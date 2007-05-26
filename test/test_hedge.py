@@ -64,8 +64,15 @@ class TestHedge(unittest.TestCase):
         from hedge.element import Triangle
 
         n = 17
-        nodes = list(Triangle(n).nodes())
+        tri = Triangle(n)
+        nodes = list(tri.nodes())
         self.assert_(len(nodes) == (n+1)*(n+2)/2)
+
+        for x in nodes:
+            ux = tri.equilateral_to_unit(x)
+            self.assert_(ux[0] >= -1)
+            self.assert_(ux[1] >= -1)
+            self.assert_(ux[0]+ux[1] <= 1)
 
 
 

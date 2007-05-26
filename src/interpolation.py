@@ -43,23 +43,3 @@ def newton_interpolation_polynomial(x, y):
 
 def newton_interpolation_function(x, y):
     return pymbolic.compile(newton_interpolation_polynomial(x, y))
-
-
-
-
-if __name__ == "__main__":
-    outf = file("nodes.dat", "w")
-    print triangle_nodes(17)
-    for x, y in triangle_nodes(33)[0]:
-        outf.write("%f\t%f\n" % (x,y))
-    profile.run("list(tri_nodes(33))", "iprof")
-    #print legendre_vandermonde([1,2,3,4], 4)
-    #print num.linspace(-1, 1, N+1)
-    #print legendre_gauss_lobatto_points(17)
-
-    #x = [-1.5, -0.75, 0, 0.75, 1.5]
-    #y = [-14.1014, -0.931596, 0, 0.931596, 14.1014]
-    #nf = newton_interpolation_function(x,
-            #[-14.1014, -0.931596, 0, 0.931596, 14.1014])
-
-

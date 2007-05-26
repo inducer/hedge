@@ -55,11 +55,25 @@ def jacobi_polynomial(alpha, beta, N):
 
 
 @FunctionValueCache
+def jacobi_function(alpha, beta, N):
+    return pymbolic.compile(jacobi_polynomial(alpha, beta, N))
+
+
+
+
+@FunctionValueCache
 def diff_jacobi_polynomial(alpha, beta, N, derivative=1):
     poly = jacobi_polynomial(alpha, beta, N)
     for i in range(derivative):
         poly = pymbolic.differentiate(poly, poly.base)
     return poly
+
+
+
+
+@FunctionValueCache
+def diff_jacobi_function(alpha, beta, N, derivative=1):
+    return pymbolic.compile(diff_jacobi_polynomial(alpha, beta, N, derivative))
 
 
 
