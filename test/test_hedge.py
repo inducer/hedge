@@ -65,14 +65,14 @@ class TestHedge(unittest.TestCase):
 
         n = 17
         tri = Triangle(n)
-        nodes = list(tri.nodes())
-        self.assert_(len(nodes) == (n+1)*(n+2)/2)
+        unodes = list(tri.unit_nodes())
+        self.assert_(len(unodes) == (n+1)*(n+2)/2)
 
-        for x in nodes:
-            ux = tri.equilateral_to_unit(x)
-            self.assert_(ux[0] >= -1)
-            self.assert_(ux[1] >= -1)
-            self.assert_(ux[0]+ux[1] <= 1)
+        eps = 1e-10
+        for ux in unodes:
+            self.assert_(ux[0] >= -1-eps)
+            self.assert_(ux[1] >= -1-eps)
+            self.assert_(ux[0]+ux[1] <= 1+eps)
 
 
 
