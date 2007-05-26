@@ -1,3 +1,8 @@
+import pylinear.array as num
+
+
+
+
 class WarpFactorCalculator:
     """Calculator for Warburton's warp factor.
 
@@ -7,14 +12,14 @@ class WarpFactorCalculator:
     """
 
     def __init__(self, N):
+        from hedge.quadrature import legendre_gauss_lobatto_points
+        from hedge.interpolation import newton_interpolation_function
+
         # Find lgl and equidistant interpolation points
         r_lgl = legendre_gauss_lobatto_points(N)
         r_eq  = num.linspace(-1,1,N+1)
 
         self.int_f = newton_interpolation_function(r_eq, r_lgl - r_eq)
-
-        assert abs(self.int_f(-1)) < 1e-10
-        assert abs(self.int_f(1)) < 1e-10
 
     def __call__(self, x):
         if abs(x) > 1-1e-10:
@@ -85,17 +90,21 @@ class Triangle:
         for n in range(0, self.order+1):
             for m in range(0, self.order+1-n):
                 # compute barycentric coordinates
-                lambda1 = n/N
-                lambda3 = m/N
+                lambda1 = n/self.order
+                lambda3 = m/self.order
                 lambda2 = 1-lambda1-lambda3
 
                 yield lambda1, lambda2, lambda3
 
     @staticmethod
     def barycentric_to_equilateral((lambda1, lambda2, lambda3)):
+        from math import sqrt
+
         return num.array([
             -lambda2+lambda3,
             (-lambda2-lambda3+2*lambda1)/sqrt(3.0)])
+
+    #equilateral_to_unit = 
 
     def equidistant_equilateral_nodes(self):
         """Compute equidistant (x,y) nodes in equilateral triangle for polynomials
@@ -119,11 +128,11 @@ class Triangle:
                   1.2832, 1.3648, 1.4773, 1.4959, 1.5743, 1.5770, 1.6223, 1.6258]
                   
         try:
-            alpha = alpha_opt[N+1]
+            alpha = alpha_opt[self.order+1]
         except IndexError:
             alpha = 5/3
 
-        warp = WarpFactorCalculator(N)
+        warp = WarpFactorCalculator(self.order)
 
         edge1dir = num.array([1,0])
         edge2dir = num.array([cos(2*pi/3), sin(2*pi/3)])
@@ -131,8 +140,9 @@ class Triangle:
 
         for bary in self.equidistant_barycentric_nodes():
             lambda1, lambda2, lambda3 = bary
+
             # find equidistant (x,y) coordinates in equilateral triangle
-            point = barycentric_to_equilateral(bary)
+            point = self.barycentric_to_equilateral(bary)
 
             # compute blend factors
             blend1 = 4*lambda2*lambda3

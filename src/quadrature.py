@@ -1,14 +1,5 @@
-def jacobi_gauss_quadrature(alpha, beta, N):
-    """Compute the N'th order Gauss quadrature points, x,
-    and weights, w, associated with the Jacobi
-    polynomial, of type (alpha,beta) > -1 ( <> -0.5).
-
-    Returns x, w.
-    """
-
-    from scipy.special.orthogonal import j_roots
-
-    return j_roots(N+1, alpha, beta)
+from __future__ import division
+import pylinear.array as num
 
 
 
@@ -32,8 +23,9 @@ def jacobi_gauss_lobatto_points(alpha, beta, N):
     if N == 1:
         return x
 
-    xint, w = jacobi_gauss_quadrature(alpha+1,beta+1,N-2);
-    x[1:-1] = num.array(xint).real
+    x[1:-1] = num.array(
+            JacobiGaussQuadrature(alpha+1, beta+1, N-2).points
+            ).real
     return x
 
 
@@ -47,4 +39,55 @@ def legendre_gauss_lobatto_points(N):
 
 
 
+
+class Quadrature:
+    """A quadrature rule."""
+    def __init__(self, points, weights):
+        self.weights = weights
+        self.points = points
+        self.data = zip(points, weights)
+
+    def __call__(self, f):
+        """Integrate the callable f with respect to the given quadrature rule.
+        """
+        return sum(w*f(x) for x, w in self.data)
+
+
+
+class JacobiGaussQuadrature(Quadrature):
+    """An N'th order Gauss quadrature associated with the Jacobi
+    polynomials of type (alpha,beta) > -1 ( <> -0.5).
+    """
+    def __init__(self, alpha, beta, N):
+        from scipy.special.orthogonal import j_roots
+        Quadrature.__init__(self, *j_roots(N+1, alpha, beta))
+
+
+
+
+class LegendreGaussQuadrature(JacobiGaussQuadrature):
+    """An N'th order Gauss quadrature associated with the Legendre polynomials.
+    """
+    def __init__(self, N):
+        JacobiGaussQuadrature.__init__(self, 0, 0, N)
+
+
+
+
+class TransformedQuadrature(Quadrature):
+    """A quadrature rule on an arbitrary interval. """
+
+    def __init__(self, quad, left, right):
+        """Transform a given quadrature rule `quad' onto an arbitrary
+        interval (left, right).
+        """
+        self.left = left
+        self.right = right
+
+        length = right-left
+        assert length > 0
+        half_length = length / 2
+        Quadrature.__init__(self,
+                [left + (p+1)/2*length for p in quad.points],
+                [w*half_length for w in quad.weights])
 
