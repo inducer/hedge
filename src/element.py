@@ -53,7 +53,7 @@ class TriangleBasisFunction:
 
 class GradTriangleBasisFunction:
     def __init__(self, (i, j)):
-        from hedge.polynomial import jacobi_function
+        from hedge.polynomial import jacobi_function, diff_jacobi_function
         self.i = i
         self.f  =      jacobi_function(0, 0, i)
         self.df = diff_jacobi_function(0, 0, i)
@@ -108,7 +108,7 @@ class Triangle:
     B=(1,-1)
     C=(-1,-1)
 
-    equilateral coordinates (x,y)
+    equilateral coordinates (x,y):
 
             A
            / \
@@ -136,7 +136,7 @@ class Triangle:
         faces = [[], [], []]
 
         i = 0
-        for m, n in self.inidces():
+        for m, n in self.indices():
             # face finding
             if n == 0:
                 faces[0].append(i)
@@ -148,16 +148,15 @@ class Triangle:
             i += 1
 
         # make sure faces are numbered counterclockwise
-        face[2] = face[2][::-1]
+        faces[2] = faces[2][::-1]
 
         return faces
 
     def equidistant_barycentric_nodes(self):
-        """Compute equidistant (x,y) nodes in barycentric coordinates
+        """Compute equidistant nodes in barycentric coordinates
         of order N.
         """
         for m, n in self.indices():
-            # compute barycentric coordinates
             lambda1 = n/self.order
             lambda3 = m/self.order
             lambda2 = 1-lambda1-lambda3
@@ -176,12 +175,16 @@ class Triangle:
                 num.array([-1/3,-1/3]))
 
     def equidistant_equilateral_nodes(self):
-        """Compute equidistant (x,y) nodes in equilateral triangle for polynomials
-        of order N.
-        """
+        """Compute equidistant nodes in equilateral coordinates."""
 
         for bary in self.equidistant_barycentric_nodes():
             yield self.barycentric_to_equilateral(bary)
+
+    def equidistant_unit_nodes(self):
+        """Compute equidistant nodes in unit coordinates."""
+
+        for bary in self.equidistant_barycentric_nodes():
+            yield self.equilateral_to_unit(self.barycentric_to_equilateral(bary))
 
     def equilateral_nodes(self):
         """Compute warped nodes in equilateral coordinates (x,y)."""
@@ -256,3 +259,4 @@ class Triangle:
         return generic_vandermonde(
                 list(self.unit_nodes()),
                 list(self.grad_basis_functions()))
+

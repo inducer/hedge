@@ -74,6 +74,31 @@ class TestHedge(unittest.TestCase):
             self.assert_(ux[1] >= -1-eps)
             self.assert_(ux[0]+ux[1] <= 1+eps)
 
+    def test_tri_basis_grad(self):
+        from itertools import izip
+        from hedge.element import Triangle
+        from random import uniform
+        import pylinear.array as num
+        import pylinear.computation as comp
+
+        tri = Triangle(8)
+        for bf, gradbf in izip(tri.basis_functions(), tri.grad_basis_functions()):
+            for i in range(10):
+                r = uniform(-0.95, 0.95)
+                s = uniform(-0.95, -r-0.05)
+
+                h = 1e-4
+                gradbf_v = gradbf((r,s))
+                approx_gradbf_v = num.array([
+                    (bf((r+h,s)) - bf((r-h,s)))/(2*h),
+                    (bf((r,s+h)) - bf((r,s-h)))/(2*h)
+                    ])
+                self.assert_(comp.norm_infinity(approx_gradbf_v-gradbf_v) < h)
+
+
+
+
+
 
 
 

@@ -1,5 +1,6 @@
 from __future__ import division
 from pytools import FunctionValueCache
+import pylinear.array as num
 import pymbolic
 
 
