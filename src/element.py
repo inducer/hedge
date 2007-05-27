@@ -95,33 +95,36 @@ class Triangle:
 
     unit coordinates (r,s):
 
-    A
+    C
     |\
     | \
     |  O
     |   \
     |    \
-    C-----B
+    A-----B
 
     O = (0,0)
-    A=(-1,1)
+    A=(-1,-1)
     B=(1,-1)
-    C=(-1,-1)
+    C=(-1,1)
 
     equilateral coordinates (x,y):
 
-            A
+            C
            / \
           /   \
          /     \
         /   O   \
        /         \
-      C-----------B
+      A-----------B
 
     O = (0,0)
-    A = (0,2/sqrt(3))
+    A = (-1,-1/sqrt(3))
     B = (1,-1/sqrt(3))
-    C = (-1,-1/sqrt(3))
+    C = (0,2/sqrt(3))
+
+    A, B, C is also the ordering of vertices, and
+    AB, BC, CA is the ordering of the faces.
     """
 
     def __init__(self, order):
@@ -260,3 +263,9 @@ class Triangle:
                 list(self.unit_nodes()),
                 list(self.grad_basis_functions()))
 
+    def get_map_unit_to_global(self, vertices):
+        mat = num.zeros((2,2))
+        mat[:,0] = vertices[1] - vertices[0]
+        mat[:,1] = vertices[2] - vertices[0]
+
+        return AffineMap(mat, vertices[0])
