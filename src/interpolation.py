@@ -1,7 +1,4 @@
 from __future__ import division
-import pylinear.array as num
-import pylinear.operator as op
-from pytools import FunctionValueCache
 import pymbolic
 
 

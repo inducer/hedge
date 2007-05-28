@@ -1,12 +1,12 @@
 from __future__ import division
-from pytools import FunctionValueCache
 import pylinear.array as num
 import pymbolic
+from pytools import memoize
 
 
 
 
-@FunctionValueCache
+@memoize
 def jacobi_polynomial(alpha, beta, N):
     """Return Jacobi Polynomial of type (alpha,beta) > -1
     (alpha+beta != -1) for order N.
@@ -55,14 +55,14 @@ def jacobi_polynomial(alpha, beta, N):
 
 
 
-@FunctionValueCache
+@memoize
 def jacobi_function(alpha, beta, N):
     return pymbolic.compile(jacobi_polynomial(alpha, beta, N))
 
 
 
 
-@FunctionValueCache
+@memoize
 def diff_jacobi_polynomial(alpha, beta, N, derivative=1):
     poly = jacobi_polynomial(alpha, beta, N)
     for i in range(derivative):
@@ -72,7 +72,7 @@ def diff_jacobi_polynomial(alpha, beta, N, derivative=1):
 
 
 
-@FunctionValueCache
+@memoize
 def diff_jacobi_function(alpha, beta, N, derivative=1):
     return pymbolic.compile(diff_jacobi_polynomial(alpha, beta, N, derivative))
 
@@ -91,14 +91,14 @@ def diff_legendre_polynomial(N, derivative=1):
 
 
 
-@FunctionValueCache
+@memoize
 def legendre_function(N):
     return pymbolic.compile(jacobi_polynomial(0, 0, N))
 
 
 
 
-@FunctionValueCache
+@memoize
 def diff_legendre_function(N, derivative=1):
     return pymbolic.compile(diff_jacobi_polynomial(0, 0, N))
 
@@ -106,6 +106,11 @@ def diff_legendre_function(N, derivative=1):
 
 
 def generic_vandermonde(points, functions):
+    """Return a Vandermonde matrix
+      
+      V[i,j] := f[j](x[i])
+    where functions=[f[j] for j] and points=[x[i] for i].
+    """
     v = num.zeros((len(points), len(functions)))
     for i, x in enumerate(points):
         for j, f in enumerate(functions):
@@ -115,11 +120,27 @@ def generic_vandermonde(points, functions):
 
 
 
+def generic_multi_vandermonde(points, functions):
+    """Return multiple Vandermonde matrices.
+      
+      V[i,j] := f[j](x[i])
+
+    where functions=[f[j] for j] and points=[x[i] for i].
+    The functions `f' are multi-valued, one matrix is returned
+    for each return value.
+    """
+    count = len(functions[0](points[0]))
+    result = [num.zeros((len(points), len(functions))) for n in range(count)]
+
+    for i, x in enumerate(points):
+        for j, f in enumerate(functions):
+            for n, f_n in f(x):
+                v[n] = f_n
+    return result
+
+
+
+
 def legendre_vandermonde(points, N):
     return generic_vandermonde(points, 
             [legendre_function(i) for i in range(N+1)])
-
-
-
-
-
