@@ -1,4 +1,4 @@
-class Element:
+class Element(object):
     pass
 
 
@@ -19,17 +19,19 @@ class Triangle(Element):
 
 
 class SimplicalMesh:
-    def __init__(self, vertices, triangle_vertices, bdry_tags):
+    def __init__(self, vertices, elements, bdry_tags):
         """Construct a simplical mesh.
 
         vertices is an iterable of vertex coordinates, given as 2-vectors.
-        triangle_vertices is an iterable of triples of indices into vertices,
-          giving triangle endpoints.
-        bdry_tags is a map from pairs of indices into vertices to (user-defined)
-          identifiers of boundaries.
+        elements is an iterable of tuples of indices into vertices,
+          giving element endpoints.
+        bdry_tags is a map from vertex indices, indicating face endpoints,
+          into user-defined boundary tags.
+        Face indices follow the convention for the respective element,
+        such as Triangle or Tetrahedron, in this module.
         """
         self.vertices = list(vertices)
-        self.elements = [Triangle(id, tri) for id, tri in enumerate(triangle_vertices)]
+        self.elements = [Triangle(id, tri) for id, tri in enumerate(elements)]
         self._build_connectivity()
 
     def _interfaces(self):
@@ -50,12 +52,12 @@ class SimplicalMesh:
         self._unique_interfaces = []
         self._boundary_faces = []
         for face, els_faces in self._face_map.iteritems():
-            if len(elements) == 2:
+            if len(els_faces) == 2:
                 self._unique_interfaces.append(els_faces[0])
                 self._neighbor_map[els_faces[0]] = els_faces[1]
                 self._neighbor_map[els_faces[1]] = els_faces[0]
-            elif len(elements) == 1:
-                self_boundary_faces.append(els_faces[0])
+            elif len(els_faces) == 1:
+                self._boundary_faces.append(els_faces[0])
             else:
                 raise RuntimeError, "face can at most border two elements"
 
