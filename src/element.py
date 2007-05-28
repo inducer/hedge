@@ -1,7 +1,9 @@
 from __future__ import division
 import pylinear.array as num
+import pylinear.comp as comp
 from hedge.tools import AffineMap
 from math import sqrt, sin, cos, exp, pi
+from pytools import memoize
 
 
 
@@ -74,7 +76,7 @@ class GradTriangleBasisFunction:
         i = self.i
 
         # see doc/hedge-notes.tm
-        return num.array([
+        return [
             # df/dr
             2*sqrt(2) * g_s * one_s**(i-1) * df_a,
             # df/ds
@@ -82,12 +84,12 @@ class GradTriangleBasisFunction:
                 f_a * one_s**i * dg_s
                 +(2*r+2) * g_s * one_s**(i-2) * df_a
                 -i * f_a * g_s * one_s**(i-1)
-                )])
+                )]
 
 
 
 
-class Triangle:
+class TriangularElement:
     """An arbitrary-order triangular finite element.
 
     Coordinate systems used:
@@ -96,11 +98,11 @@ class Triangle:
     unit coordinates (r,s):
 
     C
-    |\
-    | \
+    |\\
+    | \\
     |  O
-    |   \
-    |    \
+    |   \\
+    |    \\
     A-----B
 
     O = (0,0)
@@ -111,12 +113,12 @@ class Triangle:
     equilateral coordinates (x,y):
 
             C
-           / \
-          /   \
-         /     \
-        /   O   \
-       /         \
-      A-----------B
+           / \\
+          /   \\
+         /     \\
+        /   O   \\
+       /         \\
+      A-----------B 
 
     O = (0,0)
     A = (-1,-1/sqrt(3))
@@ -127,19 +129,34 @@ class Triangle:
     AB, BC, CA is the ordering of the faces.
     """
 
+    # In case you were wondering: the double backslashes in the docstring
+    # are required because single backslashes only escape their subsequent
+    # newlines. It looks cool, too.
+
     def __init__(self, order):
         self.order = order
 
-    def indices(self):
+    def get_map_unit_to_global(self, vertices):
+        """Return an affine map that maps the unit coordinates of the reference
+        element to a global element at a location given by its `vertices'.
+        """
+        mat = num.zeros((2,2))
+        mat[:,0] = vertices[1] - vertices[0]
+        mat[:,1] = vertices[2] - vertices[0]
+        return AffineMap(mat, vertices[0])
+
+    # numbering ---------------------------------------------------------------
+    def node_indices(self):
         for n in range(0, self.order+1):
             for m in range(0, self.order+1-n):
                 yield m,n
 
+    @memoize
     def face_indices(self):
         faces = [[], [], []]
 
         i = 0
-        for m, n in self.indices():
+        for m, n in self.node_indices():
             # face finding
             if n == 0:
                 faces[0].append(i)
@@ -155,11 +172,12 @@ class Triangle:
 
         return faces
 
+    # node generators ---------------------------------------------------------
     def equidistant_barycentric_nodes(self):
-        """Compute equidistant nodes in barycentric coordinates
+        """Generate equidistant nodes in barycentric coordinates
         of order N.
         """
-        for m, n in self.indices():
+        for m, n in self.node_indices():
             lambda1 = n/self.order
             lambda3 = m/self.order
             lambda2 = 1-lambda1-lambda3
@@ -178,19 +196,19 @@ class Triangle:
                 num.array([-1/3,-1/3]))
 
     def equidistant_equilateral_nodes(self):
-        """Compute equidistant nodes in equilateral coordinates."""
+        """Generate equidistant nodes in equilateral coordinates."""
 
         for bary in self.equidistant_barycentric_nodes():
             yield self.barycentric_to_equilateral(bary)
 
     def equidistant_unit_nodes(self):
-        """Compute equidistant nodes in unit coordinates."""
+        """Generate equidistant nodes in unit coordinates."""
 
         for bary in self.equidistant_barycentric_nodes():
             yield self.equilateral_to_unit(self.barycentric_to_equilateral(bary))
 
     def equilateral_nodes(self):
-        """Compute warped nodes in equilateral coordinates (x,y)."""
+        """Generate warped nodes in equilateral coordinates (x,y)."""
 
         # port of J. Hesthaven's Nodes2D routine
 
@@ -228,20 +246,29 @@ class Triangle:
             # return warped point
             yield point + warp1*edge1dir + warp2*edge2dir + warp3*edge3dir
 
+    @memoize
     def unit_nodes(self):
-        """Compute the warped nodes in unit coordinates (r,s)."""
-        for node in self.equilateral_nodes():
-            yield self.equilateral_to_unit(node)
+        """Generate the warped nodes in unit coordinates (r,s)."""
+        return [self.equilateral_to_unit(node)
+                for node in self.equilateral_nodes()]
 
+    # basis functions ---------------------------------------------------------
     def basis_functions(self):
         """Get a sequence of functions that form a basis
         of the function space spanned by
 
           r^i * s ^j for i+j <= N
         """
-        for idx in self.indices():
-            yield TriangleBasisFunction(idx)
+        return [TriangleBasisFunction(idx) for idx in self.node_indices()]
 
+    def grad_basis_functions(self):
+        """Get the gradient functions of the basis_functions(),
+        in the same order.
+        """
+        return [GradTriangleBasisFunction(idx) for idx in self.node_indices()]
+
+    # matrices ----------------------------------------------------------------
+    @memoize
     def vandermonde(self):
         from hedge.polynomial import generic_vandermonde
 
@@ -249,23 +276,89 @@ class Triangle:
                 list(self.unit_nodes()),
                 list(self.basis_functions()))
 
-    def grad_basis_functions(self):
-        """Get the gradient functions of the basis_functions(),
-        in the same order.
+    @memoize
+    def mass_matrix(self):
+        """Return the mass matrix of the unit element with respect 
+        to the nodal coefficients. Multiply by the Jacobian to obtain
+        the global mass matrix.
         """
-        for idx in self.indices():
-            yield GradTriangleBasisFunction(idx)
 
+        # see doc/hedge-notes.tm
+        v = self.vandermonde()
+        return 1/(v*v.T)
+
+    @memoize
     def grad_vandermonde(self):
-        from hedge.polynomial import generic_vandermonde
+        """Compute the Vandermonde matrices of the grad_basis_functions().
+        Return a list of these matrices."""
 
-        return generic_vandermonde(
+        from hedge.polynomial import generic_multi_vandermonde
+
+        return generic_multi_vandermonde(
                 list(self.unit_nodes()),
                 list(self.grad_basis_functions()))
 
-    def get_map_unit_to_global(self, vertices):
-        mat = num.zeros((2,2))
-        mat[:,0] = vertices[1] - vertices[0]
-        mat[:,1] = vertices[2] - vertices[0]
+    @memoize
+    def differentiation_matrices(self):
+        """Return matrices that map the nodal values of a function
+        to the nodal values of its derivative in each of the unit
+        coordinate directions.
+        """
 
-        return AffineMap(mat, vertices[0])
+        # see doc/hedge-notes.tm
+        v = self.vandermonde()
+        return [v <<num.leftsolve>> vdiff for vdiff in self.grad_vandermonde()]
+
+    def global_differentiation_matrices(self, inverse_affine_map):
+        """Return matrices that map the nodal values of a function
+        to the nodal values of its derivative in each of the global
+        coordinate directions.
+
+        WARNING: Every possible use of this routine is inefficient.
+        You shouldn't store its results, because that's a helluva lot 
+        of useless storage. On the other hand, recomputing this
+        matrix every time you need it is also obviously silly.
+
+        What you should really be doing is apply the differentiation
+        matrices and then linearly combine the results according
+        to the matrix.
+
+        It is thus mostly meant as a help to get you off the ground,
+        and as a guideline and as verification for your (hopefully more 
+        efficient) coding.
+        """
+
+        from operator import add
+
+        # see doc/hedge-notes.tm
+        dmats = self.differentiation_matrices()
+        return [reduce(add, (dmat*coeff for dmat, coeff in zip(dmats, col)))
+                for col in inverse_affine_map.matrix.T]
+
+    # face operations ---------------------------------------------------------
+    @memoize
+    def face_mass_matrix(self):
+        from hedge.polynomial import legendre_vandermonde
+        unodes = self.unit_nodes()
+        face_vandermonde = legendre_vandermonde(
+                [unodes[i][0] for i in self.face_indices()[0]])
+
+        return 1/(face_vandermonde*face_vandermonde.T)
+
+    def face_normals_and_jacobians(self, affine_map):
+        # FIXME TEST ME
+        def sign(x):
+            if sign x > 0: return 1
+            else: return -1
+
+        m = affine_map.matrix
+        orient = sign(affine_map.jacobian)
+        face1 = m[:,1] - m[:,0]
+        raw_normals = [
+                orient*num.array([m[1,0], -m[0,0]]),
+                orient*num.array([face1[1], -face1[0]]),
+                orient*num.array([-m[1,1], m[0,1]]),
+                ]
+        face_jacobians = [comp.norm_2(fn) for fn in raw_normals]
+        return [n/fj for n, fj in zip(raw_normals, face_jacobians)], \
+                face_jacobians
