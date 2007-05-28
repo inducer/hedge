@@ -13,7 +13,7 @@ class TestHedge(unittest.TestCase):
 
         errors = [abs(yi-nf(xi)) for xi, yi in zip(x, y)]
         self.assert_(sum(errors) < 1e-10)
-
+    # -------------------------------------------------------------------------
     def test_orthonormality_1d(self):
         n = 10
 
@@ -31,7 +31,7 @@ class TestHedge(unittest.TestCase):
                     self.assert_(abs(result-1) < 1e-9)
                 else:
                     self.assert_(abs(result) < 1e-9)
-
+    # -------------------------------------------------------------------------
     def test_transformed_quadrature(self):
         from math import exp, sqrt, pi
 
@@ -46,7 +46,7 @@ class TestHedge(unittest.TestCase):
         
         result = tq(lambda x: gaussian_density(x, mu, sigma))
         self.assert_(abs(result - 1) < 1e-9)
-
+    # -------------------------------------------------------------------------
     def test_warp(self):
         n = 17
         from hedge.element import WarpFactorCalculator
@@ -59,12 +59,12 @@ class TestHedge(unittest.TestCase):
 
         lgq = LegendreGaussQuadrature(n)
         self.assert_(abs(lgq(wfc)) < 1e-10)
-
+    # -------------------------------------------------------------------------
     def test_tri_nodes(self):
-        from hedge.element import Triangle
+        from hedge.element import TriangularElement
 
         n = 17
-        tri = Triangle(n)
+        tri = TriangularElement(n)
         unodes = list(tri.unit_nodes())
         self.assert_(len(unodes) == (n+1)*(n+2)/2)
 
@@ -73,31 +73,54 @@ class TestHedge(unittest.TestCase):
             self.assert_(ux[0] >= -1-eps)
             self.assert_(ux[1] >= -1-eps)
             self.assert_(ux[0]+ux[1] <= 1+eps)
-
+    # -------------------------------------------------------------------------
     def test_tri_basis_grad(self):
         from itertools import izip
-        from hedge.element import Triangle
+        from hedge.element import TriangularElement
         from random import uniform
         import pylinear.array as num
         import pylinear.computation as comp
 
-        tri = Triangle(8)
+        tri = TriangularElement(8)
         for bf, gradbf in izip(tri.basis_functions(), tri.grad_basis_functions()):
             for i in range(10):
                 r = uniform(-0.95, 0.95)
                 s = uniform(-0.95, -r-0.05)
 
                 h = 1e-4
-                gradbf_v = gradbf((r,s))
+                gradbf_v = num.array(gradbf((r,s)))
                 approx_gradbf_v = num.array([
                     (bf((r+h,s)) - bf((r-h,s)))/(2*h),
                     (bf((r,s+h)) - bf((r,s-h)))/(2*h)
                     ])
                 self.assert_(comp.norm_infinity(approx_gradbf_v-gradbf_v) < h)
+    # -------------------------------------------------------------------------
+    def test_tri_face_node_distribution(self):
+        """Test whether the nodes on the faces of the triangle are distributed 
+        according to the same proportions on each face.
 
+        If this is not the case, then reusing the same face mass matrix
+        for each face would be invalid.
+        """
 
+        from hedge.element import TriangularElement
+        import pylinear.array as num
+        import pylinear.computation as comp
 
+        tri = TriangularElement(8)
+        unodes = tri.unit_nodes()
+        projected_face_points = []
+        for face_i in tri.face_indices():
+            start = unodes[face_i[0]]
+            end = unodes[face_i[-1]]
+            dir = end-start
+            dir /= comp.norm_2_squared(dir)
+            pfp = num.array([dir*(unodes[i]-start) for i in face_i])
+            projected_face_points.append(pfp)
 
+        first_points =  projected_face_points[0]
+        for points in projected_face_points[1:]:
+            self.assert_(comp.norm_infinity(points-first_points) < 1e-15)
 
 
 
