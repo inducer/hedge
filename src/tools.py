@@ -1,17 +1,24 @@
 class AffineMap(object):
     def __init__(self, matrix, vector):
+        """Construct an affine map given by f(x) = matrix * x + vector."""
         self.matrix = matrix
         self.vector = vector
 
     def __call__(self, x):
+        """Apply this map."""
         return self.matrix*x + self.vector
 
-    def invert(self):
+    def inverted(self):
+        """Return a new AffineMap that is the inverse of this one.
+        """
         return AffineMap(1/self.matrix, -self.matrix <<num.solve>> vector)
 
-    def jacobian(self):
+    def _jacobian(self):
         import pylinear.computation as comp
-        return comp.determinant(self.matrix)
+        result = comp.determinant(self.matrix)
+        self.jacobian = result
+        return result
+    jacobian = property(_jacobian, doc="The jacobian of the map.")
 
 
 
