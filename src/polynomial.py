@@ -134,8 +134,8 @@ def generic_multi_vandermonde(points, functions):
 
     for i, x in enumerate(points):
         for j, f in enumerate(functions):
-            for n, f_n in f(x):
-                v[n] = f_n
+            for n, f_n in enumerate(f(x)):
+                result[n][i,j] = f_n
     return result
 
 

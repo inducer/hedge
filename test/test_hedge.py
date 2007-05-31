@@ -121,6 +121,37 @@ class TestHedge(unittest.TestCase):
         first_points =  projected_face_points[0]
         for points in projected_face_points[1:]:
             self.assert_(comp.norm_infinity(points-first_points) < 1e-15)
+    # -------------------------------------------------------------------------
+    def test_tri_face_normals_and_jacobians(self):
+        """Make sure that computed face normals and face jacobians
+        on triangles actually match their desired values.
+        """
+        from hedge.element import TriangularElement
+        from hedge.tools import AffineMap
+        import pylinear.array as num
+        import pylinear.computation as comp
+        from pylinear.randomized import \
+                make_random_spd_matrix, \
+                make_random_vector
+
+        tri = TriangularElement(8)
+
+        for i in range(10):
+            vertices = [make_random_vector(2, num.Float) for vi in range(3)]
+            map = tri.get_map_unit_to_global(vertices)
+
+            unodes = [map(v) for v in tri.unit_nodes()]
+            normals, jacobians = tri.face_normals_and_jacobians(map)
+
+            for face_i, normal, jac in zip(tri.face_indices(), normals, jacobians):
+                start = unodes[face_i[0]]
+                end = unodes[face_i[-1]]
+                dir = end-start
+                true_jac = comp.norm_2(dir)/2
+
+                self.assert_(abs(true_jac - jac) < 1e-13)
+                self.assert_(abs(comp.norm_2(normal) - 1) < 1e-13)
+                self.assert_(abs(normal*dir) < 1e-13)
 
 
 

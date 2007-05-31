@@ -1,6 +1,6 @@
 from __future__ import division
 import pylinear.array as num
-import pylinear.comp as comp
+import pylinear.computation as comp
 from hedge.tools import AffineMap
 from math import sqrt, sin, cos, exp, pi
 from pytools import memoize
@@ -20,6 +20,7 @@ class WarpFactorCalculator:
         from hedge.quadrature import legendre_gauss_lobatto_points
         from hedge.interpolation import newton_interpolation_function
 
+        import numpy
         # Find lgl and equidistant interpolation points
         r_lgl = legendre_gauss_lobatto_points(N)
         r_eq  = num.linspace(-1,1,N+1)
@@ -341,15 +342,22 @@ class TriangularElement:
         from hedge.polynomial import legendre_vandermonde
         unodes = self.unit_nodes()
         face_vandermonde = legendre_vandermonde(
-                [unodes[i][0] for i in self.face_indices()[0]])
+                [unodes[i][0] for i in self.face_indices()[0]],
+                self.order)
 
         return 1/(face_vandermonde*face_vandermonde.T)
 
     def face_normals_and_jacobians(self, affine_map):
-        # FIXME TEST ME
+        """Compute the normals and face jacobians of the unit triangle
+        transformed according to `affine_map'.
+
+        Returns a pair of lists [normals], [jacobians].
+        """
         def sign(x):
-            if sign x > 0: return 1
-            else: return -1
+            if x > 0: 
+                return 1
+            else: 
+                return -1
 
         m = affine_map.matrix
         orient = sign(affine_map.jacobian)

@@ -1,3 +1,8 @@
+import pylinear.array as num
+
+
+
+
 class Element(object):
     pass
 
@@ -8,12 +13,15 @@ class Triangle(Element):
     def __init__(self, id, vertices):
         self.id = id
         self.vertices = vertices
+
+        # After sorting, we still specify the same simplex.
+        # This is done to make face orientation unique.
         vertices.sort()
 
-    def _faces(self):
-        for i in range(3):
-            yield (self.vertices[i], self.vertices[(i+1)%3])
-    faces = property(_faces)
+    @property
+    def faces(self):
+        return [(self.vertices[i], self.vertices[(i+1)%3])
+                for i in range(3)]
 
 
 
@@ -30,17 +38,17 @@ class SimplicalMesh:
         Face indices follow the convention for the respective element,
         such as Triangle or Tetrahedron, in this module.
         """
-        self.vertices = list(vertices)
+        self.vertices = [num.asarray(v) for v in vertices]
         self.elements = [Triangle(id, tri) for id, tri in enumerate(elements)]
         self._build_connectivity()
 
-    def _interfaces(self):
+    @property
+    def interfaces(self):
         return self._unique_interfaces
-    interfaces = property(_interfaces)
 
-    def _boundaries(self):
+    @property
+    def boundaries(self):
         return self._boundary_faces
-    boundaries = property(_boundaries)
 
     def _build_connectivity(self):
         self._face_map = {}
@@ -53,7 +61,7 @@ class SimplicalMesh:
         self._boundary_faces = []
         for face, els_faces in self._face_map.iteritems():
             if len(els_faces) == 2:
-                self._unique_interfaces.append(els_faces[0])
+                self._unique_interfaces.append(els_faces)
                 self._neighbor_map[els_faces[0]] = els_faces[1]
                 self._neighbor_map[els_faces[1]] = els_faces[0]
             elif len(els_faces) == 1:
