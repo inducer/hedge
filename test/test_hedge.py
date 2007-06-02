@@ -1,3 +1,4 @@
+from __future__ import division
 import unittest
 
 
@@ -66,13 +67,18 @@ class TestHedge(unittest.TestCase):
         n = 17
         tri = TriangularElement(n)
         unodes = list(tri.unit_nodes())
-        self.assert_(len(unodes) == (n+1)*(n+2)/2)
+        self.assert_(len(unodes) == tri.node_count())
 
         eps = 1e-10
         for ux in unodes:
             self.assert_(ux[0] >= -1-eps)
             self.assert_(ux[1] >= -1-eps)
             self.assert_(ux[0]+ux[1] <= 1+eps)
+
+        for i, j in tri.node_indices():
+            self.assert_(i >= 0)
+            self.assert_(j >= 0)
+            self.assert_(i+j <= n)
     # -------------------------------------------------------------------------
     def test_tri_basis_grad(self):
         from itertools import izip
@@ -123,15 +129,13 @@ class TestHedge(unittest.TestCase):
             self.assert_(comp.norm_infinity(points-first_points) < 1e-15)
     # -------------------------------------------------------------------------
     def test_tri_face_normals_and_jacobians(self):
-        """Make sure that computed face normals and face jacobians
-        on triangles actually match their desired values.
+        """Check computed face normals and face jacobians
         """
         from hedge.element import TriangularElement
         from hedge.tools import AffineMap
         import pylinear.array as num
         import pylinear.computation as comp
         from pylinear.randomized import \
-                make_random_spd_matrix, \
                 make_random_vector
 
         tri = TriangularElement(8)
@@ -140,18 +144,105 @@ class TestHedge(unittest.TestCase):
             vertices = [make_random_vector(2, num.Float) for vi in range(3)]
             map = tri.get_map_unit_to_global(vertices)
 
-            unodes = [map(v) for v in tri.unit_nodes()]
+            unodes = tri.unit_nodes()
+            nodes = [map(v) for v in unodes]
             normals, jacobians = tri.face_normals_and_jacobians(map)
 
             for face_i, normal, jac in zip(tri.face_indices(), normals, jacobians):
+                mapped_start = nodes[face_i[0]]
+                mapped_end = nodes[face_i[-1]]
+                mapped_dir = mapped_end-mapped_start
                 start = unodes[face_i[0]]
                 end = unodes[face_i[-1]]
-                dir = end-start
-                true_jac = comp.norm_2(dir)/2
+                true_jac = comp.norm_2(mapped_end-mapped_start)\
+                        /comp.norm_2(end-start)
 
-                self.assert_(abs(true_jac - jac) < 1e-13)
+                #print abs(true_jac-jac)/true_jac
+                #print "aft, bef", comp.norm_2(mapped_end-mapped_start),comp.norm_2(end-start)
+
+                self.assert_(abs(true_jac - jac)/true_jac < 1e-13)
                 self.assert_(abs(comp.norm_2(normal) - 1) < 1e-13)
-                self.assert_(abs(normal*dir) < 1e-13)
+                self.assert_(abs(normal*mapped_dir) < 1e-13)
+    # -------------------------------------------------------------------------
+    def test_tri_map(self):
+        from hedge.element import TriangularElement
+        import pylinear.array as num
+        import pylinear.computation as comp
+        from pylinear.randomized import \
+                make_random_vector
+
+        n = 8
+        tri = TriangularElement(n)
+
+        node_dict = dict((ituple, idx) for idx, ituple in enumerate(tri.node_indices()))
+        corner_indices = [node_dict[0,0], node_dict[n,0], node_dict[0,n]]
+        unodes = tri.unit_nodes()
+        corners = [unodes[i] for i in corner_indices]
+
+        for i in range(10):
+            vertices = [make_random_vector(2, num.Float) for vi in range(3)]
+            map = tri.get_map_unit_to_global(vertices)
+            global_corners = [map(pt) for pt in corners]
+            for gc, v in zip(global_corners, vertices):
+                self.assert_(comp.norm_2(gc-v) < 1e-12)
+    # -------------------------------------------------------------------------
+    def test_tri_mass_mat(self):
+        from hedge.mesh import make_disk_mesh
+        from hedge.element import TriangularElement
+        from hedge.discretization import Discretization
+        from math import sqrt, exp, pi
+
+        sigma = 32
+
+        mesh = make_disk_mesh()
+        discr = Discretization(make_disk_mesh(), TriangularElement(9))
+        f = discr.interpolate_volume_function(lambda x: exp(-x*x*sigma))
+        ones = discr.interpolate_volume_function(lambda x: 1)
+
+        #discr.visualize_field("gaussian.vtk", [("f", f)])
+        num_integral_1 = ones * discr.apply_mass_matrix(f)
+        num_integral_2 = f * discr.apply_mass_matrix(ones)
+        true_integral = 2*pi/sigma
+        err_1 = abs(num_integral_1-true_integral)
+        err_2 = abs(num_integral_1-true_integral)
+        self.assert_(err_1 < 1e-4)
+        self.assert_(err_2 < 1e-4)
+    # -------------------------------------------------------------------------
+    def test_tri_diff_mat(self):
+        from hedge.mesh import make_disk_mesh
+        from hedge.element import TriangularElement
+        from hedge.discretization import Discretization
+        from math import sin, cos, sqrt
+
+        for coord in [0, 1]:
+            mesh = make_disk_mesh()
+            discr = Discretization(make_disk_mesh(), TriangularElement(9))
+            f = discr.interpolate_volume_function(lambda x: sin(3*x[coord]))
+            df = discr.interpolate_volume_function(lambda x: 3*cos(3*x[coord]))
+
+            df_num = discr.differentiate(coord, f)
+            error = df_num - df
+            #discr.visualize_field("diff-err.vtk",
+                    #[("f", f), ("df", df), ("df_num", df_num), ("error", error)])
+
+            l2_error = sqrt(error * discr.apply_mass_matrix(error))
+            #print l2_error, len(mesh.elements)
+            self.assert_(l2_error < 1e-4)
+
+
+
+
+        
+
+
+
+
+
+
+
+
+
+
 
 
 

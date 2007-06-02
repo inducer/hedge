@@ -39,4 +39,4 @@ def newton_interpolation_polynomial(x, y):
 
 
 def newton_interpolation_function(x, y):
-    return pymbolic.compile(newton_interpolation_polynomial(x, y))
+    return pymbolic.compile(newton_interpolation_polynomial(x, y), ["x"])

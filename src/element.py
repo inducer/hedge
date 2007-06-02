@@ -8,6 +8,11 @@ from pytools import memoize
 
 
 
+__all__ = ["TriangularElement"]
+
+
+
+
 class WarpFactorCalculator:
     """Calculator for Warburton's warp factor.
 
@@ -126,13 +131,15 @@ class TriangularElement:
     B = (1,-1/sqrt(3))
     C = (0,2/sqrt(3))
 
-    A, B, C is also the ordering of vertices, and
-    AB, BC, CA is the ordering of the faces.
+    When global vertices are passed in, they are mapped to the 
+    reference vertices A, B, C in order.
+
+    Faces are always ordered AB, BC, CA.
     """
 
     # In case you were wondering: the double backslashes in the docstring
     # are required because single backslashes only escape their subsequent
-    # newlines. It looks cool, too.
+    # newlines, and thus end up not yielding a correct docstring.
 
     def __init__(self, order):
         self.order = order
@@ -142,22 +149,39 @@ class TriangularElement:
         element to a global element at a location given by its `vertices'.
         """
         mat = num.zeros((2,2))
-        mat[:,0] = vertices[1] - vertices[0]
-        mat[:,1] = vertices[2] - vertices[0]
-        return AffineMap(mat, vertices[0])
+        mat[:,0] = (vertices[1] - vertices[0])/2
+        mat[:,1] = (vertices[2] - vertices[0])/2
+        return AffineMap(mat, (vertices[1]+vertices[2])/2)
 
     # numbering ---------------------------------------------------------------
+    def node_count(self):
+        """Return the number of interpolation nodes in this element."""
+        return int((self.order+1)*(self.order+2)/2)
+
     def node_indices(self):
+        """Generate tuples (col,row) enumerating the nodes present
+        in this triangle. The order in which these nodes are generated
+        also dictates the local node numbering.
+
+        The following invariants hold:
+        - col, row >= 0
+        - col+row <= self.order
+        """
+
         for n in range(0, self.order+1):
             for m in range(0, self.order+1-n):
                 yield m,n
 
     @memoize
     def face_indices(self):
+        """Return a list of face index lists. Each face index list contains
+        the local node numbers of the nodes on that face, numbered 
+        counterclockwise.
+        """
+
         faces = [[], [], []]
 
-        i = 0
-        for m, n in self.node_indices():
+        for i, (m, n) in enumerate(self.node_indices()):
             # face finding
             if n == 0:
                 faces[0].append(i)
@@ -165,8 +189,6 @@ class TriangularElement:
                 faces[1].append(i)
             if m == 0:
                 faces[2].append(i)
-
-            i += 1
 
         # make sure faces are numbered counterclockwise
         faces[2] = faces[2][::-1]
@@ -187,6 +209,8 @@ class TriangularElement:
 
     @staticmethod
     def barycentric_to_equilateral((lambda1, lambda2, lambda3)):
+        """Return the equilateral (x,y) coordinate corresponding
+        to the barycentric coordinates (lambda1..lambdaN)."""
         return num.array([
             -lambda2+lambda3,
             (-lambda2-lambda3+2*lambda1)/sqrt(3.0)])
@@ -253,6 +277,26 @@ class TriangularElement:
         return [self.equilateral_to_unit(node)
                 for node in self.equilateral_nodes()]
 
+    @memoize
+    def generate_submesh_indices(self):
+        """Return a list of triples of indices into the node list that
+        generate a triangulation of the reference triangle, using the
+        interpolation nodes."""
+
+        node_dict = dict(
+                (ituple, idx) 
+                for idx, ituple in enumerate(self.node_indices()))
+
+        result = []
+        for i, j in self.node_indices():
+            if i+j < self.order:
+                result.append(
+                        (node_dict[i,j], node_dict[i+1,j], node_dict[i,j+1]))
+            if i+j < self.order-1:
+                result.append(
+                    (node_dict[i+1,j+1], node_dict[i,j+1], node_dict[i+1,j]))
+        return result
+
     # basis functions ---------------------------------------------------------
     def basis_functions(self):
         """Get a sequence of functions that form a basis
@@ -278,6 +322,17 @@ class TriangularElement:
                 list(self.basis_functions()))
 
     @memoize
+    def inverse_mass_matrix(self):
+        """Return the inverse of the mass matrix of the unit element 
+        with respect to the nodal coefficients. Divide by the Jacobian 
+        to obtain the global mass matrix.
+        """
+
+        # see doc/hedge-notes.tm
+        v = self.vandermonde()
+        return v*v.T
+
+    @memoize
     def mass_matrix(self):
         """Return the mass matrix of the unit element with respect 
         to the nodal coefficients. Multiply by the Jacobian to obtain
@@ -285,8 +340,7 @@ class TriangularElement:
         """
 
         # see doc/hedge-notes.tm
-        v = self.vandermonde()
-        return 1/(v*v.T)
+        return 1/self.inverse_mass_matrix()
 
     @memoize
     def grad_vandermonde(self):
@@ -309,32 +363,6 @@ class TriangularElement:
         # see doc/hedge-notes.tm
         v = self.vandermonde()
         return [v <<num.leftsolve>> vdiff for vdiff in self.grad_vandermonde()]
-
-    def global_differentiation_matrices(self, inverse_affine_map):
-        """Return matrices that map the nodal values of a function
-        to the nodal values of its derivative in each of the global
-        coordinate directions.
-
-        WARNING: Every possible use of this routine is inefficient.
-        You shouldn't store its results, because that's a helluva lot 
-        of useless storage. On the other hand, recomputing this
-        matrix every time you need it is also obviously silly.
-
-        What you should really be doing is apply the differentiation
-        matrices and then linearly combine the results according
-        to the matrix.
-
-        It is thus mostly meant as a help to get you off the ground,
-        and as a guideline and as verification for your (hopefully more 
-        efficient) coding.
-        """
-
-        from operator import add
-
-        # see doc/hedge-notes.tm
-        dmats = self.differentiation_matrices()
-        return [reduce(add, (dmat*coeff for dmat, coeff in zip(dmats, col)))
-                for col in inverse_affine_map.matrix.T]
 
     # face operations ---------------------------------------------------------
     @memoize
@@ -367,6 +395,17 @@ class TriangularElement:
                 orient*num.array([face1[1], -face1[0]]),
                 orient*num.array([-m[1,1], m[0,1]]),
                 ]
-        face_jacobians = [comp.norm_2(fn) for fn in raw_normals]
-        return [n/fj for n, fj in zip(raw_normals, face_jacobians)], \
-                face_jacobians
+
+        raw_face_lengths = [1,sqrt(2),1]
+        face_lengths = [comp.norm_2(fn) for fn in raw_normals]
+        return [n/fl for n, fl in zip(raw_normals, face_lengths)], \
+                [fl/rfl for fl,rfl in zip(face_lengths, raw_face_lengths)]
+
+    def shuffle_face_indices_to_match(self, face_1_vertices, face_2_vertices, face_2_indices):
+        assert set(face_1_vertices) == set(face_2_vertices)
+        if face_1_vertices != face_2_vertices:
+            return face_2_indices[::-1]
+        else:
+            return face_2_indices
+
+

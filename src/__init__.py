@@ -1,4 +1,9 @@
-# Blank.
+"""
+Hedge
+-----
+
+Hybrid'n'Easy Discontinuous Galerkin Environment
+"""
 
 
 
