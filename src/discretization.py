@@ -119,7 +119,7 @@ class Discretization:
         for i_el, map in enumerate(self.maps):
             mmat = self.mass_mat[self.element_map[i_el]]
             e_start, e_end = self.element_ranges[i_el]
-            result[e_start:e_end] = 2*map.jacobian*mmat*field[e_start:e_end]
+            result[e_start:e_end] = abs(map.jacobian)*mmat*field[e_start:e_end]
         return result
 
     def _apply_diff_matrices(self, coordinate, field, matrices):
@@ -158,7 +158,7 @@ class Discretization:
         for i, v in zip(fl_indices, fl_contrib):
             el_contrib[i] = v
 
-        return self.inv_mass_mat[edata]*el_contrib/self.maps[el.id].jacobian
+        return self.inv_mass_mat[edata]*el_contrib/abs(self.maps[el.id].jacobian)
 
     def lift_face(self, flux, local_face, field, result):
         el, fl = local_face

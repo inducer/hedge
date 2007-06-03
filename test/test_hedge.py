@@ -135,8 +135,7 @@ class TestHedge(unittest.TestCase):
         from hedge.tools import AffineMap
         import pylinear.array as num
         import pylinear.computation as comp
-        from pylinear.randomized import \
-                make_random_vector
+        from pylinear.randomized import make_random_vector
 
         tri = TriangularElement(8)
 
@@ -186,29 +185,57 @@ class TestHedge(unittest.TestCase):
             for gc, v in zip(global_corners, vertices):
                 self.assert_(comp.norm_2(gc-v) < 1e-12)
     # -------------------------------------------------------------------------
+    def test_tri_map_jacobian_and_mass_matrix(self):
+        from hedge.element import TriangularElement
+        import pylinear.array as num
+        import pylinear.computation as comp
+        from pylinear.randomized import make_random_vector
+        from math import sqrt, exp, pi
+
+        edata = TriangularElement(9)
+        ones = num.ones((edata.node_count(),))
+        unit_tri_area = 2
+        self.assert_(abs(ones*(edata.mass_matrix()*ones)-unit_tri_area) < 1e-11)
+
+        for i in range(10):
+            vertices = [make_random_vector(2, num.Float) for vi in range(3)]
+            map = edata.get_map_unit_to_global(vertices)
+            mat = num.zeros((2,2))
+            mat[:,0] = (vertices[1] - vertices[0])
+            mat[:,1] = (vertices[2] - vertices[0])
+            tri_area = abs(comp.determinant(mat)/2)
+            tri_area_2 = abs(unit_tri_area*map.jacobian)
+            self.assert_(abs(tri_area - tri_area_2)/tri_area < 1e-10)
+    # -------------------------------------------------------------------------
     def test_tri_mass_mat(self):
+        """Check the integral of a Gaussian on a disk using the mass matrix"""
         from hedge.mesh import make_disk_mesh
         from hedge.element import TriangularElement
         from hedge.discretization import Discretization
         from math import sqrt, exp, pi
 
-        sigma = 32
+        sigma_squared = 1/78.4
 
         mesh = make_disk_mesh()
         discr = Discretization(make_disk_mesh(), TriangularElement(9))
-        f = discr.interpolate_volume_function(lambda x: exp(-x*x*sigma))
+        f = discr.interpolate_volume_function(lambda x: exp(-x*x/(2*sigma_squared)))
         ones = discr.interpolate_volume_function(lambda x: 1)
 
         #discr.visualize_field("gaussian.vtk", [("f", f)])
         num_integral_1 = ones * discr.apply_mass_matrix(f)
         num_integral_2 = f * discr.apply_mass_matrix(ones)
-        true_integral = 2*pi/sigma
+        dim = 2
+        true_integral = (2*pi)**(dim/2)*sqrt(sigma_squared)**dim
         err_1 = abs(num_integral_1-true_integral)
-        err_2 = abs(num_integral_1-true_integral)
+        err_2 = abs(num_integral_2-true_integral)
         self.assert_(err_1 < 1e-4)
         self.assert_(err_2 < 1e-4)
     # -------------------------------------------------------------------------
     def test_tri_diff_mat(self):
+        """Check differentiation matrix along the coordinate axes on a disk.
+        
+        Uses sines as the function to differentiate.
+        """
         from hedge.mesh import make_disk_mesh
         from hedge.element import TriangularElement
         from hedge.discretization import Discretization
@@ -228,20 +255,6 @@ class TestHedge(unittest.TestCase):
             l2_error = sqrt(error * discr.apply_mass_matrix(error))
             #print l2_error, len(mesh.elements)
             self.assert_(l2_error < 1e-4)
-
-
-
-
-        
-
-
-
-
-
-
-
-
-
 
 
 

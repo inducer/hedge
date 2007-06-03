@@ -88,14 +88,52 @@ def main() :
                 +discr.lift_boundary_flux(central_ny, u, bc, "dirichlet")
                 ])
 
+    def rhsflux(t, y):
+        u = fields[0]
+        v = fields[1:]
+
+        return ArithmeticList([# rhs u
+                +discr.lift_interior_flux(central_nx, v[0])
+                +discr.lift_interior_flux(central_ny, v[1])
+                ,
+                # rhs v1
+                +discr.lift_interior_flux(central_nx, u)
+                +discr.lift_boundary_flux(central_nx, u, bc, "dirichlet")
+                ,
+                # rhs v2
+                +discr.lift_interior_flux(central_ny, u)
+                +discr.lift_boundary_flux(central_ny, u, bc, "dirichlet")
+                ])
+
+    def rhsint(t, y):
+        u = fields[0]
+        v = fields[1:]
+
+        return ArithmeticList([# rhs u
+                -discr.apply_stiffness_matrix_t(0, v[0])
+                -discr.apply_stiffness_matrix_t(1, v[1])
+                ,
+                # rhs v1
+                -discr.apply_stiffness_matrix_t(0, u)
+                ,
+                # rhs v2
+                -discr.apply_stiffness_matrix_t(1, u)
+                ])
+
     stepper = RK4TimeStepper()
     for step in range(nsteps):
+        t = step*dt
+        rhs_here = rhsint(t, fields)
+        print max(rhs_here[1]), max(rhs_here[2])
+
         discr.visualize_vtk("fld-%04d.vtk" % step,
-                [("u", fields[0])], 
-                [("v", zip(*fields[1:]))]
+                [("u", fields[0]),
+                    ("rhsu", rhs_here[0])], 
+                [("v", zip(*fields[1:])),
+                    ("rhsv", zip(*rhs_here[1:]))]
                 )
         job = Job("timestep")
-        fields = stepper(fields, step*dt, dt, rhs)
+        fields = stepper(fields, t, dt, rhs)
         job.done()
 
 if __name__ == "__main__":
