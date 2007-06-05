@@ -30,6 +30,7 @@ class Discretization:
                 immat = self.inv_mass_mat[this_edata] = this_edata.inverse_mass_matrix()
                 dmats = self.diff_mat[this_edata] = this_edata.differentiation_matrices()
                 self.m_inv_s_t[this_edata] = [immat*d.T*mmat for d in dmats]
+                #self.m_inv_s_t[this_edata] = [d.T for d in dmats]
 
         # find normals and face jacobians
         self.normals = []
@@ -97,14 +98,6 @@ class Discretization:
     def volume_zeros(self):
         return num.zeros((len(self.points),))
 
-    def constant_on_elements(self):
-        result = self.volume_zeros()
-        import random
-        for i_el, map in enumerate(self.maps):
-            e_start, e_end = self.element_ranges[i_el]
-            result[e_start:e_end] = random.random()
-        return result
-
     def interpolate_volume_function(self, f):
         return num.array([f(x) for x in self.points])
 
@@ -158,6 +151,7 @@ class Discretization:
         for i, v in zip(fl_indices, fl_contrib):
             el_contrib[i] = v
 
+        return el_contrib
         return self.inv_mass_mat[edata]*el_contrib/abs(self.maps[el.id].jacobian)
 
     def lift_face(self, flux, local_face, field, result):
@@ -226,4 +220,30 @@ class Discretization:
             pdatalist.append(Vectors([three_vector(v) for v in field], name=name))
         vtk = VtkData(structure, "Hedge visualization", PointData(*pdatalist))
         vtk.tofile(filename)
+
+
+
+
+def generate_random_constant_on_elements(discr):
+    result = discr.volume_zeros()
+    import random
+    for i_el in range(len(discr.elements)):
+        e_start, e_end = discr.element_ranges[i_el]
+        result[e_start:e_end] = random.random()
+    return result
+
+
+
+
+def generate_ones_on_boundary(discr, tag):
+    result = discr.volume_zeros()
+    for face in discr.mesh.boundary_map[tag]:
+        el, fl = face
+
+        el_start, el_end = discr.element_ranges[el.id]
+        fl_indices = discr.element_map[el.id].face_indices()[fl]
+
+        for i in fl_indices:
+            result[el_start+i] = 1
+    return result
 

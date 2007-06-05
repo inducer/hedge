@@ -207,6 +207,16 @@ class TestHedge(unittest.TestCase):
             tri_area_2 = abs(unit_tri_area*map.jacobian)
             self.assert_(abs(tri_area - tri_area_2)/tri_area < 1e-10)
     # -------------------------------------------------------------------------
+    def test_tri_diff_mat_simple(self):
+        from hedge.element import TriangularElement
+        import pylinear.array as num
+        import pylinear.computation as comp
+        from pylinear.randomized import make_random_vector
+        from math import sqrt, exp, pi
+
+        edata = TriangularElement(4)
+        print edata.differentiation_matrices()[0]
+    # -------------------------------------------------------------------------
     def test_tri_mass_mat(self):
         """Check the integral of a Gaussian on a disk using the mass matrix"""
         from hedge.mesh import make_disk_mesh
@@ -214,7 +224,7 @@ class TestHedge(unittest.TestCase):
         from hedge.discretization import Discretization
         from math import sqrt, exp, pi
 
-        sigma_squared = 1/78.4
+        sigma_squared = 1/219.3
 
         mesh = make_disk_mesh()
         discr = Discretization(make_disk_mesh(), TriangularElement(9))
@@ -228,8 +238,8 @@ class TestHedge(unittest.TestCase):
         true_integral = (2*pi)**(dim/2)*sqrt(sigma_squared)**dim
         err_1 = abs(num_integral_1-true_integral)
         err_2 = abs(num_integral_2-true_integral)
-        self.assert_(err_1 < 1e-4)
-        self.assert_(err_2 < 1e-4)
+        self.assert_(err_1 < 1e-11)
+        self.assert_(err_2 < 1e-11)
     # -------------------------------------------------------------------------
     def test_tri_diff_mat(self):
         """Check differentiation matrix along the coordinate axes on a disk.

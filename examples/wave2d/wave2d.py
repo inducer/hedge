@@ -109,9 +109,15 @@ def main() :
         u = fields[0]
         v = fields[1:]
 
+        def source_u(x):
+            return exp(-x*x*64)
+
+        source_u_vec = discr.interpolate_volume_function(source_u)
+
         return ArithmeticList([# rhs u
                 -discr.apply_stiffness_matrix_t(0, v[0])
                 -discr.apply_stiffness_matrix_t(1, v[1])
+                +source_u_vec
                 ,
                 # rhs v1
                 -discr.apply_stiffness_matrix_t(0, u)
@@ -133,7 +139,7 @@ def main() :
                     ("rhsv", zip(*rhs_here[1:]))]
                 )
         job = Job("timestep")
-        fields = stepper(fields, t, dt, rhs)
+        fields = stepper(fields, t, dt, rhsint)
         job.done()
 
 if __name__ == "__main__":

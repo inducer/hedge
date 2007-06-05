@@ -1,6 +1,6 @@
 <TeXmacs|1.0.6>
 
-<style|<tuple|generic|maxima|axiom>>
+<style|<tuple|article|maxima|axiom>>
 
 <\body>
   <section|Mapping from 2D equilateral to Unit Coordinates>
@@ -195,32 +195,18 @@
     ><rsup|,><left|(>a<right|)>>>|<row|<cell|>|<cell|>|<cell|-i*f<left|(>a<right|)>g<left|(>s<right|)><left|(>1-s<right|)><rsup|<left|(>i-1<right|)>><right|]>>>>>
   </eqnarray*>
 
-  <section|Weak DG for the Wave Equation>
+  <section|DG Schemes>
 
-  We have <with|mode|math|u<rsub|t t>-\<Delta\>u=0>, so
+  <subsection|Notation>
 
-  <\eqnarray*>
-    <tformat|<table|<row|<cell|u<rsub|t>-\<nabla\>\<cdot\>v>|<cell|=>|<cell|0,>>|<row|<cell|v<rsub|t>-\<nabla\>u>|<cell|=>|<cell|0.>>>>
-  </eqnarray*>
+  Let <with|mode|math|l<rsub|i>> be the <with|mode|math|i>th Lagrange
+  interpolation polynomial and <with|mode|math|\<b-u\>=(u<rsub|i>)> be the
+  vector of nodal coefficients of our approximated function
+  <with|mode|math|<wide|u|~>(x)=u<rsub|i>l<rsub|i>(x)>. (<with|mode|math|u>
+  without subscript denotes a continuous function <with|mode|math|u>.)
 
-  Note that <with|mode|math|v> is a vector. Let <with|mode|math|l<rsub|i>> be
-  the <with|mode|math|i>th Lagrange interpolation polynomial and
-  <with|mode|math|\<b-u\>=(u<rsub|i>)> be the vector of nodal coefficients of
-  our approximated function <with|mode|math|<wide|u|~>(x)=u<rsub|i>l<rsub|i>(x)>.
-  (<with|mode|math|u> without subscript denotes a continuous function
-  <with|mode|math|u>.) Then, using the summation convention,
-
-  <\eqnarray*>
-    <tformat|<table|<row|<cell|0>|<cell|=>|<cell|<big|int><rsub|T<rsub|k>>u<rsub|t>\<varphi\>-<big|int><rsub|T<rsub|k>>(\<nabla\>\<cdot\>v)\<varphi\>>>|<row|<cell|>|<cell|=>|<cell|<big|int><rsub|T<rsub|k>>u<rsub|t>\<varphi\>+<big|int><rsub|D<rsub|k>>v\<cdot\>\<nabla\>\<varphi\>-<big|int><rsub|T<rsub|k>>\<nabla\>\<cdot\>(v\<varphi\>)>>|<row|<cell|>|<cell|=>|<cell|<big|int><rsub|T<rsub|k>>u<rsub|t>\<varphi\>+<big|int><rsub|D<rsub|k>>\<b-v\>\<cdot\>\<nabla\>\<varphi\>-<big|int><rsub|\<partial\>T<rsub|k>>v\<varphi\>\<cdot\>n>>|<row|<cell|>|<cell|\<approx\>>|<cell|<big|int><rsub|T<rsub|k>>u<rsub|t>\<varphi\>+<big|int><rsub|D<rsub|k>>\<b-v\>\<cdot\>\<nabla\>\<varphi\>-<big|int><rsub|\<partial\>T<rsub|k>>v<rsup|\<ast\>>\<varphi\>\<cdot\>n>>|<row|<cell|>|<cell|\<approx\>>|<cell|<big|int><rsub|T<rsub|k>>\<partial\><rsub|t>u<rsub|i>l<rsub|i>l<rsub|j>+<big|int><rsub|T<rsub|k>><matrix|<tformat|<table|<row|<cell|[v<rsub|i>]<rsub|1>l<rsub|i>>>|<row|<cell|[v<rsub|i>]<rsub|2>l<rsub|i>>>>>>\<cdot\><matrix|<tformat|<table|<row|<cell|\<partial\><rsub|x<rsub|2>>l<rsub|j>>>|<row|<cell|\<partial\><rsub|x<rsub|2>>l<rsub|j>>>>>>-<big|sum><rsub|F\<subset\>\<partial\>T<rsub|k>><big|int><rsub|F><matrix|<tformat|<table|<row|<cell|[v<rsub|i>]<rsup|\<ast\>><rsub|1>l<rsub|i><rsup|F>l<rsub|j><rsup|F>>>|<row|<cell|[v<rsub|i>]<rsup|\<ast\>><rsub|2>l<rsub|i><rsup|F>l<rsub|i><rsup|F>>>>>>\<cdot\>n>>|<row|<cell|>|<cell|=>|<cell|M<rsub|i
-    j><rsup|k>\<partial\><rsub|t>u<rsub|i>+S<rsub|i
-    j,\<partial\>x<rsub|1>><rsup|k>[v<rsub|i>]<rsub|1>+S<rsub|i
-    j,\<partial\>x<rsub|2>><rsup|k>[v<rsub|i>]<rsub|2>-<big|sum><rsub|F\<subset\>\<partial\>T<rsub|k>><left|[>[v<rsub|i>]<rsup|\<ast\>><rsub|1>M<rsub|i
-    j><rsup|F>n<rsub|1>+[v<rsub|i>]<rsup|\<ast\>><rsub|2>M<rsub|i
-    j><rsup|F>n<rsub|2><right|]>>>|<row|<cell|>|<cell|=>|<cell|(M<rsup|k>)<rsup|T>\<partial\><rsub|t>\<b-u\>+(S<rsub|\<partial\>x<rsub|1>><rsup|k>)<rsup|T>\<b-v\><rsub|1>+(S<rsub|\<partial\>x<rsub|2>><rsup|k>)<rsup|T>\<b-v\><rsub|2>-<big|sum><rsub|F\<subset\>\<partial\>T<rsub|k>><left|[>[v<rsub|F>]<rsup|\<ast\>><rsub|1>(M<rsup|F>)<rsup|T>n<rsub|1>+[v<rsub|F>]<rsup|\<ast\>><rsub|2>(M<rsup|F>)<rsup|T>n<rsub|2><right|]>>>>>
-  </eqnarray*>
-
-  where the <with|mode|math|F\<subset\>\<partial\>T<rsub|k>> represent the
-  discrete faces of the element <with|mode|math|T<rsub|k>>, and
+  <with|mode|math|F\<subset\>\<partial\>T<rsub|k>> represents the discrete
+  faces of the element <with|mode|math|T<rsub|k>>, and
   <with|mode|math|l<rsub|i><rsup|F>> is the Lagrange interpolation polynomial
   on the face <with|mode|math|f> corresponding to the node with global number
   <with|mode|math|i>, or constant zero if there is no such function (such as
@@ -291,6 +277,62 @@
     [D<rsub|x<rsub|\<nu\>>>]<rsub|i,j>=\<partial\><rsub|x<rsub|\<nu\>>>(l<rsub|j>(F<rsup|-1><rsub|k>(x<rsup|(i)>)))=(\<partial\><rsub|r>l<rsub|j>)(r<rsup|(i)><rsup|>)<left|[>(F<rsub|k><rsup|-1>)<rprime|'>(x<rsup|(i)>)<right|]><rsub|\<mu\>,\<nu\>>=[D<rsub|r<rsub|\<mu\>>>]<rsub|i,j><left|[>(F<rsup|-1><rsub|k>)<rprime|'>(x<rsup|(i)>)<right|]><rsub|\<mu\>,\<nu\>>.
   </equation*>
 
+  <subsection|Advection Equation>
+
+  <subsubsection|Weak DG>
+
+  We're discretizing <with|mode|math|u<rsub|t>=a\<cdot\>\<nabla\>u>. The
+  analytic solution is
+
+  <\equation*>
+    u(x,t)=u<rsub|0>(a\<cdot\>x+t).
+  </equation*>
+
+  Recall
+
+  <\eqnarray*>
+    <tformat|<table|<row|<cell|\<nabla\>\<cdot\>(a*u*\<varphi\>)>|<cell|=>|<cell|\<nabla\>\<cdot\>(a*u)\<varphi\>+a*u\<cdot\>\<nabla\>\<varphi\>=(a\<cdot\>\<nabla\>*u)\<varphi\>+a*u\<cdot\>\<nabla\>\<varphi\>.>>>>
+  </eqnarray*>
+
+  Using the summation convention, we find
+
+  <\eqnarray*>
+    <tformat|<table|<row|<cell|0>|<cell|=>|<cell|<big|int><rsub|T<rsub|k>>u<rsub|t>\<varphi\>-<big|int><rsub|T<rsub|k>>(a\<cdot\>\<nabla\>u)\<varphi\>>>|<row|<cell|>|<cell|=>|<cell|<big|int><rsub|T<rsub|k>>u<rsub|t>\<varphi\>+<big|int><rsub|D<rsub|k>>a*u\<cdot\>\<nabla\>\<varphi\>-<big|int><rsub|T<rsub|k>>\<nabla\>\<cdot\>(a*u*\<varphi\>)>>|<row|<cell|>|<cell|=>|<cell|<big|int><rsub|T<rsub|k>>u<rsub|t>\<varphi\>+<big|int><rsub|D<rsub|k>>a*u\<cdot\>\<nabla\>\<varphi\>-<big|int><rsub|\<partial\>T<rsub|k>>a*u\<varphi\>\<cdot\>n>>|<row|<cell|>|<cell|\<approx\>>|<cell|<big|int><rsub|T<rsub|k>>u<rsub|t>\<varphi\>+<big|int><rsub|D<rsub|k>>a*u\<cdot\>\<nabla\>\<varphi\>-<big|int><rsub|\<partial\>T<rsub|k>>(a*u)<rsup|\<ast\>>\<varphi\>\<cdot\>n>>|<row|<cell|>|<cell|\<approx\>>|<cell|<big|int><rsub|T<rsub|k>>\<partial\><rsub|t>u<rsub|i>l<rsub|i>l<rsub|j>+<big|int><rsub|T<rsub|k>><matrix|<tformat|<table|<row|<cell|a<rsub|1>u<rsub|i>l<rsub|i>>>|<row|<cell|a<rsub|2>u<rsub|i>l<rsub|i>>>>>>\<cdot\><matrix|<tformat|<table|<row|<cell|\<partial\><rsub|x<rsub|2>>l<rsub|j>>>|<row|<cell|\<partial\><rsub|x<rsub|2>>l<rsub|j>>>>>>-<big|sum><rsub|F\<subset\>\<partial\>T<rsub|k>><big|int><rsub|F><matrix|<tformat|<table|<row|<cell|(a<rsub|1>u<rsub|i>)<rsup|\<ast\>>l<rsub|i><rsup|F>l<rsub|j><rsup|F>>>|<row|<cell|(a<rsub|2>u<rsub|i>)<rsup|\<ast\>>l<rsub|i><rsup|F>l<rsub|i><rsup|F>>>>>>\<cdot\>n>>|<row|<cell|>|<cell|=>|<cell|M<rsub|i
+    j><rsup|k>\<partial\><rsub|t>u<rsub|i>+a<rsub|1>S<rsub|i
+    j,\<partial\>x<rsub|1>><rsup|k>u<rsub|i>+a<rsub|2>S<rsub|i
+    j,\<partial\>x<rsub|2>><rsup|k>u<rsub|i>-<big|sum><rsub|F\<subset\>\<partial\>T<rsub|k>><left|[>(a<rsub|1>u<rsub|i>)<rsup|\<ast\>>M<rsub|i
+    j><rsup|F>n<rsub|1>+(a<rsub|2>u<rsub|i>)<rsup|\<ast\>>M<rsub|i
+    j><rsup|F>n<rsub|2><right|]>>>|<row|<cell|>|<cell|=>|<cell|(M<rsup|k>)<rsup|T>\<partial\><rsub|t>\<b-u\>+a<rsub|1>(S<rsub|\<partial\>x<rsub|1>><rsup|k>)<rsup|T>\<b-u\>+a<rsub|2>(S<rsub|\<partial\>x<rsub|2>><rsup|k>)<rsup|T>\<b-u\>-<big|sum><rsub|F\<subset\>\<partial\>T<rsub|k>><left|[>(a<rsub|1>u<rsub|F>)<rsup|\<ast\>><rsub|>(M<rsup|F>)<rsup|T>n<rsub|1>+(a<rsub|2>u<rsub|F>)<rsup|\<ast\>><rsub|2>(M<rsup|F>)<rsup|T>n<rsub|2><right|]>>>>>
+  </eqnarray*>
+
+  <subsubsection|Strong DG>
+
+  <\eqnarray*>
+    <tformat|<table|<row|<cell|0>|<cell|=>|<cell|<big|int><rsub|T<rsub|k>>u<rsub|t>\<varphi\>+<big|int><rsub|D<rsub|k>>a*u\<cdot\>\<nabla\>\<varphi\>-<big|int><rsub|\<partial\>T<rsub|k>>(a*u)<rsup|\<ast\>>\<varphi\>\<cdot\>n>>|<row|<cell|>|<cell|=>|<cell|<big|int><rsub|T<rsub|k>>u<rsub|t>\<varphi\>-<big|int><rsub|D<rsub|k>>(a\<cdot\>\<nabla\>u)\<varphi\>+<big|int><rsub|\<partial\>T<rsub|k>>(a*u-{a*u})\<varphi\>\<cdot\>n>>|<row|<cell|>|<cell|=>|<cell|<big|int><rsub|T<rsub|k>>u<rsub|t>\<varphi\>-<big|int><rsub|D<rsub|k>>(a\<cdot\>\<nabla\>u)\<varphi\>+<big|int><rsub|\<partial\>T<rsub|k>>a<matrix|<tformat|<table|<row|<cell|<frac|1|2>>>|<row|<cell|-<frac|1|2>>>>>>\<cdot\><matrix|<tformat|<table|<row|<cell|u<rsup|->>>|<row|<cell|u<rsup|+>>>>>>\<varphi\>\<cdot\>n>>>>
+  </eqnarray*>
+
+  <subsection|Weak DG for the Wave Equation>
+
+  \;
+
+  We have <with|mode|math|u<rsub|t t>-\<Delta\>u=0>, so
+
+  <\eqnarray*>
+    <tformat|<table|<row|<cell|u<rsub|t>-\<nabla\>\<cdot\>v>|<cell|=>|<cell|0,>>|<row|<cell|v<rsub|t>-\<nabla\>u>|<cell|=>|<cell|0.>>>>
+  </eqnarray*>
+
+  Note that <with|mode|math|v> is a vector. \ Then, using the summation
+  convention,
+
+  <\eqnarray*>
+    <tformat|<table|<row|<cell|0>|<cell|=>|<cell|<big|int><rsub|T<rsub|k>>u<rsub|t>\<varphi\>-<big|int><rsub|T<rsub|k>>(\<nabla\>\<cdot\>v)\<varphi\>>>|<row|<cell|>|<cell|=>|<cell|<big|int><rsub|T<rsub|k>>u<rsub|t>\<varphi\>+<big|int><rsub|D<rsub|k>>v\<cdot\>\<nabla\>\<varphi\>-<big|int><rsub|T<rsub|k>>\<nabla\>\<cdot\>(v\<varphi\>)>>|<row|<cell|>|<cell|=>|<cell|<big|int><rsub|T<rsub|k>>u<rsub|t>\<varphi\>+<big|int><rsub|D<rsub|k>>\<b-v\>\<cdot\>\<nabla\>\<varphi\>-<big|int><rsub|\<partial\>T<rsub|k>>v\<varphi\>\<cdot\>n>>|<row|<cell|>|<cell|\<approx\>>|<cell|<big|int><rsub|T<rsub|k>>u<rsub|t>\<varphi\>+<big|int><rsub|D<rsub|k>>\<b-v\>\<cdot\>\<nabla\>\<varphi\>-<big|int><rsub|\<partial\>T<rsub|k>>v<rsup|\<ast\>>\<varphi\>\<cdot\>n>>|<row|<cell|>|<cell|\<approx\>>|<cell|<big|int><rsub|T<rsub|k>>\<partial\><rsub|t>u<rsub|i>l<rsub|i>l<rsub|j>+<big|int><rsub|T<rsub|k>><matrix|<tformat|<table|<row|<cell|[v<rsub|i>]<rsub|1>l<rsub|i>>>|<row|<cell|[v<rsub|i>]<rsub|2>l<rsub|i>>>>>>\<cdot\><matrix|<tformat|<table|<row|<cell|\<partial\><rsub|x<rsub|2>>l<rsub|j>>>|<row|<cell|\<partial\><rsub|x<rsub|2>>l<rsub|j>>>>>>-<big|sum><rsub|F\<subset\>\<partial\>T<rsub|k>><big|int><rsub|F><matrix|<tformat|<table|<row|<cell|[v<rsub|i>]<rsup|\<ast\>><rsub|1>l<rsub|i><rsup|F>l<rsub|j><rsup|F>>>|<row|<cell|[v<rsub|i>]<rsup|\<ast\>><rsub|2>l<rsub|i><rsup|F>l<rsub|i><rsup|F>>>>>>\<cdot\>n>>|<row|<cell|>|<cell|=>|<cell|M<rsub|i
+    j><rsup|k>\<partial\><rsub|t>u<rsub|i>+S<rsub|i
+    j,\<partial\>x<rsub|1>><rsup|k>[v<rsub|i>]<rsub|1>+S<rsub|i
+    j,\<partial\>x<rsub|2>><rsup|k>[v<rsub|i>]<rsub|2>-<big|sum><rsub|F\<subset\>\<partial\>T<rsub|k>><left|[>[v<rsub|i>]<rsup|\<ast\>><rsub|1>M<rsub|i
+    j><rsup|F>n<rsub|1>+[v<rsub|i>]<rsup|\<ast\>><rsub|2>M<rsub|i
+    j><rsup|F>n<rsub|2><right|]>>>|<row|<cell|>|<cell|=>|<cell|(M<rsup|k>)<rsup|T>\<partial\><rsub|t>\<b-u\>+(S<rsub|\<partial\>x<rsub|1>><rsup|k>)<rsup|T>\<b-v\><rsub|1>+(S<rsub|\<partial\>x<rsub|2>><rsup|k>)<rsup|T>\<b-v\><rsub|2>-<big|sum><rsub|F\<subset\>\<partial\>T<rsub|k>><left|[>[v<rsub|F>]<rsup|\<ast\>><rsub|1>(M<rsup|F>)<rsup|T>n<rsub|1>+[v<rsub|F>]<rsup|\<ast\>><rsub|2>(M<rsup|F>)<rsup|T>n<rsub|2><right|]>>>>>
+  </eqnarray*>
+
   We set <with|mode|math|\<b-v\><rsup|\<ast\>>\<assign\>{\<b-v\>}>. Likewise,
   we get
 
@@ -309,32 +351,60 @@
   <\collection>
     <associate|page-orientation|portrait>
     <associate|page-type|letter>
+    <associate|par-first|0>
   </collection>
 </initial>
 
 <\references>
   <\collection>
     <associate|auto-1|<tuple|1|1>>
+    <associate|auto-10|<tuple|3.5|?>>
     <associate|auto-2|<tuple|2|1>>
     <associate|auto-3|<tuple|3|3>>
+    <associate|auto-4|<tuple|3.1|?>>
+    <associate|auto-5|<tuple|3.2|?>>
+    <associate|auto-6|<tuple|3.2.1|?>>
+    <associate|auto-7|<tuple|3.2.2|?>>
+    <associate|auto-8|<tuple|3.3|?>>
+    <associate|auto-9|<tuple|3.4|?>>
   </collection>
 </references>
 
 <\auxiliary>
   <\collection>
     <\associate|toc>
-      <vspace*|1fn><with|font-series|<quote|bold>|math-font-series|<quote|bold>|Mapping
+      <vspace*|1fn><with|font-series|<quote|bold>|math-font-series|<quote|bold>|1<space|2spc>Mapping
       from 2D equilateral to Unit Coordinates>
       <datoms|<macro|x|<repeat|<arg|x>|<with|font-series|medium|<with|font-size|1|<space|0.2fn>.<space|0.2fn>>>>>|<htab|5mm>>
       <no-break><pageref|auto-1><vspace|0.5fn>
 
-      <vspace*|1fn><with|font-series|<quote|bold>|math-font-series|<quote|bold>|Derivative
+      <vspace*|1fn><with|font-series|<quote|bold>|math-font-series|<quote|bold>|2<space|2spc>Derivative
       of the 2D Basis functions> <datoms|<macro|x|<repeat|<arg|x>|<with|font-series|medium|<with|font-size|1|<space|0.2fn>.<space|0.2fn>>>>>|<htab|5mm>>
       <no-break><pageref|auto-2><vspace|0.5fn>
 
-      <vspace*|1fn><with|font-series|<quote|bold>|math-font-series|<quote|bold>|Weak
-      DG for the Wave Equation> <datoms|<macro|x|<repeat|<arg|x>|<with|font-series|medium|<with|font-size|1|<space|0.2fn>.<space|0.2fn>>>>>|<htab|5mm>>
+      <vspace*|1fn><with|font-series|<quote|bold>|math-font-series|<quote|bold>|3<space|2spc>DG
+      Schemes> <datoms|<macro|x|<repeat|<arg|x>|<with|font-series|medium|<with|font-size|1|<space|0.2fn>.<space|0.2fn>>>>>|<htab|5mm>>
       <no-break><pageref|auto-3><vspace|0.5fn>
+
+      <with|par-left|<quote|1.5fn>|3.1<space|2spc>Notation
+      <datoms|<macro|x|<repeat|<arg|x>|<with|font-series|medium|<with|font-size|1|<space|0.2fn>.<space|0.2fn>>>>>|<htab|5mm>>
+      <no-break><pageref|auto-4>>
+
+      <with|par-left|<quote|1.5fn>|3.2<space|2spc>Advection Equation
+      <datoms|<macro|x|<repeat|<arg|x>|<with|font-series|medium|<with|font-size|1|<space|0.2fn>.<space|0.2fn>>>>>|<htab|5mm>>
+      <no-break><pageref|auto-5>>
+
+      <with|par-left|<quote|3fn>|3.2.1<space|2spc>Weak DG
+      <datoms|<macro|x|<repeat|<arg|x>|<with|font-series|medium|<with|font-size|1|<space|0.2fn>.<space|0.2fn>>>>>|<htab|5mm>>
+      <no-break><pageref|auto-6>>
+
+      <with|par-left|<quote|3fn>|3.2.2<space|2spc>Strong DG
+      <datoms|<macro|x|<repeat|<arg|x>|<with|font-series|medium|<with|font-size|1|<space|0.2fn>.<space|0.2fn>>>>>|<htab|5mm>>
+      <no-break><pageref|auto-7>>
+
+      <with|par-left|<quote|1.5fn>|3.3<space|2spc>Weak DG for the Wave
+      Equation <datoms|<macro|x|<repeat|<arg|x>|<with|font-series|medium|<with|font-size|1|<space|0.2fn>.<space|0.2fn>>>>>|<htab|5mm>>
+      <no-break><pageref|auto-8>>
     </associate>
   </collection>
 </auxiliary>
