@@ -396,14 +396,14 @@ class TriangularElement:
                 orient*num.array([-m[1,1], m[0,1]]),
                 ]
 
-        raw_face_lengths = [1,sqrt(2),1]
         face_lengths = [comp.norm_2(fn) for fn in raw_normals]
         return [n/fl for n, fl in zip(raw_normals, face_lengths)], \
-                [fl/rfl for fl,rfl in zip(face_lengths, raw_face_lengths)]
+                face_lengths
 
     def shuffle_face_indices_to_match(self, face_1_vertices, face_2_vertices, face_2_indices):
         assert set(face_1_vertices) == set(face_2_vertices)
         if face_1_vertices != face_2_vertices:
+            assert face_1_vertices[::-1] == face_2_vertices
             return face_2_indices[::-1]
         else:
             return face_2_indices

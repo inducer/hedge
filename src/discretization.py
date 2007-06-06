@@ -145,13 +145,22 @@ class Discretization:
         edata = self.element_map[el.id]
         fl_contrib = fjac * edata.face_mass_matrix() * \
                 (fl_local_coeff*fl_values + fl_neighbor_coeff*fn_values)
-
         el_contrib = num.zeros((edata.node_count(),))
 
         for i, v in zip(fl_indices, fl_contrib):
             el_contrib[i] = v
 
-        return el_contrib
+        if el.id == 32600 and fl == 0:
+            print "VALUES", el.id, fl
+            print fl_values
+            print fn_values
+            print fl_local_coeff*fl_values + fl_neighbor_coeff*fn_values
+            print "test", 0.5 * (fl_values - fn_values)
+            print fl_contrib
+            print "ELVALUES"
+            print el_contrib
+            print self.inv_mass_mat[edata]*el_contrib/abs(self.maps[el.id].jacobian)
+
         return self.inv_mass_mat[edata]*el_contrib/abs(self.maps[el.id].jacobian)
 
     def lift_face(self, flux, local_face, field, result):
@@ -194,6 +203,20 @@ class Discretization:
                             fl_values, fn_values, fl_indices)
         return result
     
+    def find_element(self, idx):
+        for i, (start, stop) in enumerate(self.element_ranges):
+            if start <= idx < stop:
+                return i
+        raise ValueError, "not a valid dof index"
+        
+    def find_face(self, idx):
+        el_id = self.find_element(idx)
+        el_start, el_stop = self.element_ranges[el_id]
+        for f_id, face_indices in enumerate(self.element_map[el_id].face_indices()):
+            if idx-el_start in face_indices:
+                return el_id, f_id, idx-el_start
+        raise ValueError, "not a valid face dof index"
+
     def visualize_vtk(self, filename, fields=[], vectors=[]):
         from pyvtk import PolyData, PointData, VtkData, Scalars, Vectors
         import numpy

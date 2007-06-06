@@ -40,7 +40,7 @@ def main() :
     u = discr.interpolate_volume_function(
             lambda x: u_analytic(0, x))
 
-    dt = 1e-3
+    dt = 1e-2
     nsteps = int(1/dt)
 
     class CentralNX:
@@ -61,6 +61,8 @@ def main() :
     rhscnt = [0]
 
     def rhs(t, u):
+        from pytools import argmax
+
         bc = discr.interpolate_boundary_function("inflow",
                 lambda x: u_analytic(t, x))
 
@@ -73,27 +75,39 @@ def main() :
                         "inflow") \
                 -  a[1]*discr.lift_boundary_flux(central_ny, u, bc,
                         "inflow")
-        #discr.visualize_vtk("rhs-%04d.vtk" % rhscnt[0],
-                #[("int", rhsint), ("flux", rhsflux)])
-        rhscnt[0] += 1
-        return rhsint+rhsflux+rhsbdry
 
-    def rhsint(t, u):
-        return  -a[0]*discr.differentiate(0, u) \
-                -a[1]*discr.differentiate(1, u) \
+        maxidx = argmax(rhsflux)
+        print "MAXES", max(rhsflux), maxidx, discr.find_face(maxidx)
+        raw_input()
+
+        if False:
+        #if rhscnt[0] % 1 == 0:
+            discr.visualize_vtk("rhs-%04d.vtk" % rhscnt[0],
+                    [("u", u),
+                        ("int", rhsint), 
+                        ("flux", rhsflux),
+                        ("bdry", rhsbdry),
+                        ])
+        rhscnt[0] += 1
+
+        return rhsint+rhsflux+rhsbdry
 
     stepper = RK4TimeStepper()
     for step in range(nsteps):
-        t = step*dt
-        rhs_here = rhsint(t, u)
-
-        discr.visualize_vtk("fld-%04d.vtk" % step,
-                [("u", u),
-                    ("rhsu", rhs_here)], 
-                )
         job = Job("timestep %d" % step)
-        u = stepper(u, t, dt, rhs)
+        u = stepper(u, step*dt, dt, rhs)
         job.done()
+
+        if False:
+            job = Job("visualization")
+            t = (step+1)*dt
+            u_true = discr.interpolate_volume_function(
+                    lambda x: u_analytic(t, x))
+
+            discr.visualize_vtk("fld-%04d.vtk" % step,
+                    [("u", u), ("u_true", u_true), ("rhsu", rhs(t, u))], 
+                    )
+            job.done()
 
 if __name__ == "__main__":
     import cProfile as profile

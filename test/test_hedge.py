@@ -153,8 +153,7 @@ class TestHedge(unittest.TestCase):
                 mapped_dir = mapped_end-mapped_start
                 start = unodes[face_i[0]]
                 end = unodes[face_i[-1]]
-                true_jac = comp.norm_2(mapped_end-mapped_start)\
-                        /comp.norm_2(end-start)
+                true_jac = comp.norm_2(mapped_end-mapped_start)/2
 
                 #print abs(true_jac-jac)/true_jac
                 #print "aft, bef", comp.norm_2(mapped_end-mapped_start),comp.norm_2(end-start)
@@ -207,16 +206,6 @@ class TestHedge(unittest.TestCase):
             tri_area_2 = abs(unit_tri_area*map.jacobian)
             self.assert_(abs(tri_area - tri_area_2)/tri_area < 1e-10)
     # -------------------------------------------------------------------------
-    def test_tri_diff_mat_simple(self):
-        from hedge.element import TriangularElement
-        import pylinear.array as num
-        import pylinear.computation as comp
-        from pylinear.randomized import make_random_vector
-        from math import sqrt, exp, pi
-
-        edata = TriangularElement(4)
-        print edata.differentiation_matrices()[0]
-    # -------------------------------------------------------------------------
     def test_tri_mass_mat(self):
         """Check the integral of a Gaussian on a disk using the mass matrix"""
         from hedge.mesh import make_disk_mesh
@@ -265,8 +254,64 @@ class TestHedge(unittest.TestCase):
             l2_error = sqrt(error * discr.apply_mass_matrix(error))
             #print l2_error, len(mesh.elements)
             self.assert_(l2_error < 1e-4)
+    # -------------------------------------------------------------------------
+    def test_tri_gauss_theorem(self):
+        """Verify Gauss's theorem explicitly on a couple of elements 
+        in random orientation."""
 
+        from hedge.element import TriangularElement
+        from hedge.tools import AffineMap
+        import pylinear.array as num
+        import pylinear.computation as comp
+        from pylinear.randomized import make_random_vector
+        from operator import add
+        from math import sin, cos, sqrt, exp, pi
 
+        edata = TriangularElement(9)
+        ones = num.ones((edata.node_count(),))
+        face_ones = num.ones((len(edata.face_indices()[0]),))
+
+        def f1(x):
+            return sin(3*x[0])+cos(3*x[1])
+        def f2(x):
+            return sin(2*x[0])+cos(x[1])
+
+        def d(imap, coordinate, field):
+            col = imap.matrix[:, coordinate]
+            matrices = edata.differentiation_matrices()
+            return reduce(add, (dmat*coeff*field
+                        for dmat, coeff in zip(matrices, col)))
+
+        for i in range(10):
+            na = num.array
+            #vertices = [na([0,0]), na([1,0]), na([0,1])]
+            vertices = [make_random_vector(2, num.Float) for vi in range(3)]
+            map = edata.get_map_unit_to_global(vertices)
+            imap = map.inverted()
+
+            mapped_points = [map(node) for node in edata.unit_nodes()]
+            f1_n = num.array([f1(x) for x in mapped_points])
+            f2_n = num.array([f2(x) for x in mapped_points])
+
+            dx_n = d(imap, 0, f1_n)
+            dy_n = d(imap, 1, f2_n)
+
+            int_div_f = abs(map.jacobian)*(
+                    ones*edata.mass_matrix()*dx_n +
+                    ones*edata.mass_matrix()*dy_n
+                    )
+
+            normals, jacobians = edata.face_normals_and_jacobians(map)
+            boundary_sum = sum(
+                    sum(
+                        fjac * face_ones * edata.face_mass_matrix() 
+                        * num.take(f_n, face_indices) * n_coord
+                        for f_n, n_coord in zip([f1_n, f2_n], n))
+                    for face_indices, n, fjac
+                    in zip(edata.face_indices(), normals, jacobians))
+            self.assert_(abs(boundary_sum-int_div_f) < 1e-7)
+
+               
 
 
 
