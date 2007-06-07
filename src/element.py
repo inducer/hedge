@@ -242,7 +242,7 @@ class TriangularElement:
                   1.2832, 1.3648, 1.4773, 1.4959, 1.5743, 1.5770, 1.6223, 1.6258]
                   
         try:
-            alpha = alpha_opt[self.order+1]
+            alpha = alpha_opt[self.order-1]
         except IndexError:
             alpha = 5/3
 

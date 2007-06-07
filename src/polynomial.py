@@ -43,11 +43,10 @@ def jacobi_polynomial(alpha, beta, N):
     # Forward recurrence using the symmetry of the recurrence.
     for i in range(1, N):
         h1 = 2*i+alpha+beta
-        anew = 2/(h1+2)*sqrt( (i+1)*(i+1+alpha+beta)*(i+1+alpha)* \
-                (i+1+beta)/(h1+1)/(h1+3));
-        bnew = - (alpha^2-beta^2)/h1/(h1+2)
-        polys.append(1/anew*( -aold*polys[-2] + (x-bnew)*polys[-1]))
-
+        anew = 2/(h1+2)*sqrt( (i+1)*(i+1+alpha+beta)*(i+1+alpha)*\
+                (i+1+beta)/(h1+1)/(h1+3))
+        bnew = - (alpha**2-beta**2)/h1/(h1+2)
+        polys.append(1/anew*(-aold*polys[-2] + (x-bnew)*polys[-1]))
         aold = anew
 
     return polys[-1]
@@ -107,7 +106,6 @@ def diff_legendre_function(N, derivative=1):
 
 def generic_vandermonde(points, functions):
     """Return a Vandermonde matrix
-      
       V[i,j] := f[j](x[i])
     where functions=[f[j] for j] and points=[x[i] for i].
     """
@@ -122,9 +120,7 @@ def generic_vandermonde(points, functions):
 
 def generic_multi_vandermonde(points, functions):
     """Return multiple Vandermonde matrices.
-      
       V[i,j] := f[j](x[i])
-
     where functions=[f[j] for j] and points=[x[i] for i].
     The functions `f' are multi-valued, one matrix is returned
     for each return value.

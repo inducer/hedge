@@ -16,6 +16,12 @@ class Discretization:
                     [mesh.vertices[vi] for vi in el.vertices])
                 for el in mesh.elements]
         self.inv_maps = [map.inverted() for map in self.maps]
+        if False:
+            print edata.vandermonde().format(max_length=130, 
+                    num_stringifier=lambda x: "%.3f" % x)
+            print edata.inverse_mass_matrix().format(max_length=130, 
+                    num_stringifier=lambda x: "%.2f" % x)
+            print num.array(edata.unit_nodes())
 
         # find M^{-1} S^T
         from pylinear.operator import LUInverseOperator
@@ -150,8 +156,8 @@ class Discretization:
         for i, v in zip(fl_indices, fl_contrib):
             el_contrib[i] = v
 
-        if el.id == 32600 and fl == 0:
-            print "VALUES", el.id, fl
+        if False and el.id == 78 and fl == 2:
+            print "VALUES", el.id, fl, normal
             print fl_values
             print fn_values
             print fl_local_coeff*fl_values + fl_neighbor_coeff*fn_values
@@ -159,7 +165,7 @@ class Discretization:
             print fl_contrib
             print "ELVALUES"
             print el_contrib
-            print self.inv_mass_mat[edata]*el_contrib/abs(self.maps[el.id].jacobian)
+            print "fin", self.inv_mass_mat[edata]*el_contrib/abs(self.maps[el.id].jacobian)
 
         return self.inv_mass_mat[edata]*el_contrib/abs(self.maps[el.id].jacobian)
 

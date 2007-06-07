@@ -94,6 +94,53 @@ class ConformalMesh(Mesh):
 
 
 
+def _tag_and_make_conformal_mesh(boundary_tagger, generated_mesh_info):
+    from itertools import izip
+
+    boundary_tags = dict(
+            (frozenset(seg), 
+                boundary_tagger(generated_mesh_info.points, seg))
+                for seg, marker in izip(
+                    generated_mesh_info.segments,
+                    generated_mesh_info.segment_markers)
+                if marker == 1)
+
+    return ConformalMesh(
+            generated_mesh_info.points,
+            generated_mesh_info.elements,
+            boundary_tags)
+
+
+
+
+def make_square_mesh(a=-1, b=1, max_area=4e-3, 
+        boundary_tagger=lambda vertices, face_indices: "dirichlet"):
+    def round_trip_connect(start, end):
+        for i in range(start, end):
+            yield i, i+1
+        yield end, start
+
+    def needs_refinement(vert_origin, vert_destination, vert_apex, area):
+        return area > max_area
+
+    points = [(a,a), (a,b), (b,b), (b,a)]
+            
+    import meshpy.triangle as triangle
+
+    mesh_info = triangle.MeshInfo()
+    mesh_info.set_points(points)
+    mesh_info.set_segments(
+            list(round_trip_connect(0, 3)),
+            4*[1]
+            )
+
+    return _tag_and_make_conformal_mesh(
+            boundary_tagger,
+            triangle.build(mesh_info, refinement_func=needs_refinement))
+
+
+
+
 def make_disk_mesh(r=0.5, segments=50, max_area=4e-3, 
         boundary_tagger=lambda vertices, face_indices: "dirichlet"):
     from math import cos, sin, pi
@@ -120,19 +167,7 @@ def make_disk_mesh(r=0.5, segments=50, max_area=4e-3,
 
     generated_mesh_info = triangle.build(mesh_info, refinement_func=needs_refinement)
 
-    from itertools import izip
-
-    boundary_tags = dict(
-            (frozenset(seg), 
-                boundary_tagger(generated_mesh_info.points, seg))
-                for seg, marker in izip(
-                    generated_mesh_info.segments,
-                    generated_mesh_info.segment_markers)
-                if marker == 1)
-
-    return ConformalMesh(
-            generated_mesh_info.points,
-            generated_mesh_info.elements,
-            boundary_tags)
-
+    return _tag_and_make_conformal_mesh(
+            boundary_tagger,
+            triangle.build(mesh_info, refinement_func=needs_refinement))
 

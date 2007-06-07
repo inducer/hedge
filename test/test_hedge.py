@@ -15,23 +15,45 @@ class TestHedge(unittest.TestCase):
         errors = [abs(yi-nf(xi)) for xi, yi in zip(x, y)]
         self.assert_(sum(errors) < 1e-10)
     # -------------------------------------------------------------------------
-    def test_orthonormality_1d(self):
-        n = 10
-
-        from hedge.polynomial import legendre_function
+    def test_orthonormality_jacobi_1d(self):
+        from hedge.polynomial import jacobi_function
         from hedge.quadrature import LegendreGaussQuadrature
 
-        leg_f = [legendre_function(i) for i in range(n)]
+        max_n = 10
+        int = LegendreGaussQuadrature(4*max_n) # overkill...
 
-        lgq = LegendreGaussQuadrature(n)
+        class WeightFunction:
+            def __init__(self, alpha, beta):
+                self.alpha = alpha
+                self.beta = beta
 
-        for i, fi in enumerate(leg_f):
-            for j, fj in enumerate(leg_f):
-                result = lgq(lambda x: fi(x)*fj(x))
-                if fi == fj:
-                    self.assert_(abs(result-1) < 1e-9)
-                else:
-                    self.assert_(abs(result) < 1e-9)
+            def __call__(self, x):
+                return (1-x)**self.alpha * (1+x)**self.beta
+
+        for alpha, beta, ebound in [
+                (0, 0, 1e-9), 
+                (1, 0, 1e-9), 
+                (3, 2, 1e-10), 
+                (0, 2, 1e-9), 
+                (5, 0, 1e-8), 
+                (3, 4, 1e-9)
+                ]:
+            jac_f = [jacobi_function(alpha, beta, n) for n in range(max_n)]
+            wf = WeightFunction(alpha, beta)
+            maxerr = 0
+            for i, fi in enumerate(jac_f):
+                for j, fj in enumerate(jac_f):
+                    result = int(lambda x: wf(x)*fi(x)*fj(x))
+
+                    if i == j:
+                        true_result = 1
+                    else:
+                        true_result = 0
+                    err = abs(result-true_result)
+                    maxerr = max(maxerr, err)
+                    if abs(result-true_result) > ebound:
+                        print "bad", alpha, beta, i, j, abs(result-true_result)
+                    self.assert_(abs(result-true_result) < ebound)
     # -------------------------------------------------------------------------
     def test_transformed_quadrature(self):
         from math import exp, sqrt, pi
@@ -206,8 +228,12 @@ class TestHedge(unittest.TestCase):
             tri_area_2 = abs(unit_tri_area*map.jacobian)
             self.assert_(abs(tri_area - tri_area_2)/tri_area < 1e-10)
     # -------------------------------------------------------------------------
-    def test_tri_mass_mat(self):
+    def no_test_tri_mass_mat_gauss(self):
         """Check the integral of a Gaussian on a disk using the mass matrix"""
+
+        # This is a bad test, since it's never exact. The Gaussian has infinite support,
+        # and this *does* matter numerically.
+
         from hedge.mesh import make_disk_mesh
         from hedge.element import TriangularElement
         from hedge.discretization import Discretization
@@ -216,7 +242,7 @@ class TestHedge(unittest.TestCase):
         sigma_squared = 1/219.3
 
         mesh = make_disk_mesh()
-        discr = Discretization(make_disk_mesh(), TriangularElement(9))
+        discr = Discretization(make_disk_mesh(), TriangularElement(4))
         f = discr.interpolate_volume_function(lambda x: exp(-x*x/(2*sigma_squared)))
         ones = discr.interpolate_volume_function(lambda x: 1)
 
@@ -227,8 +253,32 @@ class TestHedge(unittest.TestCase):
         true_integral = (2*pi)**(dim/2)*sqrt(sigma_squared)**dim
         err_1 = abs(num_integral_1-true_integral)
         err_2 = abs(num_integral_2-true_integral)
+        print err_1
         self.assert_(err_1 < 1e-11)
         self.assert_(err_2 < 1e-11)
+    # -------------------------------------------------------------------------
+    def test_tri_mass_mat_trig(self):
+        """Check the integral of some trig functions on a square using the mass matrix"""
+
+        from hedge.mesh import make_square_mesh
+        from hedge.element import TriangularElement
+        from hedge.discretization import Discretization
+        import pylinear.computation as comp
+        from math import sqrt, pi, cos, sin
+
+        mesh = make_square_mesh(a=-pi, b=pi, max_area=(2*pi/10)**2/2)
+        discr = Discretization(mesh, TriangularElement(9))
+        f = discr.interpolate_volume_function(lambda x: cos(x[0])**2*sin(x[1])**2)
+        ones = discr.interpolate_volume_function(lambda x: 1)
+
+        discr.visualize_vtk("trig.vtk", [("f", f)])
+        num_integral_1 = ones * discr.apply_mass_matrix(f)
+        num_integral_2 = f * discr.apply_mass_matrix(ones)
+        true_integral = pi**2
+        err_1 = abs(num_integral_1-true_integral)
+        err_2 = abs(num_integral_2-true_integral)
+        self.assert_(err_1 < 1e-10)
+        self.assert_(err_2 < 1e-10)
     # -------------------------------------------------------------------------
     def test_tri_diff_mat(self):
         """Check differentiation matrix along the coordinate axes on a disk.
@@ -242,7 +292,7 @@ class TestHedge(unittest.TestCase):
 
         for coord in [0, 1]:
             mesh = make_disk_mesh()
-            discr = Discretization(make_disk_mesh(), TriangularElement(9))
+            discr = Discretization(make_disk_mesh(), TriangularElement(4))
             f = discr.interpolate_volume_function(lambda x: sin(3*x[coord]))
             df = discr.interpolate_volume_function(lambda x: 3*cos(3*x[coord]))
 
@@ -310,6 +360,48 @@ class TestHedge(unittest.TestCase):
                     for face_indices, n, fjac
                     in zip(edata.face_indices(), normals, jacobians))
             self.assert_(abs(boundary_sum-int_div_f) < 1e-7)
+    # -------------------------------------------------------------------------
+    def test_cubature(self):
+        """Test the integrity of the cubature data."""
+
+        from hedge.cubature import integrate_on_tetrahedron, TetrahedronCubatureData
+
+        for i in range(len(TetrahedronCubatureData)):
+            self.assert_(abs(integrate_on_tetrahedron(i+1, lambda x: 1)-2) < 1e-14)
+    # -------------------------------------------------------------------------
+    def test_tri_orthogonality(self):
+        """Test the integrity of the cubature data."""
+
+        from hedge.cubature import integrate_on_tetrahedron, TetrahedronCubatureData
+        from hedge.element import TriangularElement
+
+        for order, ebound in [
+                (3, 1e-11),
+                (4, 1e-11),
+                (7, 1e-10),
+                (9, 1e-8),
+                ]:
+            edata = TriangularElement(order)
+            basis = edata.basis_functions()
+
+            maxerr = 0
+            for i, f in enumerate(basis):
+                for j, g in enumerate(basis):
+                    if i == j:
+                        true_result = 1
+                    else:
+                        true_result = 0
+                    result = integrate_on_tetrahedron(2*order, lambda x: f(x)*g(x))
+                    err = abs(result-true_result)
+                    maxerr = max(maxerr, err)
+                    if err > ebound:
+                        print "bad", order,i,j, err
+                    self.assert_(err < ebound)
+            #print order, maxerr
+
+
+
+
 
                
 

@@ -18,6 +18,8 @@ def main() :
     a = num.array([1,0])
     def u_analytic(t, x):
         return sin(4*(a*x+t))
+    #def u_analytic(t, x):
+        #return 0.1*(a*x+t)
 
     def boundary_tagger(vertices, (v1, v2)):
         center = (num.array(vertices[v1])+num.array(vertices[v2]))/2
@@ -29,7 +31,7 @@ def main() :
 
     mesh = make_disk_mesh(boundary_tagger=boundary_tagger)
 
-    discr = Discretization(mesh, TriangularElement(4))
+    discr = Discretization(mesh, TriangularElement(1))
     print "%d elements" % len(discr.mesh.elements)
 
     #discr.visualize_vtk("bdry.vtk",
@@ -40,7 +42,7 @@ def main() :
     u = discr.interpolate_volume_function(
             lambda x: u_analytic(0, x))
 
-    dt = 1e-2
+    dt = 3e-3
     nsteps = int(1/dt)
 
     class CentralNX:
@@ -66,19 +68,20 @@ def main() :
         bc = discr.interpolate_boundary_function("inflow",
                 lambda x: u_analytic(t, x))
 
-        rhsint = +a[0]*discr.differentiate(0, u) \
-                + a[1]*discr.differentiate(1, u)
-        rhsflux =- a[0]*discr.lift_interior_flux(central_nx, u) \
-                -  a[1]*discr.lift_interior_flux(central_ny, u)
+        rhsint = +a[0]*discr.differentiate(0, u)
+                #+ a[1]*discr.differentiate(1, u)
+        rhsflux =- a[0]*discr.lift_interior_flux(central_nx, u)
+                #-  a[1]*discr.lift_interior_flux(central_ny, u)
         rhsbdry = \
                 -  a[0]*discr.lift_boundary_flux(central_nx, u, bc,
-                        "inflow") \
-                -  a[1]*discr.lift_boundary_flux(central_ny, u, bc,
                         "inflow")
+                #-  a[1]*discr.lift_boundary_flux(central_ny, u, bc,
+                        #"inflow")
 
-        maxidx = argmax(rhsflux)
-        print "MAXES", max(rhsflux), maxidx, discr.find_face(maxidx)
-        raw_input()
+        if False:
+            maxidx = argmax(rhsflux)
+            print "MAXES", max(rhsflux), maxidx, discr.find_face(maxidx)
+            raw_input()
 
         if False:
         #if rhscnt[0] % 1 == 0:
@@ -98,7 +101,7 @@ def main() :
         u = stepper(u, step*dt, dt, rhs)
         job.done()
 
-        if False:
+        if True:
             job = Job("visualization")
             t = (step+1)*dt
             u_true = discr.interpolate_volume_function(
