@@ -140,3 +140,4 @@ def generic_multi_vandermonde(points, functions):
 def legendre_vandermonde(points, N):
     return generic_vandermonde(points, 
             [legendre_function(i) for i in range(N+1)])
+

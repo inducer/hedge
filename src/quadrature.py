@@ -60,7 +60,9 @@ class JacobiGaussQuadrature(Quadrature):
     """
     def __init__(self, alpha, beta, N):
         from scipy.special.orthogonal import j_roots
-        Quadrature.__init__(self, *j_roots(N+1, alpha, beta))
+        import numpy
+        x, w = j_roots(N+1, alpha, beta)
+        Quadrature.__init__(self, numpy.real(x), w)
 
 
 

@@ -253,7 +253,6 @@ class TestHedge(unittest.TestCase):
         true_integral = (2*pi)**(dim/2)*sqrt(sigma_squared)**dim
         err_1 = abs(num_integral_1-true_integral)
         err_2 = abs(num_integral_2-true_integral)
-        print err_1
         self.assert_(err_1 < 1e-11)
         self.assert_(err_2 < 1e-11)
     # -------------------------------------------------------------------------
@@ -334,7 +333,7 @@ class TestHedge(unittest.TestCase):
         def f2(x):
             return sin(2*x[0])+cos(x[1])
 
-        edata = TriangularElement(9)
+        edata = TriangularElement(2)
 
         discr = Discretization(make_disk_mesh(), edata)
         ones = discr.interpolate_volume_function(lambda x: 1)
@@ -342,7 +341,6 @@ class TestHedge(unittest.TestCase):
         face_ones = discr.interpolate_boundary_function(
                 "boundary", lambda x: 1)
 
-        mapped_points = [map(node) for node in edata.unit_nodes()]
         f1_v = discr.interpolate_volume_function(f1)
         f2_v = discr.interpolate_volume_function(f2)
 
@@ -363,8 +361,7 @@ class TestHedge(unittest.TestCase):
                     one_sided_y, f2_v, face_zeros)
                 )*ones
 
-        print abs(boundary_int-int_div)
-        self.assert_(abs(boundary_int-int_div) < 1e-11)
+        self.assert_(abs(boundary_int-int_div) < 3e-12)
 
     # -------------------------------------------------------------------------
     def test_tri_gauss_theorem(self):
@@ -462,13 +459,21 @@ class TestHedge(unittest.TestCase):
             #print order, maxerr
     # -------------------------------------------------------------------------
     def test_1d_mass_matrix_vs_quadrature(self):
-        pass
+        from hedge.quadrature import LegendreGaussQuadrature
+        from hedge.polynomial import legendre_vandermonde
+        import pylinear.array as num
+        import pylinear.computation as comp
+        import numpy
 
-
-
-
-
-
+        for n in range(13):
+            lgq = LegendreGaussQuadrature(n)
+            vdm = legendre_vandermonde(lgq.points, n)
+            mass_mat = 1/(vdm*vdm.T)
+            ones = num.ones((mass_mat.shape[0],))
+            self.assert_(comp.norm_infinity(
+                    ((vdm*vdm.T) <<num.solve>> ones)
+                    -
+                    num.array(lgq.weights)) < 2e-10)
                
 
 
