@@ -50,10 +50,10 @@ def main() :
         else:
             return "outflow"
 
-    #mesh = make_regular_square_mesh(boundary_tagger=boundary_tagger_square, n=2)
-    mesh = make_single_element_mesh(boundary_tagger=boundary_tagger_square)
+    mesh = make_regular_square_mesh(boundary_tagger=boundary_tagger_square, n=4)
+    #mesh = make_single_element_mesh(boundary_tagger=boundary_tagger_square)
 
-    discr = Discretization(mesh, TriangularElement(8))
+    discr = Discretization(mesh, TriangularElement(1))
     print "%d elements" % len(discr.mesh.elements)
 
     #discr.visualize_vtk("bdry.vtk",

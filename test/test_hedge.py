@@ -13,10 +13,11 @@ class TestHedge(unittest.TestCase):
         nf = newton_interpolation_function(x, y)
 
         errors = [abs(yi-nf(xi)) for xi, yi in zip(x, y)]
-        self.assert_(sum(errors) < 1e-10)
+        #print errors
+        self.assert_(sum(errors) < 1e-14)
     # -------------------------------------------------------------------------
     def test_orthonormality_jacobi_1d(self):
-        from hedge.polynomial import jacobi_function
+        from hedge.polynomial import jacobi_function, jacobi_function_2
         from hedge.quadrature import LegendreGaussQuadrature
 
         max_n = 10
@@ -31,13 +32,14 @@ class TestHedge(unittest.TestCase):
                 return (1-x)**self.alpha * (1+x)**self.beta
 
         for alpha, beta, ebound in [
-                (0, 0, 1e-9), 
-                (1, 0, 1e-9), 
-                (3, 2, 1e-10), 
-                (0, 2, 1e-9), 
-                (5, 0, 1e-8), 
-                (3, 4, 1e-9)
+                (0, 0, 3e-14), 
+                (1, 0, 4e-14), 
+                (3, 2, 3e-14), 
+                (0, 2, 3e-13), 
+                (5, 0, 3e-13), 
+                (3, 4, 1e-14)
                 ]:
+            from scipy.special.orthogonal import jacobi
             jac_f = [jacobi_function(alpha, beta, n) for n in range(max_n)]
             wf = WeightFunction(alpha, beta)
             maxerr = 0
@@ -54,6 +56,7 @@ class TestHedge(unittest.TestCase):
                     if abs(result-true_result) > ebound:
                         print "bad", alpha, beta, i, j, abs(result-true_result)
                     self.assert_(abs(result-true_result) < ebound)
+            #print alpha, beta, maxerr
     # -------------------------------------------------------------------------
     def test_transformed_quadrature(self):
         from math import exp, sqrt, pi
@@ -75,13 +78,13 @@ class TestHedge(unittest.TestCase):
         from hedge.element import WarpFactorCalculator
         wfc = WarpFactorCalculator(n)
 
-        self.assert_(abs(wfc.int_f(-1)) < 1e-10)
-        self.assert_(abs(wfc.int_f(1)) < 1e-10)
+        self.assert_(abs(wfc.int_f(-1)) < 1e-15)
+        self.assert_(abs(wfc.int_f(1)) < 2e-15)
 
         from hedge.quadrature import LegendreGaussQuadrature
 
         lgq = LegendreGaussQuadrature(n)
-        self.assert_(abs(lgq(wfc)) < 1e-10)
+        self.assert_(abs(lgq(wfc)) < 7e-15)
     # -------------------------------------------------------------------------
     def test_tri_nodes(self):
         from hedge.element import TriangularElement
@@ -226,7 +229,7 @@ class TestHedge(unittest.TestCase):
             mat[:,1] = (vertices[2] - vertices[0])
             tri_area = abs(comp.determinant(mat)/2)
             tri_area_2 = abs(unit_tri_area*map.jacobian)
-            self.assert_(abs(tri_area - tri_area_2)/tri_area < 1e-10)
+            self.assert_(abs(tri_area - tri_area_2)/tri_area < 1e-15)
     # -------------------------------------------------------------------------
     def no_test_tri_mass_mat_gauss(self):
         """Check the integral of a Gaussian on a disk using the mass matrix"""
@@ -246,7 +249,7 @@ class TestHedge(unittest.TestCase):
         f = discr.interpolate_volume_function(lambda x: exp(-x*x/(2*sigma_squared)))
         ones = discr.interpolate_volume_function(lambda x: 1)
 
-        #discr.visualize_field("gaussian.vtk", [("f", f)])
+        #discr.visualize_vtk("gaussian.vtk", [("f", f)])
         num_integral_1 = ones * discr.apply_mass_matrix(f)
         num_integral_2 = f * discr.apply_mass_matrix(ones)
         dim = 2
@@ -266,16 +269,17 @@ class TestHedge(unittest.TestCase):
         from math import sqrt, pi, cos, sin
 
         mesh = make_square_mesh(a=-pi, b=pi, max_area=(2*pi/10)**2/2)
-        discr = Discretization(mesh, TriangularElement(9))
+        discr = Discretization(mesh, TriangularElement(8))
         f = discr.interpolate_volume_function(lambda x: cos(x[0])**2*sin(x[1])**2)
         ones = discr.interpolate_volume_function(lambda x: 1)
 
-        discr.visualize_vtk("trig.vtk", [("f", f)])
+        #discr.visualize_vtk("trig.vtk", [("f", f)])
         num_integral_1 = ones * discr.apply_mass_matrix(f)
         num_integral_2 = f * discr.apply_mass_matrix(ones)
         true_integral = pi**2
         err_1 = abs(num_integral_1-true_integral)
         err_2 = abs(num_integral_2-true_integral)
+        #print err_1, err_2
         self.assert_(err_1 < 1e-10)
         self.assert_(err_2 < 1e-10)
     # -------------------------------------------------------------------------
@@ -284,6 +288,7 @@ class TestHedge(unittest.TestCase):
         
         Uses sines as the function to differentiate.
         """
+        import pylinear.computation as comp
         from hedge.mesh import make_disk_mesh
         from hedge.element import TriangularElement
         from hedge.discretization import Discretization
@@ -297,12 +302,12 @@ class TestHedge(unittest.TestCase):
 
             df_num = discr.differentiate(coord, f)
             error = df_num - df
-            #discr.visualize_field("diff-err.vtk",
-                    #[("f", f), ("df", df), ("df_num", df_num), ("error", error)])
+            discr.visualize_vtk("diff-err.vtk",
+                    [("f", f), ("df", df), ("df_num", df_num), ("error", error)])
 
-            l2_error = sqrt(error * discr.apply_mass_matrix(error))
-            #print l2_error, len(mesh.elements)
-            self.assert_(l2_error < 1e-4)
+            linf_error = comp.norm_infinity(df_num-df)
+            #print linf_error
+            self.assert_(linf_error < 3e-5)
     # -------------------------------------------------------------------------
     def test_2d_gauss_theorem(self):
         """Verify Gauss's theorem explicitly on a couple of elements 
@@ -361,7 +366,7 @@ class TestHedge(unittest.TestCase):
                     one_sided_y, f2_v, face_zeros)
                 )*ones
 
-        self.assert_(abs(boundary_int-int_div) < 3e-12)
+        self.assert_(abs(boundary_int-int_div) < 1e-15)
 
     # -------------------------------------------------------------------------
     def test_tri_gauss_theorem(self):
@@ -391,10 +396,22 @@ class TestHedge(unittest.TestCase):
             return reduce(add, (dmat*coeff*field
                         for dmat, coeff in zip(matrices, col)))
 
-        for i in range(10):
-            na = num.array
-            #vertices = [na([0,0]), na([1,0]), na([0,1])]
-            vertices = [make_random_vector(2, num.Float) for vi in range(3)]
+        array = num.array
+
+        triangles = [
+                [array([-7.1687642250744492, 0.63058995062684642]), array([9.9744219044921199, 6.6530989283689781]), array([12.269380138171147, -17.529689194536481])],
+                [array([-3.1285787297852634, -16.579403405465403]), array([-5.2882160938912515, -6.2209234150214137]), array([11.251223490342774, 4.6571427341871727])],
+                [array([4.7407472917152553, -18.406868078408063]), array([1.8224524488556271, 11.551374404003361]), array([2.523148394963088, 1.632574414790982])],
+                [array([-11.523714017493292, -14.2820557378961]), array([-0.44311816855771136, 19.572194735728861]), array([5.2855990566779445, -9.8743423935894388])],
+                [array([1.113949150102217, -3.2255502625302639]), array([-13.028732972681315, 2.1525752429773379]), array([-2.3929000970202705, 6.2884649052982198])],
+                [array([-8.0878061368549741, -14.604092423350167]), array([4.5339922477199996, 8.3770287646932022]), array([-5.2180549365480156, -1.9930760171433717])],
+                [array([-1.9047012017294165, -3.6517882549544485]), array([3.1461902282192784, 5.7397849191668229]), array([-11.072761256907262, -8.3758508470287509])],
+                [array([8.6609581113102934, 9.1121629958018566]), array([3.8230948675835497, -14.004679313330751]), array([10.975623610855521, 1.6267418698764553])],
+                [array([13.959685276941629, -12.201892555481464]), array([-7.8057604576925499, -3.5283871457281757]), array([-0.41961743047735317, -3.2615635891671872])],
+                [array([-9.8469907360335078, 6.0635407355366242]), array([7.8727080309703439, 7.634505157189091]), array([-2.7723038834027118, 8.5441656500931789])],
+                ]
+
+        for vertices in triangles:
             map = edata.get_map_unit_to_global(vertices)
             imap = map.inverted()
 
@@ -417,8 +434,10 @@ class TestHedge(unittest.TestCase):
                         * num.take(f_n, face_indices) * n_coord
                         for f_n, n_coord in zip([f1_n, f2_n], n))
                     for face_indices, n, fjac
-                    in zip(edata.face_indices(), normals, jacobians))
-            self.assert_(abs(boundary_sum-int_div_f) < 1e-7)
+                    in zip(edata.face_indices(), normals, jacobians)
+                    )
+            #print abs(boundary_sum-int_div_f)
+            self.assert_(abs(boundary_sum-int_div_f) < 6e-13)
     # -------------------------------------------------------------------------
     def test_cubature(self):
         """Test the integrity of the cubature data."""
@@ -429,16 +448,15 @@ class TestHedge(unittest.TestCase):
             self.assert_(abs(integrate_on_tetrahedron(i+1, lambda x: 1)-2) < 1e-14)
     # -------------------------------------------------------------------------
     def test_tri_orthogonality(self):
-        """Test the integrity of the cubature data."""
-
         from hedge.cubature import integrate_on_tetrahedron, TetrahedronCubatureData
         from hedge.element import TriangularElement
 
         for order, ebound in [
-                (3, 1e-11),
-                (4, 1e-11),
-                (7, 1e-10),
-                (9, 1e-8),
+                (1, 2e-15),
+                (3, 4e-15),
+                (4, 3e-15),
+                (7, 3e-14),
+                (9, 2e-13),
                 ]:
             edata = TriangularElement(order)
             basis = edata.basis_functions()
@@ -473,7 +491,7 @@ class TestHedge(unittest.TestCase):
             self.assert_(comp.norm_infinity(
                     ((vdm*vdm.T) <<num.solve>> ones)
                     -
-                    num.array(lgq.weights)) < 2e-10)
+                    num.array(lgq.weights)) < 2e-14)
                
 
 

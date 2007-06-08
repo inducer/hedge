@@ -272,11 +272,12 @@ class Discretization:
             polygons += [[el_base+j for j in element] 
                     for element in self.element_map[el.id].generate_submesh_indices()]
         structure = PolyData(points=points, polygons=polygons)
-        pdatalist = []
-        for name, field in fields:
-            pdatalist.append(Scalars(numpy.array(field), name=name, lookup_table="default"))
-        for name, field in vectors:
-            pdatalist.append(Vectors([three_vector(v) for v in field], name=name))
+        pdatalist = [
+                Scalars(numpy.array(field), name=name, lookup_table="default") 
+                for name, field in fields
+                ] + [
+                Vectors([three_vector(v) for v in field], name=name)
+                for name, field in vectors]
         vtk = VtkData(structure, "Hedge visualization", PointData(*pdatalist))
         vtk.tofile(filename)
 
