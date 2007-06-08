@@ -15,25 +15,28 @@ class Discretization:
                 self.element_map[el.id].get_map_unit_to_global(
                     [mesh.vertices[vi] for vi in el.vertices])
                 for el in mesh.elements]
-        self.inv_maps = [map.inverted() for map in self.maps]
+        self.inverse_maps = [map.inverted() for map in self.maps]
         if False:
             print edata.vandermonde().format(max_length=130, 
                     num_stringifier=lambda x: "%.3f" % x)
             print edata.inverse_mass_matrix().format(max_length=130, 
                     num_stringifier=lambda x: "%.2f" % x)
             print num.array(edata.unit_nodes())
+            print num.array(edata.mass_matrix())
+            print edata.face_mass_matrix().format(max_length=130, 
+                    num_stringifier=lambda x: "%.3f" % x)
 
         # find M^{-1} S^T
         from pylinear.operator import LUInverseOperator
         self.mass_mat = {}
-        self.inv_mass_mat = {}
+        self.inverse_mass_mat = {}
         self.diff_mat = {}
         self.m_inv_s_t = {}
         for el in self.mesh.elements:
             this_edata = self.element_map[el.id]
             if this_edata not in self.diff_mat:
                 mmat = self.mass_mat[this_edata] = this_edata.mass_matrix()
-                immat = self.inv_mass_mat[this_edata] = this_edata.inverse_mass_matrix()
+                immat = self.inverse_mass_mat[this_edata] = this_edata.inverse_mass_matrix()
                 dmats = self.diff_mat[this_edata] = this_edata.differentiation_matrices()
                 self.m_inv_s_t[this_edata] = [immat*d.T*mmat for d in dmats]
                 #self.m_inv_s_t[this_edata] = [d.T for d in dmats]
@@ -115,17 +118,23 @@ class Discretization:
 
     def apply_mass_matrix(self, field):
         result = num.zeros_like(field)
-        for i_el, map in enumerate(self.maps):
+        for i_el, (map, (e_start, e_end)) in enumerate(zip(self.maps, self.element_ranges)):
             mmat = self.mass_mat[self.element_map[i_el]]
-            e_start, e_end = self.element_ranges[i_el]
             result[e_start:e_end] = abs(map.jacobian)*mmat*field[e_start:e_end]
+        return result
+
+    def apply_inverse_mass_matrix(self, field):
+        result = num.zeros_like(field)
+        for i_el, (imap, (e_start, e_end)) in enumerate(zip(self.inverse_maps, self.element_ranges)):
+            immat = self.inverse_mass_mat[self.element_map[i_el]]
+            result[e_start:e_end] = abs(imap.jacobian)*immat*field[e_start:e_end]
         return result
 
     def _apply_diff_matrices(self, coordinate, field, matrices):
         from operator import add
 
         result = num.zeros_like(field)
-        for i_el, imap in enumerate(self.inv_maps):
+        for i_el, imap in enumerate(self.inverse_maps):
             col = imap.matrix[:, coordinate]
             el_matrices = matrices[self.element_map[i_el]]
             e_start, e_end = self.element_ranges[i_el]
@@ -141,7 +150,7 @@ class Discretization:
     def apply_stiffness_matrix_t(self, coordinate, field):
         return self._apply_diff_matrices(coordinate, field, self.m_inv_s_t)
 
-    def lift_face_values(self, flux, (el, fl), fl_values, fn_values, fl_indices):
+    def lift_face_values(self, flux, (el, fl), fl_values, fn_values, fl_indices, trace=False):
         normal = self.normals[el.id][fl]
         fjac = self.face_jacobians[el.id][fl]
 
@@ -156,7 +165,7 @@ class Discretization:
         for i, v in zip(fl_indices, fl_contrib):
             el_contrib[i] = v
 
-        if False and el.id == 78 and fl == 2:
+        if trace:
             print "VALUES", el.id, fl, normal
             print fl_values
             print fn_values
@@ -165,9 +174,10 @@ class Discretization:
             print fl_contrib
             print "ELVALUES"
             print el_contrib
-            print "fin", self.inv_mass_mat[edata]*el_contrib/abs(self.maps[el.id].jacobian)
+            print "fin", self.inverse_mass_mat[edata]*el_contrib/abs(self.maps[el.id].jacobian)
+            raw_input()
 
-        return self.inv_mass_mat[edata]*el_contrib/abs(self.maps[el.id].jacobian)
+        return el_contrib
 
     def lift_face(self, flux, local_face, field, result):
         el, fl = local_face
@@ -190,7 +200,7 @@ class Discretization:
             self.lift_face(flux, face2, field, result)
         return result
     
-    def lift_boundary_flux(self, flux, field, bfield, tag):
+    def lift_boundary_flux(self, tag, flux, field, bfield):
         result = num.zeros_like(field)
         ranges = self.boundary_ranges[tag]
 
@@ -201,12 +211,32 @@ class Discretization:
             fl_indices = self.element_map[el.id].face_indices()[fl]
             fn_start, fn_end = ranges[face]
 
+            #print "eid", el.id, self.points[el_start+fl_indices[0]], self.points[el_start+fl_indices[-1]]
+
             fl_values = num.array([field[el_start+i] for i in fl_indices])
             fn_values = bfield[fn_start:fn_end]
 
             result[el_start:el_end] += \
                     self.lift_face_values(flux, face, 
-                            fl_values, fn_values, fl_indices)
+                            fl_values, fn_values, fl_indices,
+                            )
+                            #True)
+        return result
+    
+    def volumize_boundary_field(self, tag, bfield):
+        result = self.volume_zeros()
+        ranges = self.boundary_ranges[tag]
+
+        for face in self.mesh.boundary_map[tag]:
+            el, fl = face
+
+            el_start, el_end = self.element_ranges[el.id]
+            fl_indices = self.element_map[el.id].face_indices()[fl]
+            fn_start, fn_end = ranges[face]
+
+            for i, fi in enumerate(fl_indices):
+                result[el_start+fi] = bfield[fn_start+i]
+
         return result
     
     def find_element(self, idx):

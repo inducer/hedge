@@ -113,8 +113,86 @@ def _tag_and_make_conformal_mesh(boundary_tagger, generated_mesh_info):
 
 
 
-def make_square_mesh(a=-1, b=1, max_area=4e-3, 
+def make_single_element_mesh(a=-0.5, b=0.5, 
         boundary_tagger=lambda vertices, face_indices: "dirichlet"):
+    n = 2
+    node_dict = {}
+    points = []
+    points_1d = num.linspace(a, b, n)
+    for j in range(n):
+        for i in range(n):
+            node_dict[i,j] = len(points)
+            points.append(num.array([points_1d[i], points_1d[j]]))
+
+    elements = [(
+                node_dict[1,1],
+                node_dict[0,1],
+                node_dict[1,0],
+                )]
+
+    boundary_segments = [(3,1), (1,2), (2,3)]
+
+    boundary_tags = dict(
+            (frozenset(seg), 
+                boundary_tagger(points, seg))
+                for seg in  boundary_segments)
+
+    return ConformalMesh(
+            points,
+            elements,
+            boundary_tags)
+
+
+
+
+def make_regular_square_mesh(a=-0.5, b=0.5, n=5, 
+        boundary_tagger=lambda vertices, face_indices: "boundary"):
+    node_dict = {}
+    points = []
+    points_1d = num.linspace(a, b, n)
+    for j in range(n):
+        for i in range(n):
+            node_dict[i,j] = len(points)
+            points.append(num.array([points_1d[i], points_1d[j]]))
+
+    elements = []
+    for i in range(n-1):
+        for j in range(n-1):
+            elements.append((
+                node_dict[i,j],
+                node_dict[i+1,j],
+                node_dict[i,j+1],
+                ))
+            elements.append((
+                node_dict[i+1,j+1],
+                node_dict[i,j+1],
+                node_dict[i+1,j],
+                ))
+
+    boundary_segments = []
+
+    for i in range(n-1):
+        boundary_segments.append((node_dict[i  ,0  ], node_dict[i+1,0  ]))
+        boundary_segments.append((node_dict[i  ,n-1], node_dict[i+1,n-1]))
+        boundary_segments.append((node_dict[0  ,i  ], node_dict[0  ,i+1]))
+        boundary_segments.append((node_dict[n-1,i  ], node_dict[n-1,i+1]))
+
+    boundary_tags = dict(
+            (frozenset(seg), 
+                boundary_tagger(points, seg))
+                for seg in  boundary_segments)
+
+    return ConformalMesh(
+            points,
+            elements,
+            boundary_tags)
+
+
+
+
+
+def make_square_mesh(a=-1, b=1, max_area=4e-3, 
+        boundary_tagger=lambda vertices, face_indices: "boundary"):
     def round_trip_connect(start, end):
         for i in range(start, end):
             yield i, i+1
@@ -142,7 +220,7 @@ def make_square_mesh(a=-1, b=1, max_area=4e-3,
 
 
 def make_disk_mesh(r=0.5, segments=50, max_area=4e-3, 
-        boundary_tagger=lambda vertices, face_indices: "dirichlet"):
+        boundary_tagger=lambda vertices, face_indices: "boundary"):
     from math import cos, sin, pi
 
     def round_trip_connect(start, end):

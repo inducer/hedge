@@ -305,6 +305,68 @@ class TestHedge(unittest.TestCase):
             #print l2_error, len(mesh.elements)
             self.assert_(l2_error < 1e-4)
     # -------------------------------------------------------------------------
+    def test_2d_gauss_theorem(self):
+        """Verify Gauss's theorem explicitly on a couple of elements 
+        in random orientation."""
+
+        from hedge.element import TriangularElement
+        from hedge.tools import AffineMap
+        from hedge.mesh import make_disk_mesh
+        from hedge.discretization import Discretization
+        import pylinear.array as num
+        import pylinear.computation as comp
+        from pylinear.randomized import make_random_vector
+        from math import sin, cos, sqrt, exp, pi
+
+        class OneSidedFlux:
+            def __init__(self, coordinate):
+                self.coordinate = coordinate
+            def local_coeff(self, normal):
+                return normal[self.coordinate]
+            def neighbor_coeff(self, normal):
+                return 0
+
+        one_sided_x = OneSidedFlux(0)
+        one_sided_y = OneSidedFlux(1)
+
+        def f1(x):
+            return sin(3*x[0])+cos(3*x[1])
+        def f2(x):
+            return sin(2*x[0])+cos(x[1])
+
+        edata = TriangularElement(9)
+
+        discr = Discretization(make_disk_mesh(), edata)
+        ones = discr.interpolate_volume_function(lambda x: 1)
+        face_zeros = discr.boundary_zeros("boundary")
+        face_ones = discr.interpolate_boundary_function(
+                "boundary", lambda x: 1)
+
+        mapped_points = [map(node) for node in edata.unit_nodes()]
+        f1_v = discr.interpolate_volume_function(f1)
+        f2_v = discr.interpolate_volume_function(f2)
+
+        f1_f = discr.interpolate_boundary_function("boundary", f1)
+        f2_f = discr.interpolate_boundary_function("boundary", f2)
+
+        dx_v = discr.differentiate(0, f1_v)
+        dy_v = discr.differentiate(1, f2_v)
+
+        int_div = \
+                ones*discr.apply_mass_matrix(dx_v) + \
+                ones*discr.apply_mass_matrix(dy_v)
+
+        boundary_int = (
+                discr.lift_boundary_flux("boundary",
+                    one_sided_x, f1_v, face_zeros) +
+                discr.lift_boundary_flux("boundary",
+                    one_sided_y, f2_v, face_zeros)
+                )*ones
+
+        print abs(boundary_int-int_div)
+        self.assert_(abs(boundary_int-int_div) < 1e-11)
+
+    # -------------------------------------------------------------------------
     def test_tri_gauss_theorem(self):
         """Verify Gauss's theorem explicitly on a couple of elements 
         in random orientation."""
@@ -398,6 +460,10 @@ class TestHedge(unittest.TestCase):
                         print "bad", order,i,j, err
                     self.assert_(err < ebound)
             #print order, maxerr
+    # -------------------------------------------------------------------------
+    def test_1d_mass_matrix_vs_quadrature(self):
+        pass
+
 
 
 
