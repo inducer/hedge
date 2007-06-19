@@ -1,7 +1,6 @@
 #include <iostream>
 #include <boost/python.hpp>
 #include "flux.hpp"
-#include <boost/numeric/ublas/io.hpp>
 
 
 
@@ -15,11 +14,9 @@ using namespace hedge::flux;
 namespace {
   struct flux_wrap : flux, wrapper<flux>
   {
-    double neighbor_coeff(const face &local, const face &neighbor) const
+    double neighbor_coeff(const face &local) const
     {
-      return this->get_override("neighbor_coeff")(
-          boost::ref(local), 
-          boost::ref(neighbor));
+      return this->get_override("neighbor_coeff")(boost::ref(local));
     }
     double local_coeff(const face &local) const
     {

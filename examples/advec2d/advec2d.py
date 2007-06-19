@@ -4,6 +4,13 @@ import pylinear.computation as comp
 
 
 
+def dot(x, y): 
+    from operator import add
+    return reduce(add, (xi*yi for xi, yi in zip(x,y)))
+
+
+
+
 def main() :
     from hedge.element import TriangularElement
     from hedge.timestep import RK4TimeStepper
@@ -15,6 +22,9 @@ def main() :
     from hedge.discretization import \
             Discretization, \
             generate_ones_on_boundary
+    from hedge.flux import zero, trace_sign, \
+            if_bc_equals, normal_2d, jump_2d, \
+            local, neighbor, average
     from pytools.arithmetic_container import ArithmeticList
     from pytools.stopwatch import Job
     from math import sin, cos
@@ -51,8 +61,9 @@ def main() :
         else:
             return "outflow"
 
-    mesh = make_square_mesh(boundary_tagger=boundary_tagger_square, max_area=0.1)
-    #mesh = make_regular_square_mesh(boundary_tagger=boundary_tagger_square, n=4)
+    #mesh = make_square_mesh(boundary_tagger=boundary_tagger_square, max_area=0.1)
+    mesh = make_square_mesh(boundary_tagger=boundary_tagger_square, max_area=0.2)
+    #mesh = make_regular_square_mesh(boundary_tagger=boundary_tagger_square, n=3)
     #mesh = make_single_element_mesh(boundary_tagger=boundary_tagger_square)
 
     discr = Discretization(mesh, TriangularElement(2))
@@ -65,30 +76,27 @@ def main() :
 
     u = discr.interpolate_volume_function(lambda x: u_analytic(0, x))
 
-    dt = 3e-3
-    nsteps = int(1/dt)
+    dt = 1e-3
+    stepfactor = 100
+    nsteps = int(10/dt)
 
     rhscnt = [0]
-    rhsstep = 15
+    rhsstep = stepfactor
+
+    flux = dot(normal_2d, a) * local \
+            - dot(normal_2d, a) * average \
+            + 0.5 *(local-neighbor)
 
     def rhs_strong(t, u):
         from pytools import argmax
-
-        central_nx = CentralStrong(0)
-        central_ny = CentralStrong(1)
 
         bc = discr.interpolate_boundary_function("inflow",
                 lambda x: u_analytic(t, x))
 
         rhsint =   a[0]*discr.differentiate(0, u)
                 #+ a[1]*discr.differentiate(1, u)
-        rhsflux =-  a[0]*discr.lift_interior_flux(central_nx, u)
-                #-  a[1]*discr.lift_interior_flux(central_ny, u)
-        rhsbdry = \
-                - a[0]*discr.lift_boundary_flux("inflow",
-                        central_nx, u, bc)
-                #-  a[1]*discr.lift_boundary_flux(central_ny, u, bc,
-                        #"inflow")
+        rhsflux = discr.lift_interior_flux(flux, u)
+        rhsbdry = discr.lift_boundary_flux("inflow", flux, u, bc)
 
         if False:
             maxidx = argmax(rhsflux)
@@ -109,7 +117,7 @@ def main() :
                         ])
         rhscnt[0] += 1
 
-        return rhsint+discr.apply_inverse_mass_matrix(rhsflux+rhsbdry)
+        return rhsint-discr.apply_inverse_mass_matrix(rhsflux+rhsbdry)
 
     def rhs_weak(t, u):
         from pytools import argmax
@@ -153,9 +161,9 @@ def main() :
 
     stepper = RK4TimeStepper()
     for step in range(nsteps):
-        job = Job("timestep %d" % step)
+        if step % 10 == 0:
+            print "timestep %d, t=%f" % (step, dt*step)
         u = stepper(u, step*dt, dt, rhs_strong)
-        job.done()
 
         if False:
             job = Job("visualization")
