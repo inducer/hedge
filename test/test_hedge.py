@@ -492,7 +492,85 @@ class TestHedge(unittest.TestCase):
                     ((vdm*vdm.T) <<num.solve>> ones)
                     -
                     num.array(lgq.weights)) < 2e-14)
-               
+    # -------------------------------------------------------------------------
+    def test_mapping_differences_tri(self):
+        """Check that triangle interpolation is independent of mapping to reference
+        """
+        from hedge.element import TriangularElement
+        import pylinear.array as num
+        import pylinear.computation as comp
+        from pylinear.randomized import make_random_vector
+        from random import random
+        from pytools import generate_permutations
+
+        def shift(list):
+            return list[1:] + [list[0]]
+
+        class LinearCombinationOfFunctions:
+            def __init__(self, coefficients, functions, premap):
+                self.coefficients = coefficients
+                self.functions = functions
+                self.premap = premap
+
+            def __call__(self, x):
+                return sum(coeff*f(self.premap(x)) for coeff, f in 
+                        zip(self.coefficients, self.functions))
+
+        def random_barycentric_coordinates(dim):
+            remain = 1
+            coords = []
+            for i in range(dim):
+                coords.append(random() * remain)
+                remain -= coords[-1]
+            coords.append(remain)
+            return coords
+
+        tri = TriangularElement(5)
+
+        for trial_number in range(10):
+            vertices = [make_random_vector(2, num.Float) for vi in range(3)]
+            map = tri.get_map_unit_to_global(vertices)
+            nodes = [map(node) for node in tri.unit_nodes()]
+            node_values = num.array([random() for node in nodes])
+
+            functions = []
+            for pvertices in generate_permutations(vertices):
+                pmap = tri.get_map_unit_to_global(pvertices)
+                pnodes = [pmap(node) for node in tri.unit_nodes()]
+
+                # map from pnode# to node#
+                nodematch = {}
+                for pi, pn in enumerate(pnodes):
+                    for i, n in enumerate(nodes):
+                        if comp.norm_2(n - pn) < 1e-13:
+                            nodematch[pi] = i
+                            break
+
+                pnode_values = num.array([node_values[nodematch[pi]] 
+                        for pi in range(len(nodes))])
+
+                interp_f = LinearCombinationOfFunctions(
+                        tri.vandermonde() <<num.solve>> pnode_values,
+                        tri.basis_functions(),
+                        pmap.inverted())
+
+                # verify interpolation property
+                #for n, nv in zip(pnodes, pnode_values):
+                    #self.assert_(abs(interp_f(n) - nv) < 1e-13)
+
+                functions.append(interp_f)
+
+            for subtrial_number in range(15):
+                pt_in_element = sum(
+                        coeff*vertex
+                        for coeff, vertex in zip(
+                            random_barycentric_coordinates(2),
+                            vertices))
+                f_values = [f(pt_in_element) for f in functions]
+                avg = sum(f_values) / len(f_values)
+                err = [abs(fv-avg) for fv in f_values]
+                self.assert_(max(err) < 5e-13)
+
 
 
 
