@@ -1,5 +1,5 @@
 *~
-.*.swp
+.*.sw[po]
 *.dat
 build
 *.prof
