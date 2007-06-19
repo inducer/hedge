@@ -11,7 +11,7 @@ HEDGE_CONF_TEMPLATE_VERSION = 1
 
 BOOST_INCLUDE_DIRS = []
 BOOST_LIBRARY_DIRS = [] 
-BPL_LIBRARIES = ["boost_python-mt"]
+BPL_LIBRARIES = ["boost_python-gcc41-mt"]
 
 BOOST_UBLAS_BINDINGS_INCLUDE_DIRS = ["/home/andreas/work/boost-sandbox"]
 

@@ -10,11 +10,19 @@ class Discretization:
         self.edata = edata
         self.element_map = [edata] * len(self.mesh.elements)
 
-        # calculate the affine maps
+        self._calculate_affine_maps()
+        self._find_points_and_element_ranges()
+        self._calculate_local_matrices()
+        self._find_face_data()
+        self._find_boundary_points_and_ranges()
+        self._find_opposite_node_map()
+
+    # initialization ----------------------------------------------------------
+    def _calculate_affine_maps(self):
         self.maps = [
                 self.element_map[el.id].get_map_unit_to_global(
-                    [mesh.vertices[vi] for vi in el.vertices])
-                for el in mesh.elements]
+                    [self.mesh.vertices[vi] for vi in el.vertices])
+                for el in self.mesh.elements]
         self.inverse_maps = [map.inverted() for map in self.maps]
         if False:
             print edata.vandermonde().format(max_length=130, 
@@ -26,8 +34,15 @@ class Discretization:
             print edata.face_mass_matrix().format(max_length=130, 
                     num_stringifier=lambda x: "%.3f" % x)
 
-        # find M^{-1} S^T
-        from pylinear.operator import LUInverseOperator
+    def _find_points_and_element_ranges(self):
+        self.points = []
+        self.element_ranges = []
+        for el, map in zip(self.mesh.elements, self.maps):
+            e_start = len(self.points)
+            self.points += [map(node) for node in self.element_map[el.id].unit_nodes()]
+            self.element_ranges.append((e_start, len(self.points)))
+
+    def _calculate_local_matrices(self):
         self.mass_mat = {}
         self.inverse_mass_mat = {}
         self.diff_mat = {}
@@ -39,28 +54,27 @@ class Discretization:
                 immat = self.inverse_mass_mat[this_edata] = this_edata.inverse_mass_matrix()
                 dmats = self.diff_mat[this_edata] = this_edata.differentiation_matrices()
                 self.m_inv_s_t[this_edata] = [immat*d.T*mmat for d in dmats]
-                #self.m_inv_s_t[this_edata] = [d.T for d in dmats]
 
-        # find normals and face jacobians
-        self.normals = []
-        self.face_jacobians = []
+    def _find_face_data(self):
+        from hedge.flux import Face
+        self.faces = []
         for el, map in zip(self.mesh.elements, self.maps):
-            n, fj = self.element_map[el.id].face_normals_and_jacobians(map)
-            self.normals.append(n)
-            self.face_jacobians.append(fj)
+            el_faces = []
+            for n, fj in zip(*self.element_map[el.id].face_normals_and_jacobians(map)):
+                f = Face()
+                f.h = self.maps[el.id].jacobian/fj # same as sledge
+                f.face_jacobian = fj
+                f.order = self.element_map[el.id].order
+                f.normal = n
+                el_faces.append(f)
 
-        # find all points, assign element ranges
-        self.points = []
-        self.element_ranges = []
-        for el, map in zip(self.mesh.elements, self.maps):
-            e_start = len(self.points)
-            self.points += [map(node) for node in self.element_map[el.id].unit_nodes()]
-            self.element_ranges.append((e_start, len(self.points)))
+            self.faces.append(el_faces)
 
-        # assign boundary points and face ranges, for each tag separately
+    def _find_boundary_points_and_ranges(self):
+        """assign boundary points and face ranges, for each tag separately"""
         self.boundary_points = {}
         self.boundary_ranges = {}
-        for tag, els_faces in mesh.boundary_map.iteritems():
+        for tag, els_faces in self.mesh.boundary_map.iteritems():
             tag_points = []
             tag_face_ranges = {}
             for ef in els_faces:
@@ -76,7 +90,7 @@ class Discretization:
             self.boundary_points[tag] = tag_points
             self.boundary_ranges[tag] = tag_face_ranges
 
-        # find opposite-node map in the interior
+    def _find_opposite_node_map(self):
         self.opp_node_map = {}
         for face1, face2 in self.mesh.interfaces:
             e1, f1 = face1
@@ -103,7 +117,9 @@ class Discretization:
 
                 self.opp_node_map[e1_start+i] = e2_start+j
                 self.opp_node_map[e2_start+j] = e1_start+i
+
                         
+    # vector construction -----------------------------------------------------
     def volume_zeros(self):
         return num.zeros((len(self.points),))
 
@@ -116,6 +132,7 @@ class Discretization:
     def interpolate_boundary_function(self, tag, f):
         return num.array([f(x) for x in self.boundary_points[tag]])
 
+    # local operators ---------------------------------------------------------
     def apply_mass_matrix(self, field):
         result = num.zeros_like(field)
         for i_el, (map, (e_start, e_end)) in enumerate(zip(self.maps, self.element_ranges)):
@@ -150,15 +167,15 @@ class Discretization:
     def apply_stiffness_matrix_t(self, coordinate, field):
         return self._apply_diff_matrices(coordinate, field, self.m_inv_s_t)
 
+    # flux computations -------------------------------------------------------
     def lift_face_values(self, flux, (el, fl), fl_values, fn_values, fl_indices, trace=False):
-        normal = self.normals[el.id][fl]
-        fjac = self.face_jacobians[el.id][fl]
+        face = self.faces[el.id][fl]
 
-        fl_local_coeff = flux.local_coeff(normal)
-        fl_neighbor_coeff = flux.neighbor_coeff(normal)
+        fl_local_coeff = flux.local_coeff(face)
+        fl_neighbor_coeff = flux.neighbor_coeff(face)
 
         edata = self.element_map[el.id]
-        fl_contrib = fjac * edata.face_mass_matrix() * \
+        fl_contrib = face.face_jacobian * edata.face_mass_matrix() * \
                 (fl_local_coeff*fl_values + fl_neighbor_coeff*fn_values)
         el_contrib = num.zeros((edata.node_count(),))
 
@@ -166,7 +183,7 @@ class Discretization:
             el_contrib[i] = v
 
         if trace:
-            print "VALUES", el.id, fl, normal
+            print "VALUES", el.id, fl, face.normal
             print fl_values
             print fn_values
             print fl_local_coeff*fl_values + fl_neighbor_coeff*fn_values
@@ -223,6 +240,7 @@ class Discretization:
                             #True)
         return result
     
+    # misc stuff --------------------------------------------------------------
     def volumize_boundary_field(self, tag, bfield):
         result = self.volume_zeros()
         ranges = self.boundary_ranges[tag]

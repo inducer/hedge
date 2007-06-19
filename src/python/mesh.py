@@ -101,8 +101,8 @@ def _tag_and_make_conformal_mesh(boundary_tagger, generated_mesh_info):
             (frozenset(seg), 
                 boundary_tagger(generated_mesh_info.points, seg))
                 for seg, marker in izip(
-                    generated_mesh_info.segments,
-                    generated_mesh_info.segment_markers)
+                    generated_mesh_info.faces,
+                    generated_mesh_info.face_markers)
                 if marker == 1)
 
     return ConformalMesh(
@@ -130,12 +130,12 @@ def make_single_element_mesh(a=-0.5, b=0.5,
                 node_dict[1,0],
                 )]
 
-    boundary_segments = [(3,1), (1,2), (2,3)]
+    boundary_faces = [(3,1), (1,2), (2,3)]
 
     boundary_tags = dict(
             (frozenset(seg), 
                 boundary_tagger(points, seg))
-                for seg in  boundary_segments)
+                for seg in  boundary_faces)
 
     return ConformalMesh(
             points,
@@ -169,18 +169,18 @@ def make_regular_square_mesh(a=-0.5, b=0.5, n=5,
                 node_dict[i+1,j],
                 ))
 
-    boundary_segments = []
+    boundary_faces = []
 
     for i in range(n-1):
-        boundary_segments.append((node_dict[i  ,0  ], node_dict[i+1,0  ]))
-        boundary_segments.append((node_dict[i  ,n-1], node_dict[i+1,n-1]))
-        boundary_segments.append((node_dict[0  ,i  ], node_dict[0  ,i+1]))
-        boundary_segments.append((node_dict[n-1,i  ], node_dict[n-1,i+1]))
+        boundary_faces.append((node_dict[i  ,0  ], node_dict[i+1,0  ]))
+        boundary_faces.append((node_dict[i  ,n-1], node_dict[i+1,n-1]))
+        boundary_faces.append((node_dict[0  ,i  ], node_dict[0  ,i+1]))
+        boundary_faces.append((node_dict[n-1,i  ], node_dict[n-1,i+1]))
 
     boundary_tags = dict(
             (frozenset(seg), 
                 boundary_tagger(points, seg))
-                for seg in  boundary_segments)
+                for seg in  boundary_faces)
 
     return ConformalMesh(
             points,
@@ -191,7 +191,7 @@ def make_regular_square_mesh(a=-0.5, b=0.5, n=5,
 
 
 
-def make_square_mesh(a=-1, b=1, max_area=4e-3, 
+def make_square_mesh(a=-0.5, b=0.5, max_area=4e-3, 
         boundary_tagger=lambda vertices, face_indices: "boundary"):
     def round_trip_connect(start, end):
         for i in range(start, end):
@@ -207,7 +207,7 @@ def make_square_mesh(a=-1, b=1, max_area=4e-3,
 
     mesh_info = triangle.MeshInfo()
     mesh_info.set_points(points)
-    mesh_info.set_segments(
+    mesh_info.set_faces(
             list(round_trip_connect(0, 3)),
             4*[1]
             )
@@ -219,7 +219,7 @@ def make_square_mesh(a=-1, b=1, max_area=4e-3,
 
 
 
-def make_disk_mesh(r=0.5, segments=50, max_area=4e-3, 
+def make_disk_mesh(r=0.5, faces=50, max_area=4e-3, 
         boundary_tagger=lambda vertices, face_indices: "boundary"):
     from math import cos, sin, pi
 
@@ -238,9 +238,9 @@ def make_disk_mesh(r=0.5, segments=50, max_area=4e-3,
 
     mesh_info = triangle.MeshInfo()
     mesh_info.set_points(points)
-    mesh_info.set_segments(
-            list(round_trip_connect(0, segments-1)),
-            segments*[1]
+    mesh_info.set_faces(
+            list(round_trip_connect(0, faces-1)),
+            faces*[1]
             )
 
     generated_mesh_info = triangle.build(mesh_info, refinement_func=needs_refinement)

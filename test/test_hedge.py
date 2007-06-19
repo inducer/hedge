@@ -20,7 +20,7 @@ class TestHedge(unittest.TestCase):
         from hedge.polynomial import jacobi_function, jacobi_function_2
         from hedge.quadrature import LegendreGaussQuadrature
 
-        max_n = 10
+        max_n = 7
         int = LegendreGaussQuadrature(4*max_n) # overkill...
 
         class WeightFunction:
@@ -325,9 +325,9 @@ class TestHedge(unittest.TestCase):
         class OneSidedFlux:
             def __init__(self, coordinate):
                 self.coordinate = coordinate
-            def local_coeff(self, normal):
-                return normal[self.coordinate]
-            def neighbor_coeff(self, normal):
+            def local_coeff(self, face):
+                return face.normal[self.coordinate]
+            def neighbor_coeff(self, face):
                 return 0
 
         one_sided_x = OneSidedFlux(0)
@@ -455,8 +455,8 @@ class TestHedge(unittest.TestCase):
                 (1, 2e-15),
                 (3, 4e-15),
                 (4, 3e-15),
-                (7, 3e-14),
-                (9, 2e-13),
+                #(7, 3e-14),
+                #(9, 2e-13),
                 ]:
             edata = TriangularElement(order)
             basis = edata.basis_functions()

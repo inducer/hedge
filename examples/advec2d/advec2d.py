@@ -9,6 +9,7 @@ def main() :
     from hedge.timestep import RK4TimeStepper
     from hedge.mesh import \
             make_disk_mesh, \
+            make_square_mesh, \
             make_regular_square_mesh, \
             make_single_element_mesh
     from hedge.discretization import \
@@ -50,10 +51,11 @@ def main() :
         else:
             return "outflow"
 
-    mesh = make_regular_square_mesh(boundary_tagger=boundary_tagger_square, n=4)
+    mesh = make_square_mesh(boundary_tagger=boundary_tagger_square, max_area=0.1)
+    #mesh = make_regular_square_mesh(boundary_tagger=boundary_tagger_square, n=4)
     #mesh = make_single_element_mesh(boundary_tagger=boundary_tagger_square)
 
-    discr = Discretization(mesh, TriangularElement(1))
+    discr = Discretization(mesh, TriangularElement(2))
     print "%d elements" % len(discr.mesh.elements)
 
     #discr.visualize_vtk("bdry.vtk",
@@ -63,26 +65,11 @@ def main() :
 
     u = discr.interpolate_volume_function(lambda x: u_analytic(0, x))
 
-    dt = 1e-2
+    dt = 3e-3
     nsteps = int(1/dt)
 
-    class CentralWeak:
-        def __init__(self, coordinate):
-            self.coordinate = coordinate
-        def local_coeff(self, normal):
-            return 0.5*normal[self.coordinate]
-        def neighbor_coeff(self, normal):
-            return 0.5*normal[self.coordinate]
-
-    class CentralStrong:
-        def __init__(self, coordinate):
-            self.coordinate = coordinate
-        def local_coeff(self, normal):
-            return 0.5*normal[self.coordinate]
-        def neighbor_coeff(self, normal):
-            return -0.5*normal[self.coordinate]
-
     rhscnt = [0]
+    rhsstep = 15
 
     def rhs_strong(t, u):
         from pytools import argmax
@@ -108,8 +95,9 @@ def main() :
             print "MAXES", max(rhsflux), maxidx, discr.find_face(maxidx)
             raw_input()
 
+        mflux = discr.apply_inverse_mass_matrix(rhsflux+rhsbdry)
         #if False:
-        if rhscnt[0] % 1 == 0:
+        if rhscnt[0] % rhsstep == 0 or rhscnt[0] < 10:
             discr.visualize_vtk("rhs-%04d.vtk" % rhscnt[0],
                     [("u", u),
                         ("int", rhsint), 
@@ -117,6 +105,7 @@ def main() :
                         ("bdry", rhsbdry),
                         ("rhs", rhsint+rhsflux+rhsbdry),
                         ("flux", rhsflux+rhsbdry),
+                        ("mflux", mflux),
                         ])
         rhscnt[0] += 1
 
@@ -146,8 +135,9 @@ def main() :
             print "MAXES", max(rhsflux), maxidx, discr.find_face(maxidx)
             raw_input()
 
+        mflux = discr.apply_inverse_mass_matrix(rhsflux+rhsbdry)
         #if False:
-        if rhscnt[0] % 1 == 0:
+        if rhscnt[0] % rhsstep == 0 or rhscnt[0] < 10:
             discr.visualize_vtk("rhs-%04d.vtk" % rhscnt[0],
                     [("u", u),
                         ("int", rhsint), 
@@ -155,10 +145,11 @@ def main() :
                         ("bdry", rhsbdry),
                         ("rhs", rhsint+rhsflux+rhsbdry),
                         ("flux", rhsflux+rhsbdry),
+                        ("mflux", mflux),
                         ])
         rhscnt[0] += 1
 
-        return rhsint+discr.apply_inverse_mass_matrix(rhsflux+rhsbdry)
+        return rhsint+mflux
 
     stepper = RK4TimeStepper()
     for step in range(nsteps):
