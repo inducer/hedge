@@ -4,9 +4,10 @@ import pylinear.array as num
 
 
 class Element(object):
-    def __init__(self, id, vertices):
+    def __init__(self, id, vertices, tag):
         self.id = id
         self.vertices = vertices
+        self.tag = tag
 
 
 
@@ -38,8 +39,10 @@ class Mesh:
       enumerating elements bordering one another.  The relation "element 1 touches 
       element 2" is always reflexive, but this list will only contain one entry
       per element pair.
-    - boundary_map: a mapping of the form
+    - tag_to_boundary: a mapping of the form
       boundary_tag -> [(element instance, face index)])
+    - tag_to_elements: a mapping of the form
+      element_tag -> [element instances]
     """
 
 
@@ -51,20 +54,30 @@ class ConformalMesh(Mesh):
     See the Mesh class for data members provided by this class.
     """
 
-    def __init__(self, vertices, elements, boundary_tags):
+    def __init__(self, vertices, elements, boundary_tags={}, element_tags={}):
         """Construct a simplical mesh.
 
         vertices is an iterable of vertex coordinates, given as 2-vectors.
         elements is an iterable of tuples of indices into vertices,
           giving element endpoints.
-        bdry_tags is a map from sets of face vertices, indicating face endpoints,
-          into user-defined boundary tags.
+        boundary_tags is a map from sets of face vertices, indicating 
+          face endpoints, into user-defined boundary tags. This map
+          need not be complete. On unmentioned boundaries, the tag
+          "None" will be assumed.
+        element_tags is a map from element numbers into user-defined
+          element tags. This map need not contain an entry for every
+          element, the tag "None" will be assumed.
         Face indices follow the convention for the respective element,
         such as Triangle or Tetrahedron, in this module.
         """
         self.vertices = [num.asarray(v) for v in vertices]
-        self.elements = [Triangle(id, tri) for id, tri in enumerate(elements)]
+        self.elements = [Triangle(id, tri, element_tags.get(id)) 
+                for id, tri in enumerate(elements)]
         self._build_connectivity(boundary_tags)
+
+        self.tag_to_elements = {}
+        for el in self.elements:
+            self.tag_to_elements.setdefault(el.tag, []).append(el)
 
     def _build_connectivity(self, boundary_tags):
         # create face_map, which is a mapping of
@@ -76,18 +89,14 @@ class ConformalMesh(Mesh):
 
         # build connectivity structures
         self.interfaces = []
-        self.boundary_map = {}
+        self.tag_to_boundary = {}
         for face_vertices, els_faces in face_map.iteritems():
             if len(els_faces) == 2:
                 self.interfaces.append(els_faces)
             elif len(els_faces) == 1:
-                try:
-                    btag = boundary_tags[face_vertices]
-                except KeyError:
-                    for vi in face_vertices:
-                        print self.vertices[vi]
-                    raise
-                self.boundary_map.setdefault(btag, []).append(els_faces[0])
+                btag = boundary_tags.get(face_vertices)
+                self.tag_to_boundary.setdefault(btag, [])\
+                        .append(els_faces[0])
             else:
                 raise RuntimeError, "face can at most border two elements"
 

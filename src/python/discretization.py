@@ -74,7 +74,7 @@ class Discretization:
         """assign boundary points and face ranges, for each tag separately"""
         self.boundary_points = {}
         self.boundary_ranges = {}
-        for tag, els_faces in self.mesh.boundary_map.iteritems():
+        for tag, els_faces in self.mesh.tag_to_boundary.iteritems():
             tag_points = []
             tag_face_ranges = {}
             for ef in els_faces:
@@ -123,13 +123,21 @@ class Discretization:
     def volume_zeros(self):
         return num.zeros((len(self.points),))
 
-    def interpolate_volume_function(self, f):
+    def interpolate_volume_function(self, f, tag=None):
         return num.array([f(x) for x in self.points])
+
+    def interpolate_tag_volume_function(self, f, tag=None):
+        result = self.volume_zeros()
+        for el in self.mesh.tag_to_elements[tag]:
+            e_start, e_end = self.element_ranges[el.id]
+            for i, pt in enumerate(self.points[e_start:e_end]):
+                result[e_start+i] = f(pt)
+        return result
 
     def boundary_zeros(self, tag):
         return num.zeros((len(self.boundary_points[tag]),))
 
-    def interpolate_boundary_function(self, tag, f):
+    def interpolate_boundary_function(self, f, tag=None):
         return num.array([f(x) for x in self.boundary_points[tag]])
 
     # local operators ---------------------------------------------------------
@@ -184,19 +192,18 @@ class Discretization:
 
         if trace:
             print "VALUES", el.id, fl, face.normal
-            print fl_values
-            print fn_values
-            print fl_local_coeff*fl_values + fl_neighbor_coeff*fn_values
-            print "test", 0.5 * (fl_values - fn_values)
+            print "loc", fl_values
+            print "neigh", fn_values
+            print "comb", fl_local_coeff*fl_values + fl_neighbor_coeff*fn_values
+            #print "test", 0.5 * (fl_values - fn_values)
             print fl_contrib
-            print "ELVALUES"
-            print el_contrib
-            print "fin", self.inverse_mass_mat[edata]*el_contrib/abs(self.maps[el.id].jacobian)
-            raw_input()
+            #print "ELVALUES"
+            #print el_contrib
+            #print "fin", self.inverse_mass_mat[edata]*el_contrib/abs(self.maps[el.id].jacobian)
 
         return el_contrib
 
-    def lift_face(self, flux, local_face, field, result):
+    def lift_face(self, flux, local_face, remote_face, field, result, trace):
         el, fl = local_face
 
         el_start, el_end = self.element_ranges[el.id]
@@ -205,23 +212,34 @@ class Discretization:
         onm = self.opp_node_map
         fl_values = num.array([field[el_start+i] for i in fl_indices])
         fn_values = num.array([field[onm[el_start+i]] for i in fl_indices])
+        if trace:
+            rel_start, rel_end = self.element_ranges[remote_face[0].id]
+            print "locf", field[el_start:el_end]
+            print "remf", field[rel_start:rel_end]
+            print "remfi", [onm[el_start+i]-rel_start for i in fl_indices]
+            print "remfi#", len(self.element_map[el.id].unit_nodes())
 
         result[el_start:el_end] += \
                 self.lift_face_values(flux, local_face, 
-                        fl_values, fn_values, fl_indices)
+                        fl_values, fn_values, fl_indices, trace)
 
-    def lift_interior_flux(self, flux, field):
+    def lift_interior_flux(self, flux, field, glob_trace=False):
         result = num.zeros_like(field)
         for face1, face2 in self.mesh.interfaces:
-            self.lift_face(flux, face1, field, result)
-            self.lift_face(flux, face2, field, result)
+            e1, f1 = face1
+            e2, f2 = face2
+            #print (e1.id, f1), (e2.id, f2)
+            trace = glob_trace and \
+                    (set([e1.id, e2.id]) in [set([0, 1]), set([3,2])])
+            self.lift_face(flux, face1, face2, field, result, trace and e1.id in [3,0])
+            self.lift_face(flux, face2, face1, field, result, trace and e2.id in [3,0])
         return result
     
     def lift_boundary_flux(self, tag, flux, field, bfield):
         result = num.zeros_like(field)
         ranges = self.boundary_ranges[tag]
 
-        for face in self.mesh.boundary_map[tag]:
+        for face in self.mesh.tag_to_boundary[tag]:
             el, fl = face
 
             el_start, el_end = self.element_ranges[el.id]
@@ -245,7 +263,7 @@ class Discretization:
         result = self.volume_zeros()
         ranges = self.boundary_ranges[tag]
 
-        for face in self.mesh.boundary_map[tag]:
+        for face in self.mesh.tag_to_boundary[tag]:
             el, fl = face
 
             el_start, el_end = self.element_ranges[el.id]
@@ -302,6 +320,38 @@ class Discretization:
 
 
 
+class SymmetryMap:
+    def __init__(self, discr, sym_map, element_map, threshold=1e-13):
+        self.discretization = discr
+
+        complete_el_map = {}
+        for i, j in element_map.iteritems():
+            complete_el_map[i] = j
+            complete_el_map[j] = i
+
+        self.map = {}
+
+        for i_el, (start, stop) in enumerate(discr.element_ranges):
+            mapped_i_el = complete_el_map[i_el]
+            mapped_start, mapped_stop = discr.element_ranges[mapped_i_el]
+            for i_pt in range(start, stop):
+                pt = discr.points[i_pt]
+                mapped_pt = sym_map(pt)
+                for m_i_pt in range(mapped_start, mapped_stop):
+                    if comp.norm_2(discr.points[m_i_pt] - mapped_pt) < threshold:
+                        self.map[m_i_pt] = i_pt
+                        break
+
+        for i in range(len(discr.points)):
+            assert i in self.map
+
+    def __call__(self, vec):
+        result = self.discretization.volume_zeros()
+        for i, mapped_i in self.map.iteritems():
+            result[mapped_i] = vec[i]
+        return result
+
+
 def generate_random_constant_on_elements(discr):
     result = discr.volume_zeros()
     import random
@@ -315,7 +365,7 @@ def generate_random_constant_on_elements(discr):
 
 def generate_ones_on_boundary(discr, tag):
     result = discr.volume_zeros()
-    for face in discr.mesh.boundary_map[tag]:
+    for face in discr.mesh.tag_to_boundary[tag]:
         el, fl = face
 
         el_start, el_end = discr.element_ranges[el.id]

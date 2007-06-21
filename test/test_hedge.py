@@ -570,6 +570,87 @@ class TestHedge(unittest.TestCase):
                 avg = sum(f_values) / len(f_values)
                 err = [abs(fv-avg) for fv in f_values]
                 self.assert_(max(err) < 5e-13)
+    # -------------------------------------------------------------------------
+    def test_interior_fluxes_tri(self):
+        """Compare surface integrals computed using interior fluxes
+        with their known values.
+        """
+
+        from math import pi, sin, cos
+
+        def round_trip_connect(start, end):
+            for i in range(start, end):
+                yield i, i+1
+            yield end, start
+
+        a = -pi
+        b = pi
+        points = [
+                (a,0), (b,0), 
+                (a,-1), (b,-1),
+                (a,1), (b,1)
+                ]
+                
+        import meshpy.triangle as triangle
+
+        mesh_info = triangle.MeshInfo()
+        mesh_info.set_points(points)
+        mesh_info.set_faces(
+                [(0,1),(1,3),(3,2),(2,0),(0,4),(4,5),(1,5)]
+                )
+
+        mesh_info.regions.resize(2)
+        mesh_info.regions[0] = [
+                0,-0.5, # coordinate
+                1, # lower element tag
+                0.1, # max area
+                ]
+        mesh_info.regions[1] = [
+                0,0.5, # coordinate
+                2, # upper element tag
+                0.01, # max area
+                ]
+
+        generated_mesh = triangle.build(mesh_info, 
+                attributes=True,
+                area_constraints=True)
+        triangle.write_gnuplot_mesh("mesh.dat", generated_mesh)
+
+        from hedge.mesh import ConformalMesh
+
+        eltag_map = {1:"lower", 2:"upper"}
+        mesh = ConformalMesh(
+                generated_mesh.points,
+                generated_mesh.elements,
+                element_tags=dict((i, eltag_map[tag_i]) for i, tag_i in 
+                    enumerate(generated_mesh.element_attributes)))
+
+        from hedge.element import TriangularElement
+        from hedge.discretization import Discretization
+        discr = Discretization(mesh, TriangularElement(2))
+
+        u_i = discr.interpolate_tag_volume_function(
+                lambda x: sin(x[0]-x[1]),
+                "lower")
+        u_o = discr.interpolate_tag_volume_function(
+                lambda x: cos(x[0]-x[1]),
+                "upper")
+        u = u_i + u_o
+
+        #discr.visualize_vtk("dual.vtk", [("u", u)])
+
+        from hedge.flux import local, neighbor, normal_2d
+        res = discr.lift_interior_flux((local-neighbor)*normal_2d[1], u)
+        discr.visualize_vtk("dual.vtk", [("u", u), ("res", res)])
+        ones = discr.interpolate_volume_function(lambda x: 1)
+        print res*ones
+
+
+                    
+
+
+
+
 
 
 
