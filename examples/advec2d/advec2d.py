@@ -116,11 +116,11 @@ def main() :
             return "outflow"
 
 
-    mesh = make_square_mesh(boundary_tagger=boundary_tagger_square, max_area=0.1)
+    #mesh = make_square_mesh(boundary_tagger=boundary_tagger_square, max_area=0.1)
     #mesh = make_square_mesh(boundary_tagger=boundary_tagger_square, max_area=0.2)
     #mesh = make_regular_square_mesh(boundary_tagger=boundary_tagger_square, n=3)
     #mesh = make_single_element_mesh(boundary_tagger=boundary_tagger_square)
-    #mesh = make_my_mesh()
+    mesh = make_my_mesh()
 
     #print mesh.vertices
     #for el in mesh.elements:
@@ -134,10 +134,6 @@ def main() :
                 #("inflow", generate_ones_on_boundary(discr, "inflow"))])
     #return 
 
-    #sym_map = SymmetryMap(discr, 
-            #lambda x: num.array([x[0], -x[1]]),
-            #{0:3, 2:1, 5:6, 7:4})
-
     u = discr.interpolate_volume_function(lambda x: u_analytic(0, x))
 
     dt = 1e-3
@@ -146,6 +142,10 @@ def main() :
 
     rhscnt = [0]
     rhsstep = stepfactor
+
+    sym_map = SymmetryMap(discr, 
+            lambda x: num.array([x[0], -x[1]]),
+            {0:3, 2:1, 5:6, 7:4})
 
     flux = dot(normal_2d, a) * local \
             - dot(normal_2d, a) * average #\
@@ -175,13 +175,13 @@ def main() :
             discr.visualize_vtk("rhs-%04d.vtk" % rhscnt[0],
                     [
                         ("u", u),
-                        #("se_u", u-sym_map(u)),
+                        ("se_u", u-sym_map(u)),
 
                         ("int", rhsint), 
                         #("se_int", rhsint-sym_map(rhsint)),
 
                         ("iflux", rhsflux),
-                        #("se_iflux", rhsflux-sym_map(rhsflux)),
+                        ("se_iflux", rhsflux-sym_map(rhsflux)),
 
                         ("bdry", rhsbdry),
                         #("se_bdry", rhsbdry-sym_map(rhsbdry)),

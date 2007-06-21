@@ -640,12 +640,110 @@ class TestHedge(unittest.TestCase):
         #discr.visualize_vtk("dual.vtk", [("u", u), ("res", res)])
         ones = discr.interpolate_volume_function(lambda x: 1)
         self.assert_(abs(res*ones) < 5e-14)
+    # -------------------------------------------------------------------------
+    def test_symmetry_preservation_2d(self):
+        """Test whether hedge preserves symmetry in 2D advection."""
 
+        def dot(x, y): 
+            from operator import add
+            return reduce(add, (xi*yi for xi, yi in zip(x,y)))
 
-                    
+        import pylinear.array as num
 
+        def make_mesh():
+            from hedge.mesh import ConformalMesh
+            array = num.array
 
+            points = [
+                    array([-0.5, -0.5]), 
+                    array([-0.5, 0.5]), 
+                    array([0.5, 0.5]), 
+                    array([0.5, -0.5]), 
+                    array([0.0, 0.0]), 
+                    array([-0.5, 0.0]), 
+                    array([0.0, -0.5]), 
+                    array([0.5, 0.0]), 
+                    array([0.0, 0.5])]
 
+            elements = [
+                    [8,7,4],
+                    [8,7,2],
+                    [6,7,3],
+                    [7,4,6],
+                    [5,6,0],
+                    [5,6,4],
+                    [5,8,4],
+                    [1,5,8],
+                    ]
+
+            boundary_tags = {
+                    frozenset([3,7]): "inflow",
+                    frozenset([2,7]): "inflow",
+                    frozenset([6,3]): "outflow",
+                    frozenset([2,8]): "outflow",
+                    frozenset([1,8]): "outflow",
+                    frozenset([1,5]): "outflow",
+                    frozenset([0,5]): "outflow",
+                    frozenset([0,6]): "outflow",
+                    frozenset([3,6]): "outflow",
+                    }
+            return ConformalMesh(points, elements, boundary_tags)
+
+        from hedge.discretization import Discretization, SymmetryMap
+        from hedge.element import TriangularElement
+        from hedge.flux import zero, normal_2d, jump_2d, local, neighbor, average
+        from hedge.timestep import RK4TimeStepper
+        from math import sqrt
+
+        mesh = make_mesh()
+        discr = Discretization(mesh, TriangularElement(4))
+
+        def f(x):
+            if x < 0.5:
+                return 0
+            else:
+                return (x-0.5)
+
+        a = num.array([1,0])
+
+        def u_analytic(t, x):
+            return f(a*x+t)
+
+        u = discr.interpolate_volume_function(lambda x: u_analytic(0, x))
+        dt = 1e-2
+        nsteps = int(1/dt)
+
+        def rhs_strong(t, u):
+            bc = discr.interpolate_boundary_function(
+                    lambda x: u_analytic(t, x),
+                    "inflow")
+
+            rhsint =   a[0]*discr.differentiate(0, u)
+                    #+ a[1]*discr.differentiate(1, u)
+            rhsflux = discr.lift_interior_flux(flux, u)
+            rhsbdry = discr.lift_boundary_flux(flux, u, bc, "inflow")
+
+            return rhsint-discr.apply_inverse_mass_matrix(rhsflux+rhsbdry)
+
+        sym_map = SymmetryMap(discr, 
+                lambda x: num.array([x[0], -x[1]]),
+                {0:3, 2:1, 5:6, 7:4})
+
+        for flux_name, flux in [
+                ("Lax-Friedrichs",
+                    dot(normal_2d, a) * local
+                    - dot(normal_2d, a) * average
+                    + 0.5 *(local-neighbor)),
+                ("Central",
+                    dot(normal_2d, a) * local
+                    - dot(normal_2d, a) * average),
+                ]:
+            stepper = RK4TimeStepper()
+            for step in range(nsteps):
+                u = stepper(u, step*dt, dt, rhs_strong)
+                sym_error_u = u-sym_map(u)
+                sym_error_u_l2 = sqrt(sym_error_u*discr.apply_mass_matrix(sym_error_u))
+                self.assert_(sym_error_u_l2 < 1e-14)
 
 
 
