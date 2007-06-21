@@ -725,13 +725,11 @@ class TestHedge(unittest.TestCase):
                 {0:3, 2:1, 5:6, 7:4})
 
         for flux_name, flux in [
-                ("Lax-Friedrichs",
-                    dot(normal_2d, a) * local
-                    - dot(normal_2d, a) * average
+                ("lax-friedrichs",
+                    dot(normal_2d, a) * (local-average)
                     + 0.5 *(local-neighbor)),
-                ("Central",
-                    dot(normal_2d, a) * local
-                    - dot(normal_2d, a) * average),
+                ("central",
+                    dot(normal_2d, a) * (local-average) * average),
                 ]:
             stepper = RK4TimeStepper()
             for step in range(nsteps):
@@ -769,12 +767,10 @@ class TestHedge(unittest.TestCase):
 
         for flux_name, flux in [
                 ("lax-friedrichs",
-                    dot(normal_2d, a) * local
-                    - dot(normal_2d, a) * average
+                    dot(normal_2d, a) * (local-average)
                     + 0.5 *(local-neighbor)),
                 ("central",
-                    dot(normal_2d, a) * local
-                    - dot(normal_2d, a) * average),
+                    dot(normal_2d, a) * (local-average) * average),
                 ]:
 
             eoc_rec = EOCRecorder()
