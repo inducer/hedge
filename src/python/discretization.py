@@ -114,7 +114,7 @@ class Discretization:
 
             for i, j in zip(findices_l, findices_shuffled_n):
                 dist = self.points[estart_l+i]-self.points[estart_n+j]
-                assert comp.norm_2(dist) < 1e-15
+                assert comp.norm_2(dist) < 1e-14
 
             self.opp_node_map[local_face] = [estart_n+j for j in findices_shuffled_n]
                         
@@ -133,7 +133,7 @@ class Discretization:
                 result[e_start+i] = f(pt)
         return result
 
-    def boundary_zeros(self, tag):
+    def boundary_zeros(self, tag=None):
         return num.zeros((len(self.boundary_points[tag]),))
 
     def interpolate_boundary_function(self, f, tag=None):
@@ -211,30 +211,29 @@ class Discretization:
         onm = self.opp_node_map[local_face]
         fl_values = num.array([field[el_start+i] for i in fl_indices])
         fn_values = num.array([field[onm[i]] for i in range(len(fl_indices))])
-        if trace:
-            rel_start, rel_end = self.element_ranges[remote_face[0].id]
-            print "locf", field[el_start:el_end]
-            print "remf", field[rel_start:rel_end]
-            #print "remfi", [onm[el_start+i]-rel_start for i in fl_indices]
-            #print "remfi#", len(self.element_map[el.id].unit_nodes())
 
         result[el_start:el_end] += \
                 self.lift_face_values(flux, local_face, 
                         fl_values, fn_values, fl_indices, trace)
 
-    def lift_interior_flux(self, flux, field, glob_trace=False):
+    def lift_interior_flux(self, flux, field):
         result = num.zeros_like(field)
-        for face1, face2 in self.mesh.interfaces:
-            e1, f1 = face1
-            e2, f2 = face2
-            #print (e1.id, f1), (e2.id, f2)
-            trace = glob_trace and \
-                    (set([e1.id, e2.id]) in [set([0, 1]), set([3,2])])
-            self.lift_face(flux, face1, face2, field, result, trace and e1.id in [3,0])
-            self.lift_face(flux, face2, face1, field, result, trace and e2.id in [3,0])
+        for local_face, neigh_face in self.mesh.both_interfaces():
+            el, fl = local_face
+
+            el_start, el_end = self.element_ranges[el.id]
+            fl_indices = self.element_map[el.id].face_indices()[fl]
+
+            onm = self.opp_node_map[local_face]
+            fl_values = num.array([field[el_start+i] for i in fl_indices])
+            fn_values = num.array([field[onm[i]] for i in range(len(fl_indices))])
+
+            result[el_start:el_end] += \
+                    self.lift_face_values(flux, local_face, 
+                            fl_values, fn_values, fl_indices)
         return result
     
-    def lift_boundary_flux(self, tag, flux, field, bfield):
+    def lift_boundary_flux(self, flux, field, bfield, tag=None):
         result = num.zeros_like(field)
         ranges = self.boundary_ranges[tag]
 
@@ -245,16 +244,11 @@ class Discretization:
             fl_indices = self.element_map[el.id].face_indices()[fl]
             fn_start, fn_end = ranges[face]
 
-            #print "eid", el.id, self.points[el_start+fl_indices[0]], self.points[el_start+fl_indices[-1]]
-
             fl_values = num.array([field[el_start+i] for i in fl_indices])
             fn_values = bfield[fn_start:fn_end]
 
             result[el_start:el_end] += \
-                    self.lift_face_values(flux, face, 
-                            fl_values, fn_values, fl_indices,
-                            )
-                            #True)
+                    self.lift_face_values(flux, face, fl_values, fn_values, fl_indices)
         return result
     
     # misc stuff --------------------------------------------------------------

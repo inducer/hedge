@@ -310,8 +310,7 @@ class TestHedge(unittest.TestCase):
             self.assert_(linf_error < 3e-5)
     # -------------------------------------------------------------------------
     def test_2d_gauss_theorem(self):
-        """Verify Gauss's theorem explicitly on a couple of elements 
-        in random orientation."""
+        """Verify Gauss's theorem explicitly on a mesh."""
 
         from hedge.element import TriangularElement
         from hedge.tools import AffineMap
@@ -342,15 +341,14 @@ class TestHedge(unittest.TestCase):
 
         discr = Discretization(make_disk_mesh(), edata)
         ones = discr.interpolate_volume_function(lambda x: 1)
-        face_zeros = discr.boundary_zeros("boundary")
-        face_ones = discr.interpolate_boundary_function(
-                "boundary", lambda x: 1)
+        face_zeros = discr.boundary_zeros()
+        face_ones = discr.interpolate_boundary_function(lambda x: 1)
 
         f1_v = discr.interpolate_volume_function(f1)
         f2_v = discr.interpolate_volume_function(f2)
 
-        f1_f = discr.interpolate_boundary_function("boundary", f1)
-        f2_f = discr.interpolate_boundary_function("boundary", f2)
+        f1_f = discr.interpolate_boundary_function(f1)
+        f2_f = discr.interpolate_boundary_function(f2)
 
         dx_v = discr.differentiate(0, f1_v)
         dy_v = discr.differentiate(1, f2_v)
@@ -360,10 +358,8 @@ class TestHedge(unittest.TestCase):
                 ones*discr.apply_mass_matrix(dy_v)
 
         boundary_int = (
-                discr.lift_boundary_flux("boundary",
-                    one_sided_x, f1_v, face_zeros) +
-                discr.lift_boundary_flux("boundary",
-                    one_sided_y, f2_v, face_zeros)
+                discr.lift_boundary_flux(one_sided_x, f1_v, face_zeros) +
+                discr.lift_boundary_flux(one_sided_y, f2_v, face_zeros)
                 )*ones
 
         self.assert_(abs(boundary_int-int_div) < 1e-15)
@@ -643,7 +639,7 @@ class TestHedge(unittest.TestCase):
         res = discr.lift_interior_flux((local-neighbor)*normal_2d[1], u)
         #discr.visualize_vtk("dual.vtk", [("u", u), ("res", res)])
         ones = discr.interpolate_volume_function(lambda x: 1)
-        print res*ones
+        self.assert_(abs(res*ones) < 5e-14)
 
 
                     

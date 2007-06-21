@@ -128,7 +128,7 @@ def _tag_and_make_conformal_mesh(boundary_tagger, generated_mesh_info):
 
 
 def make_single_element_mesh(a=-0.5, b=0.5, 
-        boundary_tagger=lambda vertices, face_indices: "dirichlet"):
+        boundary_tagger=lambda vertices, face_indices: None):
     n = 2
     node_dict = {}
     points = []
@@ -160,7 +160,7 @@ def make_single_element_mesh(a=-0.5, b=0.5,
 
 
 def make_regular_square_mesh(a=-0.5, b=0.5, n=5, 
-        boundary_tagger=lambda vertices, face_indices: "boundary"):
+        boundary_tagger=lambda vertices, face_indices: None):
     node_dict = {}
     points = []
     points_1d = num.linspace(a, b, n)
@@ -206,7 +206,7 @@ def make_regular_square_mesh(a=-0.5, b=0.5, n=5,
 
 
 def make_square_mesh(a=-0.5, b=0.5, max_area=4e-3, 
-        boundary_tagger=lambda vertices, face_indices: "boundary"):
+        boundary_tagger=lambda vertices, face_indices: None):
     def round_trip_connect(start, end):
         for i in range(start, end):
             yield i, i+1
@@ -234,7 +234,7 @@ def make_square_mesh(a=-0.5, b=0.5, max_area=4e-3,
 
 
 def make_disk_mesh(r=0.5, faces=50, max_area=4e-3, 
-        boundary_tagger=lambda vertices, face_indices: "boundary"):
+        boundary_tagger=lambda vertices, face_indices: None):
     from math import cos, sin, pi
 
     def round_trip_connect(start, end):
