@@ -149,18 +149,20 @@ def main() :
     rhsstep = stepfactor
 
     flux = dot(normal_2d, a) * local \
-            - dot(normal_2d, a) * average \
-            + 0.5 *(local-neighbor)
+            - dot(normal_2d, a) * average #\
+            #+ 0.5 *(local-neighbor)
 
     def rhs_strong(t, u):
         from pytools import argmax
 
-        bc = discr.interpolate_boundary_function("inflow",
-                lambda x: u_analytic(t, x))
+        bc = discr.interpolate_boundary_function(
+                lambda x: u_analytic(t, x),
+                "inflow")
 
         rhsint =   a[0]*discr.differentiate(0, u)
                 #+ a[1]*discr.differentiate(1, u)
-        rhsflux = discr.lift_interior_flux(flux, u, rhscnt[0] == 3)
+        #rhsflux = discr.lift_interior_flux(flux, u, rhscnt[0] == 3)
+        rhsflux = discr.lift_interior_flux(flux, u)
         rhsbdry = discr.lift_boundary_flux("inflow", flux, u, bc)
 
         if False:

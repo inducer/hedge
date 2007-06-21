@@ -92,32 +92,31 @@ class Discretization:
 
     def _find_opposite_node_map(self):
         self.opp_node_map = {}
-        for face1, face2 in self.mesh.interfaces:
-            e1, f1 = face1
-            e2, f2 = face2
 
-            e1_start, e1_end = self.element_ranges[e1.id]
-            e2_start, e2_end = self.element_ranges[e2.id]
+        for local_face, neigh_face in self.mesh.both_interfaces():
+            e_l, fi_l = local_face
+            e_n, fi_n = neigh_face
 
-            f1_vertices = e1.faces[f1]
-            f2_vertices = e2.faces[f2]
+            estart_l, eend_l = self.element_ranges[e_l.id]
+            estart_n, eend_n = self.element_ranges[e_n.id]
 
-            e1data = self.element_map[e1.id]
-            e2data = self.element_map[e2.id]
+            vertices_l = e_l.faces[fi_l]
+            vertices_n = e_n.faces[fi_n]
 
-            f1_indices = e1data.face_indices()[f1]
-            f2_indices = e2data.face_indices()[f2]
+            edata_l = self.element_map[e_l.id]
+            edata_n = self.element_map[e_n.id]
 
-            f2_indices_for_1 = e1data.shuffle_face_indices_to_match(
-                    f1_vertices, f2_vertices, f2_indices)
+            findices_l = edata_l.face_indices()[fi_l]
+            findices_n = edata_n.face_indices()[fi_n]
 
-            for i, j in zip(f1_indices, f2_indices_for_1):
-                dist = self.points[e1_start+i]-self.points[e2_start+j]
-                assert comp.norm_2(dist) < 1e-12
+            findices_shuffled_n = edata_l.shuffle_face_indices_to_match(
+                    vertices_l, vertices_n, findices_n)
 
-                self.opp_node_map[e1_start+i] = e2_start+j
-                self.opp_node_map[e2_start+j] = e1_start+i
+            for i, j in zip(findices_l, findices_shuffled_n):
+                dist = self.points[estart_l+i]-self.points[estart_n+j]
+                assert comp.norm_2(dist) < 1e-15
 
+            self.opp_node_map[local_face] = [estart_n+j for j in findices_shuffled_n]
                         
     # vector construction -----------------------------------------------------
     def volume_zeros(self):
@@ -209,15 +208,15 @@ class Discretization:
         el_start, el_end = self.element_ranges[el.id]
         fl_indices = self.element_map[el.id].face_indices()[fl]
 
-        onm = self.opp_node_map
+        onm = self.opp_node_map[local_face]
         fl_values = num.array([field[el_start+i] for i in fl_indices])
-        fn_values = num.array([field[onm[el_start+i]] for i in fl_indices])
+        fn_values = num.array([field[onm[i]] for i in range(len(fl_indices))])
         if trace:
             rel_start, rel_end = self.element_ranges[remote_face[0].id]
             print "locf", field[el_start:el_end]
             print "remf", field[rel_start:rel_end]
-            print "remfi", [onm[el_start+i]-rel_start for i in fl_indices]
-            print "remfi#", len(self.element_map[el.id].unit_nodes())
+            #print "remfi", [onm[el_start+i]-rel_start for i in fl_indices]
+            #print "remfi#", len(self.element_map[el.id].unit_nodes())
 
         result[el_start:el_end] += \
                 self.lift_face_values(flux, local_face, 

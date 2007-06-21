@@ -614,7 +614,7 @@ class TestHedge(unittest.TestCase):
         generated_mesh = triangle.build(mesh_info, 
                 attributes=True,
                 area_constraints=True)
-        triangle.write_gnuplot_mesh("mesh.dat", generated_mesh)
+        #triangle.write_gnuplot_mesh("mesh.dat", generated_mesh)
 
         from hedge.mesh import ConformalMesh
 
@@ -627,7 +627,7 @@ class TestHedge(unittest.TestCase):
 
         from hedge.element import TriangularElement
         from hedge.discretization import Discretization
-        discr = Discretization(mesh, TriangularElement(2))
+        discr = Discretization(mesh, TriangularElement(4))
 
         u_i = discr.interpolate_tag_volume_function(
                 lambda x: sin(x[0]-x[1]),
@@ -641,7 +641,7 @@ class TestHedge(unittest.TestCase):
 
         from hedge.flux import local, neighbor, normal_2d
         res = discr.lift_interior_flux((local-neighbor)*normal_2d[1], u)
-        discr.visualize_vtk("dual.vtk", [("u", u), ("res", res)])
+        #discr.visualize_vtk("dual.vtk", [("u", u), ("res", res)])
         ones = discr.interpolate_volume_function(lambda x: 1)
         print res*ones
 

@@ -45,6 +45,11 @@ class Mesh:
       element_tag -> [element instances]
     """
 
+    def both_interfaces(self):
+        for face1, face2 in self.interfaces:
+            yield face1, face2
+            yield face2, face1
+
 
 
 
