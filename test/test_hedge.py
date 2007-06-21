@@ -644,10 +644,6 @@ class TestHedge(unittest.TestCase):
     def test_symmetry_preservation_2d(self):
         """Test whether hedge preserves symmetry in 2D advection."""
 
-        def dot(x, y): 
-            from operator import add
-            return reduce(add, (xi*yi for xi, yi in zip(x,y)))
-
         import pylinear.array as num
 
         def make_mesh():
@@ -693,18 +689,17 @@ class TestHedge(unittest.TestCase):
         from hedge.element import TriangularElement
         from hedge.flux import zero, normal_2d, jump_2d, local, neighbor, average
         from hedge.timestep import RK4TimeStepper
+        from hedge.tools import dot
         from math import sqrt
 
         mesh = make_mesh()
         discr = Discretization(mesh, TriangularElement(4))
 
-        def f(x):
-            if x < 0.5:
-                return 0
-            else:
-                return (x-0.5)
-
         a = num.array([1,0])
+
+        def f(x):
+            if x < 0.5: return 0
+            else: return (x-0.5)
 
         def u_analytic(t, x):
             return f(a*x+t)
@@ -744,7 +739,79 @@ class TestHedge(unittest.TestCase):
                 sym_error_u = u-sym_map(u)
                 sym_error_u_l2 = sqrt(sym_error_u*discr.apply_mass_matrix(sym_error_u))
                 self.assert_(sym_error_u_l2 < 1e-14)
+    # -------------------------------------------------------------------------
+    def test_convergence_advec_2d(self):
+        """Test whether 2D advection actually converges."""
 
+        import pylinear.array as num
+        from hedge.mesh import make_disk_mesh
+        from hedge.discretization import Discretization
+        from hedge.element import TriangularElement
+        from hedge.timestep import RK4TimeStepper
+        from hedge.tools import EOCRecorder, dot
+        from hedge.flux import zero, normal_2d, local, neighbor, average
+        from math import sin, pi, sqrt
+
+        a = num.array([1,0])
+
+        def u_analytic(t, x):
+            return sin(a*x+t)
+
+        def boundary_tagger_circle(vertices, (v1, v2)):
+            center = (num.array(vertices[v1])+num.array(vertices[v2]))/2
+            
+            if center * a > 0:
+                return "inflow"
+            else:
+                return "outflow"
+
+        mesh = make_disk_mesh(r=pi, boundary_tagger=boundary_tagger_circle, max_area=0.5)
+
+        for flux_name, flux in [
+                ("lax-friedrichs",
+                    dot(normal_2d, a) * local
+                    - dot(normal_2d, a) * average
+                    + 0.5 *(local-neighbor)),
+                ("central",
+                    dot(normal_2d, a) * local
+                    - dot(normal_2d, a) * average),
+                ]:
+
+            eoc_rec = EOCRecorder()
+
+            for order in [1,2,3,4,5,6]:
+                discr = Discretization(mesh, TriangularElement(order))
+
+                u = discr.interpolate_volume_function(lambda x: u_analytic(0, x))
+                dt = 1e-2
+                nsteps = int(0.1/dt)
+
+                def rhs_strong(t, u):
+                    bc = discr.interpolate_boundary_function(
+                            lambda x: u_analytic(t, x),
+                            "inflow")
+
+                    rhsint =   a[0]*discr.differentiate(0, u)
+                            #+ a[1]*discr.differentiate(1, u)
+                    rhsflux = discr.lift_interior_flux(flux, u)
+                    rhsbdry = discr.lift_boundary_flux(flux, u, bc, "inflow")
+
+                    return rhsint-discr.apply_inverse_mass_matrix(rhsflux+rhsbdry)
+
+                stepper = RK4TimeStepper()
+                for step in range(nsteps):
+                    u = stepper(u, step*dt, dt, rhs_strong)
+
+                u_true = discr.interpolate_volume_function(
+                        lambda x: u_analytic(nsteps*dt, x))
+                error = u-u_true
+                error_l2 = sqrt(error*discr.apply_mass_matrix(error))
+                eoc_rec.add_data_point(order, error_l2)
+            self.assert_(eoc_rec.estimate_order_of_convergence()[0,1] > 7)
+            #print "%s\n%s\n" % (flux_name.upper(), "-" * len(flux_name))
+            #print eoc_rec.pretty_print(abscissa_label="Poly. Order", 
+                    #error_label="L2 Error")
+                
 
 
 
