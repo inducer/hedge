@@ -68,31 +68,46 @@ def main() :
 
     dt = 1e-2
     stepfactor = 1
-    nsteps = int(0.3/dt)
+    nsteps = int(2/dt)
 
-    flux = dot(normal_2d, a) * local \
-            - dot(normal_2d, a) * average #\
-            #+ 0.5 *(local-neighbor)
+    flux_weak = dot(normal_2d, a) * average - 0.5 *(local-neighbor)
+    flux_strong = dot(normal_2d, a)*local - flux_weak
 
     def rhs_strong(t, u):
         from pytools import argmax
 
-        bc = discr.interpolate_boundary_function(
+        bc_in = discr.interpolate_boundary_function(
+                lambda x: u_analytic(t, x),
+                "inflow")
+        rhsint =   a[0]*discr.differentiate(0, u)
+                #+ a[1]*discr.differentiate(1, u)
+        rhsflux = discr.lift_interior_flux(flux_strong, u)
+        rhsbdry = discr.lift_boundary_flux(flux_strong, u, bc_in, "inflow")
+
+        return rhsint-discr.apply_inverse_mass_matrix(rhsflux+rhsbdry)
+
+    def rhs_weak(t, u):
+        from pytools import argmax
+
+        bc_in = discr.interpolate_boundary_function(
                 lambda x: u_analytic(t, x),
                 "inflow")
 
-        rhsint =   a[0]*discr.differentiate(0, u)
-                #+ a[1]*discr.differentiate(1, u)
-        rhsflux = discr.lift_interior_flux(flux, u)
-        rhsbdry = discr.lift_boundary_flux(flux, u, bc, "inflow")
+        bc_out = discr.boundarize_volume_field(u, "outflow")
 
-        return rhsint-discr.apply_inverse_mass_matrix(rhsflux+rhsbdry)
+        rhsint =   a[0]*discr.apply_stiffness_matrix_t(0, u)
+                #+ a[1]*discr.apply_stiffness_matrix_t(1, u)
+        rhsflux = discr.lift_interior_flux(flux_weak, u)
+        rhsbdry = discr.lift_boundary_flux(flux_weak, u, bc_in, "inflow") + \
+                discr.lift_boundary_flux(flux_weak, u, bc_out, "outflow")
+
+        return -rhsint+discr.apply_inverse_mass_matrix(rhsflux+rhsbdry)
 
     stepper = RK4TimeStepper()
     for step in range(nsteps):
         if step % stepfactor == 0:
             print "timestep %d, t=%f" % (step, dt*step)
-        u = stepper(u, step*dt, dt, rhs_strong)
+        u = stepper(u, step*dt, dt, rhs_weak)
 
         if step % stepfactor == 0:
             job = Job("visualization")

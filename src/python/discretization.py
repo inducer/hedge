@@ -268,6 +268,22 @@ class Discretization:
 
         return result
     
+    def boundarize_volume_field(self, field, tag=None):
+        result = self.boundary_zeros(tag)
+        ranges = self.boundary_ranges[tag]
+
+        for face in self.mesh.tag_to_boundary[tag]:
+            el, fl = face
+
+            el_start, el_end = self.element_ranges[el.id]
+            fl_indices = self.element_map[el.id].face_indices()[fl]
+            fn_start, fn_end = ranges[face]
+
+            for i, fi in enumerate(fl_indices):
+                result[fn_start+i] = field[el_start+fi]
+
+        return result
+    
     def find_element(self, idx):
         for i, (start, stop) in enumerate(self.element_ranges):
             if start <= idx < stop:
