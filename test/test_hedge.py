@@ -162,9 +162,9 @@ class TestHedge(unittest.TestCase):
         import pylinear.computation as comp
         from pylinear.randomized import make_random_vector
 
-        tri = TriangularElement(8)
+        tri = TriangularElement(4)
 
-        for i in range(10):
+        for i in range(50):
             vertices = [make_random_vector(2, num.Float) for vi in range(3)]
             map = tri.get_map_unit_to_global(vertices)
 
@@ -172,10 +172,16 @@ class TestHedge(unittest.TestCase):
             nodes = [map(v) for v in unodes]
             normals, jacobians = tri.face_normals_and_jacobians(map)
 
+            from operator import add
+            face_nodes = set(reduce(add, [[f[0], f[-1]] for f in tri.face_indices()]))
             for face_i, normal, jac in zip(tri.face_indices(), normals, jacobians):
                 mapped_start = nodes[face_i[0]]
                 mapped_end = nodes[face_i[-1]]
                 mapped_dir = mapped_end-mapped_start
+
+                opp_node = (face_nodes - set([face_i[0], face_i[-1]])).__iter__().next()
+                mapped_opposite = nodes[opp_node]
+
                 start = unodes[face_i[0]]
                 end = unodes[face_i[-1]]
                 true_jac = comp.norm_2(mapped_end-mapped_start)/2
@@ -186,6 +192,7 @@ class TestHedge(unittest.TestCase):
                 self.assert_(abs(true_jac - jac)/true_jac < 1e-13)
                 self.assert_(abs(comp.norm_2(normal) - 1) < 1e-13)
                 self.assert_(abs(normal*mapped_dir) < 1e-13)
+                self.assert_((mapped_opposite-mapped_start)*normal < 0)
     # -------------------------------------------------------------------------
     def test_tri_map(self):
         from hedge.element import TriangularElement
