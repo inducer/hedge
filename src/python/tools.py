@@ -28,6 +28,17 @@ class AffineMap(object):
             self._jacobian = determinant(self.matrix)
             return self._jacobian
 
+class Rotation(AffineMap):
+    def __init__(self, angle):
+        # FIXME: Add axis, make multidimensional
+        from math import sin, cos
+        AffineMap.__init__(self,
+                num.array([
+                    [cos(angle), sin(angle)],
+                    [-sin(angle), cos(angle)]]),
+                num.zeros((2,)))
+
+
 
 
 

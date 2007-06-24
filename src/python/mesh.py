@@ -84,6 +84,9 @@ class ConformalMesh(Mesh):
         for el in self.elements:
             self.tag_to_elements.setdefault(el.tag, []).append(el)
 
+    def transform(self, map):
+        self.vertices = [map(x) for x in self.vertices]
+
     def _build_connectivity(self, boundary_tags):
         # create face_map, which is a mapping of
         # (vertices on a face) -> [(element, face_idx) for elements bordering that face]
@@ -169,19 +172,25 @@ def make_regular_square_mesh(a=-0.5, b=0.5, n=5,
             node_dict[i,j] = len(points)
             points.append(num.array([points_1d[i], points_1d[j]]))
 
+    from random import shuffle
+    def shuffled(l):
+        result = list(l)
+        shuffle(result)
+        return result
+
     elements = []
     for i in range(n-1):
         for j in range(n-1):
-            elements.append((
+            elements.append(shuffled((
                 node_dict[i,j],
                 node_dict[i+1,j],
                 node_dict[i,j+1],
-                ))
-            elements.append((
+                )))
+            elements.append(shuffled((
                 node_dict[i+1,j+1],
                 node_dict[i,j+1],
                 node_dict[i+1,j],
-                ))
+                )))
 
     boundary_faces = []
 
