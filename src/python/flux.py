@@ -32,10 +32,6 @@ jump_3d = ArithmeticList([
     ])
 
 @work_with_arithmetic_containers
-def if_bc_equals(bcflag, THEN, ELSE):
-    return _internal.IfBCEqualsFlux(bcflag, THEN, ELSE)
-
-@work_with_arithmetic_containers
 def penalty(coefficient, exponent):
     return _internal.PenaltyTermFlux(coefficient, exponent)
 
