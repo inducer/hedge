@@ -21,7 +21,7 @@ def main() :
             make_single_element_mesh
     from hedge.discretization import Discretization, generate_ones_on_boundary
     from hedge.flux import zero, trace_sign, \
-            if_bc_equals, normal_2d, jump_2d, \
+            normal_2d, jump_2d, \
             local, neighbor, average
     from pytools.arithmetic_container import ArithmeticList
     from pytools.stopwatch import Job
@@ -30,7 +30,7 @@ def main() :
     a = num.array([1,0])
 
     def u_analytic(t, x):
-        return sin(a*x+t)
+        return sin(5*a*x+t)
 
     def boundary_tagger_circle(vertices, (v1, v2)):
         center = (num.array(vertices[v1])+num.array(vertices[v2]))/2
@@ -54,8 +54,9 @@ def main() :
     #mesh = make_square_mesh(boundary_tagger=boundary_tagger_square, max_area=0.2)
     #mesh = make_regular_square_mesh(boundary_tagger=boundary_tagger_square, n=3)
     #mesh = make_single_element_mesh(boundary_tagger=boundary_tagger_square)
-    mesh = make_disk_mesh(r=pi, boundary_tagger=boundary_tagger_circle, max_area=0.5)
-    discr = Discretization(mesh, TriangularElement(2))
+    #mesh = make_disk_mesh(r=pi, boundary_tagger=boundary_tagger_circle, max_area=0.5)
+    mesh = make_disk_mesh(boundary_tagger=boundary_tagger_circle)
+    discr = Discretization(mesh, TriangularElement(4))
 
     print "%d elements" % len(discr.mesh.elements)
 
@@ -70,7 +71,7 @@ def main() :
     stepfactor = 1
     nsteps = int(2/dt)
 
-    flux_weak = dot(normal_2d, a) * average - 0.5 *(local-neighbor)
+    flux_weak = dot(normal_2d, a) * average# - 0.5 *(local-neighbor)
     flux_strong = dot(normal_2d, a)*local - flux_weak
 
     def rhs_strong(t, u):
@@ -107,7 +108,7 @@ def main() :
     for step in range(nsteps):
         if step % stepfactor == 0:
             print "timestep %d, t=%f" % (step, dt*step)
-        u = stepper(u, step*dt, dt, rhs_weak)
+        u = stepper(u, step*dt, dt, rhs_strong)
 
         if step % stepfactor == 0:
             job = Job("visualization")
