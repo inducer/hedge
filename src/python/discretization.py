@@ -252,6 +252,14 @@ class Discretization:
         return result
     
     # misc stuff --------------------------------------------------------------
+    def dt_factor(self, max_system_ev):
+        distinct_edata = set(self.element_map)
+        return 1/max_system_ev \
+                * min(edata.dt_non_geometric_factor() for edata in distinct_edata) \
+                * min(self.element_map[el.id].dt_geometric_factor(
+                    [self.mesh.vertices[i] for i in el.vertices], map)
+                    for el, map in zip(self.mesh.elements, self.maps))
+
     def volumize_boundary_field(self, tag, bfield):
         result = self.volume_zeros()
         ranges = self.boundary_ranges[tag]

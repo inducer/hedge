@@ -25,12 +25,13 @@ def main() :
             local, neighbor, average
     from hedge.tools import Rotation
 
-    #mesh = make_disk_mesh()
+    mesh = make_disk_mesh()
     #mesh = make_regular_square_mesh(n=5)
-    mesh = make_square_mesh(max_area=0.008)
+    #mesh = make_square_mesh(max_area=0.008)
     #mesh.transform(Rotation(pi/8))
 
-    discr = Discretization(mesh, TriangularElement(4))
+    order = 4
+    discr = Discretization(mesh, TriangularElement(order))
     print "%d elements" % len(discr.mesh.elements)
 
     # u, v1, v2
@@ -39,8 +40,10 @@ def main() :
         discr.volume_zeros(), 
         discr.volume_zeros()])
 
-    dt = 1e-2
+    dt = discr.dt_factor(1)
     nsteps = int(1/dt)
+    print "dt", dt
+    print "nsteps", nsteps
 
     bc = discr.boundary_zeros()
     flux_weak = average*normal_2d

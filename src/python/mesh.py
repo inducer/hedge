@@ -255,7 +255,7 @@ def make_disk_mesh(r=0.5, faces=50, max_area=4e-3,
         return area > max_area
 
     points = [(r*cos(angle), r*sin(angle))
-            for angle in num.linspace(0, 2*pi, 50, endpoint=False)]
+            for angle in num.linspace(0, 2*pi, faces, endpoint=False)]
             
     import meshpy.triangle as triangle
 

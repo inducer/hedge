@@ -408,4 +408,17 @@ class TriangularElement:
         else:
             return face_2_indices
 
+    # time step scaling -------------------------------------------------------
+    def dt_non_geometric_factor(self):
+        unodes = self.unit_nodes()
+        return 2/3*min(
+                min(comp.norm_2(unodes[fvi+1]-unodes[fvi])
+                    for fvi in range(len(face_indices)-1))
+                for face_indices in self.face_indices())
+
+    def dt_geometric_factor(self, vertices, map):
+        area = abs(2*map.jacobian)
+        semiperimeter = sum(comp.norm_2(vertices[vi1]-vertices[vi2]) 
+                for vi1, vi2 in [(0,1), (1,2), (2,0)])/2
+        return area/semiperimeter
 

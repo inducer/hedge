@@ -25,12 +25,12 @@ def main() :
             local, neighbor, average
     from pytools.arithmetic_container import ArithmeticList
     from pytools.stopwatch import Job
-    from math import sin, cos,pi
+    from math import sin, cos, pi, sqrt
 
     a = num.array([1,0])
 
     def u_analytic(t, x):
-        return sin(5*a*x+t)
+        return sin((a*x+t))
 
     def boundary_tagger_circle(vertices, (v1, v2)):
         center = (num.array(vertices[v1])+num.array(vertices[v2]))/2
@@ -40,23 +40,23 @@ def main() :
         else:
             return "outflow"
 
+    r=1e-4
     def boundary_tagger_square(vertices, (v1, v2)):
         p1 = num.array(vertices[v1])
         p2 = num.array(vertices[v2])
         
-        if abs((p1-p2) * a) < 1e-4 and p1[0]>0.45:
+        if abs((p1-p2) * a) < 1e-4 and p1[0]>r*0.95:
             return "inflow"
         else:
             return "outflow"
 
-
     #mesh = make_square_mesh(boundary_tagger=boundary_tagger_square, max_area=0.1)
     #mesh = make_square_mesh(boundary_tagger=boundary_tagger_square, max_area=0.2)
-    #mesh = make_regular_square_mesh(boundary_tagger=boundary_tagger_square, n=3)
+    #mesh = make_regular_square_mesh(a=-r, b=r, boundary_tagger=boundary_tagger_square, n=3)
     #mesh = make_single_element_mesh(boundary_tagger=boundary_tagger_square)
     #mesh = make_disk_mesh(r=pi, boundary_tagger=boundary_tagger_circle, max_area=0.5)
     mesh = make_disk_mesh(boundary_tagger=boundary_tagger_circle)
-    discr = Discretization(mesh, TriangularElement(4))
+    discr = Discretization(mesh, TriangularElement(6))
 
     print "%d elements" % len(discr.mesh.elements)
 
@@ -67,12 +67,14 @@ def main() :
 
     u = discr.interpolate_volume_function(lambda x: u_analytic(0, x))
 
-    dt = 1e-2
+    dt = 1e-3
     stepfactor = 1
     nsteps = int(2/dt)
 
     flux_weak = dot(normal_2d, a) * average# - 0.5 *(local-neighbor)
     flux_strong = dot(normal_2d, a)*local - flux_weak
+
+    rhscnt = [0]
 
     def rhs_strong(t, u):
         from pytools import argmax
@@ -85,6 +87,16 @@ def main() :
         rhsflux = discr.lift_interior_flux(flux_strong, u)
         rhsbdry = discr.lift_boundary_flux(flux_strong, u, bc_in, "inflow")
 
+        if False:
+            discr.visualize_vtk("rhs-%04d.vtk" % rhscnt[0],
+                    [
+                        ("u", u),
+                        ("int", rhsint), 
+                        ("iflux", rhsflux),
+                        ("bdry", rhsbdry),
+                        ("flux", rhsflux+rhsbdry),
+                        ])
+            rhscnt[0] += 1
         return rhsint-discr.apply_inverse_mass_matrix(rhsflux+rhsbdry)
 
     def rhs_weak(t, u):
@@ -110,7 +122,7 @@ def main() :
             print "timestep %d, t=%f" % (step, dt*step)
         u = stepper(u, step*dt, dt, rhs_strong)
 
-        if step % stepfactor == 0:
+        if False and step % stepfactor == 0:
             job = Job("visualization")
             t = (step+1)*dt
             u_true = discr.interpolate_volume_function(
@@ -122,6 +134,7 @@ def main() :
                         ], 
                     )
             job.done()
+        print "L2 norm", sqrt(u*discr.apply_mass_matrix(u))
 
 if __name__ == "__main__":
     import cProfile as profile
