@@ -30,7 +30,7 @@ class Mesh:
     After construction, a Mesh instance has (at least) the following data 
     members:
 
-    - vertices: list of Pylinear vectors of node coordinates
+    - points: list of Pylinear vectors of node coordinates
     - elements: list of Element instances
     - interfaces: a list of pairs 
 
@@ -59,11 +59,11 @@ class ConformalMesh(Mesh):
     See the Mesh class for data members provided by this class.
     """
 
-    def __init__(self, vertices, elements, boundary_tags={}, element_tags={}):
+    def __init__(self, points, elements, boundary_tags={}, element_tags={}):
         """Construct a simplical mesh.
 
-        vertices is an iterable of vertex coordinates, given as 2-vectors.
-        elements is an iterable of tuples of indices into vertices,
+        points is an iterable of vertex coordinates, given as 2-vectors.
+        elements is an iterable of tuples of indices into points,
           giving element endpoints.
         boundary_tags is a map from sets of face vertices, indicating 
           face endpoints, into user-defined boundary tags. This map
@@ -75,7 +75,7 @@ class ConformalMesh(Mesh):
         Face indices follow the convention for the respective element,
         such as Triangle or Tetrahedron, in this module.
         """
-        self.vertices = [num.asarray(v) for v in vertices]
+        self.points = [num.asarray(v) for v in points]
         self.elements = [Triangle(id, tri, element_tags.get(id)) 
                 for id, tri in enumerate(elements)]
         self._build_connectivity(boundary_tags)
@@ -85,7 +85,7 @@ class ConformalMesh(Mesh):
             self.tag_to_elements.setdefault(el.tag, []).append(el)
 
     def transform(self, map):
-        self.vertices = [map(x) for x in self.vertices]
+        self.points = [map(x) for x in self.points]
 
     def _build_connectivity(self, boundary_tags):
         # create face_map, which is a mapping of

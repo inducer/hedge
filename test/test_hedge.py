@@ -309,8 +309,8 @@ class TestHedge(unittest.TestCase):
 
             df_num = discr.differentiate(coord, f)
             error = df_num - df
-            discr.visualize_vtk("diff-err.vtk",
-                    [("f", f), ("df", df), ("df_num", df_num), ("error", error)])
+            #discr.visualize_vtk("diff-err.vtk",
+                    #[("f", f), ("df", df), ("df_num", df_num), ("error", error)])
 
             linf_error = comp.norm_infinity(df_num-df)
             #print linf_error
@@ -649,7 +649,7 @@ class TestHedge(unittest.TestCase):
         self.assert_(abs(res*ones) < 5e-14)
     # -------------------------------------------------------------------------
     def test_symmetry_preservation_2d(self):
-        """Test whether hedge preserves symmetry in 2D advection."""
+        """Test whether we preserve symmetry in 2D advection."""
 
         import pylinear.array as num
 
@@ -743,7 +743,7 @@ class TestHedge(unittest.TestCase):
                 u = stepper(u, step*dt, dt, rhs_strong)
                 sym_error_u = u-sym_map(u)
                 sym_error_u_l2 = sqrt(sym_error_u*discr.apply_mass_matrix(sym_error_u))
-                self.assert_(sym_error_u_l2 < 1e-14)
+                self.assert_(sym_error_u_l2 < 1e-13)
     # -------------------------------------------------------------------------
     def test_convergence_advec_2d(self):
         """Test whether 2D advection actually converges."""

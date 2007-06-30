@@ -143,6 +143,8 @@ class TriangularElement:
 
     def __init__(self, order):
         self.order = order
+        self.dimensions = 2
+        self.has_local_jacobians = False
 
     def get_map_unit_to_global(self, vertices):
         """Return an affine map that maps the unit coordinates of the reference

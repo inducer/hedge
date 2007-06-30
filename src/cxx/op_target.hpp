@@ -98,8 +98,9 @@ namespace hedge {
         if (m_operand.size() != width)
           throw std::runtime_error(
               "operand size does not match matrix width");
-        m_result.resize(height);
-        m_result.clear();
+        if (m_result.size() != height)
+          throw std::runtime_error(
+              "result size does not match matrix height");
       }
 
       void finalize() const
@@ -118,7 +119,6 @@ namespace hedge {
           prod(submat, subrange(m_operand, j_start, j_stop));
       }
 
-    protected:
       const vector &m_operand;
       vector &m_result;
   };

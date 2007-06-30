@@ -1,7 +1,8 @@
 #include <boost/numeric/ublas/matrix_sparse.hpp>
 #include <boost/python.hpp>
 #include "op_target.hpp"
-#include "elementgroup.hpp"
+#include "primitives.hpp"
+#include "wrap_helpers.hpp"
 
 
 
@@ -27,6 +28,15 @@ namespace
           &cl::add_coefficients)
       ;
   }
+
+  tuple element_ranges_getitem(const element_ranges &eg, int i)
+  {
+    if (i < eg.m_first_element || i >= eg.m_first_element+eg.size())
+      PYTHON_ERROR(IndexError, "element_ranges index out of bounds");
+
+    const element_ranges::element_range &er = eg[i];
+    return make_tuple(er.first, er.second);
+  }
 }
 
 
@@ -35,17 +45,24 @@ namespace
 void hedge_expose_dg()
 {
   {
-    typedef element_group cl;
-    class_<cl>("ElementGroup")
-      .def("size", &cl::size)
+    typedef element_ranges cl;
+    class_<cl>("ElementRanges", init<unsigned>())
+      .def("__len__", &cl::size)
       .def("clear", &cl::clear)
-      .def("add_range", &cl::add_range)
+      .def("append_range", &cl::append_range)
+      .def("__getitem__", element_ranges_getitem)
       ;
   }
+
   typedef matrix_target<ublas::coordinate_matrix<double> > my_matrix_target;
 
   def("apply_elwise_matrix", apply_elwise_matrix<vector_target, matrix>);
   def("apply_elwise_matrix", apply_elwise_matrix<my_matrix_target, matrix>);
+
+  def("apply_elwise_scaled_matrix", 
+      apply_elwise_scaled_matrix<vector_target, matrix>);
+  def("apply_elwise_scaled_matrix", 
+      apply_elwise_scaled_matrix<my_matrix_target, matrix>);
 
   {
     typedef vector_target cl;
