@@ -4,6 +4,7 @@
 
 
 void hedge_expose_fluxes();
+void hedge_expose_dg();
 
 
 
@@ -11,4 +12,6 @@ void hedge_expose_fluxes();
 BOOST_PYTHON_MODULE(_internal)
 {
   hedge_expose_fluxes();
+  hedge_expose_fluxes();
+  hedge_expose_dg();
 }

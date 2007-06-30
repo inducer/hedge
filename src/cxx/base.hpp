@@ -10,6 +10,7 @@
 
 namespace hedge {
   typedef boost::numeric::ublas::vector<double> vector;
+  typedef boost::numeric::ublas::matrix<double> matrix;
 }
 
 
