@@ -33,6 +33,25 @@ namespace hedge { namespace flux {
 
 
 
+  class chained_flux : public flux
+  {
+    public:
+      chained_flux(const flux &child)
+        : m_child(child)
+      { }
+      double neighbor_coeff(const face &local) const
+      { return m_child.neighbor_coeff(local); }
+      double local_coeff(const face &local) const
+      { return m_child.local_coeff(local); }
+
+    private:
+      const flux &m_child;
+  };
+
+
+
+
+
 #define HEDGE_FLUX_DECLARE_NORMAL(DIR, IDX) \
   class normal_##DIR : public flux \
   { \

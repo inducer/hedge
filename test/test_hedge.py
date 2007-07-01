@@ -17,7 +17,7 @@ class TestHedge(unittest.TestCase):
         self.assert_(sum(errors) < 1e-14)
     # -------------------------------------------------------------------------
     def test_orthonormality_jacobi_1d(self):
-        from hedge.polynomial import jacobi_function, jacobi_function_2
+        from hedge.polynomial import jacobi_function
         from hedge.quadrature import LegendreGaussQuadrature
 
         max_n = 10

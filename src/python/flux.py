@@ -7,6 +7,7 @@ from pytools.arithmetic_container import ArithmeticList, \
 
 Face = _internal.Face
 Flux = _internal.Flux
+ChainedFlux = _internal.ChainedFlux
 
 
 

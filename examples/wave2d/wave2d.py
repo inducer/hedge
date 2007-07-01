@@ -97,6 +97,6 @@ def main() :
 
 if __name__ == "__main__":
     import cProfile as profile
-    #profile.run("main()", "wave2d.prof")
+    profile.run("main()", "wave2d.prof")
     main()
 

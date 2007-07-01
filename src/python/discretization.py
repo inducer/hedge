@@ -20,6 +20,7 @@ class Discretization:
         self._find_face_data()
         self._find_boundary_points_and_ranges()
         self._find_opposite_node_map()
+        self._build_face_groups()
 
     # initialization ----------------------------------------------------------
     def _build_maps_element_groups_and_points(self, local_discretization):
@@ -138,6 +139,40 @@ class Discretization:
                 assert comp.norm_2(dist) < 1e-14
 
             self.opp_node_map[local_face] = [estart_n+j for j in findices_shuffled_n]
+
+    def _build_face_groups(self):
+        from hedge._internal import FaceGroup
+        fg = FaceGroup()
+
+        for local_face, neigh_face in self.mesh.both_interfaces():
+            e_l, fi_l = local_face
+            e_n, fi_n = neigh_face
+
+            estart_l, eend_l = self.group_map[e_l.id].ranges[e_l.id]
+            estart_n, eend_n = self.group_map[e_n.id].ranges[e_n.id]
+
+            vertices_l = e_l.faces[fi_l]
+            vertices_n = e_n.faces[fi_n]
+
+            ldis_l = self.group_map[e_l.id].local_discretization
+            ldis_n = self.group_map[e_n.id].local_discretization
+
+            findices_l = ldis_l.face_indices()[fi_l]
+            findices_n = ldis_n.face_indices()[fi_n]
+
+            findices_shuffled_n = ldis_l.shuffle_face_indices_to_match(
+                    vertices_l, vertices_n, findices_n)
+
+            for i, j in zip(findices_l, findices_shuffled_n):
+                dist = self.points[estart_l+i]-self.points[estart_n+j]
+                assert comp.norm_2(dist) < 1e-14
+
+            fg.add_face(
+                    [estart_l+i for i in findices_l],
+                    [estart_n+i for i in findices_shuffled_n],
+                    self.faces[e_l.id][fi_l])
+
+        self.face_groups = [(fg, ldis_l.face_mass_matrix())]
                         
     # vector construction -----------------------------------------------------
     def volume_zeros(self):
@@ -162,11 +197,11 @@ class Discretization:
 
     # local operators ---------------------------------------------------------
     def perform_mass_operator(self, target):
-        from hedge._internal import apply_elwise_scaled_matrix
+        from hedge._internal import perform_elwise_scaled_operator
         target.begin(len(self.points), len(self.points))
         for eg in self.element_groups:
-            apply_elwise_scaled_matrix(
-                    eg.ranges, target, eg.mass_matrix, eg.jacobians)
+            perform_elwise_scaled_operator(
+                    eg.ranges, eg.mass_matrix, eg.jacobians, target)
         target.finalize()
 
     def apply_mass_matrix(self, field):
@@ -176,12 +211,11 @@ class Discretization:
         return result
 
     def perform_inverse_mass_operator(self, target):
-        from hedge._internal import apply_elwise_scaled_matrix
+        from hedge._internal import perform_elwise_scaled_operator
         target.begin(len(self.points), len(self.points))
         for eg in self.element_groups:
-            apply_elwise_scaled_matrix(
-                    eg.ranges, target, eg.inverse_mass_matrix, 
-                    eg.inverse_jacobians)
+            perform_elwise_scaled_operator(eg.ranges, eg.inverse_mass_matrix, 
+                    eg.inverse_jacobians, target)
         target.finalize()
 
     def apply_inverse_mass_matrix(self, field):
@@ -191,22 +225,20 @@ class Discretization:
         return result
 
     def perform_differentiation_operator(self, coordinate, target):
-        from hedge._internal import apply_elwise_scaled_matrix
+        from hedge._internal import perform_elwise_scaled_operator
         target.begin(len(self.points), len(self.points))
         for eg in self.element_groups:
             for coeff, mat in zip(eg.diff_coefficients[coordinate], 
                     eg.differentiation_matrices):
-                apply_elwise_scaled_matrix(
-                        eg.ranges, target, mat, coeff)
+                perform_elwise_scaled_operator(eg.ranges, mat, coeff, target)
         target.finalize()
 
     def perform_minv_st_operator(self, coordinate, target):
-        from hedge._internal import apply_elwise_scaled_matrix
+        from hedge._internal import perform_elwise_scaled_operator
         target.begin(len(self.points), len(self.points))
         for eg in self.element_groups:
             for coeff, mat in zip(eg.diff_coefficients[coordinate], eg.minv_st):
-                apply_elwise_scaled_matrix(
-                        eg.ranges, target, mat, coeff)
+                perform_elwise_scaled_operator(eg.ranges, mat, coeff, target)
         target.finalize()
 
     def differentiate(self, coordinate, field):
@@ -238,20 +270,21 @@ class Discretization:
         for i, v in zip(fl_indices, fl_contrib):
             el_contrib[i] = v
 
-        if trace:
-            print "VALUES", el.id, fl, face.normal
-            print "loc", fl_values
-            print "neigh", fn_values
-            print "comb", fl_local_coeff*fl_values + fl_neighbor_coeff*fn_values
-            #print "test", 0.5 * (fl_values - fn_values)
-            print fl_contrib
-            #print "ELVALUES"
-            #print el_contrib
-            #print "fin", self.inverse_mass_mat[edata]*el_contrib/abs(self.maps[el.id].jacobian)
-
         return el_contrib
 
     def lift_interior_flux(self, flux, field):
+        from hedge._internal import VectorTarget, perform_interior_flux_operator
+        from hedge.flux import ChainedFlux
+
+        result = num.zeros_like(field)
+        target = VectorTarget(field, result)
+        target.begin(len(self.points), len(self.points))
+        for fg, fmm in self.face_groups:
+            perform_interior_flux_operator(fg, fmm, ChainedFlux(flux), target)
+        target.finalize()
+        return result
+
+    def lift_interior_flux_2(self, flux, field):
         result = num.zeros_like(field)
         for local_face, neigh_face in self.mesh.both_interfaces():
             el, fl = local_face
@@ -413,6 +446,8 @@ class SymmetryMap:
         for i, mapped_i in self.map.iteritems():
             result[mapped_i] = vec[i]
         return result
+
+
 
 
 def generate_random_constant_on_elements(discr):

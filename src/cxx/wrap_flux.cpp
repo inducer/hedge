@@ -47,6 +47,14 @@ void hedge_expose_fluxes()
       ;
   }
 
+  {
+    typedef chained_flux cl;
+    class_<cl, bases<flux> >("ChainedFlux", 
+        init<flux &>()
+        [with_custodian_and_ward<1, 2>()]
+        )
+      ;
+  }
   class_<normal_x, bases<flux> >("NormalXFlux");
   class_<normal_y, bases<flux> >("NormalYFlux");
   class_<normal_z, bases<flux> >("NormalZFlux");
