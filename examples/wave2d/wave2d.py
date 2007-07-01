@@ -89,14 +89,15 @@ def main() :
         t = step*dt
         print "timestep %d, t=%f" % (step, t)
 
-        discr.visualize_vtk("fld-%04d.vtk" % step,
-                [("u", fields[0]), ], 
-                [("v", zip(*fields[1:])), ]
-                )
+        if True:
+            discr.visualize_vtk("fld-%04d.vtk" % step,
+                    [("u", fields[0]), ], 
+                    [("v", zip(*fields[1:])), ]
+                    )
         fields = stepper(fields, t, dt, rhs)
 
 if __name__ == "__main__":
     import cProfile as profile
-    profile.run("main()", "wave2d.prof")
+    #profile.run("main()", "wave2d.prof")
     main()
 
