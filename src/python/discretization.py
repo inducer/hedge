@@ -12,7 +12,16 @@ class _ElementGroup(object):
     - maps: a list of hedge.tools.AffineMap instances mapping the
       unit element to the global element.
     - ranges: a list of (start, end) tuples indicating the DOF numbers for
-      each element. Note: This is actually a C++ ElementRanges object
+      each element. Note: This is actually a C++ ElementRanges object.
+
+    - mass_matrix
+    - inverse_mass_matrix
+    - differentiation_matrices: local differentiation matrices, i.e.
+      differentiation by r, s, t, ....
+    - jacobians
+    - inverse_jacobians
+    - diff_coefficients: a (d,d)-matrix of coefficient vectors to turn
+      (r,s,t)-differentiation into (x,y,z).
     """
     pass
 
@@ -26,8 +35,9 @@ class Discretization:
         self._build_maps_element_groups_and_points(local_discretization)
         self._calculate_local_matrices()
         self._find_face_data()
-        self._find_boundary_points_and_ranges()
         self._build_face_groups()
+        self._find_boundary_points_and_ranges()
+        self._find_boundary_groups()
 
     # initialization ----------------------------------------------------------
     def _build_maps_element_groups_and_points(self, local_discretization):
@@ -71,7 +81,7 @@ class Discretization:
 
             eg.diff_coefficients = \
                     [ # runs over global differentiation coordinate
-                            [ # runs over local differentiation coordinates
+                            [ # runs over local differentiation coordinate
                                 num.array([
                                     imap.matrix[loc_coord, glob_coord]
                                     for imap in eg.inverse_maps
@@ -99,26 +109,6 @@ class Discretization:
                     el_faces.append(f)
 
                 self.faces.append(el_faces)
-
-    def _find_boundary_points_and_ranges(self):
-        """assign boundary points and face ranges, for each tag separately"""
-        self.boundary_points = {}
-        self.boundary_ranges = {}
-        for tag, els_faces in self.mesh.tag_to_boundary.iteritems():
-            tag_points = []
-            tag_face_ranges = {}
-            for ef in els_faces:
-                el, face = ef
-
-                (el_start, el_end), ldis = self.find_el_data(el.id)
-                face_indices = ldis.face_indices()[face]
-
-                f_start = len(tag_points)
-                tag_points += [self.points[el_start+i] for i in face_indices]
-                tag_face_ranges[ef] = (f_start, len(tag_points))
-
-            self.boundary_points[tag] = tag_points
-            self.boundary_ranges[tag] = tag_face_ranges
 
     def _build_face_groups(self):
         from hedge._internal import FaceGroup
@@ -159,7 +149,45 @@ class Discretization:
                 for local_face, neigh_face in self.mesh.both_interfaces()
                 ])
         
+    def _find_boundary_points_and_ranges(self):
+        """assign boundary points and face ranges, for each tag separately"""
+        self.boundary_points = {}
+        self.boundary_ranges = {}
+        for tag, els_faces in self.mesh.tag_to_boundary.iteritems():
+            tag_points = []
+            tag_face_ranges = {}
+            for ef in els_faces:
+                el, face = ef
 
+                (el_start, el_end), ldis = self.find_el_data(el.id)
+                face_indices = ldis.face_indices()[face]
+
+                f_start = len(tag_points)
+                tag_points += [self.points[el_start+i] for i in face_indices]
+                tag_face_ranges[ef] = (f_start, len(tag_points))
+
+            self.boundary_points[tag] = tag_points
+            self.boundary_ranges[tag] = tag_face_ranges
+
+    def _find_boundary_groups(self):
+        from hedge._internal import FaceGroup
+        self.boundary_groups = {}
+        for tag, els_faces in self.mesh.tag_to_boundary.iteritems():
+            fg = FaceGroup()
+            ranges = self.boundary_ranges[tag]
+            for face in els_faces:
+                el, fl = face
+
+                (estart_l, eend_l), ldis = self.find_el_data(el.id)
+                findices_l = ldis.face_indices()[fl]
+                fn_start, fn_end = ranges[face]
+
+                fg.add_face(
+                        [estart_l+i for i in findices_l],
+                        range(fn_start, fn_end),
+                        self.faces[el.id][fl])
+
+            self.boundary_groups[tag] = [(fg, ldis.face_mass_matrix())]
                         
     # vector construction -----------------------------------------------------
     def volume_zeros(self):
@@ -281,9 +309,10 @@ class Discretization:
         for fg, fmm in self.face_groups:
             perform_both_fluxes_operator(fg, fmm, ChainedFlux(flux), target)
         target.finalize()
+
         return result
 
-    def lift_boundary_flux(self, flux, field, bfield, tag=None):
+    def lift_boundary_flux_2(self, flux, field, bfield, tag=None):
         result = num.zeros_like(field)
         ranges = self.boundary_ranges[tag]
 
@@ -299,6 +328,31 @@ class Discretization:
 
             result[el_start:el_end] += \
                     self.lift_face_values(flux, face, fl_values, fn_values, fl_indices)
+        return result
+
+    def lift_boundary_flux(self, flux, field, bfield, tag=None):
+        from hedge._internal import \
+                VectorTarget, \
+                perform_local_flux_operator, \
+                perform_neighbor_flux_operator
+        from hedge.flux import ChainedFlux
+
+        ch_flux = ChainedFlux(flux)
+
+        result = num.zeros_like(field)
+
+        target_local = VectorTarget(field, result)
+        target_local.begin(len(self.points), len(self.points))
+        for fg, fmm in self.boundary_groups[tag]:
+            perform_local_flux_operator(fg, fmm, ch_flux, target_local)
+        target_local.finalize()
+
+        target_bdry = VectorTarget(bfield, result)
+        target_bdry.begin(len(self.points), len(self.boundary_points[tag]))
+        for fg, fmm in self.boundary_groups[tag]:
+            perform_neighbor_flux_operator(fg, fmm, ch_flux, target_bdry)
+        target_bdry.finalize()
+
         return result
     
     # misc stuff --------------------------------------------------------------

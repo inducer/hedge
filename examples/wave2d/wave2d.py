@@ -56,7 +56,7 @@ def main() :
         def source_u(x):
             return exp(-x*x*64)
 
-        source_u_vec = discr.interpolate_volume_function(source_u)
+        #source_u_vec = discr.interpolate_volume_function(source_u)
 
         flux = flux_strong
 
@@ -67,7 +67,7 @@ def main() :
                     discr.lift_interior_flux(flux[0], v[0])
                     +discr.lift_interior_flux(flux[1], v[1])
                     )
-                +source_u_vec
+                #+source_u_vec
                 ,
                 # rhs v0
                  discr.differentiate(0, u)
@@ -89,7 +89,7 @@ def main() :
         t = step*dt
         print "timestep %d, t=%f" % (step, t)
 
-        if True:
+        if False:
             discr.visualize_vtk("fld-%04d.vtk" % step,
                     [("u", fields[0]), ], 
                     [("v", zip(*fields[1:])), ]

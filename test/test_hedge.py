@@ -323,14 +323,16 @@ class TestHedge(unittest.TestCase):
         from hedge.element import TriangularElement
         from hedge.tools import AffineMap
         from hedge.mesh import make_disk_mesh
+        from hedge.flux import Flux
         from hedge.discretization import Discretization
         import pylinear.array as num
         import pylinear.computation as comp
         from pylinear.randomized import make_random_vector
         from math import sin, cos, sqrt, exp, pi
 
-        class OneSidedFlux:
+        class OneSidedFlux(Flux):
             def __init__(self, coordinate):
+                Flux.__init__(self)
                 self.coordinate = coordinate
             def local_coeff(self, face):
                 return face.normal[self.coordinate]
