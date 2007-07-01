@@ -1,5 +1,6 @@
 import pylinear.array as num
 import pylinear.computation as comp
+from pytools.arithmetic_container import work_with_arithmetic_containers
 
 
 
@@ -31,6 +32,7 @@ class _ElementGroup(object):
 class Discretization:
     def __init__(self, mesh, local_discretization):
         self.mesh = mesh
+        self.dimensions = local_discretization.dimensions
 
         self._build_maps_element_groups_and_points(local_discretization)
         self._calculate_local_matrices()
@@ -245,6 +247,7 @@ class Discretization:
                     eg.inverse_jacobians, target)
         target.finalize()
 
+    @work_with_arithmetic_containers
     def apply_inverse_mass_matrix(self, field):
         from hedge._internal import VectorTarget
         result = self.volume_zeros()
@@ -283,22 +286,6 @@ class Discretization:
         return result
 
     # flux computations -------------------------------------------------------
-    def lift_face_values(self, flux, (el, fl), fl_values, fn_values, fl_indices, trace=False):
-        face = self.faces[el.id][fl]
-
-        fl_local_coeff = flux.local_coeff(face)
-        fl_neighbor_coeff = flux.neighbor_coeff(face, None)
-
-        ldis = self.find_el_discretization(el.id)
-        fl_contrib = face.face_jacobian * ldis.face_mass_matrix() * \
-                (fl_local_coeff*fl_values + fl_neighbor_coeff*fn_values)
-        el_contrib = num.zeros((ldis.node_count(),))
-
-        for i, v in zip(fl_indices, fl_contrib):
-            el_contrib[i] = v
-
-        return el_contrib
-
     def lift_interior_flux(self, flux, field):
         from hedge._internal import VectorTarget, perform_both_fluxes_operator
         from hedge.flux import ChainedFlux
@@ -310,24 +297,6 @@ class Discretization:
             perform_both_fluxes_operator(fg, fmm, ChainedFlux(flux), target)
         target.finalize()
 
-        return result
-
-    def lift_boundary_flux_2(self, flux, field, bfield, tag=None):
-        result = num.zeros_like(field)
-        ranges = self.boundary_ranges[tag]
-
-        for face in self.mesh.tag_to_boundary[tag]:
-            el, fl = face
-
-            (el_start, el_end), ldis = self.find_el_data(el.id)
-            fl_indices = ldis.face_indices()[fl]
-            fn_start, fn_end = ranges[face]
-
-            fl_values = num.array([field[el_start+i] for i in fl_indices])
-            fn_values = bfield[fn_start:fn_end]
-
-            result[el_start:el_end] += \
-                    self.lift_face_values(flux, face, fl_values, fn_values, fl_indices)
         return result
 
     def lift_boundary_flux(self, flux, field, bfield, tag=None):
@@ -502,4 +471,69 @@ def generate_ones_on_boundary(discr, tag):
         for i in fl_indices:
             result[el_start+i] = 1
     return result
+
+
+
+
+class _DifferentiationOperator(object):
+    def __init__(self, discr, coordinate):
+        self.discr = discr
+        self.coordinate = coordinate
+
+    def __mul__(self, field):
+       return self.discr.differentiate(self.coordinate, field)
+
+class _MassMatrixOperator(object):
+    def __init__(self, discr):
+        self.discr = discr
+
+    def __mul__(self, field):
+       return self.discr.apply_mass_matrix(field)
+
+class _InverseMassMatrixOperator(object):
+    def __init__(self, discr):
+        self.discr = discr
+
+    def __mul__(self, field):
+       return self.discr.apply_inverse_mass_matrix(field)
+
+class _FluxOperator(object):
+    def __init__(self, discr, flux):
+        self.discr = discr
+        self.flux = flux
+
+    def __mul__(self, field):
+        return self.discr.lift_interior_flux(self.flux, field)
+
+class _BoundaryFluxOperator(object):
+    def __init__(self, discr, flux, tag=None):
+        self.discr = discr
+        self.flux = flux
+        self.tag = tag
+
+    def __mul__(self, (field, bfield)):
+        return self.discr.lift_boundary_flux(self.flux, field, bfield, self.tag)
+
+
+
+
+def bind_nabla(discr):
+    from pytools.arithmetic_container import ArithmeticList
+    return ArithmeticList(
+            [_DifferentiationOperator(discr, i) for i in range(discr.dimensions)]
+            )
+
+def bind_mass_matrix(discr):
+    return _MassMatrixOperator(discr)
+
+def bind_inverse_mass_matrix(discr):
+    return _InverseMassMatrixOperator(discr)
+
+@work_with_arithmetic_containers
+def bind_flux(*args, **kwargs):
+    return _FluxOperator(*args, **kwargs)
+
+@work_with_arithmetic_containers
+def bind_boundary_flux(*args, **kwargs):
+    return _BoundaryFluxOperator(*args, **kwargs)
 
