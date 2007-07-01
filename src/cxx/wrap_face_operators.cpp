@@ -16,17 +16,33 @@ namespace ublas = boost::numeric::ublas;
 
 namespace
 {
-  void face_group_add_face(face_group &fg, object &my_ind, object &opp_ind, 
+  template <class A, class B>
+  std::pair<A, B> extract_pair(const object &obj)
+  {
+    return std::pair<A, B>(extract<A>(obj[0]), extract<B>(obj[1]));
+  }
+
+  void face_group_add_face(face_group &fg, object &my_ind_py, object &opp_ind_py, 
       const flux::face &face)
   {
-    face_group::index_list my_ind_il, opp_ind_il;
+    face_group::index_list my_ind, opp_ind;
 
-    for (unsigned i = 0; i < len(my_ind); i++)
-      my_ind_il.push_back(extract<unsigned>(my_ind[i]));
-    for (unsigned i = 0; i < len(my_ind); i++)
-      opp_ind_il.push_back(extract<unsigned>(opp_ind[i]));
+    for (unsigned i = 0; i < len(my_ind_py); i++)
+      my_ind.push_back(extract<unsigned>(my_ind_py[i]));
+    for (unsigned i = 0; i < len(my_ind_py); i++)
+      opp_ind.push_back(extract<unsigned>(opp_ind_py[i]));
 
-    fg.add_face(my_ind_il, opp_ind_il, face);
+    fg.add_face(my_ind, opp_ind, face);
+  }
+
+  void face_group_connect_faces(face_group &fg, object &cnx_list_py)
+  {
+    face_group::connection_list cnx_list;
+
+    for (unsigned i = 0; i < len(cnx_list_py); i++)
+      cnx_list.push_back(extract_pair<unsigned, unsigned>(cnx_list_py[i]));
+
+    fg.connect_faces(cnx_list);
   }
 }
 
@@ -40,6 +56,7 @@ void hedge_expose_face_operators()
     class_<cl>("FaceGroup")
       .def("clear", &cl::clear)
       .def("add_face", face_group_add_face)
+      .def("connect_faces", face_group_connect_faces)
       ;
   }
 

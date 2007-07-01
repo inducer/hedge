@@ -124,7 +124,10 @@ class Discretization:
         from hedge._internal import FaceGroup
         fg = FaceGroup()
 
-        for local_face, neigh_face in self.mesh.both_interfaces():
+        face_number_map = {}
+        for i, (local_face, neigh_face) in enumerate(self.mesh.both_interfaces()):
+            face_number_map[local_face] = i
+
             e_l, fi_l = local_face
             e_n, fi_n = neigh_face
 
@@ -150,6 +153,13 @@ class Discretization:
                     self.faces[e_l.id][fi_l])
 
         self.face_groups = [(fg, ldis_l.face_mass_matrix())]
+
+        fg.connect_faces([
+                (face_number_map[local_face], face_number_map[neigh_face])
+                for local_face, neigh_face in self.mesh.both_interfaces()
+                ])
+        
+
                         
     # vector construction -----------------------------------------------------
     def volume_zeros(self):

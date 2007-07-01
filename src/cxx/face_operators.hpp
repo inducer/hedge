@@ -42,6 +42,15 @@ namespace hedge {
       fi.opp_flux_face = 0;
       m_face_infos.push_back(fi);
     }
+
+    typedef std::pair<unsigned, unsigned> connection;
+    typedef std::vector<connection> connection_list;
+
+    void connect_faces(const connection_list &cnx_list)
+    {
+      BOOST_FOREACH(const connection &cnx, cnx_list)
+        m_face_infos[cnx.first].opp_flux_face = &m_face_infos[cnx.second].flux_face;
+    }
   };
 
 
