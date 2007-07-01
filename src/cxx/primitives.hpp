@@ -90,15 +90,12 @@ namespace hedge {
 
   template <class Mat, class Flux, class OT>
   inline
-  void perform_interior_flux_operator(const face_group &fg, 
+  void perform_both_fluxes_operator(const face_group &fg, 
       const Mat &fmm, Flux flux, OT target)
   {
     unsigned face_length = fmm.size1();
 
     assert(fmm.size1() == fmm.size2());
-
-    vector face_values;
-    face_values.resize(face_length);
 
     BOOST_FOREACH(const face_group::face_info &fi, fg.m_face_infos)
     {
@@ -113,6 +110,60 @@ namespace hedge {
         {
           target.add_coefficient(fi.face_indices[i], fi.face_indices[j],
               fi.flux_face.face_jacobian*local_coeff*fmm(i, j));
+          target.add_coefficient(fi.face_indices[i], fi.opposite_indices[j],
+              fi.flux_face.face_jacobian*neighbor_coeff*fmm(i, j));
+        }
+    }
+  }
+
+
+
+
+  template <class Mat, class Flux, class OT>
+  inline
+  void perform_local_flux_operator(const face_group &fg, 
+      const Mat &fmm, Flux flux, OT target)
+  {
+    unsigned face_length = fmm.size1();
+
+    assert(fmm.size1() == fmm.size2());
+
+    BOOST_FOREACH(const face_group::face_info &fi, fg.m_face_infos)
+    {
+      double local_coeff = flux.local_coeff(fi.flux_face);
+
+      assert(fmm.size1() == fi.face_indices.size());
+
+      for (unsigned i = 0; i < face_length; i++)
+        for (unsigned j = 0; j < face_length; j++)
+        {
+          target.add_coefficient(fi.face_indices[i], fi.face_indices[j],
+              fi.flux_face.face_jacobian*local_coeff*fmm(i, j));
+        }
+    }
+  }
+
+
+
+
+  template <class Mat, class Flux, class OT>
+  inline
+  void perform_neighbor_flux_operator(const face_group &fg, 
+      const Mat &fmm, Flux flux, OT target)
+  {
+    unsigned face_length = fmm.size1();
+
+    assert(fmm.size1() == fmm.size2());
+
+    BOOST_FOREACH(const face_group::face_info &fi, fg.m_face_infos)
+    {
+      double neighbor_coeff = flux.neighbor_coeff(fi.flux_face);
+
+      assert(fmm.size1() == fi.opp_indices.size());
+
+      for (unsigned i = 0; i < face_length; i++)
+        for (unsigned j = 0; j < face_length; j++)
+        {
           target.add_coefficient(fi.face_indices[i], fi.opposite_indices[j],
               fi.flux_face.face_jacobian*neighbor_coeff*fmm(i, j));
         }

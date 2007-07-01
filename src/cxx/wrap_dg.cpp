@@ -55,6 +55,10 @@ namespace
 
 
 
+#define DEF_FOR_EACH_OP_TARGET(NAME, TEMPLATE_ARGS) \
+  def(#NAME, NAME<TEMPLATE_ARGS, vector_target>); \
+  def(#NAME, NAME<TEMPLATE_ARGS, my_matrix_target>);
+
 void hedge_expose_dg()
 {
   {
@@ -69,13 +73,8 @@ void hedge_expose_dg()
 
   typedef matrix_target<ublas::coordinate_matrix<double> > my_matrix_target;
 
-  def("perform_elwise_operator", perform_elwise_operator<matrix, vector_target>);
-  def("perform_elwise_operator", perform_elwise_operator<matrix, my_matrix_target>);
-
-  def("perform_elwise_scaled_operator", 
-      perform_elwise_scaled_operator<matrix, vector_target>);
-  def("perform_elwise_scaled_operator", 
-      perform_elwise_scaled_operator<matrix, my_matrix_target>);
+  DEF_FOR_EACH_OP_TARGET(perform_elwise_operator, matrix);
+  DEF_FOR_EACH_OP_TARGET(perform_elwise_scaled_operator, matrix);
 
   {
     typedef vector_target cl;
@@ -103,8 +102,8 @@ void hedge_expose_dg()
       ;
   }
 
-  def("perform_interior_flux_operator", 
-      perform_interior_flux_operator<matrix, flux::chained_flux, vector_target>);
-  def("perform_interior_flux_operator", 
-      perform_interior_flux_operator<matrix, flux::chained_flux, my_matrix_target>);
+#define FLUX_OPERATOR_TEMPLATE_ARGS matrix, flux::chained_flux
+  DEF_FOR_EACH_OP_TARGET(perform_both_fluxes_operator, FLUX_OPERATOR_TEMPLATE_ARGS);
+  DEF_FOR_EACH_OP_TARGET(perform_local_flux_operator, FLUX_OPERATOR_TEMPLATE_ARGS);
+  DEF_FOR_EACH_OP_TARGET(perform_neighbor_flux_operator, FLUX_OPERATOR_TEMPLATE_ARGS);
 }
