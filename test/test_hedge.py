@@ -20,7 +20,7 @@ class TestHedge(unittest.TestCase):
         from hedge.polynomial import jacobi_function, jacobi_function_2
         from hedge.quadrature import LegendreGaussQuadrature
 
-        max_n = 7
+        max_n = 10
         int = LegendreGaussQuadrature(4*max_n) # overkill...
 
         class WeightFunction:
@@ -32,7 +32,7 @@ class TestHedge(unittest.TestCase):
                 return (1-x)**self.alpha * (1+x)**self.beta
 
         for alpha, beta, ebound in [
-                (0, 0, 3e-14), 
+                (0, 0, 5e-14), 
                 (1, 0, 4e-14), 
                 (3, 2, 3e-14), 
                 (0, 2, 3e-13), 
@@ -43,6 +43,7 @@ class TestHedge(unittest.TestCase):
             jac_f = [jacobi_function(alpha, beta, n) for n in range(max_n)]
             wf = WeightFunction(alpha, beta)
             maxerr = 0
+
             for i, fi in enumerate(jac_f):
                 for j, fj in enumerate(jac_f):
                     result = int(lambda x: wf(x)*fi(x)*fj(x))

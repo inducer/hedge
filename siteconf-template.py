@@ -3,7 +3,7 @@
 # See documentation for hints.
 # --------------------------------------------------------------------
 
-HEDGE_CONF_TEMPLATE_VERSION = 1
+HEDGE_CONF_TEMPLATE_VERSION = 2
 
 # --------------------------------------------------------------------
 # Path options
@@ -13,7 +13,7 @@ BOOST_INCLUDE_DIRS = []
 BOOST_LIBRARY_DIRS = [] 
 BPL_LIBRARIES = ["boost_python-gcc41-mt"]
 
-BOOST_UBLAS_BINDINGS_INCLUDE_DIRS = ["/home/andreas/work/boost-sandbox"]
+BOOST_MATH_TOOLKIT_INCLUDE_DIRS = ["/home/andreas/work/boost-math-toolkit"]
 
 # --------------------------------------------------------------------
 # Compiler flags

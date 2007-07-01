@@ -26,16 +26,12 @@ try:
 except NameError:
     non_matching_config()
 
-if HEDGE_CONF_TEMPLATE_VERSION != 1:
+if HEDGE_CONF_TEMPLATE_VERSION != 2:
     non_matching_config()
 
-INCLUDE_DIRS = BOOST_INCLUDE_DIRS
+INCLUDE_DIRS = BOOST_INCLUDE_DIRS + BOOST_MATH_TOOLKIT_INCLUDE_DIRS
 LIBRARY_DIRS = BOOST_LIBRARY_DIRS
 LIBRARIES = BPL_LIBRARIES
-
-OP_EXTRA_INCLUDE_DIRS = BOOST_UBLAS_BINDINGS_INCLUDE_DIRS
-OP_EXTRA_LIBRARY_DIRS = []
-OP_EXTRA_LIBRARIES = []
 
 OP_EXTRA_DEFINES = {}
 
@@ -54,6 +50,7 @@ setup(name="hedge",
           Extension("_internal", 
               ["src/cxx/main.cpp", 
                   #"src/cxx/flux.cpp", 
+                  "src/cxx/wrap_polynomial.cpp", 
                   "src/cxx/wrap_flux.cpp", 
                   "src/cxx/wrap_dg.cpp", 
                   ],

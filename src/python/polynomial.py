@@ -1,115 +1,12 @@
 from __future__ import division
 import pylinear.array as num
-import pymbolic
 from pytools import memoize
+import hedge._internal
 
 
 
 
-@memoize
-def jacobi_polynomial(alpha, beta, N):
-    """Return Jacobi Polynomial of type (alpha,beta) > -1
-    (alpha+beta != -1) for order N.
-    """
-
-    # port of J. Hesthaven's JacobiP routine
-
-    from math import sqrt
-    from scipy.special import gamma
-    from pymbolic import var, Polynomial
-
-    x = Polynomial(var("x"))
-
-    polys = []
-    # Initial value P_0(x)
-    gamma0 = 2**(alpha+beta+1)/(alpha+beta+1)*gamma(alpha+1)* \
-            gamma(beta+1)/gamma(alpha+beta+1)
-    polys.append(1/sqrt(gamma0))
-
-    if N == 0: 
-        return polys[-1]
-
-    # Initial value P_1(x)
-    gamma1 = (alpha+1)*(beta+1)/(alpha+beta+3)*gamma0
-    polys.append(((alpha+beta+2)/2*x + (alpha-beta)/2)/sqrt(gamma1))
-
-    if N == 1: 
-        return polys[-1]
-
-    # Repeat value in recurrence.
-    aold = 2/(2+alpha+beta)*sqrt((alpha+1)*(beta+1)/(alpha+beta+3))
-
-    # Forward recurrence using the symmetry of the recurrence.
-    for i in range(1, N):
-        h1 = 2*i+alpha+beta
-        anew = 2/(h1+2)*sqrt( (i+1)*(i+1+alpha+beta)*(i+1+alpha)*\
-                (i+1+beta)/(h1+1)/(h1+3))
-        bnew = - (alpha**2-beta**2)/h1/(h1+2)
-        polys.append(1/anew*(-aold*polys[-2] + (x-bnew)*polys[-1]))
-        aold = anew
-
-    return polys[-1]
-
-
-
-
-class jacobi_function:
-    """Return Jacobi Polynomial of type (alpha,beta) > -1
-    (alpha+beta != -1) for order N.
-    """
-
-    def __init__(self, alpha, beta, N):
-        self.alpha = alpha
-        self.beta = beta
-        self.N = N
-
-    def __call__(self, x):
-        # port of J. Hesthaven's JacobiP routine
-
-        from math import sqrt
-        from scipy.special import gamma
-        from pymbolic import var, Polynomial
-
-        alpha = self.alpha
-        beta = self.beta
-        N = self.N
-
-        polys = []
-        # Initial value P_0(x)
-        gamma0 = 2**(alpha+beta+1)/(alpha+beta+1)*gamma(alpha+1)* \
-                gamma(beta+1)/gamma(alpha+beta+1)
-        polys.append(1/sqrt(gamma0))
-
-        if N == 0: 
-            return polys[-1]
-
-        # Initial value P_1(x)
-        gamma1 = (alpha+1)*(beta+1)/(alpha+beta+3)*gamma0
-        polys.append(((alpha+beta+2)/2*x + (alpha-beta)/2)/sqrt(gamma1))
-
-        if N == 1: 
-            return polys[-1]
-
-        # Repeat value in recurrence.
-        aold = 2/(2+alpha+beta)*sqrt((alpha+1)*(beta+1)/(alpha+beta+3))
-
-        # Forward recurrence using the symmetry of the recurrence.
-        for i in range(1, N):
-            h1 = 2*i+alpha+beta
-            anew = 2/(h1+2)*sqrt( (i+1)*(i+1+alpha+beta)*(i+1+alpha)*\
-                    (i+1+beta)/(h1+1)/(h1+3))
-            bnew = - (alpha**2-beta**2)/h1/(h1+2)
-            polys.append(1/anew*(-aold*polys[-2] + (x-bnew)*polys[-1]))
-            aold = anew
-
-        return polys[-1]
-
-
-
-
-@memoize
-def jacobi_function_2(alpha, beta, N):
-    return pymbolic.compile(jacobi_polynomial(alpha, beta, N), ["x"])
+jacobi_function = hedge._internal.JacobiPolynomial
 
 
 
