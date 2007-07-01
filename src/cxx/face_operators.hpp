@@ -1,5 +1,5 @@
-#ifndef _ASFAHDALSU_HEDGE_PRIMITIVES_HPP_INCLUDED
-#define _ASFAHDALSU_HEDGE_PRIMITIVES_HPP_INCLUDED
+#ifndef _ASFAHDALSU_HEDGE_FACE_OPERATORS_HPP_INCLUDED
+#define _ASFAHDALSU_HEDGE_FACE_OPERATORS_HPP_INCLUDED
 
 
 
@@ -14,50 +14,6 @@
 
 
 namespace hedge {
-  struct element_ranges 
-  {
-    public:
-      typedef std::pair<unsigned, unsigned> element_range;
-      typedef std::vector<element_range> container;
-
-      element_ranges(unsigned first_element)
-      { }
-
-      unsigned size() const
-      { return m_element_ranges.size(); }
-      void clear()
-      { m_element_ranges.clear(); }
-      void append_range(unsigned start, unsigned end)
-      { m_element_ranges.push_back(std::make_pair(start, end)); }
-      const element_range &operator[](unsigned i) const
-      { return m_element_ranges[i]; }
-
-      // non-public interface
-      container m_element_ranges;
-  };
-
-  template <class Mat, class OT>
-  inline
-  void perform_elwise_operator(const element_ranges &eg, const Mat &matrix, OT target)
-  {
-    BOOST_FOREACH(const element_ranges::element_range &r, eg.m_element_ranges)
-      target.add_coefficients(r.first, r.second, r.first, r.second, matrix);
-  }
-
-  template <class Mat, class OT>
-  inline
-  void perform_elwise_scaled_operator(const element_ranges &eg, 
-      const Mat &matrix, vector &scale_factors, OT target)
-  {
-    unsigned i = 0;
-    BOOST_FOREACH(const element_ranges::element_range &r, eg.m_element_ranges)
-      target.add_coefficients(r.first, r.second, r.first, r.second, 
-          scale_factors[i++]*matrix);
-  }
-
-
-
-
   struct face_group 
   {
     typedef std::vector<unsigned> index_list;
@@ -66,6 +22,7 @@ namespace hedge {
       index_list face_indices;
       index_list opposite_indices;
       flux::face flux_face;
+      flux::face *opp_flux_face;
     };
 
     std::vector<face_info> m_face_infos;
@@ -82,9 +39,13 @@ namespace hedge {
       fi.face_indices = my_ind;
       fi.opposite_indices = opp_ind;
       fi.flux_face = face;
+      fi.opp_flux_face = 0;
       m_face_infos.push_back(fi);
     }
   };
+
+
+
 
   template <class Mat, class Flux, class OT>
   inline
@@ -98,7 +59,8 @@ namespace hedge {
     BOOST_FOREACH(const face_group::face_info &fi, fg.m_face_infos)
     {
       double local_coeff = flux.local_coeff(fi.flux_face);
-      double neighbor_coeff = flux.neighbor_coeff(fi.flux_face);
+      double neighbor_coeff = flux.neighbor_coeff(
+          fi.flux_face, fi.opp_flux_face);
 
       assert(fmm.size1() == fi.face_indices.size());
       assert(fmm.size1() == fi.opp_indices.size());
@@ -155,7 +117,8 @@ namespace hedge {
 
     BOOST_FOREACH(const face_group::face_info &fi, fg.m_face_infos)
     {
-      double neighbor_coeff = flux.neighbor_coeff(fi.flux_face);
+      double neighbor_coeff = flux.neighbor_coeff(
+          fi.flux_face, fi.opp_flux_face);
 
       assert(fmm.size1() == fi.opp_indices.size());
 

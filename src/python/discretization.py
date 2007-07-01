@@ -4,7 +4,7 @@ import pylinear.computation as comp
 
 
 
-class _ElementGroup:
+class _ElementGroup(object):
     """Once fully filled, this structure has the following data members:
 
     - members: a list of hedge.mesh.Element instances in this group.-----------
@@ -88,10 +88,12 @@ class Discretization:
             ldis = eg.local_discretization
             for el, map in zip(eg.members, eg.maps):
                 el_faces = []
-                for n, fj in zip(*ldis.face_normals_and_jacobians(map)):
+                for fi, (n, fj) in enumerate(zip(*ldis.face_normals_and_jacobians(map))):
                     f = Face()
                     f.h = map.jacobian/fj # same as sledge
                     f.face_jacobian = fj
+                    f.element_id = el.id
+                    f.face_id = fi
                     f.order = ldis.order
                     f.normal = n
                     el_faces.append(f)
@@ -247,7 +249,7 @@ class Discretization:
         face = self.faces[el.id][fl]
 
         fl_local_coeff = flux.local_coeff(face)
-        fl_neighbor_coeff = flux.neighbor_coeff(face)
+        fl_neighbor_coeff = flux.neighbor_coeff(face, None)
 
         ldis = self.find_el_discretization(el.id)
         fl_contrib = face.face_jacobian * ldis.face_mass_matrix() * \

@@ -86,6 +86,9 @@ namespace hedge {
    * \endcode
    */
 
+
+
+
   class vector_target {
     public:
       typedef double value_type;
@@ -123,6 +126,9 @@ namespace hedge {
       vector &m_result;
   };
 
+
+
+
   template <class Mat>
   class matrix_target {
     public:
@@ -153,6 +159,12 @@ namespace hedge {
     protected:
       matrix_type &m_matrix;
   };
+
+
+
+
+  typedef matrix_target<boost::numeric::ublas::coordinate_matrix<double> > 
+    coord_matrix_target;
 }
 
 

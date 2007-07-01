@@ -334,7 +334,7 @@ class TestHedge(unittest.TestCase):
                 self.coordinate = coordinate
             def local_coeff(self, face):
                 return face.normal[self.coordinate]
-            def neighbor_coeff(self, face):
+            def neighbor_coeff(self, face, neigh):
                 return 0
 
         one_sided_x = OneSidedFlux(0)

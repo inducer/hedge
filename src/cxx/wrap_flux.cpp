@@ -14,13 +14,13 @@ using namespace hedge::flux;
 namespace {
   struct flux_wrap : flux, wrapper<flux>
   {
-    double neighbor_coeff(const face &local) const
-    {
-      return this->get_override("neighbor_coeff")(boost::ref(local));
-    }
     double local_coeff(const face &local) const
     {
       return this->get_override("local_coeff")(boost::ref(local));
+    }
+    double neighbor_coeff(const face &local, const face *neighbor) const
+    {
+      return this->get_override("neighbor_coeff")(boost::ref(local), boost::ref(neighbor));
     }
   };
 }
@@ -35,6 +35,8 @@ void hedge_expose_fluxes()
     class_<face>("Face")
       .def_readwrite("h", &cl::h)
       .def_readwrite("face_jacobian", &cl::face_jacobian)
+      .def_readwrite("element_id", &cl::element_id)
+      .def_readwrite("face_id", &cl::face_id)
       .def_readwrite("order", &cl::order)
       .def_readwrite("normal", &cl::normal)
       ;
