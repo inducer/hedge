@@ -21,7 +21,6 @@ namespace hedge {
       typedef std::vector<element_range> container;
 
       element_ranges(unsigned first_element)
-        : m_first_element(first_element)
       { }
 
       unsigned size() const
@@ -31,11 +30,10 @@ namespace hedge {
       void append_range(unsigned start, unsigned end)
       { m_element_ranges.push_back(std::make_pair(start, end)); }
       const element_range &operator[](unsigned i) const
-      { return m_element_ranges[i-m_first_element]; }
+      { return m_element_ranges[i]; }
 
       // non-public interface
       container m_element_ranges;
-      unsigned m_first_element;
   };
 
   template <class Mat, class OT>

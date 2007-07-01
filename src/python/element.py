@@ -95,7 +95,13 @@ class GradTriangleBasisFunction:
 
 
 
-class TriangularElement:
+class Element(object):
+    pass
+
+
+
+
+class TriangularElement(Element):
     """An arbitrary-order triangular finite element.
 
     Coordinate systems used:

@@ -29,13 +29,15 @@ namespace
       ;
   }
 
-  tuple element_ranges_getitem(const element_ranges &eg, int i)
+  tuple element_ranges_getitem(const element_ranges &er, int i)
   {
-    if (i < eg.m_first_element || i >= eg.m_first_element+eg.size())
+    if (i < 0)
+      i += er.size();
+    if (i < 0 || i >= er.size())
       PYTHON_ERROR(IndexError, "element_ranges index out of bounds");
 
-    const element_ranges::element_range &er = eg[i];
-    return make_tuple(er.first, er.second);
+    const element_ranges::element_range &erng = er[i];
+    return make_tuple(erng.first, erng.second);
   }
 
   void face_group_add_face(face_group &fg, object &my_ind, object &opp_ind, 

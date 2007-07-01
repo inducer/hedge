@@ -4,9 +4,17 @@ import pylinear.computation as comp
 
 
 
-class ElementGroup:
-    def __init__(self, first_element_id):
-        self.first_element_id = first_element_id
+class _ElementGroup:
+    """Once fully filled, this structure has the following data members:
+
+    - members: a list of hedge.mesh.Element instances in this group.-----------
+    - local_discretization: an instance of hedge.element.Element.
+    - maps: a list of hedge.tools.AffineMap instances mapping the
+      unit element to the global element.
+    - ranges: a list of (start, end) tuples indicating the DOF numbers for
+      each element. Note: This is actually a C++ ElementRanges object
+    """
+    pass
 
 
 
@@ -19,7 +27,6 @@ class Discretization:
         self._calculate_local_matrices()
         self._find_face_data()
         self._find_boundary_points_and_ranges()
-        self._find_opposite_node_map()
         self._build_face_groups()
 
     # initialization ----------------------------------------------------------
@@ -27,7 +34,7 @@ class Discretization:
         self.points = []
         from hedge._internal import ElementRanges
 
-        eg = ElementGroup(0)
+        eg = _ElementGroup()
         eg.members = self.mesh.elements
         eg.local_discretization = ldis = local_discretization
         eg.ranges = ElementRanges(0)
@@ -44,7 +51,7 @@ class Discretization:
 
         eg.inverse_maps = [map.inverted() for map in eg.maps]
 
-        self.group_map = [eg for i in range(len(self.mesh.elements))]
+        self.group_map = [(eg, i) for i in range(len(self.mesh.elements))]
         self.element_groups = [eg]
 
     def _calculate_local_matrices(self):
@@ -101,9 +108,8 @@ class Discretization:
             for ef in els_faces:
                 el, face = ef
 
-                el_start, el_end = self.group_map[el.id].ranges[el.id]
-                face_indices = self.group_map[el.id].local_discretization\
-                        .face_indices()[face]
+                (el_start, el_end), ldis = self.find_el_data(el.id)
+                face_indices = ldis.face_indices()[face]
 
                 f_start = len(tag_points)
                 tag_points += [self.points[el_start+i] for i in face_indices]
@@ -111,34 +117,6 @@ class Discretization:
 
             self.boundary_points[tag] = tag_points
             self.boundary_ranges[tag] = tag_face_ranges
-
-    def _find_opposite_node_map(self):
-        self.opp_node_map = {}
-
-        for local_face, neigh_face in self.mesh.both_interfaces():
-            e_l, fi_l = local_face
-            e_n, fi_n = neigh_face
-
-            estart_l, eend_l = self.group_map[e_l.id].ranges[e_l.id]
-            estart_n, eend_n = self.group_map[e_n.id].ranges[e_n.id]
-
-            vertices_l = e_l.faces[fi_l]
-            vertices_n = e_n.faces[fi_n]
-
-            ldis_l = self.group_map[e_l.id].local_discretization
-            ldis_n = self.group_map[e_n.id].local_discretization
-
-            findices_l = ldis_l.face_indices()[fi_l]
-            findices_n = ldis_n.face_indices()[fi_n]
-
-            findices_shuffled_n = ldis_l.shuffle_face_indices_to_match(
-                    vertices_l, vertices_n, findices_n)
-
-            for i, j in zip(findices_l, findices_shuffled_n):
-                dist = self.points[estart_l+i]-self.points[estart_n+j]
-                assert comp.norm_2(dist) < 1e-14
-
-            self.opp_node_map[local_face] = [estart_n+j for j in findices_shuffled_n]
 
     def _build_face_groups(self):
         from hedge._internal import FaceGroup
@@ -148,14 +126,11 @@ class Discretization:
             e_l, fi_l = local_face
             e_n, fi_n = neigh_face
 
-            estart_l, eend_l = self.group_map[e_l.id].ranges[e_l.id]
-            estart_n, eend_n = self.group_map[e_n.id].ranges[e_n.id]
+            (estart_l, eend_l), ldis_l = self.find_el_data(e_l.id)
+            (estart_n, eend_n), ldis_n = self.find_el_data(e_n.id)
 
             vertices_l = e_l.faces[fi_l]
             vertices_n = e_n.faces[fi_n]
-
-            ldis_l = self.group_map[e_l.id].local_discretization
-            ldis_n = self.group_map[e_n.id].local_discretization
 
             findices_l = ldis_l.face_indices()[fi_l]
             findices_n = ldis_n.face_indices()[fi_n]
@@ -184,7 +159,7 @@ class Discretization:
     def interpolate_tag_volume_function(self, f, tag=None):
         result = self.volume_zeros()
         for el in self.mesh.tag_to_elements[tag]:
-            e_start, e_end = self.group_map[el.id].ranges[el.id]
+            e_start, e_end = self.find_el_range(el.id)
             for i, pt in enumerate(self.points[e_start:e_end]):
                 result[e_start+i] = f(pt)
         return result
@@ -194,6 +169,18 @@ class Discretization:
 
     def interpolate_boundary_function(self, f, tag=None):
         return num.array([f(x) for x in self.boundary_points[tag]])
+
+    # element data retrieval --------------------------------------------------
+    def find_el_range(self, el_id):
+        group, idx = self.group_map[el_id]
+        return group.ranges[idx]
+
+    def find_el_discretization(self, el_id):
+        return self.group_map[el_id][0].local_discretization
+
+    def find_el_data(self, el_id):
+        group, idx = self.group_map[el_id]
+        return group.ranges[idx], group.local_discretization
 
     # local operators ---------------------------------------------------------
     def perform_mass_operator(self, target):
@@ -262,7 +249,7 @@ class Discretization:
         fl_local_coeff = flux.local_coeff(face)
         fl_neighbor_coeff = flux.neighbor_coeff(face)
 
-        ldis = self.group_map[el.id].local_discretization
+        ldis = self.find_el_discretization(el.id)
         fl_contrib = face.face_jacobian * ldis.face_mass_matrix() * \
                 (fl_local_coeff*fl_values + fl_neighbor_coeff*fn_values)
         el_contrib = num.zeros((ldis.node_count(),))
@@ -273,35 +260,17 @@ class Discretization:
         return el_contrib
 
     def lift_interior_flux(self, flux, field):
-        from hedge._internal import VectorTarget, perform_interior_flux_operator
+        from hedge._internal import VectorTarget, perform_both_fluxes_operator
         from hedge.flux import ChainedFlux
 
         result = num.zeros_like(field)
         target = VectorTarget(field, result)
         target.begin(len(self.points), len(self.points))
         for fg, fmm in self.face_groups:
-            perform_interior_flux_operator(fg, fmm, ChainedFlux(flux), target)
+            perform_both_fluxes_operator(fg, fmm, ChainedFlux(flux), target)
         target.finalize()
         return result
 
-    def lift_interior_flux_2(self, flux, field):
-        result = num.zeros_like(field)
-        for local_face, neigh_face in self.mesh.both_interfaces():
-            el, fl = local_face
-
-            eg = self.group_map[el.id]
-            el_start, el_end = eg.ranges[el.id]
-            fl_indices = eg.local_discretization.face_indices()[fl]
-
-            onm = self.opp_node_map[local_face]
-            fl_values = num.array([field[el_start+i] for i in fl_indices])
-            fn_values = num.array([field[onm[i]] for i in range(len(fl_indices))])
-
-            result[el_start:el_end] += \
-                    self.lift_face_values(flux, local_face, 
-                            fl_values, fn_values, fl_indices)
-        return result
-    
     def lift_boundary_flux(self, flux, field, bfield, tag=None):
         result = num.zeros_like(field)
         ranges = self.boundary_ranges[tag]
@@ -309,9 +278,7 @@ class Discretization:
         for face in self.mesh.tag_to_boundary[tag]:
             el, fl = face
 
-            eg = self.group_map[el.id]
-            ldis = eg.local_discretization
-            el_start, el_end = eg.ranges[el.id]
+            (el_start, el_end), ldis = self.find_el_data(el.id)
             fl_indices = ldis.face_indices()[fl]
             fn_start, fn_end = ranges[face]
 
@@ -395,8 +362,7 @@ class Discretization:
 
         for eg in self.element_groups:
             ldis = eg.local_discretization
-            for el in eg.members:
-                el_start, el_stop = eg.ranges[el.id]
+            for el, (el_start, el_stop) in zip(eg.members, eg.ranges):
                 polygons += [[el_start+j for j in element] 
                         for element in ldis.generate_submesh_indices()]
 
@@ -425,11 +391,9 @@ class SymmetryMap:
         self.map = {}
 
         for eg in discr.element_groups:
-            for el in eg.members:
-                el_start, el_stop = eg.ranges[el.id]
-
+            for el, (el_start, el_stop) in zip(eg.members, eg.ranges):
                 mapped_i_el = complete_el_map[el.id]
-                mapped_start, mapped_stop = discr.group_map[mapped_i_el].ranges[mapped_i_el]
+                mapped_start, mapped_stop = discr.find_el_range(mapped_i_el)
                 for i_pt in range(el_start, el_stop):
                     pt = discr.points[i_pt]
                     mapped_pt = sym_map(pt)
@@ -453,9 +417,9 @@ class SymmetryMap:
 def generate_random_constant_on_elements(discr):
     result = discr.volume_zeros()
     import random
-    for i_el in range(len(discr.elements)):
-        e_start, e_end = discr.element_group[i_el]
-        result[e_start:e_end] = random.random()
+    for eg in discr.element_groups:
+        for e_start, e_end in eg.ranges:
+            result[e_start:e_end] = random.random()
     return result
 
 
