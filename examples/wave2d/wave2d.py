@@ -16,7 +16,8 @@ def main() :
             bind_flux, \
             bind_boundary_flux, \
             bind_nabla, \
-            bind_inverse_mass_matrix
+            bind_inverse_mass_matrix, \
+            pair_with_boundary
     from hedge.visualization import \
             VtkVisualizer, \
             SiloVisualizer
@@ -42,7 +43,7 @@ def main() :
         discr.volume_zeros()])
 
     dt = discr.dt_factor(1)
-    nsteps = int(1/dt)
+    nsteps = int(0.2/dt)
     print "dt", dt
     print "nsteps", nsteps
 
@@ -55,7 +56,7 @@ def main() :
     bflux = bind_boundary_flux(discr, flux_strong)
 
     def source_u(x):
-        return exp(-x*x*128)
+        return exp(-x*x*256)
 
     source_u_vec = discr.interpolate_volume_function(source_u)
 
@@ -71,14 +72,14 @@ def main() :
         rhs.append(dot(nabla, v) 
                 - m_inv*(
                     dot(flux, v) 
-                    #+ dot(bflux, [(v[0], bc_v[0]), (v[1], bc_v[1])])
+                    #+ dot(bflux, pair_with_boundary(v, bc_v))
                     ) 
                 + source_u_vec)
         # rhs v
         rhs.extend(nabla*u 
                 -m_inv*(
                     flux*u 
-                    + bflux*(u,bc_u)
+                    + bflux*pair_with_boundary(u, bc_u)
                     ))
         return rhs
 
@@ -87,7 +88,7 @@ def main() :
     vis = SiloVisualizer(discr)
     for step in range(nsteps):
         t = step*dt
-        if step % 1 == 0:
+        if step % 10 == 0:
             print "timestep %d, t=%f" % (step, t)
 
         if t > 0.1:

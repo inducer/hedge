@@ -241,7 +241,7 @@ class Discretization:
         target.begin(len(self.points), len(self.points))
         for eg in self.element_groups:
             perform_elwise_scaled_operator(
-                    eg.ranges, eg.mass_matrix, eg.jacobians, target)
+                    eg.ranges, eg.jacobians, eg.mass_matrix, target)
         target.finalize()
 
     def apply_mass_matrix(self, field):
@@ -254,8 +254,9 @@ class Discretization:
         from hedge._internal import perform_elwise_scaled_operator
         target.begin(len(self.points), len(self.points))
         for eg in self.element_groups:
-            perform_elwise_scaled_operator(eg.ranges, eg.inverse_mass_matrix, 
-                    eg.inverse_jacobians, target)
+            perform_elwise_scaled_operator(eg.ranges, 
+                   eg.inverse_jacobians, eg.inverse_mass_matrix, 
+                   target)
         target.finalize()
 
     @work_with_arithmetic_containers
@@ -266,12 +267,26 @@ class Discretization:
         return result
 
     def perform_differentiation_operator(self, coordinate, target):
-        from hedge._internal import perform_elwise_scaled_operator
+        from hedge._internal import \
+                perform_elwise_scaled_operator, \
+                perform_2_elwise_scaled_operators
+
         target.begin(len(self.points), len(self.points))
-        for eg in self.element_groups:
-            for coeff, mat in zip(eg.diff_coefficients[coordinate], 
-                    eg.differentiation_matrices):
-                perform_elwise_scaled_operator(eg.ranges, mat, coeff, target)
+
+        if self.dimensions == 17:
+            for eg in self.element_groups:
+                perform_2_elwise_scaled_operators(eg.ranges, 
+                        eg.diff_coefficients[coordinate][0],
+                        eg.differentiation_matrices[0], 
+                        eg.diff_coefficients[coordinate][1],
+                        eg.differentiation_matrices[1], 
+                        target)
+        else:
+            for eg in self.element_groups:
+                for coeff, mat in zip(eg.diff_coefficients[coordinate], 
+                        eg.differentiation_matrices):
+                    perform_elwise_scaled_operator(eg.ranges, coeff, mat, target)
+
         target.finalize()
 
     def perform_minv_st_operator(self, coordinate, target):
@@ -279,7 +294,7 @@ class Discretization:
         target.begin(len(self.points), len(self.points))
         for eg in self.element_groups:
             for coeff, mat in zip(eg.diff_coefficients[coordinate], eg.minv_st):
-                perform_elwise_scaled_operator(eg.ranges, mat, coeff, target)
+                perform_elwise_scaled_operator(eg.ranges, coeff, mat, target)
         target.finalize()
 
     def differentiate(self, coordinate, field):
@@ -354,7 +369,7 @@ class Discretization:
         result = self.volume_zeros(tag)
 
         target = VectorTarget(bfield, result)
-        target.begin(len(self.points), len(self.boundary_points[tag])))
+        target.begin(len(self.points), len(self.boundary_points[tag]))
         perform_expansion(self.boundary_index_subsets[tag], target)
         target.finalize()
 
@@ -372,6 +387,23 @@ class Discretization:
         target.begin(len(self.boundary_points[tag]), len(self.points))
         perform_restriction(self.boundary_index_subsets[tag], target)
         target.finalize()
+
+        return result
+
+    @work_with_arithmetic_containers
+    def boundarize_volume_field_2(self, field, tag=None):
+        result = self.boundary_zeros(tag)
+        ranges = self.boundary_ranges[tag]
+
+        for face in self.mesh.tag_to_boundary[tag]:
+            el, fl = face
+
+            (el_start, el_end), ldis = self.find_el_data(el.id)
+            fl_indices = ldis.face_indices()[fl]
+            fn_start, fn_end = ranges[face]
+
+            for i, fi in enumerate(fl_indices):
+                result[fn_start+i] = field[el_start+fi]
 
         return result
     
@@ -490,8 +522,10 @@ class _BoundaryFluxOperator(object):
         self.flux = flux
         self.tag = tag
 
-    def __mul__(self, (field, bfield)):
-        return self.discr.lift_boundary_flux(self.flux, field, bfield, self.tag)
+    def __mul__(self, bpair):
+        return self.discr.lift_boundary_flux(self.flux, 
+                bpair.field, bpair.bfield, 
+                self.tag)
 
 
 
@@ -516,4 +550,20 @@ def bind_flux(*args, **kwargs):
 @work_with_arithmetic_containers
 def bind_boundary_flux(*args, **kwargs):
     return _BoundaryFluxOperator(*args, **kwargs)
+
+class BoundaryPair:
+    def __init__(self, field, bfield):
+        self.field = field
+        self.bfield = bfield
+
+def pair_with_boundary(field, bfield):
+    from pytools.arithmetic_container import ArithmeticList
+
+    if isinstance(field, ArithmeticList):
+        assert isinstance(bfield, ArithmeticList)
+        return ArithmeticList([
+            BoundaryPair(sub_f, sub_bf) for sub_f, sub_bf in zip(field, bfield)
+            ])
+    else:
+        return BoundaryPair(field, bfield)
 
