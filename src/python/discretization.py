@@ -155,9 +155,16 @@ class Discretization:
         """assign boundary points and face ranges, for each tag separately"""
         self.boundary_points = {}
         self.boundary_ranges = {}
+        self.boundary_index_subsets = {}
+
+        from hedge._internal import IndexSubset
+
         for tag, els_faces in self.mesh.tag_to_boundary.iteritems():
             tag_points = []
             tag_face_ranges = {}
+            tag_index_subset = IndexSubset()
+            point_idx = 0
+
             for ef in els_faces:
                 el, face = ef
 
@@ -167,9 +174,13 @@ class Discretization:
                 f_start = len(tag_points)
                 tag_points += [self.points[el_start+i] for i in face_indices]
                 tag_face_ranges[ef] = (f_start, len(tag_points))
+                for i in face_indices:
+                    tag_index_subset.add_index(point_idx, el_start+i)
+                    point_idx += 1
 
             self.boundary_points[tag] = tag_points
             self.boundary_ranges[tag] = tag_face_ranges
+            self.boundary_index_subsets[tag] = tag_index_subset
 
     def _find_boundary_groups(self):
         from hedge._internal import FaceGroup
@@ -335,36 +346,32 @@ class Discretization:
                     for eg in self.element_groups)
 
     @work_with_arithmetic_containers
-    def volumize_boundary_field(self, tag, bfield):
-        result = self.volume_zeros()
-        ranges = self.boundary_ranges[tag]
+    def volumize_boundary_field(self, bfield, tag=None):
+        from hedge._internal import \
+                VectorTarget, \
+                perform_restriction
 
-        for face in self.mesh.tag_to_boundary[tag]:
-            el, fl = face
+        result = self.volume_zeros(tag)
 
-            el_start, el_end = self.element_group[el.id]
-            fl_indices = self.element_map[el.id].face_indices()[fl]
-            fn_start, fn_end = ranges[face]
-
-            for i, fi in enumerate(fl_indices):
-                result[el_start+fi] = bfield[fn_start+i]
+        target = VectorTarget(bfield, result)
+        target.begin(len(self.points), len(self.boundary_points[tag])))
+        perform_expansion(self.boundary_index_subsets[tag], target)
+        target.finalize()
 
         return result
-    
+
     @work_with_arithmetic_containers
     def boundarize_volume_field(self, field, tag=None):
+        from hedge._internal import \
+                VectorTarget, \
+                perform_restriction
+
         result = self.boundary_zeros(tag)
-        ranges = self.boundary_ranges[tag]
 
-        for face in self.mesh.tag_to_boundary[tag]:
-            el, fl = face
-
-            (el_start, el_end), ldis = self.find_el_data(el.id)
-            fl_indices = ldis.face_indices()[fl]
-            fn_start, fn_end = ranges[face]
-
-            for i, fi in enumerate(fl_indices):
-                result[fn_start+i] = field[el_start+fi]
+        target = VectorTarget(field, result)
+        target.begin(len(self.boundary_points[tag]), len(self.points))
+        perform_restriction(self.boundary_index_subsets[tag], target)
+        target.finalize()
 
         return result
     

@@ -42,7 +42,7 @@ def main() :
         discr.volume_zeros()])
 
     dt = discr.dt_factor(1)
-    nsteps = int(0.2/dt)
+    nsteps = int(1/dt)
     print "dt", dt
     print "nsteps", nsteps
 
@@ -87,7 +87,7 @@ def main() :
     vis = SiloVisualizer(discr)
     for step in range(nsteps):
         t = step*dt
-        if step % 10 == 0:
+        if step % 1 == 0:
             print "timestep %d, t=%f" % (step, t)
 
         if t > 0.1:
@@ -102,6 +102,6 @@ def main() :
 
 if __name__ == "__main__":
     import cProfile as profile
-    profile.run("main()", "wave2d.prof")
-    #main()
+    #profile.run("main()", "wave2d.prof")
+    main()
 

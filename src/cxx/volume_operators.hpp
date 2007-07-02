@@ -54,8 +54,8 @@ namespace hedge {
   {
     unsigned i = 0;
     BOOST_FOREACH(const element_ranges::element_range &r, eg.m_element_ranges)
-      target.add_coefficients(r.first, r.second, r.first, r.second, 
-          scale_factors[i++]*matrix);
+      target.add_scaled_coefficients(r.first, r.second, r.first, r.second, 
+          scale_factors[i++], matrix);
   }
 }
 

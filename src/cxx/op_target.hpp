@@ -8,6 +8,7 @@
 #include <boost/numeric/ublas/matrix.hpp>
 #include <boost/numeric/ublas/vector_proxy.hpp>
 #include <boost/numeric/ublas/matrix_proxy.hpp>
+#include <boost/numeric/ublas/matrix_sparse.hpp>
 #include <boost/numeric/ublas/operation.hpp>
 #include "base.hpp"
 
@@ -92,7 +93,7 @@ namespace hedge {
 
   class vector_target {
     public:
-      typedef double value_type;
+      typedef vector::value_type scalar_type;
 
       vector_target(const vector &operand, vector &result)
         : m_operand(operand), m_result(result)
@@ -110,8 +111,7 @@ namespace hedge {
       void finalize() const
       { }
 
-      void add_coefficient(unsigned i, unsigned j, 
-          const value_type &coeff) const
+      void add_coefficient(unsigned i, unsigned j, scalar_type coeff) const
       { m_result[i] += coeff*m_operand[j]; }
 
       template <class Container>
@@ -128,6 +128,14 @@ namespace hedge {
             prod(submat, subrange(m_operand, j_start, j_stop));
       }
 
+      template <class Container>
+      void add_scaled_coefficients(unsigned i_start, unsigned i_stop, 
+          unsigned j_start, unsigned j_stop, scalar_type factor,
+          const Container &submat) const
+      {
+        noalias(subrange(m_result, i_start, i_stop)) +=
+          factor * prod(submat, subrange(m_operand, j_start, j_stop));
+      }
       const vector &m_operand;
       vector &m_result;
   };
@@ -139,7 +147,7 @@ namespace hedge {
   class matrix_target {
     public:
       typedef Mat matrix_type;
-      typedef typename Mat::value_type value_type;
+      typedef typename Mat::value_type scalar_type;
 
       matrix_target(matrix_type &matrix)
         : m_matrix(matrix)
@@ -152,8 +160,7 @@ namespace hedge {
       void finalize() const
       { m_matrix.sort(); }
 
-      void add_coefficient(unsigned i, unsigned j, 
-          const value_type &coeff) const
+      void add_coefficient(unsigned i, unsigned j, scalar_type coeff) const
       { m_matrix.push_back(i, j, coeff); }
 
       template <class Container>
@@ -162,6 +169,11 @@ namespace hedge {
           const Container &submat) const
       { subrange(m_matrix, i_start, i_stop, j_start, j_stop) += submat; }
 
+      template <class Container>
+      void add_scaled_coefficients(unsigned i_start, unsigned i_stop, 
+          unsigned j_start, unsigned j_stop, scalar_type factor,
+          const Container &submat) const
+      { subrange(m_matrix, i_start, i_stop, j_start, j_stop) += factor * submat; }
     protected:
       matrix_type &m_matrix;
   };

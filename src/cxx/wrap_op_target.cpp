@@ -1,4 +1,3 @@
-#include <boost/numeric/ublas/matrix_sparse.hpp>
 #include <boost/python.hpp>
 #include "op_target.hpp"
 #include "wrap_helpers.hpp"

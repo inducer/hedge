@@ -1,4 +1,3 @@
-#include <boost/numeric/ublas/matrix_sparse.hpp>
 #include <boost/python.hpp>
 #include "op_target.hpp"
 #include "volume_operators.hpp"
@@ -43,6 +42,7 @@ void hedge_expose_volume_operators()
       ;
   }
 
-  DEF_FOR_EACH_OP_TARGET(perform_elwise_operator, matrix);
-  DEF_FOR_EACH_OP_TARGET(perform_elwise_scaled_operator, matrix);
+#define VOLUME_OPERATORS_TEMPLATE_ARGS matrix,
+  DEF_FOR_EACH_OP_TARGET(perform_elwise_operator, VOLUME_OPERATORS_TEMPLATE_ARGS);
+  DEF_FOR_EACH_OP_TARGET(perform_elwise_scaled_operator, VOLUME_OPERATORS_TEMPLATE_ARGS);
 }
