@@ -63,7 +63,7 @@ def main() :
         u = fields[0]
         v = fields[1:]
 
-        bc_v = discr.boundarize_volume_field(v)
+        #bc_v = discr.boundarize_volume_field(v)
         bc_u = -discr.boundarize_volume_field(u)
 
         rhs = ArithmeticList([])
@@ -96,12 +96,12 @@ def main() :
         if step % 10 == 0:
             vis("fld-%04d.silo" % step,
                     [("u", fields[0]), ], 
-                    [("v", zip(*fields[1:])), ]
-                    )
+                    [("v", fields[1:]), ],
+                    time=t)
         fields = stepper(fields, t, dt, rhs)
 
 if __name__ == "__main__":
     import cProfile as profile
-    #profile.run("main()", "wave2d.prof")
-    main()
+    profile.run("main()", "wave2d.prof")
+    #main()
 

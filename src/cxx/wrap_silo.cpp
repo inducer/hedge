@@ -1,5 +1,6 @@
 #include <boost/numeric/bindings/traits/traits.hpp>
 #include <vector>
+#include <stdexcept>
 #include "wrap_helpers.hpp"
 #include "base.hpp"
 
@@ -245,24 +246,86 @@ namespace
     return result;
   }
 
+#define CALL_GUARDED(NAME, ARGLIST) \
+  if (NAME ARGLIST) \
+    throw std::runtime_error(#NAME " failed");
+
 #define CONVERT_INT_LIST(NAME) \
   std::vector<int> NAME; \
   for (unsigned i = 0; i < len(NAME##_py); i++) \
       NAME.push_back(extract<int>(NAME##_py[i]));
 
-  class DBfileWrapper
+  class DBoptlistWrapper : boost::noncopyable
+  {
+    public:
+      DBoptlistWrapper(int maxsize)
+        : m_optlist(DBMakeOptlist(maxsize))
+      { 
+        if (m_optlist == NULL)
+          throw std::runtime_error("DBMakeOptlist failed");
+      }
+      ~DBoptlistWrapper()
+      {
+        CALL_GUARDED(DBFreeOptlist, (m_optlist));
+      }
+
+      void add_option(int option, int value)
+      {
+        CALL_GUARDED(DBAddOption,(m_optlist, option, (void *) &value));
+      }
+
+      void add_option(int option, double value)
+      {
+        switch (option)
+        {
+          case DBOPT_DTIME:
+            {
+              CALL_GUARDED(DBAddOption,(m_optlist, option, (void *) &value));
+              break;
+            }
+          default:
+            {
+              float cast_val = value;
+              CALL_GUARDED(DBAddOption,(m_optlist, option, (void *) &cast_val));
+              break;
+            }
+
+        }
+      }
+
+      void add_option(int option, const std::string &value)
+      {
+        CALL_GUARDED(DBAddOption,(m_optlist, option, (void *) value.data()));
+      }
+
+      DBoptlist *get_optlist()
+      {
+        return m_optlist;
+      }
+
+    private:
+      DBoptlist *m_optlist;
+  };
+
+  class DBfileWrapper : boost::noncopyable
   {
     public:
       DBfileWrapper(const char *name, int target, int mode)
         : m_dbfile(DBOpen(name, target, mode))
-      { }
+      { 
+        if (m_dbfile == NULL)
+          throw std::runtime_error("DBOpen failed");
+      }
       DBfileWrapper(const char *name, int mode, int target, const char *info, int type)
         : m_dbfile(DBCreate(name, mode, target, info, type))
-      { }
+      { 
+        if (m_dbfile == NULL)
+          throw std::runtime_error("DBCreate failed");
+      }
 
       ~DBfileWrapper()
       {
-        DBClose(m_dbfile);
+        CALL_GUARDED(DBClose, (m_dbfile));
       }
 
       operator DBfile *()
@@ -270,22 +333,22 @@ namespace
         return m_dbfile;
       }
 
-      int PutZonelist(const char *name, int nzones, int ndims,
+      void put_zonelist(const char *name, int nzones, int ndims,
           object nodelist_py, object shapesize_py,
           object shapecounts_py)
       {
         CONVERT_INT_LIST(nodelist);
         CONVERT_INT_LIST(shapesize);
         CONVERT_INT_LIST(shapecounts);
-        return DBPutZonelist(m_dbfile, name, nzones, ndims, nodelist.data(),
+        CALL_GUARDED(DBPutZonelist, (m_dbfile, name, nzones, ndims, nodelist.data(),
             len(nodelist_py), 0, shapesize.data(), shapecounts.data(),
-            len(shapesize_py));
+            len(shapesize_py)));
       }
 
-      int PutUcdmesh(const char *name, int ndims,
+      void put_ucdmesh(const char *name, int ndims,
              object coordnames_py, object coords_py, 
-             int nzones, const char *zonel_name, const char *facel_name
-             /*, DBoptlist *optlist*/)
+             int nzones, const char *zonel_name, const char *facel_name,
+             DBoptlistWrapper &optlist)
       {
         typedef double value_type;
         int datatype = DB_DOUBLE;
@@ -300,26 +363,69 @@ namespace
         for (unsigned d = 0; d < ndims; d++)
           coord_starts.push_back(coords.data()+d*nnodes);
 
-        return DBPutUcdmesh(m_dbfile, name, ndims, 
+        CALL_GUARDED(DBPutUcdmesh, (m_dbfile, name, ndims, 
             /* coordnames*/ NULL,
             (float **) coord_starts.data(), nnodes,
             nzones, zonel_name, facel_name,
-            datatype, NULL);
+            datatype, optlist.get_optlist()));
       }
 
-      int PutUcdvar1(const char *vname, const char *mname, hedge::vector &v,
-             int nels, /*float *mixvar, int mixlen, */int centering
-             /*, DBoptlist *optlist*/)
+      void put_ucdvar1(const char *vname, const char *mname, hedge::vector &v,
+             /*float *mixvar, int mixlen, */int centering,
+             DBoptlistWrapper &optlist)
       {
         typedef hedge::vector::value_type value_type;
-        int datatype = DB_DOUBLE; // FIXME: sketchy
+        int datatype = DB_DOUBLE; // FIXME: should depend on real data type
 
-        return DBPutUcdvar1(m_dbfile, vname, mname, 
+        CALL_GUARDED(DBPutUcdvar1, (m_dbfile, vname, mname, 
             (float *) traits::vector_storage(v),
-            nels, 
+            v.size(), 
             /* mixvar */ NULL, /* mixlen */ 0, 
             datatype, centering,
-            /* optlist */ NULL);
+            optlist.get_optlist()));
+      }
+
+      void put_ucdvar(const char *vname, const char *mname, 
+          object varnames_py, object vars_py, 
+          /*float *mixvars[], int mixlen,*/ 
+          int centering, 
+          DBoptlistWrapper &optlist)
+      {
+        typedef hedge::vector::value_type value_type;
+        int datatype = DB_DOUBLE; // FIXME: should depend on real data type
+
+        if (len(varnames_py) != len(vars_py))
+          PYTHON_ERROR(ValueError, "varnames and vars must have the same length");
+
+        std::vector<std::string> varnames_container;
+        std::vector<const char *> varnames;
+        for (unsigned i = 0; i < len(varnames_py); i++)
+          varnames_container.push_back(
+              extract<std::string>(varnames_py[i]));
+        for (unsigned i = 0; i < len(varnames_py); i++)
+          varnames.push_back(varnames_container[i].data());
+
+        std::vector<float *> vars;
+        bool first = true;
+        unsigned vlength = 0;
+        for (unsigned i = 0; i < len(vars_py); i++)
+        {
+          hedge::vector &v = extract<hedge::vector &>(vars_py[i]);
+          if (first)
+          {
+            vlength = v.size();
+            first = false;
+          }
+          else if (vlength != v.size())
+            PYTHON_ERROR(ValueError, "field components need to have matching lengths");
+          vars.push_back((float *) traits::vector_storage(v));
+        }
+
+        CALL_GUARDED(DBPutUcdvar, (m_dbfile, vname, mname, 
+            len(vars_py), (char **) varnames.data(), vars.data(), 
+            vlength, 
+            /* mixvar */ NULL, /* mixlen */ 0, 
+            datatype, centering, optlist.get_optlist()));
       }
 
     private:
@@ -351,11 +457,21 @@ BOOST_PYTHON_MODULE(_silo)
 
   {
     typedef DBfileWrapper cl;
-    class_<cl, boost::noncopyable>("DBfile", init<const char *, int, int>())
+    class_<cl, boost::noncopyable>("DBFile", init<const char *, int, int>())
       .def(init<const char *, int, int, const char *, int>())
-      .DEF_SIMPLE_METHOD(PutZonelist)
-      .DEF_SIMPLE_METHOD(PutUcdmesh)
-      .DEF_SIMPLE_METHOD(PutUcdvar1)
+      .DEF_SIMPLE_METHOD(put_zonelist)
+      .DEF_SIMPLE_METHOD(put_ucdmesh)
+      .DEF_SIMPLE_METHOD(put_ucdvar1)
+      .DEF_SIMPLE_METHOD(put_ucdvar)
+      ;
+  }
+
+  {
+    typedef DBoptlistWrapper cl;
+    class_<cl, boost::noncopyable>("DBOptlist", init<int>())
+      .def("add_option", (void (cl::*)(int, int)) &cl::add_option)
+      .def("add_option", (void (cl::*)(int, double)) &cl::add_option)
+      .def("add_option", (void (cl::*)(int, const std::string &)) &cl::add_option)
       ;
   }
 #endif

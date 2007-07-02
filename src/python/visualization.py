@@ -33,7 +33,7 @@ class VtkVisualizer:
                 Scalars(numpy.array(field), name=name, lookup_table="default") 
                 for name, field in fields
                 ] + [
-                Vectors([_three_vector(v) for v in field], name=name)
+                Vectors([_three_vector(v) for v in zip(field)], name=name)
                 for name, field in vectors]
         vtk = VtkData(self.structure, "Hedge visualization", PointData(*pdatalist))
         vtk.tofile(filename)
@@ -59,22 +59,38 @@ class SiloVisualizer:
                 polygons += [[el_start+j for j in element] 
                         for element in ldis.generate_submesh_indices()]
 
+        self.ndims = discr.dimensions
         self.nodelist = flatten(polygons)
         self.shapesize = [3]
         self.shapecounts = [len(polygons)]
         self.nshapetypes = 1
         self.nzones = len(polygons)
-        self.ndims = discr.dimensions
 
-    def __call__(self, filename, fields=[], vectors=[], description="Hedge visualization"):
-        from hedge._silo import DBfile, symbols
-        s = symbols()
-        db = DBfile(filename, s["DB_CLOBBER"], s["DB_LOCAL"], description, s["DB_PDB"])
-        db.PutZonelist("zonelist", self.nzones, self.ndims, self.nodelist,
+    def __call__(self, filename, fields=[], vectors=[], 
+            description="Hedge visualization", time=None):
+        from hedge.silo import DBFile, \
+                DB_CLOBBER, DB_LOCAL, DB_PDB, DB_NODECENT, \
+                DBOPT_DTIME
+        db = DBFile(filename, DB_CLOBBER, DB_LOCAL, description, DB_PDB)
+
+        # put zone list
+        db.put_zonelist("zonelist", self.nzones, self.ndims, self.nodelist,
                 self.shapesize, self.shapecounts)
-        db.PutUcdmesh("mesh", self.ndims, [], self.coords, self.nzones,
-                "zonelist", None)
+
+        # put mesh coordinates
+        mesh_opts = {}
+        if time is not None:
+            mesh_opts[DBOPT_DTIME] = time
+
+        db.put_ucdmesh("mesh", self.ndims, [], self.coords, self.nzones,
+                "zonelist", None, mesh_opts)
+
+        # put data
         for name, field in fields:
-            db.PutUcdvar1(name, "mesh", field, self.nzones, symbols()["DB_NODECENT"])
+            db.put_ucdvar1(name, "mesh", field, DB_NODECENT)
+        for name, vec in vectors:
+            db.put_ucdvar(name, "mesh", 
+                    ["%s_comp%d" % (name, i) for i in range(len(vec))],
+                    vec, DB_NODECENT)
         del db
 
