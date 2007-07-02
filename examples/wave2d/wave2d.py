@@ -42,7 +42,7 @@ def main() :
         discr.volume_zeros()])
 
     dt = discr.dt_factor(1)
-    nsteps = int(3/dt)
+    nsteps = int(0.2/dt)
     print "dt", dt
     print "nsteps", nsteps
 

@@ -8,6 +8,7 @@
 #include <boost/numeric/ublas/matrix.hpp>
 #include <boost/numeric/ublas/vector_proxy.hpp>
 #include <boost/numeric/ublas/matrix_proxy.hpp>
+#include <boost/numeric/ublas/operation.hpp>
 #include "base.hpp"
 
 
@@ -118,8 +119,13 @@ namespace hedge {
           unsigned j_start, unsigned j_stop,
           const Container &submat) const
       {
-        subrange(m_result, i_start, i_stop) += 
-          prod(submat, subrange(m_operand, j_start, j_stop));
+        /*
+        boost::numeric::ublas::vector_range<vector> target
+          (m_result, boost::numeric::ublas::range(i_start, i_stop));
+        axpy_prod(submat, subrange(m_operand, j_start, j_stop), target);
+        */
+        noalias(subrange(m_result, i_start, i_stop)) +=
+            prod(submat, subrange(m_operand, j_start, j_stop));
       }
 
       const vector &m_operand;
