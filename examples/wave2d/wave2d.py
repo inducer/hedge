@@ -17,9 +17,12 @@ def main() :
             bind_boundary_flux, \
             bind_nabla, \
             bind_inverse_mass_matrix
+    from hedge.visualization import \
+            VtkVisualizer, \
+            SiloVisualizer
     from pytools.arithmetic_container import ArithmeticList
     from pytools.stopwatch import Job
-    from math import sin, cos, pi, exp
+    from math import sin, cos, pi, exp, sqrt
     from hedge.flux import zero, normal_2d, jump_2d, \
             local, neighbor, average
     from hedge.tools import Rotation, dot
@@ -29,8 +32,7 @@ def main() :
     #mesh = make_square_mesh(max_area=0.008)
     #mesh.transform(Rotation(pi/8))
 
-    order = 4
-    discr = Discretization(mesh, TriangularElement(order))
+    discr = Discretization(mesh, TriangularElement(5))
     print "%d elements" % len(discr.mesh.elements)
 
     # u, v1, v2
@@ -39,12 +41,11 @@ def main() :
         discr.volume_zeros(), 
         discr.volume_zeros()])
 
-    dt = 0.5*discr.dt_factor(1)
-    nsteps = int(1/dt)
+    dt = discr.dt_factor(1)
+    nsteps = int(3/dt)
     print "dt", dt
     print "nsteps", nsteps
 
-    bc = discr.boundary_zeros()
     flux_weak = average*normal_2d
     flux_strong = local*normal_2d - flux_weak
 
@@ -53,30 +54,47 @@ def main() :
     flux = bind_flux(discr, flux_strong)
     bflux = bind_boundary_flux(discr, flux_strong)
 
+    def source_u(x):
+        return exp(-x*x*128)
+
+    source_u_vec = discr.interpolate_volume_function(source_u)
+
     def rhs(t, y):
         u = fields[0]
         v = fields[1:]
 
-        def source_u(x):
-            return exp(-x*x*64)
+        bc_v = discr.boundarize_volume_field(v)
+        bc_u = -discr.boundarize_volume_field(u)
 
-        source_u_vec = discr.interpolate_volume_function(source_u)
-
-        rhs = ArithmeticList([# rhs u
-                dot(nabla, v) -m_inv * dot(flux, v) +source_u_vec
-                ])
-        rhs.extend(# rhs v
-            nabla*u -m_inv * (flux * u + bflux * (u,bc))
-            )
+        rhs = ArithmeticList([])
+        # rhs u
+        rhs.append(dot(nabla, v) 
+                - m_inv*(
+                    dot(flux, v) 
+                    #+ dot(bflux, [(v[0], bc_v[0]), (v[1], bc_v[1])])
+                    ) 
+                + source_u_vec)
+        # rhs v
+        rhs.extend(nabla*u 
+                -m_inv*(
+                    flux*u 
+                    + bflux*(u,bc_u)
+                    ))
         return rhs
 
     stepper = RK4TimeStepper()
+    #vis = VtkVisualizer(discr)
+    vis = SiloVisualizer(discr)
     for step in range(nsteps):
         t = step*dt
-        print "timestep %d, t=%f" % (step, t)
+        if step % 10 == 0:
+            print "timestep %d, t=%f" % (step, t)
 
-        if step % 4 == 0:
-            discr.visualize_vtk("fld-%04d.vtk" % step,
+        if t > 0.1:
+            source_u_vec = discr.volume_zeros()
+
+        if step % 10 == 0:
+            vis("fld-%04d.silo" % step,
                     [("u", fields[0]), ], 
                     [("v", zip(*fields[1:])), ]
                     )
