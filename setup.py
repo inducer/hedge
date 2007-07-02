@@ -26,14 +26,29 @@ try:
 except NameError:
     non_matching_config()
 
-if HEDGE_CONF_TEMPLATE_VERSION != 2:
+if HEDGE_CONF_TEMPLATE_VERSION != 3:
     non_matching_config()
 
-INCLUDE_DIRS = BOOST_INCLUDE_DIRS + BOOST_MATH_TOOLKIT_INCLUDE_DIRS
+INCLUDE_DIRS = BOOST_INCLUDE_DIRS \
+        + BOOST_MATH_TOOLKIT_INCLUDE_DIRS \
+        + BOOST_BINDINGS_INCLUDE_DIRS
+
 LIBRARY_DIRS = BOOST_LIBRARY_DIRS
 LIBRARIES = BPL_LIBRARIES
 
-OP_EXTRA_DEFINES = {}
+EXTRA_DEFINES = {}
+EXTRA_INCLUDE_DIRS = []
+EXTRA_LIBRARY_DIRS = []
+EXTRA_LIBRARIES = []
+
+def handle_component(comp):
+    if globals()["USE_"+comp]:
+        globals()["EXTRA_DEFINES"]["USE_"+comp] = 1
+        globals()["EXTRA_INCLUDE_DIRS"] += globals()[comp+"_INCLUDE_DIRS"]
+        globals()["EXTRA_LIBRARY_DIRS"] += globals()[comp+"_LIBRARY_DIRS"]
+        globals()["EXTRA_LIBRARIES"] += globals()[comp+"_LIBRARIES"]
+
+handle_component("SILO")
 
 setup(name="hedge",
       version="0.90",
@@ -45,7 +60,6 @@ setup(name="hedge",
       packages=["hedge"],
       package_dir={"hedge": "src/python"},
       ext_package="hedge",
-      #scripts=["scripts/pylinear"],
       ext_modules=[ 
           Extension("_internal", 
               ["src/cxx/wrap_main.cpp", 
@@ -55,10 +69,20 @@ setup(name="hedge",
                   "src/cxx/wrap_volume_operators.cpp", 
                   "src/cxx/wrap_face_operators.cpp", 
                   ],
-              include_dirs = INCLUDE_DIRS,
-              library_dirs = LIBRARY_DIRS,
-              libraries = LIBRARIES,
-              extra_compile_args = EXTRA_COMPILE_ARGS,
+              include_dirs=INCLUDE_DIRS + EXTRA_INCLUDE_DIRS,
+              library_dirs=LIBRARY_DIRS + EXTRA_LIBRARY_DIRS,
+              libraries=LIBRARIES + EXTRA_LIBRARIES,
+              extra_compile_args=EXTRA_COMPILE_ARGS,
+              define_macros=list(EXTRA_DEFINES.iteritems()),
+              ),
+          Extension("_silo", 
+              ["src/cxx/wrap_silo.cpp", 
+                  ],
+              include_dirs=INCLUDE_DIRS + EXTRA_INCLUDE_DIRS,
+              library_dirs=LIBRARY_DIRS + EXTRA_LIBRARY_DIRS,
+              libraries=LIBRARIES + EXTRA_LIBRARIES,
+              extra_compile_args=EXTRA_COMPILE_ARGS,
+              define_macros=list(EXTRA_DEFINES.iteritems()),
               ),
           ]
      )

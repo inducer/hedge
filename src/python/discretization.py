@@ -324,6 +324,40 @@ class Discretization:
 
         return result
     
+    def lift_face_values(self, flux, (el, fl), fl_values, fn_values, fl_indices, trace=False):
+        face = self.faces[el.id][fl]
+
+        fl_local_coeff = flux.local_coeff(face)
+        fl_neighbor_coeff = flux.neighbor_coeff(face, None)
+
+        ldis = self.find_el_discretization(el.id)
+        fl_contrib = face.face_jacobian * ldis.face_mass_matrix() * \
+                (fl_local_coeff*fl_values + fl_neighbor_coeff*fn_values)
+        el_contrib = num.zeros((ldis.node_count(),))
+
+        for i, v in zip(fl_indices, fl_contrib):
+            el_contrib[i] = v
+
+        return el_contrib
+
+    def lift_boundary_flux_2(self, flux, field, bfield, tag=None):
+        result = num.zeros_like(field)
+        ranges = self.boundary_ranges[tag]
+
+        for face in self.mesh.tag_to_boundary[tag]:
+            el, fl = face
+
+            (el_start, el_end), ldis = self.find_el_data(el.id)
+            fl_indices = ldis.face_indices()[fl]
+            fn_start, fn_end = ranges[face]
+
+            fl_values = num.array([field[el_start+i] for i in fl_indices])
+            fn_values = bfield[fn_start:fn_end]
+
+            result[el_start:el_end] += \
+                    self.lift_face_values(flux, face, fl_values, fn_values, fl_indices)
+        return result
+
     # misc stuff --------------------------------------------------------------
     def dt_factor(self, max_system_ev):
         distinct_ldis = set(eg.local_discretization for eg in self.element_groups)
@@ -334,6 +368,7 @@ class Discretization:
                     for el, map in zip(eg.members, eg.maps))
                     for eg in self.element_groups)
 
+    @work_with_arithmetic_containers
     def volumize_boundary_field(self, tag, bfield):
         result = self.volume_zeros()
         ranges = self.boundary_ranges[tag]
@@ -350,6 +385,7 @@ class Discretization:
 
         return result
     
+    @work_with_arithmetic_containers
     def boundarize_volume_field(self, field, tag=None):
         result = self.boundary_zeros(tag)
         ranges = self.boundary_ranges[tag]
@@ -357,8 +393,8 @@ class Discretization:
         for face in self.mesh.tag_to_boundary[tag]:
             el, fl = face
 
-            el_start, el_end = self.element_group[el.id]
-            fl_indices = self.element_map[el.id].face_indices()[fl]
+            (el_start, el_end), ldis = self.find_el_data(el.id)
+            fl_indices = ldis.face_indices()[fl]
             fn_start, fn_end = ranges[face]
 
             for i, fi in enumerate(fl_indices):
@@ -379,37 +415,6 @@ class Discretization:
             if idx-el_start in face_indices:
                 return el_id, f_id, idx-el_start
         raise ValueError, "not a valid face dof index"
-
-    def visualize_vtk(self, filename, fields=[], vectors=[]):
-        from pyvtk import PolyData, PointData, VtkData, Scalars, Vectors
-        import numpy
-
-        def three_vector(x):
-            if len(x) == 3:
-                return x
-            elif len(x) == 2:
-                return x[0], x[1], 0.
-            elif len(x) == 1:
-                return x[0], 0, 0.
-
-        points = [(x,y,0) for x,y in self.points]
-        polygons = []
-
-        for eg in self.element_groups:
-            ldis = eg.local_discretization
-            for el, (el_start, el_stop) in zip(eg.members, eg.ranges):
-                polygons += [[el_start+j for j in element] 
-                        for element in ldis.generate_submesh_indices()]
-
-        structure = PolyData(points=points, polygons=polygons)
-        pdatalist = [
-                Scalars(numpy.array(field), name=name, lookup_table="default") 
-                for name, field in fields
-                ] + [
-                Vectors([three_vector(v) for v in field], name=name)
-                for name, field in vectors]
-        vtk = VtkData(structure, "Hedge visualization", PointData(*pdatalist))
-        vtk.tofile(filename)
 
 
 
@@ -475,6 +480,7 @@ def generate_ones_on_boundary(discr, tag):
 
 
 
+# bound operators -------------------------------------------------------------
 class _DifferentiationOperator(object):
     def __init__(self, discr, coordinate):
         self.discr = discr
@@ -517,6 +523,7 @@ class _BoundaryFluxOperator(object):
 
 
 
+# operator binding functions --------------------------------------------------
 def bind_nabla(discr):
     from pytools.arithmetic_container import ArithmeticList
     return ArithmeticList(

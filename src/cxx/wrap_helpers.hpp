@@ -21,6 +21,12 @@
 #define DEF_FOR_EACH_OP_TARGET(NAME, TEMPLATE_ARGS) \
   def(#NAME, NAME<TEMPLATE_ARGS, vector_target>); \
   def(#NAME, NAME<TEMPLATE_ARGS, coord_matrix_target>);
+#define ENUM_VALUE(NAME) \
+  value(#NAME, NAME)
+#define DEF_SIMPLE_METHOD(NAME) \
+  def(#NAME, &cl::NAME)
+#define DEF_SIMPLE_FUNCTION(NAME) \
+  def(#NAME, &NAME)
 
 
 
