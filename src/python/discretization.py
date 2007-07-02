@@ -324,40 +324,6 @@ class Discretization:
 
         return result
     
-    def lift_face_values(self, flux, (el, fl), fl_values, fn_values, fl_indices, trace=False):
-        face = self.faces[el.id][fl]
-
-        fl_local_coeff = flux.local_coeff(face)
-        fl_neighbor_coeff = flux.neighbor_coeff(face, None)
-
-        ldis = self.find_el_discretization(el.id)
-        fl_contrib = face.face_jacobian * ldis.face_mass_matrix() * \
-                (fl_local_coeff*fl_values + fl_neighbor_coeff*fn_values)
-        el_contrib = num.zeros((ldis.node_count(),))
-
-        for i, v in zip(fl_indices, fl_contrib):
-            el_contrib[i] = v
-
-        return el_contrib
-
-    def lift_boundary_flux_2(self, flux, field, bfield, tag=None):
-        result = num.zeros_like(field)
-        ranges = self.boundary_ranges[tag]
-
-        for face in self.mesh.tag_to_boundary[tag]:
-            el, fl = face
-
-            (el_start, el_end), ldis = self.find_el_data(el.id)
-            fl_indices = ldis.face_indices()[fl]
-            fn_start, fn_end = ranges[face]
-
-            fl_values = num.array([field[el_start+i] for i in fl_indices])
-            fn_values = bfield[fn_start:fn_end]
-
-            result[el_start:el_end] += \
-                    self.lift_face_values(flux, face, fl_values, fn_values, fl_indices)
-        return result
-
     # misc stuff --------------------------------------------------------------
     def dt_factor(self, max_system_ev):
         distinct_ldis = set(eg.local_discretization for eg in self.element_groups)
