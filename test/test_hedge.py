@@ -115,6 +115,101 @@ class TestHedge(unittest.TestCase):
         #print list(node_indices_2(order))
         self.assert_(set(tri.node_indices()) == set(node_indices_2(order)))
     # -------------------------------------------------------------------------
+    def test_simp_nodes(self):
+        from hedge.element import TriangularElement, TetrahedralElement
+
+        triorder = 8
+        tri = TriangularElement(triorder)
+        els = [tri, TriangularElement(17), TetrahedralElement(8)]
+
+        for el in els:
+            eps = 1e-10
+
+            unodes = list(el.unit_nodes())
+            self.assert_(len(unodes) == el.node_count())
+            for ux in unodes:
+                for uc in ux:
+                    self.assert_(uc >= -1-eps)
+                self.assert_(sum(ux) <= 1+eps)
+
+            equnodes = list(el.equidistant_unit_nodes())
+            self.assert_(len(equnodes) == el.node_count())
+            for ux in equnodes:
+                for uc in ux:
+                    self.assert_(uc >= -1-eps)
+                self.assert_(sum(ux) <= 1+eps)
+
+            for indices in el.node_indices():
+                for index in indices:
+                    self.assert_(index >= 0)
+                self.assert_(sum(indices) <= el.order)
+
+            if False:
+                outf = open("trinodes1.dat", "w")
+                for ux in el.equilateral_nodes():
+                    outf.write("%g\t%g\n" % tuple(ux))
+                outf = open("trinodes2.dat", "w")
+                for ux in el.equilateral_nodes_2():
+                    outf.write("%g\t%g\n" % tuple(ux))
+
+            if el.dimensions == 3:
+                outf = open("nodes.dat", "w")
+                for ux in el.equidistant_equilateral_nodes():
+                    outf.write("%g\t%g\t%g\n" % tuple(ux))
+
+        def equilateral_nodes_2(self):
+            # This is the old, more explicit, less general way of computing
+            # the triangle nodes. Below, we compare its results with that of the
+            # new routine.
+
+            alpha_opt = [0.0000, 0.0000, 1.4152, 0.1001, 0.2751, 0.9800, 1.0999,
+                    1.2832, 1.3648, 1.4773, 1.4959, 1.5743, 1.5770, 1.6223, 1.6258]
+                      
+            try:
+                alpha = alpha_opt[self.order-1]
+            except IndexError:
+                alpha = 5/3
+
+            from hedge.element import WarpFactorCalculator
+            import pylinear.array as num
+            from math import sin, cos, pi
+
+            warp = WarpFactorCalculator(self.order)
+
+            edge1dir = num.array([1,0])
+            edge2dir = num.array([cos(2*pi/3), sin(2*pi/3)])
+            edge3dir = num.array([cos(4*pi/3), sin(4*pi/3)])
+
+            for bary in self.equidistant_barycentric_nodes():
+                lambda1, lambda2, lambda3 = bary
+
+                # find equidistant (x,y) coordinates in equilateral triangle
+                point = self.barycentric_to_equilateral(bary)
+
+                # compute blend factors
+                blend1 = 4*lambda1*lambda2 # nonzero on AB
+                blend2 = 4*lambda3*lambda2 # nonzero on BC
+                blend3 = 4*lambda3*lambda1 # nonzero on AC
+
+                # calculate amount of warp for each node, for each edge
+                warp1 = blend1*warp(lambda2 - lambda1)*(1 + (alpha*lambda3)**2)
+                warp2 = blend2*warp(lambda3 - lambda2)*(1 + (alpha*lambda1)**2)
+                warp3 = blend3*warp(lambda1 - lambda3)*(1 + (alpha*lambda2)**2)
+
+                # return warped point
+                yield point + warp1*edge1dir + warp2*edge2dir + warp3*edge3dir
+
+        from pylinear.computation import norm_2
+        for n1, n2 in zip(tri.equilateral_nodes(), equilateral_nodes_2(tri)):
+            self.assert_(norm_2(n1-n2) < 3e-15)
+
+        def node_indices_2(order):
+            for n in range(0, order+1):
+                 for m in range(0, order+1-n):
+                     yield m,n
+
+        self.assert_(set(tri.node_indices()) == set(node_indices_2(triorder)))
+    # -------------------------------------------------------------------------
     def test_tri_basis_grad(self):
         from itertools import izip
         from hedge.element import TriangularElement

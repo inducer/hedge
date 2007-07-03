@@ -16,8 +16,8 @@ class Element(object):
 class Triangle(Element):
     @property
     def faces(self):
-        v = self.vertices
-        return [(v[0], v[1]), (v[1], v[2]), (v[0], v[2])]
+        from hedge.element import TriangularElement
+        return TriangularElement.face_vertices(self.vertices)
 
 
 
@@ -25,12 +25,8 @@ class Triangle(Element):
 class Tetrahedron(Element):
     @property
     def faces(self):
-        v = self.vertices
-        return [(v[0],v[1],v[2]), 
-                (v[0],v[1],v[3]),
-                (v[0],v[3],v[2]),
-                (v[1],v[3],v[2]),
-                ]
+        from hedge.element import TetrahedralElement
+        return TetrahedralElement.face_vertices(self.vertices)
 
 
 

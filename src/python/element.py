@@ -13,6 +13,13 @@ __all__ = ["TriangularElement"]
 
 
 
+def _wandering_one(length):
+    for i in range(length):
+        yield i*(0,) + (1,) + (length-1-i)*(0,)
+
+
+
+
 class WarpFactorCalculator:
     """Calculator for Warburton's warp factor.
 
@@ -91,6 +98,37 @@ class GradTriangleBasisFunction:
                 +(2*r+2) * g_s * one_s**(i-2) * df_a
                 -i * f_a * g_s * one_s**(i-1)
                 )]
+
+
+
+
+class TetrahedronBasisFunction:
+    def __init__(self, (i, j, k)):
+        from hedge.polynomial import jacobi_function
+        self.i = i
+        self.f = jacobi_function(0, 0, i)
+        self.g = jacobi_function(2*i+1, 0, j)
+        self.h = jacobi_function(2*i+2*j+1, 0, h)
+
+    def __call__(self, (r, s, t)):
+        try:
+            a = -2*(1+r)/(s+t) - 1
+        except ZeroDivisionError:
+            a = -1
+
+        try:
+            b = 2*(1+s)/(1-t) - 1
+        except ZeroDivisionError:
+            b = -1
+
+        c = t
+
+        return sqrt(8) \
+                *self.f(a) \
+                *self.g(b) \
+                *(1-b)**(self.i) \
+                *self.h(c) \
+                *(1-c)**(self.i+self.j)
 
 
 
@@ -276,6 +314,13 @@ class TriangularElement(SimplicialElement):
         self.has_local_jacobians = False
 
     # numbering ---------------------------------------------------------------
+    @staticmethod
+    def face_vertices(vertices):
+        return [(vertices[0], vertices[1]), 
+                (vertices[1], vertices[2]), 
+                (vertices[0], vertices[2])
+                ]
+
     @memoize
     def face_indices(self):
         """Return a list of face index lists. Each face index list contains
@@ -316,11 +361,13 @@ class TriangularElement(SimplicialElement):
 
         # port of J. Hesthaven's Nodes2D routine
         # note that the order of the barycentric coordinates is changed
-        # match the order of the equilateral vertices
+        # match the order of the equilateral vertices 
+        
+        # Generally, # not much is left of the original routine--it was very redundant.
 
         # Set optimized parameter alpha, depending on order N
         alpha_opt = [0.0000, 0.0000, 1.4152, 0.1001, 0.2751, 0.9800, 1.0999,
-                  1.2832, 1.3648, 1.4773, 1.4959, 1.5743, 1.5770, 1.6223, 1.6258]
+                1.2832, 1.3648, 1.4773, 1.4959, 1.5743, 1.5770, 1.6223, 1.6258]
                   
         try:
             alpha = alpha_opt[self.order-1]
@@ -329,28 +376,33 @@ class TriangularElement(SimplicialElement):
 
         warp = WarpFactorCalculator(self.order)
 
-        edge1dir = num.array([1,0])
-        edge2dir = num.array([cos(2*pi/3), sin(2*pi/3)])
-        edge3dir = num.array([cos(4*pi/3), sin(4*pi/3)])
+        vertices = [self.barycentric_to_equilateral(bary)
+                for bary in _wandering_one(self.dimensions+1)]
+        all_vertex_indices = range(self.dimensions+1)
+        face_vertex_indices = self.face_vertices(all_vertex_indices)
+        faces_vertices = self.face_vertices(vertices)
 
-        for bary in self.equidistant_barycentric_nodes():
-            lambda1, lambda2, lambda3 = bary
+        bpoints = list(self.equidistant_barycentric_nodes())
+        epoints = [self.barycentric_to_equilateral(bp) for bp in bpoints]
 
-            # find equidistant (x,y) coordinates in equilateral triangle
-            point = self.barycentric_to_equilateral(bary)
+        from operator import mul
+        from pylinear.computation import norm_2
 
-            # compute blend factors
-            blend1 = 4*lambda1*lambda2 # nonzero on AB
-            blend2 = 4*lambda3*lambda2 # nonzero on BC
-            blend3 = 4*lambda3*lambda1 # nonzero on AC
+        for fvi, (v1, v2) in zip(face_vertex_indices, faces_vertices):
+            edgedir = v2-v1
+            edgedir /= norm_2(edgedir)
 
-            # calculate amount of warp for each node, for each edge
-            warp1 = blend1*warp(lambda2 - lambda1)*(1 + (alpha*lambda3)**2)
-            warp2 = blend2*warp(lambda3 - lambda2)*(1 + (alpha*lambda1)**2)
-            warp3 = blend3*warp(lambda1 - lambda3)*(1 + (alpha*lambda2)**2)
+            opp_vertex_index = (set(all_vertex_indices) - set(fvi)).__iter__().next()
 
-            # return warped point
-            yield point + warp1*edge1dir + warp2*edge2dir + warp3*edge3dir
+            shifted = []
+            for bp, ep in zip(bpoints, epoints):
+                blend = 4*reduce(mul, (bp[i] for i in fvi))
+                warp_amount = blend*warp(bp[fvi[1]]-bp[fvi[0]]) \
+                        * (1 + (alpha*bp[opp_vertex_index])**2)
+                shifted.append(ep + warp_amount*edgedir)
+
+            epoints = shifted
+        return epoints
 
     @memoize
     def generate_submesh_indices(self):
@@ -493,6 +545,14 @@ class TetrahedralElement(SimplicialElement):
         self.has_local_jacobians = False
 
     # numbering ---------------------------------------------------------------
+    @staticmethod
+    def face_vertices(vertices):
+        return [(vertices[0],vertices[1],vertices[2]), 
+                (vertices[0],vertices[1],vertices[3]),
+                (vertices[0],vertices[3],vertices[2]),
+                (vertices[1],vertices[3],vertices[2]),
+                ]
+
     @memoize
     def face_indices(self):
         """Return a list of face index lists. Each face index list contains
@@ -513,4 +573,98 @@ class TetrahedralElement(SimplicialElement):
                 faces[3].append(i)
 
         return faces
+
+    # node wrangling ----------------------------------------------------------
+    @staticmethod
+    def barycentric_to_equilateral((lambda1, lambda2, lambda3, lambda4)):
+        """Return the equilateral (x,y) coordinate corresponding
+        to the barycentric coordinates (lambda1..lambdaN)."""
+
+        # reflects vertices in equilateral coordinates
+        return num.array([
+            (-lambda1  +lambda2                        ),
+            (-lambda1  -lambda2  +2*lambda3            )/sqrt(3.0),
+            (-lambda1  -lambda2  -  lambda3  +3*lambda4)/sqrt(6.0),
+            ])
+
+    # see doc/hedge-notes.tm
+    equilateral_to_unit = AffineMap(
+            num.array([
+                [1,-1/sqrt(3),-1/sqrt(6)], 
+                [0, 2/sqrt(3),-1/sqrt(6)],
+                [0,         0,   sqrt(6)/2]
+                ]),
+                num.array([-1/2,-1/2,-1/2]))
+
+    def equilateral_nodes(self):
+        """Generate warped nodes in equilateral coordinates (x,y)."""
+
+        # port of J. Hesthaven's Nodes3D routine
+        # note that the order of the barycentric coordinates is changed
+        # match the order of the equilateral vertices
+
+        # Set optimized parameter alpha, depending on order N
+        alpha_opt = [0,0,0,0.1002, 1.1332,1.5608,1.3413,1.2577,1.1603,
+                            1.10153,0.6080,0.4523,0.8856,0.8717,0.9655];
+
+        try:
+            alpha = alpha_opt[self.order-1]
+        except IndexError:
+            alpha = 1
+
+        warp = WarpFactorCalculator(self.order)
+
+        vertices = [self.barycentric_to_equilateral(bary)
+                for bary in _wandering_one(self.dimensions+1)]
+        all_vertex_indices = range(self.dimensions+1)
+        face_vertex_indices = self.face_vertices(all_vertex_indices)
+        faces_vertices = self.face_vertices(vertices)
+
+        bpoints = list(self.equidistant_barycentric_nodes())
+        epoints = [self.barycentric_to_equilateral(bp) for bp in bpoints]
+
+        from pylinear.computation import norm_2
+        from operator import mul
+
+        #for face_indices, (v1, v2, v3) in zip(faces_indices, faces_vertices):
+            #face_base = v2-v1
+            #face_altitude = (v3)-(v1+v2)/2
+
+            #face_base /= norm_2(face_base)
+            #face_altitude /= norm_2(face_altitude)
+
+            #assert abs(face_base*face_altitude) < 1e-16
+
+            #shifted = []
+            #for bp, ep in zip(bpoints, epoints):
+                #blend = reduce(mul, (bp[i] for i in face_indices))
+
+
+
+
+
+            #epoints = shifted
+
+        return epoints
+
+    @memoize
+    def generate_submesh_indices(self):
+        """Return a list of triples of indices into the node list that
+        generate a tesselation of the reference element, using the
+        interpolation nodes."""
+
+        node_dict = dict(
+                (ituple, idx) 
+                for idx, ituple in enumerate(self.node_indices()))
+
+        result = []
+        for i, j in self.node_indices():
+            if i+j < self.order:
+                result.append(
+                        (node_dict[i,j], node_dict[i+1,j], node_dict[i,j+1]))
+            if i+j < self.order-1:
+                result.append(
+                    (node_dict[i+1,j+1], node_dict[i,j+1], node_dict[i+1,j]))
+        return result
+
 
