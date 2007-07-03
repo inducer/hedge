@@ -45,5 +45,4 @@ void hedge_expose_volume_operators()
 #define VOLUME_OPERATORS_TEMPLATE_ARGS matrix,
   DEF_FOR_EACH_OP_TARGET(perform_elwise_operator, VOLUME_OPERATORS_TEMPLATE_ARGS);
   DEF_FOR_EACH_OP_TARGET(perform_elwise_scaled_operator, VOLUME_OPERATORS_TEMPLATE_ARGS);
-  DEF_FOR_EACH_OP_TARGET(perform_2_elwise_scaled_operators, VOLUME_OPERATORS_TEMPLATE_ARGS);
 }

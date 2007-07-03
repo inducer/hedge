@@ -57,24 +57,6 @@ namespace hedge {
       target.add_scaled_coefficients(r.first, r.second, r.first, r.second, 
           scale_factors[i++], matrix);
   }
-  
-  template <class Mat, class OT>
-  inline
-  void perform_2_elwise_scaled_operators(const element_ranges &eg, 
-      vector &scale_factors_1, const Mat &matrix_1, 
-      vector &scale_factors_2, const Mat &matrix_2, 
-      OT target)
-  {
-    unsigned i = 0;
-    BOOST_FOREACH(const element_ranges::element_range &r, eg.m_element_ranges)
-    {
-      target.add_scaled_coefficients(r.first, r.second, r.first, r.second, 
-          scale_factors_1[i++], matrix_1);
-      target.add_scaled_coefficients(r.first, r.second, r.first, r.second, 
-          scale_factors_2[i++], matrix_2);
-
-    }
-  }
 }
 
 

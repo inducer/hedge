@@ -267,25 +267,14 @@ class Discretization:
         return result
 
     def perform_differentiation_operator(self, coordinate, target):
-        from hedge._internal import \
-                perform_elwise_scaled_operator, \
-                perform_2_elwise_scaled_operators
+        from hedge._internal import perform_elwise_scaled_operator
 
         target.begin(len(self.points), len(self.points))
 
-        if self.dimensions == 17:
-            for eg in self.element_groups:
-                perform_2_elwise_scaled_operators(eg.ranges, 
-                        eg.diff_coefficients[coordinate][0],
-                        eg.differentiation_matrices[0], 
-                        eg.diff_coefficients[coordinate][1],
-                        eg.differentiation_matrices[1], 
-                        target)
-        else:
-            for eg in self.element_groups:
-                for coeff, mat in zip(eg.diff_coefficients[coordinate], 
-                        eg.differentiation_matrices):
-                    perform_elwise_scaled_operator(eg.ranges, coeff, mat, target)
+        for eg in self.element_groups:
+            for coeff, mat in zip(eg.diff_coefficients[coordinate], 
+                    eg.differentiation_matrices):
+                perform_elwise_scaled_operator(eg.ranges, coeff, mat, target)
 
         target.finalize()
 
@@ -390,23 +379,6 @@ class Discretization:
 
         return result
 
-    @work_with_arithmetic_containers
-    def boundarize_volume_field_2(self, field, tag=None):
-        result = self.boundary_zeros(tag)
-        ranges = self.boundary_ranges[tag]
-
-        for face in self.mesh.tag_to_boundary[tag]:
-            el, fl = face
-
-            (el_start, el_end), ldis = self.find_el_data(el.id)
-            fl_indices = ldis.face_indices()[fl]
-            fn_start, fn_end = ranges[face]
-
-            for i, fi in enumerate(fl_indices):
-                result[fn_start+i] = field[el_start+fi]
-
-        return result
-    
     def find_element(self, idx):
         for i, (start, stop) in enumerate(self.element_group):
             if start <= idx < stop:
