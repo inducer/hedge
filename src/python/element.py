@@ -101,7 +101,130 @@ class Element(object):
 
 
 
-class TriangularElement(Element):
+class SimplicialElement(Element):
+    def get_map_unit_to_global(self, vertices):
+        """Return an affine map that maps the unit coordinates of the reference
+        element to a global element at a location given by its `vertices'.
+        """
+        mat = num.zeros((self.dimensions, self.dimensions))
+        for i in range(self.dimensions):
+            mat[:,i] = (vertices[i+1] - vertices[0])/2
+        from operator import add
+        return AffineMap(mat, reduce(add, vertices[1:])/2)
+
+    # numbering ---------------------------------------------------------------
+    def node_count(self):
+        """Return the number of interpolation nodes in this element."""
+        d = self.dimensions
+        o = self.order
+        from operator import mul
+        from pytools import factorial
+        return int(reduce(mul, (o+1+i for i in range(d)))/factorial(d))
+
+    def node_indices(self):
+        """Generate tuples enumerating the node indices present
+        in this element. Each tuple has a length equal to the dimension
+        of the element. The tuples constituents are non-negative integers
+        whose sum is less than or equal to the order of the element.
+        
+        The order in which these nodes are generated dictates the local 
+        node numbering.
+        """
+        from pytools import generate_non_negative_integer_tuples_summing_to_at_most
+        return generate_non_negative_integer_tuples_summing_to_at_most(
+                self.order, self.dimensions)
+
+    # node wrangling ----------------------------------------------------------
+    def equidistant_barycentric_nodes(self):
+        """Generate equidistant nodes in barycentric coordinates."""
+        for indices in self.node_indices():
+            divided = tuple(i/self.order for i in indices)
+            yield (1-sum(divided),) + divided
+
+    def equidistant_equilateral_nodes(self):
+        """Generate equidistant nodes in equilateral coordinates."""
+
+        for bary in self.equidistant_barycentric_nodes():
+            yield self.barycentric_to_equilateral(bary)
+
+    def equidistant_unit_nodes(self):
+        """Generate equidistant nodes in unit coordinates."""
+
+        for bary in self.equidistant_barycentric_nodes():
+            yield self.equilateral_to_unit(self.barycentric_to_equilateral(bary))
+
+    @memoize
+    def unit_nodes(self):
+        """Generate the warped nodes in unit coordinates (r,s,...)."""
+        return [self.equilateral_to_unit(node)
+                for node in self.equilateral_nodes()]
+
+    # matrices ----------------------------------------------------------------
+    @memoize
+    def vandermonde(self):
+        from hedge.polynomial import generic_vandermonde
+
+        return generic_vandermonde(
+                list(self.unit_nodes()),
+                list(self.basis_functions()))
+
+    @memoize
+    def inverse_mass_matrix(self):
+        """Return the inverse of the mass matrix of the unit element 
+        with respect to the nodal coefficients. Divide by the Jacobian 
+        to obtain the global mass matrix.
+        """
+
+        # see doc/hedge-notes.tm
+        v = self.vandermonde()
+        return v*v.T
+
+    @memoize
+    def mass_matrix(self):
+        """Return the mass matrix of the unit element with respect 
+        to the nodal coefficients. Multiply by the Jacobian to obtain
+        the global mass matrix.
+        """
+
+        return 1/self.inverse_mass_matrix()
+
+    @memoize
+    def grad_vandermonde(self):
+        """Compute the Vandermonde matrices of the grad_basis_functions().
+        Return a list of these matrices."""
+
+        from hedge.polynomial import generic_multi_vandermonde
+
+        return generic_multi_vandermonde(
+                list(self.unit_nodes()),
+                list(self.grad_basis_functions()))
+
+    @memoize
+    def differentiation_matrices(self):
+        """Return matrices that map the nodal values of a function
+        to the nodal values of its derivative in each of the unit
+        coordinate directions.
+        """
+
+        # see doc/hedge-notes.tm
+        v = self.vandermonde()
+        return [v <<num.leftsolve>> vdiff for vdiff in self.grad_vandermonde()]
+
+    # face operations ---------------------------------------------------------
+    @memoize
+    def face_mass_matrix(self):
+        from hedge.polynomial import legendre_vandermonde
+        unodes = self.unit_nodes()
+        face_vandermonde = legendre_vandermonde(
+                [unodes[i][0] for i in self.face_indices()[0]],
+                self.order)
+
+        return 1/(face_vandermonde*face_vandermonde.T)
+
+
+
+
+class TriangularElement(SimplicialElement):
     """An arbitrary-order triangular finite element.
 
     Coordinate systems used:
@@ -118,9 +241,9 @@ class TriangularElement(Element):
     A-----B
 
     O = (0,0)
-    A=(-1,-1)
-    B=(1,-1)
-    C=(-1,1)
+    A = (-1,-1)
+    B = (1,-1)
+    C = (-1,1)
 
     equilateral coordinates (x,y):
 
@@ -140,7 +263,7 @@ class TriangularElement(Element):
     When global vertices are passed in, they are mapped to the 
     reference vertices A, B, C in order.
 
-    Faces are always ordered AB, BC, CA.
+    Faces are always ordered AB, BC, AC.
     """
 
     # In case you were wondering: the double backslashes in the docstring
@@ -152,39 +275,11 @@ class TriangularElement(Element):
         self.dimensions = 2
         self.has_local_jacobians = False
 
-    def get_map_unit_to_global(self, vertices):
-        """Return an affine map that maps the unit coordinates of the reference
-        element to a global element at a location given by its `vertices'.
-        """
-        mat = num.zeros((2,2))
-        mat[:,0] = (vertices[1] - vertices[0])/2
-        mat[:,1] = (vertices[2] - vertices[0])/2
-        return AffineMap(mat, (vertices[1]+vertices[2])/2)
-
     # numbering ---------------------------------------------------------------
-    def node_count(self):
-        """Return the number of interpolation nodes in this element."""
-        return int((self.order+1)*(self.order+2)/2)
-
-    def node_indices(self):
-        """Generate tuples (col,row) enumerating the nodes present
-        in this triangle. The order in which these nodes are generated
-        also dictates the local node numbering.
-
-        The following invariants hold:
-        - col, row >= 0
-        - col+row <= self.order
-        """
-
-        for n in range(0, self.order+1):
-            for m in range(0, self.order+1-n):
-                yield m,n
-
     @memoize
     def face_indices(self):
         """Return a list of face index lists. Each face index list contains
-        the local node numbers of the nodes on that face, numbered 
-        counterclockwise.
+        the local node numbers of the nodes on that face.
         """
 
         faces = [[], [], []]
@@ -198,52 +293,30 @@ class TriangularElement(Element):
             if m == 0:
                 faces[2].append(i)
 
-        # make sure faces are numbered counterclockwise
-        faces[2] = faces[2][::-1]
-
         return faces
 
-    # node generators ---------------------------------------------------------
-    def equidistant_barycentric_nodes(self):
-        """Generate equidistant nodes in barycentric coordinates
-        of order N.
-        """
-        for m, n in self.node_indices():
-            lambda1 = n/self.order
-            lambda3 = m/self.order
-            lambda2 = 1-lambda1-lambda3
-
-            yield lambda1, lambda2, lambda3
-
+    # node wrangling ----------------------------------------------------------
     @staticmethod
     def barycentric_to_equilateral((lambda1, lambda2, lambda3)):
         """Return the equilateral (x,y) coordinate corresponding
         to the barycentric coordinates (lambda1..lambdaN)."""
+
+        # reflects vertices in equilateral coordinates
         return num.array([
-            -lambda2+lambda3,
-            (-lambda2-lambda3+2*lambda1)/sqrt(3.0)])
+            (-lambda1  +lambda2            ),
+            (-lambda1  -lambda2  +2*lambda3)/sqrt(3.0)])
 
     # see doc/hedge-notes.tm
     equilateral_to_unit = AffineMap(
             num.array([[1,-1/sqrt(3)], [0,2/sqrt(3)]]),
                 num.array([-1/3,-1/3]))
 
-    def equidistant_equilateral_nodes(self):
-        """Generate equidistant nodes in equilateral coordinates."""
-
-        for bary in self.equidistant_barycentric_nodes():
-            yield self.barycentric_to_equilateral(bary)
-
-    def equidistant_unit_nodes(self):
-        """Generate equidistant nodes in unit coordinates."""
-
-        for bary in self.equidistant_barycentric_nodes():
-            yield self.equilateral_to_unit(self.barycentric_to_equilateral(bary))
-
     def equilateral_nodes(self):
         """Generate warped nodes in equilateral coordinates (x,y)."""
 
         # port of J. Hesthaven's Nodes2D routine
+        # note that the order of the barycentric coordinates is changed
+        # match the order of the equilateral vertices
 
         # Set optimized parameter alpha, depending on order N
         alpha_opt = [0.0000, 0.0000, 1.4152, 0.1001, 0.2751, 0.9800, 1.0999,
@@ -267,23 +340,17 @@ class TriangularElement(Element):
             point = self.barycentric_to_equilateral(bary)
 
             # compute blend factors
-            blend1 = 4*lambda2*lambda3
-            blend2 = 4*lambda1*lambda3
-            blend3 = 4*lambda1*lambda2
+            blend1 = 4*lambda1*lambda2 # nonzero on AB
+            blend2 = 4*lambda3*lambda2 # nonzero on BC
+            blend3 = 4*lambda3*lambda1 # nonzero on AC
 
             # calculate amount of warp for each node, for each edge
-            warp1 = blend1*warp(lambda3 - lambda2)*(1 + (alpha*lambda1)**2)
-            warp2 = blend2*warp(lambda1 - lambda3)*(1 + (alpha*lambda2)**2)
-            warp3 = blend3*warp(lambda2 - lambda1)*(1 + (alpha*lambda3)**2)
+            warp1 = blend1*warp(lambda2 - lambda1)*(1 + (alpha*lambda3)**2)
+            warp2 = blend2*warp(lambda3 - lambda2)*(1 + (alpha*lambda1)**2)
+            warp3 = blend3*warp(lambda1 - lambda3)*(1 + (alpha*lambda2)**2)
 
             # return warped point
             yield point + warp1*edge1dir + warp2*edge2dir + warp3*edge3dir
-
-    @memoize
-    def unit_nodes(self):
-        """Generate the warped nodes in unit coordinates (r,s)."""
-        return [self.equilateral_to_unit(node)
-                for node in self.equilateral_nodes()]
 
     @memoize
     def generate_submesh_indices(self):
@@ -320,69 +387,7 @@ class TriangularElement(Element):
         """
         return [GradTriangleBasisFunction(idx) for idx in self.node_indices()]
 
-    # matrices ----------------------------------------------------------------
-    @memoize
-    def vandermonde(self):
-        from hedge.polynomial import generic_vandermonde
-
-        return generic_vandermonde(
-                list(self.unit_nodes()),
-                list(self.basis_functions()))
-
-    @memoize
-    def inverse_mass_matrix(self):
-        """Return the inverse of the mass matrix of the unit element 
-        with respect to the nodal coefficients. Divide by the Jacobian 
-        to obtain the global mass matrix.
-        """
-
-        # see doc/hedge-notes.tm
-        v = self.vandermonde()
-        return v*v.T
-
-    @memoize
-    def mass_matrix(self):
-        """Return the mass matrix of the unit element with respect 
-        to the nodal coefficients. Multiply by the Jacobian to obtain
-        the global mass matrix.
-        """
-
-        # see doc/hedge-notes.tm
-        return 1/self.inverse_mass_matrix()
-
-    @memoize
-    def grad_vandermonde(self):
-        """Compute the Vandermonde matrices of the grad_basis_functions().
-        Return a list of these matrices."""
-
-        from hedge.polynomial import generic_multi_vandermonde
-
-        return generic_multi_vandermonde(
-                list(self.unit_nodes()),
-                list(self.grad_basis_functions()))
-
-    @memoize
-    def differentiation_matrices(self):
-        """Return matrices that map the nodal values of a function
-        to the nodal values of its derivative in each of the unit
-        coordinate directions.
-        """
-
-        # see doc/hedge-notes.tm
-        v = self.vandermonde()
-        return [v <<num.leftsolve>> vdiff for vdiff in self.grad_vandermonde()]
-
     # face operations ---------------------------------------------------------
-    @memoize
-    def face_mass_matrix(self):
-        from hedge.polynomial import legendre_vandermonde
-        unodes = self.unit_nodes()
-        face_vandermonde = legendre_vandermonde(
-                [unodes[i][0] for i in self.face_indices()[0]],
-                self.order)
-
-        return 1/(face_vandermonde*face_vandermonde.T)
-
     def face_normals_and_jacobians(self, affine_map):
         """Compute the normals and face jacobians of the unit triangle
         transformed according to `affine_map'.
@@ -429,4 +434,83 @@ class TriangularElement(Element):
         semiperimeter = sum(comp.norm_2(vertices[vi1]-vertices[vi2]) 
                 for vi1, vi2 in [(0,1), (1,2), (2,0)])/2
         return area/semiperimeter
+
+
+
+
+class TetrahedralElement(SimplicialElement):
+    """An arbitrary-order tetrahedral finite element.
+
+    Coordinate systems used:
+    ------------------------
+
+    unit coordinates (r,s,t):
+
+               ^ s
+               |
+               C
+              /|\\
+             / | \\
+            /  |  \\
+           /   |   \\
+          /   O|    \\
+         /   __A-----B---> r
+        /_--^ ___--^^
+       ,D--^^^
+      L 
+      
+      t
+
+    (squint, and it might start making sense...)
+
+    O=( 0, 0, 0)
+    A=(-1,-1,-1)
+    B=(+1,-1,-1)
+    C=(-1,+1,-1)
+    D=(-1,-1,+1)
+
+    equilateral coordinates (x,y,z):
+
+    O = (0,0)
+    A = (-1,-1/sqrt(3),-1/sqrt(6))
+    B = ( 1,-1/sqrt(3),-1/sqrt(6))
+    C = ( 0, 2/sqrt(3),-1/sqrt(6))
+    D = ( 0,         0, 3/sqrt(6))
+
+    When global vertices are passed in, they are mapped to the 
+    reference vertices A, B, C, D in order.
+
+    Faces are always ordered ABC, ABD, ADC, BDC.
+    """
+
+    # In case you were wondering: the double backslashes in the docstring
+    # above are required because single backslashes only escape their subsequent
+    # newlines, and thus end up not yielding a correct docstring.
+
+    def __init__(self, order):
+        self.order = order
+        self.dimensions = 3
+        self.has_local_jacobians = False
+
+    # numbering ---------------------------------------------------------------
+    @memoize
+    def face_indices(self):
+        """Return a list of face index lists. Each face index list contains
+        the local node numbers of the nodes on that face.
+        """
+
+        faces = [[], [], [], []]
+
+        for i, (m,n,o) in enumerate(self.node_indices()):
+            # face finding
+            if o == 0:
+                faces[0].append(i)
+            if n == 0:
+                faces[1].append(i)
+            if m == 0:
+                faces[2].append(i)
+            if n+m+o == self.order:
+                faces[3].append(i)
+
+        return faces
 

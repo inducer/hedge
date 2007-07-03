@@ -90,8 +90,8 @@ class TestHedge(unittest.TestCase):
     def test_tri_nodes(self):
         from hedge.element import TriangularElement
 
-        n = 17
-        tri = TriangularElement(n)
+        order = 4
+        tri = TriangularElement(order)
         unodes = list(tri.unit_nodes())
         self.assert_(len(unodes) == tri.node_count())
 
@@ -104,7 +104,16 @@ class TestHedge(unittest.TestCase):
         for i, j in tri.node_indices():
             self.assert_(i >= 0)
             self.assert_(j >= 0)
-            self.assert_(i+j <= n)
+            self.assert_(i+j <= order)
+
+        def node_indices_2(order):
+            for n in range(0, order+1):
+                 for m in range(0, order+1-n):
+                     yield m,n
+
+        #print list(tri.node_indices())
+        #print list(node_indices_2(order))
+        self.assert_(set(tri.node_indices()) == set(node_indices_2(order)))
     # -------------------------------------------------------------------------
     def test_tri_basis_grad(self):
         from itertools import izip

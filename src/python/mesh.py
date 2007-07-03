@@ -16,8 +16,21 @@ class Element(object):
 class Triangle(Element):
     @property
     def faces(self):
-        return [(self.vertices[i], self.vertices[(i+1)%3])
-                for i in range(3)]
+        v = self.vertices
+        return [(v[0], v[1]), (v[1], v[2]), (v[0], v[2])]
+
+
+
+
+class Tetrahedron(Element):
+    @property
+    def faces(self):
+        v = self.vertices
+        return [(v[0],v[1],v[2]), 
+                (v[0],v[1],v[3]),
+                (v[0],v[3],v[2]),
+                (v[1],v[3],v[2]),
+                ]
 
 
 
