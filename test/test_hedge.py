@@ -190,27 +190,6 @@ class TestHedge(unittest.TestCase):
 
         self.assert_(set(tri.node_indices()) == set(node_indices_2(triorder)))
     # -------------------------------------------------------------------------
-    def test_tri_basis_grad(self):
-        from itertools import izip
-        from hedge.element import TriangularElement
-        from random import uniform
-        import pylinear.array as num
-        import pylinear.computation as comp
-
-        tri = TriangularElement(8)
-        for bf, gradbf in izip(tri.basis_functions(), tri.grad_basis_functions()):
-            for i in range(10):
-                r = uniform(-0.95, 0.95)
-                s = uniform(-0.95, -r-0.05)
-
-                h = 1e-4
-                gradbf_v = num.array(gradbf((r,s)))
-                approx_gradbf_v = num.array([
-                    (bf((r+h,s)) - bf((r-h,s)))/(2*h),
-                    (bf((r,s+h)) - bf((r,s-h)))/(2*h)
-                    ])
-                self.assert_(comp.norm_infinity(approx_gradbf_v-gradbf_v) < h)
-    # -------------------------------------------------------------------------
     def test_simp_basis_grad(self):
         from itertools import izip
         from hedge.element import TriangularElement, TetrahedralElement
@@ -240,7 +219,7 @@ class TestHedge(unittest.TestCase):
                         for dir in [num.array(dir) for dir in wandering_element(d)]
                         ])
                     err = comp.norm_infinity(approx_gradbf_v-gradbf_v)
-                    print el.dimensions, el.order, i_bf, err
+                    #print el.dimensions, el.order, i_bf, err
                     self.assert_(err < err_factor*h)
     # -------------------------------------------------------------------------
     def test_tri_face_node_distribution(self):
