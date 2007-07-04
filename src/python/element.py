@@ -13,13 +13,6 @@ __all__ = ["TriangularElement"]
 
 
 
-def _wandering_one(length):
-    for i in range(length):
-        yield i*(0,) + (1,) + (length-1-i)*(0,)
-
-
-
-
 class WarpFactorCalculator:
     """Calculator for Warburton's warp factor.
 
@@ -55,8 +48,10 @@ class TriangleWarper:
 
         cls = TriangularElement
 
+        from pytools import wandering_element
+
         vertices = [cls.barycentric_to_equilateral(bary)
-                for bary in _wandering_one(cls.dimensions+1)]
+                for bary in wandering_element(cls.dimensions+1)]
         all_vertex_indices = range(cls.dimensions+1)
         face_vertex_indices = cls.face_vertices(all_vertex_indices)
         faces_vertices = cls.face_vertices(vertices)
@@ -150,9 +145,10 @@ class TetrahedronBasisFunction:
     def __init__(self, (i, j, k)):
         from hedge.polynomial import jacobi_function
         self.i = i
+        self.j = j
         self.f = jacobi_function(0, 0, i)
         self.g = jacobi_function(2*i+1, 0, j)
-        self.h = jacobi_function(2*i+2*j+1, 0, h)
+        self.h = jacobi_function(2*i+2*j+1, 0, k)
 
     def __call__(self, (r, s, t)):
         try:
@@ -173,6 +169,81 @@ class TetrahedronBasisFunction:
                 *(1-b)**(self.i) \
                 *self.h(c) \
                 *(1-c)**(self.i+self.j)
+
+
+
+
+class GradTetrahedronBasisFunction:
+    def __init__(self, (i, j, k)):
+        from hedge.polynomial import jacobi_function, diff_jacobi_function
+        self.i = i
+        self.j = j
+        self.k = k
+
+        self.f  =      jacobi_function(0, 0, i)
+        self.df = diff_jacobi_function(0, 0, i)
+        self.g  =      jacobi_function(2*i+1, 0, j)
+        self.dg = diff_jacobi_function(2*i+1, 0, j)
+        self.h  =      jacobi_function(2*i+2*j+1, 0, k)
+        self.dh  = diff_jacobi_function(2*i+2*j+1, 0, k)
+
+    def __call__(self, (r, s, t)):
+        try:
+            a = -2*(1+r)/(s+t) - 1
+        except ZeroDivisionError:
+            a = -1
+
+        try:
+            b = 2*(1+s)/(1-t) - 1
+        except ZeroDivisionError:
+            b = -1
+
+        c = t
+
+        fa = self.f(a)
+        gb = self.g(b)
+        hc = self.h(c)
+
+        dfa = self.df(a)
+        dgb = self.dg(b)
+        dhc = self.dh(c)
+
+        id = self.i
+        jd = self.j
+        kd = self.k
+
+        # shamelessly stolen from Hesthaven/Warburton's GradSimplex3DP
+
+        # r-derivative
+        V3Dr = dfa*(gb*hc);
+        if id>0:    V3Dr = V3Dr*((0.5*(1-b))**(id-1))
+        if id+jd>0: V3Dr = V3Dr*((0.5*(1-c))**(id+jd-1))
+
+        # s-derivative 
+        V3Ds = 0.5*(1+a)*V3Dr;
+        tmp = dgb*((0.5*(1-b))**id);
+        if id>0:
+            tmp = tmp+(-0.5*id)*(gb*(0.5*(1-b))**(id-1))
+        if id+jd>0: 
+            tmp = tmp*((0.5*(1-c))**(id+jd-1))
+        tmp = fa*(tmp*hc)
+        V3Ds = V3Ds+tmp
+
+        # t-derivative 
+        V3Dt = 0.5*(1+a)*V3Dr+0.5*(1+b)*tmp
+        tmp = dhc*((0.5*(1-c))**(id+jd))
+        if id+jd>0:
+            tmp = tmp-0.5*(id+jd)*(hc*((0.5*(1-c))**(id+jd-1)))
+        tmp = fa*(gb*tmp)
+        tmp = tmp*((0.5*(1-b))**id)
+        V3Dt = V3Dt+tmp
+
+        # normalize
+        V3Dr = V3Dr*(2**(2*id+jd+1.5));
+        V3Ds = V3Ds*(2**(2*id+jd+1.5));
+        V3Dt = V3Dt*(2**(2*id+jd+1.5));
+
+        return [V3Dr, V3Ds, V3Dt]
 
 
 
@@ -292,16 +363,6 @@ class SimplicialElement(Element):
         v = self.vandermonde()
         return [v <<num.leftsolve>> vdiff for vdiff in self.grad_vandermonde()]
 
-    # face operations ---------------------------------------------------------
-    @memoize
-    def face_mass_matrix(self):
-        from hedge.polynomial import legendre_vandermonde
-        unodes = self.unit_nodes()
-        face_vandermonde = legendre_vandermonde(
-                [unodes[i][0] for i in self.face_indices()[0]],
-                self.order)
-
-        return 1/(face_vandermonde*face_vandermonde.T)
 
 
 
@@ -404,7 +465,7 @@ class TriangularElement(SimplicialElement):
     def equilateral_nodes(self):
         """Generate warped nodes in equilateral coordinates (x,y)."""
 
-        # port of J. Hesthaven's Nodes2D routine
+        # port of Hesthaven/Warburton's Nodes2D routine
         # note that the order of the barycentric coordinates is changed
         # match the order of the equilateral vertices 
         
@@ -429,8 +490,7 @@ class TriangularElement(SimplicialElement):
     @memoize
     def generate_submesh_indices(self):
         """Return a list of tuples of indices into the node list that
-        generate a tesselation of the reference element, using the
-        interpolation nodes."""
+        generate a tesselation of the reference element."""
 
         node_dict = dict(
                 (ituple, idx) 
@@ -451,7 +511,7 @@ class TriangularElement(SimplicialElement):
         """Get a sequence of functions that form a basis
         of the function space spanned by
 
-          r^i * s ^j for i+j <= N
+          r**i * s**j for i+j <= N
         """
         return [TriangleBasisFunction(idx) for idx in self.node_indices()]
 
@@ -462,6 +522,16 @@ class TriangularElement(SimplicialElement):
         return [GradTriangleBasisFunction(idx) for idx in self.node_indices()]
 
     # face operations ---------------------------------------------------------
+    @memoize
+    def face_mass_matrix(self):
+        from hedge.polynomial import legendre_vandermonde
+        unodes = self.unit_nodes()
+        face_vandermonde = legendre_vandermonde(
+                [unodes[i][0] for i in self.face_indices()[0]],
+                self.order)
+
+        return 1/(face_vandermonde*face_vandermonde.T)
+
     def face_normals_and_jacobians(self, affine_map):
         """Compute the normals and face jacobians of the unit triangle
         transformed according to `affine_map'.
@@ -622,7 +692,7 @@ class TetrahedralElement(SimplicialElement):
     def equilateral_nodes(self):
         """Generate warped nodes in equilateral coordinates (x,y)."""
 
-        # port of J. Hesthaven's Nodes3D routine
+        # port of Hesthaven/Warburton's Nodes3D routine
 
         # Set optimized parameter alpha, depending on order N
         alpha_opt = [0,0,0,0.1002, 1.1332,1.5608,1.3413,1.2577,1.1603,
@@ -633,8 +703,10 @@ class TetrahedralElement(SimplicialElement):
         except IndexError:
             alpha = 1
 
+        from pytools import wandering_element
+
         vertices = [self.barycentric_to_equilateral(bary)
-                for bary in _wandering_one(self.dimensions+1)]
+                for bary in wandering_element(self.dimensions+1)]
         all_vertex_indices = range(self.dimensions+1)
         face_vertex_indices = self.face_vertices(all_vertex_indices)
         faces_vertices = self.face_vertices(vertices)
@@ -683,21 +755,112 @@ class TetrahedralElement(SimplicialElement):
     @memoize
     def generate_submesh_indices(self):
         """Return a list of tuples of indices into the node list that
-        generate a tesselation of the reference element, using the
-        interpolation nodes."""
+        generate a tesselation of the reference element."""
 
-        node_dict = dict(
+        # nd stands for node dict
+        nd = dict(
                 (ituple, idx) 
                 for idx, ituple in enumerate(self.node_indices()))
 
+        def add_tuples(a, b):
+            return tuple(ac+bc for ac, bc in zip(a,b))
+
+        def try_add_tet(d1, d2, d3, d4):
+            try:
+                result.append((
+                    add_tuple(current, d1),
+                    add_tuple(current, d2),
+                    add_tuple(current, d3),
+                    add_tuple(current, d4),
+                    ))
+            except KeyError:
+                pass
+
         result = []
-        for i, j in self.node_indices():
-            if i+j < self.order:
-                result.append(
-                        (node_dict[i,j], node_dict[i+1,j], node_dict[i,j+1]))
-            if i+j < self.order-1:
-                result.append(
-                    (node_dict[i+1,j+1], node_dict[i,j+1], node_dict[i+1,j]))
+        for current in self.node_indices():
+            # this is a tesselation of a cube into six tets.
+            # subtets that fall outside of the master tet are simply not added.
+            try_add_tet((0,0,0), (1,0,0), (0,1,0), (0,0,1))
+            try_add_tet((1,0,1), (1,0,0), (0,1,0), (0,0,1))
+            try_add_tet((1,0,1), (0,0,1), (0,1,0), (0,0,1))
+
+            try_add_tet((1,0,0), (0,1,0), (1,0,1), (1,1,0))
+            try_add_tet((0,1,1), (0,1,0), (1,0,1), (1,1,0))
+            try_add_tet((0,1,1), (1,1,1), (1,0,1), (1,1,0))
+
         return result
+
+    # basis functions ---------------------------------------------------------
+    def basis_functions(self):
+        """Get a sequence of functions that form a basis
+        of the function space spanned by
+
+          r**i * s**j * t**k  for  i+j+k <= order
+        """
+        return [TetrahedronBasisFunction(idx) for idx in self.node_indices()]
+
+    def grad_basis_functions(self):
+        """Get the (r,s,...) gradient functions of the basis_functions(),
+        in the same order.
+        """
+        return [GradTetrahedronBasisFunction(idx) for idx in self.node_indices()]
+
+    # face operations ---------------------------------------------------------
+    @memoize
+    def face_mass_matrix(self):
+        from hedge.polynomial import legendre_vandermonde
+        unodes = self.unit_nodes()
+        face_vandermonde = legendre_vandermonde(
+                [unodes[i][0] for i in self.face_indices()[0]],
+                self.order)
+
+        return 1/(face_vandermonde*face_vandermonde.T)
+
+    def face_normals_and_jacobians(self, affine_map):
+        """Compute the normals and face jacobians of the unit triangle
+        transformed according to `affine_map'.
+
+        Returns a pair of lists [normals], [jacobians].
+        """
+        def sign(x):
+            if x > 0: 
+                return 1
+            else: 
+                return -1
+
+        m = affine_map.matrix
+        orient = sign(affine_map.jacobian)
+        face1 = m[:,1] - m[:,0]
+        raw_normals = [
+                orient*num.array([m[1,0], -m[0,0]]),
+                orient*num.array([face1[1], -face1[0]]),
+                orient*num.array([-m[1,1], m[0,1]]),
+                ]
+
+        face_lengths = [comp.norm_2(fn) for fn in raw_normals]
+        return [n/fl for n, fl in zip(raw_normals, face_lengths)], \
+                face_lengths
+
+    def shuffle_face_indices_to_match(self, face_1_vertices, face_2_vertices, face_2_indices):
+        assert set(face_1_vertices) == set(face_2_vertices)
+        if face_1_vertices != face_2_vertices:
+            assert face_1_vertices[::-1] == face_2_vertices
+            return face_2_indices[::-1]
+        else:
+            return face_2_indices
+
+    # time step scaling -------------------------------------------------------
+    def dt_non_geometric_factor(self):
+        unodes = self.unit_nodes()
+        return 2/3*min(
+                min(comp.norm_2(unodes[fvi+1]-unodes[fvi])
+                    for fvi in range(len(face_indices)-1))
+                for face_indices in self.face_indices())
+
+    def dt_geometric_factor(self, vertices, map):
+        area = abs(2*map.jacobian)
+        semiperimeter = sum(comp.norm_2(vertices[vi1]-vertices[vi2]) 
+                for vi1, vi2 in [(0,1), (1,2), (2,0)])/2
+        return area/semiperimeter
 
 

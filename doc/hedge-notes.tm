@@ -30,7 +30,7 @@
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<left|[><left|[>-1,<space|0.5spc>1<right|]>,<space|0.5spc><left|[>1,<space|0.5spc>-1<right|]>,<space|0.5spc><left|[>-1,<space|0.5spc>-1<right|]><right|]><leqno>(7)>
+      <with|mode|math|math-display|true|<left|[><left|[>-1,<space|0.5spc>1<right|]>,<space|0.5spc><left|[>1,<space|0.5spc>-1<right|]>,<space|0.5spc><left|[>-1,<space|0.5spc>-1<right|]><right|]><leqno>(2)>
 
       <axiomtype|List Vector Integer >
     </output>
@@ -40,7 +40,7 @@
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<left|[><tabular*|<tformat|<cwith|1|-1|1|1|cell-halign|c>|<cwith|1|-1|2|2|cell-halign|c>|<table|<row|<cell|a>|<cell|b>>|<row|<cell|c>|<cell|d>>>>><right|]><leqno>(8)>
+      <with|mode|math|math-display|true|<left|[><tabular*|<tformat|<cwith|1|-1|1|1|cell-halign|c>|<cwith|1|-1|2|2|cell-halign|c>|<table|<row|<cell|a>|<cell|b>>|<row|<cell|c>|<cell|d>>>>><right|]><leqno>(3)>
 
       <axiomtype|Matrix Polynomial Integer >
     </output>
@@ -50,7 +50,7 @@
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<left|[>e,<space|0.5spc>f<right|]><leqno>(9)>
+      <with|mode|math|math-display|true|<left|[>e,<space|0.5spc>f<right|]><leqno>(4)>
 
       <axiomtype|Vector OrderedVariableList [e,f] >
     </output>
@@ -64,7 +64,7 @@
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<left|[><frac|2b<sqrt|3>+3e|3>=-1,<space|0.5spc><frac|-b<sqrt|3>+3e+3a|3>=1,<space|0.5spc><frac|-b<sqrt|3>+3e-3a|3>=-1,<space|0.5spc><frac|2d<sqrt|3>+3f|3>=1,<space|0.5spc><frac|-d<sqrt|3>+3f+3c|3>=-1,<space|0.5spc><frac|-d<sqrt|3>+3f-3c|3>=-1<right|]><leqno>(10)>
+      <with|mode|math|math-display|true|<left|[><frac|2b<sqrt|3>+3e|3>=-1,<space|0.5spc><frac|-b<sqrt|3>+3e+3a|3>=1,<space|0.5spc><frac|-b<sqrt|3>+3e-3a|3>=-1,<space|0.5spc><frac|2d<sqrt|3>+3f|3>=1,<space|0.5spc><frac|-d<sqrt|3>+3f+3c|3>=-1,<space|0.5spc><frac|-d<sqrt|3>+3f-3c|3>=-1<right|]><leqno>(5)>
 
       <axiomtype|List Equation Expression Integer >
     </output>
@@ -74,7 +74,7 @@
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<left|[><left|[>a=1,<space|0.5spc>b=-<frac|1|<sqrt|3>>,<space|0.5spc>c=0,<space|0.5spc>d=<frac|2|<sqrt|3>>,<space|0.5spc>e=-<frac|1|3>,<space|0.5spc>f=-<frac|1|3><right|]><right|]><leqno>(11)>
+      <with|mode|math|math-display|true|<left|[><left|[>a=1,<space|0.5spc>b=-<frac|1|<sqrt|3>>,<space|0.5spc>c=0,<space|0.5spc>d=<frac|2|<sqrt|3>>,<space|0.5spc>e=-<frac|1|3>,<space|0.5spc>f=-<frac|1|3><right|]><right|]><leqno>(6)>
 
       <axiomtype|List List Equation Expression Integer >
     </output>
@@ -84,7 +84,113 @@
     </input>
   </session>>
 
-  <section|Derivative of the 2D Basis functions>
+  <section|Mapping from 3D equilateral to Unit Coordinates>
+
+  <with|prog-language|axiom|prog-session|default|<\session>
+    <\input|<with|color|red|<with|mode|math|\<rightarrow\>> >>
+      )clear all
+    </input>
+
+    <\output>
+      \ \ \ All user variables and function definitions have been cleared.
+    </output>
+
+    <\input|<with|color|red|<with|mode|math|\<rightarrow\>> >>
+      verteq:=[
+
+      vector [-1,-1/sqrt(3),-1/sqrt(6)],
+
+      vector [ 1,-1/sqrt(3),-1/sqrt(6)],
+
+      vector [ 0, 2/sqrt(3),-1/sqrt(6)],
+
+      vector [ 0, \ \ \ \ \ \ \ \ 0, 3/sqrt(6)]
+
+      ]
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|<left|[><left|[>-1,<space|0.5spc>-<frac|<sqrt|3>|3>,<space|0.5spc>-<frac|<sqrt|6>|6><right|]>,<space|0.5spc><left|[>1,<space|0.5spc>-<frac|<sqrt|3>|3>,<space|0.5spc>-<frac|<sqrt|6>|6><right|]>,<space|0.5spc><left|[>0,<space|0.5spc><frac|2<sqrt|3>|3>,<space|0.5spc>-<frac|<sqrt|6>|6><right|]>,<space|0.5spc><left|[>0,<space|0.5spc>0,<space|0.5spc><frac|<sqrt|6>|2><right|]><right|]><leqno>(1)>
+
+      <axiomtype|List Vector AlgebraicNumber >
+    </output>
+
+    <\input|<with|color|red|<with|mode|math|\<rightarrow\>> >>
+      vertun:= [
+
+      [-1,-1,-1],
+
+      [ 1,-1,-1],
+
+      [-1, 1,-1],
+
+      [-1,-1, 1]
+
+      ]
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|<left|[><left|[>-1,<space|0.5spc>-1,<space|0.5spc>-1<right|]>,<space|0.5spc><left|[>1,<space|0.5spc>-1,<space|0.5spc>-1<right|]>,<space|0.5spc><left|[>-1,<space|0.5spc>1,<space|0.5spc>-1<right|]>,<space|0.5spc><left|[>-1,<space|0.5spc>-1,<space|0.5spc>1<right|]><right|]><leqno>(2)>
+
+      <axiomtype|List List Integer >
+    </output>
+
+    <\input|<with|color|red|<with|mode|math|\<rightarrow\>> >>
+      A:=matrix [[a,b,c],[d,e,f],[g,h,i]]
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|<left|[><tabular*|<tformat|<cwith|1|-1|1|1|cell-halign|c>|<cwith|1|-1|2|2|cell-halign|c>|<cwith|1|-1|3|3|cell-halign|c>|<table|<row|<cell|a>|<cell|b>|<cell|c>>|<row|<cell|d>|<cell|e>|<cell|f>>|<row|<cell|g>|<cell|h>|<cell|i>>>>><right|]><leqno>(3)>
+
+      <axiomtype|Matrix Polynomial Integer >
+    </output>
+
+    <\input|<with|color|red|<with|mode|math|\<rightarrow\>> >>
+      v:=vector [j,k,l]
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|<left|[>j,<space|0.5spc>k,<space|0.5spc>l<right|]><leqno>(4)>
+
+      <axiomtype|Vector OrderedVariableList [j,k,l] >
+    </output>
+
+    <\input|<with|color|red|<with|mode|math|\<rightarrow\>> >>
+      eqns:=concat(
+
+      [(A*verteq.i+v).1=vertun.i.1 for i in 1..4],
+
+      concat(
+
+      [(A*verteq.i+v).2=vertun.i.2 for i in 1..4],
+
+      [(A*verteq.i+v).3=vertun.i.3 for i in 1..4]
+
+      ))
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|<left|[>j-<frac|<sqrt|6>|6>c-<frac|<sqrt|3>|3>b-a=-1,<space|0.5spc>j-<frac|<sqrt|6>|6>c-<frac|<sqrt|3>|3>b+a=1,<space|0.5spc>j-<frac|<sqrt|6>|6>c+<frac|2<sqrt|3>|3>b=-1,<space|0.5spc>j+<frac|<sqrt|6>|2>c=-1,<space|0.5spc>k-<frac|<sqrt|6>|6>f-<frac|<sqrt|3>|3>e-d=-1,<space|0.5spc>k-<frac|<sqrt|6>|6>f-<frac|<sqrt|3>|3>e+d=-1,<space|0.5spc>k-<frac|<sqrt|6>|6>f+<frac|2<sqrt|3>|3>e=1,<space|0.5spc>k+<frac|<sqrt|6>|2>f=-1,<space|0.5spc>l-<frac|<sqrt|6>|6>i-<frac|<sqrt|3>|3>h-g=-1,<space|0.5spc>l-<frac|<sqrt|6>|6>i-<frac|<sqrt|3>|3>h+g=-1,<space|0.5spc>l-<frac|<sqrt|6>|6>i+<frac|2<sqrt|3>|3>h=-1,<space|0.5spc>l+<frac|<sqrt|6>|2>i=1<right|]><leqno>(5)>
+
+      <axiomtype|List Equation Polynomial AlgebraicNumber >
+    </output>
+
+    <\input|<with|color|red|<with|mode|math|\<rightarrow\>> >>
+      solve(eqns,[a,b,c,d,e,f,g,h,i,j,k,l])
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|<left|[><left|[>a=1,<space|0.5spc>b=-<frac|<sqrt|3>|3>,<space|0.5spc>c=-<frac|<sqrt|6>|6>,<space|0.5spc>d=0,<space|0.5spc>e=<frac|2<sqrt|3>|3>,<space|0.5spc>f=-<frac|<sqrt|6>|6>,<space|0.5spc>g=0,<space|0.5spc>h=0,<space|0.5spc>i=<frac|<sqrt|6>|2>,<space|0.5spc>j=-<frac|1|2>,<space|0.5spc>k=-<frac|1|2>,<space|0.5spc>l=-<frac|1|2><right|]><right|]><leqno>(6)>
+
+      <axiomtype|List List Equation Fraction Polynomial AlgebraicNumber >
+    </output>
+
+    <\input|<with|color|red|<with|mode|math|\<rightarrow\>> >>
+      \;
+    </input>
+  </session>>
+
+  <section|Derivatives of the 2D Basis functions>
 
   <with|prog-language|axiom|prog-session|default|<\session>
     <\input|<with|color|red|<with|mode|math|\<rightarrow\>> >>
@@ -194,6 +300,153 @@
     ><rsup|,><left|(>s<right|)>>>|<row|<cell|>|<cell|>|<cell|+<left|(>2r+2<right|)>g<left|(>s<right|)><left|(>1-s<right|)><rsup|i-2>f<rsub|
     ><rsup|,><left|(>a<right|)>>>|<row|<cell|>|<cell|>|<cell|-i*f<left|(>a<right|)>g<left|(>s<right|)><left|(>1-s<right|)><rsup|<left|(>i-1<right|)>><right|]>>>>>
   </eqnarray*>
+
+  <section|Derivatives of the 3D Basis functions>
+
+  <with|prog-language|axiom|prog-session|default|<\session>
+    <\input|<with|color|red|<with|mode|math|\<rightarrow\>> >>
+      )clear all
+    </input>
+
+    <\output>
+      \ \ \ All user variables and function definitions have been cleared.
+    </output>
+
+    <\input|<with|color|red|<with|mode|math|\<rightarrow\>> >>
+      f:=operator 'f
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|f<leqno>(1)>
+
+      <axiomtype|BasicOperator >
+    </output>
+
+    <\input|<with|color|red|<with|mode|math|\<rightarrow\>> >>
+      g:=operator 'g
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|g<leqno>(2)>
+
+      <axiomtype|BasicOperator >
+    </output>
+
+    <\input|<with|color|red|<with|mode|math|\<rightarrow\>> >>
+      h:=operator 'h
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|h<leqno>(3)>
+
+      <axiomtype|BasicOperator >
+    </output>
+
+    <\input|<with|color|red|<with|mode|math|\<rightarrow\>> >>
+      a:= -2*(1+r)/(s+t) - 1
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|<frac|-t-s-2r-2|t+s><leqno>(4)>
+
+      <axiomtype|Fraction Polynomial Integer >
+    </output>
+
+    <\input|<with|color|red|<with|mode|math|\<rightarrow\>> >>
+      b:=2*(1+s)/(1-t) - 1
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|<frac|-t-2s-1|t-1><leqno>(5)>
+
+      <axiomtype|Fraction Polynomial Integer >
+    </output>
+
+    <\input|<with|color|red|<with|mode|math|\<rightarrow\>> >>
+      expr:=sqrt(8)*f(a)*g(b)*(1-b)^i*h(c)*(1-c)**(i+j)
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|2<sqrt|2>f<left|(><frac|-t-s-2r-2|t+s><right|)>g<left|(><frac|-t-2s-1|t-1><right|)>h<left|(>c<right|)><left|(>-c+1<right|)><rsup|<left|(>j+i<right|)>><frac|2t+2s|t-1><rsup|i><leqno>(6)>
+
+      <axiomtype|Expression Integer >
+    </output>
+
+    <\input|<with|color|red|<with|mode|math|\<rightarrow\>> >>
+      D(expr,r)
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|-<frac|4<sqrt|2>g<left|(><frac|-t-2s-1|t-1><right|)>h<left|(>c<right|)><left|(>-c+1<right|)><rsup|<left|(>j+i<right|)>><frac|2t+2s|t-1><rsup|i>f<rsub|
+      ><rsup|,><left|(><frac|-t-s-2r-2|t+s><right|)>|t+s><leqno>(7)>
+
+      <axiomtype|Expression Integer >
+    </output>
+
+    <\input|<with|color|red|<with|mode|math|\<rightarrow\>> >>
+      dfds:=D(expr,s);
+    </input>
+
+    <\output>
+      <axiomtype|Expression Integer >
+    </output>
+
+    <\input|<with|color|red|<with|mode|math|\<rightarrow\>> >>
+      dfdsden:=denominator dfds
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|t<rsup|3>+<left|(>2s-1<right|)>t<rsup|2>+<left|(>s<rsup|2>-2s<right|)>t-s<rsup|2><leqno>(20)>
+
+      <axiomtype|Expression Integer >
+    </output>
+
+    <\input|<with|color|red|<with|mode|math|\<rightarrow\>> >>
+      dfds*dfdsden
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|<left|(>-4t<rsup|2>-8s*t-4s<rsup|2><right|)><sqrt|2>f<left|(><frac|-t-s-2r-2|t+s><right|)>h<left|(>c<right|)><left|(>-c+1<right|)><rsup|<left|(>j+i<right|)>><frac|2t+2s|t-1><rsup|i>g<rsub|
+      ><rsup|,><left|(><frac|-t-2s-1|t-1><right|)>+<left|(><left|(>4r+4<right|)>t-4r-4<right|)><sqrt|2>g<left|(><frac|-t-2s-1|t-1><right|)>h<left|(>c<right|)><left|(>-c+1<right|)><rsup|<left|(>j+i<right|)>><frac|2t+2s|t-1><rsup|i>f<rsub|
+      ><rsup|,><left|(><frac|-t-s-2r-2|t+s><right|)>+<left|(>4i*t<rsup|2>+8i*s*t+4i*s<rsup|2><right|)><sqrt|2>f<left|(><frac|-t-s-2r-2|t+s><right|)>g<left|(><frac|-t-2s-1|t-1><right|)>h<left|(>c<right|)><left|(>-c+1<right|)><rsup|<left|(>j+i<right|)>><frac|2t+2s|t-1><rsup|<left|(>i-1<right|)>><leqno>(18)>
+
+      <axiomtype|Expression Integer >
+    </output>
+
+    <\input|<with|color|red|<with|mode|math|\<rightarrow\>> >>
+      dfdt:=D(expr,t);
+    </input>
+
+    <\output>
+      <axiomtype|Expression Integer >
+    </output>
+
+    <\input|<with|color|red|<with|mode|math|\<rightarrow\>> >>
+      dfdtden:=denominator dfdt
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|t<rsup|4>+<left|(>2s-2<right|)>t<rsup|3>+<left|(>s<rsup|2>-4s+1<right|)>t<rsup|2>+<left|(>-2s<rsup|2>+2s<right|)>t+s<rsup|2><leqno>(23)>
+
+      <axiomtype|Expression Integer >
+    </output>
+
+    <\input|<with|color|red|<with|mode|math|\<rightarrow\>> >>
+      dfdt*dfdtden
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|<left|(><left|(>4s+4<right|)>t<rsup|2>+<left|(>8s<rsup|2>+8s<right|)>t+4s<rsup|3>+4s<rsup|2><right|)><sqrt|2>f<left|(><frac|-t-s-2r-2|t+s><right|)>h<left|(>c<right|)><left|(>-c+1<right|)><rsup|<left|(>j+i<right|)>><frac|2t+2s|t-1><rsup|i>g<rsub|
+      ><rsup|,><left|(><frac|-t-2s-1|t-1><right|)>+<left|(><left|(>4r+4<right|)>t<rsup|2>+<left|(>-8r-8<right|)>t+4r+4<right|)><sqrt|2>g<left|(><frac|-t-2s-1|t-1><right|)>h<left|(>c<right|)><left|(>-c+1<right|)><rsup|<left|(>j+i<right|)>><frac|2t+2s|t-1><rsup|i>f<rsub|
+      ><rsup|,><left|(><frac|-t-s-2r-2|t+s><right|)>+<left|(><left|(>-4i*s-4i<right|)>t<rsup|2>+<left|(>-8i*s<rsup|2>-8i*s<right|)>t-4i*s<rsup|3>-4i*s<rsup|2><right|)><sqrt|2>f<left|(><frac|-t-s-2r-2|t+s><right|)>g<left|(><frac|-t-2s-1|t-1><right|)>h<left|(>c<right|)><left|(>-c+1<right|)><rsup|<left|(>j+i<right|)>><frac|2t+2s|t-1><rsup|<left|(>i-1<right|)>><leqno>(24)>
+
+      <axiomtype|Expression Integer >
+    </output>
+
+    <\input|<with|color|red|<with|mode|math|\<rightarrow\>> >>
+      \;
+    </input>
+  </session>>
 
   <section|DG Schemes>
 
@@ -374,15 +627,17 @@
 <\references>
   <\collection>
     <associate|auto-1|<tuple|1|1>>
-    <associate|auto-10|<tuple|3.3.2|?>>
+    <associate|auto-10|<tuple|5.3|?>>
+    <associate|auto-11|<tuple|5.3.1|?>>
+    <associate|auto-12|<tuple|5.3.2|?>>
     <associate|auto-2|<tuple|2|1>>
     <associate|auto-3|<tuple|3|3>>
-    <associate|auto-4|<tuple|3.1|?>>
-    <associate|auto-5|<tuple|3.2|?>>
-    <associate|auto-6|<tuple|3.2.1|?>>
-    <associate|auto-7|<tuple|3.2.2|?>>
-    <associate|auto-8|<tuple|3.3|?>>
-    <associate|auto-9|<tuple|3.3.1|?>>
+    <associate|auto-4|<tuple|4|?>>
+    <associate|auto-5|<tuple|5|?>>
+    <associate|auto-6|<tuple|5.1|?>>
+    <associate|auto-7|<tuple|5.2|?>>
+    <associate|auto-8|<tuple|5.2.1|?>>
+    <associate|auto-9|<tuple|5.2.2|?>>
   </collection>
 </references>
 

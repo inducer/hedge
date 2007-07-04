@@ -211,6 +211,38 @@ class TestHedge(unittest.TestCase):
                     ])
                 self.assert_(comp.norm_infinity(approx_gradbf_v-gradbf_v) < h)
     # -------------------------------------------------------------------------
+    def test_simp_basis_grad(self):
+        from itertools import izip
+        from hedge.element import TriangularElement, TetrahedralElement
+        from random import uniform
+        import pylinear.array as num
+        import pylinear.computation as comp
+
+        els = [(1, TriangularElement(8)), (3,TetrahedralElement(7))]
+        for err_factor, el in els:
+            d = el.dimensions
+            for i_bf, (bf, gradbf) in \
+                    enumerate(izip(el.basis_functions(), el.grad_basis_functions())):
+                for i in range(10):
+                    base = -0.95
+                    remaining = 1.90
+                    r = num.zeros((d,))
+                    for i in range(d):
+                        rn = uniform(0, remaining)
+                        r[i] = base+rn
+                        remaining -= rn
+
+                    from pytools import wandering_element
+                    h = 1e-4
+                    gradbf_v = num.array(gradbf(r))
+                    approx_gradbf_v = num.array([
+                        (bf(r+h*dir) - bf(r-h*dir))/(2*h)
+                        for dir in [num.array(dir) for dir in wandering_element(d)]
+                        ])
+                    err = comp.norm_infinity(approx_gradbf_v-gradbf_v)
+                    print el.dimensions, el.order, i_bf, err
+                    self.assert_(err < err_factor*h)
+    # -------------------------------------------------------------------------
     def test_tri_face_node_distribution(self):
         """Test whether the nodes on the faces of the triangle are distributed 
         according to the same proportions on each face.
