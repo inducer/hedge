@@ -48,6 +48,50 @@ class WarpFactorCalculator:
 
 
 
+class TriangleWarper:
+    def __init__(self, alpha, order):
+        self.alpha = alpha
+        self.warp = WarpFactorCalculator(order)
+
+        cls = TriangularElement
+
+        vertices = [cls.barycentric_to_equilateral(bary)
+                for bary in _wandering_one(cls.dimensions+1)]
+        all_vertex_indices = range(cls.dimensions+1)
+        face_vertex_indices = cls.face_vertices(all_vertex_indices)
+        faces_vertices = cls.face_vertices(vertices)
+
+        from pylinear.computation import norm_2
+
+        def normalize(v):
+            return v/norm_2(v)
+
+        edgedirs = [normalize(v2-v1) for v1, v2 in faces_vertices]
+        opp_vertex_indices = [
+            (set(all_vertex_indices) - set(fvi)).__iter__().next()
+            for fvi in face_vertex_indices]
+
+        self.loop_info = zip(
+                face_vertex_indices, 
+                edgedirs, 
+                opp_vertex_indices)
+
+    def __call__(self, bp):
+        shifts = []
+
+        from operator import add, mul
+
+        for fvi, edgedir, opp_vertex_index in self.loop_info:
+            blend = 4*reduce(mul, (bp[i] for i in fvi))
+            warp_amount = blend*self.warp(bp[fvi[1]]-bp[fvi[0]]) \
+                    * (1 + (self.alpha*bp[opp_vertex_index])**2)
+            shifts.append(warp_amount*edgedir)
+
+        return reduce(add, shifts)
+
+
+
+
 class TriangleBasisFunction:
     def __init__(self, (i, j)):
         from hedge.polynomial import jacobi_function
@@ -308,10 +352,11 @@ class TriangularElement(SimplicialElement):
     # are required because single backslashes only escape their subsequent
     # newlines, and thus end up not yielding a correct docstring.
 
+    dimensions = 2
+    has_local_jacobians = False
+
     def __init__(self, order):
         self.order = order
-        self.dimensions = 2
-        self.has_local_jacobians = False
 
     # numbering ---------------------------------------------------------------
     @staticmethod
@@ -363,7 +408,9 @@ class TriangularElement(SimplicialElement):
         # note that the order of the barycentric coordinates is changed
         # match the order of the equilateral vertices 
         
-        # Generally, # not much is left of the original routine--it was very redundant.
+        # Not much is left of the original routine--it was very redundant.
+        # The test suite still contains the original code and verifies this
+        # one against it.
 
         # Set optimized parameter alpha, depending on order N
         alpha_opt = [0.0000, 0.0000, 1.4152, 0.1001, 0.2751, 0.9800, 1.0999,
@@ -374,40 +421,15 @@ class TriangularElement(SimplicialElement):
         except IndexError:
             alpha = 5/3
 
-        warp = WarpFactorCalculator(self.order)
+        warp = TriangleWarper(alpha, self.order)
 
-        vertices = [self.barycentric_to_equilateral(bary)
-                for bary in _wandering_one(self.dimensions+1)]
-        all_vertex_indices = range(self.dimensions+1)
-        face_vertex_indices = self.face_vertices(all_vertex_indices)
-        faces_vertices = self.face_vertices(vertices)
-
-        bpoints = list(self.equidistant_barycentric_nodes())
-        epoints = [self.barycentric_to_equilateral(bp) for bp in bpoints]
-
-        from operator import mul
-        from pylinear.computation import norm_2
-
-        for fvi, (v1, v2) in zip(face_vertex_indices, faces_vertices):
-            edgedir = v2-v1
-            edgedir /= norm_2(edgedir)
-
-            opp_vertex_index = (set(all_vertex_indices) - set(fvi)).__iter__().next()
-
-            shifted = []
-            for bp, ep in zip(bpoints, epoints):
-                blend = 4*reduce(mul, (bp[i] for i in fvi))
-                warp_amount = blend*warp(bp[fvi[1]]-bp[fvi[0]]) \
-                        * (1 + (alpha*bp[opp_vertex_index])**2)
-                shifted.append(ep + warp_amount*edgedir)
-
-            epoints = shifted
-        return epoints
+        for bp in self.equidistant_barycentric_nodes():
+            yield self.barycentric_to_equilateral(bp) + warp(bp)
 
     @memoize
     def generate_submesh_indices(self):
-        """Return a list of triples of indices into the node list that
-        generate a triangulation of the reference triangle, using the
+        """Return a list of tuples of indices into the node list that
+        generate a tesselation of the reference element, using the
         interpolation nodes."""
 
         node_dict = dict(
@@ -539,10 +561,11 @@ class TetrahedralElement(SimplicialElement):
     # above are required because single backslashes only escape their subsequent
     # newlines, and thus end up not yielding a correct docstring.
 
+    dimensions = 3
+    has_local_jacobians = False
+
     def __init__(self, order):
         self.order = order
-        self.dimensions = 3
-        self.has_local_jacobians = False
 
     # numbering ---------------------------------------------------------------
     @staticmethod
@@ -600,19 +623,15 @@ class TetrahedralElement(SimplicialElement):
         """Generate warped nodes in equilateral coordinates (x,y)."""
 
         # port of J. Hesthaven's Nodes3D routine
-        # note that the order of the barycentric coordinates is changed
-        # match the order of the equilateral vertices
 
         # Set optimized parameter alpha, depending on order N
         alpha_opt = [0,0,0,0.1002, 1.1332,1.5608,1.3413,1.2577,1.1603,
-                            1.10153,0.6080,0.4523,0.8856,0.8717,0.9655];
+                1.10153,0.6080,0.4523,0.8856,0.8717,0.9655]
 
         try:
             alpha = alpha_opt[self.order-1]
         except IndexError:
             alpha = 1
-
-        warp = WarpFactorCalculator(self.order)
 
         vertices = [self.barycentric_to_equilateral(bary)
                 for bary in _wandering_one(self.dimensions+1)]
@@ -620,36 +639,50 @@ class TetrahedralElement(SimplicialElement):
         face_vertex_indices = self.face_vertices(all_vertex_indices)
         faces_vertices = self.face_vertices(vertices)
 
-        bpoints = list(self.equidistant_barycentric_nodes())
-        epoints = [self.barycentric_to_equilateral(bp) for bp in bpoints]
+        bary_points = list(self.equidistant_barycentric_nodes())
+        equi_points = [self.barycentric_to_equilateral(bp) 
+                for bp in bary_points]
 
         from pylinear.computation import norm_2
-        from operator import mul
+        from operator import add, mul
 
-        #for face_indices, (v1, v2, v3) in zip(faces_indices, faces_vertices):
-            #face_base = v2-v1
-            #face_altitude = (v3)-(v1+v2)/2
+        tri_warp = TriangleWarper(alpha, self.order)
 
-            #face_base /= norm_2(face_base)
-            #face_altitude /= norm_2(face_altitude)
+        for fvi, (v1, v2, v3) in zip(face_vertex_indices, faces_vertices):
+            # find directions spanning the face: "base" and "altitude"
+            directions = [v2-v1, (v3)-(v1+v2)/2]
+            directions = [dir/norm_2(dir) for dir in directions]
 
-            #assert abs(face_base*face_altitude) < 1e-16
+            # the two should be orthogonal
+            assert abs(directions[0]*directions[1]) < 1e-16
 
-            #shifted = []
-            #for bp, ep in zip(bpoints, epoints):
-                #blend = reduce(mul, (bp[i] for i in face_indices))
+            # find the vertex opposite to the current face
+            opp_vertex_index = (set(all_vertex_indices) - set(fvi)).__iter__().next()
 
+            shifted = []
+            for bp, ep in zip(bary_points, equi_points):
+                face_bp = [bp[i] for i in fvi]
 
+                blend = reduce(mul, face_bp) * (1+alpha*bp[opp_vertex_index])**2
 
+                for i in fvi:
+                    denom = bp[i] + 0.5*bp[opp_vertex_index]
+                    if abs(denom) > 1e-12:
+                        blend /= denom
+                    else:
+                        blend = 0.5 # each edge gets shifted twice
+                        break
+                    
+                shifted.append(ep + blend*reduce(add,
+                    (tw*dir for tw, dir in zip(tri_warp(face_bp), directions))))
 
+            equi_points = shifted
 
-            #epoints = shifted
-
-        return epoints
+        return equi_points
 
     @memoize
     def generate_submesh_indices(self):
-        """Return a list of triples of indices into the node list that
+        """Return a list of tuples of indices into the node list that
         generate a tesselation of the reference element, using the
         interpolation nodes."""
 

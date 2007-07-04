@@ -87,43 +87,20 @@ class TestHedge(unittest.TestCase):
         lgq = LegendreGaussQuadrature(n)
         self.assert_(abs(lgq(wfc)) < 7e-15)
     # -------------------------------------------------------------------------
-    def test_tri_nodes(self):
-        from hedge.element import TriangularElement
-
-        order = 4
-        tri = TriangularElement(order)
-        unodes = list(tri.unit_nodes())
-        self.assert_(len(unodes) == tri.node_count())
-
-        eps = 1e-10
-        for ux in unodes:
-            self.assert_(ux[0] >= -1-eps)
-            self.assert_(ux[1] >= -1-eps)
-            self.assert_(ux[0]+ux[1] <= 1+eps)
-
-        for i, j in tri.node_indices():
-            self.assert_(i >= 0)
-            self.assert_(j >= 0)
-            self.assert_(i+j <= order)
-
-        def node_indices_2(order):
-            for n in range(0, order+1):
-                 for m in range(0, order+1-n):
-                     yield m,n
-
-        #print list(tri.node_indices())
-        #print list(node_indices_2(order))
-        self.assert_(set(tri.node_indices()) == set(node_indices_2(order)))
-    # -------------------------------------------------------------------------
     def test_simp_nodes(self):
         from hedge.element import TriangularElement, TetrahedralElement
 
         triorder = 8
         tri = TriangularElement(triorder)
-        els = [tri, TriangularElement(17), TetrahedralElement(8)]
+        els = [tri, TriangularElement(17), TetrahedralElement(13)]
 
         for el in els:
             eps = 1e-10
+
+            if el.dimensions == 3:
+                outf = open("nodes.dat", "w")
+                for ux in el.equilateral_nodes():
+                    outf.write("%g\t%g\t%g\n" % tuple(ux))
 
             unodes = list(el.unit_nodes())
             self.assert_(len(unodes) == el.node_count())
@@ -144,20 +121,14 @@ class TestHedge(unittest.TestCase):
                     self.assert_(index >= 0)
                 self.assert_(sum(indices) <= el.order)
 
-            if False:
-                outf = open("trinodes1.dat", "w")
-                for ux in el.equilateral_nodes():
-                    outf.write("%g\t%g\n" % tuple(ux))
-                outf = open("trinodes2.dat", "w")
-                for ux in el.equilateral_nodes_2():
-                    outf.write("%g\t%g\n" % tuple(ux))
+    # -------------------------------------------------------------------------
+    def test_tri_nodes_against_known_values(self):
+        from hedge.element import TriangularElement, TetrahedralElement
 
-            if el.dimensions == 3:
-                outf = open("nodes.dat", "w")
-                for ux in el.equidistant_equilateral_nodes():
-                    outf.write("%g\t%g\t%g\n" % tuple(ux))
+        triorder = 8
+        tri = TriangularElement(triorder)
 
-        def equilateral_nodes_2(self):
+        def tri_equilateral_nodes_reference(self):
             # This is the old, more explicit, less general way of computing
             # the triangle nodes. Below, we compare its results with that of the
             # new routine.
@@ -199,8 +170,17 @@ class TestHedge(unittest.TestCase):
                 # return warped point
                 yield point + warp1*edge1dir + warp2*edge2dir + warp3*edge3dir
 
+        if False:
+            outf = open("trinodes1.dat", "w")
+            for ux in tri.equilateral_nodes():
+                outf.write("%g\t%g\n" % tuple(ux))
+            outf = open("trinodes2.dat", "w")
+            for ux in tri_equilateral_nodes_reference(tri):
+                outf.write("%g\t%g\n" % tuple(ux))
+
         from pylinear.computation import norm_2
-        for n1, n2 in zip(tri.equilateral_nodes(), equilateral_nodes_2(tri)):
+        for n1, n2 in zip(tri.equilateral_nodes(), 
+                tri_equilateral_nodes_reference(tri)):
             self.assert_(norm_2(n1-n2) < 3e-15)
 
         def node_indices_2(order):

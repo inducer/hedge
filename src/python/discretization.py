@@ -206,7 +206,7 @@ class Discretization:
     def volume_zeros(self):
         return num.zeros((len(self.points),))
 
-    def interpolate_volume_function(self, f, tag=None):
+    def interpolate_volume_function(self, f):
         return num.array([f(x) for x in self.points])
 
     def interpolate_tag_volume_function(self, f, tag=None):
@@ -296,7 +296,7 @@ class Discretization:
     def apply_minv_st(self, coordinate, field):
         from hedge._internal import VectorTarget
         result = self.volume_zeros()
-        self.perform_differentiation_operator(coordinate,
+        self.perform_minv_st_operator(coordinate,
                 VectorTarget(field, result))
         return result
 
