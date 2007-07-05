@@ -144,7 +144,7 @@ class TetrahedronBasisFunction:
         self.j = j
         self.f = jacobi_function(0, 0, i)
         self.g = jacobi_function(2*i+1, 0, j)
-        self.h = jacobi_function(2*i+2*j+1, 0, k)
+        self.h = jacobi_function(2*i+2*j+2, 0, k)
 
     def __call__(self, (r, s, t)):
         try:
@@ -180,8 +180,8 @@ class GradTetrahedronBasisFunction:
         self.df = diff_jacobi_function(0, 0, i)
         self.g  =      jacobi_function(2*i+1, 0, j)
         self.dg = diff_jacobi_function(2*i+1, 0, j)
-        self.h  =      jacobi_function(2*i+2*j+1, 0, k)
-        self.dh  = diff_jacobi_function(2*i+2*j+1, 0, k)
+        self.h  =      jacobi_function(2*i+2*j+2, 0, k)
+        self.dh = diff_jacobi_function(2*i+2*j+2, 0, k)
 
     def __call__(self, (r, s, t)):
         try:
@@ -283,8 +283,8 @@ class SimplicialElement(Element):
         The order in which these nodes are generated dictates the local 
         node numbering.
         """
-        from pytools import generate_non_negative_integer_tuples_summing_to_at_most
-        return generate_non_negative_integer_tuples_summing_to_at_most(
+        from pytools import generate_nonnegative_integer_tuples_summing_to_at_most
+        return generate_nonnegative_integer_tuples_summing_to_at_most(
                 self.order, self.dimensions)
 
     # node wrangling ----------------------------------------------------------
@@ -830,7 +830,11 @@ class TetrahedralElement(SimplicialElement):
         def fj_and_normal(fo, pts):
             normal = (pts[1]-pts[0]) <<num.cross>> (pts[2]-pts[0])
             n_length = comp.norm_2(normal)
-            return element_orientation*fo*normal/n_length, n_length
+
+            # ||n_length|| is the area of the parallelogram spanned by the two
+            # vectors above. Half of that is the area of the triangle we're interested
+            # in. Next, the area of the unit triangle is two, so divide by two again.
+            return element_orientation*fo*normal/n_length, n_length/4
 
         m = affine_map.matrix
 

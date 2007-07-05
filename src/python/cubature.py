@@ -13,7 +13,7 @@
 
 
 
-TetrahedronCubatureData = [
+TriangleCubatureData = [
 [# 1
 [-0.333333333333333,-0.333333333333333,2.000000000000000],
 ], [ # 2
@@ -1777,5 +1777,5 @@ TetrahedronCubatureData = [
 
 
 
-def integrate_on_tetrahedron(order, f):
-    return sum(f((r,s))*w for r, s, w in TetrahedronCubatureData[order-1])
+def integrate_on_triangle(order, f):
+    return sum(f((r,s))*w for r, s, w in TriangleCubatureData[order-1])

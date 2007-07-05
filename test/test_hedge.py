@@ -262,7 +262,6 @@ class TestHedge(unittest.TestCase):
                 TetrahedralElement(1), 
                 TriangularElement(4), 
                 ]:
-            print el, el.dimensions
             for i in range(50):
                 vertices = [make_random_vector(el.dimensions, num.Float) 
                         for vi in range(el.dimensions+1)]
@@ -302,7 +301,6 @@ class TestHedge(unittest.TestCase):
                                 for v in mapped_face_basis]
                         true_jac = abs(TriangularElement
                                 .get_map_unit_to_global(projected_corners).jacobian)
-                        print true_jac, jac
                     else:
                         assert False
 
@@ -495,13 +493,83 @@ class TestHedge(unittest.TestCase):
                 )*ones
 
         self.assert_(abs(boundary_int-int_div) < 1e-15)
+    # -------------------------------------------------------------------------
+    def test_simp_cubature_and_diff_by_monomial(self):
+        """Verify simplicial integration and differentiation using monomials."""
+
+        from hedge.element import TriangularElement, TetrahedralElement
+        from pytools import \
+                factorial, \
+                generate_nonnegative_integer_tuples_summing_to_at_most
+
+        import pylinear.array as num
+        import pylinear.computation as comp
+        from pylinear.randomized import make_random_vector
+        from operator import add, mul
+
+        eps = 1e-15
+
+        class Monomial:
+            def __init__(self, exponents, factor=1):
+                self.exponents = exponents
+                self.ones = num.ones((len(self.exponents),))
+                self.factor = factor
+
+            def __call__(self, x):
+                x = (x+self.ones)/2
+                for xi in x:
+                    assert -eps <= xi <= 1+eps
+                return self.factor* \
+                        reduce(mul, (x[i]**alpha 
+                            for i, alpha in enumerate(self.exponents)))
+
+            def theoretical_integral(self):
+                return (self.factor*2**len(self.exponents)*
+                    reduce(mul, (factorial(alpha) for alpha in self.exponents))
+                    /
+                    factorial(len(self.exponents)+sum(self.exponents)))
+
+            def diff(self, coordinate):
+                diff_exp = list(self.exponents)
+                orig_exp = diff_exp[coordinate]
+                if orig_exp == 0:
+                    return Monomial(diff_exp, 0)
+                diff_exp[coordinate] = orig_exp-1
+                return Monomial(diff_exp, self.factor*orig_exp)
+
+        thresh = 1e-14
+        for el in [
+                TriangularElement(3),
+                TetrahedralElement(5),
+                ]:
+            for comb in generate_nonnegative_integer_tuples_summing_to_at_most(
+                    el.order, el.dimensions):
+                ones = num.ones((el.node_count(),))
+                unodes = el.unit_nodes()
+                f = Monomial(comb)
+                f_n = num.array([f(x) for x in unodes])
+                int_f_n = ones*el.mass_matrix()*f_n
+                int_f = f.theoretical_integral()
+                err = abs(int_f - int_f_n)
+                if err > thresh:
+                    print "bad", el, comb, int_f, int_f_n, err
+                self.assert_(err < thresh)
+
+                dmats = el.differentiation_matrices()
+                for i in range(el.dimensions):
+                    df = f.diff(i)
+                    df = num.array([df(x) for x in unodes])/2
+                    df_n = dmats[i]*f_n
+                    err = comp.norm_infinity(df - df_n)
+                    if err > thresh:
+                        print "bad-diff", comb, i, err
+                    self.assert_(err < thresh)
 
     # -------------------------------------------------------------------------
-    def test_tri_gauss_theorem(self):
-        """Verify Gauss's theorem explicitly on a couple of elements 
-        in random orientation."""
+    def test_simp_gauss_theorem(self):
+        """Verify Gauss's theorem explicitly on simplicial elements."""
 
-        from hedge.element import TriangularElement
+        from hedge.element import TriangularElement, TetrahedralElement
         from hedge.tools import AffineMap
         import pylinear.array as num
         import pylinear.computation as comp
@@ -509,18 +577,21 @@ class TestHedge(unittest.TestCase):
         from operator import add
         from math import sin, cos, sqrt, exp, pi
 
-        edata = TriangularElement(9)
-        ones = num.ones((edata.node_count(),))
-        face_ones = num.ones((len(edata.face_indices()[0]),))
-
-        def f1(x):
+        def f1_2d(x):
             return sin(3*x[0])+cos(3*x[1])
-        def f2(x):
+        def f2_2d(x):
             return sin(2*x[0])+cos(x[1])
+
+        def f1_3d(x):
+            return sin(3*x[0])+cos(3*x[1])+sin(2*x[2])
+        def f2_3d(x):
+            return sin(2*x[0])+cos(x[1])-cos(2*x[2])
+        def f3_3d(x):
+            return sin(x[0])-3*cos(x[1])+cos(x[2])
 
         def d(imap, coordinate, field):
             col = imap.matrix[:, coordinate]
-            matrices = edata.differentiation_matrices()
+            matrices = el.differentiation_matrices()
             return reduce(add, (dmat*coeff*field
                         for dmat, coeff in zip(matrices, col)))
 
@@ -538,45 +609,51 @@ class TestHedge(unittest.TestCase):
                 [array([13.959685276941629, -12.201892555481464]), array([-7.8057604576925499, -3.5283871457281757]), array([-0.41961743047735317, -3.2615635891671872])],
                 [array([-9.8469907360335078, 6.0635407355366242]), array([7.8727080309703439, 7.634505157189091]), array([-2.7723038834027118, 8.5441656500931789])],
                 ]
+        tets = [[make_random_vector(3, num.Float) for i in range(4)]
+                for j in range(10)]
 
-        for vertices in triangles:
-            map = edata.get_map_unit_to_global(vertices)
-            imap = map.inverted()
+        for el_geoms, el, f in [
+                (triangles, TriangularElement(9), (f1_2d, f2_2d)),
+                (tets, TetrahedralElement(5), (f1_3d, f2_3d, f3_3d)),
+                ]:
+            print el
+            for vertices in el_geoms:
+                ones = num.ones((el.node_count(),))
+                face_ones = num.ones((len(el.face_indices()[0]),))
 
-            mapped_points = [map(node) for node in edata.unit_nodes()]
-            f1_n = num.array([f1(x) for x in mapped_points])
-            f2_n = num.array([f2(x) for x in mapped_points])
+                map = el.get_map_unit_to_global(vertices)
+                imap = map.inverted()
 
-            dx_n = d(imap, 0, f1_n)
-            dy_n = d(imap, 1, f2_n)
+                mapped_points = [map(node) for node in el.unit_nodes()]
 
-            int_div_f = abs(map.jacobian)*(
-                    ones*edata.mass_matrix()*dx_n +
-                    ones*edata.mass_matrix()*dy_n
-                    )
+                f_n = [num.array([fi(x) for x in mapped_points])
+                        for fi in f]
+                df_n = [d(imap, i, f_n[i]) for i, fi_n in enumerate(f_n)]
 
-            normals, jacobians = edata.face_normals_and_jacobians(map)
-            boundary_sum = sum(
-                    sum(
-                        fjac * face_ones * edata.face_mass_matrix() 
-                        * num.take(f_n, face_indices) * n_coord
-                        for f_n, n_coord in zip([f1_n, f2_n], n))
-                    for face_indices, n, fjac
-                    in zip(edata.face_indices(), normals, jacobians)
-                    )
-            #print abs(boundary_sum-int_div_f)
-            self.assert_(abs(boundary_sum-int_div_f) < 6e-13)
+                int_div_f = abs(map.jacobian)*sum(
+                        ones*el.mass_matrix()*dfi_n for dfi_n in df_n)
+
+                boundary_sum = sum(
+                        sum(
+                            fjac * face_ones * el.face_mass_matrix() 
+                            * num.take(fi_n, face_indices) * n_coord
+                            for fi_n, n_coord in zip(f_n, n))
+                        for face_indices, n, fjac
+                        in zip(el.face_indices(), *el.face_normals_and_jacobians(map))
+                        )
+                print boundary_sum, int_div_f, abs(boundary_sum-int_div_f)
+                self.assert_(abs(boundary_sum-int_div_f) < 6e-13)
     # -------------------------------------------------------------------------
     def test_cubature(self):
         """Test the integrity of the cubature data."""
 
-        from hedge.cubature import integrate_on_tetrahedron, TetrahedronCubatureData
+        from hedge.cubature import integrate_on_triangle, TriangleCubatureData
 
-        for i in range(len(TetrahedronCubatureData)):
-            self.assert_(abs(integrate_on_tetrahedron(i+1, lambda x: 1)-2) < 1e-14)
+        for i in range(len(TriangleCubatureData)):
+            self.assert_(abs(integrate_on_triangle(i+1, lambda x: 1)-2) < 1e-14)
     # -------------------------------------------------------------------------
     def test_tri_orthogonality(self):
-        from hedge.cubature import integrate_on_tetrahedron, TetrahedronCubatureData
+        from hedge.cubature import integrate_on_triangle, TriangleCubatureData
         from hedge.element import TriangularElement
 
         for order, ebound in [
@@ -596,7 +673,7 @@ class TestHedge(unittest.TestCase):
                         true_result = 1
                     else:
                         true_result = 0
-                    result = integrate_on_tetrahedron(2*order, lambda x: f(x)*g(x))
+                    result = integrate_on_triangle(2*order, lambda x: f(x)*g(x))
                     err = abs(result-true_result)
                     maxerr = max(maxerr, err)
                     if err > ebound:
