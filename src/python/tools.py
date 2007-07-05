@@ -77,6 +77,22 @@ def dot(x, y):
 
 
 
+def normalize(v):
+    from pylinear.computation import norm_2
+
+    return v/norm_2(v)
+
+
+
+
+def sign(x):
+    if x > 0: 
+        return 1
+    elif x == 0:
+        return 0
+    else: 
+        return -1
+
 # eoc estimation --------------------------------------------------------------
 def estimate_order_of_convergence(abscissae, errors):
     """Assuming that abscissae and errors are connected by a law of the form

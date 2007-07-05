@@ -249,46 +249,73 @@ class TestHedge(unittest.TestCase):
         for points in projected_face_points[1:]:
             self.assert_(comp.norm_infinity(points-first_points) < 1e-15)
     # -------------------------------------------------------------------------
-    def test_tri_face_normals_and_jacobians(self):
-        """Check computed face normals and face jacobians
+    def test_simp_face_normals_and_jacobians(self):
+        """Check computed face normals and face jacobians on simplicial elements
         """
-        from hedge.element import TriangularElement
+        from hedge.element import TriangularElement, TetrahedralElement
         from hedge.tools import AffineMap
         import pylinear.array as num
         import pylinear.computation as comp
         from pylinear.randomized import make_random_vector
 
-        tri = TriangularElement(4)
+        for el in [
+                TetrahedralElement(1), 
+                TriangularElement(4), 
+                ]:
+            print el, el.dimensions
+            for i in range(50):
+                vertices = [make_random_vector(el.dimensions, num.Float) 
+                        for vi in range(el.dimensions+1)]
+                array = num.array
+                #vertices = [array([-1, -1.0, -1.0]), array([1, -1.0, -1.0]), array([-1.0, 1, -1.0]), array([-1.0, -1.0, 1.0])]
+                map = el.get_map_unit_to_global(vertices)
 
-        for i in range(50):
-            vertices = [make_random_vector(2, num.Float) for vi in range(3)]
-            map = tri.get_map_unit_to_global(vertices)
+                unodes = el.unit_nodes()
+                nodes = [map(v) for v in unodes]
 
-            unodes = tri.unit_nodes()
-            nodes = [map(v) for v in unodes]
-            normals, jacobians = tri.face_normals_and_jacobians(map)
+                all_vertex_indices = range(el.dimensions+1)
 
-            from operator import add
-            face_nodes = set(reduce(add, [[f[0], f[-1]] for f in tri.face_indices()]))
-            for face_i, normal, jac in zip(tri.face_indices(), normals, jacobians):
-                mapped_start = nodes[face_i[0]]
-                mapped_end = nodes[face_i[-1]]
-                mapped_dir = mapped_end-mapped_start
+                for face_i, fvi, normal, jac in \
+                        zip(el.face_indices(), el.face_vertices(all_vertex_indices),
+                                *el.face_normals_and_jacobians(map)):
+                    mapped_corners = [vertices[i] for i in fvi]
+                    mapped_face_basis = [mc-mapped_corners[0] for mc in mapped_corners[1:]]
 
-                opp_node = (face_nodes - set([face_i[0], face_i[-1]])).__iter__().next()
-                mapped_opposite = nodes[opp_node]
+                    # face vertices must be among all face nodes
+                    close_nodes = 0
+                    for fi in face_i:
+                        face_node = nodes[fi]
+                        for mc in mapped_corners:
+                            if comp.norm_2(mc-face_node) < 1e-13:
+                                close_nodes += 1
 
-                start = unodes[face_i[0]]
-                end = unodes[face_i[-1]]
-                true_jac = comp.norm_2(mapped_end-mapped_start)/2
+                    self.assert_(close_nodes == len(mapped_corners))
 
-                #print abs(true_jac-jac)/true_jac
-                #print "aft, bef", comp.norm_2(mapped_end-mapped_start),comp.norm_2(end-start)
+                    opp_node = (set(all_vertex_indices) - set(fvi)).__iter__().next()
+                    mapped_opposite = vertices[opp_node]
 
-                self.assert_(abs(true_jac - jac)/true_jac < 1e-13)
-                self.assert_(abs(comp.norm_2(normal) - 1) < 1e-13)
-                self.assert_(abs(normal*mapped_dir) < 1e-13)
-                self.assert_((mapped_opposite-mapped_start)*normal < 0)
+                    if el.dimensions == 2:
+                        true_jac = comp.norm_2(mapped_corners[1]-mapped_corners[0])/2
+                    elif el.dimensions == 3:
+                        mapped_face_projection = num.array(comp.orthonormalize(mapped_face_basis))
+                        projected_corners = [num.zeros((2,))] + [mapped_face_projection*v 
+                                for v in mapped_face_basis]
+                        true_jac = abs(TriangularElement
+                                .get_map_unit_to_global(projected_corners).jacobian)
+                        print true_jac, jac
+                    else:
+                        assert False
+
+                    #print abs(true_jac-jac)/true_jac
+                    #print "aft, bef", comp.norm_2(mapped_end-mapped_start),comp.norm_2(end-start)
+
+                    self.assert_(abs(true_jac - jac)/true_jac < 1e-13)
+                    self.assert_(abs(comp.norm_2(normal) - 1) < 1e-13)
+                    for mfbv in mapped_face_basis:
+                        self.assert_(abs(normal*mfbv) < 1e-13)
+
+                    for mc in mapped_corners:
+                        self.assert_((mapped_opposite-mc)*normal < 0)
     # -------------------------------------------------------------------------
     def test_tri_map(self):
         from hedge.element import TriangularElement

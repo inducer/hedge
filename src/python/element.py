@@ -8,7 +8,7 @@ from pytools import memoize
 
 
 
-__all__ = ["TriangularElement"]
+__all__ = ["TriangularElement", "TetrahedralElement"]
 
 
 
@@ -49,17 +49,13 @@ class TriangleWarper:
         cls = TriangularElement
 
         from pytools import wandering_element
+        from tools import normalize
 
         vertices = [cls.barycentric_to_equilateral(bary)
                 for bary in wandering_element(cls.dimensions+1)]
         all_vertex_indices = range(cls.dimensions+1)
         face_vertex_indices = cls.face_vertices(all_vertex_indices)
         faces_vertices = cls.face_vertices(vertices)
-
-        from pylinear.computation import norm_2
-
-        def normalize(v):
-            return v/norm_2(v)
 
         edgedirs = [normalize(v2-v1) for v1, v2 in faces_vertices]
         opp_vertex_indices = [
@@ -255,15 +251,19 @@ class Element(object):
 
 
 class SimplicialElement(Element):
-    def get_map_unit_to_global(self, vertices):
+    @classmethod
+    def get_map_unit_to_global(cls, vertices):
         """Return an affine map that maps the unit coordinates of the reference
         element to a global element at a location given by its `vertices'.
         """
-        mat = num.zeros((self.dimensions, self.dimensions))
-        for i in range(self.dimensions):
+        mat = num.zeros((cls.dimensions, cls.dimensions))
+        for i in range(cls.dimensions):
             mat[:,i] = (vertices[i+1] - vertices[0])/2
         from operator import add
-        return AffineMap(mat, reduce(add, vertices[1:])/2)
+        return AffineMap(mat, 
+                reduce(add, vertices[1:])/2
+                -(cls.dimensions-2)/2*vertices[0]
+                )
 
     # numbering ---------------------------------------------------------------
     def node_count(self):
@@ -532,17 +532,14 @@ class TriangularElement(SimplicialElement):
 
         return 1/(face_vandermonde*face_vandermonde.T)
 
-    def face_normals_and_jacobians(self, affine_map):
-        """Compute the normals and face jacobians of the unit triangle
+    @staticmethod
+    def face_normals_and_jacobians(affine_map):
+        """Compute the normals and face jacobians of the unit element
         transformed according to `affine_map'.
 
         Returns a pair of lists [normals], [jacobians].
         """
-        def sign(x):
-            if x > 0: 
-                return 1
-            else: 
-                return -1
+        from hedge.tools import sign
 
         m = affine_map.matrix
         orient = sign(affine_map.jacobian)
@@ -557,7 +554,8 @@ class TriangularElement(SimplicialElement):
         return [n/fl for n, fl in zip(raw_normals, face_lengths)], \
                 face_lengths
 
-    def shuffle_face_indices_to_match(self, face_1_vertices, face_2_vertices, face_2_indices):
+    @staticmethod
+    def shuffle_face_indices_to_match(face_1_vertices, face_2_vertices, face_2_indices):
         assert set(face_1_vertices) == set(face_2_vertices)
         if face_1_vertices != face_2_vertices:
             assert face_1_vertices[::-1] == face_2_vertices
@@ -715,15 +713,14 @@ class TetrahedralElement(SimplicialElement):
         equi_points = [self.barycentric_to_equilateral(bp) 
                 for bp in bary_points]
 
-        from pylinear.computation import norm_2
+        from tools import normalize
         from operator import add, mul
 
         tri_warp = TriangleWarper(alpha, self.order)
 
         for fvi, (v1, v2, v3) in zip(face_vertex_indices, faces_vertices):
             # find directions spanning the face: "base" and "altitude"
-            directions = [v2-v1, (v3)-(v1+v2)/2]
-            directions = [dir/norm_2(dir) for dir in directions]
+            directions = [normalize(v2-v1), normalize((v3)-(v1+v2)/2)]
 
             # the two should be orthogonal
             assert abs(directions[0]*directions[1]) < 1e-16
@@ -808,39 +805,47 @@ class TetrahedralElement(SimplicialElement):
     # face operations ---------------------------------------------------------
     @memoize
     def face_mass_matrix(self):
-        from hedge.polynomial import legendre_vandermonde
+        from hedge.polynomial import generic_vandermonde
         unodes = self.unit_nodes()
-        face_vandermonde = legendre_vandermonde(
-                [unodes[i][0] for i in self.face_indices()[0]],
-                self.order)
+        basis = self.basis_functions()
+        face_vandermonde = generic_vandermonde(
+                [unodes[i] for i in self.face_indices()[0]],
+                [basis[i] for i in self.face_indices()[0]],
+                )
 
         return 1/(face_vandermonde*face_vandermonde.T)
 
-    def face_normals_and_jacobians(self, affine_map):
-        """Compute the normals and face jacobians of the unit triangle
+    @classmethod
+    def face_normals_and_jacobians(cls, affine_map):
+        """Compute the normals and face jacobians of the unit element
         transformed according to `affine_map'.
 
         Returns a pair of lists [normals], [jacobians].
         """
-        def sign(x):
-            if x > 0: 
-                return 1
-            else: 
-                return -1
+        from hedge.tools import normalize, sign
+
+        face_orientations = [-1,1,1,-1]
+        element_orientation = sign(affine_map.jacobian)
+
+        def fj_and_normal(fo, pts):
+            normal = (pts[1]-pts[0]) <<num.cross>> (pts[2]-pts[0])
+            n_length = comp.norm_2(normal)
+            return element_orientation*fo*normal/n_length, n_length
 
         m = affine_map.matrix
-        orient = sign(affine_map.jacobian)
-        face1 = m[:,1] - m[:,0]
-        raw_normals = [
-                orient*num.array([m[1,0], -m[0,0]]),
-                orient*num.array([face1[1], -face1[0]]),
-                orient*num.array([-m[1,1], m[0,1]]),
+
+        vertices = [
+                m*num.array([-1,-1,-1]),
+                m*num.array([+1,-1,-1]),
+                m*num.array([-1,+1,-1]),
+                m*num.array([-1,-1,+1]),
                 ]
 
-        face_lengths = [comp.norm_2(fn) for fn in raw_normals]
-        return [n/fl for n, fl in zip(raw_normals, face_lengths)], \
-                face_lengths
+        # realize that zip(*something) is unzip(something)
+        return zip(*[fj_and_normal(fo, pts) for fo, pts in
+            zip(face_orientations, cls.face_vertices(vertices))])
 
+    @staticmethod
     def shuffle_face_indices_to_match(self, face_1_vertices, face_2_vertices, face_2_indices):
         assert set(face_1_vertices) == set(face_2_vertices)
         if face_1_vertices != face_2_vertices:
