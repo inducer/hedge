@@ -852,14 +852,53 @@ class TetrahedralElement(SimplicialElement):
         return zip(*[fj_and_normal(fo, pts) for fo, pts in
             zip(face_orientations, cls.face_vertices(vertices))])
 
-    @staticmethod
     def shuffle_face_indices_to_match(self, face_1_vertices, face_2_vertices, face_2_indices):
-        assert set(face_1_vertices) == set(face_2_vertices)
-        if face_1_vertices != face_2_vertices:
-            assert face_1_vertices[::-1] == face_2_vertices
-            return face_2_indices[::-1]
-        else:
+        (a,b,c) = face_1_vertices
+        f2_tuple = face_2_vertices
+
+        try:
+            idx_map = self._shuffle_face_idx_map
+        except AttributeError:
+            idx_map = self._shuffle_face_idx_map = {}
+            idx = 0
+            for j in range(0, order+1):
+                for i in range(0, self.order+1-j):
+                    self._shuffle_face_idx_map[i,j] = idx
+                    idx += 1
+
+        def flip(indices):
+            """Flip the indices along the unit hypotenuse."""
+            result = []
+            for j in range(0, order+1):
+                for i in range(0, self.order+1-j):
+                    result.append(indices[idx_map[j,i]])
+            return result
+
+        def shift_left(indices):
+            """Rotate all edges to the left."""
+            result = len(indices)*[0]
+            idx = 0
+            for j in range(0, order+1):
+                for i in range(0, self.order+1-j):
+                    result[idx_map[j, self.order-i+j]] = indices[idx]
+                    idx += 1
+            return result
+
+        if f2_tuple == (a,b,c):
             return face_2_indices
+        elif f2_tuple == (a,c,b):
+            return flip(face_2_indices)
+        elif f2_tuple == (b,c,a):
+            return shift_left(face_2_indices)
+        elif f2_tuple == (b,a,c):
+            return flip(shift_left(face_2_indices))
+        elif f2_tuple == (c,a,b):
+            return shift_left(shift_left(face_2_indices))
+        elif f2_tuple == (c,b,a):
+            # (a,b,c) -> (a,c,b) -> (c,b,a)
+            return shift_left(flip(face_2_indices))
+        else:
+            raise ValueError, "face_2_vertices is not a permutation of face_1_vertices"
 
     # time step scaling -------------------------------------------------------
     def dt_non_geometric_factor(self):
@@ -870,9 +909,7 @@ class TetrahedralElement(SimplicialElement):
                 for face_indices in self.face_indices())
 
     def dt_geometric_factor(self, vertices, map):
-        area = abs(2*map.jacobian)
-        semiperimeter = sum(comp.norm_2(vertices[vi1]-vertices[vi2]) 
-                for vi1, vi2 in [(0,1), (1,2), (2,0)])/2
-        return area/semiperimeter
+        normals, face_jacobians = self.face_normals_and_jacobians(map)[1]
+        return abs(map.jacobian)/min(abs(fj) for fj in face_jacobians)
 
 

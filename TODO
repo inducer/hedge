@@ -1,2 +1,4 @@
 Nomenclature: Elements and Elements
 Verify 3D nodes against Matlab
+Periodic BCs to verify 3D cyl waveguide
+general simplicial quadrature/replace fixed quad data
