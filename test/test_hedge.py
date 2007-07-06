@@ -583,11 +583,18 @@ class TestHedge(unittest.TestCase):
             return sin(2*x[0])+cos(x[1])
 
         def f1_3d(x):
-            return sin(3*x[0])+cos(3*x[1])+sin(2*x[2])
+            return sin(3*x[0])+cos(3*x[1])+sin(1.9*x[2])
         def f2_3d(x):
-            return sin(2*x[0])+cos(x[1])-cos(2*x[2])
+            return sin(1.2*x[0])+cos(2.1*x[1])-cos(1.5*x[2])
         def f3_3d(x):
-            return sin(x[0])-3*cos(x[1])+cos(x[2])
+            return 5*sin(-0.2*x[0])-3*cos(x[1])+cos(x[2])
+
+        #def f1_3d(x):
+            #return 1
+        #def f2_3d(x):
+            #return 0
+        #def f3_3d(x):
+            #return 0
 
         def d(imap, coordinate, field):
             col = imap.matrix[:, coordinate]
@@ -609,14 +616,15 @@ class TestHedge(unittest.TestCase):
                 [array([13.959685276941629, -12.201892555481464]), array([-7.8057604576925499, -3.5283871457281757]), array([-0.41961743047735317, -3.2615635891671872])],
                 [array([-9.8469907360335078, 6.0635407355366242]), array([7.8727080309703439, 7.634505157189091]), array([-2.7723038834027118, 8.5441656500931789])],
                 ]
-        tets = [[make_random_vector(3, num.Float) for i in range(4)]
-                for j in range(10)]
+        tets = [
+                [make_random_vector(3, num.Float) for i in range(4)]
+                for j in range(10)
+                ]
 
         for el_geoms, el, f in [
                 (triangles, TriangularElement(9), (f1_2d, f2_2d)),
-                (tets, TetrahedralElement(5), (f1_3d, f2_3d, f3_3d)),
+                (tets, TetrahedralElement(1), (f1_3d, f2_3d, f3_3d)),
                 ]:
-            print el
             for vertices in el_geoms:
                 ones = num.ones((el.node_count(),))
                 face_ones = num.ones((len(el.face_indices()[0]),))
@@ -633,6 +641,16 @@ class TestHedge(unittest.TestCase):
                 int_div_f = abs(map.jacobian)*sum(
                         ones*el.mass_matrix()*dfi_n for dfi_n in df_n)
 
+                if False:
+                    boundary_comp = [
+                            array([
+                                fjac * face_ones * el.face_mass_matrix() 
+                                * num.take(fi_n, face_indices) * n_coord
+                                for fi_n, n_coord in zip(f_n, n)])
+                            for face_indices, n, fjac
+                            in zip(el.face_indices(), *el.face_normals_and_jacobians(map))
+                            ]
+
                 boundary_sum = sum(
                         sum(
                             fjac * face_ones * el.face_mass_matrix() 
@@ -641,8 +659,15 @@ class TestHedge(unittest.TestCase):
                         for face_indices, n, fjac
                         in zip(el.face_indices(), *el.face_normals_and_jacobians(map))
                         )
-                print boundary_sum, int_div_f, abs(boundary_sum-int_div_f)
-                self.assert_(abs(boundary_sum-int_div_f) < 6e-13)
+
+                #print el.face_normals_and_jacobians(map)[1]
+                #print 'mp', [mapped_points[fi] for fi in el.face_indices()[2]]
+                #print num.take(f_n[0], el.face_indices()[2])
+                #print 'bc', boundary_comp
+                #print 'bs', boundary_sum
+                #print 'idiv', int_div_f
+                #print abs(boundary_sum-int_div_f)
+                self.assert_(abs(boundary_sum-int_div_f) < 1e-12)
     # -------------------------------------------------------------------------
     def test_cubature(self):
         """Test the integrity of the cubature data."""

@@ -807,9 +807,12 @@ class TetrahedralElement(SimplicialElement):
     def face_mass_matrix(self):
         from hedge.polynomial import generic_vandermonde
         unodes = self.unit_nodes()
-        basis = self.basis_functions()
+
+        node_indices = list(self.node_indices())
+        basis = [TriangleBasisFunction(node_indices[i][:2]) 
+                for i in self.face_indices()[0]]
         face_vandermonde = generic_vandermonde(
-                [unodes[i] for i in self.face_indices()[0]],
+                [unodes[i][:2] for i in self.face_indices()[0]],
                 [basis[i] for i in self.face_indices()[0]],
                 )
 
