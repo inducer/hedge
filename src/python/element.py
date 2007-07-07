@@ -795,6 +795,17 @@ class TetrahedralElement(SimplicialElement):
         for current in self.node_tuples():
             # this is a tesselation of a cube into six tets.
             # subtets that fall outside of the master tet are simply not added.
+
+            # positively oriented
+            #try_add_tet((0,0,0), (1,0,0), (0,1,0), (0,0,1))
+            #try_add_tet((1,0,1), (1,0,0), (0,0,1), (0,1,0))
+            #try_add_tet((1,0,1), (0,1,1), (0,1,0), (0,0,1))
+
+            #try_add_tet((1,0,0), (0,1,0), (1,0,1), (1,1,0))
+            #try_add_tet((0,1,1), (0,1,0), (1,1,0), (1,0,1))
+            #try_add_tet((0,1,1), (1,1,1), (1,0,1), (1,1,0))
+
+            # negatively oriented
             try_add_tet((0,0,0), (1,0,0), (0,0,1), (0,1,0))
             try_add_tet((1,0,1), (1,0,0), (0,1,0), (0,0,1))
             try_add_tet((1,0,1), (0,1,1), (0,0,1), (0,1,0))
@@ -802,7 +813,6 @@ class TetrahedralElement(SimplicialElement):
             try_add_tet((1,0,0), (0,1,0), (1,1,0), (1,0,1))
             try_add_tet((0,1,1), (0,1,0), (1,0,1), (1,1,0))
             try_add_tet((0,1,1), (1,1,1), (1,1,0), (1,0,1))
-
         return result
 
     # basis functions ---------------------------------------------------------

@@ -962,18 +962,18 @@ class TestHedge(unittest.TestCase):
         from hedge.discretization import Discretization
         discr = Discretization(mesh, TetrahedralElement(4))
 
-        u_i = discr.interpolate_tag_volume_function(
+        u_l = discr.interpolate_tag_volume_function(
                 lambda x: sin(x[0]-x[1]+x[2]),
                 "lower")
-        u_o = discr.interpolate_tag_volume_function(
+        u_u = discr.interpolate_tag_volume_function(
                 lambda x: cos(x[0]-x[1]+x[2]),
                 "upper")
-        u = u_i + u_o
+        u = u_l + u_u
 
         # visualize the produced field
-        #from hedge.visualization import SiloVisualizer
-        #vis = SiloVisualizer(discr)
-        #vis("sandwich.silo", [("u", u)])
+        from hedge.visualization import SiloVisualizer
+        vis = SiloVisualizer(discr)
+        vis("sandwich.silo", [("u_l", u_l), ("u_u", u_u)], expressions=[("u", "u_l+u_u")])
 
         # make sure the surface integral of the difference 
         # between top and bottom is zero

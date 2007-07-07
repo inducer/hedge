@@ -35,3 +35,17 @@ class DBFile(hedge._silo.DBFile):
             centering, optlist={}):
         hedge._silo.DBFile.put_ucdvar(self, vname, mname, varnames, vars, centering, 
                 _convert_optlist(optlist))
+
+    def put_defvars(self, vname, vars):
+        """Add an defined variable ("expression") to this database.
+
+        The `vars' argument consists of a list of tuples of type
+          (name, definition)
+        or
+          (name, definition, DB_VARTYPE_SCALAR | DB_VARTYPE_VECTOR).
+        or even
+          (name, definition, DB_VARTYPE_XXX, {options}).
+        If the type is not specified, scalar is assumed.
+        """
+        
+        hedge._silo.DBFile.put_defvars(self, vname, vars)

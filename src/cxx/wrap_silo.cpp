@@ -428,6 +428,42 @@ namespace
             datatype, centering, optlist.get_optlist()));
       }
 
+      void put_defvars(std::string id, object vars_py)
+      {
+        std::vector<std::string> varnames_container;
+        std::vector<const char *> varnames;
+        std::vector<std::string> vardefs_container;
+        std::vector<const char *> vardefs;
+        std::vector<int> vartypes;
+        std::vector<DBoptlist *> varopts;
+
+        for (unsigned i = 0; i < len(vars_py); i++)
+        {
+          object entry = vars_py[i];
+          varnames_container.push_back(extract<std::string>(entry[0]));
+          vardefs_container.push_back(extract<std::string>(entry[1]));
+          if (len(entry) == 2)
+            vartypes.push_back(DB_VARTYPE_SCALAR);
+          else 
+          {
+            vartypes.push_back(extract<int>(entry[2]));
+            if (len(entry == 4))
+              varopts.push_back(extract<DBoptlistWrapper *>(entry[3])()->get_optlist());
+            else
+              varopts.push_back(NULL);
+          }
+        }
+
+        for (unsigned i = 0; i < len(vars_py); i++)
+        {
+          varnames.push_back(varnames_container[i].data());
+          vardefs.push_back(vardefs_container[i].data());
+        }
+
+        CALL_GUARDED(DBPutDefvars, (m_dbfile, id.data(), len(vars_py), 
+            varnames.data(), vartypes.data(), vardefs.data(), varopts.data()));
+      }
+
     private:
       DBfile *m_dbfile;
   };
@@ -463,6 +499,7 @@ BOOST_PYTHON_MODULE(_silo)
       .DEF_SIMPLE_METHOD(put_ucdmesh)
       .DEF_SIMPLE_METHOD(put_ucdvar1)
       .DEF_SIMPLE_METHOD(put_ucdvar)
+      .DEF_SIMPLE_METHOD(put_defvars)
       ;
   }
 
