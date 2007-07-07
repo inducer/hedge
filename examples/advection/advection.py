@@ -90,8 +90,6 @@ def main() :
     weak_nabla = bind_weak_nabla(discr)
     m_inv = bind_inverse_mass_matrix(discr)
 
-    rhscnt = [0]
-
     def rhs_strong(t, u):
         from pytools import argmax
 
@@ -113,13 +111,15 @@ def main() :
 
         bc_out = discr.boundarize_volume_field(u, "outflow")
 
-        rhsint =   a[0]*discr.apply_minv_st(0, u)
-                #+ a[1]*discr.apply_minv_st(1, u)
-        rhsflux = discr.lift_interior_flux(flux_weak, u)
-        rhsbdry = discr.lift_boundary_flux(flux_weak, u, bc_in, "inflow") + \
-                discr.lift_boundary_flux(flux_weak, u, bc_out, "outflow")
+        flux = bind_flux(discr, flux_weak)
+        b_in_flux = bind_boundary_flux(discr, flux_weak, "inflow")
+        b_out_flux = bind_boundary_flux(discr, flux_weak, "outflow")
 
-        return -rhsint+discr.apply_inverse_mass_matrix(rhsflux+rhsbdry)
+        return -dot(a, weak_nabla*u) +m_inv*(
+                flux*u
+                + b_in_flux * pair_with_boundary(u, bc_in)
+                + b_out_flux * pair_with_boundary(u, bc_out)
+                )
 
     stepper = RK4TimeStepper()
     for step in range(nsteps):
