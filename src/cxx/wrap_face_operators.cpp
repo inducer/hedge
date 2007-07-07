@@ -53,6 +53,7 @@ void hedge_expose_face_operators()
   {
     typedef face_group cl;
     class_<cl>("FaceGroup")
+      .def("__len__", &cl::size)
       .def("clear", &cl::clear)
       .def("add_face", face_group_add_face)
       .def("connect_faces", face_group_connect_faces)

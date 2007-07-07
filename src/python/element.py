@@ -274,7 +274,7 @@ class SimplicialElement(Element):
         from pytools import factorial
         return int(reduce(mul, (o+1+i for i in range(d)))/factorial(d))
 
-    def node_indices(self):
+    def node_tuples(self):
         """Generate tuples enumerating the node indices present
         in this element. Each tuple has a length equal to the dimension
         of the element. The tuples constituents are non-negative integers
@@ -287,10 +287,30 @@ class SimplicialElement(Element):
         return generate_nonnegative_integer_tuples_summing_to_at_most(
                 self.order, self.dimensions)
 
+    @memoize
+    def vertex_indices(self):
+        """Return the list of the vertices' indices into the elements' volume vector."""
+        from pytools import wandering_element
+
+        result = []
+
+        vertex_tuples = [self.dimensions * (0,)] \
+                + list(wandering_element(self.dimensions, wanderer=self.order))
+        vti = 0
+
+        for i, nt in enumerate(self.node_tuples()):
+            if nt == vertex_tuples[vti]:
+                result.append(i)
+                vti += 1
+
+        assert vti == len(vertex_tuples)
+
+        return result
+
     # node wrangling ----------------------------------------------------------
     def equidistant_barycentric_nodes(self):
         """Generate equidistant nodes in barycentric coordinates."""
-        for indices in self.node_indices():
+        for indices in self.node_tuples():
             divided = tuple(i/self.order for i in indices)
             yield (1-sum(divided),) + divided
 
@@ -435,7 +455,7 @@ class TriangularElement(SimplicialElement):
 
         faces = [[], [], []]
 
-        for i, (m, n) in enumerate(self.node_indices()):
+        for i, (m, n) in enumerate(self.node_tuples()):
             # face finding
             if n == 0:
                 faces[0].append(i)
@@ -494,10 +514,10 @@ class TriangularElement(SimplicialElement):
 
         node_dict = dict(
                 (ituple, idx) 
-                for idx, ituple in enumerate(self.node_indices()))
+                for idx, ituple in enumerate(self.node_tuples()))
 
         result = []
-        for i, j in self.node_indices():
+        for i, j in self.node_tuples():
             if i+j < self.order:
                 result.append(
                         (node_dict[i,j], node_dict[i+1,j], node_dict[i,j+1]))
@@ -513,13 +533,13 @@ class TriangularElement(SimplicialElement):
 
           r**i * s**j for i+j <= N
         """
-        return [TriangleBasisFunction(idx) for idx in self.node_indices()]
+        return [TriangleBasisFunction(idx) for idx in self.node_tuples()]
 
     def grad_basis_functions(self):
         """Get the gradient functions of the basis_functions(),
         in the same order.
         """
-        return [GradTriangleBasisFunction(idx) for idx in self.node_indices()]
+        return [GradTriangleBasisFunction(idx) for idx in self.node_tuples()]
 
     # face operations ---------------------------------------------------------
     @memoize
@@ -622,7 +642,7 @@ class TetrahedralElement(SimplicialElement):
     When global vertices are passed in, they are mapped to the 
     reference vertices A, B, C, D in order.
 
-    Faces are always ordered ABC, ABD, ADC, BDC.
+    Faces are always ordered ABC, ABD, ACD, BCD.
     """
 
     # In case you were wondering: the double backslashes in the docstring
@@ -640,8 +660,8 @@ class TetrahedralElement(SimplicialElement):
     def face_vertices(vertices):
         return [(vertices[0],vertices[1],vertices[2]), 
                 (vertices[0],vertices[1],vertices[3]),
-                (vertices[0],vertices[3],vertices[2]),
-                (vertices[1],vertices[3],vertices[2]),
+                (vertices[0],vertices[2],vertices[3]),
+                (vertices[1],vertices[2],vertices[3]),
                 ]
 
     @memoize
@@ -652,8 +672,7 @@ class TetrahedralElement(SimplicialElement):
 
         faces = [[], [], [], []]
 
-        for i, (m,n,o) in enumerate(self.node_indices()):
-            # face finding
+        for i, (m,n,o) in enumerate(self.node_tuples()):
             if o == 0:
                 faces[0].append(i)
             if n == 0:
@@ -754,10 +773,9 @@ class TetrahedralElement(SimplicialElement):
         """Return a list of tuples of indices into the node list that
         generate a tesselation of the reference element."""
 
-        # nd stands for node dict
-        nd = dict(
+        node_dict = dict(
                 (ituple, idx) 
-                for idx, ituple in enumerate(self.node_indices()))
+                for idx, ituple in enumerate(self.node_tuples()))
 
         def add_tuples(a, b):
             return tuple(ac+bc for ac, bc in zip(a,b))
@@ -765,25 +783,25 @@ class TetrahedralElement(SimplicialElement):
         def try_add_tet(d1, d2, d3, d4):
             try:
                 result.append((
-                    add_tuple(current, d1),
-                    add_tuple(current, d2),
-                    add_tuple(current, d3),
-                    add_tuple(current, d4),
+                    node_dict[add_tuples(current, d1)],
+                    node_dict[add_tuples(current, d2)],
+                    node_dict[add_tuples(current, d3)],
+                    node_dict[add_tuples(current, d4)],
                     ))
-            except KeyError:
+            except KeyError, e:
                 pass
 
         result = []
-        for current in self.node_indices():
+        for current in self.node_tuples():
             # this is a tesselation of a cube into six tets.
             # subtets that fall outside of the master tet are simply not added.
-            try_add_tet((0,0,0), (1,0,0), (0,1,0), (0,0,1))
+            try_add_tet((0,0,0), (1,0,0), (0,0,1), (0,1,0))
             try_add_tet((1,0,1), (1,0,0), (0,1,0), (0,0,1))
-            try_add_tet((1,0,1), (0,0,1), (0,1,0), (0,0,1))
+            try_add_tet((1,0,1), (0,1,1), (0,0,1), (0,1,0))
 
-            try_add_tet((1,0,0), (0,1,0), (1,0,1), (1,1,0))
+            try_add_tet((1,0,0), (0,1,0), (1,1,0), (1,0,1))
             try_add_tet((0,1,1), (0,1,0), (1,0,1), (1,1,0))
-            try_add_tet((0,1,1), (1,1,1), (1,0,1), (1,1,0))
+            try_add_tet((0,1,1), (1,1,1), (1,1,0), (1,0,1))
 
         return result
 
@@ -794,13 +812,13 @@ class TetrahedralElement(SimplicialElement):
 
           r**i * s**j * t**k  for  i+j+k <= order
         """
-        return [TetrahedronBasisFunction(idx) for idx in self.node_indices()]
+        return [TetrahedronBasisFunction(idx) for idx in self.node_tuples()]
 
     def grad_basis_functions(self):
         """Get the (r,s,...) gradient functions of the basis_functions(),
         in the same order.
         """
-        return [GradTetrahedronBasisFunction(idx) for idx in self.node_indices()]
+        return [GradTetrahedronBasisFunction(idx) for idx in self.node_tuples()]
 
     # face operations ---------------------------------------------------------
     @memoize
@@ -808,8 +826,8 @@ class TetrahedralElement(SimplicialElement):
         from hedge.polynomial import generic_vandermonde
         unodes = self.unit_nodes()
 
-        node_indices = list(self.node_indices())
-        basis = [TriangleBasisFunction(node_indices[i][:2]) 
+        node_tuples = list(self.node_tuples())
+        basis = [TriangleBasisFunction(node_tuples[i][:2]) 
                 for i in self.face_indices()[0]]
         face_vandermonde = generic_vandermonde(
                 [unodes[i][:2] for i in self.face_indices()[0]],
@@ -827,7 +845,7 @@ class TetrahedralElement(SimplicialElement):
         """
         from hedge.tools import normalize, sign
 
-        face_orientations = [-1,1,1,-1]
+        face_orientations = [-1,1,-1,1]
         element_orientation = sign(affine_map.jacobian)
 
         def fj_and_normal(fo, pts):
@@ -861,15 +879,16 @@ class TetrahedralElement(SimplicialElement):
         except AttributeError:
             idx_map = self._shuffle_face_idx_map = {}
             idx = 0
-            for j in range(0, order+1):
+            for j in range(0, self.order+1):
                 for i in range(0, self.order+1-j):
                     self._shuffle_face_idx_map[i,j] = idx
                     idx += 1
 
+        # flip and shift_left generate S_3
         def flip(indices):
             """Flip the indices along the unit hypotenuse."""
             result = []
-            for j in range(0, order+1):
+            for j in range(0, self.order+1):
                 for i in range(0, self.order+1-j):
                     result.append(indices[idx_map[j,i]])
             return result
@@ -878,24 +897,28 @@ class TetrahedralElement(SimplicialElement):
             """Rotate all edges to the left."""
             result = len(indices)*[0]
             idx = 0
-            for j in range(0, order+1):
+            for j in range(0, self.order+1):
                 for i in range(0, self.order+1-j):
-                    result[idx_map[j, self.order-i+j]] = indices[idx]
+                    result[idx_map[j, self.order-i-j]] = indices[idx]
                     idx += 1
             return result
 
+        # yay, enumerate S_3 by hand
         if f2_tuple == (a,b,c):
             return face_2_indices
         elif f2_tuple == (a,c,b):
             return flip(face_2_indices)
         elif f2_tuple == (b,c,a):
-            return shift_left(face_2_indices)
+            # (b,c,a) -sl-> (c,a,b) -sl-> (a,b,c)
+            return shift_left(shift_left(face_2_indices))
         elif f2_tuple == (b,a,c):
+            # (b,a,c) -sl-> (a,c,b) -fl-> (a,b,c)
             return flip(shift_left(face_2_indices))
         elif f2_tuple == (c,a,b):
-            return shift_left(shift_left(face_2_indices))
+            # (c,a,b) -sl-> (a,b,c)
+            return shift_left(face_2_indices)
         elif f2_tuple == (c,b,a):
-            # (a,b,c) -> (a,c,b) -> (c,b,a)
+            # (c,b,a) -fl-> (c,a,b) -sl-> (a,b,c)
             return shift_left(flip(face_2_indices))
         else:
             raise ValueError, "face_2_vertices is not a permutation of face_1_vertices"

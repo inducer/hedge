@@ -4,10 +4,13 @@ import pylinear.array as num
 
 
 class Element(object):
-    def __init__(self, id, vertices, tag):
+    def __init__(self, id, vertices, tag, points):
         self.id = id
-        self.vertices = vertices
+        self.vertices = self._reorder_vertices(vertices, points)
         self.tag = tag
+
+    def _reorder_vertices(self, vertices, points):
+        return vertices
 
 
 
@@ -19,6 +22,15 @@ class Triangle(Element):
         from hedge.element import TriangularElement
         return TriangularElement.face_vertices(self.vertices)
 
+    def _reorder_vertices(self, vertices, points):
+        from hedge.element import TriangularElement
+        map = TriangularElement.get_map_unit_to_global(
+                [points[i] for i in vertices])
+        if map.jacobian < 0:
+            return [vertices[0], vertices[2], vertices[1]]
+        else:
+            return vertices
+
 
 
 
@@ -28,6 +40,14 @@ class Tetrahedron(Element):
         from hedge.element import TetrahedralElement
         return TetrahedralElement.face_vertices(self.vertices)
 
+    def _reorder_vertices(self, vertices, points):
+        from hedge.element import TetrahedralElement
+        map = TetrahedralElement.get_map_unit_to_global(
+                [points[i] for i in vertices])
+        if map.jacobian < 0:
+            return [vertices[0], vertices[1], vertices[3], vertices[2]]
+        else:
+            return vertices
 
 
 
@@ -84,8 +104,19 @@ class ConformalMesh(Mesh):
         Face indices follow the convention for the respective element,
         such as Triangle or Tetrahedron, in this module.
         """
+        if len(points) == 0:
+            raise ValueError, "mesh contains no points"
+
+        dim = len(points[0])
+        if dim == 2:
+            el_class = Triangle
+        elif dim == 3:
+            el_class = Tetrahedron
+        else:
+            raise ValueError, "%d-dimensional meshes are unsupported" % dim
+
         self.points = [num.asarray(v) for v in points]
-        self.elements = [Triangle(id, tri, element_tags.get(id)) 
+        self.elements = [el_class(id, tri, element_tags.get(id), self.points) 
                 for id, tri in enumerate(elements)]
         self._build_connectivity(boundary_tags)
 

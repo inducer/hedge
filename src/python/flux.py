@@ -12,25 +12,19 @@ ChainedFlux = _internal.ChainedFlux
 
 
 
-normal_2d = ArithmeticList([
-    _internal.NormalXFlux(), 
-    _internal.NormalYFlux(),
-    ])
-normal_3d = ArithmeticList([
-    _internal.NormalXFlux(), 
-    _internal.NormalYFlux(),
-    _internal.NormalZFlux(),
-    ])
+def normal(dim):
+    return ArithmeticList([
+        _internal.NormalXFlux(), 
+        _internal.NormalYFlux(),
+        _internal.NormalZFlux(),
+        ])[:dim]
 
-jump_2d = ArithmeticList([
-    _internal.JumpXFlux(), 
-    _internal.JumpYFlux(),
-    ])
-jump_3d = ArithmeticList([
-    _internal.JumpXFlux(), 
-    _internal.JumpYFlux(),
-    _internal.JumpZFlux(),
-    ])
+def jump(dim):
+    return ArithmeticList([
+        _internal.JumpXFlux(), 
+        _internal.JumpYFlux(),
+        _internal.JumpZFlux(),
+        ])[:dim]
 
 @work_with_arithmetic_containers
 def penalty(coefficient, exponent):

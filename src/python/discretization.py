@@ -144,12 +144,15 @@ class Discretization:
                     [estart_n+i for i in findices_shuffled_n],
                     self.faces[e_l.id][fi_l])
 
-        self.face_groups = [(fg, ldis_l.face_mass_matrix())]
+        if len(fg):
+            self.face_groups = [(fg, ldis_l.face_mass_matrix())]
 
-        fg.connect_faces([
-                (face_number_map[local_face], face_number_map[neigh_face])
-                for local_face, neigh_face in self.mesh.both_interfaces()
-                ])
+            fg.connect_faces([
+                    (face_number_map[local_face], face_number_map[neigh_face])
+                    for local_face, neigh_face in self.mesh.both_interfaces()
+                    ])
+        else:
+            self.face_groups = []
         
     def _find_boundary_points_and_ranges(self):
         """assign boundary points and face ranges, for each tag separately"""

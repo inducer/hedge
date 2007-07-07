@@ -5,6 +5,22 @@ import unittest
 
 
 class TestHedge(unittest.TestCase):
+    def test_face_vertex_order(self):
+        """Verify that face_indices() emits face vertex indices in the right order."""
+        from hedge.element import TriangularElement, TetrahedralElement
+
+        for el in [TriangularElement(5), TetrahedralElement(5)]:
+            vertex_indices = el.vertex_indices()
+            for fn, (face_vertices, face_indices) in enumerate(zip(
+                    el.face_vertices(vertex_indices), el.face_indices())):
+                face_vertices_i = 0
+                for fi in face_indices:
+                    if fi == face_vertices[face_vertices_i]:
+                        face_vertices_i += 1
+
+                self.assert_(face_vertices_i == len(face_vertices))
+
+    # -------------------------------------------------------------------------
     def test_newton_interpolation(self):
         from hedge.interpolation import newton_interpolation_function
         
@@ -97,11 +113,6 @@ class TestHedge(unittest.TestCase):
         for el in els:
             eps = 1e-10
 
-            if el.dimensions == 3:
-                outf = open("nodes.dat", "w")
-                for ux in el.equilateral_nodes():
-                    outf.write("%g\t%g\t%g\n" % tuple(ux))
-
             unodes = list(el.unit_nodes())
             self.assert_(len(unodes) == el.node_count())
             for ux in unodes:
@@ -116,11 +127,10 @@ class TestHedge(unittest.TestCase):
                     self.assert_(uc >= -1-eps)
                 self.assert_(sum(ux) <= 1+eps)
 
-            for indices in el.node_indices():
+            for indices in el.node_tuples():
                 for index in indices:
                     self.assert_(index >= 0)
                 self.assert_(sum(indices) <= el.order)
-
     # -------------------------------------------------------------------------
     def test_tri_nodes_against_known_values(self):
         from hedge.element import TriangularElement, TetrahedralElement
@@ -188,7 +198,7 @@ class TestHedge(unittest.TestCase):
                  for m in range(0, order+1-n):
                      yield m,n
 
-        self.assert_(set(tri.node_indices()) == set(node_indices_2(triorder)))
+        self.assert_(set(tri.node_tuples()) == set(node_indices_2(triorder)))
     # -------------------------------------------------------------------------
     def test_simp_basis_grad(self):
         from itertools import izip
@@ -325,7 +335,7 @@ class TestHedge(unittest.TestCase):
         n = 8
         tri = TriangularElement(n)
 
-        node_dict = dict((ituple, idx) for idx, ituple in enumerate(tri.node_indices()))
+        node_dict = dict((ituple, idx) for idx, ituple in enumerate(tri.node_tuples()))
         corner_indices = [node_dict[0,0], node_dict[n,0], node_dict[0,n]]
         unodes = tri.unit_nodes()
         corners = [unodes[i] for i in corner_indices]
@@ -617,8 +627,18 @@ class TestHedge(unittest.TestCase):
                 [array([-9.8469907360335078, 6.0635407355366242]), array([7.8727080309703439, 7.634505157189091]), array([-2.7723038834027118, 8.5441656500931789])],
                 ]
         tets = [
-                [make_random_vector(3, num.Float) for i in range(4)]
-                for j in range(10)
+                #[make_random_vector(3, num.Float) for i in range(4)]
+                #for j in range(10)
+                [array([-0.087835976182812386, 8.4241880323369127, 2.6557808710807933]), array([5.4875560966799677, -7.5530368326122499, 8.4703868377747877]), array([-8.4888098806626751, 1.8369058453192324, -6.9041468708803713]), array([17.327527449499168, -9.0586108433594319, 5.7459746913914636])],
+                [array([16.993689961344593, -12.116305360441197, -12.711045554409088]), array([-2.0324332275643817, -5.0524187595904335, 5.9257028535230383]), array([6.4221144729287687, -7.2496949199427245, -1.1590391996379827]), array([-5.7529432953399171, -6.9587987820990262, 3.7223773892240426])],
+                [array([-0.4423263927732628, -1.6306971591009138, -1.2554069824001064]), array([-9.1171749892163785, 14.232868970928301, 4.6548620163014505]), array([16.554360867165595, -2.1451702825571202, -1.9050837421951314]), array([-8.7455417971698139, 19.016251630886945, -15.137691422305545])],
+                [array([-1.9251811954429843, -4.5369007736338665, 9.2675942450331963]), array([-13.586778017089083, -3.6666239130220553, -14.095112617514117]), array([-15.014799506040006, -3.4363888726140681, -0.85237426213437206]), array([6.3854978041452597, 13.293981904633554, -7.8432774486183146])],
+                [array([-6.761839340374304, 14.864784704377955, 1.574274771089831]), array([-0.1823468063801317, -21.892423945260102, 11.565172070570537]), array([-0.14658389181168049, 13.07241603902848, 7.2652184007323042]), array([-20.35574011769496, 14.816503793175773, -7.2800214849607254])],
+                [array([23.294362873156878, 13.644282203469114, 10.383738204469243]), array([-19.792088993452555, 0.4209925297886693, -7.3933945447515388]), array([-2.832898385995708, -1.6480401382241885, -6.2689214950820924]), array([-0.081772347748623617, -3.3803599922239673, -19.614368674546114])],
+                [array([0.43913744703796659, -16.473036116412242, -0.8653853759721295]), array([-7.3270752283484297, -0.97723025169973787, 2.1330514627504464]), array([3.8730334021748307, -9.0983850278388143, 3.3578300089831501]), array([18.639504439820936, 20.594835769217696, -10.666261239487298])],
+                [array([-12.786230591302058, -9.2931510923111169, -2.1598642469378935]), array([-4.0458439207057459, -9.0298998997705144, -0.11666215074316685]), array([7.5023999981398424, 4.8603369473110583, 2.1813627427875013]), array([2.9579841500551272, -22.563123335973565, 10.335559822513606])],
+                [array([-7.7732699602949893, 15.816977096296963, -6.8826683632918728]), array([7.6233333630240256, -9.3309869383569026, 0.50189282953625991]), array([-11.272342858699034, 1.089016041114454, -6.0359393299451476]), array([-6.4746449930954348, -0.026130504314747997, -2.2786267101817677])],
+                [array([-18.243993907118757, 5.0646875774948974, -9.2110046334596856]), array([-8.1550804560957264, -3.1021806460634913, 7.5622831439916105]), array([19.460768761970783, 17.494565076685859, 16.295621155355697]), array([4.6186236213250131, -1.3869183721072562, -0.2159066724152843])],
                 ]
 
         for el_geoms, el, f in [
@@ -869,9 +889,96 @@ class TestHedge(unittest.TestCase):
 
         #discr.visualize_vtk("dual.vtk", [("u", u)])
 
-        from hedge.flux import local, neighbor, normal_2d
-        res = discr.lift_interior_flux((local-neighbor)*normal_2d[1], u)
+        from hedge.flux import local, neighbor, normal
+        res = discr.lift_interior_flux((local-neighbor)*normal(discr.dimensions)[1], u)
         #discr.visualize_vtk("dual.vtk", [("u", u), ("res", res)])
+        ones = discr.interpolate_volume_function(lambda x: 1)
+        self.assert_(abs(res*ones) < 5e-14)
+    # -------------------------------------------------------------------------
+    def test_interior_fluxes_tet(self):
+        """Compare surface integrals computed using interior fluxes
+        with their known values.
+        """
+
+        import meshpy.tet as tet
+        from math import pi, sin, cos
+
+        mesh_info = tet.MeshInfo()
+
+        # construct a two-box extrusion of this base
+        base = [(-pi,-pi,0), (pi,-pi,0), (pi,pi,0), (-pi,pi,0)]
+
+        # first, the nodes
+        mesh_info.set_points(
+                base
+                +[(x,y,z+pi) for x,y,z in base]
+                +[(x,y,z+pi+1) for x,y,z in base]
+                )
+
+        # next, the facets
+
+        # vertex indices for a box missing the -z face
+        box_without_minus_z = [ 
+            [4,5,6,7],
+            [0,4,5,1],
+            [1,5,6,2],
+            [2,6,7,3],
+            [3,7,4,0],
+            ]
+
+        def add_to_all_vertex_indices(facets, increment):
+            return [[pt+increment for pt in facet] for facet in facets]
+
+        mesh_info.set_facets(
+            [[0,1,2,3]] # base
+            +box_without_minus_z # first box
+            +add_to_all_vertex_indices(box_without_minus_z, 4) # second box
+            )
+
+        # set the volume properties -- this is where the tet size constraints are
+        mesh_info.regions.resize(2)
+        mesh_info.regions[0] = [0,0,pi/2, # point in volume -> first box
+                0, # region tag (user-defined number)
+                0.5, # max tet volume in region
+                ]
+        mesh_info.regions[1] = [0,0,pi+0.5, # point in volume -> second box
+                1, # region tag (user-defined number, arbitrary)
+                0.1, # max tet volume in region
+                ]
+
+        mesh = tet.build(mesh_info, attributes=True, area_constraints=True)
+        #mesh.write_vtk("sandwich-mesh.vtk")
+
+        from hedge.mesh import ConformalMesh
+
+        eltag_map = {0:"lower", 1:"upper"}
+        mesh = ConformalMesh(
+                mesh.points,
+                mesh.elements,
+                element_tags=dict((i, eltag_map[tag_i]) for i, tag_i in 
+                    enumerate(mesh.element_attributes)))
+
+        from hedge.element import TetrahedralElement
+        from hedge.discretization import Discretization
+        discr = Discretization(mesh, TetrahedralElement(4))
+
+        u_i = discr.interpolate_tag_volume_function(
+                lambda x: sin(x[0]-x[1]+x[2]),
+                "lower")
+        u_o = discr.interpolate_tag_volume_function(
+                lambda x: cos(x[0]-x[1]+x[2]),
+                "upper")
+        u = u_i + u_o
+
+        # visualize the produced field
+        #from hedge.visualization import SiloVisualizer
+        #vis = SiloVisualizer(discr)
+        #vis("sandwich.silo", [("u", u)])
+
+        # make sure the surface integral of the difference 
+        # between top and bottom is zero
+        from hedge.flux import local, neighbor, normal
+        res = discr.lift_interior_flux((local-neighbor)*normal(discr.dimensions)[1], u)
         ones = discr.interpolate_volume_function(lambda x: 1)
         self.assert_(abs(res*ones) < 5e-14)
     # -------------------------------------------------------------------------
@@ -921,7 +1028,7 @@ class TestHedge(unittest.TestCase):
 
         from hedge.discretization import Discretization, SymmetryMap
         from hedge.element import TriangularElement
-        from hedge.flux import zero, normal_2d, jump_2d, local, neighbor, average
+        from hedge.flux import zero, normal, jump, local, neighbor, average
         from hedge.timestep import RK4TimeStepper
         from hedge.tools import dot
         from math import sqrt
@@ -958,12 +1065,13 @@ class TestHedge(unittest.TestCase):
                 lambda x: num.array([x[0], -x[1]]),
                 {0:3, 2:1, 5:6, 7:4})
 
+        normal = normal(discr.dimensions)
         for flux_name, flux in [
                 ("lax-friedrichs",
-                    dot(normal_2d, a) * (local-average)
+                    dot(normal, a) * (local-average)
                     + 0.5 *(local-neighbor)),
                 ("central",
-                    dot(normal_2d, a) * (local-average) * average),
+                    dot(normal, a) * (local-average) * average),
                 ]:
             stepper = RK4TimeStepper()
             for step in range(nsteps):
@@ -981,7 +1089,7 @@ class TestHedge(unittest.TestCase):
         from hedge.element import TriangularElement
         from hedge.timestep import RK4TimeStepper
         from hedge.tools import EOCRecorder, dot
-        from hedge.flux import zero, normal_2d, local, neighbor, average
+        from hedge.flux import zero, normal, local, neighbor, average
         from math import sin, pi, sqrt
 
         a = num.array([1,0])
@@ -1001,10 +1109,10 @@ class TestHedge(unittest.TestCase):
 
         for flux_name, flux in [
                 ("lax-friedrichs",
-                    dot(normal_2d, a) * (local-average)
+                    dot(normal(2), a) * (local-average)
                     + 0.5 *(local-neighbor)),
                 ("central",
-                    dot(normal_2d, a) * (local-average) * average),
+                    dot(normal(2), a) * (local-average) * average),
                 ]:
 
             eoc_rec = EOCRecorder()

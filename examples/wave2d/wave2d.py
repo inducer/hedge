@@ -24,8 +24,7 @@ def main() :
     from pytools.arithmetic_container import ArithmeticList
     from pytools.stopwatch import Job
     from math import sin, cos, pi, exp, sqrt
-    from hedge.flux import zero, normal_2d, jump_2d, \
-            local, neighbor, average
+    from hedge.flux import zero, normal, jump, local, neighbor, average
     from hedge.tools import Rotation, dot
 
     mesh = make_disk_mesh()
@@ -36,19 +35,17 @@ def main() :
     discr = Discretization(mesh, TriangularElement(5))
     print "%d elements" % len(discr.mesh.elements)
 
-    # u, v1, v2
-    fields = ArithmeticList([
-        discr.volume_zeros(), 
-        discr.volume_zeros(), 
-        discr.volume_zeros()])
+    fields = ArithmeticList([discr.volume_zeros()]) # u
+    fields.extend([discr.volume_zeros() for i in range(discr.dimensions)]) # v
 
     dt = discr.dt_factor(1)
     nsteps = int(1/dt)
     print "dt", dt
     print "nsteps", nsteps
 
-    flux_weak = average*normal_2d
-    flux_strong = local*normal_2d - flux_weak
+    normal = normal(discr.dimensions)
+    flux_weak = average*normal
+    flux_strong = local*normal - flux_weak
 
     nabla = bind_nabla(discr)
     m_inv = bind_inverse_mass_matrix(discr)

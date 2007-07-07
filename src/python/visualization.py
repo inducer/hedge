@@ -51,17 +51,15 @@ class SiloVisualizer:
 
         polygons = []
 
-        # FIXME enforce ccw numbering?
-
         for eg in discr.element_groups:
             ldis = eg.local_discretization
+            smi = list(ldis.generate_submesh_indices())
             for el, (el_start, el_stop) in zip(eg.members, eg.ranges):
-                polygons += [[el_start+j for j in element] 
-                        for element in ldis.generate_submesh_indices()]
+                polygons += [[el_start+j for j in element] for element in smi]
 
         self.ndims = discr.dimensions
         self.nodelist = flatten(polygons)
-        self.shapesize = [3]
+        self.shapesize = [4]
         self.shapecounts = [len(polygons)]
         self.nshapetypes = 1
         self.nzones = len(polygons)

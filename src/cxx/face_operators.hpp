@@ -27,6 +27,11 @@ namespace hedge {
 
     std::vector<face_info> m_face_infos;
 
+    unsigned size()
+    {
+      return m_face_infos.size();
+    }
+
     void clear()
     {
       m_face_infos.clear();

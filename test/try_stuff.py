@@ -79,9 +79,28 @@ def plot_real_tri_quad_weights():
     for x, y, w in TetrahedronCubatureData[15]:
         outf.write("%g\t%g\t%g\n" % (x,y,w))
 
+def visualize_single_tet():
+    from hedge.mesh import ConformalMesh
+    from hedge.element import TetrahedralElement
+    from hedge.discretization import Discretization
+    from hedge.visualization import SiloVisualizer
+
+    points = [
+            (-1,-1,-1),
+            (+1,-1,-1),
+            (-1,+1,-1),
+            (-1,-1,+1),
+            ]
+    elements = [(0,1,2,3)]
+    mesh = ConformalMesh(points, elements)
+    discr = Discretization(mesh, TetrahedralElement(2))
+    vis = SiloVisualizer(discr)
+    vis("single-tet.silo", [("zip", discr.volume_zeros())])
+
 
 
 if __name__ == "__main__":
     #plot_tri_order_1_polynomials_hi_res()
-    plot_tri_quad_weights()
+    #plot_tri_quad_weights()
     #plot_real_tri_quad_weights()
+    visualize_single_tet()
