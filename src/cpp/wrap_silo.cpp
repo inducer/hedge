@@ -1,6 +1,8 @@
 #include <boost/numeric/bindings/traits/traits.hpp>
+#include <boost/scoped_array.hpp>
 #include <vector>
 #include <stdexcept>
+#include <iostream>
 #include "wrap_helpers.hpp"
 #include "base.hpp"
 
@@ -257,9 +259,18 @@ namespace
 
   class DBoptlistWrapper : boost::noncopyable
   {
+    private:
+      DBoptlist *m_optlist;
+      boost::scoped_array<char> m_option_storage;
+      unsigned m_option_storage_size;
+      unsigned m_option_storage_occupied;
+
     public:
-      DBoptlistWrapper(int maxsize)
-        : m_optlist(DBMakeOptlist(maxsize))
+      DBoptlistWrapper(unsigned maxsize, unsigned storage_size)
+        : m_optlist(DBMakeOptlist(maxsize)),
+        m_option_storage(new char[storage_size]),
+        m_option_storage_size(storage_size),
+        m_option_storage_occupied(0)
       { 
         if (m_optlist == NULL)
           throw std::runtime_error("DBMakeOptlist failed");
@@ -271,7 +282,9 @@ namespace
 
       void add_option(int option, int value)
       {
-        CALL_GUARDED(DBAddOption,(m_optlist, option, (void *) &value));
+        CALL_GUARDED(DBAddOption,(m_optlist, option, 
+              add_storage_data((void *) &value, sizeof(value))
+              ));
       }
 
       void add_option(int option, double value)
@@ -280,22 +293,27 @@ namespace
         {
           case DBOPT_DTIME:
             {
-              CALL_GUARDED(DBAddOption,(m_optlist, option, (void *) &value));
+              CALL_GUARDED(DBAddOption,(m_optlist, option, 
+                    add_storage_data((void *) &value, sizeof(value))
+                    ));
               break;
             }
           default:
             {
               float cast_val = value;
-              CALL_GUARDED(DBAddOption,(m_optlist, option, (void *) &cast_val));
+              CALL_GUARDED(DBAddOption,(m_optlist, option, 
+                    add_storage_data((void *) &cast_val, sizeof(cast_val))
+                    ));
               break;
             }
-
         }
       }
 
       void add_option(int option, const std::string &value)
       {
-        CALL_GUARDED(DBAddOption,(m_optlist, option, (void *) value.data()));
+        CALL_GUARDED(DBAddOption,(m_optlist, option, 
+              add_storage_data((void *) value.data(), value.size()+1)
+              ));
       }
 
       DBoptlist *get_optlist()
@@ -303,8 +321,19 @@ namespace
         return m_optlist;
       }
 
-    private:
-      DBoptlist *m_optlist;
+    protected:
+      void *add_storage_data(void *data, unsigned size)
+      {
+        if (m_option_storage_occupied + size > m_option_storage_size)
+          throw std::runtime_error("silo option list storage exhausted"
+              "--specify bigger storage size");
+
+        void *dest = m_option_storage.get() + m_option_storage_occupied;
+        memcpy(dest, data, size);
+        m_option_storage_occupied += size;
+        return dest;
+      }
+
   };
 
   class DBfileWrapper : boost::noncopyable
@@ -505,8 +534,8 @@ BOOST_PYTHON_MODULE(_silo)
 
   {
     typedef DBoptlistWrapper cl;
-    class_<cl, boost::noncopyable>("DBOptlist", init<int>())
-      .def("add_option", (void (cl::*)(int, int)) &cl::add_option)
+    class_<cl, boost::noncopyable>("DBOptlist", init<unsigned, unsigned>())
+      .def("add_int_option", (void (cl::*)(int, int)) &cl::add_option)
       .def("add_option", (void (cl::*)(int, double)) &cl::add_option)
       .def("add_option", (void (cl::*)(int, const std::string &)) &cl::add_option)
       ;

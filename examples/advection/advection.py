@@ -26,6 +26,7 @@ def main() :
             bind_boundary_flux, \
             bind_nabla, \
             bind_weak_nabla, \
+            bind_mass_matrix, \
             bind_inverse_mass_matrix, \
             pair_with_boundary
     from hedge.visualization import SiloVisualizer
@@ -88,6 +89,7 @@ def main() :
 
     nabla = bind_nabla(discr)
     weak_nabla = bind_weak_nabla(discr)
+    mass = bind_mass_matrix(discr)
     m_inv = bind_inverse_mass_matrix(discr)
 
     def rhs_strong(t, u):
@@ -124,7 +126,7 @@ def main() :
     stepper = RK4TimeStepper()
     for step in range(nsteps):
         if step % stepfactor == 0:
-            print "timestep %d, t=%f" % (step, dt*step)
+            print "timestep %d, t=%f, l2=%f" % (step, dt*step, sqrt(u*(mass*u)))
         u = stepper(u, step*dt, dt, rhs_weak)
 
         t = (step+1)*dt
@@ -138,10 +140,8 @@ def main() :
                     ], 
                 #expressions=[("error", "u-u_true")]
                 time=t, 
-                #step=step
+                step=step
                 )
-
-        print "L2 norm", sqrt(u*discr.apply_mass_matrix(u))
 
 if __name__ == "__main__":
     import cProfile as profile

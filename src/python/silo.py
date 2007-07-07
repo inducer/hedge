@@ -10,10 +10,14 @@ for name, value in hedge._silo.symbols().iteritems():
 
 
 def _convert_optlist(ol_dict):
-    ol = hedge._silo.DBOptlist(len(ol_dict)+1)
+    optcount = len(ol_dict) + 1
+    ol = hedge._silo.DBOptlist(optcount, optcount * 150)
 
     for key, value in ol_dict.iteritems():
-        ol.add_option(key, value)
+        if isinstance(value, int):
+            ol.add_int_option(key, value)
+        else:
+            ol.add_option(key, value)
 
     return ol
 
