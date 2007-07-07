@@ -469,6 +469,14 @@ class _DifferentiationOperator(object):
     def __mul__(self, field):
        return self.discr.differentiate(self.coordinate, field)
 
+class _WeakDifferentiationOperator(object):
+    def __init__(self, discr, coordinate):
+        self.discr = discr
+        self.coordinate = coordinate
+
+    def __mul__(self, field):
+       return self.discr.apply_minv_st(self.coordinate, field)
+
 class _MassMatrixOperator(object):
     def __init__(self, discr):
         self.discr = discr
@@ -510,6 +518,12 @@ def bind_nabla(discr):
     from pytools.arithmetic_container import ArithmeticList
     return ArithmeticList(
             [_DifferentiationOperator(discr, i) for i in range(discr.dimensions)]
+            )
+
+def bind_weak_nabla(discr):
+    from pytools.arithmetic_container import ArithmeticList
+    return ArithmeticList(
+            [_WeakDifferentiationOperator(discr, i) for i in range(discr.dimensions)]
             )
 
 def bind_mass_matrix(discr):

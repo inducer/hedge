@@ -19,10 +19,18 @@ def main() :
             make_square_mesh, \
             make_regular_square_mesh, \
             make_single_element_mesh
-    from hedge.discretization import Discretization, generate_ones_on_boundary
-    from hedge.flux import zero, trace_sign, \
-            normal_2d, jump_2d, \
-            local, neighbor, average
+    from hedge.discretization import \
+            Discretization, \
+            generate_ones_on_boundary, \
+            bind_flux, \
+            bind_boundary_flux, \
+            bind_nabla, \
+            bind_weak_nabla, \
+            bind_inverse_mass_matrix, \
+            pair_with_boundary
+    from hedge.visualization import SiloVisualizer
+    from hedge.flux import zero, trace_sign, normal, jump, local, neighbor, average
+    from hedge.tools import dot
     from pytools.arithmetic_container import ArithmeticList
     from pytools.stopwatch import Job
     from math import sin, cos, pi, sqrt
@@ -30,7 +38,7 @@ def main() :
     a = num.array([1,0])
 
     def u_analytic(t, x):
-        return sin((a*x+t))
+        return sin(3*(a*x+t))
 
     def boundary_tagger_circle(vertices, (v1, v2)):
         center = (num.array(vertices[v1])+num.array(vertices[v2]))/2
@@ -56,23 +64,31 @@ def main() :
     #mesh = make_single_element_mesh(boundary_tagger=boundary_tagger_square)
     #mesh = make_disk_mesh(r=pi, boundary_tagger=boundary_tagger_circle, max_area=0.5)
     mesh = make_disk_mesh(boundary_tagger=boundary_tagger_circle)
-    discr = Discretization(mesh, TriangularElement(6))
+    discr = Discretization(mesh, TriangularElement(3))
+    vis = SiloVisualizer(discr)
 
     print "%d elements" % len(discr.mesh.elements)
 
-    #discr.visualize_vtk("bdry.vtk",
+    #vis("bdry.vtk",
             #[("outflow", generate_ones_on_boundary(discr, "outflow")), 
                 #("inflow", generate_ones_on_boundary(discr, "inflow"))])
     #return 
 
     u = discr.interpolate_volume_function(lambda x: u_analytic(0, x))
 
-    dt = 1e-3
+    dt = discr.dt_factor(comp.norm_2(a))
     stepfactor = 1
     nsteps = int(2/dt)
 
-    flux_weak = dot(normal_2d, a) * average# - 0.5 *(local-neighbor)
-    flux_strong = dot(normal_2d, a)*local - flux_weak
+    normal = normal(discr.dimensions)
+    jump = jump(discr.dimensions)
+
+    flux_weak = dot(normal, a) * average# - 0.5 *(local-neighbor)
+    flux_strong = dot(normal, a)*local - flux_weak
+
+    nabla = bind_nabla(discr)
+    weak_nabla = bind_weak_nabla(discr)
+    m_inv = bind_inverse_mass_matrix(discr)
 
     rhscnt = [0]
 
@@ -82,22 +98,11 @@ def main() :
         bc_in = discr.interpolate_boundary_function(
                 lambda x: u_analytic(t, x),
                 "inflow")
-        rhsint =   a[0]*discr.differentiate(0, u)
-                #+ a[1]*discr.differentiate(1, u)
-        rhsflux = discr.lift_interior_flux(flux_strong, u)
-        rhsbdry = discr.lift_boundary_flux(flux_strong, u, bc_in, "inflow")
 
-        if False:
-            discr.visualize_vtk("rhs-%04d.vtk" % rhscnt[0],
-                    [
-                        ("u", u),
-                        ("int", rhsint), 
-                        ("iflux", rhsflux),
-                        ("bdry", rhsbdry),
-                        ("flux", rhsflux+rhsbdry),
-                        ])
-            rhscnt[0] += 1
-        return rhsint-discr.apply_inverse_mass_matrix(rhsflux+rhsbdry)
+        flux = bind_flux(discr, flux_strong)
+        bflux = bind_boundary_flux(discr, flux_strong, "inflow")
+
+        return dot(a, nabla*u) - m_inv*(flux*u + bflux * pair_with_boundary(u, bc_in))
 
     def rhs_weak(t, u):
         from pytools import argmax
@@ -108,8 +113,8 @@ def main() :
 
         bc_out = discr.boundarize_volume_field(u, "outflow")
 
-        rhsint =   a[0]*discr.apply_stiffness_matrix_t(0, u)
-                #+ a[1]*discr.apply_stiffness_matrix_t(1, u)
+        rhsint =   a[0]*discr.apply_minv_st(0, u)
+                #+ a[1]*discr.apply_minv_st(1, u)
         rhsflux = discr.lift_interior_flux(flux_weak, u)
         rhsbdry = discr.lift_boundary_flux(flux_weak, u, bc_in, "inflow") + \
                 discr.lift_boundary_flux(flux_weak, u, bc_out, "outflow")
@@ -120,20 +125,22 @@ def main() :
     for step in range(nsteps):
         if step % stepfactor == 0:
             print "timestep %d, t=%f" % (step, dt*step)
-        u = stepper(u, step*dt, dt, rhs_strong)
+        u = stepper(u, step*dt, dt, rhs_weak)
 
-        if False and step % stepfactor == 0:
-            job = Job("visualization")
-            t = (step+1)*dt
-            u_true = discr.interpolate_volume_function(
-                    lambda x: u_analytic(t, x))
+        t = (step+1)*dt
+        #u_true = discr.interpolate_volume_function(
+                #lambda x: u_analytic(t, x))
 
-            discr.visualize_vtk("fld-%04d.vtk" % step,
-                    [("u", u), 
-                        ("error", u_true-u), 
-                        ], 
-                    )
-            job.done()
+        vis("fld-%04d.silo" % step,
+                [
+                    ("u", u), 
+                    #("u_true", u_true), 
+                    ], 
+                #expressions=[("error", "u-u_true")]
+                time=t, 
+                #step=step
+                )
+
         print "L2 norm", sqrt(u*discr.apply_mass_matrix(u))
 
 if __name__ == "__main__":

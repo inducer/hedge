@@ -76,7 +76,7 @@ class SiloVisualizer:
             description="Hedge visualization", time=None, step=None):
         from hedge.silo import DBFile, \
                 DB_CLOBBER, DB_LOCAL, DB_PDB, DB_NODECENT, \
-                DBOPT_DTIME
+                DBOPT_DTIME, DBOPT_CYCLE
         db = DBFile(filename, DB_CLOBBER, DB_LOCAL, description, DB_PDB)
 
         # put zone list
