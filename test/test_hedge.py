@@ -4,6 +4,45 @@ import unittest
 
 
 
+class Monomial:
+    def __init__(self, exponents, factor=1):
+        import pylinear.array as num
+
+        self.exponents = exponents
+        self.ones = num.ones((len(self.exponents),))
+        self.factor = factor
+
+    def __call__(self, x):
+        from operator import mul
+
+        eps = 1e-15
+        x = (x+self.ones)/2
+        for xi in x:
+            assert -eps <= xi <= 1+eps
+        return self.factor* \
+                reduce(mul, (x[i]**alpha 
+                    for i, alpha in enumerate(self.exponents)))
+
+    def theoretical_integral(self):
+        from pytools import factorial
+        from operator import mul
+
+        return (self.factor*2**len(self.exponents)*
+            reduce(mul, (factorial(alpha) for alpha in self.exponents))
+            /
+            factorial(len(self.exponents)+sum(self.exponents)))
+
+    def diff(self, coordinate):
+        diff_exp = list(self.exponents)
+        orig_exp = diff_exp[coordinate]
+        if orig_exp == 0:
+            return Monomial(diff_exp, 0)
+        diff_exp[coordinate] = orig_exp-1
+        return Monomial(diff_exp, self.factor*orig_exp)
+
+
+
+
 class TestHedge(unittest.TestCase):
     def test_face_vertex_order(self):
         """Verify that face_indices() emits face vertex indices in the right order."""
@@ -504,50 +543,33 @@ class TestHedge(unittest.TestCase):
 
         self.assert_(abs(boundary_int-int_div) < 1e-15)
     # -------------------------------------------------------------------------
-    def test_simp_cubature_and_diff_by_monomial(self):
-        """Verify simplicial integration and differentiation using monomials."""
+    def test_simp_cubature(self):
+        from pytools import generate_nonnegative_integer_tuples_summing_to_at_most
+        from hedge.quadrature import SimplexCubature
+
+        for dim in range(2,3+1):
+            for s in range(3+1):
+                cub = SimplexCubature(s, dim)
+                for comb in generate_nonnegative_integer_tuples_summing_to_at_most(
+                        2*s+1, dim):
+                    f = Monomial(comb)
+                    i_f = cub(f)
+                    err = abs(i_f - f.theoretical_integral())
+                    self.assert_(err < 2e-15)
+    # -------------------------------------------------------------------------
+    def test_simp_mass_and_diff_matrices_by_monomial(self):
+        """Verify simplicial mass and differentiation matrices using monomials."""
 
         from hedge.element import TriangularElement, TetrahedralElement
-        from pytools import \
-                factorial, \
-                generate_nonnegative_integer_tuples_summing_to_at_most
+        from pytools import generate_nonnegative_integer_tuples_summing_to_at_most
 
         import pylinear.array as num
         import pylinear.computation as comp
         from pylinear.randomized import make_random_vector
         from operator import add, mul
 
-        eps = 1e-15
-
-        class Monomial:
-            def __init__(self, exponents, factor=1):
-                self.exponents = exponents
-                self.ones = num.ones((len(self.exponents),))
-                self.factor = factor
-
-            def __call__(self, x):
-                x = (x+self.ones)/2
-                for xi in x:
-                    assert -eps <= xi <= 1+eps
-                return self.factor* \
-                        reduce(mul, (x[i]**alpha 
-                            for i, alpha in enumerate(self.exponents)))
-
-            def theoretical_integral(self):
-                return (self.factor*2**len(self.exponents)*
-                    reduce(mul, (factorial(alpha) for alpha in self.exponents))
-                    /
-                    factorial(len(self.exponents)+sum(self.exponents)))
-
-            def diff(self, coordinate):
-                diff_exp = list(self.exponents)
-                orig_exp = diff_exp[coordinate]
-                if orig_exp == 0:
-                    return Monomial(diff_exp, 0)
-                diff_exp[coordinate] = orig_exp-1
-                return Monomial(diff_exp, self.factor*orig_exp)
-
         thresh = 1e-14
+
         for el in [
                 TriangularElement(3),
                 TetrahedralElement(5),
@@ -574,7 +596,6 @@ class TestHedge(unittest.TestCase):
                     if err > thresh:
                         print "bad-diff", comb, i, err
                     self.assert_(err < thresh)
-
     # -------------------------------------------------------------------------
     def test_simp_gauss_theorem(self):
         """Verify Gauss's theorem explicitly on simplicial elements."""
@@ -689,42 +710,36 @@ class TestHedge(unittest.TestCase):
                 #print abs(boundary_sum-int_div_f)
                 self.assert_(abs(boundary_sum-int_div_f) < 1e-12)
     # -------------------------------------------------------------------------
-    def test_cubature(self):
-        """Test the integrity of the cubature data."""
-
-        from hedge.cubature import integrate_on_triangle, TriangleCubatureData
-
-        for i in range(len(TriangleCubatureData)):
-            self.assert_(abs(integrate_on_triangle(i+1, lambda x: 1)-2) < 1e-14)
-    # -------------------------------------------------------------------------
-    def test_tri_orthogonality(self):
-        from hedge.cubature import integrate_on_triangle, TriangleCubatureData
-        from hedge.element import TriangularElement
+    def test_simp_orthogonality(self):
+        from hedge.quadrature import SimplexCubature
+        from hedge.element import TriangularElement, TetrahedralElement
 
         for order, ebound in [
                 (1, 2e-15),
-                (3, 4e-15),
-                (4, 3e-15),
+                (2, 5e-15),
+                (3, 1e-14),
+                #(4, 3e-14),
                 #(7, 3e-14),
                 #(9, 2e-13),
                 ]:
-            edata = TriangularElement(order)
-            basis = edata.basis_functions()
+            for ldis in [TriangularElement(order), TetrahedralElement(order)]:
+                cub = SimplexCubature(order, ldis.dimensions)
+                basis = ldis.basis_functions()
 
-            maxerr = 0
-            for i, f in enumerate(basis):
-                for j, g in enumerate(basis):
-                    if i == j:
-                        true_result = 1
-                    else:
-                        true_result = 0
-                    result = integrate_on_triangle(2*order, lambda x: f(x)*g(x))
-                    err = abs(result-true_result)
-                    maxerr = max(maxerr, err)
-                    if err > ebound:
-                        print "bad", order,i,j, err
-                    self.assert_(err < ebound)
-            #print order, maxerr
+                maxerr = 0
+                for i, f in enumerate(basis):
+                    for j, g in enumerate(basis):
+                        if i == j:
+                            true_result = 1
+                        else:
+                            true_result = 0
+                        result = cub(lambda x: f(x)*g(x))
+                        err = abs(result-true_result)
+                        maxerr = max(maxerr, err)
+                        if err > ebound:
+                            print "bad", order,i,j, err
+                        self.assert_(err < ebound)
+                #print order, maxerr
     # -------------------------------------------------------------------------
     def test_1d_mass_matrix_vs_quadrature(self):
         from hedge.quadrature import LegendreGaussQuadrature
