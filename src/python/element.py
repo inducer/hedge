@@ -551,8 +551,8 @@ class TriangularElement(SimplicialElement):
                     for fvi in range(len(face_indices)-1))
                 for face_indices in self.face_indices())
 
-    def dt_geometric_factor(self, vertices, map):
-        area = abs(2*map.jacobian)
+    def dt_geometric_factor(self, vertices, el):
+        area = abs(2*el.map.jacobian)
         semiperimeter = sum(comp.norm_2(vertices[vi1]-vertices[vi2]) 
                 for vi1, vi2 in [(0,1), (1,2), (2,0)])/2
         return area/semiperimeter
@@ -862,8 +862,7 @@ class TetrahedralElement(SimplicialElement):
                     for fvi in range(len(face_indices)-1))
                 for face_indices in self.face_indices())
 
-    def dt_geometric_factor(self, vertices, map):
-        normals, face_jacobians = self.face_normals_and_jacobians(map)[1]
-        return abs(map.jacobian)/min(abs(fj) for fj in face_jacobians)
+    def dt_geometric_factor(self, vertices, el):
+        return abs(el.map.jacobian)/min(abs(fj) for fj in el.face_jacobians)
 
 

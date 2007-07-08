@@ -12,13 +12,16 @@ def dot(x, y):
 
 
 def main() :
-    from hedge.element import TriangularElement
+    from hedge.element import \
+            TriangularElement, \
+            TetrahedralElement
     from hedge.timestep import RK4TimeStepper
     from hedge.mesh import \
             make_disk_mesh, \
             make_square_mesh, \
             make_regular_square_mesh, \
-            make_single_element_mesh
+            make_single_element_mesh, \
+            make_ball_mesh
     from hedge.discretization import \
             Discretization, \
             generate_ones_on_boundary, \
@@ -36,8 +39,6 @@ def main() :
     from pytools.stopwatch import Job
     from math import sin, cos, pi, sqrt
 
-    a = num.array([1,0])
-
     def u_analytic(t, x):
         return sin(3*(a*x+t))
 
@@ -47,13 +48,24 @@ def main() :
         else:
             return "outflow"
 
-    #mesh = make_square_mesh(boundary_tagger=boundary_tagger, max_area=0.1)
-    #mesh = make_square_mesh(boundary_tagger=boundary_tagger, max_area=0.2)
-    #mesh = make_regular_square_mesh(a=-r, b=r, boundary_tagger=boundary_tagger, n=3)
-    #mesh = make_single_element_mesh(boundary_tagger=boundary_tagger)
-    #mesh = make_disk_mesh(r=pi, boundary_tagger=boundary_tagger, max_area=0.5)
-    mesh = make_disk_mesh(boundary_tagger=boundary_tagger)
-    discr = Discretization(mesh, TriangularElement(3))
+    dim = 3
+    if dim == 2:
+        a = num.array([1,0])
+        #mesh = make_square_mesh(boundary_tagger=boundary_tagger, max_area=0.1)
+        #mesh = make_square_mesh(boundary_tagger=boundary_tagger, max_area=0.2)
+        #mesh = make_regular_square_mesh(a=-r, b=r, boundary_tagger=boundary_tagger, n=3)
+        #mesh = make_single_element_mesh(boundary_tagger=boundary_tagger)
+        #mesh = make_disk_mesh(r=pi, boundary_tagger=boundary_tagger, max_area=0.5)
+        #mesh = make_disk_mesh(boundary_tagger=boundary_tagger)
+        el_class = TriangularElement
+    elif dim == 3:
+        a = num.array([1,0,0])
+        mesh = make_ball_mesh(boundary_tagger=boundary_tagger)
+        el_class = TetrahedralElement
+    else:
+        raise RuntimeError, "bad number of dimensions"
+
+    discr = Discretization(mesh, el_class(3))
     vis = SiloVisualizer(discr)
 
     print "%d elements" % len(discr.mesh.elements)
@@ -115,7 +127,7 @@ def main() :
     for step in range(nsteps):
         if step % stepfactor == 0:
             print "timestep %d, t=%f, l2=%f" % (step, dt*step, sqrt(u*(mass*u)))
-        u = stepper(u, step*dt, dt, rhs_weak)
+        u = stepper(u, step*dt, dt, rhs_strong)
 
         t = (step+1)*dt
         #u_true = discr.interpolate_volume_function(

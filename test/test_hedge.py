@@ -897,7 +897,7 @@ class TestHedge(unittest.TestCase):
 
         generated_mesh = triangle.build(mesh_info, 
                 attributes=True,
-                area_constraints=True)
+                volume_constraints=True)
         #triangle.write_gnuplot_mesh("mesh.dat", generated_mesh)
 
         from hedge.mesh import ConformalMesh
@@ -984,7 +984,7 @@ class TestHedge(unittest.TestCase):
                 0.1, # max tet volume in region
                 ]
 
-        generated_mesh = tet.build(mesh_info, attributes=True, area_constraints=True)
+        generated_mesh = tet.build(mesh_info, attributes=True, volume_constraints=True)
         #mesh.write_vtk("sandwich-mesh.vtk")
 
         from hedge.mesh import ConformalMesh

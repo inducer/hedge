@@ -409,3 +409,35 @@ def make_disk_mesh(r=0.5, faces=50, max_area=4e-3,
             generated_mesh.points,
             generated_mesh.elements,
             boundary_tagger)
+
+
+
+
+def make_ball_mesh(r=0.5, subdivisions=10, max_volume=None,
+        boundary_tagger=lambda fvi, el, fn: None):
+    from math import pi, cos, sin
+    from meshpy.tet import MeshInfo, build, generate_surface_of_revolution,\
+            EXT_OPEN
+
+    dphi = pi/subdivisions
+
+    def truncate(r):
+        if abs(r) < 1e-10:
+            return 0
+        else:
+            return r
+
+    rz = [(truncate(r*sin(i*dphi)), r*cos(i*dphi)) for i in range(subdivisions+1)]
+
+    mesh_info = MeshInfo()
+    points, facets = generate_surface_of_revolution(rz,
+            closure=EXT_OPEN, radial_subdiv=subdivisions)
+
+    mesh_info.set_points(points)
+    mesh_info.set_facets(facets, [1 for i in range(len(facets))])
+    generated_mesh = build(mesh_info, max_volume=max_volume)
+
+    return ConformalMesh(
+            generated_mesh.points,
+            generated_mesh.elements,
+            boundary_tagger)

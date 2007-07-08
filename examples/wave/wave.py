@@ -5,17 +5,21 @@ import pylinear.computation as comp
 
 
 def main() :
-    from hedge.element import TriangularElement
+    from hedge.element import \
+            TriangularElement, \
+            TetrahedralElement
     from hedge.timestep import RK4TimeStepper
     from hedge.mesh import \
             make_disk_mesh, \
             make_regular_square_mesh, \
-            make_square_mesh
+            make_square_mesh, \
+            make_ball_mesh
     from hedge.discretization import \
             Discretization, \
             bind_flux, \
             bind_boundary_flux, \
             bind_nabla, \
+            bind_mass_matrix, \
             bind_inverse_mass_matrix, \
             pair_with_boundary
     from hedge.visualization import \
@@ -27,18 +31,27 @@ def main() :
     from hedge.flux import zero, normal, jump, local, neighbor, average
     from hedge.tools import Rotation, dot
 
-    mesh = make_disk_mesh()
-    #mesh = make_regular_square_mesh(n=5)
-    #mesh = make_square_mesh(max_area=0.008)
-    #mesh.transform(Rotation(pi/8))
+    dim = 3
 
-    discr = Discretization(mesh, TriangularElement(5))
+    if dim == 2:
+        mesh = make_disk_mesh()
+        #mesh = make_regular_square_mesh(n=5)
+        #mesh = make_square_mesh(max_area=0.008)
+        #mesh.transform(Rotation(pi/8))
+        el_class = TriangularElement
+    elif dim == 3:
+        mesh = make_ball_mesh(max_volume=0.001)
+        el_class = TetrahedralElement
+    else:
+        raise RuntimeError, "bad number of dimensions"
+
+    discr = Discretization(mesh, el_class(3))
     print "%d elements" % len(discr.mesh.elements)
 
     fields = ArithmeticList([discr.volume_zeros()]) # u
     fields.extend([discr.volume_zeros() for i in range(discr.dimensions)]) # v
 
-    dt = discr.dt_factor(1)
+    dt = 0.1*discr.dt_factor(1)
     nsteps = int(1/dt)
     print "dt", dt
     print "nsteps", nsteps
@@ -48,7 +61,9 @@ def main() :
     flux_strong = local*normal - flux_weak
 
     nabla = bind_nabla(discr)
+    mass = bind_mass_matrix(discr)
     m_inv = bind_inverse_mass_matrix(discr)
+
     flux = bind_flux(discr, flux_strong)
     bflux = bind_boundary_flux(discr, flux_strong)
 
@@ -86,7 +101,8 @@ def main() :
     for step in range(nsteps):
         t = step*dt
         if step % 10 == 0:
-            print "timestep %d, t=%f" % (step, t)
+            print "timestep %d, t=%f, l2=%g" % (
+                    step, t, sqrt(fields[0]*(mass*fields[0])))
 
         if t > 0.1:
             source_u_vec = discr.volume_zeros()
