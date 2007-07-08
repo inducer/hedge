@@ -41,30 +41,18 @@ def main() :
     def u_analytic(t, x):
         return sin(3*(a*x+t))
 
-    def boundary_tagger_circle(vertices, (v1, v2)):
-        center = (num.array(vertices[v1])+num.array(vertices[v2]))/2
-        
-        if center * a > 0:
+    def boundary_tagger(vertices, el, face_nr):
+        if el.face_normals[face_nr] * a > 0:
             return "inflow"
         else:
             return "outflow"
 
-    r=1e-4
-    def boundary_tagger_square(vertices, (v1, v2)):
-        p1 = num.array(vertices[v1])
-        p2 = num.array(vertices[v2])
-        
-        if abs((p1-p2) * a) < 1e-4 and p1[0]>r*0.95:
-            return "inflow"
-        else:
-            return "outflow"
-
-    #mesh = make_square_mesh(boundary_tagger=boundary_tagger_square, max_area=0.1)
-    #mesh = make_square_mesh(boundary_tagger=boundary_tagger_square, max_area=0.2)
-    #mesh = make_regular_square_mesh(a=-r, b=r, boundary_tagger=boundary_tagger_square, n=3)
-    #mesh = make_single_element_mesh(boundary_tagger=boundary_tagger_square)
-    #mesh = make_disk_mesh(r=pi, boundary_tagger=boundary_tagger_circle, max_area=0.5)
-    mesh = make_disk_mesh(boundary_tagger=boundary_tagger_circle)
+    #mesh = make_square_mesh(boundary_tagger=boundary_tagger, max_area=0.1)
+    #mesh = make_square_mesh(boundary_tagger=boundary_tagger, max_area=0.2)
+    #mesh = make_regular_square_mesh(a=-r, b=r, boundary_tagger=boundary_tagger, n=3)
+    #mesh = make_single_element_mesh(boundary_tagger=boundary_tagger)
+    #mesh = make_disk_mesh(r=pi, boundary_tagger=boundary_tagger, max_area=0.5)
+    mesh = make_disk_mesh(boundary_tagger=boundary_tagger)
     discr = Discretization(mesh, TriangularElement(3))
     vis = SiloVisualizer(discr)
 

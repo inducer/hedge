@@ -95,7 +95,8 @@ def main() :
             vis("fld-%04d.silo" % step,
                     [("u", fields[0]), ], 
                     [("v", fields[1:]), ],
-                    time=t)
+                    time=t,
+                    step=step)
         fields = stepper(fields, t, dt, rhs)
 
 if __name__ == "__main__":

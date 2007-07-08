@@ -6,7 +6,7 @@ import pylinear.computation as comp
 
 
 class Element(object):
-    def __init__(self, id, vertex_indices, tag, all_vertices):
+    def __init__(self, id, vertex_indices, all_vertices):
         self.id = id
 
         vertices = [all_vertices[v] for v in vertex_indices]        
@@ -15,11 +15,13 @@ class Element(object):
                         vertices)
         vertices = [all_vertices[v] for v in vertex_indices]        
 
-        self.tag = tag
         self.map = self.get_map_unit_to_global(vertices)
         self.inverse_map = self.map.inverted()
         self.face_normals, self.face_jacobians = \
                 self.face_normals_and_jacobians(self.map)
+
+    def set_tag(self, tag):
+        self.tag = tag
 
     def _reorder_vertices(self, vertex_indices, vertices):
         return vertex_indices
@@ -190,19 +192,23 @@ class ConformalMesh(Mesh):
     See the Mesh class for data members provided by this class.
     """
 
-    def __init__(self, points, elements, boundary_tags={}, element_tags={}):
+    def __init__(self, points, elements, 
+            boundary_tagger=lambda fvi, el, fn: None, 
+            element_tagger=lambda el: None,
+            ):
         """Construct a simplical mesh.
 
         points is an iterable of vertex coordinates, given as 2-vectors.
         elements is an iterable of tuples of indices into points,
           giving element endpoints.
-        boundary_tags is a map from sets of face vertices, indicating 
-          face endpoints, into user-defined boundary tags. This map
-          need not be complete. On unmentioned boundaries, the tag
-          "None" will be assumed.
-        element_tags is a map from element numbers into user-defined
-          element tags. This map need not contain an entry for every
-          element, the tag "None" will be assumed.
+        boundary_tagger is a function that takes the arguments
+          (set_of_face_vertex_indices, element, face_number)
+          It returns the boundary tag for that boundary surface.
+          The default tag is "None".
+        element_tagger is a function that takes the arguments
+          (element)
+          andre turns the corresponding element tag.
+          The default tag is "None".
         Face indices follow the convention for the respective element,
         such as Triangle or Tetrahedron, in this module.
         """
@@ -217,21 +223,25 @@ class ConformalMesh(Mesh):
         else:
             raise ValueError, "%d-dimensional meshes are unsupported" % dim
 
+        # build points and elements
         self.points = [num.asarray(v) for v in points]
-        self.elements = [el_class(id, vert_indices, 
-            element_tags.get(id), 
-            self.points) 
+        self.elements = [el_class(id, vert_indices, self.points) 
             for id, vert_indices in enumerate(elements)]
-        self._build_connectivity(boundary_tags)
 
+        # tag elements
         self.tag_to_elements = {}
         for el in self.elements:
+            el_tag = element_tagger(el)
+            el.set_tag(el_tag)
             self.tag_to_elements.setdefault(el.tag, []).append(el)
+        
+        # build connectiviety
+        self._build_connectivity(boundary_tagger)
 
     def transform(self, map):
         self.points = [map(x) for x in self.points]
 
-    def _build_connectivity(self, boundary_tags):
+    def _build_connectivity(self, boundary_tagger):
         # create face_map, which is a mapping of
         # (vertices on a face) -> [(element, face_idx) for elements bordering that face]
         face_map = {}
@@ -246,7 +256,8 @@ class ConformalMesh(Mesh):
             if len(els_faces) == 2:
                 self.interfaces.append(els_faces)
             elif len(els_faces) == 1:
-                btag = boundary_tags.get(face_vertices)
+                el, face = els_faces[0]
+                btag = boundary_tagger(face_vertices, el, face)
                 self.tag_to_boundary.setdefault(btag, [])\
                         .append(els_faces[0])
             else:
@@ -266,10 +277,6 @@ def _tag_and_make_conformal_mesh(boundary_tagger, generated_mesh_info):
                     generated_mesh_info.face_markers)
                 if marker == 1)
 
-    return ConformalMesh(
-            generated_mesh_info.points,
-            generated_mesh_info.elements,
-            boundary_tags)
 
 
 
@@ -307,7 +314,7 @@ def make_single_element_mesh(a=-0.5, b=0.5,
 
 
 def make_regular_square_mesh(a=-0.5, b=0.5, n=5, 
-        boundary_tagger=lambda vertices, face_indices: None):
+        boundary_tagger=lambda fvi, el, fn: None):
     node_dict = {}
     points = []
     points_1d = num.linspace(a, b, n)
@@ -336,30 +343,13 @@ def make_regular_square_mesh(a=-0.5, b=0.5, n=5,
                 node_dict[i+1,j],
                 )))
 
-    boundary_faces = []
-
-    for i in range(n-1):
-        boundary_faces.append((node_dict[i  ,0  ], node_dict[i+1,0  ]))
-        boundary_faces.append((node_dict[i  ,n-1], node_dict[i+1,n-1]))
-        boundary_faces.append((node_dict[0  ,i  ], node_dict[0  ,i+1]))
-        boundary_faces.append((node_dict[n-1,i  ], node_dict[n-1,i+1]))
-
-    boundary_tags = dict(
-            (frozenset(seg), 
-                boundary_tagger(points, seg))
-                for seg in  boundary_faces)
-
-    return ConformalMesh(
-            points,
-            elements,
-            boundary_tags)
-
+    return ConformalMesh(points, elements, boundary_tagger)
 
 
 
 
 def make_square_mesh(a=-0.5, b=0.5, max_area=4e-3, 
-        boundary_tagger=lambda vertices, face_indices: None):
+        boundary_tagger=lambda fvi, el, fn: None):
     def round_trip_connect(start, end):
         for i in range(start, end):
             yield i, i+1
@@ -379,15 +369,18 @@ def make_square_mesh(a=-0.5, b=0.5, max_area=4e-3,
             4*[1]
             )
 
-    return _tag_and_make_conformal_mesh(
-            boundary_tagger,
-            triangle.build(mesh_info, refinement_func=needs_refinement))
+    generated_mesh = triangle.build(mesh_info, 
+            refinement_func=needs_refinement)
+    return ConformalMesh(
+            generated_mesh.points,
+            generated_mesh.elements,
+            boundary_tagger)
 
 
 
 
 def make_disk_mesh(r=0.5, faces=50, max_area=4e-3, 
-        boundary_tagger=lambda vertices, face_indices: None):
+        boundary_tagger=lambda fvi, el, fn: None):
     from math import cos, sin, pi
 
     def round_trip_connect(start, end):
@@ -410,9 +403,9 @@ def make_disk_mesh(r=0.5, faces=50, max_area=4e-3,
             faces*[1]
             )
 
-    generated_mesh_info = triangle.build(mesh_info, refinement_func=needs_refinement)
+    generated_mesh = triangle.build(mesh_info, refinement_func=needs_refinement)
 
-    return _tag_and_make_conformal_mesh(
-            boundary_tagger,
-            triangle.build(mesh_info, refinement_func=needs_refinement))
-
+    return ConformalMesh(
+            generated_mesh.points,
+            generated_mesh.elements,
+            boundary_tagger)

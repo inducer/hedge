@@ -476,7 +476,7 @@ class TestHedge(unittest.TestCase):
         self.assert_(err_2 < 1e-10)
     # -------------------------------------------------------------------------
     def test_tri_diff_mat(self):
-        """Check differentiation matrix along the coordinate axes on a disk.
+        """Check differentiation matrix along the coordinate axes on a disk
         
         Uses sines as the function to differentiate.
         """
@@ -902,12 +902,16 @@ class TestHedge(unittest.TestCase):
 
         from hedge.mesh import ConformalMesh
 
-        eltag_map = {1:"lower", 2:"upper"}
+        def element_tagger(el):
+            if generated_mesh.element_attributes[el.id] == 1:
+                return "upper"
+            else:
+                return "lower"
+
         mesh = ConformalMesh(
                 generated_mesh.points,
                 generated_mesh.elements,
-                element_tags=dict((i, eltag_map[tag_i]) for i, tag_i in 
-                    enumerate(generated_mesh.element_attributes)))
+                element_tagger=element_tagger)
 
         from hedge.element import TriangularElement
         from hedge.discretization import Discretization
@@ -980,17 +984,21 @@ class TestHedge(unittest.TestCase):
                 0.1, # max tet volume in region
                 ]
 
-        mesh = tet.build(mesh_info, attributes=True, area_constraints=True)
+        generated_mesh = tet.build(mesh_info, attributes=True, area_constraints=True)
         #mesh.write_vtk("sandwich-mesh.vtk")
 
         from hedge.mesh import ConformalMesh
 
-        eltag_map = {0:"lower", 1:"upper"}
+        def element_tagger(el):
+            if generated_mesh.element_attributes[el.id] == 1:
+                return "upper"
+            else:
+                return "lower"
+
         mesh = ConformalMesh(
-                mesh.points,
-                mesh.elements,
-                element_tags=dict((i, eltag_map[tag_i]) for i, tag_i in 
-                    enumerate(mesh.element_attributes)))
+                generated_mesh.points,
+                generated_mesh.elements,
+                element_tagger=element_tagger)
 
         from hedge.element import TetrahedralElement
         from hedge.discretization import Discretization
@@ -1047,18 +1055,14 @@ class TestHedge(unittest.TestCase):
                     [1,5,8],
                     ]
 
-            boundary_tags = {
-                    frozenset([3,7]): "inflow",
-                    frozenset([2,7]): "inflow",
-                    frozenset([6,3]): "outflow",
-                    frozenset([2,8]): "outflow",
-                    frozenset([1,8]): "outflow",
-                    frozenset([1,5]): "outflow",
-                    frozenset([0,5]): "outflow",
-                    frozenset([0,6]): "outflow",
-                    frozenset([3,6]): "outflow",
-                    }
-            return ConformalMesh(points, elements, boundary_tags)
+            def boundary_tagger(vertices, el, face_nr):
+                if el.face_normals[face_nr] * a > 0:
+                    return "inflow"
+                else:
+                    return "outflow"
+
+            return ConformalMesh(points, elements, 
+                    boundary_tagger)
 
         from hedge.discretization import Discretization, SymmetryMap
         from hedge.element import TriangularElement
@@ -1067,10 +1071,10 @@ class TestHedge(unittest.TestCase):
         from hedge.tools import dot
         from math import sqrt
 
+        a = num.array([1,0])
+
         mesh = make_mesh()
         discr = Discretization(mesh, TriangularElement(4))
-
-        a = num.array([1,0])
 
         def f(x):
             if x < 0.5: return 0
@@ -1131,15 +1135,13 @@ class TestHedge(unittest.TestCase):
         def u_analytic(t, x):
             return sin(a*x+t)
 
-        def boundary_tagger_circle(vertices, (v1, v2)):
-            center = (num.array(vertices[v1])+num.array(vertices[v2]))/2
-            
-            if center * a > 0:
+        def boundary_tagger(vertices, el, face_nr):
+            if el.face_normals[face_nr] * a > 0:
                 return "inflow"
             else:
                 return "outflow"
 
-        mesh = make_disk_mesh(r=pi, boundary_tagger=boundary_tagger_circle, max_area=0.5)
+        mesh = make_disk_mesh(r=pi, boundary_tagger=boundary_tagger, max_area=0.5)
 
         for flux_name, flux in [
                 ("lax-friedrichs",
