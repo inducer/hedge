@@ -45,13 +45,14 @@ class Monomial:
 
 class TestHedge(unittest.TestCase):
     def test_face_vertex_order(self):
-        """Verify that face_indices() emits face vertex indices in the right order."""
+        """Verify that face_indices() emits face vertex indices in the right order"""
         from hedge.element import TriangularElement, TetrahedralElement
 
         for el in [TriangularElement(5), TetrahedralElement(5)]:
             vertex_indices = el.vertex_indices()
             for fn, (face_vertices, face_indices) in enumerate(zip(
-                    el.face_vertices(vertex_indices), el.face_indices())):
+                    el.geometry_class.face_vertices(vertex_indices), 
+                    el.face_indices())):
                 face_vertices_i = 0
                 for fi in face_indices:
                     if fi == face_vertices[face_vertices_i]:
@@ -61,6 +62,7 @@ class TestHedge(unittest.TestCase):
 
     # -------------------------------------------------------------------------
     def test_newton_interpolation(self):
+        """Verify Newton interpolation"""
         from hedge.interpolation import newton_interpolation_function
         
         x = [-1.5, -0.75, 0, 0.75, 1.5]
@@ -72,6 +74,7 @@ class TestHedge(unittest.TestCase):
         self.assert_(sum(errors) < 1e-14)
     # -------------------------------------------------------------------------
     def test_orthonormality_jacobi_1d(self):
+        """Verify that the Jacobi polymials are orthogonal in 1D"""
         from hedge.polynomial import jacobi_function
         from hedge.quadrature import LegendreGaussQuadrature
 
@@ -115,6 +118,7 @@ class TestHedge(unittest.TestCase):
             #print alpha, beta, maxerr
     # -------------------------------------------------------------------------
     def test_transformed_quadrature(self):
+        """Test 1D quadrature on arbitrary intervals"""
         from math import exp, sqrt, pi
 
         def gaussian_density(x, mu, sigma):
@@ -130,6 +134,7 @@ class TestHedge(unittest.TestCase):
         self.assert_(abs(result - 1) < 1e-9)
     # -------------------------------------------------------------------------
     def test_warp(self):
+        """Check some assumptions on the node warp factor calculator"""
         n = 17
         from hedge.element import WarpFactorCalculator
         wfc = WarpFactorCalculator(n)
@@ -143,6 +148,7 @@ class TestHedge(unittest.TestCase):
         self.assert_(abs(lgq(wfc)) < 7e-15)
     # -------------------------------------------------------------------------
     def test_simp_nodes(self):
+        """Verify basic assumptions on simplex interpolation nodes"""
         from hedge.element import TriangularElement, TetrahedralElement
 
         triorder = 8
@@ -172,6 +178,7 @@ class TestHedge(unittest.TestCase):
                 self.assert_(sum(indices) <= el.order)
     # -------------------------------------------------------------------------
     def test_tri_nodes_against_known_values(self):
+        """Check triangle nodes against a previous implementation"""
         from hedge.element import TriangularElement, TetrahedralElement
 
         triorder = 8
@@ -240,6 +247,7 @@ class TestHedge(unittest.TestCase):
         self.assert_(set(tri.node_tuples()) == set(node_indices_2(triorder)))
     # -------------------------------------------------------------------------
     def test_simp_basis_grad(self):
+        """Do a simplistic FD-style check on the differentiation matrix"""
         from itertools import izip
         from hedge.element import TriangularElement, TetrahedralElement
         from random import uniform
@@ -302,6 +310,7 @@ class TestHedge(unittest.TestCase):
         """Check computed face normals and face jacobians on simplicial elements
         """
         from hedge.element import TriangularElement, TetrahedralElement
+        from hedge.mesh import Triangle
         from hedge.tools import AffineMap
         import pylinear.array as num
         import pylinear.computation as comp
@@ -312,11 +321,13 @@ class TestHedge(unittest.TestCase):
                 TriangularElement(4), 
                 ]:
             for i in range(50):
+                geo = el.geometry_class
+
                 vertices = [make_random_vector(el.dimensions, num.Float) 
                         for vi in range(el.dimensions+1)]
-                array = num.array
+                #array = num.array
                 #vertices = [array([-1, -1.0, -1.0]), array([1, -1.0, -1.0]), array([-1.0, 1, -1.0]), array([-1.0, -1.0, 1.0])]
-                map = el.get_map_unit_to_global(vertices)
+                map = geo.get_map_unit_to_global(vertices)
 
                 unodes = el.unit_nodes()
                 nodes = [map(v) for v in unodes]
@@ -324,8 +335,9 @@ class TestHedge(unittest.TestCase):
                 all_vertex_indices = range(el.dimensions+1)
 
                 for face_i, fvi, normal, jac in \
-                        zip(el.face_indices(), el.face_vertices(all_vertex_indices),
-                                *el.face_normals_and_jacobians(map)):
+                        zip(el.face_indices(), 
+                                geo.face_vertices(all_vertex_indices),
+                                *geo.face_normals_and_jacobians(map)):
                     mapped_corners = [vertices[i] for i in fvi]
                     mapped_face_basis = [mc-mapped_corners[0] for mc in mapped_corners[1:]]
 
@@ -348,8 +360,9 @@ class TestHedge(unittest.TestCase):
                         mapped_face_projection = num.array(comp.orthonormalize(mapped_face_basis))
                         projected_corners = [num.zeros((2,))] + [mapped_face_projection*v 
                                 for v in mapped_face_basis]
-                        true_jac = abs(TriangularElement
-                                .get_map_unit_to_global(projected_corners).jacobian)
+                        true_jac = abs(Triangle
+                                .get_map_unit_to_global(projected_corners)
+                                .jacobian)
                     else:
                         assert False
 
@@ -365,6 +378,7 @@ class TestHedge(unittest.TestCase):
                         self.assert_((mapped_opposite-mc)*normal < 0)
     # -------------------------------------------------------------------------
     def test_tri_map(self):
+        """Verify that the mapping and node-building operations maintain triangle vertices"""
         from hedge.element import TriangularElement
         import pylinear.array as num
         import pylinear.computation as comp
@@ -381,12 +395,13 @@ class TestHedge(unittest.TestCase):
 
         for i in range(10):
             vertices = [make_random_vector(2, num.Float) for vi in range(3)]
-            map = tri.get_map_unit_to_global(vertices)
+            map = tri.geometry_class.get_map_unit_to_global(vertices)
             global_corners = [map(pt) for pt in corners]
             for gc, v in zip(global_corners, vertices):
                 self.assert_(comp.norm_2(gc-v) < 1e-12)
     # -------------------------------------------------------------------------
     def test_tri_map_jacobian_and_mass_matrix(self):
+        """Verify whether tri map jacobians recover known values of triangle area"""
         from hedge.element import TriangularElement
         import pylinear.array as num
         import pylinear.computation as comp
@@ -400,7 +415,7 @@ class TestHedge(unittest.TestCase):
 
         for i in range(10):
             vertices = [make_random_vector(2, num.Float) for vi in range(3)]
-            map = edata.get_map_unit_to_global(vertices)
+            map = edata.geometry_class.get_map_unit_to_global(vertices)
             mat = num.zeros((2,2))
             mat[:,0] = (vertices[1] - vertices[0])
             mat[:,1] = (vertices[2] - vertices[0])
@@ -487,7 +502,7 @@ class TestHedge(unittest.TestCase):
             self.assert_(linf_error < 3e-5)
     # -------------------------------------------------------------------------
     def test_2d_gauss_theorem(self):
-        """Verify Gauss's theorem explicitly on a mesh."""
+        """Verify Gauss's theorem explicitly on a mesh"""
 
         from hedge.element import TriangularElement
         from hedge.tools import AffineMap
@@ -544,6 +559,7 @@ class TestHedge(unittest.TestCase):
         self.assert_(abs(boundary_int-int_div) < 1e-15)
     # -------------------------------------------------------------------------
     def test_simp_cubature(self):
+        """Check that Grundmann-Moeller cubature works as advertised"""
         from pytools import generate_nonnegative_integer_tuples_summing_to_at_most
         from hedge.quadrature import SimplexCubature
 
@@ -558,7 +574,7 @@ class TestHedge(unittest.TestCase):
                     self.assert_(err < 2e-15)
     # -------------------------------------------------------------------------
     def test_simp_mass_and_diff_matrices_by_monomial(self):
-        """Verify simplicial mass and differentiation matrices using monomials."""
+        """Verify simplicial mass and differentiation matrices using monomials"""
 
         from hedge.element import TriangularElement, TetrahedralElement
         from pytools import generate_nonnegative_integer_tuples_summing_to_at_most
@@ -598,7 +614,7 @@ class TestHedge(unittest.TestCase):
                     self.assert_(err < thresh)
     # -------------------------------------------------------------------------
     def test_simp_gauss_theorem(self):
-        """Verify Gauss's theorem explicitly on simplicial elements."""
+        """Verify Gauss's theorem explicitly on simplicial elements"""
 
         from hedge.element import TriangularElement, TetrahedralElement
         from hedge.tools import AffineMap
@@ -670,7 +686,7 @@ class TestHedge(unittest.TestCase):
                 ones = num.ones((el.node_count(),))
                 face_ones = num.ones((len(el.face_indices()[0]),))
 
-                map = el.get_map_unit_to_global(vertices)
+                map = el.geometry_class.get_map_unit_to_global(vertices)
                 imap = map.inverted()
 
                 mapped_points = [map(node) for node in el.unit_nodes()]
@@ -698,7 +714,8 @@ class TestHedge(unittest.TestCase):
                             * num.take(fi_n, face_indices) * n_coord
                             for fi_n, n_coord in zip(f_n, n))
                         for face_indices, n, fjac
-                        in zip(el.face_indices(), *el.face_normals_and_jacobians(map))
+                        in zip(el.face_indices(), 
+                            *el.geometry_class.face_normals_and_jacobians(map))
                         )
 
                 #print el.face_normals_and_jacobians(map)[1]
@@ -711,6 +728,7 @@ class TestHedge(unittest.TestCase):
                 self.assert_(abs(boundary_sum-int_div_f) < 1e-12)
     # -------------------------------------------------------------------------
     def test_simp_orthogonality(self):
+        """Test orthogonality of simplicial bases using Grundmann-Moeller cubature"""
         from hedge.quadrature import SimplexCubature
         from hedge.element import TriangularElement, TetrahedralElement
 
@@ -742,6 +760,7 @@ class TestHedge(unittest.TestCase):
                 #print order, maxerr
     # -------------------------------------------------------------------------
     def test_1d_mass_matrix_vs_quadrature(self):
+        """Check that a 1D mass matrix for Legendre-Gauss points gives the right weights"""
         from hedge.quadrature import LegendreGaussQuadrature
         from hedge.polynomial import legendre_vandermonde
         import pylinear.array as num
@@ -794,13 +813,13 @@ class TestHedge(unittest.TestCase):
 
         for trial_number in range(10):
             vertices = [make_random_vector(2, num.Float) for vi in range(3)]
-            map = tri.get_map_unit_to_global(vertices)
+            map = tri.geometry_class.get_map_unit_to_global(vertices)
             nodes = [map(node) for node in tri.unit_nodes()]
             node_values = num.array([random() for node in nodes])
 
             functions = []
             for pvertices in generate_permutations(vertices):
-                pmap = tri.get_map_unit_to_global(pvertices)
+                pmap = tri.geometry_class.get_map_unit_to_global(pvertices)
                 pnodes = [pmap(node) for node in tri.unit_nodes()]
 
                 # map from pnode# to node#
@@ -837,8 +856,8 @@ class TestHedge(unittest.TestCase):
                 self.assert_(max(err) < 5e-13)
     # -------------------------------------------------------------------------
     def test_interior_fluxes_tri(self):
-        """Compare surface integrals computed using interior fluxes
-        with their known values.
+        """Check triangle surface integrals computed using interior fluxes
+        against their known values.
         """
 
         from math import pi, sin, cos
@@ -911,8 +930,8 @@ class TestHedge(unittest.TestCase):
         self.assert_(abs(res*ones) < 5e-14)
     # -------------------------------------------------------------------------
     def test_interior_fluxes_tet(self):
-        """Compare surface integrals computed using interior fluxes
-        with their known values.
+        """Check tetrahedron surface integrals computed using interior fluxes
+        against their known values.
         """
 
         import meshpy.tet as tet
@@ -998,7 +1017,7 @@ class TestHedge(unittest.TestCase):
         self.assert_(abs(res*ones) < 5e-14)
     # -------------------------------------------------------------------------
     def test_symmetry_preservation_2d(self):
-        """Test whether we preserve symmetry in 2D advection."""
+        """Test whether we preserve symmetry in a symmetric 2D advection problem"""
 
         import pylinear.array as num
 
@@ -1096,7 +1115,7 @@ class TestHedge(unittest.TestCase):
                 self.assert_(sym_error_u_l2 < 1e-13)
     # -------------------------------------------------------------------------
     def test_convergence_advec_2d(self):
-        """Test whether 2D advection actually converges."""
+        """Test whether 2D advection actually converges"""
 
         import pylinear.array as num
         from hedge.mesh import make_disk_mesh

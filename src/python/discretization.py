@@ -10,8 +10,6 @@ class _ElementGroup(object):
 
     - members: a list of hedge.mesh.Element instances in this group.-----------
     - local_discretization: an instance of hedge.element.Element.
-    - maps: a list of hedge.tools.AffineMap instances mapping the
-      unit element to the global element.
     - ranges: a list of (start, end) tuples indicating the DOF numbers for
       each element. Note: This is actually a C++ ElementRanges object.
 
@@ -34,7 +32,7 @@ class Discretization:
         self.mesh = mesh
         self.dimensions = local_discretization.dimensions
 
-        self._build_maps_element_groups_and_points(local_discretization)
+        self._build_element_groups_and_points(local_discretization)
         self._calculate_local_matrices()
         self._find_face_data()
         self._build_face_groups()
@@ -42,7 +40,7 @@ class Discretization:
         self._find_boundary_groups()
 
     # initialization ----------------------------------------------------------
-    def _build_maps_element_groups_and_points(self, local_discretization):
+    def _build_element_groups_and_points(self, local_discretization):
         self.points = []
         from hedge._internal import ElementRanges
 
@@ -50,18 +48,11 @@ class Discretization:
         eg.members = self.mesh.elements
         eg.local_discretization = ldis = local_discretization
         eg.ranges = ElementRanges(0)
-        eg.maps = []
 
         for el in self.mesh.elements:
-            map = ldis.get_map_unit_to_global(
-                        [self.mesh.points[vi] for vi in el.vertices])
-            eg.maps.append(map)
-
             e_start = len(self.points)
-            self.points += [map(node) for node in ldis.unit_nodes()]
+            self.points += [el.map(node) for node in ldis.unit_nodes()]
             eg.ranges.append_range(e_start, len(self.points))
-
-        eg.inverse_maps = [map.inverted() for map in eg.maps]
 
         self.group_map = [(eg, i) for i in range(len(self.mesh.elements))]
         self.element_groups = [eg]
@@ -76,33 +67,36 @@ class Discretization:
                     ldis.differentiation_matrices()
             eg.minv_st = [immat*d.T*mmat for d in dmats]
 
-            eg.jacobians = \
-                    num.array([abs(map.jacobian)  for map  in eg.maps])
-            eg.inverse_jacobians = \
-                    num.array([abs(imap.jacobian) for imap in eg.inverse_maps])
+            eg.jacobians = num.array([
+                abs(el.map.jacobian) 
+                for el in eg.members])
+            eg.inverse_jacobians = num.array([
+                abs(el.inverse_map.jacobian) 
+                for el in eg.members])
 
-            eg.diff_coefficients = \
-                    [ # runs over global differentiation coordinate
-                            [ # runs over local differentiation coordinate
-                                num.array([
-                                    imap.matrix[loc_coord, glob_coord]
-                                    for imap in eg.inverse_maps
-                                    ])
-                                for loc_coord in range(ldis.dimensions)
-                                ]
-                            for glob_coord in range(ldis.dimensions)
-                            ]
+            eg.diff_coefficients = [ # over global diff. coordinate
+                    [ # local diff. coordinate
+                        num.array([
+                            el.inverse_map
+                            .matrix[loc_coord, glob_coord]
+                            for el in eg.members
+                            ])
+                        for loc_coord in range(ldis.dimensions)
+                        ]
+                    for glob_coord in range(ldis.dimensions)
+                    ]
 
     def _find_face_data(self):
         from hedge.flux import Face
         self.faces = []
         for eg in self.element_groups:
             ldis = eg.local_discretization
-            for el, map in zip(eg.members, eg.maps):
+            for el in eg.members:
                 el_faces = []
-                for fi, (n, fj) in enumerate(zip(*ldis.face_normals_and_jacobians(map))):
+                for fi, (n, fj) in enumerate(
+                        zip(el.face_normals, el.face_jacobians)):
                     f = Face()
-                    f.h = map.jacobian/fj # same as sledge
+                    f.h = el.map.jacobian/fj # same as sledge
                     f.face_jacobian = fj
                     f.element_id = el.id
                     f.face_id = fi
@@ -137,6 +131,7 @@ class Discretization:
 
             for i, j in zip(findices_l, findices_shuffled_n):
                 dist = self.points[estart_l+i]-self.points[estart_n+j]
+                #print dist
                 assert comp.norm_2(dist) < 1e-14
 
             fg.add_face(
@@ -346,10 +341,11 @@ class Discretization:
     def dt_factor(self, max_system_ev):
         distinct_ldis = set(eg.local_discretization for eg in self.element_groups)
         return 1/max_system_ev \
-                * min(edata.dt_non_geometric_factor() for edata in distinct_ldis) \
+                * min(ldis.dt_non_geometric_factor() for ldis in distinct_ldis) \
                 * min(min(eg.local_discretization.dt_geometric_factor(
-                    [self.mesh.points[i] for i in el.vertices], map)
-                    for el, map in zip(eg.members, eg.maps))
+                    [self.mesh.points[i] for i in el.vertex_indices], 
+                    el.map)
+                    for el in eg.members)
                     for eg in self.element_groups)
 
     @work_with_arithmetic_containers

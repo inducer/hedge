@@ -1,53 +1,155 @@
+from __future__ import division
 import pylinear.array as num
+import pylinear.computation as comp
 
 
 
 
 class Element(object):
-    def __init__(self, id, vertices, tag, points):
+    def __init__(self, id, vertex_indices, tag, all_vertices):
         self.id = id
-        self.vertices = self._reorder_vertices(vertices, points)
+
+        vertices = [all_vertices[v] for v in vertex_indices]        
+        vertex_indices = self.vertex_indices = \
+                self._reorder_vertices(vertex_indices, 
+                        vertices)
+        vertices = [all_vertices[v] for v in vertex_indices]        
+
         self.tag = tag
+        self.map = self.get_map_unit_to_global(vertices)
+        self.inverse_map = self.map.inverted()
+        self.face_normals, self.face_jacobians = \
+                self.face_normals_and_jacobians(self.map)
 
-    def _reorder_vertices(self, vertices, points):
-        return vertices
+    def _reorder_vertices(self, vertex_indices, vertices):
+        return vertex_indices
 
 
 
 
 
-class Triangle(Element):
+class SimplicialElement(Element):
     @property
     def faces(self):
-        from hedge.element import TriangularElement
-        return TriangularElement.face_vertices(self.vertices)
+        return self.face_vertices(self.vertex_indices)
 
-    def _reorder_vertices(self, vertices, points):
-        from hedge.element import TriangularElement
-        map = TriangularElement.get_map_unit_to_global(
-                [points[i] for i in vertices])
+    @classmethod
+    def get_map_unit_to_global(cls, vertices):
+        """Return an affine map that maps the unit coordinates of the reference
+        element to a global element at a location given by its `vertices'.
+        """
+        from hedge.tools import AffineMap
+
+        mat = num.zeros((cls.dimensions, cls.dimensions))
+        for i in range(cls.dimensions):
+            mat[:,i] = (vertices[i+1] - vertices[0])/2
+
+        from operator import add
+
+        return AffineMap(mat, 
+                reduce(add, vertices[1:])/2
+                -(cls.dimensions-2)/2*vertices[0]
+                )
+
+
+
+
+class Triangle(SimplicialElement):
+    dimensions = 2
+
+    @staticmethod
+    def face_vertices(vertices):
+        return [(vertices[0], vertices[1]), 
+                (vertices[1], vertices[2]), 
+                (vertices[0], vertices[2])
+                ]
+
+    def _reorder_vertices(self, vertex_indices, vertices):
+        map = self.get_map_unit_to_global(vertices)
+        vi = vertex_indices
         if map.jacobian < 0:
-            return [vertices[0], vertices[2], vertices[1]]
+            return [vi[0], vi[2], vi[1]]
         else:
-            return vertices
+            return vi
+
+    @staticmethod
+    def face_normals_and_jacobians(affine_map):
+        """Compute the normals and face jacobians of the unit element
+        transformed according to `affine_map'.
+
+        Returns a pair of lists [normals], [jacobians].
+        """
+        from hedge.tools import sign
+
+        m = affine_map.matrix
+        orient = sign(affine_map.jacobian)
+        face1 = m[:,1] - m[:,0]
+        raw_normals = [
+                orient*num.array([m[1,0], -m[0,0]]),
+                orient*num.array([face1[1], -face1[0]]),
+                orient*num.array([-m[1,1], m[0,1]]),
+                ]
+
+        face_lengths = [comp.norm_2(fn) for fn in raw_normals]
+        return [n/fl for n, fl in zip(raw_normals, face_lengths)], \
+                face_lengths
 
 
 
 
-class Tetrahedron(Element):
-    @property
-    def faces(self):
-        from hedge.element import TetrahedralElement
-        return TetrahedralElement.face_vertices(self.vertices)
+class Tetrahedron(SimplicialElement):
+    dimensions = 3
 
-    def _reorder_vertices(self, vertices, points):
-        from hedge.element import TetrahedralElement
-        map = TetrahedralElement.get_map_unit_to_global(
-                [points[i] for i in vertices])
+    @staticmethod
+    def face_vertices(vertices):
+        return [(vertices[0],vertices[1],vertices[2]), 
+                (vertices[0],vertices[1],vertices[3]),
+                (vertices[0],vertices[2],vertices[3]),
+                (vertices[1],vertices[2],vertices[3]),
+                ]
+
+    def _reorder_vertices(self, vertex_indices, vertices):
+        map = self.get_map_unit_to_global(vertices)
+        vi = vertex_indices
         if map.jacobian < 0:
-            return [vertices[0], vertices[1], vertices[3], vertices[2]]
+            return [vi[0], vi[1], vi[3], vi[2]]
         else:
-            return vertices
+            return vi
+
+    @classmethod
+    def face_normals_and_jacobians(cls, affine_map):
+        """Compute the normals and face jacobians of the unit element
+        transformed according to `affine_map'.
+
+        Returns a pair of lists [normals], [jacobians].
+        """
+        from hedge.tools import normalize, sign
+
+        face_orientations = [-1,1,-1,1]
+        element_orientation = sign(affine_map.jacobian)
+
+        def fj_and_normal(fo, pts):
+            normal = (pts[1]-pts[0]) <<num.cross>> (pts[2]-pts[0])
+            n_length = comp.norm_2(normal)
+
+            # ||n_length|| is the area of the parallelogram spanned by the two
+            # vectors above. Half of that is the area of the triangle we're interested
+            # in. Next, the area of the unit triangle is two, so divide by two again.
+            return element_orientation*fo*normal/n_length, n_length/4
+
+        m = affine_map.matrix
+
+        vertices = [
+                m*num.array([-1,-1,-1]),
+                m*num.array([+1,-1,-1]),
+                m*num.array([-1,+1,-1]),
+                m*num.array([-1,-1,+1]),
+                ]
+
+        # realize that zip(*something) is unzip(something)
+        return zip(*[fj_and_normal(fo, pts) for fo, pts in
+            zip(face_orientations, cls.face_vertices(vertices))])
+
 
 
 
@@ -116,8 +218,10 @@ class ConformalMesh(Mesh):
             raise ValueError, "%d-dimensional meshes are unsupported" % dim
 
         self.points = [num.asarray(v) for v in points]
-        self.elements = [el_class(id, tri, element_tags.get(id), self.points) 
-                for id, tri in enumerate(elements)]
+        self.elements = [el_class(id, vert_indices, 
+            element_tags.get(id), 
+            self.points) 
+            for id, vert_indices in enumerate(elements)]
         self._build_connectivity(boundary_tags)
 
         self.tag_to_elements = {}
