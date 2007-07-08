@@ -863,6 +863,6 @@ class TetrahedralElement(SimplicialElement):
                 for face_indices in self.face_indices())
 
     def dt_geometric_factor(self, vertices, el):
-        return abs(el.map.jacobian)/min(abs(fj) for fj in el.face_jacobians)
+        return abs(el.map.jacobian)/max(abs(fj) for fj in el.face_jacobians)
 
 

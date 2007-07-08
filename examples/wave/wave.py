@@ -51,7 +51,7 @@ def main() :
     fields = ArithmeticList([discr.volume_zeros()]) # u
     fields.extend([discr.volume_zeros() for i in range(discr.dimensions)]) # v
 
-    dt = 0.1*discr.dt_factor(1)
+    dt = discr.dt_factor(1)
     nsteps = int(1/dt)
     print "dt", dt
     print "nsteps", nsteps
