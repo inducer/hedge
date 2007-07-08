@@ -63,7 +63,7 @@ setup(name="hedge",
       ext_modules=[ 
           Extension("_internal", 
               ["src/cpp/wrap_main.cpp", 
-                  "src/cpp/wrap_polynomial.cpp", 
+                  "src/cpp/wrap_special_function.cpp", 
                   "src/cpp/wrap_flux.cpp", 
                   "src/cpp/wrap_op_target.cpp", 
                   "src/cpp/wrap_volume_operators.cpp", 

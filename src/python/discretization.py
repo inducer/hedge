@@ -205,14 +205,48 @@ class Discretization:
         return num.zeros((len(self.points),))
 
     def interpolate_volume_function(self, f):
-        return num.array([f(x) for x in self.points])
+        try:
+            # are we interpolating many fields at once?
+            count = len(f)
+        except:
+            # no, just one
+            count = 1
+
+        if count > 1:
+            from pytools.arithmetic_container import ArithmeticList
+            result = ArithmeticList([self.volume_zeros() for i in range(count)])
+
+            for point_nr, x in enumerate(self.points):
+                for field_nr, value in enumerate(f(x)):
+                    result[field_nr][point_nr] = value
+            return result
+        else:
+            return num.array([f(x) for x in self.points])
 
     def interpolate_tag_volume_function(self, f, tag=None):
-        result = self.volume_zeros()
-        for el in self.mesh.tag_to_elements[tag]:
-            e_start, e_end = self.find_el_range(el.id)
-            for i, pt in enumerate(self.points[e_start:e_end]):
-                result[e_start+i] = f(pt)
+        try:
+            # are we interpolating many fields at once?
+            count = len(f)
+        except:
+            # no, just one
+            count = 1
+
+        if count > 1:
+            from pytools.arithmetic_container import ArithmeticList
+            result = ArithmeticList([self.volume_zeros() for i in range(count)])
+
+            for el in self.mesh.tag_to_elements[tag]:
+                e_start, e_end = self.find_el_range(el.id)
+                for i, pt in enumerate(self.points[e_start:e_end]):
+                    for field_nr, value in enumerate(f(pt)):
+                        result[field_nr][e_start+i] = value
+        else:
+            result = self.volume_zeros()
+            for el in self.mesh.tag_to_elements[tag]:
+                e_start, e_end = self.find_el_range(el.id)
+                for i, pt in enumerate(self.points[e_start:e_end]):
+                    result[e_start+i] = f(pt)
+
         return result
 
     def boundary_zeros(self, tag=None):
@@ -242,6 +276,7 @@ class Discretization:
                     eg.ranges, eg.jacobians, eg.mass_matrix, target)
         target.finalize()
 
+    @work_with_arithmetic_containers
     def apply_mass_matrix(self, field):
         from hedge._internal import VectorTarget
         result = self.volume_zeros()

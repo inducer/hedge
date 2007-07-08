@@ -441,3 +441,29 @@ def make_ball_mesh(r=0.5, subdivisions=10, max_volume=None,
             generated_mesh.points,
             generated_mesh.elements,
             boundary_tagger)
+
+
+
+
+def make_cylinder_mesh(radius=0.5, height=1, radial_subdivisions=10, 
+        height_subdivisions=10, max_volume=None,
+        boundary_tagger=lambda fvi, el, fn: None):
+    from math import pi, cos, sin
+    from meshpy.tet import MeshInfo, build, generate_surface_of_revolution,\
+            EXT_CLOSE_IN_Z
+
+    dz = height/height_subdivisions
+    rz = [(radius, i*dz) for i in range(height_subdivisions+1)]
+
+    mesh_info = MeshInfo()
+    points, facets = generate_surface_of_revolution(rz,
+            closure=EXT_CLOSE_IN_Z, radial_subdiv=radial_subdivisions)
+
+    mesh_info.set_points(points)
+    mesh_info.set_facets(facets, [1 for i in range(len(facets))])
+    generated_mesh = build(mesh_info, max_volume=max_volume)
+
+    return ConformalMesh(
+            generated_mesh.points,
+            generated_mesh.elements,
+            boundary_tagger)

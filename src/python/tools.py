@@ -1,4 +1,23 @@
 import pylinear.array as num
+import hedge._internal
+
+
+
+
+cyl_bessel_j = hedge._internal.cyl_bessel_j
+cyl_neumann = hedge._internal.cyl_neumann
+
+
+
+
+def cyl_bessel_j_prime(nu, z):
+    if nu == 0:
+        if z == 0:
+            return 0
+        else:
+            return -cyl_bessel_j(nu+1, z)+nu/z*cyl_bessel_j(nu, z)
+    else:
+        return 0.5*(cyl_bessel_j(nu-1, z)-cyl_bessel_j(nu+1, z))
 
 
 
@@ -73,6 +92,17 @@ def reduction_matrix(indices, big_len):
 def dot(x, y): 
     from operator import add
     return reduce(add, (xi*yi for xi, yi in zip(x,y)))
+
+
+
+
+def cross(a, b): 
+    from pytools.arithmetic_container import ArithmeticList
+    return ArithmeticList([
+            a[1]*b[2]-a[2]*b[1],
+            a[2]*b[0]-a[0]*b[2],
+            a[0]*b[1]-a[1]*b[0]
+            ])
 
 
 

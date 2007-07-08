@@ -476,7 +476,7 @@ namespace
           else 
           {
             vartypes.push_back(extract<int>(entry[2]));
-            if (len(entry == 4))
+            if (len(entry) == 4)
               varopts.push_back(extract<DBoptlistWrapper *>(entry[3])()->get_optlist());
             else
               varopts.push_back(NULL);
