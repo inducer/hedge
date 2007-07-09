@@ -26,7 +26,6 @@ def main() :
             Discretization, \
             generate_ones_on_boundary, \
             bind_flux, \
-            bind_boundary_flux, \
             bind_nabla, \
             bind_weak_nabla, \
             bind_mass_matrix, \
@@ -100,9 +99,10 @@ def main() :
                 "inflow")
 
         flux = bind_flux(discr, flux_strong)
-        bflux = bind_boundary_flux(discr, flux_strong, "inflow")
 
-        return dot(a, nabla*u) - m_inv*(flux*u + bflux * pair_with_boundary(u, bc_in))
+        return dot(a, nabla*u) - m_inv*(
+                flux * u + 
+                flux * pair_with_boundary(u, bc_in, "inflow"))
 
     def rhs_weak(t, u):
         from pytools import argmax
@@ -114,20 +114,18 @@ def main() :
         bc_out = discr.boundarize_volume_field(u, "outflow")
 
         flux = bind_flux(discr, flux_weak)
-        b_in_flux = bind_boundary_flux(discr, flux_weak, "inflow")
-        b_out_flux = bind_boundary_flux(discr, flux_weak, "outflow")
 
         return -dot(a, weak_nabla*u) +m_inv*(
                 flux*u
-                + b_in_flux * pair_with_boundary(u, bc_in)
-                + b_out_flux * pair_with_boundary(u, bc_out)
+                + flux * pair_with_boundary(u, bc_in, "inflow")
+                + flux * pair_with_boundary(u, bc_out, "outflow")
                 )
 
     stepper = RK4TimeStepper()
     for step in range(nsteps):
         if step % stepfactor == 0:
             print "timestep %d, t=%f, l2=%f" % (step, dt*step, sqrt(u*(mass*u)))
-        u = stepper(u, step*dt, dt, rhs_strong)
+        u = stepper(u, step*dt, dt, rhs_weak)
 
         t = (step+1)*dt
         #u_true = discr.interpolate_volume_function(

@@ -521,24 +521,25 @@ class _InverseMassMatrixOperator(object):
     def __mul__(self, field):
        return self.discr.apply_inverse_mass_matrix(field)
 
+class _BoundaryPair:
+    def __init__(self, field, bfield, tag):
+        self.field = field
+        self.bfield = bfield
+        self.tag = tag
+
 class _FluxOperator(object):
     def __init__(self, discr, flux):
         self.discr = discr
         self.flux = flux
 
     def __mul__(self, field):
-        return self.discr.lift_interior_flux(self.flux, field)
+        if isinstance(field, _BoundaryPair):
+            bpair = field
+            return self.discr.lift_boundary_flux(self.flux, 
+                    bpair.field, bpair.bfield, bpair.tag)
+        else:
+            return self.discr.lift_interior_flux(self.flux, field)
 
-class _BoundaryFluxOperator(object):
-    def __init__(self, discr, flux, tag=None):
-        self.discr = discr
-        self.flux = flux
-        self.tag = tag
-
-    def __mul__(self, bpair):
-        return self.discr.lift_boundary_flux(self.flux, 
-                bpair.field, bpair.bfield, 
-                self.tag)
 
 
 
@@ -566,23 +567,14 @@ def bind_inverse_mass_matrix(discr):
 def bind_flux(*args, **kwargs):
     return _FluxOperator(*args, **kwargs)
 
-@work_with_arithmetic_containers
-def bind_boundary_flux(*args, **kwargs):
-    return _BoundaryFluxOperator(*args, **kwargs)
-
-class BoundaryPair:
-    def __init__(self, field, bfield):
-        self.field = field
-        self.bfield = bfield
-
-def pair_with_boundary(field, bfield):
+def pair_with_boundary(field, bfield, tag=None):
     from pytools.arithmetic_container import ArithmeticList
 
     if isinstance(field, ArithmeticList):
         assert isinstance(bfield, ArithmeticList)
         return ArithmeticList([
-            BoundaryPair(sub_f, sub_bf) for sub_f, sub_bf in zip(field, bfield)
+            _BoundaryPair(sub_f, sub_bf, tag) for sub_f, sub_bf in zip(field, bfield)
             ])
     else:
-        return BoundaryPair(field, bfield)
+        return _BoundaryPair(field, bfield, tag)
 

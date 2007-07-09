@@ -17,7 +17,6 @@ def main() :
     from hedge.discretization import \
             Discretization, \
             bind_flux, \
-            bind_boundary_flux, \
             bind_nabla, \
             bind_mass_matrix, \
             bind_inverse_mass_matrix, \
@@ -65,7 +64,6 @@ def main() :
     m_inv = bind_inverse_mass_matrix(discr)
 
     flux = bind_flux(discr, flux_strong)
-    bflux = bind_boundary_flux(discr, flux_strong)
 
     def source_u(x):
         return exp(-x*x*256)
@@ -91,7 +89,7 @@ def main() :
         rhs.extend(nabla*u 
                 -m_inv*(
                     flux*u 
-                    + bflux*pair_with_boundary(u, bc_u)
+                    + flux*pair_with_boundary(u, bc_u)
                     ))
         return rhs
 
