@@ -82,6 +82,16 @@
     </output>
 
     <\input|<with|color|red|<with|mode|math|\<rightarrow\>> >>
+      cross(vector [0,0,1], vector [x,y,0])
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|<left|[>-y,<space|0.5spc>x,<space|0.5spc>0<right|]><leqno>(7)>
+
+      <axiomtype|Vector Polynomial Integer >
+    </output>
+
+    <\input|<with|color|red|<with|mode|math|\<rightarrow\>> >>
       \;
     </input>
   </session>>

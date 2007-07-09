@@ -34,6 +34,7 @@ def main():
             SplitComplexAdapter, \
             CartesianAdapter, \
             CylindricalCavityMode
+    from pytools.arithmetic_container import ArithmeticList
 
     # field order is [Ex Ey Ez Hx Hy Hz]
 
@@ -42,8 +43,8 @@ def main():
     epsilon = 1
     mu = 1
 
-    mesh = make_cylinder_mesh(radius=R, height=d, max_volume=0.01)
-    discr = Discretization(mesh, TetrahedralElement(3))
+    mesh = make_cylinder_mesh(radius=R, height=d, max_volume=0.001)
+    discr = Discretization(mesh, TetrahedralElement(1))
     vis = SiloVisualizer(discr)
 
     print "%d elements" % len(discr.mesh.elements)
@@ -52,7 +53,7 @@ def main():
             radius=R, height=d, 
             epsilon=epsilon, mu=mu)
     r_sol = CartesianAdapter(RealPartAdapter(mode))
-    #fields = discr.interpolate_volume_function(r_sol)
+    fields = discr.interpolate_volume_function(r_sol)
 
     dt = discr.dt_factor(1)
     nsteps = int(1/dt)
@@ -123,56 +124,61 @@ def main():
                     )
 
     #vis_solution()
-    check_pde()
-    return
+    #check_pde()
 
     normal = normal(discr.dimensions)
-    flux_weak = average*normal
-    flux_strong = local*normal - flux_weak
+    jump = jump(discr.dimensions)
+    #flux_e = -cross(normal, jump)
+    #flux_h = cross(normal, jump)
+    #flux_e = 1/2*normal*(local-average)
+    #flux_h = 1/2*normal*(local-average)
+    flux_e = -normal*(local-average)
+    flux_h = normal*(local-average)
 
-    flux = bind_flux(discr, flux_strong)
-    bflux = bind_boundary_flux(discr, flux_strong)
+    bound_flux_e = bind_flux(discr, flux_e)
+    bound_flux_h = bind_flux(discr, flux_h)
+
+    bc_flux_e = bind_boundary_flux(discr, flux_e)
+    bc_flux_h = bind_boundary_flux(discr, flux_h)
 
     def rhs(t, y):
-        u = fields[0]
-        v = fields[1:]
+        e = fields[0:3]
+        h = fields[3:6]
 
-        #bc_v = discr.boundarize_volume_field(v)
-        bc_u = -discr.boundarize_volume_field(u)
+        bc_e = -discr.boundarize_volume_field(e)
+        bc_h = discr.boundarize_volume_field(h)
 
         rhs = ArithmeticList([])
-        # rhs u
-        rhs.append(dot(nabla, v) 
-                - m_inv*(
-                    dot(flux, v) 
-                    #+ dot(bflux, pair_with_boundary(v, bc_v))
+        # rhs e
+        rhs.extend(curl(h)
+                + m_inv*(
+                    cross(bound_flux_e, h)
+                    + cross(bc_flux_e, pair_with_boundary(h, bc_h))
                     ) 
-                + source_u_vec)
-        # rhs v
-        rhs.extend(nabla*u 
-                -m_inv*(
-                    flux*u 
-                    + bflux*pair_with_boundary(u, bc_u)
-                    ))
+                )
+        # rhs h
+        rhs.extend(-curl(e)
+                +m_inv*(
+                    cross(bound_flux_h, e)
+                    + cross(bc_flux_h, pair_with_boundary(e, bc_e))
+                    )
+        )
         return rhs
 
     stepper = RK4TimeStepper()
-    #vis = VtkVisualizer(discr)
     for step in range(nsteps):
         t = step*dt
-        if step % 10 == 0:
-            print "timestep %d, t=%f, l2=%g" % (
-                    step, t, sqrt(fields[0]*(mass*fields[0])))
+        print "timestep %d, t=%f l2[e]=%g l2[h]=%g" % (
+                step, t, l2_norm(fields[0:3]), l2_norm(fields[3:6]))
 
-        if t > 0.1:
-            source_u_vec = discr.volume_zeros()
-
-        if step % 10 == 0:
-            vis("fld-%04d.silo" % step,
-                    [("u", fields[0]), ], 
-                    [("v", fields[1:]), ],
-                    time=t,
-                    step=step)
+        vis("cylmode-%04d.silo" % step,
+                vectors=[("e", fields[0:3]), 
+                    ("h", fields[3:6]), ],
+                expressions=[
+                    ],
+                write_coarse_mesh=True,
+                time=t, step=step
+                )
         fields = stepper(fields, t, dt, rhs)
 
 if __name__ == "__main__":
