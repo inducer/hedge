@@ -927,8 +927,8 @@ class TestHedge(unittest.TestCase):
 
         #discr.visualize_vtk("dual.vtk", [("u", u)])
 
-        from hedge.flux import local, neighbor, normal
-        res = discr.lift_interior_flux((local-neighbor)*normal(discr.dimensions)[1], u)
+        from hedge.flux import local, neighbor, make_normal
+        res = discr.lift_interior_flux((local-neighbor)*make_normal(discr.dimensions)[1], u)
         #discr.visualize_vtk("dual.vtk", [("u", u), ("res", res)])
         ones = discr.interpolate_volume_function(lambda x: 1)
         self.assert_(abs(res*ones) < 5e-14)
@@ -1019,8 +1019,8 @@ class TestHedge(unittest.TestCase):
 
         # make sure the surface integral of the difference 
         # between top and bottom is zero
-        from hedge.flux import local, neighbor, normal
-        res = discr.lift_interior_flux((local-neighbor)*normal(discr.dimensions)[1], u)
+        from hedge.flux import local, neighbor, make_normal
+        res = discr.lift_interior_flux((local-neighbor)*make_normal(discr.dimensions)[1], u)
         ones = discr.interpolate_volume_function(lambda x: 1)
         self.assert_(abs(res*ones) < 5e-14)
     # -------------------------------------------------------------------------
@@ -1066,7 +1066,7 @@ class TestHedge(unittest.TestCase):
 
         from hedge.discretization import Discretization, SymmetryMap
         from hedge.element import TriangularElement
-        from hedge.flux import zero, normal, jump, local, neighbor, average
+        from hedge.flux import zero, make_normal, local, neighbor, average
         from hedge.timestep import RK4TimeStepper
         from hedge.tools import dot
         from math import sqrt
@@ -1103,7 +1103,7 @@ class TestHedge(unittest.TestCase):
                 lambda x: num.array([x[0], -x[1]]),
                 {0:3, 2:1, 5:6, 7:4})
 
-        normal = normal(discr.dimensions)
+        normal = make_normal(discr.dimensions)
         for flux_name, flux in [
                 ("lax-friedrichs",
                     dot(normal, a) * (local-average)
@@ -1127,7 +1127,7 @@ class TestHedge(unittest.TestCase):
         from hedge.element import TriangularElement
         from hedge.timestep import RK4TimeStepper
         from hedge.tools import EOCRecorder, dot
-        from hedge.flux import zero, normal, local, neighbor, average
+        from hedge.flux import zero, make_normal, local, neighbor, average
         from math import sin, pi, sqrt
 
         a = num.array([1,0])
@@ -1145,10 +1145,10 @@ class TestHedge(unittest.TestCase):
 
         for flux_name, flux in [
                 ("lax-friedrichs",
-                    dot(normal(2), a) * (local-average)
+                    dot(make_normal(2), a) * (local-average)
                     + 0.5 *(local-neighbor)),
                 ("central",
-                    dot(normal(2), a) * (local-average) * average),
+                    dot(make_normal(2), a) * (local-average) * average),
                 ]:
 
             eoc_rec = EOCRecorder()

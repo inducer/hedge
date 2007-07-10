@@ -467,3 +467,36 @@ def make_cylinder_mesh(radius=0.5, height=1, radial_subdivisions=10,
             generated_mesh.points,
             generated_mesh.elements,
             boundary_tagger)
+
+
+
+
+def make_box_mesh(dimensions=(1,1,1), max_volume=None,
+        boundary_tagger=lambda fvi, el, fn: None):
+    from math import pi, cos, sin
+    from meshpy.tet import MeshInfo, build, generate_extrusion,\
+            EXT_CLOSE_IN_Z
+
+    d = dimensions
+    base_shape = [
+            (-d[0]/2, -d[1]/2),
+            (+d[0]/2, -d[1]/2),
+            (+d[0]/2, +d[1]/2),
+            (-d[0]/2, +d[1]/2),
+            ]
+    rz = [(1,0), (1,d[1])]
+
+    mesh_info = MeshInfo()
+    points, facets = generate_extrusion(rz, base_shape, closure=EXT_CLOSE_IN_Z)
+
+    def add_d_half_to_x_and_y((x,y,z)):
+        return (x+d[0]/2, y+d[0]/2, z)
+
+    mesh_info.set_points([add_d_half_to_x_and_y(p) for p in points])
+    mesh_info.set_facets(facets, [1 for i in range(len(facets))])
+    generated_mesh = build(mesh_info, max_volume=max_volume)
+
+    return ConformalMesh(
+            generated_mesh.points,
+            generated_mesh.elements,
+            boundary_tagger)

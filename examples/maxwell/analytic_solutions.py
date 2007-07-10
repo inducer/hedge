@@ -69,7 +69,7 @@ class CylindricalCavityMode:
     ch 8.7, p. 368f.
     """
     
-    def __init__(self,  m, n, p, radius, height, epsilon, mu, tm_scale=1):
+    def __init__(self,  m, n, p, radius, height, epsilon, mu):
         try:
             from bessel_zeros import bessel_zeros
         except ImportError:
@@ -92,7 +92,6 @@ class CylindricalCavityMode:
         self.mu = mu
 
         self.t = 0
-        self.tm_scale = tm_scale
 
         x_mn = bessel_zeros[m][n-1]
 
@@ -125,7 +124,7 @@ class CylindricalCavityMode:
         epsilon = self.epsilon
 
         # common subexpressions -------------------------------------------
-        t_scale = self.tm_scale * cmath.exp(-1j * omega * self.t)
+        tdep = cmath.exp(-1j * omega * self.t)
         phi_factor = cmath.exp(phi_sign * 1j * m * phi)
 
         # psi and derivatives ---------------------------------------------
@@ -135,9 +134,9 @@ class CylindricalCavityMode:
                 * 1/r * phi_sign*1j*m * phi_factor)
 
         # field components in polar coordinates ---------------------------
-        ez   = t_scale * cos(p * pi * z / d) * psi
+        ez   = tdep * cos(p * pi * z / d) * psi
 
-        e_transverse_factor = (t_scale
+        e_transverse_factor = (tdep
                 * (-p*pi/(d*gamma**2))
                 * sin(p * pi * z / d))
 
@@ -148,7 +147,7 @@ class CylindricalCavityMode:
 
         # z x grad psi = z x (psi_x, psi_y)   = (-psi_y,   psi_x)
         # z x grad psi = z x (psi_r, psi_phi) = (-psi_phi, psi_r)
-        h_transverse_factor = (t_scale
+        h_transverse_factor = (tdep
                 * 1j*epsilon*omega/gamma**2
                 * cos(p * pi * z / d))
 
@@ -157,3 +156,56 @@ class CylindricalCavityMode:
 
         return [er, ephi, ez, hr, hphi, hz]
 
+
+
+
+class RectangularCavityMode:
+    """A rectangular TM cavity mode."""
+    
+    def __init__(self, epsilon, mu, mode_indices, 
+            dimensions=(1,1,1), coefficients=(1,0,0)):
+        for n in mode_indices:
+            assert n >= 0 and n == int(n)
+        self.mode_indices = mode_indices
+        self.dimensions = dimensions
+        self.coefficients = coefficients
+
+        self.epsilon = epsilon
+        self.mu = mu
+
+        self.t = 0
+
+        self.factors = [n*pi/a for n,  a in zip(self.mode_indices, self.dimensions)]
+
+        c = 1/sqrt(mu*epsilon)
+        self.k = sqrt(sum(f**2 for f in self.factors))
+        self.omega = self.k*c
+
+    def set_time(self, t):
+        self.t = t
+
+    def __len__(self):
+        return 6
+
+    def __call__(self, x):
+        f,g,h = self.factors
+        omega = self.omega
+        k = self.k
+
+        sines = [sin(f*xi) for f, xi in zip(self.factors, x)[:2]]
+        cosines = [cos(f*xi) for f, xi in zip(self.factors, x)[:2]]
+
+        zdep_add = cmath.exp(1j*h*x[2])+cmath.exp(-1j*h*x[2])
+        zdep_sub = cmath.exp(1j*h*x[2])-cmath.exp(-1j*h*x[2])
+
+        tdep = cmath.exp(-1j * omega * self.t)
+
+        C = 1j/(f**2+g**2)
+        return [
+                C*f*h*cosines[0]*  sines[1]*zdep_sub*tdep,
+                C*g*h*  sines[0]*cosines[1]*zdep_sub*tdep,
+                        sines[0]*  sines[1]*zdep_add*tdep,
+                -C*g*self.epsilon*omega*  sines[0]*cosines[1]*zdep_add*tdep,
+                 C*f*self.epsilon*omega*cosines[0]*  sines[1]*zdep_add*tdep,
+                0j
+                ]

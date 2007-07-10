@@ -183,7 +183,10 @@ class EOCRecorder:
             else:
                 tbl.add_row((str(absc), str(err), str(gm_eoc[i-gliding_mean+1,1])))
 
-        return str(tbl) + "\n\nOverall EOC: %s" % self.estimate_order_of_convergence()[0,1]
+        if len(self.history) > 1:
+            return str(tbl) + "\n\nOverall EOC: %s" % self.estimate_order_of_convergence()[0,1]
+        else:
+            return str(tbl)
 
     def write_gnuplot_file(self, filename):
         outfile = file(filename, "w")

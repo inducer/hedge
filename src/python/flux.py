@@ -12,18 +12,11 @@ ChainedFlux = _internal.ChainedFlux
 
 
 
-def normal(dim):
+def make_normal(dim):
     return ArithmeticList([
         _internal.NormalXFlux(), 
         _internal.NormalYFlux(),
         _internal.NormalZFlux(),
-        ])[:dim]
-
-def jump(dim):
-    return ArithmeticList([
-        _internal.JumpXFlux(), 
-        _internal.JumpYFlux(),
-        _internal.JumpZFlux(),
         ])[:dim]
 
 @work_with_arithmetic_containers
