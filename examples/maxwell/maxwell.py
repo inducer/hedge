@@ -5,6 +5,22 @@ import pylinear.computation as comp
 
 
 
+def double_cross(tbl, field):
+    from pytools.arithmetic_container import ArithmeticList
+    return ArithmeticList([
+          tbl[0][1]*field[1] + tbl[0][2]*field[2]
+        - tbl[1][1]*field[0] - tbl[2][2]*field[0],
+
+          tbl[1][0]*field[0] + tbl[1][2]*field[2] 
+        - tbl[0][0]*field[1] - tbl[2][2]*field[1],
+          
+          tbl[2][1]*field[1] + tbl[2][0]*field[0] 
+        - tbl[0][0]*field[2] - tbl[1][1]*field[2],
+        ])
+
+
+
+
 def main():
     from hedge.element import TriangularElement, TetrahedralElement
     from hedge.timestep import RK4TimeStepper
@@ -145,14 +161,19 @@ def main():
 
         #vis_solution()
         #check_pde()
+        #continue
 
         normal = make_normal(discr.dimensions)
 
-        flux_e = bind_flux(discr, -1/2*normal*(local-neighbor))
-        flux_h = bind_flux(discr, 1/2*normal*(local-neighbor))
+        n_jump = bind_flux(discr, 1/2*normal*(local-neighbor))
+        n_n_jump_tbl = [[bind_flux(discr, 1/2*normal[i]*normal[j]*(local-neighbor))
+                for i in range(discr.dimensions)]
+                for j in range(discr.dimensions)]
 
         mode.set_time(0)
         fields = discr.interpolate_volume_function(r_sol)
+
+        alpha = 1
 
         def rhs(t, y):
             e = fields[0:3]
@@ -161,19 +182,27 @@ def main():
             bc_e = -discr.boundarize_volume_field(e)
             bc_h = discr.boundarize_volume_field(h)
 
+            h_pair = pair_with_boundary(h, bc_h)
+            e_pair = pair_with_boundary(e, bc_e)
+
             rhs = ArithmeticList([])
+
             # rhs e
             rhs.extend(curl(h)
-                    + m_inv*(
-                        cross(flux_e, h)
-                        + cross(flux_e, pair_with_boundary(h, bc_h))
+                    - m_inv*(
+                        cross(n_jump, h)
+                        + cross(n_jump, h_pair)
+                        - alpha*double_cross(n_n_jump_tbl, e)
+                        - alpha*double_cross(n_n_jump_tbl, e_pair)
                         ) 
                     )
             # rhs h
             rhs.extend(-curl(e)
-                    +m_inv*(
-                        cross(flux_h, e)
-                        + cross(flux_h, pair_with_boundary(e, bc_e))
+                    + m_inv*(
+                        cross(n_jump, e)
+                        + cross(n_jump, e_pair)
+                        + alpha*double_cross(n_n_jump_tbl, h)
+                        + alpha*double_cross(n_n_jump_tbl, h_pair)
                         )
             )
             return rhs
@@ -204,7 +233,7 @@ def main():
         true_fields = discr.interpolate_volume_function(r_sol)
         eoc_rec.add_data_point(order, l2_norm(fields-true_fields))
 
-        vis("cylmode-%04d.silo" % order,
+        vis("em-%04d.silo" % order,
                 vectors=[
                     ("e", fields[0:3]), 
                     ("h", fields[3:6]), 
@@ -226,5 +255,3 @@ if __name__ == "__main__":
     import cProfile as profile
     #profile.run("main()", "wave2d.prof")
     main()
-
-

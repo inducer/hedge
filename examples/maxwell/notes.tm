@@ -229,15 +229,15 @@
     </output>
 
     <\input|<with|color|red|<with|mode|math|\<rightarrow\>> >>
-      z1f:=1; z2f:=-1;
+      zf1:=1; zf2:=-1;
     </input>
 
     <\output>
-      <axiomtype|NonNegativeInteger >
+      <axiomtype|Integer >
     </output>
 
     <\input|<with|color|red|<with|mode|math|\<rightarrow\>> >>
-      zdep:=z1f*zdep1 + z2f*zdep2;
+      zdep:=zf1*zdep1 + zf2*zdep2;
     </input>
 
     <\output>
@@ -255,24 +255,14 @@
     <\input|<with|color|red|<with|mode|math|\<rightarrow\>> >>
       efield := vector [
 
-      C*f*h*cosines(1)* \ sines(2)*zdep1,
+      C*f*h*cosines(1)* \ sines(2)*(zf1*zdep1-zf2*zdep2),
 
-      C*g*h* \ sines(1)*cosines(2)*zdep1,
+      C*g*h* \ sines(1)*cosines(2)*(zf1*zdep1-zf2*zdep2),
 
       \ \ \ \ \ \ \ \ sines(1)* \ sines(2)*zdep];
     </input>
 
     <\output>
-      \ \ \ Compiling function cosines with type PositiveInteger -\<gtr\>
-      Expression\ 
-
-      \ \ \ \ \ \ Integer\ 
-
-      \ \ \ Compiling function sines with type PositiveInteger -\<gtr\>
-      Expression\ 
-
-      \ \ \ \ \ \ Integer\ 
-
       <axiomtype|Vector Expression Complex Integer >
     </output>
 
@@ -281,11 +271,6 @@
     </input>
 
     <\output>
-      \ \ \ Compiling function curl with type Vector Expression Complex
-      Integer
-
-      \ \ \ \ \ \ \ -\<gtr\> Vector Expression Complex Integer\ 
-
       <axiomtype|Vector Expression Complex Integer >
     </output>
 
@@ -302,7 +287,7 @@
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<left|[>0,<space|0.5spc>0,<space|0.5spc>0<right|]><leqno>(15)>
+      <with|mode|math|math-display|true|<left|[>0,<space|0.5spc>0,<space|0.5spc>0<right|]><leqno>(71)>
 
       <axiomtype|Vector Expression Complex Integer >
     </output>
@@ -312,11 +297,13 @@
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<left|[><frac|<left|(>-i*g*h<rsup|2>-i*g<rsup|3>-i*f<rsup|2>g<right|)>cos
-      <left|(>g*y<right|)>e<rsup|<left|(>i*h*z<right|)>>sin
-      <left|(>f*x<right|)><sqrt|\<epsilon\>\<mu\>>|<left|(>g<rsup|2>+f<rsup|2><right|)>\<mu\><sqrt|h<rsup|2>+g<rsup|2>+f<rsup|2>>>,<space|0.5spc><frac|<left|(>i*f*h<rsup|2>+i*f*g<rsup|2>+i*f<rsup|3><right|)>cos
-      <left|(>f*x<right|)>e<rsup|<left|(>i*h*z<right|)>>sin
-      <left|(>g*y<right|)><sqrt|\<epsilon\>\<mu\>>|<left|(>g<rsup|2>+f<rsup|2><right|)>\<mu\><sqrt|h<rsup|2>+g<rsup|2>+f<rsup|2>>>,<space|0.5spc>0<right|]><leqno>(71)>
+      <with|mode|math|math-display|true|<left|[><frac|<left|(><left|(>-i*g*h<rsup|2>-i*g<rsup|3>-i*f<rsup|2>g<right|)>cos
+      <left|(>g*y<right|)>e<rsup|<left|(>i*h*z<right|)>>+<left|(>i*g*h<rsup|2>+i*g<rsup|3>+i*f<rsup|2>g<right|)>cos
+      <left|(>g*y<right|)>e<rsup|<left|(>-i*h*z<right|)>><right|)>sin
+      <left|(>f*x<right|)><sqrt|\<epsilon\>\<mu\>>|<left|(>g<rsup|2>+f<rsup|2><right|)>\<mu\><sqrt|h<rsup|2>+g<rsup|2>+f<rsup|2>>>,<space|0.5spc><frac|<left|(><left|(>i*f*h<rsup|2>+i*f*g<rsup|2>+i*f<rsup|3><right|)>cos
+      <left|(>f*x<right|)>e<rsup|<left|(>i*h*z<right|)>>+<left|(>-i*f*h<rsup|2>-i*f*g<rsup|2>-i*f<rsup|3><right|)>cos
+      <left|(>f*x<right|)>e<rsup|<left|(>-i*h*z<right|)>><right|)>sin
+      <left|(>g*y<right|)><sqrt|\<epsilon\>\<mu\>>|<left|(>g<rsup|2>+f<rsup|2><right|)>\<mu\><sqrt|h<rsup|2>+g<rsup|2>+f<rsup|2>>>,<space|0.5spc>0<right|]><leqno>(72)>
 
       <axiomtype|Vector Expression Complex Integer >
     </output>
@@ -324,19 +311,21 @@
     <\input|<with|color|red|<with|mode|math|\<rightarrow\>> >>
       hfield2:=vector [
 
-      -%i*g/(f^2+g^2)*epsilon*omega*sines(1)*cosines(2)*exps(3),
+      -%i*g/(f^2+g^2)*epsilon*omega*sines(1)*cosines(2)*(zf1*zdep1+zf2*zdep2),
 
-      \ %i*f/(f^2+g^2)*epsilon*omega*cosines(1)*sines(2)*exps(3),
+      \ %i*f/(f^2+g^2)*epsilon*omega*cosines(1)*sines(2)*(zf1*zdep1+zf2*zdep2),
 
       0]
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<left|[>-<frac|i\<epsilon\>g*cos
-      <left|(>g*y<right|)>e<rsup|<left|(>i*h*z<right|)>>sin
-      <left|(>f*x<right|)><sqrt|h<rsup|2>+g<rsup|2>+f<rsup|2>>|<left|(>g<rsup|2>+f<rsup|2><right|)><sqrt|\<epsilon\>\<mu\>>>,<space|0.5spc><frac|i\<epsilon\>f*cos
-      <left|(>f*x<right|)>e<rsup|<left|(>i*h*z<right|)>>sin
-      <left|(>g*y<right|)><sqrt|h<rsup|2>+g<rsup|2>+f<rsup|2>>|<left|(>g<rsup|2>+f<rsup|2><right|)><sqrt|\<epsilon\>\<mu\>>>,<space|0.5spc>0<right|]><leqno>(72)>
+      <with|mode|math|math-display|true|<left|[><frac|<left|(>-i\<epsilon\>g*cos
+      <left|(>g*y<right|)>e<rsup|<left|(>i*h*z<right|)>>+i\<epsilon\>g*cos
+      <left|(>g*y<right|)>e<rsup|<left|(>-i*h*z<right|)>><right|)>sin
+      <left|(>f*x<right|)><sqrt|h<rsup|2>+g<rsup|2>+f<rsup|2>>|<left|(>g<rsup|2>+f<rsup|2><right|)><sqrt|\<epsilon\>\<mu\>>>,<space|0.5spc><frac|<left|(>i\<epsilon\>f*cos
+      <left|(>f*x<right|)>e<rsup|<left|(>i*h*z<right|)>>-i\<epsilon\>f*cos
+      <left|(>f*x<right|)>e<rsup|<left|(>-i*h*z<right|)>><right|)>sin
+      <left|(>g*y<right|)><sqrt|h<rsup|2>+g<rsup|2>+f<rsup|2>>|<left|(>g<rsup|2>+f<rsup|2><right|)><sqrt|\<epsilon\>\<mu\>>>,<space|0.5spc>0<right|]><leqno>(73)>
 
       <axiomtype|Vector Expression Complex Integer >
     </output>
@@ -346,7 +335,7 @@
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<left|[>0,<space|0.5spc>0,<space|0.5spc>0<right|]><leqno>(73)>
+      <with|mode|math|math-display|true|<left|[>0,<space|0.5spc>0,<space|0.5spc>0<right|]><leqno>(74)>
 
       <axiomtype|Vector Expression Complex Integer >
     </output>
@@ -354,9 +343,9 @@
     <\input|<with|color|red|<with|mode|math|\<rightarrow\>> >>
       bcs:=[
 
-      eval(efield.3, x=0),
+      eval(efield.1, z=0),
 
-      eval(efield.3, y=0),
+      eval(efield.2, z=0),
 
       eval(efield.3, z=0),
 
@@ -370,7 +359,9 @@
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<left|[>0,<space|0.5spc>0,<space|0.5spc>0,<space|0.5spc>0,<space|0.5spc>0,<space|0.5spc>0<right|]><leqno>(46)>
+      <with|mode|math|math-display|true|<left|[>0,<space|0.5spc><frac|2i*g*h*cos
+      <left|(>g*y<right|)>sin <left|(>f*x<right|)>|g<rsup|2>+f<rsup|2>>,<space|0.5spc><frac|2i*f*h*cos
+      <left|(>f*x<right|)>sin <left|(>g*y<right|)>|g<rsup|2>+f<rsup|2>>,<space|0.5spc>0,<space|0.5spc>0,<space|0.5spc>0<right|]><leqno>(76)>
 
       <axiomtype|List Expression Complex Integer >
     </output>

@@ -159,16 +159,19 @@ class CylindricalCavityMode:
 
 
 
-class RectangularCavityMode:
+class RectangularWaveguideMode:
     """A rectangular TM cavity mode."""
     
     def __init__(self, epsilon, mu, mode_indices, 
-            dimensions=(1,1,1), coefficients=(1,0,0)):
+            dimensions=(1,1,1), coefficients=(1,0,0),
+            forward_coeff=1, backward_coeff=0):
         for n in mode_indices:
             assert n >= 0 and n == int(n)
         self.mode_indices = mode_indices
         self.dimensions = dimensions
         self.coefficients = coefficients
+        self.forward_coeff = forward_coeff
+        self.backward_coeff = backward_coeff
 
         self.epsilon = epsilon
         self.mu = mu
@@ -209,3 +212,19 @@ class RectangularCavityMode:
                  C*f*self.epsilon*omega*cosines[0]*  sines[1]*zdep_add*tdep,
                 0j
                 ]
+
+
+
+
+class RectangularCavityMode(RectangularWaveguideMode):
+    """A rectangular TM cavity mode."""
+    
+    def __init__(self, *args, **kwargs):
+        if "scale" in kwargs:
+            kwargs["forward_coeff"] = scale
+            kwargs["backward_coeff"] = scale
+        else:
+            kwargs["forward_coeff"] = 1
+            kwargs["backward_coeff"] = 1
+        RectangularWaveguideMode.__init__(self, *args, **kwargs)
+
