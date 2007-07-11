@@ -45,7 +45,8 @@ except NameError:
 if HEDGE_CONF_TEMPLATE_VERSION != 3:
     non_matching_config()
 
-INCLUDE_DIRS = BOOST_INCLUDE_DIRS \
+INCLUDE_DIRS = ["src/cpp"] \
+        + BOOST_INCLUDE_DIRS \
         + BOOST_MATH_TOOLKIT_INCLUDE_DIRS \
         + BOOST_BINDINGS_INCLUDE_DIRS
 
@@ -66,6 +67,38 @@ def handle_component(comp):
 
 handle_component("SILO")
 
+ext_modules=[
+        Extension("_internal", 
+            ["src/wrapper/wrap_main.cpp", 
+                "src/wrapper/wrap_special_function.cpp", 
+                "src/wrapper/wrap_flux.cpp", 
+                "src/wrapper/wrap_op_target.cpp", 
+                "src/wrapper/wrap_volume_operators.cpp", 
+                "src/wrapper/wrap_face_operators.cpp", 
+                "src/wrapper/wrap_index_subset.cpp", 
+                ],
+            include_dirs=INCLUDE_DIRS + EXTRA_INCLUDE_DIRS,
+            library_dirs=LIBRARY_DIRS + EXTRA_LIBRARY_DIRS,
+            libraries=LIBRARIES + EXTRA_LIBRARIES,
+            extra_compile_args=EXTRA_COMPILE_ARGS,
+            define_macros=list(EXTRA_DEFINES.iteritems()),
+            )]
+
+if USE_SILO:
+    ext_modules.append(
+            Extension("_silo", 
+                ["src/wrapper/wrap_silo.cpp", 
+                    ],
+                include_dirs=INCLUDE_DIRS + EXTRA_INCLUDE_DIRS,
+                library_dirs=LIBRARY_DIRS + EXTRA_LIBRARY_DIRS,
+                libraries=LIBRARIES + EXTRA_LIBRARIES,
+                extra_compile_args=EXTRA_COMPILE_ARGS,
+                define_macros=list(EXTRA_DEFINES.iteritems()),
+                ))
+
+
+
+
 setup(name="hedge",
       version="0.90",
       description="The Hybrid-and-Easy Discontinuous Galerkin Environment",
@@ -76,30 +109,5 @@ setup(name="hedge",
       packages=["hedge"],
       package_dir={"hedge": "src/python"},
       ext_package="hedge",
-      ext_modules=[ 
-          Extension("_internal", 
-              ["src/cpp/wrap_main.cpp", 
-                  "src/cpp/wrap_special_function.cpp", 
-                  "src/cpp/wrap_flux.cpp", 
-                  "src/cpp/wrap_op_target.cpp", 
-                  "src/cpp/wrap_volume_operators.cpp", 
-                  "src/cpp/wrap_face_operators.cpp", 
-                  "src/cpp/wrap_index_subset.cpp", 
-                  ],
-              include_dirs=INCLUDE_DIRS + EXTRA_INCLUDE_DIRS,
-              library_dirs=LIBRARY_DIRS + EXTRA_LIBRARY_DIRS,
-              libraries=LIBRARIES + EXTRA_LIBRARIES,
-              extra_compile_args=EXTRA_COMPILE_ARGS,
-              define_macros=list(EXTRA_DEFINES.iteritems()),
-              ),
-          Extension("_silo", 
-              ["src/cpp/wrap_silo.cpp", 
-                  ],
-              include_dirs=INCLUDE_DIRS + EXTRA_INCLUDE_DIRS,
-              library_dirs=LIBRARY_DIRS + EXTRA_LIBRARY_DIRS,
-              libraries=LIBRARIES + EXTRA_LIBRARIES,
-              extra_compile_args=EXTRA_COMPILE_ARGS,
-              define_macros=list(EXTRA_DEFINES.iteritems()),
-              ),
-          ]
+      ext_modules=ext_modules
      )
