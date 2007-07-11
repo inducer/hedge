@@ -1,0 +1,34 @@
+Welcome to Hedge!
+-----------------
+
+Hedge is the 
+
+  Hybrid'n'Easy Discontinuous Galerkin Environment.
+
+It is a "hybrid" because it is written in both Python and C++. The Python
+part takes care of high-level control, while the low-level C++ part takes
+care of crunching the numbers, resulting in a fast code that is extremely
+easy to use.
+
+To compile Hedge, you need the following prerequisites:
+
+- Boost 1.34 or newer
+  http://www.boost.org 
+- Boost Linear Algebra Bindings
+  http://news.tiker.net/software/boost-bindings
+- Boost Math Toolbox
+  http://freespace.virgin.net/boost.regex/toolkit/html/
+- numpy + scipy (this dependency will be gone eventually)
+  http://scipy.org
+- libsilo
+  http://www.llnl.gov/visit/source.html
+- meshpy
+  http://news.tiker.net/software/meshpy
+- pylinear
+  http://news.tiker.net/software/pylinear
+- pytools
+  NO URL YET
+- visit (if you want visualization, which you likely do)
+  http://www.llnl.gov/visit/
+
+Andreas Kloeckner <kloeckner@dam.brown.edu>
