@@ -145,5 +145,5 @@ class SiloVisualizer:
                     vec, DB_NODECENT)
         if expressions:
             db.put_defvars("defvars", expressions)
-        del db
+        return db
 

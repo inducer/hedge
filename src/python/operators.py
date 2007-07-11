@@ -80,8 +80,8 @@ class MaxwellOperator:
                     - (self.m_inv*(
                         cross(self.n_jump, h)
                         + cross(self.n_jump, h_pair)
-                        #- self.alpha*_double_cross(self.n_n_jump_tbl, e)
-                        #- self.alpha*_double_cross(self.n_n_jump_tbl, e_pair)
+                        - 1/Z*self.alpha*_double_cross(self.n_n_jump_tbl, e)
+                        - 1/Z*self.alpha*_double_cross(self.n_n_jump_tbl, e_pair)
                         ))))
         # rhs h
         rhs.extend(
@@ -90,8 +90,8 @@ class MaxwellOperator:
                     + (self.m_inv*(
                         cross(self.n_jump, e)
                         + cross(self.n_jump, e_pair)
-                        #+ self.alpha*_double_cross(self.n_n_jump_tbl, h)
-                        #+ self.alpha*_double_cross(self.n_n_jump_tbl, h_pair)
+                        + 1/Y*self.alpha*_double_cross(self.n_n_jump_tbl, h)
+                        + 1/Y*self.alpha*_double_cross(self.n_n_jump_tbl, h_pair)
                         ))))
 
         return rhs
