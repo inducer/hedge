@@ -1,4 +1,11 @@
-Nomenclature: Elements and Elements
-Verify 3D nodes against Matlab
 Periodic BCs
 Deformed elements
+PML
+Check whether timestep makes a difference in wave eq for 
+  non-reflection Dirichlet BC
+Visualization normals issue
+Kill scipy dependency
+Build script
+Parallelism
+Upwinding for the wave equation
+Constant * normal flux optimizations
