@@ -94,7 +94,7 @@ class TestHedge(unittest.TestCase):
     # -------------------------------------------------------------------------
     def test_orthonormality_jacobi_1d(self):
         """Verify that the Jacobi polymials are orthogonal in 1D"""
-        from hedge.polynomial import jacobi_function
+        from hedge.polynomial import JacobiFunction
         from hedge.quadrature import LegendreGaussQuadrature
 
         max_n = 10
@@ -117,7 +117,7 @@ class TestHedge(unittest.TestCase):
                 (3, 4, 1e-14)
                 ]:
             from scipy.special.orthogonal import jacobi
-            jac_f = [jacobi_function(alpha, beta, n) for n in range(max_n)]
+            jac_f = [JacobiFunction(alpha, beta, n) for n in range(max_n)]
             wf = WeightFunction(alpha, beta)
             maxerr = 0
 

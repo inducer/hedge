@@ -25,25 +25,13 @@ import hedge._internal
 
 
 
-jacobi_function = hedge._internal.JacobiPolynomial
+JacobiFunction = hedge._internal.JacobiPolynomial
+DiffJacobiFunction = hedge._internal.DiffJacobiPolynomial
 
 
 
 
-@memoize
-def diff_jacobi_polynomial(alpha, beta, N):
-    from math import sqrt
-
-    if N == 0:
-        return 0
-    else:
-        return sqrt(N*(N+alpha+beta+1))*\
-                jacobi_polynomial(alpha+1, beta+1, N-1)
-
-
-
-
-class diff_jacobi_function:
+class diff_jacobi_function_2:
     def __init__(self, alpha, beta, N):
         from math import sqrt
         if N == 0:
@@ -56,33 +44,16 @@ class diff_jacobi_function:
     def __call__(self, x):
         return self.factor*self.jf(x)
 
-@memoize
-def diff_jacobi_function_2(alpha, beta, N):
-    return pymbolic.compile(diff_jacobi_polynomial(alpha, beta, N), ["x"])
 
 
 
-
-def legendre_polynomial(N):
-    return jacobi_polynomial(0, 0, N)
-
-
-
-
-def diff_legendre_polynomial(N, derivative=1):
-    return diff_jacobi_polynomial(0, 0, N, derivative)
-
-
-
-
-def legendre_function(N):
-    return jacobi_function(0, 0, N)
-
-
-
-
-def diff_legendre_function(N):
-    return diff_jacobi_function(0, 0, N)
+class LegendreFunction(JacobiFunction):
+    def __init__(self, N):
+        JacobiFunction.__init__(self, 0, 0, N)
+        
+class DiffLegendreFunction(JacobiFunction):
+    def __init__(self, N):
+        DiffJacobiFunction.__init__(self, 0, 0, N)
 
 
 
@@ -122,5 +93,5 @@ def generic_multi_vandermonde(points, functions):
 
 def legendre_vandermonde(points, N):
     return generic_vandermonde(points, 
-            [legendre_function(i) for i in range(N+1)])
+            [LegendreFunction(i) for i in range(N+1)])
 

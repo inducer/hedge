@@ -21,6 +21,7 @@ from __future__ import division
 import pylinear.array as num
 import pylinear.computation as comp
 from hedge.tools import AffineMap
+import hedge._internal
 from math import sqrt, sin, cos, exp, pi
 from pytools import memoize
 from hedge.mesh import Triangle, Tetrahedron
@@ -104,163 +105,10 @@ class TriangleWarper:
 
 
 
-class TriangleBasisFunction:
-    def __init__(self, (i, j)):
-        from hedge.polynomial import jacobi_function
-        self.i = i
-        self.f = jacobi_function(0, 0, i)
-        self.g = jacobi_function(2*i+1, 0, j)
-
-    def __call__(self, (r, s)):
-        try:
-            a = 2*(1+r)/(1-s)-1
-        except ZeroDivisionError:
-            a = 1
-
-        return sqrt(2)*self.f(a)*self.g(s)*(1-s)**self.i
-
-
-
-
-class GradTriangleBasisFunction:
-    def __init__(self, (i, j)):
-        from hedge.polynomial import jacobi_function, diff_jacobi_function
-        self.i = i
-        self.f  =      jacobi_function(0, 0, i)
-        self.df = diff_jacobi_function(0, 0, i)
-        self.g  =      jacobi_function(2*i+1, 0, j)
-        self.dg = diff_jacobi_function(2*i+1, 0, j)
-
-    def __call__(self, (r, s)):
-        try:
-            a = 2*(1+r)/(1-s)-1
-        except ZeroDivisionError:
-            a = 1
-
-        f_a = self.f(a)
-        g_s = self.g(s)
-        df_a = self.df(a)
-        dg_s = self.dg(s)
-        one_s = 1-s
-        i = self.i
-
-        # see doc/hedge-notes.tm
-        return [
-            # df/dr
-            2*sqrt(2) * g_s * one_s**(i-1) * df_a,
-            # df/ds
-            sqrt(2)*(
-                f_a * one_s**i * dg_s
-                +(2*r+2) * g_s * one_s**(i-2) * df_a
-                -i * f_a * g_s * one_s**(i-1)
-                )]
-
-
-
-
-class TetrahedronBasisFunction:
-    def __init__(self, (i, j, k)):
-        from hedge.polynomial import jacobi_function
-        self.i = i
-        self.j = j
-        self.f = jacobi_function(0, 0, i)
-        self.g = jacobi_function(2*i+1, 0, j)
-        self.h = jacobi_function(2*i+2*j+2, 0, k)
-
-    def __call__(self, (r, s, t)):
-        try:
-            a = -2*(1+r)/(s+t) - 1
-        except ZeroDivisionError:
-            a = -1
-
-        try:
-            b = 2*(1+s)/(1-t) - 1
-        except ZeroDivisionError:
-            b = -1
-
-        c = t
-
-        return sqrt(8) \
-                *self.f(a) \
-                *self.g(b) \
-                *(1-b)**(self.i) \
-                *self.h(c) \
-                *(1-c)**(self.i+self.j)
-
-
-
-
-class GradTetrahedronBasisFunction:
-    def __init__(self, (i, j, k)):
-        from hedge.polynomial import jacobi_function, diff_jacobi_function
-        self.i = i
-        self.j = j
-        self.k = k
-
-        self.f  =      jacobi_function(0, 0, i)
-        self.df = diff_jacobi_function(0, 0, i)
-        self.g  =      jacobi_function(2*i+1, 0, j)
-        self.dg = diff_jacobi_function(2*i+1, 0, j)
-        self.h  =      jacobi_function(2*i+2*j+2, 0, k)
-        self.dh = diff_jacobi_function(2*i+2*j+2, 0, k)
-
-    def __call__(self, (r, s, t)):
-        try:
-            a = -2*(1+r)/(s+t) - 1
-        except ZeroDivisionError:
-            a = -1
-
-        try:
-            b = 2*(1+s)/(1-t) - 1
-        except ZeroDivisionError:
-            b = -1
-
-        c = t
-
-        fa = self.f(a)
-        gb = self.g(b)
-        hc = self.h(c)
-
-        dfa = self.df(a)
-        dgb = self.dg(b)
-        dhc = self.dh(c)
-
-        id = self.i
-        jd = self.j
-        kd = self.k
-
-        # shamelessly stolen from Hesthaven/Warburton's GradSimplex3DP
-
-        # r-derivative
-        V3Dr = dfa*(gb*hc);
-        if id>0:    V3Dr = V3Dr*((0.5*(1-b))**(id-1))
-        if id+jd>0: V3Dr = V3Dr*((0.5*(1-c))**(id+jd-1))
-
-        # s-derivative 
-        V3Ds = 0.5*(1+a)*V3Dr;
-        tmp = dgb*((0.5*(1-b))**id);
-        if id>0:
-            tmp = tmp+(-0.5*id)*(gb*(0.5*(1-b))**(id-1))
-        if id+jd>0: 
-            tmp = tmp*((0.5*(1-c))**(id+jd-1))
-        tmp = fa*(tmp*hc)
-        V3Ds = V3Ds+tmp
-
-        # t-derivative 
-        V3Dt = 0.5*(1+a)*V3Dr+0.5*(1+b)*tmp
-        tmp = dhc*((0.5*(1-c))**(id+jd))
-        if id+jd>0:
-            tmp = tmp-0.5*(id+jd)*(hc*((0.5*(1-c))**(id+jd-1)))
-        tmp = fa*(gb*tmp)
-        tmp = tmp*((0.5*(1-b))**id)
-        V3Dt = V3Dt+tmp
-
-        # normalize
-        V3Dr = V3Dr*(2**(2*id+jd+1.5));
-        V3Ds = V3Ds*(2**(2*id+jd+1.5));
-        V3Dt = V3Dt*(2**(2*id+jd+1.5));
-
-        return [V3Dr, V3Ds, V3Dt]
+TriangleBasisFunction = hedge._internal.TriangleBasisFunction
+GradTriangleBasisFunction = hedge._internal.GradTriangleBasisFunction
+TetrahedronBasisFunction = hedge._internal.TetrahedronBasisFunction
+GradTetrahedronBasisFunction = hedge._internal.GradTetrahedronBasisFunction
 
 
 
@@ -534,13 +382,13 @@ class TriangularElement(SimplicialElement):
 
           r**i * s**j for i+j <= N
         """
-        return [TriangleBasisFunction(idx) for idx in self.node_tuples()]
+        return [TriangleBasisFunction(*idx) for idx in self.node_tuples()]
 
     def grad_basis_functions(self):
         """Get the gradient functions of the basis_functions(),
         in the same order.
         """
-        return [GradTriangleBasisFunction(idx) for idx in self.node_tuples()]
+        return [GradTriangleBasisFunction(*idx) for idx in self.node_tuples()]
 
     # face operations ---------------------------------------------------------
     @memoize
@@ -796,13 +644,13 @@ class TetrahedralElement(SimplicialElement):
 
           r**i * s**j * t**k  for  i+j+k <= order
         """
-        return [TetrahedronBasisFunction(idx) for idx in self.node_tuples()]
+        return [TetrahedronBasisFunction(*idx) for idx in self.node_tuples()]
 
     def grad_basis_functions(self):
         """Get the (r,s,...) gradient functions of the basis_functions(),
         in the same order.
         """
-        return [GradTetrahedronBasisFunction(idx) for idx in self.node_tuples()]
+        return [GradTetrahedronBasisFunction(*idx) for idx in self.node_tuples()]
 
     # face operations ---------------------------------------------------------
     @memoize
@@ -811,7 +659,7 @@ class TetrahedralElement(SimplicialElement):
         unodes = self.unit_nodes()
 
         node_tuples = list(self.node_tuples())
-        basis = [TriangleBasisFunction(node_tuples[i][:2]) 
+        basis = [TriangleBasisFunction(*node_tuples[i][:2]) 
                 for i in self.face_indices()[0]]
         face_vandermonde = generic_vandermonde(
                 [unodes[i][:2] for i in self.face_indices()[0]],
