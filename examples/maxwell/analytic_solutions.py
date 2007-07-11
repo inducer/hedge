@@ -214,8 +214,10 @@ class RectangularWaveguideMode:
         omega = self.omega
         k = self.k
 
-        sines = [sin(f*xi) for f, xi in zip(self.factors, x)[:2]]
-        cosines = [cos(f*xi) for f, xi in zip(self.factors, x)[:2]]
+        sx = sin(f*x[0])
+        sy = sin(g*x[1])
+        cx = cos(f*x[0])
+        cy = cos(g*x[1])
 
         zdep_add = cmath.exp(1j*h*x[2])+cmath.exp(-1j*h*x[2])
         zdep_sub = cmath.exp(1j*h*x[2])-cmath.exp(-1j*h*x[2])
@@ -224,11 +226,11 @@ class RectangularWaveguideMode:
 
         C = 1j/(f**2+g**2)
         return [
-                C*f*h*cosines[0]*  sines[1]*zdep_sub*tdep,
-                C*g*h*  sines[0]*cosines[1]*zdep_sub*tdep,
-                        sines[0]*  sines[1]*zdep_add*tdep,
-                -C*g*self.epsilon*omega*  sines[0]*cosines[1]*zdep_add*tdep,
-                 C*f*self.epsilon*omega*cosines[0]*  sines[1]*zdep_add*tdep,
+                C*f*h*cx*sy*zdep_sub*tdep,
+                C*g*h*sx*cy*zdep_sub*tdep,
+                      sx*sy*zdep_add*tdep,
+                -C*g*self.epsilon*omega*sx*cy*zdep_add*tdep,
+                 C*f*self.epsilon*omega*cx*sy*zdep_add*tdep,
                 0j
                 ]
 
@@ -246,4 +248,98 @@ class RectangularCavityMode(RectangularWaveguideMode):
             kwargs["forward_coeff"] = 1
             kwargs["backward_coeff"] = 1
         RectangularWaveguideMode.__init__(self, *args, **kwargs)
+
+
+
+
+
+# analytic solution tools -----------------------------------------------------
+def vis_solution(discr, vis, mode, r_sol):
+    dt = 0.1
+    for step in range(10):
+        t = step*dt
+        print step, t
+        mode.set_time(t)
+        fields = discr.interpolate_volume_function(r_sol)
+
+        vis("em-%04d.silo" % step,
+                vectors=[("e", fields[0:3]), ("h", fields[3:6]), ],
+                expressions=[
+                ("mag_e", "magnitude(e)"),
+                ("mag_h", "magnitude(h)"),
+                ],
+                write_coarse_mesh=True,
+                time=t, step=step
+                )
+
+
+
+
+def check_time_harmonic_solution(discr, mode, c_sol):
+    from hedge.discretization import bind_nabla, bind_mass_matrix
+    from hedge.visualization import SiloVisualizer
+    from hedge.tools import dot, cross
+    from hedge.silo import DB_VARTYPE_VECTOR
+
+    def curl(field):
+        return cross(nabla, field)
+
+    vis = SiloVisualizer(discr)
+
+    nabla = bind_nabla(discr)
+    mass = bind_mass_matrix(discr)
+
+    def rel_l2_error(err, base):
+        def l2_norm(field):
+            return sqrt(dot(field, mass*field))
+
+        base_l2 = l2_norm(base)
+        err_l2 = l2_norm(err)
+        if base_l2 == 0:
+            if err_l2 == 0:
+                return 0.
+            else:
+                return float("inf")
+        else:
+            return err_l2/base_l2
+
+    dt = 0.1
+
+    for step in range(10):
+        t = step*dt
+        mode.set_time(t)
+        fields = discr.interpolate_volume_function(c_sol)
+
+        er = fields[0:3]
+        hr = fields[3:6]
+        ei = fields[6:9]
+        hi = fields[9:12]
+
+        vis("em-%04d.silo" % step,
+                vectors=[
+                    ("curl_er", curl(er)), 
+                    ("om_hi", -mode.mu*mode.omega*hi), 
+                    ("curl_hr", curl(hr)), 
+                    ("om_ei", mode.epsilon*mode.omega*hi), 
+                    ],
+                expressions=[
+                ("diff_er", "curl_er-om_hi", DB_VARTYPE_VECTOR),
+                ("diff_hr", "curl_hr-om_ei", DB_VARTYPE_VECTOR),
+                ],
+                write_coarse_mesh=True,
+                time=t, step=step
+                )
+
+        er_res = curl(er) + mode.mu     *mode.omega*hi
+        ei_res = curl(ei) - mode.mu     *mode.omega*hr
+        hr_res = curl(hr) - mode.epsilon*mode.omega*ei
+        hi_res = curl(hi) + mode.epsilon*mode.omega*er
+
+        print "time=%f, rel l2 residual in Re[E]=%g\tIm[E]=%g\tRe[H]=%g\tIm[H]=%g" % (
+                t,
+                rel_l2_error(er_res, er),
+                rel_l2_error(ei_res, ei),
+                rel_l2_error(hr_res, hr),
+                rel_l2_error(hi_res, hi),
+                )
 

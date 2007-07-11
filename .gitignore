@@ -10,3 +10,4 @@ doc/hedge-notes.pdf
 *.silo
 *.session
 dump.py
+*.orig

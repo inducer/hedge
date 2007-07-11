@@ -24,22 +24,6 @@ import pylinear.computation as comp
 
 
 
-def double_cross(tbl, field):
-    from pytools.arithmetic_container import ArithmeticList
-    return ArithmeticList([
-          tbl[0][1]*field[1] + tbl[0][2]*field[2]
-        - tbl[1][1]*field[0] - tbl[2][2]*field[0],
-
-          tbl[1][0]*field[0] + tbl[1][2]*field[2] 
-        - tbl[0][0]*field[1] - tbl[2][2]*field[1],
-          
-          tbl[2][1]*field[1] + tbl[2][0]*field[0] 
-        - tbl[0][0]*field[2] - tbl[1][1]*field[2],
-        ])
-
-
-
-
 def main():
     from hedge.element import TriangularElement, TetrahedralElement
     from hedge.timestep import RK4TimeStepper
@@ -53,29 +37,31 @@ def main():
             pair_with_boundary
     from hedge.visualization import SiloVisualizer
     from hedge.silo import DB_VARTYPE_VECTOR
-    from hedge.flux import zero, make_normal, local, neighbor, average
     from hedge.tools import dot, cross, EOCRecorder
-    from math import sqrt
+    from math import sqrt, pi
     from analytic_solutions import \
+            check_time_harmonic_solution, \
+            vis_solution, \
             RealPartAdapter, \
             SplitComplexAdapter, \
             CartesianAdapter, \
             CylindricalCavityMode, \
             RectangularCavityMode
     from pytools.arithmetic_container import ArithmeticList
+    from hedge.operators import MaxwellOperator
 
-    # field order is [Ex Ey Ez Hx Hy Hz]
-
-    R = 1
-    d = 2
-    epsilon = 1
-    mu = 1
+    epsilon0 = 8.8541878176e-12 # C**2 / (N m**2)
+    mu0 = 4*pi*1e-7 # N/A**2.
+    epsilon = 1*epsilon0
+    mu = 1*mu0
 
     eoc_rec = EOCRecorder()
 
     cylindrical = False
 
     if cylindrical:
+        R = 1
+        d = 2
         mode = CylindricalCavityMode(m=1, n=1, p=1,
                 radius=R, height=d, 
                 epsilon=epsilon, mu=mu)
@@ -83,13 +69,13 @@ def main():
         c_sol = SplitComplexAdapter(CartesianAdapter(mode))
         mesh = make_cylinder_mesh(radius=R, height=d, max_volume=0.01)
     else:
-        mode = RectangularCavityMode(epsilon, mu, (1,1,1))
+        mode = RectangularCavityMode(epsilon, mu, (3,2,1))
         r_sol = RealPartAdapter(mode)
         c_sol = SplitComplexAdapter(mode)
         mesh = make_box_mesh(max_volume=0.01)
 
-    #for order in [3]:
-    for order in [1,2,3,4,5,6]:
+    #for order in [1,2,3,4,5,6]:
+    for order in [3]:
         print "---------------------------------------------"
         print "order %d" % order
         print "---------------------------------------------"
@@ -98,133 +84,26 @@ def main():
 
         print "%d elements" % len(discr.mesh.elements)
 
-        dt = discr.dt_factor(1/sqrt(epsilon*mu))
-        final_time = 0.3
+        dt = discr.dt_factor(1/sqrt(mu*epsilon))
+        final_time = dt*60
         nsteps = int(final_time/dt)+1
         dt = final_time/nsteps
 
         print "dt", dt
         print "nsteps", nsteps
 
-        nabla = bind_nabla(discr)
         mass = bind_mass_matrix(discr)
-        m_inv = bind_inverse_mass_matrix(discr)
 
         def l2_norm(field):
             return sqrt(dot(field, mass*field))
 
-        def curl(field):
-            return cross(nabla, field)
-
-        def vis_solution():
-            dt = 0.1
-            for step in range(10):
-                t = step*dt
-                print step, t
-                mode.set_time(t)
-                fields = discr.interpolate_volume_function(r_sol)
-
-                vis("em-%04d.silo" % step,
-                        vectors=[("e", fields[0:3]), ("h", fields[3:6]), ],
-                        expressions=[
-                        ("mag_e", "magnitude(e)"),
-                        ("mag_h", "magnitude(h)"),
-                        ],
-                        write_coarse_mesh=True,
-                        time=t, step=step
-                        )
-
-        def check_pde():
-            dt = 0.1
-
-            for step in range(10):
-                t = step*dt
-                mode.set_time(t)
-                fields = discr.interpolate_volume_function(c_sol)
-
-                er = fields[0:3]
-                hr = fields[3:6]
-                ei = fields[6:9]
-                hi = fields[9:12]
-
-                vis("em-%04d.silo" % step,
-                        vectors=[
-                            ("er", er), 
-                            ("ei", ei), 
-                            ("hr", hr), 
-                            ("hi", hi), 
-                            ("curl_er", curl(er)), 
-                            ("om_hi", -mode.omega*hi), 
-                            ("curl_hr", curl(hr)), 
-                            ("om_ei", mu*epsilon*mode.omega*hi), 
-                            ],
-                        expressions=[
-                        ("diff_er", "curl_er-om_hi", DB_VARTYPE_VECTOR),
-                        ("diff_hr", "curl_hr-om_ei", DB_VARTYPE_VECTOR),
-                        ],
-                        write_coarse_mesh=True,
-                        time=t, step=step
-                        )
-                er_res = curl(er) + mode.omega*hi
-                ei_res = curl(ei) - mode.omega*hr
-                hr_res = curl(hr) - mu*epsilon*mode.omega*ei
-                hi_res = curl(hi) + mu*epsilon*mode.omega*er
-
-                print "time=%f, rel l2 residual in Re[E]=%g\tIm[E]=%g\tRe[H]=%g\tIm[H]=%g" % (
-                        t,
-                        l2_norm(er_res),#/l2_norm(er),
-                        l2_norm(ei_res),#/l2_norm(ei),
-                        l2_norm(hr_res),#/l2_norm(hr),
-                        l2_norm(hi_res),#/l2_norm(hi),
-                        )
-
-        #vis_solution()
-        #check_pde()
+        #vis_solution(discr, vis, mode, r_sol)
+        #check_time_harmonic_solution(discr, mode, c_sol)
         #continue
-
-        normal = make_normal(discr.dimensions)
-
-        n_jump = bind_flux(discr, 1/2*normal*(local-neighbor))
-        n_n_jump_tbl = [[bind_flux(discr, 1/2*normal[i]*normal[j]*(local-neighbor))
-                for i in range(discr.dimensions)]
-                for j in range(discr.dimensions)]
 
         mode.set_time(0)
         fields = discr.interpolate_volume_function(r_sol)
-
-        alpha = 1
-
-        def rhs(t, y):
-            e = fields[0:3]
-            h = fields[3:6]
-
-            bc_e = -discr.boundarize_volume_field(e)
-            bc_h = discr.boundarize_volume_field(h)
-
-            h_pair = pair_with_boundary(h, bc_h)
-            e_pair = pair_with_boundary(e, bc_e)
-
-            rhs = ArithmeticList([])
-
-            # rhs e
-            rhs.extend(curl(h)
-                    - m_inv*(
-                        cross(n_jump, h)
-                        + cross(n_jump, h_pair)
-                        - alpha*double_cross(n_n_jump_tbl, e)
-                        - alpha*double_cross(n_n_jump_tbl, e_pair)
-                        ) 
-                    )
-            # rhs h
-            rhs.extend(-curl(e)
-                    + m_inv*(
-                        cross(n_jump, e)
-                        + cross(n_jump, e_pair)
-                        + alpha*double_cross(n_n_jump_tbl, h)
-                        + alpha*double_cross(n_n_jump_tbl, h_pair)
-                        )
-            )
-            return rhs
+        op = MaxwellOperator(discr, epsilon, mu, upwind_alpha=0)
 
         stepper = RK4TimeStepper()
         from time import time
@@ -245,7 +124,7 @@ def main():
                     #time=t, step=step
                     #)
 
-            fields = stepper(fields, t, dt, rhs)
+            fields = stepper(fields, t, dt, op.rhs)
             t += dt
 
         mode.set_time(t)
