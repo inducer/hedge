@@ -53,7 +53,8 @@ class MaxwellOperator:
     def rhs(self, t, y):
         from hedge.tools import cross
         from hedge.discretization import pair_with_boundary
-        from pytools.arithmetic_container import ArithmeticList
+        from pytools.arithmetic_container import \
+                ArithmeticList, concatenate_fields
         from math import sqrt
 
         e = y[0:3]
@@ -68,13 +69,11 @@ class MaxwellOperator:
         h_pair = pair_with_boundary(h, bc_h)
         e_pair = pair_with_boundary(e, bc_e)
 
-        rhs = ArithmeticList([])
-
         Z = sqrt(self.mu/self.epsilon)
         Y = 1/Z
 
-        # rhs e
-        rhs.extend(
+        return  concatenate_fields(
+                # rhs e
                 1/self.epsilon*(
                     curl(h)
                     - (self.m_inv*(
@@ -82,10 +81,10 @@ class MaxwellOperator:
                         + cross(self.n_jump, h_pair)
                         - 1/Z*self.alpha*_double_cross(self.n_n_jump_tbl, e)
                         - 1/Z*self.alpha*_double_cross(self.n_n_jump_tbl, e_pair)
-                        ))))
-        # rhs h
-        rhs.extend(
-                1/self.mu*(
+                        )))
+                    ,
+                    # rhs h
+                    1/self.mu*(
                     - curl(e)
                     + (self.m_inv*(
                         cross(self.n_jump, e)
@@ -93,6 +92,4 @@ class MaxwellOperator:
                         + 1/Y*self.alpha*_double_cross(self.n_n_jump_tbl, h)
                         + 1/Y*self.alpha*_double_cross(self.n_n_jump_tbl, h_pair)
                         ))))
-
-        return rhs
 

@@ -47,7 +47,6 @@ def main():
             CartesianAdapter, \
             CylindricalCavityMode, \
             RectangularCavityMode
-    from pytools.arithmetic_container import ArithmeticList
     from hedge.operators import MaxwellOperator
 
     epsilon0 = 8.8541878176e-12 # C**2 / (N m**2)
@@ -103,7 +102,7 @@ def main():
 
         mode.set_time(0)
         fields = discr.interpolate_volume_function(r_sol)
-        op = MaxwellOperator(discr, epsilon, mu, upwind_alpha=0)
+        op = MaxwellOperator(discr, epsilon, mu, upwind_alpha=1)
 
         stepper = RK4TimeStepper()
         from time import time
@@ -115,14 +114,14 @@ def main():
                     time()-last_tstep)
             last_tstep = time()
 
-            #vis("cylmode-%04d.silo" % step,
-                    #vectors=[("e", fields[0:3]), 
-                        #("h", fields[3:6]), ],
-                    #expressions=[
-                        #],
-                    #write_coarse_mesh=True,
-                    #time=t, step=step
-                    #)
+            db = vis("cylmode-%04d.silo" % step,
+                    vectors=[("e", fields[0:3]), 
+                        ("h", fields[3:6]), ],
+                    expressions=[
+                        ],
+                    write_coarse_mesh=True,
+                    time=t, step=step
+                    )
 
             fields = stepper(fields, t, dt, op.rhs)
             t += dt
