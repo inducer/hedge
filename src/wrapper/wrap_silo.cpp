@@ -381,6 +381,9 @@ namespace
         return m_dbfile;
       }
 
+
+
+
       void put_zonelist(const char *name, int nzones, int ndims,
           object nodelist_py, object shapesize_py,
           object shapecounts_py)
@@ -392,6 +395,9 @@ namespace
             len(nodelist_py), 0, shapesize.data(), shapecounts.data(),
             len(shapesize_py)));
       }
+
+
+
 
       void put_ucdmesh(const char *name, int ndims,
              object coordnames_py, object coords_py, 
@@ -418,6 +424,9 @@ namespace
             datatype, optlist.get_optlist()));
       }
 
+
+
+
       void put_ucdvar1(const char *vname, const char *mname, hedge::vector &v,
              /*float *mixvar, int mixlen, */int centering,
              DBoptlistWrapper &optlist)
@@ -432,6 +441,9 @@ namespace
             datatype, centering,
             optlist.get_optlist()));
       }
+
+
+
 
       void put_ucdvar(const char *vname, const char *mname, 
           object varnames_py, object vars_py, 
@@ -476,6 +488,9 @@ namespace
             datatype, centering, optlist.get_optlist()));
       }
 
+
+
+
       void put_defvars(std::string id, object vars_py)
       {
         std::vector<std::string> varnames_container;
@@ -512,6 +527,75 @@ namespace
             varnames.data(), vartypes.data(), vardefs.data(), varopts.data()));
       }
 
+
+
+
+      void put_pointmesh(const char *id, int ndims, object coords_py,
+          DBoptlistWrapper &optlist)
+      {
+        typedef double value_type;
+        std::vector<value_type> coords;
+        int datatype = DB_DOUBLE; // FIXME: should depend on real data type
+
+        int npoints = len(coords_py)/ndims;
+
+        for (unsigned d = 0; d < ndims; d++)
+          for (unsigned i = 0; i < npoints; i++)
+            coords.push_back(extract<value_type>(coords_py[d*npoints+i]));
+
+        std::vector<float *> coord_starts;
+        for (unsigned d = 0; d < ndims; d++)
+          coord_starts.push_back((float *) (coords.data()+d*npoints));
+
+        CALL_GUARDED(DBPutPointmesh, (m_dbfile, id, 
+              ndims, coord_starts.data(), npoints, datatype, 
+              optlist.get_optlist()));
+      }
+
+
+
+
+      void put_pointvar1(const char *vname, const char *mname, 
+          hedge::vector &v,
+          DBoptlistWrapper &optlist)
+      {
+        int datatype = DB_DOUBLE; // FIXME: should depend on real data type
+
+        CALL_GUARDED(DBPutPointvar1, (m_dbfile, vname, mname,
+              (float *) traits::vector_storage(v), v.size(), datatype,
+              optlist.get_optlist()));
+      }
+
+
+
+
+      void put_pointvar(const char *vname, const char *mname, 
+          object vars_py,
+          DBoptlistWrapper &optlist)
+      {
+        int datatype = DB_DOUBLE; // FIXME: should depend on real data type
+
+        std::vector<float *> vars;
+        bool first = true;
+        unsigned vlength = 0;
+        for (unsigned i = 0; i < len(vars_py); i++)
+        {
+          hedge::vector &v = extract<hedge::vector &>(vars_py[i]);
+          if (first)
+          {
+            vlength = v.size();
+            first = false;
+          }
+          else if (vlength != v.size())
+            PYTHON_ERROR(ValueError, "field components need to have matching lengths");
+
+          vars.push_back((float *) traits::vector_storage(v));
+        }
+
+        CALL_GUARDED(DBPutPointvar, (m_dbfile, vname, mname,
+              len(vars_py), vars.data(), vlength, datatype,
+              optlist.get_optlist()));
+      }
     private:
       DBfile *m_dbfile;
   };
@@ -548,6 +632,9 @@ BOOST_PYTHON_MODULE(_silo)
       .DEF_SIMPLE_METHOD(put_ucdvar1)
       .DEF_SIMPLE_METHOD(put_ucdvar)
       .DEF_SIMPLE_METHOD(put_defvars)
+      .DEF_SIMPLE_METHOD(put_pointmesh)
+      .DEF_SIMPLE_METHOD(put_pointvar1)
+      //.DEF_SIMPLE_METHOD(put_pointvar)
       ;
   }
 
