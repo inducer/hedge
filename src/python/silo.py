@@ -72,3 +72,16 @@ class DBFile(hedge._silo.DBFile):
         """
         
         hedge._silo.DBFile.put_defvars(self, vname, vars)
+
+    def put_pointmesh(self, mname, ndims, coords, optlist={}):
+        hedge._silo.DBFile.put_pointmesh(self, mname, ndims, coords,
+                _convert_optlist(optlist))
+
+    def put_pointvar1(self, vname, mname, var, optlist={}):
+        hedge._silo.DBFile.put_pointvar1(self, vname, mname, var,
+                _convert_optlist(optlist))
+
+    def put_pointvar(self, vname, mname, vars, optlist={}):
+        hedge._silo.DBFile.put_pointvar(self, vname, mname, vars,
+                _convert_optlist(optlist))
+

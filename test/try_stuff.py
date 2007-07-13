@@ -9,7 +9,7 @@ def plot_order_3_tri_poly_components():
     plot_1d(f, -1, 1)
     plot_1d(g, -1, 1)
 
-def plot_tri_order_1_polynomials_hi_res():
+def plot_tri_polynomials_hi_res():
     import numpy
     import pylinear.array as num
     from hedge.element import TriangularElement

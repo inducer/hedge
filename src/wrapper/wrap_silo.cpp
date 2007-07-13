@@ -634,7 +634,7 @@ BOOST_PYTHON_MODULE(_silo)
       .DEF_SIMPLE_METHOD(put_defvars)
       .DEF_SIMPLE_METHOD(put_pointmesh)
       .DEF_SIMPLE_METHOD(put_pointvar1)
-      //.DEF_SIMPLE_METHOD(put_pointvar)
+      .DEF_SIMPLE_METHOD(put_pointvar)
       ;
   }
 

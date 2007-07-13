@@ -72,6 +72,14 @@ class SimplicialElement(Element):
                 -(cls.dimensions-2)/2*vertices[0]
                 )
 
+    def contains_point(self, x):
+        unit_coords = self.inverse_map(x)
+        for xi in unit_coords:
+            if xi < -1:
+                return False
+
+        return sum(unit_coords) < 0
+
 
 
 
