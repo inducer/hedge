@@ -77,7 +77,6 @@ class SimplicialElement(Element):
         for xi in unit_coords:
             if xi < -1:
                 return False
-
         return sum(unit_coords) < 0
 
 
@@ -96,7 +95,7 @@ class Triangle(SimplicialElement):
     def _reorder_vertices(self, vertex_indices, vertices):
         map = self.get_map_unit_to_global(vertices)
         vi = vertex_indices
-        if map.jacobian < 0:
+        if map.jacobian > 0:
             return [vi[0], vi[2], vi[1]]
         else:
             return vi
@@ -140,7 +139,7 @@ class Tetrahedron(SimplicialElement):
     def _reorder_vertices(self, vertex_indices, vertices):
         map = self.get_map_unit_to_global(vertices)
         vi = vertex_indices
-        if map.jacobian < 0:
+        if map.jacobian > 0:
             return [vi[0], vi[1], vi[3], vi[2]]
         else:
             return vi
@@ -511,13 +510,13 @@ def make_box_mesh(dimensions=(1,1,1), max_volume=None,
             (+d[0]/2, +d[1]/2),
             (-d[0]/2, +d[1]/2),
             ]
-    rz = [(1,0), (1,d[1])]
+    rz = [(1,0), (1,d[2])]
 
     mesh_info = MeshInfo()
     points, facets = generate_extrusion(rz, base_shape, closure=EXT_CLOSE_IN_Z)
 
     def add_d_half_to_x_and_y((x,y,z)):
-        return (x+d[0]/2, y+d[0]/2, z)
+        return (x+d[0]/2, y+d[1]/2, z)
 
     mesh_info.set_points([add_d_half_to_x_and_y(p) for p in points])
     mesh_info.set_facets(facets, [1 for i in range(len(facets))])
