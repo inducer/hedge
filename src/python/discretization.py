@@ -131,8 +131,6 @@ class Discretization:
 
         # map (el, face) tuples to their numbers within this face group
         face_number_map = {}
-        # map node index to lists of other nodes sharing its coordinates
-        node_brothers_map = {}
 
         # find and match node indices along faces
         for i, (local_face, neigh_face) in enumerate(self.mesh.both_interfaces()):
@@ -157,9 +155,6 @@ class Discretization:
                 dist = self.points[estart_l+i]-self.points[estart_n+j]
                 assert comp.norm_2(dist) < 1e-14
 
-                node_brothers_map.setdefault(estart_l+i, []).append(estart_n+j)
-                node_brothers_map.setdefault(estart_n+j, []).append(estart_l+i)
-
             fg.add_face(
                     [estart_l+i for i in findices_l],
                     [estart_n+i for i in findices_shuffled_n],
@@ -175,14 +170,6 @@ class Discretization:
                     ])
         else:
             self.face_groups = []
-
-        # set the point coordinates of all "brother" nodes exactly equal
-        # (works around visit bug)
-        for node_i, brothers in node_brothers_map.iteritems():
-            node_pt = self.points[node_i]
-            for brother_i in brothers:
-                self.points[brother_i] = node_pt
-            print node_i, brothers
         
     def _find_boundary_points_and_ranges(self):
         """assign boundary points and face ranges, for each tag separately"""

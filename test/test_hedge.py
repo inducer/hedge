@@ -1034,10 +1034,10 @@ class TestHedge(unittest.TestCase):
         u = u_l + u_u
 
         # visualize the produced field
-        from hedge.visualization import SiloVisualizer
-        vis = SiloVisualizer(discr)
-        vis("sandwich.silo", [("u_l", u_l), ("u_u", u_u)], expressions=[("u", "u_l+u_u")],
-                write_coarse_mesh=True)
+        #from hedge.visualization import SiloVisualizer
+        #vis = SiloVisualizer(discr)
+        #vis("sandwich.silo", [("u_l", u_l), ("u_u", u_u)], expressions=[("u", "u_l+u_u")],
+                #write_coarse_mesh=True)
 
         # make sure the surface integral of the difference 
         # between top and bottom is zero
