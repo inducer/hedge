@@ -40,13 +40,12 @@ def main() :
             bind_mass_matrix, \
             bind_inverse_mass_matrix, \
             pair_with_boundary
-    from hedge.visualization import \
-            VtkVisualizer, \
-            SiloVisualizer
+    from hedge.visualization import SiloVisualizer
+    from hedge.silo import SiloFile
     from pytools.arithmetic_container import ArithmeticList
     from pytools.stopwatch import Job
     from math import sin, cos, pi, exp, sqrt
-    from hedge.flux import zero, normal, jump, local, neighbor, average
+    from hedge.flux import zero, make_normal, local, neighbor, average
     from hedge.tools import Rotation, dot
 
     dim = 3
@@ -74,7 +73,7 @@ def main() :
     print "dt", dt
     print "nsteps", nsteps
 
-    normal = normal(discr.dimensions)
+    normal = make_normal(discr.dimensions)
     flux_weak = average*normal
     flux_strong = local*normal - flux_weak
 
@@ -125,11 +124,13 @@ def main() :
             source_u_vec = discr.volume_zeros()
 
         if step % 10 == 0:
-            vis("fld-%04d.silo" % step,
+            silo = SiloFile("fld-%04d.silo" % step)
+            vis.add_to_silo(silo,
                     [("u", fields[0]), ], 
                     [("v", fields[1:]), ],
                     time=t,
                     step=step)
+            silo.close()
         fields = stepper(fields, t, dt, rhs)
 
 if __name__ == "__main__":

@@ -43,7 +43,30 @@ def _convert_optlist(ol_dict):
 
 
 
-class DBFile(hedge._silo.DBFile):
+class SiloFile(hedge._silo.DBFile):
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+    def __init__(self, pathname, create=True, mode=None,
+            fileinfo="Hedge visualization",
+            target=DB_LOCAL, filetype=None):
+        if create:
+            if mode is None:
+                mode = DB_NOCLOBBER
+            if filetype is None:
+                filetype = DB_PDB
+            hedge._silo.DBFile.__init__(self, pathname, mode, target,
+                    fileinfo, filetype)
+        else:
+            if mode is None:
+                mode = DB_APPEND
+            if filetype is None:
+                filetype = DB_UNKNOWN
+            hedge._silo.DBFile.__init__(self, pathname, mode, filetype)
+
     def put_ucdmesh(self, name, ndims, coordnames, coords, 
             nzones, zonel_name, facel_name,
             optlist={}):

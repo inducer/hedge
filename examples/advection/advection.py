@@ -51,7 +51,8 @@ def main() :
             bind_inverse_mass_matrix, \
             pair_with_boundary
     from hedge.visualization import SiloVisualizer
-    from hedge.flux import zero, trace_sign, normal, jump, local, neighbor, average
+    from hedge.silo import SiloFile
+    from hedge.flux import zero, trace_sign, make_normal, local, neighbor, average
     from hedge.tools import dot
     from pytools.arithmetic_container import ArithmeticList
     from pytools.stopwatch import Job
@@ -99,8 +100,7 @@ def main() :
     stepfactor = 1
     nsteps = int(2/dt)
 
-    normal = normal(discr.dimensions)
-    jump = jump(discr.dimensions)
+    normal = make_normal(discr.dimensions)
 
     flux_weak = dot(normal, a) * average# - 0.5 *(local-neighbor)
     flux_strong = dot(normal, a)*local - flux_weak
@@ -150,15 +150,16 @@ def main() :
         #u_true = discr.interpolate_volume_function(
                 #lambda x: u_analytic(t, x))
 
-        vis("fld-%04d.silo" % step,
-                [
+        silo = SiloFile("fld-%04d.silo" % step)
+        vis.add_to_silo(silo, [
                     ("u", u), 
                     #("u_true", u_true), 
                     ], 
-                #expressions=[("error", "u-u_true")]
-                time=t, 
-                step=step
-                )
+                    #expressions=[("error", "u-u_true")]
+                    time=t, 
+                    step=step
+                    )
+        silo.close()
 
 if __name__ == "__main__":
     import cProfile as profile

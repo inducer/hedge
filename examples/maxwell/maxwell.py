@@ -36,12 +36,12 @@ def main():
             bind_inverse_mass_matrix, \
             pair_with_boundary
     from hedge.visualization import SiloVisualizer
+    from hedge.silo import SiloFile
     from hedge.silo import DB_VARTYPE_VECTOR
     from hedge.tools import dot, cross, EOCRecorder
     from math import sqrt, pi
     from analytic_solutions import \
             check_time_harmonic_solution, \
-            vis_solution, \
             RealPartAdapter, \
             SplitComplexAdapter, \
             CartesianAdapter, \
@@ -96,7 +96,6 @@ def main():
         def l2_norm(field):
             return sqrt(dot(field, mass*field))
 
-        #vis_solution(discr, vis, mode, r_sol)
         #check_time_harmonic_solution(discr, mode, c_sol)
         #continue
 
@@ -114,7 +113,8 @@ def main():
                     time()-last_tstep)
             last_tstep = time()
 
-            db = vis("cylmode-%04d.silo" % step,
+            silo = SiloFile("em-%04d.silo" % step)
+            vis.add_to_silo(silo,
                     vectors=[("e", fields[0:3]), 
                         ("h", fields[3:6]), ],
                     expressions=[
@@ -129,21 +129,6 @@ def main():
         mode.set_time(t)
         true_fields = discr.interpolate_volume_function(r_sol)
         eoc_rec.add_data_point(order, l2_norm(fields-true_fields))
-
-        vis("em-%04d.silo" % order,
-                vectors=[
-                    ("e", fields[0:3]), 
-                    ("h", fields[3:6]), 
-                    ("etrue", true_fields[0:3]), 
-                    ("htrue", true_fields[3:6]), 
-                    ],
-                expressions=[
-                    ("eerr", "e-etrue", DB_VARTYPE_VECTOR),
-                    ("herr", "h-htrue", DB_VARTYPE_VECTOR),
-                    ],
-                write_coarse_mesh=True,
-                time=t, step=step
-                )
 
         print
         print eoc_rec.pretty_print("P.Deg.", "L2 Error")

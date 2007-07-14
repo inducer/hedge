@@ -83,12 +83,12 @@ class SiloMeshData:
                 self.nshapetypes += 1
                 self.nzones += len(polygons)
 
-    def put_mesh(self, db, zonelist_name, mesh_name, mesh_opts):
+    def put_mesh(self, silo, zonelist_name, mesh_name, mesh_opts):
         # put zone list
-        db.put_zonelist(zonelist_name, self.nzones, self.ndims, self.nodelist,
+        silo.put_zonelist(zonelist_name, self.nzones, self.ndims, self.nodelist,
                 self.shapesizes, self.shapecounts)
 
-        db.put_ucdmesh(mesh_name, self.ndims, [], self.coords, self.nzones,
+        silo.put_ucdmesh(mesh_name, self.ndims, [], self.coords, self.nzones,
                 zonelist_name, None, mesh_opts)
 
 
@@ -117,13 +117,9 @@ class SiloVisualizer:
         self.fine_mesh = SiloMeshData(dim, discr.points, generate_fine_element_groups())
         self.coarse_mesh = SiloMeshData(dim, discr.mesh.points, generate_coarse_element_groups())
 
-    def __call__(self, filename, fields=[], vectors=[], expressions=[],
-            description="Hedge visualization", time=None, step=None,
-            write_coarse_mesh=False):
-        from hedge.silo import DBFile, \
-                DB_CLOBBER, DB_LOCAL, DB_PDB, DB_NODECENT, \
-                DBOPT_DTIME, DBOPT_CYCLE
-        db = DBFile(filename, DB_CLOBBER, DB_LOCAL, description, DB_PDB)
+    def add_to_silo(self, silo, fields=[], vectors=[], expressions=[],
+            time=None, step=None, write_coarse_mesh=False):
+        from hedge.silo import DB_NODECENT, DBOPT_DTIME, DBOPT_CYCLE
 
         # put mesh coordinates
         mesh_opts = {}
@@ -132,18 +128,17 @@ class SiloVisualizer:
         if step is not None:
             mesh_opts[DBOPT_CYCLE] = int(step)
 
-        self.fine_mesh.put_mesh(db, "finezonelist", "finemesh", mesh_opts)
+        self.fine_mesh.put_mesh(silo, "finezonelist", "finemesh", mesh_opts)
         if write_coarse_mesh:
-            self.coarse_mesh.put_mesh(db, "coarsezonelist", "mesh", mesh_opts)
+            self.coarse_mesh.put_mesh(silo, "coarsezonelist", "mesh", mesh_opts)
 
         # put data
         for name, field in fields:
-            db.put_ucdvar1(name, "finemesh", field, DB_NODECENT)
+            silo.put_ucdvar1(name, "finemesh", field, DB_NODECENT)
         for name, vec in vectors:
-            db.put_ucdvar(name, "finemesh", 
+            silo.put_ucdvar(name, "finemesh", 
                     ["%s_comp%d" % (name, i) for i in range(len(vec))],
                     vec, DB_NODECENT)
         if expressions:
-            db.put_defvars("defvars", expressions)
-        return db
+            silo.put_defvars("defvars", expressions)
 

@@ -254,30 +254,10 @@ class RectangularCavityMode(RectangularWaveguideMode):
 
 
 # analytic solution tools -----------------------------------------------------
-def vis_solution(discr, vis, mode, r_sol):
-    dt = 0.1
-    for step in range(10):
-        t = step*dt
-        print step, t
-        mode.set_time(t)
-        fields = discr.interpolate_volume_function(r_sol)
-
-        vis("em-%04d.silo" % step,
-                vectors=[("e", fields[0:3]), ("h", fields[3:6]), ],
-                expressions=[
-                ("mag_e", "magnitude(e)"),
-                ("mag_h", "magnitude(h)"),
-                ],
-                write_coarse_mesh=True,
-                time=t, step=step
-                )
-
-
-
-
 def check_time_harmonic_solution(discr, mode, c_sol):
     from hedge.discretization import bind_nabla, bind_mass_matrix
     from hedge.visualization import SiloVisualizer
+    from hedge.silo import SiloFile
     from hedge.tools import dot, cross
     from hedge.silo import DB_VARTYPE_VECTOR
 
@@ -315,7 +295,8 @@ def check_time_harmonic_solution(discr, mode, c_sol):
         ei = fields[6:9]
         hi = fields[9:12]
 
-        vis("em-%04d.silo" % step,
+        silo = SiloFile("em-complex-%04d.silo" % step)
+        vis.add_to_silo(silo,
                 vectors=[
                     ("curl_er", curl(er)), 
                     ("om_hi", -mode.mu*mode.omega*hi), 

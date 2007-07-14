@@ -355,29 +355,55 @@ namespace
 
   };
 
+
+
+
+#define ENSURE_DB_OPEN \
+  if (!m_db_is_open) \
+    throw std::runtime_error("silo db is already closed");
+
+
+
+
   class DBfileWrapper : boost::noncopyable
   {
     public:
       DBfileWrapper(const char *name, int target, int mode)
-        : m_dbfile(DBOpen(name, target, mode))
+        : m_db_is_open(false),
+        m_dbfile(DBOpen(name, target, mode))
       { 
         if (m_dbfile == NULL)
           throw std::runtime_error("DBOpen failed");
+        m_db_is_open = true;
       }
+
       DBfileWrapper(const char *name, int mode, int target, const char *info, int type)
-        : m_dbfile(DBCreate(name, mode, target, info, type))
+        : m_db_is_open(false),
+        m_dbfile(DBCreate(name, mode, target, info, type))
       { 
         if (m_dbfile == NULL)
           throw std::runtime_error("DBCreate failed");
+        m_db_is_open = true;
       }
 
       ~DBfileWrapper()
       {
-        CALL_GUARDED(DBClose, (m_dbfile));
+        if (m_db_is_open)
+          close();
       }
+
+      void close()
+      {
+        ENSURE_DB_OPEN;
+        CALL_GUARDED(DBClose, (m_dbfile));
+        m_db_is_open = false;
+      }
+
+
 
       operator DBfile *()
       {
+        ENSURE_DB_OPEN;
         return m_dbfile;
       }
 
@@ -388,6 +414,8 @@ namespace
           object nodelist_py, object shapesize_py,
           object shapecounts_py)
       {
+        ENSURE_DB_OPEN;
+
         CONVERT_INT_LIST(nodelist);
         CONVERT_INT_LIST(shapesize);
         CONVERT_INT_LIST(shapecounts);
@@ -404,6 +432,8 @@ namespace
              int nzones, const char *zonel_name, const char *facel_name,
              DBoptlistWrapper &optlist)
       {
+        ENSURE_DB_OPEN;
+
         typedef double value_type;
         int datatype = DB_DOUBLE;
 
@@ -431,6 +461,8 @@ namespace
              /*float *mixvar, int mixlen, */int centering,
              DBoptlistWrapper &optlist)
       {
+        ENSURE_DB_OPEN;
+
         typedef hedge::vector::value_type value_type;
         int datatype = DB_DOUBLE; // FIXME: should depend on real data type
 
@@ -451,6 +483,8 @@ namespace
           int centering, 
           DBoptlistWrapper &optlist)
       {
+        ENSURE_DB_OPEN;
+
         typedef hedge::vector::value_type value_type;
         int datatype = DB_DOUBLE; // FIXME: should depend on real data type
 
@@ -493,6 +527,8 @@ namespace
 
       void put_defvars(std::string id, object vars_py)
       {
+        ENSURE_DB_OPEN;
+
         std::vector<std::string> varnames_container;
         std::vector<const char *> varnames;
         std::vector<std::string> vardefs_container;
@@ -533,6 +569,8 @@ namespace
       void put_pointmesh(const char *id, int ndims, object coords_py,
           DBoptlistWrapper &optlist)
       {
+        ENSURE_DB_OPEN;
+
         typedef double value_type;
         std::vector<value_type> coords;
         int datatype = DB_DOUBLE; // FIXME: should depend on real data type
@@ -559,6 +597,8 @@ namespace
           hedge::vector &v,
           DBoptlistWrapper &optlist)
       {
+        ENSURE_DB_OPEN;
+
         int datatype = DB_DOUBLE; // FIXME: should depend on real data type
 
         CALL_GUARDED(DBPutPointvar1, (m_dbfile, vname, mname,
@@ -573,6 +613,8 @@ namespace
           object vars_py,
           DBoptlistWrapper &optlist)
       {
+        ENSURE_DB_OPEN;
+
         int datatype = DB_DOUBLE; // FIXME: should depend on real data type
 
         std::vector<float *> vars;
@@ -597,6 +639,7 @@ namespace
               optlist.get_optlist()));
       }
     private:
+      bool m_db_is_open;
       DBfile *m_dbfile;
   };
 
@@ -627,6 +670,7 @@ BOOST_PYTHON_MODULE(_silo)
     typedef DBfileWrapper cl;
     class_<cl, boost::noncopyable>("DBFile", init<const char *, int, int>())
       .def(init<const char *, int, int, const char *, int>())
+      .DEF_SIMPLE_METHOD(close)
       .DEF_SIMPLE_METHOD(put_zonelist)
       .DEF_SIMPLE_METHOD(put_ucdmesh)
       .DEF_SIMPLE_METHOD(put_ucdvar1)
