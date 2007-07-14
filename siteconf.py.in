@@ -9,23 +9,22 @@ HEDGE_CONF_TEMPLATE_VERSION = 3
 # Path options
 # --------------------------------------------------------------------
 
-BOOST_INCLUDE_DIRS = []
-BOOST_LIBRARY_DIRS = [] 
-BPL_LIBRARIES = ["boost_python-gcc41-mt"]
+BOOST_INCLUDE_DIRS = [$str{BOOST_INC_DIR}]
+BOOST_LIBRARY_DIRS = [$str{BOOST_LIB_DIR}] 
+BPL_LIBRARIES = [$str{BOOST_PYTHON_LIBNAME}]
 
-BOOST_MATH_TOOLKIT_INCLUDE_DIRS = ["/home/andreas/work/boost-math-toolkit"]
+BOOST_MATH_TOOLKIT_INCLUDE_DIRS = [$str{BOOST_MATH_TOOLKIT_INC_DIR}]
 
-BOOST_BINDINGS_INCLUDE_DIRS = ["/home/andreas/work/boost-sandbox"]
+BOOST_BINDINGS_INCLUDE_DIRS = [$str{BOOST_BINDINGS_INC_DIR}]
 
-USE_SILO = True
+USE_SILO = ${USE_SILO}
 
-SILO_INCLUDE_DIRS = ["/home/andreas/pool/include"]
-SILO_LIBRARY_DIRS = ["/home/andreas/pool/lib"]
+SILO_INCLUDE_DIRS = [$str{SILO_INC_DIR}]
+SILO_LIBRARY_DIRS = [$str{SILO_LIB_DIR}]
 SILO_LIBRARIES = ["silo"]
 
 # --------------------------------------------------------------------
 # Compiler flags
 # --------------------------------------------------------------------
-#EXTRA_COMPILE_ARGS = ["-fmessage-length=0", "-Wno-sign-compare"]
-EXTRA_COMPILE_ARGS = ["-Wno-sign-compare"]
+EXTRA_COMPILE_ARGS = [$str{CXXFLAGS}]
 

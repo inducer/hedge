@@ -11,3 +11,4 @@ doc/hedge-notes.pdf
 *.session
 dump.py
 *.orig
+Makefile
