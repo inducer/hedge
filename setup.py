@@ -110,5 +110,6 @@ setup(name="hedge",
       packages=["hedge"],
       package_dir={"hedge": "src/python"},
       ext_package="hedge",
-      ext_modules=ext_modules
+      ext_modules=ext_modules,
+      data_files=[("include/hedge", glob.glob("src/cpp/*.hpp"))],
      )
