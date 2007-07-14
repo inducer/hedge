@@ -77,7 +77,7 @@ class SimplicialElement(Element):
         for xi in unit_coords:
             if xi < -1:
                 return False
-        return sum(unit_coords) < 0
+        return sum(unit_coords) < -(self.dimensions-2)
 
 
 
