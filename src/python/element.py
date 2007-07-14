@@ -376,6 +376,7 @@ class TriangularElement(SimplicialElement):
         return result
 
     # basis functions ---------------------------------------------------------
+    @memoize
     def basis_functions(self):
         """Get a sequence of functions that form a basis
         of the function space spanned by
@@ -638,6 +639,7 @@ class TetrahedralElement(SimplicialElement):
         return result
 
     # basis functions ---------------------------------------------------------
+    @memoize
     def basis_functions(self):
         """Get a sequence of functions that form a basis
         of the function space spanned by

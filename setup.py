@@ -70,6 +70,7 @@ handle_component("SILO")
 ext_modules=[
         Extension("_internal", 
             ["src/wrapper/wrap_main.cpp", 
+                "src/wrapper/wrap_base.cpp", 
                 "src/wrapper/wrap_special_function.cpp", 
                 "src/wrapper/wrap_flux.cpp", 
                 "src/wrapper/wrap_op_target.cpp", 
