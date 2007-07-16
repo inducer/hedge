@@ -38,7 +38,7 @@ namespace
   {
     if (i < 0)
       i += er.size();
-    if (i < 0 || i >= er.size())
+    if (i < 0 || i >= int(er.size()))
       PYTHON_ERROR(IndexError, "element_ranges index out of bounds");
 
     const element_ranges::element_range &erng = er[i];

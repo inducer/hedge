@@ -25,16 +25,14 @@ import sys
 try:
     execfile("siteconf.py")
 except IOError:
-    print "*** Please copy siteconf-template.py to siteconf.py,"
-    print "*** then edit siteconf.py to match your environment."
+    print "*** Please run configure first."
     sys.exit(1)
 
 from distutils.core import setup,Extension
 
 def non_matching_config():
     print "*** The version of your configuration template does not match"
-    print "*** the version of the setup script. Please copy siteconf-template.py"
-    print "*** over siteconf.py and re-customize it to your environment."
+    print "*** the version of the setup script. Please re-run configure."
     sys.exit(1)
 
 try:

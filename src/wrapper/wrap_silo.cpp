@@ -273,7 +273,7 @@ namespace
 
 #define CONVERT_INT_LIST(NAME) \
   std::vector<int> NAME; \
-  for (unsigned i = 0; i < len(NAME##_py); i++) \
+  for (unsigned i = 0; i < unsigned(len(NAME##_py)); i++) \
       NAME.push_back(extract<int>(NAME##_py[i]));
 
   class DBoptlistWrapper : boost::noncopyable
@@ -439,12 +439,12 @@ namespace
 
         int nnodes = len(coords_py)/ndims;
         std::vector<value_type> coords;
-        for (unsigned d = 0; d < ndims; d++)
-          for (unsigned i = 0; i < nnodes; i++)
+        for (unsigned d = 0; d < unsigned(ndims); d++)
+          for (unsigned i = 0; i < unsigned(nnodes); i++)
             coords.push_back(extract<value_type>(coords_py[d*nnodes+i]));
 
         std::vector<value_type *> coord_starts;
-        for (unsigned d = 0; d < ndims; d++)
+        for (unsigned d = 0; d < unsigned(ndims); d++)
           coord_starts.push_back(coords.data()+d*nnodes);
 
         CALL_GUARDED(DBPutUcdmesh, (m_dbfile, name, ndims, 
@@ -493,16 +493,16 @@ namespace
 
         std::vector<std::string> varnames_container;
         std::vector<const char *> varnames;
-        for (unsigned i = 0; i < len(varnames_py); i++)
+        for (unsigned i = 0; i < unsigned(len(varnames_py)); i++)
           varnames_container.push_back(
               extract<std::string>(varnames_py[i]));
-        for (unsigned i = 0; i < len(varnames_py); i++)
+        for (unsigned i = 0; i < unsigned(len(varnames_py)); i++)
           varnames.push_back(varnames_container[i].data());
 
         std::vector<float *> vars;
         bool first = true;
         unsigned vlength = 0;
-        for (unsigned i = 0; i < len(vars_py); i++)
+        for (unsigned i = 0; i < unsigned(len(vars_py)); i++)
         {
           hedge::vector &v = extract<hedge::vector &>(vars_py[i]);
           if (first)
@@ -536,7 +536,7 @@ namespace
         std::vector<int> vartypes;
         std::vector<DBoptlist *> varopts;
 
-        for (unsigned i = 0; i < len(vars_py); i++)
+        for (unsigned i = 0; i < unsigned(len(vars_py)); i++)
         {
           object entry = vars_py[i];
           varnames_container.push_back(extract<std::string>(entry[0]));
@@ -553,7 +553,7 @@ namespace
           }
         }
 
-        for (unsigned i = 0; i < len(vars_py); i++)
+        for (unsigned i = 0; i < unsigned(len(vars_py)); i++)
         {
           varnames.push_back(varnames_container[i].data());
           vardefs.push_back(vardefs_container[i].data());
@@ -577,12 +577,12 @@ namespace
 
         int npoints = len(coords_py)/ndims;
 
-        for (unsigned d = 0; d < ndims; d++)
-          for (unsigned i = 0; i < npoints; i++)
+        for (unsigned d = 0; d < unsigned(ndims); d++)
+          for (unsigned i = 0; i < unsigned(npoints); i++)
             coords.push_back(extract<value_type>(coords_py[d*npoints+i]));
 
         std::vector<float *> coord_starts;
-        for (unsigned d = 0; d < ndims; d++)
+        for (unsigned d = 0; d < unsigned(ndims); d++)
           coord_starts.push_back((float *) (coords.data()+d*npoints));
 
         CALL_GUARDED(DBPutPointmesh, (m_dbfile, id, 
@@ -620,7 +620,7 @@ namespace
         std::vector<float *> vars;
         bool first = true;
         unsigned vlength = 0;
-        for (unsigned i = 0; i < len(vars_py); i++)
+        for (unsigned i = 0; i < unsigned(len(vars_py)); i++)
         {
           hedge::vector &v = extract<hedge::vector &>(vars_py[i]);
           if (first)

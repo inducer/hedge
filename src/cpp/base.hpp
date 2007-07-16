@@ -40,6 +40,9 @@ namespace hedge {
       vector m_vector;
       double m_jacobian;
 
+      affine_map()
+      { }
+
       affine_map(const matrix &mat, const vector &vec, const double &jac)
         : m_matrix(mat), m_vector(vec), m_jacobian(jac)
       { }

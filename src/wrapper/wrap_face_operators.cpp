@@ -45,9 +45,9 @@ namespace
   {
     face_group::index_list my_ind, opp_ind;
 
-    for (unsigned i = 0; i < len(my_ind_py); i++)
+    for (unsigned i = 0; i < unsigned(len(my_ind_py)); i++)
       my_ind.push_back(extract<unsigned>(my_ind_py[i]));
-    for (unsigned i = 0; i < len(my_ind_py); i++)
+    for (unsigned i = 0; i < unsigned(len(my_ind_py)); i++)
       opp_ind.push_back(extract<unsigned>(opp_ind_py[i]));
 
     fg.add_face(my_ind, opp_ind, face);
@@ -57,7 +57,7 @@ namespace
   {
     face_group::connection_list cnx_list;
 
-    for (unsigned i = 0; i < len(cnx_list_py); i++)
+    for (unsigned i = 0; i < unsigned(len(cnx_list_py)); i++)
       cnx_list.push_back(extract_pair<unsigned, unsigned>(cnx_list_py[i]));
 
     fg.connect_faces(cnx_list);
