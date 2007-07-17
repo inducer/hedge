@@ -33,7 +33,7 @@ class VtkVisualizer:
     def __init__(self, discr):
         from pyvtk import PolyData
 
-        points = [_three_vector(p) for p in discr.points]
+        points = [_three_vector(p) for p in discr.nodes]
         polygons = []
 
         for eg in discr.element_groups:
@@ -114,7 +114,7 @@ class SiloVisualizer:
                 yield generate_coarse_elements(eg)
 
         dim = discr.dimensions
-        self.fine_mesh = SiloMeshData(dim, discr.points, generate_fine_element_groups())
+        self.fine_mesh = SiloMeshData(dim, discr.nodes, generate_fine_element_groups())
         self.coarse_mesh = SiloMeshData(dim, discr.mesh.points, generate_coarse_element_groups())
 
     def add_to_silo(self, silo, fields=[], vectors=[], expressions=[],

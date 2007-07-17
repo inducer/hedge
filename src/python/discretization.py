@@ -400,7 +400,7 @@ class Discretization:
         return 1/max_system_ev \
                 * min(ldis.dt_non_geometric_factor() for ldis in distinct_ldis) \
                 * min(min(eg.local_discretization.dt_geometric_factor(
-                    [self.mesh.nodes[i] for i in el.vertex_indices], el)
+                    [self.mesh.points[i] for i in el.vertex_indices], el)
                     for el in eg.members)
                     for eg in self.element_groups)
 
