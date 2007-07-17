@@ -51,16 +51,16 @@ class Discretization:
         self.mesh = mesh
         self.dimensions = local_discretization.dimensions
 
-        self._build_element_groups_and_points(local_discretization)
+        self._build_element_groups_and_nodes(local_discretization)
         self._calculate_local_matrices()
         self._find_face_data()
         self._build_face_groups()
-        self._find_boundary_points_and_ranges()
+        self._find_boundary_nodes_and_ranges()
         self._find_boundary_groups()
 
     # initialization ----------------------------------------------------------
-    def _build_element_groups_and_points(self, local_discretization):
-        self.points = []
+    def _build_element_groups_and_nodes(self, local_discretization):
+        self.nodes = []
         from hedge._internal import ElementRanges
 
         eg = _ElementGroup()
@@ -69,9 +69,9 @@ class Discretization:
         eg.ranges = ElementRanges(0)
 
         for el in self.mesh.elements:
-            e_start = len(self.points)
-            self.points += [el.map(node) for node in ldis.unit_nodes()]
-            eg.ranges.append_range(e_start, len(self.points))
+            e_start = len(self.nodes)
+            self.nodes += [el.map(node) for node in ldis.unit_nodes()]
+            eg.ranges.append_range(e_start, len(self.nodes))
 
         self.group_map = [(eg, i) for i in range(len(self.mesh.elements))]
         self.element_groups = [eg]
@@ -152,7 +152,7 @@ class Discretization:
                     vertices_l, vertices_n, findices_n)
 
             for i, j in zip(findices_l, findices_shuffled_n):
-                dist = self.points[estart_l+i]-self.points[estart_n+j]
+                dist = self.nodes[estart_l+i]-self.nodes[estart_n+j]
                 assert comp.norm_2(dist) < 1e-14
 
             fg.add_face(
@@ -171,16 +171,16 @@ class Discretization:
         else:
             self.face_groups = []
         
-    def _find_boundary_points_and_ranges(self):
-        """assign boundary points and face ranges, for each tag separately"""
-        self.boundary_points = {}
+    def _find_boundary_nodes_and_ranges(self):
+        """assign boundary nodes and face ranges, for each tag separately"""
+        self.boundary_nodes = {}
         self.boundary_ranges = {}
         self.boundary_index_subsets = {}
 
         from hedge._internal import IndexSubset
 
         for tag, els_faces in self.mesh.tag_to_boundary.iteritems():
-            tag_points = []
+            tag_nodes = []
             tag_face_ranges = {}
             tag_index_subset = IndexSubset()
             point_idx = 0
@@ -191,14 +191,14 @@ class Discretization:
                 (el_start, el_end), ldis = self.find_el_data(el.id)
                 face_indices = ldis.face_indices()[face]
 
-                f_start = len(tag_points)
-                tag_points += [self.points[el_start+i] for i in face_indices]
-                tag_face_ranges[ef] = (f_start, len(tag_points))
+                f_start = len(tag_nodes)
+                tag_nodes += [self.nodes[el_start+i] for i in face_indices]
+                tag_face_ranges[ef] = (f_start, len(tag_nodes))
                 for i in face_indices:
                     tag_index_subset.add_index(point_idx, el_start+i)
                     point_idx += 1
 
-            self.boundary_points[tag] = tag_points
+            self.boundary_nodes[tag] = tag_nodes
             self.boundary_ranges[tag] = tag_face_ranges
             self.boundary_index_subsets[tag] = tag_index_subset
 
@@ -224,7 +224,7 @@ class Discretization:
                         
     # vector construction -----------------------------------------------------
     def volume_zeros(self):
-        return num.zeros((len(self.points),))
+        return num.zeros((len(self.nodes),))
 
     def interpolate_volume_function(self, f):
         try:
@@ -238,12 +238,12 @@ class Discretization:
             from pytools.arithmetic_container import ArithmeticList
             result = ArithmeticList([self.volume_zeros() for i in range(count)])
 
-            for point_nr, x in enumerate(self.points):
+            for point_nr, x in enumerate(self.nodes):
                 for field_nr, value in enumerate(f(x)):
                     result[field_nr][point_nr] = value
             return result
         else:
-            return num.array([f(x) for x in self.points])
+            return num.array([f(x) for x in self.nodes])
 
     def interpolate_tag_volume_function(self, f, tag=None):
         try:
@@ -259,23 +259,23 @@ class Discretization:
 
             for el in self.mesh.tag_to_elements[tag]:
                 e_start, e_end = self.find_el_range(el.id)
-                for i, pt in enumerate(self.points[e_start:e_end]):
+                for i, pt in enumerate(self.nodes[e_start:e_end]):
                     for field_nr, value in enumerate(f(pt)):
                         result[field_nr][e_start+i] = value
         else:
             result = self.volume_zeros()
             for el in self.mesh.tag_to_elements[tag]:
                 e_start, e_end = self.find_el_range(el.id)
-                for i, pt in enumerate(self.points[e_start:e_end]):
+                for i, pt in enumerate(self.nodes[e_start:e_end]):
                     result[e_start+i] = f(pt)
 
         return result
 
     def boundary_zeros(self, tag=None):
-        return num.zeros((len(self.boundary_points[tag]),))
+        return num.zeros((len(self.boundary_nodes[tag]),))
 
     def interpolate_boundary_function(self, f, tag=None):
-        return num.array([f(x) for x in self.boundary_points[tag]])
+        return num.array([f(x) for x in self.boundary_nodes[tag]])
 
     # element data retrieval --------------------------------------------------
     def find_el_range(self, el_id):
@@ -292,7 +292,7 @@ class Discretization:
     # local operators ---------------------------------------------------------
     def perform_mass_operator(self, target):
         from hedge._internal import perform_elwise_scaled_operator
-        target.begin(len(self.points), len(self.points))
+        target.begin(len(self.nodes), len(self.nodes))
         for eg in self.element_groups:
             perform_elwise_scaled_operator(
                     eg.ranges, eg.jacobians, eg.mass_matrix, target)
@@ -307,7 +307,7 @@ class Discretization:
 
     def perform_inverse_mass_operator(self, target):
         from hedge._internal import perform_elwise_scaled_operator
-        target.begin(len(self.points), len(self.points))
+        target.begin(len(self.nodes), len(self.nodes))
         for eg in self.element_groups:
             perform_elwise_scaled_operator(eg.ranges, 
                    eg.inverse_jacobians, eg.inverse_mass_matrix, 
@@ -324,7 +324,7 @@ class Discretization:
     def perform_differentiation_operator(self, coordinate, target):
         from hedge._internal import perform_elwise_scaled_operator
 
-        target.begin(len(self.points), len(self.points))
+        target.begin(len(self.nodes), len(self.nodes))
 
         for eg in self.element_groups:
             for coeff, mat in zip(eg.diff_coefficients[coordinate], 
@@ -335,7 +335,7 @@ class Discretization:
 
     def perform_minv_st_operator(self, coordinate, target):
         from hedge._internal import perform_elwise_scaled_operator
-        target.begin(len(self.points), len(self.points))
+        target.begin(len(self.nodes), len(self.nodes))
         for eg in self.element_groups:
             for coeff, mat in zip(eg.diff_coefficients[coordinate], eg.minv_st):
                 perform_elwise_scaled_operator(eg.ranges, coeff, mat, target)
@@ -362,7 +362,7 @@ class Discretization:
 
         result = num.zeros_like(field)
         target = VectorTarget(field, result)
-        target.begin(len(self.points), len(self.points))
+        target.begin(len(self.nodes), len(self.nodes))
         for fg, fmm in self.face_groups:
             perform_both_fluxes_operator(fg, fmm, ChainedFlux(flux), target)
         target.finalize()
@@ -381,13 +381,13 @@ class Discretization:
         result = num.zeros_like(field)
 
         target_local = VectorTarget(field, result)
-        target_local.begin(len(self.points), len(self.points))
+        target_local.begin(len(self.nodes), len(self.nodes))
         for fg, fmm in self.boundary_groups[tag]:
             perform_local_flux_operator(fg, fmm, ch_flux, target_local)
         target_local.finalize()
 
         target_bdry = VectorTarget(bfield, result)
-        target_bdry.begin(len(self.points), len(self.boundary_points[tag]))
+        target_bdry.begin(len(self.nodes), len(self.boundary_nodes[tag]))
         for fg, fmm in self.boundary_groups[tag]:
             perform_neighbor_flux_operator(fg, fmm, ch_flux, target_bdry)
         target_bdry.finalize()
@@ -400,7 +400,7 @@ class Discretization:
         return 1/max_system_ev \
                 * min(ldis.dt_non_geometric_factor() for ldis in distinct_ldis) \
                 * min(min(eg.local_discretization.dt_geometric_factor(
-                    [self.mesh.points[i] for i in el.vertex_indices], el)
+                    [self.mesh.nodes[i] for i in el.vertex_indices], el)
                     for el in eg.members)
                     for eg in self.element_groups)
 
@@ -413,7 +413,7 @@ class Discretization:
         result = self.volume_zeros(tag)
 
         target = VectorTarget(bfield, result)
-        target.begin(len(self.points), len(self.boundary_points[tag]))
+        target.begin(len(self.nodes), len(self.boundary_nodes[tag]))
         perform_expansion(self.boundary_index_subsets[tag], target)
         target.finalize()
 
@@ -428,7 +428,7 @@ class Discretization:
         result = self.boundary_zeros(tag)
 
         target = VectorTarget(field, result)
-        target.begin(len(self.boundary_points[tag]), len(self.points))
+        target.begin(len(self.boundary_nodes[tag]), len(self.nodes))
         perform_restriction(self.boundary_index_subsets[tag], target)
         target.finalize()
 
@@ -467,14 +467,14 @@ class SymmetryMap:
                 mapped_i_el = complete_el_map[el.id]
                 mapped_start, mapped_stop = discr.find_el_range(mapped_i_el)
                 for i_pt in range(el_start, el_stop):
-                    pt = discr.points[i_pt]
+                    pt = discr.nodes[i_pt]
                     mapped_pt = sym_map(pt)
                     for m_i_pt in range(mapped_start, mapped_stop):
-                        if comp.norm_2(discr.points[m_i_pt] - mapped_pt) < threshold:
+                        if comp.norm_2(discr.nodes[m_i_pt] - mapped_pt) < threshold:
                             self.map[m_i_pt] = i_pt
                             break
 
-        for i in range(len(discr.points)):
+        for i in range(len(discr.nodes)):
             assert i in self.map
 
     def __call__(self, vec):
