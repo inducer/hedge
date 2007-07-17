@@ -47,7 +47,7 @@ namespace hedge {
         : m_matrix(mat), m_vector(vec), m_jacobian(jac)
       { }
 
-      vector operator()(const vector &op)
+      vector operator()(const vector &op) const
       {
         return prod(m_matrix, op) + m_vector;
       }
