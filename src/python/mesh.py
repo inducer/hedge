@@ -39,9 +39,6 @@ class Element(object):
         self.face_normals, self.face_jacobians = \
                 self.face_normals_and_jacobians(self.map)
 
-    def set_tag(self, tag):
-        self.tag = tag
-
     def _reorder_vertices(self, vertex_indices, vertices):
         return vertex_indices
 
@@ -200,8 +197,12 @@ class Mesh:
       per element pair.
     - tag_to_boundary: a mapping of the form
       boundary_tag -> [(element instance, face index)])
+
+      The boundary tag None always refers to the entire boundary.
     - tag_to_elements: a mapping of the form
       element_tag -> [element instances]
+
+      The boundary tag None always refers to the entire domain.
     """
 
     def both_interfaces(self):
@@ -255,13 +256,14 @@ class ConformalMesh(Mesh):
             for id, vert_indices in enumerate(elements)]
 
         # tag elements
-        self.tag_to_elements = {}
+        self.tag_to_elements = {None: []}
         for el in self.elements:
             el_tag = element_tagger(el)
-            el.set_tag(el_tag)
-            self.tag_to_elements.setdefault(el.tag, []).append(el)
+            if el_tag is not None:
+                self.tag_to_elements.setdefault(el_tag, []).append(el)
+            self.tag_to_elements[None].append(el)
         
-        # build connectiviety
+        # build connectivity
         self._build_connectivity(boundary_tagger)
 
     def transform(self, map):
@@ -269,7 +271,8 @@ class ConformalMesh(Mesh):
 
     def _build_connectivity(self, boundary_tagger):
         # create face_map, which is a mapping of
-        # (vertices on a face) -> [(element, face_idx) for elements bordering that face]
+        # (vertices on a face) -> 
+        #  [(element, face_idx) for elements bordering that face]
         face_map = {}
         for el in self.elements:
             for fid, face_vertices in enumerate(el.faces):
@@ -277,15 +280,17 @@ class ConformalMesh(Mesh):
 
         # build connectivity structures
         self.interfaces = []
-        self.tag_to_boundary = {}
+        self.tag_to_boundary = {None: []}
         for face_vertices, els_faces in face_map.iteritems():
             if len(els_faces) == 2:
                 self.interfaces.append(els_faces)
             elif len(els_faces) == 1:
                 el, face = els_faces[0]
                 btag = boundary_tagger(face_vertices, el, face)
-                self.tag_to_boundary.setdefault(btag, [])\
-                        .append(els_faces[0])
+                if btag is not None:
+                    self.tag_to_boundary.setdefault(btag, []) \
+                            .append(els_faces[0])
+                self.tag_to_boundary[None].append(els_faces[0])
             else:
                 raise RuntimeError, "face can at most border two elements"
 
