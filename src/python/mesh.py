@@ -465,7 +465,7 @@ def make_ball_mesh(r=0.5, subdivisions=10, max_volume=None,
             closure=EXT_OPEN, radial_subdiv=subdivisions)
 
     mesh_info.set_points(points)
-    mesh_info.set_facets(facets, [1 for i in range(len(facets))])
+    mesh_info.set_faces(facets, [1 for i in range(len(facets))])
     generated_mesh = build(mesh_info, max_volume=max_volume)
 
     return ConformalMesh(
@@ -491,7 +491,7 @@ def make_cylinder_mesh(radius=0.5, height=1, radial_subdivisions=10,
             closure=EXT_CLOSE_IN_Z, radial_subdiv=radial_subdivisions)
 
     mesh_info.set_points(points)
-    mesh_info.set_facets(facets, [1 for i in range(len(facets))])
+    mesh_info.set_faces(facets, [1 for i in range(len(facets))])
     generated_mesh = build(mesh_info, max_volume=max_volume)
 
     return ConformalMesh(
@@ -524,7 +524,7 @@ def make_box_mesh(dimensions=(1,1,1), max_volume=None,
         return (x+d[0]/2, y+d[1]/2, z)
 
     mesh_info.set_points([add_d_half_to_x_and_y(p) for p in points])
-    mesh_info.set_facets(facets, [1 for i in range(len(facets))])
+    mesh_info.set_faces(facets, [1 for i in range(len(facets))])
     generated_mesh = build(mesh_info, max_volume=max_volume)
 
     return ConformalMesh(
