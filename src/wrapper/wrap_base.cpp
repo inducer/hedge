@@ -34,9 +34,13 @@ void hedge_expose_base()
   {
     typedef affine_map cl;
     class_<cl>("AffineMap", init<const matrix &, const vector &, const double &>())
-      .def_readonly("matrix", &cl::m_matrix)
-      .def_readonly("vector", &cl::m_vector)
-      .def_readonly("jacobian", &cl::m_jacobian)
+      .add_property("matrix", 
+          make_function(&cl::matrix, 
+            return_internal_reference<>()))
+      .add_property("vector", 
+          make_function(&cl::vector, 
+            return_internal_reference<>()))
+      .add_property("jacobian", &cl::jacobian)
       .def("__call__", &affine_map::operator())
       ;
   }

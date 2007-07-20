@@ -35,22 +35,35 @@ namespace hedge {
 
   class affine_map
   {
-    public:
-      matrix m_matrix;
-      vector m_vector;
+    private:
+      hedge::matrix m_matrix;
+      hedge::vector m_vector;
       double m_jacobian;
 
+    public:
       affine_map()
       { }
 
-      affine_map(const matrix &mat, const vector &vec, const double &jac)
+      affine_map(
+          const hedge::matrix &mat, 
+          const hedge::vector &vec, 
+          const double &jac)
         : m_matrix(mat), m_vector(vec), m_jacobian(jac)
       { }
 
-      vector operator()(const vector &op) const
+      const hedge::vector operator()(const hedge::vector &op) const
       {
         return prod(m_matrix, op) + m_vector;
       }
+
+      const double jacobian() const
+      { return m_jacobian; }
+
+      const hedge::vector &vector() const
+      { return m_vector; }
+
+      const hedge::matrix &matrix() const
+      { return m_matrix; }
   };
 }
 
