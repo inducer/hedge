@@ -988,7 +988,7 @@ class TestHedge(unittest.TestCase):
         def add_to_all_vertex_indices(facets, increment):
             return [[pt+increment for pt in facet] for facet in facets]
 
-        mesh_info.set_facets(
+        mesh_info.set_faces(
             [[0,1,2,3]] # base
             +box_without_minus_z # first box
             +add_to_all_vertex_indices(box_without_minus_z, 4) # second box
