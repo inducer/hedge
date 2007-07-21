@@ -117,7 +117,7 @@ class SiloVisualizer:
         self.fine_mesh = SiloMeshData(dim, discr.nodes, generate_fine_element_groups())
         self.coarse_mesh = SiloMeshData(dim, discr.mesh.points, generate_coarse_element_groups())
 
-    def add_to_silo(self, silo, fields=[], vectors=[], expressions=[],
+    def add_to_silo(self, silo, scalars=[], vectors=[], expressions=[],
             time=None, step=None, write_coarse_mesh=False):
         from hedge.silo import DB_NODECENT, DBOPT_DTIME, DBOPT_CYCLE
 
@@ -133,7 +133,7 @@ class SiloVisualizer:
             self.coarse_mesh.put_mesh(silo, "coarsezonelist", "mesh", mesh_opts)
 
         # put data
-        for name, field in fields:
+        for name, field in scalars:
             silo.put_ucdvar1(name, "finemesh", field, DB_NODECENT)
         for name, vec in vectors:
             silo.put_ucdvar(name, "finemesh", 
