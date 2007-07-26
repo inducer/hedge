@@ -40,7 +40,8 @@ def main() :
             make_square_mesh, \
             make_regular_square_mesh, \
             make_single_element_mesh, \
-            make_ball_mesh
+            make_ball_mesh, \
+            make_box_mesh
     from hedge.discretization import \
             Discretization, \
             generate_ones_on_boundary, \
@@ -63,11 +64,12 @@ def main() :
 
     def boundary_tagger(vertices, el, face_nr):
         if el.face_normals[face_nr] * a > 0:
-            return "inflow"
+            return ["inflow"]
         else:
-            return "outflow"
+            return ["outflow"]
 
     dim = 3
+    periodic = False
     if dim == 2:
         a = num.array([1,0])
         #mesh = make_square_mesh(boundary_tagger=boundary_tagger, max_area=0.1)
@@ -78,8 +80,14 @@ def main() :
         #mesh = make_disk_mesh(boundary_tagger=boundary_tagger)
         el_class = TriangularElement
     elif dim == 3:
-        a = num.array([1,0,0])
-        mesh = make_ball_mesh(boundary_tagger=boundary_tagger)
+        a = num.array([0,0,0.5])
+        if periodic:
+            mesh = make_box_mesh(dimensions=(1,1,2*pi/3),
+                    periodic=periodic, max_volume=0.01)
+        else:
+            mesh = make_box_mesh(max_volume=0.01, 
+                    boundary_tagger=boundary_tagger)
+            #mesh = make_ball_mesh(boundary_tagger=boundary_tagger)
         el_class = TetrahedralElement
     else:
         raise RuntimeError, "bad number of dimensions"
@@ -89,7 +97,8 @@ def main() :
 
     print "%d elements" % len(discr.mesh.elements)
 
-    #vis("bdry.vtk",
+    #silo = SiloFile("bdry.silo")
+    #vis.add_to_silo(silo,
             #[("outflow", generate_ones_on_boundary(discr, "outflow")), 
                 #("inflow", generate_ones_on_boundary(discr, "inflow"))])
     #return 
@@ -98,7 +107,7 @@ def main() :
 
     dt = discr.dt_factor(comp.norm_2(a))
     stepfactor = 1
-    nsteps = int(2/dt)
+    nsteps = int(4/dt)
 
     normal = make_normal(discr.dimensions)
 
@@ -113,18 +122,25 @@ def main() :
     def rhs_strong(t, u):
         from pytools import argmax
 
-        bc_in = discr.interpolate_boundary_function(
-                lambda x: u_analytic(t, x),
-                "inflow")
+        if periodic:
+            flux = bind_flux(discr, flux_strong)
 
-        flux = bind_flux(discr, flux_strong)
+            return dot(a, nabla*u) - m_inv*(flux * u)
+        else:
+            bc_in = discr.interpolate_boundary_function(
+                    lambda x: u_analytic(t, x),
+                    "inflow")
 
-        return dot(a, nabla*u) - m_inv*(
-                flux * u + 
-                flux * pair_with_boundary(u, bc_in, "inflow"))
+            flux = bind_flux(discr, flux_strong)
+
+            return dot(a, nabla*u) - m_inv*(
+                    flux * u + 
+                    flux * pair_with_boundary(u, bc_in, "inflow"))
 
     def rhs_weak(t, u):
         from pytools import argmax
+
+        assert not periodic
 
         bc_in = discr.interpolate_boundary_function(
                 lambda x: u_analytic(t, x),
@@ -144,7 +160,7 @@ def main() :
     for step in range(nsteps):
         if step % stepfactor == 0:
             print "timestep %d, t=%f, l2=%f" % (step, dt*step, sqrt(u*(mass*u)))
-        u = stepper(u, step*dt, dt, rhs_weak)
+        u = stepper(u, step*dt, dt, rhs_strong)
 
         t = (step+1)*dt
         #u_true = discr.interpolate_volume_function(

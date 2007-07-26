@@ -18,6 +18,7 @@
 
 
 import pylinear.array as num
+import pylinear.computation as comp
 import hedge._internal
 
 
@@ -131,6 +132,25 @@ def sign(x):
         return 0
     else: 
         return -1
+
+
+
+
+def find_matching_vertices_along_axis(axis, points_a, points_b, numbers_a, numbers_b):
+    a_to_b = {}
+
+    for i, pi in enumerate(points_a):
+        for j, pj in enumerate(points_b):
+            dist = pi-pj
+            dist[axis] = 0
+            if comp.norm_2(dist) < 1e-12:
+                a_to_b[numbers_a[i]] = numbers_b[j]
+                break
+
+    return a_to_b
+
+
+
 
 # eoc estimation --------------------------------------------------------------
 def estimate_order_of_convergence(abscissae, errors):

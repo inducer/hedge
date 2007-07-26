@@ -25,20 +25,14 @@ import pylinear.computation as comp
 
 
 def main():
-    from hedge.element import TriangularElement, TetrahedralElement
+    from hedge.element import TetrahedralElement
     from hedge.timestep import RK4TimeStepper
     from hedge.mesh import make_ball_mesh, make_cylinder_mesh, make_box_mesh
-    from hedge.discretization import \
-            Discretization, \
-            bind_flux, \
-            bind_nabla, \
-            bind_mass_matrix, \
-            bind_inverse_mass_matrix, \
-            pair_with_boundary
+    from hedge.discretization import Discretization, bind_mass_matrix
     from hedge.visualization import SiloVisualizer
     from hedge.silo import SiloFile
     from hedge.silo import DB_VARTYPE_VECTOR
-    from hedge.tools import dot, cross, EOCRecorder
+    from hedge.tools import dot, EOCRecorder
     from math import sqrt, pi
     from analytic_solutions import \
             check_time_harmonic_solution, \
@@ -46,6 +40,7 @@ def main():
             SplitComplexAdapter, \
             CartesianAdapter, \
             CylindricalCavityMode, \
+            RectangularWaveguideMode, \
             RectangularCavityMode
     from hedge.operators import MaxwellOperator
 
@@ -57,7 +52,9 @@ def main():
     eoc_rec = EOCRecorder()
 
     cylindrical = False
+    periodic = True
 
+    # default to "whole boundary is PEC"
     if cylindrical:
         R = 1
         d = 2
@@ -68,10 +65,13 @@ def main():
         c_sol = SplitComplexAdapter(CartesianAdapter(mode))
         mesh = make_cylinder_mesh(radius=R, height=d, max_volume=0.01)
     else:
-        mode = RectangularCavityMode(epsilon, mu, (3,2,1))
+        #if periodic:
+            #mode = RectangularWaveguideMode(epsilon, mu, (3,2,1))
+        #else:
+        mode = RectangularCavityMode(epsilon, mu, (1,2,2))
         r_sol = RealPartAdapter(mode)
         c_sol = SplitComplexAdapter(mode)
-        mesh = make_box_mesh(max_volume=0.01)
+        mesh = make_box_mesh(max_volume=0.01, periodic=periodic)
 
     #for order in [1,2,3,4,5,6]:
     for order in [3]:
@@ -108,7 +108,7 @@ def main():
         last_tstep = time()
         t = 0
         for step in range(nsteps):
-            print "timestep %d, t=%f l2[e]=%g l2[h]=%g secs=%f" % (
+            print "timestep %d, t=%g l2[e]=%g l2[h]=%g secs=%f" % (
                     step, t, l2_norm(fields[0:3]), l2_norm(fields[3:6]),
                     time()-last_tstep)
             last_tstep = time()

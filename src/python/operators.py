@@ -1,3 +1,22 @@
+# Hedge - the Hybrid'n'Easy DG Environment
+# Copyright (C) 2007 Andreas Kloeckner
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+
+
 from __future__ import division
 
 
@@ -20,12 +39,12 @@ def _double_cross(tbl, field):
 
 
 class MaxwellOperator:
-    """A 3D Maxwell operator with PEC boundaries everywhere.
+    """A 3D Maxwell operator with PEC boundaries.
 
     Field order is [Ex Ey Ez Hx Hy Hz].
     """
 
-    def __init__(self, discr, epsilon, mu, upwind_alpha=1):
+    def __init__(self, discr, epsilon, mu, upwind_alpha=1, pec_tag=None):
         from hedge.flux import make_normal, local, neighbor
         from hedge.discretization import \
             bind_flux, \
@@ -38,6 +57,8 @@ class MaxwellOperator:
         self.epsilon = epsilon
         self.mu = mu
         self.alpha = upwind_alpha
+
+        self.pec_tag = pec_tag
 
         normal = make_normal(discr.dimensions)
 
@@ -63,11 +84,11 @@ class MaxwellOperator:
         def curl(field):
             return cross(self.nabla, field)
 
-        bc_e = -self.discr.boundarize_volume_field(e)
-        bc_h = self.discr.boundarize_volume_field(h)
+        bc_e = -self.discr.boundarize_volume_field(e, self.pec_tag)
+        bc_h = self.discr.boundarize_volume_field(h, self.pec_tag)
 
-        h_pair = pair_with_boundary(h, bc_h)
-        e_pair = pair_with_boundary(e, bc_e)
+        h_pair = pair_with_boundary(h, bc_h, self.pec_tag)
+        e_pair = pair_with_boundary(e, bc_e, self.pec_tag)
 
         Z = sqrt(self.mu/self.epsilon)
         Y = 1/Z

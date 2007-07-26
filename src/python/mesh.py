@@ -186,29 +186,49 @@ class Mesh:
     After construction, a Mesh instance has (at least) the following data 
     members:
 
-    - points: list of Pylinear vectors of node coordinates
-    - elements: list of Element instances
-    - interfaces: a list of pairs 
+    * points: list of Pylinear vectors of node coordinates
+
+    * elements: list of Element instances
+
+    * interfaces: a list of pairs 
 
         ((element instance 1, face index 1), (element instance 2, face index 2))
 
       enumerating elements bordering one another.  The relation "element 1 touches 
       element 2" is always reflexive, but this list will only contain one entry
       per element pair.
-    - tag_to_boundary: a mapping of the form
+
+    * tag_to_boundary: a mapping of the form
       boundary_tag -> [(element instance, face index)])
 
       The boundary tag None always refers to the entire boundary.
-    - tag_to_elements: a mapping of the form
+
+    * tag_to_elements: a mapping of the form
       element_tag -> [element instances]
 
       The boundary tag None always refers to the entire domain.
+
+    * periodicity: A list of tuples (minus_tag, plus_tag) or None
+      indicating the tags of the boundaries to be matched together
+      as periodic. There is one tuple per axis, so that for example
+      a 3D mesh has three tuples.
     """
 
     def both_interfaces(self):
         for face1, face2 in self.interfaces:
             yield face1, face2
             yield face2, face1
+
+    @property
+    def bounding_box(self):
+        try:
+            return self._bounding_box
+        except AttributeError:
+            self._bounding_box = (
+                    reduce(num.minimum, self.points),
+                    reduce(num.maximum, self.points),
+                    )
+            return self._bounding_box
 
 
 
@@ -220,22 +240,29 @@ class ConformalMesh(Mesh):
     """
 
     def __init__(self, points, elements, 
-            boundary_tagger=lambda fvi, el, fn: None, 
-            element_tagger=lambda el: None,
+            boundary_tagger=lambda fvi, el, fn: [], 
+            element_tagger=lambda el: [],
+            periodicity=None
             ):
         """Construct a simplical mesh.
 
-        points is an iterable of vertex coordinates, given as 2-vectors.
+        points is an iterable of vertex coordinates, given as vectors.
+
         elements is an iterable of tuples of indices into points,
           giving element endpoints.
+
         boundary_tagger is a function that takes the arguments
           (set_of_face_vertex_indices, element, face_number)
-          It returns the boundary tag for that boundary surface.
-          The default tag is "None".
+          It returns a list of tags that apply to this surface.
+
         element_tagger is a function that takes the arguments
-          (element)
-          andre turns the corresponding element tag.
-          The default tag is "None".
+          (element) and returns the a list of tags that apply
+          to that element.
+
+        periodicity is either None or is a list of tuples
+          just like the one documented for the `periodicity'
+          member of class Mesh.
+
         Face indices follow the convention for the respective element,
         such as Triangle or Tetrahedron, in this module.
         """
@@ -258,18 +285,21 @@ class ConformalMesh(Mesh):
         # tag elements
         self.tag_to_elements = {None: []}
         for el in self.elements:
-            el_tag = element_tagger(el)
-            if el_tag is not None:
+            for el_tag in element_tagger(el):
                 self.tag_to_elements.setdefault(el_tag, []).append(el)
             self.tag_to_elements[None].append(el)
         
         # build connectivity
-        self._build_connectivity(boundary_tagger)
+        if periodicity is None:
+            periodicity = dim*[None]
+        assert len(periodicity) == dim
+
+        self._build_connectivity(boundary_tagger, periodicity)
 
     def transform(self, map):
         self.points = [map(x) for x in self.points]
 
-    def _build_connectivity(self, boundary_tagger):
+    def _build_connectivity(self, boundary_tagger, periodicity):
         # create face_map, which is a mapping of
         # (vertices on a face) -> 
         #  [(element, face_idx) for elements bordering that face]
@@ -278,7 +308,7 @@ class ConformalMesh(Mesh):
             for fid, face_vertices in enumerate(el.faces):
                 face_map.setdefault(frozenset(face_vertices), []).append((el, fid))
 
-        # build connectivity structures
+        # build non-periodic connectivity structures
         self.interfaces = []
         self.tag_to_boundary = {None: []}
         for face_vertices, els_faces in face_map.iteritems():
@@ -286,13 +316,63 @@ class ConformalMesh(Mesh):
                 self.interfaces.append(els_faces)
             elif len(els_faces) == 1:
                 el, face = els_faces[0]
-                btag = boundary_tagger(face_vertices, el, face)
-                if btag is not None:
+                for btag in boundary_tagger(face_vertices, el, face):
                     self.tag_to_boundary.setdefault(btag, []) \
                             .append(els_faces[0])
                 self.tag_to_boundary[None].append(els_faces[0])
             else:
                 raise RuntimeError, "face can at most border two elements"
+
+        # add periodicity-induced connectivity
+        from pytools import flatten
+
+        self.periodicity = periodicity
+
+        self.periodic_face_vertex_map = {}
+
+        for axis, axis_periodicity in enumerate(periodicity):
+            if axis_periodicity is not None:
+                # find faces on +-axis boundaries
+                minus_tag, plus_tag = axis_periodicity
+                minus_faces = self.tag_to_boundary[minus_tag]
+                plus_faces = self.tag_to_boundary[plus_tag]
+
+                # find vertex indices and points on these faces
+                minus_vertex_indices = list(set(flatten(el.faces[face] 
+                    for el, face in minus_faces)))
+                plus_vertex_indices = list(set(flatten(el.faces[face] 
+                    for el, face in plus_faces)))
+
+                minus_z_points = [self.points[pi] for pi in minus_vertex_indices]
+                plus_z_points = [self.points[pi] for pi in plus_vertex_indices]
+
+                # find a mapping from -axis to +axis vertices
+                from hedge.tools import find_matching_vertices_along_axis
+
+                minus_to_plus = find_matching_vertices_along_axis(
+                        axis, minus_z_points, plus_z_points,
+                        minus_vertex_indices, plus_vertex_indices)
+
+                # establish face connectivity
+                for minus_face in minus_faces:
+                    minus_el, minus_fi = minus_face
+                    minus_fvi = minus_el.faces[minus_fi]
+
+                    plus_fvi = tuple(minus_to_plus[i] for i in minus_fvi)
+                    plus_faces = face_map[frozenset(plus_fvi)]
+                    assert len(plus_faces) == 1
+
+                    plus_face = plus_faces[0]
+                    self.interfaces.append([minus_face, plus_face])
+
+                    plus_el, plus_fi = plus_face
+                    native_plus_fvi = plus_el.faces[plus_fi]
+
+                    self.periodic_face_vertex_map[minus_fvi] = plus_fvi, axis
+                    self.periodic_face_vertex_map[native_plus_fvi] = native_plus_fvi, axis
+
+                    self.tag_to_boundary[None].remove(plus_face)
+                    self.tag_to_boundary[None].remove(minus_face)
 
 
 
@@ -313,7 +393,7 @@ def _tag_and_make_conformal_mesh(boundary_tagger, generated_mesh_info):
 
 
 def make_single_element_mesh(a=-0.5, b=0.5, 
-        boundary_tagger=lambda vertices, face_indices: None):
+        boundary_tagger=lambda vertices, face_indices: []):
     n = 2
     node_dict = {}
     points = []
@@ -345,7 +425,7 @@ def make_single_element_mesh(a=-0.5, b=0.5,
 
 
 def make_regular_square_mesh(a=-0.5, b=0.5, n=5, 
-        boundary_tagger=lambda fvi, el, fn: None):
+        boundary_tagger=lambda fvi, el, fn: []):
     node_dict = {}
     points = []
     points_1d = num.linspace(a, b, n)
@@ -380,7 +460,7 @@ def make_regular_square_mesh(a=-0.5, b=0.5, n=5,
 
 
 def make_square_mesh(a=-0.5, b=0.5, max_area=4e-3, 
-        boundary_tagger=lambda fvi, el, fn: None):
+        boundary_tagger=lambda fvi, el, fn: []):
     def round_trip_connect(start, end):
         for i in range(start, end):
             yield i, i+1
@@ -395,7 +475,7 @@ def make_square_mesh(a=-0.5, b=0.5, max_area=4e-3,
 
     mesh_info = triangle.MeshInfo()
     mesh_info.set_points(points)
-    mesh_info.set_faces(
+    mesh_info.set_facets(
             list(round_trip_connect(0, 3)),
             4*[1]
             )
@@ -411,7 +491,7 @@ def make_square_mesh(a=-0.5, b=0.5, max_area=4e-3,
 
 
 def make_disk_mesh(r=0.5, faces=50, max_area=4e-3, 
-        boundary_tagger=lambda fvi, el, fn: None):
+        boundary_tagger=lambda fvi, el, fn: []):
     from math import cos, sin, pi
 
     def round_trip_connect(start, end):
@@ -429,7 +509,7 @@ def make_disk_mesh(r=0.5, faces=50, max_area=4e-3,
 
     mesh_info = triangle.MeshInfo()
     mesh_info.set_points(points)
-    mesh_info.set_faces(
+    mesh_info.set_facets(
             list(round_trip_connect(0, faces-1)),
             faces*[1]
             )
@@ -445,7 +525,7 @@ def make_disk_mesh(r=0.5, faces=50, max_area=4e-3,
 
 
 def make_ball_mesh(r=0.5, subdivisions=10, max_volume=None,
-        boundary_tagger=lambda fvi, el, fn: None):
+        boundary_tagger=lambda fvi, el, fn: []):
     from math import pi, cos, sin
     from meshpy.tet import MeshInfo, build, generate_surface_of_revolution,\
             EXT_OPEN
@@ -465,45 +545,128 @@ def make_ball_mesh(r=0.5, subdivisions=10, max_volume=None,
             closure=EXT_OPEN, radial_subdiv=subdivisions)
 
     mesh_info.set_points(points)
-    mesh_info.set_faces(facets, [1 for i in range(len(facets))])
+    mesh_info.set_facets(facets, [1 for i in range(len(facets))])
     generated_mesh = build(mesh_info, max_volume=max_volume)
 
     return ConformalMesh(
             generated_mesh.points,
             generated_mesh.elements,
             boundary_tagger)
+
+
+
+
+MINUS_Z_MARKER = 1
+PLUS_Z_MARKER = 2
+SHELL_MARKER = 3
+
+
+
+
+def _make_z_periodic_mesh(points, facets, tags, height, 
+        max_volume, boundary_tagger):
+    from meshpy.tet import MeshInfo, build
+
+    mesh_info = MeshInfo()
+    mesh_info.set_points(points)
+    mesh_info.set_facets(facets, tags)
+
+    mesh_info.pbc_groups.resize(1)
+    pbcg = mesh_info.pbc_groups[0]
+
+    pbcg.facet_marker_1 = MINUS_Z_MARKER
+    pbcg.facet_marker_2 = PLUS_Z_MARKER
+
+    trans_vector = num.array([0,0,height])
+    pbcg.set_transform(translation=trans_vector)
+
+    from pytools import flatten
+    minus_z_point_indices = list(set(flatten(facet 
+        for facet, tag in zip(facets, tags) if tag == MINUS_Z_MARKER)))
+    plus_z_point_indices = list(set(flatten(facet 
+        for facet, tag in zip(facets, tags) if tag == PLUS_Z_MARKER)))
+    minus_z_points = [num.array(points[pi])
+            for pi in minus_z_point_indices]
+    plus_z_points = [num.array(points[pi])
+            for pi in plus_z_point_indices]
+
+    from hedge.tools import find_matching_vertices_along_axis
+    minus_to_plus = find_matching_vertices_along_axis(
+            2, minus_z_points, plus_z_points,
+            minus_z_point_indices, plus_z_point_indices)
+
+    pairs = pbcg.point_pairs
+    pairs.resize(len(minus_to_plus))
+    for i, pi in enumerate(minus_z_point_indices):
+        pairs[i] = pi, minus_to_plus[pi]
+
+    def zper_boundary_tagger(fvi, el, fn):
+        result = boundary_tagger(fvi, el, fn)
+        face_marker = fvi2fm[frozenset(fvi)]
+        if face_marker == MINUS_Z_MARKER:
+            result.append("minus_z")
+        if face_marker == PLUS_Z_MARKER:
+            result.append("plus_z")
+        if face_marker == SHELL_MARKER:
+            result.append("shell")
+        return result
+
+    generated_mesh = build(mesh_info, max_volume=max_volume)
+    fvi2fm = generated_mesh.face_vertex_indices_to_face_marker
+        
+    return ConformalMesh(
+            generated_mesh.points,
+            generated_mesh.elements,
+            zper_boundary_tagger,
+            periodicity=[None, None, ("minus_z", "plus_z")])
 
 
 
 
 def make_cylinder_mesh(radius=0.5, height=1, radial_subdivisions=10, 
-        height_subdivisions=10, max_volume=None,
-        boundary_tagger=lambda fvi, el, fn: None):
+        height_subdivisions=1, max_volume=None, periodic=False,
+        boundary_tagger=lambda fvi, el, fn: []):
     from math import pi, cos, sin
-    from meshpy.tet import MeshInfo, build, generate_surface_of_revolution,\
-            EXT_CLOSE_IN_Z
+    from meshpy.tet import MeshInfo, build, generate_surface_of_revolution, \
+            EXT_OPEN
 
     dz = height/height_subdivisions
-    rz = [(radius, i*dz) for i in range(height_subdivisions+1)]
+    rz = [(0,0)] \
+            + [(radius, i*dz) for i in range(height_subdivisions+1)] \
+            + [(0,height)]
+    ring_tags = [MINUS_Z_MARKER] \
+            + ((height_subdivisions+1)*[SHELL_MARKER]) \
+            + [PLUS_Z_MARKER]
 
-    mesh_info = MeshInfo()
-    points, facets = generate_surface_of_revolution(rz,
-            closure=EXT_CLOSE_IN_Z, radial_subdiv=radial_subdivisions)
+    points, facets, tags = generate_surface_of_revolution(rz,
+            closure=EXT_OPEN, radial_subdiv=radial_subdivisions,
+            ring_tags=ring_tags)
 
-    mesh_info.set_points(points)
-    mesh_info.set_faces(facets, [1 for i in range(len(facets))])
-    generated_mesh = build(mesh_info, max_volume=max_volume)
+    assert len(facets) == len(tags)
 
-    return ConformalMesh(
-            generated_mesh.points,
-            generated_mesh.elements,
-            boundary_tagger)
+    if periodic:
+        return _make_z_periodic_mesh(
+                points, facets, tags,
+                height=height, 
+                max_volume=max_volume,
+                boundary_tagger=boundary_tagger)
+    else:
+        mesh_info = MeshInfo()
+        mesh_info.set_points(points)
+        mesh_info.set_facets(facets, tags)
+
+        generated_mesh = build(mesh_info, max_volume=max_volume)
+
+        return ConformalMesh(
+                generated_mesh.points,
+                generated_mesh.elements,
+                boundary_tagger)
 
 
 
 
-def make_box_mesh(dimensions=(1,1,1), max_volume=None,
-        boundary_tagger=lambda fvi, el, fn: None):
+def make_box_mesh(dimensions=(1,1,1), max_volume=None, periodic=False,
+        boundary_tagger=lambda fvi, el, fn: []):
     from math import pi, cos, sin
     from meshpy.tet import MeshInfo, build, generate_extrusion,\
             EXT_CLOSE_IN_Z
@@ -515,19 +678,31 @@ def make_box_mesh(dimensions=(1,1,1), max_volume=None,
             (+d[0]/2, +d[1]/2),
             (-d[0]/2, +d[1]/2),
             ]
-    rz = [(1,0), (1,d[2])]
+    rz = [(0,0), (1,0), (1,d[2]), (0,d[2])]
+    ring_tags = [MINUS_Z_MARKER, SHELL_MARKER, PLUS_Z_MARKER]
 
-    mesh_info = MeshInfo()
-    points, facets = generate_extrusion(rz, base_shape, closure=EXT_CLOSE_IN_Z)
+    points, facets, tags = generate_extrusion(rz, base_shape, closure=EXT_CLOSE_IN_Z,
+            ring_tags=ring_tags)
 
     def add_d_half_to_x_and_y((x,y,z)):
         return (x+d[0]/2, y+d[1]/2, z)
 
-    mesh_info.set_points([add_d_half_to_x_and_y(p) for p in points])
-    mesh_info.set_faces(facets, [1 for i in range(len(facets))])
-    generated_mesh = build(mesh_info, max_volume=max_volume)
+    points = [add_d_half_to_x_and_y(p) for p in points]
 
-    return ConformalMesh(
-            generated_mesh.points,
-            generated_mesh.elements,
-            boundary_tagger)
+    if periodic:
+        return _make_z_periodic_mesh(points, facets, tags, 
+                height=dimensions[2], 
+                max_volume=max_volume,
+                boundary_tagger=boundary_tagger)
+    else:
+        mesh_info = MeshInfo()
+        mesh_info.set_points(points)
+        mesh_info.set_facets(facets, tags)
+
+        generated_mesh = build(mesh_info, max_volume=max_volume)
+
+        return ConformalMesh(
+                generated_mesh.points,
+                generated_mesh.elements,
+                boundary_tagger)
+

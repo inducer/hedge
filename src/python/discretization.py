@@ -148,12 +148,29 @@ class Discretization:
             findices_l = ldis_l.face_indices()[fi_l]
             findices_n = ldis_n.face_indices()[fi_n]
 
-            findices_shuffled_n = ldis_l.shuffle_face_indices_to_match(
-                    vertices_l, vertices_n, findices_n)
+            try:
+                findices_shuffled_n = \
+                        ldis_l.shuffle_face_indices_to_match(
+                        vertices_l, vertices_n, findices_n)
 
-            for i, j in zip(findices_l, findices_shuffled_n):
-                dist = self.nodes[estart_l+i]-self.nodes[estart_n+j]
-                assert comp.norm_2(dist) < 1e-14
+                for i, j in zip(findices_l, findices_shuffled_n):
+                    dist = self.nodes[estart_l+i]-self.nodes[estart_n+j]
+                    assert comp.norm_2(dist) < 1e-14
+
+            except ValueError:
+                vertices_l, axis_l = self.mesh.periodic_face_vertex_map[vertices_l]
+                vertices_n, axis_n = self.mesh.periodic_face_vertex_map[vertices_n]
+
+                assert axis_l == axis_n
+
+                findices_shuffled_n = \
+                        ldis_l.shuffle_face_indices_to_match(
+                        vertices_l, vertices_n, findices_n)
+
+                for i, j in zip(findices_l, findices_shuffled_n):
+                    dist = self.nodes[estart_l+i]-self.nodes[estart_n+j]
+                    dist[axis_l] = 0 
+                    assert comp.norm_2(dist) < 1e-14
 
             fg.add_face(
                     [estart_l+i for i in findices_l],
@@ -502,8 +519,8 @@ def generate_ones_on_boundary(discr, tag):
     for face in discr.mesh.tag_to_boundary[tag]:
         el, fl = face
 
-        el_start, el_end = discr.element_group[el.id]
-        fl_indices = discr.element_map[el.id].face_indices()[fl]
+        (el_start, el_end), ldis = discr.find_el_data(el.id)
+        fl_indices = ldis.face_indices()[fl]
 
         for i in fl_indices:
             result[el_start+i] = 1

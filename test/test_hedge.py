@@ -900,7 +900,7 @@ class TestHedge(unittest.TestCase):
 
         mesh_info = triangle.MeshInfo()
         mesh_info.set_points(points)
-        mesh_info.set_faces(
+        mesh_info.set_facets(
                 [(0,1),(1,3),(3,2),(2,0),(0,4),(4,5),(1,5)]
                 )
 
@@ -925,9 +925,9 @@ class TestHedge(unittest.TestCase):
 
         def element_tagger(el):
             if generated_mesh.element_attributes[el.id] == 1:
-                return "upper"
+                return ["upper"]
             else:
-                return "lower"
+                return ["lower"]
 
         mesh = ConformalMesh(
                 generated_mesh.points,
@@ -988,7 +988,7 @@ class TestHedge(unittest.TestCase):
         def add_to_all_vertex_indices(facets, increment):
             return [[pt+increment for pt in facet] for facet in facets]
 
-        mesh_info.set_faces(
+        mesh_info.set_facets(
             [[0,1,2,3]] # base
             +box_without_minus_z # first box
             +add_to_all_vertex_indices(box_without_minus_z, 4) # second box
@@ -1012,9 +1012,9 @@ class TestHedge(unittest.TestCase):
 
         def element_tagger(el):
             if generated_mesh.element_attributes[el.id] == 1:
-                return "upper"
+                return ["upper"]
             else:
-                return "lower"
+                return ["lower"]
 
         mesh = ConformalMesh(
                 generated_mesh.points,
@@ -1079,9 +1079,9 @@ class TestHedge(unittest.TestCase):
 
             def boundary_tagger(vertices, el, face_nr):
                 if el.face_normals[face_nr] * a > 0:
-                    return "inflow"
+                    return ["inflow"]
                 else:
-                    return "outflow"
+                    return ["outflow"]
 
             return ConformalMesh(points, elements, 
                     boundary_tagger)
@@ -1159,9 +1159,9 @@ class TestHedge(unittest.TestCase):
 
         def boundary_tagger(vertices, el, face_nr):
             if el.face_normals[face_nr] * a > 0:
-                return "inflow"
+                return ["inflow"]
             else:
-                return "outflow"
+                return ["outflow"]
 
         mesh = make_disk_mesh(r=pi, boundary_tagger=boundary_tagger, max_area=0.5)
 
