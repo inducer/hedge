@@ -635,7 +635,7 @@ def make_cylinder_mesh(radius=0.5, height=1, radial_subdivisions=10,
             + [(radius, i*dz) for i in range(height_subdivisions+1)] \
             + [(0,height)]
     ring_tags = [MINUS_Z_MARKER] \
-            + ((height_subdivisions+1)*[SHELL_MARKER]) \
+            + ((height_subdivisions)*[SHELL_MARKER]) \
             + [PLUS_Z_MARKER]
 
     points, facets, tags = generate_surface_of_revolution(rz,

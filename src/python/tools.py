@@ -140,12 +140,16 @@ def find_matching_vertices_along_axis(axis, points_a, points_b, numbers_a, numbe
     a_to_b = {}
 
     for i, pi in enumerate(points_a):
+        found = False
         for j, pj in enumerate(points_b):
             dist = pi-pj
             dist[axis] = 0
             if comp.norm_2(dist) < 1e-12:
                 a_to_b[numbers_a[i]] = numbers_b[j]
+                found = True
                 break
+        if not found:
+            raise ValueError, "No match for index %d point %s" % (i, pi)
 
     return a_to_b
 
