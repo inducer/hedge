@@ -12,3 +12,4 @@ doc/hedge-notes.pdf
 dump.py
 *.orig
 Makefile
+tags

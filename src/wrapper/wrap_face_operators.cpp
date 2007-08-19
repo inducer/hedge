@@ -79,9 +79,11 @@ void hedge_expose_face_operators()
       ;
   }
 
-#define FLUX_OPERATOR_TEMPLATE_ARGS matrix, flux::chained_flux,
-  DEF_FOR_EACH_OP_TARGET(perform_both_fluxes_operator, FLUX_OPERATOR_TEMPLATE_ARGS);
-  DEF_FOR_EACH_OP_TARGET(perform_local_flux_operator, FLUX_OPERATOR_TEMPLATE_ARGS);
-  DEF_FOR_EACH_OP_TARGET(perform_neighbor_flux_operator, FLUX_OPERATOR_TEMPLATE_ARGS);
+#define ARG_TYPES \
+  const face_group &, const matrix &, flux::chained_flux,
+  DEF_FOR_EACH_OP_TARGET(perform_both_fluxes_operator, ARG_TYPES);
+  DEF_FOR_EACH_OP_TARGET(perform_local_flux_operator, ARG_TYPES);
+  DEF_FOR_EACH_OP_TARGET(perform_neighbor_flux_operator, ARG_TYPES);
+#undef ARG_TYPES
 }
 

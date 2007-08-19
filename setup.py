@@ -56,6 +56,9 @@ EXTRA_INCLUDE_DIRS = []
 EXTRA_LIBRARY_DIRS = []
 EXTRA_LIBRARIES = []
 
+BLAS_INCLUDE_DIRS = []
+USE_BLAS = HAVE_BLAS
+
 def handle_component(comp):
     if globals()["USE_"+comp]:
         globals()["EXTRA_DEFINES"]["USE_"+comp] = 1
@@ -63,6 +66,7 @@ def handle_component(comp):
         globals()["EXTRA_LIBRARY_DIRS"] += globals()[comp+"_LIBRARY_DIRS"]
         globals()["EXTRA_LIBRARIES"] += globals()[comp+"_LIBRARIES"]
 
+handle_component("BLAS")
 handle_component("SILO")
 
 ext_modules=[

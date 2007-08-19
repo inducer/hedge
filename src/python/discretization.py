@@ -61,17 +61,19 @@ class Discretization:
     # initialization ----------------------------------------------------------
     def _build_element_groups_and_nodes(self, local_discretization):
         self.nodes = []
-        from hedge._internal import ElementRanges
+        from hedge._internal import UniformElementRanges
 
         eg = _ElementGroup()
         eg.members = self.mesh.elements
         eg.local_discretization = ldis = local_discretization
-        eg.ranges = ElementRanges(0)
+        eg.ranges = UniformElementRanges(
+                0, 
+                len(ldis.unit_nodes()), 
+                len(self.mesh.elements))
 
         for el in self.mesh.elements:
             e_start = len(self.nodes)
             self.nodes += [el.map(node) for node in ldis.unit_nodes()]
-            eg.ranges.append_range(e_start, len(self.nodes))
 
         self.group_map = [(eg, i) for i in range(len(self.mesh.elements))]
         self.element_groups = [eg]

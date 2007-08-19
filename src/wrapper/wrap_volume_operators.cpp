@@ -34,14 +34,15 @@ namespace ublas = boost::numeric::ublas;
 
 namespace
 {
-  tuple element_ranges_getitem(const element_ranges &er, int i)
+  template <class ER>
+  tuple element_ranges_getitem(const ER &er, int i)
   {
     if (i < 0)
       i += er.size();
     if (i < 0 || i >= int(er.size()))
       PYTHON_ERROR(IndexError, "element_ranges index out of bounds");
 
-    const element_ranges::element_range &erng = er[i];
+    const element_range &erng = er[i];
     return make_tuple(erng.first, erng.second);
   }
 }
@@ -52,16 +53,26 @@ namespace
 void hedge_expose_volume_operators()
 {
   {
-    typedef element_ranges cl;
-    class_<cl>("ElementRanges", init<unsigned>())
+    typedef nonuniform_element_ranges cl;
+    class_<cl>("NonuniformElementRanges")
       .def("__len__", &cl::size)
       .def("clear", &cl::clear)
       .def("append_range", &cl::append_range)
-      .def("__getitem__", element_ranges_getitem)
+      .def("__getitem__", element_ranges_getitem<cl>)
       ;
   }
 
-#define VOLUME_OPERATORS_TEMPLATE_ARGS matrix,
-  DEF_FOR_EACH_OP_TARGET(perform_elwise_operator, VOLUME_OPERATORS_TEMPLATE_ARGS);
-  DEF_FOR_EACH_OP_TARGET(perform_elwise_scaled_operator, VOLUME_OPERATORS_TEMPLATE_ARGS);
+  {
+    typedef uniform_element_ranges cl;
+    class_<cl>("UniformElementRanges", init<int, int, int>())
+      .def("__len__", &cl::size)
+      .def("__getitem__", element_ranges_getitem<cl>)
+      ;
+  }
+#define ARG_TYPES const uniform_element_ranges &, const matrix &,
+  DEF_FOR_EACH_OP_TARGET(perform_elwise_operator, ARG_TYPES);
+#undef ARG_TYPES
+#define ARG_TYPES const uniform_element_ranges &, const vector &, const matrix &,
+  DEF_FOR_EACH_OP_TARGET(perform_elwise_scaled_operator, ARG_TYPES);
+#undef ARG_TYPES
 }

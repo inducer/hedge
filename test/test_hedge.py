@@ -1207,6 +1207,23 @@ class TestHedge(unittest.TestCase):
             #print "%s\n%s\n" % (flux_name.upper(), "-" * len(flux_name))
             #print eoc_rec.pretty_print(abscissa_label="Poly. Order", 
                     #error_label="L2 Error")
+    # -------------------------------------------------------------------------
+    def test_all_periodic_no_boundary(self):
+        """Test that an all-periodic brick has no boundary."""
+        from hedge.mesh import make_box_mesh
+
+        mesh = make_box_mesh(periodicity=(True,True,True))
+
+        def count(iterable):
+            result = 0
+            for i in iterable:
+                result += 1
+            return result
+
+        self.assert_(count(mesh.tag_to_boundary[None]) == 0)
+
+
+
                 
 
 

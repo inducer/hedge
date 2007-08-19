@@ -65,13 +65,15 @@ def main():
         c_sol = SplitComplexAdapter(CartesianAdapter(mode))
         mesh = make_cylinder_mesh(radius=R, height=d, max_volume=0.01)
     else:
-        #if periodic:
-            #mode = RectangularWaveguideMode(epsilon, mu, (3,2,1))
-        #else:
+        if periodic:
+            mode = RectangularWaveguideMode(epsilon, mu, (3,2,1))
+            periodicity = (False, False, True)
+        else:
+            periodicity = None
         mode = RectangularCavityMode(epsilon, mu, (1,2,2))
         r_sol = RealPartAdapter(mode)
         c_sol = SplitComplexAdapter(mode)
-        mesh = make_box_mesh(max_volume=0.01, periodic=periodic)
+        mesh = make_box_mesh(max_volume=0.01, periodicity=periodicity)
 
     #for order in [1,2,3,4,5,6]:
     for order in [3]:

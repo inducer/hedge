@@ -556,9 +556,13 @@ def make_ball_mesh(r=0.5, subdivisions=10, max_volume=None,
 
 
 
-MINUS_Z_MARKER = 1
-PLUS_Z_MARKER = 2
-SHELL_MARKER = 3
+MINUS_X_MARKER = 1
+PLUS_X_MARKER = 2
+MINUS_Y_MARKER = 3
+PLUS_Y_MARKER = 4
+MINUS_Z_MARKER = 5
+PLUS_Z_MARKER = 6
+SHELL_MARKER = 100
 
 
 
@@ -577,28 +581,7 @@ def _make_z_periodic_mesh(points, facets, tags, height,
     pbcg.facet_marker_1 = MINUS_Z_MARKER
     pbcg.facet_marker_2 = PLUS_Z_MARKER
 
-    trans_vector = num.array([0,0,height])
-    pbcg.set_transform(translation=trans_vector)
-
-    from pytools import flatten
-    minus_z_point_indices = list(set(flatten(facet 
-        for facet, tag in zip(facets, tags) if tag == MINUS_Z_MARKER)))
-    plus_z_point_indices = list(set(flatten(facet 
-        for facet, tag in zip(facets, tags) if tag == PLUS_Z_MARKER)))
-    minus_z_points = [num.array(points[pi])
-            for pi in minus_z_point_indices]
-    plus_z_points = [num.array(points[pi])
-            for pi in plus_z_point_indices]
-
-    from hedge.tools import find_matching_vertices_along_axis
-    minus_to_plus = find_matching_vertices_along_axis(
-            2, minus_z_points, plus_z_points,
-            minus_z_point_indices, plus_z_point_indices)
-
-    pairs = pbcg.point_pairs
-    pairs.resize(len(minus_to_plus))
-    for i, pi in enumerate(minus_z_point_indices):
-        pairs[i] = pi, minus_to_plus[pi]
+    pbcg.set_transform(translation=[0,0,height])
 
     def zper_boundary_tagger(fvi, el, fn):
         result = boundary_tagger(fvi, el, fn)
@@ -665,44 +648,115 @@ def make_cylinder_mesh(radius=0.5, height=1, radial_subdivisions=10,
 
 
 
-def make_box_mesh(dimensions=(1,1,1), max_volume=None, periodic=False,
+def make_box_mesh(dimensions=(1,1,1), max_volume=None, periodicity=None,
         boundary_tagger=lambda fvi, el, fn: []):
-    from math import pi, cos, sin
-    from meshpy.tet import MeshInfo, build, generate_extrusion,\
-            EXT_CLOSE_IN_Z
+    """Return a mesh for a brick from the origin to `dimensions'.
+
+    `max_volume' specifies the maximum volume for each tetrahedron.
+    `periodicity' is either None, or a triple of bools, indicating
+    whether periodic BCs are to be applied along that axis.
+    See ConformalMesh.__init__ for the meaning of boundary_tagger.
+
+    A few stock boundary tags are provided for easy application
+    of boundary conditions, namely plus_[xyz] and minus_[xyz] tag
+    the appropriate faces of the brick.
+    """
+
+    def count(iterable):
+        result = 0
+        for i in iterable:
+            result += 1
+        return result
+
+    from meshpy.tet import MeshInfo, build
 
     d = dimensions
-    base_shape = [
-            (-d[0]/2, -d[1]/2),
-            (+d[0]/2, -d[1]/2),
-            (+d[0]/2, +d[1]/2),
-            (-d[0]/2, +d[1]/2),
+
+    #    7--------6
+    #   /|       /|
+    #  4--------5 |  z
+    #  | |      | |  ^
+    #  | 3------|-2  | y
+    #  |/       |/   |/
+    #  0--------1    +--->x
+
+    points = [
+            (0   ,   0,   0),
+            (d[0],   0,   0),
+            (d[0],d[1],   0),
+            (0   ,d[1],   0),
+            (0   ,   0,d[2]),
+            (d[0],   0,d[2]),
+            (d[0],d[1],d[2]),
+            (0   ,d[1],d[2]),
             ]
-    rz = [(0,0), (1,0), (1,d[2]), (0,d[2])]
-    ring_tags = [MINUS_Z_MARKER, SHELL_MARKER, PLUS_Z_MARKER]
 
-    points, facets, tags = generate_extrusion(rz, base_shape, closure=EXT_CLOSE_IN_Z,
-            ring_tags=ring_tags)
+    facets = [
+            (0,1,2,3),
+            (0,1,5,4),
+            (1,2,6,5),
+            (7,6,2,3),
+            (7,3,0,4),
+            (4,5,6,7)
+            ]
 
-    def add_d_half_to_x_and_y((x,y,z)):
-        return (x+d[0]/2, y+d[1]/2, z)
+    tags = [MINUS_Z_MARKER, MINUS_Y_MARKER, PLUS_X_MARKER, 
+            PLUS_Y_MARKER, MINUS_X_MARKER, PLUS_Z_MARKER]
+            
+    mesh_info = MeshInfo()
+    mesh_info.set_points(points)
+    mesh_info.set_facets(facets, tags)
 
-    points = [add_d_half_to_x_and_y(p) for p in points]
+    if periodicity is None:
+        periodicity = (False, False, False)
 
-    if periodic:
-        return _make_z_periodic_mesh(points, facets, tags, 
-                height=dimensions[2], 
-                max_volume=max_volume,
-                boundary_tagger=boundary_tagger)
-    else:
-        mesh_info = MeshInfo()
-        mesh_info.set_points(points)
-        mesh_info.set_facets(facets, tags)
+    axes = ["x", "y", "z"]
 
-        generated_mesh = build(mesh_info, max_volume=max_volume)
+    per_count = count(p for p in periodicity if p)
+    mesh_info.pbc_groups.resize(per_count)
+    pbc_group_number = 0
 
-        return ConformalMesh(
-                generated_mesh.points,
-                generated_mesh.elements,
-                boundary_tagger)
+    marker_to_tag = {}
+    mesh_periodicity = []
+
+    for axis, axis_per in enumerate(periodicity):
+        minus_marker = 1+2*axis
+        plus_marker = 2+2*axis
+
+        minus_tag = "minus_"+axes[axis]
+        plus_tag = "plus_"+axes[axis]
+
+        marker_to_tag[minus_marker] = minus_tag
+        marker_to_tag[plus_marker] = plus_tag
+
+        if axis_per:
+            pbcg = mesh_info.pbc_groups[pbc_group_number]
+            pbc_group_number +=1
+
+            pbcg.facet_marker_1 = minus_marker
+            pbcg.facet_marker_2 = plus_marker
+
+            translation = [0,0,0]
+            translation[axis] = d[axis]
+            pbcg.set_transform(translation=translation)
+
+            mesh_periodicity.append((minus_tag, plus_tag))
+        else:
+            mesh_periodicity.append(None)
+
+    generated_mesh = build(mesh_info, max_volume=max_volume)
+
+    fvi2fm = generated_mesh.face_vertex_indices_to_face_marker
+
+    def wrapped_boundary_tagger(fvi, el, fn):
+        face_marker = fvi2fm[frozenset(fvi)]
+
+        return [marker_to_tag[face_marker]] \
+                + boundary_tagger(fvi, el, fn)
+
+    return ConformalMesh(
+            generated_mesh.points,
+            generated_mesh.elements,
+            wrapped_boundary_tagger,
+            periodicity=mesh_periodicity)
 

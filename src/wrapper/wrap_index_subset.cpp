@@ -41,6 +41,8 @@ void hedge_expose_index_subset()
       ;
   }
 
-  DEF_FOR_EACH_OP_TARGET(perform_restriction, );
-  DEF_FOR_EACH_OP_TARGET(perform_expansion, );
+#define ARG_TYPES const index_subset &, 
+  DEF_FOR_EACH_OP_TARGET(perform_restriction, ARG_TYPES);
+  DEF_FOR_EACH_OP_TARGET(perform_expansion, ARG_TYPES);
+#undef ARG_TYPES
 }

@@ -37,9 +37,9 @@
 
 
 
-#define DEF_FOR_EACH_OP_TARGET(NAME, TEMPLATE_ARGS) \
-  def(#NAME, NAME<TEMPLATE_ARGS vector_target>); \
-  def(#NAME, NAME<TEMPLATE_ARGS coord_matrix_target>);
+#define DEF_FOR_EACH_OP_TARGET(NAME, ARG_TYPES) \
+  def(#NAME, (void (*)(ARG_TYPES vector_target)) NAME); \
+  def(#NAME, (void (*)(ARG_TYPES coord_matrix_target)) NAME);
 #define ENUM_VALUE(NAME) \
   value(#NAME, NAME)
 #define DEF_SIMPLE_METHOD(NAME) \
