@@ -42,6 +42,8 @@ void hedge_expose_base()
             return_internal_reference<>()))
       .add_property("jacobian", &cl::jacobian)
       .def("__call__", &affine_map::operator())
+
+      .enable_pickling()
       ;
   }
 }

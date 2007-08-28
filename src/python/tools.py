@@ -54,6 +54,10 @@ class AffineMap(hedge._internal.AffineMap):
         """
         return AffineMap(1/self.matrix, -self.matrix <<num.solve>> self.vector)
 
+    def __getinitargs__(self):
+        return self.matrix, self.vector
+
+
 
 
 

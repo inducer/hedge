@@ -18,7 +18,8 @@
 
 
 #include <boost/python.hpp>
-#include "index_subset.hpp"
+#include <boost/python/stl_iterator.hpp>
+#include "index_map.hpp"
 #include "wrap_helpers.hpp"
 #include "op_target.hpp"
 
@@ -31,18 +32,30 @@ using namespace hedge;
 
 
 
-void hedge_expose_index_subset()
+namespace
+{
+  from_index_map *make_from_index_map(object iterable)
+  {
+    std::auto_ptr<from_index_map> fim(new from_index_map);
+    copy(
+        stl_input_iterator<unsigned>(iterable), 
+        stl_input_iterator<unsigned>(),
+        back_inserter(*fim));
+    return fim.release();
+  }
+
+}
+void hedge_expose_index_map()
 {
   {
-    typedef index_subset cl;
-    class_<cl>("IndexSubset")
-      .DEF_SIMPLE_METHOD(clear)
-      .DEF_SIMPLE_METHOD(add_index)
+    typedef from_index_map cl;
+    class_<cl>("IndexMap")
+      .def("__init__", make_constructor(make_from_index_map))
       ;
   }
 
-#define ARG_TYPES const index_subset &, 
-  DEF_FOR_EACH_OP_TARGET(perform_restriction, ARG_TYPES);
-  DEF_FOR_EACH_OP_TARGET(perform_expansion, ARG_TYPES);
+#define ARG_TYPES const from_index_map &, 
+  DEF_FOR_EACH_OP_TARGET(perform_index_map, ARG_TYPES);
+  DEF_FOR_EACH_OP_TARGET(perform_inverse_index_map, ARG_TYPES);
 #undef ARG_TYPES
 }

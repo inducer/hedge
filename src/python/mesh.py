@@ -30,8 +30,8 @@ class Element(object):
 
         vertices = [all_vertices[v] for v in vertex_indices]        
         vertex_indices = self.vertex_indices = \
-                self._reorder_vertices(vertex_indices, 
-                        vertices)
+                tuple(self._reorder_vertices(vertex_indices, 
+                        vertices))
         vertices = [all_vertices[v] for v in vertex_indices]        
 
         self.map = self.get_map_unit_to_global(vertices)
@@ -242,7 +242,8 @@ class ConformalMesh(Mesh):
     def __init__(self, points, elements, 
             boundary_tagger=lambda fvi, el, fn: [], 
             element_tagger=lambda el: [],
-            periodicity=None
+            periodicity=None,
+            _is_rankbdry_face=lambda (el, face): False,
             ):
         """Construct a simplical mesh.
 
@@ -262,6 +263,16 @@ class ConformalMesh(Mesh):
         periodicity is either None or is a list of tuples
           just like the one documented for the `periodicity'
           member of class Mesh.
+
+        _is_rankbdry_face is an implementation detail and
+          should not be used from user code. It is a function
+          returning whether a given face identified by 
+          (element instance, face_nr) is cut by a parallel
+          mesh partition.
+
+        Tags beginning with the string "hedge" are reserved for internal
+        use. The value "None" is also not a valid tag as it is used for
+        "everything", i.e. "the whole boundary", or "all elements".
 
         Face indices follow the convention for the respective element,
         such as Triangle or Tetrahedron, in this module.
@@ -294,12 +305,12 @@ class ConformalMesh(Mesh):
             periodicity = dim*[None]
         assert len(periodicity) == dim
 
-        self._build_connectivity(boundary_tagger, periodicity)
+        self._build_connectivity(boundary_tagger, periodicity, _is_rankbdry_face)
 
     def transform(self, map):
         self.points = [map(x) for x in self.points]
 
-    def _build_connectivity(self, boundary_tagger, periodicity):
+    def _build_connectivity(self, boundary_tagger, periodicity, is_rankbdry_face):
         # create face_map, which is a mapping of
         # (vertices on a face) -> 
         #  [(element, face_idx) for elements bordering that face]
@@ -324,11 +335,11 @@ class ConformalMesh(Mesh):
                 raise RuntimeError, "face can at most border two elements"
 
         # add periodicity-induced connectivity
-        from pytools import flatten
+        from pytools import flatten, reverse_dictionary
 
         self.periodicity = periodicity
 
-        self.periodic_face_vertex_map = {}
+        self.periodic_opposite_map = {}
 
         for axis, axis_periodicity in enumerate(periodicity):
             if axis_periodicity is not None:
@@ -352,24 +363,40 @@ class ConformalMesh(Mesh):
                 minus_to_plus = find_matching_vertices_along_axis(
                         axis, minus_z_points, plus_z_points,
                         minus_vertex_indices, plus_vertex_indices)
+                plus_to_minus = reverse_dictionary(minus_to_plus)
 
                 # establish face connectivity
                 for minus_face in minus_faces:
                     minus_el, minus_fi = minus_face
                     minus_fvi = minus_el.faces[minus_fi]
 
-                    plus_fvi = tuple(minus_to_plus[i] for i in minus_fvi)
-                    plus_faces = face_map[frozenset(plus_fvi)]
-                    assert len(plus_faces) == 1
+                    mapped_plus_fvi = tuple(minus_to_plus[i] for i in minus_fvi)
+                    try:
+                        plus_faces = face_map[frozenset(mapped_plus_fvi)]
+                        assert len(plus_faces) == 1
+                    except KeyError:
+                        # is our periodic counterpart is in a different mesh clump?
+                        if is_rankbdry_face(minus_face):
+                            # if so, cool. parallel handler will take care of it.
+                            continue
+                        else:
+                            # if not, bad.
+                            raise
 
                     plus_face = plus_faces[0]
                     self.interfaces.append([minus_face, plus_face])
 
                     plus_el, plus_fi = plus_face
-                    native_plus_fvi = plus_el.faces[plus_fi]
+                    plus_fvi = plus_el.faces[plus_fi]
 
-                    self.periodic_face_vertex_map[minus_fvi] = plus_fvi, axis
-                    self.periodic_face_vertex_map[native_plus_fvi] = native_plus_fvi, axis
+                    mapped_minus_fvi = tuple(plus_to_minus[i] for i in plus_fvi)
+
+                    # the periodic_opposite_map maps face vertex tuples from
+                    # one end of the periodic domain to the other, while
+                    # correspondence between each entry 
+
+                    self.periodic_opposite_map[minus_fvi] = mapped_plus_fvi, axis
+                    self.periodic_opposite_map[plus_fvi] = mapped_minus_fvi, axis
 
                     self.tag_to_boundary[None].remove(plus_face)
                     self.tag_to_boundary[None].remove(minus_face)

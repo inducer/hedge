@@ -43,6 +43,9 @@ def main():
             RectangularWaveguideMode, \
             RectangularCavityMode
     from hedge.operators import MaxwellOperator
+    from hedge.parallel import guess_parallelization_context
+
+    pcon = guess_parallelization_context()
 
     epsilon0 = 8.8541878176e-12 # C**2 / (N m**2)
     mu0 = 4*pi*1e-7 # N/A**2.
@@ -63,7 +66,9 @@ def main():
                 epsilon=epsilon, mu=mu)
         r_sol = CartesianAdapter(RealPartAdapter(mode))
         c_sol = SplitComplexAdapter(CartesianAdapter(mode))
-        mesh = make_cylinder_mesh(radius=R, height=d, max_volume=0.01)
+
+        if pcon.is_head_rank:
+            mesh = make_cylinder_mesh(radius=R, height=d, max_volume=0.01)
     else:
         if periodic:
             mode = RectangularWaveguideMode(epsilon, mu, (3,2,1))
@@ -73,25 +78,32 @@ def main():
         mode = RectangularCavityMode(epsilon, mu, (1,2,2))
         r_sol = RealPartAdapter(mode)
         c_sol = SplitComplexAdapter(mode)
-        mesh = make_box_mesh(max_volume=0.01, periodicity=periodicity)
+
+        if pcon.is_head_rank:
+            mesh = make_box_mesh(max_volume=0.01, periodicity=periodicity)
+
+    if pcon.is_head_rank:
+        mesh_data = pcon.distribute_mesh(mesh)
+    else:
+        mesh_data = pcon.receive_mesh()
 
     #for order in [1,2,3,4,5,6]:
     for order in [3]:
-        print "---------------------------------------------"
-        print "order %d" % order
-        print "---------------------------------------------"
-        discr = Discretization(mesh, TetrahedralElement(order))
-        vis = SiloVisualizer(discr)
+        discr = pcon.make_discretization(mesh_data, TetrahedralElement(order))
 
-        print "%d elements" % len(discr.mesh.elements)
+        vis = SiloVisualizer(discr)
 
         dt = discr.dt_factor(1/sqrt(mu*epsilon))
         final_time = dt*60
         nsteps = int(final_time/dt)+1
         dt = final_time/nsteps
 
-        print "dt", dt
-        print "nsteps", nsteps
+        if pcon.is_head_rank:
+            print "---------------------------------------------"
+            print "order %d" % order
+            print "---------------------------------------------"
+            print "dt", dt
+            print "nsteps", nsteps
 
         mass = bind_mass_matrix(discr)
 
@@ -115,15 +127,16 @@ def main():
                     time()-last_tstep)
             last_tstep = time()
 
-            silo = SiloFile("em-%04d.silo" % step)
-            vis.add_to_silo(silo,
-                    vectors=[("e", fields[0:3]), 
-                        ("h", fields[3:6]), ],
-                    expressions=[
-                        ],
-                    write_coarse_mesh=True,
-                    time=t, step=step
-                    )
+            if False:
+                silo = SiloFile("em-%04d.silo" % step)
+                vis.add_to_silo(silo,
+                        vectors=[("e", fields[0:3]), 
+                            ("h", fields[3:6]), ],
+                        expressions=[
+                            ],
+                        write_coarse_mesh=True,
+                        time=t, step=step
+                        )
 
             fields = stepper(fields, t, dt, op.rhs)
             t += dt

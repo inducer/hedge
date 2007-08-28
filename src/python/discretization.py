@@ -46,6 +46,16 @@ class _ElementGroup(object):
 
 
 
+class _Boundary:
+    def __init__(self, nodes, ranges, index_map, face_groups_and_ldis):
+        self.nodes = nodes
+        self.ranges = ranges
+        self.index_map = index_map
+        self.face_groups_and_ldis = face_groups_and_ldis
+
+
+
+
 class Discretization:
     def __init__(self, mesh, local_discretization):
         self.mesh = mesh
@@ -54,9 +64,8 @@ class Discretization:
         self._build_element_groups_and_nodes(local_discretization)
         self._calculate_local_matrices()
         self._find_face_data()
-        self._build_face_groups()
-        self._find_boundary_nodes_and_ranges()
-        self._find_boundary_groups()
+        self._build_interior_face_groups()
+        self.boundaries = {}
 
     # initialization ----------------------------------------------------------
     def _build_element_groups_and_nodes(self, local_discretization):
@@ -127,7 +136,7 @@ class Discretization:
 
                 self.faces.append(el_faces)
 
-    def _build_face_groups(self):
+    def _build_interior_face_groups(self):
         from hedge._internal import FaceGroup
         fg = FaceGroup()
 
@@ -160,10 +169,10 @@ class Discretization:
                     assert comp.norm_2(dist) < 1e-14
 
             except ValueError:
-                vertices_l, axis_l = self.mesh.periodic_face_vertex_map[vertices_l]
-                vertices_n, axis_n = self.mesh.periodic_face_vertex_map[vertices_n]
+                # this happens if vertices_l is not a permutation of vertices_n.
+                # periodicity is the only reason why that would be so.
 
-                assert axis_l == axis_n
+                vertices_n, axis = self.mesh.periodic_opposite_map[vertices_n]
 
                 findices_shuffled_n = \
                         ldis_l.shuffle_face_indices_to_match(
@@ -171,7 +180,7 @@ class Discretization:
 
                 for i, j in zip(findices_l, findices_shuffled_n):
                     dist = self.nodes[estart_l+i]-self.nodes[estart_n+j]
-                    dist[axis_l] = 0 
+                    dist[axis] = 0 
                     assert comp.norm_2(dist) < 1e-14
 
             fg.add_face(
@@ -190,57 +199,45 @@ class Discretization:
         else:
             self.face_groups = []
         
-    def _find_boundary_nodes_and_ranges(self):
-        """assign boundary nodes and face ranges, for each tag separately"""
-        self.boundary_nodes = {}
-        self.boundary_ranges = {}
-        self.boundary_index_subsets = {}
+    def get_boundary(self, tag):
+        try:
+            return self.boundaries[tag]
+        except KeyError:
+            pass
 
-        from hedge._internal import IndexSubset
+        from hedge._internal import IndexMap, FaceGroup
 
-        for tag, els_faces in self.mesh.tag_to_boundary.iteritems():
-            tag_nodes = []
-            tag_face_ranges = {}
-            tag_index_subset = IndexSubset()
-            point_idx = 0
+        nodes = []
+        face_ranges = {}
+        index_map = []
+        face_group = FaceGroup()
+        ldis = None # if this boundary is empty, we might as well have no ldis
 
-            for ef in els_faces:
-                el, face = ef
+        for ef in self.mesh.tag_to_boundary[tag]:
+            el, face_nr = ef
 
-                (el_start, el_end), ldis = self.find_el_data(el.id)
-                face_indices = ldis.face_indices()[face]
+            (el_start, el_end), ldis = self.find_el_data(el.id)
+            face_indices = ldis.face_indices()[face_nr]
 
-                f_start = len(tag_nodes)
-                tag_nodes += [self.nodes[el_start+i] for i in face_indices]
-                tag_face_ranges[ef] = (f_start, len(tag_nodes))
-                for i in face_indices:
-                    tag_index_subset.add_index(point_idx, el_start+i)
-                    point_idx += 1
+            f_start = len(nodes)
+            nodes += [self.nodes[el_start+i] for i in face_indices]
+            face_range = face_ranges[ef] = (f_start, len(nodes))
+            index_map.extend(el_start+i for i in face_indices)
 
-            self.boundary_nodes[tag] = tag_nodes
-            self.boundary_ranges[tag] = tag_face_ranges
-            self.boundary_index_subsets[tag] = tag_index_subset
+            face_group.add_face(
+                    [el_start+i for i in face_indices],
+                    range(*face_range),
+                    self.faces[el.id][face_nr])
 
-    def _find_boundary_groups(self):
-        from hedge._internal import FaceGroup
-        self.boundary_groups = {}
-        for tag, els_faces in self.mesh.tag_to_boundary.iteritems():
-            fg = FaceGroup()
-            ranges = self.boundary_ranges[tag]
-            for face in els_faces:
-                el, fl = face
+        bdry = _Boundary(
+                nodes=nodes,
+                ranges=face_ranges,
+                index_map=IndexMap(index_map),
+                face_groups_and_ldis=[(face_group, ldis)])
 
-                (estart_l, eend_l), ldis = self.find_el_data(el.id)
-                findices_l = ldis.face_indices()[fl]
-                fn_start, fn_end = ranges[face]
+        self.boundaries[tag] = bdry
+        return bdry
 
-                fg.add_face(
-                        [estart_l+i for i in findices_l],
-                        range(fn_start, fn_end),
-                        self.faces[el.id][fl])
-
-            self.boundary_groups[tag] = [(fg, ldis.face_mass_matrix())]
-                        
     # vector construction -----------------------------------------------------
     def volume_zeros(self):
         return num.zeros((len(self.nodes),))
@@ -291,10 +288,10 @@ class Discretization:
         return result
 
     def boundary_zeros(self, tag=None):
-        return num.zeros((len(self.boundary_nodes[tag]),))
+        return num.zeros((len(self.get_boundary(tag).nodes),))
 
     def interpolate_boundary_function(self, f, tag=None):
-        return num.array([f(x) for x in self.boundary_nodes[tag]])
+        return num.array([f(x) for x in self.get_boundary(tag).nodes])
 
     # element data retrieval --------------------------------------------------
     def find_el_range(self, el_id):
@@ -399,41 +396,51 @@ class Discretization:
 
         result = num.zeros_like(field)
 
+        bdry = self.get_boundary(tag)
+
         target_local = VectorTarget(field, result)
         target_local.begin(len(self.nodes), len(self.nodes))
-        for fg, fmm in self.boundary_groups[tag]:
-            perform_local_flux_operator(fg, fmm, ch_flux, target_local)
+        for fg, ldis in bdry.face_groups_and_ldis:
+            perform_local_flux_operator(fg, ldis.face_mass_matrix(), ch_flux, target_local)
         target_local.finalize()
 
         target_bdry = VectorTarget(bfield, result)
-        target_bdry.begin(len(self.nodes), len(self.boundary_nodes[tag]))
-        for fg, fmm in self.boundary_groups[tag]:
-            perform_neighbor_flux_operator(fg, fmm, ch_flux, target_bdry)
+        target_bdry.begin(len(self.nodes), len(bdry.nodes))
+        for fg, ldis in bdry.face_groups_and_ldis:
+            perform_neighbor_flux_operator(fg, ldis.face_mass_matrix(), ch_flux, target_bdry)
         target_bdry.finalize()
 
         return result
     
     # misc stuff --------------------------------------------------------------
-    def dt_factor(self, max_system_ev):
+    def dt_non_geometric_factor(self):
         distinct_ldis = set(eg.local_discretization for eg in self.element_groups)
+        return min(ldis.dt_non_geometric_factor() 
+                for ldis in distinct_ldis)
+
+    def dt_geometric_factor(self):
+        return min(min(eg.local_discretization.dt_geometric_factor(
+            [self.mesh.points[i] for i in el.vertex_indices], el)
+            for el in eg.members)
+            for eg in self.element_groups)
+
+    def dt_factor(self, max_system_ev):
         return 1/max_system_ev \
-                * min(ldis.dt_non_geometric_factor() for ldis in distinct_ldis) \
-                * min(min(eg.local_discretization.dt_geometric_factor(
-                    [self.mesh.points[i] for i in el.vertex_indices], el)
-                    for el in eg.members)
-                    for eg in self.element_groups)
+                * self.dt_non_geometric_factor() \
+                * self.dt_geometric_factor()
 
     @work_with_arithmetic_containers
     def volumize_boundary_field(self, bfield, tag=None):
         from hedge._internal import \
                 VectorTarget, \
-                perform_restriction
+                perform_inverse_index_map
 
         result = self.volume_zeros(tag)
+        bdry = self.get_boundary(tag)
 
         target = VectorTarget(bfield, result)
-        target.begin(len(self.nodes), len(self.boundary_nodes[tag]))
-        perform_expansion(self.boundary_index_subsets[tag], target)
+        target.begin(len(self.nodes), len(bdry.nodes))
+        perform_inverse_index_map(bdry.index_map, target)
         target.finalize()
 
         return result
@@ -442,13 +449,15 @@ class Discretization:
     def boundarize_volume_field(self, field, tag=None):
         from hedge._internal import \
                 VectorTarget, \
-                perform_restriction
+                perform_index_map
 
         result = self.boundary_zeros(tag)
 
+        bdry = self.get_boundary(tag)
+
         target = VectorTarget(field, result)
-        target.begin(len(self.boundary_nodes[tag]), len(self.nodes))
-        perform_restriction(self.boundary_index_subsets[tag], target)
+        target.begin(len(bdry.nodes), len(self.nodes))
+        perform_index_map(bdry.index_map, target)
         target.finalize()
 
         return result

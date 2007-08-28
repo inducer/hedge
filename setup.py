@@ -78,7 +78,7 @@ ext_modules=[
                 "src/wrapper/wrap_op_target.cpp", 
                 "src/wrapper/wrap_volume_operators.cpp", 
                 "src/wrapper/wrap_face_operators.cpp", 
-                "src/wrapper/wrap_index_subset.cpp", 
+                "src/wrapper/wrap_index_map.cpp", 
                 ],
             include_dirs=INCLUDE_DIRS + EXTRA_INCLUDE_DIRS,
             library_dirs=LIBRARY_DIRS + EXTRA_LIBRARY_DIRS,
