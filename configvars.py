@@ -17,13 +17,6 @@ vars = [
     ("BLAS_LIB_NAMES", "blas",
         "Library names for BLAS, comma-separated"),
     # -------------------------------------------------------------------------
-    ("USE_SILO", True,
-        "Whether to use libsilo for output"),
-    ("SILO_INC_DIR", None,
-        "The include directory for libsilo"),
-    ("SILO_LIB_DIR", None,
-        "The library directory for libsilo"),
-    # -------------------------------------------------------------------------
     ("CXXFLAGS", None,
         "Any extra C++ compiler options to include"),
     ]

@@ -64,7 +64,7 @@ class SiloMeshData:
     def __init__(self, dim, points, element_groups):
         from pytools import flatten
 
-        self.coords = flatten([p[d] for p in points] for d in range(dim))
+        self.coords = list(flatten([p[d] for p in points] for d in range(dim)))
 
         self.ndims = dim
         self.nodelist = []
@@ -119,7 +119,7 @@ class SiloVisualizer:
 
     def add_to_silo(self, silo, scalars=[], vectors=[], expressions=[],
             time=None, step=None, write_coarse_mesh=False):
-        from hedge.silo import DB_NODECENT, DBOPT_DTIME, DBOPT_CYCLE
+        from pylo import DB_NODECENT, DBOPT_DTIME, DBOPT_CYCLE
 
         # put mesh coordinates
         mesh_opts = {}

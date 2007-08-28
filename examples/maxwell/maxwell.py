@@ -30,8 +30,7 @@ def main():
     from hedge.mesh import make_ball_mesh, make_cylinder_mesh, make_box_mesh
     from hedge.discretization import Discretization, bind_mass_matrix
     from hedge.visualization import SiloVisualizer
-    from hedge.silo import SiloFile
-    from hedge.silo import DB_VARTYPE_VECTOR
+    from pylo import SiloFile, DB_VARTYPE_VECTOR
     from hedge.tools import dot, EOCRecorder
     from math import sqrt, pi
     from analytic_solutions import \
@@ -127,7 +126,7 @@ def main():
                     time()-last_tstep)
             last_tstep = time()
 
-            if False:
+            if True:
                 silo = SiloFile("em-%04d.silo" % step)
                 vis.add_to_silo(silo,
                         vectors=[("e", fields[0:3]), 

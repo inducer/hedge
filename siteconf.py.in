@@ -21,12 +21,6 @@ HAVE_BLAS = ${HAVE_BLAS}
 BLAS_LIBRARY_DIRS = [$str{BLAS_LIB_DIR}]
 BLAS_LIBRARIES = $str{BLAS_LIB_NAMES}.split(",")
 
-USE_SILO = ${USE_SILO}
-
-SILO_INCLUDE_DIRS = [$str{SILO_INC_DIR}]
-SILO_LIBRARY_DIRS = [$str{SILO_LIB_DIR}]
-SILO_LIBRARIES = ["silo"]
-
 # --------------------------------------------------------------------
 # Compiler flags
 # --------------------------------------------------------------------

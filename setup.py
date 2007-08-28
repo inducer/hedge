@@ -67,10 +67,18 @@ def handle_component(comp):
         globals()["EXTRA_LIBRARIES"] += globals()[comp+"_LIBRARIES"]
 
 handle_component("BLAS")
-handle_component("SILO")
 
-ext_modules=[
-        Extension("_internal", 
+setup(name="hedge",
+      version="0.90",
+      description="The Hybrid-and-Easy Discontinuous Galerkin Environment",
+      author=u"Andreas Kloeckner",
+      author_email="inform@tiker.net",
+      license = "GPLv3",
+      url="http://news.tiker.net/software/hedge",
+      packages=["hedge"],
+      package_dir={"hedge": "src/python"},
+      ext_package="hedge",
+      ext_modules=[Extension("_internal", 
             ["src/wrapper/wrap_main.cpp", 
                 "src/wrapper/wrap_base.cpp", 
                 "src/wrapper/wrap_special_function.cpp", 
@@ -85,33 +93,6 @@ ext_modules=[
             libraries=LIBRARIES + EXTRA_LIBRARIES,
             extra_compile_args=EXTRA_COMPILE_ARGS,
             define_macros=list(EXTRA_DEFINES.iteritems()),
-            )]
-
-if USE_SILO:
-    ext_modules.append(
-            Extension("_silo", 
-                ["src/wrapper/wrap_silo.cpp", 
-                    ],
-                include_dirs=INCLUDE_DIRS + EXTRA_INCLUDE_DIRS,
-                library_dirs=LIBRARY_DIRS + EXTRA_LIBRARY_DIRS,
-                libraries=LIBRARIES + EXTRA_LIBRARIES,
-                extra_compile_args=EXTRA_COMPILE_ARGS,
-                define_macros=list(EXTRA_DEFINES.iteritems()),
-                ))
-
-
-
-
-setup(name="hedge",
-      version="0.90",
-      description="The Hybrid-and-Easy Discontinuous Galerkin Environment",
-      author=u"Andreas Kloeckner",
-      author_email="inform@tiker.net",
-      license = "GPLv3",
-      url="http://news.tiker.net/software/hedge",
-      packages=["hedge"],
-      package_dir={"hedge": "src/python"},
-      ext_package="hedge",
-      ext_modules=ext_modules,
+            )],
       data_files=[("include/hedge", glob.glob("src/cpp/*.hpp"))],
      )
