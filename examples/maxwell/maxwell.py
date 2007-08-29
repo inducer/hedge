@@ -29,8 +29,11 @@ def main():
     from hedge.timestep import RK4TimeStepper
     from hedge.mesh import make_ball_mesh, make_cylinder_mesh, make_box_mesh
     from hedge.discretization import Discretization, bind_mass_matrix
-    from hedge.visualization import SiloVisualizer
-    from pylo import SiloFile, DB_VARTYPE_VECTOR
+    from hedge.visualization import \
+            make_silo_file, \
+            SiloVisualizer, \
+            get_node_partition
+    from pylo import DB_VARTYPE_VECTOR
     from hedge.tools import dot, EOCRecorder
     from math import sqrt, pi
     from analytic_solutions import \
@@ -127,10 +130,12 @@ def main():
             last_tstep = time()
 
             if True:
-                silo = SiloFile("em-%04d.silo" % step)
+                silo = make_silo_file(pcon, "em-%04d" % step)
                 vis.add_to_silo(silo,
                         vectors=[("e", fields[0:3]), 
                             ("h", fields[3:6]), ],
+                        scalars=[("partition", get_node_partition(pcon, discr))
+                            ],
                         expressions=[
                             ],
                         write_coarse_mesh=True,

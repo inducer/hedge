@@ -92,6 +92,8 @@ class SiloMeshData:
                 zonelist_name, None, mesh_opts)
 
 
+
+
 class SiloVisualizer:
     def __init__(self, discr):
         def generate_fine_elements(eg):
@@ -142,3 +144,27 @@ class SiloVisualizer:
         if expressions:
             silo.put_defvars("defvars", expressions)
 
+
+
+
+def make_silo_file(pcontext, pathname):
+    """This function returns either a pylo.SiloFile or a
+    pylo.ParallelSiloFile, depending on the ParallelContext
+    `pcontext' passed in.
+
+    An extension of .silo is automatically appended to `pathname'.
+    """
+    if len(pcontext.ranks) == 1:
+        from pylo import SiloFile
+        return SiloFile(pathname+".silo")
+    else:
+        from pylo import ParallelSiloFile
+        return ParallelSiloFile(pathname, pcontext.rank, pcontext.ranks)
+
+
+
+
+def get_node_partition(pcon, discr):
+    vec = discr.volume_zeros()
+    vec[:] = pcon.rank
+    return vec
