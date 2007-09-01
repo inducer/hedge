@@ -236,3 +236,22 @@ class EOCRecorder:
         for absc, err in self.history:
             outfile.write("%f %f\n" % (absc, const * absc**(-order)))
 
+
+
+
+def apply_index_map(imap, vector):
+    from hedge._internal import VectorTarget, perform_index_map
+
+    result = num.zeros_like(vector, shape=(imap.to_length,))
+    perform_index_map(imap, VectorTarget(vector, result))
+    return result
+
+
+
+
+def apply_inverse_index_map(imap, vector):
+    from hedge._internal import VectorTarget, perform_inverse_index_map
+
+    result = num.zeros_like(vector, shape=(imap.from_length,))
+    perform_inverse_index_map(imap, VectorTarget(vector, result))
+    return result

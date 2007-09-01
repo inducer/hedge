@@ -18,6 +18,7 @@
 
 
 import pylinear.computation as comp
+from pytools.arithmetic_container import work_with_arithmetic_containers
 
 
 
@@ -203,9 +204,13 @@ class MPIParallelizationContext(ParallelizationContext):
                     for vi in rank_global_vertex_indices]
 
             # find global-to-local maps
-            rank_global2local_vertex_indices = {}
-            for lvi, gvi in enumerate(rank_global_vertex_indices):
-                rank_global2local_vertex_indices[gvi] = lvi
+            rank_global2local_vertex_indices = dict(
+                    (gvi, lvi) for lvi, gvi in 
+                    enumerate(rank_global_vertex_indices))
+
+            rank_global2local_elements = dict(
+                    (el.id, i) for i, el in 
+                    enumerate(rank_global_elements))
 
             # find elements in local numbering
             rank_local_elements = [
@@ -234,14 +239,17 @@ class MPIParallelizationContext(ParallelizationContext):
                 return (rank_global_elements[local_el.id], face_nr) in elface2rank
 
             from hedge.mesh import ConformalMesh
-            rank_mesh = ConformalMesh(rank_local_vertices,
+            rank_mesh = ConformalMesh(
+                    rank_local_vertices,
                     rank_local_elements,
                     parallelizer_bdry_tagger, copy_el_tagger,
                     mesh.periodicity,
                     is_rankbdry_face)
 
             # assemble per-rank data
-            rank_data = (rank_mesh, 
+            rank_data = (
+                    rank_mesh, 
+                    rank_global2local_elements,
                     rank_global2local_vertex_indices,
                     neighboring_ranks[rank],
                     mesh.periodic_opposite_map)
@@ -273,8 +281,11 @@ class ParallelDiscretization(hedge.discretization.Discretization):
     def __init__(self, mesh_data, local_discretization):
         import boost.mpi as mpi
 
+        self.received_bdrys = {}
+
         (self.context,
                 (mesh, 
+                    self.global2local_elements, 
                     self.global2local_vertex_indices, 
                     self.neighbor_ranks,
                     global_periodic_opposite_map)) = \
@@ -291,7 +302,7 @@ class ParallelDiscretization(hedge.discretization.Discretization):
             local2global_vertex_indices = \
                     reverse_dictionary(self.global2local_vertex_indices)
 
-            send_requests = mpi.request_vector()
+            send_requests = mpi.RequestList()
 
             for rank in self.neighbor_ranks:
                 rank_bdry = mesh.tag_to_boundary["hedge-rank-bdry-%d" % rank]
@@ -318,8 +329,7 @@ class ParallelDiscretization(hedge.discretization.Discretization):
 
             received_packets = {}
             while len(received_packets) < len(self.neighbor_ranks):
-                received_packet, status = comm.recv(
-                        tag=0, return_status=True)
+                received_packet, status = comm.recv(tag=0, return_status=True)
                 received_packets[status.source] = received_packet
 
             mpi.wait_all(send_requests)
@@ -419,18 +429,17 @@ class ParallelDiscretization(hedge.discretization.Discretization):
                 # turn from_indices into an IndexMap
 
                 from hedge._internal import IndexMap
-                self.from_neighbor_maps[rank] = IndexMap(from_indices)
+                self.from_neighbor_maps[rank] = IndexMap(
+                        len(from_indices), len(from_indices), from_indices)
 
     def lift_interior_flux(self, flux, field):
         import boost.mpi as mpi
 
         comm = self.context.communicator
 
-        recv_request_map = dict(
-                (rank, comm.irecv(source=rank, tag=1))
-                for rank in self.neighbor_ranks)
-        recv_requests = mpi.request_vector(recv_request_map.itervalues())
-        send_requests = mpi.request_vector(
+        recv_requests = mpi.RequestList(comm.irecv(source=rank, tag=1)
+            for rank in self.neighbor_ranks)
+        send_requests = mpi.RequestList(
                 comm.isend(rank, 1,
                     self.boundarize_volume_field(field, "hedge-rank-bdry-%d"% rank))
                 for rank in self.neighbor_ranks)
@@ -438,12 +447,15 @@ class ParallelDiscretization(hedge.discretization.Discretization):
         result = [hedge.discretization.Discretization.\
                 lift_interior_flux(self, flux, field)]
 
-        def receive(status):
-            req = recv_request_map[status.source]
-            bfield = req.value
-
-            result[0] += self.lift_boundary_flux(flux, field, bfield, 
-                    "hedge-rank-bdry-%d" %  status.source)
+        def receive(foreign_order_bfield, status):
+            from hedge.tools import apply_index_map
+            bfield = apply_index_map(
+                    self.from_neighbor_maps[status.source],
+                    foreign_order_bfield)
+            tag = "hedge-rank-bdry-%d" %  status.source
+            result[0] += self.lift_boundary_flux(flux, field, bfield, tag)
+            self.received_bdrys[status.source] = \
+                    self.volumize_boundary_field(bfield, tag)
 
         mpi.wait_all(recv_requests, receive)
         mpi.wait_all(send_requests)
@@ -477,3 +489,36 @@ def guess_parallelization_context():
     except ImportError:
         return SerialParallelizationContext()
 
+
+
+
+@work_with_arithmetic_containers
+def reassemble_volume_field(pcon, global_discr, local_discr, field):
+    from pytools import reverse_dictionary
+    local2global_element = reverse_dictionary(
+            local_discr.global2local_elements)
+
+    send_packet = {}
+    for eg in local_discr.element_groups:
+        for el, (estart, eend) in zip(eg.members, eg.ranges):
+            send_packet[local2global_element[el.id]] = field[estart:eend]
+
+    def reduction(a, b):
+        a.update(b)
+        return a
+
+    import boost.mpi as mpi
+
+    gfield_parts = mpi.reduce(
+            pcon.communicator, send_packet, reduction, pcon.head_rank)
+
+    if pcon.is_head_rank:
+        result = global_discr.volume_zeros()
+        for eg in global_discr.element_groups:
+            for el, (estart, eend) in zip(eg.members, eg.ranges):
+                my_part = gfield_parts[el.id]
+                assert len(my_part) == eend-estart
+                result[estart:eend] = my_part
+        return result
+    else:
+        return None

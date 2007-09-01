@@ -32,7 +32,7 @@ def main():
     from hedge.visualization import \
             make_silo_file, \
             SiloVisualizer, \
-            get_node_partition
+            get_rank_partition
     from pylo import DB_VARTYPE_VECTOR
     from hedge.tools import dot, EOCRecorder
     from math import sqrt, pi
@@ -57,7 +57,7 @@ def main():
     eoc_rec = EOCRecorder()
 
     cylindrical = False
-    periodic = True
+    periodic = False
 
     # default to "whole boundary is PEC"
     if cylindrical:
@@ -129,18 +129,20 @@ def main():
                     time()-last_tstep)
             last_tstep = time()
 
+            print l2_norm(op.rhs(t, fields)[0:3])
             if True:
-                silo = make_silo_file(pcon, "em-%04d" % step)
+                silo = make_silo_file("em-%04d" % step, pcon)
                 vis.add_to_silo(silo,
                         vectors=[("e", fields[0:3]), 
                             ("h", fields[3:6]), ],
-                        scalars=[("partition", get_node_partition(pcon, discr))
+                        scalars=[("partition", get_rank_partition(pcon, discr))
                             ],
                         expressions=[
                             ],
                         write_coarse_mesh=True,
                         time=t, step=step
                         )
+                silo.close()
 
             fields = stepper(fields, t, dt, op.rhs)
             t += dt

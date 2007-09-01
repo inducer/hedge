@@ -200,6 +200,13 @@ class Discretization:
             self.face_groups = []
         
     def get_boundary(self, tag):
+        """Get a _Boundary instance for a given `tag'.
+
+        If there is no boundary tagged with `tag', an empty _Boundary instance
+        is returned. Asking for a nonexistant boundary is not an error. 
+        (Otherwise get_boundary would unnecessarily become non-local when run 
+        in parallel.)
+        """
         try:
             return self.boundaries[tag]
         except KeyError:
@@ -213,7 +220,7 @@ class Discretization:
         face_group = FaceGroup()
         ldis = None # if this boundary is empty, we might as well have no ldis
 
-        for ef in self.mesh.tag_to_boundary[tag]:
+        for ef in self.mesh.tag_to_boundary.get(tag, []):
             el, face_nr = ef
 
             (el_start, el_end), ldis = self.find_el_data(el.id)
@@ -232,7 +239,7 @@ class Discretization:
         bdry = _Boundary(
                 nodes=nodes,
                 ranges=face_ranges,
-                index_map=IndexMap(index_map),
+                index_map=IndexMap(len(self.nodes), len(index_map), index_map),
                 face_groups_and_ldis=[(face_group, ldis)])
 
         self.boundaries[tag] = bdry
@@ -397,6 +404,8 @@ class Discretization:
         result = num.zeros_like(field)
 
         bdry = self.get_boundary(tag)
+        if not bdry.nodes:
+            return result
 
         target_local = VectorTarget(field, result)
         target_local.begin(len(self.nodes), len(self.nodes))
@@ -435,7 +444,7 @@ class Discretization:
                 VectorTarget, \
                 perform_inverse_index_map
 
-        result = self.volume_zeros(tag)
+        result = self.volume_zeros()
         bdry = self.get_boundary(tag)
 
         target = VectorTarget(bfield, result)

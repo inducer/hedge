@@ -32,14 +32,22 @@
 
 
 namespace hedge {
-  typedef std::vector<unsigned> from_index_map;
+  struct from_index_map
+  {
+    std::vector<unsigned> m_map;
+    unsigned m_from_length, m_to_length;
+
+    from_index_map(unsigned from_length, unsigned to_length)
+      : m_from_length(from_length), m_to_length(to_length)
+    { }
+  };
 
   template <class OT>
   inline
   void perform_index_map(const from_index_map &fim, OT target)
   {
     unsigned i = 0;
-    BOOST_FOREACH(unsigned from_index, fim)
+    BOOST_FOREACH(unsigned from_index, fim.m_map)
       target.add_coefficient(i++, from_index, 1);
   }
 
@@ -48,7 +56,7 @@ namespace hedge {
   void perform_inverse_index_map(const from_index_map &fim, OT target)
   {
     unsigned i = 0;
-    BOOST_FOREACH(unsigned from_index, fim)
+    BOOST_FOREACH(unsigned from_index, fim.m_map)
       target.add_coefficient(from_index, i++, 1);
   }
 }

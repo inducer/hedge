@@ -34,13 +34,15 @@ using namespace hedge;
 
 namespace
 {
-  from_index_map *make_from_index_map(object iterable)
+  from_index_map *make_from_index_map(
+      unsigned from_length, unsigned to_length, object iterable)
   {
-    std::auto_ptr<from_index_map> fim(new from_index_map);
+    std::auto_ptr<from_index_map> fim(
+        new from_index_map(from_length, to_length));
     copy(
         stl_input_iterator<unsigned>(iterable), 
         stl_input_iterator<unsigned>(),
-        back_inserter(*fim));
+        back_inserter(fim->m_map));
     return fim.release();
   }
 
@@ -49,8 +51,10 @@ void hedge_expose_index_map()
 {
   {
     typedef from_index_map cl;
-    class_<cl>("IndexMap")
+    class_<cl>("IndexMap", init<unsigned, unsigned>())
       .def("__init__", make_constructor(make_from_index_map))
+      .def_readonly("from_length", &cl::m_from_length)
+      .def_readonly("to_length", &cl::m_to_length)
       ;
   }
 

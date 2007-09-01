@@ -147,14 +147,14 @@ class SiloVisualizer:
 
 
 
-def make_silo_file(pcontext, pathname):
+def make_silo_file(pathname, pcontext=None):
     """This function returns either a pylo.SiloFile or a
     pylo.ParallelSiloFile, depending on the ParallelContext
     `pcontext' passed in.
 
     An extension of .silo is automatically appended to `pathname'.
     """
-    if len(pcontext.ranks) == 1:
+    if pcontext is None or len(pcontext.ranks) == 1:
         from pylo import SiloFile
         return SiloFile(pathname+".silo")
     else:
@@ -164,7 +164,7 @@ def make_silo_file(pcontext, pathname):
 
 
 
-def get_node_partition(pcon, discr):
+def get_rank_partition(pcon, discr):
     vec = discr.volume_zeros()
     vec[:] = pcon.rank
     return vec

@@ -19,14 +19,76 @@
 
 import pylinear.array as num
 import pylinear.computation as comp
+from hedge.tools import dot
 
 
 
 
-def dot(x, y): 
-    from operator import add
-    return reduce(add, (xi*yi for xi, yi in zip(x,y)))
+class StrongAdvectionOperator:
+    def __init__(self, discr, a, inflow_u=None):
+        self.a = a
+        self.discr = discr
+        self.inflow_u = inflow_u
 
+        from hedge.flux import zero, trace_sign, make_normal, local, neighbor, average
+        from hedge.discretization import bind_flux, bind_nabla, bind_mass_matrix, \
+                bind_inverse_mass_matrix
+
+        normal = make_normal(self.discr.dimensions)
+        flux_weak = dot(normal, a) * average# - 0.5 *(local-neighbor)
+        flux_strong = dot(normal, a)*local - flux_weak
+        self.flux = bind_flux(self.discr, flux_strong)
+
+        self.nabla = bind_nabla(discr)
+        self.mass = bind_mass_matrix(discr)
+        self.m_inv = bind_inverse_mass_matrix(discr)
+
+    def rhs(self, t, u):
+        from hedge.discretization import pair_with_boundary
+
+        bc_in = self.discr.interpolate_boundary_function(
+                lambda x: self.inflow_u(t, x),
+                "inflow")
+
+        return dot(self.a, self.nabla*u) - self.m_inv*(
+                self.flux * u + 
+                self.flux * pair_with_boundary(u, bc_in, "inflow"))
+
+
+
+
+class WeakAdvectionOperator:
+    def __init__(self, discr, a, inflow_u=None):
+        self.a = a
+        self.discr = discr
+        self.inflow_u = inflow_u
+
+        from hedge.flux import zero, trace_sign, make_normal, local, neighbor, average
+        from hedge.discretization import bind_flux, bind_weak_nabla, bind_mass_matrix, \
+                bind_inverse_mass_matrix
+
+        normal = make_normal(self.discr.dimensions)
+        flux_weak = dot(normal, a) * average# - 0.5 *(local-neighbor)
+        self.flux = bind_flux(self.discr, flux_weak)
+
+        self.weak_nabla = bind_weak_nabla(discr)
+        self.mass = bind_mass_matrix(discr)
+        self.m_inv = bind_inverse_mass_matrix(discr)
+
+    def rhs(self, t, u):
+        from hedge.discretization import pair_with_boundary
+
+        bc_in = self.discr.interpolate_boundary_function(
+                lambda x: self.inflow_u(t, x),
+                "inflow")
+
+        bc_out = self.discr.boundarize_volume_field(u, "outflow")
+
+        return -dot(self.a, self.weak_nabla*u) + self.m_inv*(
+                self.flux*u
+                + self.flux * pair_with_boundary(u, bc_in, "inflow")
+                + self.flux * pair_with_boundary(u, bc_out, "outflow")
+                )
 
 
 
@@ -42,22 +104,16 @@ def main() :
             make_single_element_mesh, \
             make_ball_mesh, \
             make_box_mesh
-    from hedge.discretization import \
-            Discretization, \
-            generate_ones_on_boundary, \
-            bind_flux, \
-            bind_nabla, \
-            bind_weak_nabla, \
-            bind_mass_matrix, \
-            bind_inverse_mass_matrix, \
-            pair_with_boundary
-    from hedge.visualization import SiloVisualizer
-    from hedge.silo import SiloFile
+    from hedge.discretization import Discretization, generate_ones_on_boundary
+    from hedge.visualization import SiloVisualizer, make_silo_file
     from hedge.flux import zero, trace_sign, make_normal, local, neighbor, average
     from hedge.tools import dot
     from pytools.arithmetic_container import ArithmeticList
     from pytools.stopwatch import Job
     from math import sin, cos, pi, sqrt
+    from hedge.parallel import \
+            guess_parallelization_context, \
+            reassemble_volume_field
 
     def u_analytic(t, x):
         return sin(3*(a*x+t))
@@ -68,32 +124,42 @@ def main() :
         else:
             return ["outflow"]
 
+    pcon = guess_parallelization_context()
+
     dim = 3
     periodic = False
     if dim == 2:
         a = num.array([1,0])
-        #mesh = make_square_mesh(boundary_tagger=boundary_tagger, max_area=0.1)
-        #mesh = make_square_mesh(boundary_tagger=boundary_tagger, max_area=0.2)
-        #mesh = make_regular_square_mesh(a=-r, b=r, boundary_tagger=boundary_tagger, n=3)
-        #mesh = make_single_element_mesh(boundary_tagger=boundary_tagger)
-        #mesh = make_disk_mesh(r=pi, boundary_tagger=boundary_tagger, max_area=0.5)
-        #mesh = make_disk_mesh(boundary_tagger=boundary_tagger)
+        if pcon.is_head_rank:
+            #mesh = make_square_mesh(boundary_tagger=boundary_tagger, max_area=0.1)
+            #mesh = make_square_mesh(boundary_tagger=boundary_tagger, max_area=0.2)
+            #mesh = make_regular_square_mesh(a=-r, b=r, boundary_tagger=boundary_tagger, n=3)
+            #mesh = make_single_element_mesh(boundary_tagger=boundary_tagger)
+            #mesh = make_disk_mesh(r=pi, boundary_tagger=boundary_tagger, max_area=0.5)
+            mesh = make_disk_mesh(boundary_tagger=boundary_tagger)
         el_class = TriangularElement
     elif dim == 3:
         a = num.array([0,0,0.5])
-        if periodic:
-            mesh = make_box_mesh(dimensions=(1,1,2*pi/3),
-                    periodic=periodic, max_volume=0.01)
-        else:
-            mesh = make_box_mesh(max_volume=0.01, 
-                    boundary_tagger=boundary_tagger)
-            #mesh = make_ball_mesh(boundary_tagger=boundary_tagger)
+        if pcon.is_head_rank:
+            if periodic:
+                mesh = make_box_mesh(dimensions=(1,1,2*pi/3),
+                        periodic=periodic, max_volume=0.01)
+            else:
+                mesh = make_box_mesh(max_volume=0.01, 
+                        boundary_tagger=boundary_tagger)
+                #mesh = make_ball_mesh(boundary_tagger=boundary_tagger)
         el_class = TetrahedralElement
     else:
         raise RuntimeError, "bad number of dimensions"
 
-    discr = Discretization(mesh, el_class(3))
+    if pcon.is_head_rank:
+        mesh_data = pcon.distribute_mesh(mesh)
+    else:
+        mesh_data = pcon.receive_mesh()
+
+    discr = pcon.make_discretization(mesh_data, el_class(5))
     vis = SiloVisualizer(discr)
+    op = WeakAdvectionOperator(discr, a, u_analytic)
 
     print "%d elements" % len(discr.mesh.elements)
 
@@ -109,64 +175,13 @@ def main() :
     stepfactor = 1
     nsteps = int(4/dt)
 
-    normal = make_normal(discr.dimensions)
-
-    flux_weak = dot(normal, a) * average# - 0.5 *(local-neighbor)
-    flux_strong = dot(normal, a)*local - flux_weak
-
-    nabla = bind_nabla(discr)
-    weak_nabla = bind_weak_nabla(discr)
-    mass = bind_mass_matrix(discr)
-    m_inv = bind_inverse_mass_matrix(discr)
-
-    def rhs_strong(t, u):
-        from pytools import argmax
-
-        if periodic:
-            flux = bind_flux(discr, flux_strong)
-
-            return dot(a, nabla*u) - m_inv*(flux * u)
-        else:
-            bc_in = discr.interpolate_boundary_function(
-                    lambda x: u_analytic(t, x),
-                    "inflow")
-
-            flux = bind_flux(discr, flux_strong)
-
-            return dot(a, nabla*u) - m_inv*(
-                    flux * u + 
-                    flux * pair_with_boundary(u, bc_in, "inflow"))
-
-    def rhs_weak(t, u):
-        from pytools import argmax
-
-        assert not periodic
-
-        bc_in = discr.interpolate_boundary_function(
-                lambda x: u_analytic(t, x),
-                "inflow")
-
-        bc_out = discr.boundarize_volume_field(u, "outflow")
-
-        flux = bind_flux(discr, flux_weak)
-
-        return -dot(a, weak_nabla*u) +m_inv*(
-                flux*u
-                + flux * pair_with_boundary(u, bc_in, "inflow")
-                + flux * pair_with_boundary(u, bc_out, "outflow")
-                )
-
     stepper = RK4TimeStepper()
     for step in range(nsteps):
         if step % stepfactor == 0:
-            print "timestep %d, t=%f, l2=%f" % (step, dt*step, sqrt(u*(mass*u)))
-        u = stepper(u, step*dt, dt, rhs_strong)
+            print "timestep %d, t=%f, l2=%f" % (step, dt*step, sqrt(u*(op.mass*u)))
 
-        t = (step+1)*dt
-        #u_true = discr.interpolate_volume_function(
-                #lambda x: u_analytic(t, x))
-
-        silo = SiloFile("fld-%04d.silo" % step)
+        t = step*dt
+        silo = make_silo_file("fld-%04d" % step, pcon)
         vis.add_to_silo(silo, [
                     ("u", u), 
                     #("u_true", u_true), 
@@ -175,6 +190,12 @@ def main() :
                     time=t, 
                     step=step
                     )
+
+        u = stepper(u, t, dt, op.rhs)
+
+        #u_true = discr.interpolate_volume_function(
+                #lambda x: u_analytic(t, x))
+
         silo.close()
 
 if __name__ == "__main__":
