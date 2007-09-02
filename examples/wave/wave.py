@@ -19,6 +19,55 @@
 
 import pylinear.array as num
 import pylinear.computation as comp
+from pytools.arithmetic_container import ArithmeticList
+from hedge.tools import Rotation, dot
+
+
+
+
+class StrongWaveOperator:
+    def __init__(self, discr, source_f):
+        self.discr = discr
+        self.source_f = source_f
+
+        from hedge.flux import zero, trace_sign, make_normal, local, neighbor, average
+        from hedge.discretization import bind_flux, bind_nabla, bind_mass_matrix, \
+                bind_inverse_mass_matrix
+
+        normal = make_normal(discr.dimensions)
+        flux_weak = average*normal
+        flux_strong = local*normal - flux_weak
+
+        self.nabla = bind_nabla(discr)
+        self.mass = bind_mass_matrix(discr)
+        self.m_inv = bind_inverse_mass_matrix(discr)
+
+        self.flux = bind_flux(discr, flux_strong)
+
+    def rhs(self, t, y):
+        from hedge.discretization import pair_with_boundary
+
+        u = y[0]
+        v = y[1:]
+
+        #bc_v = self.discr.boundarize_volume_field(v)
+        bc_u = -self.discr.boundarize_volume_field(u)
+
+        rhs = ArithmeticList([])
+        # rhs u
+        rhs.append(dot(self.nabla, v) 
+                - self.m_inv*(
+                    dot(self.flux, v) 
+                    #+ dot(bflux, pair_with_boundary(v, bc_v))
+                    ) 
+                + self.source_f(t))
+        # rhs v
+        rhs.extend(self.nabla*u 
+                -self.m_inv*(
+                    self.flux*u 
+                    + self.flux*pair_with_boundary(u, bc_u)
+                    ))
+        return rhs
 
 
 
@@ -33,105 +82,76 @@ def main() :
             make_regular_square_mesh, \
             make_square_mesh, \
             make_ball_mesh
-    from hedge.discretization import \
-            Discretization, \
-            bind_flux, \
-            bind_nabla, \
-            bind_mass_matrix, \
-            bind_inverse_mass_matrix, \
-            pair_with_boundary
-    from hedge.visualization import SiloVisualizer
-    from hedge.silo import SiloFile
-    from pytools.arithmetic_container import ArithmeticList
+    from hedge.visualization import SiloVisualizer, make_silo_file
     from pytools.stopwatch import Job
     from math import sin, cos, pi, exp, sqrt
-    from hedge.flux import zero, make_normal, local, neighbor, average
-    from hedge.tools import Rotation, dot
+    from hedge.parallel import guess_parallelization_context
 
-    dim = 3
+    pcon = guess_parallelization_context()
+
+    dim = 2
 
     if dim == 2:
-        mesh = make_disk_mesh()
+        if pcon.is_head_rank:
+            mesh = make_disk_mesh()
         #mesh = make_regular_square_mesh(n=5)
         #mesh = make_square_mesh(max_area=0.008)
         #mesh.transform(Rotation(pi/8))
         el_class = TriangularElement
     elif dim == 3:
-        mesh = make_ball_mesh(max_volume=0.001)
+        if pcon.is_head_rank:
+            mesh = make_ball_mesh(max_volume=0.001)
         el_class = TetrahedralElement
     else:
         raise RuntimeError, "bad number of dimensions"
 
-    discr = Discretization(mesh, el_class(3))
-    print "%d elements" % len(discr.mesh.elements)
+    if pcon.is_head_rank:
+        print "%d elements" % len(mesh.elements)
+        mesh_data = pcon.distribute_mesh(mesh)
+    else:
+        mesh_data = pcon.receive_mesh()
 
-    fields = ArithmeticList([discr.volume_zeros()]) # u
-    fields.extend([discr.volume_zeros() for i in range(discr.dimensions)]) # v
+    discr = pcon.make_discretization(mesh_data, el_class(3))
+    stepper = RK4TimeStepper()
+    vis = SiloVisualizer(discr)
 
     dt = discr.dt_factor(1)
     nsteps = int(1/dt)
-    print "dt", dt
-    print "nsteps", nsteps
-
-    normal = make_normal(discr.dimensions)
-    flux_weak = average*normal
-    flux_strong = local*normal - flux_weak
-
-    nabla = bind_nabla(discr)
-    mass = bind_mass_matrix(discr)
-    m_inv = bind_inverse_mass_matrix(discr)
-
-    flux = bind_flux(discr, flux_strong)
+    if pcon.is_head_rank:
+        print "dt", dt
+        print "nsteps", nsteps
 
     def source_u(x):
         return exp(-x*x*256)
 
     source_u_vec = discr.interpolate_volume_function(source_u)
 
-    def rhs(t, y):
-        u = fields[0]
-        v = fields[1:]
+    def source_vec_getter(t):
+        if t > 0.1:
+            return discr.volume_zeros()
+        else:
+            return source_u_vec
 
-        #bc_v = discr.boundarize_volume_field(v)
-        bc_u = -discr.boundarize_volume_field(u)
+    op = StrongWaveOperator(discr, source_vec_getter)
+    fields = ArithmeticList([discr.volume_zeros()]) # u
+    fields.extend([discr.volume_zeros() for i in range(discr.dimensions)]) # v
 
-        rhs = ArithmeticList([])
-        # rhs u
-        rhs.append(dot(nabla, v) 
-                - m_inv*(
-                    dot(flux, v) 
-                    #+ dot(bflux, pair_with_boundary(v, bc_v))
-                    ) 
-                + source_u_vec)
-        # rhs v
-        rhs.extend(nabla*u 
-                -m_inv*(
-                    flux*u 
-                    + flux*pair_with_boundary(u, bc_u)
-                    ))
-        return rhs
-
-    stepper = RK4TimeStepper()
-    #vis = VtkVisualizer(discr)
-    vis = SiloVisualizer(discr)
     for step in range(nsteps):
         t = step*dt
-        if step % 10 == 0:
+        if step % 1 == 0:
             print "timestep %d, t=%f, l2=%g" % (
-                    step, t, sqrt(fields[0]*(mass*fields[0])))
+                    step, t, sqrt(fields[0]*(op.mass*fields[0])))
 
-        if t > 0.1:
-            source_u_vec = discr.volume_zeros()
-
-        if step % 10 == 0:
-            silo = SiloFile("fld-%04d.silo" % step)
+        if step % 1 == 0:
+            silo = make_silo_file("fld-%04d" % step, pcon)
             vis.add_to_silo(silo,
                     [("u", fields[0]), ], 
                     [("v", fields[1:]), ],
                     time=t,
                     step=step)
             silo.close()
-        fields = stepper(fields, t, dt, rhs)
+
+        fields = stepper(fields, t, dt, op.rhs)
 
 if __name__ == "__main__":
     #import cProfile as profile
