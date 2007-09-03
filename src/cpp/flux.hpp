@@ -23,6 +23,17 @@
 
 
 
+#include <boost/tuple/tuple.hpp>
+#include <boost/mpl/int.hpp>
+#include <boost/mpl/vector.hpp>
+#include <boost/mpl/vector_c.hpp>
+#include <boost/mpl/transform.hpp>
+#include <boost/mpl/push_back.hpp>
+#include <boost/mpl/clear.hpp>
+#include <boost/mpl/fold.hpp>
+#include <boost/mpl/copy.hpp>
+#include <boost/mpl/placeholders.hpp>
+#include <boost/mpl/back_inserter.hpp>
 #include "base.hpp"
 
 
@@ -72,24 +83,6 @@ namespace hedge { namespace flux {
 
 
 
-#define HEDGE_FLUX_DECLARE_NORMAL(DIR, IDX) \
-  class normal_##DIR : public flux \
-  { \
-    public: \
-      double local_coeff(const face &local) const \
-      { return local.normal[IDX]; } \
-      double neighbor_coeff(const face &local, const face *neighbor) const \
-      { return local.normal[IDX]; } \
-  };
-
-  HEDGE_FLUX_DECLARE_NORMAL(x,0);
-  HEDGE_FLUX_DECLARE_NORMAL(y,1);
-  HEDGE_FLUX_DECLARE_NORMAL(z,2);
-#undef HEDGE_FLUX_DECLARE_NORMAL
-
-
-
-
   class zero : public flux
   {
     public:
@@ -105,75 +98,122 @@ namespace hedge { namespace flux {
   class constant : public flux
   {
     public:
-      constant(double value)
-        : m_value(value)
+      constant(double local, double neighbor)
+        : m_local(local), m_neighbor(neighbor)
       { }
       double local_coeff(const face &local) const
-      { return m_value; }
+      { return m_local; }
       double neighbor_coeff(const face &local, const face *neighbor) const
-      { return m_value; }
-    protected:
-      double m_value;
+      { return m_neighbor; }
+
+      const double local_constant() const
+      { return m_local; }
+      const double neighbor_constant() const
+      { return m_neighbor; }
+
+    private:
+      const double m_local, m_neighbor;
   };
 
 
 
 
-  class local : public flux
+  template<class Dir>
+  class normal : public flux
   {
     public:
+      typedef normal type;
+
       double local_coeff(const face &local) const
-      { return 1; }
+      { return local.normal[Dir::value]; }
       double neighbor_coeff(const face &local, const face *neighbor) const
-      { return 0; }
+      { return local.normal[Dir::value]; }
+
+      static int direction()
+      { return Dir::value; }
+
+      static std::string name()
+      { return "Normal" + boost::lexical_cast<std::string>(Dir::value) + "Flux"; }
   };
 
 
 
 
-  class neighbor : public flux
+  template<class Dir>
+  class constant_times_normal : public flux
   {
     public:
+      constant_times_normal(double local, double neighbor)
+        : m_local(local), m_neighbor(neighbor)
+      { }
+
       double local_coeff(const face &local) const
-      { return 0; }
+      { return m_local * local.normal[Dir::value]; }
       double neighbor_coeff(const face &local, const face *neighbor) const
-      { return 1; }
+      { return m_neighbor * local.normal[Dir::value]; }
+
+      static int direction()
+      { return Dir::value; }
+
+      static std::string name()
+      { 
+        return "ConstantTimesNormal" 
+        + boost::lexical_cast<std::string>(Dir::value) 
+        + "Flux"; 
+      }
+
+      const double local_constant() const
+      { return m_local; }
+      const double neighbor_constant() const
+      { return m_neighbor; }
+
+    private:
+      const double m_local, m_neighbor;
   };
 
 
 
 
-  class average : public flux
+  template<class Dir1, class Dir2>
+  class constant_times_2normals : public flux
   {
     public:
+      constant_times_2normals(double local, double neighbor)
+        : m_local(local), m_neighbor(neighbor)
+      { }
+
       double local_coeff(const face &local) const
-      { return 0.5; }
+      { 
+        return m_local 
+          * local.normal[Dir1::value] 
+          * local.normal[Dir2::value]; 
+      }
+
       double neighbor_coeff(const face &local, const face *neighbor) const
-      { return 0.5; }
-  };
+      { 
+        return m_neighbor 
+        * local.normal[Dir1::value] 
+        * local.normal[Dir2::value]; 
+      }
 
+      static boost::tuple<int,int> directions()
+      { return boost::make_tuple(Dir1::value, Dir2::value); }
 
+      static std::string name()
+      { 
+        return "ConstantTimes2Normal" 
+        + boost::lexical_cast<std::string>(Dir1::value) 
+        + boost::lexical_cast<std::string>(Dir2::value) 
+        + "Flux"; 
+      }
 
+      const double local_constant() const
+      { return m_local; }
+      const double neighbor_constant() const
+      { return m_neighbor; }
 
-  class trace_sign : public flux
-  {
-    public:
-      double local_coeff(const face &local) const
-      { return -1; }
-      double neighbor_coeff(const face &local, const face *neighbor) const
-      { return 1; }
-  };
-
-
-
-
-  class neg_trace_sign : public flux
-  {
-    public:
-      double local_coeff(const face &local) const
-      { return 1; }
-      double neighbor_coeff(const face &local, const face *neighbor) const
-      { return -1; }
+    private:
+      const double m_local, m_neighbor;
   };
 
 
@@ -266,22 +306,6 @@ namespace hedge { namespace flux {
 
 
 
-  typedef binary_operator<
-    std::multiplies<double>,
-    neg_trace_sign,
-    normal_x> jump_x;
-  typedef binary_operator<
-    std::multiplies<double>,
-    neg_trace_sign,
-    normal_y> jump_y;
-  typedef binary_operator<
-    std::multiplies<double>,
-    neg_trace_sign,
-    normal_z> jump_z;
-
-    
-
-
   /** A runtime-polymorphic face function consisting of a binary operation 
    * on two underlying face functions.
    *
@@ -372,6 +396,36 @@ namespace hedge { namespace flux {
       Operation m_operation;
       flux &m_op;
   };
+
+
+
+
+  typedef boost::mpl::vector_c<int, 0, 1, 2> dim_list;
+
+  typedef boost::mpl::transform<dim_list, 
+          normal<boost::mpl::_1> >::type 
+            normal_fluxes;
+
+  typedef boost::mpl::transform<dim_list, 
+          constant_times_normal<boost::mpl::_1> >::type
+            constant_times_normal_fluxes;
+
+  typedef boost::mpl::vector<
+    // FIXME yugly and redundant. pending reply from boost users list
+      constant_times_2normals<boost::mpl::int_<0>, boost::mpl::int_<0> >,
+      constant_times_2normals<boost::mpl::int_<0>, boost::mpl::int_<1> >,
+      constant_times_2normals<boost::mpl::int_<0>, boost::mpl::int_<2> >,
+
+      constant_times_2normals<boost::mpl::int_<1>, boost::mpl::int_<0> >,
+      constant_times_2normals<boost::mpl::int_<1>, boost::mpl::int_<1> >,
+      constant_times_2normals<boost::mpl::int_<1>, boost::mpl::int_<2> >,
+
+      constant_times_2normals<boost::mpl::int_<2>, boost::mpl::int_<0> >,
+      constant_times_2normals<boost::mpl::int_<2>, boost::mpl::int_<1> >,
+      constant_times_2normals<boost::mpl::int_<2>, boost::mpl::int_<2> >
+      >
+        constant_times_2normal_fluxes;
+
 } }
 
 

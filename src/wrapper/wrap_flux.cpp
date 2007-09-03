@@ -17,8 +17,11 @@
 
 
 
+#include <vector>
 #include <iostream>
 #include <boost/python.hpp>
+#include <boost/mpl/for_each.hpp>
+#include <boost/mpl/clear.hpp>
 #include "flux.hpp"
 
 
@@ -26,6 +29,7 @@
 
 using namespace boost::python;
 using namespace hedge::flux;
+namespace mpl = boost::mpl;
 
 
 
@@ -42,7 +46,123 @@ namespace {
       return this->get_override("neighbor_coeff")(boost::ref(local), boost::ref(neighbor));
     }
   };
+
+
+
+
+  struct call_without_arguments
+  {
+    template <class Exposer>
+    void operator()(Exposer exp)
+    { exp(); }
+  };
+
+  struct printit
+  {
+    template <class T>
+    void operator()(T t)
+    { std::cout << T::value << std::endl; }
+  };
 }
+
+
+
+
+namespace hedge { namespace python {
+
+  template <class ConstantFlux>
+  ConstantFlux add_constant_fluxes(
+      const ConstantFlux &fl1,
+      const ConstantFlux &fl2
+      )
+  {
+    return ConstantFlux(
+        fl1.local_constant() + fl2.local_constant(),
+        fl1.neighbor_constant() + fl2.neighbor_constant()
+        );
+  }
+
+
+
+
+  template <class ConstantFlux>
+  ConstantFlux subtract_constant_fluxes(
+      const ConstantFlux &fl1,
+      const ConstantFlux &fl2
+      )
+  {
+    return ConstantFlux(
+        fl1.local_constant() - fl2.local_constant(),
+        fl1.neighbor_constant() - fl2.neighbor_constant()
+        );
+  }
+
+
+
+
+  template <class ConstantFlux>
+  ConstantFlux multiply_constant_flux_by_constant(
+      const ConstantFlux &fl1,
+      double c
+      )
+  {
+    return ConstantFlux(
+        fl1.local_constant() * c,
+        fl1.neighbor_constant() * c
+        );
+  }
+
+
+
+
+  template <class Flux>
+  struct expose_default_constructible_flux
+  {
+    void operator()()
+    {
+      boost::python::class_
+        <Flux, boost::python::bases<flux::flux> >
+        (Flux::name().c_str());
+    }
+  };
+
+
+
+
+  template <class Flux>
+  struct expose_constant_flux
+  {
+    void operator()()
+    {
+      boost::python::class_
+        <Flux, boost::python::bases<flux::flux> >
+        (Flux::name().c_str(), 
+         init<double, double>(
+           (arg("local"), arg("neighbor"))
+           )
+        )
+        .add_property("local_constant", &Flux::local_constant)
+        .add_property("neighbor_constant", &Flux::neighbor_constant)
+        ;
+      def("add_fluxes", add_constant_fluxes<Flux>);
+      def("subtract_fluxes", subtract_constant_fluxes<Flux>);
+      def("multiply_fluxes", multiply_constant_flux_by_constant<Flux>);
+    }
+  };
+
+
+
+
+  template <class Flux>
+  struct expose_normal_multipliable_constant_flux
+  {
+    void operator()()
+    {
+      expose_constant_flux<Flux>()();
+      def("multiply_fluxes", multiply_constant_flux_by_normal<Flux>);
+    }
+  };
+} }
 
 
 
@@ -76,20 +196,34 @@ void hedge_expose_fluxes()
         )
       ;
   }
-  class_<normal_x, bases<flux> >("NormalXFlux");
-  class_<normal_y, bases<flux> >("NormalYFlux");
-  class_<normal_z, bases<flux> >("NormalZFlux");
-  class_<jump_x, bases<flux> >("JumpXFlux");
-  class_<jump_y, bases<flux> >("JumpYFlux");
-  class_<jump_z, bases<flux> >("JumpZFlux");
+
   class_<zero, bases<flux> >("ZeroFlux");
-  class_<local, bases<flux> >("LocalFlux");
-  class_<neighbor, bases<flux> >("NeighborFlux");
-  class_<average, bases<flux> >("AverageFlux");
-  class_<trace_sign, bases<flux> >("TraceSignFlux");
-  class_<neg_trace_sign, bases<flux> >("NegativeTraceSignFlux");
+  class_<constant, bases<flux> >(
+      "ConstantFlux", 
+      init<double, double>(
+        (arg("local"), arg("neighbor"))
+        )
+      );
+
+  mpl::for_each<
+    normal_fluxes, 
+    hedge::python::expose_default_constructible_flux<mpl::_1> 
+      > (call_without_arguments());
+
+  mpl::for_each<
+    constant_times_normal_fluxes, 
+    hedge::python::expose_constant_flux<mpl::_1> 
+      > (call_without_arguments());
+
+  mpl::for_each<
+    constant_times_2normal_fluxes, 
+    hedge::python::expose_constant_flux<mpl::_1> 
+      > (call_without_arguments());
+
   class_<penalty_term, bases<flux> >("PenaltyTermFlux",
-      init<double, double>()
+      init<double, double>(
+        (arg("coefficient"), arg("power"))
+        )
       );
 
   {
