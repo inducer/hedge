@@ -327,10 +327,14 @@ class ConformalMesh(Mesh):
                 self.interfaces.append(els_faces)
             elif len(els_faces) == 1:
                 el, face = els_faces[0]
-                for btag in boundary_tagger(face_vertices, el, face):
+                tags = boundary_tagger(face_vertices, el, face)
+                for btag in tags:
                     self.tag_to_boundary.setdefault(btag, []) \
                             .append(els_faces[0])
-                self.tag_to_boundary[None].append(els_faces[0])
+                if "hedge-no-boundary" not in tags:
+                    # this is used to mark rank interfaces as not being part of the
+                    # boundary
+                    self.tag_to_boundary[None].append(els_faces[0])
             else:
                 raise RuntimeError, "face can at most border two elements"
 

@@ -227,6 +227,10 @@ class MPIParallelizationContext(ParallelizationContext):
                 try:
                     opp_rank = elface2rank[el, fn]
                     result.append("hedge-rank-bdry-%d" % opp_rank)
+
+                    # keeps this part of the boundary from falling
+                    # under the "None" tag.
+                    result.append("hedge-no-boundary")
                 except KeyError:
                     pass
 

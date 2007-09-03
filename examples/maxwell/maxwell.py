@@ -129,7 +129,6 @@ def main():
                     time()-last_tstep)
             last_tstep = time()
 
-            print l2_norm(op.rhs(t, fields)[0:3])
             if True:
                 silo = make_silo_file("em-%04d" % step, pcon)
                 vis.add_to_silo(silo,

@@ -26,7 +26,7 @@ from hedge.tools import Rotation, dot
 
 
 class StrongWaveOperator:
-    def __init__(self, discr, source_f):
+    def __init__(self, discr, source_f=None):
         self.discr = discr
         self.source_f = source_f
 
@@ -59,8 +59,9 @@ class StrongWaveOperator:
                 - self.m_inv*(
                     dot(self.flux, v) 
                     #+ dot(bflux, pair_with_boundary(v, bc_v))
-                    ) 
-                + self.source_f(t))
+                    ))
+        if self.source_f is not None:
+            rhs[0] += self.source_f(t)
         # rhs v
         rhs.extend(self.nabla*u 
                 -self.m_inv*(
