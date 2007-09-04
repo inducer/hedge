@@ -50,119 +50,73 @@ namespace {
 
 
 
-  struct call_without_arguments
+  template<class Flux>
+  std::auto_ptr<Flux> new_unary_op_flux(const flux &op1, const flux &op2)
   {
-    template <class Exposer>
-    void operator()(Exposer exp)
-    { exp(); }
-  };
+    return std::auto_ptr<Flux>(new Flux(chained_flux(op1)));
+  }
 
-  struct printit
+
+
+
+  template<class Operation> 
+  void expose_unary_operator(Operation, const std::string &name)
   {
-    template <class T>
-    void operator()(T t)
-    { std::cout << T::value << std::endl; }
-  };
+    typedef unary_operator<Operation, chained_flux> cl;
+    class_<cl, bases<flux>, boost::noncopyable>(name.c_str(), no_init);
+    def(("make_"+name).c_str(), 
+        new_unary_op_flux<cl>,
+        with_custodian_and_ward_postcall<0, 1>())
+      ;
+  }
+
+
+
+
+  template<class Flux>
+  std::auto_ptr<Flux> new_binary_op_flux(const flux &op1, const flux &op2)
+  {
+    return std::auto_ptr<Flux>(new Flux(chained_flux(op1), chained_flux(op2)));
+  }
+
+
+
+
+  template<class Operation> 
+  void expose_binary_operator(Operation, const std::string &name)
+  {
+    typedef binary_operator<Operation, chained_flux, chained_flux> cl;
+    class_<cl, bases<flux>, boost::noncopyable>(name.c_str(), no_init);
+    def(("make_"+name).c_str(), 
+        new_binary_op_flux<cl>,
+        with_custodian_and_ward_postcall<0, 1, 
+        with_custodian_and_ward_postcall<0, 2> >())
+      ;
+  }
+
+
+
+
+  template<class Flux>
+  std::auto_ptr<Flux> new_binary_constant_op_flux(const flux &op1, double c)
+  {
+    return std::auto_ptr<Flux>(new Flux(chained_flux(op1), constant(c)));
+  }
+
+
+
+
+  template<class Operation> 
+  void expose_binary_constant_operator(Operation, const std::string &name)
+  {
+    typedef binary_operator<Operation, chained_flux, constant> cl;
+    class_<cl, bases<flux>, boost::noncopyable>(name.c_str(), no_init);
+    def(("make_"+name).c_str(), 
+        new_binary_constant_op_flux<cl>,
+        with_custodian_and_ward_postcall<0, 1>())
+      ;
+  }
 }
-
-
-
-
-namespace hedge { namespace python {
-
-  template <class ConstantFlux>
-  ConstantFlux add_constant_fluxes(
-      const ConstantFlux &fl1,
-      const ConstantFlux &fl2
-      )
-  {
-    return ConstantFlux(
-        fl1.local_constant() + fl2.local_constant(),
-        fl1.neighbor_constant() + fl2.neighbor_constant()
-        );
-  }
-
-
-
-
-  template <class ConstantFlux>
-  ConstantFlux subtract_constant_fluxes(
-      const ConstantFlux &fl1,
-      const ConstantFlux &fl2
-      )
-  {
-    return ConstantFlux(
-        fl1.local_constant() - fl2.local_constant(),
-        fl1.neighbor_constant() - fl2.neighbor_constant()
-        );
-  }
-
-
-
-
-  template <class ConstantFlux>
-  ConstantFlux multiply_constant_flux_by_constant(
-      const ConstantFlux &fl1,
-      double c
-      )
-  {
-    return ConstantFlux(
-        fl1.local_constant() * c,
-        fl1.neighbor_constant() * c
-        );
-  }
-
-
-
-
-  template <class Flux>
-  struct expose_default_constructible_flux
-  {
-    void operator()()
-    {
-      boost::python::class_
-        <Flux, boost::python::bases<flux::flux> >
-        (Flux::name().c_str());
-    }
-  };
-
-
-
-
-  template <class Flux>
-  struct expose_constant_flux
-  {
-    void operator()()
-    {
-      boost::python::class_
-        <Flux, boost::python::bases<flux::flux> >
-        (Flux::name().c_str(), 
-         init<double, double>(
-           (arg("local"), arg("neighbor"))
-           )
-        )
-        .add_property("local_constant", &Flux::local_constant)
-        .add_property("neighbor_constant", &Flux::neighbor_constant)
-        ;
-      def("add_fluxes", add_constant_fluxes<Flux>);
-      def("subtract_fluxes", subtract_constant_fluxes<Flux>);
-      def("multiply_fluxes", multiply_constant_flux_by_constant<Flux>);
-    }
-  };
-
-
-
-
-  template <class Flux>
-  struct expose_normal_multipliable_constant_flux
-  {
-    void operator()()
-    {
-      expose_constant_flux<Flux>()();
-      def("multiply_fluxes", multiply_constant_flux_by_normal<Flux>);
-    }
-  };
-} }
 
 
 
@@ -197,28 +151,18 @@ void hedge_expose_fluxes()
       ;
   }
 
-  class_<zero, bases<flux> >("ZeroFlux");
   class_<constant, bases<flux> >(
       "ConstantFlux", 
       init<double, double>(
         (arg("local"), arg("neighbor"))
-        )
-      );
+        ))
+      .def(self + self)
+      .def(self - self)
+      .def(- self)
+      .def(self * double())
+      ;
 
-  mpl::for_each<
-    normal_fluxes, 
-    hedge::python::expose_default_constructible_flux<mpl::_1> 
-      > (call_without_arguments());
-
-  mpl::for_each<
-    constant_times_normal_fluxes, 
-    hedge::python::expose_constant_flux<mpl::_1> 
-      > (call_without_arguments());
-
-  mpl::for_each<
-    constant_times_2normal_fluxes, 
-    hedge::python::expose_constant_flux<mpl::_1> 
-      > (call_without_arguments());
+  class_<normal>("NormalFlux", init<int>( (arg("axis"))) );
 
   class_<penalty_term, bases<flux> >("PenaltyTermFlux",
       init<double, double>(
@@ -226,50 +170,16 @@ void hedge_expose_fluxes()
         )
       );
 
-  {
-    typedef runtime_binary_operator<std::plus<double> > cl;
-    class_<cl, bases<flux>, boost::noncopyable>("SumFlux", 
-        init<flux &, flux &>()
-        [with_custodian_and_ward<1, 2, with_custodian_and_ward<1, 3> >()]
-        )
-      ;
-  }
 
-  {
-    typedef runtime_binary_operator<std::minus<double> > cl;
-    class_<cl, bases<flux>, boost::noncopyable>("DifferenceFlux", 
-        init<flux &, flux &>()
-        [with_custodian_and_ward<1, 2, with_custodian_and_ward<1, 3> >()]
-        )
-      ;
-  }
+  expose_binary_operator(std::plus<double>(), "SumFlux");
+  expose_binary_operator(std::minus<double>(), "DifferenceFlux");
+  expose_binary_operator(std::multiplies<double>(), "ProductFlux");
+  expose_binary_constant_operator(std::multiplies<double>(), 
+      "ProductWithConstantFlux");
 
-  {
-    typedef runtime_binary_operator<std::multiplies<double> > cl;
-    class_<cl, bases<flux>, boost::noncopyable >("ProductFlux", 
-        init<flux &, flux &>()
-        [with_custodian_and_ward<1, 2, with_custodian_and_ward<1, 3> >()]
-        )
-      ;
-  }
-  
-  {
-    typedef runtime_binary_operator_with_constant<std::multiplies<double> > cl;
-    class_<cl, bases<flux>, boost::noncopyable>("ConstantProductFlux", 
-        init<flux &, double>()
-        [with_custodian_and_ward<1, 2>()]
-        )
-      ;
-  }
-  
-  {
-    typedef runtime_unary_operator<std::negate<double> > cl;
-    class_<cl, bases<flux>, boost::noncopyable >("NegativeFlux", 
-        init<flux &>()
-        [with_custodian_and_ward<1, 2>()]
-        )
-      ;
-  }
+  expose_unary_operator(std::negate<double>(), "NegativeFlux");
+
+  -normal(1) * 3 * (constant(5) + normal(0));
 
 }
 

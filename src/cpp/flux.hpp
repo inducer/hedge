@@ -24,16 +24,7 @@
 
 
 #include <boost/tuple/tuple.hpp>
-#include <boost/mpl/int.hpp>
-#include <boost/mpl/vector.hpp>
-#include <boost/mpl/vector_c.hpp>
-#include <boost/mpl/transform.hpp>
-#include <boost/mpl/push_back.hpp>
-#include <boost/mpl/clear.hpp>
-#include <boost/mpl/fold.hpp>
-#include <boost/mpl/copy.hpp>
-#include <boost/mpl/placeholders.hpp>
-#include <boost/mpl/back_inserter.hpp>
+#include <boost/utility.hpp>
 #include "base.hpp"
 
 
@@ -52,6 +43,63 @@ namespace hedge { namespace flux {
 
 
 
+  template<class Operation, class Operand>
+  class unary_operator;
+  template<class Operation, class Operand1, class Operand2>
+  class binary_operator;
+  class constant;
+
+
+
+
+  template <class Derived>
+  struct flux_operators
+  {
+    template <class Flux2>
+    binary_operator<std::plus<double>, Derived, Flux2> 
+      operator+(const flux_operators<Flux2> &f2) const
+    {
+      return binary_operator<std::plus<double>, Derived, Flux2>
+        (static_cast<const Derived &>(*this), 
+         static_cast<const Flux2 &>(f2));
+    }
+
+    template <class Flux2>
+    binary_operator<std::minus<double>, Derived, Flux2> 
+      operator-(const flux_operators<Flux2> &f2) const
+    {
+      return binary_operator<std::minus<double>, Derived, Flux2>
+        (static_cast<const Derived &>(*this), 
+         static_cast<const Flux2 &>(f2));
+    }
+
+    unary_operator<std::negate<double>, Derived> 
+      operator-() const
+    {
+      return unary_operator<std::negate<double>, Derived>
+        (static_cast<const Derived &>(*this));
+    }
+
+    binary_operator<std::minus<double>, Derived, constant> 
+      operator*(const double d) const
+    {
+      return binary_operator<std::minus<double>, Derived, constant>
+        (static_cast<const Derived &>(*this), constant(d));
+    }
+
+    template <class Flux2>
+    binary_operator<std::multiplies<double>, Derived, Flux2> 
+      operator*(const flux_operators<Flux2> &f2) const
+    {
+      return binary_operator<std::multiplies<double>, Derived, Flux2>
+        (static_cast<const Derived &>(*this), 
+         static_cast<const Flux2 &>(f2));
+    }
+  };
+
+
+
+
   class flux
   {
     public:
@@ -64,7 +112,7 @@ namespace hedge { namespace flux {
 
 
 
-  class chained_flux : public flux
+  class chained_flux : public flux, public flux_operators<chained_flux>
   {
     public:
       chained_flux(const flux &child)
@@ -83,21 +131,12 @@ namespace hedge { namespace flux {
 
 
 
-  class zero : public flux
+  class constant : public flux, public flux_operators<constant>
   {
     public:
-      double local_coeff(const face &local) const
-      { return 0; }
-      double neighbor_coeff(const face &local, const face *neighbor) const
-      { return 0; }
-  };
-
-
-
-
-  class constant : public flux
-  {
-    public:
+      constant(double both)
+        : m_local(both), m_neighbor(both)
+      { }
       constant(double local, double neighbor)
         : m_local(local), m_neighbor(neighbor)
       { }
@@ -115,111 +154,49 @@ namespace hedge { namespace flux {
       const double m_local, m_neighbor;
   };
 
+  constant operator+(const constant &self, const constant &other)
+  { 
+    return constant(
+        self.local_constant() + other.local_constant(), 
+        self.neighbor_constant() + other.neighbor_constant()); 
+  }
+  constant operator-(const constant &self, const constant &other)
+  { 
+    return constant(
+        self.local_constant() - other.local_constant(), 
+        self.neighbor_constant() - other.neighbor_constant()); 
+  }
+  constant operator-(const constant &self)
+  { return constant(-self.local_constant(), -self.neighbor_constant()); }
+  constant operator*(const constant &self, const double c)
+  { return constant(self.local_constant() * c, self.neighbor_constant() * c); }
 
 
 
-  template<class Dir>
-  class normal : public flux
+
+  class normal : public flux, public flux_operators<normal>
   {
     public:
-      typedef normal type;
-
-      double local_coeff(const face &local) const
-      { return local.normal[Dir::value]; }
-      double neighbor_coeff(const face &local, const face *neighbor) const
-      { return local.normal[Dir::value]; }
-
-      static int direction()
-      { return Dir::value; }
-
-      static std::string name()
-      { return "Normal" + boost::lexical_cast<std::string>(Dir::value) + "Flux"; }
-  };
-
-
-
-
-  template<class Dir>
-  class constant_times_normal : public flux
-  {
-    public:
-      constant_times_normal(double local, double neighbor)
-        : m_local(local), m_neighbor(neighbor)
+      normal(int axis)
+        : m_axis(axis)
       { }
 
       double local_coeff(const face &local) const
-      { return m_local * local.normal[Dir::value]; }
+      { return local.normal[m_axis]; }
       double neighbor_coeff(const face &local, const face *neighbor) const
-      { return m_neighbor * local.normal[Dir::value]; }
+      { return local.normal[m_axis]; }
 
-      static int direction()
-      { return Dir::value; }
-
-      static std::string name()
-      { 
-        return "ConstantTimesNormal" 
-        + boost::lexical_cast<std::string>(Dir::value) 
-        + "Flux"; 
-      }
-
-      const double local_constant() const
-      { return m_local; }
-      const double neighbor_constant() const
-      { return m_neighbor; }
+      const int axis()
+      { return m_axis; }
 
     private:
-      const double m_local, m_neighbor;
+      int m_axis;
   };
 
 
 
 
-  template<class Dir1, class Dir2>
-  class constant_times_2normals : public flux
-  {
-    public:
-      constant_times_2normals(double local, double neighbor)
-        : m_local(local), m_neighbor(neighbor)
-      { }
-
-      double local_coeff(const face &local) const
-      { 
-        return m_local 
-          * local.normal[Dir1::value] 
-          * local.normal[Dir2::value]; 
-      }
-
-      double neighbor_coeff(const face &local, const face *neighbor) const
-      { 
-        return m_neighbor 
-        * local.normal[Dir1::value] 
-        * local.normal[Dir2::value]; 
-      }
-
-      static boost::tuple<int,int> directions()
-      { return boost::make_tuple(Dir1::value, Dir2::value); }
-
-      static std::string name()
-      { 
-        return "ConstantTimes2Normal" 
-        + boost::lexical_cast<std::string>(Dir1::value) 
-        + boost::lexical_cast<std::string>(Dir2::value) 
-        + "Flux"; 
-      }
-
-      const double local_constant() const
-      { return m_local; }
-      const double neighbor_constant() const
-      { return m_neighbor; }
-
-    private:
-      const double m_local, m_neighbor;
-  };
-
-
-
-
-  class penalty_term : public flux
+  class penalty_term : public flux, public flux_operators<penalty_term>
   {
     public:
       penalty_term(double coefficient, double power)
@@ -236,15 +213,23 @@ namespace hedge { namespace flux {
 
 
 
-  /** A compile-time polymorphic face function consisting of a binary operation
-   * on two underlying face functions.
-   *
-   * See also runtime_binary_operator for the compile-time-polymorphic version.
-   */
   template<class Operation, class Operand1, class Operand2>
-  class binary_operator : public flux
+  class binary_operator : 
+    public flux, 
+    public flux_operators<binary_operator<Operation, Operand1, Operand2> >
   {
     public:
+      binary_operator()
+      { }
+
+      binary_operator(const Operand1 &op1, const Operand2 &op2)
+        : m_op1(op1), m_op2(op2)
+      { }
+
+      binary_operator(const Operation &operation, const Operand1 &op1, const Operand2 &op2)
+        : m_operation(operation), m_op1(op1), m_op2(op2)
+      { }
+
       double local_coeff(const face &local) const
       { 
         return m_operation(
@@ -269,21 +254,16 @@ namespace hedge { namespace flux {
 
 
 
-
-  /** A compile-time polymorphic face function consisting of a unary operation
-   * on an underlying face functions.
-   *
-   * (This is "compile-time polymorphic" because the child nodes are known
-   * at compile time, as opposed to polymorphism by virtual method, which would 
-   * be run-time.)
-   *
-   * See also runtime_unary_operator for the compile-time-polymorphic version.
-   */
   template<class Operation, class Operand>
-  class unary_operator : public flux
+  class unary_operator : 
+    public flux, 
+    public flux_operators<unary_operator<Operation, Operand> >
   {
     public:
       unary_operator()
+      { }
+      unary_operator(const Operand &op)
+        : m_op(op)
       { }
       unary_operator(const Operation &operation, const Operand &op)
         : m_operation(operation), m_op(op)
@@ -301,131 +281,6 @@ namespace hedge { namespace flux {
       Operation m_operation;
       Operand m_op;
   };
-
-
-
-
-
-  /** A runtime-polymorphic face function consisting of a binary operation 
-   * on two underlying face functions.
-   *
-   * See also binary_operator for the compile-time-polymorphic version.
-   */
-  template<class Operation>
-  class runtime_binary_operator : public flux
-  {
-    public:
-      runtime_binary_operator(
-          flux &op1, 
-          flux &op2)
-        : m_op1(op1), m_op2(op2)
-      { }
-      double local_coeff(const face &local) const
-      { 
-        return m_operation(
-            m_op1.local_coeff(local),
-            m_op2.local_coeff(local)
-            );
-      }
-      double neighbor_coeff(const face &local, const face *neighbor) const
-      { 
-        return m_operation(
-            m_op1.neighbor_coeff(local, neighbor),
-            m_op2.neighbor_coeff(local, neighbor)
-            );
-      }
-
-    protected:
-      Operation m_operation;
-      flux &m_op1;
-      flux &m_op2;
-  };
-
-
-
-
-  template<class Operation>
-  class runtime_binary_operator_with_constant : public flux
-  {
-    public:
-      runtime_binary_operator_with_constant(
-          flux &op1, double op2)
-        : m_op1(op1), m_op2(op2)
-      { }
-      double local_coeff(const face &local) const
-      { 
-        return m_operation(
-            m_op1.local_coeff(local),
-            m_op2
-            );
-      }
-      double neighbor_coeff(const face &local, const face *neighbor) const
-      { 
-        return Operation()(
-            m_op1.neighbor_coeff(local, neighbor),
-            m_op2
-            );
-      }
-
-    protected:
-      Operation m_operation;
-      flux &m_op1;
-      double m_op2;
-  };
-
-
-
-
-  template<class Operation>
-  class runtime_unary_operator : public flux
-  {
-    public:
-      runtime_unary_operator(flux &op)
-        : m_op(op)
-      { }
-      double local_coeff(const face &local) const
-      { 
-        return m_operation(m_op.local_coeff(local));
-      }
-      double neighbor_coeff(const face &local, const face *neighbor) const
-      { 
-        return Operation()(m_op.neighbor_coeff(local, neighbor));
-      }
-
-    protected:
-      Operation m_operation;
-      flux &m_op;
-  };
-
-
-
-
-  typedef boost::mpl::vector_c<int, 0, 1, 2> dim_list;
-
-  typedef boost::mpl::transform<dim_list, 
-          normal<boost::mpl::_1> >::type 
-            normal_fluxes;
-
-  typedef boost::mpl::transform<dim_list, 
-          constant_times_normal<boost::mpl::_1> >::type
-            constant_times_normal_fluxes;
-
-  typedef boost::mpl::vector<
-    // FIXME yugly and redundant. pending reply from boost users list
-      constant_times_2normals<boost::mpl::int_<0>, boost::mpl::int_<0> >,
-      constant_times_2normals<boost::mpl::int_<0>, boost::mpl::int_<1> >,
-      constant_times_2normals<boost::mpl::int_<0>, boost::mpl::int_<2> >,
-
-      constant_times_2normals<boost::mpl::int_<1>, boost::mpl::int_<0> >,
-      constant_times_2normals<boost::mpl::int_<1>, boost::mpl::int_<1> >,
-      constant_times_2normals<boost::mpl::int_<1>, boost::mpl::int_<2> >,
-
-      constant_times_2normals<boost::mpl::int_<2>, boost::mpl::int_<0> >,
-      constant_times_2normals<boost::mpl::int_<2>, boost::mpl::int_<1> >,
-      constant_times_2normals<boost::mpl::int_<2>, boost::mpl::int_<2> >
-      >
-        constant_times_2normal_fluxes;
-
 } }
 
 
