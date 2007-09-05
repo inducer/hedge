@@ -30,14 +30,21 @@ class StrongAdvectionOperator:
         self.discr = discr
         self.inflow_u = inflow_u
 
-        from hedge.flux import zero, trace_sign, make_normal, local, neighbor, average
+        from hedge.flux import zero, make_normal, local, neighbor, average
         from hedge.discretization import bind_flux, bind_nabla, bind_mass_matrix, \
                 bind_inverse_mass_matrix
 
+        from hedge.flux import stringify_flux, compile_flux
         normal = make_normal(self.discr.dimensions)
-        flux_weak = dot(normal, a) * average# - 0.5 *(local-neighbor)
+        flux_weak = dot(normal, a) * average - 0.5 *(local-neighbor)
         flux_strong = dot(normal, a)*local - flux_weak
         self.flux = bind_flux(self.discr, flux_strong)
+        print stringify_flux(flux_weak)
+        print compile_flux(flux_weak)
+        raw_input()
+        print stringify_flux(flux_strong)
+        print compile_flux(flux_strong)
+        raw_input()
 
         self.nabla = bind_nabla(discr)
         self.mass = bind_mass_matrix(discr)
@@ -63,7 +70,7 @@ class WeakAdvectionOperator:
         self.discr = discr
         self.inflow_u = inflow_u
 
-        from hedge.flux import zero, trace_sign, make_normal, local, neighbor, average
+        from hedge.flux import zero, make_normal, local, neighbor, average
         from hedge.discretization import bind_flux, bind_weak_nabla, bind_mass_matrix, \
                 bind_inverse_mass_matrix
 
@@ -106,7 +113,6 @@ def main() :
             make_box_mesh
     from hedge.discretization import Discretization, generate_ones_on_boundary
     from hedge.visualization import SiloVisualizer, make_silo_file
-    from hedge.flux import zero, trace_sign, make_normal, local, neighbor, average
     from hedge.tools import dot
     from pytools.arithmetic_container import ArithmeticList
     from pytools.stopwatch import Job
@@ -126,7 +132,7 @@ def main() :
 
     pcon = guess_parallelization_context()
 
-    dim = 3
+    dim = 2
     periodic = False
     if dim == 2:
         a = num.array([1,0])

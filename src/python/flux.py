@@ -20,70 +20,209 @@
 import hedge._internal as _internal
 from pytools.arithmetic_container import ArithmeticList, \
         work_with_arithmetic_containers
+import pymbolic
 
 
 
 
 Face = _internal.Face
-Flux = _internal.Flux
-Flux = _internal.ConstantFlux
-ChainedFlux = _internal.ChainedFlux
+which_faces = _internal.which_faces
+
+
+
+
+# c++ fluxes debug dumping ----------------------------------------------------
+def _constant_str(self):
+    return "ConstantFlux(%s, %s)" % (self.local_c, self.neighbor_c)
+def _normal_str(self):
+    return "NormalFlux(%d)" % self.axis
+def _penalty_str(self):
+    return "PenaltyFlux(%s)" % self.power
+def _penalty_str(self):
+    return "PenaltyFlux(%s)" % self.power
+def _sum_str(self):
+    return "SumFlux(%s, %s)" % (self.operand1, self.operand2)
+def _product_str(self):
+    return "ProductFlux(%s, %s)" % (self.operand1, self.operand2)
+def _negative_str(self):
+    return "NegativeFlux(%s)" % self.operand
+def _chained_str(self):
+    #return "ChainedFlux(%s)" % self.child
+    return str(self.child)
+
+_internal.ConstantFlux.__str__ = _constant_str
+_internal.NormalFlux.__str__ = _normal_str
+_internal.PenaltyFlux.__str__ = _penalty_str
+_internal.SumFlux.__str__ = _sum_str
+_internal.ProductFlux.__str__ = _product_str
+_internal.NegativeFlux.__str__ = _negative_str
+_internal.ChainedFlux.__str__ = _chained_str
+
+
+# python fluxes ---------------------------------------------------------------
+class Flux(pymbolic.primitives.AlgebraicLeaf):
+    def __str__(self):
+        return FluxStringifyMapper()(self)
+
+
+
+
+class ConstantFlux(Flux):
+    def __init__(self, local_c, neighbor_c=None):
+        if neighbor_c is None:
+            neighbor_c = local_c
+        self.local_c = local_c
+        self.neighbor_c = neighbor_c
+
+    def __add__(self, other):
+        if isinstance(other, ConstantFlux):
+            return ConstantFlux(
+                    self.local_c + other.local_c,
+                    self.neighbor_c + other.neighbor_c)
+        else:
+            return Flux.__add__(self, other)
+
+    __radd__ = __add__
+
+    def __sub__(self, other):
+        if isinstance(other, ConstantFlux):
+            return ConstantFlux(
+                    self.local_c - other.local_c,
+                    self.neighbor_c - other.neighbor_c)
+        else:
+            return Flux.__sub__(self, other)
+
+    def __rsub__(self, other):
+        if isinstance(other, ConstantFlux):
+            return ConstantFlux(
+                    other.local_c - self.local_c,
+                    other.neighbor_c - self.neighbor_c)
+        else:
+            return Flux.__rsub__(self, other)
+
+    def __neg__(self, other):
+        return ConstantFlux(- self.local_c, - self.neighbor_c)
+
+    def __mul__(self, other):
+        try:
+            otherfloat = float(other)
+        except:
+            return Flux.__mul__(self, other)
+        else:
+            return ConstantFlux(otherfloat*self.local_c, otherfloat*self.neighbor_c)
+
+    def invoke_mapper(self, mapper, *args, **kwargs):
+        return mapper.map_constant_flux(self, *args, **kwargs)
+
+
+
+
+class NormalFlux(Flux):
+    def __init__(self, axis):
+        self.axis = axis
+
+    def invoke_mapper(self, mapper, *args, **kwargs):
+        return mapper.map_normal_flux(self, *args, **kwargs)
+
+
+
+class PenaltyFlux(Flux):
+    def __init__(self, power):
+        self.power = power
+
+    def invoke_mapper(self, mapper, *args, **kwargs):
+        return mapper.map_penalty_flux(self, *args, **kwargs)
+
 
 
 
 
 def make_normal(dim):
-    return ArithmeticList([
-        getattr(_internal, "Normal%dFlux" % i)()
-        for i in range(dim)])
+    return ArithmeticList([NormalFlux(i) for i in range(dim)])
 
 
 
 
-@work_with_arithmetic_containers
-def penalty(coefficient, exponent):
-    return _internal.PenaltyTermFlux(coefficient, exponent)
-
-zero = _internal.ZeroFlux()
-local = _internal.ConstantFlux(1, 0)
-neighbor = _internal.ConstantFlux(0, 1)
-average = _internal.ConstantFlux(0.5, 0.5)
-trace_sign = _internal.ConstantFlux(-1, 1)
+zero = ConstantFlux(0)
+local = ConstantFlux(1, 0)
+neighbor = ConstantFlux(0, 1)
+average = ConstantFlux(0.5, 0.5)
 
 
 
 
-# generic flux arithmetic -----------------------------------------------------
-@work_with_arithmetic_containers
-def _add_fluxes(fl1, fl2): 
+class FluxIdentityMapper(pymbolic.mapper.IdentityMapper):
+    def map_constant_flux(self, expr, *args, **kwargs):
+        return expr.__class__(expr.local_c, expr.neighbor_c)
+
+    def map_normal_flux(self, expr, *args, **kwargs):
+        return expr.__class__(expr.axis)
+
+    def map_penalty_flux(self, expr, *args, **kwargs):
+        return expr.__class__(expr.power)
+
+
+
+
+class FluxNormalizationMapper(FluxIdentityMapper):
+    pass
+
+
+
+
+class FluxStringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
+    def map_constant_flux(self, expr, enclosing_prec):
+        return "Const(%s, %s)" % (expr.local_c, expr.neighbor_c)
+
+    def map_normal_flux(self, expr, enclosing_prec):
+        return "Normal(%d)" % expr.axis
+
+    def map_penalty_flux(self, expr, enclosing_prec):
+        return "Penalty(%s)" % (expr.power)
+
+
+
+
+
+def stringify_flux(flux):
+    return FluxStringifyMapper()(flux, 
+            pymbolic.mapper.stringifier.PREC_NONE)
+
+
+
+
+class FluxCompilationMapper(pymbolic.mapper.RecursiveMapper):
+    def map_constant(self, expr):
+        return _internal.ConstantFlux(expr)
+
+    def map_sum(self, expr):
+        return reduce(lambda f1, f2: _internal.make_SumFlux(f1, f2),
+                (self.rec(c) for c in expr.children))
+
+    def map_product(self, expr):
+        return reduce(lambda f1, f2: _internal.make_ProductFlux(f1, f2),
+                (self.rec(c) for c in expr.children))
+
+    def map_negation(self, expr):
+        return _internal.make_NegativeFlux(self.rec(expr.child))
+
+    def map_constant_flux(self, expr):
+        return _internal.ConstantFlux(expr.local_c, expr.neighbor_c)
+
+    def map_normal_flux(self, expr):
+        return _internal.NormalFlux(expr.axis)
+
+    def map_penalty_flux(self, expr):
+        return _internal.PenaltyFlux(expr.power)
+
+
+
+
+def compile_flux(flux):
     try:
-        return _internal.add_fluxes(fl1, fl2)
-    except TypeError:
-        return _internal.SumFlux(fl1, fl2)
+        return flux._compiled
+    except AttributeError:
+        flux._compiled = FluxCompilationMapper()(flux)
+        return flux._compiled
 
 
-@work_with_arithmetic_containers
-def _sub_fluxes(fl1, fl2): 
-    try:
-        return _internal.subtract_fluxes(fl1, fl2)
-    except TypeError:
-        return _internal.DifferenceFlux(fl1, fl2)
-
-@work_with_arithmetic_containers
-def _mul_fluxes(fl1, op2): 
-    try:
-        return _internal.multiply_fluxes(fl1, op2)
-    except TypeError:
-        return _internal.ConstantProductFlux(fl1, op2)
-
-def _neg_flux(flux): 
-    return _internal.NegativeFlux(flux)
-
-
-
-
-Flux.__add__ = _add_fluxes
-Flux.__sub__ = _sub_fluxes
-Flux.__mul__ = _mul_fluxes
-Flux.__rmul__ = _mul_fluxes
-Flux.__neg__ = _neg_flux

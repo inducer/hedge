@@ -40,8 +40,8 @@ namespace hedge {
     {
       index_list face_indices;
       index_list opposite_indices;
-      flux::face flux_face;
-      flux::face *opp_flux_face;
+      fluxes::face flux_face;
+      fluxes::face *opp_flux_face;
     };
 
     std::vector<face_info> m_face_infos;
@@ -57,7 +57,7 @@ namespace hedge {
     }
 
     void add_face(const index_list &my_ind, const index_list &opp_ind, 
-        const flux::face &face)
+        const fluxes::face &face)
     {
       face_info fi;
       fi.face_indices = my_ind;
@@ -80,87 +80,81 @@ namespace hedge {
 
 
 
-  template <class Mat, class Flux, class OT>
+  enum which_faces
+  {
+    BOTH, 
+    LOCAL, 
+    NEIGHBOR
+  };
+
+
+
+
+
+  template <class Flux, class Mat, class OT>
   inline
-  void perform_both_fluxes_operator(const face_group &fg, 
-      const Mat &fmm, Flux flux, OT target)
+  void perform_flux_operator(Flux flux, const face_group &fg, 
+      which_faces which, const Mat &fmm, OT target)
   {
     unsigned face_length = fmm.size1();
 
     assert(fmm.size1() == fmm.size2());
 
-    BOOST_FOREACH(const face_group::face_info &fi, fg.m_face_infos)
+    switch (which)
     {
-      double local_coeff = flux.local_coeff(fi.flux_face);
-      double neighbor_coeff = flux.neighbor_coeff(
-          fi.flux_face, fi.opp_flux_face);
-
-      assert(fmm.size1() == fi.face_indices.size());
-      assert(fmm.size1() == fi.opp_indices.size());
-
-      for (unsigned i = 0; i < face_length; i++)
-        for (unsigned j = 0; j < face_length; j++)
+      case BOTH:
+        BOOST_FOREACH(const face_group::face_info &fi, fg.m_face_infos)
         {
-          target.add_coefficient(fi.face_indices[i], fi.face_indices[j],
-              fi.flux_face.face_jacobian*local_coeff*fmm(i, j));
-          target.add_coefficient(fi.face_indices[i], fi.opposite_indices[j],
-              fi.flux_face.face_jacobian*neighbor_coeff*fmm(i, j));
+          double local_coeff = flux.local_coeff(fi.flux_face);
+          double neighbor_coeff = flux.neighbor_coeff(
+              fi.flux_face, fi.opp_flux_face);
+
+          assert(fmm.size1() == fi.face_indices.size());
+          assert(fmm.size1() == fi.opp_indices.size());
+
+          for (unsigned i = 0; i < face_length; i++)
+            for (unsigned j = 0; j < face_length; j++)
+            {
+              target.add_coefficient(fi.face_indices[i], fi.face_indices[j],
+                  fi.flux_face.face_jacobian*local_coeff*fmm(i, j));
+              target.add_coefficient(fi.face_indices[i], fi.opposite_indices[j],
+                  fi.flux_face.face_jacobian*neighbor_coeff*fmm(i, j));
+            }
         }
-    }
-  }
+        break;
 
-
-
-
-  template <class Mat, class Flux, class OT>
-  inline
-  void perform_local_flux_operator(const face_group &fg, 
-      const Mat &fmm, Flux flux, OT target)
-  {
-    unsigned face_length = fmm.size1();
-
-    assert(fmm.size1() == fmm.size2());
-
-    BOOST_FOREACH(const face_group::face_info &fi, fg.m_face_infos)
-    {
-      double local_coeff = flux.local_coeff(fi.flux_face);
-
-      assert(fmm.size1() == fi.face_indices.size());
-
-      for (unsigned i = 0; i < face_length; i++)
-        for (unsigned j = 0; j < face_length; j++)
+      case LOCAL:
+        BOOST_FOREACH(const face_group::face_info &fi, fg.m_face_infos)
         {
-          target.add_coefficient(fi.face_indices[i], fi.face_indices[j],
-              fi.flux_face.face_jacobian*local_coeff*fmm(i, j));
+          double local_coeff = flux.local_coeff(fi.flux_face);
+
+          assert(fmm.size1() == fi.face_indices.size());
+
+          for (unsigned i = 0; i < face_length; i++)
+            for (unsigned j = 0; j < face_length; j++)
+            {
+              target.add_coefficient(fi.face_indices[i], fi.face_indices[j],
+                  fi.flux_face.face_jacobian*local_coeff*fmm(i, j));
+            }
         }
-    }
-  }
+        break;
 
-
-
-
-  template <class Mat, class Flux, class OT>
-  inline
-  void perform_neighbor_flux_operator(const face_group &fg, 
-      const Mat &fmm, Flux flux, OT target)
-  {
-    unsigned face_length = fmm.size1();
-
-    assert(fmm.size1() == fmm.size2());
-
-    BOOST_FOREACH(const face_group::face_info &fi, fg.m_face_infos)
-    {
-      double neighbor_coeff = flux.neighbor_coeff(
-          fi.flux_face, fi.opp_flux_face);
-
-      assert(fmm.size1() == fi.opp_indices.size());
-
-      for (unsigned i = 0; i < face_length; i++)
-        for (unsigned j = 0; j < face_length; j++)
+      case NEIGHBOR:
+        BOOST_FOREACH(const face_group::face_info &fi, fg.m_face_infos)
         {
-          target.add_coefficient(fi.face_indices[i], fi.opposite_indices[j],
-              fi.flux_face.face_jacobian*neighbor_coeff*fmm(i, j));
+          double neighbor_coeff = flux.neighbor_coeff(
+              fi.flux_face, fi.opp_flux_face);
+
+          assert(fmm.size1() == fi.opp_indices.size());
+
+          for (unsigned i = 0; i < face_length; i++)
+            for (unsigned j = 0; j < face_length; j++)
+            {
+              target.add_coefficient(fi.face_indices[i], fi.opposite_indices[j],
+                  fi.flux_face.face_jacobian*neighbor_coeff*fmm(i, j));
+            }
         }
+        break;
     }
   }
 }

@@ -380,26 +380,21 @@ class Discretization:
 
     # flux computations -------------------------------------------------------
     def lift_interior_flux(self, flux, field):
-        from hedge._internal import VectorTarget, perform_both_fluxes_operator
-        from hedge.flux import ChainedFlux
+        from hedge._internal import VectorTarget
+        from hedge.flux import which_faces, compile_flux
 
         result = num.zeros_like(field)
         target = VectorTarget(field, result)
         target.begin(len(self.nodes), len(self.nodes))
         for fg, fmm in self.face_groups:
-            perform_both_fluxes_operator(fg, fmm, ChainedFlux(flux), target)
+            compile_flux(flux).perform(fg, which_faces.BOTH, fmm, target)
         target.finalize()
 
         return result
 
     def lift_boundary_flux(self, flux, field, bfield, tag=None):
-        from hedge._internal import \
-                VectorTarget, \
-                perform_local_flux_operator, \
-                perform_neighbor_flux_operator
-        from hedge.flux import ChainedFlux
-
-        ch_flux = ChainedFlux(flux)
+        from hedge._internal import VectorTarget
+        from hedge.flux import which_faces, compile_flux, stringify_flux
 
         result = num.zeros_like(field)
 
@@ -407,16 +402,20 @@ class Discretization:
         if not bdry.nodes:
             return result
 
+        compiled_flux = compile_flux(flux)
+        
         target_local = VectorTarget(field, result)
         target_local.begin(len(self.nodes), len(self.nodes))
         for fg, ldis in bdry.face_groups_and_ldis:
-            perform_local_flux_operator(fg, ldis.face_mass_matrix(), ch_flux, target_local)
+            compiled_flux.perform(fg, which_faces.LOCAL, 
+                    ldis.face_mass_matrix(), target_local)
         target_local.finalize()
 
         target_bdry = VectorTarget(bfield, result)
         target_bdry.begin(len(self.nodes), len(bdry.nodes))
         for fg, ldis in bdry.face_groups_and_ldis:
-            perform_neighbor_flux_operator(fg, ldis.face_mass_matrix(), ch_flux, target_bdry)
+            compiled_flux.perform(fg, which_faces.NEIGHBOR, 
+                    ldis.face_mass_matrix(), target_bdry)
         target_bdry.finalize()
 
         return result

@@ -30,7 +30,7 @@
 
 
 
-namespace hedge { namespace flux {
+namespace hedge { namespace fluxes {
   struct face
   {
     double h;
@@ -123,6 +123,8 @@ namespace hedge { namespace flux {
       double neighbor_coeff(const face &local, const face *neighbor) const
       { return m_child.neighbor_coeff(local, neighbor); }
 
+      const flux &child() const
+      { return m_child; }
     private:
       const flux &m_child;
   };
@@ -186,7 +188,7 @@ namespace hedge { namespace flux {
       double neighbor_coeff(const face &local, const face *neighbor) const
       { return local.normal[m_axis]; }
 
-      const int axis()
+      const int axis() const
       { return m_axis; }
 
     private:
@@ -199,15 +201,19 @@ namespace hedge { namespace flux {
   class penalty_term : public flux, public flux_operators<penalty_term>
   {
     public:
-      penalty_term(double coefficient, double power)
-        : m_coefficient(coefficient), m_power(power)
+      penalty_term( double power)
+        : m_power(power)
       { }
       double local_coeff(const face &local) const
-      { return m_coefficient * pow(local.order*local.order/local.h, m_power); }
+      { return pow(local.order*local.order/local.h, m_power); }
       double neighbor_coeff(const face &local, const face *neighbor) const
-      { return m_coefficient * pow(local.order*local.order/local.h, m_power); }
-    protected:
-      double m_coefficient, m_power;
+      { return pow(local.order*local.order/local.h, m_power); }
+
+      const double power() const
+      { return m_power; }
+
+    private:
+      double m_power;
   };
 
 
@@ -245,6 +251,12 @@ namespace hedge { namespace flux {
             );
       }
 
+      const Operand1 &operand1() const
+      { return m_op1; }
+
+      const Operand2 &operand2() const
+      { return m_op2; }
+
     protected:
       Operation m_operation;
       Operand1 m_op1;
@@ -276,6 +288,9 @@ namespace hedge { namespace flux {
       { 
         return m_operation(m_op.neighbor_coeff(local, neighbor));
       }
+
+      const Operand &operand() const
+      { return m_op; }
 
     protected:
       Operation m_operation;
