@@ -111,6 +111,9 @@ class ConstantFlux(Flux):
         else:
             return ConstantFlux(otherfloat*self.local_c, otherfloat*self.neighbor_c)
 
+    def __getinitargs__(self):
+        return self.local_c, self.neighbor_c
+
     def invoke_mapper(self, mapper, *args, **kwargs):
         return mapper.map_constant_flux(self, *args, **kwargs)
 
@@ -121,6 +124,9 @@ class NormalFlux(Flux):
     def __init__(self, axis):
         self.axis = axis
 
+    def __getinitargs__(self):
+        return self.axis,
+
     def invoke_mapper(self, mapper, *args, **kwargs):
         return mapper.map_normal_flux(self, *args, **kwargs)
 
@@ -129,6 +135,9 @@ class NormalFlux(Flux):
 class PenaltyFlux(Flux):
     def __init__(self, power):
         self.power = power
+
+    def __getinitargs__(self):
+        return self.power,
 
     def invoke_mapper(self, mapper, *args, **kwargs):
         return mapper.map_penalty_flux(self, *args, **kwargs)

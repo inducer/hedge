@@ -17,6 +17,7 @@
 
 
 
+import pylinear.array as num
 import pylinear.computation as comp
 from pytools.arithmetic_container import work_with_arithmetic_containers
 
@@ -438,31 +439,44 @@ class ParallelDiscretization(hedge.discretization.Discretization):
 
     def lift_interior_flux(self, flux, field):
         import boost.mpi as mpi
+        from hedge._internal import irecv_vector, isend_vector
 
         comm = self.context.communicator
 
-        recv_requests = mpi.RequestList(comm.irecv(source=rank, tag=1)
-            for rank in self.neighbor_ranks)
-        send_requests = mpi.RequestList(
-                comm.isend(rank, 1,
-                    self.boundarize_volume_field(field, "hedge-rank-bdry-%d"% rank))
+        # Subtlety here: The vectors for isend and irecv need to stay allocated
+        # for as long as the request is not finished. The wrapper aids this
+        # by making sure the vector outlives the request by using Boost.Python's
+        # with_custodian_and_ward mechanism. However, this "life support" gets
+        # eliminated if we add the request to a RequestList, so we need to provide
+        # our own life support for these vectors.
+
+        neigh_recv_vecs = dict((rank, self.boundary_zeros("hedge-rank-bdry-%d"% rank))
                 for rank in self.neighbor_ranks)
+
+        recv_requests = mpi.RequestList(
+                irecv_vector(comm, rank, 1, neigh_recv_vecs[rank])
+                for rank in self.neighbor_ranks)
+        send_requests = [isend_vector(comm, rank, 1,
+            self.boundarize_volume_field(field, "hedge-rank-bdry-%d"% rank))
+            for rank in self.neighbor_ranks]
 
         result = [hedge.discretization.Discretization.\
                 lift_interior_flux(self, flux, field)]
 
-        def receive(foreign_order_bfield, status):
+        def receive(_, status):
             from hedge.tools import apply_index_map
+
+            foreign_order_bfield = neigh_recv_vecs[status.source]
+
             bfield = apply_index_map(
                     self.from_neighbor_maps[status.source],
                     foreign_order_bfield)
+
             tag = "hedge-rank-bdry-%d" %  status.source
             result[0] += self.lift_boundary_flux(flux, field, bfield, tag)
-            self.received_bdrys[status.source] = \
-                    self.volumize_boundary_field(bfield, tag)
 
         mpi.wait_all(recv_requests, receive)
-        mpi.wait_all(send_requests)
+        mpi.wait_all(mpi.RequestList(send_requests))
         return result[0]
 
     def dt_non_geometric_factor(self):

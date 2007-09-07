@@ -156,21 +156,21 @@ namespace hedge { namespace fluxes {
       const double m_local, m_neighbor;
   };
 
-  constant operator+(const constant &self, const constant &other)
+  inline constant operator+(const constant &self, const constant &other)
   { 
     return constant(
         self.local_constant() + other.local_constant(), 
         self.neighbor_constant() + other.neighbor_constant()); 
   }
-  constant operator-(const constant &self, const constant &other)
+  inline constant operator-(const constant &self, const constant &other)
   { 
     return constant(
         self.local_constant() - other.local_constant(), 
         self.neighbor_constant() - other.neighbor_constant()); 
   }
-  constant operator-(const constant &self)
+  inline constant operator-(const constant &self)
   { return constant(-self.local_constant(), -self.neighbor_constant()); }
-  constant operator*(const constant &self, const double c)
+  inline constant operator*(const constant &self, const double c)
   { return constant(self.local_constant() * c, self.neighbor_constant() * c); }
 
 

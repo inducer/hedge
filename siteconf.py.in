@@ -3,7 +3,7 @@
 # See documentation for hints.
 # --------------------------------------------------------------------
 
-HEDGE_CONF_TEMPLATE_VERSION = 3
+HEDGE_CONF_TEMPLATE_VERSION = 4
 
 # --------------------------------------------------------------------
 # Path options
@@ -21,6 +21,15 @@ HAVE_BLAS = ${HAVE_BLAS}
 BLAS_LIBRARY_DIRS = [$str{BLAS_LIB_DIR}]
 BLAS_LIBRARIES = $str{BLAS_LIB_NAMES}.split(",")
 
+HAVE_MPI = ${HAVE_MPI}
+MPICC = $str{MPICC}
+MPICXX = [$str{MPICXX}]
+BOOST_MPI_LIBRARIES = [$str{BOOST_MPI_LIBNAME}]
+
+if not MPICXX:
+    MPICXX = MPICC
+
+BLAS_LIBRARIES = $str{BLAS_LIB_NAMES}.split(",")
 # --------------------------------------------------------------------
 # Compiler flags
 # --------------------------------------------------------------------

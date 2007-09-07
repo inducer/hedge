@@ -30,9 +30,10 @@ class StrongWaveOperator:
         self.discr = discr
         self.source_f = source_f
 
-        from hedge.flux import zero, trace_sign, make_normal, local, neighbor, average
+        from hedge.flux import zero, make_normal, local, neighbor, average
         from hedge.discretization import bind_flux, bind_nabla, bind_mass_matrix, \
                 bind_inverse_mass_matrix
+        from hedge.flux import stringify_flux
 
         normal = make_normal(discr.dimensions)
         flux_weak = average*normal
@@ -90,7 +91,7 @@ def main() :
 
     pcon = guess_parallelization_context()
 
-    dim = 2
+    dim = 3
 
     if dim == 2:
         if pcon.is_head_rank:

@@ -39,12 +39,6 @@ class StrongAdvectionOperator:
         flux_weak = dot(normal, a) * average - 0.5 *(local-neighbor)
         flux_strong = dot(normal, a)*local - flux_weak
         self.flux = bind_flux(self.discr, flux_strong)
-        print stringify_flux(flux_weak)
-        print compile_flux(flux_weak)
-        raw_input()
-        print stringify_flux(flux_strong)
-        print compile_flux(flux_strong)
-        raw_input()
 
         self.nabla = bind_nabla(discr)
         self.mass = bind_mass_matrix(discr)
@@ -132,7 +126,7 @@ def main() :
 
     pcon = guess_parallelization_context()
 
-    dim = 2
+    dim = 3
     periodic = False
     if dim == 2:
         a = num.array([1,0])
@@ -165,7 +159,7 @@ def main() :
 
     discr = pcon.make_discretization(mesh_data, el_class(5))
     vis = SiloVisualizer(discr)
-    op = WeakAdvectionOperator(discr, a, u_analytic)
+    op = StrongAdvectionOperator(discr, a, u_analytic)
 
     print "%d elements" % len(discr.mesh.elements)
 
@@ -177,7 +171,7 @@ def main() :
 
     u = discr.interpolate_volume_function(lambda x: u_analytic(0, x))
 
-    dt = discr.dt_factor(comp.norm_2(a))
+    dt = discr.dt_factor(comp.norm_2(a))/2
     stepfactor = 1
     nsteps = int(4/dt)
 
