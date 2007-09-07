@@ -61,8 +61,8 @@ _internal.ChainedFlux.__str__ = _chained_str
 
 # python fluxes ---------------------------------------------------------------
 class Flux(pymbolic.primitives.AlgebraicLeaf):
-    def __str__(self):
-        return FluxStringifyMapper()(self)
+    def stringify(self, enclosing_prec, use_repr_for_constants=False):
+        return FluxStringifyMapper(use_repr_for_constants)(self, enclosing_prec)
 
 
 
@@ -114,8 +114,8 @@ class ConstantFlux(Flux):
     def __getinitargs__(self):
         return self.local_c, self.neighbor_c
 
-    def invoke_mapper(self, mapper, *args, **kwargs):
-        return mapper.map_constant_flux(self, *args, **kwargs)
+    def get_mapper_method(self, mapper):
+        return mapper.map_constant_flux
 
 
 
@@ -127,8 +127,8 @@ class NormalFlux(Flux):
     def __getinitargs__(self):
         return self.axis,
 
-    def invoke_mapper(self, mapper, *args, **kwargs):
-        return mapper.map_normal_flux(self, *args, **kwargs)
+    def get_mapper_method(self, mapper):
+        return mapper.map_normal_flux
 
 
 
@@ -139,8 +139,8 @@ class PenaltyFlux(Flux):
     def __getinitargs__(self):
         return self.power,
 
-    def invoke_mapper(self, mapper, *args, **kwargs):
-        return mapper.map_penalty_flux(self, *args, **kwargs)
+    def get_mapper_method(self, mapper):
+        return mapper.map_penalty_flux
 
 
 
@@ -189,13 +189,6 @@ class FluxStringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
     def map_penalty_flux(self, expr, enclosing_prec):
         return "Penalty(%s)" % (expr.power)
 
-
-
-
-
-def stringify_flux(flux):
-    return FluxStringifyMapper()(flux, 
-            pymbolic.mapper.stringifier.PREC_NONE)
 
 
 

@@ -38,6 +38,8 @@ class StrongAdvectionOperator:
         normal = make_normal(self.discr.dimensions)
         flux_weak = dot(normal, a) * average - 0.5 *(local-neighbor)
         flux_strong = dot(normal, a)*local - flux_weak
+        print flux_strong
+        raw_input()
         self.flux = bind_flux(self.discr, flux_strong)
 
         self.nabla = bind_nabla(discr)
