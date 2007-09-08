@@ -75,10 +75,14 @@ class ConstantFlux(Flux):
         self.neighbor_c = neighbor_c
 
     def __add__(self, other):
+        from pymbolic.primitives import is_constant
+
         if isinstance(other, ConstantFlux):
             return ConstantFlux(
                     self.local_c + other.local_c,
                     self.neighbor_c + other.neighbor_c)
+        elif is_constant(other):
+            return ConstantFlux( self.local_c + other, self.neighbor_c + other)
         else:
             return Flux.__add__(self, other)
 
@@ -111,6 +115,17 @@ class ConstantFlux(Flux):
         else:
             return ConstantFlux(otherfloat*self.local_c, otherfloat*self.neighbor_c)
 
+    def __eq__(self, other):
+        return (isinstance(other, ConstantFlux) and
+                self.local_c == other.local_c and
+                self.neighbor_c == other.neighbor_c)
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def __hash__(self):
+        return 0xdedbeef ^ hash(self.local_c) ^ hash(self.neighbor_c)
+
     def __getinitargs__(self):
         return self.local_c, self.neighbor_c
 
@@ -127,6 +142,15 @@ class NormalFlux(Flux):
     def __getinitargs__(self):
         return self.axis,
 
+    def __eq__(self, other):
+        return isinstance(other, NormalFlux) and self.axis == other.axis
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def __hash__(self):
+        return 0xa931ff ^ hash(self.axis)
+
     def get_mapper_method(self, mapper):
         return mapper.map_normal_flux
 
@@ -138,6 +162,15 @@ class PenaltyFlux(Flux):
 
     def __getinitargs__(self):
         return self.power,
+
+    def __eq__(self, other):
+        return isinstance(other, PenaltyFlux) and self.power == other.power
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def __hash__(self):
+        return 0x9f194 ^ hash(self.power)
 
     def get_mapper_method(self, mapper):
         return mapper.map_penalty_flux
@@ -193,6 +226,88 @@ class FluxStringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
 
 
 
+class FluxNormalizationMapper(pymbolic.mapper.IdentityMapper):
+    def map_constant_flux(self, expr):
+        if expr.local_c == expr.neighbor_c:
+            return expr.local_c
+        else:
+            return expr
+
+    def map_sum(self, expr):
+        from pymbolic.primitives import \
+                flattened_sum, flattened_product, \
+                Product, is_constant
+
+        terms2coeff = {}
+
+        def add_term(coeff, terms):
+            terms2coeff[terms] = terms2coeff.get(terms, 0)  + coeff
+
+        for kid in expr.children:
+            kid = self.rec(kid)
+
+            if isinstance(kid, Product):
+                pkids = kid.children
+            else:
+                pkids = [kid]
+
+            coeffs = []
+            terms = set()
+            for p_kid in pkids:
+                if is_constant(p_kid) or isinstance(p_kid, ConstantFlux):
+                    coeffs.append(p_kid)
+                else:
+                    terms.add(p_kid)
+
+            add_term(flattened_product(coeffs), frozenset(terms))
+
+        return flattened_sum(
+                coeffs*flattened_product(terms)
+                for terms, coeffs in terms2coeff.iteritems())
+
+
+
+
+    def map_product(self, expr):
+        from pymbolic.primitives import flattened_product, is_constant
+
+        constants = []
+        c_fluxes = []
+        rest = []
+
+        for kid in expr.children:
+            kid = self.rec(kid)
+
+            if is_constant(kid):
+                constants.append(kid)
+            elif isinstance(kid, ConstantFlux):
+                c_fluxes.append(kid)
+            else:
+                rest.append(kid)
+
+        from operator import mul
+        constant = reduce(mul, constants, 1)
+
+        if c_fluxes:
+            if len(c_fluxes) > 1:
+                raise RuntimeError, "Multiplying two nontrivial constant fluxes is not going to do what you want"
+            c_flux = c_fluxes[0]
+            c_flux *= constant
+            return flattened_product([c_flux] + rest)
+        else:
+            return flattened_product([constant] + rest)
+
+
+
+
+        
+def normalize_flux(flux):
+    from pymbolic import expand, flatten
+    return FluxNormalizationMapper()(flatten(expand(flux)))
+
+
+
+
 class FluxCompilationMapper(pymbolic.mapper.RecursiveMapper):
     def map_constant(self, expr):
         return _internal.ConstantFlux(expr)
@@ -224,7 +339,7 @@ def compile_flux(flux):
     try:
         return flux._compiled
     except AttributeError:
-        flux._compiled = FluxCompilationMapper()(flux)
+        flux._compiled = FluxCompilationMapper()(normalize_flux(flux))
         return flux._compiled
 
 

@@ -394,7 +394,7 @@ class Discretization:
 
     def lift_boundary_flux(self, flux, field, bfield, tag=None):
         from hedge._internal import VectorTarget
-        from hedge.flux import which_faces, compile_flux, stringify_flux
+        from hedge.flux import which_faces, compile_flux
 
         result = num.zeros_like(field)
 

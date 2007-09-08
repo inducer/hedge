@@ -34,12 +34,10 @@ class StrongAdvectionOperator:
         from hedge.discretization import bind_flux, bind_nabla, bind_mass_matrix, \
                 bind_inverse_mass_matrix
 
-        from hedge.flux import stringify_flux, compile_flux
         normal = make_normal(self.discr.dimensions)
         flux_weak = dot(normal, a) * average - 0.5 *(local-neighbor)
         flux_strong = dot(normal, a)*local - flux_weak
-        print flux_strong
-        raw_input()
+
         self.flux = bind_flux(self.discr, flux_strong)
 
         self.nabla = bind_nabla(discr)
@@ -116,6 +114,7 @@ def main() :
     from hedge.parallel import \
             guess_parallelization_context, \
             reassemble_volume_field
+    from time import time
 
     def u_analytic(t, x):
         return sin(3*(a*x+t))
@@ -178,9 +177,13 @@ def main() :
     nsteps = int(4/dt)
 
     stepper = RK4TimeStepper()
+    start_step = time()
     for step in range(nsteps):
         if step % stepfactor == 0:
-            print "timestep %d, t=%f, l2=%f" % (step, dt*step, sqrt(u*(op.mass*u)))
+            now = time()
+            print "timestep %d, t=%f, l2=%f, secs=%f" % (
+                    step, dt*step, sqrt(u*(op.mass*u)), now-start_step)
+            start_step = now
 
         t = step*dt
         silo = make_silo_file("fld-%04d" % step, pcon)
