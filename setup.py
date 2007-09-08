@@ -104,6 +104,7 @@ def main():
                 library_dirs=LIBRARY_DIRS + EXTRA_LIBRARY_DIRS,
                 libraries=LIBRARIES + EXTRA_LIBRARIES,
                 define_macros=list(EXTRA_DEFINES.iteritems()),
+                extra_compile_args=conf["EXTRA_COMPILE_ARGS"],
                 )],
           data_files=[("include/hedge", glob.glob("src/cpp/*.hpp"))],
          )

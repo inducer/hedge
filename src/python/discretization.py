@@ -199,7 +199,7 @@ class Discretization:
         else:
             self.face_groups = []
         
-    def get_boundary(self, tag):
+    def _get_boundary(self, tag):
         """Get a _Boundary instance for a given `tag'.
 
         If there is no boundary tagged with `tag', an empty _Boundary instance
@@ -295,10 +295,10 @@ class Discretization:
         return result
 
     def boundary_zeros(self, tag=None):
-        return num.zeros((len(self.get_boundary(tag).nodes),))
+        return num.zeros((len(self._get_boundary(tag).nodes),))
 
     def interpolate_boundary_function(self, f, tag=None):
-        return num.array([f(x) for x in self.get_boundary(tag).nodes])
+        return num.array([f(x) for x in self._get_boundary(tag).nodes])
 
     # element data retrieval --------------------------------------------------
     def find_el_range(self, el_id):
@@ -379,18 +379,81 @@ class Discretization:
         return result
 
     # flux computations -------------------------------------------------------
-    def lift_interior_flux(self, flux, field):
-        from hedge._internal import VectorTarget
+    def perform_interior_flux(self, flux, target):
+        """Perform interior fluxes on the given operator target.
+        This adds the contribution
+
+          M_{i,j} := \sum_{interior faces f} \int_f
+            (  
+               flux.local_coeff(f) * \phi_j
+               + 
+               flux.neighbor_coeff(f) * \phi_{opp(j)}
+             )
+             \phi_i
+        
+        to the given target. opp(j) denotes the dof with its node
+        opposite from node j on the face opposite f.
+
+        Thus the matrix product M*u, where u is the full volume field
+        results in 
+
+          v_i := M_{i,j} u_j
+            = \sum_{interior faces f} \int_f
+            (  
+               flux.local_coeff(f) * u^-
+               + 
+               flux.neighbor_coeff(f) * u^+
+             )
+             \phi_i
+
+        For more on operator targets, see src/cpp/op_target.hpp.
+        """
         from hedge.flux import which_faces, compile_flux
 
-        result = num.zeros_like(field)
-        target = VectorTarget(field, result)
         target.begin(len(self.nodes), len(self.nodes))
         for fg, fmm in self.face_groups:
             compile_flux(flux).perform(fg, which_faces.BOTH, fmm, target)
         target.finalize()
 
+    def lift_interior_flux(self, flux, field):
+        """Use perform_interior_flux() to directly compute the vector
+        v mentioned in its definition. No matrix of the operator is 
+        ever constructed.
+        """
+        from hedge._internal import VectorTarget
+
+        result = num.zeros_like(field)
+        self.perform_interior_flux(flux, VectorTarget(field, result))
         return result
+
+    def prepare_interior_flux_op(self, flux):
+        """Use perform_interior_flux() to compute the matrix M mentioned
+        in its definition.
+The return value of this function is meant to be passed directly to
+        apply_interior_flux_op. For the serial Discretization class, the
+        value returned from this function is simply the sparse matrix M in 
+        CSR form. However, for parallel Discretization instances, the return
+        value will be more complicated. Hence, user programs should not rely 
+        on the structure of the return value of this function.
+        """
+        from hedge._internal import MatrixTarget
+
+        matrix = num.zeros(shape=(0,0), flavor=num.SparseBuildMatrix)
+        print "pif_m"
+        self.perform_interior_flux(flux, MatrixTarget(matrix))
+        print "end_pif_m"
+        print matrix.shape, matrix.nnz
+        conv = num.asarray(matrix, flavor=num.SparseExecuteMatrix)
+        print "conv_pif_m"
+        return conv
+
+    def apply_interior_flux_op(self, data, field):
+        """Use the result of prepare_interior_flux_op(), passed in as `data',
+        to apply the operator described in perform_interior_flux on the 
+        field passed in as `field'.
+        """
+        # I love programming when it's this easy. :)
+        return data*field
 
     def lift_boundary_flux(self, flux, field, bfield, tag=None):
         from hedge._internal import VectorTarget
@@ -398,7 +461,7 @@ class Discretization:
 
         result = num.zeros_like(field)
 
-        bdry = self.get_boundary(tag)
+        bdry = self._get_boundary(tag)
         if not bdry.nodes:
             return result
 
@@ -444,7 +507,7 @@ class Discretization:
                 perform_inverse_index_map
 
         result = self.volume_zeros()
-        bdry = self.get_boundary(tag)
+        bdry = self._get_boundary(tag)
 
         target = VectorTarget(bfield, result)
         target.begin(len(self.nodes), len(bdry.nodes))
@@ -461,7 +524,7 @@ class Discretization:
 
         result = self.boundary_zeros(tag)
 
-        bdry = self.get_boundary(tag)
+        bdry = self._get_boundary(tag)
 
         target = VectorTarget(field, result)
         target.begin(len(bdry.nodes), len(self.nodes))
@@ -585,7 +648,7 @@ class _BoundaryPair:
         self.bfield = bfield
         self.tag = tag
 
-class _FluxOperator(object):
+class _DirectFluxOperator(object):
     def __init__(self, discr, flux):
         self.discr = discr
         self.flux = flux
@@ -598,6 +661,19 @@ class _FluxOperator(object):
         else:
             return self.discr.lift_interior_flux(self.flux, field)
 
+class _FluxMatrixOperator(object):
+    def __init__(self, discr, flux):
+        self.discr = discr
+        self.flux = flux
+        self.interior_op = self.discr.prepare_interior_flux_op(flux)
+
+    def __mul__(self, field):
+        if isinstance(field, _BoundaryPair):
+            bpair = field
+            return self.discr.lift_boundary_flux(self.flux, 
+                    bpair.field, bpair.bfield, bpair.tag)
+        else:
+            return self.discr.apply_interior_flux_op(self.interior_op, field)
 
 
 
@@ -623,7 +699,15 @@ def bind_inverse_mass_matrix(discr):
 
 @work_with_arithmetic_containers
 def bind_flux(*args, **kwargs):
-    return _FluxOperator(*args, **kwargs)
+    direct = True
+    if "direct" in kwargs:
+        direct = kwargs["direct"]
+        del kwargs["direct"]
+
+    if direct:
+        return _DirectFluxOperator(*args, **kwargs)
+    else:
+        return _FluxMatrixOperator(*args, **kwargs)
 
 def pair_with_boundary(field, bfield, tag=None):
     from pytools.arithmetic_container import ArithmeticList
