@@ -19,6 +19,7 @@
 
 from __future__ import division
 import pylinear.array as num
+import pylinear.computation as comp
 
 
 
@@ -78,10 +79,78 @@ class JacobiGaussQuadrature(Quadrature):
     polynomials of type (alpha,beta) > -1 ( <> -0.5).
     """
     def __init__(self, alpha, beta, N):
-        from scipy.special.orthogonal import j_roots
-        import numpy
-        x, w = j_roots(N+1, alpha, beta)
-        Quadrature.__init__(self, numpy.real(x), w)
+        x, w = self.compute_weights_and_nodes(N, alpha, beta)
+        Quadrature.__init__(self, x, w)
+
+    @staticmethod
+    def compute_weights_and_nodes(N, alpha, beta):
+        """Return (nodes, weights) for an n-th order Gauss quadrature
+        with the Jacobi polynomials of type (alpha, beta).
+        """
+        # follows 
+        # Gene H. Golub, John H. Welsch, Calculation of Gauss Quadrature Rules, 
+        # Mathematics of Computation, Vol. 23, No. 106 (Apr., 1969), pp. 221-230
+        # doi:10.2307/2004418
+
+        # see also doc/hedge-notes.tm for correspondence with the Jacobi
+        # recursion from Hesthaven/Warburton's book
+
+        from math import sqrt
+
+        apb = alpha+beta
+
+        # see Appendix A of Hesthaven/Warburton for these formulas
+        def a(n):
+            return (
+                    2/(2*n+apb)
+                    *
+                    sqrt(
+                        (n*(n+apb)*(n+alpha)*(n+beta))
+                        /
+                        ((2*n+apb-1)*(2*n+apb+1))
+                        )
+                    )
+
+        def b(n):
+            if n == 0:
+                return (
+                        -(alpha-beta)
+                        /
+                        (apb+2)
+                        )
+            else:
+                return (
+                        -(alpha**2-beta**2)
+                        /
+                        ((2*n+apb)*(2*n+apb+2))
+                        )
+
+        T = num.zeros((N+1, N+1))
+
+        for n in range(N+1):
+            T[n,n] = b(n)
+            if n > 0:
+                T[n,n-1] = current_a
+            if n < N:
+                next_a = a(n+1)
+                T[n,n+1] = next_a
+                current_a = next_a
+
+        assert comp.norm_frobenius(T-T.T) < 1e-12
+        eigvec, eigval = comp.diagonalize_hermitian(T)
+        #eigvec = eigvec.T
+        assert comp.norm_frobenius(T*eigvec -  eigvec*num.diagonal_matrix(eigval)) < 1e-12
+
+        from hedge.polynomial import JacobiFunction
+        p0 = JacobiFunction(alpha, beta, 0)
+        nodes = eigval
+        weights = [eigvec[0,i]**2 / p0(nodes[i])**2 for i in range(N+1)]
+
+        return nodes, weights
+
+
+            
+
 
 
 

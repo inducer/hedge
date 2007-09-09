@@ -60,9 +60,12 @@ _internal.ChainedFlux.__str__ = _chained_str
 
 
 # python fluxes ---------------------------------------------------------------
-class Flux(pymbolic.primitives.AlgebraicLeaf):
+class Flux(pymbolic.primitives.AlgebraicLeaf, _internal.Flux):
     def stringify(self, enclosing_prec, use_repr_for_constants=False):
         return FluxStringifyMapper(use_repr_for_constants)(self, enclosing_prec)
+
+    def perform(self, face_group, which_faces, fmm, target):
+        _internal.ChainedFlux(self).perform(face_group, which_faces, fmm, target)
 
 
 
@@ -309,6 +312,9 @@ def normalize_flux(flux):
 
 
 class FluxCompilationMapper(pymbolic.mapper.RecursiveMapper):
+    def handle_unsupported_expression(self, expr):
+        return expr
+
     def map_constant(self, expr):
         return _internal.ConstantFlux(expr)
 

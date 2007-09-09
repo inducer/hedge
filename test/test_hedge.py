@@ -116,7 +116,6 @@ class TestHedge(unittest.TestCase):
                 (5, 0, 3e-13), 
                 (3, 4, 1e-14)
                 ]:
-            from scipy.special.orthogonal import jacobi
             jac_f = [JacobiFunction(alpha, beta, n) for n in range(max_n)]
             wf = WeightFunction(alpha, beta)
             maxerr = 0
@@ -786,7 +785,6 @@ class TestHedge(unittest.TestCase):
         from hedge.polynomial import legendre_vandermonde
         import pylinear.array as num
         import pylinear.computation as comp
-        import numpy
 
         for n in range(13):
             lgq = LegendreGaussQuadrature(n)

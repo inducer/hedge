@@ -90,7 +90,7 @@ def main():
         mesh_data = pcon.receive_mesh()
 
     #for order in [1,2,3,4,5,6]:
-    for order in [3]:
+    for order in [7]:
         discr = pcon.make_discretization(mesh_data, TetrahedralElement(order))
 
         vis = SiloVisualizer(discr)

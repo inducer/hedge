@@ -614,6 +614,27 @@
   <\eqnarray*>
     <tformat|<table|<row|<cell|0>|<cell|=>|<cell|<big|int><rsub|T<rsub|k>>v<rsub|t>\<cdot\>\<psi\>+<big|int><rsub|T<rsub|k>>u\<nabla\>\<cdot\>\<psi\>-<big|int><rsub|\<partial\>T<rsub|k>>u<rsup|\<ast\>>\<psi\>\<cdot\>n>>|<row|<cell|>|<cell|=>|<cell|<big|int><rsub|T<rsub|k>>v<rsub|t>\<cdot\>\<psi\>-<big|int><rsub|T<rsub|k>>(\<nabla\>u)\<psi\>+<big|int><rsub|\<partial\>T<rsub|k>>(u-u<rsup|\<ast\>>)\<psi\>\<cdot\>n>>|<row|<cell|>|<cell|=>|<cell|<big|int><rsub|T<rsub|k>>v<rsub|t>\<cdot\>\<psi\>-<big|int><rsub|T<rsub|k>>(\<nabla\>u)\<psi\>+<frac|1|2><big|int><rsub|\<partial\>T<rsub|k>>[u]\<psi\>\<cdot\>n>>>>
   </eqnarray*>
+
+  <section|Quadrature Rules>
+
+  Golub-Welsch recursion:
+
+  <\equation*>
+    p<rsub|n>=(\<alpha\><rsub|n>x+\<beta\><rsub|n>)p<rsub|n-1>-\<gamma\><rsub|n>p<rsub|n-2>
+  </equation*>
+
+  Hesthaven-Warburton recursion:
+
+  <\equation*>
+    x*p<rsub|n>=a<rsub|n>p<rsub|n-1>+b<rsub|n>p<rsub|n>+a<rsub|n+1>p<rsub|n+1>
+  </equation*>
+
+  Solve for <with|mode|math|a<rsub|n>> and <with|mode|math|b<rsub|n>> from
+  G-W:
+
+  <\eqnarray*>
+    <tformat|<table|<row|<cell|p<rsub|n+1>>|<cell|=>|<cell|\<alpha\><rsub|n+1>x*p<rsub|n>+\<beta\><rsub|n+1>p<rsub|n>-\<gamma\><rsub|n+1>p<rsub|n-1>>>|<row|<cell|\<alpha\><rsub|n+1>x*p<rsub|n>>|<cell|=>|<cell|p<rsub|n+1>-\<beta\><rsub|n+1>p<rsub|n>+\<gamma\><rsub|n+1>p<rsub|n-1>>>|<row|<cell|x*p<rsub|n>>|<cell|=>|<cell|<frac|1|\<alpha\><rsub|n+1>>p<rsub|n+1>-<frac|\<beta\><rsub|n+1>|\<alpha\><rsub|n+1>>p<rsub|n>+<frac|\<gamma\><rsub|n+1>|\<alpha\><rsub|n+1>>p<rsub|n-1>>>|<row|<cell|>|<cell|=>|<cell|<wide*|<frac|\<gamma\><rsub|n+1>|\<alpha\><rsub|n+1>>|\<wide-underbrace\>><rsub|a<rsub|n>>p<rsub|n-1><wide*|-<frac|\<beta\><rsub|n+1>|\<alpha\><rsub|n+1>>|\<wide-underbrace\>><rsub|b<rsub|n>>p<rsub|n>+<wide*|<frac|1|\<alpha\><rsub|n+1>>|\<wide-underbrace\>><rsub|a<rsub|n+1>>p<rsub|n+1>.>>>>
+  </eqnarray*>
 </body>
 
 <\initial>
@@ -630,6 +651,7 @@
     <associate|auto-10|<tuple|5.3|?>>
     <associate|auto-11|<tuple|5.3.1|?>>
     <associate|auto-12|<tuple|5.3.2|?>>
+    <associate|auto-13|<tuple|6|?>>
     <associate|auto-2|<tuple|2|1>>
     <associate|auto-3|<tuple|3|3>>
     <associate|auto-4|<tuple|4|?>>

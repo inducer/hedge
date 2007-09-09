@@ -46,7 +46,6 @@ class WarpFactorCalculator:
         from hedge.quadrature import legendre_gauss_lobatto_points
         from hedge.interpolation import newton_interpolation_function
 
-        import numpy
         # Find lgl and equidistant interpolation points
         r_lgl = legendre_gauss_lobatto_points(N)
         r_eq  = num.linspace(-1,1,N+1)
