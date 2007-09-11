@@ -38,8 +38,8 @@ class StrongAdvectionOperator:
         flux_weak = dot(normal, a) * average - 0.5 *(local-neighbor)
         flux_strong = dot(normal, a)*local - flux_weak
 
-        #self.flux = bind_flux(self.discr, flux_strong, direct=False)
-        self.flux = bind_flux(self.discr, flux_strong)
+        self.flux = bind_flux(self.discr, flux_strong, direct=False)
+        #self.flux = bind_flux(self.discr, flux_strong)
 
         self.nabla = bind_nabla(discr)
         self.mass = bind_mass_matrix(discr)
@@ -206,6 +206,7 @@ def main() :
 
 if __name__ == "__main__":
     import cProfile as profile
-    main()
+    profile.run("main()", "advec.prof")
+    #main()
 
 

@@ -429,7 +429,8 @@ class Discretization:
     def prepare_interior_flux_op(self, flux):
         """Use perform_interior_flux() to compute the matrix M mentioned
         in its definition.
-The return value of this function is meant to be passed directly to
+
+        The return value of this function is meant to be passed directly to
         apply_interior_flux_op. For the serial Discretization class, the
         value returned from this function is simply the sparse matrix M in 
         CSR form. However, for parallel Discretization instances, the return
@@ -439,12 +440,8 @@ The return value of this function is meant to be passed directly to
         from hedge._internal import MatrixTarget
 
         matrix = num.zeros(shape=(0,0), flavor=num.SparseBuildMatrix)
-        print "pif_m"
         self.perform_interior_flux(flux, MatrixTarget(matrix))
-        print "end_pif_m"
-        print matrix.shape, matrix.nnz
         conv = num.asarray(matrix, flavor=num.SparseExecuteMatrix)
-        print "conv_pif_m"
         return conv
 
     def apply_interior_flux_op(self, data, field):

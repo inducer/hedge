@@ -180,7 +180,7 @@ namespace hedge {
       { m_matrix.sort(); }
 
       void add_coefficient(unsigned i, unsigned j, scalar_type coeff) const
-      { m_matrix.push_back(i, j, coeff); }
+      { m_matrix.append_element(i, j, coeff); }
 
       template <class Container>
       void add_coefficients(unsigned i_start, unsigned i_stop, 
@@ -200,7 +200,8 @@ namespace hedge {
 
 
 
-  typedef matrix_target<boost::numeric::ublas::coordinate_matrix<double> > 
+  typedef matrix_target<boost::numeric::ublas::coordinate_matrix<double, 
+          boost::numeric::ublas::column_major> > 
     coord_matrix_target;
 }
 
