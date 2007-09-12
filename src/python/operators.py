@@ -44,7 +44,8 @@ class MaxwellOperator:
     Field order is [Ex Ey Ez Hx Hy Hz].
     """
 
-    def __init__(self, discr, epsilon, mu, upwind_alpha=1, pec_tag=None):
+    def __init__(self, discr, epsilon, mu, upwind_alpha=1, pec_tag=None,
+            direct_flux=True):
         from hedge.flux import make_normal, local, neighbor
         from hedge.discretization import pair_with_boundary
 
@@ -58,9 +59,10 @@ class MaxwellOperator:
 
         normal = make_normal(discr.dimensions)
 
-        self.n_jump = discr.get_flux_operator(1/2*normal*(local-neighbor))
+        self.n_jump = discr.get_flux_operator(
+                1/2*normal*(local-neighbor), direct=direct_flux)
         self.n_n_jump_tbl = [[discr.get_flux_operator(
-            1/2*normal[i]*normal[j]*(local-neighbor))
+            1/2*normal[i]*normal[j]*(local-neighbor), direct=direct_flux)
                 for i in range(discr.dimensions)]
                 for j in range(discr.dimensions)]
 

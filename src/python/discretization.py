@@ -583,7 +583,7 @@ def generate_ones_on_boundary(discr, tag):
 
 
 # bound operators -------------------------------------------------------------
-class _BoundaryPair:
+class BoundaryPair:
     def __init__(self, field, bfield, tag):
         self.field = field
         self.bfield = bfield
@@ -627,7 +627,7 @@ class _DirectFluxOperator(object):
     def __mul__(self, field):
         from hedge._internal import VectorTarget
 
-        if isinstance(field, _BoundaryPair):
+        if isinstance(field, BoundaryPair):
             bpair = field
             result = num.zeros_like(bpair.field)
             self.discr.perform_boundary_flux_local_part(
@@ -655,7 +655,7 @@ class _FluxMatrixOperator(object):
         self.bdry_ops = {}
 
     def __mul__(self, field):
-        if isinstance(field, _BoundaryPair):
+        if isinstance(field, BoundaryPair):
             from hedge._internal import MatrixTarget
 
             bpair = field
@@ -687,8 +687,9 @@ def pair_with_boundary(field, bfield, tag=None):
     if isinstance(field, ArithmeticList):
         assert isinstance(bfield, ArithmeticList)
         return ArithmeticList([
-            _BoundaryPair(sub_f, sub_bf, tag) for sub_f, sub_bf in zip(field, bfield)
+            BoundaryPair(sub_f, sub_bf, tag) for sub_f, sub_bf in zip(field, bfield)
             ])
     else:
-        return _BoundaryPair(field, bfield, tag)
+        return BoundaryPair(field, bfield, tag)
+
 
