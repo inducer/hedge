@@ -461,8 +461,8 @@ class TestHedge(unittest.TestCase):
         ones = discr.interpolate_volume_function(lambda x: 1)
 
         #discr.visualize_vtk("gaussian.vtk", [("f", f)])
-        num_integral_1 = ones * discr.apply_mass_matrix(f)
-        num_integral_2 = f * discr.apply_mass_matrix(ones)
+        num_integral_1 = ones * (discr.mass_operator * f)
+        num_integral_2 = f * (discr.mass_operator * ones)
         dim = 2
         true_integral = (2*pi)**(dim/2)*sqrt(sigma_squared)**dim
         err_1 = abs(num_integral_1-true_integral)
@@ -485,8 +485,8 @@ class TestHedge(unittest.TestCase):
         ones = discr.interpolate_volume_function(lambda x: 1)
 
         #discr.visualize_vtk("trig.vtk", [("f", f)])
-        num_integral_1 = ones * discr.apply_mass_matrix(f)
-        num_integral_2 = f * discr.apply_mass_matrix(ones)
+        num_integral_1 = ones * (discr.mass_operator * f)
+        num_integral_2 = f * (discr.mass_operator * ones)
         true_integral = pi**2
         err_1 = abs(num_integral_1-true_integral)
         err_2 = abs(num_integral_2-true_integral)
@@ -511,7 +511,7 @@ class TestHedge(unittest.TestCase):
             f = discr.interpolate_volume_function(lambda x: sin(3*x[coord]))
             df = discr.interpolate_volume_function(lambda x: 3*cos(3*x[coord]))
 
-            df_num = discr.differentiate(coord, f)
+            df_num = discr.nabla[coord] * f
             error = df_num - df
             #discr.visualize_vtk("diff-err.vtk",
                     #[("f", f), ("df", df), ("df_num", df_num), ("error", error)])
@@ -527,7 +527,7 @@ class TestHedge(unittest.TestCase):
         from hedge.tools import AffineMap
         from hedge.mesh import make_disk_mesh
         from hedge.flux import Flux
-        from hedge.discretization import Discretization
+        from hedge.discretization import Discretization, pair_with_boundary
         import pylinear.array as num
         import pylinear.computation as comp
         from pylinear.randomized import make_random_vector
@@ -563,16 +563,16 @@ class TestHedge(unittest.TestCase):
         f1_f = discr.interpolate_boundary_function(f1)
         f2_f = discr.interpolate_boundary_function(f2)
 
-        dx_v = discr.differentiate(0, f1_v)
-        dy_v = discr.differentiate(1, f2_v)
+        dx_v = discr.nabla[0] * f1_v
+        dy_v = discr.nabla[1] * f2_v
 
         int_div = \
-                ones*discr.apply_mass_matrix(dx_v) + \
-                ones*discr.apply_mass_matrix(dy_v)
+                ones*(discr.mass_operator*dx_v) + \
+                ones*(discr.mass_operator*dy_v)
 
         boundary_int = (
-                discr.lift_boundary_flux(one_sided_x, f1_v, face_zeros) +
-                discr.lift_boundary_flux(one_sided_y, f2_v, face_zeros)
+                discr.get_flux_operator(one_sided_x)*pair_with_boundary(f1_v, face_zeros) +
+                discr.get_flux_operator(one_sided_y)*pair_with_boundary(f2_v, face_zeros)
                 )*ones
 
         #print abs(boundary_int-int_div)
@@ -947,7 +947,8 @@ class TestHedge(unittest.TestCase):
         #discr.visualize_vtk("dual.vtk", [("u", u)])
 
         from hedge.flux import local, neighbor, make_normal
-        res = discr.lift_interior_flux((local-neighbor)*make_normal(discr.dimensions)[1], u)
+        res = discr.get_flux_operator(
+                (local-neighbor)*make_normal(discr.dimensions)[1]) * u
         #discr.visualize_vtk("dual.vtk", [("u", u), ("res", res)])
         ones = discr.interpolate_volume_function(lambda x: 1)
         self.assert_(abs(res*ones) < 5e-14)
@@ -1040,7 +1041,8 @@ class TestHedge(unittest.TestCase):
         # make sure the surface integral of the difference 
         # between top and bottom is zero
         from hedge.flux import local, neighbor, make_normal
-        res = discr.lift_interior_flux((local-neighbor)*make_normal(discr.dimensions)[1], u)
+        res = discr.get_flux_operator(
+                (local-neighbor)*make_normal(discr.dimensions)[1]) * u
         ones = discr.interpolate_volume_function(lambda x: 1)
         self.assert_(abs(res*ones) < 5e-14)
     # -------------------------------------------------------------------------
@@ -1084,7 +1086,8 @@ class TestHedge(unittest.TestCase):
             return ConformalMesh(points, elements, 
                     boundary_tagger)
 
-        from hedge.discretization import Discretization, SymmetryMap
+        from hedge.discretization import \
+                Discretization, SymmetryMap, pair_with_boundary
         from hedge.element import TriangularElement
         from hedge.flux import zero, make_normal, local, neighbor, average
         from hedge.timestep import RK4TimeStepper
@@ -1107,17 +1110,19 @@ class TestHedge(unittest.TestCase):
         dt = 1e-2
         nsteps = int(1/dt)
 
+        from hedge.tools import dot
+        nabla = discr.nabla
+
         def rhs_strong(t, u):
             bc = discr.interpolate_boundary_function(
                     lambda x: u_analytic(t, x),
                     "inflow")
 
-            rhsint =   a[0]*discr.differentiate(0, u)
-                    #+ a[1]*discr.differentiate(1, u)
-            rhsflux = discr.lift_interior_flux(flux, u)
-            rhsbdry = discr.lift_boundary_flux(flux, u, bc, "inflow")
+            rhsint = dot(a, nabla*u)
+            rhsflux = flux_op * u
+            rhsbdry = flux_op * pair_with_boundary(u, bc, "inflow")
 
-            return rhsint-discr.apply_inverse_mass_matrix(rhsflux+rhsbdry)
+            return rhsint-discr.inverse_mass_operator*(rhsflux+rhsbdry)
 
         sym_map = SymmetryMap(discr, 
                 lambda x: num.array([x[0], -x[1]]),
@@ -1132,10 +1137,11 @@ class TestHedge(unittest.TestCase):
                     dot(normal, a) * (local-average) * average),
                 ]:
             stepper = RK4TimeStepper()
+            flux_op = discr.get_flux_operator(flux)
             for step in range(nsteps):
                 u = stepper(u, step*dt, dt, rhs_strong)
                 sym_error_u = u-sym_map(u)
-                sym_error_u_l2 = sqrt(sym_error_u*discr.apply_mass_matrix(sym_error_u))
+                sym_error_u_l2 = sqrt(sym_error_u*(discr.mass_operator*sym_error_u))
                 self.assert_(sym_error_u_l2 < 1e-13)
     # -------------------------------------------------------------------------
     def test_convergence_advec_2d(self):
@@ -1143,6 +1149,7 @@ class TestHedge(unittest.TestCase):
 
         import pylinear.array as num
         from hedge.mesh import make_disk_mesh
+        from hedge.discretization import Discretization, pair_with_boundary
         from hedge.discretization import Discretization
         from hedge.element import TriangularElement
         from hedge.timestep import RK4TimeStepper
@@ -1163,6 +1170,8 @@ class TestHedge(unittest.TestCase):
 
         mesh = make_disk_mesh(r=pi, boundary_tagger=boundary_tagger, max_area=0.5)
 
+        from hedge.tools import dot
+
         for flux_name, flux in [
                 ("lax-friedrichs",
                     dot(make_normal(2), a) * (local-average)
@@ -1175,6 +1184,8 @@ class TestHedge(unittest.TestCase):
 
             for order in [1,2,3,4,5,6]:
                 discr = Discretization(mesh, TriangularElement(order))
+                nabla = discr.nabla
+                flux_op = discr.get_flux_operator(flux)
 
                 u = discr.interpolate_volume_function(lambda x: u_analytic(0, x))
                 dt = 1e-2
@@ -1185,12 +1196,11 @@ class TestHedge(unittest.TestCase):
                             lambda x: u_analytic(t, x),
                             "inflow")
 
-                    rhsint =   a[0]*discr.differentiate(0, u)
-                            #+ a[1]*discr.differentiate(1, u)
-                    rhsflux = discr.lift_interior_flux(flux, u)
-                    rhsbdry = discr.lift_boundary_flux(flux, u, bc, "inflow")
+                    rhsint = dot(a, nabla*u)
+                    rhsflux = flux_op * u
+                    rhsbdry = flux_op * pair_with_boundary(u, bc, "inflow")
 
-                    return rhsint-discr.apply_inverse_mass_matrix(rhsflux+rhsbdry)
+                    return rhsint-discr.inverse_mass_operator*(rhsflux+rhsbdry)
 
                 stepper = RK4TimeStepper()
                 for step in range(nsteps):
@@ -1199,7 +1209,7 @@ class TestHedge(unittest.TestCase):
                 u_true = discr.interpolate_volume_function(
                         lambda x: u_analytic(nsteps*dt, x))
                 error = u-u_true
-                error_l2 = sqrt(error*discr.apply_mass_matrix(error))
+                error_l2 = sqrt(error*(discr.mass_operator*error))
                 eoc_rec.add_data_point(order, error_l2)
             self.assert_(eoc_rec.estimate_order_of_convergence()[0,1] > 7)
             #print "%s\n%s\n" % (flux_name.upper(), "-" * len(flux_name))

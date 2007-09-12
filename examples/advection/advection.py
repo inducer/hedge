@@ -31,19 +31,17 @@ class StrongAdvectionOperator:
         self.inflow_u = inflow_u
 
         from hedge.flux import zero, make_normal, local, neighbor, average
-        from hedge.discretization import bind_flux, bind_nabla, bind_mass_matrix, \
-                bind_inverse_mass_matrix
 
         normal = make_normal(self.discr.dimensions)
         flux_weak = dot(normal, a) * average - 0.5 *(local-neighbor)
         flux_strong = dot(normal, a)*local - flux_weak
 
-        self.flux = bind_flux(self.discr, flux_strong, direct=False)
+        self.flux = discr.get_flux_operator(flux_strong, direct=False)
         #self.flux = bind_flux(self.discr, flux_strong)
 
-        self.nabla = bind_nabla(discr)
-        self.mass = bind_mass_matrix(discr)
-        self.m_inv = bind_inverse_mass_matrix(discr)
+        self.nabla = discr.nabla
+        self.mass = discr.mass_operator
+        self.m_inv = discr.inverse_mass_operator
 
     def rhs(self, t, u):
         from hedge.discretization import pair_with_boundary
@@ -66,16 +64,14 @@ class WeakAdvectionOperator:
         self.inflow_u = inflow_u
 
         from hedge.flux import zero, make_normal, local, neighbor, average
-        from hedge.discretization import bind_flux, bind_weak_nabla, bind_mass_matrix, \
-                bind_inverse_mass_matrix
 
         normal = make_normal(self.discr.dimensions)
         flux_weak = dot(normal, a) * average# - 0.5 *(local-neighbor)
-        self.flux = bind_flux(self.discr, flux_weak)
+        self.flux = discr.get_flux_operator(flux_weak)
 
-        self.weak_nabla = bind_weak_nabla(discr)
-        self.mass = bind_mass_matrix(discr)
-        self.m_inv = bind_inverse_mass_matrix(discr)
+        self.weak_nabla = discr.weak_nabla
+        self.mass = discr.mass_operator
+        self.m_inv = discr.inverse_mass_operator
 
     def rhs(self, t, u):
         from hedge.discretization import pair_with_boundary
@@ -161,7 +157,7 @@ def main() :
 
     discr = pcon.make_discretization(mesh_data, el_class(5))
     vis = SiloVisualizer(discr)
-    op = StrongAdvectionOperator(discr, a, u_analytic)
+    op = WeakAdvectionOperator(discr, a, u_analytic)
 
     print "%d elements" % len(discr.mesh.elements)
 

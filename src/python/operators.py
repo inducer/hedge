@@ -46,11 +46,7 @@ class MaxwellOperator:
 
     def __init__(self, discr, epsilon, mu, upwind_alpha=1, pec_tag=None):
         from hedge.flux import make_normal, local, neighbor
-        from hedge.discretization import \
-            bind_flux, \
-            bind_nabla, \
-            bind_inverse_mass_matrix, \
-            pair_with_boundary
+        from hedge.discretization import pair_with_boundary
 
         self.discr = discr
 
@@ -62,13 +58,14 @@ class MaxwellOperator:
 
         normal = make_normal(discr.dimensions)
 
-        self.n_jump = bind_flux(discr, 1/2*normal*(local-neighbor))
-        self.n_n_jump_tbl = [[bind_flux(discr, 1/2*normal[i]*normal[j]*(local-neighbor))
+        self.n_jump = discr.get_flux_operator(1/2*normal*(local-neighbor))
+        self.n_n_jump_tbl = [[discr.get_flux_operator(
+            1/2*normal[i]*normal[j]*(local-neighbor))
                 for i in range(discr.dimensions)]
                 for j in range(discr.dimensions)]
 
-        self.nabla = bind_nabla(discr)
-        self.m_inv = bind_inverse_mass_matrix(discr)
+        self.nabla = discr.nabla
+        self.m_inv = discr.inverse_mass_operator
 
 
     def rhs(self, t, y):

@@ -31,19 +31,16 @@ class StrongWaveOperator:
         self.source_f = source_f
 
         from hedge.flux import zero, make_normal, local, neighbor, average
-        from hedge.discretization import bind_flux, bind_nabla, bind_mass_matrix, \
-                bind_inverse_mass_matrix
-        from hedge.flux import stringify_flux
 
         normal = make_normal(discr.dimensions)
         flux_weak = average*normal
         flux_strong = local*normal - flux_weak
 
-        self.nabla = bind_nabla(discr)
-        self.mass = bind_mass_matrix(discr)
-        self.m_inv = bind_inverse_mass_matrix(discr)
+        self.nabla = discr.nabla
+        self.mass = discr.mass_operator
+        self.m_inv = discr.inverse_mass_operator
 
-        self.flux = bind_flux(discr, flux_strong)
+        self.flux = discr.get_flux_operator(flux_strong)
 
     def rhs(self, t, y):
         from hedge.discretization import pair_with_boundary

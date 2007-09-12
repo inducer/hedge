@@ -28,7 +28,6 @@ def main():
     from hedge.element import TetrahedralElement
     from hedge.timestep import RK4TimeStepper
     from hedge.mesh import make_ball_mesh, make_cylinder_mesh, make_box_mesh
-    from hedge.discretization import Discretization, bind_mass_matrix
     from hedge.visualization import \
             make_silo_file, \
             SiloVisualizer, \
@@ -107,10 +106,8 @@ def main():
             print "dt", dt
             print "nsteps", nsteps
 
-        mass = bind_mass_matrix(discr)
-
         def l2_norm(field):
-            return sqrt(dot(field, mass*field))
+            return sqrt(dot(field, discr.mass_operator*field))
 
         #check_time_harmonic_solution(discr, mode, c_sol)
         #continue
