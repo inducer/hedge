@@ -69,7 +69,7 @@ class WeakAdvectionOperator:
         flux_weak = dot(normal, a) * average# - 0.5 *(local-neighbor)
         self.flux = discr.get_flux_operator(flux_weak)
 
-        self.weak_nabla = discr.weak_nabla
+        self.minv_st = discr.minv_stiffness_t
         self.mass = discr.mass_operator
         self.m_inv = discr.inverse_mass_operator
 
@@ -82,7 +82,7 @@ class WeakAdvectionOperator:
 
         bc_out = self.discr.boundarize_volume_field(u, "outflow")
 
-        return -dot(self.a, self.weak_nabla*u) + self.m_inv*(
+        return -dot(self.a, self.minv_st*u) + self.m_inv*(
                 self.flux*u
                 + self.flux * pair_with_boundary(u, bc_in, "inflow")
                 + self.flux * pair_with_boundary(u, bc_out, "outflow")

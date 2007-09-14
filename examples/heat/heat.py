@@ -25,10 +25,17 @@ from hedge.tools import Rotation, dot
 
 
 
-class StrongWaveOperator:
-    def __init__(self, discr, source_f=None):
+def coefficient_to_matrix(discr, coeff):
+    return num.diagonal_matrix(
+            discr.interpolate_volume_function(coeff),
+            flavor=num.SparseExecuteMatrix)
+
+    
+
+
+class StrongHeatOperator:
+    def __init__(self, discr, coeff=lambda x: 1):
         self.discr = discr
-        self.source_f = source_f
 
         from hedge.flux import zero, make_normal, local, neighbor, average
 
@@ -37,36 +44,44 @@ class StrongWaveOperator:
         flux_strong = local*normal - flux_weak
 
         self.nabla = discr.nabla
+        self.stiff = discr.stiffness_operator
         self.mass = discr.mass_operator
         self.m_inv = discr.inverse_mass_operator
 
-        self.flux = discr.get_flux_operator(flux_strong)
+        self.q_flux = discr.get_flux_operator(flux_strong)
+        self.u_flux = discr.get_flux_operator(flux_strong)
+        
+        from math import sqrt
+        self.sqrt_coeff = coefficient_to_matrix(discr, lambda x: sqrt(coeff(x)))
 
-    def rhs(self, t, y):
+    def q(self, u):
         from hedge.discretization import pair_with_boundary
 
-        u = y[0]
-        v = y[1:]
+        sqrt_coeff_u = self.sqrt_coeff * u
+        bc_u = -self.discr.boundarize_volume_field(sqrt_coeff_u)
 
-        bc_v = self.discr.boundarize_volume_field(v)
-        bc_u = -self.discr.boundarize_volume_field(u)
+        q = self.m_inv * (
+                self.sqrt_coeff*(self.stiff * u)
+                - (self.u_flux*sqrt_coeff_u)
+                - self.u_flux*pair_with_boundary(sqrt_coeff_u, bc_u)
+                )
+        return q
 
-        rhs = ArithmeticList([])
-        # rhs u
-        rhs.append(dot(self.nabla, v) 
-                - self.m_inv*(
-                    dot(self.flux, v) 
-                    + dot(self.flux, pair_with_boundary(v, bc_v))
-                    ))
-        if self.source_f is not None:
-            rhs[0] += self.source_f(t)
-        # rhs v
-        rhs.extend(self.nabla*u 
-                -self.m_inv*(
-                    self.flux*u 
-                    + self.flux*pair_with_boundary(u, bc_u)
-                    ))
-        return rhs
+    def rhs(self, t, u):
+        from hedge.discretization import pair_with_boundary
+
+        q = self.q(u)
+
+        sqrt_coeff_q = self.sqrt_coeff * q
+        bc_q = self.discr.boundarize_volume_field(sqrt_coeff_q)
+
+        rhs_u = self.m_inv * (
+                self.sqrt_coeff*dot(self.stiff, q)
+                - dot(self.q_flux, sqrt_coeff_q)
+                - dot(self.q_flux, pair_with_boundary(sqrt_coeff_q, bc_q))
+                )
+
+        return rhs_u
 
 
 
@@ -82,7 +97,6 @@ def main() :
             make_square_mesh, \
             make_ball_mesh
     from hedge.visualization import SiloVisualizer, make_silo_file
-    from pytools.stopwatch import Job
     from math import sin, cos, pi, exp, sqrt
     from hedge.parallel import guess_parallelization_context
 
@@ -92,9 +106,10 @@ def main() :
 
     if dim == 2:
         if pcon.is_head_rank:
-            #mesh = make_disk_mesh()
-            mesh = make_regular_square_mesh(
-                    n=9, periodicity=(True,True))
+            mesh = make_disk_mesh(r=0.5)
+            #mesh = make_regular_square_mesh(
+                    #n=9, periodicity=(True,True))
+            #mesh = make_regular_square_mesh(n=9)
             #mesh = make_square_mesh(max_area=0.008)
             #mesh.transform(Rotation(pi/8))
         el_class = TriangularElement
@@ -111,47 +126,42 @@ def main() :
     else:
         mesh_data = pcon.receive_mesh()
 
-    discr = pcon.make_discretization(mesh_data, el_class(6))
+    discr = pcon.make_discretization(mesh_data, el_class(3))
     stepper = RK4TimeStepper()
     vis = SiloVisualizer(discr)
 
-    dt = discr.dt_factor(1)
-    nsteps = int(10/dt)
+    dt = discr.dt_factor(1)**2/2
+    nsteps = int(1/dt)
     if pcon.is_head_rank:
         print "dt", dt
         print "nsteps", nsteps
 
-    def source_u(x):
-        return exp(-x*x*256)
-
-    source_u_vec = discr.interpolate_volume_function(source_u)
-
-    def source_vec_getter(t):
-        if t > 0.1:
-            return discr.volume_zeros()
+    def u0(x):
+        
+        if comp.norm_2(x) < 0.2:
+            #return exp(-100*x*x)
+            return 1
         else:
-            return source_u_vec
+            return 0
 
-    op = StrongWaveOperator(discr, source_vec_getter)
-    fields = ArithmeticList([discr.volume_zeros()]) # u
-    fields.extend([discr.volume_zeros() for i in range(discr.dimensions)]) # v
+    op = StrongHeatOperator(discr)
+    u = discr.interpolate_volume_function(u0)
 
     for step in range(nsteps):
         t = step*dt
-        if step % 1 == 0:
+        if step % 10 == 0:
             print "timestep %d, t=%f, l2=%g" % (
-                    step, t, sqrt(fields[0]*(op.mass*fields[0])))
+                    step, t, sqrt(u*(op.mass*u)))
 
-        if step % 1 == 0:
+        if step % 10 == 0:
             silo = make_silo_file("fld-%04d" % step, pcon)
             vis.add_to_silo(silo,
-                    [("u", fields[0]), ], 
-                    [("v", fields[1:]), ],
+                    [("u", u), ], 
                     time=t,
-                    step=step)
+                    step=step, write_coarse_mesh=True)
             silo.close()
 
-        fields = stepper(fields, t, dt, op.rhs)
+        u = stepper(u, t, dt, op.rhs)
 
 if __name__ == "__main__":
     #import cProfile as profile

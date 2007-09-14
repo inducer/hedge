@@ -455,7 +455,7 @@ def make_single_element_mesh(a=-0.5, b=0.5,
 
 
 
-def make_regular_square_mesh(a=-0.5, b=0.5, n=5, 
+def make_regular_square_mesh(a=-0.5, b=0.5, n=5, periodicity=None,
         boundary_tagger=lambda fvi, el, fn: []):
     node_dict = {}
     points = []
@@ -465,27 +465,46 @@ def make_regular_square_mesh(a=-0.5, b=0.5, n=5,
             node_dict[i,j] = len(points)
             points.append(num.array([points_1d[i], points_1d[j]]))
 
-    from random import shuffle
-    def shuffled(l):
-        result = list(l)
-        shuffle(result)
-        return result
-
     elements = []
+
+    if periodicity is None:
+        periodicity = (False, False)
+
+    axes = ["x", "y"]
+    mesh_periodicity = []
+    for i, axis in enumerate(axes):
+        if periodicity[0]:
+            mesh_periodicity.append(("minus_"+axis, "plus_"+axis))
+        else:
+            mesh_periodicity.append(None)
+
+    fvi2fm = {}
+
     for i in range(n-1):
         for j in range(n-1):
-            elements.append(shuffled((
-                node_dict[i,j],
-                node_dict[i+1,j],
-                node_dict[i,j+1],
-                )))
-            elements.append(shuffled((
-                node_dict[i+1,j+1],
-                node_dict[i,j+1],
-                node_dict[i+1,j],
-                )))
 
-    return ConformalMesh(points, elements, boundary_tagger)
+            # c--d
+            # |  |
+            # a--b
+
+            a = node_dict[i,j]
+            b = node_dict[i+1,j]
+            c = node_dict[i,j+1]
+            d = node_dict[i+1,j+1]
+
+            elements.append((a,b,c))
+            elements.append((d,c,b))
+
+            if i == 0: fvi2fm[frozenset((a,c))] = "minus_x"
+            if i == n-2: fvi2fm[frozenset((b,d))] = "plus_x"
+            if j == 0: fvi2fm[frozenset((a,b))] = "minus_y"
+            if j == n-2: fvi2fm[frozenset((c,d))] = "plus_y"
+
+    def wrapped_boundary_tagger(fvi, el, fn):
+        return [fvi2fm[frozenset(fvi)]] + boundary_tagger(fvi, el, fn)
+
+    return ConformalMesh(points, elements, wrapped_boundary_tagger,
+            periodicity=mesh_periodicity)
 
 
 

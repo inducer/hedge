@@ -61,6 +61,15 @@ class WarpFactorCalculator:
 
 
 
+class FaceVertexMismatch(Exception):
+    def __init__(self, value):
+        self.value = value
+    def __str__(self):
+        return repr(self.value)
+
+
+
+
 class TriangleWarper:
     def __init__(self, alpha, order):
         self.alpha = alpha
@@ -403,7 +412,9 @@ class TriangularElement(SimplicialElement):
 
     @staticmethod
     def shuffle_face_indices_to_match(face_1_vertices, face_2_vertices, face_2_indices):
-        assert set(face_1_vertices) == set(face_2_vertices)
+        if set(face_1_vertices) != set(face_2_vertices):
+            raise FaceVertexMismatch("face vertices do not match")
+
         if face_1_vertices != face_2_vertices:
             assert face_1_vertices[::-1] == face_2_vertices
             return face_2_indices[::-1]
@@ -720,7 +731,7 @@ class TetrahedralElement(SimplicialElement):
             # (c,b,a) -fl-> (c,a,b) -sl-> (a,b,c)
             return shift_left(flip(face_2_indices))
         else:
-            raise ValueError, "face_2_vertices is not a permutation of face_1_vertices"
+            raise FaceVertexMismatch("face vertices do not match")
 
     # time step scaling -------------------------------------------------------
     def dt_non_geometric_factor(self):

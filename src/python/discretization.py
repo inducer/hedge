@@ -36,6 +36,7 @@ class _ElementGroup(object):
     - inverse_mass_matrix
     - differentiation_matrices: local differentiation matrices, i.e.
       differentiation by r, s, t, ....
+    - stiffness_matrices
     - jacobians
     - inverse_jacobians
     - diff_coefficients: a (d,d)-matrix of coefficient vectors to turn
@@ -95,6 +96,7 @@ class Discretization:
             immat = eg.inverse_mass_matrix = ldis.inverse_mass_matrix()
             dmats = eg.differentiation_matrices = \
                     ldis.differentiation_matrices()
+            smats = eg.stiffness_matrices = [mmat*d for d in dmats]
             eg.minv_st = [immat*d.T*mmat for d in dmats]
 
             eg.jacobians = num.array([
@@ -108,6 +110,18 @@ class Discretization:
                     [ # local diff. coordinate
                         num.array([
                             el.inverse_map
+                            .matrix[loc_coord, glob_coord]
+                            for el in eg.members
+                            ])
+                        for loc_coord in range(ldis.dimensions)
+                        ]
+                    for glob_coord in range(ldis.dimensions)
+                    ]
+
+            eg.stiffness_coefficients = [ # over global diff. coordinate
+                    [ # local diff. coordinate
+                        num.array([
+                            abs(el.map.jacobian)*el.inverse_map
                             .matrix[loc_coord, glob_coord]
                             for el in eg.members
                             ])
@@ -138,6 +152,8 @@ class Discretization:
 
     def _build_interior_face_groups(self):
         from hedge._internal import FaceGroup
+        from hedge.element import FaceVertexMismatch
+
         fg = FaceGroup()
 
         # map (el, face) tuples to their numbers within this face group
@@ -168,7 +184,7 @@ class Discretization:
                     dist = self.nodes[estart_l+i]-self.nodes[estart_n+j]
                     assert comp.norm_2(dist) < 1e-14
 
-            except ValueError:
+            except FaceVertexMismatch:
                 # this happens if vertices_l is not a permutation of vertices_n.
                 # periodicity is the only reason why that would be so.
 
@@ -342,12 +358,27 @@ class Discretization:
 
         target.finalize()
 
+    def perform_stiffness_operator(self, coordinate, target):
+        from hedge._internal import perform_elwise_scaled_operator
+
+        target.begin(len(self.nodes), len(self.nodes))
+
+        for eg in self.element_groups:
+            for coeff, mat in zip(eg.stiffness_coefficients[coordinate], 
+                    eg.stiffness_matrices):
+                perform_elwise_scaled_operator(eg.ranges, coeff, mat, target)
+
+        target.finalize()
+
     def perform_minv_st_operator(self, coordinate, target):
         from hedge._internal import perform_elwise_scaled_operator
+
         target.begin(len(self.nodes), len(self.nodes))
+
         for eg in self.element_groups:
             for coeff, mat in zip(eg.diff_coefficients[coordinate], eg.minv_st):
                 perform_elwise_scaled_operator(eg.ranges, coeff, mat, target)
+
         target.finalize()
 
     # interior flux computation -----------------------------------------------
@@ -486,7 +517,16 @@ class Discretization:
                 )
 
     @property
-    def weak_nabla(self):
+    def stiffness_operator(self):
+        from pytools.arithmetic_container import ArithmeticList
+        return ArithmeticList(
+                [_DifferentiationOperator(self, i, 
+                    self.perform_stiffness_operator) 
+                    for i in range(self.dimensions)]
+                )
+
+    @property
+    def minv_stiffness_t(self):
         from pytools.arithmetic_container import ArithmeticList
         return ArithmeticList(
                 [_DifferentiationOperator(self, i, 
