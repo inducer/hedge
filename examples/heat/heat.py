@@ -96,7 +96,7 @@ def main() :
             make_regular_square_mesh, \
             make_square_mesh, \
             make_ball_mesh
-    from hedge.visualization import SiloVisualizer, LegacyVtkVisualizer
+    from hedge.visualization import SiloVisualizer, VtkVisualizer
     from math import sin, cos, pi, exp, sqrt
     from hedge.parallel import guess_parallelization_context
 
@@ -128,7 +128,7 @@ def main() :
 
     discr = pcon.make_discretization(mesh_data, el_class(3))
     stepper = RK4TimeStepper()
-    vis = LegacyVtkVisualizer(discr)
+    vis = VtkVisualizer(discr, "fld", pcon)
 
     dt = discr.dt_factor(1)**2/2
     nsteps = int(1/dt)
@@ -154,13 +154,13 @@ def main() :
                     step, t, sqrt(u*(op.mass*u)))
 
         if step % 10 == 0:
-            vfile = vis.make_file("fld-%04d" % step, pcon)
-            vis.add_data(vfile,
+            visf = vis.make_file("fld-%04d" % step)
+            vis.add_data(visf,
                     [("u", u), ], 
-                    #time=t,
-                    #step=step, write_coarse_mesh=True
+                    time=t, step=step, 
+                    #write_coarse_mesh=True
                     )
-            vfile.close()
+            visf.close()
 
         u = stepper(u, t, dt, op.rhs)
 

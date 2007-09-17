@@ -29,7 +29,7 @@ def main():
     from hedge.timestep import RK4TimeStepper
     from hedge.mesh import make_ball_mesh, make_cylinder_mesh, make_box_mesh
     from hedge.visualization import \
-            make_silo_file, \
+            VtkVisualizer, \
             SiloVisualizer, \
             get_rank_partition
     from pylo import DB_VARTYPE_VECTOR
@@ -89,10 +89,10 @@ def main():
         mesh_data = pcon.receive_mesh()
 
     #for order in [1,2,3,4,5,6]:
-    for order in [7]:
+    for order in [3]:
         discr = pcon.make_discretization(mesh_data, TetrahedralElement(order))
 
-        vis = SiloVisualizer(discr)
+        vis = VtkVisualizer(discr, "em", pcon)
 
         dt = discr.dt_factor(1/sqrt(mu*epsilon))
         final_time = dt*60
@@ -127,18 +127,16 @@ def main():
             last_tstep = time()
 
             if True:
-                silo = make_silo_file("em-%04d" % step, pcon)
-                vis.add_to_silo(silo,
+                visf = vis.make_file("em-%04d" % step)
+                vis.add_data(visf,
                         vectors=[("e", fields[0:3]), 
                             ("h", fields[3:6]), ],
                         scalars=[("partition", get_rank_partition(pcon, discr))
                             ],
-                        expressions=[
-                            ],
-                        write_coarse_mesh=True,
+                        #write_coarse_mesh=True,
                         time=t, step=step
                         )
-                silo.close()
+                visf.close()
 
             fields = stepper(fields, t, dt, op.rhs)
             t += dt
