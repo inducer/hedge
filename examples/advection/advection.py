@@ -103,7 +103,7 @@ def main() :
             make_ball_mesh, \
             make_box_mesh
     from hedge.discretization import Discretization, generate_ones_on_boundary
-    from hedge.visualization import SiloVisualizer, make_silo_file
+    from hedge.visualization import SiloVisualizer, VtkVisualizer
     from hedge.tools import dot
     from pytools.arithmetic_container import ArithmeticList
     from pytools.stopwatch import Job
@@ -156,7 +156,7 @@ def main() :
         mesh_data = pcon.receive_mesh()
 
     discr = pcon.make_discretization(mesh_data, el_class(5))
-    vis = SiloVisualizer(discr)
+    vis = SiloVisualizer(discr, "fld", pcon)
     op = WeakAdvectionOperator(discr, a, u_analytic)
 
     print "%d elements" % len(discr.mesh.elements)
@@ -171,7 +171,7 @@ def main() :
 
     dt = discr.dt_factor(comp.norm_2(a))/2
     stepfactor = 1
-    nsteps = int(4/dt)
+    nsteps = int(0.1/dt)
 
     stepper = RK4TimeStepper()
     start_step = time()
@@ -183,8 +183,8 @@ def main() :
             start_step = now
 
         t = step*dt
-        silo = make_silo_file("fld-%04d" % step, pcon)
-        vis.add_to_silo(silo, [
+        visf = vis.make_file("fld-%04d" % step)
+        vis.add_data(visf, [
                     ("u", u), 
                     #("u_true", u_true), 
                     ], 
@@ -192,13 +192,15 @@ def main() :
                     time=t, 
                     step=step
                     )
+        visf.close()
 
         u = stepper(u, t, dt, op.rhs)
 
         #u_true = discr.interpolate_volume_function(
                 #lambda x: u_analytic(t, x))
 
-        silo.close()
+    vis.close()
+
 
 if __name__ == "__main__":
     import cProfile as profile

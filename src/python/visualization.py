@@ -17,6 +17,7 @@
 
 
 
+# legacy vtk ------------------------------------------------------------------
 def _three_vector(x):
     if len(x) == 3:
         return x
@@ -28,8 +29,37 @@ def _three_vector(x):
 
 
 
+class LegacyVtkFile:
+    def __init__(self, pathname, structure, description="Hedge visualization"):
+        self.pathname = pathname
+        self.structure = structure
+        self.description = description
 
-class VtkVisualizer:
+        self.pointdata = []
+        self.is_closed = False
+
+    def __fin__(self):
+        self.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
+
+    def close(self):
+        if not self.is_closed:
+            from pyvtk import PointData, VtkData
+            vtk = VtkData(self.structure, 
+                    self.description, 
+                    PointData(*self.pointdata))
+            vtk.tofile(self.pathname)
+            self.is_closed = True
+            
+
+
+
+class LegacyVtkVisualizer:
     def __init__(self, discr):
         from pyvtk import PolyData
 
@@ -44,22 +74,190 @@ class VtkVisualizer:
 
         self.structure = PolyData(points=points, polygons=polygons)
 
-    def __call__(self, filename, fields=[], vectors=[], description="Hedge visualization"):
-        from pyvtk import PointData, VtkData, Scalars, Vectors
+    def make_file(self, pathname, pcontext=None):
+        if pcontext is not None:
+            if len(pcontext.ranks) > 1:
+                raise RuntimeError, "Legacy VTK does not suport parallel visualization"
+        return LegacyVtkFile(pathname+".vtk", self.structure)
+
+    def add_data(self, vtkfile, scalars=[], vectors=[]):
+        from pyvtk import Scalars, Vectors
         import numpy
 
-        pdatalist = [
+        vtkfile.pointdata.extend(
                 Scalars(numpy.array(field), name=name, lookup_table="default") 
-                for name, field in fields
-                ] + [
+                for name, field in scalars)
+        vtkfile.pointdata.extend(
                 Vectors([_three_vector(v) for v in zip(field)], name=name)
-                for name, field in vectors]
-        vtk = VtkData(self.structure, "Hedge visualization", PointData(*pdatalist))
-        vtk.tofile(filename)
+                for name, field in vectors)
 
 
 
 
+# xml vtk ---------------------------------------------------------------------
+class Closable:
+    def __init__(self):
+        self.is_closed = False
+
+    def __del__(self):
+        self.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
+
+    def close(self):
+        if not self.is_closed:
+            self.do_close()
+            self.is_closed = True
+
+
+
+
+class VtkFile(Closable):
+    def __init__(self, pathname, grid, filenames=None):
+        Closable.__init__(self)
+        self.pathname = pathname
+        self.grid = grid
+
+    def get_head_pathname(self):
+        return self.pathname
+
+    def do_close(self):
+        from hedge.vtk import InlineXMLGenerator, AppendedDataXMLGenerator
+
+        outf = file(self.pathname, "w")
+        AppendedDataXMLGenerator()(self.grid).write(outf)
+        #InlineXMLGenerator()(self.grid).write(outf)
+        outf.close()
+
+
+
+
+
+class ParallelVtkFile(VtkFile):
+    def __init__(self, pathname, grid, index_pathname, pathnames=None):
+        VtkFile.__init__(self, pathname, grid)
+        self.index_pathname = index_pathname
+        self.pathnames = pathnames
+
+    def get_head_pathname(self):
+        return self.index_pathname
+
+    def do_close(self):
+        VtkFile.do_close(self)
+
+        from hedge.vtk import ParallelXMLGenerator
+
+        outf = file(self.index_pathname, "w")
+        ParallelXMLGenerator(self.pathnames)(self.grid).write(outf)
+        outf.close()
+
+
+
+
+
+
+
+class VtkVisualizer(Closable):
+    def __init__(self, discr, basename, pcontext=None):
+        Closable.__init__(self)
+
+        self.basename = basename
+        self.pcontext = pcontext
+
+        if self.pcontext is None or self.pcontext.is_head_rank:
+            self.timestep_to_pathnames = {}
+        else:
+            self.timestep_to_pathnames = None
+
+        from hedge.vtk import UnstructuredGrid, \
+                VTK_TRIANGLE, VTK_TETRA
+        from hedge.element import Triangle, Tetrahedron
+
+        cells = []
+        cell_types = []
+
+        for eg in discr.element_groups:
+            ldis = eg.local_discretization
+
+            for el, (el_start, el_stop) in zip(eg.members, eg.ranges):
+                smi = ldis.generate_submesh_indices()
+                cells.extend([el_start+j for j in element] 
+                    for element in smi)
+                if isinstance(el, Triangle):
+                    cell_types.extend([VTK_TRIANGLE] * len(smi))
+                elif isinstance(el, Tetrahedron):
+                    cell_types.extend([VTK_TETRA] * len(smi))
+                else:
+                    raise RuntimeError, "unsupported element type: %s" % type(el)
+
+        self.grid = UnstructuredGrid(discr.nodes, cells, cell_types)
+
+    def do_close(self):
+        if self.timestep_to_pathnames:
+            from hedge.vtk import XMLRoot, XMLElement, make_vtkfile
+
+            collection = XMLElement("Collection")
+
+            vtkf = make_vtkfile(collection.tag)
+            xmlroot = XMLRoot(vtkf)
+
+            vtkf.add_child(collection)
+
+            tsteps = self.timestep_to_pathnames.keys()
+            tsteps.sort()
+            for i, time in enumerate(tsteps):
+                for part, pathname in enumerate(self.timestep_to_pathnames[time]):
+                    collection.add_child(XMLElement(
+                        "DataSet",
+                        timestep=time, part=part, file=pathname))
+            outf = open(self.basename+".pvd", "w")
+            xmlroot.write(outf)
+            outf.close()
+
+    def make_file(self, pathname):
+        """FIXME
+
+        An appropriate extension (including the dot) is automatically
+        appended to `pathname'.
+        """
+        if self.pcontext is None or len(self.pcontext.ranks) == 1:
+            return VtkFile(pathname+"."+self.grid.vtk_extension(), 
+                    self.grid.copy())
+        else:
+            filename_pattern = (
+                    pathname + "-%05d." + self.grid.vtk_extension())
+            if self.pcontext.is_head_rank:
+                return ParallelVtkFile(
+                        filename_pattern % self.pcontext.rank,
+                        self.grid.copy(), 
+                        index_pathname="%s.p%s" % (
+                            pathname, self.grid.vtk_extension()),
+                        pathnames=[
+                            filename_pattern % rank for rank in self.pcontext.ranks])
+            else:
+                return VtkFile(
+                        filename_pattern % self.pcontext.rank, 
+                        self.grid.copy())
+
+    def add_data(self, visf, scalars=[], vectors=[], time=None, step=None):
+        for name, data in scalars:
+            visf.grid.add_pointdata(name, data)
+        for name, data in vectors:
+            visf.grid.add_pointdata(name, data)
+
+        if step is not None and self.timestep_to_pathnames is not None:
+            self.timestep_to_pathnames.setdefault(time, []).append(visf.get_head_pathname())
+
+
+
+
+
+
+# silo ------------------------------------------------------------------------
 class SiloMeshData:
     def __init__(self, dim, points, element_groups):
         from pytools import flatten
@@ -95,7 +293,7 @@ class SiloMeshData:
 
 
 class SiloVisualizer:
-    def __init__(self, discr):
+    def __init__(self, discr, basename, pcontext=None):
         def generate_fine_elements(eg):
             ldis = eg.local_discretization
             smi = list(ldis.generate_submesh_indices())
@@ -118,8 +316,28 @@ class SiloVisualizer:
         dim = discr.dimensions
         self.fine_mesh = SiloMeshData(dim, discr.nodes, generate_fine_element_groups())
         self.coarse_mesh = SiloMeshData(dim, discr.mesh.points, generate_coarse_element_groups())
+        self.pcontext = pcontext
 
-    def add_to_silo(self, silo, scalars=[], vectors=[], expressions=[],
+    def close(self):
+        pass
+
+    def make_file(self, pathname):
+        """This function returns either a pylo.SiloFile or a
+        pylo.ParallelSiloFile, depending on the ParallelContext
+        under which we are running
+
+        An extension of .silo is automatically appended to `pathname'.
+        """
+        if self.pcontext is None or len(self.pcontext.ranks) == 1:
+            from pylo import SiloFile
+            return SiloFile(pathname+".silo")
+        else:
+            from pylo import ParallelSiloFile
+            return ParallelSiloFile(
+                    pathname, 
+                    self.pcontext.rank, self.pcontext.ranks)
+
+    def add_data(self, silo, scalars=[], vectors=[], expressions=[],
             time=None, step=None, write_coarse_mesh=False):
         from pylo import DB_NODECENT, DBOPT_DTIME, DBOPT_CYCLE
 
@@ -147,23 +365,7 @@ class SiloVisualizer:
 
 
 
-def make_silo_file(pathname, pcontext=None):
-    """This function returns either a pylo.SiloFile or a
-    pylo.ParallelSiloFile, depending on the ParallelContext
-    `pcontext' passed in.
-
-    An extension of .silo is automatically appended to `pathname'.
-    """
-    if pcontext is None or len(pcontext.ranks) == 1:
-        from pylo import SiloFile
-        return SiloFile(pathname+".silo")
-    else:
-        from pylo import ParallelSiloFile
-        return ParallelSiloFile(pathname, pcontext.rank, pcontext.ranks)
-
-
-
-
+# tools -----------------------------------------------------------------------
 def get_rank_partition(pcon, discr):
     vec = discr.volume_zeros()
     vec[:] = pcon.rank

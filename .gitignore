@@ -14,3 +14,6 @@ dump.py
 Makefile
 *.png
 tags
+*.vtu
+*.pvtu
+*.pvd
