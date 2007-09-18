@@ -349,6 +349,8 @@ class AppendedDataXMLGenerator(InlineXMLGenerator):
 
 class ParallelXMLGenerator(XMLGenerator):
     def __init__(self, pathnames):
+        XMLGenerator.__init__(self, compressor=None)
+
         self.pathnames = pathnames
 
     def gen_unstructured_grid(self, ugrid):

@@ -88,7 +88,7 @@ def main() :
 
     pcon = guess_parallelization_context()
 
-    dim = 3
+    dim = 2
 
     if dim == 2:
         if pcon.is_head_rank:

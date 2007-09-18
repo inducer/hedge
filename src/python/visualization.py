@@ -17,6 +17,14 @@
 
 
 
+def _assert_not_a_file(name):
+    import os
+    if os.access(name, os.F_OK):
+        raise IOError, "file `%s' already exists" % name
+
+
+
+
 # legacy vtk ------------------------------------------------------------------
 def _three_vector(x):
     if len(x) == 3:
@@ -130,9 +138,7 @@ class VtkFile(Closable):
         return self.pathname
 
     def do_close(self):
-        import os
-        if os.access(self.pathname, os.F_OK):
-            raise IOError, "file `%s' already exists" % self.pathname
+        _assert_not_a_file(self.pathname)
 
         from hedge.vtk import InlineXMLGenerator, AppendedDataXMLGenerator
 
@@ -174,7 +180,7 @@ class VtkVisualizer(Closable):
     def __init__(self, discr, basename, pcontext=None, compressor=None):
         Closable.__init__(self)
 
-        self.basename = basename
+        self.pvd_name = basename+".pvd"
         self.pcontext = pcontext
         self.compressor = compressor
 
@@ -206,7 +212,10 @@ class VtkVisualizer(Closable):
 
         self.grid = UnstructuredGrid(discr.nodes, cells, cell_types)
 
-    def do_close(self):
+        _assert_not_a_file(self.pvd_name)
+
+
+    def update_pvd(self):
         if self.timestep_to_pathnames:
             from hedge.vtk import XMLRoot, XMLElement, make_vtkfile
 
@@ -224,9 +233,12 @@ class VtkVisualizer(Closable):
                     collection.add_child(XMLElement(
                         "DataSet",
                         timestep=time, part=part, file=pathname))
-            outf = open(self.basename+".pvd", "w")
+            outf = open(self.pvd_name, "w")
             xmlroot.write(outf)
             outf.close()
+
+    def do_close(self):
+        self.update_pvd()
 
     def make_file(self, pathname):
         """FIXME
@@ -267,6 +279,13 @@ class VtkVisualizer(Closable):
 
         if step is not None and self.timestep_to_pathnames is not None:
             self.timestep_to_pathnames.setdefault(time, []).append(visf.get_head_pathname())
+
+            # When we are run under MPI and cancelled by Ctrl+C, destructors
+            # do not get called. Therefore, we just spend the (hopefully negligible)
+            # time to update the PVD index every few data additions.
+            if len(self.timestep_to_pathnames) % 5 == 0:
+                self.update_pvd()
+
 
 
 
