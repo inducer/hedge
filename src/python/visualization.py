@@ -17,6 +17,11 @@
 
 
 
+import hedge.tools 
+
+
+
+
 def _assert_not_a_file(name):
     import os
     if os.access(name, os.F_OK):
@@ -103,33 +108,13 @@ class LegacyVtkVisualizer:
 
 
 # xml vtk ---------------------------------------------------------------------
-class Closable:
-    def __init__(self):
-        self.is_closed = False
-
-    def __del__(self):
-        self.close()
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        self.close()
-
-    def close(self):
-        if not self.is_closed:
-            # even if previous close attempt failed, consider ourselves closed still
-            try:
-                self.do_close()
-            finally:
-                self.is_closed = True
 
 
 
 
-class VtkFile(Closable):
+class VtkFile(hedge.tools.Closable):
     def __init__(self, pathname, grid, filenames=None, compressor=None):
-        Closable.__init__(self)
+        hedge.tools.Closable.__init__(self)
         self.pathname = pathname
         self.grid = grid
         self.compressor = compressor
@@ -176,9 +161,9 @@ class ParallelVtkFile(VtkFile):
 
 
 
-class VtkVisualizer(Closable):
+class VtkVisualizer(hedge.tools.Closable):
     def __init__(self, discr, basename, pcontext=None, compressor=None):
-        Closable.__init__(self)
+        hedge.tools.Closable.__init__(self)
 
         self.pvd_name = basename+".pvd"
         self.pcontext = pcontext

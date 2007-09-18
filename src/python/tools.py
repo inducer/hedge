@@ -184,9 +184,6 @@ def estimate_order_of_convergence(abscissae, errors):
 
   
 
-
-
-
 class EOCRecorder:
     def __init__(self):
         self.history = []
@@ -241,6 +238,32 @@ class EOCRecorder:
 
 
 
+# small utilities -------------------------------------------------------------
+class Closable:
+    def __init__(self):
+        self.is_closed = False
+
+    def __del__(self):
+        self.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
+
+    def close(self):
+        if not self.is_closed:
+            # even if close attempt fails, consider ourselves closed still
+            try:
+                self.do_close()
+            finally:
+                self.is_closed = True
+
+
+
+
+# index map tools -------------------------------------------------------------
 def apply_index_map(imap, vector):
     from hedge._internal import VectorTarget, perform_index_map
 
