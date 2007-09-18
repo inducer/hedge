@@ -46,18 +46,22 @@ namespace hedge {
   inline
   void perform_index_map(const from_index_map &fim, OT target)
   {
+    target.begin(fim.m_to_length, fim.m_from_length);
     unsigned i = 0;
     BOOST_FOREACH(unsigned from_index, fim.m_map)
       target.add_coefficient(i++, from_index, 1);
+    target.finalize();
   }
 
   template <class OT>
   inline
   void perform_inverse_index_map(const from_index_map &fim, OT target)
   {
+    target.begin(fim.m_from_length, fim.m_to_length);
     unsigned i = 0;
     BOOST_FOREACH(unsigned from_index, fim.m_map)
       target.add_coefficient(from_index, i++, 1);
+    target.finalize();
   }
 }
 

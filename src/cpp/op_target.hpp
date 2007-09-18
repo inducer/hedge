@@ -121,10 +121,10 @@ namespace hedge {
       {
         if (m_operand.size() != width)
           throw std::runtime_error(
-              "operand size does not match matrix width");
+              "operand size does not match target width");
         if (m_result.size() != height)
           throw std::runtime_error(
-              "result size does not match matrix height");
+              "result size does not match target height");
       }
 
       void finalize() const

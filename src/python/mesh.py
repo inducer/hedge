@@ -364,7 +364,7 @@ class ConformalMesh(Mesh):
                 # find a mapping from -axis to +axis vertices
                 from hedge.tools import find_matching_vertices_along_axis
 
-                minus_to_plus = find_matching_vertices_along_axis(
+                minus_to_plus, not_found = find_matching_vertices_along_axis(
                         axis, minus_z_points, plus_z_points,
                         minus_vertex_indices, plus_vertex_indices)
                 plus_to_minus = reverse_dictionary(minus_to_plus)
@@ -374,8 +374,8 @@ class ConformalMesh(Mesh):
                     minus_el, minus_fi = minus_face
                     minus_fvi = minus_el.faces[minus_fi]
 
-                    mapped_plus_fvi = tuple(minus_to_plus[i] for i in minus_fvi)
                     try:
+                        mapped_plus_fvi = tuple(minus_to_plus[i] for i in minus_fvi)
                         plus_faces = face_map[frozenset(mapped_plus_fvi)]
                         assert len(plus_faces) == 1
                     except KeyError:

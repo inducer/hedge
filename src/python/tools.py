@@ -142,6 +142,8 @@ def sign(x):
 
 def find_matching_vertices_along_axis(axis, points_a, points_b, numbers_a, numbers_b):
     a_to_b = {}
+    not_found = []
+
 
     for i, pi in enumerate(points_a):
         found = False
@@ -153,9 +155,9 @@ def find_matching_vertices_along_axis(axis, points_a, points_b, numbers_a, numbe
                 found = True
                 break
         if not found:
-            raise ValueError, "No match for index %d point %s" % (i, pi)
+            not_found.append(numbers_a[i])
 
-    return a_to_b
+    return a_to_b, not_found
 
 
 

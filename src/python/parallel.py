@@ -358,7 +358,7 @@ class ParallelDiscretization(hedge.discretization.Discretization):
                     nb_face_starts.append(
                             nb_face_starts[-1]+len(node_coords))
 
-                # step 2: determine face order by matching vertices
+                # step 2: match faces by matching vertices
                 nb_face_order = dict(
                         (frozenset(vertices), i)
                         for i, vertices in enumerate(nb_all_facevertices_global))
@@ -400,6 +400,8 @@ class ParallelDiscretization(hedge.discretization.Discretization):
                                         his_vertices_here,
                                         nb_node_indices)
 
+                        from_indices.extend(shuffled_other_node_indices)
+
                         # check if the nodes really match up
                         my_node_indices = [estart+i for i in ldis.face_indices()[face_nr]]
 
@@ -430,6 +432,8 @@ class ParallelDiscretization(hedge.discretization.Discretization):
                         for my_i, other_i in zip(my_node_indices, shuffled_other_node_indices):
                             dist = self.nodes[my_i]-flat_nb_node_coords[other_i]
                             assert comp.norm_2(dist) < 1e-14
+
+                assert len(from_indices) == len(flat_nb_node_coords)
 
                 # turn from_indices into an IndexMap
 
@@ -499,6 +503,7 @@ class _ParallelFluxOperator(object):
         recv_requests = mpi.RequestList(
                 irecv_vector(comm, rank, 1, neigh_recv_vecs[rank])
                 for rank in self.discr.neighbor_ranks)
+
         send_requests = [isend_vector(comm, rank, 1,
             self.discr.boundarize_volume_field(field, "hedge-rank-bdry-%d"% rank))
             for rank in self.discr.neighbor_ranks]
