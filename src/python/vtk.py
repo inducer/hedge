@@ -121,6 +121,7 @@ class DataArray:
             self.type = container.type
             self.components = container.components
             self.buffer = container.buffer
+            self.encoding_cache = container.encoding_cache
             return
 
         from hedge._internal import \
@@ -158,6 +159,32 @@ class DataArray:
                     self.buffer =  bufferize_list_of_vectors(container, self.components)
         else:
             raise ValueError, "cannot convert object of type `%s' to DataArray" % container
+
+        self.encoding_cache = {}
+
+    def encode(self, compressor, xml_element):
+        from hedge._internal import bufferize_int32
+        from base64 import b64encode
+
+        try:
+            b64header, b64data = self.encoding_cache[compressor]
+        except KeyError:
+            if compressor == "zlib":
+                from zlib import compress
+                comp_buffer = compress(self.buffer)
+                comp_header = [1, len(self.buffer), len(self.buffer), len(comp_buffer)]
+                b64header = b64encode(bufferize_int32(comp_header))
+                b64data = b64encode(comp_buffer)
+            else:
+                b64header = b64encode( bufferize_int32([len(self.buffer)]))
+                b64data = b64encode(self.buffer)
+                
+            self.encoding_cache[compressor] = b64header, b64data
+
+        xml_element.add_child(b64header)
+        xml_element.add_child(b64data)
+
+        return len(b64header) + len(b64data)
 
     def invoke_visitor(self, visitor):
         return visitor.gen_data_array(self)
@@ -217,22 +244,39 @@ class UnstructuredGrid:
 
 
 
-def make_vtkfile(filetype):
+def make_vtkfile(filetype, compressor):
     import sys
     if sys.byteorder == "little":
         bo = "LittleEndian"
     else:
         bo = "BigEndian"
 
-    return XMLElement("VTKFile", type=filetype, version="0.1", byte_order=bo)
+    kwargs = {}
+    if compressor == "zlib":
+        kwargs["compressor"] = "vtkZLibDataCompressor"
+
+    return XMLElement("VTKFile", type=filetype, version="0.1", byte_order=bo, **kwargs)
 
 
 
 
 class XMLGenerator:
+    def __init__(self, compressor):
+        if compressor == "zlib":
+            try:
+                import zlib
+            except ImportError:
+                compress = False
+        elif compressor is None:
+            pass
+        else:
+            raise ValueError, "Invalid compressor name `%s'" % compressor
+
+        self.compressor = compressor
+
     def __call__(self, vtkobj):
         child = self.rec(vtkobj)
-        vtkf = make_vtkfile(child.tag)
+        vtkf = make_vtkfile(child.tag, self.compressor)
         vtkf.add_child(child)
         return XMLRoot(vtkf)
 
@@ -268,14 +312,9 @@ class InlineXMLGenerator(XMLGenerator):
         return el
 
     def gen_data_array(self, data):
-        from hedge._internal import bufferize_int32
         el = XMLElement("DataArray", type=data.type, Name=data.name, 
                 NumberOfComponents=data.components, format="binary")
-        from base64 import b64encode
-        el.add_child(b64encode(
-            bufferize_int32([len(data.buffer)])
-            ))
-        el.add_child(b64encode(data.buffer))
+        data.encode_buffer(self.compressor, el)
         el.add_child("\n")
         return el
 
@@ -283,7 +322,9 @@ class InlineXMLGenerator(XMLGenerator):
 
 
 class AppendedDataXMLGenerator(InlineXMLGenerator):
-    def __init__(self):
+    def __init__(self, compressor):
+        InlineXMLGenerator.__init__(self, compressor)
+
         self.base64_len = 0
         self.app_data = XMLElement("AppendedData", encoding="base64")
         self.app_data.add_child("_")
@@ -295,21 +336,12 @@ class AppendedDataXMLGenerator(InlineXMLGenerator):
         return xmlroot
 
     def gen_data_array(self, data):
-        from hedge._internal import bufferize_int32
-
         el = XMLElement("DataArray", type=data.type, Name=data.name, 
                 NumberOfComponents=data.components, format="appended", 
                 offset=self.base64_len)
 
-        from base64 import b64encode
+        self.base64_len += data.encode(self.compressor, self.app_data)
 
-        b64size = b64encode(bufferize_int32([len(data.buffer)]))
-        b64data = b64encode(data.buffer)
-
-        self.app_data.add_child(b64size)
-        self.app_data.add_child(b64data)
-
-        self.base64_len += len(b64size) + len(b64data)
         return el
 
 

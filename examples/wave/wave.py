@@ -88,7 +88,7 @@ def main() :
 
     pcon = guess_parallelization_context()
 
-    dim = 2
+    dim = 3
 
     if dim == 2:
         if pcon.is_head_rank:
@@ -111,7 +111,7 @@ def main() :
     else:
         mesh_data = pcon.receive_mesh()
 
-    discr = pcon.make_discretization(mesh_data, el_class(6))
+    discr = pcon.make_discretization(mesh_data, el_class(3))
     stepper = RK4TimeStepper()
     vis = VtkVisualizer(discr, "fld", pcon)
 
@@ -136,11 +136,16 @@ def main() :
     fields = ArithmeticList([discr.volume_zeros()]) # u
     fields.extend([discr.volume_zeros() for i in range(discr.dimensions)]) # v
 
+    from time import time
+    step_start = time()
     for step in range(nsteps):
         t = step*dt
         if step % 1 == 0:
-            print "timestep %d, t=%f, l2=%g" % (
-                    step, t, sqrt(fields[0]*(op.mass*fields[0])))
+            now = time()
+            print "timestep %d, t=%f, l2=%g, secs=%f" % (
+                    step, t, sqrt(fields[0]*(op.mass*fields[0])),
+                    now-step_start)
+            step_start = now
 
         if step % 1 == 0:
             visf = vis.make_file("fld-%04d" % step)

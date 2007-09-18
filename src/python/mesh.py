@@ -349,8 +349,8 @@ class ConformalMesh(Mesh):
             if axis_periodicity is not None:
                 # find faces on +-axis boundaries
                 minus_tag, plus_tag = axis_periodicity
-                minus_faces = self.tag_to_boundary[minus_tag]
-                plus_faces = self.tag_to_boundary[plus_tag]
+                minus_faces = self.tag_to_boundary.get(minus_tag, [])
+                plus_faces = self.tag_to_boundary.get(plus_tag, [])
 
                 # find vertex indices and points on these faces
                 minus_vertex_indices = list(set(flatten(el.faces[face] 

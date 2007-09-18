@@ -110,27 +110,35 @@ class Closable:
 
     def close(self):
         if not self.is_closed:
-            self.do_close()
-            self.is_closed = True
+            # even if previous close attempt failed, consider ourselves closed still
+            try:
+                self.do_close()
+            finally:
+                self.is_closed = True
 
 
 
 
 class VtkFile(Closable):
-    def __init__(self, pathname, grid, filenames=None):
+    def __init__(self, pathname, grid, filenames=None, compressor=None):
         Closable.__init__(self)
         self.pathname = pathname
         self.grid = grid
+        self.compressor = compressor
 
     def get_head_pathname(self):
         return self.pathname
 
     def do_close(self):
+        import os
+        if os.access(self.pathname, os.F_OK):
+            raise IOError, "file `%s' already exists" % self.pathname
+
         from hedge.vtk import InlineXMLGenerator, AppendedDataXMLGenerator
 
         outf = file(self.pathname, "w")
-        AppendedDataXMLGenerator()(self.grid).write(outf)
-        #InlineXMLGenerator()(self.grid).write(outf)
+        AppendedDataXMLGenerator(self.compressor)(self.grid).write(outf)
+        #InlineXMLGenerator(self.compressor)(self.grid).write(outf)
         outf.close()
 
 
@@ -138,10 +146,11 @@ class VtkFile(Closable):
 
 
 class ParallelVtkFile(VtkFile):
-    def __init__(self, pathname, grid, index_pathname, pathnames=None):
+    def __init__(self, pathname, grid, index_pathname, pathnames=None, compressor=None):
         VtkFile.__init__(self, pathname, grid)
         self.index_pathname = index_pathname
         self.pathnames = pathnames
+        self.compressor = compressor
 
     def get_head_pathname(self):
         return self.index_pathname
@@ -162,11 +171,12 @@ class ParallelVtkFile(VtkFile):
 
 
 class VtkVisualizer(Closable):
-    def __init__(self, discr, basename, pcontext=None):
+    def __init__(self, discr, basename, pcontext=None, compressor=None):
         Closable.__init__(self)
 
         self.basename = basename
         self.pcontext = pcontext
+        self.compressor = compressor
 
         if self.pcontext is None or self.pcontext.is_head_rank:
             self.timestep_to_pathnames = {}
@@ -202,7 +212,7 @@ class VtkVisualizer(Closable):
 
             collection = XMLElement("Collection")
 
-            vtkf = make_vtkfile(collection.tag)
+            vtkf = make_vtkfile(collection.tag, compressor=None)
             xmlroot = XMLRoot(vtkf)
 
             vtkf.add_child(collection)
@@ -226,7 +236,9 @@ class VtkVisualizer(Closable):
         """
         if self.pcontext is None or len(self.pcontext.ranks) == 1:
             return VtkFile(pathname+"."+self.grid.vtk_extension(), 
-                    self.grid.copy())
+                    self.grid.copy(),
+                    compressor=self.compressor
+                    )
         else:
             filename_pattern = (
                     pathname + "-%05d." + self.grid.vtk_extension())
@@ -237,11 +249,15 @@ class VtkVisualizer(Closable):
                         index_pathname="%s.p%s" % (
                             pathname, self.grid.vtk_extension()),
                         pathnames=[
-                            filename_pattern % rank for rank in self.pcontext.ranks])
+                            filename_pattern % rank for rank in self.pcontext.ranks],
+                       compressor=self.compressor 
+                       )
             else:
                 return VtkFile(
                         filename_pattern % self.pcontext.rank, 
-                        self.grid.copy())
+                        self.grid.copy(),
+                        compressor=self.compressor
+                        )
 
     def add_data(self, visf, scalars=[], vectors=[], time=None, step=None):
         for name, data in scalars:
