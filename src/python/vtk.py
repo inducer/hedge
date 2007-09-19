@@ -48,6 +48,10 @@ VTK_HEXAHEDRON = 12
 VTK_WEDGE = 13
 VTK_PYRAMID = 14
 
+VF_LIST_OF_COMPONENTS = 0 # [[x0,y0,z0], [x1,y1,z1]
+VF_LIST_OF_VECTORS = 1 # [[x0,x1], [y0,y1], [z0,z1]]
+VF_INTERLEAVED = 2 # [[x0,x1,y0,y1,z0,z1]
+
 
 
 
@@ -114,7 +118,8 @@ class XMLRoot(XMLElementBase):
 
 
 class DataArray:
-    def __init__(self, name, container, typehint=None, vec_padding=3, list_of_components=True):
+    def __init__(self, name, container, typehint=None, vector_padding=3, 
+            vector_format=VF_LIST_OF_COMPONENTS, components=None):
         self.name = name
 
         if isinstance(container, DataArray):
@@ -132,8 +137,15 @@ class DataArray:
                 bufferize_uint8
 
         if num.Vector.is_a(container):
+            if vector_format == VF_INTERLEAVED:
+                if components is None:
+                    raise ValueError, "VF_INTERLEAVED requires `components' argument"
+                self.components = components
+                if vector_padding != components:
+                    raise ValueError, "padding is not supported for VF_INTERLEAVED"
+            else:
+                self.components = 1
             self.type = "Float64"
-            self.components = 1
             self.buffer = bufferize_vector(container)
         elif isinstance(container, list):
             if len(container) == 0 or not num.Vector.is_a(container[0]):
@@ -146,17 +158,19 @@ class DataArray:
                     self.buffer = bufferize_int32(container)
             else:
                 self.type = "Float64"
-                if list_of_components:
+                if vector_format == VF_LIST_OF_COMPONENTS:
                     ctr = list(container)
-                    while len(ctr) < vec_padding:
+                    while len(ctr) < vector_padding:
                         ctr.append(None)
                     self.components = len(ctr)
                     self.buffer =  bufferize_list_of_components(ctr, len(ctr[0]))
-                else:
-                    self.components = len(container[0])
-                    if self.components < vec_padding:
-                        self.components = vec_padding
+                elif vector_format == VF_LIST_OF_VECTORS:
+                    self.components = components or len(container[0])
+                    if self.components < vector_padding:
+                        self.components = vector_padding
                     self.buffer =  bufferize_list_of_vectors(container, self.components)
+                else:
+                    raise TypeError, "unrecognized vector format"
         else:
             raise ValueError, "cannot convert object of type `%s' to DataArray" % container
 
@@ -197,11 +211,8 @@ class UnstructuredGrid:
         self.point_count = len(points)
         self.cell_count = len(cells)
 
-        try:
-            self.point_count, self.points = points
-        except:
-            self.point_count = len(points)
-            self.points = DataArray("points", points, list_of_components=False)
+        self.point_count, self.points = points
+        assert self.points.name == "points"
 
         try:
             self.cell_count, self.cell_connectivity, \
@@ -237,8 +248,8 @@ class UnstructuredGrid:
     def invoke_visitor(self, visitor):
         return visitor.gen_unstructured_grid(self)
 
-    def add_pointdata(self, name, data):
-        self.pointdata.append(DataArray(name, data))
+    def add_pointdata(self, data_array):
+        self.pointdata.append(data_array)
 
 
 
@@ -261,7 +272,7 @@ def make_vtkfile(filetype, compressor):
 
 
 class XMLGenerator:
-    def __init__(self, compressor):
+    def __init__(self, compressor=None):
         if compressor == "zlib":
             try:
                 import zlib
@@ -322,7 +333,7 @@ class InlineXMLGenerator(XMLGenerator):
 
 
 class AppendedDataXMLGenerator(InlineXMLGenerator):
-    def __init__(self, compressor):
+    def __init__(self, compressor=None):
         InlineXMLGenerator.__init__(self, compressor)
 
         self.base64_len = 0

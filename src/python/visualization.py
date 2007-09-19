@@ -22,14 +22,6 @@ import hedge.tools
 
 
 
-def _assert_not_a_file(name):
-    import os
-    if os.access(name, os.F_OK):
-        raise IOError, "file `%s' already exists" % name
-
-
-
-
 # legacy vtk ------------------------------------------------------------------
 def _three_vector(x):
     if len(x) == 3:
@@ -123,7 +115,8 @@ class VtkFile(hedge.tools.Closable):
         return self.pathname
 
     def do_close(self):
-        _assert_not_a_file(self.pathname)
+        from pytools import assert_not_a_file
+        assert_not_a_file(self.pathname)
 
         from hedge.vtk import InlineXMLGenerator, AppendedDataXMLGenerator
 
@@ -174,8 +167,8 @@ class VtkVisualizer(hedge.tools.Closable):
         else:
             self.timestep_to_pathnames = None
 
-        from hedge.vtk import UnstructuredGrid, \
-                VTK_TRIANGLE, VTK_TETRA
+        from hedge.vtk import UnstructuredGrid, DataArray, \
+                VTK_TRIANGLE, VTK_TETRA, VF_LIST_OF_VECTORS
         from hedge.element import Triangle, Tetrahedron
 
         cells = []
@@ -195,10 +188,13 @@ class VtkVisualizer(hedge.tools.Closable):
                 else:
                     raise RuntimeError, "unsupported element type: %s" % type(el)
 
-        self.grid = UnstructuredGrid(discr.nodes, cells, cell_types)
+        self.grid = UnstructuredGrid(
+                (len(discr.nodes), 
+                    DataArray("points", discr.nodes, vector_format=VF_LIST_OF_VECTORS)),
+                cells, cell_types)
 
-        _assert_not_a_file(self.pvd_name)
-
+        from pytools import assert_not_a_file
+        assert_not_a_file(self.pvd_name)
 
     def update_pvd(self):
         if self.timestep_to_pathnames:
@@ -256,14 +252,9 @@ class VtkVisualizer(hedge.tools.Closable):
                         compressor=self.compressor
                         )
 
-    def add_data(self, visf, scalars=[], vectors=[], time=None, step=None):
-        for name, data in scalars:
-            visf.grid.add_pointdata(name, data)
-        for name, data in vectors:
-            visf.grid.add_pointdata(name, data)
-
-        if step is not None and self.timestep_to_pathnames is not None:
-            self.timestep_to_pathnames.setdefault(time, []).append(visf.get_head_pathname())
+    def register_pathname(self, time, pathname):
+        if time is not None and self.timestep_to_pathnames is not None:
+            self.timestep_to_pathnames.setdefault(time, []).append(pathname)
 
             # When we are run under MPI and cancelled by Ctrl+C, destructors
             # do not get called. Therefore, we just spend the (hopefully negligible)
@@ -271,7 +262,14 @@ class VtkVisualizer(hedge.tools.Closable):
             if len(self.timestep_to_pathnames) % 5 == 0:
                 self.update_pvd()
 
+    def add_data(self, visf, scalars=[], vectors=[], time=None, step=None):
+        from hedge.vtk import DataArray
+        for name, data in scalars:
+            visf.grid.add_pointdata(DataArray(name, data))
+        for name, data in vectors:
+            visf.grid.add_pointdata(DataArray(name, data))
 
+        self.register_pathname(time, visf.get_head_pathname())
 
 
 
@@ -313,7 +311,7 @@ class SiloMeshData:
 
 
 class SiloVisualizer:
-    def __init__(self, discr, basename, pcontext=None):
+    def __init__(self, discr, pcontext=None):
         def generate_fine_elements(eg):
             ldis = eg.local_discretization
             smi = list(ldis.generate_submesh_indices())
