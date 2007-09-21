@@ -126,7 +126,7 @@ namespace hedge { namespace fluxes {
       const flux &child() const
       { return m_child; }
     private:
-      const flux &m_child;
+      const flux & m_child;
   };
 
 
@@ -192,7 +192,7 @@ namespace hedge { namespace fluxes {
       { return m_axis; }
 
     private:
-      int m_axis;
+      const int m_axis;
   };
 
 
@@ -213,7 +213,7 @@ namespace hedge { namespace fluxes {
       { return m_power; }
 
     private:
-      double m_power;
+      const double m_power;
   };
 
 
@@ -229,7 +229,7 @@ namespace hedge { namespace fluxes {
       { }
 
       binary_operator(const Operand1 &op1, const Operand2 &op2)
-        : m_op1(op1), m_op2(op2)
+        : m_operation(), m_op1(op1), m_op2(op2)
       { }
 
       binary_operator(const Operation &operation, const Operand1 &op1, const Operand2 &op2)
@@ -258,9 +258,9 @@ namespace hedge { namespace fluxes {
       { return m_op2; }
 
     protected:
-      Operation m_operation;
-      Operand1 m_op1;
-      Operand2 m_op2;
+      const Operation m_operation;
+      const Operand1 m_op1;
+      const Operand2 m_op2;
   };
 
 
@@ -275,7 +275,7 @@ namespace hedge { namespace fluxes {
       unary_operator()
       { }
       unary_operator(const Operand &op)
-        : m_op(op)
+        : m_operation(), m_op(op)
       { }
       unary_operator(const Operation &operation, const Operand &op)
         : m_operation(operation), m_op(op)
@@ -293,8 +293,8 @@ namespace hedge { namespace fluxes {
       { return m_op; }
 
     protected:
-      Operation m_operation;
-      Operand m_op;
+      const Operation m_operation;
+      const Operand m_op;
   };
 } }
 
