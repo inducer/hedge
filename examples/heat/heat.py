@@ -19,7 +19,7 @@
 
 import pylinear.array as num
 import pylinear.computation as comp
-from pytools.arithmetic_container import ArithmeticList
+from pytools.arithmetic_container import ArithmeticList, work_with_arithmetic_containers
 from hedge.tools import Rotation, dot
 
 
@@ -34,51 +34,105 @@ def coefficient_to_matrix(discr, coeff):
 
 
 class StrongHeatOperator:
-    def __init__(self, discr, coeff=lambda x: 1):
+    def __init__(self, discr, coeff=lambda x: 1, 
+            dirichlet_bc=lambda x, t: 0, dirichlet_tag="dirichlet",
+            neumann_bc=lambda x, t: 0, neumann_tag="neumann"):
         self.discr = discr
 
         from hedge.flux import zero, make_normal, local, neighbor, average
 
         normal = make_normal(discr.dimensions)
-        flux_weak = average*normal
-        flux_strong = local*normal - flux_weak
+
+        #self.ldg_beta = num.array([1,1])
+        flux_u = (
+                local*normal-(
+                    average*normal
+                    #-(local-neighbor)*normal
+                    )
+                )
+        flux_q = (
+                local*normal-(
+                    average*normal
+                    #+(local-neighbor)*normal
+                    )
+                )
+
+        from hedge.flux import normalize_flux
+        for i, term in enumerate(flux_q):
+            print "component %d:" % i, normalize_flux(term)
+
+        self.flux_u = discr.get_flux_operator(flux_u)
+        self.flux_q = discr.get_flux_operator(flux_q)
 
         self.nabla = discr.nabla
         self.stiff = discr.stiffness_operator
         self.mass = discr.mass_operator
         self.m_inv = discr.inverse_mass_operator
 
-        self.q_flux = discr.get_flux_operator(flux_strong)
-        self.u_flux = discr.get_flux_operator(flux_strong)
-        
         from math import sqrt
+        self.coeff_func = coeff
         self.sqrt_coeff = coefficient_to_matrix(discr, lambda x: sqrt(coeff(x)))
+        self.dirichlet_bc_func = dirichlet_bc
+        self.dirichlet_tag = dirichlet_tag
+        self.neumann_bc_func = neumann_bc
+        self.neumann_tag = neumann_tag
 
-    def q(self, u):
+        self.neumann_normals = discr.boundary_normals(self.neumann_tag)
+
+    def q(self, t, u):
         from hedge.discretization import pair_with_boundary
+        from math import sqrt
+
+        def dir_bc_func(x):
+            return sqrt(self.coeff_func(x))*self.dirichlet_bc_func(t, x)
+
+        dtag = self.dirichlet_tag
+        ntag = self.neumann_tag
 
         sqrt_coeff_u = self.sqrt_coeff * u
-        bc_u = -self.discr.boundarize_volume_field(sqrt_coeff_u)
+
+        dirichlet_bc_u = (
+                -self.discr.boundarize_volume_field(sqrt_coeff_u, dtag)
+                +2*self.discr.interpolate_boundary_function(dir_bc_func, dtag))
+
+        neumann_bc_u = self.discr.boundarize_volume_field(sqrt_coeff_u, ntag)
 
         q = self.m_inv * (
                 self.sqrt_coeff*(self.stiff * u)
-                - (self.u_flux*sqrt_coeff_u)
-                - self.u_flux*pair_with_boundary(sqrt_coeff_u, bc_u)
+                - self.flux_u*sqrt_coeff_u
+                - self.flux_u*pair_with_boundary(sqrt_coeff_u, dirichlet_bc_u, dtag)
+                - self.flux_u*pair_with_boundary(sqrt_coeff_u, neumann_bc_u, ntag)
                 )
         return q
 
     def rhs(self, t, u):
         from hedge.discretization import pair_with_boundary
+        from math import sqrt
 
-        q = self.q(u)
+        q = self.q(t, u)
+
+        def neumann_bc_func(x):
+            return sqrt(self.coeff_func(x))*self.neumann_bc_func(t, x)
+
+        dtag = self.dirichlet_tag
+        ntag = self.neumann_tag
+
+        ac_multiply = work_with_arithmetic_containers(num.multiply)
 
         sqrt_coeff_q = self.sqrt_coeff * q
-        bc_q = self.discr.boundarize_volume_field(sqrt_coeff_q)
+        dirichlet_bc_q = self.discr.boundarize_volume_field(sqrt_coeff_q, dtag)
+        neumann_bc_q = (
+                -self.discr.boundarize_volume_field(sqrt_coeff_q, ntag)
+                +
+                2*ac_multiply(self.neumann_normals,
+                self.discr.interpolate_boundary_function(neumann_bc_func, ntag))
+                )
 
         rhs_u = self.m_inv * (
-                self.sqrt_coeff*dot(self.stiff, q)
-                - dot(self.q_flux, sqrt_coeff_q)
-                - dot(self.q_flux, pair_with_boundary(sqrt_coeff_q, bc_q))
+                dot(self.stiff, self.sqrt_coeff*q)
+                - dot(self.flux_q, sqrt_coeff_q)
+                - dot(self.flux_q, pair_with_boundary(sqrt_coeff_q, dirichlet_bc_q, dtag))
+                - dot(self.flux_q, pair_with_boundary(sqrt_coeff_q, neumann_bc_q, ntag))
                 )
 
         return rhs_u
@@ -104,9 +158,15 @@ def main() :
 
     dim = 2
 
+    def boundary_tagger(fvi, el, fn):
+        if el.face_normals[fn][0] > 0:
+            return ["dirichlet"]
+        else:
+            return ["neumann"]
+
     if dim == 2:
         if pcon.is_head_rank:
-            mesh = make_disk_mesh(r=0.5)
+            mesh = make_disk_mesh(r=0.5, boundary_tagger=boundary_tagger)
             #mesh = make_regular_square_mesh(
                     #n=9, periodicity=(True,True))
             #mesh = make_regular_square_mesh(n=9)
@@ -137,14 +197,31 @@ def main() :
         print "nsteps", nsteps
 
     def u0(x):
-        
         if comp.norm_2(x) < 0.2:
-            #return exp(-100*x*x)
-            return 1
+            return exp(-100*x*x)
+            #return 1
         else:
             return 0
 
-    op = StrongHeatOperator(discr)
+    def coeff(x):
+        if x[0] < 0:
+            return 0.25
+        else:
+            return 1
+
+    def dirichlet_bc(t, x):
+        return 0
+
+    def neumann_bc(t, x):
+        return 2
+
+    op = StrongHeatOperator(discr, 
+            #coeff=coeff,
+            dirichlet_tag=None,
+            dirichlet_bc=dirichlet_bc,
+            neumann_tag="garnix", 
+            #neumann_bc=neumann_bc
+            )
     u = discr.interpolate_volume_function(u0)
 
     for step in range(nsteps):
