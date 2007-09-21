@@ -19,7 +19,10 @@
 
 #include <vector>
 #include <iostream>
+#include <boost/tuple/tuple.hpp>
 #include <boost/python.hpp>
+#include <boost/python/stl_iterator.hpp>
+#include <boost/python/suite/indexing/vector_indexing_suite.hpp>
 #include "flux.hpp"
 #include "face_operators.hpp"
 #include "op_target.hpp"
@@ -155,45 +158,24 @@ namespace {
 
 
   // face_group ---------------------------------------------------------------
-  template <class A, class B>
-  std::pair<A, B> extract_pair(const object &obj)
+  class face_group_indexing_suite :
+    public vector_indexing_suite<face_group, false, face_group_indexing_suite>
   {
-    return std::pair<A, B>(extract<A>(obj[0]), extract<B>(obj[1]));
-  }
-
-
-
-
-  void face_group_add_face(face_group &fg, 
-      object &my_ind_py, object &opp_ind_py, 
-      const fluxes::face &face)
-  {
-    face_group::index_list my_ind, opp_ind;
-
-    for (unsigned i = 0; i < unsigned(len(my_ind_py)); i++)
-      my_ind.push_back(extract<unsigned>(my_ind_py[i]));
-    for (unsigned i = 0; i < unsigned(len(my_ind_py)); i++)
-      opp_ind.push_back(extract<unsigned>(opp_ind_py[i]));
-
-    fg.add_face(my_ind, opp_ind, face);
-  }
+    public:
+      static bool contains(face_group &container, face_pair const &key)
+      { PYTHON_ERROR(NotImplementedError, "face pairs are not comparable"); }
+  };
 
 
 
 
   void face_group_connect_faces(face_group &fg, object &cnx_list_py)
   {
-    face_group::connection_list cnx_list;
-
-    for (unsigned i = 0; i < unsigned(len(cnx_list_py)); i++)
-      cnx_list.push_back(extract_pair<unsigned, unsigned>(cnx_list_py[i]));
-
-    fg.connect_faces(cnx_list);
+    BOOST_FOREACH(tuple tp, std::make_pair(
+          stl_input_iterator<tuple>(cnx_list_py),
+          stl_input_iterator<tuple>()))
+      fg[extract<unsigned>(tp[0])].opp_flux_face = &fg[extract<unsigned>(tp[0])].flux_face;
   }
-
-
-
-
 }
 
 
@@ -280,21 +262,29 @@ void hedge_expose_fluxes()
   {
     typedef fluxes::face cl;
     class_<cl>("Face")
-      .def_readwrite("h", &cl::h)
-      .def_readwrite("face_jacobian", &cl::face_jacobian)
-      .def_readwrite("element_id", &cl::element_id)
-      .def_readwrite("face_id", &cl::face_id)
-      .def_readwrite("order", &cl::order)
-      .def_readwrite("normal", &cl::normal)
+      .DEF_SIMPLE_RW_MEMBER(h)
+      .DEF_SIMPLE_RW_MEMBER(face_jacobian)
+      .DEF_SIMPLE_RW_MEMBER(element_id)
+      .DEF_SIMPLE_RW_MEMBER(face_id)
+      .DEF_SIMPLE_RW_MEMBER(order)
+      .DEF_SIMPLE_RW_MEMBER(normal)
+      ;
+  }
+  {
+    typedef face_pair cl;
+    class_<cl>("FacePair")
+      .DEF_SIMPLE_RW_MEMBER(face_indices)
+      .DEF_SIMPLE_RW_MEMBER(opposite_indices)
+      .DEF_SIMPLE_RW_MEMBER(flux_face)
+      .DEF_SIMPLE_RW_MEMBER(opp_flux_face)
       ;
   }
 
   {
     typedef face_group cl;
     class_<cl>("FaceGroup")
-      .def("__len__", &cl::size)
-      .def("clear", &cl::clear)
-      .def("add_face", face_group_add_face)
+      .def(face_group_indexing_suite())
+      .DEF_SIMPLE_METHOD(clear)
       .def("connect_faces", face_group_connect_faces)
       ;
   }

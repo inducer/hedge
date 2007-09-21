@@ -32,19 +32,28 @@
 
 
 
-namespace hedge {
+namespace hedge 
+{
+  typedef std::vector<unsigned> index_list;
+
+  struct face_pair
+  {
+    face_pair()
+      : opp_flux_face(0)
+    { }
+
+    index_list face_indices;
+    index_list opposite_indices;
+    fluxes::face flux_face;
+    fluxes::face *opp_flux_face;
+  };
+
+  typedef std::vector<face_pair> face_group;
+  /*
   struct face_group 
   {
-    typedef std::vector<unsigned> index_list;
-    struct face_info
-    {
-      index_list face_indices;
-      index_list opposite_indices;
-      fluxes::face flux_face;
-      fluxes::face *opp_flux_face;
-    };
 
-    std::vector<face_info> m_face_infos;
+    std::vector<face_pair> m_face_infos;
 
     unsigned size()
     {
@@ -59,12 +68,12 @@ namespace hedge {
     void add_face(const index_list &my_ind, const index_list &opp_ind, 
         const fluxes::face &face)
     {
-      face_info fi;
-      fi.face_indices = my_ind;
-      fi.opposite_indices = opp_ind;
-      fi.flux_face = face;
-      fi.opp_flux_face = 0;
-      m_face_infos.push_back(fi);
+      face_pair fp;
+      fp.face_indices = my_ind;
+      fp.opposite_indices = opp_ind;
+      fp.flux_face = face;
+      fp.opp_flux_face = 0;
+      m_face_infos.push_back(fp);
     }
 
     typedef std::pair<unsigned, unsigned> connection;
@@ -76,6 +85,7 @@ namespace hedge {
         m_face_infos[cnx.first].opp_flux_face = &m_face_infos[cnx.second].flux_face;
     }
   };
+  */
 
 
 
@@ -103,55 +113,55 @@ namespace hedge {
     switch (which)
     {
       case BOTH:
-        BOOST_FOREACH(const face_group::face_info &fi, fg.m_face_infos)
+        BOOST_FOREACH(const face_pair &fp, fg)
         {
-          double local_coeff = flux.local_coeff(fi.flux_face);
+          double local_coeff = flux.local_coeff(fp.flux_face);
           double neighbor_coeff = flux.neighbor_coeff(
-              fi.flux_face, fi.opp_flux_face);
+              fp.flux_face, fp.opp_flux_face);
 
-          assert(fmm.size1() == fi.face_indices.size());
-          assert(fmm.size1() == fi.opp_indices.size());
+          assert(fmm.size1() == fp.face_indices.size());
+          assert(fmm.size1() == fp.opp_indices.size());
 
           for (unsigned i = 0; i < face_length; i++)
             for (unsigned j = 0; j < face_length; j++)
             {
-              target.add_coefficient(fi.face_indices[i], fi.face_indices[j],
-                  fi.flux_face.face_jacobian*local_coeff*fmm(i, j));
-              target.add_coefficient(fi.face_indices[i], fi.opposite_indices[j],
-                  fi.flux_face.face_jacobian*neighbor_coeff*fmm(i, j));
+              target.add_coefficient(fp.face_indices[i], fp.face_indices[j],
+                  fp.flux_face.face_jacobian*local_coeff*fmm(i, j));
+              target.add_coefficient(fp.face_indices[i], fp.opposite_indices[j],
+                  fp.flux_face.face_jacobian*neighbor_coeff*fmm(i, j));
             }
         }
         break;
 
       case LOCAL:
-        BOOST_FOREACH(const face_group::face_info &fi, fg.m_face_infos)
+        BOOST_FOREACH(const face_pair &fp, fg)
         {
-          double local_coeff = flux.local_coeff(fi.flux_face);
+          double local_coeff = flux.local_coeff(fp.flux_face);
 
-          assert(fmm.size1() == fi.face_indices.size());
+          assert(fmm.size1() == fp.face_indices.size());
 
           for (unsigned i = 0; i < face_length; i++)
             for (unsigned j = 0; j < face_length; j++)
             {
-              target.add_coefficient(fi.face_indices[i], fi.face_indices[j],
-                  fi.flux_face.face_jacobian*local_coeff*fmm(i, j));
+              target.add_coefficient(fp.face_indices[i], fp.face_indices[j],
+                  fp.flux_face.face_jacobian*local_coeff*fmm(i, j));
             }
         }
         break;
 
       case NEIGHBOR:
-        BOOST_FOREACH(const face_group::face_info &fi, fg.m_face_infos)
+        BOOST_FOREACH(const face_pair &fp, fg)
         {
           double neighbor_coeff = flux.neighbor_coeff(
-              fi.flux_face, fi.opp_flux_face);
+              fp.flux_face, fp.opp_flux_face);
 
-          assert(fmm.size1() == fi.opp_indices.size());
+          assert(fmm.size1() == fp.opp_indices.size());
 
           for (unsigned i = 0; i < face_length; i++)
             for (unsigned j = 0; j < face_length; j++)
             {
-              target.add_coefficient(fi.face_indices[i], fi.opposite_indices[j],
-                  fi.flux_face.face_jacobian*neighbor_coeff*fmm(i, j));
+              target.add_coefficient(fp.face_indices[i], fp.opposite_indices[j],
+                  fp.flux_face.face_jacobian*neighbor_coeff*fmm(i, j));
             }
         }
         break;

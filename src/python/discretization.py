@@ -151,7 +151,7 @@ class Discretization:
                 self.faces.append(el_faces)
 
     def _build_interior_face_groups(self):
-        from hedge._internal import FaceGroup
+        from hedge._internal import FaceGroup, FacePair, UnsignedList
         from hedge.element import FaceVertexMismatch
 
         fg = FaceGroup()
@@ -199,10 +199,12 @@ class Discretization:
                     dist[axis] = 0 
                     assert comp.norm_2(dist) < 1e-14
 
-            fg.add_face(
-                    [estart_l+i for i in findices_l],
-                    [estart_n+i for i in findices_shuffled_n],
-                    self.faces[e_l.id][fi_l])
+
+            fp = FacePair()
+            fp.face_indices = UnsignedList(estart_l+i for i in findices_l)
+            fp.opposite_indices = UnsignedList(estart_n+i for i in findices_shuffled_n)
+            fp.flux_face = self.faces[e_l.id][fi_l]
+            fg.append(fp)
 
         # communicate face neighbor relationships to C++ core
         if len(fg):
@@ -228,7 +230,7 @@ class Discretization:
         except KeyError:
             pass
 
-        from hedge._internal import IndexMap, FaceGroup
+        from hedge._internal import IndexMap, FaceGroup, FacePair, UnsignedList
 
         nodes = []
         face_ranges = {}
@@ -247,10 +249,11 @@ class Discretization:
             face_range = face_ranges[ef] = (f_start, len(nodes))
             index_map.extend(el_start+i for i in face_indices)
 
-            face_group.add_face(
-                    [el_start+i for i in face_indices],
-                    range(*face_range),
-                    self.faces[el.id][face_nr])
+            fp = FacePair()
+            fp.face_indices = UnsignedList(el_start+i for i in face_indices)
+            fp.opposite_indices = UnsignedList(xrange(*face_range))
+            fp.flux_face = self.faces[el.id][face_nr]
+            face_group.append(fp)
 
         bdry = _Boundary(
                 nodes=nodes,
@@ -268,8 +271,8 @@ class Discretization:
     def interpolate_volume_function(self, f):
         try:
             # are we interpolating many fields at once?
-            count = len(f)
-        except:
+            count = f.target_dimensions
+        except AttributeError:
             # no, just one
             count = 1
 
@@ -314,7 +317,34 @@ class Discretization:
         return num.zeros((len(self._get_boundary(tag).nodes),))
 
     def interpolate_boundary_function(self, f, tag=None):
-        return num.array([f(x) for x in self._get_boundary(tag).nodes])
+        try:
+            # are we interpolating many fields at once?
+            count = f.target_dimensions
+        except AttributeError:
+            # no, just one
+            count = 1
+
+        if count > 1:
+            from pytools.arithmetic_container import ArithmeticList
+            result = ArithmeticList([self.boundary_zeros(tag) for i in range(count)])
+            for i, pt in enumerate(self._get_boundary(tag).nodes):
+                for field_nr, value in enumerate(f(pt)):
+                    result[field_nr][i] = value
+            return result
+        else:
+            return num.array([f(x) for x in self._get_boundary(tag).nodes])
+
+    def boundary_normals(self, tag=None):
+        from pytools.arithmetic_container import ArithmeticList
+        result = ArithmeticList([self.boundary_zeros(tag) for i in range(self.dimensions)])
+        for fg, ldis in self._get_boundary(tag).face_groups_and_ldis:
+            for face_pair in fg:
+                normal = face_pair.flux_face.normal
+                for i in face_pair.opposite_indices:
+                    for j in range(self.dimensions):
+                        result[j][i] = normal[j]
+
+        return result
 
     # element data retrieval --------------------------------------------------
     def find_el_range(self, el_id):

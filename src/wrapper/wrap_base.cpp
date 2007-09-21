@@ -22,6 +22,7 @@
 #include <boost/foreach.hpp>
 #include <boost/scoped_array.hpp>
 #include <boost/python/stl_iterator.hpp>
+#include <boost/python/suite/indexing/vector_indexing_suite.hpp>
 #include <boost/numeric/bindings/traits/traits.hpp>
 #include <boost/numeric/bindings/traits/ublas_matrix.hpp>
 
@@ -37,6 +38,20 @@ using namespace boost::numeric::bindings;
 
 namespace
 {
+  template <class T>
+  std::auto_ptr<std::vector<T> > construct_vector(object iterable)
+  {
+    std::auto_ptr<std::vector<T> > result(new std::vector<T>());
+    copy(
+        stl_input_iterator<T>(iterable),
+        stl_input_iterator<T>(),
+        back_inserter(*result));
+    return result;
+  }
+
+
+
+
   template <class T>
   PyObject *bufferize_sequence(object iterable)
   {
@@ -130,6 +145,14 @@ namespace
 
 void hedge_expose_base()
 {
+  {
+    typedef std::vector<unsigned> cl;
+    class_<cl>("UnsignedList")
+      .def("__init__", make_constructor(construct_vector<unsigned>))
+      .def(vector_indexing_suite<cl> ())
+      ;
+  }
+
   {
     typedef affine_map cl;
     class_<cl>("AffineMap", init<const matrix &, const vector &, const double &>())

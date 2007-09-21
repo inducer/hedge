@@ -64,6 +64,8 @@
 #define DEF_SIMPLE_FUNCTION(NAME) \
   def(#NAME, &NAME)
 
+#define DEF_SIMPLE_RW_MEMBER(NAME) \
+  def_readwrite(#NAME, &cl::NAME)
 
 
 
