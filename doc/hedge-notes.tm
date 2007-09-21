@@ -615,6 +615,26 @@
     <tformat|<table|<row|<cell|0>|<cell|=>|<cell|<big|int><rsub|T<rsub|k>>v<rsub|t>\<cdot\>\<psi\>+<big|int><rsub|T<rsub|k>>u\<nabla\>\<cdot\>\<psi\>-<big|int><rsub|\<partial\>T<rsub|k>>u<rsup|\<ast\>>\<psi\>\<cdot\>n>>|<row|<cell|>|<cell|=>|<cell|<big|int><rsub|T<rsub|k>>v<rsub|t>\<cdot\>\<psi\>-<big|int><rsub|T<rsub|k>>(\<nabla\>u)\<psi\>+<big|int><rsub|\<partial\>T<rsub|k>>(u-u<rsup|\<ast\>>)\<psi\>\<cdot\>n>>|<row|<cell|>|<cell|=>|<cell|<big|int><rsub|T<rsub|k>>v<rsub|t>\<cdot\>\<psi\>-<big|int><rsub|T<rsub|k>>(\<nabla\>u)\<psi\>+<frac|1|2><big|int><rsub|\<partial\>T<rsub|k>>[u]\<psi\>\<cdot\>n>>>>
   </eqnarray*>
 
+  <subsection|Heat Equation>
+
+  Begin with
+
+  <\eqnarray*>
+    <tformat|<table|<row|<cell|u<rsub|t>-\<nabla\>\<cdot\>(<sqrt|a>q)>|<cell|=>|<cell|0,>>|<row|<cell|q-<sqrt|a>\<nabla\>u>|<cell|=>|<cell|0,>>>>
+  </eqnarray*>
+
+  so
+
+  <\eqnarray*>
+    <tformat|<table|<row|<cell|<big|int><rsub|T>[u<rsub|t>-\<nabla\>\<cdot\>(<sqrt|a>q)]\<varphi\>>|<cell|=>|<cell|0>>|<row|<cell|<big|int><rsub|T>u<rsub|t>\<varphi\>+<big|int><rsub|T><sqrt|a>*q\<cdot\>\<nabla\>\<varphi\>-<big|int><rsub|T>\<nabla\>\<cdot\>(<sqrt|a>*q*\<varphi\>)>|<cell|=>|<cell|0>>|<row|<cell|<big|int><rsub|T>u<rsub|t>\<varphi\>+<big|int><rsub|T><sqrt|a>*q\<cdot\>\<nabla\>\<varphi\>-<big|int><rsub|\<partial\>T><sqrt|a>*q*\<varphi\>\<cdot\>n>|<cell|=>|<cell|0>>|<row|<cell|<big|int><rsub|T>u<rsub|t>\<varphi\>+<big|int><rsub|T><sqrt|a>*q\<cdot\>\<nabla\>\<varphi\>-<big|int><rsub|\<partial\>T>(<sqrt|a>*q)<rsup|\<ast\>>\<varphi\>\<cdot\>n>|<cell|=>|<cell|0,>>>>
+  </eqnarray*>
+
+  and
+
+  <\eqnarray*>
+    <tformat|<table|<row|<cell|<big|int><rsub|T>[q-<sqrt|a>\<nabla\>u]\<cdot\>\<psi\>>|<cell|=>|<cell|0>>|<row|<cell|<big|int><rsub|T>q\<cdot\>\<psi\>-<big|int><rsub|T><sqrt|a>\<psi\>\<cdot\>(\<nabla\>u)>|<cell|=>|<cell|0>>|<row|<cell|<big|int><rsub|T>q\<cdot\>\<psi\>+<big|int><rsub|T>\<nabla\>\<cdot\>(<sqrt|a>*u)\<psi\>-<big|int><rsub|T>\<nabla\>\<cdot\>(<sqrt|a>*u\<psi\>)>|<cell|=>|<cell|0>>|<row|<cell|<big|int><rsub|T>q\<cdot\>\<psi\>+<big|int><rsub|T>\<nabla\>\<cdot\>(<sqrt|a>*u)\<psi\>-<big|int><rsub|\<partial\>T>n\<cdot\>(<sqrt|a>*u)<rsup|\<ast\>>\<psi\>>|<cell|=>|<cell|0.>>>>
+  </eqnarray*>
+
   <section|Quadrature Rules>
 
   Golub-Welsch recursion:
@@ -623,7 +643,7 @@
     p<rsub|n>=(\<alpha\><rsub|n>x+\<beta\><rsub|n>)p<rsub|n-1>-\<gamma\><rsub|n>p<rsub|n-2>
   </equation*>
 
-  Hesthaven-Warburton recursion:
+  Hesthaven-Warburton ``recursion'':
 
   <\equation*>
     x*p<rsub|n>=a<rsub|n>p<rsub|n-1>+b<rsub|n>p<rsub|n>+a<rsub|n+1>p<rsub|n+1>
@@ -651,7 +671,8 @@
     <associate|auto-10|<tuple|5.3|?>>
     <associate|auto-11|<tuple|5.3.1|?>>
     <associate|auto-12|<tuple|5.3.2|?>>
-    <associate|auto-13|<tuple|6|?>>
+    <associate|auto-13|<tuple|5.4|?>>
+    <associate|auto-14|<tuple|6|?>>
     <associate|auto-2|<tuple|2|1>>
     <associate|auto-3|<tuple|3|3>>
     <associate|auto-4|<tuple|4|?>>
@@ -715,6 +736,10 @@
       <with|par-left|<quote|3fn>|5.3.2<space|2spc>Strong DG
       <datoms|<macro|x|<repeat|<arg|x>|<with|font-series|medium|<with|font-size|1|<space|0.2fn>.<space|0.2fn>>>>>|<htab|5mm>>
       <no-break><pageref|auto-12>>
+
+      <vspace*|1fn><with|font-series|<quote|bold>|math-font-series|<quote|bold>|6<space|2spc>Quadrature
+      Rules> <datoms|<macro|x|<repeat|<arg|x>|<with|font-series|medium|<with|font-size|1|<space|0.2fn>.<space|0.2fn>>>>>|<htab|5mm>>
+      <no-break><pageref|auto-13><vspace|0.5fn>
     </associate>
   </collection>
 </auxiliary>
