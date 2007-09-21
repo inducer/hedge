@@ -313,7 +313,11 @@ def normalize_flux(flux):
 
 class FluxCompilationMapper(pymbolic.mapper.RecursiveMapper):
     def handle_unsupported_expression(self, expr):
-        return expr
+        if isinstance(expr, _internal.Flux):
+            return expr
+        else:
+            pymbolic.mapper.RecursiveMapper.\
+                    handle_unsupported_expression(self, expr)
 
     def map_constant(self, expr):
         return _internal.ConstantFlux(expr)
@@ -337,6 +341,18 @@ class FluxCompilationMapper(pymbolic.mapper.RecursiveMapper):
 
     def map_penalty_flux(self, expr):
         return _internal.PenaltyFlux(expr.power)
+
+    def map_power(self, expr):
+        base = self.rec(expr.base)
+        result = base
+
+        assert isinstance(expr.exponent, int)
+
+        for i in range(1, expr.exponent):
+            result = _internal.make_ProductFlux(result, base)
+
+        return result
+
 
 
 
