@@ -328,6 +328,11 @@ class ConformalMesh(Mesh):
             elif len(els_faces) == 1:
                 el, face = els_faces[0]
                 tags = boundary_tagger(face_vertices, el, face)
+
+                if isinstance(tags, str):
+                    from warnings import warn
+                    warn("Received string as tag list")
+
                 for btag in tags:
                     self.tag_to_boundary.setdefault(btag, []) \
                             .append(els_faces[0])
