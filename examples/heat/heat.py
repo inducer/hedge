@@ -47,15 +47,17 @@ class StrongHeatOperator:
         flux_u = (
                 local*normal-(
                     average*normal
-                    #-(local-neighbor)*normal
+                    +(local-neighbor)*0.5
                     )
                 )
         flux_q = (
                 local*normal-(
                     average*normal
-                    #+(local-neighbor)*normal
+                    -(local-neighbor)*0.5
                     )
                 )
+        flux_u_bdry = local*normal-average*normal
+        flux_q_bdry = local*normal-average*normal
 
         from hedge.flux import normalize_flux
         for i, term in enumerate(flux_q):
@@ -63,6 +65,8 @@ class StrongHeatOperator:
 
         self.flux_u = discr.get_flux_operator(flux_u)
         self.flux_q = discr.get_flux_operator(flux_q)
+        self.flux_u_bdry = discr.get_flux_operator(flux_u_bdry)
+        self.flux_q_bdry = discr.get_flux_operator(flux_q_bdry)
 
         self.nabla = discr.nabla
         self.stiff = discr.stiffness_operator
@@ -100,8 +104,8 @@ class StrongHeatOperator:
         q = self.m_inv * (
                 self.sqrt_coeff*(self.stiff * u)
                 - self.flux_u*sqrt_coeff_u
-                - self.flux_u*pair_with_boundary(sqrt_coeff_u, dirichlet_bc_u, dtag)
-                - self.flux_u*pair_with_boundary(sqrt_coeff_u, neumann_bc_u, ntag)
+                - self.flux_u_bdry*pair_with_boundary(sqrt_coeff_u, dirichlet_bc_u, dtag)
+                - self.flux_u_bdry*pair_with_boundary(sqrt_coeff_u, neumann_bc_u, ntag)
                 )
         return q
 
@@ -131,8 +135,8 @@ class StrongHeatOperator:
         rhs_u = self.m_inv * (
                 dot(self.stiff, self.sqrt_coeff*q)
                 - dot(self.flux_q, sqrt_coeff_q)
-                - dot(self.flux_q, pair_with_boundary(sqrt_coeff_q, dirichlet_bc_q, dtag))
-                - dot(self.flux_q, pair_with_boundary(sqrt_coeff_q, neumann_bc_q, ntag))
+                - dot(self.flux_q_bdry, pair_with_boundary(sqrt_coeff_q, dirichlet_bc_q, dtag))
+                - dot(self.flux_q_bdry, pair_with_boundary(sqrt_coeff_q, neumann_bc_q, ntag))
                 )
 
         return rhs_u
@@ -190,7 +194,7 @@ def main() :
     stepper = RK4TimeStepper()
     vis = VtkVisualizer(discr, "fld", pcon)
 
-    dt = discr.dt_factor(1)**2/2
+    dt = discr.dt_factor(1)**2/5
     nsteps = int(1/dt)
     if pcon.is_head_rank:
         print "dt", dt
@@ -198,8 +202,8 @@ def main() :
 
     def u0(x):
         if comp.norm_2(x) < 0.2:
-            return exp(-100*x*x)
-            #return 1
+            #return exp(-100*x*x)
+            return 1
         else:
             return 0
 

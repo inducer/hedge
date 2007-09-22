@@ -107,7 +107,7 @@ class ConstantFlux(Flux):
         else:
             return Flux.__rsub__(self, other)
 
-    def __neg__(self, other):
+    def __neg__(self):
         return ConstantFlux(- self.local_c, - self.neighbor_c)
 
     def __mul__(self, other):
