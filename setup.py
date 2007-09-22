@@ -93,7 +93,8 @@ def main():
           packages=["hedge"],
           package_dir={"hedge": "src/python"},
           ext_package="hedge",
-          ext_modules=[Extension("_internal", 
+          ext_modules=[
+              Extension("_internal", 
                 ["src/wrapper/wrap_main.cpp", 
                     "src/wrapper/wrap_base.cpp", 
                     "src/wrapper/wrap_special_function.cpp", 
@@ -102,16 +103,14 @@ def main():
                     "src/wrapper/wrap_volume_operators.cpp", 
                     "src/wrapper/wrap_index_map.cpp", 
                     "src/wrapper/wrap_mpi.cpp", 
-
-                    "src/bgl-python/basic_graph.cpp", 
-                    "src/bgl-python/cuthill_mckee_ordering.cpp", 
                     ],
                 include_dirs=INCLUDE_DIRS + EXTRA_INCLUDE_DIRS,
                 library_dirs=LIBRARY_DIRS + EXTRA_LIBRARY_DIRS,
                 libraries=LIBRARIES + EXTRA_LIBRARIES,
                 define_macros=list(EXTRA_DEFINES.iteritems()),
                 extra_compile_args=conf["EXTRA_COMPILE_ARGS"],
-                )],
+                ),
+              ],
           data_files=[("include/hedge", glob.glob("src/cpp/*.hpp"))],
          )
 
