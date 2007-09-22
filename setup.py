@@ -63,7 +63,10 @@ def main():
         cvars["CC"] = conf["MPICC"]
         cvars["CXX"] = conf["MPICXX"]
 
-    INCLUDE_DIRS = ["src/cpp"] \
+    INCLUDE_DIRS = [
+            "src/bgl-python",
+            "src/cpp",
+            ] \
             + conf["BOOST_MATH_TOOLKIT_INCLUDE_DIRS"] \
             + conf["BOOST_BINDINGS_INCLUDE_DIRS"] \
             + conf["BOOST_INCLUDE_DIRS"]
@@ -99,6 +102,9 @@ def main():
                     "src/wrapper/wrap_volume_operators.cpp", 
                     "src/wrapper/wrap_index_map.cpp", 
                     "src/wrapper/wrap_mpi.cpp", 
+
+                    "src/bgl-python/basic_graph.cpp", 
+                    "src/bgl-python/cuthill_mckee_ordering.cpp", 
                     ],
                 include_dirs=INCLUDE_DIRS + EXTRA_INCLUDE_DIRS,
                 library_dirs=LIBRARY_DIRS + EXTRA_LIBRARY_DIRS,
