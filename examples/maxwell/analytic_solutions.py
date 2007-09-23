@@ -34,7 +34,7 @@ class RealPartAdapter:
 
     @property
     def target_dimensions(self):
-        return self.adaptee.target_dimension
+        return self.adaptee.target_dimensions
 
     def __call__(self, x):
         return [xi.real for xi in self.adaptee(x)]
@@ -45,7 +45,7 @@ class SplitComplexAdapter:
 
     @property
     def target_dimensions(self):
-        return self.adaptee.target_dimension*2
+        return self.adaptee.target_dimensions*2
 
     def __call__(self, x):
         ad_x = self.adaptee(x)
@@ -57,7 +57,7 @@ class CartesianAdapter:
 
     @property
     def target_dimensions(self):
-        return self.adaptee.target_dimension
+        return self.adaptee.target_dimensions
 
     def __call__(self, x):
         xy = x[:2]
