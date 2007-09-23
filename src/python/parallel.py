@@ -140,13 +140,9 @@ class MPIParallelizationContext(ParallelizationContext):
             if partition == 1:
                 return 
 
-            adjacency = {}
-            for (e1, f1), (e2, f2) in mesh.interfaces:
-                adjacency.setdefault(e1.id, []).append(e2.id)
-                adjacency.setdefault(e2.id, []).append(e1.id)
-
             from pymetis import part_graph
-            cuts, partition = part_graph(partition, adjacency)
+            cuts, partition = part_graph(partition, 
+                    mesh.element_adjacency_graph)
 
         # find ranks to which we need to distribute
         target_ranks = set()
@@ -278,28 +274,45 @@ class MPIParallelizationContext(ParallelizationContext):
 
 
 import hedge.discretization
+import hedge.mesh
 
 
 
 
 class ParallelDiscretization(hedge.discretization.Discretization):
-    def __init__(self, mesh_data, local_discretization):
-        import boost.mpi as mpi
-
+    def __init__(self, mesh_data, local_discretization, 
+            reorder=hedge.mesh.REORDER_CMK):
         self.received_bdrys = {}
 
         (self.context,
                 (mesh, 
-                    self.global2local_elements, 
+                    global2local_elements, 
                     self.global2local_vertex_indices, 
                     self.neighbor_ranks,
                     global_periodic_opposite_map)) = \
                 mesh_data
 
-        comm = self.context.communicator
+        from hedge.tools import reverse_lookup_table
+        old_el_indices = mesh.reorder(reorder)
+
+        if old_el_indices is None:
+            self.global2local_elements = global2local_elements
+        else:
+            new_el_indices = reverse_lookup_table(old_el_indices)
+            self.global2local_elements = dict(
+                    (gi, new_el_indices[li])
+                    for gi, li in global2local_elements.iteritems())
 
         hedge.discretization.Discretization.__init__(self,
-                mesh, local_discretization)
+                mesh, local_discretization, 
+                reorder=hedge.mesh.REORDER_NONE)
+
+        self._setup_from_neighbor_maps()
+
+    def _setup_from_neighbor_maps(self):
+        import boost.mpi as mpi
+
+        comm = self.context.communicator
 
         if self.neighbor_ranks:
             # send interface information to neighboring ranks -----------------
@@ -310,7 +323,7 @@ class ParallelDiscretization(hedge.discretization.Discretization):
             send_requests = mpi.RequestList()
 
             for rank in self.neighbor_ranks:
-                rank_bdry = mesh.tag_to_boundary["hedge-rank-bdry-%d" % rank]
+                rank_bdry = self.mesh.tag_to_boundary["hedge-rank-bdry-%d" % rank]
                 
                 # a list of global vertex numbers for each face
                 my_vertices_global = [
@@ -348,7 +361,7 @@ class ParallelDiscretization(hedge.discretization.Discretization):
 
             for rank, (nb_all_facevertices_global, nb_node_coords) in \
                     received_packets.iteritems():
-                rank_bdry = mesh.tag_to_boundary["hedge-rank-bdry-%d" % rank]
+                rank_bdry = self.mesh.tag_to_boundary["hedge-rank-bdry-%d" % rank]
                 flat_nb_node_coords = list(flatten(nb_node_coords))
 
                 # step 1: find start node indices for each 
@@ -466,6 +479,7 @@ class ParallelDiscretization(hedge.discretization.Discretization):
         matrix-free fashion or uses precomputed matrices.
         """
         return _ParallelFluxOperator(self, flux, direct)
+
 
 
 

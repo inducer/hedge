@@ -20,6 +20,7 @@
 import pylinear.array as num
 import pylinear.computation as comp
 from pytools.arithmetic_container import work_with_arithmetic_containers
+import hedge.mesh
 
 
 
@@ -58,9 +59,12 @@ class _Boundary:
 
 
 class Discretization:
-    def __init__(self, mesh, local_discretization):
+    def __init__(self, mesh, local_discretization, 
+            reorder=hedge.mesh.REORDER_CMK):
         self.mesh = mesh
         self.dimensions = local_discretization.dimensions
+
+        self.mesh.reorder(reorder)
 
         self._build_element_groups_and_nodes(local_discretization)
         self._calculate_local_matrices()

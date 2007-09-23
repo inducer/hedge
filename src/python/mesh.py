@@ -24,6 +24,12 @@ import pylinear.computation as comp
 
 
 
+REORDER_NONE = 0
+REORDER_CMK = 1
+
+
+
+
 class Element(object):
     def __init__(self, id, vertex_indices, all_vertices):
         self.id = id
@@ -230,6 +236,18 @@ class Mesh:
                     )
             return self._bounding_box
 
+    @property
+    def element_adjacency_graph(self):
+        """Return a dictionary mapping each element id to a
+        list of adjacent element ids.
+        """
+        adjacency = {}
+        for (e1, f1), (e2, f2) in self.interfaces:
+            adjacency.setdefault(e1.id, []).append(e2.id)
+            adjacency.setdefault(e2.id, []).append(e1.id)
+        return adjacency
+
+
 
 
 
@@ -409,6 +427,27 @@ class ConformalMesh(Mesh):
 
                     self.tag_to_boundary[None].remove(plus_face)
                     self.tag_to_boundary[None].remove(minus_face)
+
+    def reorder(self, method=REORDER_CMK):
+        """Reorder this mesh according using the specified
+        method. Return a list of the old element IDs.
+        """
+        if method == REORDER_NONE:
+            return None
+        elif method == REORDER_CMK:
+            from hedge.tools import cuthill_mckee
+            old_numbers = cuthill_mckee(self.element_adjacency_graph)
+        else:
+            raise ValueError, "invalid reordering method"
+
+        self.elements = [self.elements[old_numbers[i]] 
+                for i in range(len(self.elements))]
+
+        for i, el in enumerate(self.elements):
+            assert el.id == old_numbers[i]
+            el.id = i
+
+        return old_numbers
 
 
 

@@ -280,3 +280,69 @@ def apply_inverse_index_map(imap, vector):
     result = num.zeros_like(vector, shape=(imap.from_length,))
     perform_inverse_index_map(imap, VectorTarget(vector, result))
     return result
+
+
+
+
+# mesh reorderings ------------------------------------------------------------
+def cuthill_mckee(graph):
+    """Return a Cuthill-McKee ordering for the given graph.
+
+    See (for example)
+    Y. Saad, Iterative Methods for Sparse Linear System,
+    2nd edition, p. 76.
+
+    `graph' is given as an adjacency mapping, i.e. each node is
+    mapped to a list of its neighbors.
+    """
+    from pytools import argmin
+
+    # this list is called "old_numbers" because it maps a 
+    # "new number to its "old number"
+    old_numbers = []
+    visited_nodes = set()
+    levelset = []
+
+    all_nodes = set(graph.keys())
+
+    def levelset_cmp(node_a, node_b):
+        return cmp(len(graph[node_a]), len(graph[node_b]))
+
+    while len(old_numbers) < len(graph):
+        if not levelset:
+            unvisited = list(set(graph.keys()) - visited_nodes)
+
+            if not unvisited:
+                break
+
+            start_node = unvisited[
+                    argmin(len(graph[node]) for node in unvisited)]
+            visited_nodes.add(start_node)
+            old_numbers.append(start_node)
+            levelset = [start_node]
+
+        next_levelset = set()
+        levelset.sort(levelset_cmp)
+
+        for node in levelset:
+            for neighbor in graph[node]:
+                if neighbor in visited_nodes:
+                    continue
+
+                visited_nodes.add(neighbor)
+                next_levelset.add(neighbor)
+                old_numbers.append(neighbor)
+
+        levelset = list(next_levelset)
+
+    return old_numbers
+
+
+
+
+def reverse_lookup_table(lut):
+    result = [None] * len(lut)
+    for key, value in enumerate(lut):
+        result[value] = key
+    return result
+
