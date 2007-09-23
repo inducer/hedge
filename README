@@ -18,17 +18,15 @@ To compile Hedge, you need the following prerequisites:
   http://news.tiker.net/software/boost-bindings
 - Boost Math Toolbox
   http://freespace.virgin.net/boost.regex/toolkit/html/
-- numpy + scipy (this dependency will be gone eventually)
-  http://scipy.org
-- libsilo
-  http://www.llnl.gov/visit/source.html
 - meshpy
   http://news.tiker.net/software/meshpy
 - pylinear
   http://news.tiker.net/software/pylinear
 - pytools
   NO URL YET
-- visit (if you want visualization, which you likely do)
-  http://www.llnl.gov/visit/
+
+If you want visualization, you might want to get one of these two:
+- paraview (http://paraview.org/)
+- visit (http://www.llnl.gov/visit/)
 
 Andreas Kloeckner <kloeckner@dam.brown.edu>
