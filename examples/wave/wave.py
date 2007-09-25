@@ -19,7 +19,7 @@
 
 import pylinear.array as num
 import pylinear.computation as comp
-from pytools.arithmetic_container import ArithmeticList
+from pytools.arithmetic_container import ArithmeticList, join_fields
 from hedge.tools import Rotation, dot
 
 
@@ -30,42 +30,46 @@ class StrongWaveOperator:
         self.discr = discr
         self.source_f = source_f
 
-        from hedge.flux import zero, make_normal, local, neighbor, average
+        from hedge.flux import FluxVectorPlaceholder, make_normal
 
-        normal = make_normal(discr.dimensions)
-        flux_weak = average*normal
-        flux_strong = local*normal - flux_weak
+        dim = discr.dimensions
+        w = FluxVectorPlaceholder(1+dim)
+        u = w[0]
+        v = w[1:]
+        normal = make_normal(dim)
+
+        flux_weak = join_fields(
+                dot(v.avg, normal),
+                u.avg * normal)
+
+        flux_strong = join_fields(
+                dot(v.int, normal),
+                u.int * normal) - flux_weak
+
+        self.flux = discr.get_flux_operator(flux_strong)
 
         self.nabla = discr.nabla
         self.mass = discr.mass_operator
         self.m_inv = discr.inverse_mass_operator
 
-        self.flux = discr.get_flux_operator(flux_strong)
-
-    def rhs(self, t, y):
+    def rhs(self, t, w):
         from hedge.discretization import pair_with_boundary
 
-        u = y[0]
-        v = y[1:]
+        u = w[0]
+        v = w[1:]
 
-        bc_v = self.discr.boundarize_volume_field(v)
-        bc_u = -self.discr.boundarize_volume_field(u)
+        bc = join_fields(
+                -self.discr.boundarize_volume_field(u),
+                self.discr.boundarize_volume_field(v))
 
-        rhs = ArithmeticList([])
-        # rhs u
-        rhs.append(dot(self.nabla, v) 
-                - self.m_inv*(
-                    dot(self.flux, v) 
-                    + dot(self.flux, pair_with_boundary(v, bc_v))
-                    ))
+        rhs = (join_fields(
+                dot(self.nabla, v), 
+                self.nabla*u)
+                - self.m_inv*(self.flux*w + self.flux*pair_with_boundary(w, bc)))
+
         if self.source_f is not None:
             rhs[0] += self.source_f(t)
-        # rhs v
-        rhs.extend(self.nabla*u 
-                -self.m_inv*(
-                    self.flux*u 
-                    + self.flux*pair_with_boundary(u, bc_u)
-                    ))
+
         return rhs
 
 
@@ -93,9 +97,9 @@ def main() :
     if dim == 2:
         if pcon.is_head_rank:
             #mesh = make_disk_mesh()
-            mesh = make_regular_square_mesh(
-                    n=9, periodicity=(True,True))
-            #mesh = make_square_mesh(max_area=0.008)
+            #mesh = make_regular_square_mesh(
+                    #n=9, periodicity=(True,True))
+            mesh = make_square_mesh(max_area=0.008)
             #mesh.transform(Rotation(pi/8))
         el_class = TriangularElement
     elif dim == 3:
@@ -111,7 +115,7 @@ def main() :
     else:
         mesh_data = pcon.receive_mesh()
 
-    discr = pcon.make_discretization(mesh_data, el_class(3))
+    discr = pcon.make_discretization(mesh_data, el_class(7))
     stepper = RK4TimeStepper()
     vis = VtkVisualizer(discr, "fld", pcon)
 

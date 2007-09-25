@@ -104,8 +104,7 @@ namespace hedge { namespace fluxes {
   {
     public:
       virtual ~flux() { }
-      virtual double local_coeff(const face &local) const = 0;
-      virtual double neighbor_coeff(const face &local, const face *neighbor) const = 0;
+      virtual double operator()(const face &local, const face *neighbor) const = 0;
   };
 
 
@@ -118,13 +117,12 @@ namespace hedge { namespace fluxes {
       chained_flux(const flux &child)
         : m_child(child)
       { }
-      double local_coeff(const face &local) const
-      { return m_child.local_coeff(local); }
-      double neighbor_coeff(const face &local, const face *neighbor) const
-      { return m_child.neighbor_coeff(local, neighbor); }
+      double operator()(const face &local, const face *neighbor) const
+      { return m_child(local, neighbor); }
 
       const flux &child() const
       { return m_child; }
+
     private:
       const flux & m_child;
   };
@@ -136,42 +134,32 @@ namespace hedge { namespace fluxes {
   class constant : public flux, public flux_operators<constant>
   {
     public:
-      constant(double both)
-        : m_local(both), m_neighbor(both)
+      constant(double value)
+        : m_value(value)
       { }
-      constant(double local, double neighbor)
-        : m_local(local), m_neighbor(neighbor)
-      { }
-      double local_coeff(const face &local) const
-      { return m_local; }
-      double neighbor_coeff(const face &local, const face *neighbor) const
-      { return m_neighbor; }
+      double operator()(const face &local, const face *neighbor) const
+      { return m_value; }
 
-      const double local_constant() const
-      { return m_local; }
-      const double neighbor_constant() const
-      { return m_neighbor; }
+      const double value() const
+      { return m_value; }
 
     private:
-      const double m_local, m_neighbor;
+      const double m_value;
   };
 
   inline constant operator+(const constant &self, const constant &other)
   { 
     return constant(
-        self.local_constant() + other.local_constant(), 
-        self.neighbor_constant() + other.neighbor_constant()); 
+        self.value() + other.value());
   }
   inline constant operator-(const constant &self, const constant &other)
   { 
-    return constant(
-        self.local_constant() - other.local_constant(), 
-        self.neighbor_constant() - other.neighbor_constant()); 
+    return constant(self.value() - other.value());
   }
   inline constant operator-(const constant &self)
-  { return constant(-self.local_constant(), -self.neighbor_constant()); }
+  { return constant(-self.value()); }
   inline constant operator*(const constant &self, const double c)
-  { return constant(self.local_constant() * c, self.neighbor_constant() * c); }
+  { return constant(self.value() * c); }
 
 
 
@@ -183,9 +171,7 @@ namespace hedge { namespace fluxes {
         : m_axis(axis)
       { }
 
-      double local_coeff(const face &local) const
-      { return local.normal[m_axis]; }
-      double neighbor_coeff(const face &local, const face *neighbor) const
+      double operator()(const face &local, const face *neighbor) const
       { return local.normal[m_axis]; }
 
       const int axis() const
@@ -204,9 +190,7 @@ namespace hedge { namespace fluxes {
       penalty_term( double power)
         : m_power(power)
       { }
-      double local_coeff(const face &local) const
-      { return pow(local.order*local.order/local.h, m_power); }
-      double neighbor_coeff(const face &local, const face *neighbor) const
+      double operator()(const face &local, const face *neighbor) const
       { return pow(local.order*local.order/local.h, m_power); }
 
       const double power() const
@@ -236,18 +220,11 @@ namespace hedge { namespace fluxes {
         : m_operation(operation), m_op1(op1), m_op2(op2)
       { }
 
-      double local_coeff(const face &local) const
+      double operator()(const face &local, const face *neighbor) const
       { 
         return m_operation(
-            m_op1.local_coeff(local),
-            m_op2.local_coeff(local)
-            );
-      }
-      double neighbor_coeff(const face &local, const face *neighbor) const
-      { 
-        return m_operation(
-            m_op1.neighbor_coeff(local, neighbor),
-            m_op2.neighbor_coeff(local, neighbor)
+            m_op1(local, neighbor),
+            m_op2(local, neighbor)
             );
       }
 
@@ -280,13 +257,9 @@ namespace hedge { namespace fluxes {
       unary_operator(const Operation &operation, const Operand &op)
         : m_operation(operation), m_op(op)
       { }
-      double local_coeff(const face &local) const
+      double operator()(const face &local, const face *neighbor) const
       { 
-        return m_operation(m_op.local_coeff(local));
-      }
-      double neighbor_coeff(const face &local, const face *neighbor) const
-      { 
-        return m_operation(m_op.neighbor_coeff(local, neighbor));
+        return m_operation(m_op(local, neighbor));
       }
 
       const Operand &operand() const

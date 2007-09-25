@@ -30,14 +30,15 @@ class StrongAdvectionOperator:
         self.discr = discr
         self.inflow_u = inflow_u
 
-        from hedge.flux import zero, make_normal, local, neighbor, average
+        from hedge.flux import make_normal, FluxScalarPlaceholder
 
-        normal = make_normal(self.discr.dimensions)
-        flux_weak = dot(normal, a) * average - 0.5 *(local-neighbor)
-        flux_strong = dot(normal, a)*local - flux_weak
+        dim = discr.dimensions
+        u = FluxScalarPlaceholder(0)
+        normal = make_normal(dim)
 
-        self.flux = discr.get_flux_operator(flux_strong, direct=False)
-        #self.flux = bind_flux(self.discr, flux_strong)
+        flux_weak = u.avg*dot(normal, a) - 0.5*(u.int - u.ext)
+        flux_strong = u.int * dot(normal, a) - flux_weak
+        self.flux = discr.get_flux_operator(flux_strong)
 
         self.nabla = discr.nabla
         self.mass = discr.mass_operator
@@ -63,10 +64,13 @@ class WeakAdvectionOperator:
         self.discr = discr
         self.inflow_u = inflow_u
 
-        from hedge.flux import zero, make_normal, local, neighbor, average
+        from hedge.flux import make_normal, FluxScalarPlaceholder
 
-        normal = make_normal(self.discr.dimensions)
-        flux_weak = dot(normal, a) * average# - 0.5 *(local-neighbor)
+        dim = discr.dimensions
+        u = FluxScalarPlaceholder(0)
+        normal = make_normal(dim)
+
+        flux_weak = u.avg*dot(normal, a) - 0.5*(u.int - u.ext)
         self.flux = discr.get_flux_operator(flux_weak)
 
         self.minv_st = discr.minv_stiffness_t
@@ -124,7 +128,7 @@ def main() :
 
     pcon = guess_parallelization_context()
 
-    dim = 3
+    dim = 2
     periodic = False
     if dim == 2:
         a = num.array([1,0])
@@ -156,8 +160,9 @@ def main() :
         mesh_data = pcon.receive_mesh()
 
     discr = pcon.make_discretization(mesh_data, el_class(5))
-    vis = SiloVisualizer(discr, "fld", pcon)
-    op = WeakAdvectionOperator(discr, a, u_analytic)
+    vis = SiloVisualizer(discr, pcon)
+    #vis = VtkVisualizer(discr, "fld", pcon)
+    op = StrongAdvectionOperator(discr, a, u_analytic)
 
     print "%d elements" % len(discr.mesh.elements)
 
@@ -171,7 +176,7 @@ def main() :
 
     dt = discr.dt_factor(comp.norm_2(a))/2
     stepfactor = 1
-    nsteps = int(0.1/dt)
+    nsteps = int(1/dt)
 
     stepper = RK4TimeStepper()
     start_step = time()

@@ -26,14 +26,13 @@ import pymbolic
 
 
 Face = _internal.Face
-which_faces = _internal.which_faces
 
 
 
 
 # c++ fluxes debug dumping ----------------------------------------------------
 def _constant_str(self):
-    return "ConstantFlux(%s, %s)" % (self.local_c, self.neighbor_c)
+    return "ConstantFlux(%s)" % self.value
 def _normal_str(self):
     return "NormalFlux(%d)" % self.axis
 def _penalty_str(self):
@@ -70,75 +69,30 @@ class Flux(pymbolic.primitives.AlgebraicLeaf, _internal.Flux):
 
 
 
-class ConstantFlux(Flux):
-    def __init__(self, local_c, neighbor_c=None):
-        if neighbor_c is None:
-            neighbor_c = local_c
-        self.local_c = local_c
-        self.neighbor_c = neighbor_c
-
-    def __add__(self, other):
-        from pymbolic.primitives import is_constant
-
-        if isinstance(other, ConstantFlux):
-            return ConstantFlux(
-                    self.local_c + other.local_c,
-                    self.neighbor_c + other.neighbor_c)
-        elif is_constant(other):
-            return ConstantFlux( self.local_c + other, self.neighbor_c + other)
-        else:
-            return Flux.__add__(self, other)
-
-    __radd__ = __add__
-
-    def __sub__(self, other):
-        if isinstance(other, ConstantFlux):
-            return ConstantFlux(
-                    self.local_c - other.local_c,
-                    self.neighbor_c - other.neighbor_c)
-        else:
-            return Flux.__sub__(self, other)
-
-    def __rsub__(self, other):
-        if isinstance(other, ConstantFlux):
-            return ConstantFlux(
-                    other.local_c - self.local_c,
-                    other.neighbor_c - self.neighbor_c)
-        else:
-            return Flux.__rsub__(self, other)
-
-    def __neg__(self):
-        return ConstantFlux(- self.local_c, - self.neighbor_c)
-
-    def __mul__(self, other):
-        try:
-            otherfloat = float(other)
-        except:
-            return Flux.__mul__(self, other)
-        else:
-            return ConstantFlux(otherfloat*self.local_c, otherfloat*self.neighbor_c)
+class FieldComponent(Flux):
+    def __init__(self, index, is_local):
+        self.index = index
+        self.is_local = is_local
 
     def __eq__(self, other):
-        return (isinstance(other, ConstantFlux) and
-                self.local_c == other.local_c and
-                self.neighbor_c == other.neighbor_c)
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
-
-    def __hash__(self):
-        return 0xdedbeef ^ hash(self.local_c) ^ hash(self.neighbor_c)
+        return (isinstance(other, FieldComponent) 
+                and self.index == other.index
+                and self.is_local == other.is_local
+                )
 
     def __getinitargs__(self):
-        return self.local_c, self.neighbor_c
+        return self.index, self.is_local
+
+    def __hash__(self):
+        return 0x7371afcd ^ hash(self.index) ^ hash(self.is_local)
 
     def get_mapper_method(self, mapper):
-        return mapper.map_constant_flux
+        return mapper.map_field_component
 
 
 
 
-class NormalFlux(Flux):
+class Normal(Flux):
     def __init__(self, axis):
         self.axis = axis
 
@@ -146,7 +100,7 @@ class NormalFlux(Flux):
         return self.axis,
 
     def __eq__(self, other):
-        return isinstance(other, NormalFlux) and self.axis == other.axis
+        return isinstance(other, Normal) and self.axis == other.axis
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -155,11 +109,12 @@ class NormalFlux(Flux):
         return 0xa931ff ^ hash(self.axis)
 
     def get_mapper_method(self, mapper):
-        return mapper.map_normal_flux
+        return mapper.map_normal
 
 
 
-class PenaltyFlux(Flux):
+
+class PenaltyTerm(Flux):
     def __init__(self, power):
         self.power = power
 
@@ -167,7 +122,7 @@ class PenaltyFlux(Flux):
         return self.power,
 
     def __eq__(self, other):
-        return isinstance(other, PenaltyFlux) and self.power == other.power
+        return isinstance(other, PenaltyTerm) and self.power == other.power
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -176,53 +131,88 @@ class PenaltyFlux(Flux):
         return 0x9f194 ^ hash(self.power)
 
     def get_mapper_method(self, mapper):
-        return mapper.map_penalty_flux
+        return mapper.map_penalty_term
 
 
 
 
 
-def make_normal(dim):
-    return ArithmeticList([NormalFlux(i) for i in range(dim)])
+def make_normal(dimensions):
+    return ArithmeticList([Normal(i) for i in range(dimensions)])
 
 
 
 
-zero = ConstantFlux(0)
-local = ConstantFlux(1, 0)
-neighbor = ConstantFlux(0, 1)
-average = ConstantFlux(0.5, 0.5)
+
+class FluxScalarPlaceholder:
+    def __init__(self, component=0):
+        self.component = component
+
+    @property
+    def int(self):
+        return FieldComponent(self.component, True)
+
+    @property
+    def ext(self):
+        return FieldComponent(self.component, False)
+
+    @property
+    def avg(self):
+        return 0.5*(self.int+self.ext)
+
+    def jump(self, dimensions):
+        return make_normal(dimensions) * (self.int-self.ext)
 
 
 
 
-class FluxIdentityMapper(pymbolic.mapper.IdentityMapper):
-    def map_constant_flux(self, expr, *args, **kwargs):
-        return expr.__class__(expr.local_c, expr.neighbor_c)
+class FluxVectorPlaceholder:
+    def __init__(self, components=None, indices=None):
+        if not (components or indices):
+            raise ValueError, "either components or indices must be specified"
 
-    def map_normal_flux(self, expr, *args, **kwargs):
-        return expr.__class__(expr.axis)
+        if components:
+            self.indices = range(components)
+        else:
+            self.indices = indices
 
-    def map_penalty_flux(self, expr, *args, **kwargs):
-        return expr.__class__(expr.power)
+    def __getitem__(self, idx):
+        if isinstance(idx, int):
+            return FluxScalarPlaceholder(self.indices[idx])
+        else:
+            return FluxVectorPlaceholder(indices=self.indices.__getitem__(idx))
+
+    @property
+    def int(self):
+        return ArithmeticList(FieldComponent(i, True) for i in self.indices)
+
+    @property
+    def ext(self):
+        return ArithmeticList(FieldComponent(i, False) for i in self.indices)
+
+    @property
+    def avg(self):
+        return 0.5*(self.int+self.ext)
+
+    @property
+    def jump(self):
+        return dot(make_normal(len(self.indices)), self.int-self.ext)
 
 
 
 
-class FluxNormalizationMapper(FluxIdentityMapper):
-    pass
-
-
-
-
+# internal flux wrangling -----------------------------------------------------
 class FluxStringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
-    def map_constant_flux(self, expr, enclosing_prec):
-        return "Const(%s, %s)" % (expr.local_c, expr.neighbor_c)
+    def map_field_component(self, expr, enclosing_prec):
+        if expr.is_local:
+            return "Int[%d]" % expr.index
+        else:
+            return "Ext[%d]" % expr.index
 
-    def map_normal_flux(self, expr, enclosing_prec):
+    def map_normal(self, expr, enclosing_prec):
         return "Normal(%d)" % expr.axis
 
-    def map_penalty_flux(self, expr, enclosing_prec):
+    def map_penalty_term(self, expr, enclosing_prec):
         return "Penalty(%s)" % (expr.power)
 
 
@@ -257,7 +247,7 @@ class FluxNormalizationMapper(pymbolic.mapper.IdentityMapper):
             coeffs = []
             terms = set()
             for p_kid in pkids:
-                if is_constant(p_kid) or isinstance(p_kid, ConstantFlux):
+                if is_constant(p_kid):
                     coeffs.append(p_kid)
                 else:
                     terms.add(p_kid)
@@ -275,7 +265,6 @@ class FluxNormalizationMapper(pymbolic.mapper.IdentityMapper):
         from pymbolic.primitives import flattened_product, is_constant
 
         constants = []
-        c_fluxes = []
         rest = []
 
         for kid in expr.children:
@@ -283,22 +272,13 @@ class FluxNormalizationMapper(pymbolic.mapper.IdentityMapper):
 
             if is_constant(kid):
                 constants.append(kid)
-            elif isinstance(kid, ConstantFlux):
-                c_fluxes.append(kid)
             else:
                 rest.append(kid)
 
         from operator import mul
         constant = reduce(mul, constants, 1)
 
-        if c_fluxes:
-            if len(c_fluxes) > 1:
-                raise RuntimeError, "Multiplying two nontrivial constant fluxes is not going to do what you want"
-            c_flux = c_fluxes[0]
-            c_flux *= constant
-            return flattened_product([c_flux] + rest)
-        else:
-            return flattened_product([constant] + rest)
+        return flattened_product([constant] + rest)
 
 
 
@@ -307,6 +287,19 @@ class FluxNormalizationMapper(pymbolic.mapper.IdentityMapper):
 def normalize_flux(flux):
     from pymbolic import expand, flatten
     return FluxNormalizationMapper()(flatten(expand(flux)))
+
+
+
+
+class FluxDependencyMapper(pymbolic.mapper.dependency.DependencyMapper):
+    def map_field_component(self, expr):
+        return set([expr])
+
+    def map_normal(self, expr):
+        return set()
+
+    def map_penalty_term(self, expr):
+        return set()
 
 
 
@@ -333,15 +326,6 @@ class FluxCompilationMapper(pymbolic.mapper.RecursiveMapper):
     def map_negation(self, expr):
         return _internal.make_NegativeFlux(self.rec(expr.child))
 
-    def map_constant_flux(self, expr):
-        return _internal.ConstantFlux(expr.local_c, expr.neighbor_c)
-
-    def map_normal_flux(self, expr):
-        return _internal.NormalFlux(expr.axis)
-
-    def map_penalty_flux(self, expr):
-        return _internal.PenaltyFlux(expr.power)
-
     def map_power(self, expr):
         base = self.rec(expr.base)
         result = base
@@ -353,15 +337,74 @@ class FluxCompilationMapper(pymbolic.mapper.RecursiveMapper):
 
         return result
 
+    def map_normal(self, expr):
+        return _internal.NormalFlux(expr.axis)
+
+    def map_penalty_term(self, expr):
+        return _internal.PenaltyTerm(expr.power)
 
 
 
 
+
+class FluxDifferentiationMapper(pymbolic.mapper.differentiator.DifferentiationMapper):
+    def map_field_component(self, expr):
+        if expr == self.variable:
+            return 1
+        else:
+            return 0
+
+    def map_normal(self, expr):
+        return 0
+
+    def map_penalty_term(self, expr):
+        return 0
+
+
+
+
+@work_with_arithmetic_containers
 def compile_flux(flux):
+    def compile_scalar_single_dep_flux(flux):
+        return FluxCompilationMapper()(flux)
+        #if not flux:
+            #return None
+        #else:
+            #return FluxCompilationMapper()(normalize_flux(flux))
+
+    def compile_scalar_flux(flux):
+        def in_fields_cmp(a, b):
+            return cmp(a.index, b.index) \
+                    or cmp(a.is_local, b.is_local)
+
+        in_fields = list(FluxDependencyMapper()(flux))
+        in_fields.sort(in_fields_cmp)
+
+        max_in_field = max(in_field.index for in_field in in_fields)
+
+        in_derivatives = dict(
+                ((in_field.index, in_field.is_local),
+                normalize_flux(FluxDifferentiationMapper(in_field)(flux)))
+                for in_field in in_fields)
+
+        for i, deriv in in_derivatives.iteritems():
+            if FluxDependencyMapper()(deriv):
+                raise ValueError, "Flux is nonlinear in component %d" % i
+
+        flux._compiled = []
+        for in_field_idx in range(max_in_field+1):
+            int = in_derivatives.get((in_field_idx, True), 0)
+            ext = in_derivatives.get((in_field_idx, False), 0)
+
+            if int or ext:
+                flux._compiled.append(
+                        (in_field_idx, 
+                            compile_scalar_single_dep_flux(int),
+                            compile_scalar_single_dep_flux(ext),))
+
+        return flux._compiled
+
     try:
         return flux._compiled
     except AttributeError:
-        flux._compiled = FluxCompilationMapper()(normalize_flux(flux))
-        return flux._compiled
-
-
+        return compile_scalar_flux(flux)

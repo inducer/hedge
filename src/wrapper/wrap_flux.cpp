@@ -43,15 +43,11 @@ namespace {
   // flux-related -------------------------------------------------------------
   struct flux_wrap : fluxes::flux, wrapper<fluxes::flux>
   {
-    double local_coeff(const fluxes::face &local) const
-    {
-      return this->get_override("local_coeff")(boost::ref(local));
-    }
-    double neighbor_coeff(
+    double operator()(
         const fluxes::face &local, 
         const fluxes::face *neighbor) const
     {
-      return this->get_override("neighbor_coeff")(boost::ref(local), boost::ref(neighbor));
+      return this->get_override("__call__")(boost::ref(local), boost::ref(neighbor));
     }
   };
 
@@ -75,7 +71,6 @@ namespace {
 
     class_<cl, bases<fluxes::flux>, boost::noncopyable>
       (name.c_str(), no_init)
-      EXPOSE_FLUX_PERFORM(cl)
       .add_property("operand", 
           make_function(&cl::operand, return_internal_reference<>()))
       ;
@@ -107,7 +102,6 @@ namespace {
 
     class_<cl, bases<fluxes::flux>, boost::noncopyable>
       (name.c_str(), no_init)
-      EXPOSE_FLUX_PERFORM(cl)
       .add_property("operand1", 
           make_function(&cl::operand1, return_internal_reference<>()))
       .add_property("operand2", 
@@ -141,7 +135,6 @@ namespace {
             fluxes::chained_flux, fluxes::constant> cl;
     class_<cl, bases<fluxes::flux>, boost::noncopyable>
       (name.c_str(), no_init)
-      EXPOSE_FLUX_PERFORM(cl)
       .add_property("operand1", 
           make_function(&cl::operand1, return_internal_reference<>()))
       .add_property("operand2", 
@@ -183,18 +176,10 @@ namespace {
 
 void hedge_expose_fluxes()
 {
-  enum_<which_faces>("which_faces")
-    .ENUM_VALUE(BOTH)
-    .ENUM_VALUE(LOCAL)
-    .ENUM_VALUE(NEIGHBOR)
-    ;
-
-
   {
     typedef fluxes::flux cl;
     class_<flux_wrap, boost::noncopyable>("Flux")
-      .def("neighbor_coeff", pure_virtual(&cl::neighbor_coeff))
-      .def("local_coeff", pure_virtual(&cl::local_coeff))
+      .def("__call__", pure_virtual(&cl::operator()))
       ;
   }
 
@@ -204,10 +189,10 @@ void hedge_expose_fluxes()
         init<fluxes::flux &>()
         [with_custodian_and_ward<1, 2>()]
         )
-      EXPOSE_FLUX_PERFORM(cl)
       .add_property("child", 
           make_function(&cl::child, return_internal_reference<>()))
       ;
+    EXPOSE_FLUX_PERFORM(cl)
   }
 
   {
@@ -215,24 +200,19 @@ void hedge_expose_fluxes()
 
     class_<cl, bases<fluxes::flux> >(
         "ConstantFlux", 
-        init<double, double>(
-          (arg("local"), arg("neighbor"))
-          ))
+        init<double>(arg("value")))
       .def(init<double>(arg("both")))
       .def(self + self)
       .def(self - self)
       .def(- self)
       .def(self * double())
-      .add_property("local_c", &cl::local_constant)
-      .add_property("neighbor_c", &cl::neighbor_constant)
-      EXPOSE_FLUX_PERFORM(cl)
+      .add_property("value", &cl::value)
       ;
   }
 
   {
     typedef fluxes::normal cl;
     class_<cl, bases<fluxes::flux> >("NormalFlux", init<int>(arg("axis")))
-      EXPOSE_FLUX_PERFORM(cl)
       .add_property("axis", &cl::axis)
       ;
   }
@@ -242,7 +222,6 @@ void hedge_expose_fluxes()
     class_<cl, bases<fluxes::flux> >("PenaltyFlux",
         init<double>(arg("power"))
         )
-      EXPOSE_FLUX_PERFORM(cl)
       .add_property("power", &cl::power)
       ;
   }

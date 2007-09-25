@@ -42,18 +42,14 @@
   def(#NAME, (void (*)(ARG_TYPES coord_matrix_target)) NAME);
 
 #define EXPOSE_FLUX_PERFORM(FLUX_CLASS) \
-  .def("perform", (void (*)(FLUX_CLASS, \
-          const hedge::face_group &, \
-          hedge::which_faces, \
-          const matrix &, \
-          hedge::vector_target)) \
-      hedge::perform_flux_operator) \
-  .def("perform", (void (*)(FLUX_CLASS, \
-          const face_group &, \
-          which_faces, \
-          const matrix &, \
-          hedge::coord_matrix_target)) \
-      hedge::perform_flux_operator)
+  def("perform_flux", (void (*)(\
+          const hedge::face_group &, const matrix &, \
+          FLUX_CLASS, hedge::vector_target, FLUX_CLASS, hedge::vector_target)) \
+      hedge::perform_flux_detailed); \
+  def("perform_flux", (void (*)(\
+          const hedge::face_group &, const matrix &, \
+          FLUX_CLASS, hedge::coord_matrix_target, FLUX_CLASS, hedge::coord_matrix_target)) \
+      hedge::perform_flux_detailed);
 
 #define ENUM_VALUE(NAME) \
   value(#NAME, NAME)

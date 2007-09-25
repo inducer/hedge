@@ -19,7 +19,9 @@
 
 import pylinear.array as num
 import pylinear.computation as comp
-from pytools.arithmetic_container import work_with_arithmetic_containers
+from pytools.arithmetic_container import \
+        work_with_arithmetic_containers, \
+        ArithmeticList
 import hedge.mesh
 
 
@@ -281,7 +283,6 @@ class Discretization:
             count = 1
 
         if count > 1:
-            from pytools.arithmetic_container import ArithmeticList
             result = ArithmeticList([self.volume_zeros() for i in range(count)])
 
             for point_nr, x in enumerate(self.nodes):
@@ -300,7 +301,6 @@ class Discretization:
             count = 1
 
         if count > 1:
-            from pytools.arithmetic_container import ArithmeticList
             result = ArithmeticList([self.volume_zeros() for i in range(count)])
 
             for el in self.mesh.tag_to_elements[tag]:
@@ -329,7 +329,6 @@ class Discretization:
             count = 1
 
         if count > 1:
-            from pytools.arithmetic_container import ArithmeticList
             result = ArithmeticList([self.boundary_zeros(tag) for i in range(count)])
             for i, pt in enumerate(self._get_boundary(tag).nodes):
                 for field_nr, value in enumerate(f(pt)):
@@ -339,7 +338,6 @@ class Discretization:
             return num.array([f(x) for x in self._get_boundary(tag).nodes])
 
     def boundary_normals(self, tag=None):
-        from pytools.arithmetic_container import ArithmeticList
         result = ArithmeticList([self.boundary_zeros(tag) for i in range(self.dimensions)])
         for fg, ldis in self._get_boundary(tag).face_groups_and_ldis:
             for face_pair in fg:
@@ -415,16 +413,16 @@ class Discretization:
 
         target.finalize()
 
-    # interior flux computation -----------------------------------------------
-    def perform_interior_flux(self, flux, target):
-        """Perform interior fluxes on the given operator target.
-        This performs the contribution
+    # inner flux computation --------------------------------------------------
+    def perform_inner_flux(self, int_flux, ext_flux, target):
+        """Perform fluxes in the interior of the domain on the 
+        given operator target.  This performs the contribution
 
           M_{i,j} := \sum_{interior faces f} \int_f
             (  
-               flux.local_coeff(f) * \phi_j
+               int_flux(f) * \phi_j
                + 
-               flux.neighbor_coeff(f) * \phi_{opp(j)}
+               ext_flux(f) * \phi_{opp(j)}
              )
              \phi_i
         
@@ -437,45 +435,50 @@ class Discretization:
           v_i := M_{i,j} u_j
             = \sum_{interior faces f} \int_f
             (  
-               flux.local_coeff(f) * u^-
+               int_flux(f) * u^-
                + 
-               flux.neighbor_coeff(f) * u^+
+               ext_flux(f) * u^+
              )
              \phi_i
 
         For more on operator targets, see src/cpp/op_target.hpp.
+
+        Both local_flux and neighbor_flux must be instances of
+        hedge.flux.Flux, i.e. compiled fluxes. Typically, you will
+        not call this routine, it will be called for you by flux
+        operators obtained by get_flux_operator().
         """
-        from hedge.flux import which_faces, compile_flux
+        from hedge._internal import perform_flux, ChainedFlux
+
+        ch_int = ChainedFlux(int_flux)
+        ch_ext = ChainedFlux(ext_flux)
 
         target.begin(len(self.nodes), len(self.nodes))
         for fg, fmm in self.face_groups:
-            compile_flux(flux).perform(fg, which_faces.BOTH, fmm, target)
+            perform_flux(fg, fmm, ch_int, target, ch_ext, target)
         target.finalize()
 
     # boundary flux computation -----------------------------------------------
-    def perform_boundary_flux_local_part(self, flux, target, tag=None):
-        from hedge.flux import which_faces, compile_flux
+    def perform_boundary_flux(self, 
+            int_flux, int_target, 
+            ext_flux, ext_target, 
+            tag=None):
+        from hedge._internal import perform_flux, ChainedFlux
+
+        ch_int = ChainedFlux(int_flux)
+        ch_ext = ChainedFlux(ext_flux)
 
         bdry = self._get_boundary(tag)
 
-        target.begin(len(self.nodes), len(self.nodes))
+        int_target.begin(len(self.nodes), len(self.nodes))
+        ext_target.begin(len(self.nodes), len(bdry.nodes))
         if bdry.nodes:
             for fg, ldis in bdry.face_groups_and_ldis:
-                compile_flux(flux).perform(fg, which_faces.LOCAL, 
-                        ldis.face_mass_matrix(), target)
-        target.finalize()
-
-    def perform_boundary_flux_boundary_part(self, flux, target, tag=None):
-        from hedge.flux import which_faces, compile_flux
-
-        bdry = self._get_boundary(tag)
-
-        target.begin(len(self.nodes), len(bdry.nodes))
-        if bdry.nodes:
-            for fg, ldis in bdry.face_groups_and_ldis:
-                compile_flux(flux).perform(fg, which_faces.NEIGHBOR, 
-                        ldis.face_mass_matrix(), target)
-        target.finalize()
+                perform_flux(fg, ldis.face_mass_matrix(), 
+                        ch_int, int_target, 
+                        ch_ext, ext_target)
+        int_target.finalize()
+        ext_target.finalize()
 
     # misc stuff --------------------------------------------------------------
     def dt_non_geometric_factor(self):
@@ -544,7 +547,6 @@ class Discretization:
     # operator binding functions --------------------------------------------------
     @property
     def nabla(self):
-        from pytools.arithmetic_container import ArithmeticList
         return ArithmeticList(
                 [_DifferentiationOperator(self, i, self.perform_differentiation_operator) 
                     for i in range(self.dimensions)]
@@ -552,7 +554,6 @@ class Discretization:
 
     @property
     def stiffness_operator(self):
-        from pytools.arithmetic_container import ArithmeticList
         return ArithmeticList(
                 [_DifferentiationOperator(self, i, 
                     self.perform_stiffness_operator) 
@@ -561,7 +562,6 @@ class Discretization:
 
     @property
     def minv_stiffness_t(self):
-        from pytools.arithmetic_container import ArithmeticList
         return ArithmeticList(
                 [_DifferentiationOperator(self, i, 
                     self.perform_minv_st_operator) 
@@ -578,7 +578,6 @@ class Discretization:
         return _DiscretizationMethodOperator(
                 self, self.perform_inverse_mass_operator)
 
-    @work_with_arithmetic_containers
     def get_flux_operator(self, flux, direct=True):
         """Return a flux operator that can be multiplied with
         a volume field to obtain the lifted interior fluxes
@@ -588,10 +587,24 @@ class Discretization:
         `direct' determines whether the operator is applied in a
         matrix-free fashion or uses precomputed matrices.
         """
-        if direct:
-            return _DirectFluxOperator(self, flux)
+
+        from hedge.flux import compile_flux
+
+        def get_scalar_flux_operator(flux):
+            if direct:
+                return _DirectFluxOperator(self, flux)
+            else:
+                return _FluxMatrixOperator(self, flux)
+
+        if isinstance(flux, tuple):
+            # a tuple of int/ext fluxes
+            return get_scalar_flux_operator([(0,) + flux])
+        elif isinstance(flux, ArithmeticList):
+            return _VectorFluxOperator(
+                    [get_scalar_flux_operator(compile_flux(flux_component)) 
+                        for flux_component in flux])
         else:
-            return _FluxMatrixOperator(self, flux)
+            return get_scalar_flux_operator(compile_flux(flux))
 
 
 
@@ -615,11 +628,13 @@ class SymmetryMap:
                     mapped_pt = sym_map(pt)
                     for m_i_pt in range(mapped_start, mapped_stop):
                         if comp.norm_2(discr.nodes[m_i_pt] - mapped_pt) < threshold:
-                            self.map[m_i_pt] = i_pt
+                            self.map[i_pt] = m_i_pt
                             break
 
-        for i in range(len(discr.nodes)):
-            assert i in self.map
+                    if i_pt not in self.map:
+                        for m_i_pt in range(mapped_start, mapped_stop):
+                            print comp.norm_2(discr.nodes[m_i_pt] - mapped_pt)
+                        raise RuntimeError, "no symmetry match found"
 
     def __call__(self, vec):
         result = self.discretization.volume_zeros()
@@ -656,16 +671,7 @@ def generate_ones_on_boundary(discr, tag):
 
 
 
-# bound operators -------------------------------------------------------------
-class BoundaryPair:
-    def __init__(self, field, bfield, tag):
-        self.field = field
-        self.bfield = bfield
-        self.tag = tag
-
-
-
-
+# local operators -------------------------------------------------------------
 class _DifferentiationOperator(object):
     def __init__(self, discr, coordinate, discr_method):
         self.discr = discr
@@ -693,6 +699,10 @@ class _DiscretizationMethodOperator(object):
         self.discr_method(VectorTarget(field, result))
         return result
 
+
+
+
+# flux operators --------------------------------------------------------------
 class _DirectFluxOperator(object):
     def __init__(self, discr, flux):
         self.discr = discr
@@ -701,19 +711,30 @@ class _DirectFluxOperator(object):
     def __mul__(self, field):
         from hedge._internal import VectorTarget
 
-        if isinstance(field, BoundaryPair):
-            bpair = field
-            result = num.zeros_like(bpair.field)
-            self.discr.perform_boundary_flux_local_part(
-                    self.flux, VectorTarget(bpair.field, result), bpair.tag)
-            self.discr.perform_boundary_flux_boundary_part(
-                    self.flux, VectorTarget(bpair.bfield, result), bpair.tag)
-            return result
+        def mul_single_dep(int_flux, ext_flux, result, field):
+            if isinstance(field, BoundaryPair):
+                bpair = field
+                self.discr.perform_boundary_flux(
+                        int_flux, VectorTarget(bpair.field, result),
+                        ext_flux, VectorTarget(bpair.bfield, result), 
+                        bpair.tag)
+            else:
+                self.discr.perform_inner_flux(
+                        int_flux, ext_flux, VectorTarget(field, result))
+
+        result = self.discr.volume_zeros()
+        if isinstance(field, ArithmeticList):
+            for idx, int_flux, ext_flux in self.flux:
+                mul_single_dep(int_flux, ext_flux, result, field[idx]) 
         else:
-            result = num.zeros_like(field)
-            self.discr.perform_interior_flux(
-                    self.flux, VectorTarget(field, result))
-            return result
+            assert len(self.flux) == 1
+            idx, int_flux, ext_flux = self.flux[0]
+            assert idx == 0
+            mul_single_dep(int_flux, ext_flux, result, field) 
+        return result
+
+
+
 
 class _FluxMatrixOperator(object):
     def __init__(self, discr, flux):
@@ -722,42 +743,74 @@ class _FluxMatrixOperator(object):
         self.discr = discr
         self.flux = flux
 
-        int_bmatrix = num.zeros(shape=(0,0), flavor=num.SparseBuildMatrix)
-        discr.perform_interior_flux(flux, MatrixTarget(int_bmatrix))
-        self.int_matrix = num.asarray(int_bmatrix, flavor=num.SparseExecuteMatrix)
+        self.inner_matrices = {}
+        for idx, int_flux, ext_flux in self.flux:
+            inner_bmatrix = num.zeros(shape=(0,0), flavor=num.SparseBuildMatrix)
+            discr.perform_inner_flux(int_flux, ext_flux, MatrixTarget(inner_bmatrix))
+            self.inner_matrices[idx] = \
+                    num.asarray(inner_bmatrix, flavor=num.SparseExecuteMatrix)
 
         self.bdry_ops = {}
 
     def __mul__(self, field):
-        if isinstance(field, BoundaryPair):
-            from hedge._internal import MatrixTarget
+        def mul_single_dep(idx, int_flux, ext_flux, field):
+            if isinstance(field, BoundaryPair):
+                from hedge._internal import MatrixTarget
 
-            bpair = field
+                bpair = field
 
-            try:
-                local_matrix, neighbor_matrix = self.bdry_ops[bpair.tag]
-            except KeyError:
-                local_matrix = num.zeros(shape=(0,0), flavor=num.SparseBuildMatrix)
-                neighbor_matrix = num.zeros(shape=(0,0), flavor=num.SparseBuildMatrix)
+                try:
+                    int_matrix, ext_matrix = self.bdry_ops[idx, bpair.tag]
+                except KeyError:
+                    int_bmatrix = num.zeros(shape=(0,0), flavor=num.SparseBuildMatrix)
+                    ext_bmatrix = num.zeros(shape=(0,0), flavor=num.SparseBuildMatrix)
+                    self.discr.perform_boundary_flux(
+                            int_flux, MatrixTarget(int_bmatrix), 
+                            ext_flux, MatrixTarget(ext_bmatrix), 
+                            bpair.tag)
+                    int_matrix = num.asarray(int_bmatrix, flavor=num.SparseExecuteMatrix)
+                    ext_matrix = num.asarray(ext_bmatrix, flavor=num.SparseExecuteMatrix)
 
-                self.discr.perform_boundary_flux_local_part(
-                        self.flux, MatrixTarget(local_matrix), bpair.tag)
-                self.discr.perform_boundary_flux_boundary_part(
-                        self.flux, MatrixTarget(neighbor_matrix), bpair.tag)
-                self.bdry_ops[bpair.tag] = local_matrix, neighbor_matrix
+                    self.bdry_ops[idx, bpair.tag] = int_matrix, ext_matrix
 
-            return ( local_matrix*bpair.field 
-                    + neighbor_matrix*bpair.bfield)
+                return int_matrix*bpair.field + ext_matrix*bpair.bfield
+            else:
+                return self.inner_matrices[idx] * field
+
+        if isinstance(field, ArithmeticList):
+            result = self.discr.volume_zeros()
+            for idx, int_flux, ext_flux in self.flux:
+                result += mul_single_dep(idx, int_flux, ext_flux, field[idx]) 
+            return result
         else:
-            return self.int_matrix * field
+            assert len(self.flux) == 1
+            idx, int_flux, ext_flux = self.flux[0]
+            assert idx == 0
+            return mul_single_dep(0, int_flux, ext_flux, field) 
 
+
+
+
+class _VectorFluxOperator(object):
+    def __init__(self, flux_operators):
+        self.flux_operators = flux_operators
+
+    def __mul__(self, field):
+        return ArithmeticList(fo * field for fo in self.flux_operators)
+
+
+
+# boundary pair ---------------------------------------------------------------
+class BoundaryPair:
+    def __init__(self, field, bfield, tag):
+        self.field = field
+        self.bfield = bfield
+        self.tag = tag
 
 
 
 
 def pair_with_boundary(field, bfield, tag=None):
-    from pytools.arithmetic_container import ArithmeticList
-
     if isinstance(field, ArithmeticList):
         assert isinstance(bfield, ArithmeticList)
         return ArithmeticList([

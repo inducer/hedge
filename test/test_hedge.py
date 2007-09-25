@@ -533,17 +533,20 @@ class TestHedge(unittest.TestCase):
         from pylinear.randomized import make_random_vector
         from math import sin, cos, sqrt, exp, pi
 
-        class OneSidedFlux(Flux):
+        class NormalFlux(Flux):
             def __init__(self, coordinate):
                 Flux.__init__(self)
                 self.coordinate = coordinate
-            def local_coeff(self, face):
-                return face.normal[self.coordinate]
-            def neighbor_coeff(self, face, neigh):
+
+            def __call__(self, int_face, ext_face):
+                return int_face.normal[self.coordinate]
+
+        class ZeroFlux(Flux):
+            def __call__(self, int_face, ext_face):
                 return 0
 
-        one_sided_x = OneSidedFlux(0)
-        one_sided_y = OneSidedFlux(1)
+        one_sided_x = (NormalFlux(0), ZeroFlux())
+        one_sided_y = (NormalFlux(1), ZeroFlux())
 
         def f1(x):
             return sin(3*x[0])+cos(3*x[1])
@@ -555,7 +558,6 @@ class TestHedge(unittest.TestCase):
         discr = Discretization(make_disk_mesh(), edata)
         ones = discr.interpolate_volume_function(lambda x: 1)
         face_zeros = discr.boundary_zeros()
-        face_ones = discr.interpolate_boundary_function(lambda x: 1)
 
         f1_v = discr.interpolate_volume_function(f1)
         f2_v = discr.interpolate_volume_function(f2)
@@ -946,10 +948,11 @@ class TestHedge(unittest.TestCase):
 
         #discr.visualize_vtk("dual.vtk", [("u", u)])
 
-        from hedge.flux import local, neighbor, make_normal
+        from hedge.flux import make_normal, FluxScalarPlaceholder
+        fluxu = FluxScalarPlaceholder()
         res = discr.get_flux_operator(
-                (local-neighbor)*make_normal(discr.dimensions)[1]) * u
-        #discr.visualize_vtk("dual.vtk", [("u", u), ("res", res)])
+                (fluxu.int - fluxu.ext)*make_normal(discr.dimensions)[1]) * u
+
         ones = discr.interpolate_volume_function(lambda x: 1)
         self.assert_(abs(res*ones) < 5e-14)
     # -------------------------------------------------------------------------
@@ -1040,9 +1043,10 @@ class TestHedge(unittest.TestCase):
 
         # make sure the surface integral of the difference 
         # between top and bottom is zero
-        from hedge.flux import local, neighbor, make_normal
+        from hedge.flux import make_normal, FluxScalarPlaceholder
+        fluxu = FluxScalarPlaceholder()
         res = discr.get_flux_operator(
-                (local-neighbor)*make_normal(discr.dimensions)[1]) * u
+                (fluxu.int - fluxu.ext)*make_normal(discr.dimensions)[1]) * u
         ones = discr.interpolate_volume_function(lambda x: 1)
         self.assert_(abs(res*ones) < 5e-14)
     # -------------------------------------------------------------------------
@@ -1055,6 +1059,17 @@ class TestHedge(unittest.TestCase):
             from hedge.mesh import ConformalMesh
             array = num.array
 
+            #
+            #    1---8---2
+            #    |7 /|\ 1|
+            #    | / | \ |
+            #    |/ 6|0 \|
+            #    5---4---7
+            #    |\ 5|3 /|
+            #    | \ | / |
+            #    |4 \|/ 2|
+            #    0---6---3
+            #
             points = [
                     array([-0.5, -0.5]), 
                     array([-0.5, 0.5]), 
@@ -1083,21 +1098,22 @@ class TestHedge(unittest.TestCase):
                 else:
                     return ["outflow"]
 
-            return ConformalMesh(points, elements, 
-                    boundary_tagger)
+            return ConformalMesh(points, elements, boundary_tagger)
 
         from hedge.discretization import \
                 Discretization, SymmetryMap, pair_with_boundary
         from hedge.element import TriangularElement
-        from hedge.flux import zero, make_normal, local, neighbor, average
+        from hedge.flux import make_normal, FluxScalarPlaceholder
         from hedge.timestep import RK4TimeStepper
+        from hedge.mesh import REORDER_NONE
         from hedge.tools import dot
         from math import sqrt
 
         a = num.array([1,0])
 
         mesh = make_mesh()
-        discr = Discretization(mesh, TriangularElement(4))
+        discr = Discretization(mesh, TriangularElement(4), 
+                reorder=REORDER_NONE)
 
         def f(x):
             if x < 0.5: return 0
@@ -1129,12 +1145,13 @@ class TestHedge(unittest.TestCase):
                 {0:3, 2:1, 5:6, 7:4})
 
         normal = make_normal(discr.dimensions)
+        fluxu = FluxScalarPlaceholder(0)
         for flux_name, flux in [
                 ("lax-friedrichs",
-                    dot(normal, a) * (local-average)
-                    + 0.5 *(local-neighbor)),
+                    dot(normal, a) * (fluxu.int - fluxu.avg)
+                    + 0.5 *(fluxu.int -fluxu.ext)),
                 ("central",
-                    dot(normal, a) * (local-average) * average),
+                    dot(normal, a) * (fluxu.int - fluxu.avg)),
                 ]:
             stepper = RK4TimeStepper()
             flux_op = discr.get_flux_operator(flux)
@@ -1150,11 +1167,10 @@ class TestHedge(unittest.TestCase):
         import pylinear.array as num
         from hedge.mesh import make_disk_mesh
         from hedge.discretization import Discretization, pair_with_boundary
-        from hedge.discretization import Discretization
         from hedge.element import TriangularElement
         from hedge.timestep import RK4TimeStepper
         from hedge.tools import EOCRecorder, dot
-        from hedge.flux import zero, make_normal, local, neighbor, average
+        from hedge.flux import make_normal, FluxScalarPlaceholder
         from math import sin, pi, sqrt
 
         a = num.array([1,0])
@@ -1172,12 +1188,14 @@ class TestHedge(unittest.TestCase):
 
         from hedge.tools import dot
 
+        normal = make_normal(2)
+        fluxu = FluxScalarPlaceholder(0)
         for flux_name, flux in [
                 ("lax-friedrichs",
-                    dot(make_normal(2), a) * (local-average)
-                    + 0.5 *(local-neighbor)),
+                    dot(normal, a) * (fluxu.int - fluxu.avg)
+                    + 0.5 *(fluxu.int -fluxu.ext)),
                 ("central",
-                    dot(make_normal(2), a) * (local-average) * average),
+                    dot(normal, a) * (fluxu.int - fluxu.avg)),
                 ]:
 
             eoc_rec = EOCRecorder()

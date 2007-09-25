@@ -110,6 +110,35 @@ namespace hedge {
 
 
 
+  class null_target {
+    public:
+      typedef vector::value_type scalar_type;
+
+      void begin(unsigned height, unsigned width) const
+      { }
+
+      void finalize() const
+      { }
+
+      void add_coefficient(unsigned i, unsigned j, scalar_type coeff) const
+      { }
+
+      template <class Container>
+      void add_coefficients(unsigned i_start, unsigned i_stop, 
+          unsigned j_start, unsigned j_stop,
+          const Container &submat) const
+      { }
+
+      template <class Container>
+      void add_scaled_coefficients(unsigned i_start, unsigned i_stop, 
+          unsigned j_start, unsigned j_stop, scalar_type factor,
+          const Container &submat) const
+      { }
+  };
+
+
+
+
   class vector_target {
     public:
       typedef vector::value_type scalar_type;

@@ -22,22 +22,6 @@ from __future__ import division
 
 
 
-def _double_cross(tbl, field):
-    from pytools.arithmetic_container import ArithmeticList
-    return ArithmeticList([
-          tbl[0][1]*field[1] + tbl[0][2]*field[2]
-        - tbl[1][1]*field[0] - tbl[2][2]*field[0],
-
-          tbl[1][0]*field[0] + tbl[1][2]*field[2] 
-        - tbl[0][0]*field[1] - tbl[2][2]*field[1],
-          
-          tbl[2][1]*field[1] + tbl[2][0]*field[0] 
-        - tbl[0][0]*field[2] - tbl[1][1]*field[2],
-        ])
-
-
-
-
 class MaxwellOperator:
     """A 3D Maxwell operator with PEC boundaries.
 
@@ -46,8 +30,11 @@ class MaxwellOperator:
 
     def __init__(self, discr, epsilon, mu, upwind_alpha=1, pec_tag=None,
             direct_flux=True):
-        from hedge.flux import make_normal, local, neighbor
+        from hedge.flux import make_normal, FluxVectorPlaceholder
         from hedge.discretization import pair_with_boundary
+        from math import sqrt
+        from pytools.arithmetic_container import join_fields
+        from hedge.tools import cross
 
         self.discr = discr
 
@@ -57,59 +44,58 @@ class MaxwellOperator:
 
         self.pec_tag = pec_tag
 
-        normal = make_normal(discr.dimensions)
+        dim = discr.dimensions
+        normal = make_normal(dim)
+        w = FluxVectorPlaceholder(6)
+        e = w[0:3]
+        h = w[3:6]
 
-        self.n_jump = discr.get_flux_operator(
-                1/2*normal*(local-neighbor), direct=direct_flux)
-        self.n_n_jump_tbl = [[discr.get_flux_operator(
-            1/2*normal[i]*normal[j]*(local-neighbor), direct=direct_flux)
-                for i in range(discr.dimensions)]
-                for j in range(discr.dimensions)]
+        Z = sqrt(mu/epsilon)
+        Y = 1/Z
+
+        self.flux = discr.get_flux_operator(join_fields(
+                # flux e
+                1/epsilon*(
+                    1/2*cross(normal, h.int-h.ext)
+                    -upwind_alpha/(2*Z)*cross(normal, cross(normal, e.int-e.ext))
+                    ),
+                # flux h
+                1/mu*(
+                    -1/2*cross(normal, e.int-e.ext)
+                    -upwind_alpha/(2*Y)*cross(normal, cross(normal, h.int-h.ext))
+                    ),
+                ), 
+                direct=direct_flux)
 
         self.nabla = discr.nabla
         self.m_inv = discr.inverse_mass_operator
 
 
-    def rhs(self, t, y):
+    def rhs(self, t, w):
         from hedge.tools import cross
         from hedge.discretization import pair_with_boundary
-        from pytools.arithmetic_container import \
-                ArithmeticList, concatenate_fields
-        from math import sqrt
+        from pytools.arithmetic_container import join_fields
 
-        e = y[0:3]
-        h = y[3:6]
+        e = w[0:3]
+        h = w[3:6]
 
         def curl(field):
             return cross(self.nabla, field)
 
-        bc_e = -self.discr.boundarize_volume_field(e, self.pec_tag)
-        bc_h = self.discr.boundarize_volume_field(h, self.pec_tag)
+        bc = join_fields(
+                -self.discr.boundarize_volume_field(e, self.pec_tag),
+                self.discr.boundarize_volume_field(h, self.pec_tag)
+                )
 
-        h_pair = pair_with_boundary(h, bc_h, self.pec_tag)
-        e_pair = pair_with_boundary(e, bc_e, self.pec_tag)
+        bpair = pair_with_boundary(w, bc, self.pec_tag)
 
-        Z = sqrt(self.mu/self.epsilon)
-        Y = 1/Z
-
-        return  concatenate_fields(
-                # rhs e
-                1/self.epsilon*(
-                    curl(h)
-                    - (self.m_inv*(
-                        cross(self.n_jump, h)
-                        + cross(self.n_jump, h_pair)
-                        - 1/Z*self.alpha*_double_cross(self.n_n_jump_tbl, e)
-                        - 1/Z*self.alpha*_double_cross(self.n_n_jump_tbl, e_pair)
-                        )))
-                    ,
-                    # rhs h
-                    1/self.mu*(
-                    - curl(e)
-                    + (self.m_inv*(
-                        cross(self.n_jump, e)
-                        + cross(self.n_jump, e_pair)
-                        + 1/Y*self.alpha*_double_cross(self.n_n_jump_tbl, h)
-                        + 1/Y*self.alpha*_double_cross(self.n_n_jump_tbl, h_pair)
-                        ))))
-
+        return  (
+                join_fields(
+                    1/self.epsilon * curl(h),
+                    - 1/self.mu * curl(e),
+                    )
+                - self.m_inv*(
+                    self.flux * w
+                    +self.flux * pair_with_boundary(w, bc, self.pec_tag)
+                    )
+                )

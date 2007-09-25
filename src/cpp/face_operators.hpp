@@ -90,83 +90,81 @@ namespace hedge
 
 
 
-  enum which_faces
+  template <class LFlux, class LTarget, class NFlux, class NTarget>
+  struct flux_data
   {
-    BOTH, 
-    LOCAL, 
-    NEIGHBOR
+    typedef LFlux local_flux_t;
+    typedef NFlux neighbor_flux_t;
+    typedef LTarget local_target_t;
+    typedef NTarget neighbor_target_t;
+
+    local_flux_t local_flux;
+    local_target_t local_target;
+    
+    neighbor_flux_t neighbor_flux;
+    neighbor_target_t neighbor_target;
+
+    flux_data(LFlux lflux, LTarget ltarget, NFlux nflux, NTarget ntarget)
+      : local_flux(lflux), local_target(ltarget), 
+      neighbor_flux(nflux), neighbor_target(ntarget)
+    { }
   };
 
 
 
 
+  template <class LFlux, class LTarget, class NFlux, class NTarget>
+  flux_data<LFlux, LTarget, NFlux, NTarget> make_flux_data(
+      LFlux lflux, LTarget ltarget, NFlux nflux, NTarget ntarget)
+  {
+    return flux_data<LFlux, LTarget, NFlux, NTarget>(lflux, ltarget, nflux, ntarget);
+  }
 
-  template <class Flux, class Mat, class OT>
+
+
+
+  template <class Mat, class FData>
   inline
-  void perform_flux_operator(Flux flux, const face_group &fg, 
-      which_faces which, const Mat &fmm, OT target)
+  void perform_flux(const face_group &fg, const Mat &fmm, FData fdata)
   {
     unsigned face_length = fmm.size1();
 
     assert(fmm.size1() == fmm.size2());
 
-    switch (which)
+    BOOST_FOREACH(const face_pair &fp, fg)
     {
-      case BOTH:
-        BOOST_FOREACH(const face_pair &fp, fg)
+      const double local_coeff = 
+        fp.flux_face.face_jacobian*fdata.local_flux(fp.flux_face, fp.opp_flux_face);
+      const double neighbor_coeff = 
+        fp.flux_face.face_jacobian*fdata.neighbor_flux(fp.flux_face, fp.opp_flux_face);
+
+      assert(fmm.size1() == fp.face_indices.size());
+      assert(fmm.size1() == fp.opp_indices.size());
+
+      for (unsigned i = 0; i < face_length; i++)
+        for (unsigned j = 0; j < face_length; j++)
         {
-          double local_coeff = flux.local_coeff(fp.flux_face);
-          double neighbor_coeff = flux.neighbor_coeff(
-              fp.flux_face, fp.opp_flux_face);
-
-          assert(fmm.size1() == fp.face_indices.size());
-          assert(fmm.size1() == fp.opp_indices.size());
-
-          for (unsigned i = 0; i < face_length; i++)
-            for (unsigned j = 0; j < face_length; j++)
-            {
-              target.add_coefficient(fp.face_indices[i], fp.face_indices[j],
-                  fp.flux_face.face_jacobian*local_coeff*fmm(i, j));
-              target.add_coefficient(fp.face_indices[i], fp.opposite_indices[j],
-                  fp.flux_face.face_jacobian*neighbor_coeff*fmm(i, j));
-            }
+          fdata.local_target.add_coefficient(fp.face_indices[i], fp.face_indices[j],
+              local_coeff*fmm(i, j));
+          fdata.neighbor_target.add_coefficient(fp.face_indices[i], fp.opposite_indices[j],
+              neighbor_coeff*fmm(i, j));
         }
-        break;
-
-      case LOCAL:
-        BOOST_FOREACH(const face_pair &fp, fg)
-        {
-          double local_coeff = flux.local_coeff(fp.flux_face);
-
-          assert(fmm.size1() == fp.face_indices.size());
-
-          for (unsigned i = 0; i < face_length; i++)
-            for (unsigned j = 0; j < face_length; j++)
-            {
-              target.add_coefficient(fp.face_indices[i], fp.face_indices[j],
-                  fp.flux_face.face_jacobian*local_coeff*fmm(i, j));
-            }
-        }
-        break;
-
-      case NEIGHBOR:
-        BOOST_FOREACH(const face_pair &fp, fg)
-        {
-          double neighbor_coeff = flux.neighbor_coeff(
-              fp.flux_face, fp.opp_flux_face);
-
-          assert(fmm.size1() == fp.opp_indices.size());
-
-          for (unsigned i = 0; i < face_length; i++)
-            for (unsigned j = 0; j < face_length; j++)
-            {
-              target.add_coefficient(fp.face_indices[i], fp.opposite_indices[j],
-                  fp.flux_face.face_jacobian*neighbor_coeff*fmm(i, j));
-            }
-        }
-        break;
     }
   }
+
+
+
+
+  template <class Mat, class LFlux, class LTarget, class NFlux, class NTarget>
+  void perform_flux_detailed(const face_group &fg, const Mat& fmm,
+      LFlux lflux, LTarget ltarget, NFlux nflux, NTarget ntarget)
+  {
+    perform_flux(fg, fmm, make_flux_data(lflux, ltarget, nflux, ntarget));
+  }
+
+
+
+
 }
 
 
