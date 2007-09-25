@@ -89,7 +89,7 @@ class MaxwellOperator:
 
         bpair = pair_with_boundary(w, bc, self.pec_tag)
 
-        return  (
+        return (
                 join_fields(
                     1/self.epsilon * curl(h),
                     - 1/self.mu * curl(e),

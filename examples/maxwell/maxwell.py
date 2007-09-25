@@ -89,7 +89,7 @@ def main():
         mesh_data = pcon.receive_mesh()
 
     #for order in [1,2,3,4,5,6]:
-    for order in [3]:
+    for order in [7]:
         discr = pcon.make_discretization(mesh_data, TetrahedralElement(order))
 
         vis = VtkVisualizer(discr, "em", pcon)
@@ -116,7 +116,7 @@ def main():
         mode.set_time(0)
         fields = discr.interpolate_volume_function(r_sol)
         op = MaxwellOperator(discr, epsilon, mu, upwind_alpha=1,
-                direct_flux=False)
+                direct_flux=True)
         #from pylinear.toybox import write_gnuplot_sparsity_pattern
         #write_gnuplot_sparsity_pattern(
                 #"fluxmat-%d.dat" % pcon.rank, op.n_jump[0].serial_flux_op.int_matrix)

@@ -20,6 +20,7 @@
 import pylinear.array as num
 import pylinear.computation as comp
 import hedge._internal
+from pytools.arithmetic_container import work_with_arithmetic_containers
 
 
 
@@ -264,6 +265,7 @@ class Closable:
 
 
 # index map tools -------------------------------------------------------------
+@work_with_arithmetic_containers
 def apply_index_map(imap, vector):
     from hedge._internal import VectorTarget, perform_index_map
 

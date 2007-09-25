@@ -20,6 +20,8 @@
 import pylinear.array as num
 import pylinear.computation as comp
 from pytools.arithmetic_container import work_with_arithmetic_containers
+import hedge.discretization
+import hedge.mesh
 
 
 
@@ -271,14 +273,6 @@ class MPIParallelizationContext(ParallelizationContext):
 
 
 
-
-
-import hedge.discretization
-import hedge.mesh
-
-
-
-
 class ParallelDiscretization(hedge.discretization.Discretization):
     def __init__(self, mesh_data, local_discretization, 
             reorder=hedge.mesh.REORDER_CMK):
@@ -468,7 +462,6 @@ class ParallelDiscretization(hedge.discretization.Discretization):
                 Discretization.dt_geometric_factor(self),
                 min)
 
-    @work_with_arithmetic_containers
     def get_flux_operator(self, flux, direct=True):
         """Return a flux operator that can be multiplied with
         a volume field to obtain the lifted interior fluxes
@@ -486,14 +479,13 @@ class ParallelDiscretization(hedge.discretization.Discretization):
 class _ParallelFluxOperator(object):
     def __init__(self, discr, flux, direct):
         self.discr = discr
-        self.flux = flux
         from hedge.discretization import Discretization
         self.serial_flux_op = Discretization.get_flux_operator(
                 discr, flux, direct)
 
-    @work_with_arithmetic_containers
     def __mul__(self, field):
         from hedge.discretization import pair_with_boundary, BoundaryPair
+        from pytools.arithmetic_container import ArithmeticList
 
         if isinstance(field, BoundaryPair):
             return self.serial_flux_op * field
@@ -503,15 +495,49 @@ class _ParallelFluxOperator(object):
 
         comm = self.discr.context.communicator
 
+        if isinstance(field, ArithmeticList):
+            field_count = len(field)
+            if field_count:
+                if isinstance(field[0], BoundaryPair):
+                    return self.serial_flux_op * field
+
+        else:
+            field_count = None
+
+        def boundary_zeros(tag):
+            if field_count is not None:
+                return num.vstack([
+                    self.discr.boundary_zeros(tag)
+                    for field_i in range(field_count)])
+            else:
+                return self.discr.boundary_zeros(tag)
+
+        def boundarize(field, tag):
+            if field_count is not None:
+                return num.vstack([
+                    self.discr.boundarize_volume_field(component, tag)
+                    for component in field])
+            else:
+                return self.discr.boundarize_volume_field(field, tag)
+
+        def unstack(field, tag):
+            if field_count is not None:
+                bdry_len = len(self.discr._get_boundary(tag).nodes)
+                return ArithmeticList(
+                    field[i*bdry_len:(i+1)*bdry_len]
+                    for i in range(field_count))
+            else:
+                return field
+
         # Subtlety here: The vectors for isend and irecv need to stay allocated
         # for as long as the request is not completed. The wrapper aids this
         # by making sure the vector outlives the request by using Boost.Python's
         # with_custodian_and_ward mechanism. However, this "life support" gets
-        # eliminated if we add the request to a RequestList, so we need to provide
-        # our own life support for these vectors.
+        # eliminated if the only reference to the request is from inside a 
+        # RequestList, so we need to provide our own life support for these vectors.
 
         neigh_recv_vecs = dict(
-                (rank, self.discr.boundary_zeros("hedge-rank-bdry-%d"% rank))
+                (rank, boundary_zeros("hedge-rank-bdry-%d"% rank))
                 for rank in self.discr.neighbor_ranks)
 
         recv_requests = mpi.RequestList(
@@ -519,7 +545,7 @@ class _ParallelFluxOperator(object):
                 for rank in self.discr.neighbor_ranks)
 
         send_requests = [isend_vector(comm, rank, 1,
-            self.discr.boundarize_volume_field(field, "hedge-rank-bdry-%d"% rank))
+            boundarize(field, "hedge-rank-bdry-%d"% rank))
             for rank in self.discr.neighbor_ranks]
 
         result = [self.serial_flux_op * field]
@@ -527,13 +553,14 @@ class _ParallelFluxOperator(object):
         def receive(_, status):
             from hedge.tools import apply_index_map
 
-            foreign_order_bfield = neigh_recv_vecs[status.source]
+            tag = "hedge-rank-bdry-%d" %  status.source
+
+            foreign_order_bfield = unstack(neigh_recv_vecs[status.source], tag)
 
             bfield = apply_index_map(
                     self.discr.from_neighbor_maps[status.source],
                     foreign_order_bfield)
 
-            tag = "hedge-rank-bdry-%d" %  status.source
             result[0] += self.serial_flux_op * \
                     pair_with_boundary(field, bfield, tag)
 
