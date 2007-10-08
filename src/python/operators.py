@@ -106,13 +106,14 @@ class StrongLaplacianOperator:
     def __init__(self, discr, coeff=lambda x: 1, 
             dirichlet_bc=lambda x, t: 0, dirichlet_tag="dirichlet",
             neumann_bc=lambda x, t: 0, neumann_tag="neumann",
-            use_ldg=True, stabilisation=False):
+            ldg=True, stabilisation=0):
         self.discr = discr
 
         from hedge.flux import \
                 FluxVectorPlaceholder, \
                 FluxScalarPlaceholder, \
-                make_normal
+                make_normal, \
+                PenaltyTerm
         from hedge.tools import dot
         from pytools.arithmetic_container import ArithmeticList
 
@@ -121,17 +122,25 @@ class StrongLaplacianOperator:
         v = FluxVectorPlaceholder(dim)
         normal = make_normal(dim)
 
-        flux_central_v = dot(v.int, normal) - dot(v.avg, normal)
-        flux_central_u = u.int*normal - u.avg*normal
+        # central
+        flux_v = flux_v_central = dot(v.int, normal) - dot(v.avg, normal)
+        flux_u = flux_u_central = u.int*normal - u.avg*normal
+        flux_v_bdry = flux_v
+        flux_u_bdry = flux_u
 
-        ldg_beta = ArithmeticList([1]*dim)
-        flux_ldg_v = flux_central_v + dot((v.int-v.ext)*0.5, ldg_beta)
-        flux_ldg_u = flux_central_u -(u.int-u.ext)*0.5*ldg_beta
+        if ldg:
+            ldg_beta = ArithmeticList([1]*dim)
+            flux_v = flux_v_central + dot((v.int-v.ext)*0.5, ldg_beta)
+            flux_u = flux_u_central -(u.int-u.ext)*0.5*ldg_beta
 
-        self.flux_u = discr.get_flux_operator(flux_ldg_u)
-        self.flux_v = discr.get_flux_operator(flux_ldg_v)
-        self.flux_u_bdry = discr.get_flux_operator(flux_central_u)
-        self.flux_v_bdry = discr.get_flux_operator(flux_central_v)
+        if stabilisation:
+            flux_v -= stabilisation * PenaltyTerm() * v.jump
+            flux_v_bdry -= stabilisation * PenaltyTerm() * v.jump
+
+        self.flux_u = discr.get_flux_operator(flux_u)
+        self.flux_v = discr.get_flux_operator(flux_v)
+        self.flux_u_bdry = discr.get_flux_operator(flux_u_bdry)
+        self.flux_v_bdry = discr.get_flux_operator(flux_v_bdry)
 
         self.nabla = discr.nabla
         self.stiff = discr.stiffness_operator

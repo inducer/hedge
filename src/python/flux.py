@@ -115,7 +115,7 @@ class Normal(Flux):
 
 
 class PenaltyTerm(Flux):
-    def __init__(self, power):
+    def __init__(self, power=1):
         self.power = power
 
     def __getinitargs__(self):
@@ -196,6 +196,7 @@ class FluxVectorPlaceholder:
 
     @property
     def jump(self):
+        from hedge.tools import dot
         return dot(make_normal(len(self.indices)), self.int-self.ext)
 
 
@@ -341,7 +342,7 @@ class FluxCompilationMapper(pymbolic.mapper.RecursiveMapper):
         return _internal.NormalFlux(expr.axis)
 
     def map_penalty_term(self, expr):
-        return _internal.PenaltyTerm(expr.power)
+        return _internal.PenaltyFlux(expr.power)
 
 
 

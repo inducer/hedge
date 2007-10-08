@@ -271,6 +271,10 @@ class Discretization:
         return bdry
 
     # vector construction -----------------------------------------------------
+    def __len__(self):
+        """Return the number of nodes in this discretization."""
+        return len(self.nodes)
+
     def volume_zeros(self):
         return num.zeros((len(self.nodes),))
 
