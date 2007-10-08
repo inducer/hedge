@@ -40,7 +40,6 @@ class MaxwellOperator:
 
         self.epsilon = epsilon
         self.mu = mu
-        self.alpha = upwind_alpha
 
         self.pec_tag = pec_tag
 

@@ -348,3 +348,94 @@ def reverse_lookup_table(lut):
         result[value] = key
     return result
 
+
+
+
+# block matrix ----------------------------------------------------------------
+class BlockMatrix:
+    """A block matrix is the sum of different smaller
+    matrices positioned within one big matrix.
+    """
+
+    def __init__(self, chunks):
+        """Return a new block matrix made up of components (`chunks')
+        given as triples (i,j,smaller_matrix), where the top left (0,0)
+        corner of the smaller_matrix is taken to be at position (i,j).
+
+        smaller_matrix may be anything that can be left-multiplied to
+        a Pylinear vector, including BlockMatrix instances.
+        """
+        self.chunks = []
+        for i, j, chunk in chunks:
+            if isinstance(chunk, BlockMatrix):
+                self.chunks.extend(
+                        (i+subi, j+subj, subchunk)
+                        for subi, subj, subchunk in chunk.chunks)
+            else:
+                self.chunks.append((i, j, chunk))
+
+    @property
+    def T(self):
+        return BlockMatrix(
+                (j, i, chunk.T) for i, j, chunk in self.chunks)
+
+    @property
+    def H(self):
+        return BlockMatrix(
+                (j, i, chunk.H) for i, j, chunk in self.chunks)
+
+    @property
+    def shape(self):
+        return (
+                max(i+chunk.shape[0] for i, j, chunk in self.chunks),
+                max(j+chunk.shape[0] for i, j, chunk in self.chunks)
+                )
+
+    def __add__(self, other):
+        if isinstance(other, BlockMatrix):
+            return BlockMatrix(self.chunks + other.chunks)
+        else:
+            return NotImplemented
+
+    def __neg__(self):
+        return BlockMatrix((i,j,-chunk) for i, j, chunk in self.chunks)
+
+    def __sub__(self, other):
+        if isinstance(other, BlockMatrix):
+            return BlockMatrix(self.chunks + (-other).chunks)
+        else:
+            return NotImplemented
+
+    def __mul__(self, other):
+        if num.Vector.is_a(other):
+            h, w = self.shape
+            assert len(other) == w
+            result = num.zeros((h,))
+
+            for i, j, chunk in self.chunks:
+                ch, cw = chunk.shape
+                result[i:i+ch] += chunk * other[j:j+cw]
+
+            return result
+        elif isinstance(other, (float, complex, int)):
+            return BlockMatrix(
+                    (i,j,other*chunk) 
+                    for i, j, chunk in self.chunks)
+        else:
+            return NotImplemented
+
+    def __rmul__(self, other):
+        if isinstance(other, (float, complex, int)):
+            return BlockMatrix(
+                    (i,j,other*chunk) 
+                    for i, j, chunk in self.chunks)
+        else:
+            return NotImplemented
+
+
+
+
+
+
+
+

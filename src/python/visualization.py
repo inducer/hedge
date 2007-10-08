@@ -155,10 +155,17 @@ class ParallelVtkFile(VtkFile):
 
 
 class VtkVisualizer(hedge.tools.Closable):
-    def __init__(self, discr, basename, pcontext=None, compressor=None):
+    def __init__(self, discr, pcontext=None, basename=None, compressor=None):
         hedge.tools.Closable.__init__(self)
 
-        self.pvd_name = basename+".pvd"
+        from pytools import assert_not_a_file
+
+        if basename is not None:
+            self.pvd_name = basename+".pvd"
+            assert_not_a_file(self.pvd_name)
+        else:
+            self.pvd_name = None
+
         self.pcontext = pcontext
         self.compressor = compressor
 
@@ -193,11 +200,9 @@ class VtkVisualizer(hedge.tools.Closable):
                     DataArray("points", discr.nodes, vector_format=VF_LIST_OF_VECTORS)),
                 cells, cell_types)
 
-        from pytools import assert_not_a_file
-        assert_not_a_file(self.pvd_name)
 
     def update_pvd(self):
-        if self.timestep_to_pathnames:
+        if self.pvd_name and self.timestep_to_pathnames:
             from hedge.vtk import XMLRoot, XMLElement, make_vtkfile
 
             collection = XMLElement("Collection")

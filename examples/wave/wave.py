@@ -117,7 +117,7 @@ def main() :
 
     discr = pcon.make_discretization(mesh_data, el_class(7))
     stepper = RK4TimeStepper()
-    vis = VtkVisualizer(discr, "fld", pcon)
+    vis = VtkVisualizer(discr, pcon, "fld")
 
     dt = discr.dt_factor(1)
     nsteps = int(10/dt)
@@ -154,8 +154,8 @@ def main() :
         if step % 1 == 0:
             visf = vis.make_file("fld-%04d" % step)
             vis.add_data(visf,
-                    [("u", fields[0]), ], 
-                    [("v", fields[1:]), ],
+                    scalars=[("u", fields[0]), ], 
+                    vectors=[("v", fields[1:]), ],
                     time=t,
                     step=step)
             visf.close()

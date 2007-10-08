@@ -600,7 +600,7 @@ class Discretization:
             # a tuple of int/ext fluxes
             return get_scalar_flux_operator([(0,) + flux])
         elif isinstance(flux, ArithmeticList):
-            return _VectorFluxOperator(
+            return _VectorFluxOperator(self, 
                     [get_scalar_flux_operator(compile_flux(flux_component)) 
                         for flux_component in flux])
         else:
@@ -673,31 +673,44 @@ def generate_ones_on_boundary(discr, tag):
 
 # local operators -------------------------------------------------------------
 class _DifferentiationOperator(object):
-    def __init__(self, discr, coordinate, discr_method):
+    def __init__(self, discr, coordinate, perform_func):
         self.discr = discr
         self.coordinate = coordinate
-        self.discr_method = discr_method
+        self.perform_func = perform_func
 
     @work_with_arithmetic_containers
     def __mul__(self, field):
         from hedge._internal import VectorTarget
 
         result = self.discr.volume_zeros()
-        self.discr_method(
-                self.coordinate, VectorTarget(field, result))
+        self.perform_func(self.coordinate, VectorTarget(field, result))
         return result
+
+    def matrix(self):
+        from hedge._internal import MatrixTarget
+
+        bmatrix = num.zeros((0,0), flavor=num.SparseBuildMatrix)
+        self.perform_func(self.coordinate, MatrixTarget(bmatrix))
+        return num.asarray(bmatrix, flavor=num.SparseExecuteMatrix)
 
 class _DiscretizationMethodOperator(object):
-    def __init__(self, discr, discr_method):
+    def __init__(self, discr, perform_func):
         self.discr = discr
-        self.discr_method = discr_method
+        self.perform_func = perform_func
 
     @work_with_arithmetic_containers
     def __mul__(self, field):
         from hedge._internal import VectorTarget
         result = self.discr.volume_zeros()
-        self.discr_method(VectorTarget(field, result))
+        self.perform_func(VectorTarget(field, result))
         return result
+
+    def matrix(self):
+        from hedge._internal import MatrixTarget
+
+        bmatrix = num.zeros((0,0), flavor=num.SparseBuildMatrix)
+        self.perform_func(MatrixTarget(bmatrix))
+        return num.asarray(bmatrix, flavor=num.SparseExecuteMatrix)
 
 
 
@@ -788,15 +801,42 @@ class _FluxMatrixOperator(object):
             assert idx == 0
             return mul_single_dep(0, int_flux, ext_flux, field) 
 
+    def matrix_inner(self):
+        """Returns a BlockMatrix to compute the lifting of the interior fluxes.
+
+        The different components are assumed to be run together in one vector,
+        in order.
+        """
+        from hedge.tools import BlockMatrix
+        flen = len(self.discr.volume_zeros())
+        return BlockMatrix(
+                (0, flen*idx, self.inner_matrices[idx])
+                for idx, int_flux, ext_flux in self.flux)
+
 
 
 
 class _VectorFluxOperator(object):
-    def __init__(self, flux_operators):
+    def __init__(self, discr, flux_operators):
+        self.discr = discr
         self.flux_operators = flux_operators
 
     def __mul__(self, field):
         return ArithmeticList(fo * field for fo in self.flux_operators)
+
+    def matrix_inner(self):
+        """Returns a BlockMatrix to compute the lifting of the interior fluxes.
+
+        The different components are assumed to be run together in one vector,
+        in order.
+        """
+        from hedge.tools import BlockMatrix
+        flen = len(self.discr.volume_zeros())
+        return BlockMatrix(
+            (flen*i, 0, fo.matrix_inner()) 
+            for i, fo in enumerate(self.flux_operators))
+
+
 
 
 
