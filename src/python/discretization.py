@@ -608,6 +608,7 @@ class Discretization:
 
 
 
+# random utilities ------------------------------------------------------------
 class SymmetryMap:
     def __init__(self, discr, sym_map, element_map, threshold=1e-13):
         self.discretization = discr
@@ -658,15 +659,37 @@ def generate_random_constant_on_elements(discr):
 
 def generate_ones_on_boundary(discr, tag):
     result = discr.volume_zeros()
-    for face in discr.mesh.tag_to_boundary[tag]:
-        el, fl = face
 
-        (el_start, el_end), ldis = discr.find_el_data(el.id)
-        fl_indices = ldis.face_indices()[fl]
+    try:
+        faces = discr.mesh.tag_to_boundary[tag]
+    except KeyError:
+        pass
+    else:
+        for face in faces:
+            el, fl = face
 
-        for i in fl_indices:
-            result[el_start+i] = 1
+            (el_start, el_end), ldis = discr.find_el_data(el.id)
+            fl_indices = ldis.face_indices()[fl]
+
+            for i in fl_indices:
+                result[el_start+i] = 1
+
     return result
+
+
+
+
+def check_bc_coverage(discr, bc_tags):
+    """Given a list of boundary tags as `bc_tags', this function verifies
+    that
+    a) the union of all these boundaries gives the complete boundary,
+    b) all these boundaries are disjoint.
+    """
+
+    all_bc_sum = sum(generate_ones_on_boundary(discr, tag) for tag in bc_tags)
+    if all_bc_sum != generate_ones_on_boundary(discr, None):
+        raise RuntimeError, "Invalid BC coverage (duplicate or missing BC)"
+
 
 
 
@@ -840,7 +863,7 @@ class _VectorFluxOperator(object):
 
 
 
-# boundary pair ---------------------------------------------------------------
+# boundary treatment ----------------------------------------------------------
 class BoundaryPair:
     def __init__(self, field, bfield, tag):
         self.field = field

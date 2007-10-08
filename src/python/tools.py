@@ -31,6 +31,14 @@ cyl_neumann = hedge._internal.cyl_neumann
 
 
 
+def coefficient_to_matrix(discr, coeff):
+    return num.diagonal_matrix(
+            discr.interpolate_volume_function(coeff),
+            flavor=num.SparseExecuteMatrix)
+
+
+
+
 def cyl_bessel_j_prime(nu, z):
     if nu == 0:
         if z == 0:
