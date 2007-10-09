@@ -160,9 +160,6 @@ class FluxScalarPlaceholder:
     def avg(self):
         return 0.5*(self.int+self.ext)
 
-    def jump(self, dimensions):
-        return make_normal(dimensions) * (self.int-self.ext)
-
 
 
 
@@ -193,11 +190,6 @@ class FluxVectorPlaceholder:
     @property
     def avg(self):
         return 0.5*(self.int+self.ext)
-
-    @property
-    def jump(self):
-        from hedge.tools import dot
-        return dot(make_normal(len(self.indices)), self.int-self.ext)
 
 
 
@@ -368,26 +360,30 @@ class FluxDifferentiationMapper(pymbolic.mapper.differentiator.DifferentiationMa
 def compile_flux(flux):
     def compile_scalar_single_dep_flux(flux):
         return FluxCompilationMapper()(flux)
-        #if not flux:
-            #return None
-        #else:
-            #return FluxCompilationMapper()(normalize_flux(flux))
 
     def compile_scalar_flux(flux):
         def in_fields_cmp(a, b):
             return cmp(a.index, b.index) \
                     or cmp(a.is_local, b.is_local)
 
-        in_fields = list(FluxDependencyMapper()(flux))
+        in_fields = list(FluxDependencyMapper(composite_leaves=True)(flux))
+
+        # check that all in_fields are FieldComponents
+        for in_field in in_fields:
+            if not isinstance(in_field, FieldComponent):
+                raise ValueError, "flux depends on invalid term `%s'" % str(in_field)
+            
         in_fields.sort(in_fields_cmp)
 
         max_in_field = max(in_field.index for in_field in in_fields)
 
+        # find d<flux> / d<in_fields>
         in_derivatives = dict(
                 ((in_field.index, in_field.is_local),
                 normalize_flux(FluxDifferentiationMapper(in_field)(flux)))
                 for in_field in in_fields)
 
+        # check for (invalid) nonlinearity
         for i, deriv in in_derivatives.iteritems():
             if FluxDependencyMapper()(deriv):
                 raise ValueError, "Flux is nonlinear in component %d" % i

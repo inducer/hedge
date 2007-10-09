@@ -52,9 +52,9 @@ def main() :
 
     if dim == 2:
         if pcon.is_head_rank:
-            mesh = make_disk_mesh(r=0.5, boundary_tagger=boundary_tagger)
-            #mesh = make_regular_square_mesh(
-                    #n=9, periodicity=(True,True))
+            #mesh = make_disk_mesh(r=0.5, boundary_tagger=boundary_tagger)
+            mesh = make_regular_square_mesh(
+                    n=6, periodicity=(True,True))
             #mesh = make_regular_square_mesh(n=9)
             #mesh = make_square_mesh(max_area=0.008)
             #mesh.transform(Rotation(pi/8))
@@ -72,7 +72,7 @@ def main() :
     else:
         mesh_data = pcon.receive_mesh()
 
-    discr = pcon.make_discretization(mesh_data, el_class(3))
+    discr = pcon.make_discretization(mesh_data, el_class(1))
     vis = VtkVisualizer(discr, pcon)
 
     def u0(x):
@@ -94,7 +94,6 @@ def main() :
     def neumann_bc(t, x):
         return 2
 
-
     import pymbolic
     v_x = pymbolic.var("x")
     sol = pymbolic.parse("math.sin(x[0]**2*x[1]**2)")
@@ -105,11 +104,14 @@ def main() :
     op = StrongLaplacianOperator(discr, 
             #coeff=coeff,
             dirichlet_tag=None,
+            #dirichlet_bc=lambda t, x: 1 if x[0] else 0,
             dirichlet_bc=lambda t, x: sol_c(x),
             neumann_tag="empty", 
             #neumann_bc=neumann_bc,
-            stabilisation=1e-2
+            stabilisation=1
             )
+
+    return
 
     class MyOperator(operator.Operator(num.Float64)):
         def size1(self):
@@ -119,43 +121,40 @@ def main() :
             return len(discr)
 
         def apply(self, before, after):
-            after[:] = op.rhs(0, before)
+            after[:] = -op.rhs(0, before)
 
-    a_inv = operator.BiCGSTABOperator.make(MyOperator(), 4000, 1e-10)
-    #a_inv.debug_level = 1
+    a_inv = operator.BiCGSTABOperator.make(MyOperator(), 40000, 1e-5)
+    #a_inv = operator.CGOperator.make(MyOperator(), 4000, 1e-10)
+    a_inv.debug_level = 1
 
-    results = comp.operator_eigenvectors(a_inv, 5, 
-            #which=comp.LARGEST_MAGNITUDE
-            )
-    scalars = []
-    for i, (value,vector) in enumerate(results):
-        print i, value
-        scalars.append(("ev%d" % i, vector))
+    if False:
+        results = comp.operator_eigenvectors(MyOperator(), 5, 
+                which=comp.SMALLEST_MAGNITUDE
+                )
+        scalars = []
+        for i, (value,vector) in enumerate(results):
+            print i, value
+            scalars.append(("ev%d" % i, vector.real))
 
-    visf = vis.make_file("eigenvectors" % i)
-    vis.add_data(visf, scalars)
-    visf.close()
+        visf = vis.make_file("eigenvectors")
+        vis.add_data(visf, scalars)
+        visf.close()
+        return
 
     sol_v = discr.interpolate_volume_function(sol_c)
     rhs_v = discr.interpolate_volume_function(rhs_c)
 
     visf = vis.make_file("fld")
     vis.add_data(visf, [
-        #("u", u), 
-        ("sol", sol_v), 
+        #("sol", u), 
+        ("truesol", sol_v), 
         ("rhs2", op.rhs(0, sol_v)), 
         ("rhs", rhs_v), 
         ])
     visf.close()
 
-    u = a_inv(rhs_v)
+    u = -a_inv(rhs_v)
 
-    visf = vis.make_file("fld")
-    vis.add_data(visf, [
-        ("u", u), 
-        ("rhs", rhs_v), 
-        ])
-    visf.close()
 
 
 

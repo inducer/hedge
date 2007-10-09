@@ -32,7 +32,7 @@ class MaxwellOperator:
     def __init__(self, discr, epsilon, mu, upwind_alpha=1, pec_tag=None,
             direct_flux=True):
         from hedge.flux import make_normal, FluxVectorPlaceholder
-        from hedge.discretization import pair_with_boundary
+        from hedge.discretization import pair_with_boundary, check_bc_coverage
         from math import sqrt
         from pytools.arithmetic_container import join_fields
         from hedge.tools import cross
@@ -43,6 +43,8 @@ class MaxwellOperator:
         self.mu = mu
 
         self.pec_tag = pec_tag
+
+        check_bc_coverage(discr, [pec_tag])
 
         dim = discr.dimensions
         normal = make_normal(dim)
@@ -133,9 +135,12 @@ class StrongLaplacianOperator:
             flux_v = flux_v_central + dot((v.int-v.ext)*0.5, ldg_beta)
             flux_u = flux_u_central -(u.int-u.ext)*0.5*ldg_beta
 
+        print flux_v
         if stabilisation:
-            flux_v -= stabilisation * PenaltyTerm() * v.jump
-            flux_v_bdry -= stabilisation * PenaltyTerm() * v.jump
+            stab_term = stabilisation * PenaltyTerm() * dot(normal, (u.int - u.ext))
+            flux_v -= stab_term
+            flux_v_bdry -= stab_term
+        print flux_v
 
         self.flux_u = discr.get_flux_operator(flux_u)
         self.flux_v = discr.get_flux_operator(flux_v)
