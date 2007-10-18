@@ -63,6 +63,56 @@ class Monomial:
 
 
 class TestHedge(unittest.TestCase):
+    def test_timestep_accuracy(self):
+        """Check that all timesteppers have the advertised accuracy."""
+        import pylinear.array as num
+        from math import sqrt, log, sin, cos
+        from hedge.tools import EOCRecorder
+
+        def rhs(t, y):
+            u = y[0]
+            v = y[1]
+            return num.array([v, -u/t**2])
+
+        def soln(t):
+            inner = sqrt(3)/2*log(t)
+            return sqrt(t)*(
+                    5*sqrt(3)/3*sin(inner)
+                    + cos(inner)
+                    )
+
+        def get_error(stepper, dt):
+            t = 1
+            y = num.array([1, 3])
+            final_t = 10
+            nsteps = int((final_t-t)/dt)
+
+            for i in range(nsteps):
+                y = stepper(y, t, dt, rhs)
+                t += dt
+
+            return abs(y[0]-soln(t))
+
+        def verify_timestep_order(stepper_getter, order):
+            eocrec = EOCRecorder()
+            for n in range(4,8):
+                dt = 2**(-n)
+                stepper = stepper_getter()
+                eocrec.add_data_point(1/dt, get_error(stepper, dt))
+
+            #print stepper
+            #print eocrec.pretty_print()
+
+            self.assert_(eocrec.estimate_order_of_convergence()[0,1] > order*0.95)
+
+        from hedge.timestep import RK4TimeStepper, AdamsBashforthTimeStepper
+
+        verify_timestep_order(lambda : AdamsBashforthTimeStepper(1), 1)
+        verify_timestep_order(lambda : AdamsBashforthTimeStepper(2), 2)
+        verify_timestep_order(lambda : AdamsBashforthTimeStepper(3), 3)
+        verify_timestep_order(lambda : AdamsBashforthTimeStepper(4), 4)
+        verify_timestep_order(RK4TimeStepper, 4)
+
     def test_face_vertex_order(self):
         """Verify that face_indices() emits face vertex indices in the right order"""
         from hedge.element import TriangularElement, TetrahedralElement
