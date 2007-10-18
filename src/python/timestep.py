@@ -17,28 +17,45 @@
 
 
 
+from __future__ import division
+
+
+
+
 _RK4A = [0.0,
-        -567301805773.0/1357537059087.0,
-        -2404267990393.0/2016746695238.0,
-        -3550918686646.0/2091501179385.0,
-        -1275806237668.0/ 842570457699.0,
+        -567301805773 /1357537059087,
+        -2404267990393/2016746695238,
+        -3550918686646/2091501179385,
+        -1275806237668/ 842570457699,
         ]
 
-_RK4B = [1432997174477.0/ 9575080441755.0,
-        5161836677717.0/13612068292357.0,
-        1720146321549.0/ 2090206949498.0,
-        3134564353537.0/ 4481467310338.0,
-        2277821191437.0/14882151754819.0,
+_RK4B = [1432997174477/ 9575080441755,
+        5161836677717 /13612068292357,
+        1720146321549 / 2090206949498,
+        3134564353537 / 4481467310338,
+        2277821191437 /14882151754819,
         ]
 
 _RK4C = [0.0,
-        1432997174477.0/9575080441755.0,
-        2526269341429.0/6820363962896.0,
-        2006345519317.0/3224310063776.0,
-        2802321613138.0/2924317926251.0,
-        1.0,
+        1432997174477/9575080441755,
+        2526269341429/6820363962896,
+        2006345519317/3224310063776,
+        2802321613138/2924317926251,
+        1,
         ]
 
+
+
+_ABCoefficients = [
+        # from R. Verfuerth,
+        # "Skript Numerische Behandlung von Differentialgleichungen"
+        None,
+        [1],
+        [3/2, -1/2],
+        [23/12, -16/12, 5/12],
+        [55/24, -59/24, 37/24, -9/24],
+        [1901/720, -2774/720, 2616/720, -1274/720, 251/720]
+        ]
 
 
 
@@ -55,4 +72,44 @@ class RK4TimeStepper:
             y += b * self.residual
 
         return y
+
+
+
+
+class AdamsBashforthTimeStepper:
+    def __init__(self, order, startup_stepper=RK4TimeStepper()):
+        if order < 1:
+            raise ValueError, "unsupported order in Adams-Bashforth"
+        try:
+            self.coefficients = _ABCoefficients[order]
+        except IndexError:
+            raise ValueError, "unsupported order in Adams-Bashforth"
+
+        self.f_history = []
+        self.startup_stepper = startup_stepper
+
+    def __call__(self, y, t, dt, rhs):
+        if len(self.f_history) == 0:
+            # insert IC
+            self.f_history.append(rhs(t, y))
+
+        if len(self.f_history) < len(self.coefficients):
+            ynew = self.startup_stepper(y, t, dt, rhs)
+            if len(self.f_history) == len(self.coefficients) - 1:
+                # here's some memory we won't need any more
+                del self.startup_stepper
+
+        else:
+            from operator import add
+
+            assert len(self.coefficients) == len(self.f_history)
+            ynew = y + dt * reduce(add,
+                    (coeff * f 
+                        for coeff, f in 
+                        zip(self.coefficients, self.f_history)))
+
+            self.f_history.pop()
+
+        self.f_history.insert(0, rhs(t+dt, ynew))
+        return ynew
 
