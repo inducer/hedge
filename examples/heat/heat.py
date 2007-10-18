@@ -28,7 +28,7 @@ def main() :
     from hedge.element import \
             TriangularElement, \
             TetrahedralElement
-    from hedge.operators import StrongLaplacianOperator
+    from hedge.operators import StrongHeatOperator
     from hedge.timestep import RK4TimeStepper
     from hedge.mesh import \
             make_disk_mesh, \
@@ -100,7 +100,7 @@ def main() :
     def neumann_bc(t, x):
         return 2
 
-    op = StrongLaplacianOperator(discr, 
+    op = StrongHeatOperator(discr, 
             #coeff=coeff,
             dirichlet_tag=None,
             dirichlet_bc=dirichlet_bc,

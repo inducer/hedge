@@ -146,7 +146,7 @@ class Discretization:
                 for fi, (n, fj) in enumerate(
                         zip(el.face_normals, el.face_jacobians)):
                     f = Face()
-                    f.h = el.map.jacobian/fj # same as sledge
+                    f.h = abs(el.map.jacobian/fj) # same as sledge
                     f.face_jacobian = fj
                     f.element_id = el.id
                     f.face_id = fi

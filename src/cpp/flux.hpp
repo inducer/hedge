@@ -191,7 +191,9 @@ namespace hedge { namespace fluxes {
         : m_power(power)
       { }
       double operator()(const face &local, const face *neighbor) const
-      { return pow(local.order*local.order/local.h, m_power); }
+      { 
+        return pow(local.order*local.order/local.h, m_power); 
+      }
 
       const double power() const
       { return m_power; }

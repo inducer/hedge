@@ -501,6 +501,11 @@ def make_single_element_mesh(a=-0.5, b=0.5,
 
 def make_regular_square_mesh(a=-0.5, b=0.5, n=5, periodicity=None,
         boundary_tagger=lambda fvi, el, fn: []):
+    """Create a regular square mesh.
+
+    `periodicity is either None, or a tuple of bools specifying whether
+    the mesh is to be periodic in x and y.
+    """
     node_dict = {}
     points = []
     points_1d = num.linspace(a, b, n)

@@ -30,7 +30,7 @@ def main() :
     from hedge.element import \
             TriangularElement, \
             TetrahedralElement
-    from hedge.operators import StrongLaplacianOperator
+    from hedge.operators import StrongPoissonOperator
     from hedge.mesh import \
             make_disk_mesh, \
             make_regular_square_mesh, \
@@ -52,9 +52,8 @@ def main() :
 
     if dim == 2:
         if pcon.is_head_rank:
-            #mesh = make_disk_mesh(r=0.5, boundary_tagger=boundary_tagger)
-            mesh = make_regular_square_mesh(
-                    n=6, periodicity=(True,True))
+            mesh = make_disk_mesh(r=0.5, boundary_tagger=boundary_tagger)
+            mesh = make_regular_square_mesh(n=3)
             #mesh = make_regular_square_mesh(n=9)
             #mesh = make_square_mesh(max_area=0.008)
             #mesh.transform(Rotation(pi/8))
@@ -72,7 +71,7 @@ def main() :
     else:
         mesh_data = pcon.receive_mesh()
 
-    discr = pcon.make_discretization(mesh_data, el_class(1))
+    discr = pcon.make_discretization(mesh_data, el_class(4))
     vis = VtkVisualizer(discr, pcon)
 
     def u0(x):
@@ -96,24 +95,26 @@ def main() :
 
     import pymbolic
     v_x = pymbolic.var("x")
-    sol = pymbolic.parse("math.sin(x[0]**2*x[1]**2)")
+    #sol = pymbolic.parse("math.sin(x[0]**2*x[1]**2)")
+    sol = pymbolic.parse("(x[0]**2+-0.25)*(x[1]**2+-0.25)")
     sol_c = pymbolic.compile(sol, variables=["x"])
     rhs = pymbolic.simplify(pymbolic.laplace(sol, [v_x[0], v_x[1]]))
     rhs_c = pymbolic.compile(rhs, variables=["x"])
+    #print sol,rhs
 
-    op = StrongLaplacianOperator(discr, 
+    op = StrongPoissonOperator(discr, 
             #coeff=coeff,
             dirichlet_tag=None,
-            #dirichlet_bc=lambda t, x: 1 if x[0] else 0,
+            #dirichlet_bc=lambda t, x: 0,
             dirichlet_bc=lambda t, x: sol_c(x),
             neumann_tag="empty", 
             #neumann_bc=neumann_bc,
-            stabilisation=1
+            ldg=False
             )
 
-    return
+    #return
 
-    class MyOperator(operator.Operator(num.Float64)):
+    class StiffnessOperator(operator.Operator(num.Float64)):
         def size1(self):
             return len(discr)
 
@@ -123,17 +124,27 @@ def main() :
         def apply(self, before, after):
             after[:] = -op.rhs(0, before)
 
-    a_inv = operator.BiCGSTABOperator.make(MyOperator(), 40000, 1e-5)
-    #a_inv = operator.CGOperator.make(MyOperator(), 4000, 1e-10)
-    a_inv.debug_level = 1
+    class MassOperator(operator.Operator(num.Float64)):
+        def size1(self):
+            return len(discr)
+
+        def size2(self):
+            return len(discr)
+
+        def apply(self, before, after):
+            after[:] = discr.mass_operator * before
+
+
+    def l2_norm(v):
+        return sqrt(v*(discr.mass_operator*v))
 
     if False:
-        results = comp.operator_eigenvectors(MyOperator(), 5, 
+        results = comp.operator_eigenvectors(StiffnessOperator(), 20, MassOperator(),
                 which=comp.SMALLEST_MAGNITUDE
                 )
         scalars = []
         for i, (value,vector) in enumerate(results):
-            print i, value
+            print i, value, l2_norm(vector.real)
             scalars.append(("ev%d" % i, vector.real))
 
         visf = vis.make_file("eigenvectors")
@@ -144,16 +155,20 @@ def main() :
     sol_v = discr.interpolate_volume_function(sol_c)
     rhs_v = discr.interpolate_volume_function(rhs_c)
 
+    a_inv = operator.BiCGSTABOperator.make(StiffnessOperator(), 40000, 1e-10)
+    #a_inv = operator.CGOperator.make(StiffnessOperator(), 4000, 1e-10)
+    a_inv.debug_level = 1
+
+    u = -a_inv(discr.mass_operator * rhs_v)
+
     visf = vis.make_file("fld")
     vis.add_data(visf, [
-        #("sol", u), 
+        ("sol", u), 
         ("truesol", sol_v), 
-        ("rhs2", op.rhs(0, sol_v)), 
+        ("rhs2", discr.inverse_mass_operator* op.rhs(0, sol_v)), 
         ("rhs", rhs_v), 
         ])
     visf.close()
-
-    u = -a_inv(rhs_v)
 
 
 
