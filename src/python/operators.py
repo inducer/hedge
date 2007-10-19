@@ -19,6 +19,7 @@
 
 from __future__ import division
 import pylinear.array as num
+import pylinear.operator as operator
 
 
 
@@ -111,13 +112,14 @@ class StrongLaplacianOperatorBase:
             ldg=True):
         self.discr = discr
 
-        
         fs = self.get_strong_flux_set(ldg)
 
         self.flux_u = discr.get_flux_operator(fs.flux_u)
         self.flux_v = discr.get_flux_operator(fs.flux_v)
-        self.flux_u_bdry = discr.get_flux_operator(fs.flux_u_bdry)
-        self.flux_v_bdry = discr.get_flux_operator(fs.flux_v_bdry)
+        self.flux_u_dbdry = discr.get_flux_operator(fs.flux_u_dbdry)
+        self.flux_v_dbdry = discr.get_flux_operator(fs.flux_v_dbdry)
+        self.flux_u_nbdry = discr.get_flux_operator(fs.flux_u_nbdry)
+        self.flux_v_nbdry = discr.get_flux_operator(fs.flux_v_nbdry)
 
         self.nabla = discr.nabla
         self.stiff = discr.stiffness_operator
@@ -134,8 +136,10 @@ class StrongLaplacianOperatorBase:
         self.sqrt_coeff = coefficient_to_matrix(discr, lambda x: sqrt(coeff(x)))
         self.dirichlet_bc_func = dirichlet_bc
         self.dirichlet_tag = dirichlet_tag
+        self.dirichlet_zeros = self.discr.boundary_zeros(dirichlet_tag)
         self.neumann_bc_func = neumann_bc
         self.neumann_tag = neumann_tag
+        self.neumann_zeros = self.discr.boundary_zeros(neumann_tag)
 
         self.neumann_normals = discr.boundary_normals(self.neumann_tag)
 
@@ -146,11 +150,12 @@ class StrongLaplacianOperatorBase:
         from hedge.flux import FluxVectorPlaceholder, FluxScalarPlaceholder, make_normal
 
         # note here:
-        # local elliptic DG is unlike the other kids in that the computation
-        # of the flux of u depends *only* on u, whereas the computation of
-        # the flux of v (yielding the final right hand side) may also depend
-        # on u. That's why we use the layout [u,v], where v is simply omitted
-        # for the u flux computation.
+
+        # local DG is unlike the other kids in that the computation of the flux
+        # of u depends *only* on u, whereas the computation of the flux of v
+        # (yielding the final right hand side) may also depend on u. That's why
+        # we use the layout [u,v], where v is simply omitted for the u flux
+        # computation.
 
         dim = self.discr.dimensions
         vec = FluxVectorPlaceholder(1+dim)
@@ -161,17 +166,23 @@ class StrongLaplacianOperatorBase:
         from hedge.tools import dot
 
         # central
-        fs.flux_v = dot(v.avg, normal)
         fs.flux_u = u.avg*normal
-        fs.flux_v_bdry = fs.flux_v
-        fs.flux_u_bdry = fs.flux_u
+        fs.flux_v = dot(v.avg, normal)
+
+        # dbdry is "dirichlet boundary"
+        # nbdry is "neumann boundary"
+        fs.flux_u_dbdry = fs.flux_u
+        fs.flux_u_nbdry = fs.flux_u
+
+        fs.flux_v_dbdry = fs.flux_v
+        fs.flux_v_nbdry = fs.flux_v
 
         if ldg:
             from pytools.arithmetic_container import ArithmeticList 
             ldg_beta = ArithmeticList([1]*dim)
 
-            fs.flux_v = fs.flux_v + dot((v.int-v.ext)*0.5, ldg_beta)
             fs.flux_u = fs.flux_u -(u.int-u.ext)*0.5*ldg_beta
+            fs.flux_v = fs.flux_v + dot((v.int-v.ext)*0.5, ldg_beta)
 
         return fs
 
@@ -186,96 +197,183 @@ class StrongLaplacianOperatorBase:
 
         fs.flux_u = u.int*normal - fs.flux_u
         fs.flux_v = dot(v.int, normal) - fs.flux_v
-        fs.flux_u_bdry = u.int*normal - fs.flux_u_bdry
-        fs.flux_v_bdry = dot(v.int, normal) - fs.flux_v_bdry
+        fs.flux_u_dbdry = u.int*normal - fs.flux_u_dbdry
+        fs.flux_v_dbdry = dot(v.int, normal) - fs.flux_v_dbdry
+        fs.flux_u_nbdry = u.int*normal - fs.flux_u_nbdry
+        fs.flux_v_nbdry = dot(v.int, normal) - fs.flux_v_nbdry
 
         return fs
 
-    def v(self, t, u):
-        from hedge.discretization import pair_with_boundary
+
+
+
+
+
+class StrongPoissonOperator(StrongLaplacianOperatorBase, operator.Operator(num.Float64)):
+    """Implements LDG according to
+
+    P. Castillo et al., 
+    Local discontinuous Galerkin methods for elliptic problems", 
+    Communications in Numerical Methods in Engineering 18, no. 1 (2002): 69-75.
+    """
+    def __init__(self, *args, **kwargs):
+        operator.Operator(num.Float64).__init__(self)
+        StrongLaplacianOperatorBase.__init__(self, *args, **kwargs)
+
+    # pylinear operator infrastructure ----------------------------------------
+    def size1(self):
+        return len(self.discr)
+
+    def size2(self):
+        return len(self.discr)
+
+    def apply(self, before, after):
+        after[:] = self.op(0, before)
+
+    # boundary conditions -----------------------------------------------------
+    def dirichlet_bc_u(self):
         from math import sqrt
 
-        dtag = self.dirichlet_tag
-        ntag = self.neumann_tag
+        def dir_bc_func(x):
+            return sqrt(self.coeff_func(x))*self.dirichlet_bc_func(0, x)
 
+        return self.discr.interpolate_boundary_function(dir_bc_func, self.dirichlet_tag)
 
-    def rhs(self, t, u):
-        from hedge.discretization import pair_with_boundary
+    def dirichlet_bc_v(self, sqrt_coeff_v):
+        return self.discr.boundarize_volume_field(sqrt_coeff_v, self.dirichlet_tag)
+
+    def neumann_bc_u(self, sqrt_coeff_u):
+        return self.discr.boundarize_volume_field(sqrt_coeff_u, self.neumann_tag)
+
+    def neumann_bc_v(self):
+        from pytools.arithmetic_container import work_with_arithmetic_containers
         from math import sqrt
-        from hedge.tools import dot
-        from pytools.arithmetic_container import \
-                work_with_arithmetic_containers, \
-                join_fields
 
         def neumann_bc_func(x):
             return sqrt(self.coeff_func(x))*self.neumann_bc_func(t, x)
+
+        ac_multiply = work_with_arithmetic_containers(num.multiply)
+
+        return ac_multiply(self.neumann_normals,
+                self.discr.interpolate_boundary_function(
+                    neumann_bc_func, self.neumann_tag))
+
+    # fluxes ------------------------------------------------------------------
+    def get_weak_flux_set(self, ldg):
+        fs = StrongLaplacianOperatorBase.get_weak_flux_set(self, ldg)
+
+        from hedge.flux import PenaltyTerm
+        from hedge.tools import dot
+
+        # apply stabilisation
+        u = fs.u
+        v = fs.v
+        normal = fs.normal
+
+        fs.flux_v -= PenaltyTerm() * (u.int - u.ext)
+
+        # boundary fluxes
+
+        fs.flux_u_dbdry = fs.normal * u.ext
+        fs.flux_v_dbdry = dot(v.int, normal) - PenaltyTerm()*(u.int - u.ext)
+
+        #fs.flux_u_nbdry = fs.normal * u.ext
+        #fs.flux_v_nbdry = dot(fs.normal, v.ext)
+
+        return fs
+
+    # operator application, rhs prep ------------------------------------------
+    def op(self, t, u):
+        from hedge.discretization import pair_with_boundary
+        from math import sqrt
+        from hedge.tools import dot
+        from pytools.arithmetic_container import join_fields
 
         dtag = self.dirichlet_tag
         ntag = self.neumann_tag
 
         sqrt_coeff_u = self.sqrt_coeff * u
 
-        dirichlet_bc_u = self.dirichlet_bc_u(t, sqrt_coeff_u)
-        neumann_bc_u = self.discr.boundarize_volume_field(sqrt_coeff_u, ntag)
+        #neumann_bc_u = self.neumann_bc_u(t, sqrt_coeff_u)
 
         v = self.m_inv * (
                 self.sqrt_coeff*(self.stiff * u)
                 - self.flux_u*sqrt_coeff_u
-                - self.flux_u_bdry*pair_with_boundary(sqrt_coeff_u, dirichlet_bc_u, dtag)
-                - self.flux_u_bdry*pair_with_boundary(sqrt_coeff_u, neumann_bc_u, ntag)
+                - self.flux_u_dbdry*pair_with_boundary(sqrt_coeff_u, self.dirichlet_zeros, dtag)
+                #- self.flux_u_nbdry*pair_with_boundary(sqrt_coeff_u, neumann_bc_u, ntag)
                 )
         sqrt_coeff_v = self.sqrt_coeff * v
 
-        ac_multiply = work_with_arithmetic_containers(num.multiply)
-
-        dirichlet_bc_v = self.discr.boundarize_volume_field(sqrt_coeff_v, dtag)
-
-        neumann_bc_v = (
-                -self.discr.boundarize_volume_field(sqrt_coeff_v, ntag)
-                +
-                2*ac_multiply(self.neumann_normals,
-                self.discr.interpolate_boundary_function(neumann_bc_func, ntag))
-                )
+        dirichlet_bc_v = self.dirichlet_bc_v(sqrt_coeff_v)
+        #neumann_bc_v = self.neumann_bc_v(t, sqrt_coeff_v)
 
         w = join_fields(sqrt_coeff_u, sqrt_coeff_v)
-        dirichlet_bc_w = join_fields(dirichlet_bc_u, dirichlet_bc_v)
-        neumann_bc_w = join_fields(neumann_bc_u, neumann_bc_v)
+        dirichlet_bc_w = join_fields(self.dirichlet_zeros, dirichlet_bc_v)
+        #neumann_bc_w = join_fields(neumann_bc_u, neumann_bc_v)
 
-        return  (
-                dot(self.stiff, self.sqrt_coeff*v)
+        return (
+                dot(self.stiff, sqrt_coeff_v)
                 - self.flux_v * w
-                - self.flux_v_bdry * pair_with_boundary(w, dirichlet_bc_w, dtag)
-                - self.flux_v_bdry * pair_with_boundary(w, neumann_bc_w, ntag)
+                - self.flux_v_dbdry * pair_with_boundary(w, dirichlet_bc_w, dtag)
+                #- self.flux_v_nbdry * pair_with_boundary(w, neumann_bc_w, ntag)
                 )
 
+    def prepare_rhs(self, rhs):
+        """Perform the rhs(*) function in the class description, i.e.
+        return a right hand side for the linear system op(u)=rhs(f).
+        
+        In matrix form, LDG looks like this:
+        
+        Mv = Cu + g
+        Mf = Av + Bu + h
 
+        where v is the auxiliary vector, u is the argument of the operator, f
+        is the result of the operator and g and h are inhom boundary data, and
+        A,B,C are some operator+lifting matrices
 
+        M f = A Minv(Cu + g) + Bu + h
 
+        so the linear system looks like
 
-class StrongPoissonOperator(StrongLaplacianOperatorBase):
-    def dirichlet_bc_u(self, t, sqrt_coeff_u):
-        from math import sqrt
+        M f = A Minv Cu + A Minv g + Bu + h
+        M f - A Minv g - h = (A Minv C + B)u
 
-        def dir_bc_func(x):
-            return sqrt(self.coeff_func(x))*self.dirichlet_bc_func(t, x)
+        So the right hand side we're putting together here is really
+
+        M f - A Minv g - h
+        """
+
+        from pytools.arithmetic_container import ArithmeticList 
+        from hedge.discretization import pair_with_boundary
+        from hedge.tools import dot
+        from pytools.arithmetic_container import join_fields
+
+        dim = self.discr.dimensions
 
         dtag = self.dirichlet_tag
-        return self.discr.interpolate_boundary_function(dir_bc_func, dtag)
+        ntag = self.neumann_tag
 
-    def get_weak_flux_set(self, ldg):
-        fs = StrongLaplacianOperatorBase.get_weak_flux_set(self, ldg)
+        vol_zeros = self.discr.volume_zeros()
+        dirichlet_bc_u = self.dirichlet_bc_u()
+        vpart = self.m_inv * (
+                -(self.flux_u_dbdry*pair_with_boundary(vol_zeros, dirichlet_bc_u, dtag))
+                #- self.flux_u_nbdry*pair_with_boundary(sqrt_coeff_u, neumann_bc_u, ntag)
+                )
+        sqrt_coeff_v = self.sqrt_coeff * vpart
 
-        from hedge.flux import PenaltyTerm
+        dirichlet_bc_v = ArithmeticList(self.dirichlet_zeros for i in range(dim))
+        #neumann_bc_v = self.neumann_bc_v(t, sqrt_coeff_v)
 
-        # apply stabilisation
-        u = fs.u
-        stab_term = 1 * PenaltyTerm() * (u.int - u.ext)
+        w = join_fields(vol_zeros, sqrt_coeff_v)
+        dirichlet_bc_w = join_fields(dirichlet_bc_u, dirichlet_bc_v)
+        #neumann_bc_w = join_fields(neumann_bc_u, neumann_bc_v)
 
-        fs.flux_v -= stab_term
-        fs.flux_v_bdry -= stab_term
-
-        return fs
-
+        return self.discr.mass_operator * rhs - (
+                dot(self.stiff, sqrt_coeff_v)
+                - self.flux_v * w
+                - self.flux_v_dbdry * pair_with_boundary(w, dirichlet_bc_w, dtag)
+                #- self.flux_v_nbdry * pair_with_boundary(w, neumann_bc_w, ntag)
+                )
 
 
 
@@ -292,5 +390,64 @@ class StrongHeatOperator(StrongLaplacianOperatorBase):
                 -self.discr.boundarize_volume_field(sqrt_coeff_u, dtag)
                 +2*self.discr.interpolate_boundary_function(dir_bc_func, dtag))
 
+    def dirichlet_bc_v(self, t, sqrt_coeff_v):
+        return self.discr.boundarize_volume_field(
+                sqrt_coeff_v, self.dirichlet_tag)
+
+    def neumann_bc_u(self, t, sqrt_coeff_u):
+        return self.discr.boundarize_volume_field(
+                sqrt_coeff_u, self.neumann_tag)
+
+    def neumann_bc_v(self, t, sqrt_coeff_v):
+        from pytools.arithmetic_container import work_with_arithmetic_containers
+        from math import sqrt
+
+        def neumann_bc_func(x):
+            return sqrt(self.coeff_func(x))*self.neumann_bc_func(t, x)
+
+        ntag = self.neumann_tag
+
+        ac_multiply = work_with_arithmetic_containers(num.multiply)
+
+        return (
+                -self.discr.boundarize_volume_field(sqrt_coeff_v, ntag)
+                +
+                2*ac_multiply(self.neumann_normals,
+                self.discr.interpolate_boundary_function(neumann_bc_func, ntag))
+                )
+
     def rhs(self, t, u):
-        return self.m_inv * StrongLaplacianOperatorBase.rhs(self, t, u)
+        from hedge.discretization import pair_with_boundary
+        from math import sqrt
+        from hedge.tools import dot
+        from pytools.arithmetic_container import join_fields
+
+        dtag = self.dirichlet_tag
+        ntag = self.neumann_tag
+
+        sqrt_coeff_u = self.sqrt_coeff * u
+
+        dirichlet_bc_u = self.dirichlet_bc_u(t, sqrt_coeff_u)
+        neumann_bc_u = self.neumann_bc_u(t, sqrt_coeff_u)
+
+        v = self.m_inv * (
+                self.sqrt_coeff*(self.stiff * u)
+                - self.flux_u*sqrt_coeff_u
+                - self.flux_u_dbdry*pair_with_boundary(sqrt_coeff_u, dirichlet_bc_u, dtag)
+                - self.flux_u_nbdry*pair_with_boundary(sqrt_coeff_u, neumann_bc_u, ntag)
+                )
+        sqrt_coeff_v = self.sqrt_coeff * v
+
+        dirichlet_bc_v = self.dirichlet_bc_v(t, sqrt_coeff_v)
+        neumann_bc_v = self.neumann_bc_v(t, sqrt_coeff_v)
+
+        w = join_fields(sqrt_coeff_u, sqrt_coeff_v)
+        dirichlet_bc_w = join_fields(dirichlet_bc_u, dirichlet_bc_v)
+        neumann_bc_w = join_fields(neumann_bc_u, neumann_bc_v)
+
+        return self.m_inv * (
+                dot(self.stiff, self.sqrt_coeff*v)
+                - self.flux_v * w
+                - self.flux_v_dbdry * pair_with_boundary(w, dirichlet_bc_w, dtag)
+                - self.flux_v_nbdry * pair_with_boundary(w, neumann_bc_w, ntag)
+                )

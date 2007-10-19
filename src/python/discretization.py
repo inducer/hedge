@@ -19,6 +19,7 @@
 
 import pylinear.array as num
 import pylinear.computation as comp
+import pylinear.operator as operator
 from pytools.arithmetic_container import \
         work_with_arithmetic_containers, \
         ArithmeticList
@@ -698,10 +699,34 @@ def check_bc_coverage(discr, bc_tags):
 
 
 
+# pylinear operator wrapper ---------------------------------------------------
+class PylinearOperator(operator.Operator(num.Float64)):
+    def __init__(self,  discr_op):
+        operator.Operator(num.Float64).__init__(self)
+        self.discr_op = discr_op
+
+    def size1(self):
+        return len(self.discr_op.discr)
+
+    def size2(self):
+        return len(self.discr_op.discr)
+
+    def apply(self, before, after):
+        after[:] = self.discr_op.__mul__(before)
+
+
+
+
+
 # local operators -------------------------------------------------------------
-class _DifferentiationOperator(object):
-    def __init__(self, discr, coordinate, perform_func):
+class _DiscretizationVectorOperator(object):
+    def __init__(self, discr):
         self.discr = discr
+
+class _DifferentiationOperator(_DiscretizationVectorOperator):
+    def __init__(self, discr, coordinate, perform_func):
+        _DiscretizationVectorOperator.__init__(self, discr)
+
         self.coordinate = coordinate
         self.perform_func = perform_func
 
@@ -720,9 +745,9 @@ class _DifferentiationOperator(object):
         self.perform_func(self.coordinate, MatrixTarget(bmatrix))
         return num.asarray(bmatrix, flavor=num.SparseExecuteMatrix)
 
-class _DiscretizationMethodOperator(object):
+class _DiscretizationMethodOperator(_DiscretizationVectorOperator):
     def __init__(self, discr, perform_func):
-        self.discr = discr
+        _DiscretizationVectorOperator.__init__(self, discr)
         self.perform_func = perform_func
 
     @work_with_arithmetic_containers
@@ -743,9 +768,9 @@ class _DiscretizationMethodOperator(object):
 
 
 # flux operators --------------------------------------------------------------
-class _DirectFluxOperator(object):
+class _DirectFluxOperator(_DiscretizationVectorOperator):
     def __init__(self, discr, flux):
-        self.discr = discr
+        _DiscretizationVectorOperator.__init__(self, discr)
         self.flux = flux
 
     def __mul__(self, field):
@@ -776,11 +801,12 @@ class _DirectFluxOperator(object):
 
 
 
-class _FluxMatrixOperator(object):
+class _FluxMatrixOperator(_DiscretizationVectorOperator):
     def __init__(self, discr, flux):
+        _DiscretizationVectorOperator.__init__(self, discr)
+
         from hedge._internal import MatrixTarget
 
-        self.discr = discr
         self.flux = flux
 
         self.inner_matrices = {}

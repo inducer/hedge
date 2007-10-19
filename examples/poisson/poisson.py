@@ -95,8 +95,8 @@ def main() :
 
     import pymbolic
     v_x = pymbolic.var("x")
-    #sol = pymbolic.parse("math.sin(x[0]**2*x[1]**2)")
-    sol = pymbolic.parse("(x[0]**2+-0.25)*(x[1]**2+-0.25)")
+    sol = pymbolic.parse("math.sin(x[0]**2*x[1]**2)")
+    #sol = pymbolic.parse("(x[0]**2+-0.25)*(x[1]**2+-0.25)")
     sol_c = pymbolic.compile(sol, variables=["x"])
     rhs = pymbolic.simplify(pymbolic.laplace(sol, [v_x[0], v_x[1]]))
     rhs_c = pymbolic.compile(rhs, variables=["x"])
@@ -112,40 +112,31 @@ def main() :
             ldg=False
             )
 
-    #return
-
-    class StiffnessOperator(operator.Operator(num.Float64)):
-        def size1(self):
-            return len(discr)
-
-        def size2(self):
-            return len(discr)
-
-        def apply(self, before, after):
-            after[:] = -op.rhs(0, before)
-
-    class MassOperator(operator.Operator(num.Float64)):
-        def size1(self):
-            return len(discr)
-
-        def size2(self):
-            return len(discr)
-
-        def apply(self, before, after):
-            after[:] = discr.mass_operator * before
-
-
     def l2_norm(v):
         return sqrt(v*(discr.mass_operator*v))
 
+    def matrix_rep(op):
+        h,w = op.shape
+        mat = num.zeros(op.shape)
+        for j in range(w):
+            mat[:,j] = op(num.unit_vector(w, j))
+        return mat
+
     if False:
-        results = comp.operator_eigenvectors(StiffnessOperator(), 20, MassOperator(),
+        mat = matrix_rep(op)
+        print comp.norm_frobenius(mat-mat.T)
+        print comp.eigenvalues(mat)
+        print mat.shape
+    
+    if False:
+        results = comp.operator_eigenvectors(-op, 20, discr.mass_operator,
                 which=comp.SMALLEST_MAGNITUDE
                 )
         scalars = []
         for i, (value,vector) in enumerate(results):
             print i, value, l2_norm(vector.real)
             scalars.append(("ev%d" % i, vector.real))
+        print 
 
         visf = vis.make_file("eigenvectors")
         vis.add_data(visf, scalars)
@@ -155,17 +146,17 @@ def main() :
     sol_v = discr.interpolate_volume_function(sol_c)
     rhs_v = discr.interpolate_volume_function(rhs_c)
 
-    a_inv = operator.BiCGSTABOperator.make(StiffnessOperator(), 40000, 1e-10)
-    #a_inv = operator.CGOperator.make(StiffnessOperator(), 4000, 1e-10)
+    #a_inv = operator.BiCGSTABOperator.make(StiffnessOperator(), 40000, 1e-10)
+    a_inv = operator.CGOperator.make(-op, 4000, 1e-10)
     a_inv.debug_level = 1
 
-    u = -a_inv(discr.mass_operator * rhs_v)
+    u = -a_inv(op.prepare_rhs(rhs_v))
 
     visf = vis.make_file("fld")
     vis.add_data(visf, [
         ("sol", u), 
         ("truesol", sol_v), 
-        ("rhs2", discr.inverse_mass_operator* op.rhs(0, sol_v)), 
+        ("rhs2", discr.inverse_mass_operator* op(sol_v)), 
         ("rhs", rhs_v), 
         ])
     visf.close()

@@ -75,7 +75,7 @@ def main() :
     stepper = RK4TimeStepper()
     vis = VtkVisualizer(discr, pcon, "fld")
 
-    dt = discr.dt_factor(1)**2/5
+    dt = discr.dt_factor(1)**2 / 5
     nsteps = int(1/dt)
     if pcon.is_head_rank:
         print "dt", dt
@@ -102,10 +102,10 @@ def main() :
 
     op = StrongHeatOperator(discr, 
             #coeff=coeff,
-            dirichlet_tag=None,
+            dirichlet_tag="dirichlet",
             dirichlet_bc=dirichlet_bc,
-            neumann_tag="garnix", 
-            #neumann_bc=neumann_bc
+            neumann_tag="neumann", 
+            neumann_bc=neumann_bc
             )
     u = discr.interpolate_volume_function(u0)
 

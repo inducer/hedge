@@ -79,7 +79,7 @@ def main() :
     from hedge.element import \
             TriangularElement, \
             TetrahedralElement
-    from hedge.timestep import RK4TimeStepper
+    from hedge.timestep import RK4TimeStepper, AdamsBashforthTimeStepper
     from hedge.mesh import \
             make_disk_mesh, \
             make_regular_square_mesh, \
@@ -115,8 +115,9 @@ def main() :
     else:
         mesh_data = pcon.receive_mesh()
 
-    discr = pcon.make_discretization(mesh_data, el_class(7))
+    discr = pcon.make_discretization(mesh_data, el_class(3))
     stepper = RK4TimeStepper()
+    #stepper = AdamsBashforthTimeStepper(1)
     vis = VtkVisualizer(discr, pcon, "fld")
 
     dt = discr.dt_factor(1)
