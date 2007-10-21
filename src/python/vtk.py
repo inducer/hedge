@@ -1,18 +1,21 @@
-# Hedge - the Hybrid'n'Easy DG Environment
-# Copyright (C) 2007 Andreas Kloeckner
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+"""Generic support for new-style (XML) VTK visualization data files."""
+
+__copyright__ = "Copyright (C) 2007 Andreas Kloeckner"
+
+__license__ = """
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see U{http://www.gnu.org/licenses/}.
+"""
 
 
 
@@ -56,7 +59,7 @@ VF_INTERLEAVED = 2 # [[x0,x1,y0,y1,z0,z1]
 
 
 # Ah, the joys of home-baked non-compliant XML goodness.
-class XMLElementBase:
+class XMLElementBase(object):
     def __init__(self):
         self.children = []
 
@@ -117,7 +120,7 @@ class XMLRoot(XMLElementBase):
 
 
 
-class DataArray:
+class DataArray(object):
     def __init__(self, name, container, typehint=None, vector_padding=3, 
             vector_format=VF_LIST_OF_COMPONENTS, components=None):
         self.name = name
@@ -206,7 +209,7 @@ class DataArray:
 
 
 
-class UnstructuredGrid:
+class UnstructuredGrid(object):
     def __init__(self, points, cells, cell_types):
         self.point_count = len(points)
         self.cell_count = len(cells)
@@ -271,7 +274,7 @@ def make_vtkfile(filetype, compressor):
 
 
 
-class XMLGenerator:
+class XMLGenerator(object):
     def __init__(self, compressor=None):
         if compressor == "zlib":
             try:

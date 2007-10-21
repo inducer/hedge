@@ -1,18 +1,21 @@
-# Hedge - the Hybrid'n'Easy DG Environment
-# Copyright (C) 2007 Andreas Kloeckner
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+"""Visualization for global DG functions. Supports VTK, Silo, etc."""
+
+__copyright__ = "Copyright (C) 2007 Andreas Kloeckner"
+
+__license__ = """
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see U{http://www.gnu.org/licenses/}.
+"""
 
 
 
@@ -34,7 +37,7 @@ def _three_vector(x):
 
 
 
-class LegacyVtkFile:
+class LegacyVtkFile(object):
     def __init__(self, pathname, structure, description="Hedge visualization"):
         self.pathname = pathname
         self.structure = structure
@@ -64,7 +67,7 @@ class LegacyVtkFile:
 
 
 
-class LegacyVtkVisualizer:
+class LegacyVtkVisualizer(object):
     def __init__(self, discr):
         from pyvtk import PolyData
 
@@ -281,7 +284,7 @@ class VtkVisualizer(hedge.tools.Closable):
 
 
 # silo ------------------------------------------------------------------------
-class SiloMeshData:
+class SiloMeshData(object):
     def __init__(self, dim, points, element_groups):
         from pytools import flatten
 
@@ -315,7 +318,7 @@ class SiloMeshData:
 
 
 
-class SiloVisualizer:
+class SiloVisualizer(object):
     def __init__(self, discr, pcontext=None):
         def generate_fine_elements(eg):
             ldis = eg.local_discretization

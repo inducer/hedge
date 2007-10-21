@@ -1,23 +1,27 @@
-# Hedge - the Hybrid'n'Easy DG Environment
-# Copyright (C) 2007 Andreas Kloeckner
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
-
-
+"""Mesh topology representation."""
 
 from __future__ import division
+
+__copyright__ = "Copyright (C) 2007 Andreas Kloeckner"
+
+__license__ = """
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see U{http://www.gnu.org/licenses/}.
+"""
+
+
+
+
 import pylinear.array as num
 import pylinear.computation as comp
 
@@ -30,8 +34,12 @@ REORDER_CMK = 1
 
 
 
-class TAG_NONE: pass
-class TAG_ALL: pass
+class TAG_NONE(object): 
+    """A boundary or volume tag representing an empty boundary or volume."""
+    pass
+class TAG_ALL(object): 
+    """A boundary or volume tag representing the entire boundary or volume."""
+    pass
 
 
 
@@ -193,39 +201,31 @@ class Tetrahedron(SimplicialElement):
 
 
 
-class Mesh:
+class Mesh(object):
     """Information about the geometry and connectivity of a finite
     element mesh. (Note: no information about the discretization
     is stored here.)
 
-    After construction, a Mesh instance has (at least) the following data 
-    members:
+    @ivar points: list of Pylinear vectors of node coordinates
+    @ivar elements: list of Element instances
+    @ivar interfaces: a list of pairs::
 
-    * points: list of Pylinear vectors of node coordinates
-
-    * elements: list of Element instances
-
-    * interfaces: a list of pairs 
-
-        ((element instance 1, face index 1), (element instance 2, face index 2))
+          ((element instance 1, face index 1), (element instance 2, face index 2))
 
       enumerating elements bordering one another.  The relation "element 1 touches 
       element 2" is always reflexive, but this list will only contain one entry
       per element pair.
-
-    * tag_to_boundary: a mapping of the form
-      boundary_tag -> [(element instance, face index)])
+    @ivar tag_to_boundary: a mapping of the form::
+          boundary_tag -> [(element instance, face index)])
 
       The boundary tag TAG_NONE always refers to an empty boundary.
       The boundary tag TAG_ALL always refers to the entire boundary.
-
-    * tag_to_elements: a mapping of the form
+    @ivar tag_to_elements: a mapping of the form
       element_tag -> [element instances]
 
       The boundary tag TAG_NONE always refers to an empty domain.
       The boundary tag TAG_ALL always refers to the entire domain.
-
-    * periodicity: A list of tuples (minus_tag, plus_tag) or None
+    @ivar periodicity: A list of tuples (minus_tag, plus_tag) or None
       indicating the tags of the boundaries to be matched together
       as periodic. There is one tuple per axis, so that for example
       a 3D mesh has three tuples.
@@ -269,41 +269,36 @@ class ConformalMesh(Mesh):
     """
 
     def __init__(self, points, elements, 
-            boundary_tagger=lambda fvi, el, fn: [], 
-            element_tagger=lambda el: [],
+            boundary_tagger=(lambda fvi, el, fn: []), 
+            element_tagger=(lambda el: []),
             periodicity=None,
-            _is_rankbdry_face=lambda (el, face): False,
+            _is_rankbdry_face=(lambda (el, face): False),
             ):
         """Construct a simplical mesh.
-
-        points is an iterable of vertex coordinates, given as vectors.
-
-        elements is an iterable of tuples of indices into points,
-          giving element endpoints.
-
-        boundary_tagger is a function that takes the arguments
-          (set_of_face_vertex_indices, element, face_number)
-          It returns a list of tags that apply to this surface.
-
-        element_tagger is a function that takes the arguments
-          (element) and returns the a list of tags that apply
-          to that element.
-
-        periodicity is either None or is a list of tuples
-          just like the one documented for the `periodicity'
-          member of class Mesh.
-
-        _is_rankbdry_face is an implementation detail and
-          should not be used from user code. It is a function
-          returning whether a given face identified by 
-          (element instance, face_nr) is cut by a parallel
-          mesh partition.
 
         Tags beginning with the string "hedge" are reserved for internal
         use.
 
         Face indices follow the convention for the respective element,
         such as Triangle or Tetrahedron, in this module.
+
+        @param points: an iterable of vertex coordinates, given as vectors.
+        @param elements: an iterable of tuples of indices into points,
+          giving element endpoints.
+        @param boundary_tagger: a function that takes the arguments
+          C{(set_of_face_vertex_indices, element, face_number)}
+          It returns a list of tags that apply to this surface.
+        @param element_tagger: a function that takes the arguments
+          (element) and returns the a list of tags that apply
+          to that element.
+        @param periodicity: either None or is a list of tuples
+          just like the one documented for the `periodicity'
+          member of class Mesh.
+        @param _is_rankbdry_face: an implementation detail, 
+          should not be used from user code. It is a function
+          returning whether a given face identified by 
+          C{(element instance, face_nr)} is cut by a parallel
+          mesh partition.
         """
         if len(points) == 0:
             raise ValueError, "mesh contains no points"
@@ -465,10 +460,12 @@ class ConformalMesh(Mesh):
 
 
 def check_bc_coverage(mesh, bc_tags):
-    """Given a list of boundary tags as `bc_tags', this function verifies
+    """Verify complete boundary condition coverage.
+    
+    Given a list of boundary tags as C{bc_tags}, this function verifies
     that
-    a) the union of all these boundaries gives the complete boundary,
-    b) all these boundaries are disjoint.
+        1. the union of all these boundaries gives the complete boundary,
+        2. all these boundaries are disjoint.
     """
 
     entire_bdry = set(mesh.tag_to_boundary[TAG_ALL])
@@ -491,7 +488,7 @@ def check_bc_coverage(mesh, bc_tags):
 
 
 def make_single_element_mesh(a=-0.5, b=0.5, 
-        boundary_tagger=lambda vertices, face_indices: []):
+        boundary_tagger=(lambda vertices, face_indices: [])):
     n = 2
     node_dict = {}
     points = []
@@ -523,7 +520,7 @@ def make_single_element_mesh(a=-0.5, b=0.5,
 
 
 def make_regular_square_mesh(a=-0.5, b=0.5, n=5, periodicity=None,
-        boundary_tagger=lambda fvi, el, fn: []):
+        boundary_tagger=(lambda fvi, el, fn: [])):
     """Create a regular square mesh.
 
     `periodicity is either None, or a tuple of bools specifying whether
@@ -582,7 +579,7 @@ def make_regular_square_mesh(a=-0.5, b=0.5, n=5, periodicity=None,
 
 
 def make_square_mesh(a=-0.5, b=0.5, max_area=4e-3, 
-        boundary_tagger=lambda fvi, el, fn: []):
+        boundary_tagger=(lambda fvi, el, fn: [])):
     def round_trip_connect(start, end):
         for i in range(start, end):
             yield i, i+1
@@ -613,7 +610,7 @@ def make_square_mesh(a=-0.5, b=0.5, max_area=4e-3,
 
 
 def make_disk_mesh(r=0.5, faces=50, max_area=4e-3, 
-        boundary_tagger=lambda fvi, el, fn: []):
+        boundary_tagger=(lambda fvi, el, fn: [])):
     from math import cos, sin, pi
 
     def round_trip_connect(start, end):
@@ -647,7 +644,7 @@ def make_disk_mesh(r=0.5, faces=50, max_area=4e-3,
 
 
 def make_ball_mesh(r=0.5, subdivisions=10, max_volume=None,
-        boundary_tagger=lambda fvi, el, fn: []):
+        boundary_tagger=(lambda fvi, el, fn: [])):
     from math import pi, cos, sin
     from meshpy.tet import MeshInfo, build, generate_surface_of_revolution,\
             EXT_OPEN
@@ -730,7 +727,7 @@ def _make_z_periodic_mesh(points, facets, tags, height,
 
 def make_cylinder_mesh(radius=0.5, height=1, radial_subdivisions=10, 
         height_subdivisions=1, max_volume=None, periodic=False,
-        boundary_tagger=lambda fvi, el, fn: []):
+        boundary_tagger=(lambda fvi, el, fn: [])):
     from math import pi, cos, sin
     from meshpy.tet import MeshInfo, build, generate_surface_of_revolution, \
             EXT_OPEN
@@ -771,7 +768,7 @@ def make_cylinder_mesh(radius=0.5, height=1, radial_subdivisions=10,
 
 
 def make_box_mesh(dimensions=(1,1,1), max_volume=None, periodicity=None,
-        boundary_tagger=lambda fvi, el, fn: []):
+        boundary_tagger=(lambda fvi, el, fn: [])):
     """Return a mesh for a brick from the origin to `dimensions'.
 
     `max_volume' specifies the maximum volume for each tetrahedron.

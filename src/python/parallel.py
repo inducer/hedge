@@ -1,18 +1,22 @@
-# Hedge - the Hybrid'n'Easy DG Environment
-# Copyright (C) 2007 Andreas Kloeckner
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+"""Parallelism support"""
+
+__copyright__ = "Copyright (C) 2007 Andreas Kloeckner"
+
+__license__ = """
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see U{http://www.gnu.org/licenses/}.
+"""
+
 
 
 
@@ -26,7 +30,7 @@ import hedge.mesh
 
 
 
-class ParallelizationContext:
+class ParallelizationContext(object):
     @property
     def rank(self):
         raise NotImplementedError
@@ -50,17 +54,17 @@ class ParallelizationContext:
         many parts, distributing over the first `partition' ranks.
 
         If partition is None, act as if partition was the integer corresponding
-        to the current number of processors on the job.
+        to the current number of ranks on the job.
 
         If partition is not an integer, it must be a mapping from element number to 
         rank. (A list or tuple of rank numbers will do, for example, or so will
         a full-blown dict.)
 
-        Returns
-          (local_mesh_chunk,
-           global2local_element,
-           global2local_vertex_indices,
-           [rank numbers with shared element interfaces]).
+        Returns a mesh chunk.
+
+        We deliberately do not define the term `mesh chunk'. The return value
+        of this function is to be treated as opaque by the user, only to be
+        used as an argument to L{make_discretization}().
 
         This routine may only be invoked on the head rank.
         """
@@ -68,12 +72,12 @@ class ParallelizationContext:
 
     def receive_mesh(self):
         """Wait for a mesh chunk to be sent by the head rank.
-        
-        Returns
-          (local_mesh_chunk,
-           global2local_element,
-           global2local_vertex_indices,
-           [rank numbers with shared element interfaces]).
+
+        We deliberately do not define the term `mesh chunk'. The return value
+        of this function is to be treated as opaque by the user, only to be
+        used as an argument to L{make_discretization}().
+
+        This routine should only be invoked on non-head ranks.
         """
 
         raise NotImplementedError

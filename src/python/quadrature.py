@@ -1,23 +1,27 @@
-# Hedge - the Hybrid'n'Easy DG Environment
-# Copyright (C) 2007 Andreas Kloeckner
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
-
-
+"""1D quadrature for Jacobi polynomials. Grundmann-Moeller cubature on the simplex."""
 
 from __future__ import division
+
+__copyright__ = "Copyright (C) 2007 Andreas Kloeckner"
+
+__license__ = """
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see U{http://www.gnu.org/licenses/}.
+"""
+
+
+
+
 import pylinear.array as num
 import pylinear.computation as comp
 
@@ -31,7 +35,7 @@ def legendre_gauss_quadrature(N):
 
 
 def jacobi_gauss_lobatto_points(alpha, beta, N):
-    """Compute the N'th order Gauss-Lobatto quadrature
+    """Compute the M{N}th order Gauss-Lobatto quadrature
     points, x, associated with the Jacobi polynomial,
     of type (alpha,beta) > -1 ( <> -0.5).
     """
@@ -52,7 +56,7 @@ def jacobi_gauss_lobatto_points(alpha, beta, N):
 
 
 def legendre_gauss_lobatto_points(N):
-    """Compute the N'th order Gauss-Lobatto quadrature
+    """Compute the M{N}th order Gauss-Lobatto quadrature
     points, x, associated with the Legendre polynomials.
     """
     return jacobi_gauss_lobatto_points(0, 0, N)
@@ -60,8 +64,8 @@ def legendre_gauss_lobatto_points(N):
 
 
 
-class Quadrature:
-    """A quadrature rule."""
+class Quadrature(object):
+    """An abstract quadrature rule."""
     def __init__(self, points, weights):
         self.weights = weights
         self.points = points
@@ -75,8 +79,10 @@ class Quadrature:
 
 
 class JacobiGaussQuadrature(Quadrature):
-    """An N'th order Gauss quadrature associated with the Jacobi
-    polynomials of type (alpha,beta) > -1 ( <> -0.5).
+    """An M{N}th order Gauss quadrature associated with the Jacobi
+    polynomials of type M{(alpha,beta) > -1} 
+    
+    C{alpha} and C{beta} may not be -0.5.
     """
     def __init__(self, alpha, beta, N):
         x, w = self.compute_weights_and_nodes(N, alpha, beta)
@@ -151,12 +157,8 @@ class JacobiGaussQuadrature(Quadrature):
 
             
 
-
-
-
-
 class LegendreGaussQuadrature(JacobiGaussQuadrature):
-    """An N'th order Gauss quadrature associated with the Legendre polynomials.
+    """An M{N}th order Gauss quadrature associated with the Legendre polynomials.
     """
     def __init__(self, N):
         JacobiGaussQuadrature.__init__(self, 0, 0, N)
@@ -165,7 +167,7 @@ class LegendreGaussQuadrature(JacobiGaussQuadrature):
 
 
 class TransformedQuadrature(Quadrature):
-    """A quadrature rule on an arbitrary interval. """
+    """A quadrature rule on an arbitrary interval M{(a,b)}. """
 
     def __init__(self, quad, left, right):
         """Transform a given quadrature rule `quad' onto an arbitrary
@@ -222,8 +224,8 @@ def _simplify_fraction((a, b)):
 
 
 
-class SimplexCubature:
-    """Cubature on an n-simplex.
+class SimplexCubature(object):
+    """Cubature on an M{n}-simplex.
 
     cf.
     A. Grundmann and H.M. Moeller,  

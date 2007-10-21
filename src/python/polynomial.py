@@ -1,23 +1,28 @@
-# Hedge - the Hybrid'n'Easy DG Environment
-# Copyright (C) 2007 Andreas Kloeckner
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
-
-
+"""Jacobi polynomials and Vandermonde matrices."""
 
 from __future__ import division
+
+__copyright__ = "Copyright (C) 2007 Andreas Kloeckner"
+
+__license__ = """
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see U{http://www.gnu.org/licenses/}.
+"""
+
+
+
+
+
 import pylinear.array as num
 from pytools import memoize
 import hedge._internal
@@ -31,7 +36,7 @@ DiffJacobiFunction = hedge._internal.DiffJacobiPolynomial
 
 
 
-class diff_jacobi_function_2:
+class diff_jacobi_function_2(object):
     def __init__(self, alpha, beta, N):
         from math import sqrt
         if N == 0:
@@ -59,9 +64,11 @@ class DiffLegendreFunction(JacobiFunction):
 
 
 def generic_vandermonde(points, functions):
-    """Return a Vandermonde matrix
-      V[i,j] := f[j](x[i])
-    where functions=[f[j] for j] and points=[x[i] for i].
+    """Return a Vandermonde matrix.
+
+    The Vandermonde Matrix is given by M{V_{i,j} := f_j(x_i)}
+    where C{functions} is the list of M{f_j} and points is 
+    the list of M{x_i}.
     """
     v = num.zeros((len(points), len(functions)))
     for i, x in enumerate(points):
@@ -74,10 +81,13 @@ def generic_vandermonde(points, functions):
 
 def generic_multi_vandermonde(points, functions):
     """Return multiple Vandermonde matrices.
-      V[i,j] := f[j](x[i])
-    where functions=[f[j] for j] and points=[x[i] for i].
-    The functions `f' are multi-valued, one matrix is returned
-    for each return value.
+
+    The Vandermonde Matrix is given by M{V_{i,j} := f_j(x_i)}
+    where C{functions} is the list of M{f_j} and points is 
+    the list of M{x_i}.
+
+    The functions M{f_j} are multi-valued (i.e. return iterables), and one 
+    matrix is returned for each return value.
     """
     count = len(functions[0](points[0]))
     result = [num.zeros((len(points), len(functions))) for n in range(count)]

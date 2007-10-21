@@ -1,23 +1,23 @@
-# Hedge - the Hybrid'n'Easy DG Environment
-# Copyright (C) 2007 Andreas Kloeckner
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
-
-
+"""ODE solvers: timestepping support, such as Runge-Kutta, Adams-Bashforth, etc."""
 
 from __future__ import division
+
+__copyright__ = "Copyright (C) 2007 Andreas Kloeckner"
+
+__license__ = """
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see U{http://www.gnu.org/licenses/}.
+"""
 
 
 
@@ -60,7 +60,7 @@ _ABCoefficients = [
 
 
 
-class RK4TimeStepper:
+class RK4TimeStepper(object):
     def __call__(self, y, t, dt, rhs):
         try:
             self.residual
@@ -76,7 +76,7 @@ class RK4TimeStepper:
 
 
 
-class AdamsBashforthTimeStepper:
+class AdamsBashforthTimeStepper(object):
     def __init__(self, order, startup_stepper=RK4TimeStepper()):
         if order < 1:
             raise ValueError, "unsupported order in Adams-Bashforth"

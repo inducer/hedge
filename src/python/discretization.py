@@ -1,18 +1,21 @@
-# Hedge - the Hybrid'n'Easy DG Environment
-# Copyright (C) 2007 Andreas Kloeckner
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+"""Global function space discretization."""
+
+__copyright__ = "Copyright (C) 2007 Andreas Kloeckner"
+
+__license__ = """
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see U{http://www.gnu.org/licenses/}.
+"""
 
 
 
@@ -31,27 +34,26 @@ import hedge.mesh
 class _ElementGroup(object):
     """Once fully filled, this structure has the following data members:
 
-    - members: a list of hedge.mesh.Element instances in this group.-----------
-    - local_discretization: an instance of hedge.element.Element.
-    - ranges: a list of (start, end) tuples indicating the DOF numbers for
+    @ivar members: a list of hedge.mesh.Element instances in this group.
+    @ivar local_discretization: an instance of hedge.element.Element.
+    @ivar ranges: a list of C{(start, end)} tuples indicating the DOF numbers for
       each element. Note: This is actually a C++ ElementRanges object.
-
-    - mass_matrix
-    - inverse_mass_matrix
-    - differentiation_matrices: local differentiation matrices, i.e.
-      differentiation by r, s, t, ....
-    - stiffness_matrices
-    - jacobians
-    - inverse_jacobians
-    - diff_coefficients: a (d,d)-matrix of coefficient vectors to turn
-      (r,s,t)-differentiation into (x,y,z).
+    @ivar mass_matrix: The element-local mass matrix M{M}.
+    @ivar inverse_mass_matrix: the element-local inverese mass matrix M{M^{-1}}.
+    @ivar differentiation_matrices: local differentiation matrices M{D_r, D_s, D_t}, 
+      i.e.  differentiation by M{r, s, t, ....}.
+    @ivar stiffness_matrices: the element-local stiffness matrices M{M*D_r, M*D_s,...}.
+    @ivar jacobians: list of jacobians over all elements
+    @ivar inverse_jacobians: inverses of L{jacobians}.
+    @ivar diff_coefficients: a M{(d,d)}-matrix of coefficient vectors to turn
+      M{(r,s,t)}-differentiation into M{(x,y,z)}.
     """
     pass
 
 
 
 
-class _Boundary:
+class _Boundary(object):
     def __init__(self, nodes, ranges, index_map, face_groups_and_ldis):
         self.nodes = nodes
         self.ranges = ranges
@@ -61,7 +63,7 @@ class _Boundary:
 
 
 
-class Discretization:
+class Discretization(object):
     def __init__(self, mesh, local_discretization, 
             reorder=hedge.mesh.REORDER_CMK):
         self.mesh = mesh
@@ -442,7 +444,7 @@ class Discretization:
     # inner flux computation --------------------------------------------------
     def perform_inner_flux(self, int_flux, ext_flux, target):
         """Perform fluxes in the interior of the domain on the 
-        given operator target.  This performs the contribution
+        given operator target.  This performs the contribution::
 
           M_{i,j} := \sum_{interior faces f} \int_f
             (  
@@ -456,7 +458,7 @@ class Discretization:
         opposite from node j on the face opposite f.
 
         Thus the matrix product M*u, where u is the full volume field
-        results in 
+        results in::
 
           v_i := M_{i,j} u_j
             = \sum_{interior faces f} \int_f
@@ -641,7 +643,14 @@ class Discretization:
 
 
 # random utilities ------------------------------------------------------------
-class SymmetryMap:
+class SymmetryMap(object):
+    """A symmetry map on global DG functions.
+
+    Suppose that the L{Mesh} on which a L{Discretization} is defined has
+    is mapped onto itself by a nontrivial symmetry map M{f(.)}. Then
+    this class allows you to carry out this map on vectors representing
+    functions on this L{Discretization}.
+    """
     def __init__(self, discr, sym_map, element_map, threshold=1e-13):
         self.discretization = discr
 
@@ -911,7 +920,12 @@ class _VectorFluxOperator(object):
 
 
 # boundary treatment ----------------------------------------------------------
-class BoundaryPair:
+class BoundaryPair(object):
+    """Represents a pairing of a volume and a boundary field, used for the
+    application of boundary fluxes.
+
+    Do not use class constructor. Use L{pair_with_boundary}() instead.
+    """
     def __init__(self, field, bfield, tag):
         self.field = field
         self.bfield = bfield
@@ -921,6 +935,11 @@ class BoundaryPair:
 
 
 def pair_with_boundary(field, bfield, tag=hedge.mesh.TAG_ALL):
+    """Create a L{BoundaryPair} out of the volume field C{field}
+    and the boundary field C{field}.
+
+    Accepts ArithmeticList or 0 for either argument.
+    """
     if isinstance(field, ArithmeticList):
         assert isinstance(bfield, ArithmeticList)
         return ArithmeticList([

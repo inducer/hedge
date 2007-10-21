@@ -1,23 +1,28 @@
-# Hedge - the Hybrid'n'Easy DG Environment
-# Copyright (C) 2007 Andreas Kloeckner
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
-
-
+"""Canned operators for several PDEs, such as Maxwell's, heat, Poisson, etc."""
 
 from __future__ import division
+
+__copyright__ = "Copyright (C) 2007 Andreas Kloeckner"
+
+__license__ = """
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see U{http://www.gnu.org/licenses/}.
+"""
+
+
+
+
+
 import pylinear.array as num
 import pylinear.operator as operator
 import hedge.mesh
@@ -25,7 +30,7 @@ import hedge.mesh
 
 
 
-class MaxwellOperator:
+class MaxwellOperator(object):
     """A 3D Maxwell operator with PEC boundaries.
 
     Field order is [Ex Ey Ez Hx Hy Hz].
@@ -107,7 +112,7 @@ class MaxwellOperator:
 
 
 
-class LaplacianOperatorBase:
+class LaplacianOperatorBase(object):
     def get_weak_flux_set(self, ldg):
         class FluxSet: pass
         fs = FluxSet()
@@ -172,8 +177,6 @@ class LaplacianOperatorBase:
 
 
 
-
-
 class WeakPoissonOperator(operator.Operator(num.Float64)):
     """Implements LDG according to
 
@@ -181,9 +184,9 @@ class WeakPoissonOperator(operator.Operator(num.Float64)):
     Local discontinuous Galerkin methods for elliptic problems", 
     Communications in Numerical Methods in Engineering 18, no. 1 (2002): 69-75.
     """
-    def __init__(self, discr, coeff=lambda x: 1, 
-            dirichlet_bc=lambda x, t: 0, dirichlet_tag="dirichlet",
-            neumann_bc=lambda x, t: 0, neumann_tag="neumann",
+    def __init__(self, discr, coeff=(lambda x: 1), 
+            dirichlet_bc=(lambda x, t: 0), dirichlet_tag="dirichlet",
+            neumann_bc=(lambda x, t: 0), neumann_tag="neumann",
             ldg=True):
         operator.Operator(num.Float64).__init__(self)
 
@@ -389,8 +392,8 @@ class WeakPoissonOperator(operator.Operator(num.Float64)):
 
 class StrongHeatOperator(LaplacianOperatorBase):
     def __init__(self, discr, coeff=lambda x: 1, 
-            dirichlet_bc=lambda x, t: 0, dirichlet_tag="dirichlet",
-            neumann_bc=lambda x, t: 0, neumann_tag="neumann",
+            dirichlet_bc=(lambda x, t: 0), dirichlet_tag="dirichlet",
+            neumann_bc=(lambda x, t: 0), neumann_tag="neumann",
             ldg=True):
         operator.Operator(num.Float64).__init__(self)
         self.discr = discr

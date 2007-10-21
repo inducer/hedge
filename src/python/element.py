@@ -1,23 +1,27 @@
-# Hedge - the Hybrid'n'Easy DG Environment
-# Copyright (C) 2007 Andreas Kloeckner
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
-
-
+"""Local function space representation."""
 
 from __future__ import division
+
+__copyright__ = "Copyright (C) 2007 Andreas Kloeckner"
+
+__license__ = """
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see U{http://www.gnu.org/licenses/}.
+"""
+
+
+
+
 import pylinear.array as num
 import pylinear.computation as comp
 from hedge.tools import AffineMap
@@ -254,9 +258,9 @@ class TriangularElement(SimplicialElement):
     """An arbitrary-order triangular finite element.
 
     Coordinate systems used:
-    ------------------------
+    ========================
 
-    unit coordinates (r,s):
+    unit coordinates (r,s)::
 
     C
     |\\
@@ -266,12 +270,14 @@ class TriangularElement(SimplicialElement):
     |    \\
     A-----B
 
-    O = (0,0)
-    A = (-1,-1)
-    B = (1,-1)
-    C = (-1,1)
+    Points in unit coordinates::
 
-    equilateral coordinates (x,y):
+        O = (0,0)
+        A = (-1,-1)
+        B = (1,-1)
+        C = (-1,1)
+
+    equilateral coordinates (x,y)::
 
             C
            / \\
@@ -281,10 +287,12 @@ class TriangularElement(SimplicialElement):
        /         \\
       A-----------B 
 
-    O = (0,0)
-    A = (-1,-1/sqrt(3))
-    B = (1,-1/sqrt(3))
-    C = (0,2/sqrt(3))
+    Points in equilateral coordinates::
+
+        O = (0,0)
+        A = (-1,-1/sqrt(3))
+        B = (1,-1/sqrt(3))
+        C = (0,2/sqrt(3))
 
     When global vertices are passed in, they are mapped to the 
     reference vertices A, B, C in order.
@@ -386,8 +394,9 @@ class TriangularElement(SimplicialElement):
     # basis functions ---------------------------------------------------------
     @memoize
     def basis_functions(self):
-        """Get a sequence of functions that form a basis
-        of the function space spanned by
+        """Get a sequence of functions that form a basis of the approximation space.
+
+        The approximation space is spanned by the polynomials:::
 
           r**i * s**j for i+j <= N
         """
@@ -442,9 +451,9 @@ class TetrahedralElement(SimplicialElement):
     """An arbitrary-order tetrahedral finite element.
 
     Coordinate systems used:
-    ------------------------
+    ========================
 
-    unit coordinates (r,s,t):
+    unit coordinates (r,s,t)::
 
                ^ s
                |
@@ -457,25 +466,25 @@ class TetrahedralElement(SimplicialElement):
          /   __A-----B---> r
         /_--^ ___--^^
        ,D--^^^
-      L 
+    t L 
       
-      t
-
     (squint, and it might start making sense...)
 
-    O=( 0, 0, 0)
-    A=(-1,-1,-1)
-    B=(+1,-1,-1)
-    C=(-1,+1,-1)
-    D=(-1,-1,+1)
+    Points in unit coordinates::
 
-    equilateral coordinates (x,y,z):
+        O=( 0, 0, 0)
+        A=(-1,-1,-1)
+        B=(+1,-1,-1)
+        C=(-1,+1,-1)
+        D=(-1,-1,+1)
 
-    O = (0,0)
-    A = (-1,-1/sqrt(3),-1/sqrt(6))
-    B = ( 1,-1/sqrt(3),-1/sqrt(6))
-    C = ( 0, 2/sqrt(3),-1/sqrt(6))
-    D = ( 0,         0, 3/sqrt(6))
+    Points in equilateral coordinates (x,y,z)::
+
+        O = (0,0)
+        A = (-1,-1/sqrt(3),-1/sqrt(6))
+        B = ( 1,-1/sqrt(3),-1/sqrt(6))
+        C = ( 0, 2/sqrt(3),-1/sqrt(6))
+        D = ( 0,         0, 3/sqrt(6))
 
     When global vertices are passed in, they are mapped to the 
     reference vertices A, B, C, D in order.
@@ -651,8 +660,9 @@ class TetrahedralElement(SimplicialElement):
     # basis functions ---------------------------------------------------------
     @memoize
     def basis_functions(self):
-        """Get a sequence of functions that form a basis
-        of the function space spanned by
+        """Get a sequence of functions that form a basis of the approximation space.
+
+        The approximation space is spanned by the polynomials::
 
           r**i * s**j * t**k  for  i+j+k <= order
         """

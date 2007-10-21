@@ -18,3 +18,4 @@ tags
 *.pvtu
 *.pvd
 dbg_*.py
+doc/reference

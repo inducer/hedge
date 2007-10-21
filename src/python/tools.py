@@ -1,18 +1,22 @@
-# Hedge - the Hybrid'n'Easy DG Environment
-# Copyright (C) 2007 Andreas Kloeckner
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+"""Miscellaneous helper facilities."""
+
+__copyright__ = "Copyright (C) 2007 Andreas Kloeckner"
+
+__license__ = """
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see U{http://www.gnu.org/licenses/}.
+"""
+
 
 
 
@@ -169,7 +173,7 @@ def find_matching_vertices_along_axis(axis, points_a, points_b, numbers_a, numbe
 
 def make_vector_target(argument, result):
     """Creates a VectorTarget for an OperatorTarget with `argument'
-    and `result'. Normally, `argument' and `result' should be 
+    and `result'. Normally, C{argument} and C{result} should be 
     vectors. However, `argument' may also be the scalar 0, in which
     case a dummy operator is returned.
     """
@@ -205,7 +209,7 @@ def estimate_order_of_convergence(abscissae, errors):
 
   
 
-class EOCRecorder:
+class EOCRecorder(object):
     def __init__(self):
         self.history = []
 
@@ -260,7 +264,7 @@ class EOCRecorder:
 
 
 # small utilities -------------------------------------------------------------
-class Closable:
+class Closable(object):
     def __init__(self):
         self.is_closed = False
 
@@ -372,7 +376,7 @@ def reverse_lookup_table(lut):
 
 
 # block matrix ----------------------------------------------------------------
-class BlockMatrix:
+class BlockMatrix(object):
     """A block matrix is the sum of different smaller
     matrices positioned within one big matrix.
     """
