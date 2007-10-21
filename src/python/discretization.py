@@ -297,7 +297,7 @@ class Discretization:
         else:
             return num.array([f(x) for x in self.nodes])
 
-    def interpolate_tag_volume_function(self, f, tag=None):
+    def interpolate_tag_volume_function(self, f, tag=hedge.mesh.TAG_ALL):
         try:
             # are we interpolating many fields at once?
             count = len(f)
@@ -322,10 +322,10 @@ class Discretization:
 
         return result
 
-    def boundary_zeros(self, tag=None):
+    def boundary_zeros(self, tag=hedge.mesh.TAG_ALL):
         return num.zeros((len(self._get_boundary(tag).nodes),))
 
-    def interpolate_boundary_function(self, f, tag=None):
+    def interpolate_boundary_function(self, f, tag=hedge.mesh.TAG_ALL):
         try:
             # are we interpolating many fields at once?
             count = f.target_dimensions
@@ -342,7 +342,7 @@ class Discretization:
         else:
             return num.array([f(x) for x in self._get_boundary(tag).nodes])
 
-    def boundary_normals(self, tag=None):
+    def boundary_normals(self, tag=hedge.mesh.TAG_ALL):
         result = ArithmeticList([self.boundary_zeros(tag) for i in range(self.dimensions)])
         for fg, ldis in self._get_boundary(tag).face_groups_and_ldis:
             for face_pair in fg:
@@ -467,7 +467,7 @@ class Discretization:
     def perform_boundary_flux(self, 
             int_flux, int_target, 
             ext_flux, ext_target, 
-            tag=None):
+            tag=hedge.mesh.TAG_ALL):
         from hedge._internal import perform_flux, ChainedFlux
 
         ch_int = ChainedFlux(int_flux)
@@ -503,7 +503,7 @@ class Discretization:
                 * self.dt_geometric_factor()
 
     @work_with_arithmetic_containers
-    def volumize_boundary_field(self, bfield, tag=None):
+    def volumize_boundary_field(self, bfield, tag=hedge.mesh.TAG_ALL):
         from hedge._internal import \
                 VectorTarget, \
                 perform_inverse_index_map
@@ -519,7 +519,7 @@ class Discretization:
         return result
 
     @work_with_arithmetic_containers
-    def boundarize_volume_field(self, field, tag=None):
+    def boundarize_volume_field(self, field, tag=hedge.mesh.TAG_ALL):
         from hedge._internal import \
                 VectorTarget, \
                 perform_index_map
@@ -684,23 +684,8 @@ def generate_ones_on_boundary(discr, tag):
 
 
 
-def check_bc_coverage(discr, bc_tags):
-    """Given a list of boundary tags as `bc_tags', this function verifies
-    that
-    a) the union of all these boundaries gives the complete boundary,
-    b) all these boundaries are disjoint.
-    """
-
-    all_bc_sum = sum(generate_ones_on_boundary(discr, tag) for tag in bc_tags)
-    if all_bc_sum != generate_ones_on_boundary(discr, None):
-        raise RuntimeError, "Invalid BC coverage (duplicate or missing BC)"
-
-
-
-
-
 # pylinear operator wrapper ---------------------------------------------------
-class PylinearOperator(operator.Operator(num.Float64)):
+class PylinearOpWrapper(operator.Operator(num.Float64)):
     def __init__(self,  discr_op):
         operator.Operator(num.Float64).__init__(self)
         self.discr_op = discr_op
@@ -790,12 +775,17 @@ class _DirectFluxOperator(_DiscretizationVectorOperator):
         result = self.discr.volume_zeros()
         if isinstance(field, ArithmeticList):
             for idx, int_flux, ext_flux in self.flux:
+                if not (0 <= idx < len(field)):
+                    raise RuntimeError, "flux depends on out-of-bounds field index"
                 mul_single_dep(int_flux, ext_flux, result, field[idx]) 
         else:
-            assert len(self.flux) == 1
-            idx, int_flux, ext_flux = self.flux[0]
-            assert idx == 0
-            mul_single_dep(int_flux, ext_flux, result, field) 
+            if len(self.flux) > 1:
+                raise RuntimeError, "only found one field to process, but flux has multiple field dependencies"
+            if len(self.flux) == 1:
+                idx, int_flux, ext_flux = self.flux[0]
+                if idx != 0:
+                    raise RuntimeError, "flux depends on out-of-bounds field index"
+                mul_single_dep(int_flux, ext_flux, result, field) 
         return result
 
 
@@ -903,7 +893,7 @@ class BoundaryPair:
 
 
 
-def pair_with_boundary(field, bfield, tag=None):
+def pair_with_boundary(field, bfield, tag=hedge.mesh.TAG_ALL):
     if isinstance(field, ArithmeticList):
         assert isinstance(bfield, ArithmeticList)
         return ArithmeticList([

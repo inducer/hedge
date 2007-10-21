@@ -1286,7 +1286,7 @@ class TestHedge(unittest.TestCase):
     # -------------------------------------------------------------------------
     def test_all_periodic_no_boundary(self):
         """Test that an all-periodic brick has no boundary."""
-        from hedge.mesh import make_box_mesh
+        from hedge.mesh import make_box_mesh, TAG_ALL
 
         mesh = make_box_mesh(periodicity=(True,True,True))
 
@@ -1296,7 +1296,7 @@ class TestHedge(unittest.TestCase):
                 result += 1
             return result
 
-        self.assert_(count(mesh.tag_to_boundary[None]) == 0)
+        self.assert_(count(mesh.tag_to_boundary[TAG_ALL]) == 0)
 
 
 

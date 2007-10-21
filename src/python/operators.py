@@ -20,6 +20,7 @@
 from __future__ import division
 import pylinear.array as num
 import pylinear.operator as operator
+import hedge.mesh
 
 
 
@@ -30,10 +31,11 @@ class MaxwellOperator:
     Field order is [Ex Ey Ez Hx Hy Hz].
     """
 
-    def __init__(self, discr, epsilon, mu, upwind_alpha=1, pec_tag=None,
-            direct_flux=True):
+    def __init__(self, discr, epsilon, mu, upwind_alpha=1, 
+            pec_tag=hedge.mesh.TAG_ALL, direct_flux=True):
         from hedge.flux import make_normal, FluxVectorPlaceholder
-        from hedge.discretization import pair_with_boundary, check_bc_coverage
+        from hedge.mesh import check_bc_coverage
+        from hedge.discretization import pair_with_boundary
         from math import sqrt
         from pytools.arithmetic_container import join_fields
         from hedge.tools import cross
@@ -45,7 +47,7 @@ class MaxwellOperator:
 
         self.pec_tag = pec_tag
 
-        check_bc_coverage(discr, [pec_tag])
+        check_bc_coverage(discr.mesh, [pec_tag])
 
         dim = discr.dimensions
         normal = make_normal(dim)
@@ -128,18 +130,16 @@ class StrongLaplacianOperatorBase:
 
         from math import sqrt
         from hedge.tools import coefficient_to_matrix
-        from hedge.discretization import check_bc_coverage
+        from hedge.mesh import check_bc_coverage
 
-        check_bc_coverage(discr, [dirichlet_tag, neumann_tag])
+        check_bc_coverage(discr.mesh, [dirichlet_tag, neumann_tag])
 
         self.coeff_func = coeff
         self.sqrt_coeff = coefficient_to_matrix(discr, lambda x: sqrt(coeff(x)))
         self.dirichlet_bc_func = dirichlet_bc
         self.dirichlet_tag = dirichlet_tag
-        self.dirichlet_zeros = self.discr.boundary_zeros(dirichlet_tag)
         self.neumann_bc_func = neumann_bc
         self.neumann_tag = neumann_tag
-        self.neumann_zeros = self.discr.boundary_zeros(neumann_tag)
 
         self.neumann_normals = discr.boundary_normals(self.neumann_tag)
 
@@ -181,7 +181,7 @@ class StrongLaplacianOperatorBase:
             from pytools.arithmetic_container import ArithmeticList 
             ldg_beta = ArithmeticList([1]*dim)
 
-            fs.flux_u = fs.flux_u -(u.int-u.ext)*0.5*ldg_beta
+            fs.flux_u = fs.flux_u - (u.int-u.ext)*0.5*ldg_beta
             fs.flux_v = fs.flux_v + dot((v.int-v.ext)*0.5, ldg_beta)
 
         return fs
@@ -220,6 +220,9 @@ class StrongPoissonOperator(StrongLaplacianOperatorBase, operator.Operator(num.F
         operator.Operator(num.Float64).__init__(self)
         StrongLaplacianOperatorBase.__init__(self, *args, **kwargs)
 
+        self.dirichlet_zeros = self.discr.boundary_zeros(self.dirichlet_tag)
+        self.neumann_zeros = self.discr.boundary_zeros(self.neumann_tag)
+
     # pylinear operator infrastructure ----------------------------------------
     def size1(self):
         return len(self.discr)
@@ -228,7 +231,7 @@ class StrongPoissonOperator(StrongLaplacianOperatorBase, operator.Operator(num.F
         return len(self.discr)
 
     def apply(self, before, after):
-        after[:] = self.op(0, before)
+        after[:] = self.op(before)
 
     # boundary conditions -----------------------------------------------------
     def dirichlet_bc_u(self):
@@ -250,7 +253,7 @@ class StrongPoissonOperator(StrongLaplacianOperatorBase, operator.Operator(num.F
         from math import sqrt
 
         def neumann_bc_func(x):
-            return sqrt(self.coeff_func(x))*self.neumann_bc_func(t, x)
+            return sqrt(self.coeff_func(x))*self.neumann_bc_func(0, x)
 
         ac_multiply = work_with_arithmetic_containers(num.multiply)
 
@@ -277,45 +280,45 @@ class StrongPoissonOperator(StrongLaplacianOperatorBase, operator.Operator(num.F
         fs.flux_u_dbdry = fs.normal * u.ext
         fs.flux_v_dbdry = dot(v.int, normal) - PenaltyTerm()*(u.int - u.ext)
 
-        #fs.flux_u_nbdry = fs.normal * u.ext
-        #fs.flux_v_nbdry = dot(fs.normal, v.ext)
+        fs.flux_u_nbdry = fs.normal * u.int
+        fs.flux_v_nbdry = dot(fs.normal, v.ext)
 
         return fs
 
     # operator application, rhs prep ------------------------------------------
-    def op(self, t, u):
+    def op(self, u):
         from hedge.discretization import pair_with_boundary
         from math import sqrt
         from hedge.tools import dot
-        from pytools.arithmetic_container import join_fields
+        from pytools.arithmetic_container import join_fields, ArithmeticList
+
+        dim = self.discr.dimensions
 
         dtag = self.dirichlet_tag
         ntag = self.neumann_tag
 
         sqrt_coeff_u = self.sqrt_coeff * u
 
-        #neumann_bc_u = self.neumann_bc_u(t, sqrt_coeff_u)
-
         v = self.m_inv * (
                 self.sqrt_coeff*(self.stiff * u)
                 - self.flux_u*sqrt_coeff_u
                 - self.flux_u_dbdry*pair_with_boundary(sqrt_coeff_u, self.dirichlet_zeros, dtag)
-                #- self.flux_u_nbdry*pair_with_boundary(sqrt_coeff_u, neumann_bc_u, ntag)
+                - self.flux_u_nbdry*pair_with_boundary(sqrt_coeff_u, self.neumann_zeros, ntag)
                 )
         sqrt_coeff_v = self.sqrt_coeff * v
 
         dirichlet_bc_v = self.dirichlet_bc_v(sqrt_coeff_v)
-        #neumann_bc_v = self.neumann_bc_v(t, sqrt_coeff_v)
+        neumann_bc_v = ArithmeticList(self.neumann_zeros for i in range(dim))
 
         w = join_fields(sqrt_coeff_u, sqrt_coeff_v)
         dirichlet_bc_w = join_fields(self.dirichlet_zeros, dirichlet_bc_v)
-        #neumann_bc_w = join_fields(neumann_bc_u, neumann_bc_v)
+        neumann_bc_w = join_fields(self.neumann_bc_u(sqrt_coeff_u), neumann_bc_v)
 
         return (
                 dot(self.stiff, sqrt_coeff_v)
                 - self.flux_v * w
                 - self.flux_v_dbdry * pair_with_boundary(w, dirichlet_bc_w, dtag)
-                #- self.flux_v_nbdry * pair_with_boundary(w, neumann_bc_w, ntag)
+                - self.flux_v_nbdry * pair_with_boundary(w, neumann_bc_w, ntag)
                 )
 
     def prepare_rhs(self, rhs):
@@ -357,22 +360,21 @@ class StrongPoissonOperator(StrongLaplacianOperatorBase, operator.Operator(num.F
         dirichlet_bc_u = self.dirichlet_bc_u()
         vpart = self.m_inv * (
                 -(self.flux_u_dbdry*pair_with_boundary(vol_zeros, dirichlet_bc_u, dtag))
-                #- self.flux_u_nbdry*pair_with_boundary(sqrt_coeff_u, neumann_bc_u, ntag)
                 )
         sqrt_coeff_v = self.sqrt_coeff * vpart
 
         dirichlet_bc_v = ArithmeticList(self.dirichlet_zeros for i in range(dim))
-        #neumann_bc_v = self.neumann_bc_v(t, sqrt_coeff_v)
+        neumann_bc_v = self.neumann_bc_v()
 
         w = join_fields(vol_zeros, sqrt_coeff_v)
         dirichlet_bc_w = join_fields(dirichlet_bc_u, dirichlet_bc_v)
-        #neumann_bc_w = join_fields(neumann_bc_u, neumann_bc_v)
+        neumann_bc_w = join_fields(self.neumann_zeros, neumann_bc_v)
 
         return self.discr.mass_operator * rhs - (
                 dot(self.stiff, sqrt_coeff_v)
                 - self.flux_v * w
                 - self.flux_v_dbdry * pair_with_boundary(w, dirichlet_bc_w, dtag)
-                #- self.flux_v_nbdry * pair_with_boundary(w, neumann_bc_w, ntag)
+                - self.flux_v_nbdry * pair_with_boundary(w, neumann_bc_w, ntag)
                 )
 
 

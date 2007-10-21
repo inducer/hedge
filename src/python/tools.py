@@ -83,6 +83,14 @@ class Rotation(AffineMap):
 
 
 
+class Reflection(AffineMap):
+    def __init__(self, axis, dim):
+        mat = num.identity(dim)
+        mat[axis,axis] = -1
+        AffineMap.__init__(self, mat, num.zeros((dim,)))
+
+
+
 
 def plot_1d(f, a, b, steps=100):
     h = float(b - a)/steps

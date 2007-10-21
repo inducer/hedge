@@ -18,10 +18,11 @@
 
 
 
+from __future__ import division
 import pylinear.array as num
 import pylinear.operator as operator
 import pylinear.computation as comp
-from hedge.tools import Rotation, dot
+from hedge.tools import Reflection, Rotation, dot
 
 
 
@@ -35,7 +36,8 @@ def main() :
             make_disk_mesh, \
             make_regular_square_mesh, \
             make_square_mesh, \
-            make_ball_mesh
+            make_ball_mesh, \
+            TAG_ALL, TAG_NONE
     from hedge.visualization import SiloVisualizer, VtkVisualizer
     from math import sin, cos, pi, exp, sqrt
     from hedge.parallel import guess_parallelization_context
@@ -45,6 +47,14 @@ def main() :
     dim = 2
 
     def boundary_tagger(fvi, el, fn):
+        from math import atan2, pi
+        normal = el.face_normals[fn]
+        if -10/180*pi < atan2(normal[1], normal[0]) < 10/180*pi:
+            return ["dirichlet"]
+        else:
+            return ["neumann"]
+
+    def boundary_tagger_2(fvi, el, fn):
         if el.face_normals[fn][0] > 0:
             return ["dirichlet"]
         else:
@@ -52,11 +62,11 @@ def main() :
 
     if dim == 2:
         if pcon.is_head_rank:
-            mesh = make_disk_mesh(r=0.5, boundary_tagger=boundary_tagger)
-            mesh = make_regular_square_mesh(n=3)
+            #mesh = make_disk_mesh(r=0.5, boundary_tagger=boundary_tagger)
+            #mesh = make_regular_square_mesh(n=3, boundary_tagger=boundary_tagger)
             #mesh = make_regular_square_mesh(n=9)
-            #mesh = make_square_mesh(max_area=0.008)
-            #mesh.transform(Rotation(pi/8))
+            mesh = make_square_mesh(max_area=0.03)
+            #mesh.transform(Reflection(0,2))
         el_class = TriangularElement
     elif dim == 3:
         if pcon.is_head_rank:
@@ -91,24 +101,27 @@ def main() :
         return 0
 
     def neumann_bc(t, x):
-        return 2
+        return -2
 
     import pymbolic
     v_x = pymbolic.var("x")
     sol = pymbolic.parse("math.sin(x[0]**2*x[1]**2)")
     #sol = pymbolic.parse("(x[0]**2+-0.25)*(x[1]**2+-0.25)")
     sol_c = pymbolic.compile(sol, variables=["x"])
-    rhs = pymbolic.simplify(pymbolic.laplace(sol, [v_x[0], v_x[1]]))
-    rhs_c = pymbolic.compile(rhs, variables=["x"])
+    #rhs = pymbolic.simplify(pymbolic.laplace(sol, [v_x[0], v_x[1]]))
+    #rhs_c = pymbolic.compile(rhs, variables=["x"])
     #print sol,rhs
+
+    def rhs_c(x):
+        return 1
 
     op = StrongPoissonOperator(discr, 
             #coeff=coeff,
-            dirichlet_tag=None,
+            dirichlet_tag=TAG_ALL,
             #dirichlet_bc=lambda t, x: 0,
-            dirichlet_bc=lambda t, x: sol_c(x),
-            neumann_tag="empty", 
-            #neumann_bc=neumann_bc,
+            dirichlet_bc=lambda t, x: 0,
+            neumann_tag=TAG_NONE, 
+            neumann_bc=lambda t, x: -1,
             ldg=False
             )
 
@@ -122,14 +135,15 @@ def main() :
             mat[:,j] = op(num.unit_vector(w, j))
         return mat
 
-    if False:
+    if True:
         mat = matrix_rep(op)
         print comp.norm_frobenius(mat-mat.T)
-        print comp.eigenvalues(mat)
+        #print comp.eigenvalues(mat)
         print mat.shape
     
     if False:
-        results = comp.operator_eigenvectors(-op, 20, discr.mass_operator,
+        from hedge.discretization import PylinearOpWrapper
+        results = comp.operator_eigenvectors(-op, 20, PylinearOpWrapper(discr.mass_operator),
                 which=comp.SMALLEST_MAGNITUDE
                 )
         scalars = []
@@ -147,17 +161,24 @@ def main() :
     rhs_v = discr.interpolate_volume_function(rhs_c)
 
     #a_inv = operator.BiCGSTABOperator.make(StiffnessOperator(), 40000, 1e-10)
-    a_inv = operator.CGOperator.make(-op, 4000, 1e-10)
+    a_inv = operator.CGOperator.make(-op, 40000, 1e-12)
     a_inv.debug_level = 1
 
     u = -a_inv(op.prepare_rhs(rhs_v))
 
+    v_ones = 1+discr.volume_zeros()
+
+    from hedge.discretization import generate_ones_on_boundary
     visf = vis.make_file("fld")
     vis.add_data(visf, [
         ("sol", u), 
         ("truesol", sol_v), 
         ("rhs2", discr.inverse_mass_operator* op(sol_v)), 
         ("rhs", rhs_v), 
+        ("dir", generate_ones_on_boundary(discr, "dirichlet")), 
+        ("neu", generate_ones_on_boundary(discr, "neumann")), 
+        ("unsym", (mat-mat.T)*v_ones), 
+        #("nrmls", discr.volumize_boundary_field(op.neumann_bc_v(), "neumann")), 
         ])
     visf.close()
 

@@ -30,15 +30,24 @@ REORDER_CMK = 1
 
 
 
+class TAG_NONE: pass
+class TAG_ALL: pass
+
+
+
+
 class Element(object):
     def __init__(self, id, vertex_indices, all_vertices):
         self.id = id
 
-        vertices = [all_vertices[v] for v in vertex_indices]        
-        vertex_indices = self.vertex_indices = \
-                tuple(self._reorder_vertices(vertex_indices, 
-                        vertices))
-        vertices = [all_vertices[v] for v in vertex_indices]        
+        vertices = [all_vertices[v] for v in vertex_indices]
+        self.vertex_indices = tuple(self._reorder_vertices(
+            vertex_indices, vertices))
+
+        self.update_geometry(all_vertices)
+
+    def update_geometry(self, all_vertices):
+        vertices = [all_vertices[v] for v in self.vertex_indices]        
 
         self.map = self.get_map_unit_to_global(vertices)
         self.inverse_map = self.map.inverted()
@@ -207,12 +216,14 @@ class Mesh:
     * tag_to_boundary: a mapping of the form
       boundary_tag -> [(element instance, face index)])
 
-      The boundary tag None always refers to the entire boundary.
+      The boundary tag TAG_NONE always refers to an empty boundary.
+      The boundary tag TAG_ALL always refers to the entire boundary.
 
     * tag_to_elements: a mapping of the form
       element_tag -> [element instances]
 
-      The boundary tag None always refers to the entire domain.
+      The boundary tag TAG_NONE always refers to an empty domain.
+      The boundary tag TAG_ALL always refers to the entire domain.
 
     * periodicity: A list of tuples (minus_tag, plus_tag) or None
       indicating the tags of the boundaries to be matched together
@@ -289,8 +300,7 @@ class ConformalMesh(Mesh):
           mesh partition.
 
         Tags beginning with the string "hedge" are reserved for internal
-        use. The value "None" is also not a valid tag as it is used for
-        "everything", i.e. "the whole boundary", or "all elements".
+        use.
 
         Face indices follow the convention for the respective element,
         such as Triangle or Tetrahedron, in this module.
@@ -312,11 +322,11 @@ class ConformalMesh(Mesh):
             for id, vert_indices in enumerate(elements)]
 
         # tag elements
-        self.tag_to_elements = {None: []}
+        self.tag_to_elements = {TAG_NONE: [], TAG_ALL: []}
         for el in self.elements:
             for el_tag in element_tagger(el):
                 self.tag_to_elements.setdefault(el_tag, []).append(el)
-            self.tag_to_elements[None].append(el)
+            self.tag_to_elements[TAG_ALL].append(el)
         
         # build connectivity
         if periodicity is None:
@@ -327,6 +337,8 @@ class ConformalMesh(Mesh):
 
     def transform(self, map):
         self.points = [map(x) for x in self.points]
+        for e in self.elements:
+            e.update_geometry(self.points)
 
     def _build_connectivity(self, boundary_tagger, periodicity, is_rankbdry_face):
         # create face_map, which is a mapping of
@@ -339,7 +351,7 @@ class ConformalMesh(Mesh):
 
         # build non-periodic connectivity structures
         self.interfaces = []
-        self.tag_to_boundary = {None: []}
+        self.tag_to_boundary = {TAG_NONE: [], TAG_ALL: []}
         for face_vertices, els_faces in face_map.iteritems():
             if len(els_faces) == 2:
                 self.interfaces.append(els_faces)
@@ -357,7 +369,7 @@ class ConformalMesh(Mesh):
                 if "hedge-no-boundary" not in tags:
                     # this is used to mark rank interfaces as not being part of the
                     # boundary
-                    self.tag_to_boundary[None].append(els_faces[0])
+                    self.tag_to_boundary[TAG_ALL].append(els_faces[0])
             else:
                 raise RuntimeError, "face can at most border two elements"
 
@@ -425,8 +437,8 @@ class ConformalMesh(Mesh):
                     self.periodic_opposite_map[minus_fvi] = mapped_plus_fvi, axis
                     self.periodic_opposite_map[plus_fvi] = mapped_minus_fvi, axis
 
-                    self.tag_to_boundary[None].remove(plus_face)
-                    self.tag_to_boundary[None].remove(minus_face)
+                    self.tag_to_boundary[TAG_ALL].remove(plus_face)
+                    self.tag_to_boundary[TAG_ALL].remove(minus_face)
 
     def reorder(self, method=REORDER_CMK):
         """Reorder this mesh according using the specified
@@ -452,17 +464,28 @@ class ConformalMesh(Mesh):
 
 
 
-def _tag_and_make_conformal_mesh(boundary_tagger, generated_mesh_info):
-    from itertools import izip
+def check_bc_coverage(mesh, bc_tags):
+    """Given a list of boundary tags as `bc_tags', this function verifies
+    that
+    a) the union of all these boundaries gives the complete boundary,
+    b) all these boundaries are disjoint.
+    """
 
-    boundary_tags = dict(
-            (frozenset(seg), 
-                boundary_tagger(generated_mesh_info.points, seg))
-                for seg, marker in izip(
-                    generated_mesh_info.faces,
-                    generated_mesh_info.face_markers)
-                if marker == 1)
+    entire_bdry = set(mesh.tag_to_boundary[TAG_ALL])
+    for tag in bc_tags:
+        try:
+            bdry = mesh.tag_to_boundary[tag]
+        except KeyError:
+            pass
+        else:
+            for el_face in bdry:
+                try:
+                    entire_bdry.remove(el_face)
+                except KeyError:
+                    raise RuntimeError, "Duplicate BC found"
 
+    if len(entire_bdry) != 0:
+        raise RuntimeError, "Incomplete BC coverage"
 
 
 
