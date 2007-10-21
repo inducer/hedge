@@ -62,10 +62,10 @@ def main() :
 
     if dim == 2:
         if pcon.is_head_rank:
-            #mesh = make_disk_mesh(r=0.5, boundary_tagger=boundary_tagger)
+            mesh = make_disk_mesh(r=0.5, boundary_tagger=boundary_tagger)
             #mesh = make_regular_square_mesh(n=3, boundary_tagger=boundary_tagger)
             #mesh = make_regular_square_mesh(n=9)
-            mesh = make_square_mesh(max_area=0.03)
+            #mesh = make_square_mesh(max_area=0.03, boundary_tagger=boundary_tagger)
             #mesh.transform(Reflection(0,2))
         el_class = TriangularElement
     elif dim == 3:
@@ -81,7 +81,7 @@ def main() :
     else:
         mesh_data = pcon.receive_mesh()
 
-    discr = pcon.make_discretization(mesh_data, el_class(4))
+    discr = pcon.make_discretization(mesh_data, el_class(2))
     vis = VtkVisualizer(discr, pcon)
 
     def u0(x):
@@ -113,14 +113,14 @@ def main() :
     #print sol,rhs
 
     def rhs_c(x):
-        return 1
+        return 0
 
     op = WeakPoissonOperator(discr, 
             #coeff=coeff,
-            dirichlet_tag=TAG_ALL,
+            dirichlet_tag="dirichlet",
             #dirichlet_bc=lambda t, x: 0,
             dirichlet_bc=lambda t, x: 0,
-            neumann_tag=TAG_NONE, 
+            neumann_tag="neumann", 
             neumann_bc=lambda t, x: -1,
             ldg=False
             )
@@ -135,7 +135,7 @@ def main() :
             mat[:,j] = op(num.unit_vector(w, j))
         return mat
 
-    if True:
+    if False:
         mat = matrix_rep(op)
         print comp.norm_frobenius(mat-mat.T)
         #print comp.eigenvalues(mat)
@@ -161,7 +161,7 @@ def main() :
     rhs_v = discr.interpolate_volume_function(rhs_c)
 
     #a_inv = operator.BiCGSTABOperator.make(StiffnessOperator(), 40000, 1e-10)
-    a_inv = operator.CGOperator.make(-op, 40000, 1e-12)
+    a_inv = operator.CGOperator.make(-op, 40000, 1e-10)
     a_inv.debug_level = 1
 
     u = -a_inv(op.prepare_rhs(rhs_v))
@@ -177,8 +177,6 @@ def main() :
         ("rhs", rhs_v), 
         ("dir", generate_ones_on_boundary(discr, "dirichlet")), 
         ("neu", generate_ones_on_boundary(discr, "neumann")), 
-        ("unsym", (mat-mat.T)*v_ones), 
-        #("nrmls", discr.volumize_boundary_field(op.neumann_bc_v(), "neumann")), 
         ])
     visf.close()
 

@@ -525,14 +525,13 @@ class Discretization:
 
     @work_with_arithmetic_containers
     def volumize_boundary_field(self, bfield, tag=hedge.mesh.TAG_ALL):
-        from hedge._internal import \
-                VectorTarget, \
-                perform_inverse_index_map
+        from hedge._internal import perform_inverse_index_map
+        from hedge.tools import make_vector_target
 
         result = self.volume_zeros()
         bdry = self._get_boundary(tag)
 
-        target = VectorTarget(bfield, result)
+        target = make_vector_target(bfield, result)
         target.begin(len(self.nodes), len(bdry.nodes))
         perform_inverse_index_map(bdry.index_map, target)
         target.finalize()
@@ -541,15 +540,14 @@ class Discretization:
 
     @work_with_arithmetic_containers
     def boundarize_volume_field(self, field, tag=hedge.mesh.TAG_ALL):
-        from hedge._internal import \
-                VectorTarget, \
-                perform_index_map
+        from hedge._internal import perform_index_map
+        from hedge.tools import make_vector_target
 
         result = self.boundary_zeros(tag)
 
         bdry = self._get_boundary(tag)
 
-        target = VectorTarget(field, result)
+        target = make_vector_target(field, result)
         target.begin(len(bdry.nodes), len(self.nodes))
         perform_index_map(bdry.index_map, target)
         target.finalize()
@@ -746,10 +744,10 @@ class _DifferentiationOperator(_DiscretizationVectorOperator):
 
     @work_with_arithmetic_containers
     def __mul__(self, field):
-        from hedge._internal import VectorTarget
+        from hedge.tools import make_vector_target
 
         result = self.discr.volume_zeros()
-        self.perform_func(self.coordinate, VectorTarget(field, result))
+        self.perform_func(self.coordinate, make_vector_target(field, result))
         return result
 
     def matrix(self):
@@ -766,9 +764,9 @@ class _DiscretizationMethodOperator(_DiscretizationVectorOperator):
 
     @work_with_arithmetic_containers
     def __mul__(self, field):
-        from hedge._internal import VectorTarget
+        from hedge.tools import make_vector_target
         result = self.discr.volume_zeros()
-        self.perform_func(VectorTarget(field, result))
+        self.perform_func(make_vector_target(field, result))
         return result
 
     def matrix(self):
@@ -788,18 +786,18 @@ class _DirectFluxOperator(_DiscretizationVectorOperator):
         self.flux = flux
 
     def __mul__(self, field):
-        from hedge._internal import VectorTarget
+        from hedge.tools import make_vector_target
 
         def mul_single_dep(int_flux, ext_flux, result, field):
             if isinstance(field, BoundaryPair):
                 bpair = field
                 self.discr.perform_boundary_flux(
-                        int_flux, VectorTarget(bpair.field, result),
-                        ext_flux, VectorTarget(bpair.bfield, result), 
+                        int_flux, make_vector_target(bpair.field, result),
+                        ext_flux, make_vector_target(bpair.bfield, result), 
                         bpair.tag)
             else:
                 self.discr.perform_inner_flux(
-                        int_flux, ext_flux, VectorTarget(field, result))
+                        int_flux, ext_flux, make_vector_target(field, result))
 
         result = self.discr.volume_zeros()
         if isinstance(field, ArithmeticList):

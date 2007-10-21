@@ -38,10 +38,23 @@
 
 
 #define DEF_FOR_EACH_OP_TARGET(NAME, ARG_TYPES) \
+  def(#NAME, (void (*)(ARG_TYPES null_target)) NAME); \
   def(#NAME, (void (*)(ARG_TYPES vector_target)) NAME); \
   def(#NAME, (void (*)(ARG_TYPES coord_matrix_target)) NAME);
 
 #define EXPOSE_FLUX_PERFORM(FLUX_CLASS) \
+  def("perform_flux", (void (*)(\
+          const hedge::face_group &, const matrix &, \
+          FLUX_CLASS, hedge::null_target, FLUX_CLASS, hedge::null_target)) \
+      hedge::perform_flux_detailed); \
+  def("perform_flux", (void (*)(\
+          const hedge::face_group &, const matrix &, \
+          FLUX_CLASS, hedge::vector_target, FLUX_CLASS, hedge::null_target)) \
+      hedge::perform_flux_detailed); \
+  def("perform_flux", (void (*)(\
+          const hedge::face_group &, const matrix &, \
+          FLUX_CLASS, hedge::null_target, FLUX_CLASS, hedge::vector_target)) \
+      hedge::perform_flux_detailed); \
   def("perform_flux", (void (*)(\
           const hedge::face_group &, const matrix &, \
           FLUX_CLASS, hedge::vector_target, FLUX_CLASS, hedge::vector_target)) \

@@ -217,9 +217,6 @@ class WeakPoissonOperator(operator.Operator(num.Float64)):
 
         self.neumann_normals = discr.boundary_normals(self.neumann_tag)
 
-        self.dirichlet_zeros = self.discr.boundary_zeros(self.dirichlet_tag)
-        self.neumann_zeros = self.discr.boundary_zeros(self.neumann_tag)
-
     # pylinear operator infrastructure ----------------------------------------
     def size1(self):
         return len(self.discr)
@@ -315,17 +312,16 @@ class WeakPoissonOperator(operator.Operator(num.Float64)):
         v = self.m_inv * (
                 - self.sqrt_coeff*(self.stiff_t * u)
                 + self.flux_u*sqrt_coeff_u
-                + self.flux_u_dbdry*pair_with_boundary(sqrt_coeff_u, self.dirichlet_zeros, dtag)
-                + self.flux_u_nbdry*pair_with_boundary(sqrt_coeff_u, self.neumann_zeros, ntag)
+                + self.flux_u_dbdry*pair_with_boundary(sqrt_coeff_u, 0, dtag)
+                + self.flux_u_nbdry*pair_with_boundary(sqrt_coeff_u, 0, ntag)
                 )
         sqrt_coeff_v = self.sqrt_coeff * v
 
         dirichlet_bc_v = self.dirichlet_bc_v(sqrt_coeff_v)
-        neumann_bc_v = ArithmeticList(self.neumann_zeros for i in range(dim))
 
         w = join_fields(sqrt_coeff_u, sqrt_coeff_v)
-        dirichlet_bc_w = join_fields(self.dirichlet_zeros, dirichlet_bc_v)
-        neumann_bc_w = join_fields(self.neumann_bc_u(sqrt_coeff_u), neumann_bc_v)
+        dirichlet_bc_w = join_fields(0, dirichlet_bc_v)
+        neumann_bc_w = join_fields(self.neumann_bc_u(sqrt_coeff_u), [0]*dim)
 
         return (
                 -dot(self.stiff_t, sqrt_coeff_v)
@@ -369,19 +365,17 @@ class WeakPoissonOperator(operator.Operator(num.Float64)):
         dtag = self.dirichlet_tag
         ntag = self.neumann_tag
 
-        vol_zeros = self.discr.volume_zeros()
         dirichlet_bc_u = self.dirichlet_bc_u()
         vpart = self.m_inv * (
-                (self.flux_u_dbdry*pair_with_boundary(vol_zeros, dirichlet_bc_u, dtag))
+                (self.flux_u_dbdry*pair_with_boundary(0, dirichlet_bc_u, dtag))
                 )
         sqrt_coeff_v = self.sqrt_coeff * vpart
 
-        dirichlet_bc_v = ArithmeticList(self.dirichlet_zeros for i in range(dim))
         neumann_bc_v = self.neumann_bc_v()
 
-        w = join_fields(vol_zeros, sqrt_coeff_v)
-        dirichlet_bc_w = join_fields(dirichlet_bc_u, dirichlet_bc_v)
-        neumann_bc_w = join_fields(self.neumann_zeros, neumann_bc_v)
+        w = join_fields(0, sqrt_coeff_v)
+        dirichlet_bc_w = join_fields(dirichlet_bc_u, [0]*dim)
+        neumann_bc_w = join_fields(0, neumann_bc_v)
 
         return self.discr.mass_operator * rhs - (
                 -dot(self.stiff_t, sqrt_coeff_v)

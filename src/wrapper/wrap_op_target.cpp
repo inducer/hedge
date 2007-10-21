@@ -54,6 +54,12 @@ namespace
 void hedge_expose_op_target()
 {
   {
+    typedef null_target cl;
+    class_<cl> wrapper("NullTarget");
+    expose_op_target(wrapper);
+  }
+
+  {
     typedef vector_target cl;
     class_<cl> wrapper("VectorTarget", 
         init<const vector &, vector &>()

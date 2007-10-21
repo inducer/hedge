@@ -69,7 +69,6 @@ class AffineMap(hedge._internal.AffineMap):
 
 
 
-
 class Rotation(AffineMap):
     def __init__(self, angle):
         # FIXME: Add axis, make multidimensional
@@ -106,16 +105,6 @@ def plot_1d(f, a, b, steps=100):
     gp = Gnuplot()
     gp.plot(Data(points, data))
     raw_input()
-
-
-
-
-def reduction_matrix(indices, big_len):
-    import pylinear.array as num
-    result = num.zeros((len(indices), big_len), flavor=num.SparseBuildMatrix)
-    for i, j in enumerate(indices):
-        result[i,j] = 1
-    return result
 
 
 
@@ -161,7 +150,6 @@ def find_matching_vertices_along_axis(axis, points_a, points_b, numbers_a, numbe
     a_to_b = {}
     not_found = []
 
-
     for i, pi in enumerate(points_a):
         found = False
         for j, pj in enumerate(points_b):
@@ -175,6 +163,22 @@ def find_matching_vertices_along_axis(axis, points_a, points_b, numbers_a, numbe
             not_found.append(numbers_a[i])
 
     return a_to_b, not_found
+
+
+
+
+def make_vector_target(argument, result):
+    """Creates a VectorTarget for an OperatorTarget with `argument'
+    and `result'. Normally, `argument' and `result' should be 
+    vectors. However, `argument' may also be the scalar 0, in which
+    case a dummy operator is returned.
+    """
+    from hedge._internal import NullTarget, VectorTarget
+    if argument == 0:
+        return NullTarget()
+    else:
+        return VectorTarget(argument, result)
+
 
 
 
