@@ -167,7 +167,16 @@ namespace {
     BOOST_FOREACH(tuple tp, std::make_pair(
           stl_input_iterator<tuple>(cnx_list_py),
           stl_input_iterator<tuple>()))
-      fg[extract<unsigned>(tp[0])].opp_flux_face = &fg[extract<unsigned>(tp[0])].flux_face;
+    {
+      face_pair &fpa = fg[extract<unsigned>(tp[0])];
+      face_pair &fpb = fg[extract<unsigned>(tp[1])];
+
+      fpa.opp_flux_face = &fpb.flux_face;
+      fpb.opp_flux_face = &fpa.flux_face;
+
+      fpa.flux_face.h = fpb.flux_face.h = std::max(
+          fpa.flux_face.h, fpb.flux_face.h);
+    }
   }
 }
 

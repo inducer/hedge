@@ -104,6 +104,7 @@ class Discretization:
             dmats = eg.differentiation_matrices = \
                     ldis.differentiation_matrices()
             smats = eg.stiffness_matrices = [mmat*d for d in dmats]
+            smats = eg.stiffness_t_matrices = [d.T*mmat.T for d in dmats]
             eg.minv_st = [immat*d.T*mmat for d in dmats]
 
             eg.jacobians = num.array([
@@ -147,7 +148,15 @@ class Discretization:
                 for fi, (n, fj) in enumerate(
                         zip(el.face_normals, el.face_jacobians)):
                     f = Face()
-                    f.h = abs(el.map.jacobian/fj) # same as sledge
+
+                    # This crude approximation is shamelessly stolen from sledge.
+                    # There's an important caveat, however (which took me the better
+                    # part of a week to figure out):
+                    # h on both sides of an interface must be the same, otherwise
+                    # the penalty term will behave very oddly.
+                    # In hedge, this unification is performed in connect_faces in the C++ core.
+                    f.h = abs(el.map.jacobian/fj)
+
                     f.face_jacobian = fj
                     f.element_id = el.id
                     f.face_id = fi
@@ -219,7 +228,7 @@ class Discretization:
 
             fg.connect_faces([
                     (face_number_map[local_face], face_number_map[neigh_face])
-                    for local_face, neigh_face in self.mesh.both_interfaces()
+                    for local_face, neigh_face in self.mesh.interfaces
                     ])
         else:
             self.face_groups = []
@@ -407,6 +416,18 @@ class Discretization:
 
         target.finalize()
 
+    def perform_stiffness_t_operator(self, coordinate, target):
+        from hedge._internal import perform_elwise_scaled_operator
+
+        target.begin(len(self.nodes), len(self.nodes))
+
+        for eg in self.element_groups:
+            for coeff, mat in zip(eg.stiffness_coefficients[coordinate], 
+                    eg.stiffness_t_matrices):
+                perform_elwise_scaled_operator(eg.ranges, coeff, mat, target)
+
+        target.finalize()
+
     def perform_minv_st_operator(self, coordinate, target):
         from hedge._internal import perform_elwise_scaled_operator
 
@@ -562,6 +583,14 @@ class Discretization:
         return ArithmeticList(
                 [_DifferentiationOperator(self, i, 
                     self.perform_stiffness_operator) 
+                    for i in range(self.dimensions)]
+                )
+
+    @property
+    def stiffness_t_operator(self):
+        return ArithmeticList(
+                [_DifferentiationOperator(self, i, 
+                    self.perform_stiffness_t_operator) 
                     for i in range(self.dimensions)]
                 )
 

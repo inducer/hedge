@@ -49,43 +49,6 @@ namespace hedge
   };
 
   typedef std::vector<face_pair> face_group;
-  /*
-  struct face_group 
-  {
-
-    std::vector<face_pair> m_face_infos;
-
-    unsigned size()
-    {
-      return m_face_infos.size();
-    }
-
-    void clear()
-    {
-      m_face_infos.clear();
-    }
-
-    void add_face(const index_list &my_ind, const index_list &opp_ind, 
-        const fluxes::face &face)
-    {
-      face_pair fp;
-      fp.face_indices = my_ind;
-      fp.opposite_indices = opp_ind;
-      fp.flux_face = face;
-      fp.opp_flux_face = 0;
-      m_face_infos.push_back(fp);
-    }
-
-    typedef std::pair<unsigned, unsigned> connection;
-    typedef std::vector<connection> connection_list;
-
-    void connect_faces(const connection_list &cnx_list)
-    {
-      BOOST_FOREACH(const connection &cnx, cnx_list)
-        m_face_infos[cnx.first].opp_flux_face = &m_face_infos[cnx.second].flux_face;
-    }
-  };
-  */
 
 
 
@@ -161,10 +124,6 @@ namespace hedge
   {
     perform_flux(fg, fmm, make_flux_data(lflux, ltarget, nflux, ntarget));
   }
-
-
-
-
 }
 
 

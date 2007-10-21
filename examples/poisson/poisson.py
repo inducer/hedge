@@ -31,7 +31,7 @@ def main() :
     from hedge.element import \
             TriangularElement, \
             TetrahedralElement
-    from hedge.operators import StrongPoissonOperator
+    from hedge.operators import WeakPoissonOperator
     from hedge.mesh import \
             make_disk_mesh, \
             make_regular_square_mesh, \
@@ -115,7 +115,7 @@ def main() :
     def rhs_c(x):
         return 1
 
-    op = StrongPoissonOperator(discr, 
+    op = WeakPoissonOperator(discr, 
             #coeff=coeff,
             dirichlet_tag=TAG_ALL,
             #dirichlet_bc=lambda t, x: 0,

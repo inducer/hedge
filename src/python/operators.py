@@ -107,42 +107,7 @@ class MaxwellOperator:
 
 
 
-class StrongLaplacianOperatorBase:
-    def __init__(self, discr, coeff=lambda x: 1, 
-            dirichlet_bc=lambda x, t: 0, dirichlet_tag="dirichlet",
-            neumann_bc=lambda x, t: 0, neumann_tag="neumann",
-            ldg=True):
-        self.discr = discr
-
-        fs = self.get_strong_flux_set(ldg)
-
-        self.flux_u = discr.get_flux_operator(fs.flux_u)
-        self.flux_v = discr.get_flux_operator(fs.flux_v)
-        self.flux_u_dbdry = discr.get_flux_operator(fs.flux_u_dbdry)
-        self.flux_v_dbdry = discr.get_flux_operator(fs.flux_v_dbdry)
-        self.flux_u_nbdry = discr.get_flux_operator(fs.flux_u_nbdry)
-        self.flux_v_nbdry = discr.get_flux_operator(fs.flux_v_nbdry)
-
-        self.nabla = discr.nabla
-        self.stiff = discr.stiffness_operator
-        self.mass = discr.mass_operator
-        self.m_inv = discr.inverse_mass_operator
-
-        from math import sqrt
-        from hedge.tools import coefficient_to_matrix
-        from hedge.mesh import check_bc_coverage
-
-        check_bc_coverage(discr.mesh, [dirichlet_tag, neumann_tag])
-
-        self.coeff_func = coeff
-        self.sqrt_coeff = coefficient_to_matrix(discr, lambda x: sqrt(coeff(x)))
-        self.dirichlet_bc_func = dirichlet_bc
-        self.dirichlet_tag = dirichlet_tag
-        self.neumann_bc_func = neumann_bc
-        self.neumann_tag = neumann_tag
-
-        self.neumann_normals = discr.boundary_normals(self.neumann_tag)
-
+class LaplacianOperatorBase:
     def get_weak_flux_set(self, ldg):
         class FluxSet: pass
         fs = FluxSet()
@@ -209,16 +174,48 @@ class StrongLaplacianOperatorBase:
 
 
 
-class StrongPoissonOperator(StrongLaplacianOperatorBase, operator.Operator(num.Float64)):
+class WeakPoissonOperator(operator.Operator(num.Float64)):
     """Implements LDG according to
 
     P. Castillo et al., 
     Local discontinuous Galerkin methods for elliptic problems", 
     Communications in Numerical Methods in Engineering 18, no. 1 (2002): 69-75.
     """
-    def __init__(self, *args, **kwargs):
+    def __init__(self, discr, coeff=lambda x: 1, 
+            dirichlet_bc=lambda x, t: 0, dirichlet_tag="dirichlet",
+            neumann_bc=lambda x, t: 0, neumann_tag="neumann",
+            ldg=True):
         operator.Operator(num.Float64).__init__(self)
-        StrongLaplacianOperatorBase.__init__(self, *args, **kwargs)
+
+        self.discr = discr
+
+        fs = self.get_weak_flux_set(ldg)
+
+        self.flux_u = discr.get_flux_operator(fs.flux_u)
+        self.flux_v = discr.get_flux_operator(fs.flux_v)
+        self.flux_u_dbdry = discr.get_flux_operator(fs.flux_u_dbdry)
+        self.flux_v_dbdry = discr.get_flux_operator(fs.flux_v_dbdry)
+        self.flux_u_nbdry = discr.get_flux_operator(fs.flux_u_nbdry)
+        self.flux_v_nbdry = discr.get_flux_operator(fs.flux_v_nbdry)
+
+        self.stiff_t = discr.stiffness_t_operator
+        self.mass = discr.mass_operator
+        self.m_inv = discr.inverse_mass_operator
+
+        from math import sqrt
+        from hedge.tools import coefficient_to_matrix
+        from hedge.mesh import check_bc_coverage
+
+        check_bc_coverage(discr.mesh, [dirichlet_tag, neumann_tag])
+
+        self.coeff_func = coeff
+        self.sqrt_coeff = coefficient_to_matrix(discr, lambda x: sqrt(coeff(x)))
+        self.dirichlet_bc_func = dirichlet_bc
+        self.dirichlet_tag = dirichlet_tag
+        self.neumann_bc_func = neumann_bc
+        self.neumann_tag = neumann_tag
+
+        self.neumann_normals = discr.boundary_normals(self.neumann_tag)
 
         self.dirichlet_zeros = self.discr.boundary_zeros(self.dirichlet_tag)
         self.neumann_zeros = self.discr.boundary_zeros(self.neumann_tag)
@@ -263,25 +260,41 @@ class StrongPoissonOperator(StrongLaplacianOperatorBase, operator.Operator(num.F
 
     # fluxes ------------------------------------------------------------------
     def get_weak_flux_set(self, ldg):
-        fs = StrongLaplacianOperatorBase.get_weak_flux_set(self, ldg)
+        class FluxSet: pass
+        fs = FluxSet()
 
-        from hedge.flux import PenaltyTerm
+        from hedge.flux import \
+                FluxVectorPlaceholder, FluxScalarPlaceholder, \
+                make_normal, PenaltyTerm
         from hedge.tools import dot
 
-        # apply stabilisation
-        u = fs.u
-        v = fs.v
-        normal = fs.normal
+        dim = self.discr.dimensions
+        vec = FluxVectorPlaceholder(1+dim)
+        fs.u = u = vec[0]
+        fs.v = v = vec[1:]
+        normal = make_normal(dim)
 
-        fs.flux_v -= PenaltyTerm() * (u.int - u.ext)
+        # central flux
+        fs.flux_u = u.avg*normal
+        fs.flux_v = dot(v.avg, normal)
+
+        # ldg terms
+        from pytools.arithmetic_container import ArithmeticList 
+        ldg_beta = ArithmeticList([1]*dim)
+
+        fs.flux_u = fs.flux_u - (u.int-u.ext)*0.5*ldg_beta
+        fs.flux_v = fs.flux_v + dot((v.int-v.ext)*0.5, ldg_beta)
+
+        # penalty term
+        stab_term = PenaltyTerm() * (u.int - u.ext)
+        fs.flux_v -= 0.1 * stab_term
 
         # boundary fluxes
+        fs.flux_u_dbdry = normal * u.ext
+        fs.flux_v_dbdry = dot(v.int, normal) - stab_term
 
-        fs.flux_u_dbdry = fs.normal * u.ext
-        fs.flux_v_dbdry = dot(v.int, normal) - PenaltyTerm()*(u.int - u.ext)
-
-        fs.flux_u_nbdry = fs.normal * u.int
-        fs.flux_v_nbdry = dot(fs.normal, v.ext)
+        fs.flux_u_nbdry = normal * u.int
+        fs.flux_v_nbdry = dot(normal, v.ext)
 
         return fs
 
@@ -300,10 +313,10 @@ class StrongPoissonOperator(StrongLaplacianOperatorBase, operator.Operator(num.F
         sqrt_coeff_u = self.sqrt_coeff * u
 
         v = self.m_inv * (
-                self.sqrt_coeff*(self.stiff * u)
-                - self.flux_u*sqrt_coeff_u
-                - self.flux_u_dbdry*pair_with_boundary(sqrt_coeff_u, self.dirichlet_zeros, dtag)
-                - self.flux_u_nbdry*pair_with_boundary(sqrt_coeff_u, self.neumann_zeros, ntag)
+                - self.sqrt_coeff*(self.stiff_t * u)
+                + self.flux_u*sqrt_coeff_u
+                + self.flux_u_dbdry*pair_with_boundary(sqrt_coeff_u, self.dirichlet_zeros, dtag)
+                + self.flux_u_nbdry*pair_with_boundary(sqrt_coeff_u, self.neumann_zeros, ntag)
                 )
         sqrt_coeff_v = self.sqrt_coeff * v
 
@@ -315,10 +328,10 @@ class StrongPoissonOperator(StrongLaplacianOperatorBase, operator.Operator(num.F
         neumann_bc_w = join_fields(self.neumann_bc_u(sqrt_coeff_u), neumann_bc_v)
 
         return (
-                dot(self.stiff, sqrt_coeff_v)
-                - self.flux_v * w
-                - self.flux_v_dbdry * pair_with_boundary(w, dirichlet_bc_w, dtag)
-                - self.flux_v_nbdry * pair_with_boundary(w, neumann_bc_w, ntag)
+                -dot(self.stiff_t, sqrt_coeff_v)
+                + self.flux_v * w
+                + self.flux_v_dbdry * pair_with_boundary(w, dirichlet_bc_w, dtag)
+                + self.flux_v_nbdry * pair_with_boundary(w, neumann_bc_w, ntag)
                 )
 
     def prepare_rhs(self, rhs):
@@ -359,7 +372,7 @@ class StrongPoissonOperator(StrongLaplacianOperatorBase, operator.Operator(num.F
         vol_zeros = self.discr.volume_zeros()
         dirichlet_bc_u = self.dirichlet_bc_u()
         vpart = self.m_inv * (
-                -(self.flux_u_dbdry*pair_with_boundary(vol_zeros, dirichlet_bc_u, dtag))
+                (self.flux_u_dbdry*pair_with_boundary(vol_zeros, dirichlet_bc_u, dtag))
                 )
         sqrt_coeff_v = self.sqrt_coeff * vpart
 
@@ -371,16 +384,52 @@ class StrongPoissonOperator(StrongLaplacianOperatorBase, operator.Operator(num.F
         neumann_bc_w = join_fields(self.neumann_zeros, neumann_bc_v)
 
         return self.discr.mass_operator * rhs - (
-                dot(self.stiff, sqrt_coeff_v)
-                - self.flux_v * w
-                - self.flux_v_dbdry * pair_with_boundary(w, dirichlet_bc_w, dtag)
-                - self.flux_v_nbdry * pair_with_boundary(w, neumann_bc_w, ntag)
+                -dot(self.stiff_t, sqrt_coeff_v)
+                + self.flux_v * w
+                + self.flux_v_dbdry * pair_with_boundary(w, dirichlet_bc_w, dtag)
+                + self.flux_v_nbdry * pair_with_boundary(w, neumann_bc_w, ntag)
                 )
 
 
 
 
-class StrongHeatOperator(StrongLaplacianOperatorBase):
+class StrongHeatOperator(LaplacianOperatorBase):
+    def __init__(self, discr, coeff=lambda x: 1, 
+            dirichlet_bc=lambda x, t: 0, dirichlet_tag="dirichlet",
+            neumann_bc=lambda x, t: 0, neumann_tag="neumann",
+            ldg=True):
+        operator.Operator(num.Float64).__init__(self)
+        self.discr = discr
+
+        fs = self.get_strong_flux_set(ldg)
+
+        self.flux_u = discr.get_flux_operator(fs.flux_u)
+        self.flux_v = discr.get_flux_operator(fs.flux_v)
+        self.flux_u_dbdry = discr.get_flux_operator(fs.flux_u_dbdry)
+        self.flux_v_dbdry = discr.get_flux_operator(fs.flux_v_dbdry)
+        self.flux_u_nbdry = discr.get_flux_operator(fs.flux_u_nbdry)
+        self.flux_v_nbdry = discr.get_flux_operator(fs.flux_v_nbdry)
+
+        self.nabla = discr.nabla
+        self.stiff = discr.stiffness_operator
+        self.mass = discr.mass_operator
+        self.m_inv = discr.inverse_mass_operator
+
+        from math import sqrt
+        from hedge.tools import coefficient_to_matrix
+        from hedge.mesh import check_bc_coverage
+
+        check_bc_coverage(discr.mesh, [dirichlet_tag, neumann_tag])
+
+        self.coeff_func = coeff
+        self.sqrt_coeff = coefficient_to_matrix(discr, lambda x: sqrt(coeff(x)))
+        self.dirichlet_bc_func = dirichlet_bc
+        self.dirichlet_tag = dirichlet_tag
+        self.neumann_bc_func = neumann_bc
+        self.neumann_tag = neumann_tag
+
+        self.neumann_normals = discr.boundary_normals(self.neumann_tag)
+
     def dirichlet_bc_u(self, t, sqrt_coeff_u):
         from math import sqrt
 
