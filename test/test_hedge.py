@@ -1297,6 +1297,64 @@ class TestHedge(unittest.TestCase):
             return result
 
         self.assert_(count(mesh.tag_to_boundary[TAG_ALL]) == 0)
+    # -------------------------------------------------------------------------
+    def test_elliptic(self):
+        """Test that elliptic operators turn out symmetric and converge."""
+        import pylinear.array as num
+        import pylinear.computation as comp
+        import pylinear.operator as operator
+
+        def matrix_rep(op):
+            h,w = op.shape
+            mat = num.zeros(op.shape)
+            for j in range(w):
+                mat[:,j] = op(num.unit_vector(w, j))
+            return mat
+
+        import pymbolic
+        v_x = pymbolic.var("x")
+        truesol = pymbolic.parse("math.sin(x[0]**2*x[1]**2)")
+        truesol_c = pymbolic.compile(truesol, variables=["x"])
+        rhs = pymbolic.simplify(pymbolic.laplace(truesol, [v_x[0], v_x[1]]))
+        rhs_c = pymbolic.compile(rhs, variables=["x"])
+
+        from hedge.mesh import make_disk_mesh, TAG_ALL, TAG_NONE
+        mesh = make_disk_mesh(r=0.5, max_area=0.1, faces=20)
+
+        from hedge.tools import EOCRecorder
+        eocrec = EOCRecorder()
+        for order in [1,2,3,4,5]:
+            from hedge.discretization import Discretization
+            from hedge.element import TriangularElement
+            discr = Discretization(mesh, TriangularElement(order))
+
+            def l2_norm(v):
+                from math import sqrt
+                return sqrt(v*(discr.mass_operator*v))
+
+            from hedge.data import GivenFunction
+            from hedge.operators import WeakPoissonOperator
+            op = WeakPoissonOperator(discr, 
+                    dirichlet_tag=TAG_ALL,
+                    dirichlet_bc=GivenFunction(truesol_c),
+                    neumann_tag=TAG_NONE, 
+                    )
+
+            if order <= 3:
+                mat = matrix_rep(op)
+                self.assert_(comp.norm_frobenius(mat-mat.T)<1e-12)
+
+            rhs_v = discr.interpolate_volume_function(rhs_c)
+            truesol_v = discr.interpolate_volume_function(truesol_c)
+            a_inv = operator.CGOperator.make(-op, 40000, 1e-10)
+            sol_v = -a_inv(op.prepare_rhs(rhs_v))
+
+            eocrec.add_data_point(order, l2_norm(sol_v-truesol_v))
+
+        self.assert_(eocrec.estimate_order_of_convergence()[0,1] > 8)
+
+
+
 
 
 
