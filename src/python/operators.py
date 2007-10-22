@@ -327,7 +327,7 @@ class WeakPoissonOperator(hedge.tools.PylinearOperator):
 
 
 class StrongHeatOperator(object):
-    def __init__(self, discr, coeff=lambda x: 1, 
+    def __init__(self, discr, coeff=hedge.data.ConstantGivenFunction(1), 
             dirichlet_bc=hedge.data.ConstantGivenFunction(), dirichlet_tag="dirichlet",
             neumann_bc=hedge.data.ConstantGivenFunction(), neumann_tag="neumann",
             ldg=True):
@@ -432,7 +432,7 @@ class StrongHeatOperator(object):
     # boundary conditions -----------------------------------------------------
     def dirichlet_bc_u(self, t, sqrt_coeff_u):
         return (
-                -self.discr.boundarize_volume_field(sqrt_coeff_u, dtag)
+                -self.discr.boundarize_volume_field(sqrt_coeff_u, self.dirichlet_tag)
                 +2*self.dir_sqrt_coeff*self.dirichlet_bc.interpolate_boundary(
                     t, self.discr, self.dirichlet_tag)
                 )
@@ -449,7 +449,7 @@ class StrongHeatOperator(object):
         ac_multiply = work_with_arithmetic_containers(num.multiply)
 
         return (
-                -self.discr.boundarize_volume_field(sqrt_coeff_v, ntag)
+                -self.discr.boundarize_volume_field(sqrt_coeff_v, self.neumann_tag)
                 +
                 2*ac_multiply(self.neumann_normals,
                 self.neumann_bc.interpolate_boundary(t, self.discr, self.neumann_tag))

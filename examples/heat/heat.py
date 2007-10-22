@@ -38,6 +38,8 @@ def main() :
     from hedge.visualization import SiloVisualizer, VtkVisualizer
     from math import sin, cos, pi, exp, sqrt
     from hedge.parallel import guess_parallelization_context
+    from hedge.data import TimeConstantGivenFunction, \
+            GivenFunction, ConstantGivenFunction
 
     pcon = guess_parallelization_context()
 
@@ -103,9 +105,9 @@ def main() :
     op = StrongHeatOperator(discr, 
             #coeff=coeff,
             dirichlet_tag="dirichlet",
-            dirichlet_bc=dirichlet_bc,
+            dirichlet_bc=TimeConstantGivenFunction(ConstantGivenFunction(0)),
             neumann_tag="neumann", 
-            neumann_bc=neumann_bc
+            neumann_bc=TimeConstantGivenFunction(ConstantGivenFunction(1))
             )
     u = discr.interpolate_volume_function(u0)
 
