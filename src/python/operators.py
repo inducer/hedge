@@ -24,8 +24,9 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import pylinear.array as num
-import pylinear.operator as operator
+import hedge.tools
 import hedge.mesh
+import hedge.data
 
 
 
@@ -112,83 +113,19 @@ class MaxwellOperator(object):
 
 
 
-class LaplacianOperatorBase(object):
-    def get_weak_flux_set(self, ldg):
-        class FluxSet: pass
-        fs = FluxSet()
+class WeakPoissonOperator(hedge.tools.PylinearOperator):
+    """Implements the Local Discontinuous Galerkin (LDG) Method for elliptic
+    operators.
 
-        from hedge.flux import FluxVectorPlaceholder, FluxScalarPlaceholder, make_normal
-
-        # note here:
-
-        # local DG is unlike the other kids in that the computation of the flux
-        # of u depends *only* on u, whereas the computation of the flux of v
-        # (yielding the final right hand side) may also depend on u. That's why
-        # we use the layout [u,v], where v is simply omitted for the u flux
-        # computation.
-
-        dim = self.discr.dimensions
-        vec = FluxVectorPlaceholder(1+dim)
-        fs.u = u = vec[0]
-        fs.v = v = vec[1:]
-        normal = fs.normal = make_normal(dim)
-
-        from hedge.tools import dot
-
-        # central
-        fs.flux_u = u.avg*normal
-        fs.flux_v = dot(v.avg, normal)
-
-        # dbdry is "dirichlet boundary"
-        # nbdry is "neumann boundary"
-        fs.flux_u_dbdry = fs.flux_u
-        fs.flux_u_nbdry = fs.flux_u
-
-        fs.flux_v_dbdry = fs.flux_v
-        fs.flux_v_nbdry = fs.flux_v
-
-        if ldg:
-            from pytools.arithmetic_container import ArithmeticList 
-            ldg_beta = ArithmeticList([1]*dim)
-
-            fs.flux_u = fs.flux_u - (u.int-u.ext)*0.5*ldg_beta
-            fs.flux_v = fs.flux_v + dot((v.int-v.ext)*0.5, ldg_beta)
-
-        return fs
-
-    def get_strong_flux_set(self, ldg):
-        from hedge.tools import dot
-
-        fs = self.get_weak_flux_set(ldg)
-
-        u = fs.u
-        v = fs.v
-        normal = fs.normal
-
-        fs.flux_u = u.int*normal - fs.flux_u
-        fs.flux_v = dot(v.int, normal) - fs.flux_v
-        fs.flux_u_dbdry = u.int*normal - fs.flux_u_dbdry
-        fs.flux_v_dbdry = dot(v.int, normal) - fs.flux_v_dbdry
-        fs.flux_u_nbdry = u.int*normal - fs.flux_u_nbdry
-        fs.flux_v_nbdry = dot(v.int, normal) - fs.flux_v_nbdry
-
-        return fs
-
-
-
-
-class WeakPoissonOperator(operator.Operator(num.Float64)):
-    """Implements LDG according to
-
-    P. Castillo et al., 
+    See P. Castillo et al., 
     Local discontinuous Galerkin methods for elliptic problems", 
     Communications in Numerical Methods in Engineering 18, no. 1 (2002): 69-75.
     """
-    def __init__(self, discr, coeff=(lambda x: 1), 
-            dirichlet_bc=(lambda x, t: 0), dirichlet_tag="dirichlet",
-            neumann_bc=(lambda x, t: 0), neumann_tag="neumann",
+    def __init__(self, discr, coeff=hedge.data.ConstantGivenFunction(1), 
+            dirichlet_bc=hedge.data.ConstantGivenFunction(), dirichlet_tag="dirichlet",
+            neumann_bc=hedge.data.ConstantGivenFunction(), neumann_tag="neumann",
             ldg=True):
-        operator.Operator(num.Float64).__init__(self)
+        hedge.tools.PylinearOperator.__init__(self)
 
         self.discr = discr
 
@@ -206,16 +143,23 @@ class WeakPoissonOperator(operator.Operator(num.Float64)):
         self.m_inv = discr.inverse_mass_operator
 
         from math import sqrt
-        from hedge.tools import coefficient_to_matrix
         from hedge.mesh import check_bc_coverage
 
         check_bc_coverage(discr.mesh, [dirichlet_tag, neumann_tag])
 
-        self.coeff_func = coeff
-        self.sqrt_coeff = coefficient_to_matrix(discr, lambda x: sqrt(coeff(x)))
-        self.dirichlet_bc_func = dirichlet_bc
+        def fast_diagonal_mat(vec):
+            return num.diagonal_matrix(vec, flavor=num.SparseExecuteMatrix)
+
+        self.sqrt_coeff = fast_diagonal_mat(
+                num.sqrt(coeff.interpolate_volume(discr)))
+        self.dir_sqrt_coeff = fast_diagonal_mat(
+                num.sqrt(coeff.interpolate_boundary(discr, dirichlet_tag)))
+        self.neu_sqrt_coeff = fast_diagonal_mat(
+                num.sqrt(coeff.interpolate_boundary(discr, neumann_tag)))
+
+        self.dirichlet_bc = dirichlet_bc
         self.dirichlet_tag = dirichlet_tag
-        self.neumann_bc_func = neumann_bc
+        self.neumann_bc = neumann_bc
         self.neumann_tag = neumann_tag
 
         self.neumann_normals = discr.boundary_normals(self.neumann_tag)
@@ -232,12 +176,8 @@ class WeakPoissonOperator(operator.Operator(num.Float64)):
 
     # boundary conditions -----------------------------------------------------
     def dirichlet_bc_u(self):
-        from math import sqrt
-
-        def dir_bc_func(x):
-            return sqrt(self.coeff_func(x))*self.dirichlet_bc_func(0, x)
-
-        return self.discr.interpolate_boundary_function(dir_bc_func, self.dirichlet_tag)
+        return self.dir_sqrt_coeff * \
+                self.dirichlet_bc.interpolate_boundary(self.discr, self.dirichlet_tag)
 
     def dirichlet_bc_v(self, sqrt_coeff_v):
         return self.discr.boundarize_volume_field(sqrt_coeff_v, self.dirichlet_tag)
@@ -247,16 +187,12 @@ class WeakPoissonOperator(operator.Operator(num.Float64)):
 
     def neumann_bc_v(self):
         from pytools.arithmetic_container import work_with_arithmetic_containers
-        from math import sqrt
-
-        def neumann_bc_func(x):
-            return sqrt(self.coeff_func(x))*self.neumann_bc_func(0, x)
 
         ac_multiply = work_with_arithmetic_containers(num.multiply)
 
         return ac_multiply(self.neumann_normals,
-                self.discr.interpolate_boundary_function(
-                    neumann_bc_func, self.neumann_tag))
+                self.neu_sqrt_coeff * 
+                self.neumann_bc.interpolate_boundary(self.discr, self.neumann_tag))
 
     # fluxes ------------------------------------------------------------------
     def get_weak_flux_set(self, ldg):
@@ -390,12 +326,11 @@ class WeakPoissonOperator(operator.Operator(num.Float64)):
 
 
 
-class StrongHeatOperator(LaplacianOperatorBase):
+class StrongHeatOperator(object):
     def __init__(self, discr, coeff=lambda x: 1, 
-            dirichlet_bc=(lambda x, t: 0), dirichlet_tag="dirichlet",
-            neumann_bc=(lambda x, t: 0), neumann_tag="neumann",
+            dirichlet_bc=hedge.data.ConstantGivenFunction(), dirichlet_tag="dirichlet",
+            neumann_bc=hedge.data.ConstantGivenFunction(), neumann_tag="neumann",
             ldg=True):
-        operator.Operator(num.Float64).__init__(self)
         self.discr = discr
 
         fs = self.get_strong_flux_set(ldg)
@@ -412,48 +347,104 @@ class StrongHeatOperator(LaplacianOperatorBase):
         self.mass = discr.mass_operator
         self.m_inv = discr.inverse_mass_operator
 
-        from math import sqrt
-        from hedge.tools import coefficient_to_matrix
         from hedge.mesh import check_bc_coverage
-
         check_bc_coverage(discr.mesh, [dirichlet_tag, neumann_tag])
 
-        self.coeff_func = coeff
-        self.sqrt_coeff = coefficient_to_matrix(discr, lambda x: sqrt(coeff(x)))
-        self.dirichlet_bc_func = dirichlet_bc
+        def fast_diagonal_mat(vec):
+            return num.diagonal_matrix(vec, flavor=num.SparseExecuteMatrix)
+
+        self.sqrt_coeff = fast_diagonal_mat(
+                num.sqrt(coeff.interpolate_volume(discr)))
+        self.dir_sqrt_coeff = fast_diagonal_mat(
+                num.sqrt(coeff.interpolate_boundary(discr, dirichlet_tag)))
+        self.neu_sqrt_coeff = fast_diagonal_mat(
+                num.sqrt(coeff.interpolate_boundary(discr, neumann_tag)))
+
+        self.dirichlet_bc = dirichlet_bc
         self.dirichlet_tag = dirichlet_tag
-        self.neumann_bc_func = neumann_bc
+        self.neumann_bc = neumann_bc
         self.neumann_tag = neumann_tag
 
         self.neumann_normals = discr.boundary_normals(self.neumann_tag)
 
+    # fluxes ------------------------------------------------------------------
+    def get_weak_flux_set(self, ldg):
+        class FluxSet: pass
+        fs = FluxSet()
+
+        from hedge.flux import FluxVectorPlaceholder, FluxScalarPlaceholder, make_normal
+
+        # note here:
+
+        # local DG is unlike the other kids in that the computation of the flux
+        # of u depends *only* on u, whereas the computation of the flux of v
+        # (yielding the final right hand side) may also depend on u. That's why
+        # we use the layout [u,v], where v is simply omitted for the u flux
+        # computation.
+
+        dim = self.discr.dimensions
+        vec = FluxVectorPlaceholder(1+dim)
+        fs.u = u = vec[0]
+        fs.v = v = vec[1:]
+        normal = fs.normal = make_normal(dim)
+
+        from hedge.tools import dot
+
+        # central
+        fs.flux_u = u.avg*normal
+        fs.flux_v = dot(v.avg, normal)
+
+        # dbdry is "dirichlet boundary"
+        # nbdry is "neumann boundary"
+        fs.flux_u_dbdry = fs.flux_u
+        fs.flux_u_nbdry = fs.flux_u
+
+        fs.flux_v_dbdry = fs.flux_v
+        fs.flux_v_nbdry = fs.flux_v
+
+        if ldg:
+            from pytools.arithmetic_container import ArithmeticList 
+            ldg_beta = ArithmeticList([1]*dim)
+
+            fs.flux_u = fs.flux_u - (u.int-u.ext)*0.5*ldg_beta
+            fs.flux_v = fs.flux_v + dot((v.int-v.ext)*0.5, ldg_beta)
+
+        return fs
+
+    def get_strong_flux_set(self, ldg):
+        from hedge.tools import dot
+
+        fs = self.get_weak_flux_set(ldg)
+
+        u = fs.u
+        v = fs.v
+        normal = fs.normal
+
+        fs.flux_u = u.int*normal - fs.flux_u
+        fs.flux_v = dot(v.int, normal) - fs.flux_v
+        fs.flux_u_dbdry = u.int*normal - fs.flux_u_dbdry
+        fs.flux_v_dbdry = dot(v.int, normal) - fs.flux_v_dbdry
+        fs.flux_u_nbdry = u.int*normal - fs.flux_u_nbdry
+        fs.flux_v_nbdry = dot(v.int, normal) - fs.flux_v_nbdry
+
+        return fs
+
+    # boundary conditions -----------------------------------------------------
     def dirichlet_bc_u(self, t, sqrt_coeff_u):
-        from math import sqrt
-
-        def dir_bc_func(x):
-            return sqrt(self.coeff_func(x))*self.dirichlet_bc_func(t, x)
-
-        dtag = self.dirichlet_tag
         return (
                 -self.discr.boundarize_volume_field(sqrt_coeff_u, dtag)
-                +2*self.discr.interpolate_boundary_function(dir_bc_func, dtag))
+                +2*self.dir_sqrt_coeff*self.dirichlet_bc.interpolate_boundary(
+                    t, self.discr, self.dirichlet_tag)
+                )
 
     def dirichlet_bc_v(self, t, sqrt_coeff_v):
-        return self.discr.boundarize_volume_field(
-                sqrt_coeff_v, self.dirichlet_tag)
+        return self.discr.boundarize_volume_field(sqrt_coeff_v, self.dirichlet_tag)
 
     def neumann_bc_u(self, t, sqrt_coeff_u):
-        return self.discr.boundarize_volume_field(
-                sqrt_coeff_u, self.neumann_tag)
+        return self.discr.boundarize_volume_field(sqrt_coeff_u, self.neumann_tag)
 
     def neumann_bc_v(self, t, sqrt_coeff_v):
         from pytools.arithmetic_container import work_with_arithmetic_containers
-        from math import sqrt
-
-        def neumann_bc_func(x):
-            return sqrt(self.coeff_func(x))*self.neumann_bc_func(t, x)
-
-        ntag = self.neumann_tag
 
         ac_multiply = work_with_arithmetic_containers(num.multiply)
 
@@ -461,9 +452,10 @@ class StrongHeatOperator(LaplacianOperatorBase):
                 -self.discr.boundarize_volume_field(sqrt_coeff_v, ntag)
                 +
                 2*ac_multiply(self.neumann_normals,
-                self.discr.interpolate_boundary_function(neumann_bc_func, ntag))
+                self.neumann_bc.interpolate_boundary(t, self.discr, self.neumann_tag))
                 )
 
+    # right-hand side ---------------------------------------------------------
     def rhs(self, t, u):
         from hedge.discretization import pair_with_boundary
         from math import sqrt

@@ -26,6 +26,7 @@ import pylinear.operator as operator
 from pytools.arithmetic_container import \
         work_with_arithmetic_containers, \
         ArithmeticList
+import hedge.tools
 import hedge.mesh
 
 
@@ -721,7 +722,7 @@ def generate_ones_on_boundary(discr, tag):
 
 
 # pylinear operator wrapper ---------------------------------------------------
-class PylinearOpWrapper(operator.Operator(num.Float64)):
+class PylinearOpWrapper(hedge.tools.PylinearOperator):
     def __init__(self,  discr_op):
         operator.Operator(num.Float64).__init__(self)
         self.discr_op = discr_op

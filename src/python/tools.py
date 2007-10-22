@@ -35,14 +35,6 @@ cyl_neumann = hedge._internal.cyl_neumann
 
 
 
-def coefficient_to_matrix(discr, coeff):
-    return num.diagonal_matrix(
-            discr.interpolate_volume_function(coeff),
-            flavor=num.SparseExecuteMatrix)
-
-
-
-
 def cyl_bessel_j_prime(nu, z):
     if nu == 0:
         if z == 0:
@@ -174,11 +166,11 @@ def find_matching_vertices_along_axis(axis, points_a, points_b, numbers_a, numbe
 def make_vector_target(argument, result):
     """Creates a VectorTarget for an OperatorTarget with `argument'
     and `result'. Normally, C{argument} and C{result} should be 
-    vectors. However, `argument' may also be the scalar 0, in which
+    vectors. However, C{argument} may also be the scalar 0, in which
     case a dummy operator is returned.
     """
     from hedge._internal import NullTarget, VectorTarget
-    if argument == 0:
+    if isinstance(argument, (int, float)) and argument == 0:
         return NullTarget()
     else:
         return VectorTarget(argument, result)
@@ -460,6 +452,5 @@ class BlockMatrix(object):
 
 
 
-
-
-
+import pylinear.operator
+PylinearOperator = pylinear.operator.Operator(num.Float64)

@@ -41,6 +41,7 @@ def main() :
     from hedge.visualization import SiloVisualizer, VtkVisualizer
     from math import sin, cos, pi, exp, sqrt
     from hedge.parallel import guess_parallelization_context
+    from hedge.data import GivenFunction, ConstantGivenFunction
 
     pcon = guess_parallelization_context()
 
@@ -81,7 +82,7 @@ def main() :
     else:
         mesh_data = pcon.receive_mesh()
 
-    discr = pcon.make_discretization(mesh_data, el_class(2))
+    discr = pcon.make_discretization(mesh_data, el_class(5))
     vis = VtkVisualizer(discr, pcon)
 
     def u0(x):
@@ -97,10 +98,13 @@ def main() :
         else:
             return 1
 
-    def dirichlet_bc(t, x):
-        return 0
+    def dirichlet_bc(x):
+        if x[0] > 0:
+            return 0
+        else:
+            return 1
 
-    def neumann_bc(t, x):
+    def neumann_bc(x):
         return -2
 
     import pymbolic
@@ -117,11 +121,11 @@ def main() :
 
     op = WeakPoissonOperator(discr, 
             #coeff=coeff,
-            dirichlet_tag="dirichlet",
+            dirichlet_tag=TAG_ALL,
             #dirichlet_bc=lambda t, x: 0,
-            dirichlet_bc=lambda t, x: 0,
-            neumann_tag="neumann", 
-            neumann_bc=lambda t, x: -1,
+            dirichlet_bc=GivenFunction(dirichlet_bc),
+            neumann_tag=TAG_NONE, 
+            neumann_bc=ConstantGivenFunction(-1),
             ldg=False
             )
 
@@ -184,7 +188,7 @@ def main() :
 
 
 if __name__ == "__main__":
-    #import cProfile as profile
-    #profile.run("main()", "wave2d.prof")
-    main()
+    import cProfile as profile
+    profile.run("main()", "poisson.prof")
+    #main()
 
