@@ -52,11 +52,13 @@ class IGivenFunction(object):
         """Return the volume interpolant of this function with respect to
         the L{Discretization} C{discr}.
         """
+        raise NotImplementedError
 
     def boundary_interpolant(self, discr, tag=hedge.mesh.TAG_ALL):
         """Return the boundary interpolant of this function with respect to
         the L{Discretization} discr at the boundary tagged with C{tag}.
         """
+        raise NotImplementedError
 
 
 
@@ -70,12 +72,14 @@ class ITimeDependentGivenFunction(object):
         """Return the volume interpolant of this function with respect to
         the L{Discretization} discr at time {t}.
         """
+        raise NotImplementedError
 
     def boundary_interpolant(self, t, discr, tag=hedge.mesh.TAG_ALL):
         """Return the boundary interpolant of this function with respect to
         the L{Discretization} discr at time C{t} at the boundary tagged with
         C{tag}.
         """
+        raise NotImplementedError
 
 
 
@@ -136,11 +140,17 @@ class TimeConstantGivenFunction(ITimeDependentGivenFunction):
         self.gf = gf
 
     def volume_interpolant(self, t, discr):
-        return self.gf.interpolate_volume(discr)
+        return self.gf.volume_interpolant(discr)
 
     def boundary_interpolant(self, t, discr, tag=hedge.mesh.TAG_ALL):
-        return self.gf.interpolate_boundary(discr, tag)
+        return self.gf.boundary_interpolant(discr, tag)
 
+
+
+
+
+def make_tdep_constant(x):
+    return TimeConstantGivenFunction(ConstantGivenFunction(x))
 
 
 
@@ -153,11 +163,11 @@ class TimeHarmonicGivenFunction(ITimeDependentGivenFunction):
         self.omega = omega
         self.phase = phase
 
-    def interpolate_volume(self, t, discr):
+    def volume_interpolant(self, t, discr):
         from math import sin
         return sin(omega*t+phase)*self.gf.interpolate_volume(discr)
 
-    def interpolate_boundary(self, t, discr, tag=hedge.mesh.TAG_ALL):
+    def boundary_interpolant(self, t, discr, tag=hedge.mesh.TAG_ALL):
         from math import sin
         return sin(omega*t+phase)*self.gf.interpolate_boundary(discr, tag)
 
@@ -171,8 +181,8 @@ class TimeDependentGivenFunction(ITimeDependentGivenFunction):
     def __init__(self, f):
         self.f = f
 
-    def interpolate_volume(self, t, discr):
+    def volume_interpolant(self, t, discr):
         return discr.interpolate_volume_function(lambda x: self.f(x,t))
 
-    def interpolate_boundary(self, discr, tag=hedge.mesh.TAG_ALL):
-        return discr.interpolate_boundary_function(lambda x: self.f(x,t), tag)
+    def boundary_interpolant(self, t, discr, tag=hedge.mesh.TAG_ALL):
+        return discr.interpolate_boundary_function(lambda x: self.f(x, t), tag)

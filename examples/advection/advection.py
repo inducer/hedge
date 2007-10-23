@@ -24,76 +24,6 @@ from hedge.tools import dot
 
 
 
-class StrongAdvectionOperator:
-    def __init__(self, discr, a, inflow_u=None):
-        self.a = a
-        self.discr = discr
-        self.inflow_u = inflow_u
-
-        from hedge.flux import make_normal, FluxScalarPlaceholder
-
-        dim = discr.dimensions
-        u = FluxScalarPlaceholder(0)
-        normal = make_normal(dim)
-
-        flux_weak = u.avg*dot(normal, a) - 0.5*(u.int - u.ext)
-        flux_strong = u.int * dot(normal, a) - flux_weak
-        self.flux = discr.get_flux_operator(flux_strong)
-
-        self.nabla = discr.nabla
-        self.mass = discr.mass_operator
-        self.m_inv = discr.inverse_mass_operator
-
-    def rhs(self, t, u):
-        from hedge.discretization import pair_with_boundary
-
-        bc_in = self.discr.interpolate_boundary_function(
-                lambda x: self.inflow_u(t, x),
-                "inflow")
-
-        return dot(self.a, self.nabla*u) - self.m_inv*(
-                self.flux * u + 
-                self.flux * pair_with_boundary(u, bc_in, "inflow"))
-
-
-
-
-class WeakAdvectionOperator:
-    def __init__(self, discr, a, inflow_u=None):
-        self.a = a
-        self.discr = discr
-        self.inflow_u = inflow_u
-
-        from hedge.flux import make_normal, FluxScalarPlaceholder
-
-        dim = discr.dimensions
-        u = FluxScalarPlaceholder(0)
-        normal = make_normal(dim)
-
-        flux_weak = u.avg*dot(normal, a) - 0.5*(u.int - u.ext)
-        self.flux = discr.get_flux_operator(flux_weak)
-
-        self.minv_st = discr.minv_stiffness_t
-        self.mass = discr.mass_operator
-        self.m_inv = discr.inverse_mass_operator
-
-    def rhs(self, t, u):
-        from hedge.discretization import pair_with_boundary
-
-        bc_in = self.discr.interpolate_boundary_function(
-                lambda x: self.inflow_u(t, x),
-                "inflow")
-
-        bc_out = self.discr.boundarize_volume_field(u, "outflow")
-
-        return -dot(self.a, self.minv_st*u) + self.m_inv*(
-                self.flux*u
-                + self.flux * pair_with_boundary(u, bc_in, "inflow")
-                + self.flux * pair_with_boundary(u, bc_out, "outflow")
-                )
-
-
-
 def main() :
     from hedge.element import \
             TriangularElement, \
@@ -116,8 +46,10 @@ def main() :
             guess_parallelization_context, \
             reassemble_volume_field
     from time import time
+    from hedge.operators import StrongAdvectionOperator, WeakAdvectionOperator
+    from hedge.data import TimeDependentGivenFunction
 
-    def u_analytic(t, x):
+    def u_analytic(x, t):
         return sin(3*(a*x+t))
 
     def boundary_tagger(vertices, el, face_nr):
@@ -159,10 +91,13 @@ def main() :
     else:
         mesh_data = pcon.receive_mesh()
 
-    discr = pcon.make_discretization(mesh_data, el_class(5))
+    discr = pcon.make_discretization(mesh_data, el_class(3))
     vis = SiloVisualizer(discr, pcon)
     #vis = VtkVisualizer(discr, "fld", pcon)
-    op = StrongAdvectionOperator(discr, a, u_analytic)
+    op = StrongAdvectionOperator(discr, a, 
+            inflow_u=TimeDependentGivenFunction(u_analytic))
+    #op = WeakAdvectionOperator(discr, a, 
+            #inflow_u=TimeDependentGivenFunction(u_analytic))
 
     print "%d elements" % len(discr.mesh.elements)
 
@@ -172,10 +107,10 @@ def main() :
                 #("inflow", ones_on_boundary(discr, "inflow"))])
     #return 
 
-    u = discr.interpolate_volume_function(lambda x: u_analytic(0, x))
+    u = discr.interpolate_volume_function(lambda x: u_analytic(x, 0))
 
     dt = discr.dt_factor(comp.norm_2(a))/2
-    stepfactor = 1
+    stepfactor = 10
     nsteps = int(1/dt)
 
     stepper = RK4TimeStepper()

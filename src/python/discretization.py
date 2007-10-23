@@ -319,7 +319,7 @@ class Discretization(object):
                 from pytools.arithmetic_container import ArithmeticListMatrix
                 return ArithmeticListMatrix(result)
             else:
-                raise ValueError, "only scalars, vectors and matrices are "\
+                raise NotImplementedError, "only scalars, vectors and matrices are "\
                         "supported for volume interpolation"
 
     def boundary_zeros(self, tag=hedge.mesh.TAG_ALL):
@@ -352,7 +352,7 @@ class Discretization(object):
                 from pytools.arithmetic_container import ArithmeticListMatrix
                 return ArithmeticListMatrix(result)
             else:
-                raise ValueError, "only scalars, vectors and matrices vectors are supported "\
+                raise NotImplementedError, "only scalars, vectors and matrices vectors are supported "\
                         "for boundary interpolation"
 
     def boundary_normals(self, tag=hedge.mesh.TAG_ALL):

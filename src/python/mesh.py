@@ -487,6 +487,7 @@ def check_bc_coverage(mesh, bc_tags):
 
 
 
+# mesh producers for simple geometries ----------------------------------------
 def make_single_element_mesh(a=-0.5, b=0.5, 
         boundary_tagger=(lambda vertices, face_indices: [])):
     n = 2

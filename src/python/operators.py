@@ -31,6 +31,95 @@ import hedge.data
 
 
 
+class AdvectionOperatorBase:
+    def __init__(self, discr, v, 
+            inflow_tag="inflow",
+            inflow_u=hedge.data.make_tdep_constant(0),
+            outflow_tag="outflow",
+            flux_type="central"):
+        self.discr = discr
+        self.v = v
+        self.inflow_tag = inflow_tag
+        self.inflow_u = inflow_u
+        self.outflow_tag = outflow_tag
+        self.flux_type = flux_type
+
+        from hedge.mesh import check_bc_coverage
+        check_bc_coverage(discr.mesh, [inflow_tag, outflow_tag])
+
+        self.nabla = discr.nabla
+        self.mass = discr.mass_operator
+        self.m_inv = discr.inverse_mass_operator
+        self.minv_st = discr.minv_stiffness_t
+
+        self.flux = discr.get_flux_operator(self.get_flux())
+
+    flux_types = [
+            "central",
+            #"upwind",
+            "lf"
+            ]
+
+    def get_weak_flux(self):
+        from hedge.flux import make_normal, FluxScalarPlaceholder
+        from hedge.tools import dot
+
+        u = FluxScalarPlaceholder(0)
+        normal = make_normal(self.discr.dimensions)
+
+        if self.flux_type == "central":
+            return u.avg*dot(normal, self.v) - 0.5*(u.int - u.ext)
+        elif self.flux_type == "lf":
+            return u.avg*dot(normal, self.v) - 0.5*(u.int - u.ext)
+        elif self.flux_type == "upwind":
+            raise NotImplementedError
+        else:
+            raise ValueError, "invalid flux type"
+
+
+class StrongAdvectionOperator(AdvectionOperatorBase):
+    def get_flux(self):
+        from hedge.flux import make_normal, FluxScalarPlaceholder
+        from hedge.tools import dot
+
+        u = FluxScalarPlaceholder(0)
+        normal = make_normal(self.discr.dimensions)
+
+        return u.int * dot(normal, self.v) - self.get_weak_flux()
+
+    def rhs(self, t, u):
+        from hedge.discretization import pair_with_boundary
+        from hedge.tools import dot
+
+        bc_in = self.inflow_u.boundary_interpolant(t, self.discr, self.inflow_tag)
+
+        return dot(self.v, self.nabla*u) - self.m_inv*(
+                self.flux * u + 
+                self.flux * pair_with_boundary(u, bc_in, self.inflow_tag))
+
+
+
+
+class WeakAdvectionOperator(AdvectionOperatorBase):
+    def get_flux(self):
+        return self.get_weak_flux()
+
+    def rhs(self, t, u):
+        from hedge.discretization import pair_with_boundary
+        from hedge.tools import dot
+
+        bc_in = self.inflow_u.boundary_interpolant(t, self.discr, self.inflow_tag)
+        bc_out = self.discr.boundarize_volume_field(u, self.outflow_tag)
+
+        return -dot(self.v, self.minv_st*u) + self.m_inv*(
+                self.flux*u
+                + self.flux * pair_with_boundary(u, bc_in, self.inflow_tag)
+                + self.flux * pair_with_boundary(u, bc_out, self.outflow_tag)
+                )
+
+
+
+
 class MaxwellOperator(object):
     """A 3D Maxwell operator with PEC boundaries.
 
