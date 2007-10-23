@@ -63,10 +63,10 @@ def main() :
 
     if dim == 2:
         if pcon.is_head_rank:
-            mesh = make_disk_mesh(r=0.5, boundary_tagger=boundary_tagger)
+            #mesh = make_disk_mesh(r=0.5, boundary_tagger=boundary_tagger)
             #mesh = make_regular_square_mesh(n=3, boundary_tagger=boundary_tagger)
             #mesh = make_regular_square_mesh(n=9)
-            #mesh = make_square_mesh(max_area=0.03, boundary_tagger=boundary_tagger)
+            mesh = make_square_mesh(max_area=0.01, boundary_tagger=boundary_tagger)
             #mesh.transform(Reflection(0,2))
         el_class = TriangularElement
     elif dim == 3:
@@ -82,7 +82,7 @@ def main() :
     else:
         mesh_data = pcon.receive_mesh()
 
-    discr = pcon.make_discretization(mesh_data, el_class(5))
+    discr = pcon.make_discretization(mesh_data, el_class(2))
     vis = VtkVisualizer(discr, pcon)
 
     def u0(x):
@@ -92,41 +92,44 @@ def main() :
         else:
             return 0
 
-    def coeff(x):
-        if x[0] < 0:
-            return 0.25
-        else:
-            return 1
-
     def dirichlet_bc(x):
         if x[0] > 0:
             return 0
         else:
             return 1
 
-    def neumann_bc(x):
-        return -2
-
-    import pymbolic
-    v_x = pymbolic.var("x")
-    sol = pymbolic.parse("math.sin(x[0]**2*x[1]**2)")
-    #sol = pymbolic.parse("(x[0]**2+-0.25)*(x[1]**2+-0.25)")
-    sol_c = pymbolic.compile(sol, variables=["x"])
-    #rhs = pymbolic.simplify(pymbolic.laplace(sol, [v_x[0], v_x[1]]))
-    #rhs_c = pymbolic.compile(rhs, variables=["x"])
-    #print sol,rhs
-
     def rhs_c(x):
-        return 0
+        if comp.norm_2(x) < 0.1:
+            return 1000
+        else:
+            return 0
+
+    class DiffTensor:
+        shape = (dim, dim)
+
+        def __call__(self, x):
+            result = num.identity(dim)
+            result[0,0] = 20*abs(x[0]-0.5)
+            return result
+
+    def my_diff_tensor():
+        result = num.identity(dim)
+        result[0,0] = 0.1
+        return result
 
     op = WeakPoissonOperator(discr, 
-            #coeff=coeff,
+            #diffusion_tensor=ConstantGivenFunction(my_diff_tensor()),
+            diffusion_tensor=GivenFunction(DiffTensor()),
+
+            #dirichlet_tag="dirichlet",
+            #neumann_tag="neumann", 
+
             dirichlet_tag=TAG_ALL,
-            #dirichlet_bc=lambda t, x: 0,
-            dirichlet_bc=GivenFunction(dirichlet_bc),
-            neumann_tag=TAG_NONE, 
-            neumann_bc=ConstantGivenFunction(-1),
-            ldg=False
+            neumann_tag=TAG_NONE,
+
+            #dirichlet_bc=GivenFunction(dirichlet_bc),
+            dirichlet_bc=ConstantGivenFunction(0),
+            neumann_bc=ConstantGivenFunction(-10),
             )
 
     def l2_norm(v):
@@ -145,8 +148,8 @@ def main() :
         #print comp.eigenvalues(mat)
         print mat.shape
     
+    from hedge.discretization import PylinearOpWrapper
     if False:
-        from hedge.discretization import PylinearOpWrapper
         results = comp.operator_eigenvectors(-op, 20, PylinearOpWrapper(discr.mass_operator),
                 which=comp.SMALLEST_MAGNITUDE
                 )
@@ -161,24 +164,18 @@ def main() :
         visf.close()
         return
 
-    sol_v = discr.interpolate_volume_function(sol_c)
-    rhs_v = discr.interpolate_volume_function(rhs_c)
 
-    #a_inv = operator.BiCGSTABOperator.make(StiffnessOperator(), 40000, 1e-10)
-    a_inv = operator.CGOperator.make(-op, 40000, 1e-10)
+    #a_inv = operator.BiCGSTABOperator.make(-op, 40000, 1e-10)
+    mass_op = PylinearOpWrapper(discr.mass_operator)
+    a_inv = operator.CGOperator.make(-op, 40000, 1e-4)
     a_inv.debug_level = 1
 
-    u = -a_inv(op.prepare_rhs(rhs_v))
-
-    v_ones = 1+discr.volume_zeros()
+    u = -a_inv(op.prepare_rhs(GivenFunction(rhs_c)))
 
     from hedge.discretization import ones_on_boundary
     visf = vis.make_file("fld")
     vis.add_data(visf, [
         ("sol", u), 
-        ("truesol", sol_v), 
-        ("rhs2", discr.inverse_mass_operator* op(sol_v)), 
-        ("rhs", rhs_v), 
         ("dir", ones_on_boundary(discr, "dirichlet")), 
         ("neu", ones_on_boundary(discr, "neumann")), 
         ])

@@ -309,7 +309,7 @@ class Discretization(object):
                 return result
             elif len(f.shape) == 2:
                 h, w = f.shape
-                matrix = [[self.volume_zeros() for j in range(w)] for i in range(h)]
+                result = [[self.volume_zeros() for j in range(w)] for i in range(h)]
 
                 for point_nr, x in enumerate(self.nodes):
                     for i, row in enumerate(f(x)):
@@ -317,7 +317,7 @@ class Discretization(object):
                             result[i][j][point_nr] = entry
 
                 from pytools.arithmetic_container import ArithmeticListMatrix
-                result = ArithmeticList([self.volume_zeros() for i in range(count)])
+                return ArithmeticListMatrix(result)
             else:
                 raise ValueError, "only scalars, vectors and matrices are "\
                         "supported for volume interpolation"
@@ -340,8 +340,19 @@ class Discretization(object):
                     for field_nr, value in enumerate(f(pt)):
                         result[field_nr][i] = value
                 return result
+            elif len(f.shape) == 2:
+                h, w = f.shape
+                result = [[self.boundary_zeros(tag) for j in range(w)] for i in range(h)]
+
+                for point_nr, x in enumerate(self._get_boundary(tag).nodes):
+                    for i, row in enumerate(f(x)):
+                        for j, entry in enumerate(row):
+                            result[i][j][point_nr] = entry
+
+                from pytools.arithmetic_container import ArithmeticListMatrix
+                return ArithmeticListMatrix(result)
             else:
-                raise ValueError, "only scalars and vectors are supported "\
+                raise ValueError, "only scalars, vectors and matrices vectors are supported "\
                         "for boundary interpolation"
 
     def boundary_normals(self, tag=hedge.mesh.TAG_ALL):

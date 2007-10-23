@@ -162,7 +162,7 @@ class WeakPoissonOperator(hedge.tools.PylinearOperator):
             self.diff = diffusion_tensor.volume_interpolant(discr).map(
                     fast_diagonal_mat)
             self.neu_diff = diffusion_tensor.boundary_interpolant(
-                    discr, self.neumann_tag).map(
+                    discr, neumann_tag).map(
                     fast_diagonal_mat)
 
         self.dirichlet_bc = dirichlet_bc
@@ -181,24 +181,6 @@ class WeakPoissonOperator(hedge.tools.PylinearOperator):
 
     def apply(self, before, after):
         after[:] = self.op(before)
-
-    # boundary conditions -----------------------------------------------------
-    def dirichlet_bc_u(self):
-        return self.dirichlet_bc.boundary_interpolant(self.discr, self.dirichlet_tag)
-
-    def dirichlet_bc_v(self, sqrt_coeff_v):
-        return self.discr.boundarize_volume_field(sqrt_coeff_v, self.dirichlet_tag)
-
-    def neumann_bc_u(self, sqrt_coeff_u):
-        return self.discr.boundarize_volume_field(sqrt_coeff_u, self.neumann_tag)
-
-    def neumann_bc_v(self):
-        from pytools.arithmetic_container import work_with_arithmetic_containers
-
-        ac_multiply = work_with_arithmetic_containers(num.multiply)
-
-        return self.neu_diff * ac_multiply(self.neumann_normals,
-                self.neumann_bc.boundary_interpolant(self.discr, self.neumann_tag))
 
     # fluxes ------------------------------------------------------------------
     def get_weak_flux_set(self, ldg):
@@ -229,7 +211,7 @@ class WeakPoissonOperator(hedge.tools.PylinearOperator):
 
         # penalty term
         stab_term = PenaltyTerm() * (u.int - u.ext)
-        fs.flux_v -= 0.1 * stab_term
+        fs.flux_v -= stab_term
 
         # boundary fluxes
         fs.flux_u_dbdry = normal * u.ext
@@ -261,8 +243,8 @@ class WeakPoissonOperator(hedge.tools.PylinearOperator):
         diff_v = self.diff * v
 
         w = join_fields(u, diff_v)
-        dirichlet_bc_w = join_fields(0, self.dirichlet_bc_v(diff_v))
-        neumann_bc_w = join_fields(self.neumann_bc_u(u), [0]*dim)
+        dirichlet_bc_w = join_fields(0, [0]*dim)
+        neumann_bc_w = join_fields(0, [0]*dim)
 
         return (
                 -dot(self.stiff_t, diff_v)
@@ -306,17 +288,24 @@ class WeakPoissonOperator(hedge.tools.PylinearOperator):
         dtag = self.dirichlet_tag
         ntag = self.neumann_tag
 
-        dirichlet_bc_u = self.dirichlet_bc_u()
+        dirichlet_bc_u = self.dirichlet_bc.boundary_interpolant(self.discr, dtag)
         vpart = self.m_inv * (
                 (self.flux_u_dbdry*pair_with_boundary(0, dirichlet_bc_u, dtag))
                 )
         diff_v = self.diff * vpart
 
+        def neumann_bc_v():
+            from pytools.arithmetic_container import work_with_arithmetic_containers
+            ac_multiply = work_with_arithmetic_containers(num.multiply)
+
+            return self.neu_diff * ac_multiply(self.neumann_normals,
+                    self.neumann_bc.boundary_interpolant(self.discr, ntag))
+
         w = join_fields(0, diff_v)
         dirichlet_bc_w = join_fields(dirichlet_bc_u, [0]*dim)
-        neumann_bc_w = join_fields(0, self.neumann_bc_v())
+        neumann_bc_w = join_fields(0, neumann_bc_v())
 
-        return self.discr.mass_operator * rhs - (
+        return self.discr.mass_operator * rhs.volume_interpolant(self.discr) - (
                 -dot(self.stiff_t, diff_v)
                 + self.flux_v * w
                 + self.flux_v_dbdry * pair_with_boundary(w, dirichlet_bc_w, dtag)

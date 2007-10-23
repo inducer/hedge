@@ -1346,10 +1346,9 @@ class TestHedge(unittest.TestCase):
                 mat = matrix_rep(op)
                 self.assert_(comp.norm_frobenius(mat-mat.T)<1e-12)
 
-            rhs_v = discr.interpolate_volume_function(rhs_c)
             truesol_v = discr.interpolate_volume_function(truesol_c)
             a_inv = operator.CGOperator.make(-op, 40000, 1e-10)
-            sol_v = -a_inv(op.prepare_rhs(rhs_v))
+            sol_v = -a_inv(op.prepare_rhs(GivenFunction(rhs_c)))
 
             eocrec.add_data_point(order, l2_norm(sol_v-truesol_v))
 
