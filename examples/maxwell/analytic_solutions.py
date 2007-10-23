@@ -33,8 +33,8 @@ class RealPartAdapter:
         self.adaptee = adaptee
 
     @property
-    def target_dimensions(self):
-        return self.adaptee.target_dimensions
+    def shape(self):
+        return self.adaptee.shape
 
     def __call__(self, x):
         return [xi.real for xi in self.adaptee(x)]
@@ -44,8 +44,9 @@ class SplitComplexAdapter:
         self.adaptee = adaptee
 
     @property
-    def target_dimensions(self):
-        return self.adaptee.target_dimensions*2
+    def shape(self):
+        (n,) = self.adaptee.shape
+        return (n*2,)
 
     def __call__(self, x):
         ad_x = self.adaptee(x)
@@ -56,8 +57,8 @@ class CartesianAdapter:
         self.adaptee = adaptee
 
     @property
-    def target_dimensions(self):
-        return self.adaptee.target_dimensions
+    def shape(self):
+        return self.adaptee.shape
 
     def __call__(self, x):
         xy = x[:2]
@@ -127,8 +128,8 @@ class CylindricalCavityMode:
         self.t = t
 
     @property
-    def target_dimensions(self):
-        return 6
+    def shape(self):
+        return (6,)
 
     def __call__(self, x):
         # coordinates -----------------------------------------------------
@@ -211,8 +212,8 @@ class RectangularWaveguideMode:
         self.t = t
 
     @property
-    def target_dimensions(self):
-        return 6
+    def shape(self):
+        return (6,)
 
     def __call__(self, x):
         f,g,h = self.factors

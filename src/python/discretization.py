@@ -294,45 +294,33 @@ class Discretization(object):
     def interpolate_volume_function(self, f):
         try:
             # are we interpolating many fields at once?
-            count = f.target_dimensions
+            shape = f.shape
         except AttributeError:
             # no, just one
-            count = 1
-
-        if count > 1:
-            result = ArithmeticList([self.volume_zeros() for i in range(count)])
-
-            for point_nr, x in enumerate(self.nodes):
-                for field_nr, value in enumerate(f(x)):
-                    result[field_nr][point_nr] = value
-            return result
-        else:
             return num.array([f(x) for x in self.nodes])
-
-    def interpolate_tag_volume_function(self, f, tag=hedge.mesh.TAG_ALL):
-        try:
-            # are we interpolating many fields at once?
-            count = len(f)
-        except:
-            # no, just one
-            count = 1
-
-        if count > 1:
-            result = ArithmeticList([self.volume_zeros() for i in range(count)])
-
-            for el in self.mesh.tag_to_elements[tag]:
-                e_start, e_end = self.find_el_range(el.id)
-                for i, pt in enumerate(self.nodes[e_start:e_end]):
-                    for field_nr, value in enumerate(f(pt)):
-                        result[field_nr][e_start+i] = value
         else:
-            result = self.volume_zeros()
-            for el in self.mesh.tag_to_elements[tag]:
-                e_start, e_end = self.find_el_range(el.id)
-                for i, pt in enumerate(self.nodes[e_start:e_end]):
-                    result[e_start+i] = f(pt)
+            if len(f.shape) == 1:
+                (count,) = f.shape
+                result = ArithmeticList([self.volume_zeros() for i in range(count)])
 
-        return result
+                for point_nr, x in enumerate(self.nodes):
+                    for field_nr, value in enumerate(f(x)):
+                        result[field_nr][point_nr] = value
+                return result
+            elif len(f.shape) == 2:
+                h, w = f.shape
+                matrix = [[self.volume_zeros() for j in range(w)] for i in range(h)]
+
+                for point_nr, x in enumerate(self.nodes):
+                    for i, row in enumerate(f(x)):
+                        for j, entry in enumerate(row):
+                            result[i][j][point_nr] = entry
+
+                from pytools.arithmetic_container import ArithmeticListMatrix
+                result = ArithmeticList([self.volume_zeros() for i in range(count)])
+            else:
+                raise ValueError, "only scalars, vectors and matrices are "\
+                        "supported for volume interpolation"
 
     def boundary_zeros(self, tag=hedge.mesh.TAG_ALL):
         return num.zeros((len(self._get_boundary(tag).nodes),))
@@ -340,19 +328,21 @@ class Discretization(object):
     def interpolate_boundary_function(self, f, tag=hedge.mesh.TAG_ALL):
         try:
             # are we interpolating many fields at once?
-            count = f.target_dimensions
+            shape = f.shape
         except AttributeError:
             # no, just one
-            count = 1
-
-        if count > 1:
-            result = ArithmeticList([self.boundary_zeros(tag) for i in range(count)])
-            for i, pt in enumerate(self._get_boundary(tag).nodes):
-                for field_nr, value in enumerate(f(pt)):
-                    result[field_nr][i] = value
-            return result
-        else:
             return num.array([f(x) for x in self._get_boundary(tag).nodes])
+        else:
+            if len(f.shape) == 1:
+                (count,) = f.shape
+                result = ArithmeticList([self.boundary_zeros(tag) for i in range(count)])
+                for i, pt in enumerate(self._get_boundary(tag).nodes):
+                    for field_nr, value in enumerate(f(pt)):
+                        result[field_nr][i] = value
+                return result
+            else:
+                raise ValueError, "only scalars and vectors are supported "\
+                        "for boundary interpolation"
 
     def boundary_normals(self, tag=hedge.mesh.TAG_ALL):
         result = ArithmeticList([self.boundary_zeros(tag) for i in range(self.dimensions)])
@@ -699,7 +689,7 @@ def generate_random_constant_on_elements(discr):
 
 
 
-def generate_ones_on_boundary(discr, tag):
+def ones_on_boundary(discr, tag=hedge.mesh.TAG_ALL):
     result = discr.volume_zeros()
 
     try:
@@ -715,6 +705,18 @@ def generate_ones_on_boundary(discr, tag):
 
             for i in fl_indices:
                 result[el_start+i] = 1
+
+    return result
+
+
+
+
+def ones_on_volume(discr, tag=hedge.mesh.TAG_ALL):
+    result = discr.volume_zeros()
+
+    for el in discr.mesh.tag_to_elements[tag]:
+        e_start, e_end = discr.find_el_range(el.id)
+        result[e_start:e_end] = 1
 
     return result
 

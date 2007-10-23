@@ -121,7 +121,7 @@ class WeakPoissonOperator(hedge.tools.PylinearOperator):
     Local discontinuous Galerkin methods for elliptic problems", 
     Communications in Numerical Methods in Engineering 18, no. 1 (2002): 69-75.
     """
-    def __init__(self, discr, coeff=hedge.data.ConstantGivenFunction(1), 
+    def __init__(self, discr, diffusion_tensor=None, 
             dirichlet_bc=hedge.data.ConstantGivenFunction(), dirichlet_tag="dirichlet",
             neumann_bc=hedge.data.ConstantGivenFunction(), neumann_tag="neumann",
             ldg=True):
@@ -147,15 +147,23 @@ class WeakPoissonOperator(hedge.tools.PylinearOperator):
 
         check_bc_coverage(discr.mesh, [dirichlet_tag, neumann_tag])
 
-        def fast_diagonal_mat(vec):
-            return num.diagonal_matrix(vec, flavor=num.SparseExecuteMatrix)
+        # treat diffusion tensor
+        if diffusion_tensor is None:
+            diffusion_tensor = hedge.data.ConstantGivenFunction(
+                    num.identity(discr.dimensions))
 
-        self.sqrt_coeff = fast_diagonal_mat(
-                num.sqrt(coeff.interpolate_volume(discr)))
-        self.dir_sqrt_coeff = fast_diagonal_mat(
-                num.sqrt(coeff.interpolate_boundary(discr, dirichlet_tag)))
-        self.neu_sqrt_coeff = fast_diagonal_mat(
-                num.sqrt(coeff.interpolate_boundary(discr, neumann_tag)))
+        from pytools.arithmetic_container import ArithmeticListMatrix
+        if isinstance(diffusion_tensor, hedge.data.ConstantGivenFunction):
+            self.diff = self.neu_diff = \
+                    ArithmeticListMatrix(diffusion_tensor.value)
+        else:
+            def fast_diagonal_mat(vec):
+                return num.diagonal_matrix(vec, flavor=num.SparseExecuteMatrix)
+            self.diff = diffusion_tensor.volume_interpolant(discr).map(
+                    fast_diagonal_mat)
+            self.neu_diff = diffusion_tensor.boundary_interpolant(
+                    discr, self.neumann_tag).map(
+                    fast_diagonal_mat)
 
         self.dirichlet_bc = dirichlet_bc
         self.dirichlet_tag = dirichlet_tag
@@ -176,8 +184,7 @@ class WeakPoissonOperator(hedge.tools.PylinearOperator):
 
     # boundary conditions -----------------------------------------------------
     def dirichlet_bc_u(self):
-        return self.dir_sqrt_coeff * \
-                self.dirichlet_bc.interpolate_boundary(self.discr, self.dirichlet_tag)
+        return self.dirichlet_bc.boundary_interpolant(self.discr, self.dirichlet_tag)
 
     def dirichlet_bc_v(self, sqrt_coeff_v):
         return self.discr.boundarize_volume_field(sqrt_coeff_v, self.dirichlet_tag)
@@ -190,9 +197,8 @@ class WeakPoissonOperator(hedge.tools.PylinearOperator):
 
         ac_multiply = work_with_arithmetic_containers(num.multiply)
 
-        return ac_multiply(self.neumann_normals,
-                self.neu_sqrt_coeff * 
-                self.neumann_bc.interpolate_boundary(self.discr, self.neumann_tag))
+        return self.neu_diff * ac_multiply(self.neumann_normals,
+                self.neumann_bc.boundary_interpolant(self.discr, self.neumann_tag))
 
     # fluxes ------------------------------------------------------------------
     def get_weak_flux_set(self, ldg):
@@ -246,24 +252,20 @@ class WeakPoissonOperator(hedge.tools.PylinearOperator):
         dtag = self.dirichlet_tag
         ntag = self.neumann_tag
 
-        sqrt_coeff_u = self.sqrt_coeff * u
-
         v = self.m_inv * (
-                - self.sqrt_coeff*(self.stiff_t * u)
-                + self.flux_u*sqrt_coeff_u
-                + self.flux_u_dbdry*pair_with_boundary(sqrt_coeff_u, 0, dtag)
-                + self.flux_u_nbdry*pair_with_boundary(sqrt_coeff_u, 0, ntag)
+                - (self.stiff_t * u)
+                + self.flux_u*u
+                + self.flux_u_dbdry*pair_with_boundary(u, 0, dtag)
+                + self.flux_u_nbdry*pair_with_boundary(u, 0, ntag)
                 )
-        sqrt_coeff_v = self.sqrt_coeff * v
+        diff_v = self.diff * v
 
-        dirichlet_bc_v = self.dirichlet_bc_v(sqrt_coeff_v)
-
-        w = join_fields(sqrt_coeff_u, sqrt_coeff_v)
-        dirichlet_bc_w = join_fields(0, dirichlet_bc_v)
-        neumann_bc_w = join_fields(self.neumann_bc_u(sqrt_coeff_u), [0]*dim)
+        w = join_fields(u, diff_v)
+        dirichlet_bc_w = join_fields(0, self.dirichlet_bc_v(diff_v))
+        neumann_bc_w = join_fields(self.neumann_bc_u(u), [0]*dim)
 
         return (
-                -dot(self.stiff_t, sqrt_coeff_v)
+                -dot(self.stiff_t, diff_v)
                 + self.flux_v * w
                 + self.flux_v_dbdry * pair_with_boundary(w, dirichlet_bc_w, dtag)
                 + self.flux_v_nbdry * pair_with_boundary(w, neumann_bc_w, ntag)
@@ -308,16 +310,14 @@ class WeakPoissonOperator(hedge.tools.PylinearOperator):
         vpart = self.m_inv * (
                 (self.flux_u_dbdry*pair_with_boundary(0, dirichlet_bc_u, dtag))
                 )
-        sqrt_coeff_v = self.sqrt_coeff * vpart
+        diff_v = self.diff * vpart
 
-        neumann_bc_v = self.neumann_bc_v()
-
-        w = join_fields(0, sqrt_coeff_v)
+        w = join_fields(0, diff_v)
         dirichlet_bc_w = join_fields(dirichlet_bc_u, [0]*dim)
-        neumann_bc_w = join_fields(0, neumann_bc_v)
+        neumann_bc_w = join_fields(0, self.neumann_bc_v())
 
         return self.discr.mass_operator * rhs - (
-                -dot(self.stiff_t, sqrt_coeff_v)
+                -dot(self.stiff_t, diff_v)
                 + self.flux_v * w
                 + self.flux_v_dbdry * pair_with_boundary(w, dirichlet_bc_w, dtag)
                 + self.flux_v_nbdry * pair_with_boundary(w, neumann_bc_w, ntag)
@@ -354,11 +354,11 @@ class StrongHeatOperator(object):
             return num.diagonal_matrix(vec, flavor=num.SparseExecuteMatrix)
 
         self.sqrt_coeff = fast_diagonal_mat(
-                num.sqrt(coeff.interpolate_volume(discr)))
+                num.sqrt(coeff.volume_interpolant(discr)))
         self.dir_sqrt_coeff = fast_diagonal_mat(
-                num.sqrt(coeff.interpolate_boundary(discr, dirichlet_tag)))
+                num.sqrt(coeff.boundary_interpolant(discr, dirichlet_tag)))
         self.neu_sqrt_coeff = fast_diagonal_mat(
-                num.sqrt(coeff.interpolate_boundary(discr, neumann_tag)))
+                num.sqrt(coeff.boundary_interpolant(discr, neumann_tag)))
 
         self.dirichlet_bc = dirichlet_bc
         self.dirichlet_tag = dirichlet_tag
@@ -433,7 +433,7 @@ class StrongHeatOperator(object):
     def dirichlet_bc_u(self, t, sqrt_coeff_u):
         return (
                 -self.discr.boundarize_volume_field(sqrt_coeff_u, self.dirichlet_tag)
-                +2*self.dir_sqrt_coeff*self.dirichlet_bc.interpolate_boundary(
+                +2*self.dir_sqrt_coeff*self.dirichlet_bc.boundary_interpolant(
                     t, self.discr, self.dirichlet_tag)
                 )
 
@@ -452,7 +452,7 @@ class StrongHeatOperator(object):
                 -self.discr.boundarize_volume_field(sqrt_coeff_v, self.neumann_tag)
                 +
                 2*ac_multiply(self.neumann_normals,
-                self.neumann_bc.interpolate_boundary(t, self.discr, self.neumann_tag))
+                self.neumann_bc.boundary_interpolant(t, self.discr, self.neumann_tag))
                 )
 
     # right-hand side ---------------------------------------------------------

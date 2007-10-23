@@ -106,7 +106,7 @@ def main() :
             make_single_element_mesh, \
             make_ball_mesh, \
             make_box_mesh
-    from hedge.discretization import Discretization, generate_ones_on_boundary
+    from hedge.discretization import Discretization, ones_on_boundary
     from hedge.visualization import SiloVisualizer, VtkVisualizer
     from hedge.tools import dot
     from pytools.arithmetic_container import ArithmeticList
@@ -168,8 +168,8 @@ def main() :
 
     #silo = SiloFile("bdry.silo")
     #vis.add_to_silo(silo,
-            #[("outflow", generate_ones_on_boundary(discr, "outflow")), 
-                #("inflow", generate_ones_on_boundary(discr, "inflow"))])
+            #[("outflow", ones_on_boundary(discr, "outflow")), 
+                #("inflow", ones_on_boundary(discr, "inflow"))])
     #return 
 
     u = discr.interpolate_volume_function(lambda x: u_analytic(0, x))

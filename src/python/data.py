@@ -26,37 +26,55 @@ import hedge.mesh
 
 
 
+# helpers ---------------------------------------------------------------------
+class _ConstantFunctionContainer:
+    def __init__(self, value):
+        self.value = value
+
+    @property
+    def shape(self):
+        return self.value.shape
+
+    def __call__(self, x):
+        return self.value
+
+
+
+
+
+# interpolation wrappers ------------------------------------------------------
 class IGivenFunction(object):
-    """Abstract interface for interpolating a known, I{non-time-dependent} function with
-    respect to various L{Discretization}s.
+    """Abstract interface for obtaining interpolants of I{time-independent} 
+    functions.
     """
 
-    def interpolate_volume(self, discr):
-        """Interpolate the function represented by this object into the 
-        global L{Discretization} C{discr}.
+    def volume_interpolant(self, discr):
+        """Return the volume interpolant of this function with respect to
+        the L{Discretization} C{discr}.
         """
 
-    def interpolate_boundary(self, discr, tag=hedge.mesh.TAG_ALL):
-        """Interpolate the function represented by this object into the 
-        global L{Discretization} C{discr}.
+    def boundary_interpolant(self, discr, tag=hedge.mesh.TAG_ALL):
+        """Return the boundary interpolant of this function with respect to
+        the L{Discretization} discr at the boundary tagged with C{tag}.
         """
 
 
 
 
 class ITimeDependentGivenFunction(object):
-    """Abstract interface for interpolating a known I{time-dependent} function with
-    respect to various L{Discretization}s.
+    """Abstract interface for obtaining interpolants of I{time-dependent} 
+    functions.
     """
 
-    def interpolate_volume(self, t, discr):
-        """Interpolate the function represented by this object into the 
-        global L{Discretization} C{discr}.
+    def volume_interpolant(self, t, discr):
+        """Return the volume interpolant of this function with respect to
+        the L{Discretization} discr at time {t}.
         """
 
-    def interpolate_boundary(self, t, discr, tag=hedge.mesh.TAG_ALL):
-        """Interpolate the function represented by this object into the 
-        global L{Discretization} C{discr}.
+    def boundary_interpolant(self, t, discr, tag=hedge.mesh.TAG_ALL):
+        """Return the boundary interpolant of this function with respect to
+        the L{Discretization} discr at time C{t} at the boundary tagged with
+        C{tag}.
         """
 
 
@@ -79,7 +97,7 @@ class GivenFunction(IGivenFunction):
         self.volume_cache = WeakKeyDictionary()
         self.boundary_cache = WeakKeyDictionary()
 
-    def interpolate_volume(self, discr):
+    def volume_interpolant(self, discr):
         try:
             return self.volume_cache[discr]
         except KeyError:
@@ -87,7 +105,7 @@ class GivenFunction(IGivenFunction):
             self.volume_cache[discr] = result
             return result
 
-    def interpolate_boundary(self, discr, tag=hedge.mesh.TAG_ALL):
+    def boundary_interpolant(self, discr, tag=hedge.mesh.TAG_ALL):
         try:
             return self.boundary_cache[discr][tag]
         except KeyError:
@@ -103,7 +121,9 @@ class ConstantGivenFunction(GivenFunction):
     """A constant-valued L{GivenFunction}.
     """
     def __init__(self, value=0):
-        GivenFunction.__init__(self, lambda x: value)
+        self.value = value
+
+        GivenFunction.__init__(self, _ConstantFunctionContainer(value))
 
 
 
@@ -115,10 +135,10 @@ class TimeConstantGivenFunction(ITimeDependentGivenFunction):
     def __init__(self, gf):
         self.gf = gf
 
-    def interpolate_volume(self, t, discr):
+    def volume_interpolant(self, t, discr):
         return self.gf.interpolate_volume(discr)
 
-    def interpolate_boundary(self, t, discr, tag=hedge.mesh.TAG_ALL):
+    def boundary_interpolant(self, t, discr, tag=hedge.mesh.TAG_ALL):
         return self.gf.interpolate_boundary(discr, tag)
 
 

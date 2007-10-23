@@ -172,15 +172,15 @@ def main() :
 
     v_ones = 1+discr.volume_zeros()
 
-    from hedge.discretization import generate_ones_on_boundary
+    from hedge.discretization import ones_on_boundary
     visf = vis.make_file("fld")
     vis.add_data(visf, [
         ("sol", u), 
         ("truesol", sol_v), 
         ("rhs2", discr.inverse_mass_operator* op(sol_v)), 
         ("rhs", rhs_v), 
-        ("dir", generate_ones_on_boundary(discr, "dirichlet")), 
-        ("neu", generate_ones_on_boundary(discr, "neumann")), 
+        ("dir", ones_on_boundary(discr, "dirichlet")), 
+        ("neu", ones_on_boundary(discr, "neumann")), 
         ])
     visf.close()
 

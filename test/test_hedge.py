@@ -985,15 +985,16 @@ class TestHedge(unittest.TestCase):
                 element_tagger=element_tagger)
 
         from hedge.element import TriangularElement
-        from hedge.discretization import Discretization
+        from hedge.discretization import Discretization, ones_on_volume
         discr = Discretization(mesh, TriangularElement(4))
 
-        u_i = discr.interpolate_tag_volume_function(
-                lambda x: sin(x[0]-x[1]),
-                "lower")
-        u_o = discr.interpolate_tag_volume_function(
-                lambda x: cos(x[0]-x[1]),
-                "upper")
+        import pylinear.array as num
+        u_i = num.multiply(
+                discr.interpolate_volume_function(lambda x: sin(x[0]-x[1])),
+                ones_on_volume(discr, "lower"))
+        u_o = num.multiply(
+                discr.interpolate_volume_function(lambda x: cos(x[0]-x[1])),
+                ones_on_volume(discr, "upper"))
         u = u_i + u_o
 
         #discr.visualize_vtk("dual.vtk", [("u", u)])
@@ -1074,15 +1075,16 @@ class TestHedge(unittest.TestCase):
                 element_tagger=element_tagger)
 
         from hedge.element import TetrahedralElement
-        from hedge.discretization import Discretization
+        from hedge.discretization import Discretization, ones_on_volume
         discr = Discretization(mesh, TetrahedralElement(4))
 
-        u_l = discr.interpolate_tag_volume_function(
-                lambda x: sin(x[0]-x[1]+x[2]),
-                "lower")
-        u_u = discr.interpolate_tag_volume_function(
-                lambda x: cos(x[0]-x[1]+x[2]),
-                "upper")
+        import pylinear.array as num
+        u_l = num.multiply(
+                discr.interpolate_volume_function(lambda x: sin(x[0]-x[1]+x[2])),
+                ones_on_volume(discr, "lower"))
+        u_u = num.multiply(
+                discr.interpolate_volume_function(lambda x: cos(x[0]-x[1]+x[2])),
+                ones_on_volume(discr, "upper"))
         u = u_l + u_u
 
         # visualize the produced field
