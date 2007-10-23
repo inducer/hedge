@@ -48,9 +48,17 @@ def main() :
     from time import time
     from hedge.operators import StrongAdvectionOperator, WeakAdvectionOperator
     from hedge.data import TimeDependentGivenFunction
+    from math import floor
+
+    def f(x):
+        if int(floor(x)) % 2 == 0:
+            return 1
+        else:
+            return 0
 
     def u_analytic(x, t):
-        return sin(3*(a*x+t))
+        #return sin(3*(a*x+t))
+        return f((a*x+t))
 
     def boundary_tagger(vertices, el, face_nr):
         if el.face_normals[face_nr] * a > 0:
@@ -65,12 +73,11 @@ def main() :
     if dim == 2:
         a = num.array([1,0])
         if pcon.is_head_rank:
-            #mesh = make_square_mesh(boundary_tagger=boundary_tagger, max_area=0.1)
-            #mesh = make_square_mesh(boundary_tagger=boundary_tagger, max_area=0.2)
+            mesh = make_square_mesh(max_area=0.01, boundary_tagger=boundary_tagger)
             #mesh = make_regular_square_mesh(a=-r, b=r, boundary_tagger=boundary_tagger, n=3)
             #mesh = make_single_element_mesh(boundary_tagger=boundary_tagger)
             #mesh = make_disk_mesh(r=pi, boundary_tagger=boundary_tagger, max_area=0.5)
-            mesh = make_disk_mesh(boundary_tagger=boundary_tagger)
+            #mesh = make_disk_mesh(boundary_tagger=boundary_tagger)
         el_class = TriangularElement
     elif dim == 3:
         a = num.array([0,0,0.5])
@@ -91,21 +98,16 @@ def main() :
     else:
         mesh_data = pcon.receive_mesh()
 
-    discr = pcon.make_discretization(mesh_data, el_class(3))
+    discr = pcon.make_discretization(mesh_data, el_class(5))
     vis = SiloVisualizer(discr, pcon)
     #vis = VtkVisualizer(discr, "fld", pcon)
     op = StrongAdvectionOperator(discr, a, 
-            inflow_u=TimeDependentGivenFunction(u_analytic))
+            inflow_u=TimeDependentGivenFunction(u_analytic),
+            flux_type="lf")
     #op = WeakAdvectionOperator(discr, a, 
             #inflow_u=TimeDependentGivenFunction(u_analytic))
 
     print "%d elements" % len(discr.mesh.elements)
-
-    #silo = SiloFile("bdry.silo")
-    #vis.add_to_silo(silo,
-            #[("outflow", ones_on_boundary(discr, "outflow")), 
-                #("inflow", ones_on_boundary(discr, "inflow"))])
-    #return 
 
     u = discr.interpolate_volume_function(lambda x: u_analytic(x, 0))
 
