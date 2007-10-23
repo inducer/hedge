@@ -68,7 +68,7 @@ class AdvectionOperatorBase:
         normal = make_normal(self.discr.dimensions)
 
         if self.flux_type == "central":
-            return u.avg*dot(normal, self.v) - 0.5*(u.int - u.ext)
+            return u.avg*dot(normal, self.v)
         elif self.flux_type == "lf":
             return u.avg*dot(normal, self.v) - 0.5*(u.int - u.ext)
         elif self.flux_type == "upwind":

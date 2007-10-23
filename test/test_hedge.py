@@ -1152,63 +1152,41 @@ class TestHedge(unittest.TestCase):
 
             return ConformalMesh(points, elements, boundary_tagger)
 
-        from hedge.discretization import \
-                Discretization, SymmetryMap, pair_with_boundary
+        from hedge.discretization import Discretization, SymmetryMap
         from hedge.element import TriangularElement
-        from hedge.flux import make_normal, FluxScalarPlaceholder
         from hedge.timestep import RK4TimeStepper
         from hedge.mesh import REORDER_NONE
-        from hedge.tools import dot
         from math import sqrt
+        from hedge.operators import StrongAdvectionOperator
+        from hedge.data import TimeDependentGivenFunction
 
         a = num.array([1,0])
 
         mesh = make_mesh()
-        discr = Discretization(mesh, TriangularElement(4), 
-                reorder=REORDER_NONE)
+        discr = Discretization(mesh, TriangularElement(4), reorder=REORDER_NONE)
 
         def f(x):
             if x < 0.5: return 0
             else: return (x-0.5)
 
-        def u_analytic(t, x):
+        def u_analytic(x, t):
             return f(a*x+t)
 
-        u = discr.interpolate_volume_function(lambda x: u_analytic(0, x))
+        u = discr.interpolate_volume_function(lambda x: u_analytic(x, 0))
         dt = 1e-2
         nsteps = int(1/dt)
-
-        from hedge.tools import dot
-        nabla = discr.nabla
-
-        def rhs_strong(t, u):
-            bc = discr.interpolate_boundary_function(
-                    lambda x: u_analytic(t, x),
-                    "inflow")
-
-            rhsint = dot(a, nabla*u)
-            rhsflux = flux_op * u
-            rhsbdry = flux_op * pair_with_boundary(u, bc, "inflow")
-
-            return rhsint-discr.inverse_mass_operator*(rhsflux+rhsbdry)
 
         sym_map = SymmetryMap(discr, 
                 lambda x: num.array([x[0], -x[1]]),
                 {0:3, 2:1, 5:6, 7:4})
 
-        normal = make_normal(discr.dimensions)
-        fluxu = FluxScalarPlaceholder(0)
-        for flux_name, flux in [
-                ("lax-friedrichs",
-                    dot(normal, a) * (fluxu.int - fluxu.avg)
-                    + 0.5 *(fluxu.int -fluxu.ext)),
-                ("central",
-                    dot(normal, a) * (fluxu.int - fluxu.avg)),
-                ]:
+        for flux_type in StrongAdvectionOperator.flux_types:
             stepper = RK4TimeStepper()
-            flux_op = discr.get_flux_operator(flux)
+            op = StrongAdvectionOperator(discr, a, 
+                    inflow_u=TimeDependentGivenFunction(u_analytic),
+                    flux_type=flux_type)
             for step in range(nsteps):
-                u = stepper(u, step*dt, dt, rhs_strong)
+                u = stepper(u, step*dt, dt, op.rhs)
                 sym_error_u = u-sym_map(u)
                 sym_error_u_l2 = sqrt(sym_error_u*(discr.mass_operator*sym_error_u))
                 self.assert_(sym_error_u_l2 < 1e-13)
@@ -1221,13 +1199,14 @@ class TestHedge(unittest.TestCase):
         from hedge.discretization import Discretization, pair_with_boundary
         from hedge.element import TriangularElement
         from hedge.timestep import RK4TimeStepper
-        from hedge.tools import EOCRecorder, dot
-        from hedge.flux import make_normal, FluxScalarPlaceholder
+        from hedge.tools import EOCRecorder
         from math import sin, pi, sqrt
+        from hedge.operators import StrongAdvectionOperator
+        from hedge.data import TimeDependentGivenFunction
 
         a = num.array([1,0])
 
-        def u_analytic(t, x):
+        def u_analytic(x, t):
             return sin(a*x+t)
 
         def boundary_tagger(vertices, el, face_nr):
@@ -1238,51 +1217,30 @@ class TestHedge(unittest.TestCase):
 
         mesh = make_disk_mesh(r=pi, boundary_tagger=boundary_tagger, max_area=0.5)
 
-        from hedge.tools import dot
-
-        normal = make_normal(2)
-        fluxu = FluxScalarPlaceholder(0)
-        for flux_name, flux in [
-                ("lax-friedrichs",
-                    dot(normal, a) * (fluxu.int - fluxu.avg)
-                    + 0.5 *(fluxu.int -fluxu.ext)),
-                ("central",
-                    dot(normal, a) * (fluxu.int - fluxu.avg)),
-                ]:
-
+        for flux_type in StrongAdvectionOperator.flux_types:
             eoc_rec = EOCRecorder()
 
             for order in [1,2,3,4,5,6]:
                 discr = Discretization(mesh, TriangularElement(order))
-                nabla = discr.nabla
-                flux_op = discr.get_flux_operator(flux)
+                op = StrongAdvectionOperator(discr, a, 
+                        inflow_u=TimeDependentGivenFunction(u_analytic),
+                        flux_type=flux_type)
 
-                u = discr.interpolate_volume_function(lambda x: u_analytic(0, x))
+                u = discr.interpolate_volume_function(lambda x: u_analytic(x, 0))
                 dt = 1e-2
                 nsteps = int(0.1/dt)
 
-                def rhs_strong(t, u):
-                    bc = discr.interpolate_boundary_function(
-                            lambda x: u_analytic(t, x),
-                            "inflow")
-
-                    rhsint = dot(a, nabla*u)
-                    rhsflux = flux_op * u
-                    rhsbdry = flux_op * pair_with_boundary(u, bc, "inflow")
-
-                    return rhsint-discr.inverse_mass_operator*(rhsflux+rhsbdry)
-
                 stepper = RK4TimeStepper()
                 for step in range(nsteps):
-                    u = stepper(u, step*dt, dt, rhs_strong)
+                    u = stepper(u, step*dt, dt, op.rhs)
 
                 u_true = discr.interpolate_volume_function(
-                        lambda x: u_analytic(nsteps*dt, x))
+                        lambda x: u_analytic(x, nsteps*dt))
                 error = u-u_true
                 error_l2 = sqrt(error*(discr.mass_operator*error))
                 eoc_rec.add_data_point(order, error_l2)
             self.assert_(eoc_rec.estimate_order_of_convergence()[0,1] > 7)
-            #print "%s\n%s\n" % (flux_name.upper(), "-" * len(flux_name))
+            #print "%s\n%s\n" % (flux_type.upper(), "-" * len(flux_type))
             #print eoc_rec.pretty_print(abscissa_label="Poly. Order", 
                     #error_label="L2 Error")
     # -------------------------------------------------------------------------
