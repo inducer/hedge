@@ -89,10 +89,10 @@ def main():
         mesh_data = pcon.receive_mesh()
 
     #for order in [1,2,3,4,5,6]:
-    for order in [7]:
+    for order in [3]:
         discr = pcon.make_discretization(mesh_data, TetrahedralElement(order))
 
-        vis = VtkVisualizer(discr, "em", pcon)
+        vis = VtkVisualizer(discr, pcon, "em")
 
         dt = discr.dt_factor(1/sqrt(mu*epsilon))
         final_time = dt*60

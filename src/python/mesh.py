@@ -40,6 +40,21 @@ class TAG_NONE(object):
 class TAG_ALL(object): 
     """A boundary or volume tag representing the entire boundary or volume."""
     pass
+class TAG_NO_BOUNDARY(object): 
+    """A boundary tag indicating that this edge should not fall under TAG_ALL."""
+    pass
+class TAG_RANK_BOUNDARY(object): 
+    """A boundary tag indicating the boundary with a neighboring rank."""
+    def __init__(self, rank):
+        self.rank = rank
+
+    def __eq__(self, other):
+        return isinstance(other, TAG_RANK_BOUNDARY) and self.rank == other.rank
+
+    def __hash__(self):
+        return 0xaffe ^ hash(self.rank)
+
+
 
 
 
@@ -276,9 +291,6 @@ class ConformalMesh(Mesh):
             ):
         """Construct a simplical mesh.
 
-        Tags beginning with the string "hedge" are reserved for internal
-        use.
-
         Face indices follow the convention for the respective element,
         such as Triangle or Tetrahedron, in this module.
 
@@ -361,7 +373,7 @@ class ConformalMesh(Mesh):
                 for btag in tags:
                     self.tag_to_boundary.setdefault(btag, []) \
                             .append(els_faces[0])
-                if "hedge-no-boundary" not in tags:
+                if TAG_NO_BOUNDARY not in tags:
                     # this is used to mark rank interfaces as not being part of the
                     # boundary
                     self.tag_to_boundary[TAG_ALL].append(els_faces[0])

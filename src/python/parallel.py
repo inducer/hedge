@@ -160,6 +160,8 @@ class MPIParallelizationContext(ParallelizationContext):
         # copy_el_tagger, below
         el2tags = {}
         for tag, elements in mesh.tag_to_elements.iteritems():
+            if tag == hedge.mesh.TAG_ALL:
+                continue
             for el in elements:
                 el2tags.setdefault(el, []).append(tag)
 
@@ -167,6 +169,8 @@ class MPIParallelizationContext(ParallelizationContext):
         # to speed up parallelizer_bdry_tagger, below
         elface2tags = {}
         for tag, elfaces in mesh.tag_to_boundary.iteritems():
+            if tag == hedge.mesh.TAG_ALL:
+                continue
             for el, fn in elfaces:
                 elface2tags.setdefault((el, fn), []).append(tag)
 
@@ -192,6 +196,7 @@ class MPIParallelizationContext(ParallelizationContext):
 
         # prepare a new mesh for each rank and send it
         import boost.mpi as mpi
+        from hedge.mesh import TAG_NO_BOUNDARY
 
         for rank in target_ranks:
             rank_global_elements = [el 
@@ -229,18 +234,18 @@ class MPIParallelizationContext(ParallelizationContext):
                 result = elface2tags.get((el, fn), [])
                 try:
                     opp_rank = elface2rank[el, fn]
-                    result.append("hedge-rank-bdry-%d" % opp_rank)
+                    result.append(hedge.mesh.TAG_RANK_BOUNDARY(opp_rank))
 
                     # keeps this part of the boundary from falling
                     # under the "None" tag.
-                    result.append("hedge-no-boundary")
+                    result.append(TAG_NO_BOUNDARY)
                 except KeyError:
                     pass
 
                 return result
 
             def copy_el_tagger(local_el):
-                return el2tags[rank_global_elements[local_el.id]]
+                return el2tags.get(rank_global_elements[local_el.id], [])
 
             def is_rankbdry_face((local_el, face_nr)):
                 return (rank_global_elements[local_el.id], face_nr) in elface2rank
@@ -321,7 +326,8 @@ class ParallelDiscretization(hedge.discretization.Discretization):
             send_requests = mpi.RequestList()
 
             for rank in self.neighbor_ranks:
-                rank_bdry = self.mesh.tag_to_boundary["hedge-rank-bdry-%d" % rank]
+                rank_bdry = self.mesh.tag_to_boundary[
+                        hedge.mesh.TAG_RANK_BOUNDARY(rank)]
                 
                 # a list of global vertex numbers for each face
                 my_vertices_global = [
@@ -359,7 +365,8 @@ class ParallelDiscretization(hedge.discretization.Discretization):
 
             for rank, (nb_all_facevertices_global, nb_node_coords) in \
                     received_packets.iteritems():
-                rank_bdry = self.mesh.tag_to_boundary["hedge-rank-bdry-%d" % rank]
+                rank_bdry = self.mesh.tag_to_boundary[
+                        hedge.mesh.TAG_RANK_BOUNDARY(rank)]
                 flat_nb_node_coords = list(flatten(nb_node_coords))
 
                 # step 1: find start node indices for each 
@@ -541,7 +548,7 @@ class _ParallelFluxOperator(object):
         # RequestList, so we need to provide our own life support for these vectors.
 
         neigh_recv_vecs = dict(
-                (rank, boundary_zeros("hedge-rank-bdry-%d"% rank))
+                (rank, boundary_zeros(hedge.mesh.TAG_RANK_BOUNDARY(rank)))
                 for rank in self.discr.neighbor_ranks)
 
         recv_requests = mpi.RequestList(
@@ -549,7 +556,7 @@ class _ParallelFluxOperator(object):
                 for rank in self.discr.neighbor_ranks)
 
         send_requests = [isend_vector(comm, rank, 1,
-            boundarize(field, "hedge-rank-bdry-%d"% rank))
+            boundarize(field, hedge.mesh.TAG_RANK_BOUNDARY(rank)))
             for rank in self.discr.neighbor_ranks]
 
         result = [self.serial_flux_op * field]
@@ -557,7 +564,7 @@ class _ParallelFluxOperator(object):
         def receive(_, status):
             from hedge.tools import apply_index_map
 
-            tag = "hedge-rank-bdry-%d" %  status.source
+            tag = hedge.mesh.TAG_RANK_BOUNDARY(status.source)
 
             foreign_order_bfield = unstack(neigh_recv_vecs[status.source], tag)
 

@@ -174,6 +174,7 @@ class MaxwellOperator(object):
     def rhs(self, t, w):
         from hedge.tools import cross
         from hedge.discretization import pair_with_boundary
+        from pytools.arithmetic_container import join_fields
 
         e = w[0:3]
         h = w[3:6]
