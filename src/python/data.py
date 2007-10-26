@@ -122,12 +122,33 @@ class GivenFunction(IGivenFunction):
 
 
 class ConstantGivenFunction(GivenFunction):
-    """A constant-valued L{GivenFunction}.
+    """A L{GivenFunction} that has a constant value on all space.
     """
     def __init__(self, value=0):
         self.value = value
 
         GivenFunction.__init__(self, _ConstantFunctionContainer(value))
+
+
+
+
+class GivenVolumeInterpolant(IGivenFunction):
+    """A constant-valued L{GivenFunction}.
+    """
+    def __init__(self, discr, interpolant):
+        self.discr = discr
+        self.interpolant = interpolant
+
+    def volume_interpolant(self, discr):
+        if discr != self.discr:
+            raise ValueError, "cross-interpolation between discretizations not supported"
+        return self.interpolant
+
+    def boundary_interpolant(self, discr, tag=hedge.mesh.TAG_ALL):
+        if discr != self.discr:
+            raise ValueError, "cross-interpolation between discretizations not supported"
+        return discr.boundarize_volume_field(self.interpolant, tag)
+
 
 
 
