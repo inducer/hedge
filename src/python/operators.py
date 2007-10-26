@@ -61,19 +61,19 @@ class DivergenceOperator:
         self.discr = discr
 
         from hedge.flux import make_normal, FluxVectorPlaceholder
-        v = FluxVectorPlaceholder()
+        v = FluxVectorPlaceholder(discr.dimensions)
 
         self.nabla = discr.nabla
         self.m_inv = discr.inverse_mass_operator
         normal = make_normal(self.discr.dimensions)
 
-        from hedge.toosl import dot
+        from hedge.tools import dot
         self.flux = discr.get_flux_operator(dot(v.int-v.avg, normal))
 
     def __call__(self, v):
         from hedge.mesh import TAG_ALL
         from hedge.discretization import pair_with_boundary
-        from hedge.toosl import dot
+        from hedge.tools import dot
 
         bc = self.discr.boundarize_volume_field(v, TAG_ALL)
 
