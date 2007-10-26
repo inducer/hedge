@@ -45,7 +45,7 @@ def main() :
 
     pcon = guess_parallelization_context()
 
-    dim = 2
+    dim = 3
 
     def boundary_tagger(fvi, el, fn):
         from math import atan2, pi
@@ -82,7 +82,7 @@ def main() :
     else:
         mesh_data = pcon.receive_mesh()
 
-    discr = pcon.make_discretization(mesh_data, el_class(2))
+    discr = pcon.make_discretization(mesh_data, el_class(3))
     vis = VtkVisualizer(discr, pcon)
 
     def u0(x):
@@ -166,11 +166,12 @@ def main() :
 
 
     #a_inv = operator.BiCGSTABOperator.make(-op, 40000, 1e-10)
-    mass_op = PylinearOpWrapper(discr.mass_operator)
-    a_inv = operator.CGOperator.make(-op, 40000, 1e-4)
-    a_inv.debug_level = 1
+    #a_inv = operator.CGOperator.make(-op, 40000, 1e-4)
+    #a_inv.debug_level = 1
+    #u = -a_inv(op.prepare_rhs(GivenFunction(rhs_c)))
 
-    u = -a_inv(op.prepare_rhs(GivenFunction(rhs_c)))
+    from hedge.tools import parallel_cg
+    u = -parallel_cg(pcon, -op, op.prepare_rhs(GivenFunction(rhs_c)), debug=True, tol=1e-4)
 
     from hedge.discretization import ones_on_boundary
     visf = vis.make_file("fld")

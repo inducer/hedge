@@ -23,6 +23,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 import pylinear.array as num
 import pylinear.computation as comp
+import pylinear.operator as op
 import hedge._internal
 from pytools.arithmetic_container import work_with_arithmetic_containers
 
@@ -454,3 +455,84 @@ class BlockMatrix(object):
 
 import pylinear.operator
 PylinearOperator = pylinear.operator.Operator(num.Float64)
+
+
+
+
+# parallel cg -----------------------------------------------------------------
+def parallel_cg(pcon, local_a, b, precon=None, x=None, tol=1e-7, max_iterations=None, 
+        debug=False):
+    if x is None:
+        x = num.zeros((local_a.size1(),))
+
+    if len(pcon.ranks) == 1:
+        # use canned single-processor cg if possible
+        a_inv = op.CGOperator.make(local_a, max_it=max_iterations, 
+                tolerance=tol, precon_op=precon)
+        if debug:
+            a_inv.debug_level = 1
+        a_inv.apply(b, x)
+        return x
+
+    # typed up from J.R. Shewchuk, 
+    # An Introduction to the Conjugate Gradient Method
+    # Without the Agonizing Pain, Edition 1 1/4 [8/1994]
+    # Appendix B4
+
+    from boost.mpi import all_reduce
+    from operator import add
+
+    if local_a.size1() != local_a.size2():
+        raise ValueError("cg: A is not quadratic")
+
+    if precon is None:
+        precon = op.IdentityOperator.make(local_a.dtype, local_a.size1())
+    if max_iterations is None:
+        max_iterations = 10 * local_a.size1()
+
+    def inner(a, b):
+        local = a*num.conjugate(b)
+        return all_reduce(pcon.communicator, local, add)
+
+    iterations = 0
+    residual = b - local_a(x)
+    d = precon(residual)
+
+    delta_new = inner(residual, d)
+    delta_0 = delta_new
+
+    while iterations < max_iterations:
+        q = local_a(d)
+        alpha = delta_new / inner(d, q)
+
+        x += alpha * d
+        calculate_real_residual = (
+                iterations % 50 == 0 
+                or abs(delta_new) < tol*tol * abs(delta_0))
+
+        if calculate_real_residual:
+            residual = b - local_a(x)
+        else:
+            residual -= alpha*q
+
+        s = precon(residual)
+        delta_old = delta_new
+        delta_new = inner(residual, s)
+
+        if calculate_real_residual and abs(delta_new) < tol*tol * abs(delta_0):
+            print "HALT", pcon.rank
+            # Only terminate the loop on the basis of a "real" residual.
+            break
+
+        beta = delta_new / delta_old;
+        d = s + beta * d;
+
+        if debug and iterations % 20 == 0 and pcon.is_head_rank:
+            print delta_new
+
+        iterations += 1
+
+    if iterations == max_iterations:
+        raise RuntimeError("cg failed to converge")
+
+    return x
