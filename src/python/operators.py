@@ -31,6 +31,59 @@ import hedge.data
 
 
 
+class GradientOperator:
+    def __init__(self, discr):
+        self.discr = discr
+
+        from hedge.flux import make_normal, FluxScalarPlaceholder
+        u = FluxScalarPlaceholder()
+
+        self.nabla = discr.nabla
+        self.m_inv = discr.inverse_mass_operator
+        normal = make_normal(self.discr.dimensions)
+        self.flux = discr.get_flux_operator(u.int*normal - u.avg*normal)
+
+    def __call__(self, u):
+        from hedge.mesh import TAG_ALL
+        from hedge.discretization import pair_with_boundary
+
+        bc = self.discr.boundarize_volume_field(u, TAG_ALL)
+
+        return self.nabla*u - self.m_inv*(
+                self.flux * u + 
+                self.flux * pair_with_boundary(u, bc, TAG_ALL))
+
+
+
+
+class DivergenceOperator:
+    def __init__(self, discr):
+        self.discr = discr
+
+        from hedge.flux import make_normal, FluxVectorPlaceholder
+        v = FluxVectorPlaceholder()
+
+        self.nabla = discr.nabla
+        self.m_inv = discr.inverse_mass_operator
+        normal = make_normal(self.discr.dimensions)
+
+        from hedge.toosl import dot
+        self.flux = discr.get_flux_operator(dot(v.int-v.avg, normal))
+
+    def __call__(self, v):
+        from hedge.mesh import TAG_ALL
+        from hedge.discretization import pair_with_boundary
+        from hedge.toosl import dot
+
+        bc = self.discr.boundarize_volume_field(v, TAG_ALL)
+
+        return dot(self.nabla, v) - self.m_inv*(
+                self.flux * v + 
+                self.flux * pair_with_boundary(v, bc, TAG_ALL))
+
+
+
+
 class AdvectionOperatorBase:
     def __init__(self, discr, v, 
             inflow_tag="inflow",
@@ -313,6 +366,15 @@ class WeakPoissonOperator(hedge.tools.PylinearOperator):
         return fs
 
     # operator application, rhs prep ------------------------------------------
+    def grad(self, u):
+        from hedge.discretization import pair_with_boundary
+
+        return self.m_inv * (
+                - (self.stiff_t * u)
+                + self.flux_u*u
+                + self.flux_u_dbdry*pair_with_boundary(u, 0, self.dirichlet_tag)
+                + self.flux_u_nbdry*pair_with_boundary(u, 0, self.neumann_tag)
+                )
     def op(self, u):
         from hedge.discretization import pair_with_boundary
         from math import sqrt
@@ -321,15 +383,7 @@ class WeakPoissonOperator(hedge.tools.PylinearOperator):
 
         dim = self.discr.dimensions
 
-        dtag = self.dirichlet_tag
-        ntag = self.neumann_tag
-
-        v = self.m_inv * (
-                - (self.stiff_t * u)
-                + self.flux_u*u
-                + self.flux_u_dbdry*pair_with_boundary(u, 0, dtag)
-                + self.flux_u_nbdry*pair_with_boundary(u, 0, ntag)
-                )
+        v = self.grad(u)
         diff_v = self.diff * v
 
         w = join_fields(u, diff_v)
@@ -339,8 +393,8 @@ class WeakPoissonOperator(hedge.tools.PylinearOperator):
         return (
                 -dot(self.stiff_t, diff_v)
                 + self.flux_v * w
-                + self.flux_v_dbdry * pair_with_boundary(w, dirichlet_bc_w, dtag)
-                + self.flux_v_nbdry * pair_with_boundary(w, neumann_bc_w, ntag)
+                + self.flux_v_dbdry * pair_with_boundary(w, dirichlet_bc_w, self.dirichlet_tag)
+                + self.flux_v_nbdry * pair_with_boundary(w, neumann_bc_w, self.neumann_tag)
                 )
 
     def prepare_rhs(self, rhs):
