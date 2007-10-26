@@ -16,10 +16,18 @@ clean:
 tags:
 	ctags -R src || true
 
-doc:
-	rm -Rf doc/reference 
-	mkdir doc/reference 
+userdoc:
+	rm -Rf doc/user-reference
+	mkdir doc/user-reference 
 	${PYTHON_EXE} `which epydoc` \
-	  -o doc/reference -n hedge -v --no-private --html \
+	  -o doc/user-reference -n hedge -v --no-private --html \
 	  --exclude-introspect="hedge\._internal" \
+	  --exclude-introspect="hedge\.vtk" \
+	  --exclude-introspect="hedge\.polynomial" \
+	  hedge
+devdoc:
+	rm -Rf doc/dev-reference
+	mkdir doc/dev-reference 
+	${PYTHON_EXE} `which epydoc` \
+	  -o doc/dev-reference -n hedge -v --html \
 	  hedge

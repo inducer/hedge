@@ -25,6 +25,12 @@ import hedge.tools
 
 
 
+class Visualizer(object):
+    pass
+
+
+
+
 # legacy vtk ------------------------------------------------------------------
 def _three_vector(x):
     if len(x) == 3:
@@ -67,7 +73,7 @@ class LegacyVtkFile(object):
 
 
 
-class LegacyVtkVisualizer(object):
+class LegacyVtkVisualizer(Visualizer):
     def __init__(self, discr):
         from pyvtk import PolyData
 
@@ -156,8 +162,7 @@ class ParallelVtkFile(VtkFile):
 
 
 
-
-class VtkVisualizer(hedge.tools.Closable):
+class VtkVisualizer(Visualizer, hedge.tools.Closable):
     def __init__(self, discr, pcontext=None, basename=None, compressor=None):
         hedge.tools.Closable.__init__(self)
 
@@ -318,7 +323,7 @@ class SiloMeshData(object):
 
 
 
-class SiloVisualizer(object):
+class SiloVisualizer(Visualizer):
     def __init__(self, discr, pcontext=None):
         def generate_fine_elements(eg):
             ldis = eg.local_discretization

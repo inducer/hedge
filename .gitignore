@@ -18,4 +18,5 @@ tags
 *.pvtu
 *.pvd
 dbg_*.py
-doc/reference
+doc/user-reference
+doc/dev-reference

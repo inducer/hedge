@@ -65,6 +65,14 @@ class _Boundary(object):
 
 
 class Discretization(object):
+    """The global approximation space.
+
+    Instances of this class tie together a local discretization (i.e. polynomials
+    on an elemnent) into a function space on a mesh. They provide creation
+    functions such as interpolating given functions, differential operators and
+    flux lifting operators.
+    """
+
     def __init__(self, mesh, local_discretization, 
             reorder=hedge.mesh.REORDER_CMK):
         self.mesh = mesh

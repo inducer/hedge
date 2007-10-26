@@ -60,7 +60,13 @@ _ABCoefficients = [
 
 
 
-class RK4TimeStepper(object):
+class TimeStepper(object):
+    pass
+
+
+
+
+class RK4TimeStepper(TimeStepper):
     def __call__(self, y, t, dt, rhs):
         try:
             self.residual
@@ -76,7 +82,7 @@ class RK4TimeStepper(object):
 
 
 
-class AdamsBashforthTimeStepper(object):
+class AdamsBashforthTimeStepper(TimeStepper):
     def __init__(self, order, startup_stepper=RK4TimeStepper()):
         if order < 1:
             raise ValueError, "unsupported order in Adams-Bashforth"

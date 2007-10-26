@@ -31,7 +31,33 @@ import hedge.data
 
 
 
-class GradientOperator:
+class Operator(object):
+    """A base class for Discontinuous Galerkin operators.
+
+    You may derive your own operators from this class, but, at present
+    this class provides no functionality. Its function is merely as 
+    documentation, to group related classes together in an inheritance
+    tree.
+    """
+    pass
+
+
+
+
+class TimeDependentOperator(Operator):
+    """A base class for time-dependent Discontinuous Galerkin operators.
+
+    You may derive your own operators from this class, but, at present
+    this class provides no functionality. Its function is merely as 
+    documentation, to group related classes together in an inheritance
+    tree.
+    """
+    pass
+
+
+
+
+class GradientOperator(Operator):
     def __init__(self, discr):
         self.discr = discr
 
@@ -56,7 +82,7 @@ class GradientOperator:
 
 
 
-class DivergenceOperator:
+class DivergenceOperator(Operator):
     def __init__(self, discr):
         self.discr = discr
 
@@ -84,7 +110,7 @@ class DivergenceOperator:
 
 
 
-class AdvectionOperatorBase:
+class AdvectionOperatorBase(TimeDependentOperator):
     def __init__(self, discr, v, 
             inflow_tag="inflow",
             inflow_u=hedge.data.make_tdep_constant(0),
@@ -173,7 +199,7 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
 
 
 
-class MaxwellOperator(object):
+class MaxwellOperator(TimeDependentOperator):
     """A 3D Maxwell operator with PEC boundaries.
 
     Field order is [Ex Ey Ez Hx Hy Hz].
@@ -256,7 +282,7 @@ class MaxwellOperator(object):
 
 
 
-class WeakPoissonOperator(hedge.tools.PylinearOperator):
+class WeakPoissonOperator(Operator,hedge.tools.PylinearOperator):
     """Implements the Local Discontinuous Galerkin (LDG) Method for elliptic
     operators.
 
@@ -459,7 +485,7 @@ class WeakPoissonOperator(hedge.tools.PylinearOperator):
 
 
 
-class StrongHeatOperator(object):
+class StrongHeatOperator(TimeDependentOperator):
     def __init__(self, discr, coeff=hedge.data.ConstantGivenFunction(1), 
             dirichlet_bc=hedge.data.ConstantGivenFunction(), dirichlet_tag="dirichlet",
             neumann_bc=hedge.data.ConstantGivenFunction(), neumann_tag="neumann",
