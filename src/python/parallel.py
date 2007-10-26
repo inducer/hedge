@@ -292,7 +292,7 @@ class ParallelDiscretization(hedge.discretization.Discretization):
                     global2local_elements, 
                     self.global2local_vertex_indices, 
                     self.neighbor_ranks,
-                    global_periodic_opposite_map)) = \
+                    self.global_periodic_opposite_map)) = \
                 mesh_data
 
         from hedge.tools import reverse_lookup_table
@@ -398,11 +398,11 @@ class ParallelDiscretization(hedge.discretization.Discretization):
                         # continue below in else part
                     except KeyError:
                         # ok, our face must be part of a periodic pair
-                        my_vertices_there, axis = global_periodic_opposite_map[
+                        my_vertices_there, axis = self.global_periodic_opposite_map[
                                 my_global_vertices]
                         nb_face_idx = nb_face_order[frozenset(my_vertices_there)]
 
-                        his_vertices_here, axis2 = global_periodic_opposite_map[
+                        his_vertices_here, axis2 = self.global_periodic_opposite_map[
                                 nb_all_facevertices_global[nb_face_idx]]
 
                         assert axis == axis2
