@@ -94,15 +94,17 @@ class LegacyVtkVisualizer(Visualizer):
                 raise RuntimeError, "Legacy VTK does not suport parallel visualization"
         return LegacyVtkFile(pathname+".vtk", self.structure)
 
-    def add_data(self, vtkfile, scalars=[], vectors=[]):
+    def add_data(self, vtkfile, scalars=[], vectors=[], scale_factor=1):
         from pyvtk import Scalars, Vectors
         import numpy
 
         vtkfile.pointdata.extend(
-                Scalars(numpy.array(field), name=name, lookup_table="default") 
+                Scalars(numpy.array(scale_factor*field), 
+                    name=name, lookup_table="default") 
                 for name, field in scalars)
         vtkfile.pointdata.extend(
-                Vectors([_three_vector(v) for v in zip(field)], name=name)
+                Vectors([_three_vector(scale_factor*v) 
+                    for v in zip(field)], name=name)
                 for name, field in vectors)
 
 
@@ -275,12 +277,13 @@ class VtkVisualizer(Visualizer, hedge.tools.Closable):
             if len(self.timestep_to_pathnames) % 5 == 0:
                 self.update_pvd()
 
-    def add_data(self, visf, scalars=[], vectors=[], time=None, step=None):
+    def add_data(self, visf, scalars=[], vectors=[], time=None, step=None,
+            scale_factor=1):
         from hedge.vtk import DataArray
         for name, data in scalars:
-            visf.grid.add_pointdata(DataArray(name, data))
+            visf.grid.add_pointdata(DataArray(name, scale_factor*data))
         for name, data in vectors:
-            visf.grid.add_pointdata(DataArray(name, data))
+            visf.grid.add_pointdata(DataArray(name, scale_factor*data))
 
         self.register_pathname(time, visf.get_head_pathname())
 
@@ -369,7 +372,8 @@ class SiloVisualizer(Visualizer):
                     self.pcontext.rank, self.pcontext.ranks)
 
     def add_data(self, silo, scalars=[], vectors=[], expressions=[],
-            time=None, step=None, write_coarse_mesh=False):
+            time=None, step=None, write_coarse_mesh=False,
+            scale_factor=1):
         from pylo import DB_NODECENT, DBOPT_DTIME, DBOPT_CYCLE
 
         # put mesh coordinates
@@ -385,11 +389,12 @@ class SiloVisualizer(Visualizer):
 
         # put data
         for name, field in scalars:
-            silo.put_ucdvar1(name, "finemesh", field, DB_NODECENT)
+            silo.put_ucdvar1(name, "finemesh", scale_factor*field, DB_NODECENT)
         for name, vec in vectors:
             silo.put_ucdvar(name, "finemesh", 
-                    ["%s_comp%d" % (name, i) for i in range(len(vec))],
-                    vec, DB_NODECENT)
+                    ["%s_comp%d" % (name, i) 
+                        for i in range(len(vec))],
+                    scale_factor*vec, DB_NODECENT)
         if expressions:
             silo.put_defvars("defvars", expressions)
 
