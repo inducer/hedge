@@ -1310,14 +1310,9 @@ class TestHedge(unittest.TestCase):
 
             eocrec.add_data_point(order, l2_norm(sol_v-truesol_v))
 
+        #print eocrec.pretty_print()
+
         self.assert_(eocrec.estimate_order_of_convergence()[0,1] > 8)
-
-
-
-
-
-
-                
 
 
 

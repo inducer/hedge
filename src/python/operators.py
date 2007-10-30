@@ -400,30 +400,45 @@ class WeakPoissonOperator(Operator,hedge.tools.PylinearOperator):
                 + self.flux_u_nbdry*pair_with_boundary(u, 0, self.neumann_tag)
                 )
 
-    def div(self, v, u=None):
+    def div(self, v, u=None, apply_minv=True):
+        """Compute the divergence of v using an LDG operator.
+
+        The divergence computation is unaffected by the scaling
+        effected by the diffusion tensor.
+
+        @param apply_minv: Bool specifying whether to compute a complete 
+          divergence operator. If False, the final application of the inverse
+          mass operator is skipped. This is used in L{op}() in order to reduce
+          the scheme M{M^{-1} S u = f} to M{S u = M f}, so that the mass operator
+          only needs to be applied once, when preparing the right hand side
+          in @L{prepare_minv}.
+        """
         from hedge.discretization import pair_with_boundary
         from hedge.tools import dot
         from pytools.arithmetic_container import join_fields
 
         dim = self.discr.dimensions
 
-        if u is not None:
-            w = join_fields(u, v)
-        else:
-            w = join_fields(self.discr.volume_zeros(), v)
+        if u is None:
+            u = self.discr.volume_zeros()
+        w = join_fields(u, v)
 
         dirichlet_bc_w = join_fields(0, [0]*dim)
         neumann_bc_w = join_fields(0, [0]*dim)
 
-        return (
+        result = (
                 -dot(self.stiff_t, v)
                 + self.flux_v * w
                 + self.flux_v_dbdry * pair_with_boundary(w, dirichlet_bc_w, self.dirichlet_tag)
                 + self.flux_v_nbdry * pair_with_boundary(w, neumann_bc_w, self.neumann_tag)
                 )
+        if apply_minv:
+            return self.m_inv * result
+        else:
+            return result
 
     def op(self, u):
-        return self.div(self.diffusion * self.grad(u), u)
+        return self.div(self.diffusion * self.grad(u), u, apply_minv=False)
 
     def prepare_rhs(self, rhs):
         """Perform the rhs(*) function in the class description, i.e.
