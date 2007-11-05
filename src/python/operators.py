@@ -207,7 +207,7 @@ class MaxwellOperator(TimeDependentOperator):
 
     def __init__(self, discr, epsilon, mu, upwind_alpha=1, 
             pec_tag=hedge.mesh.TAG_ALL, direct_flux=True):
-        from hedge.flux import make_normal, FluxVectorPlaceholder
+        from hedge.flux import make_normal
         from hedge.mesh import check_bc_coverage
         from hedge.discretization import pair_with_boundary
         from math import sqrt
@@ -226,14 +226,36 @@ class MaxwellOperator(TimeDependentOperator):
 
         dim = discr.dimensions
         normal = make_normal(dim)
-        w = FluxVectorPlaceholder(6)
+
+        def build_placeholder():
+            from hedge.flux import \
+                    FluxVectorPlaceholder,  \
+                    FluxScalarPlaceholder, \
+                    FluxZeroPlaceholder
+
+            assigned_components = 0
+            scalars = []
+            for use_component in self.get_subset():
+                if use_component:
+                    scalars.append(
+                            FluxScalarPlaceholder(assigned_components))
+                    assigned_components += 1
+                else:
+                    scalars.append(FluxZeroPlaceholder())
+
+            assert len(scalars) == 6
+
+            return FluxVectorPlaceholder(scalars=scalars)
+
+        w = build_placeholder()
+
         e = w[0:3]
         h = w[3:6]
 
         Z = sqrt(mu/epsilon)
         Y = 1/Z
 
-        self.flux = discr.get_flux_operator(join_fields(
+        fluxes = join_fields(
                 # flux e
                 1/epsilon*(
                     1/2*cross(normal, h.int-h.ext)
@@ -244,12 +266,16 @@ class MaxwellOperator(TimeDependentOperator):
                     -1/2*cross(normal, e.int-e.ext)
                     -upwind_alpha/(2*Y)*cross(normal, cross(normal, h.int-h.ext))
                     ),
-                ), 
-                direct=direct_flux)
+                )
+
+        for i, use_component in list(enumerate(self.get_subset()))[::-1]:
+            if not use_component:
+                del fluxes[i]
+
+        self.flux = discr.get_flux_operator(fluxes, direct=direct_flux)
 
         self.nabla = discr.nabla
         self.m_inv = discr.inverse_mass_operator
-
 
     def rhs(self, t, w):
         from hedge.tools import cross
@@ -278,6 +304,41 @@ class MaxwellOperator(TimeDependentOperator):
                     self.flux * w
                     +self.flux * pair_with_boundary(w, bc, self.pec_tag)
                     )
+                )
+
+    def get_subset(self):
+        return 6*(True,)
+
+
+
+
+class TMMaxwellOperator(MaxwellOperator):
+    """A 2D TM Maxwell operator with PEC boundaries.
+
+    Field order is [Ez Hx Hy].
+    """
+
+    def get_subset(self):
+        return (
+                (False,False,True) # only ez
+                +
+                (True,True,False) # hx and hy
+                )
+
+
+
+
+class TEMaxwellOperator(MaxwellOperator):
+    """A 2D TE Maxwell operator with PEC boundaries.
+
+    Field order is [Ex Ey Hz].
+    """
+
+    def get_subset(self):
+        return (
+                (True,True,False) # ex and ey
+                +
+                (False,False,True) # only hz
                 )
 
 

@@ -147,6 +147,22 @@ def make_normal(dimensions):
 
 
 
+class FluxZeroPlaceholder(object):
+    @property
+    def int(self):
+        return 0
+
+    @property
+    def ext(self):
+        return 0
+
+    @property
+    def avg(self):
+        return 0
+
+
+
+
 class FluxScalarPlaceholder(object):
     def __init__(self, component=0):
         self.component = component
@@ -167,32 +183,36 @@ class FluxScalarPlaceholder(object):
 
 
 class FluxVectorPlaceholder(object):
-    def __init__(self, components=None, indices=None):
-        if not (components or indices):
-            raise ValueError, "either components or indices must be specified"
+    def __init__(self, components=None, scalars=None):
+        if not (components or scalars):
+            raise ValueError, "either components or scalars must be specified"
+        if components and scalars:
+            raise ValueError, "only one of components and scalars may be specified"
 
         if components:
-            self.indices = range(components)
+            self.scalars = [
+                    FluxScalarPlaceholder(i) 
+                    for i in range(components)]
         else:
-            self.indices = indices
+            self.scalars = scalars
 
     def __getitem__(self, idx):
         if isinstance(idx, int):
-            return FluxScalarPlaceholder(self.indices[idx])
+            return self.scalars[idx]
         else:
-            return FluxVectorPlaceholder(indices=self.indices.__getitem__(idx))
+            return FluxVectorPlaceholder(scalars=self.scalars.__getitem__(idx))
 
     @property
     def int(self):
-        return ArithmeticList(FieldComponent(i, True) for i in self.indices)
+        return ArithmeticList(scalar.int for scalar in self.scalars)
 
     @property
     def ext(self):
-        return ArithmeticList(FieldComponent(i, False) for i in self.indices)
+        return ArithmeticList(scalar.ext for scalar in self.scalars)
 
     @property
     def avg(self):
-        return 0.5*(self.int+self.ext)
+        return ArithmeticList(scalar.avg for scalar in self.scalars)
 
 
 
