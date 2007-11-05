@@ -207,12 +207,21 @@ class MaxwellOperator(TimeDependentOperator):
 
     def __init__(self, discr, epsilon, mu, upwind_alpha=1, 
             pec_tag=hedge.mesh.TAG_ALL, direct_flux=True):
-        from hedge.flux import make_normal
+        from hedge.flux import make_normal, FluxVectorPlaceholder
         from hedge.mesh import check_bc_coverage
         from hedge.discretization import pair_with_boundary
         from math import sqrt
         from pytools.arithmetic_container import join_fields
-        from hedge.tools import cross
+        from hedge.tools import SubsettableCrossProduct
+        from pytools import len_iterable
+
+        e_subset = self.get_subset()[0:3]
+        h_subset = self.get_subset()[3:6]
+
+        e_cross = self.e_cross = SubsettableCrossProduct(
+                op2_subset=e_subset, result_subset=h_subset)
+        h_cross = self.h_cross = SubsettableCrossProduct(
+                op2_subset=h_subset, result_subset=e_subset)
 
         self.discr = discr
 
@@ -227,30 +236,9 @@ class MaxwellOperator(TimeDependentOperator):
         dim = discr.dimensions
         normal = make_normal(dim)
 
-        def build_placeholder():
-            from hedge.flux import \
-                    FluxVectorPlaceholder,  \
-                    FluxScalarPlaceholder, \
-                    FluxZeroPlaceholder
-
-            assigned_components = 0
-            scalars = []
-            for use_component in self.get_subset():
-                if use_component:
-                    scalars.append(
-                            FluxScalarPlaceholder(assigned_components))
-                    assigned_components += 1
-                else:
-                    scalars.append(FluxZeroPlaceholder())
-
-            assert len(scalars) == 6
-
-            return FluxVectorPlaceholder(scalars=scalars)
-
-        w = build_placeholder()
-
-        e = w[0:3]
-        h = w[3:6]
+        w = FluxVectorPlaceholder(
+            len_iterable(uc for uc in self.get_subset() if uc))
+        e, h = self.split_fields(w)
 
         Z = sqrt(mu/epsilon)
         Y = 1/Z
@@ -258,19 +246,15 @@ class MaxwellOperator(TimeDependentOperator):
         fluxes = join_fields(
                 # flux e
                 1/epsilon*(
-                    1/2*cross(normal, h.int-h.ext)
-                    -upwind_alpha/(2*Z)*cross(normal, cross(normal, e.int-e.ext))
+                    1/2*h_cross(normal, h.int-h.ext)
+                    -upwind_alpha/(2*Z)*h_cross(normal, e_cross(normal, e.int-e.ext))
                     ),
                 # flux h
                 1/mu*(
-                    -1/2*cross(normal, e.int-e.ext)
-                    -upwind_alpha/(2*Y)*cross(normal, cross(normal, h.int-h.ext))
+                    -1/2*e_cross(normal, e.int-e.ext)
+                    -upwind_alpha/(2*Y)*e_cross(normal, h_cross(normal, h.int-h.ext))
                     ),
                 )
-
-        for i, use_component in list(enumerate(self.get_subset()))[::-1]:
-            if not use_component:
-                del fluxes[i]
 
         self.flux = discr.get_flux_operator(fluxes, direct=direct_flux)
 
@@ -280,13 +264,15 @@ class MaxwellOperator(TimeDependentOperator):
     def rhs(self, t, w):
         from hedge.tools import cross
         from hedge.discretization import pair_with_boundary
-        from pytools.arithmetic_container import join_fields
+        from pytools.arithmetic_container import join_fields, ArithmeticList
 
-        e = w[0:3]
-        h = w[3:6]
+        e, h = self.split_fields(w)
 
-        def curl(field):
-            return cross(self.nabla, field)
+        def e_curl(field):
+            return self.e_cross(self.nabla, field)
+
+        def h_curl(field):
+            return self.h_cross(self.nabla, field)
 
         bc = join_fields(
                 -self.discr.boundarize_volume_field(e, self.pec_tag),
@@ -297,8 +283,8 @@ class MaxwellOperator(TimeDependentOperator):
 
         return (
                 join_fields(
-                    1/self.epsilon * curl(h),
-                    - 1/self.mu * curl(e),
+                    1/self.epsilon * h_curl(h),
+                    - 1/self.mu * e_curl(e),
                     )
                 - self.m_inv*(
                     self.flux * w
@@ -306,7 +292,39 @@ class MaxwellOperator(TimeDependentOperator):
                     )
                 )
 
+    def split_fields(self, w):
+        e_subset = self.get_subset()[0:3]
+        h_subset = self.get_subset()[3:6]
+
+        idx = 0
+
+        e = []
+        for use_component in e_subset:
+            if use_component:
+                e.append(w[idx])
+                idx += 1
+
+        h = []
+        for use_component in h_subset:
+            if use_component:
+                h.append(w[idx])
+                idx += 1
+
+        from hedge.flux import FluxVectorPlaceholder
+        from pytools.arithmetic_container import ArithmeticList
+
+        if isinstance(w, FluxVectorPlaceholder):
+            return FluxVectorPlaceholder(scalars=e), FluxVectorPlaceholder(scalars=h)
+        elif isinstance(w, ArithmeticList):
+            return ArithmeticList(e), ArithmeticList(h)
+        else:
+            return e, h
+
     def get_subset(self):
+        """Return a 6-tuple of C{bool}s indicating whether field components 
+        are to be computed. The fields are numbered in the order specified
+        in the class documentation.
+        """
         return 6*(True,)
 
 
