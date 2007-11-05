@@ -163,8 +163,9 @@ class DataArray(object):
                 self.type = "Float64"
                 if vector_format == VF_LIST_OF_COMPONENTS:
                     ctr = list(container)
-                    while len(ctr) < vector_padding:
-                        ctr.append(None)
+                    if len(ctr) > 1:
+                        while len(ctr) < vector_padding:
+                            ctr.append(None)
                     self.components = len(ctr)
                     self.buffer =  bufferize_list_of_components(ctr, len(ctr[0]))
                 elif vector_format == VF_LIST_OF_VECTORS:

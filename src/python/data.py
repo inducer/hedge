@@ -177,7 +177,7 @@ def make_tdep_constant(x):
 
 
 class TimeHarmonicGivenFunction(ITimeDependentGivenFunction):
-    """Adapts a L{GivenFunction} to have a harmonic time-dependency.
+    """Adapts an L{IGivenFunction} to have a harmonic time-dependency.
     """
     def __init__(self, gf, omega, phase=0):
         self.gf = gf
@@ -186,11 +186,45 @@ class TimeHarmonicGivenFunction(ITimeDependentGivenFunction):
 
     def volume_interpolant(self, t, discr):
         from math import sin
-        return sin(omega*t+phase)*self.gf.interpolate_volume(discr)
+        return sin(omega*t+phase)*self.gf.volume_interpolant(discr)
 
     def boundary_interpolant(self, t, discr, tag=hedge.mesh.TAG_ALL):
         from math import sin
-        return sin(omega*t+phase)*self.gf.interpolate_boundary(discr, tag)
+        return sin(omega*t+phase)*self.gf.boundary_interpolant(discr, tag)
+
+
+
+
+
+class TimeIntervalGivenFunction(ITimeDependentGivenFunction):
+    """Adapts an L{IGivenFunction} to depend on time by "turning it on"
+    for the time interval [on_time, off_time), and having it be zero
+    the rest of the time.
+    """
+
+    def __init__(self, gf, on_time=0, off_time=1):
+        self.gf = gf
+        self.on_time = on_time
+        self.off_time = off_time
+        assert on_time <= off_time
+
+
+
+    def volume_interpolant(self, t, discr):
+        if self.on_time <= t < self.off_time:
+            return self.gf.volume_interpolant(discr)
+        else:
+            # FIXME: not optimal
+            # difficult part here is to match shape
+            return 0*self.gf.volume_interpolant(discr)
+
+    def boundary_interpolant(self, t, discr, tag=hedge.mesh.TAG_ALL):
+        if self.on_time <= t < self.off_time:
+            return self.gf.boundary_interpolant(discr, tag)
+        else:
+            # FIXME: not optimal
+            # difficult part here is to match shape
+            return 0*self.gf.boundary_interpolant(discr, tag)
 
 
 

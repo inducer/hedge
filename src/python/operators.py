@@ -206,14 +206,14 @@ class MaxwellOperator(TimeDependentOperator):
     """
 
     def __init__(self, discr, epsilon, mu, upwind_alpha=1, 
-            pec_tag=hedge.mesh.TAG_ALL, direct_flux=True):
+            pec_tag=hedge.mesh.TAG_ALL, direct_flux=True,
+            current=None):
         from hedge.flux import make_normal, FluxVectorPlaceholder
         from hedge.mesh import check_bc_coverage
         from hedge.discretization import pair_with_boundary
         from math import sqrt
         from pytools.arithmetic_container import join_fields
         from hedge.tools import SubsettableCrossProduct
-        from pytools import len_iterable
 
         e_subset = self.get_subset()[0:3]
         h_subset = self.get_subset()[3:6]
@@ -231,13 +231,14 @@ class MaxwellOperator(TimeDependentOperator):
 
         self.pec_tag = pec_tag
 
+        self.current = current
+
         check_bc_coverage(discr.mesh, [pec_tag])
 
         dim = discr.dimensions
         normal = make_normal(dim)
 
-        w = FluxVectorPlaceholder(
-            len_iterable(uc for uc in self.get_subset() if uc))
+        w = FluxVectorPlaceholder(self.component_count())
         e, h = self.split_fields(w)
 
         Z = sqrt(mu/epsilon)
@@ -281,16 +282,23 @@ class MaxwellOperator(TimeDependentOperator):
 
         bpair = pair_with_boundary(w, bc, self.pec_tag)
 
-        return (
-                join_fields(
-                    1/self.epsilon * h_curl(h),
-                    - 1/self.mu * e_curl(e),
-                    )
-                - self.m_inv*(
+        local_op_fields = join_fields(
+                1/self.epsilon * h_curl(h),
+                - 1/self.mu * e_curl(e),
+                )
+
+        if self.current is not None:
+            j = self.current.volume_interpolant(t, self.discr)
+            e_idx = 0 
+            for j_idx, use_component in enumerate(self.get_subset()[0:3]):
+                if use_component:
+                    local_op_fields[e_idx] -= j[j_idx]
+                    e_idx += 1
+            
+        return local_op_fields - self.m_inv*(
                     self.flux * w
                     +self.flux * pair_with_boundary(w, bc, self.pec_tag)
                     )
-                )
 
     def split_fields(self, w):
         e_subset = self.get_subset()[0:3]
@@ -319,6 +327,10 @@ class MaxwellOperator(TimeDependentOperator):
             return ArithmeticList(e), ArithmeticList(h)
         else:
             return e, h
+
+    def component_count(self):
+        from pytools import len_iterable
+        return len_iterable(uc for uc in self.get_subset() if uc)
 
     def get_subset(self):
         """Return a 6-tuple of C{bool}s indicating whether field components 

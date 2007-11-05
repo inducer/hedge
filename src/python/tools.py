@@ -156,7 +156,6 @@ class SubsettableCrossProduct:
         op1 = pymbolic.var("x")
         op2 = pymbolic.var("y")
 
-        #self.expressions = []
         self.functions = []
         for i, use_component in enumerate(result_subset):
             if use_component:
@@ -166,31 +165,16 @@ class SubsettableCrossProduct:
                         lc = levi_civita((i, j_real, k_real))
                         if lc != 0:
                             this_expr += lc*op1[j]*op2[k]
-                #self.expressions.append(this_expr)
                 self.functions.append(pymbolic.compile(this_expr))
-
-        for e in self.functions:
-            print e._Expression
-        print "--------------------"
 
     def __call__(self, x, y):
         from pytools.arithmetic_container import ArithmeticList
-        #import pymbolic
-        #return ArithmeticList(pymbolic.evaluate_kw(e, x=x, y=y) 
-                #for e in self.expressions)
         return ArithmeticList(f(x, y) for f in self.functions)
 
 
 
 
 cross = SubsettableCrossProduct()
-def cross2(a, b): 
-    from pytools.arithmetic_container import ArithmeticList
-    return ArithmeticList([
-            a[1]*b[2]-a[2]*b[1],
-            a[2]*b[0]-a[0]*b[2],
-            a[0]*b[1]-a[1]*b[0]
-            ])
 
 
 
