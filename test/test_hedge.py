@@ -207,8 +207,8 @@ class TestHedge(unittest.TestCase):
         from hedge.element import WarpFactorCalculator
         wfc = WarpFactorCalculator(n)
 
-        self.assert_(abs(wfc.int_f(-1)) < 1e-15)
-        self.assert_(abs(wfc.int_f(1)) < 2e-15)
+        self.assert_(abs(wfc.int_f(-1)) < 4e-15)
+        self.assert_(abs(wfc.int_f(1)) < 4e-15)
 
         from hedge.quadrature import LegendreGaussQuadrature
 
