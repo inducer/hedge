@@ -517,7 +517,7 @@ class _ParallelFluxOperator(object):
 
         def boundary_zeros(tag):
             if field_count is not None:
-                return num.vstack([
+                return num.hstack([
                     self.discr.boundary_zeros(tag)
                     for field_i in range(field_count)])
             else:
@@ -525,7 +525,7 @@ class _ParallelFluxOperator(object):
 
         def boundarize(field, tag):
             if field_count is not None:
-                return num.vstack([
+                return num.hstack([
                     self.discr.boundarize_volume_field(component, tag)
                     for component in field])
             else:
