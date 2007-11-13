@@ -555,7 +555,7 @@ def make_regular_square_mesh(a=-0.5, b=0.5, n=5, periodicity=None,
     axes = ["x", "y"]
     mesh_periodicity = []
     for i, axis in enumerate(axes):
-        if periodicity[0]:
+        if periodicity[i]:
             mesh_periodicity.append(("minus_"+axis, "plus_"+axis))
         else:
             mesh_periodicity.append(None)

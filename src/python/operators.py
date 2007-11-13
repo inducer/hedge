@@ -422,6 +422,8 @@ class WeakPoissonOperator(Operator,hedge.tools.PylinearOperator):
                 return num.diagonal_matrix(vec, flavor=num.SparseExecuteMatrix)
             self.diffusion = diffusion_tensor.volume_interpolant(discr).map(
                     fast_diagonal_mat)
+            self.neu_diff = diffusion_tensor.boundary_interpolant(discr, neumann_tag).map(
+                    fast_diagonal_mat)
 
         self.dirichlet_bc = dirichlet_bc
         self.dirichlet_tag = dirichlet_tag
