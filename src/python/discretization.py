@@ -215,7 +215,7 @@ class Discretization(object):
                 # this happens if vertices_l is not a permutation of vertices_n.
                 # periodicity is the only reason why that would be so.
 
-                vertices_n, axis = self.mesh.periodic_opposite_map[vertices_n]
+                vertices_n, axis = self.mesh.periodic_opposite_faces[vertices_n]
 
                 findices_shuffled_n = \
                         ldis_l.shuffle_face_indices_to_match(

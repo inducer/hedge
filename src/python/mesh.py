@@ -244,6 +244,9 @@ class Mesh(object):
       indicating the tags of the boundaries to be matched together
       as periodic. There is one tuple per axis, so that for example
       a 3D mesh has three tuples.
+    @ivar periodic_opposite_faces: a mapping of the form::
+      (element instance, face index) -> 
+        (opposite element instance, face index), axis
     """
 
     def both_interfaces(self):
@@ -385,7 +388,7 @@ class ConformalMesh(Mesh):
 
         self.periodicity = periodicity
 
-        self.periodic_opposite_map = {}
+        self.periodic_opposite_faces = {}
 
         for axis, axis_periodicity in enumerate(periodicity):
             if axis_periodicity is not None:
@@ -437,12 +440,12 @@ class ConformalMesh(Mesh):
 
                     mapped_minus_fvi = tuple(plus_to_minus[i] for i in plus_fvi)
 
-                    # the periodic_opposite_map maps face vertex tuples from
+                    # periodic_opposite_faces maps face vertex tuples from
                     # one end of the periodic domain to the other, while
                     # correspondence between each entry 
 
-                    self.periodic_opposite_map[minus_fvi] = mapped_plus_fvi, axis
-                    self.periodic_opposite_map[plus_fvi] = mapped_minus_fvi, axis
+                    self.periodic_opposite_faces[minus_fvi] = mapped_plus_fvi, axis
+                    self.periodic_opposite_faces[plus_fvi] = mapped_minus_fvi, axis
 
                     self.tag_to_boundary[TAG_ALL].remove(plus_face)
                     self.tag_to_boundary[TAG_ALL].remove(minus_face)
