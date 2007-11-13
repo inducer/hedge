@@ -245,8 +245,17 @@ class Mesh(object):
       as periodic. There is one tuple per axis, so that for example
       a 3D mesh has three tuples.
     @ivar periodic_opposite_faces: a mapping of the form::
-      (element instance, face index) -> 
-        (opposite element instance, face index), axis
+          (element instance, face index) -> 
+            (opposite element instance, face index), axis
+
+      This maps a face C{(el, face_index)} to its periodicity-induced
+      opposite.
+
+    @ivar periodic_opposite_vertices: a mapping of the form::
+          vertex_index -> [opposite_vertex_indices]
+
+      This maps one vertex to a list of its periodicity-induced 
+      opposites.
     """
 
     def both_interfaces(self):
@@ -389,6 +398,7 @@ class ConformalMesh(Mesh):
         self.periodicity = periodicity
 
         self.periodic_opposite_faces = {}
+        self.periodic_opposite_vertices = {}
 
         for axis, axis_periodicity in enumerate(periodicity):
             if axis_periodicity is not None:
@@ -413,6 +423,10 @@ class ConformalMesh(Mesh):
                         axis, minus_z_points, plus_z_points,
                         minus_vertex_indices, plus_vertex_indices)
                 plus_to_minus = reverse_dictionary(minus_to_plus)
+
+                for a, b in minus_to_plus.iteritems():
+                    self.periodic_opposite_vertices.setdefault(a, []).append(b)
+                    self.periodic_opposite_vertices.setdefault(b, []).append(a)
 
                 # establish face connectivity
                 for minus_face in minus_faces:
