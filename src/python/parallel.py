@@ -264,7 +264,7 @@ class MPIParallelizationContext(ParallelizationContext):
                     rank_global2local_elements,
                     rank_global2local_vertex_indices,
                     neighboring_ranks[rank],
-                    mesh.periodic_opposite_map)
+                    mesh.periodic_opposite_faces)
 
             if rank == self.head_rank:
                 result = self, rank_data
@@ -292,7 +292,7 @@ class ParallelDiscretization(hedge.discretization.Discretization):
                     global2local_elements, 
                     self.global2local_vertex_indices, 
                     self.neighbor_ranks,
-                    self.global_periodic_opposite_map)) = \
+                    self.global_periodic_opposite_faces)) = \
                 mesh_data
 
         from hedge.tools import reverse_lookup_table
@@ -398,11 +398,11 @@ class ParallelDiscretization(hedge.discretization.Discretization):
                         # continue below in else part
                     except KeyError:
                         # ok, our face must be part of a periodic pair
-                        my_vertices_there, axis = self.global_periodic_opposite_map[
+                        my_vertices_there, axis = self.global_periodic_opposite_faces[
                                 my_global_vertices]
                         nb_face_idx = nb_face_order[frozenset(my_vertices_there)]
 
-                        his_vertices_here, axis2 = self.global_periodic_opposite_map[
+                        his_vertices_here, axis2 = self.global_periodic_opposite_faces[
                                 nb_all_facevertices_global[nb_face_idx]]
 
                         assert axis == axis2
@@ -517,7 +517,7 @@ class _ParallelFluxOperator(object):
 
         def boundary_zeros(tag):
             if field_count is not None:
-                return num.vstack([
+                return num.hstack([
                     self.discr.boundary_zeros(tag)
                     for field_i in range(field_count)])
             else:
@@ -525,7 +525,7 @@ class _ParallelFluxOperator(object):
 
         def boundarize(field, tag):
             if field_count is not None:
-                return num.vstack([
+                return num.hstack([
                     self.discr.boundarize_volume_field(component, tag)
                     for component in field])
             else:

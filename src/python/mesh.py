@@ -244,6 +244,18 @@ class Mesh(object):
       indicating the tags of the boundaries to be matched together
       as periodic. There is one tuple per axis, so that for example
       a 3D mesh has three tuples.
+    @ivar periodic_opposite_faces: a mapping of the form::
+          (element instance, face index) -> 
+            (opposite element instance, face index), axis
+
+      This maps a face C{(el, face_index)} to its periodicity-induced
+      opposite.
+
+    @ivar periodic_opposite_vertices: a mapping of the form::
+          vertex_index -> [opposite_vertex_indices]
+
+      This maps one vertex to a list of its periodicity-induced 
+      opposites.
     """
 
     def both_interfaces(self):
@@ -385,7 +397,8 @@ class ConformalMesh(Mesh):
 
         self.periodicity = periodicity
 
-        self.periodic_opposite_map = {}
+        self.periodic_opposite_faces = {}
+        self.periodic_opposite_vertices = {}
 
         for axis, axis_periodicity in enumerate(periodicity):
             if axis_periodicity is not None:
@@ -410,6 +423,10 @@ class ConformalMesh(Mesh):
                         axis, minus_z_points, plus_z_points,
                         minus_vertex_indices, plus_vertex_indices)
                 plus_to_minus = reverse_dictionary(minus_to_plus)
+
+                for a, b in minus_to_plus.iteritems():
+                    self.periodic_opposite_vertices.setdefault(a, []).append(b)
+                    self.periodic_opposite_vertices.setdefault(b, []).append(a)
 
                 # establish face connectivity
                 for minus_face in minus_faces:
@@ -437,12 +454,12 @@ class ConformalMesh(Mesh):
 
                     mapped_minus_fvi = tuple(plus_to_minus[i] for i in plus_fvi)
 
-                    # the periodic_opposite_map maps face vertex tuples from
+                    # periodic_opposite_faces maps face vertex tuples from
                     # one end of the periodic domain to the other, while
                     # correspondence between each entry 
 
-                    self.periodic_opposite_map[minus_fvi] = mapped_plus_fvi, axis
-                    self.periodic_opposite_map[plus_fvi] = mapped_minus_fvi, axis
+                    self.periodic_opposite_faces[minus_fvi] = mapped_plus_fvi, axis
+                    self.periodic_opposite_faces[plus_fvi] = mapped_minus_fvi, axis
 
                     self.tag_to_boundary[TAG_ALL].remove(plus_face)
                     self.tag_to_boundary[TAG_ALL].remove(minus_face)
@@ -532,20 +549,26 @@ def make_single_element_mesh(a=-0.5, b=0.5,
 
 
 
-def make_regular_square_mesh(a=-0.5, b=0.5, n=5, periodicity=None,
+def make_regular_rect_mesh(a=(0,0), b=(1,1), n=(5,5), periodicity=None,
         boundary_tagger=(lambda fvi, el, fn: [])):
-    """Create a regular square mesh.
+    """Create a semi-structured rectangular mesh.
 
-    `periodicity is either None, or a tuple of bools specifying whether
-    the mesh is to be periodic in x and y.
+    @arg a: the lower left hand point of the rectangle
+    @arg b: the upper right hand point of the rectangle
+    @arg n: a tuple of integers indicating the total number of points
+      on [a,b].
+    @arg periodicity: either None, or a tuple of bools specifying whether
+      the mesh is to be periodic in x and y.
     """
     node_dict = {}
     points = []
-    points_1d = num.linspace(a, b, n)
-    for j in range(n):
-        for i in range(n):
+    points_1d = [num.linspace(a_i, b_i, n_i)
+            for a_i, b_i, n_i in zip(a, b, n)]
+
+    for j in range(n[1]):
+        for i in range(n[0]):
             node_dict[i,j] = len(points)
-            points.append(num.array([points_1d[i], points_1d[j]]))
+            points.append(num.array([points_1d[0][i], points_1d[1][j]]))
 
     elements = []
 
@@ -555,15 +578,15 @@ def make_regular_square_mesh(a=-0.5, b=0.5, n=5, periodicity=None,
     axes = ["x", "y"]
     mesh_periodicity = []
     for i, axis in enumerate(axes):
-        if periodicity[0]:
+        if periodicity[i]:
             mesh_periodicity.append(("minus_"+axis, "plus_"+axis))
         else:
             mesh_periodicity.append(None)
 
     fvi2fm = {}
 
-    for i in range(n-1):
-        for j in range(n-1):
+    for i in range(n[0]-1):
+        for j in range(n[1]-1):
 
             # c--d
             # |  |
@@ -578,15 +601,31 @@ def make_regular_square_mesh(a=-0.5, b=0.5, n=5, periodicity=None,
             elements.append((d,c,b))
 
             if i == 0: fvi2fm[frozenset((a,c))] = "minus_x"
-            if i == n-2: fvi2fm[frozenset((b,d))] = "plus_x"
+            if i == n[0]-2: fvi2fm[frozenset((b,d))] = "plus_x"
             if j == 0: fvi2fm[frozenset((a,b))] = "minus_y"
-            if j == n-2: fvi2fm[frozenset((c,d))] = "plus_y"
+            if j == n[1]-2: fvi2fm[frozenset((c,d))] = "plus_y"
 
     def wrapped_boundary_tagger(fvi, el, fn):
         return [fvi2fm[frozenset(fvi)]] + boundary_tagger(fvi, el, fn)
 
     return ConformalMesh(points, elements, wrapped_boundary_tagger,
             periodicity=mesh_periodicity)
+
+
+
+
+def make_regular_square_mesh(a=-0.5, b=0.5, n=5, periodicity=None,
+        boundary_tagger=(lambda fvi, el, fn: [])):
+    """Create a semi-structured square mesh.
+
+    @arg a: the lower x and y coordinate of the square
+    @arg b: the upper x and y coordinate of the square
+    @arg n: integer indicating the total number of points on [a,b].
+    @arg periodicity: either None, or a tuple of bools specifying whether
+      the mesh is to be periodic in x and y.
+    """
+    return make_regular_rect_mesh(
+            (a,a), (b,b), (n,n), periodicity, boundary_tagger)
 
 
 

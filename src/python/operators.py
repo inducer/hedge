@@ -206,13 +206,22 @@ class MaxwellOperator(TimeDependentOperator):
     """
 
     def __init__(self, discr, epsilon, mu, upwind_alpha=1, 
-            pec_tag=hedge.mesh.TAG_ALL, direct_flux=True):
+            pec_tag=hedge.mesh.TAG_ALL, direct_flux=True,
+            current=None):
         from hedge.flux import make_normal, FluxVectorPlaceholder
         from hedge.mesh import check_bc_coverage
         from hedge.discretization import pair_with_boundary
         from math import sqrt
         from pytools.arithmetic_container import join_fields
-        from hedge.tools import cross
+        from hedge.tools import SubsettableCrossProduct
+
+        e_subset = self.get_subset()[0:3]
+        h_subset = self.get_subset()[3:6]
+
+        e_cross = self.e_cross = SubsettableCrossProduct(
+                op2_subset=e_subset, result_subset=h_subset)
+        h_cross = self.h_cross = SubsettableCrossProduct(
+                op2_subset=h_subset, result_subset=e_subset)
 
         self.discr = discr
 
@@ -222,45 +231,49 @@ class MaxwellOperator(TimeDependentOperator):
 
         self.pec_tag = pec_tag
 
+        self.current = current
+
         check_bc_coverage(discr.mesh, [pec_tag])
 
         dim = discr.dimensions
         normal = make_normal(dim)
-        w = FluxVectorPlaceholder(6)
-        e = w[0:3]
-        h = w[3:6]
+
+        w = FluxVectorPlaceholder(self.component_count())
+        e, h = self.split_fields(w)
 
         Z = sqrt(mu/epsilon)
         Y = 1/Z
 
-        self.flux = discr.get_flux_operator(join_fields(
+        fluxes = join_fields(
                 # flux e
                 1/epsilon*(
-                    1/2*cross(normal, h.int-h.ext)
-                    -upwind_alpha/(2*Z)*cross(normal, cross(normal, e.int-e.ext))
+                    1/2*h_cross(normal, h.int-h.ext)
+                    -upwind_alpha/(2*Z)*h_cross(normal, e_cross(normal, e.int-e.ext))
                     ),
                 # flux h
                 1/mu*(
-                    -1/2*cross(normal, e.int-e.ext)
-                    -upwind_alpha/(2*Y)*cross(normal, cross(normal, h.int-h.ext))
+                    -1/2*e_cross(normal, e.int-e.ext)
+                    -upwind_alpha/(2*Y)*e_cross(normal, h_cross(normal, h.int-h.ext))
                     ),
-                ), 
-                direct=direct_flux)
+                )
+
+        self.flux = discr.get_flux_operator(fluxes, direct=direct_flux)
 
         self.nabla = discr.nabla
         self.m_inv = discr.inverse_mass_operator
 
-
     def rhs(self, t, w):
         from hedge.tools import cross
         from hedge.discretization import pair_with_boundary
-        from pytools.arithmetic_container import join_fields
+        from pytools.arithmetic_container import join_fields, ArithmeticList
 
-        e = w[0:3]
-        h = w[3:6]
+        e, h = self.split_fields(w)
 
-        def curl(field):
-            return cross(self.nabla, field)
+        def e_curl(field):
+            return self.e_cross(self.nabla, field)
+
+        def h_curl(field):
+            return self.h_cross(self.nabla, field)
 
         bc = join_fields(
                 -self.discr.boundarize_volume_field(e, self.pec_tag),
@@ -269,15 +282,93 @@ class MaxwellOperator(TimeDependentOperator):
 
         bpair = pair_with_boundary(w, bc, self.pec_tag)
 
-        return (
-                join_fields(
-                    1/self.epsilon * curl(h),
-                    - 1/self.mu * curl(e),
-                    )
-                - self.m_inv*(
+        local_op_fields = join_fields(
+                1/self.epsilon * h_curl(h),
+                - 1/self.mu * e_curl(e),
+                )
+
+        if self.current is not None:
+            j = self.current.volume_interpolant(t, self.discr)
+            e_idx = 0 
+            for j_idx, use_component in enumerate(self.get_subset()[0:3]):
+                if use_component:
+                    local_op_fields[e_idx] -= j[j_idx]
+                    e_idx += 1
+            
+        return local_op_fields - self.m_inv*(
                     self.flux * w
                     +self.flux * pair_with_boundary(w, bc, self.pec_tag)
                     )
+
+    def split_fields(self, w):
+        e_subset = self.get_subset()[0:3]
+        h_subset = self.get_subset()[3:6]
+
+        idx = 0
+
+        e = []
+        for use_component in e_subset:
+            if use_component:
+                e.append(w[idx])
+                idx += 1
+
+        h = []
+        for use_component in h_subset:
+            if use_component:
+                h.append(w[idx])
+                idx += 1
+
+        from hedge.flux import FluxVectorPlaceholder
+        from pytools.arithmetic_container import ArithmeticList
+
+        if isinstance(w, FluxVectorPlaceholder):
+            return FluxVectorPlaceholder(scalars=e), FluxVectorPlaceholder(scalars=h)
+        elif isinstance(w, ArithmeticList):
+            return ArithmeticList(e), ArithmeticList(h)
+        else:
+            return e, h
+
+    def component_count(self):
+        from pytools import len_iterable
+        return len_iterable(uc for uc in self.get_subset() if uc)
+
+    def get_subset(self):
+        """Return a 6-tuple of C{bool}s indicating whether field components 
+        are to be computed. The fields are numbered in the order specified
+        in the class documentation.
+        """
+        return 6*(True,)
+
+
+
+
+class TMMaxwellOperator(MaxwellOperator):
+    """A 2D TM Maxwell operator with PEC boundaries.
+
+    Field order is [Ez Hx Hy].
+    """
+
+    def get_subset(self):
+        return (
+                (False,False,True) # only ez
+                +
+                (True,True,False) # hx and hy
+                )
+
+
+
+
+class TEMaxwellOperator(MaxwellOperator):
+    """A 2D TE Maxwell operator with PEC boundaries.
+
+    Field order is [Ex Ey Hz].
+    """
+
+    def get_subset(self):
+        return (
+                (True,True,False) # ex and ey
+                +
+                (False,False,True) # only hz
                 )
 
 
@@ -330,6 +421,8 @@ class WeakPoissonOperator(Operator,hedge.tools.PylinearOperator):
             def fast_diagonal_mat(vec):
                 return num.diagonal_matrix(vec, flavor=num.SparseExecuteMatrix)
             self.diffusion = diffusion_tensor.volume_interpolant(discr).map(
+                    fast_diagonal_mat)
+            self.neu_diff = diffusion_tensor.boundary_interpolant(discr, neumann_tag).map(
                     fast_diagonal_mat)
 
         self.dirichlet_bc = dirichlet_bc

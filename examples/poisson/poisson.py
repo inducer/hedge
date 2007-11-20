@@ -45,7 +45,7 @@ def main() :
 
     pcon = guess_parallelization_context()
 
-    dim = 3
+    dim = 2
 
     def boundary_tagger(fvi, el, fn):
         from math import atan2, pi
@@ -64,9 +64,9 @@ def main() :
     if dim == 2:
         if pcon.is_head_rank:
             #mesh = make_disk_mesh(r=0.5, boundary_tagger=boundary_tagger)
-            #mesh = make_regular_square_mesh(n=3, boundary_tagger=boundary_tagger)
+            mesh = make_regular_square_mesh(n=3, boundary_tagger=boundary_tagger, periodicity=(True,False))
             #mesh = make_regular_square_mesh(n=9)
-            mesh = make_square_mesh(max_area=0.01, boundary_tagger=boundary_tagger)
+            #mesh = make_square_mesh(max_area=0.1, boundary_tagger=boundary_tagger)
             #mesh.transform(Reflection(0,2))
         el_class = TriangularElement
     elif dim == 3:
@@ -82,7 +82,7 @@ def main() :
     else:
         mesh_data = pcon.receive_mesh()
 
-    discr = pcon.make_discretization(mesh_data, el_class(3))
+    discr = pcon.make_discretization(mesh_data, el_class(5))
     vis = VtkVisualizer(discr, pcon)
 
     def u0(x):
@@ -118,8 +118,8 @@ def main() :
         return result
 
     op = WeakPoissonOperator(discr, 
-            #diffusion_tensor=ConstantGivenFunction(my_diff_tensor()),
-            diffusion_tensor=GivenFunction(DiffTensor()),
+            diffusion_tensor=ConstantGivenFunction(my_diff_tensor()),
+            #diffusion_tensor=GivenFunction(DiffTensor()),
 
             #dirichlet_tag="dirichlet",
             #neumann_tag="neumann", 
@@ -142,21 +142,21 @@ def main() :
             mat[:,j] = op(num.unit_vector(w, j))
         return mat
 
-    if False:
+    if True:
         mat = matrix_rep(op)
         print comp.norm_frobenius(mat-mat.T)
         #print comp.eigenvalues(mat)
         print mat.shape
     
-    from hedge.discretization import PylinearOpWrapper
-    if False:
-        results = comp.operator_eigenvectors(-op, 20, PylinearOpWrapper(discr.mass_operator),
+    if True:
+        from hedge.discretization import PylinearOpWrapper
+        results = comp.operator_eigenvectors(-op, 30, PylinearOpWrapper(discr.mass_operator),
                 which=comp.SMALLEST_MAGNITUDE
                 )
         scalars = []
         for i, (value,vector) in enumerate(results):
             print i, value, l2_norm(vector.real)
-            scalars.append(("ev%d" % i, vector.real))
+            scalars.append(("ev%03d" % i, vector.real))
         print 
 
         visf = vis.make_file("eigenvectors")

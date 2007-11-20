@@ -25,16 +25,16 @@ import pylinear.computation as comp
 
 
 def main():
-    from hedge.element import TetrahedralElement
+    from hedge.element import TriangularElement
     from hedge.timestep import RK4TimeStepper
-    from hedge.mesh import make_ball_mesh, make_cylinder_mesh, make_box_mesh
+    from hedge.mesh import make_disk_mesh
     from hedge.visualization import \
             VtkVisualizer, \
             SiloVisualizer, \
             get_rank_partition
     from pylo import DB_VARTYPE_VECTOR
     from hedge.tools import dot, EOCRecorder
-    from math import sqrt, pi
+    from math import sqrt, pi, exp
     from analytic_solutions import \
             check_time_harmonic_solution, \
             RealPartAdapter, \
@@ -43,8 +43,10 @@ def main():
             CylindricalCavityMode, \
             RectangularWaveguideMode, \
             RectangularCavityMode
-    from hedge.operators import MaxwellOperator
+    from hedge.operators import TEMaxwellOperator, TMMaxwellOperator
     from hedge.parallel import guess_parallelization_context
+    from hedge.data import GivenFunction, TimeIntervalGivenFunction
+    from pytools.arithmetic_container import ArithmeticList
 
     pcon = guess_parallelization_context()
 
@@ -53,48 +55,33 @@ def main():
     epsilon = 1*epsilon0
     mu = 1*mu0
 
-    eoc_rec = EOCRecorder()
+    #eoc_rec = EOCRecorder()
 
     cylindrical = False
     periodic = False
 
-    if cylindrical:
-        R = 1
-        d = 2
-        mode = CylindricalCavityMode(m=1, n=1, p=1,
-                radius=R, height=d, 
-                epsilon=epsilon, mu=mu)
-        r_sol = CartesianAdapter(RealPartAdapter(mode))
-        c_sol = SplitComplexAdapter(CartesianAdapter(mode))
-
-        if pcon.is_head_rank:
-            mesh = make_cylinder_mesh(radius=R, height=d, max_volume=0.01)
-    else:
-        if periodic:
-            mode = RectangularWaveguideMode(epsilon, mu, (3,2,1))
-            periodicity = (False, False, True)
-        else:
-            periodicity = None
-        mode = RectangularCavityMode(epsilon, mu, (1,2,2))
-        r_sol = RealPartAdapter(mode)
-        c_sol = SplitComplexAdapter(mode)
-
-        if pcon.is_head_rank:
-            mesh = make_box_mesh(max_volume=0.01, periodicity=periodicity)
+    mesh = make_disk_mesh(r=0.5)
 
     if pcon.is_head_rank:
         mesh_data = pcon.distribute_mesh(mesh)
     else:
         mesh_data = pcon.receive_mesh()
 
+    class CurrentSource:
+        shape = (3,)
+
+        def __call__(self, x):
+            return [0,0,exp(-80*comp.norm_2_squared(x))]
+
     #for order in [1,2,3,4,5,6]:
-    for order in [2,3,4]:
-        discr = pcon.make_discretization(mesh_data, TetrahedralElement(order))
+    for order in [3]:
+        discr = pcon.make_discretization(mesh_data, TriangularElement(order))
 
         vis = VtkVisualizer(discr, pcon, "em-%d" % order)
+        #vis = SiloVisualizer(discr, pcon)
 
         dt = discr.dt_factor(1/sqrt(mu*epsilon))
-        final_time = dt*60
+        final_time = dt*200
         nsteps = int(final_time/dt)+1
         dt = final_time/nsteps
 
@@ -109,18 +96,12 @@ def main():
         def l2_norm(field):
             return sqrt(dot(field, discr.mass_operator*field))
 
-        #check_time_harmonic_solution(discr, mode, c_sol)
-        #continue
-
-        mode.set_time(0)
-        fields = discr.interpolate_volume_function(r_sol)
-        op = MaxwellOperator(discr, epsilon, mu, upwind_alpha=1,
-                direct_flux=True)
-        #from pylinear.toybox import write_gnuplot_sparsity_pattern
-        #write_gnuplot_sparsity_pattern(
-                #"fluxmat-%d.dat" % pcon.rank, op.n_jump[0].serial_flux_op.int_matrix)
-
-        #return
+        op = TMMaxwellOperator(discr, epsilon, mu, upwind_alpha=1,
+                direct_flux=True,
+                current=TimeIntervalGivenFunction(
+                    GivenFunction(CurrentSource()), off_time=final_time/10)
+                )
+        fields = ArithmeticList([discr.volume_zeros() for i in range(op.component_count())])
 
         stepper = RK4TimeStepper()
         from time import time
@@ -144,14 +125,14 @@ def main():
             fields = stepper(fields, t, dt, op.rhs)
             t += dt
 
-        mode.set_time(t)
-        true_fields = discr.interpolate_volume_function(r_sol)
-        eoc_rec.add_data_point(order, l2_norm(fields-true_fields))
+        #true_fields = discr.interpolate_volume_function(r_sol)
+        #eoc_rec.add_data_point(order, l2_norm(fields-true_fields))
 
-        print
-        print eoc_rec.pretty_print("P.Deg.", "L2 Error")
+        #print
+        #print eoc_rec.pretty_print("P.Deg.", "L2 Error")
 
 if __name__ == "__main__":
     import cProfile as profile
     #profile.run("main()", "wave2d.prof")
     main()
+

@@ -215,7 +215,7 @@ class Discretization(object):
                 # this happens if vertices_l is not a permutation of vertices_n.
                 # periodicity is the only reason why that would be so.
 
-                vertices_n, axis = self.mesh.periodic_opposite_map[vertices_n]
+                vertices_n, axis = self.mesh.periodic_opposite_faces[vertices_n]
 
                 findices_shuffled_n = \
                         ldis_l.shuffle_face_indices_to_match(
@@ -761,11 +761,44 @@ class PylinearOpWrapper(hedge.tools.PylinearOperator):
 
 
 
-# local operators -------------------------------------------------------------
+# operator algebra ------------------------------------------------------------
 class _DiscretizationVectorOperator(object):
     def __init__(self, discr):
         self.discr = discr
 
+    def __add__(self, op2):
+        return _OperatorSum(self, op2)
+
+    def __sub__(self, op2):
+        return _OperatorSum(self, -op2)
+
+    def __neg__(self):
+        return _ScalarMultipleOperator(-1, op)
+
+    def __rmul__(self, scalar):
+        value = float(scalar)
+        return _ScalarMultipleOperator(scalar, self)
+
+class _ScalarMultipleOperator(_DiscretizationVectorOperator):
+    def __init__(self, scalar, op):
+        self.scalar = scalar
+        self.op = op
+
+    def __mul__(self, field):
+        return self.scalar*(self.op*field)
+
+class _OperatorSum(_DiscretizationVectorOperator):
+    def __init__(self, op1, op2):
+        self.op1 = op1
+        self.op2 = op2
+
+    def __mul__(self, field):
+        return self.op1*field + self.op2*field
+
+
+
+
+# local operators -------------------------------------------------------------
 class _DifferentiationOperator(_DiscretizationVectorOperator):
     def __init__(self, discr, coordinate, perform_func):
         _DiscretizationVectorOperator.__init__(self, discr)

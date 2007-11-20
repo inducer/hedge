@@ -113,13 +113,68 @@ def dot(x, y):
 
 
 
-def cross(a, b): 
-    from pytools.arithmetic_container import ArithmeticList
-    return ArithmeticList([
-            a[1]*b[2]-a[2]*b[1],
-            a[2]*b[0]-a[0]*b[2],
-            a[0]*b[1]-a[1]*b[0]
-            ])
+def levi_civita(tuple):
+    """Compute an entry of the Levi-Civita tensor for the indices C{tuple}.
+
+    Only three-tuples are supported for now.
+    """
+    if len(tuple) == 3:
+        if tuple in [(0,1,2), (2,0,1), (1,2,0)]: 
+            return 1
+        elif tuple in [(2,1,0), (0,2,1), (1,0,2)]: 
+            return -1
+        else:
+            return 0
+    else:
+        raise NotImplementedError
+
+
+
+
+class SubsettableCrossProduct:
+    """A cross product that can operate on an arbitrary subsets of its
+    two operands and return an arbitrary subset of its result.
+    """
+
+    full_subset = (True, True, True)
+
+    def __init__(self, op1_subset=full_subset, op2_subset=full_subset, result_subset=full_subset):
+        """Construct a subset-able cross product.
+
+        @arg op1_subset: The subset of indices of operand 1 to be taken into account.
+          Given as a 3-sequence of bools.
+        @arg op2_subset: The subset of indices of operand 2 to be taken into account.
+          Given as a 3-sequence of bools.
+        @arg op2_subset: The subset of indices of operand 2 to be taken into account.
+          Given as a 3-sequence of bools.
+        """
+        def subset_indices(subset):
+            return [i for i, use_component in enumerate(subset) 
+                    if use_component]
+
+        import pymbolic
+        op1 = pymbolic.var("x")
+        op2 = pymbolic.var("y")
+
+        self.functions = []
+        for i, use_component in enumerate(result_subset):
+            if use_component:
+                this_expr = 0
+                for j, j_real in enumerate(subset_indices(op1_subset)):
+                    for k, k_real in enumerate(subset_indices(op2_subset)):
+                        lc = levi_civita((i, j_real, k_real))
+                        if lc != 0:
+                            this_expr += lc*op1[j]*op2[k]
+                self.functions.append(pymbolic.compile(this_expr))
+
+    def __call__(self, x, y):
+        from pytools.arithmetic_container import ArithmeticList
+        return ArithmeticList(f(x, y) for f in self.functions)
+
+
+
+
+cross = SubsettableCrossProduct()
 
 
 

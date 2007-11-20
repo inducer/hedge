@@ -277,13 +277,17 @@ class VtkVisualizer(Visualizer, hedge.tools.Closable):
             if len(self.timestep_to_pathnames) % 5 == 0:
                 self.update_pvd()
 
-    def add_data(self, visf, scalars=[], vectors=[], time=None, step=None,
+    def add_data(self, visf, variables=[], scalars=[], vectors=[], time=None, step=None,
             scale_factor=1):
+        if scalars or vectors:
+            import warnings
+            warnings.warn("`scalars' and `vectors' arguments are deprecated",
+                    DeprecationWarning)
+            variables = scalars + vectors
+
         from hedge.vtk import DataArray
-        for name, data in scalars:
-            visf.grid.add_pointdata(DataArray(name, scale_factor*data))
-        for name, data in vectors:
-            visf.grid.add_pointdata(DataArray(name, scale_factor*data))
+        for name, field in variables:
+            visf.grid.add_pointdata(DataArray(name, scale_factor*field))
 
         self.register_pathname(time, visf.get_head_pathname())
 
@@ -371,9 +375,14 @@ class SiloVisualizer(Visualizer):
                     pathname, 
                     self.pcontext.rank, self.pcontext.ranks)
 
-    def add_data(self, silo, scalars=[], vectors=[], expressions=[],
-            time=None, step=None, write_coarse_mesh=False,
-            scale_factor=1):
+    def add_data(self, silo, variables=[], scalars=[], vectors=[], expressions=[],
+            time=None, step=None, scale_factor=1):
+        if scalars or vectors:
+            import warnings
+            warnings.warn("`scalars' and `vectors' arguments are deprecated",
+                    DeprecationWarning)
+            variables = scalars + vectors
+
         from pylo import DB_NODECENT, DBOPT_DTIME, DBOPT_CYCLE
 
         # put mesh coordinates
@@ -384,17 +393,20 @@ class SiloVisualizer(Visualizer):
             mesh_opts[DBOPT_CYCLE] = int(step)
 
         self.fine_mesh.put_mesh(silo, "finezonelist", "finemesh", mesh_opts)
-        if write_coarse_mesh:
-            self.coarse_mesh.put_mesh(silo, "coarsezonelist", "mesh", mesh_opts)
+        self.coarse_mesh.put_mesh(silo, "coarsezonelist", "mesh", mesh_opts)
 
         # put data
-        for name, field in scalars:
-            silo.put_ucdvar1(name, "finemesh", scale_factor*field, DB_NODECENT)
-        for name, vec in vectors:
-            silo.put_ucdvar(name, "finemesh", 
-                    ["%s_comp%d" % (name, i) 
-                        for i in range(len(vec))],
-                    scale_factor*vec, DB_NODECENT)
+        for name, field in variables:
+            if isinstance(field, list) and len(field) > 1:
+                silo.put_ucdvar(name, "finemesh", 
+                        ["%s_comp%d" % (name, i) 
+                            for i in range(len(field))],
+                        scale_factor*field, DB_NODECENT)
+            else:
+                if isinstance(field, list):
+                    field = field[0]
+                silo.put_ucdvar1(name, "finemesh", scale_factor*field, DB_NODECENT)
+
         if expressions:
             silo.put_defvars("defvars", expressions)
 
