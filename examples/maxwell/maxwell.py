@@ -32,7 +32,6 @@ def main():
             VtkVisualizer, \
             SiloVisualizer, \
             get_rank_partition
-    from pylo import DB_VARTYPE_VECTOR
     from hedge.tools import dot, EOCRecorder
     from math import sqrt, pi
     from analytic_solutions import \
