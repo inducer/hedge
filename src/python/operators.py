@@ -149,11 +149,9 @@ class AdvectionOperatorBase(TimeDependentOperator):
 
         if self.flux_type == "central":
             return u.avg*dot(normal, self.v)
-        elif self.flux_type == "lf":
+        elif self.flux_type in ["lf", "upwind"]:
             return u.avg*dot(normal, self.v) \
                     - 0.5*comp.norm_2(self.v)*(u.int - u.ext)
-        elif self.flux_type == "upwind":
-            raise NotImplementedError
         else:
             raise ValueError, "invalid flux type"
 
