@@ -20,3 +20,5 @@ tags
 dbg_*.py
 doc/user-reference
 doc/dev-reference
+*.poly
+*.node

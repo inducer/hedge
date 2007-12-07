@@ -497,21 +497,26 @@ def check_bc_coverage(mesh, bc_tags):
         2. all these boundaries are disjoint.
     """
 
-    entire_bdry = set(mesh.tag_to_boundary[TAG_ALL])
-    for tag in bc_tags:
-        try:
-            bdry = mesh.tag_to_boundary[tag]
-        except KeyError:
-            pass
-        else:
-            for el_face in bdry:
-                try:
-                    entire_bdry.remove(el_face)
-                except KeyError:
-                    raise RuntimeError, "Duplicate BC found"
+    bdry_to_tag = {}
+    all_bdry_faces = mesh.tag_to_boundary[TAG_ALL]
+    bdry_face_countdown = len(all_bdry_faces)
+    bdry_face_countdown_2 = len(set(mesh.tag_to_boundary[TAG_ALL]))
 
-    if len(entire_bdry) != 0:
-        raise RuntimeError, "Incomplete BC coverage"
+    for tag in bc_tags:
+        for el_face in mesh.tag_to_boundary.get(tag, []):
+            if el_face in bdry_to_tag:
+                raise RuntimeError, "Duplicate BCs %s found on (el=%d,face=%d)" % (
+                        [bdry_to_tag[el_face], tag],el_face[0].id, el_face[1])
+            else:
+                bdry_to_tag[el_face] = tag
+                bdry_face_countdown -= 1
+
+    if bdry_face_countdown > 0:
+        raise RuntimeError, "No BCs on faces %s" % (
+                set(all_bdry_faces)-set(bdry_to_tag.keys()))
+    elif bdry_face_countdown < 0:
+        raise RuntimeError, "More BCs were assigned than boundary faces are present " \
+                "(did something screw up your periodicity?)"
 
 
 
@@ -738,13 +743,13 @@ SHELL_MARKER = 100
 
 
 
-def _make_z_periodic_mesh(points, facets, tags, height, 
+def _make_z_periodic_mesh(points, facets, facet_holestarts, facet_markers, height, 
         max_volume, boundary_tagger):
     from meshpy.tet import MeshInfo, build
 
     mesh_info = MeshInfo()
     mesh_info.set_points(points)
-    mesh_info.set_facets(facets, tags)
+    mesh_info.set_facets_ex(facets, facet_holestarts, facet_markers)
 
     mesh_info.pbc_groups.resize(1)
     pbcg = mesh_info.pbc_groups[0]
@@ -755,12 +760,18 @@ def _make_z_periodic_mesh(points, facets, tags, height,
     pbcg.set_transform(translation=[0,0,height])
 
     def zper_boundary_tagger(fvi, el, fn):
-        result = boundary_tagger(fvi, el, fn)
+        # we only ask about *boundaries*
+        # we should not try to have the user tag
+        # the (periodicity-induced) interior faces
+
         face_marker = fvi2fm[frozenset(fvi)]
+
         if face_marker == MINUS_Z_MARKER:
-            result.append("minus_z")
+            return ["minus_z"]
         if face_marker == PLUS_Z_MARKER:
-            result.append("plus_z")
+            return ["plus_z"]
+
+        result = boundary_tagger(fvi, el, fn)
         if face_marker == SHELL_MARKER:
             result.append("shell")
         return result
@@ -788,26 +799,26 @@ def make_cylinder_mesh(radius=0.5, height=1, radial_subdivisions=10,
     rz = [(0,0)] \
             + [(radius, i*dz) for i in range(height_subdivisions+1)] \
             + [(0,height)]
-    ring_tags = [MINUS_Z_MARKER] \
+    ring_markers = [MINUS_Z_MARKER] \
             + ((height_subdivisions)*[SHELL_MARKER]) \
             + [PLUS_Z_MARKER]
 
-    points, facets, tags = generate_surface_of_revolution(rz,
+    points, facets, facet_holestarts, facet_markers = generate_surface_of_revolution(rz,
             closure=EXT_OPEN, radial_subdiv=radial_subdivisions,
-            ring_tags=ring_tags)
+            ring_markers=ring_markers)
 
-    assert len(facets) == len(tags)
+    assert len(facets) == len(facet_markers)
 
     if periodic:
         return _make_z_periodic_mesh(
-                points, facets, tags,
+                points, facets, facet_holestarts, facet_markers, 
                 height=height, 
                 max_volume=max_volume,
                 boundary_tagger=boundary_tagger)
     else:
         mesh_info = MeshInfo()
         mesh_info.set_points(points)
-        mesh_info.set_facets(facets, tags)
+        mesh_info.set_facets_ex(facets, facet_holestarts, facet_markers)
 
         generated_mesh = build(mesh_info, max_volume=max_volume)
 
