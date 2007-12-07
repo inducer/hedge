@@ -24,6 +24,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import pylinear.array as num
+import pylinear.computation as comp
 import hedge.tools
 import hedge.mesh
 import hedge.data
@@ -149,7 +150,8 @@ class AdvectionOperatorBase(TimeDependentOperator):
         if self.flux_type == "central":
             return u.avg*dot(normal, self.v)
         elif self.flux_type == "lf":
-            return u.avg*dot(normal, self.v) - 0.5*(u.int - u.ext)
+            return u.avg*dot(normal, self.v) \
+                    - 0.5*comp.norm_2(self.v)*(u.int - u.ext)
         elif self.flux_type == "upwind":
             raise NotImplementedError
         else:

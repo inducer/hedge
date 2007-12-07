@@ -32,6 +32,7 @@ def main() :
     from hedge.mesh import \
             make_disk_mesh, \
             make_square_mesh, \
+            make_cylinder_mesh, \
             make_regular_square_mesh, \
             make_single_element_mesh, \
             make_ball_mesh, \
@@ -51,14 +52,15 @@ def main() :
     from math import floor
 
     def f(x):
-        if int(floor(x)) % 2 == 0:
-            return 1
-        else:
-            return 0
+        return sin(4*pi*x)
+        #if int(floor(x)) % 2 == 0:
+            #return 1
+        #else:
+            #return 0
 
     def u_analytic(x, t):
         #return sin(3*(a*x+t))
-        return f((a*x+t))
+        return f((a*x/norm_a+t*norm_a))
 
     def boundary_tagger(vertices, el, face_nr):
         if el.face_normals[face_nr] * a > 0:
@@ -68,8 +70,8 @@ def main() :
 
     pcon = guess_parallelization_context()
 
-    dim = 2
-    periodic = False
+    dim = 3
+
     if dim == 2:
         a = num.array([1,0])
         if pcon.is_head_rank:
@@ -80,18 +82,20 @@ def main() :
             #mesh = make_disk_mesh(boundary_tagger=boundary_tagger)
         el_class = TriangularElement
     elif dim == 3:
-        a = num.array([0,0,0.5])
+        a = num.array([0,0,0.3])
         if pcon.is_head_rank:
-            if periodic:
-                mesh = make_box_mesh(dimensions=(1,1,2*pi/3),
-                        periodic=periodic, max_volume=0.01)
-            else:
-                mesh = make_box_mesh(max_volume=0.01, 
-                        boundary_tagger=boundary_tagger)
-                #mesh = make_ball_mesh(boundary_tagger=boundary_tagger)
+            mesh = make_cylinder_mesh(max_volume=0.01, boundary_tagger=boundary_tagger,
+                    periodic=False, radial_subdivisions=32)
+            #mesh = make_box_mesh(dimensions=(1,1,2*pi/3), max_volume=0.01,
+                    #boundary_tagger=boundary_tagger)
+            #mesh = make_box_mesh(max_volume=0.01, boundary_tagger=boundary_tagger)
+            #mesh = make_ball_mesh(boundary_tagger=boundary_tagger)
+            #mesh = make_cylinder_mesh(max_volume=0.01, boundary_tagger=boundary_tagger)
         el_class = TetrahedralElement
     else:
         raise RuntimeError, "bad number of dimensions"
+
+    norm_a = comp.norm_2(a)
 
     if pcon.is_head_rank:
         mesh_data = pcon.distribute_mesh(mesh)
@@ -107,13 +111,18 @@ def main() :
     #op = WeakAdvectionOperator(discr, a, 
             #inflow_u=TimeDependentGivenFunction(u_analytic))
 
-    print "%d elements" % len(discr.mesh.elements)
-
     u = discr.interpolate_volume_function(lambda x: u_analytic(x, 0))
 
-    dt = discr.dt_factor(comp.norm_2(a))/2
+    #dt = discr.dt_factor(norm_a)/9 for 0.1
+    # dt(0.1) = dt(1) * 10/9 -> roughly same as dt(1) ???
+    dt = discr.dt_factor(norm_a)
     stepfactor = 10
     nsteps = int(1/dt)
+
+    print "%d elements, dt=%g, nsteps=%d" % (
+            len(discr.mesh.elements),
+            dt,
+            nsteps)
 
     stepper = RK4TimeStepper()
     start_step = time()
@@ -125,16 +134,17 @@ def main() :
             start_step = now
 
         t = step*dt
-        visf = vis.make_file("fld-%04d" % step)
-        vis.add_data(visf, [
-                    ("u", u), 
-                    #("u_true", u_true), 
-                    ], 
-                    #expressions=[("error", "u-u_true")]
-                    time=t, 
-                    step=step
-                    )
-        visf.close()
+        if step % 5 == 0:
+            visf = vis.make_file("fld-%04d" % step)
+            vis.add_data(visf, [
+                        ("u", u), 
+                        #("u_true", u_true), 
+                        ], 
+                        #expressions=[("error", "u-u_true")]
+                        time=t, 
+                        step=step
+                        )
+            visf.close()
 
         u = stepper(u, t, dt, op.rhs)
 
