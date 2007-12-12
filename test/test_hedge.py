@@ -113,6 +113,7 @@ class TestHedge(unittest.TestCase):
         verify_timestep_order(lambda : AdamsBashforthTimeStepper(4), 4)
         verify_timestep_order(RK4TimeStepper, 4)
 
+    # -------------------------------------------------------------------------
     def test_face_vertex_order(self):
         """Verify that face_indices() emits face vertex indices in the right order"""
         from hedge.element import TriangularElement, TetrahedralElement
@@ -1195,6 +1196,7 @@ class TestHedge(unittest.TestCase):
         """Test whether 2D advection actually converges"""
 
         import pylinear.array as num
+        import pylinear.computation as comp
         from hedge.mesh import make_disk_mesh
         from hedge.discretization import Discretization, pair_with_boundary
         from hedge.element import TriangularElement
@@ -1227,8 +1229,8 @@ class TestHedge(unittest.TestCase):
                         flux_type=flux_type)
 
                 u = discr.interpolate_volume_function(lambda x: u_analytic(x, 0))
-                dt = 1e-2
-                nsteps = int(0.1/dt)
+                dt = discr.dt_factor(comp.norm_2(a))
+                nsteps = int(0.4/dt)
 
                 stepper = RK4TimeStepper()
                 for step in range(nsteps):
@@ -1240,9 +1242,11 @@ class TestHedge(unittest.TestCase):
                 error_l2 = sqrt(error*(discr.mass_operator*error))
                 eoc_rec.add_data_point(order, error_l2)
             self.assert_(eoc_rec.estimate_order_of_convergence()[0,1] > 7)
-            #print "%s\n%s\n" % (flux_type.upper(), "-" * len(flux_type))
-            #print eoc_rec.pretty_print(abscissa_label="Poly. Order", 
-                    #error_label="L2 Error")
+
+            if False:
+                print "%s\n%s\n" % (flux_type.upper(), "-" * len(flux_type))
+                print eoc_rec.pretty_print(abscissa_label="Poly. Order", 
+                        error_label="L2 Error")
     # -------------------------------------------------------------------------
     def test_all_periodic_no_boundary(self):
         """Test that an all-periodic brick has no boundary."""

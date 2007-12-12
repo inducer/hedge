@@ -141,19 +141,6 @@ class SimplicialElement(Element):
         from pytools import factorial
         return int(reduce(mul, (o+1+i for i in range(d)))/factorial(d))
 
-    def node_tuples(self):
-        """Generate tuples enumerating the node indices present
-        in this element. Each tuple has a length equal to the dimension
-        of the element. The tuples constituents are non-negative integers
-        whose sum is less than or equal to the order of the element.
-        
-        The order in which these nodes are generated dictates the local 
-        node numbering.
-        """
-        from pytools import generate_nonnegative_integer_tuples_summing_to_at_most
-        return generate_nonnegative_integer_tuples_summing_to_at_most(
-                self.order, self.dimensions)
-
     @memoize
     def vertex_indices(self):
         """Return the list of the vertices' node indices."""
@@ -161,18 +148,14 @@ class SimplicialElement(Element):
 
         result = []
 
+        node_tup_to_idx = dict(
+                (ituple, idx) 
+                for idx, ituple in enumerate(self.node_tuples()))
+
         vertex_tuples = [self.dimensions * (0,)] \
                 + list(wandering_element(self.dimensions, wanderer=self.order))
-        vti = 0
 
-        for i, nt in enumerate(self.node_tuples()):
-            if nt == vertex_tuples[vti]:
-                result.append(i)
-                vti += 1
-
-        assert vti == len(vertex_tuples)
-
-        return result
+        return [node_tup_to_idx[vt] for vt in vertex_tuples]
 
     @memoize
     def face_indices(self):
@@ -180,11 +163,20 @@ class SimplicialElement(Element):
         the local node numbers of the nodes on that face.
         """
 
+        node_tup_to_idx = dict(
+                (ituple, idx) 
+                for idx, ituple in enumerate(self.node_tuples()))
+
+        from pytools import generate_nonnegative_integer_tuples_summing_to_at_most
+
+        enum_order_nodes_gen = generate_nonnegative_integer_tuples_summing_to_at_most(
+                    self.order, self.dimensions)
+
         faces = [[] for i in range(self.dimensions+1)]
 
-        for i, node_tup in enumerate(self.node_tuples()):
+        for node_tup in enum_order_nodes_gen:
             for face_idx in self.faces_for_node_tuple(node_tup):
-                faces[face_idx].append(i)
+                faces[face_idx].append(node_tup_to_idx[node_tup])
 
         return faces
 
@@ -264,6 +256,19 @@ class SimplicialElement(Element):
         v = self.vandermonde()
         return [v <<num.leftsolve>> vdiff for vdiff in self.grad_vandermonde()]
 
+    # time step scaling -------------------------------------------------------
+    def dt_non_geometric_factor(self):
+        unodes = self.unit_nodes()
+        vertex_indices = self.vertex_indices()
+
+        return 2/3*\
+                min(min(min(
+                    comp.norm_2(unodes[face_node_index]-unodes[vertex_index])
+                    for vertex_index in vertex_indices
+                    if vertex_index != face_node_index)
+                    for face_node_index in face_indices)
+                    for face_indices in self.face_indices())
+
 
 
 
@@ -326,6 +331,43 @@ class TriangularElement(SimplicialElement):
         self.order = order
 
     # numbering ---------------------------------------------------------------
+    @memoize
+    def node_tuples(self):
+        """Generate tuples enumerating the node indices present
+        in this element. Each tuple has a length equal to the dimension
+        of the element. The tuples constituents are non-negative integers
+        whose sum is less than or equal to the order of the element.
+        
+        The order in which these nodes are generated dictates the local 
+        node numbering.
+        """
+        from pytools import generate_nonnegative_integer_tuples_summing_to_at_most
+        node_tups = list(generate_nonnegative_integer_tuples_summing_to_at_most(
+                self.order, self.dimensions))
+
+        faces_to_nodes = {}
+        for node_tup in node_tups:
+            faces_to_nodes.setdefault(
+                    frozenset(self.faces_for_node_tuple(node_tup)),
+                    []).append(node_tup)
+
+        result = []
+        def add_face_nodes(faces):
+            result.extend(faces_to_nodes.get(frozenset(faces), []))
+
+        add_face_nodes([])
+        add_face_nodes([0])
+        add_face_nodes([0,1])
+        add_face_nodes([1])
+        add_face_nodes([1,2])
+        add_face_nodes([2])
+        add_face_nodes([0,2])
+
+        assert set(result) == set(node_tups)
+        assert len(result) == len(node_tups)
+
+        return result
+
     def faces_for_node_tuple(self, node_tuple):
         """Return the list of face indices of faces on which the node 
         represented by C{node_tuple} lies.
@@ -447,13 +489,6 @@ class TriangularElement(SimplicialElement):
             return face_2_indices
 
     # time step scaling -------------------------------------------------------
-    def dt_non_geometric_factor(self):
-        unodes = self.unit_nodes()
-        return 2/3*min(
-                min(comp.norm_2(unodes[fvi+1]-unodes[fvi])
-                    for fvi in range(len(face_indices)-1))
-                for face_indices in self.face_indices())
-
     def dt_geometric_factor(self, vertices, el):
         area = abs(2*el.map.jacobian)
         semiperimeter = sum(comp.norm_2(vertices[vi1]-vertices[vi2]) 
@@ -520,6 +555,76 @@ class TetrahedralElement(SimplicialElement):
         self.order = order
 
     # numbering ---------------------------------------------------------------
+    @memoize
+    def node_tuples(self):
+        """Generate tuples enumerating the node indices present
+        in this element. Each tuple has a length equal to the dimension
+        of the element. The tuples constituents are non-negative integers
+        whose sum is less than or equal to the order of the element.
+        
+        The order in which these nodes are generated dictates the local 
+        node numbering.
+        """
+        from pytools import generate_nonnegative_integer_tuples_summing_to_at_most
+        node_tups = list(generate_nonnegative_integer_tuples_summing_to_at_most(
+                self.order, self.dimensions))
+
+        if False:
+            faces_to_nodes = {}
+            for node_tup in node_tups:
+                faces_to_nodes.setdefault(
+                        frozenset(self.faces_for_node_tuple(node_tup)),
+                        []).append(node_tup)
+
+            result = []
+            def add_face_nodes(faces):
+                result.extend(faces_to_nodes.get(frozenset(faces), []))
+
+            add_face_nodes([0,3])
+            add_face_nodes([0])
+            add_face_nodes([0,2])
+            add_face_nodes([0,1])
+            add_face_nodes([0,1,2])
+            add_face_nodes([0,1,3])
+            add_face_nodes([0,2,3])
+            add_face_nodes([1])
+            add_face_nodes([1,2])
+            add_face_nodes([1,2,3])
+            add_face_nodes([1,3])
+            add_face_nodes([2])
+            add_face_nodes([2,3])
+            add_face_nodes([3])
+            add_face_nodes([])
+
+            assert set(result) == set(node_tups)
+            assert len(result) == len(node_tups)
+
+        if True:
+            from pytools import average
+
+            def order_number_for_node_tuple(nt):
+                faces = self.faces_for_node_tuple(nt)
+                if not faces:
+                    return -1
+                elif len(faces) >= 3:
+                    return 1000
+                else:
+                    return average(faces)
+
+            def cmp_node_tuples(nt1, nt2):
+                return cmp(
+                        order_number_for_node_tuple(nt1), 
+                        order_number_for_node_tuple(nt2))
+
+            result = node_tups
+            #result.sort(cmp_node_tuples)
+
+        for i, nt in enumerate(result):
+            fnt = self.faces_for_node_tuple(nt)
+            #print i, nt, fnt
+
+        return result
+
     def faces_for_node_tuple(self, node_tuple):
         """Return the list of face indices of faces on which the node 
         represented by C{node_tuple} lies.
@@ -698,15 +803,20 @@ class TetrahedralElement(SimplicialElement):
     @memoize
     def face_mass_matrix(self):
         from hedge.polynomial import generic_vandermonde
-        unodes = self.unit_nodes()
 
-        node_tuples = list(self.node_tuples())
-        basis = [TriangleBasisFunction(*node_tuples[i][:2]) 
-                for i in self.face_indices()[0]]
+        from pytools import generate_nonnegative_integer_tuples_summing_to_at_most
+
+        basis = [TriangleBasisFunction(*node_tup) 
+                for node_tup in 
+                generate_nonnegative_integer_tuples_summing_to_at_most(
+                    self.order, self.dimensions-1)]
+
+        unodes = self.unit_nodes()
+        face_indices = self.face_indices()
+
         face_vandermonde = generic_vandermonde(
-                [unodes[i][:2] for i in self.face_indices()[0]],
-                [basis[i] for i in self.face_indices()[0]],
-                )
+                [unodes[i][:2] for i in face_indices[0]],
+                basis)
 
         return 1/(face_vandermonde*face_vandermonde.T)
 
@@ -764,13 +874,6 @@ class TetrahedralElement(SimplicialElement):
             raise FaceVertexMismatch("face vertices do not match")
 
     # time step scaling -------------------------------------------------------
-    def dt_non_geometric_factor(self):
-        unodes = self.unit_nodes()
-        return 2/3*min(
-                min(comp.norm_2(unodes[fvi+1]-unodes[fvi])
-                    for fvi in range(len(face_indices)-1))
-                for face_indices in self.face_indices())
-
     def dt_geometric_factor(self, vertices, el):
         return abs(el.map.jacobian)/max(abs(fj) for fj in el.face_jacobians)
 

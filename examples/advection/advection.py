@@ -59,7 +59,6 @@ def main() :
             #return 0
 
     def u_analytic(x, t):
-        #return sin(3*(a*x+t))
         return f((a*x/norm_a+t*norm_a))
 
     def boundary_tagger(vertices, el, face_nr):
@@ -70,15 +69,15 @@ def main() :
 
     pcon = guess_parallelization_context()
 
-    dim = 3
+    dim = 2
 
     if dim == 2:
         a = num.array([1,0])
         if pcon.is_head_rank:
-            mesh = make_square_mesh(max_area=0.01, boundary_tagger=boundary_tagger)
+            #mesh = make_square_mesh(max_area=0.01, boundary_tagger=boundary_tagger)
             #mesh = make_regular_square_mesh(a=-r, b=r, boundary_tagger=boundary_tagger, n=3)
             #mesh = make_single_element_mesh(boundary_tagger=boundary_tagger)
-            #mesh = make_disk_mesh(r=pi, boundary_tagger=boundary_tagger, max_area=0.5)
+            mesh = make_disk_mesh(r=pi, boundary_tagger=boundary_tagger, max_area=0.5)
             #mesh = make_disk_mesh(boundary_tagger=boundary_tagger)
         el_class = TriangularElement
     elif dim == 3:
@@ -113,8 +112,6 @@ def main() :
 
     u = discr.interpolate_volume_function(lambda x: u_analytic(x, 0))
 
-    #dt = discr.dt_factor(norm_a)/9 for 0.1
-    # dt(0.1) = dt(1) * 10/9 -> roughly same as dt(1) ???
     dt = discr.dt_factor(norm_a)
     stepfactor = 10
     nsteps = int(1/dt)
