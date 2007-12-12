@@ -33,5 +33,6 @@ BLAS_LIBRARIES = $str{BLAS_LIB_NAMES}.split(",")
 # --------------------------------------------------------------------
 # Compiler flags
 # --------------------------------------------------------------------
-EXTRA_COMPILE_ARGS = [$str{CXXFLAGS}]
+from pytools import flatten
+EXTRA_COMPILE_ARGS = list(flatten([eca.split() for eca in [$str{CXXFLAGS}]]))
 
