@@ -156,7 +156,7 @@ class SimplicialElement(Element):
 
     @memoize
     def vertex_indices(self):
-        """Return the list of the vertices' indices into the elements' volume vector."""
+        """Return the list of the vertices' node indices."""
         from pytools import wandering_element
 
         result = []
@@ -173,6 +173,20 @@ class SimplicialElement(Element):
         assert vti == len(vertex_tuples)
 
         return result
+
+    @memoize
+    def face_indices(self):
+        """Return a list of face index lists. Each face index list contains
+        the local node numbers of the nodes on that face.
+        """
+
+        faces = [[] for i in range(self.dimensions+1)]
+
+        for i, node_tup in enumerate(self.node_tuples()):
+            for face_idx in self.faces_for_node_tuple(node_tup):
+                faces[face_idx].append(i)
+
+        return faces
 
     # node wrangling ----------------------------------------------------------
     def equidistant_barycentric_nodes(self):
@@ -312,24 +326,20 @@ class TriangularElement(SimplicialElement):
         self.order = order
 
     # numbering ---------------------------------------------------------------
-    @memoize
-    def face_indices(self):
-        """Return a list of face index lists. Each face index list contains
-        the local node numbers of the nodes on that face.
+    def faces_for_node_tuple(self, node_tuple):
+        """Return the list of face indices of faces on which the node 
+        represented by C{node_tuple} lies.
         """
+        m, n = node_tuple
 
-        faces = [[], [], []]
-
-        for i, (m, n) in enumerate(self.node_tuples()):
-            # face finding
-            if n == 0:
-                faces[0].append(i)
-            if n+m == self.order:
-                faces[1].append(i)
-            if m == 0:
-                faces[2].append(i)
-
-        return faces
+        result = []
+        if n == 0:
+            result.append(0)
+        if n+m == self.order:
+            result.append(1)
+        if m == 0:
+            result.append(2)
+        return result
 
     # node wrangling ----------------------------------------------------------
     @staticmethod
@@ -400,13 +410,19 @@ class TriangularElement(SimplicialElement):
 
           r**i * s**j for i+j <= N
         """
-        return [TriangleBasisFunction(*idx) for idx in self.node_tuples()]
+        from pytools import generate_nonnegative_integer_tuples_summing_to_at_most
+        return [TriangleBasisFunction(*idx) for idx in 
+                generate_nonnegative_integer_tuples_summing_to_at_most(
+                    self.order, self.dimensions)]
 
     def grad_basis_functions(self):
         """Get the gradient functions of the basis_functions(),
         in the same order.
         """
-        return [GradTriangleBasisFunction(*idx) for idx in self.node_tuples()]
+        from pytools import generate_nonnegative_integer_tuples_summing_to_at_most
+        return [GradTriangleBasisFunction(*idx) for idx in 
+                generate_nonnegative_integer_tuples_summing_to_at_most(
+                    self.order, self.dimensions)]
 
     # face operations ---------------------------------------------------------
     @memoize
@@ -504,25 +520,23 @@ class TetrahedralElement(SimplicialElement):
         self.order = order
 
     # numbering ---------------------------------------------------------------
-    @memoize
-    def face_indices(self):
-        """Return a list of face index lists. Each face index list contains
-        the local node numbers of the nodes on that face.
+    def faces_for_node_tuple(self, node_tuple):
+        """Return the list of face indices of faces on which the node 
+        represented by C{node_tuple} lies.
         """
+        m,n,o = node_tuple
+        result = []
 
-        faces = [[], [], [], []]
+        if o == 0:
+            result.append(0)
+        if n == 0:
+            result.append(1)
+        if m == 0:
+            result.append(2)
+        if n+m+o == self.order:
+            result.append(3)
 
-        for i, (m,n,o) in enumerate(self.node_tuples()):
-            if o == 0:
-                faces[0].append(i)
-            if n == 0:
-                faces[1].append(i)
-            if m == 0:
-                faces[2].append(i)
-            if n+m+o == self.order:
-                faces[3].append(i)
-
-        return faces
+        return result
 
     # node wrangling ----------------------------------------------------------
     @staticmethod
@@ -666,13 +680,19 @@ class TetrahedralElement(SimplicialElement):
 
           r**i * s**j * t**k  for  i+j+k <= order
         """
-        return [TetrahedronBasisFunction(*idx) for idx in self.node_tuples()]
+        from pytools import generate_nonnegative_integer_tuples_summing_to_at_most
+        return [TetrahedronBasisFunction(*idx) for idx in 
+                generate_nonnegative_integer_tuples_summing_to_at_most(
+                    self.order, self.dimensions)]
 
     def grad_basis_functions(self):
         """Get the (r,s,...) gradient functions of the basis_functions(),
         in the same order.
         """
-        return [GradTetrahedronBasisFunction(*idx) for idx in self.node_tuples()]
+        from pytools import generate_nonnegative_integer_tuples_summing_to_at_most
+        return [GradTetrahedronBasisFunction(*idx) for idx in 
+                generate_nonnegative_integer_tuples_summing_to_at_most(
+                    self.order, self.dimensions)]
 
     # face operations ---------------------------------------------------------
     @memoize
