@@ -107,10 +107,11 @@ namespace hedge
       for (unsigned i = 0; i < face_length; i++)
         for (unsigned j = 0; j < face_length; j++)
         {
+          const typename Mat::value_type fmm_entry = fmm(i, j);
           fdata.local_target.add_coefficient(fp.face_indices[i], fp.face_indices[j],
-              local_coeff*fmm(i, j));
+              local_coeff*fmm_entry);
           fdata.neighbor_target.add_coefficient(fp.face_indices[i], fp.opposite_indices[j],
-              neighbor_coeff*fmm(i, j));
+              neighbor_coeff*fmm_entry);
         }
     }
   }
