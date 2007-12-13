@@ -1,0 +1,5 @@
+Coding convention notes:
+
+ - m_XXX prefix only in front of data members of classes.
+   structure members that have *no* member functions do not
+   get this prefix.
