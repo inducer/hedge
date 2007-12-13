@@ -69,7 +69,7 @@ def main() :
 
     pcon = guess_parallelization_context()
 
-    dim = 2
+    dim = 3
 
     if dim == 2:
         a = num.array([1,0])
@@ -83,7 +83,7 @@ def main() :
     elif dim == 3:
         a = num.array([0,0,0.3])
         if pcon.is_head_rank:
-            mesh = make_cylinder_mesh(max_volume=0.01, boundary_tagger=boundary_tagger,
+            mesh = make_cylinder_mesh(max_volume=0.0001, boundary_tagger=boundary_tagger,
                     periodic=False, radial_subdivisions=32)
             #mesh = make_box_mesh(dimensions=(1,1,2*pi/3), max_volume=0.01,
                     #boundary_tagger=boundary_tagger)

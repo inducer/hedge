@@ -483,6 +483,16 @@ class ConformalMesh(Mesh):
             assert el.id == old_numbers[i]
             el.id = i
 
+        # sort interfaces by element id -- this is actually the most important part
+        def face_cmp(face1, face2):
+            (face1_el1, _), (face1_el2, _) = face1
+            (face2_el1, _), (face2_el2, _) = face2
+
+            return cmp(
+                    min(face1_el1.id, face1_el2.id), 
+                    min(face2_el1.id, face2_el2.id))
+
+        self.interfaces.sort(face_cmp)
         return old_numbers
 
 
