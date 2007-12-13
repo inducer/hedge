@@ -820,7 +820,7 @@ class TetrahedralElement(SimplicialElement):
 
         return 1/(face_vandermonde*face_vandermonde.T)
 
-    def shuffle_face_indices_to_match(self, face_1_vertices, face_2_vertices, face_2_indices):
+    def get_face_index_shuffle_to_match(self, face_1_vertices, face_2_vertices):
         (a,b,c) = face_1_vertices
         f2_tuple = face_2_vertices
 
@@ -834,42 +834,68 @@ class TetrahedralElement(SimplicialElement):
                     self._shuffle_face_idx_map[i,j] = idx
                     idx += 1
 
-        # flip and shift_left generate S_3
-        def flip(indices):
-            """Flip the indices along the unit hypotenuse."""
-            result = []
-            for j in range(0, self.order+1):
-                for i in range(0, self.order+1-j):
-                    result.append(indices[idx_map[j,i]])
-            return tuple(result)
+        order = self.order
 
-        def shift_left(indices):
-            """Rotate all edges to the left."""
-            result = len(indices)*[0]
-            idx = 0
-            for j in range(0, self.order+1):
-                for i in range(0, self.order+1-j):
-                    result[idx_map[j, self.order-i-j]] = indices[idx]
-                    idx += 1
-            return tuple(result)
+        class TetrahedronFaceIndexShuffle:
+            def __init__(self, operations):
+                self.operations = operations
+
+            def __hash__(self):
+                return hash(operations)
+
+            def __eq__(self, other):
+                return self.operations == other.operations
+
+            def __call__(self, indices):
+                for op in self.operations:
+                    if op == "flip":
+                        indices = self.flip(indices)
+                    elif op == "shift_left":
+                        indices = self.shift_left(indices)
+                return indices
+
+            # flip and shift_left generate S_3
+            def flip(self, indices):
+                """Flip the indices along the unit hypotenuse."""
+                result = []
+                for j in range(0, order+1):
+                    for i in range(0, order+1-j):
+                        result.append(indices[idx_map[j,i]])
+                return tuple(result)
+
+            def shift_left(self, indices):
+                """Rotate all edges to the left."""
+                result = len(indices)*[0]
+                idx = 0
+                for j in range(0, order+1):
+                    for i in range(0, order+1-j):
+                        result[idx_map[j, order-i-j]] = indices[idx]
+                        idx += 1
+                return tuple(result)
 
         # yay, enumerate S_3 by hand
         if f2_tuple == (a,b,c):
-            return face_2_indices
+            #return face_2_indices
+            return TetrahedronFaceIndexShuffle(())
         elif f2_tuple == (a,c,b):
-            return flip(face_2_indices)
+            #return flip(face_2_indices)
+            return TetrahedronFaceIndexShuffle(("flip",))
         elif f2_tuple == (b,c,a):
             # (b,c,a) -sl-> (c,a,b) -sl-> (a,b,c)
-            return shift_left(shift_left(face_2_indices))
+            #return shift_left(shift_left(face_2_indices))
+            return TetrahedronFaceIndexShuffle(("shift_left", "shift_left"))
         elif f2_tuple == (b,a,c):
             # (b,a,c) -sl-> (a,c,b) -fl-> (a,b,c)
-            return flip(shift_left(face_2_indices))
+            #return flip(shift_left(face_2_indices))
+            return TetrahedronFaceIndexShuffle(("shift_left", "flip"))
         elif f2_tuple == (c,a,b):
             # (c,a,b) -sl-> (a,b,c)
-            return shift_left(face_2_indices)
+            #return shift_left(face_2_indices)
+            return TetrahedronFaceIndexShuffle(("shift_left",))
         elif f2_tuple == (c,b,a):
             # (c,b,a) -fl-> (c,a,b) -sl-> (a,b,c)
-            return shift_left(flip(face_2_indices))
+            #return shift_left(flip(face_2_indices))
+            return TetrahedronFaceIndexShuffle(("flip", "shift_left"))
         else:
             raise FaceVertexMismatch("face vertices do not match")
 

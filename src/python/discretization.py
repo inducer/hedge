@@ -39,22 +39,27 @@ class _FaceGroup(hedge._internal.FaceGroup):
         self.face_index_tuples = []
         self.face_index_tuple_register = {}
 
-    def register_face_index_tuple(self, face_index_tup):
-        assert isinstance(face_index_tup, tuple)
+    def register_face_indices(self, id, generator):
 
         try:
-            return self.face_index_tuple_register[face_index_tup]
+            return self.face_index_tuple_register[face_index_tup_id]
         except KeyError:
             new_idx = len(self.face_index_tuples)
-            self.face_index_tuples.append(face_index_tup)
-            self.face_index_tuple_register[face_index_tup] = new_idx
+        assert isinstance(face_index_tup, tuple)
+        face_index_tup
+            self.face_index_tuples.append(generator())
+            self.face_index_tuple_register[face_index_tup_id] = new_idx
             return new_idx
 
-    def commit_face_index_tuples(self):
+    def commit_face_index_lists(self):
         from hedge._internal import IntVector
 
         for fit in self.face_index_tuples:
             intvec = IntVector(fit)
+
+            # allow prefetching a few entries past the end
+            for i in range(4):
+                intvec.append(intvec[-1])
 
             self.index_lists.append(intvec)
 
@@ -111,7 +116,7 @@ class Discretization(object):
         self.mesh = mesh
         self.dimensions = local_discretization.dimensions
 
-        self.mesh.reorder(reorder)
+        #self.mesh.reorder(reorder)
 
         self._build_element_groups_and_nodes(local_discretization)
         self._calculate_local_matrices()
@@ -222,9 +227,10 @@ class Discretization(object):
             findices_n = ldis_n.face_indices()[fi_n]
 
             try:
-                findices_shuffled_n = \
-                        ldis_l.shuffle_face_indices_to_match(
-                        vertices_l, vertices_n, findices_n)
+                findices_shuffle_op_n = \
+                        ldis_l.get_face_index_shuffle_to_match(
+                        vertices_l, vertices_n)
+                findices_shuffled_n = findices_shuffle_op_n(findices_n)
 
                 for i, j in zip(findices_l, findices_shuffled_n):
                     dist = self.nodes[estart_l+i]-self.nodes[estart_n+j]
@@ -236,9 +242,10 @@ class Discretization(object):
 
                 vertices_n, axis = self.mesh.periodic_opposite_faces[vertices_n]
 
-                findices_shuffled_n = \
-                        ldis_l.shuffle_face_indices_to_match(
+                findices_shuffle_op_n = \
+                        ldis_l.get_face_index_shuffle_to_match(
                         vertices_l, vertices_n, findices_n)
+                findices_shuffled_n = findices_shuffle_op_n(findices_n)
 
                 for i, j in zip(findices_l, findices_shuffled_n):
                     dist = self.nodes[estart_l+i]-self.nodes[estart_n+j]
@@ -251,17 +258,17 @@ class Discretization(object):
             fp.el_base_index = estart_l
             fp.opp_el_base_index = estart_n
 
-            fp.face_index_list_number = \
-                    fg.register_face_index_tuple(findices_l)
-            fp.opp_face_index_list_number = \
-                    fg.register_face_index_tuple(findices_shuffled_n)
+            fp.face_index_list_number = fg.register_face_indices(
+                    id=fi_l, 
+                    generator=lambda: findices_l)
+            fp.opp_face_index_list_number = fg.register_face_indices(
+                    id=(fi_n, findices_shuffle_op_n),
+                    generator=lambda : findices_shuffle_op_n(findices_n))
 
             fp.flux_face_index = len(fg.flux_faces)
             fp.opp_flux_face_index = len(fg.flux_faces)+1
 
             fg.face_pairs.append(fp)
-            #fp.dump()
-            #raw_input()
 
             # create the flux faces
             flux_face_l = self._make_flux_face(ldis_l, local_face)
@@ -317,9 +324,12 @@ class Discretization(object):
             fp = FacePair()
             fp.el_base_index = el_start
             fp.opp_el_base_index = f_start
-            fp.face_index_list_number = face_group.register_face_index_tuple(face_indices)
-            fp.opp_face_index_list_number = face_group.register_face_index_tuple(
-                    tuple(xrange(len(face_indices))))
+            fp.face_index_list_number = face_group.register_face_indices(
+                    id=face_nr,
+                    generator=lambda: face_indices)
+            fp.opp_face_index_list_number = face_group.register_face_indices(
+                    id=(),
+                    generator=lambda: tuple(xrange(len(face_indices))))
             fp.flux_face_index = len(face_group.flux_faces)
             face_group.face_pairs.append(fp)
 

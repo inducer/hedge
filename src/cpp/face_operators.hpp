@@ -277,8 +277,8 @@ namespace hedge
           const int oilj = oebi+*oilj_iterator++;
 
           /*
-          __builtin_prefetch(&operand[ebi+ilj_iterator[1]], 0, 1);
-          __builtin_prefetch(&operand[oebi+oilj_iterator[1]], 0, 1);
+          __builtin_prefetch(&operand[ebi+ilj_iterator[0]], 0, 1);
+          __builtin_prefetch(&operand[oebi+oilj_iterator[0]], 0, 1);
           */
 
           res_ili_addition += 

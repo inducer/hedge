@@ -71,10 +71,11 @@ def main() :
 
     dim = 3
 
+    job = Job("mesh")
     if dim == 2:
         a = num.array([1,0])
         if pcon.is_head_rank:
-            #mesh = make_square_mesh(max_area=0.01, boundary_tagger=boundary_tagger)
+            #mesh = make_square_mesh(max_area=0.0003, boundary_tagger=boundary_tagger)
             #mesh = make_regular_square_mesh(a=-r, b=r, boundary_tagger=boundary_tagger, n=3)
             #mesh = make_single_element_mesh(boundary_tagger=boundary_tagger)
             mesh = make_disk_mesh(r=pi, boundary_tagger=boundary_tagger, max_area=0.5)
@@ -83,7 +84,7 @@ def main() :
     elif dim == 3:
         a = num.array([0,0,0.3])
         if pcon.is_head_rank:
-            mesh = make_cylinder_mesh(max_volume=0.01, boundary_tagger=boundary_tagger,
+            mesh = make_cylinder_mesh(max_volume=0.0005, boundary_tagger=boundary_tagger,
                     periodic=False, radial_subdivisions=32)
             #mesh = make_box_mesh(dimensions=(1,1,2*pi/3), max_volume=0.01,
                     #boundary_tagger=boundary_tagger)
@@ -93,6 +94,7 @@ def main() :
         el_class = TetrahedralElement
     else:
         raise RuntimeError, "bad number of dimensions"
+    job.done()
 
     norm_a = comp.norm_2(a)
 
@@ -101,7 +103,11 @@ def main() :
     else:
         mesh_data = pcon.receive_mesh()
 
+    job = Job("discretization")
     discr = pcon.make_discretization(mesh_data, el_class(5))
+    job.done()
+
+    return
     vis = SiloVisualizer(discr, pcon)
     #vis = VtkVisualizer(discr, "fld", pcon)
     op = StrongAdvectionOperator(discr, a, 
@@ -113,7 +119,6 @@ def main() :
     u = discr.interpolate_volume_function(lambda x: u_analytic(x, 0))
 
     dt = discr.dt_factor(norm_a)
-    stepfactor = 10
     nsteps = int(1/dt)
 
     print "%d elements, dt=%g, nsteps=%d" % (
@@ -124,7 +129,7 @@ def main() :
     stepper = RK4TimeStepper()
     start_step = time()
     for step in range(nsteps):
-        if step % stepfactor == 0:
+        if step % 1 == 0:
             now = time()
             print "timestep %d, t=%f, l2=%f, secs=%f" % (
                     step, dt*step, sqrt(u*(op.mass*u)), now-start_step)
@@ -152,8 +157,8 @@ def main() :
 
 
 if __name__ == "__main__":
-    #import cProfile as profile
-    #profile.run("main()", "advec.prof")
-    main()
+    import cProfile as profile
+    profile.run("main()", "advec.prof")
+    #main()
 
 
