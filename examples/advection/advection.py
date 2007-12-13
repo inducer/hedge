@@ -84,7 +84,7 @@ def main() :
     elif dim == 3:
         a = num.array([0,0,0.3])
         if pcon.is_head_rank:
-            mesh = make_cylinder_mesh(max_volume=0.0005, boundary_tagger=boundary_tagger,
+            mesh = make_cylinder_mesh(max_volume=0.00005, boundary_tagger=boundary_tagger,
                     periodic=False, radial_subdivisions=32)
             #mesh = make_box_mesh(dimensions=(1,1,2*pi/3), max_volume=0.01,
                     #boundary_tagger=boundary_tagger)
@@ -107,7 +107,6 @@ def main() :
     discr = pcon.make_discretization(mesh_data, el_class(5))
     job.done()
 
-    return
     vis = SiloVisualizer(discr, pcon)
     #vis = VtkVisualizer(discr, "fld", pcon)
     op = StrongAdvectionOperator(discr, a, 
@@ -157,8 +156,8 @@ def main() :
 
 
 if __name__ == "__main__":
-    import cProfile as profile
-    profile.run("main()", "advec.prof")
-    #main()
+    #import cProfile as profile
+    #profile.run("main()", "advec.prof")
+    main()
 
 

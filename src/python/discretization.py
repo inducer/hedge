@@ -36,26 +36,25 @@ import hedge._internal
 class _FaceGroup(hedge._internal.FaceGroup):
     def __init__(self, double_sided):
         hedge._internal.FaceGroup.__init__(self, double_sided)
-        self.face_index_tuples = []
-        self.face_index_tuple_register = {}
+        self.face_index_lists = []
+        self.face_index_list_register = {}
 
-    def register_face_indices(self, id, generator):
+    def register_face_indices(self, identifier, generator):
 
         try:
-            return self.face_index_tuple_register[face_index_tup_id]
+            return self.face_index_list_register[identifier]
         except KeyError:
-            new_idx = len(self.face_index_tuples)
-        assert isinstance(face_index_tup, tuple)
-        face_index_tup
-            self.face_index_tuples.append(generator())
-            self.face_index_tuple_register[face_index_tup_id] = new_idx
+            new_idx = len(self.face_index_lists)
+            fil = generator()
+            self.face_index_lists.append(fil)
+            self.face_index_list_register[identifier] = new_idx
             return new_idx
 
     def commit_face_index_lists(self):
         from hedge._internal import IntVector
 
-        for fit in self.face_index_tuples:
-            intvec = IntVector(fit)
+        for fil in self.face_index_lists:
+            intvec = IntVector(fil)
 
             # allow prefetching a few entries past the end
             for i in range(4):
@@ -63,8 +62,8 @@ class _FaceGroup(hedge._internal.FaceGroup):
 
             self.index_lists.append(intvec)
 
-        del self.face_index_tuples
-        del self.face_index_tuple_register
+        del self.face_index_lists
+        del self.face_index_list_register
 
 
 
@@ -112,11 +111,13 @@ class Discretization(object):
     """
 
     def __init__(self, mesh, local_discretization, 
-            reorder=hedge.mesh.REORDER_CMK):
+            reorder=hedge.mesh.REORDER_CMK,
+            debug=False):
         self.mesh = mesh
         self.dimensions = local_discretization.dimensions
+        self.debug = debug
 
-        #self.mesh.reorder(reorder)
+        self.mesh.reorder(reorder)
 
         self._build_element_groups_and_nodes(local_discretization)
         self._calculate_local_matrices()
@@ -230,11 +231,13 @@ class Discretization(object):
                 findices_shuffle_op_n = \
                         ldis_l.get_face_index_shuffle_to_match(
                         vertices_l, vertices_n)
-                findices_shuffled_n = findices_shuffle_op_n(findices_n)
 
-                for i, j in zip(findices_l, findices_shuffled_n):
-                    dist = self.nodes[estart_l+i]-self.nodes[estart_n+j]
-                    assert comp.norm_2(dist) < 1e-14
+                if self.debug:
+                    findices_shuffled_n = findices_shuffle_op_n(findices_n)
+
+                    for i, j in zip(findices_l, findices_shuffled_n):
+                        dist = self.nodes[estart_l+i]-self.nodes[estart_n+j]
+                        assert comp.norm_2(dist) < 1e-14
 
             except FaceVertexMismatch:
                 # this happens if vertices_l is not a permutation of vertices_n.
@@ -245,12 +248,14 @@ class Discretization(object):
                 findices_shuffle_op_n = \
                         ldis_l.get_face_index_shuffle_to_match(
                         vertices_l, vertices_n, findices_n)
-                findices_shuffled_n = findices_shuffle_op_n(findices_n)
 
-                for i, j in zip(findices_l, findices_shuffled_n):
-                    dist = self.nodes[estart_l+i]-self.nodes[estart_n+j]
-                    dist[axis] = 0 
-                    assert comp.norm_2(dist) < 1e-14
+                if self.debug:
+                    findices_shuffled_n = findices_shuffle_op_n(findices_n)
+
+                    for i, j in zip(findices_l, findices_shuffled_n):
+                        dist = self.nodes[estart_l+i]-self.nodes[estart_n+j]
+                        dist[axis] = 0 
+                        assert comp.norm_2(dist) < 1e-14
 
             # create and fill the face pair
             fp = FacePair()
@@ -259,10 +264,10 @@ class Discretization(object):
             fp.opp_el_base_index = estart_n
 
             fp.face_index_list_number = fg.register_face_indices(
-                    id=fi_l, 
+                    identifier=fi_l, 
                     generator=lambda: findices_l)
             fp.opp_face_index_list_number = fg.register_face_indices(
-                    id=(fi_n, findices_shuffle_op_n),
+                    identifier=(fi_n, findices_shuffle_op_n),
                     generator=lambda : findices_shuffle_op_n(findices_n))
 
             fp.flux_face_index = len(fg.flux_faces)
@@ -280,9 +285,8 @@ class Discretization(object):
             fg.flux_faces.append(flux_face_l)
             fg.flux_faces.append(flux_face_n)
 
-        fg.commit_face_index_tuples()
+        fg.commit_face_index_lists()
 
-        # communicate face neighbor relationships to C++ core
         if len(fg.face_pairs):
             self.face_groups = [(fg, ldis_l.face_mass_matrix())]
         else:
@@ -325,10 +329,10 @@ class Discretization(object):
             fp.el_base_index = el_start
             fp.opp_el_base_index = f_start
             fp.face_index_list_number = face_group.register_face_indices(
-                    id=face_nr,
+                    identifier=face_nr,
                     generator=lambda: face_indices)
             fp.opp_face_index_list_number = face_group.register_face_indices(
-                    id=(),
+                    identifier=(),
                     generator=lambda: tuple(xrange(len(face_indices))))
             fp.flux_face_index = len(face_group.flux_faces)
             face_group.face_pairs.append(fp)
@@ -336,7 +340,7 @@ class Discretization(object):
             # create the flux face
             face_group.flux_faces.append(self._make_flux_face(ldis, ef))
 
-        face_group.commit_face_index_tuples()
+        face_group.commit_face_index_lists()
 
         bdry = _Boundary(
                 nodes=nodes,

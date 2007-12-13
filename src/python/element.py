@@ -478,15 +478,34 @@ class TriangularElement(SimplicialElement):
         return 1/(face_vandermonde*face_vandermonde.T)
 
     @staticmethod
-    def shuffle_face_indices_to_match(face_1_vertices, face_2_vertices, face_2_indices):
+    def get_face_index_shuffle_to_match(face_1_vertices, face_2_vertices):
         if set(face_1_vertices) != set(face_2_vertices):
             raise FaceVertexMismatch("face vertices do not match")
 
+        class TriangleFaceIndexShuffle:
+            def __init__(self, operations):
+                self.operations = operations
+
+            def __hash__(self):
+                return hash(self.operations)
+
+            def __eq__(self, other):
+                return self.operations == other.operations
+
+            def __call__(self, indices):
+                for op in self.operations:
+                    if op == "flip":
+                        indices = indices[::-1]
+                    else:
+                        raise RuntimeError, "invalid operation"
+                return indices
+
+
         if face_1_vertices != face_2_vertices:
             assert face_1_vertices[::-1] == face_2_vertices
-            return face_2_indices[::-1]
+            return TriangleFaceIndexShuffle(("flip",))
         else:
-            return face_2_indices
+            return TriangleFaceIndexShuffle(())
 
     # time step scaling -------------------------------------------------------
     def dt_geometric_factor(self, vertices, el):
@@ -841,7 +860,7 @@ class TetrahedralElement(SimplicialElement):
                 self.operations = operations
 
             def __hash__(self):
-                return hash(operations)
+                return hash(self.operations)
 
             def __eq__(self, other):
                 return self.operations == other.operations
@@ -852,6 +871,8 @@ class TetrahedralElement(SimplicialElement):
                         indices = self.flip(indices)
                     elif op == "shift_left":
                         indices = self.shift_left(indices)
+                    else:
+                        raise RuntimeError, "invalid operation"
                 return indices
 
             # flip and shift_left generate S_3
@@ -861,7 +882,7 @@ class TetrahedralElement(SimplicialElement):
                 for j in range(0, order+1):
                     for i in range(0, order+1-j):
                         result.append(indices[idx_map[j,i]])
-                return tuple(result)
+                return result
 
             def shift_left(self, indices):
                 """Rotate all edges to the left."""
@@ -871,7 +892,7 @@ class TetrahedralElement(SimplicialElement):
                     for i in range(0, order+1-j):
                         result[idx_map[j, order-i-j]] = indices[idx]
                         idx += 1
-                return tuple(result)
+                return result
 
         # yay, enumerate S_3 by hand
         if f2_tuple == (a,b,c):
