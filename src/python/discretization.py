@@ -82,7 +82,6 @@ class Discretization(object):
 
         self._build_element_groups_and_nodes(local_discretization)
         self._calculate_local_matrices()
-        self._find_face_data()
         self._build_interior_face_groups()
         self.boundaries = {}
 
@@ -149,47 +148,36 @@ class Discretization(object):
                     for glob_coord in range(ldis.dimensions)
                     ]
 
-    def _find_face_data(self):
-        from hedge.flux import Face
-        self.faces = []
-        for eg in self.element_groups:
-            ldis = eg.local_discretization
-            for el in eg.members:
-                el_faces = []
-                for fi, (n, fj) in enumerate(
-                        zip(el.face_normals, el.face_jacobians)):
-                    f = Face()
+    def _make_flux_face(self, ldis, (el, fi)):
+        from hedge.flux import FluxFace
 
-                    # This crude approximation is shamelessly stolen from sledge.
-                    # There's an important caveat, however (which took me the better
-                    # part of a week to figure out):
-                    # h on both sides of an interface must be the same, otherwise
-                    # the penalty term will behave very oddly.
-                    # In hedge, this unification is performed in connect_faces in the C++ core.
-                    f.h = abs(el.map.jacobian/fj)
+        f = FluxFace()
 
-                    f.face_jacobian = fj
-                    f.element_id = el.id
-                    f.face_id = fi
-                    f.order = ldis.order
-                    f.normal = n
-                    el_faces.append(f)
+        f.face_jacobian = el.face_jacobians[fi]
+        f.element_id = el.id
+        f.face_id = fi
+        f.order = ldis.order
+        f.normal = el.face_normals[fi]
 
-                self.faces.append(el_faces)
+        # This crude approximation is shamelessly stolen from sledge.
+        # There's an important caveat, however (which took me the better
+        # part of a week to figure out):
+        # h on both sides of an interface must be the same, otherwise
+        # the penalty term will behave very oddly.
+        f.h = abs(el.map.jacobian/f.face_jacobian)
+
+        return f
 
     def _build_interior_face_groups(self):
         from hedge._internal import FaceGroup, FacePair, UnsignedList
         from hedge.element import FaceVertexMismatch
 
-        fg = FaceGroup()
+        fg = FaceGroup(double_sided=True)
 
-        # map (el, face) tuples to their numbers within this face group
-        face_number_map = {}
+        connect_list = []
 
         # find and match node indices along faces
-        for i, (local_face, neigh_face) in enumerate(self.mesh.both_interfaces()):
-            face_number_map[local_face] = i
-
+        for i, (local_face, neigh_face) in enumerate(self.mesh.interfaces):
             e_l, fi_l = local_face
             e_n, fi_n = neigh_face
 
@@ -226,21 +214,26 @@ class Discretization(object):
                     dist[axis] = 0 
                     assert comp.norm_2(dist) < 1e-14
 
+            # this causes connect_faces() below to connect this face pair
+            # with the next two flux faces we create.
+            connect_list.append(
+                    (len(fg.face_pairs), len(fg.flux_faces), len(fg.flux_faces)+1)
+                    )
 
+            # create the flux faces
+            fg.flux_faces.append(self._make_flux_face(ldis_l, local_face))
+            fg.flux_faces.append(self._make_flux_face(ldis_n, neigh_face))
+
+            # create the face pair
             fp = FacePair()
             fp.face_indices = UnsignedList(estart_l+i for i in findices_l)
             fp.opposite_indices = UnsignedList(estart_n+i for i in findices_shuffled_n)
-            fp.flux_face = self.faces[e_l.id][fi_l]
-            fg.append(fp)
+            fg.face_pairs.append(fp)
 
         # communicate face neighbor relationships to C++ core
-        if len(fg):
+        if len(fg.face_pairs):
             self.face_groups = [(fg, ldis_l.face_mass_matrix())]
-
-            fg.connect_faces([
-                    (face_number_map[local_face], face_number_map[neigh_face])
-                    for local_face, neigh_face in self.mesh.interfaces
-                    ])
+            fg.connect_faces(connect_list)
         else:
             self.face_groups = []
         
@@ -262,8 +255,10 @@ class Discretization(object):
         nodes = []
         face_ranges = {}
         index_map = []
-        face_group = FaceGroup()
+        face_group = FaceGroup(double_sided=False)
         ldis = None # if this boundary is empty, we might as well have no ldis
+
+        connect_list = []
 
         for ef in self.mesh.tag_to_boundary.get(tag, []):
             el, face_nr = ef
@@ -276,11 +271,22 @@ class Discretization(object):
             face_range = face_ranges[ef] = (f_start, len(nodes))
             index_map.extend(el_start+i for i in face_indices)
 
+            # this causes connect_faces() below to connect this face pair
+            # with the next flux face we create.
+            connect_list.append(
+                    (len(face_group.face_pairs), len(face_group.flux_faces))
+                    )
+
+            # create the flux faces
+            face_group.flux_faces.append(self._make_flux_face(ldis, ef))
+
+            # create the face pair
             fp = FacePair()
             fp.face_indices = UnsignedList(el_start+i for i in face_indices)
             fp.opposite_indices = UnsignedList(xrange(*face_range))
-            fp.flux_face = self.faces[el.id][face_nr]
-            face_group.append(fp)
+            face_group.face_pairs.append(fp)
+
+        face_group.connect_faces(connect_list)
 
         bdry = _Boundary(
                 nodes=nodes,
@@ -366,7 +372,7 @@ class Discretization(object):
     def boundary_normals(self, tag=hedge.mesh.TAG_ALL):
         result = ArithmeticList([self.boundary_zeros(tag) for i in range(self.dimensions)])
         for fg, ldis in self._get_boundary(tag).face_groups_and_ldis:
-            for face_pair in fg:
+            for face_pair in fg.face_pairs:
                 normal = face_pair.flux_face.normal
                 for i in face_pair.opposite_indices:
                     for j in range(self.dimensions):

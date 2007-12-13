@@ -39,16 +39,30 @@ namespace hedge
   struct face_pair
   {
     face_pair()
-      : opp_flux_face(0)
+      : flux_face(0), opp_flux_face(0)
     { }
 
     index_list face_indices;
     index_list opposite_indices;
-    fluxes::face flux_face;
+    fluxes::face *flux_face;
     fluxes::face *opp_flux_face;
   };
 
-  typedef std::vector<face_pair> face_group;
+  struct face_group
+  {
+    public:
+      typedef std::vector<face_pair> face_pair_vector;
+      typedef std::vector<fluxes::face> flux_face_vector;
+
+      face_pair_vector face_pairs;
+      flux_face_vector flux_faces;
+
+      const bool        double_sided;
+
+      face_group(bool d_sided)
+        : double_sided(d_sided)
+      { }
+  };
 
 
 
@@ -87,19 +101,18 @@ namespace hedge
 
 
   template <class Mat, class FData>
-  inline
-  void perform_flux(const face_group &fg, const Mat &fmm, FData fdata)
+  void perform_single_sided_flux(const face_group &fg, const Mat &fmm, FData fdata)
   {
     unsigned face_length = fmm.size1();
 
     assert(fmm.size1() == fmm.size2());
 
-    BOOST_FOREACH(const face_pair &fp, fg)
+    BOOST_FOREACH(const face_pair &fp, fg.face_pairs)
     {
       const double local_coeff = 
-        fp.flux_face.face_jacobian*fdata.local_flux(fp.flux_face, fp.opp_flux_face);
+        fp.flux_face->face_jacobian*fdata.local_flux(*fp.flux_face, fp.opp_flux_face);
       const double neighbor_coeff = 
-        fp.flux_face.face_jacobian*fdata.neighbor_flux(fp.flux_face, fp.opp_flux_face);
+        fp.flux_face->face_jacobian*fdata.neighbor_flux(*fp.flux_face, fp.opp_flux_face);
 
       assert(fmm.size1() == fp.face_indices.size());
       assert(fmm.size1() == fp.opp_indices.size());
@@ -119,11 +132,60 @@ namespace hedge
 
 
 
+  template <class Mat, class FData>
+  void perform_double_sided_flux(const face_group &fg, const Mat &fmm, FData fdata)
+  {
+    unsigned face_length = fmm.size1();
+
+    assert(fmm.size1() == fmm.size2());
+
+    BOOST_FOREACH(const face_pair &fp, fg.face_pairs)
+    {
+      const double local_coeff_here = 
+        fp.flux_face->face_jacobian*fdata.local_flux(*fp.flux_face, fp.opp_flux_face);
+      const double neighbor_coeff_here = 
+        fp.flux_face->face_jacobian*fdata.neighbor_flux(*fp.flux_face, fp.opp_flux_face);
+      const double local_coeff_opp = 
+        fp.flux_face->face_jacobian*fdata.local_flux(*fp.opp_flux_face, fp.flux_face);
+      const double neighbor_coeff_opp = 
+        fp.flux_face->face_jacobian*fdata.neighbor_flux(*fp.opp_flux_face, fp.flux_face);
+
+      assert(fmm.size1() == fp.face_indices.size());
+      assert(fmm.size1() == fp.opp_indices.size());
+
+      for (unsigned i = 0; i < face_length; i++)
+        for (unsigned j = 0; j < face_length; j++)
+        {
+          const typename Mat::value_type fmm_entry = fmm(i, j);
+
+          fdata.local_target.add_coefficient(
+              fp.face_indices[i], fp.face_indices[j],
+              local_coeff_here*fmm_entry);
+          fdata.neighbor_target.add_coefficient(
+              fp.face_indices[i], fp.opposite_indices[j],
+              neighbor_coeff_here*fmm_entry);
+
+          fdata.local_target.add_coefficient(
+              fp.opposite_indices[i], fp.opposite_indices[j],
+              local_coeff_opp*fmm_entry);
+          fdata.neighbor_target.add_coefficient(
+              fp.opposite_indices[i], fp.face_indices[j],
+              neighbor_coeff_opp*fmm_entry);
+        }
+    }
+  }
+
+
+
+
   template <class Mat, class LFlux, class LTarget, class NFlux, class NTarget>
   void perform_flux_detailed(const face_group &fg, const Mat& fmm,
       LFlux lflux, LTarget ltarget, NFlux nflux, NTarget ntarget)
   {
-    perform_flux(fg, fmm, make_flux_data(lflux, ltarget, nflux, ntarget));
+    if (fg.double_sided)
+      perform_double_sided_flux(fg, fmm, make_flux_data(lflux, ltarget, nflux, ntarget));
+    else
+      perform_single_sided_flux(fg, fmm, make_flux_data(lflux, ltarget, nflux, ntarget));
   }
 }
 

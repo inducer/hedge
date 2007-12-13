@@ -151,12 +151,13 @@ namespace {
 
 
   // face_group ---------------------------------------------------------------
-  class face_group_indexing_suite :
-    public vector_indexing_suite<face_group, false, face_group_indexing_suite>
+  template <class T>
+  class no_compare_indexing_suite :
+    public vector_indexing_suite<T, false, no_compare_indexing_suite<T> >
   {
     public:
-      static bool contains(face_group &container, face_pair const &key)
-      { PYTHON_ERROR(NotImplementedError, "face pairs are not comparable"); }
+      static bool contains(T &container, typename T::value_type const &key)
+      { PYTHON_ERROR(NotImplementedError, "containment checking not supported on this container"); }
   };
 
 
@@ -168,14 +169,17 @@ namespace {
           stl_input_iterator<tuple>(cnx_list_py),
           stl_input_iterator<tuple>()))
     {
-      face_pair &fpa = fg[extract<unsigned>(tp[0])];
-      face_pair &fpb = fg[extract<unsigned>(tp[1])];
+      face_pair &fp = fg.face_pairs[extract<unsigned>(tp[0])];
+      fluxes::face &ffa = fg.flux_faces[extract<unsigned>(tp[1])];
 
-      fpa.opp_flux_face = &fpb.flux_face;
-      fpb.opp_flux_face = &fpa.flux_face;
+      fp.flux_face = &ffa;
 
-      fpa.flux_face.h = fpb.flux_face.h = std::max(
-          fpa.flux_face.h, fpb.flux_face.h);
+      if (len(tp) == 3)
+      {
+        fluxes::face &ffb = fg.flux_faces[extract<unsigned>(tp[2])];
+        fp.opp_flux_face = &ffb;
+        ffa.h = ffb.h = std::max(ffa.h, ffb.h);
+      }
     }
   }
 }
@@ -249,7 +253,7 @@ void hedge_expose_fluxes()
   // face information ---------------------------------------------------------
   {
     typedef fluxes::face cl;
-    class_<cl>("Face")
+    class_<cl>("FluxFace")
       .DEF_SIMPLE_RW_MEMBER(h)
       .DEF_SIMPLE_RW_MEMBER(face_jacobian)
       .DEF_SIMPLE_RW_MEMBER(element_id)
@@ -269,10 +273,24 @@ void hedge_expose_fluxes()
   }
 
   {
+    typedef face_group::face_pair_vector cl;
+    class_<cl>("FacePairVector")
+      .def(no_compare_indexing_suite<cl>())
+      ;
+  }
+
+  {
+    typedef face_group::flux_face_vector cl;
+    class_<cl>("FluxFaceVector")
+      .def(no_compare_indexing_suite<cl>())
+      ;
+  }
+
+  {
     typedef face_group cl;
-    class_<cl>("FaceGroup")
-      .def(face_group_indexing_suite())
-      .DEF_SIMPLE_METHOD(clear)
+    class_<cl>("FaceGroup", init<bool>(arg("double_sided")))
+      .DEF_SIMPLE_RW_MEMBER(face_pairs)
+      .DEF_SIMPLE_RW_MEMBER(flux_faces)
       .def("connect_faces", face_group_connect_faces)
       ;
   }

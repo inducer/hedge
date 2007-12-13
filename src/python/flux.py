@@ -28,7 +28,7 @@ import pymbolic
 
 
 
-Face = _internal.Face
+FluxFace = _internal.FluxFace
 
 
 
