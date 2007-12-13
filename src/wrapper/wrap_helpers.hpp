@@ -62,7 +62,15 @@
   def("perform_flux", (void (*)(\
           const hedge::face_group &, const matrix &, \
           FLUX_CLASS, hedge::coord_matrix_target, FLUX_CLASS, hedge::coord_matrix_target)) \
-      hedge::perform_flux_detailed);
+      hedge::perform_flux_detailed); \
+  def("perform_flux_on_one_target", (void (*)(\
+          const hedge::face_group &, const matrix &, \
+          FLUX_CLASS, FLUX_CLASS, hedge::vector_target)) \
+      hedge::perform_flux_on_one_target); \
+  def("perform_flux_on_one_target", (void (*)(\
+          const hedge::face_group &, const matrix &, \
+          FLUX_CLASS, FLUX_CLASS, hedge::coord_matrix_target)) \
+      hedge::perform_flux_on_one_target); \
 
 #define ENUM_VALUE(NAME) \
   value(#NAME, NAME)

@@ -28,6 +28,39 @@ from pytools.arithmetic_container import \
         ArithmeticList
 import hedge.tools
 import hedge.mesh
+import hedge._internal
+
+
+
+
+class _FaceGroup(hedge._internal.FaceGroup):
+    def __init__(self, double_sided):
+        hedge._internal.FaceGroup.__init__(self, double_sided)
+        self.face_index_tuples = []
+        self.face_index_tuple_register = {}
+
+    def register_face_index_tuple(self, face_index_tup):
+        assert isinstance(face_index_tup, tuple)
+
+        try:
+            return self.face_index_tuple_register[face_index_tup]
+        except KeyError:
+            new_idx = len(self.face_index_tuples)
+            self.face_index_tuples.append(face_index_tup)
+            self.face_index_tuple_register[face_index_tup] = new_idx
+            return new_idx
+
+    def commit_face_index_tuples(self):
+        from hedge._internal import IntVector
+
+        for fit in self.face_index_tuples:
+            intvec = IntVector(fit)
+
+            self.index_lists.append(intvec)
+
+        del self.face_index_tuples
+        del self.face_index_tuple_register
+
 
 
 
@@ -169,12 +202,10 @@ class Discretization(object):
         return f
 
     def _build_interior_face_groups(self):
-        from hedge._internal import FaceGroup, FacePair, UnsignedList
+        from hedge._internal import FaceGroup, FacePair
         from hedge.element import FaceVertexMismatch
 
-        fg = FaceGroup(double_sided=True)
-
-        connect_list = []
+        fg = _FaceGroup(double_sided=True)
 
         # find and match node indices along faces
         for i, (local_face, neigh_face) in enumerate(self.mesh.interfaces):
@@ -214,26 +245,39 @@ class Discretization(object):
                     dist[axis] = 0 
                     assert comp.norm_2(dist) < 1e-14
 
-            # this causes connect_faces() below to connect this face pair
-            # with the next two flux faces we create.
-            connect_list.append(
-                    (len(fg.face_pairs), len(fg.flux_faces), len(fg.flux_faces)+1)
-                    )
+            # create and fill the face pair
+            fp = FacePair()
+
+            fp.el_base_index = estart_l
+            fp.opp_el_base_index = estart_n
+
+            fp.face_index_list_number = \
+                    fg.register_face_index_tuple(findices_l)
+            fp.opp_face_index_list_number = \
+                    fg.register_face_index_tuple(findices_shuffled_n)
+
+            fp.flux_face_index = len(fg.flux_faces)
+            fp.opp_flux_face_index = len(fg.flux_faces)+1
+
+            fg.face_pairs.append(fp)
+            #fp.dump()
+            #raw_input()
 
             # create the flux faces
-            fg.flux_faces.append(self._make_flux_face(ldis_l, local_face))
-            fg.flux_faces.append(self._make_flux_face(ldis_n, neigh_face))
+            flux_face_l = self._make_flux_face(ldis_l, local_face)
+            flux_face_n = self._make_flux_face(ldis_n, neigh_face)
 
-            # create the face pair
-            fp = FacePair()
-            fp.face_indices = UnsignedList(estart_l+i for i in findices_l)
-            fp.opposite_indices = UnsignedList(estart_n+i for i in findices_shuffled_n)
-            fg.face_pairs.append(fp)
+            # unify h across the faces
+            flux_face_l.h = flux_face_n.h = max(flux_face_l.h, flux_face_n.h)
+
+            fg.flux_faces.append(flux_face_l)
+            fg.flux_faces.append(flux_face_n)
+
+        fg.commit_face_index_tuples()
 
         # communicate face neighbor relationships to C++ core
         if len(fg.face_pairs):
             self.face_groups = [(fg, ldis_l.face_mass_matrix())]
-            fg.connect_faces(connect_list)
         else:
             self.face_groups = []
         
@@ -250,15 +294,13 @@ class Discretization(object):
         except KeyError:
             pass
 
-        from hedge._internal import IndexMap, FaceGroup, FacePair, UnsignedList
+        from hedge._internal import IndexMap, FacePair
 
         nodes = []
         face_ranges = {}
         index_map = []
-        face_group = FaceGroup(double_sided=False)
+        face_group = _FaceGroup(double_sided=False)
         ldis = None # if this boundary is empty, we might as well have no ldis
-
-        connect_list = []
 
         for ef in self.mesh.tag_to_boundary.get(tag, []):
             el, face_nr = ef
@@ -268,25 +310,23 @@ class Discretization(object):
 
             f_start = len(nodes)
             nodes += [self.nodes[el_start+i] for i in face_indices]
-            face_range = face_ranges[ef] = (f_start, len(nodes))
+            face_ranges[ef] = (f_start, len(nodes))
             index_map.extend(el_start+i for i in face_indices)
-
-            # this causes connect_faces() below to connect this face pair
-            # with the next flux face we create.
-            connect_list.append(
-                    (len(face_group.face_pairs), len(face_group.flux_faces))
-                    )
-
-            # create the flux faces
-            face_group.flux_faces.append(self._make_flux_face(ldis, ef))
 
             # create the face pair
             fp = FacePair()
-            fp.face_indices = UnsignedList(el_start+i for i in face_indices)
-            fp.opposite_indices = UnsignedList(xrange(*face_range))
+            fp.el_base_index = el_start
+            fp.opp_el_base_index = f_start
+            fp.face_index_list_number = face_group.register_face_index_tuple(face_indices)
+            fp.opp_face_index_list_number = face_group.register_face_index_tuple(
+                    tuple(xrange(len(face_indices))))
+            fp.flux_face_index = len(face_group.flux_faces)
             face_group.face_pairs.append(fp)
 
-        face_group.connect_faces(connect_list)
+            # create the flux face
+            face_group.flux_faces.append(self._make_flux_face(ldis, ef))
+
+        face_group.commit_face_index_tuples()
 
         bdry = _Boundary(
                 nodes=nodes,
@@ -492,14 +532,17 @@ class Discretization(object):
         not call this routine, it will be called for you by flux
         operators obtained by get_flux_operator().
         """
-        from hedge._internal import perform_flux, ChainedFlux
+        from hedge._internal import perform_flux_on_one_target, ChainedFlux, NullTarget
+
+        if isinstance(target, NullTarget):
+            return
 
         ch_int = ChainedFlux(int_flux)
         ch_ext = ChainedFlux(ext_flux)
 
         target.begin(len(self.nodes), len(self.nodes))
         for fg, fmm in self.face_groups:
-            perform_flux(fg, fmm, ch_int, target, ch_ext, target)
+            perform_flux_on_one_target(fg, fmm, ch_int, ch_ext, target)
         target.finalize()
 
     # boundary flux computation -----------------------------------------------

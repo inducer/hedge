@@ -146,9 +146,9 @@ namespace
 void hedge_expose_base()
 {
   {
-    typedef std::vector<unsigned> cl;
-    class_<cl>("UnsignedList")
-      .def("__init__", make_constructor(construct_vector<unsigned>))
+    typedef std::vector<int> cl;
+    class_<cl>("IntVector")
+      .def("__init__", make_constructor(construct_vector<int>))
       .def(vector_indexing_suite<cl> ())
       ;
   }

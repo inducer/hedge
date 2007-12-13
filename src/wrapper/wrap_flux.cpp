@@ -159,29 +159,6 @@ namespace {
       static bool contains(T &container, typename T::value_type const &key)
       { PYTHON_ERROR(NotImplementedError, "containment checking not supported on this container"); }
   };
-
-
-
-
-  void face_group_connect_faces(face_group &fg, object &cnx_list_py)
-  {
-    BOOST_FOREACH(tuple tp, std::make_pair(
-          stl_input_iterator<tuple>(cnx_list_py),
-          stl_input_iterator<tuple>()))
-    {
-      face_pair &fp = fg.face_pairs[extract<unsigned>(tp[0])];
-      fluxes::face &ffa = fg.flux_faces[extract<unsigned>(tp[1])];
-
-      fp.flux_face = &ffa;
-
-      if (len(tp) == 3)
-      {
-        fluxes::face &ffb = fg.flux_faces[extract<unsigned>(tp[2])];
-        fp.opp_flux_face = &ffb;
-        ffa.h = ffb.h = std::max(ffa.h, ffb.h);
-      }
-    }
-  }
 }
 
 
@@ -265,10 +242,12 @@ void hedge_expose_fluxes()
   {
     typedef face_pair cl;
     class_<cl>("FacePair")
-      .DEF_SIMPLE_RW_MEMBER(face_indices)
-      .DEF_SIMPLE_RW_MEMBER(opposite_indices)
-      .DEF_SIMPLE_RW_MEMBER(flux_face)
-      .DEF_SIMPLE_RW_MEMBER(opp_flux_face)
+      .DEF_SIMPLE_RW_MEMBER(el_base_index)
+      .DEF_SIMPLE_RW_MEMBER(opp_el_base_index)
+      .DEF_SIMPLE_RW_MEMBER(face_index_list_number)
+      .DEF_SIMPLE_RW_MEMBER(opp_face_index_list_number)
+      .DEF_SIMPLE_RW_MEMBER(flux_face_index)
+      .DEF_SIMPLE_RW_MEMBER(opp_flux_face_index)
       ;
   }
 
@@ -287,11 +266,18 @@ void hedge_expose_fluxes()
   }
 
   {
+    typedef face_group::index_list_vector cl;
+    class_<cl>("IndexListVector")
+      .def(no_compare_indexing_suite<cl>())
+      ;
+  }
+
+  {
     typedef face_group cl;
     class_<cl>("FaceGroup", init<bool>(arg("double_sided")))
       .DEF_SIMPLE_RW_MEMBER(face_pairs)
       .DEF_SIMPLE_RW_MEMBER(flux_faces)
-      .def("connect_faces", face_group_connect_faces)
+      .DEF_SIMPLE_RW_MEMBER(index_lists)
       ;
   }
 }

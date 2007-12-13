@@ -178,7 +178,7 @@ class SimplicialElement(Element):
             for face_idx in self.faces_for_node_tuple(node_tup):
                 faces[face_idx].append(node_tup_to_idx[node_tup])
 
-        return faces
+        return [tuple(fi) for fi in faces]
 
     # node wrangling ----------------------------------------------------------
     def equidistant_barycentric_nodes(self):
@@ -841,7 +841,7 @@ class TetrahedralElement(SimplicialElement):
             for j in range(0, self.order+1):
                 for i in range(0, self.order+1-j):
                     result.append(indices[idx_map[j,i]])
-            return result
+            return tuple(result)
 
         def shift_left(indices):
             """Rotate all edges to the left."""
@@ -851,7 +851,7 @@ class TetrahedralElement(SimplicialElement):
                 for i in range(0, self.order+1-j):
                     result[idx_map[j, self.order-i-j]] = indices[idx]
                     idx += 1
-            return result
+            return tuple(result)
 
         # yay, enumerate S_3 by hand
         if f2_tuple == (a,b,c):
