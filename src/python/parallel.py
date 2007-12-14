@@ -356,7 +356,7 @@ class ParallelDiscretization(hedge.discretization.Discretization):
 
             mpi.wait_all(send_requests)
 
-            # process received packages ---------------------------------------
+            # process received packets ----------------------------------------
             from pytools import flatten
 
             # nb_ stands for neighbor_
@@ -386,6 +386,17 @@ class ParallelDiscretization(hedge.discretization.Discretization):
                 # to reshuffle them to match our node order
                 from_indices = []
 
+                shuffled_indices_cache = {}
+
+                def get_shuffled_indices(face_node_count, shuffle_op):
+                    try:
+                        return shuffled_indices_cache[shuffle_op]
+                    except KeyError:
+                        unshuffled_indices = range(face_node_count)
+                        result = shuffled_indices_cache[shuffle_op] = \
+                                shuffle_op(unshuffled_indices)
+                        return result
+
                 for el, face_nr in rank_bdry:
                     (estart, eend), ldis = self.find_el_data(el.id)
 
@@ -409,14 +420,15 @@ class ParallelDiscretization(hedge.discretization.Discretization):
                         
                         face_node_count = len(nb_node_coords[nb_face_idx])
                         nb_face_start = nb_face_starts[nb_face_idx]
-                        nb_node_indices = range(
-                                nb_face_start, nb_face_start+face_node_count)
 
-                        shuffled_other_node_indices = \
-                                ldis.shuffle_face_indices_to_match(
+                        shuffle_op = \
+                                ldis.get_face_index_shuffle_to_match(
                                         my_global_vertices,
-                                        his_vertices_here,
-                                        nb_node_indices)
+                                        his_vertices_here) 
+
+                        shuffled_other_node_indices = [nb_face_start+i 
+                                for i in get_shuffled_indices(
+                                    face_node_count, shuffle_op)]
 
                         from_indices.extend(shuffled_other_node_indices)
 
@@ -433,14 +445,15 @@ class ParallelDiscretization(hedge.discretization.Discretization):
 
                         face_node_count = len(nb_node_coords[nb_face_idx])
                         nb_face_start = nb_face_starts[nb_face_idx]
-                        nb_node_indices = range(
-                                nb_face_start, nb_face_start+face_node_count)
 
-                        shuffled_other_node_indices = \
-                                ldis.shuffle_face_indices_to_match(
+                        shuffle_op = \
+                                ldis.get_face_index_shuffle_to_match(
                                         my_global_vertices,
-                                        nb_vertices,
-                                        nb_node_indices)
+                                        nb_vertices)
+
+                        shuffled_other_node_indices = [nb_face_start+i 
+                                for i in get_shuffled_indices(
+                                    face_node_count, shuffle_op)]
 
                         from_indices.extend(shuffled_other_node_indices)
 
