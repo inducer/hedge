@@ -23,6 +23,7 @@
 #include <boost/scoped_array.hpp>
 #include <boost/python/stl_iterator.hpp>
 #include <boost/python/suite/indexing/vector_indexing_suite.hpp>
+#include <boost/numeric/ublas/matrix_proxy.hpp>
 #include <boost/numeric/bindings/traits/traits.hpp>
 #include <boost/numeric/bindings/traits/ublas_matrix.hpp>
 
@@ -32,6 +33,7 @@
 using namespace hedge;
 using namespace boost::python;
 using namespace boost::numeric::bindings;
+namespace ublas = boost::numeric::ublas;
 
 
 
@@ -52,6 +54,27 @@ namespace
 
 
 
+  // affine map ---------------------------------------------------------------
+  affine_map *get_simplex_map_unit_to_global(unsigned dimensions, object vertices)
+  {
+    matrix mat(dimensions, dimensions);
+
+    const vector &vertex0 = extract<vector const &>(vertices[0]);
+    vector vsum = ublas::zero_vector<vector::value_type>(dimensions);
+    for (unsigned i = 0; i < dimensions; i++)
+    {
+      const vector &vertex = extract<vector const &>(vertices[i+1]);
+      vsum += vertex;
+      column(mat, i) = 0.5*(vertex-vertex0);
+    }
+
+    return new affine_map(mat, 0.5*vsum - 0.5*(dimensions-2)*vertex0);
+  }
+
+
+
+
+  // binary buffers -----------------------------------------------------------
   template <class T>
   PyObject *bufferize_sequence(object iterable)
   {
@@ -64,12 +87,18 @@ namespace
         reinterpret_cast<const char *>(v.data()), v.size()*sizeof(T));
   }
 
+
+
+
   PyObject *bufferize_vector(const vector &v)
   {
     return PyString_FromStringAndSize(
         reinterpret_cast<const char *>(traits::vector_storage(v)), 
         v.size()*sizeof(vector::value_type));
   }
+
+
+
 
   PyObject *bufferize_list_of_vectors(object &vec_list, unsigned component_count)
   {
@@ -96,6 +125,9 @@ namespace
         reinterpret_cast<const char *>(result.get()), 
         data_size*sizeof(vector::value_type));
   }
+
+
+
 
   PyObject *bufferize_list_of_components(object &vec_list, unsigned vec_count)
   {
@@ -155,18 +187,21 @@ void hedge_expose_base()
 
   {
     typedef affine_map cl;
-    class_<cl>("AffineMap", init<const matrix &, const vector &, const double &>())
+    class_<cl>("AffineMap", init<const matrix &, const vector &>())
       .add_property("matrix", 
           make_function(&cl::matrix, 
             return_internal_reference<>()))
       .add_property("vector", 
           make_function(&cl::vector, 
             return_internal_reference<>()))
-      .add_property("jacobian", &cl::jacobian)
       .def("__call__", &affine_map::operator())
 
       .enable_pickling()
       ;
+
+    def("get_simplex_map_unit_to_global",
+        get_simplex_map_unit_to_global,
+        return_value_policy<manage_new_object>());
   }
 
   // FIXME: pretty crude, but covers 32- and 64-bit machines

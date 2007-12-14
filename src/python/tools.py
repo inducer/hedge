@@ -48,20 +48,24 @@ def cyl_bessel_j_prime(nu, z):
 
 
 
-class AffineMap(hedge._internal.AffineMap):
-    def __init__(self, matrix, vector):
-        """Construct an affine map given by f(x) = matrix * x + vector."""
-        from pylinear.computation import determinant
-        hedge._internal.AffineMap.__init__(self,
-                matrix, vector, determinant(matrix))
+AffineMap = hedge._internal.AffineMap
+def _affine_map_jacobian(self):
+    try:
+        return self._jacobian
+    except AttributeError:
+        self._jacobian = comp.determinant(self.matrix)
+        return self._jacobian
+AffineMap.jacobian = property(_affine_map_jacobian)
 
-    def inverted(self):
-        """Return a new AffineMap that is the inverse of this one.
-        """
-        return AffineMap(1/self.matrix, -self.matrix <<num.solve>> self.vector)
+def _affine_map_inverted(self):
+    """Return a new AffineMap that is the inverse of this one.
+    """
+    return AffineMap(1/self.matrix, -self.matrix <<num.solve>> self.vector)
+AffineMap.inverted = _affine_map_inverted
 
-    def __getinitargs__(self):
-        return self.matrix, self.vector
+def _affine_map___getinitargs__(self):
+    return self.matrix, self.vector
+AffineMap.__getinitargs__ = _affine_map___getinitargs__
 
 
 

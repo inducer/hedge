@@ -75,7 +75,7 @@ class Element(object):
         self.map = self.get_map_unit_to_global(vertices)
         self.inverse_map = self.map.inverted()
         self.face_normals, self.face_jacobians = \
-                self.face_normals_and_jacobians(self.map)
+                self.face_normals_and_jacobians(vertices, self.map)
 
     def _reorder_vertices(self, vertex_indices, vertices):
         return vertex_indices
@@ -94,18 +94,8 @@ class SimplicialElement(Element):
         """Return an affine map that maps the unit coordinates of the reference
         element to a global element at a location given by its `vertices'.
         """
-        from hedge.tools import AffineMap
-
-        mat = num.zeros((cls.dimensions, cls.dimensions))
-        for i in range(cls.dimensions):
-            mat[:,i] = (vertices[i+1] - vertices[0])/2
-
-        from operator import add
-
-        return AffineMap(mat, 
-                reduce(add, vertices[1:])/2
-                -(cls.dimensions-2)/2*vertices[0]
-                )
+        from hedge._internal import get_simplex_map_unit_to_global
+        return get_simplex_map_unit_to_global(cls.dimensions, vertices)
 
     def contains_point(self, x):
         unit_coords = self.inverse_map(x)
@@ -136,7 +126,7 @@ class Triangle(SimplicialElement):
             return vi
 
     @staticmethod
-    def face_normals_and_jacobians(affine_map):
+    def face_normals_and_jacobians(vertices, affine_map):
         """Compute the normals and face jacobians of the unit element
         transformed according to `affine_map'.
 
@@ -180,7 +170,7 @@ class Tetrahedron(SimplicialElement):
             return vi
 
     @classmethod
-    def face_normals_and_jacobians(cls, affine_map):
+    def face_normals_and_jacobians(cls, vertices, affine_map):
         """Compute the normals and face jacobians of the unit element
         transformed according to `affine_map'.
 
@@ -201,13 +191,6 @@ class Tetrahedron(SimplicialElement):
             return element_orientation*fo*normal/n_length, n_length/4
 
         m = affine_map.matrix
-
-        vertices = [
-                m*num.array([-1,-1,-1]),
-                m*num.array([+1,-1,-1]),
-                m*num.array([-1,+1,-1]),
-                m*num.array([-1,-1,+1]),
-                ]
 
         # realize that zip(*something) is unzip(something)
         return zip(*[fj_and_normal(fo, pts) for fo, pts in
@@ -337,6 +320,7 @@ class ConformalMesh(Mesh):
 
         # build points and elements
         self.points = [num.asarray(v) for v in points]
+
         self.elements = [el_class(id, vert_indices, self.points) 
             for id, vert_indices in enumerate(elements)]
 

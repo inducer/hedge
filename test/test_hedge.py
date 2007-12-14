@@ -407,7 +407,7 @@ class TestHedge(unittest.TestCase):
                 for face_i, fvi, normal, jac in \
                         zip(el.face_indices(), 
                                 geo.face_vertices(all_vertex_indices),
-                                *geo.face_normals_and_jacobians(map)):
+                                *geo.face_normals_and_jacobians(vertices, map)):
                     mapped_corners = [vertices[i] for i in fvi]
                     mapped_face_basis = [mc-mapped_corners[0] for mc in mapped_corners[1:]]
 
@@ -657,7 +657,7 @@ class TestHedge(unittest.TestCase):
         from pylinear.randomized import make_random_vector
         from operator import add, mul
 
-        thresh = 1e-14
+        thresh = 5e-14
 
         for el in [
                 TriangularElement(3),
@@ -778,7 +778,7 @@ class TestHedge(unittest.TestCase):
                                 * num.take(fi_n, face_indices) * n_coord
                                 for fi_n, n_coord in zip(f_n, n)])
                             for face_indices, n, fjac
-                            in zip(el.face_indices(), *el.face_normals_and_jacobians(map))
+                            in zip(el.face_indices(), *el.face_normals_and_jacobians(vertices, map))
                             ]
 
                 boundary_sum = sum(
@@ -788,7 +788,7 @@ class TestHedge(unittest.TestCase):
                             for fi_n, n_coord in zip(f_n, n))
                         for face_indices, n, fjac
                         in zip(el.face_indices(), 
-                            *el.geometry_class.face_normals_and_jacobians(map))
+                            *el.geometry_class.face_normals_and_jacobians(vertices, map))
                         )
 
                 #print el.face_normals_and_jacobians(map)[1]
