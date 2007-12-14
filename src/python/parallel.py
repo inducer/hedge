@@ -310,12 +310,17 @@ class ParallelDiscretization(hedge.discretization.Discretization):
                 mesh, local_discretization, 
                 reorder=hedge.mesh.REORDER_NONE)
 
-        self._setup_from_neighbor_maps()
+        self._setup_neighbor_connections()
 
-    def _setup_from_neighbor_maps(self):
+    def _setup_neighbor_connections(self):
         import boost.mpi as mpi
 
         comm = self.context.communicator
+
+        def get_flux_face(el_face):
+            face_group, ffi = (rank_discr_boundary
+                    .el_face_to_face_group_and_flux_face_index[el_face])
+            return face_group.flux_faces[ffi]
 
         if self.neighbor_ranks:
             # send interface information to neighboring ranks -----------------
@@ -326,9 +331,10 @@ class ParallelDiscretization(hedge.discretization.Discretization):
             send_requests = mpi.RequestList()
 
             for rank in self.neighbor_ranks:
-                rank_bdry = self.mesh.tag_to_boundary[
-                        hedge.mesh.TAG_RANK_BOUNDARY(rank)]
-                
+                bdry_tag = hedge.mesh.TAG_RANK_BOUNDARY(rank)
+                rank_bdry = self.mesh.tag_to_boundary[bdry_tag]
+                rank_discr_boundary = self._get_boundary(bdry_tag)
+
                 # a list of global vertex numbers for each face
                 my_vertices_global = [
                         tuple(local2global_vertex_indices[vi]
@@ -338,14 +344,20 @@ class ParallelDiscretization(hedge.discretization.Discretization):
                 # a list of node coordinates, indicating the order
                 # in which nodal values will be sent, this is for
                 # testing only and could (potentially) be omitted
+
                 my_node_coords = []
                 for el, face_nr in rank_bdry:
                     (estart, eend), ldis = self.find_el_data(el.id)
                     findices = ldis.face_indices()[face_nr]
                     my_node_coords.append(
                             [self.nodes[estart+i] for i in findices])
+
+                # compile a list of FluxFace.h values for unification
+                # across the rank boundary
+
+                my_h_values = [get_flux_face(el_face).h for el_face in rank_bdry]
                 
-                packet = (my_vertices_global, my_node_coords)
+                packet = (my_vertices_global, my_node_coords, my_h_values)
 
                 send_requests.append(comm.isend(rank, 0, packet))
 
@@ -363,10 +375,12 @@ class ParallelDiscretization(hedge.discretization.Discretization):
 
             self.from_neighbor_maps = {}
 
-            for rank, (nb_all_facevertices_global, nb_node_coords) in \
+            for rank, (nb_all_facevertices_global, nb_node_coords, nb_h_values) in \
                     received_packets.iteritems():
-                rank_bdry = self.mesh.tag_to_boundary[
-                        hedge.mesh.TAG_RANK_BOUNDARY(rank)]
+                bdry_tag = hedge.mesh.TAG_RANK_BOUNDARY(rank)
+                rank_bdry = self.mesh.tag_to_boundary[bdry_tag]
+                rank_discr_boundary = self._get_boundary(bdry_tag)
+
                 flat_nb_node_coords = list(flatten(nb_node_coords))
 
                 # step 1: find start node indices for each 
@@ -463,6 +477,11 @@ class ParallelDiscretization(hedge.discretization.Discretization):
                         for my_i, other_i in zip(my_node_indices, shuffled_other_node_indices):
                             dist = self.nodes[my_i]-flat_nb_node_coords[other_i]
                             assert comp.norm_2(dist) < 1e-14
+
+                    # finally, unify FluxFace.h values across boundary
+                    nb_h = nb_h_values[nb_face_idx]
+                    flux_face = get_flux_face((el, face_nr))
+                    flux_face.h = max(nb_h, flux_face.h)
 
                 assert len(from_indices) == len(flat_nb_node_coords)
 

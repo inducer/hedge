@@ -92,11 +92,14 @@ class _ElementGroup(object):
 
 
 class _Boundary(object):
-    def __init__(self, nodes, ranges, index_map, face_groups_and_ldis):
+    def __init__(self, nodes, ranges, index_map, face_groups_and_ldis,
+            el_face_to_face_group_and_flux_face_index={}):
         self.nodes = nodes
         self.ranges = ranges
         self.index_map = index_map
         self.face_groups_and_ldis = face_groups_and_ldis
+        self.el_face_to_face_group_and_flux_face_index = \
+                el_face_to_face_group_and_flux_face_index
 
 
 
@@ -312,6 +315,7 @@ class Discretization(object):
         index_map = []
         face_group = _FaceGroup(double_sided=False)
         ldis = None # if this boundary is empty, we might as well have no ldis
+        el_face_to_face_group_and_flux_face_index = {}
 
         for ef in self.mesh.tag_to_boundary.get(tag, []):
             el, face_nr = ef
@@ -339,6 +343,10 @@ class Discretization(object):
 
             # create the flux face
             face_group.flux_faces.append(self._make_flux_face(ldis, ef))
+            
+            # and make it possible to find it later
+            el_face_to_face_group_and_flux_face_index[ef] = \
+                    face_group, len(face_group.flux_faces)-1
 
         face_group.commit_face_index_lists()
 
@@ -346,7 +354,9 @@ class Discretization(object):
                 nodes=nodes,
                 ranges=face_ranges,
                 index_map=IndexMap(len(self.nodes), len(index_map), index_map),
-                face_groups_and_ldis=[(face_group, ldis)])
+                face_groups_and_ldis=[(face_group, ldis)],
+                el_face_to_face_group_and_flux_face_index=
+                el_face_to_face_group_and_flux_face_index)
 
         self.boundaries[tag] = bdry
         return bdry
