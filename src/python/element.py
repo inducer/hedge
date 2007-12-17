@@ -205,6 +205,19 @@ class SimplicialElement(Element):
         return [self.equilateral_to_unit(node)
                 for node in self.equilateral_nodes()]
 
+    # basis functions ---------------------------------------------------------
+    def generate_mode_identifiers(self):
+        """Generate a hashable objects identifying each basis function, in order.
+
+        The output from this function is required to be in the same order
+        as that of L{basis_functions} and L{grad_basis_functions}, and thereby
+        also from L{vandermonde}.
+        """
+        from pytools import generate_nonnegative_integer_tuples_summing_to_at_most
+
+        return generate_nonnegative_integer_tuples_summing_to_at_most(
+                self.order, self.dimensions)
+
     # matrices ----------------------------------------------------------------
     @memoize
     def vandermonde(self):
@@ -452,19 +465,15 @@ class TriangularElement(SimplicialElement):
 
           r**i * s**j for i+j <= N
         """
-        from pytools import generate_nonnegative_integer_tuples_summing_to_at_most
         return [TriangleBasisFunction(*idx) for idx in 
-                generate_nonnegative_integer_tuples_summing_to_at_most(
-                    self.order, self.dimensions)]
+                self.generate_mode_identifiers()]
 
     def grad_basis_functions(self):
         """Get the gradient functions of the basis_functions(),
         in the same order.
         """
-        from pytools import generate_nonnegative_integer_tuples_summing_to_at_most
         return [GradTriangleBasisFunction(*idx) for idx in 
-                generate_nonnegative_integer_tuples_summing_to_at_most(
-                    self.order, self.dimensions)]
+                self.generate_mode_identifiers()]
 
     # face operations ---------------------------------------------------------
     @memoize
@@ -589,6 +598,7 @@ class TetrahedralElement(SimplicialElement):
                 self.order, self.dimensions))
 
         if False:
+            # hand-tuned node order
             faces_to_nodes = {}
             for node_tup in node_tups:
                 faces_to_nodes.setdefault(
@@ -619,6 +629,7 @@ class TetrahedralElement(SimplicialElement):
             assert len(result) == len(node_tups)
 
         if True:
+            # average-sort heuristic node order
             from pytools import average
 
             def order_number_for_node_tuple(nt):
@@ -804,19 +815,15 @@ class TetrahedralElement(SimplicialElement):
 
           r**i * s**j * t**k  for  i+j+k <= order
         """
-        from pytools import generate_nonnegative_integer_tuples_summing_to_at_most
         return [TetrahedronBasisFunction(*idx) for idx in 
-                generate_nonnegative_integer_tuples_summing_to_at_most(
-                    self.order, self.dimensions)]
+                self.generate_mode_identifiers()]
 
     def grad_basis_functions(self):
         """Get the (r,s,...) gradient functions of the basis_functions(),
         in the same order.
         """
-        from pytools import generate_nonnegative_integer_tuples_summing_to_at_most
         return [GradTetrahedronBasisFunction(*idx) for idx in 
-                generate_nonnegative_integer_tuples_summing_to_at_most(
-                    self.order, self.dimensions)]
+                self.generate_mode_identifiers()]
 
     # face operations ---------------------------------------------------------
     @memoize

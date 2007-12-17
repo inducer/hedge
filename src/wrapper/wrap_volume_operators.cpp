@@ -69,10 +69,18 @@ void hedge_expose_volume_operators()
       .def("__getitem__", element_ranges_getitem<cl>)
       ;
   }
-#define ARG_TYPES const uniform_element_ranges &, const matrix &,
+
+#define ARG_TYPES \
+  const uniform_element_ranges &, \
+  const uniform_element_ranges &, \
+  const matrix &,
   DEF_FOR_EACH_OP_TARGET(perform_elwise_operator, ARG_TYPES);
 #undef ARG_TYPES
-#define ARG_TYPES const uniform_element_ranges &, const vector &, const matrix &,
+#define ARG_TYPES \
+  const uniform_element_ranges &, \
+  const uniform_element_ranges &, \
+  const vector &, \
+  const matrix &,
   DEF_FOR_EACH_OP_TARGET(perform_elwise_scaled_operator, ARG_TYPES);
 #undef ARG_TYPES
 }

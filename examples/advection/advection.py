@@ -52,7 +52,7 @@ def main() :
     from math import floor
 
     def f(x):
-        return sin(4*pi*x)
+        return sin(pi*x)
         #if int(floor(x)) % 2 == 0:
             #return 1
         #else:
@@ -69,7 +69,7 @@ def main() :
 
     pcon = guess_parallelization_context()
 
-    dim = 3
+    dim = 2
 
     job = Job("mesh")
     if dim == 2:
@@ -104,11 +104,17 @@ def main() :
         mesh_data = pcon.receive_mesh()
 
     job = Job("discretization")
-    discr = pcon.make_discretization(mesh_data, el_class(5))
+    mesh_data = mesh_data.reordered_by("cuthill")
+    discr = pcon.make_discretization(mesh_data, el_class(2))
+    vis_discr = pcon.make_discretization(mesh_data, el_class(20))
+
+    from hedge.discretization import Projector
+    vis_projector = Projector(discr, vis_discr)
+
     job.done()
 
-    vis = SiloVisualizer(discr, pcon)
-    #vis = VtkVisualizer(discr, "fld", pcon)
+    vis = SiloVisualizer(vis_discr, pcon)
+    #vis = VtkVisualizer(vis_discr, "fld", pcon)
     op = StrongAdvectionOperator(discr, a, 
             inflow_u=TimeDependentGivenFunction(u_analytic),
             flux_type="lf")
@@ -138,7 +144,7 @@ def main() :
         if step % 5 == 0:
             visf = vis.make_file("fld-%04d" % step)
             vis.add_data(visf, [
-                        ("u", u), 
+                        ("u", vis_projector(u)), 
                         #("u_true", u_true), 
                         ], 
                         #expressions=[("error", "u-u_true")]

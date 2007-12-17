@@ -22,14 +22,9 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 
+import pytools
 import pylinear.array as num
 import pylinear.computation as comp
-
-
-
-
-REORDER_NONE = 0
-REORDER_CMK = 1
 
 
 
@@ -59,25 +54,32 @@ class TAG_RANK_BOUNDARY(object):
 
 
 
-class Element(object):
-    def __init__(self, id, vertex_indices, all_vertices):
-        self.id = id
-
+def make_element(class_, id, vertex_indices, all_vertices):
+    vertices = [all_vertices[v] for v in vertex_indices]
+    map = class_.get_map_unit_to_global(vertices)
+    new_vertex_indices = \
+            class_._reorder_vertices(vertex_indices, vertices, map)
+    if new_vertex_indices:
+        vertex_indices = new_vertex_indices
         vertices = [all_vertices[v] for v in vertex_indices]
-        self.vertex_indices = tuple(self._reorder_vertices(
-            vertex_indices, vertices))
+        map = class_.get_map_unit_to_global(vertices)
 
-        self.update_geometry(all_vertices)
+    face_normals, face_jacobians = \
+            class_.face_normals_and_jacobians(vertices, map)
 
-    def update_geometry(self, all_vertices):
-        vertices = [all_vertices[v] for v in self.vertex_indices]        
+    return class_(id, vertex_indices, map, map.inverted(), 
+            face_normals, face_jacobians)
 
-        self.map = self.get_map_unit_to_global(vertices)
-        self.inverse_map = self.map.inverted()
-        self.face_normals, self.face_jacobians = \
-                self.face_normals_and_jacobians(vertices, self.map)
 
-    def _reorder_vertices(self, vertex_indices, vertices):
+
+
+class Element(pytools.Record):
+    def __init__(self, id, vertex_indices, map, inverse_map, face_normals,
+            face_jacobians):
+        pytools.Record.__init__(self, locals())
+
+    @staticmethod
+    def _reorder_vertices(vertex_indices, vertices):
         return vertex_indices
 
 
@@ -117,13 +119,13 @@ class Triangle(SimplicialElement):
                 (vertices[0], vertices[2])
                 ]
 
-    def _reorder_vertices(self, vertex_indices, vertices):
-        map = self.get_map_unit_to_global(vertices)
+    @classmethod
+    def _reorder_vertices(cls, vertex_indices, vertices, map):
         vi = vertex_indices
         if map.jacobian > 0:
-            return [vi[0], vi[2], vi[1]]
+            return (vi[0], vi[2], vi[1])
         else:
-            return vi
+            return None
 
     @staticmethod
     def face_normals_and_jacobians(vertices, affine_map):
@@ -161,13 +163,13 @@ class Tetrahedron(SimplicialElement):
                 (vertices[1],vertices[2],vertices[3]),
                 ]
 
-    def _reorder_vertices(self, vertex_indices, vertices):
-        map = self.get_map_unit_to_global(vertices)
+    @classmethod
+    def _reorder_vertices(cls, vertex_indices, vertices, map):
         vi = vertex_indices
         if map.jacobian > 0:
-            return [vi[0], vi[1], vi[3], vi[2]]
+            return (vi[0], vi[1], vi[3], vi[2])
         else:
-            return vi
+            return None
 
     @classmethod
     def face_normals_and_jacobians(cls, vertices, affine_map):
@@ -199,7 +201,7 @@ class Tetrahedron(SimplicialElement):
 
 
 
-class Mesh(object):
+class Mesh(pytools.Record):
     """Information about the geometry and connectivity of a finite
     element mesh. (Note: no information about the discretization
     is stored here.)
@@ -272,200 +274,222 @@ class Mesh(object):
 
 
 
+def _build_mesh_data_dict(points, elements, boundary_tagger, periodicity, is_rankbdry_face):
+    # create face_map, which is a mapping of
+    # (vertices on a face) -> 
+    #  [(element, face_idx) for elements bordering that face]
+    face_map = {}
+    for el in elements:
+        for fid, face_vertices in enumerate(el.faces):
+            face_map.setdefault(frozenset(face_vertices), []).append((el, fid))
+
+    # build non-periodic connectivity structures
+    interfaces = []
+    tag_to_boundary = {TAG_NONE: [], TAG_ALL: []}
+    for face_vertices, els_faces in face_map.iteritems():
+        if len(els_faces) == 2:
+            interfaces.append(els_faces)
+        elif len(els_faces) == 1:
+            el, face = els_faces[0]
+            tags = boundary_tagger(face_vertices, el, face)
+
+            if isinstance(tags, str):
+                from warnings import warn
+                warn("Received string as tag list")
+
+            for btag in tags:
+                tag_to_boundary.setdefault(btag, []) \
+                        .append(els_faces[0])
+            if TAG_NO_BOUNDARY not in tags:
+                # this is used to mark rank interfaces as not being part of the
+                # boundary
+                tag_to_boundary[TAG_ALL].append(els_faces[0])
+        else:
+            raise RuntimeError, "face can at most border two elements"
+
+    # add periodicity-induced connectivity
+    from pytools import flatten, reverse_dictionary
+
+    periodic_opposite_faces = {}
+    periodic_opposite_vertices = {}
+
+    for axis, axis_periodicity in enumerate(periodicity):
+        if axis_periodicity is not None:
+            # find faces on +-axis boundaries
+            minus_tag, plus_tag = axis_periodicity
+            minus_faces = tag_to_boundary.get(minus_tag, [])
+            plus_faces = tag_to_boundary.get(plus_tag, [])
+
+            # find vertex indices and points on these faces
+            minus_vertex_indices = list(set(flatten(el.faces[face] 
+                for el, face in minus_faces)))
+            plus_vertex_indices = list(set(flatten(el.faces[face] 
+                for el, face in plus_faces)))
+
+            minus_z_points = [points[pi] for pi in minus_vertex_indices]
+            plus_z_points = [points[pi] for pi in plus_vertex_indices]
+
+            # find a mapping from -axis to +axis vertices
+            from hedge.tools import find_matching_vertices_along_axis
+
+            minus_to_plus, not_found = find_matching_vertices_along_axis(
+                    axis, minus_z_points, plus_z_points,
+                    minus_vertex_indices, plus_vertex_indices)
+            plus_to_minus = reverse_dictionary(minus_to_plus)
+
+            for a, b in minus_to_plus.iteritems():
+                periodic_opposite_vertices.setdefault(a, []).append(b)
+                periodic_opposite_vertices.setdefault(b, []).append(a)
+
+            # establish face connectivity
+            for minus_face in minus_faces:
+                minus_el, minus_fi = minus_face
+                minus_fvi = minus_el.faces[minus_fi]
+
+                try:
+                    mapped_plus_fvi = tuple(minus_to_plus[i] for i in minus_fvi)
+                    plus_faces = face_map[frozenset(mapped_plus_fvi)]
+                    assert len(plus_faces) == 1
+                except KeyError:
+                    # is our periodic counterpart is in a different mesh clump?
+                    if is_rankbdry_face(minus_face):
+                        # if so, cool. parallel handler will take care of it.
+                        continue
+                    else:
+                        # if not, bad.
+                        raise
+
+                plus_face = plus_faces[0]
+                interfaces.append([minus_face, plus_face])
+
+                plus_el, plus_fi = plus_face
+                plus_fvi = plus_el.faces[plus_fi]
+
+                mapped_minus_fvi = tuple(plus_to_minus[i] for i in plus_fvi)
+
+                # periodic_opposite_faces maps face vertex tuples from
+                # one end of the periodic domain to the other, while
+                # correspondence between each entry 
+
+                periodic_opposite_faces[minus_fvi] = mapped_plus_fvi, axis
+                periodic_opposite_faces[plus_fvi] = mapped_minus_fvi, axis
+
+                tag_to_boundary[TAG_ALL].remove(plus_face)
+                tag_to_boundary[TAG_ALL].remove(minus_face)
+    return {
+            "interfaces": interfaces,
+            "tag_to_boundary": tag_to_boundary,
+            "periodicity": periodicity,
+            "periodic_opposite_faces": periodic_opposite_faces,
+            "periodic_opposite_vertices": periodic_opposite_vertices,
+            }
+
+
+
+
+def make_conformal_mesh(points, elements, 
+        boundary_tagger=(lambda fvi, el, fn: []), 
+        element_tagger=(lambda el: []),
+        periodicity=None,
+        _is_rankbdry_face=(lambda (el, face): False),
+        ):
+    """Construct a simplical mesh.
+
+    Face indices follow the convention for the respective element,
+    such as Triangle or Tetrahedron, in this module.
+
+    @param points: an iterable of vertex coordinates, given as vectors.
+    @param elements: an iterable of tuples of indices into points,
+      giving element endpoints.
+    @param boundary_tagger: a function that takes the arguments
+      C{(set_of_face_vertex_indices, element, face_number)}
+      It returns a list of tags that apply to this surface.
+    @param element_tagger: a function that takes the arguments
+      (element) and returns the a list of tags that apply
+      to that element.
+    @param periodicity: either None or is a list of tuples
+      just like the one documented for the `periodicity'
+      member of class Mesh.
+    @param _is_rankbdry_face: an implementation detail, 
+      should not be used from user code. It is a function
+      returning whether a given face identified by 
+      C{(element instance, face_nr)} is cut by a parallel
+      mesh partition.
+    """
+    if len(points) == 0:
+        raise ValueError, "mesh contains no points"
+
+    dim = len(points[0])
+    if dim == 2:
+        el_class = Triangle
+    elif dim == 3:
+        el_class = Tetrahedron
+    else:
+        raise ValueError, "%d-dimensional meshes are unsupported" % dim
+
+    # build points and elements
+    points = [num.asarray(v) for v in points]
+
+    element_objs = [make_element(el_class, id, vert_indices, points) 
+        for id, vert_indices in enumerate(elements)]
+
+    # tag elements
+    tag_to_elements = {TAG_NONE: [], TAG_ALL: []}
+    for el in element_objs:
+        for el_tag in element_tagger(el):
+            tag_to_elements.setdefault(el_tag, []).append(el)
+        tag_to_elements[TAG_ALL].append(el)
+    
+    # build connectivity
+    if periodicity is None:
+        periodicity = dim*[None]
+    assert len(periodicity) == dim
+
+    mdd = _build_mesh_data_dict(
+            points, element_objs, boundary_tagger, periodicity, _is_rankbdry_face)
+    mdd["tag_to_elements"] = tag_to_elements
+    return ConformalMesh(points, element_objs, **mdd)
+
+
+
+
 class ConformalMesh(Mesh):
     """A mesh whose elements' faces exactly match up with one another.
 
     See the Mesh class for data members provided by this class.
     """
 
-    def __init__(self, points, elements, 
-            boundary_tagger=(lambda fvi, el, fn: []), 
-            element_tagger=(lambda el: []),
-            periodicity=None,
-            _is_rankbdry_face=(lambda (el, face): False),
-            ):
-        """Construct a simplical mesh.
-
-        Face indices follow the convention for the respective element,
-        such as Triangle or Tetrahedron, in this module.
-
-        @param points: an iterable of vertex coordinates, given as vectors.
-        @param elements: an iterable of tuples of indices into points,
-          giving element endpoints.
-        @param boundary_tagger: a function that takes the arguments
-          C{(set_of_face_vertex_indices, element, face_number)}
-          It returns a list of tags that apply to this surface.
-        @param element_tagger: a function that takes the arguments
-          (element) and returns the a list of tags that apply
-          to that element.
-        @param periodicity: either None or is a list of tuples
-          just like the one documented for the `periodicity'
-          member of class Mesh.
-        @param _is_rankbdry_face: an implementation detail, 
-          should not be used from user code. It is a function
-          returning whether a given face identified by 
-          C{(element instance, face_nr)} is cut by a parallel
-          mesh partition.
+    def __init__(self, points, elements, interfaces, tag_to_boundary, tag_to_elements,
+            periodicity, periodic_opposite_faces, periodic_opposite_vertices):
+        """This constructor is for internal use only. Use L{make_conformal_mesh} instead.
         """
-        if len(points) == 0:
-            raise ValueError, "mesh contains no points"
+        Mesh.__init__(self, locals())
 
-        dim = len(points[0])
-        if dim == 2:
-            el_class = Triangle
-        elif dim == 3:
-            el_class = Tetrahedron
-        else:
-            raise ValueError, "%d-dimensional meshes are unsupported" % dim
-
-        # build points and elements
-        self.points = [num.asarray(v) for v in points]
-
-        self.elements = [el_class(id, vert_indices, self.points) 
-            for id, vert_indices in enumerate(elements)]
-
-        # tag elements
-        self.tag_to_elements = {TAG_NONE: [], TAG_ALL: []}
-        for el in self.elements:
-            for el_tag in element_tagger(el):
-                self.tag_to_elements.setdefault(el_tag, []).append(el)
-            self.tag_to_elements[TAG_ALL].append(el)
-        
-        # build connectivity
-        if periodicity is None:
-            periodicity = dim*[None]
-        assert len(periodicity) == dim
-
-        self._build_connectivity(boundary_tagger, periodicity, _is_rankbdry_face)
-
-    def transform(self, map):
-        self.points = [map(x) for x in self.points]
-        for e in self.elements:
-            e.update_geometry(self.points)
-
-    def _build_connectivity(self, boundary_tagger, periodicity, is_rankbdry_face):
-        # create face_map, which is a mapping of
-        # (vertices on a face) -> 
-        #  [(element, face_idx) for elements bordering that face]
-        face_map = {}
-        for el in self.elements:
-            for fid, face_vertices in enumerate(el.faces):
-                face_map.setdefault(frozenset(face_vertices), []).append((el, fid))
-
-        # build non-periodic connectivity structures
-        self.interfaces = []
-        self.tag_to_boundary = {TAG_NONE: [], TAG_ALL: []}
-        for face_vertices, els_faces in face_map.iteritems():
-            if len(els_faces) == 2:
-                self.interfaces.append(els_faces)
-            elif len(els_faces) == 1:
-                el, face = els_faces[0]
-                tags = boundary_tagger(face_vertices, el, face)
-
-                if isinstance(tags, str):
-                    from warnings import warn
-                    warn("Received string as tag list")
-
-                for btag in tags:
-                    self.tag_to_boundary.setdefault(btag, []) \
-                            .append(els_faces[0])
-                if TAG_NO_BOUNDARY not in tags:
-                    # this is used to mark rank interfaces as not being part of the
-                    # boundary
-                    self.tag_to_boundary[TAG_ALL].append(els_faces[0])
-            else:
-                raise RuntimeError, "face can at most border two elements"
-
-        # add periodicity-induced connectivity
-        from pytools import flatten, reverse_dictionary
-
-        self.periodicity = periodicity
-
-        self.periodic_opposite_faces = {}
-        self.periodic_opposite_vertices = {}
-
-        for axis, axis_periodicity in enumerate(periodicity):
-            if axis_periodicity is not None:
-                # find faces on +-axis boundaries
-                minus_tag, plus_tag = axis_periodicity
-                minus_faces = self.tag_to_boundary.get(minus_tag, [])
-                plus_faces = self.tag_to_boundary.get(plus_tag, [])
-
-                # find vertex indices and points on these faces
-                minus_vertex_indices = list(set(flatten(el.faces[face] 
-                    for el, face in minus_faces)))
-                plus_vertex_indices = list(set(flatten(el.faces[face] 
-                    for el, face in plus_faces)))
-
-                minus_z_points = [self.points[pi] for pi in minus_vertex_indices]
-                plus_z_points = [self.points[pi] for pi in plus_vertex_indices]
-
-                # find a mapping from -axis to +axis vertices
-                from hedge.tools import find_matching_vertices_along_axis
-
-                minus_to_plus, not_found = find_matching_vertices_along_axis(
-                        axis, minus_z_points, plus_z_points,
-                        minus_vertex_indices, plus_vertex_indices)
-                plus_to_minus = reverse_dictionary(minus_to_plus)
-
-                for a, b in minus_to_plus.iteritems():
-                    self.periodic_opposite_vertices.setdefault(a, []).append(b)
-                    self.periodic_opposite_vertices.setdefault(b, []).append(a)
-
-                # establish face connectivity
-                for minus_face in minus_faces:
-                    minus_el, minus_fi = minus_face
-                    minus_fvi = minus_el.faces[minus_fi]
-
-                    try:
-                        mapped_plus_fvi = tuple(minus_to_plus[i] for i in minus_fvi)
-                        plus_faces = face_map[frozenset(mapped_plus_fvi)]
-                        assert len(plus_faces) == 1
-                    except KeyError:
-                        # is our periodic counterpart is in a different mesh clump?
-                        if is_rankbdry_face(minus_face):
-                            # if so, cool. parallel handler will take care of it.
-                            continue
-                        else:
-                            # if not, bad.
-                            raise
-
-                    plus_face = plus_faces[0]
-                    self.interfaces.append([minus_face, plus_face])
-
-                    plus_el, plus_fi = plus_face
-                    plus_fvi = plus_el.faces[plus_fi]
-
-                    mapped_minus_fvi = tuple(plus_to_minus[i] for i in plus_fvi)
-
-                    # periodic_opposite_faces maps face vertex tuples from
-                    # one end of the periodic domain to the other, while
-                    # correspondence between each entry 
-
-                    self.periodic_opposite_faces[minus_fvi] = mapped_plus_fvi, axis
-                    self.periodic_opposite_faces[plus_fvi] = mapped_minus_fvi, axis
-
-                    self.tag_to_boundary[TAG_ALL].remove(plus_face)
-                    self.tag_to_boundary[TAG_ALL].remove(minus_face)
-
-    def reorder(self, method=REORDER_CMK):
-        """Reorder this mesh according using the specified
-        method. Return a list of the old element IDs.
-        """
-        if method == REORDER_NONE:
-            return None
-        elif method == REORDER_CMK:
+    def get_reorder_oldnumbers(self, method):
+        if method == "cuthill":
             from hedge.tools import cuthill_mckee
-            old_numbers = cuthill_mckee(self.element_adjacency_graph)
+            return cuthill_mckee(self.element_adjacency_graph)
         else:
-            raise ValueError, "invalid reordering method"
+            raise ValueError, "invalid mesh reorder method"
 
-        self.elements = [self.elements[old_numbers[i]] 
+    def reordered_by(self, method):
+        old_numbers = self.get_reorder_oldnumbers(method)
+        return self.reordered(old_numbers)
+
+    def reordered(self, old_numbers):
+        """Return a copy of this C{Mesh} whose elements are 
+        reordered using such that for each element C{i},
+        C{old_numbers[i]} gives the previous number of that
+        element.
+        """
+
+        elements = [self.elements[old_numbers[i]].copy(id=i)
                 for i in range(len(self.elements))]
 
-        for i, el in enumerate(self.elements):
-            assert el.id == old_numbers[i]
-            el.id = i
+        old2new_el = dict(
+                (self.elements[old_numbers[i]], new_el) 
+                for i, new_el in enumerate(elements)
+                )
 
         # sort interfaces by element id -- this is actually the most important part
         def face_cmp(face1, face2):
@@ -476,8 +500,28 @@ class ConformalMesh(Mesh):
                     min(face1_el1.id, face1_el2.id), 
                     min(face2_el1.id, face2_el2.id))
 
-        self.interfaces.sort(face_cmp)
-        return old_numbers
+        interfaces = [
+                ((old2new_el[e1], f1), (old2new_el[e2], f2))
+                for (e1,f1), (e2,f2) in self.interfaces]
+        interfaces.sort(face_cmp)
+
+        tag_to_boundary = dict(
+                (tag, [(old2new_el[old_el], fnr) for old_el, fnr in elfaces])
+                for tag, elfaces in self.tag_to_boundary.iteritems())
+
+        tag_to_elements = dict(
+                (tag, [old2new_el[old_el] for old_el in tag_els])
+                for tag, tag_els in self.tag_to_elements.iteritems())
+
+        periodic_opposite_faces = dict(
+                ((old2new_el[e1], f1), ((old2new_el[e2], f2), axis))
+                for (e1,f1), ((e2,f2), axis) in self.periodic_opposite_faces)
+
+        return ConformalMesh(
+                self.points, elements, interfaces,
+                tag_to_boundary, tag_to_elements, self.periodicity,
+                periodic_opposite_faces, self.periodic_opposite_vertices
+                )
 
 
 
@@ -540,7 +584,7 @@ def make_single_element_mesh(a=-0.5, b=0.5,
                 boundary_tagger(points, seg))
                 for seg in  boundary_faces)
 
-    return ConformalMesh(
+    return make_conformal_mesh(
             points,
             elements,
             boundary_tags)
@@ -607,7 +651,7 @@ def make_regular_rect_mesh(a=(0,0), b=(1,1), n=(5,5), periodicity=None,
     def wrapped_boundary_tagger(fvi, el, fn):
         return [fvi2fm[frozenset(fvi)]] + boundary_tagger(fvi, el, fn)
 
-    return ConformalMesh(points, elements, wrapped_boundary_tagger,
+    return make_conformal_mesh(points, elements, wrapped_boundary_tagger,
             periodicity=mesh_periodicity)
 
 
@@ -652,7 +696,7 @@ def make_square_mesh(a=-0.5, b=0.5, max_area=4e-3,
 
     generated_mesh = triangle.build(mesh_info, 
             refinement_func=needs_refinement)
-    return ConformalMesh(
+    return make_conformal_mesh(
             generated_mesh.points,
             generated_mesh.elements,
             boundary_tagger)
@@ -686,7 +730,7 @@ def make_disk_mesh(r=0.5, faces=50, max_area=4e-3,
 
     generated_mesh = triangle.build(mesh_info, refinement_func=needs_refinement)
 
-    return ConformalMesh(
+    return make_conformal_mesh(
             generated_mesh.points,
             generated_mesh.elements,
             boundary_tagger)
@@ -718,7 +762,7 @@ def make_ball_mesh(r=0.5, subdivisions=10, max_volume=None,
     mesh_info.set_facets(facets, [1 for i in range(len(facets))])
     generated_mesh = build(mesh_info, max_volume=max_volume)
 
-    return ConformalMesh(
+    return make_conformal_mesh(
             generated_mesh.points,
             generated_mesh.elements,
             boundary_tagger)
@@ -773,7 +817,7 @@ def _make_z_periodic_mesh(points, facets, facet_holestarts, facet_markers, heigh
     generated_mesh = build(mesh_info, max_volume=max_volume)
     fvi2fm = generated_mesh.face_vertex_indices_to_face_marker
         
-    return ConformalMesh(
+    return make_conformal_mesh(
             generated_mesh.points,
             generated_mesh.elements,
             zper_boundary_tagger,
@@ -816,7 +860,7 @@ def make_cylinder_mesh(radius=0.5, height=1, radial_subdivisions=10,
 
         generated_mesh = build(mesh_info, max_volume=max_volume)
 
-        return ConformalMesh(
+        return make_conformal_mesh(
                 generated_mesh.points,
                 generated_mesh.elements,
                 boundary_tagger)
@@ -930,7 +974,7 @@ def make_box_mesh(dimensions=(1,1,1), max_volume=None, periodicity=None,
         return [marker_to_tag[face_marker]] \
                 + boundary_tagger(fvi, el, fn)
 
-    return ConformalMesh(
+    return make_conformal_mesh(
             generated_mesh.points,
             generated_mesh.elements,
             wrapped_boundary_tagger,

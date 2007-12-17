@@ -20,7 +20,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 
-
+import pytools
 import pylinear.array as num
 import pylinear.computation as comp
 from pytools.arithmetic_container import work_with_arithmetic_containers
@@ -115,6 +115,28 @@ class SerialParallelizationContext(ParallelizationContext):
         from hedge.discretization import Discretization
 
         return Discretization(mesh_data, *args, **kwargs)
+
+
+
+
+class RankData(pytools.Record):
+    def __init__(self, 
+            mesh, 
+            global2local_elements,
+            global2local_vertex_indices,
+            neighbor_ranks,
+            global_periodic_opposite_faces,
+            old_el_numbers=None
+            ):
+        pytools.Record.__init__(self, locals())
+
+    def reordered_by(self, *args, **kwargs):
+        old_el_numbers = self.mesh.get_reorder_oldnumbers(*args, **kwargs)
+        mesh = self.mesh.reordered(old_el_numbers)
+        return self.copy(
+                mesh=mesh,
+                old_el_numbers=old_el_numbers
+                )
 
 
 
@@ -250,8 +272,8 @@ class MPIParallelizationContext(ParallelizationContext):
             def is_rankbdry_face((local_el, face_nr)):
                 return (rank_global_elements[local_el.id], face_nr) in elface2rank
 
-            from hedge.mesh import ConformalMesh
-            rank_mesh = ConformalMesh(
+            from hedge.mesh import make_conformal_mesh
+            rank_mesh = make_conformal_mesh(
                     rank_local_vertices,
                     rank_local_elements,
                     parallelizer_bdry_tagger, copy_el_tagger,
@@ -259,7 +281,7 @@ class MPIParallelizationContext(ParallelizationContext):
                     is_rankbdry_face)
 
             # assemble per-rank data
-            rank_data = (
+            rank_data = RankData(
                     rank_mesh, 
                     rank_global2local_elements,
                     rank_global2local_vertex_indices,
@@ -267,48 +289,41 @@ class MPIParallelizationContext(ParallelizationContext):
                     mesh.periodic_opposite_faces)
 
             if rank == self.head_rank:
-                result = self, rank_data
+                result = rank_data
             else:
                 self.communicator.send(rank, 0, rank_data)
 
         return result
 
     def receive_mesh(self):
-        return self, self.communicator.recv(self.head_rank, 0)
+        return self.communicator.recv(self.head_rank, 0)
 
     def make_discretization(self, mesh_data, *args, **kwargs):
-        return ParallelDiscretization(mesh_data, *args, **kwargs)
+        return ParallelDiscretization(self, mesh_data, *args, **kwargs)
 
 
 
 
 class ParallelDiscretization(hedge.discretization.Discretization):
-    def __init__(self, mesh_data, local_discretization, 
-            reorder=hedge.mesh.REORDER_CMK):
+    def __init__(self, pcon, rank_data, local_discretization):
         self.received_bdrys = {}
-
-        (self.context,
-                (mesh, 
-                    global2local_elements, 
-                    self.global2local_vertex_indices, 
-                    self.neighbor_ranks,
-                    self.global_periodic_opposite_faces)) = \
-                mesh_data
-
-        from hedge.tools import reverse_lookup_table
-        old_el_indices = mesh.reorder(reorder)
-
-        if old_el_indices is None:
-            self.global2local_elements = global2local_elements
-        else:
-            new_el_indices = reverse_lookup_table(old_el_indices)
-            self.global2local_elements = dict(
-                    (gi, new_el_indices[li])
-                    for gi, li in global2local_elements.iteritems())
+        self.context = pcon
 
         hedge.discretization.Discretization.__init__(self,
-                mesh, local_discretization, 
-                reorder=hedge.mesh.REORDER_NONE)
+                rank_data.mesh, local_discretization)
+
+        self.global2local_vertex_indices = rank_data.global2local_vertex_indices 
+        self.neighbor_ranks = rank_data.neighbor_ranks
+        self.global_periodic_opposite_faces = rank_data.global_periodic_opposite_faces
+
+        if rank_data.old_el_numbers is not None:
+            from hedge.tools import reverse_lookup_table
+            new_el_numbers = reverse_lookup_table(rank_data.old_el_numbers)
+            self.global2local_elements = dict(
+                    (gi, new_el_numbers[li])
+                    for gi, li in rank_data.global2local_elements.iteritems())
+        else:
+            self.global2local_elements = rank_data.global2local_elements 
 
         self._setup_neighbor_connections()
 

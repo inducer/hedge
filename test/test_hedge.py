@@ -972,15 +972,14 @@ class TestHedge(unittest.TestCase):
                 volume_constraints=True)
         #triangle.write_gnuplot_mesh("mesh.dat", generated_mesh)
 
-        from hedge.mesh import ConformalMesh
-
         def element_tagger(el):
             if generated_mesh.element_attributes[el.id] == 1:
                 return ["upper"]
             else:
                 return ["lower"]
 
-        mesh = ConformalMesh(
+        from hedge.mesh import make_conformal_mesh
+        mesh = make_conformal_mesh(
                 generated_mesh.points,
                 generated_mesh.elements,
                 element_tagger=element_tagger)
@@ -1062,7 +1061,6 @@ class TestHedge(unittest.TestCase):
         generated_mesh = tet.build(mesh_info, attributes=True, volume_constraints=True)
         #mesh.write_vtk("sandwich-mesh.vtk")
 
-        from hedge.mesh import ConformalMesh
 
         def element_tagger(el):
             if generated_mesh.element_attributes[el.id] == 1:
@@ -1070,7 +1068,8 @@ class TestHedge(unittest.TestCase):
             else:
                 return ["lower"]
 
-        mesh = ConformalMesh(
+        from hedge.mesh import make_conformal_mesh
+        mesh = make_conformal_mesh(
                 generated_mesh.points,
                 generated_mesh.elements,
                 element_tagger=element_tagger)
@@ -1109,7 +1108,6 @@ class TestHedge(unittest.TestCase):
         import pylinear.array as num
 
         def make_mesh():
-            from hedge.mesh import ConformalMesh
             array = num.array
 
             #
@@ -1151,12 +1149,12 @@ class TestHedge(unittest.TestCase):
                 else:
                     return ["outflow"]
 
-            return ConformalMesh(points, elements, boundary_tagger)
+            from hedge.mesh import make_conformal_mesh
+            return make_conformal_mesh(points, elements, boundary_tagger)
 
         from hedge.discretization import Discretization, SymmetryMap
         from hedge.element import TriangularElement
         from hedge.timestep import RK4TimeStepper
-        from hedge.mesh import REORDER_NONE
         from math import sqrt
         from hedge.operators import StrongAdvectionOperator
         from hedge.data import TimeDependentGivenFunction
@@ -1164,7 +1162,7 @@ class TestHedge(unittest.TestCase):
         a = num.array([1,0])
 
         mesh = make_mesh()
-        discr = Discretization(mesh, TriangularElement(4), reorder=REORDER_NONE)
+        discr = Discretization(mesh, TriangularElement(4))
 
         def f(x):
             if x < 0.5: return 0
@@ -1284,6 +1282,7 @@ class TestHedge(unittest.TestCase):
 
         from hedge.mesh import make_disk_mesh, TAG_ALL, TAG_NONE
         mesh = make_disk_mesh(r=0.5, max_area=0.1, faces=20)
+        mesh = mesh.reordered_by("cuthill")
 
         from hedge.tools import EOCRecorder
         eocrec = EOCRecorder()
@@ -1317,6 +1316,38 @@ class TestHedge(unittest.TestCase):
         #print eocrec.pretty_print()
 
         self.assert_(eocrec.estimate_order_of_convergence()[0,1] > 8)
+    # -------------------------------------------------------------------------
+    def test_projection(self):
+        """Test whether projection between different orders works"""
+
+        import pylinear.array as num
+        import pylinear.computation as comp
+        from hedge.mesh import make_disk_mesh
+        from hedge.discretization import Discretization, Projector
+        from hedge.element import TriangularElement
+        from hedge.tools import EOCRecorder
+        from math import sin, pi, sqrt
+
+        a = num.array([1,3])
+
+        def u_analytic(x):
+            return sin(a*x)
+
+        mesh = make_disk_mesh(r=pi, max_area=0.5)
+
+        discr2 = Discretization(mesh, TriangularElement(2))
+        discr5 = Discretization(mesh, TriangularElement(5))
+        p2to5 = Projector(discr2, discr5)
+        p5to2 = Projector(discr5, discr2)
+
+        def l2_norm(discr, v):
+            from math import sqrt
+            return sqrt(v*(discr.mass_operator*v))
+
+        u2 = discr2.interpolate_volume_function(u_analytic)
+        u2_i = p5to2(p2to5(u2))
+        self.assert_(l2_norm(discr2, u2-u2_i) < 1e-15)
+
 
 
 

@@ -113,14 +113,11 @@ class Discretization(object):
     flux lifting operators.
     """
 
-    def __init__(self, mesh, local_discretization, 
-            reorder=hedge.mesh.REORDER_CMK,
-            debug=False):
+    def __init__(self, mesh, local_discretization, debug=False):
         self.mesh = mesh
+
         self.dimensions = local_discretization.dimensions
         self.debug = debug
-
-        self.mesh.reorder(reorder)
 
         self._build_element_groups_and_nodes(local_discretization)
         self._calculate_local_matrices()
@@ -462,14 +459,14 @@ class Discretization(object):
         target.begin(len(self.nodes), len(self.nodes))
         for eg in self.element_groups:
             perform_elwise_scaled_operator(
-                    eg.ranges, eg.jacobians, eg.mass_matrix, target)
+                    eg.ranges, eg.ranges, eg.jacobians, eg.mass_matrix, target)
         target.finalize()
 
     def perform_inverse_mass_operator(self, target):
         from hedge._internal import perform_elwise_scaled_operator
         target.begin(len(self.nodes), len(self.nodes))
         for eg in self.element_groups:
-            perform_elwise_scaled_operator(eg.ranges, 
+            perform_elwise_scaled_operator(eg.ranges, eg.ranges,
                    eg.inverse_jacobians, eg.inverse_mass_matrix, 
                    target)
         target.finalize()
@@ -482,7 +479,8 @@ class Discretization(object):
         for eg in self.element_groups:
             for coeff, mat in zip(eg.diff_coefficients[coordinate], 
                     eg.differentiation_matrices):
-                perform_elwise_scaled_operator(eg.ranges, coeff, mat, target)
+                perform_elwise_scaled_operator(eg.ranges, eg.ranges, 
+                        coeff, mat, target)
 
         target.finalize()
 
@@ -494,7 +492,9 @@ class Discretization(object):
         for eg in self.element_groups:
             for coeff, mat in zip(eg.stiffness_coefficients[coordinate], 
                     eg.stiffness_matrices):
-                perform_elwise_scaled_operator(eg.ranges, coeff, mat, target)
+                perform_elwise_scaled_operator(
+                        eg.ranges, eg.ranges,
+                        coeff, mat, target)
 
         target.finalize()
 
@@ -506,7 +506,8 @@ class Discretization(object):
         for eg in self.element_groups:
             for coeff, mat in zip(eg.stiffness_coefficients[coordinate], 
                     eg.stiffness_t_matrices):
-                perform_elwise_scaled_operator(eg.ranges, coeff, mat, target)
+                perform_elwise_scaled_operator(
+                        eg.ranges, eg.ranges, coeff, mat, target)
 
         target.finalize()
 
@@ -517,7 +518,7 @@ class Discretization(object):
 
         for eg in self.element_groups:
             for coeff, mat in zip(eg.diff_coefficients[coordinate], eg.minv_st):
-                perform_elwise_scaled_operator(eg.ranges, coeff, mat, target)
+                perform_elwise_scaled_operator(eg.ranges, eg.ranges, coeff, mat, target)
 
         target.finalize()
 
@@ -722,6 +723,7 @@ class Discretization(object):
                         for flux_component in flux])
         else:
             return get_scalar_flux_operator(compile_flux(flux))
+
 
 
 
@@ -1076,4 +1078,82 @@ def pair_with_boundary(field, bfield, tag=hedge.mesh.TAG_ALL):
     else:
         return BoundaryPair(field, bfield, tag)
 
+
+
+
+# projection between different discretizations --------------------------------
+class Projector:
+    def __init__(self, from_discr, to_discr):
+        self.from_discr = from_discr
+        self.to_discr = to_discr
+
+        self.interp_matrices = []
+        for from_eg, to_eg in zip(
+                from_discr.element_groups, to_discr.element_groups):
+            from_ldis = from_eg.local_discretization
+            to_ldis = to_eg.local_discretization
+
+            from_count = from_ldis.node_count()
+            to_count = to_ldis.node_count()
+
+            # check that the two element groups have the same members
+            for from_el, to_el in zip(from_eg.members, to_eg.members):
+                assert from_el is to_el
+
+            # assemble the from->to mode permutation matrix, guided by 
+            # mode identifiers
+            if to_count > from_count:
+                to_node_ids_to_idx = dict(
+                        (nid, i) for i, nid in 
+                        enumerate(to_ldis.generate_mode_identifiers()))
+
+                to_indices = [
+                    to_node_ids_to_idx[from_nid]
+                    for from_nid in from_ldis.generate_mode_identifiers()
+                    ]
+
+                pmat = num.permutation_matrix(
+                    to_indices=to_indices, 
+                    h=to_count, w=from_count,
+                    flavor=num.DenseMatrix)
+            else:
+                from_node_ids_to_idx = dict(
+                        (nid, i) for i, nid in 
+                        enumerate(from_ldis.generate_mode_identifiers()))
+
+                from_indices = [
+                    from_node_ids_to_idx[to_nid]
+                    for to_nid in to_ldis.generate_mode_identifiers()
+                    ]
+
+                pmat = num.permutation_matrix(
+                    from_indices=from_indices, 
+                    h=to_count, w=from_count,
+                    flavor=num.DenseMatrix)
+
+            # build interpolation matrix
+            from_matrix = from_ldis.vandermonde()
+            to_matrix = to_ldis.vandermonde()
+            #self.interp_matrices.append(from_matrix <<num.leftsolve>> (to_matrix*pmat))
+            self.interp_matrices.append(to_matrix*pmat*(1/from_matrix))
+
+    @work_with_arithmetic_containers
+    def __call__(self, from_vec):
+        from hedge._internal import perform_elwise_operator, VectorTarget
+        result = self.to_discr.volume_zeros()
+
+        target = VectorTarget(from_vec, result)
+
+        target.begin(len(self.to_discr), len(self.from_discr))
+        for from_eg, to_eg, imat in zip(
+                self.from_discr.element_groups, 
+                self.to_discr.element_groups, 
+                self.interp_matrices):
+            perform_elwise_operator(
+                    from_eg.ranges, to_eg.ranges, 
+                    imat, target)
+
+        target.finalize()
+
+        return result
 

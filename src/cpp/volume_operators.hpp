@@ -75,24 +75,27 @@ namespace hedge {
   struct uniform_element_ranges 
   {
     private:
-      int m_start, m_el_size, m_el_count;
+      unsigned m_start, m_el_size, m_el_count;
 
     public:
-      uniform_element_ranges(int start, int el_size, int el_count)
+      uniform_element_ranges(unsigned start, unsigned el_size, unsigned el_count)
         : m_start(start), m_el_size(el_size), m_el_count(el_count)
       { }
 
-      int size() const
+      const unsigned start() const
+      { return m_start; }
+
+      unsigned size() const
       { return m_el_count; }
+
+      unsigned el_size() const
+      { return m_el_size; }
 
       const element_range operator[](int i) const
       { 
         unsigned el_start = m_start + i*m_el_size;
         return std::make_pair(el_start, el_start+m_el_size);
       }
-
-      const int start() const
-      { return m_start; }
 
       // iterator functionality
       class const_iterator : public boost::iterator_facade<
@@ -143,23 +146,45 @@ namespace hedge {
 
 
   // generic operations -------------------------------------------------------
-  template <class ER, class Mat, class OT>
+  template <class SrcERanges, class DestERanges, class Mat, class OT>
   inline
-  void perform_elwise_operator(const ER &eg, const Mat &matrix, OT target)
+  void perform_elwise_operator(
+      const SrcERanges &src_ers, 
+      const DestERanges &dest_ers,
+      const Mat &matrix, OT target)
   {
-    BOOST_FOREACH(const element_range &r, eg)
-      target.add_coefficients(r.first, r.second, r.first, r.second, matrix);
+    if (src_ers.size() != dest_ers.size())
+      throw std::runtime_error("element ranges have different sizes");
+
+    typename DestERanges::const_iterator dest_ers_it = dest_ers.begin();
+
+    BOOST_FOREACH(const element_range src_er, src_ers)
+    {
+      const element_range dest_er = *dest_ers_it++;
+      target.add_coefficients(
+          dest_er.first, dest_er.second, src_er.first, src_er.second, 
+          matrix);
+    }
   }
 
-  template <class ER, class Mat, class OT>
+  template <class SrcERanges, class DestERanges, class Mat, class OT>
   inline
-  void perform_elwise_scaled_operator(const ER &eg, 
+  void perform_elwise_scaled_operator(
+      const SrcERanges &src_ers, 
+      const DestERanges &dest_ers,
       const vector &scale_factors, const Mat &matrix, OT target)
   {
+    if (src_ers.size() != dest_ers.size())
+      throw std::runtime_error("element ranges have different sizes");
+
     unsigned i = 0;
-    BOOST_FOREACH(const element_range &r, eg)
-      target.add_scaled_coefficients(r.first, r.second, r.first, r.second, 
+    BOOST_FOREACH(const element_range src_er, src_ers)
+    {
+      const element_range dest_er = dest_ers[i];
+      target.add_scaled_coefficients(
+          dest_er.first, dest_er.second, src_er.first, src_er.second, 
           scale_factors[i++], matrix);
+    }
   }
 
 
@@ -170,12 +195,21 @@ namespace hedge {
 #ifdef USE_BLAS
   template <class Mat>
   inline
-  void perform_elwise_scaled_operator(const uniform_element_ranges &eg, 
+  void perform_elwise_scaled_operator(
+      const uniform_element_ranges &src_ers, 
+      const uniform_element_ranges &dest_ers, 
       const vector &scale_factors, const Mat &matrix, vector_target target)
   {
+    if (src_ers.size() != dest_ers.size())
+      throw std::runtime_error("element ranges have different sizes");
+    if (matrix.size2() != src_ers.el_size())
+      throw std::runtime_error("number of matrix columns != size of src element");
+    if (matrix.size1() != dest_ers.el_size())
+      throw std::runtime_error("number of matrix rows != size of dest element");
+
     unsigned i = 0;
     vector new_operand(target.m_operand.size());
-    BOOST_FOREACH(const element_range &r, eg)
+    BOOST_FOREACH(const element_range r, src_ers)
     {
       noalias(subrange(new_operand, r.first, r.second)) = 
         scale_factors[i++] * subrange(target.m_operand, r.first, r.second);
@@ -188,16 +222,16 @@ namespace hedge {
         'T', // "matrix" is row-major
         'N', // a contiguous array of vectors is column-major
         matrix.size2(),
-        eg.size(),
+        src_ers.size(),
         matrix.size1(),
         /*alpha*/ 1,
         /*a*/ traits::matrix_storage(matrix), 
         /*lda*/ matrix.size1(),
-        /*b*/ traits::vector_storage(new_operand) + eg.start(), 
+        /*b*/ traits::vector_storage(new_operand) + src_ers.start(), 
         /*ldb*/ matrix.size1(),
-        1,
-        /*c*/ traits::vector_storage(target.m_result) + eg.start(), 
-        /*ldb*/ matrix.size2()
+        /*beta*/ 1,
+        /*c*/ traits::vector_storage(target.m_result) + dest_ers.start(), 
+        /*ldc*/ matrix.size2()
         );
   }
 #endif
