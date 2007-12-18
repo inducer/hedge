@@ -520,11 +520,11 @@ PylinearOperator = pylinear.operator.Operator(num.Float64)
 
 # parallel cg -----------------------------------------------------------------
 def parallel_cg(pcon, local_a, b, precon=None, x=None, tol=1e-7, max_iterations=None, 
-        debug=False):
+        debug=False, debug_callback=None):
     if x is None:
         x = num.zeros((local_a.size1(),))
 
-    if len(pcon.ranks) == 1:
+    if len(pcon.ranks) == 1 and debug_callback is None:
         # use canned single-processor cg if possible
         a_inv = op.CGOperator.make(local_a, max_it=max_iterations, 
                 tolerance=tol, precon_op=precon)
@@ -536,7 +536,7 @@ def parallel_cg(pcon, local_a, b, precon=None, x=None, tol=1e-7, max_iterations=
     # typed up from J.R. Shewchuk, 
     # An Introduction to the Conjugate Gradient Method
     # Without the Agonizing Pain, Edition 1 1/4 [8/1994]
-    # Appendix B4
+    # Appendix B3
 
     from boost.mpi import all_reduce
     from operator import add
@@ -549,12 +549,23 @@ def parallel_cg(pcon, local_a, b, precon=None, x=None, tol=1e-7, max_iterations=
     if max_iterations is None:
         max_iterations = 10 * local_a.size1()
 
-    def inner(a, b):
-        local = a*num.conjugate(b)
-        return all_reduce(pcon.communicator, local, add)
+    if len(pcon.ranks) == 1:
+        def inner(a, b):
+            return a*num.conjugate(b)
+    else:
+        def inner(a, b):
+            local = a*num.conjugate(b)
+            return all_reduce(pcon.communicator, local, add)
 
     iterations = 0
     residual = b - local_a(x)
+
+    # remove me
+    s = 0*x
+
+    if debug_callback is not None:
+        debug_callback(x, 0*x, residual, s);
+
     d = precon(residual)
 
     delta_new = inner(residual, d)
@@ -563,6 +574,7 @@ def parallel_cg(pcon, local_a, b, precon=None, x=None, tol=1e-7, max_iterations=
     while iterations < max_iterations:
         q = local_a(d)
         alpha = delta_new / inner(d, q)
+        #print "debug: alpha=%g" % alpha
 
         x += alpha * d
         calculate_real_residual = (
@@ -574,6 +586,9 @@ def parallel_cg(pcon, local_a, b, precon=None, x=None, tol=1e-7, max_iterations=
         else:
             residual -= alpha*q
 
+        if debug_callback is not None:
+            debug_callback(x, residual, d, s);
+
         s = precon(residual)
         delta_old = delta_new
         delta_new = inner(residual, s)
@@ -584,10 +599,11 @@ def parallel_cg(pcon, local_a, b, precon=None, x=None, tol=1e-7, max_iterations=
             break
 
         beta = delta_new / delta_old;
+        print "debug: beta=%g, delta_new=%g" % (beta, delta_new)
         d = s + beta * d;
 
         if debug and iterations % 20 == 0 and pcon.is_head_rank:
-            print delta_new
+            print "debug: delta_new=%g" % delta_new
 
         iterations += 1
 

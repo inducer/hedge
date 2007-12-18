@@ -246,8 +246,7 @@ class Discretization(object):
                 vertices_n, axis = self.mesh.periodic_opposite_faces[vertices_n]
 
                 findices_shuffle_op_n = \
-                        ldis_l.get_face_index_shuffle_to_match(
-                        vertices_l, vertices_n, findices_n)
+                        ldis_l.get_face_index_shuffle_to_match(vertices_l, vertices_n)
 
                 if self.debug:
                     findices_shuffled_n = findices_shuffle_op_n(findices_n)

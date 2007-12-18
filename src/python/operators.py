@@ -760,3 +760,76 @@ class StrongHeatOperator(TimeDependentOperator):
                 - self.flux_v_dbdry * pair_with_boundary(w, dirichlet_bc_w, dtag)
                 - self.flux_v_nbdry * pair_with_boundary(w, neumann_bc_w, ntag)
                 )
+
+
+
+
+def solve_twogrid_problem(pcon, fine_discr, fine_op, fine_rhs,
+        coarse_discr, coarse_op, tol=1e-9):
+    # for notation see
+    # C. Wagner, Introduction to Algebraic Multigrid.  Heidelberg: 1998.
+    # Algorithm 2.3.1
+
+    Ah = fine_op
+    AH = coarse_op
+    fh = fine_rhs
+
+    from hedge.discretization import Projector
+    R = Projector(fine_discr, coarse_discr)
+    P = Projector(coarse_discr, fine_discr)
+
+    from hedge.visualization import VtkVisualizer
+    vis = VtkVisualizer(fine_discr, pcon)
+    
+    prec_call = [0]
+
+    from hedge.tools import PylinearOperator, parallel_cg
+
+    class CoarseGridPreconditioner(PylinearOperator):
+        def size1(self):
+            return len(fine_discr)
+
+        def size2(self):
+            return len(fine_discr)
+
+        def apply(self, before, after):
+            prec_call[0] += 1
+            #if prec_call[0] % 60 != 0:
+            if False:
+                after[:] = before
+                return
+
+            print "ENTER"
+            dH = R(before)
+
+            after[:] = P(parallel_cg(pcon, coarse_op, dH, tol=tol))
+
+            debug_info["uh"] = before
+            debug_info["dH"] = P(dH)
+            debug_info["vH"] = after
+
+    debug_info = { }
+
+    def dbg_cb(x, residual, d, s):
+        #if prec_call[0] % 5 == 1 or debug_info:
+        if True:
+            visf = vis.make_file("mg-%04d" % prec_call[0])
+            vis.add_data(visf, [
+                ("x", -x),
+                ("residual", -residual),
+                ("d", -d),
+                ("s", -s),
+                ("uh", -debug_info.get("uh", fine_discr.volume_zeros())),
+                ("dH", -debug_info.get("dH", fine_discr.volume_zeros())),
+                ("vH", -debug_info.get("vH", fine_discr.volume_zeros())),
+                ], time=prec_call[0])
+            visf.close()
+
+            debug_info.clear()
+
+    return parallel_cg(pcon, fine_op, fine_rhs, 
+            precon=CoarseGridPreconditioner(), 
+            tol=tol, debug=True, debug_callback=dbg_cb)
+
+
+

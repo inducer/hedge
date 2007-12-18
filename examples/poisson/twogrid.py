@@ -63,7 +63,7 @@ def main() :
     if dim == 2:
         if pcon.is_head_rank:
             #mesh = make_disk_mesh(r=0.5, boundary_tagger=boundary_tagger)
-            mesh = make_regular_square_mesh(n=3, boundary_tagger=boundary_tagger, periodicity=(True,False))
+            mesh = make_regular_square_mesh(n=17, boundary_tagger=boundary_tagger, periodicity=(True,False))
             #mesh = make_regular_square_mesh(n=9)
             #mesh = make_square_mesh(max_area=0.1, boundary_tagger=boundary_tagger)
             #mesh.transform(Reflection(0,2))
@@ -81,7 +81,8 @@ def main() :
     else:
         mesh_data = pcon.receive_mesh()
 
-    discr = pcon.make_discretization(mesh_data, el_class(5))
+    coarse_discr = pcon.make_discretization(mesh_data, el_class(1))
+    discr = pcon.make_discretization(mesh_data, el_class(4))
     vis = VtkVisualizer(discr, pcon)
 
     def u0(x):
@@ -113,10 +114,10 @@ def main() :
 
     def my_diff_tensor():
         result = num.identity(dim)
-        result[0,0] = 0.1
+        result[0,0] = 1
         return result
 
-    op = WeakPoissonOperator(discr, 
+    op_kwargs = dict(
             diffusion_tensor=ConstantGivenFunction(my_diff_tensor()),
             #diffusion_tensor=GivenFunction(DiffTensor()),
 
@@ -130,6 +131,8 @@ def main() :
             dirichlet_bc=ConstantGivenFunction(0),
             neumann_bc=ConstantGivenFunction(-10),
             )
+    op = WeakPoissonOperator(discr, **op_kwargs)
+    coarse_op = WeakPoissonOperator(coarse_discr, **op_kwargs)
 
     def l2_norm(v):
         return sqrt(v*(discr.mass_operator*v))
@@ -141,7 +144,7 @@ def main() :
             mat[:,j] = op(num.unit_vector(w, j))
         return mat
 
-    if True:
+    if False:
         mat = matrix_rep(op)
         print comp.norm_frobenius(mat-mat.T)
         #print comp.eigenvalues(mat)
@@ -163,14 +166,10 @@ def main() :
         visf.close()
         return
 
-
-    #a_inv = operator.BiCGSTABOperator.make(-op, 40000, 1e-10)
-    #a_inv = operator.CGOperator.make(-op, 40000, 1e-4)
-    #a_inv.debug_level = 1
-    #u = -a_inv(op.prepare_rhs(GivenFunction(rhs_c)))
-
-    from hedge.tools import parallel_cg
-    u = -parallel_cg(pcon, -op, op.prepare_rhs(GivenFunction(rhs_c)), debug=True, tol=1e-4)
+    from hedge.operators import solve_twogrid_problem
+    rhs = op.prepare_rhs(GivenFunction(rhs_c))
+    #u = -parallel_cg(pcon, -op, rhs, debug=True, tol=1e-4)
+    u = -solve_twogrid_problem(pcon, discr, -op, rhs, coarse_discr, -coarse_op)
 
     from hedge.discretization import ones_on_boundary
     visf = vis.make_file("fld")
@@ -188,4 +187,5 @@ if __name__ == "__main__":
     #import cProfile as profile
     #profile.run("main()", "poisson.prof")
     main()
+
 
