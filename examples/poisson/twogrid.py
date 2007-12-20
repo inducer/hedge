@@ -82,7 +82,7 @@ def main() :
         mesh_data = pcon.receive_mesh()
 
     coarse_discr = pcon.make_discretization(mesh_data, el_class(1))
-    discr = pcon.make_discretization(mesh_data, el_class(4))
+    discr = pcon.make_discretization(mesh_data, el_class(2))
     vis = VtkVisualizer(discr, pcon)
 
     def u0(x):

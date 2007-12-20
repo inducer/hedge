@@ -187,7 +187,7 @@ namespace hedge { namespace fluxes {
   class penalty_term : public flux, public flux_operators<penalty_term>
   {
     public:
-      penalty_term( double power)
+      penalty_term(double power)
         : m_power(power)
       { }
       double operator()(const face &local, const face *neighbor) const

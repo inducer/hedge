@@ -764,15 +764,76 @@ class StrongHeatOperator(TimeDependentOperator):
 
 
 
+def diagonal_blocks(poisson_op):
+    op = poisson_op
+    discr = op.discr
+
+    from pytools.arithmetic_container import ArithmeticList
+    AL = ArithmeticList
+
+    def multiply_minv_by_diagonal(diag):
+        for elgroup in discr.element_groups:
+            d_minv = num.diagonal(elgroup.local_discretization.inverse_mass_matrix())
+            for el_start, el_end in elgroup.ranges:
+                diag[el_start:el_end] = num.multiply(d_minv, diag[el_start:el_end])
+
+        return diag
+
+    def inner_flux_diagonal(int_flux):
+        diag = discr.volume_zeros()
+
+        for fg, fmm in discr.face_groups:
+            for fp in fg.face_pairs:
+                flux_face = fg.flux_faces[fp.flux_face_index]
+                local_coeff = flux_face.face_jacobian*int_flux(flux_face, None)
+                for i, ili in enumerate(fg.index_lists[fp.face_index_list_number]):
+                    diag[ili] += local_coeff*fmm[i,i]
+
+        return multiply_minv_by_diagonal(diag)
+
+    def bdry_flux_diagonal(int_flux, tag):
+        diag = discr.volume_zeros()
+
+        bdry = discr._get_boundary(tag)
+
+        if bdry.nodes:
+            for fg, ldis in bdry.face_groups_and_ldis:
+                fmm = ldis.face_mass_matrix()
+                for fp in fg.face_pairs:
+                    flux_face = fg.flux_faces[fp.flux_face_index]
+                    opp_flux_face = fg.flux_faces[fp.opp_flux_face_index]
+                    local_coeff = flux_face.face_jacobian*int_flux(flux_face, opp_flux_face)
+                    for i, ili in enumerate(fg.index_lists[fp.face_index_list_number]):
+                        diag[ili] += local_coeff*fmm[i,i]
+
+        return multiply_minv_by_diagonal(diag)
+
+    dblocks = {}
+    for elgroup in discr.element_groups:
+        grad_matrices = AL(
+                AL(dot(
+                    elgroup.inverse_mass_matrix*(-elgroup.stiffness_t_matrices),
+                    (eg.stiffness_coefficients[coord][rst_axis][i_el]
+                        for rst_axis in range(discr.dimensions))
+                    )
+                    for xyz_axis in range(discr.dimensions))
+                
+                for i_el in range(len(elgroup.members))
+                )
+
+        @work_with_arithmetic_containers
+        def get_matrix(op):
+            return op.matrix
+
+        global_grad_matrix = self.m_inv.matrix() * (- get_matrix(self.stiff_t))
+
+
+
 def solve_twogrid_problem(pcon, fine_discr, fine_op, fine_rhs,
         coarse_discr, coarse_op, tol=1e-9):
-    # for notation see
+    # see
     # C. Wagner, Introduction to Algebraic Multigrid.  Heidelberg: 1998.
     # Algorithm 2.3.1
-
-    Ah = fine_op
-    AH = coarse_op
-    fh = fine_rhs
 
     from hedge.discretization import Projector
     R = Projector(fine_discr, coarse_discr)
@@ -781,55 +842,59 @@ def solve_twogrid_problem(pcon, fine_discr, fine_op, fine_rhs,
     from hedge.visualization import VtkVisualizer
     vis = VtkVisualizer(fine_discr, pcon)
     
-    prec_call = [0]
+    from hedge.tools import PylinearOperator, CGStateContainer
 
-    from hedge.tools import PylinearOperator, parallel_cg
+    coarse_cg = CGStateContainer(pcon, coarse_op)
+    fine_cg = CGStateContainer(pcon, fine_op)
 
-    class CoarseGridPreconditioner(PylinearOperator):
-        def size1(self):
-            return len(fine_discr)
+    delta_0 = fine_cg.reset(fine_rhs)
 
-        def size2(self):
-            return len(fine_discr)
+    max_iterations = 10 * fine_op.size1()
+    iteration = 0
+    halfstep = 0
 
-        def apply(self, before, after):
-            prec_call[0] += 1
-            #if prec_call[0] % 60 != 0:
-            if False:
-                after[:] = before
-                return
+    def plot(with_coarse):
+        data = [
+            ("x", fine_cg.x),
+            ("residual", fine_cg.residual),
+            ("d", fine_cg.d),
+            ]
+        if with_coarse:
+            data.extend([
+                ("coarse_rhs", P(coarse_rhs)),
+                ("coarse_correction", P(coarse_cg.x)),
+                ])
+        else:
+            data.extend([
+                ("coarse_rhs", fine_discr.volume_zeros()),
+                ("coarse_correction", fine_discr.volume_zeros()),
+                ])
+        visf = vis.make_file("mg-%04d" % halfstep)
+        vis.add_data(visf, data, time=halfstep)
+        visf.close()
 
-            print "ENTER"
-            dH = R(before)
+    while iteration < max_iterations:
+        # smooth
+        for i in range(20):
+            delta = fine_cg.one_iteration()
 
-            after[:] = P(parallel_cg(pcon, coarse_op, dH, tol=tol))
+        print "%05i: delta before coarse: %g" % (halfstep, delta)
 
-            debug_info["uh"] = before
-            debug_info["dH"] = P(dH)
-            debug_info["vH"] = after
+        plot(with_coarse=False);halfstep += 1
 
-    debug_info = { }
+        # solve
+        coarse_rhs = R(fine_rhs - fine_op(fine_cg.x))
+        coarse_cg.reset(coarse_rhs)
+        coarse_cg.run(tol=tol)
 
-    def dbg_cb(x, residual, d, s):
-        #if prec_call[0] % 5 == 1 or debug_info:
-        if True:
-            visf = vis.make_file("mg-%04d" % prec_call[0])
-            vis.add_data(visf, [
-                ("x", -x),
-                ("residual", -residual),
-                ("d", -d),
-                ("s", -s),
-                ("uh", -debug_info.get("uh", fine_discr.volume_zeros())),
-                ("dH", -debug_info.get("dH", fine_discr.volume_zeros())),
-                ("vH", -debug_info.get("vH", fine_discr.volume_zeros())),
-                ], time=prec_call[0])
-            visf.close()
+        delta = fine_cg.reset(fine_rhs, fine_cg.x+P(coarse_cg.x))
+        print "%05i: delta after coarse:  %g" % (halfstep, delta)
 
-            debug_info.clear()
+        if abs(delta) < tol*tol * abs(delta_0):
+            return fine_cg.x
 
-    return parallel_cg(pcon, fine_op, fine_rhs, 
-            precon=CoarseGridPreconditioner(), 
-            tol=tol, debug=True, debug_callback=dbg_cb)
+        plot(with_coarse=True);halfstep += 1
 
+        iteration += 1
 
-
+        print "-----------------------------------------"

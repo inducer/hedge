@@ -519,95 +519,111 @@ PylinearOperator = pylinear.operator.Operator(num.Float64)
 
 
 # parallel cg -----------------------------------------------------------------
-def parallel_cg(pcon, local_a, b, precon=None, x=None, tol=1e-7, max_iterations=None, 
+class CGStateContainer:
+    def __init__(self, pcon, operator, precon=None):
+        if precon is None:
+            precon = op.IdentityOperator.make(operator.dtype, operator.size1())
+
+        self.pcon = pcon
+        self.operator = operator
+        self.precon = precon
+
+        if len(pcon.ranks) == 1:
+            def inner(a, b):
+                return a*num.conjugate(b)
+        else:
+            from boost.mpi import all_reduce
+            from operator import add
+
+            def inner(a, b):
+                local = a*num.conjugate(b)
+                return all_reduce(pcon.communicator, local, add)
+
+        self.inner = inner
+
+    def reset(self, rhs, x=None):
+        self.rhs = rhs
+
+        if x is None:
+            x = num.zeros((self.operator.size1(),))
+        self.x = x
+
+        self.residual = rhs - self.operator(x)
+
+        self.d = self.precon(self.residual)
+
+        self.delta = self.inner(self.residual, self.d)
+        return self.delta
+
+    def one_iteration(self, compute_real_residual=False):
+        # typed up from J.R. Shewchuk, 
+        # An Introduction to the Conjugate Gradient Method
+        # Without the Agonizing Pain, Edition 1 1/4 [8/1994]
+        # Appendix B3
+
+        q = self.operator(self.d)
+        alpha = self.delta / self.inner(self.d, q)
+
+        self.x += alpha * self.d
+
+        if compute_real_residual:
+            self.residual = self.rhs - self.operator(self.x)
+        else:
+            self.residual -= alpha*q
+
+        s = self.precon(self.residual)
+        delta_old = self.delta
+        self.delta = self.inner(self.residual, s)
+
+        beta = self.delta / delta_old;
+        self.d = s + beta * self.d;
+
+        return self.delta
+
+    def run(self, max_iterations=None, tol=1e-7, debug_callback=None, debug=0):
+        if max_iterations is None:
+            max_iterations = 10 * self.operator.size1()
+
+
+        iterations = 0
+        delta_0 = delta = self.delta
+        while iterations < max_iterations:
+            if debug_callback is not None:
+                debug_callback(self.x, self.residual, self.d)
+
+            compute_real_residual = \
+                    iterations % 50 == 0 or \
+                    abs(delta) < tol*tol * abs(delta_0)
+            delta = self.one_iteration(
+                    compute_real_residual=compute_real_residual)
+
+            if compute_real_residual and abs(delta) < tol*tol * abs(delta_0):
+                return self.x
+
+            if debug and iterations % debug == 0 and self.pcon.is_head_rank:
+                print "debug: delta=%g" % delta
+            iterations += 1
+
+        raise RuntimeError("cg failed to converge")
+            
+
+
+
+def parallel_cg(pcon, operator, b, precon=None, x=None, tol=1e-7, max_iterations=None, 
         debug=False, debug_callback=None):
     if x is None:
-        x = num.zeros((local_a.size1(),))
+        x = num.zeros((operator.size1(),))
 
-    if len(pcon.ranks) == 1 and debug_callback is None:
+    #if len(pcon.ranks) == 1 and debug_callback is None:
+    if False:
         # use canned single-processor cg if possible
-        a_inv = op.CGOperator.make(local_a, max_it=max_iterations, 
+        a_inv = op.CGOperator.make(operator, max_it=max_iterations, 
                 tolerance=tol, precon_op=precon)
         if debug:
             a_inv.debug_level = 1
         a_inv.apply(b, x)
         return x
 
-    # typed up from J.R. Shewchuk, 
-    # An Introduction to the Conjugate Gradient Method
-    # Without the Agonizing Pain, Edition 1 1/4 [8/1994]
-    # Appendix B3
-
-    from boost.mpi import all_reduce
-    from operator import add
-
-    if local_a.size1() != local_a.size2():
-        raise ValueError("cg: A is not quadratic")
-
-    if precon is None:
-        precon = op.IdentityOperator.make(local_a.dtype, local_a.size1())
-    if max_iterations is None:
-        max_iterations = 10 * local_a.size1()
-
-    if len(pcon.ranks) == 1:
-        def inner(a, b):
-            return a*num.conjugate(b)
-    else:
-        def inner(a, b):
-            local = a*num.conjugate(b)
-            return all_reduce(pcon.communicator, local, add)
-
-    iterations = 0
-    residual = b - local_a(x)
-
-    # remove me
-    s = 0*x
-
-    if debug_callback is not None:
-        debug_callback(x, 0*x, residual, s);
-
-    d = precon(residual)
-
-    delta_new = inner(residual, d)
-    delta_0 = delta_new
-
-    while iterations < max_iterations:
-        q = local_a(d)
-        alpha = delta_new / inner(d, q)
-        #print "debug: alpha=%g" % alpha
-
-        x += alpha * d
-        calculate_real_residual = (
-                iterations % 50 == 0 
-                or abs(delta_new) < tol*tol * abs(delta_0))
-
-        if calculate_real_residual:
-            residual = b - local_a(x)
-        else:
-            residual -= alpha*q
-
-        if debug_callback is not None:
-            debug_callback(x, residual, d, s);
-
-        s = precon(residual)
-        delta_old = delta_new
-        delta_new = inner(residual, s)
-
-        if calculate_real_residual and abs(delta_new) < tol*tol * abs(delta_0):
-            print "HALT", pcon.rank
-            # Only terminate the loop on the basis of a "real" residual.
-            break
-
-        beta = delta_new / delta_old;
-        print "debug: beta=%g, delta_new=%g" % (beta, delta_new)
-        d = s + beta * d;
-
-        if debug and iterations % 20 == 0 and pcon.is_head_rank:
-            print "debug: delta_new=%g" % delta_new
-
-        iterations += 1
-
-    if iterations == max_iterations:
-        raise RuntimeError("cg failed to converge")
-
-    return x
+    cg = CGStateContainer(pcon, operator, precon)
+    cg.reset(b, x)
+    return cg.run(max_iterations, tol, debug_callback, debug)

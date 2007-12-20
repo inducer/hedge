@@ -191,6 +191,47 @@ namespace hedge {
 
 
 
+  template <class SrcERanges, class DestERanges, class Mat>
+  inline
+  void perform_elwise_scaled_gauss_seidel(
+      const SrcERanges &src_ers, 
+      const DestERanges &dest_ers,
+      const vector &scale_factors, const Mat &matrix, vector_target target, 
+      const vector &rhs)
+  {
+    if (src_ers.size() != dest_ers.size())
+      throw std::runtime_error("element ranges have different sizes");
+    if (matrix.size1() != matrix.size2())
+      throw std::runtime_error("matrix must be square");
+    const unsigned n = matrix.size1();
+    if (n != b.size())
+      throw std::runtime_error("rhs has the wrong size");
+    if (n != target.m_operand.size())
+      throw std::runtime_error("operand has the wrong size");
+    if (n != target.m_result.size())
+      throw std::runtime_error("result has the wrong size");
+
+    unsigned el_idx = 0;
+    BOOST_FOREACH(const element_range src_er, src_ers)
+    {
+      const element_range dest_er = dest_ers[el_idx];
+      const vector::value_type scale_factor = scale_factors[el_idx++];
+
+      for (unsigned i = 0; i<matrix.size1(); i++)
+      {
+        vector::value_type accumulator = b[i];
+        for (unsigned j = 0; j<i; j++)
+            accumulator -= scale_factor*matrix(i,j)*target.m_result[j];
+        for (unsigned j = i+1; j<n; j++)
+            accumulator -= scale_factor*matrix(i,j)*target.m_operand[j];
+        target.m_result[i] = x_i/(scale_factor*matrix(i,i);
+      }
+    }
+  }
+
+
+
+
   // fast specializations -----------------------------------------------------
 #ifdef USE_BLAS
   template <class Mat>

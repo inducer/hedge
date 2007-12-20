@@ -145,6 +145,9 @@ class Discretization(object):
         self.element_groups = [eg]
 
     def _calculate_local_matrices(self):
+        from pytools.arithmetic_container import ArithmeticList
+        AL = ArithmeticList
+
         for eg in self.element_groups:
             ldis = eg.local_discretization
 
@@ -152,9 +155,9 @@ class Discretization(object):
             immat = eg.inverse_mass_matrix = ldis.inverse_mass_matrix()
             dmats = eg.differentiation_matrices = \
                     ldis.differentiation_matrices()
-            smats = eg.stiffness_matrices = [mmat*d for d in dmats]
-            smats = eg.stiffness_t_matrices = [d.T*mmat.T for d in dmats]
-            eg.minv_st = [immat*d.T*mmat for d in dmats]
+            smats = eg.stiffness_matrices = AL(mmat*d for d in dmats)
+            smats = eg.stiffness_t_matrices = AL(d.T*mmat.T for d in dmats)
+            eg.minv_st = AL(immat*d.T*mmat for d in dmats)
 
             eg.jacobians = num.array([
                 abs(el.map.jacobian) 
