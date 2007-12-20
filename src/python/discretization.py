@@ -126,8 +126,8 @@ class Discretization(object):
 
     # initialization ----------------------------------------------------------
     def _build_element_groups_and_nodes(self, local_discretization):
-        self.nodes = []
         from hedge._internal import UniformElementRanges
+        from hedge.tools import FixedSizeSliceAdapter
 
         eg = _ElementGroup()
         eg.members = self.mesh.elements
@@ -137,9 +137,26 @@ class Discretization(object):
                 len(ldis.unit_nodes()), 
                 len(self.mesh.elements))
 
+        nodes_per_el = ldis.node_count()
+        self.nodes = FixedSizeSliceAdapter(
+                num.empty((self.dimensions * nodes_per_el * len(self.mesh.elements),)),
+                self.dimensions)
+
+        unit_nodes = FixedSizeSliceAdapter(
+                num.empty((self.dimensions * nodes_per_el,)),
+                self.dimensions)
+        for i_node, node in enumerate(ldis.unit_nodes()):
+            unit_nodes[i_node] = node
+
+        from hedge._internal import map_element_nodes
+
         for el in self.mesh.elements:
-            e_start = len(self.nodes)
-            self.nodes += [el.map(node) for node in ldis.unit_nodes()]
+            map_element_nodes(
+                    self.nodes.adaptee,
+                    el.id*nodes_per_el*self.dimensions,
+                    el.map,
+                    unit_nodes.adaptee,
+                    self.dimensions)
 
         self.group_map = [(eg, i) for i in range(len(self.mesh.elements))]
         self.element_groups = [eg]

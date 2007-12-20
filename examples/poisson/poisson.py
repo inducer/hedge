@@ -44,7 +44,7 @@ def main() :
 
     pcon = guess_parallelization_context()
 
-    dim = 2
+    dim = 3
 
     def boundary_tagger(fvi, el, fn):
         from math import atan2, pi
@@ -70,7 +70,7 @@ def main() :
         el_class = TriangularElement
     elif dim == 3:
         if pcon.is_head_rank:
-            mesh = make_ball_mesh(max_volume=0.001)
+            mesh = make_ball_mesh(max_volume=0.0001)
         el_class = TetrahedralElement
     else:
         raise RuntimeError, "bad number of dimensions"

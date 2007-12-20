@@ -138,6 +138,11 @@ class DataArray(object):
                 bufferize_list_of_components, \
                 bufferize_int32, \
                 bufferize_uint8
+        from hedge.tools import FixedSizeSliceAdapter
+
+        def vec_type(vec):
+            # FIXME
+            return VTK_FLOAT64
 
         if num.Vector.is_a(container):
             if vector_format == VF_INTERLEAVED:
@@ -148,8 +153,22 @@ class DataArray(object):
                     raise ValueError, "padding is not supported for VF_INTERLEAVED"
             else:
                 self.components = 1
-            self.type = "Float64"
+            self.type = vec_type(container)
             self.buffer = bufferize_vector(container)
+
+        elif isinstance(container, FixedSizeSliceAdapter):
+            if container.unit == vector_padding and num.Vector.is_a(container.adaptee):
+                self.buffer = bufferize_vector(container.adaptee)
+                self.type = vec_type(container.adaptee)
+                self.components = container.unit
+                print "HEY"
+            else:
+                self.type = vec_type(container[0])
+                self.components = components or len(container[0])
+                if self.components < vector_padding:
+                    self.components = vector_padding
+                self.buffer =  bufferize_list_of_vectors(container, self.components)
+
         elif isinstance(container, list):
             if len(container) == 0 or not num.Vector.is_a(container[0]):
                 self.components = 1
@@ -160,15 +179,20 @@ class DataArray(object):
                     self.type = VTK_INT32
                     self.buffer = bufferize_int32(container)
             else:
-                self.type = "Float64"
                 if vector_format == VF_LIST_OF_COMPONENTS:
                     ctr = list(container)
                     if len(ctr) > 1:
                         while len(ctr) < vector_padding:
                             ctr.append(None)
+                        self.type = vec_type(ctr[0])
+                    else:
+                        self.type = VTK_FLOAT64
+
                     self.components = len(ctr)
                     self.buffer =  bufferize_list_of_components(ctr, len(ctr[0]))
+
                 elif vector_format == VF_LIST_OF_VECTORS:
+                    self.type = vec_type(container[0])
                     self.components = components or len(container[0])
                     if self.components < vector_padding:
                         self.components = vector_padding

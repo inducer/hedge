@@ -23,6 +23,7 @@
 #include <boost/scoped_array.hpp>
 #include <boost/python/stl_iterator.hpp>
 #include <boost/python/suite/indexing/vector_indexing_suite.hpp>
+#include <boost/numeric/ublas/vector_proxy.hpp>
 #include <boost/numeric/ublas/matrix_proxy.hpp>
 #include <boost/numeric/bindings/traits/traits.hpp>
 #include <boost/numeric/bindings/traits/ublas_matrix.hpp>
@@ -55,7 +56,7 @@ namespace
 
 
   // affine map ---------------------------------------------------------------
-  affine_map *get_simplex_map_unit_to_global(unsigned dimensions, object vertices)
+  affine_map *get_simplex_map_unit_to_global(const unsigned dimensions, object vertices)
   {
     matrix mat(dimensions, dimensions);
 
@@ -69,6 +70,17 @@ namespace
     }
 
     return new affine_map(mat, 0.5*vsum - 0.5*(dimensions-2)*vertex0);
+  }
+
+
+
+
+  void map_element_nodes(vector &all_nodes, const unsigned el_start, 
+      const affine_map &map, const vector &unit_nodes, const unsigned dim)
+  {
+    for (unsigned nstart = 0; nstart < unit_nodes.size(); nstart += dim)
+      subrange(all_nodes, el_start+nstart, el_start+nstart+dim) = 
+        map(subrange(unit_nodes, nstart, nstart+dim));
   }
 
 
@@ -199,8 +211,11 @@ void hedge_expose_base()
       .enable_pickling()
       ;
 
+    def("map_element_nodes", map_element_nodes,
+        (arg("all_nodes"), arg("el_start"), arg("map"), arg("unit_nodes"), arg("dim")));
     def("get_simplex_map_unit_to_global",
         get_simplex_map_unit_to_global,
+        (arg("dimensions"), arg("vertices")),
         return_value_policy<manage_new_object>());
   }
 

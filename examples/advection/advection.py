@@ -19,7 +19,6 @@
 
 import pylinear.array as num
 import pylinear.computation as comp
-from hedge.tools import dot
 
 
 
@@ -39,7 +38,7 @@ def main() :
             make_box_mesh
     from hedge.discretization import Discretization, ones_on_boundary
     from hedge.visualization import SiloVisualizer, VtkVisualizer
-    from hedge.tools import dot
+    from hedge.tools import dot, mem_checkpoint
     from pytools.arithmetic_container import ArithmeticList
     from pytools.stopwatch import Job
     from math import sin, cos, pi, sqrt
@@ -69,7 +68,7 @@ def main() :
 
     pcon = guess_parallelization_context()
 
-    dim = 2
+    dim = 3
 
     job = Job("mesh")
     if dim == 2:
@@ -84,7 +83,7 @@ def main() :
     elif dim == 3:
         a = num.array([0,0,0.3])
         if pcon.is_head_rank:
-            mesh = make_cylinder_mesh(max_volume=0.003, boundary_tagger=boundary_tagger,
+            mesh = make_cylinder_mesh(max_volume=0.0003, boundary_tagger=boundary_tagger,
                     periodic=False, radial_subdivisions=32)
             #mesh = make_box_mesh(dimensions=(1,1,2*pi/3), max_volume=0.01,
                     #boundary_tagger=boundary_tagger)
@@ -105,21 +104,23 @@ def main() :
 
     job = Job("discretization")
     mesh_data = mesh_data.reordered_by("cuthill")
-    discr = pcon.make_discretization(mesh_data, el_class(2))
-    vis_discr = pcon.make_discretization(mesh_data, el_class(20))
+    discr = pcon.make_discretization(mesh_data, el_class(5))
+    vis_discr = discr
 
     from hedge.discretization import Projector
     vis_projector = Projector(discr, vis_discr)
 
     job.done()
 
-    vis = SiloVisualizer(vis_discr, pcon)
-    #vis = VtkVisualizer(vis_discr, "fld", pcon)
+    mem_checkpoint("discr")
+    #vis = SiloVisualizer(vis_discr, pcon)
+    vis = VtkVisualizer(vis_discr, pcon, "fld")
     op = StrongAdvectionOperator(discr, a, 
             inflow_u=TimeDependentGivenFunction(u_analytic),
             flux_type="lf")
     #op = WeakAdvectionOperator(discr, a, 
             #inflow_u=TimeDependentGivenFunction(u_analytic))
+    mem_checkpoint("vis")
 
     u = discr.interpolate_volume_function(lambda x: u_analytic(x, 0))
 

@@ -74,6 +74,9 @@ def make_element(class_, id, vertex_indices, all_vertices):
 
 
 class Element(pytools.Record):
+    __slots__ = ["id", "vertex_indices", "map", "inverse_map", "face_normals",
+            "face_jacobians"]
+
     def __init__(self, id, vertex_indices, map, inverse_map, face_normals,
             face_jacobians):
         pytools.Record.__init__(self, locals())
@@ -87,6 +90,9 @@ class Element(pytools.Record):
 
 
 class SimplicialElement(Element):
+    __slots__ = ["id", "vertex_indices", "map", "inverse_map", "face_normals",
+            "face_jacobians"]
+
     @property
     def faces(self):
         return self.face_vertices(self.vertex_indices)
@@ -111,6 +117,9 @@ class SimplicialElement(Element):
 
 class Triangle(SimplicialElement):
     dimensions = 2
+
+    __slots__ = ["id", "vertex_indices", "map", "inverse_map", "face_normals",
+            "face_jacobians"]
 
     @staticmethod
     def face_vertices(vertices):
@@ -154,6 +163,9 @@ class Triangle(SimplicialElement):
 
 class Tetrahedron(SimplicialElement):
     dimensions = 3
+
+    __slots__ = ["id", "vertex_indices", "map", "inverse_map", "face_normals",
+            "face_jacobians"]
 
     @staticmethod
     def face_vertices(vertices):

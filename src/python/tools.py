@@ -340,6 +340,77 @@ class Closable(object):
 
 
 
+def mem_checkpoint(name=None):
+    """Invoke the garbage collector and wait for a keypress."""
+
+    import gc
+    gc.collect()
+    if name:
+        raw_input("%s -- hit Enter:" % name)
+    else:
+        raw_input("Enter:")
+
+
+
+
+
+class FixedSizeSliceAdapter(object):
+    """Adapts an indexable object C{idxable} so that C{idxable[i]}
+    refers to the slice C{adaptee[i*unit:(i+1)*unit]}.
+
+    Slice operations on the adapter cause new list objects (shallow copies) to 
+    be created.
+    """
+
+    __slots__ = ["adaptee", "unit"]
+
+    def __init__(self, adaptee, unit):
+        self.adaptee = adaptee
+        self.unit = unit
+
+    def __len__(self):
+        result, remainder = divmod(len(self.adaptee), self.unit)
+        assert remainder == 0
+        return result
+
+    def __iter__(parent):
+        class FSSAIterator:
+            def __init__(self):
+                self.idx = 0
+
+            def next(self):
+                if self.idx >= len(parent):
+                    raise StopIteration
+                result = parent[self.idx]
+                self.idx += 1
+                return result
+
+        return FSSAIterator()
+
+    def __getitem__(self, idx):
+        if isinstance(idx, int):
+            return self.adaptee[self.unit*idx:self.unit*(idx+1)]
+        elif isinstance(idx, slice):
+            range_args= idx.indices(self.__len__())
+            return [self.adaptee[self.unit*i:self.unit*(i+1)]
+                    for i in xrange(*range_args)]
+        else:
+            raise TypeError, "invalid index type"
+
+    def __setitem__(self, idx, value):
+        if isinstance(idx, int):
+            self.adaptee[self.unit*idx:self.unit*(idx+1)] = value
+        elif isinstance(idx, slice):
+            range_args= idx.indices(self.__len__())
+            for i, subval in zip(xrange(*range_args), values):
+                self.adaptee[self.unit*i:self.unit*(i+1)] = subval
+        else:
+            raise TypeError, "invalid index type"
+
+
+
+
+
 # index map tools -------------------------------------------------------------
 @work_with_arithmetic_containers
 def apply_index_map(imap, vector):
