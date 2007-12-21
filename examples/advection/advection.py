@@ -83,7 +83,7 @@ def main() :
     elif dim == 3:
         a = num.array([0,0,0.3])
         if pcon.is_head_rank:
-            mesh = make_cylinder_mesh(max_volume=0.0003, boundary_tagger=boundary_tagger,
+            mesh = make_cylinder_mesh(max_volume=0.00004, boundary_tagger=boundary_tagger,
                     periodic=False, radial_subdivisions=32)
             #mesh = make_box_mesh(dimensions=(1,1,2*pi/3), max_volume=0.01,
                     #boundary_tagger=boundary_tagger)
@@ -93,7 +93,6 @@ def main() :
         el_class = TetrahedralElement
     else:
         raise RuntimeError, "bad number of dimensions"
-    job.done()
 
     norm_a = comp.norm_2(a)
 
@@ -101,21 +100,27 @@ def main() :
         mesh_data = pcon.distribute_mesh(mesh)
     else:
         mesh_data = pcon.receive_mesh()
+    job.done()
 
     job = Job("discretization")
     mesh_data = mesh_data.reordered_by("cuthill")
     discr = pcon.make_discretization(mesh_data, el_class(5))
     vis_discr = discr
-
-    from hedge.discretization import Projector
-    vis_projector = Projector(discr, vis_discr)
-
     job.done()
 
-    mem_checkpoint("discr")
+    dt = discr.dt_factor(norm_a)
+    nsteps = int(1/dt)
+
+    if pcon.is_head_rank:
+        print "%d elements, dt=%g, nsteps=%d" % (
+                len(discr.mesh.elements),
+                dt,
+                nsteps)
+
+
+    print "AAFAF", pcon.rank, pcon.ranks
     vis = SiloVisualizer(vis_discr, pcon)
     #vis = VtkVisualizer(vis_discr, pcon, "fld")
-    mem_checkpoint("vis")
 
     op = StrongAdvectionOperator(discr, a, 
             inflow_u=TimeDependentGivenFunction(u_analytic),
@@ -129,31 +134,22 @@ def main() :
     #code.interact(local = {'objs': objs})
 
     u = discr.interpolate_volume_function(lambda x: u_analytic(x, 0))
-    print u.shape
-
-    dt = discr.dt_factor(norm_a)
-    nsteps = int(1/dt)
-
-    print "%d elements, dt=%g, nsteps=%d" % (
-            len(discr.mesh.elements),
-            dt,
-            nsteps)
 
     stepper = RK4TimeStepper()
     start_step = time()
     for step in range(nsteps):
-        if step % 1 == 0:
+        if step % 1 == 0 and pcon.is_head_rank:
             now = time()
             print "timestep %d, t=%f, l2=%f, secs=%f" % (
                     step, dt*step, sqrt(u*(op.mass*u)), now-start_step)
             start_step = now
 
         t = step*dt
-        if False:
-        #if step % 5 == 0:
+
+        if step % 5 == 0:
             visf = vis.make_file("fld-%04d" % step)
             vis.add_data(visf, [
-                        ("u", vis_projector(u)), 
+                        ("u", u), 
                         #("u_true", u_true), 
                         ], 
                         #expressions=[("error", "u-u_true")]
@@ -164,7 +160,6 @@ def main() :
 
         u = stepper(u, t, dt, op.rhs)
 
-        mem_checkpoint("after tstep")
         #u_true = discr.interpolate_volume_function(
                 #lambda x: u_analytic(t, x))
 

@@ -171,7 +171,7 @@ class StrongAdvectionOperator(AdvectionOperatorBase):
         from hedge.tools import dot
 
         bc_in = self.inflow_u.boundary_interpolant(t, self.discr, self.inflow_tag)
-
+        
         return dot(self.v, self.nabla*u) - self.m_inv*(
                 self.flux * u + 
                 self.flux * pair_with_boundary(u, bc_in, self.inflow_tag))

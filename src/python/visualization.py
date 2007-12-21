@@ -313,13 +313,16 @@ class SiloMeshData(object):
         self.nshapetypes = 0
         self.nzones = 0
 
-        for eg in element_groups:
+        for nodelist_size_estimate, eg in element_groups:
             poly_count = 0
             poly_length = None
+            self.nodelist.reserve(len(self.nodelist) + nodelist_size_estimate)
             for polygon in eg:
-                self.nodelist.extend(polygon)
+                prev_nodelist_len = len(self.nodelist)
+                for i in polygon:
+                    self.nodelist.append(i)
                 poly_count += 1
-                poly_length = len(polygon)
+                poly_length = len(self.nodelist) - prev_nodelist_len
 
             if poly_count:
                 self.shapesizes.append(poly_length)
@@ -342,14 +345,17 @@ class SiloVisualizer(Visualizer):
     def __init__(self, discr, pcontext=None):
         def generate_fine_elements(eg):
             ldis = eg.local_discretization
-            smi = list(ldis.get_submesh_indices())
+            smi = ldis.get_submesh_indices()
             for el, (el_start, el_stop) in zip(eg.members, eg.ranges):
                 for element in smi:
-                    yield [el_start+j for j in element] 
+                    yield [el_start+j for j in element]
 
         def generate_fine_element_groups():
             for eg in discr.element_groups:
-                yield generate_fine_elements(eg)
+                ldis = eg.local_discretization
+                smi = ldis.get_submesh_indices()
+                nodelist_size_estimate = len(eg.members) * len(smi) * len(smi[0])
+                yield nodelist_size_estimate, generate_fine_elements(eg)
 
         def generate_coarse_elements(eg):
             for el in eg.members:
@@ -357,19 +363,21 @@ class SiloVisualizer(Visualizer):
 
         def generate_coarse_element_groups():
             for eg in discr.element_groups:
-                yield generate_coarse_elements(eg)
+                if eg.members:
+                    nodelist_size_estimate = len(eg.members) \
+                            * len(eg.members[0].vertex_indices)
+                else:
+                    nodelist_size_estimate = 0
 
-        from hedge.tools import mem_checkpoint
+                yield nodelist_size_estimate, generate_coarse_elements(eg)
 
         dim = discr.dimensions
         self.fine_mesh = SiloMeshData(dim, 
                 discr.nodes.get_component_major_vector(), 
                 generate_fine_element_groups())
-        mem_checkpoint("finemesh")
         self.coarse_mesh = SiloMeshData(dim, 
                 discr.mesh.points.get_component_major_vector(), 
                 generate_coarse_element_groups())
-        mem_checkpoint("coarsemesh")
         self.pcontext = pcontext
 
     def close(self):
