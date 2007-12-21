@@ -359,13 +359,17 @@ class SiloVisualizer(Visualizer):
             for eg in discr.element_groups:
                 yield generate_coarse_elements(eg)
 
+        from hedge.tools import mem_checkpoint
+
         dim = discr.dimensions
         self.fine_mesh = SiloMeshData(dim, 
                 discr.nodes.get_component_major_vector(), 
                 generate_fine_element_groups())
+        mem_checkpoint("finemesh")
         self.coarse_mesh = SiloMeshData(dim, 
                 discr.mesh.points.get_component_major_vector(), 
                 generate_coarse_element_groups())
+        mem_checkpoint("coarsemesh")
         self.pcontext = pcontext
 
     def close(self):

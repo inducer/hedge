@@ -129,6 +129,7 @@ def main() :
     #code.interact(local = {'objs': objs})
 
     u = discr.interpolate_volume_function(lambda x: u_analytic(x, 0))
+    print u.shape
 
     dt = discr.dt_factor(norm_a)
     nsteps = int(1/dt)
@@ -148,7 +149,8 @@ def main() :
             start_step = now
 
         t = step*dt
-        if step % 5 == 0:
+        if False:
+        #if step % 5 == 0:
             visf = vis.make_file("fld-%04d" % step)
             vis.add_data(visf, [
                         ("u", vis_projector(u)), 
@@ -162,6 +164,7 @@ def main() :
 
         u = stepper(u, t, dt, op.rhs)
 
+        mem_checkpoint("after tstep")
         #u_true = discr.interpolate_volume_function(
                 #lambda x: u_analytic(t, x))
 

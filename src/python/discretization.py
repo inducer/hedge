@@ -391,7 +391,9 @@ class Discretization(object):
             shape = f.shape
         except AttributeError:
             # no, just one
-            return num.array([f(x) for x in self.nodes])
+            result = self.volume_zeros()
+            result[:] = (f(x) for x in self.nodes)
+            return result
         else:
             if len(f.shape) == 1:
                 (count,) = f.shape
