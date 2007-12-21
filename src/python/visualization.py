@@ -111,10 +111,6 @@ class LegacyVtkVisualizer(Visualizer):
 
 
 # xml vtk ---------------------------------------------------------------------
-
-
-
-
 class VtkFile(hedge.tools.Closable):
     def __init__(self, pathname, grid, filenames=None, compressor=None):
         hedge.tools.Closable.__init__(self)
@@ -195,21 +191,15 @@ class VtkVisualizer(Visualizer, hedge.tools.Closable):
         cells = IntVector()
         cell_types = IntVector()
 
-        from hedge.tools import mem_checkpoint
-        mem_checkpoint("before cells")
-
         for eg in discr.element_groups:
             ldis = eg.local_discretization
             smi = ldis.get_submesh_indices()
 
             cells.reserve(len(cells)+len(smi)*len(eg.members))
-            from pytools.stopwatch import Job
-            job = Job("cells")
             for el, (el_start, el_stop) in zip(eg.members, eg.ranges):
                 for element in smi:
                     for j in element:
                         cells.append(el_start+j)
-            job.done()
 
             if ldis.geometry is Triangle:
                 vtk_eltype = VTK_TRIANGLE
@@ -219,8 +209,6 @@ class VtkVisualizer(Visualizer, hedge.tools.Closable):
                 raise RuntimeError, "unsupported element type: %s" % type(ldis.geometry)
 
             cell_types.extend([vtk_eltype] * len(smi) * len(eg.members))
-
-        mem_checkpoint("after cells")
 
         self.grid = UnstructuredGrid(
                 (len(discr.nodes), 
