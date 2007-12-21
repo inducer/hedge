@@ -302,27 +302,30 @@ class VtkVisualizer(Visualizer, hedge.tools.Closable):
 
 # silo ------------------------------------------------------------------------
 class SiloMeshData(object):
-    def __init__(self, dim, points, element_groups):
-        from pytools import flatten
+    def __init__(self, dim, coords, element_groups):
+        self.coords = coords
 
-        self.coords = list(flatten([p[d] for p in points] for d in range(dim)))
-
+        from pylo import IntVector
         self.ndims = dim
-        self.nodelist = []
-        self.shapesizes = []
-        self.shapecounts = []
+        self.nodelist = IntVector()
+        self.shapesizes = IntVector()
+        self.shapecounts = IntVector()
         self.nshapetypes = 0
         self.nzones = 0
 
         for eg in element_groups:
-            polygons = list(eg)
+            poly_count = 0
+            poly_length = None
+            for polygon in eg:
+                self.nodelist.extend(polygon)
+                poly_count += 1
+                poly_length = len(polygon)
 
-            if len(polygons):
-                self.nodelist += flatten(polygons)
-                self.shapesizes.append(len(polygons[0]))
-                self.shapecounts.append(len(polygons))
+            if poly_count:
+                self.shapesizes.append(poly_length)
+                self.shapecounts.append(poly_count)
                 self.nshapetypes += 1
-                self.nzones += len(polygons)
+                self.nzones += poly_count
 
     def put_mesh(self, silo, zonelist_name, mesh_name, mesh_opts):
         # put zone list
@@ -357,8 +360,12 @@ class SiloVisualizer(Visualizer):
                 yield generate_coarse_elements(eg)
 
         dim = discr.dimensions
-        self.fine_mesh = SiloMeshData(dim, discr.nodes, generate_fine_element_groups())
-        self.coarse_mesh = SiloMeshData(dim, discr.mesh.points, generate_coarse_element_groups())
+        self.fine_mesh = SiloMeshData(dim, 
+                discr.nodes.get_component_major_vector(), 
+                generate_fine_element_groups())
+        self.coarse_mesh = SiloMeshData(dim, 
+                discr.mesh.points.get_component_major_vector(), 
+                generate_coarse_element_groups())
         self.pcontext = pcontext
 
     def close(self):

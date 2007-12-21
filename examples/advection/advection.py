@@ -113,8 +113,8 @@ def main() :
     job.done()
 
     mem_checkpoint("discr")
-    #vis = SiloVisualizer(vis_discr, pcon)
-    vis = VtkVisualizer(vis_discr, pcon, "fld")
+    vis = SiloVisualizer(vis_discr, pcon)
+    #vis = VtkVisualizer(vis_discr, pcon, "fld")
     mem_checkpoint("vis")
 
     op = StrongAdvectionOperator(discr, a, 

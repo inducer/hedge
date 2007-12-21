@@ -193,7 +193,7 @@ void hedge_expose_base()
     typedef std::vector<int> cl;
     class_<cl>("IntVector")
       .def("__init__", make_constructor(construct_vector<int>))
-      .def("reserve", &cl::reserve, arg("advised_sizes"))
+      .def("reserve", &cl::reserve, arg("advised_size"))
       .def(vector_indexing_suite<cl> ())
       ;
   }

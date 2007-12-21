@@ -440,9 +440,12 @@ def make_conformal_mesh(points, elements,
         raise ValueError, "%d-dimensional meshes are unsupported" % dim
 
     # build points and elements
-    points = [num.asarray(v) for v in points]
+    from hedge.tools import FixedSizeSliceAdapter
+    new_points = FixedSizeSliceAdapter(num.empty((dim*len(points),)), dim)
+    for i, p in enumerate(points):
+        new_points[i] = p
 
-    element_objs = [make_element(el_class, id, vert_indices, points) 
+    element_objs = [make_element(el_class, id, vert_indices, new_points) 
         for id, vert_indices in enumerate(elements)]
 
     # tag elements
@@ -458,9 +461,9 @@ def make_conformal_mesh(points, elements,
     assert len(periodicity) == dim
 
     mdd = _build_mesh_data_dict(
-            points, element_objs, boundary_tagger, periodicity, _is_rankbdry_face)
+            new_points, element_objs, boundary_tagger, periodicity, _is_rankbdry_face)
     mdd["tag_to_elements"] = tag_to_elements
-    return ConformalMesh(points, element_objs, **mdd)
+    return ConformalMesh(new_points, element_objs, **mdd)
 
 
 

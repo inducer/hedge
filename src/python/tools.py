@@ -356,10 +356,16 @@ def mem_checkpoint(name=None):
 
 class FixedSizeSliceAdapter(object):
     """Adapts an indexable object C{idxable} so that C{idxable[i]}
-    refers to the slice C{adaptee[i*unit:(i+1)*unit]}.
+    refers to the slice C{adaptee[i*unit:(i+1)*unit]}. This effectively
+    turns one long vector into storage space of lots of identically-sized
+    smaller ones.
 
     Slice operations on the adapter cause new list objects (shallow copies) to 
     be created.
+
+    If A, B, and C are different vectors stored in this adapter, then their
+    ordering in the adaptee will be C{A0A1A2B0B1B2}, i.e. each vector is contiguous.
+    We refer to this as 'vector-major' order.
     """
 
     __slots__ = ["adaptee", "unit"]
@@ -406,6 +412,13 @@ class FixedSizeSliceAdapter(object):
                 self.adaptee[self.unit*i:self.unit*(i+1)] = subval
         else:
             raise TypeError, "invalid index type"
+
+    def get_component_major_vector(self):
+        """Return the adaptee's data in component-major order.
+        
+        This gives a vector of order C{A0B0C0A1B1C1...}
+        """
+        return num.hstack([self.adaptee[i::self.unit] for i in range(self.unit)])
 
 
 
