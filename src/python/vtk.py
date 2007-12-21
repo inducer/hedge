@@ -51,6 +51,24 @@ VTK_HEXAHEDRON = 12
 VTK_WEDGE = 13
 VTK_PYRAMID = 14
 
+CELL_NODE_COUNT = {
+        VTK_VERTEX: 1,
+        # VTK_POLY_VERTEX: no a-priori size
+        VTK_LINE: 2,
+        # VTK_POLY_LINE: no a-priori size
+        VTK_TRIANGLE: 3,
+        # VTK_TRIANGLE_STRIP: no a-priori size
+        # VTK_POLYGON: no a-priori size
+        VTK_PIXEL: 4,
+        VTK_QUAD: 4,
+        VTK_TETRA: 4,
+        VTK_VOXEL: 8,
+        VTK_HEXAHEDRON: 8,
+        VTK_WEDGE: 6,
+        VTK_PYRAMID: 5,
+        }
+
+
 VF_LIST_OF_COMPONENTS = 0 # [[x0,y0,z0], [x1,y1,z1]
 VF_LIST_OF_VECTORS = 1 # [[x0,x1], [y0,y1], [z0,z1]]
 VF_INTERLEAVED = 2 # [[x0,x1,y0,y1,z0,z1]
@@ -120,6 +138,114 @@ class XMLRoot(XMLElementBase):
 
 
 
+class EncodedBuffer:
+    def encoder(self):
+        """Return an identifier for the binary encoding used."""
+        raise NotImplementedError
+
+    def compressor(self):
+        """Return an identifier for the compressor used, or None."""
+        raise NotImplementedError
+
+    def raw_buffer(self):
+        """Reobtain the raw buffer string object that was used to
+        construct this encoded buffer."""
+
+        raise NotImplementedError
+
+    def add_to_xml_element(self, xml_element):
+        """Add encoded buffer to the given C{xml_element}.
+        Return total size of encoded buffer in bytes."""
+
+        raise NotImplementedError
+
+
+
+
+
+class BinaryEncodedBuffer:
+    def __init__(self, buffer):
+        self.buffer = buffer
+
+    def encoder(self):
+        return "binary"
+
+    def compressor(self):
+        return None
+
+    def raw_buffer(self):
+        return self.buffer
+
+    def add_to_xml_element(self, xml_element):
+        raise NotImplementedError
+
+
+
+
+class Base64EncodedBuffer:
+    def __init__(self, buffer):
+        from hedge._internal import bufferize_int32
+        from base64 import b64encode
+        self.b64header = b64encode(bufferize_int32([len(buffer)]))
+        self.b64data = b64encode(buffer)
+
+    def encoder(self):
+        return "base64"
+
+    def compressor(self):
+        return None
+
+    def raw_buffer(self):
+        from base64 import b64decode
+        return b64decode(self.b64data)
+
+    def add_to_xml_element(self, xml_element):
+        """Add encoded buffer to the given C{xml_element}.
+        Return total size of encoded buffer in bytes."""
+
+        xml_element.add_child(self.b64header)
+        xml_element.add_child(self.b64data)
+
+        return len(self.b64header) + len(self.b64data)
+
+
+
+
+class Base64ZLibEncodedBuffer:
+    def __init__(self, buffer):
+        from hedge._internal import bufferize_int32
+        from base64 import b64encode
+        from zlib import compress
+        comp_buffer = compress(buffer)
+        comp_header = [1, len(buffer), len(buffer), len(comp_buffer)]
+        self.b64header = b64encode(bufferize_int32(comp_header))
+        self.b64data = b64encode(comp_buffer)
+
+    def encoder(self):
+        return "base64"
+
+    def compressor(self):
+        return "zlib"
+
+    def raw_buffer(self):
+        from base64 import b64decode
+        from zlib import decompress
+        return decompress(b64decode(self.b64data))
+
+    def add_to_xml_element(self, xml_element):
+        """Add encoded buffer to the given C{xml_element}.
+        Return total size of encoded buffer in bytes."""
+
+        xml_element.add_child(self.b64header)
+        xml_element.add_child(self.b64data)
+
+        return len(self.b64header) + len(self.b64data)
+
+
+
+
+
+
 class DataArray(object):
     def __init__(self, name, container, typehint=None, vector_padding=3, 
             vector_format=VF_LIST_OF_COMPONENTS, components=None):
@@ -128,8 +254,7 @@ class DataArray(object):
         if isinstance(container, DataArray):
             self.type = container.type
             self.components = container.components
-            self.buffer = container.buffer
-            self.encoding_cache = container.encoding_cache
+            self.encoded_buffer = container.encoded_buffer
             return
 
         from hedge._internal import \
@@ -144,6 +269,8 @@ class DataArray(object):
             # FIXME
             return VTK_FLOAT64
 
+        from hedge._internal import IntVector
+
         if num.Vector.is_a(container):
             if vector_format == VF_INTERLEAVED:
                 if components is None:
@@ -154,30 +281,31 @@ class DataArray(object):
             else:
                 self.components = 1
             self.type = vec_type(container)
-            self.buffer = bufferize_vector(container)
+            buffer = bufferize_vector(container)
 
         elif isinstance(container, FixedSizeSliceAdapter):
             if container.unit == vector_padding and num.Vector.is_a(container.adaptee):
-                self.buffer = bufferize_vector(container.adaptee)
+                buffer = bufferize_vector(container.adaptee)
                 self.type = vec_type(container.adaptee)
                 self.components = container.unit
-                print "HEY"
             else:
                 self.type = vec_type(container[0])
                 self.components = components or len(container[0])
                 if self.components < vector_padding:
                     self.components = vector_padding
-                self.buffer =  bufferize_list_of_vectors(container, self.components)
+                buffer =  bufferize_list_of_vectors(container, self.components)
 
-        elif isinstance(container, list):
+        elif isinstance(container, (list, IntVector)):
             if len(container) == 0 or not num.Vector.is_a(container[0]):
                 self.components = 1
                 if typehint == VTK_UINT8:
                     self.type = VTK_UINT8
-                    self.buffer = bufferize_uint8(container)
-                else:
+                    buffer = bufferize_uint8(container)
+                elif typehint == VTK_INT32: 
                     self.type = VTK_INT32
-                    self.buffer = bufferize_int32(container)
+                    buffer = bufferize_int32(container)
+                else:
+                    raise ValueError, "unsupported typehint"
             else:
                 if vector_format == VF_LIST_OF_COMPONENTS:
                     ctr = list(container)
@@ -189,44 +317,53 @@ class DataArray(object):
                         self.type = VTK_FLOAT64
 
                     self.components = len(ctr)
-                    self.buffer =  bufferize_list_of_components(ctr, len(ctr[0]))
+                    buffer =  bufferize_list_of_components(ctr, len(ctr[0]))
 
                 elif vector_format == VF_LIST_OF_VECTORS:
                     self.type = vec_type(container[0])
                     self.components = components or len(container[0])
                     if self.components < vector_padding:
                         self.components = vector_padding
-                    self.buffer =  bufferize_list_of_vectors(container, self.components)
+                    buffer =  bufferize_list_of_vectors(container, self.components)
                 else:
                     raise TypeError, "unrecognized vector format"
+
+                assert typehint == self.type
         else:
             raise ValueError, "cannot convert object of type `%s' to DataArray" % container
 
-        self.encoding_cache = {}
+        self.encoded_buffer = BinaryEncodedBuffer(buffer)
+
+    def get_encoded_buffer(self, encoder, compressor):
+        have_encoder = self.encoded_buffer.encoder()
+        have_compressor = self.encoded_buffer.compressor()
+
+        if (encoder, compressor) != (have_encoder, have_compressor):
+            raw_buf = self.encoded_buffer.raw_buffer()
+
+            # avoid having three copies of the buffer around temporarily
+            del self.encoded_buffer
+
+            if (encoder, compressor) == ("binary", None):
+                self.encoded_buffer = BinaryEncodedBuffer(raw_buf)
+            elif (encoder, compressor) == ("base64", None):
+                self.encoded_buffer = Base64EncodedBuffer(raw_buf)
+            elif (encoder, compressor) == ("base64", "zlib"):
+                self.encoded_buffer = Base64ZLibEncodedBuffer(raw_buf)
+            else:
+                self.encoded_buffer = BinaryEncodedBuffer(raw_buf)
+                raise ValueError, "invalid encoder/compressor pair"
+
+            have_encoder = self.encoded_buffer.encoder()
+            have_compressor = self.encoded_buffer.compressor()
+
+            assert (encoder, compressor) == (have_encoder, have_compressor)
+
+        return self.encoded_buffer
 
     def encode(self, compressor, xml_element):
-        from hedge._internal import bufferize_int32
-        from base64 import b64encode
-
-        try:
-            b64header, b64data = self.encoding_cache[compressor]
-        except KeyError:
-            if compressor == "zlib":
-                from zlib import compress
-                comp_buffer = compress(self.buffer)
-                comp_header = [1, len(self.buffer), len(self.buffer), len(comp_buffer)]
-                b64header = b64encode(bufferize_int32(comp_header))
-                b64data = b64encode(comp_buffer)
-            else:
-                b64header = b64encode( bufferize_int32([len(self.buffer)]))
-                b64data = b64encode(self.buffer)
-                
-            self.encoding_cache[compressor] = b64header, b64data
-
-        xml_element.add_child(b64header)
-        xml_element.add_child(b64data)
-
-        return len(b64header) + len(b64data)
+        ebuf = self.get_encoded_buffer("base64", compressor)
+        return ebuf.add_to_xml_element(xml_element)
 
     def invoke_visitor(self, visitor):
         return visitor.gen_data_array(self)
@@ -246,17 +383,22 @@ class UnstructuredGrid(object):
             self.cell_count, self.cell_connectivity, \
                     self.cell_offsets = cells
         except:
-            self.cell_count = len(cells)
+            self.cell_count = len(cell_types)
 
-            connectivity = []
-            offsets = []
+            def cumsum(container):
+                run_sum = 0
+                for i in range(len(container)):
+                    run_sum += container[i]
+                    container[i] = run_sum
+                return container
 
-            for cell in cells:
-                connectivity.extend(cell)
-                offsets.append(len(connectivity))
+            from hedge._internal import IntVector
+            offsets = cumsum(
+                    IntVector(CELL_NODE_COUNT[ct] for ct in cell_types)
+                    )
 
-            self.cell_connectivity = DataArray("connectivity", connectivity)
-            self.cell_offsets = DataArray("offsets", offsets)
+            self.cell_connectivity = DataArray("connectivity", cells, VTK_INT32)
+            self.cell_offsets = DataArray("offsets", offsets, VTK_INT32)
 
         self.cell_types = DataArray("types", cell_types, VTK_UINT8)
 
@@ -353,7 +495,7 @@ class InlineXMLGenerator(XMLGenerator):
     def gen_data_array(self, data):
         el = XMLElement("DataArray", type=data.type, Name=data.name, 
                 NumberOfComponents=data.components, format="binary")
-        data.encode_buffer(self.compressor, el)
+        data.encode(self.compressor, el)
         el.add_child("\n")
         return el
 

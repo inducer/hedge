@@ -115,12 +115,18 @@ def main() :
     mem_checkpoint("discr")
     #vis = SiloVisualizer(vis_discr, pcon)
     vis = VtkVisualizer(vis_discr, pcon, "fld")
+    mem_checkpoint("vis")
+
     op = StrongAdvectionOperator(discr, a, 
             inflow_u=TimeDependentGivenFunction(u_analytic),
             flux_type="lf")
     #op = WeakAdvectionOperator(discr, a, 
             #inflow_u=TimeDependentGivenFunction(u_analytic))
-    mem_checkpoint("vis")
+
+    #from sizer import scanner
+    #objs = scanner.Objects()
+    #import code
+    #code.interact(local = {'objs': objs})
 
     u = discr.interpolate_volume_function(lambda x: u_analytic(x, 0))
 

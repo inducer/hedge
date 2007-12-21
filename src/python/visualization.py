@@ -84,7 +84,7 @@ class LegacyVtkVisualizer(Visualizer):
             ldis = eg.local_discretization
             for el, (el_start, el_stop) in zip(eg.members, eg.ranges):
                 polygons += [[el_start+j for j in element] 
-                        for element in ldis.generate_submesh_indices()]
+                        for element in ldis.get_submesh_indices()]
 
         self.structure = PolyData(points=points, polygons=polygons)
 
@@ -188,22 +188,39 @@ class VtkVisualizer(Visualizer, hedge.tools.Closable):
                 VTK_TRIANGLE, VTK_TETRA, VF_LIST_OF_VECTORS
         from hedge.element import Triangle, Tetrahedron
 
-        cells = []
-        cell_types = []
+        # For now, we use IntVector here because the Python allocator
+        # is somewhat reluctant to return allocated chunks of memory
+        # to the OS.
+        from hedge._internal import IntVector
+        cells = IntVector()
+        cell_types = IntVector()
+
+        from hedge.tools import mem_checkpoint
+        mem_checkpoint("before cells")
 
         for eg in discr.element_groups:
             ldis = eg.local_discretization
+            smi = ldis.get_submesh_indices()
 
+            cells.reserve(len(cells)+len(smi)*len(eg.members))
+            from pytools.stopwatch import Job
+            job = Job("cells")
             for el, (el_start, el_stop) in zip(eg.members, eg.ranges):
-                smi = ldis.generate_submesh_indices()
-                cells.extend([el_start+j for j in element] 
-                    for element in smi)
-                if isinstance(el, Triangle):
-                    cell_types.extend([VTK_TRIANGLE] * len(smi))
-                elif isinstance(el, Tetrahedron):
-                    cell_types.extend([VTK_TETRA] * len(smi))
-                else:
-                    raise RuntimeError, "unsupported element type: %s" % type(el)
+                for element in smi:
+                    for j in element:
+                        cells.append(el_start+j)
+            job.done()
+
+            if ldis.geometry is Triangle:
+                vtk_eltype = VTK_TRIANGLE
+            elif ldis.geometry is Tetrahedron:
+                vtk_eltype = VTK_TETRA
+            else:
+                raise RuntimeError, "unsupported element type: %s" % type(ldis.geometry)
+
+            cell_types.extend([vtk_eltype] * len(smi) * len(eg.members))
+
+        mem_checkpoint("after cells")
 
         self.grid = UnstructuredGrid(
                 (len(discr.nodes), 
@@ -334,7 +351,7 @@ class SiloVisualizer(Visualizer):
     def __init__(self, discr, pcontext=None):
         def generate_fine_elements(eg):
             ldis = eg.local_discretization
-            smi = list(ldis.generate_submesh_indices())
+            smi = list(ldis.get_submesh_indices())
             for el, (el_start, el_stop) in zip(eg.members, eg.ranges):
                 for element in smi:
                     yield [el_start+j for j in element] 

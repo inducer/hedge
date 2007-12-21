@@ -87,9 +87,9 @@ class TriangleWarper:
         vertices = [cls.barycentric_to_equilateral(bary)
                 for bary in wandering_element(cls.dimensions+1)]
         all_vertex_indices = range(cls.dimensions+1)
-        face_vertex_indices = cls.geometry_class \
+        face_vertex_indices = cls.geometry \
                 .face_vertices(all_vertex_indices)
-        faces_vertices = cls.geometry_class.face_vertices(vertices)
+        faces_vertices = cls.geometry.face_vertices(vertices)
 
         edgedirs = [normalize(v2-v1) for v1, v2 in faces_vertices]
         opp_vertex_indices = [
@@ -338,7 +338,7 @@ class TriangularElement(SimplicialElement):
 
     dimensions = 2
     has_local_jacobians = False
-    geometry_class = Triangle
+    geometry = Triangle
 
     def __init__(self, order):
         self.order = order
@@ -438,7 +438,7 @@ class TriangularElement(SimplicialElement):
             yield self.barycentric_to_equilateral(bp) + warp(bp)
 
     @memoize
-    def generate_submesh_indices(self):
+    def get_submesh_indices(self):
         """Return a list of tuples of indices into the node list that
         generate a tesselation of the reference element."""
 
@@ -577,7 +577,7 @@ class TetrahedralElement(SimplicialElement):
 
     dimensions = 3
     has_local_jacobians = False
-    geometry_class = Tetrahedron
+    geometry = Tetrahedron
 
     def __init__(self, order):
         self.order = order
@@ -714,9 +714,9 @@ class TetrahedralElement(SimplicialElement):
         vertices = [self.barycentric_to_equilateral(bary)
                 for bary in wandering_element(self.dimensions+1)]
         all_vertex_indices = range(self.dimensions+1)
-        face_vertex_indices = self.geometry_class \
+        face_vertex_indices = self.geometry \
                 .face_vertices(all_vertex_indices)
-        faces_vertices = self.geometry_class \
+        faces_vertices = self.geometry \
                 .face_vertices(vertices)
 
         bary_points = list(self.equidistant_barycentric_nodes())
@@ -760,7 +760,7 @@ class TetrahedralElement(SimplicialElement):
         return equi_points
 
     @memoize
-    def generate_submesh_indices(self):
+    def get_submesh_indices(self):
         """Return a list of tuples of indices into the node list that
         generate a tesselation of the reference element."""
 
