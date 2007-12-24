@@ -635,9 +635,14 @@ def make_regular_rect_mesh(a=(0,0), b=(1,1), n=(5,5), periodicity=None,
 
     axes = ["x", "y"]
     mesh_periodicity = []
+    periodic_tags = set()
     for i, axis in enumerate(axes):
         if periodicity[i]:
-            mesh_periodicity.append(("minus_"+axis, "plus_"+axis))
+            minus_tag = "minus_"+axis
+            plus_tag = "plus_"+axis
+            mesh_periodicity.append((minus_tag, plus_tag))
+            periodic_tags.add(minus_tag)
+            periodic_tags.add(plus_tag)
         else:
             mesh_periodicity.append(None)
 
@@ -664,7 +669,11 @@ def make_regular_rect_mesh(a=(0,0), b=(1,1), n=(5,5), periodicity=None,
             if j == n[1]-2: fvi2fm[frozenset((c,d))] = "plus_y"
 
     def wrapped_boundary_tagger(fvi, el, fn):
-        return [fvi2fm[frozenset(fvi)]] + boundary_tagger(fvi, el, fn)
+        btag = fvi2fm[frozenset(fvi)]
+        if btag in periodic_tags:
+            return [btag]
+        else:
+            return [btag] + boundary_tagger(fvi, el, fn)
 
     return make_conformal_mesh(points, elements, wrapped_boundary_tagger,
             periodicity=mesh_periodicity)

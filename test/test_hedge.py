@@ -121,7 +121,7 @@ class TestHedge(unittest.TestCase):
         for el in [TriangularElement(5), TetrahedralElement(5)]:
             vertex_indices = el.vertex_indices()
             for fn, (face_vertices, face_indices) in enumerate(zip(
-                    el.geometry_class.face_vertices(vertex_indices), 
+                    el.geometry.face_vertices(vertex_indices), 
                     el.face_indices())):
                 face_vertices_i = 0
                 for fi in face_indices:
@@ -391,7 +391,7 @@ class TestHedge(unittest.TestCase):
                 TriangularElement(4), 
                 ]:
             for i in range(50):
-                geo = el.geometry_class
+                geo = el.geometry
 
                 vertices = [make_random_vector(el.dimensions, num.Float) 
                         for vi in range(el.dimensions+1)]
@@ -465,7 +465,7 @@ class TestHedge(unittest.TestCase):
 
         for i in range(10):
             vertices = [make_random_vector(2, num.Float) for vi in range(3)]
-            map = tri.geometry_class.get_map_unit_to_global(vertices)
+            map = tri.geometry.get_map_unit_to_global(vertices)
             global_corners = [map(pt) for pt in corners]
             for gc, v in zip(global_corners, vertices):
                 self.assert_(comp.norm_2(gc-v) < 1e-12)
@@ -485,7 +485,7 @@ class TestHedge(unittest.TestCase):
 
         for i in range(10):
             vertices = [make_random_vector(2, num.Float) for vi in range(3)]
-            map = edata.geometry_class.get_map_unit_to_global(vertices)
+            map = edata.geometry.get_map_unit_to_global(vertices)
             mat = num.zeros((2,2))
             mat[:,0] = (vertices[1] - vertices[0])
             mat[:,1] = (vertices[2] - vertices[0])
@@ -507,7 +507,7 @@ class TestHedge(unittest.TestCase):
         sigma_squared = 1/219.3
 
         mesh = make_disk_mesh()
-        discr = Discretization(make_disk_mesh(), TriangularElement(4))
+        discr = Discretization(make_disk_mesh(), TriangularElement(4), debug=True)
         f = discr.interpolate_volume_function(lambda x: exp(-x*x/(2*sigma_squared)))
         ones = discr.interpolate_volume_function(lambda x: 1)
 
@@ -531,7 +531,7 @@ class TestHedge(unittest.TestCase):
         from math import sqrt, pi, cos, sin
 
         mesh = make_square_mesh(a=-pi, b=pi, max_area=(2*pi/10)**2/2)
-        discr = Discretization(mesh, TriangularElement(8))
+        discr = Discretization(mesh, TriangularElement(8), debug=True)
         f = discr.interpolate_volume_function(lambda x: cos(x[0])**2*sin(x[1])**2)
         ones = discr.interpolate_volume_function(lambda x: 1)
 
@@ -558,7 +558,7 @@ class TestHedge(unittest.TestCase):
 
         for coord in [0, 1]:
             mesh = make_disk_mesh()
-            discr = Discretization(make_disk_mesh(), TriangularElement(4))
+            discr = Discretization(make_disk_mesh(), TriangularElement(4), debug=True)
             f = discr.interpolate_volume_function(lambda x: sin(3*x[coord]))
             df = discr.interpolate_volume_function(lambda x: 3*cos(3*x[coord]))
 
@@ -606,7 +606,7 @@ class TestHedge(unittest.TestCase):
 
         edata = TriangularElement(2)
 
-        discr = Discretization(make_disk_mesh(), edata)
+        discr = Discretization(make_disk_mesh(), edata, debug=True)
         ones = discr.interpolate_volume_function(lambda x: 1)
         face_zeros = discr.boundary_zeros()
 
@@ -759,7 +759,7 @@ class TestHedge(unittest.TestCase):
                 ones = num.ones((el.node_count(),))
                 face_ones = num.ones((len(el.face_indices()[0]),))
 
-                map = el.geometry_class.get_map_unit_to_global(vertices)
+                map = el.geometry.get_map_unit_to_global(vertices)
                 imap = map.inverted()
 
                 mapped_points = [map(node) for node in el.unit_nodes()]
@@ -788,7 +788,7 @@ class TestHedge(unittest.TestCase):
                             for fi_n, n_coord in zip(f_n, n))
                         for face_indices, n, fjac
                         in zip(el.face_indices(), 
-                            *el.geometry_class.face_normals_and_jacobians(vertices, map))
+                            *el.geometry.face_normals_and_jacobians(vertices, map))
                         )
 
                 #print el.face_normals_and_jacobians(map)[1]
@@ -885,13 +885,13 @@ class TestHedge(unittest.TestCase):
 
         for trial_number in range(10):
             vertices = [make_random_vector(2, num.Float) for vi in range(3)]
-            map = tri.geometry_class.get_map_unit_to_global(vertices)
+            map = tri.geometry.get_map_unit_to_global(vertices)
             nodes = [map(node) for node in tri.unit_nodes()]
             node_values = num.array([random() for node in nodes])
 
             functions = []
             for pvertices in generate_permutations(vertices):
-                pmap = tri.geometry_class.get_map_unit_to_global(pvertices)
+                pmap = tri.geometry.get_map_unit_to_global(pvertices)
                 pnodes = [pmap(node) for node in tri.unit_nodes()]
 
                 # map from pnode# to node#
@@ -986,7 +986,7 @@ class TestHedge(unittest.TestCase):
 
         from hedge.element import TriangularElement
         from hedge.discretization import Discretization, ones_on_volume
-        discr = Discretization(mesh, TriangularElement(4))
+        discr = Discretization(mesh, TriangularElement(4), debug=True)
 
         import pylinear.array as num
         u_i = num.multiply(
@@ -1076,7 +1076,7 @@ class TestHedge(unittest.TestCase):
 
         from hedge.element import TetrahedralElement
         from hedge.discretization import Discretization, ones_on_volume
-        discr = Discretization(mesh, TetrahedralElement(4))
+        discr = Discretization(mesh, TetrahedralElement(4), debug=True)
 
         import pylinear.array as num
         u_l = num.multiply(
@@ -1162,7 +1162,7 @@ class TestHedge(unittest.TestCase):
         a = num.array([1,0])
 
         mesh = make_mesh()
-        discr = Discretization(mesh, TriangularElement(4))
+        discr = Discretization(mesh, TriangularElement(4), debug=True)
 
         def f(x):
             if x < 0.5: return 0
@@ -1195,7 +1195,7 @@ class TestHedge(unittest.TestCase):
 
         import pylinear.array as num
         import pylinear.computation as comp
-        from hedge.mesh import make_disk_mesh
+        from hedge.mesh import make_disk_mesh, make_regular_rect_mesh
         from hedge.discretization import Discretization, pair_with_boundary
         from hedge.element import TriangularElement
         from hedge.timestep import RK4TimeStepper
@@ -1204,10 +1204,14 @@ class TestHedge(unittest.TestCase):
         from hedge.operators import StrongAdvectionOperator
         from hedge.data import TimeDependentGivenFunction
 
-        a = num.array([1,0])
+        a = num.array([0.27,0])
+        norm_a = comp.norm_2(a)
+
+        def f(x):
+            return sin(x)
 
         def u_analytic(x, t):
-            return sin(a*x+t)
+            return f((a*x/norm_a+t*norm_a))
 
         def boundary_tagger(vertices, el, face_nr):
             if el.face_normals[face_nr] * a > 0:
@@ -1215,36 +1219,45 @@ class TestHedge(unittest.TestCase):
             else:
                 return ["outflow"]
 
-        mesh = make_disk_mesh(r=pi, boundary_tagger=boundary_tagger, max_area=0.5)
+        for mesh in [
+                # non-periodic
+                make_disk_mesh(r=pi, boundary_tagger=boundary_tagger, max_area=0.5),
+                # periodic
+                make_regular_rect_mesh(a=(0,0), b=(2*pi, 1), n=(8,4),
+                    periodicity=(True, False),
+                    boundary_tagger=boundary_tagger, 
+                    )
+                ]:
+            for flux_type in StrongAdvectionOperator.flux_types:
+                for direct_flux in [True, False]:
+                    eoc_rec = EOCRecorder()
 
-        for flux_type in StrongAdvectionOperator.flux_types:
-            eoc_rec = EOCRecorder()
+                    for order in [1,2,3,4,5,6]:
+                        discr = Discretization(mesh, TriangularElement(order), debug=True)
+                        op = StrongAdvectionOperator(discr, a, 
+                                inflow_u=TimeDependentGivenFunction(u_analytic),
+                                flux_type=flux_type, direct_flux=direct_flux)
 
-            for order in [1,2,3,4,5,6]:
-                discr = Discretization(mesh, TriangularElement(order))
-                op = StrongAdvectionOperator(discr, a, 
-                        inflow_u=TimeDependentGivenFunction(u_analytic),
-                        flux_type=flux_type)
+                        u = discr.interpolate_volume_function(lambda x: u_analytic(x, 0))
+                        dt = discr.dt_factor(norm_a)
+                        nsteps = int(1/dt)
 
-                u = discr.interpolate_volume_function(lambda x: u_analytic(x, 0))
-                dt = discr.dt_factor(comp.norm_2(a))
-                nsteps = int(0.4/dt)
+                        stepper = RK4TimeStepper()
+                        for step in range(nsteps):
+                            u = stepper(u, step*dt, dt, op.rhs)
 
-                stepper = RK4TimeStepper()
-                for step in range(nsteps):
-                    u = stepper(u, step*dt, dt, op.rhs)
+                        u_true = discr.interpolate_volume_function(
+                                lambda x: u_analytic(x, nsteps*dt))
+                        error = u-u_true
+                        error_l2 = sqrt(error*(discr.mass_operator*error))
+                        eoc_rec.add_data_point(order, error_l2)
 
-                u_true = discr.interpolate_volume_function(
-                        lambda x: u_analytic(x, nsteps*dt))
-                error = u-u_true
-                error_l2 = sqrt(error*(discr.mass_operator*error))
-                eoc_rec.add_data_point(order, error_l2)
-            self.assert_(eoc_rec.estimate_order_of_convergence()[0,1] > 7)
+                    print "%s\n%s\n" % (flux_type.upper(), "-" * len(flux_type))
+                    print eoc_rec.pretty_print(abscissa_label="Poly. Order", 
+                            error_label="L2 Error")
 
-            if False:
-                print "%s\n%s\n" % (flux_type.upper(), "-" * len(flux_type))
-                print eoc_rec.pretty_print(abscissa_label="Poly. Order", 
-                        error_label="L2 Error")
+                    self.assert_(eoc_rec.estimate_order_of_convergence()[0,1] > 4)
+                    self.assert_(eoc_rec.estimate_order_of_convergence(2)[-1,1] > 10)
     # -------------------------------------------------------------------------
     def test_all_periodic_no_boundary(self):
         """Test that an all-periodic brick has no boundary."""
@@ -1289,7 +1302,7 @@ class TestHedge(unittest.TestCase):
         for order in [1,2,3,4,5]:
             from hedge.discretization import Discretization
             from hedge.element import TriangularElement
-            discr = Discretization(mesh, TriangularElement(order))
+            discr = Discretization(mesh, TriangularElement(order), debug=True)
 
             def l2_norm(v):
                 from math import sqrt
@@ -1335,8 +1348,8 @@ class TestHedge(unittest.TestCase):
 
         mesh = make_disk_mesh(r=pi, max_area=0.5)
 
-        discr2 = Discretization(mesh, TriangularElement(2))
-        discr5 = Discretization(mesh, TriangularElement(5))
+        discr2 = Discretization(mesh, TriangularElement(2), debug=True)
+        discr5 = Discretization(mesh, TriangularElement(5), debug=True)
         p2to5 = Projector(discr2, discr5)
         p5to2 = Projector(discr5, discr2)
 

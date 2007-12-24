@@ -116,7 +116,9 @@ class AdvectionOperatorBase(TimeDependentOperator):
             inflow_tag="inflow",
             inflow_u=hedge.data.make_tdep_constant(0),
             outflow_tag="outflow",
-            flux_type="central"):
+            flux_type="central",
+            direct_flux=True
+            ):
         self.discr = discr
         self.v = v
         self.inflow_tag = inflow_tag
@@ -132,7 +134,7 @@ class AdvectionOperatorBase(TimeDependentOperator):
         self.m_inv = discr.inverse_mass_operator
         self.minv_st = discr.minv_stiffness_t
 
-        self.flux = discr.get_flux_operator(self.get_flux())
+        self.flux = discr.get_flux_operator(self.get_flux(), direct=direct_flux)
 
     flux_types = [
             "central",
