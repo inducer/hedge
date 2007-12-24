@@ -305,12 +305,12 @@ class MPIParallelizationContext(ParallelizationContext):
 
 
 class ParallelDiscretization(hedge.discretization.Discretization):
-    def __init__(self, pcon, rank_data, local_discretization):
+    def __init__(self, pcon, rank_data, local_discretization, debug=False):
         self.received_bdrys = {}
         self.context = pcon
 
         hedge.discretization.Discretization.__init__(self,
-                rank_data.mesh, local_discretization)
+                rank_data.mesh, local_discretization, debug=debug)
 
         self.global2local_vertex_indices = rank_data.global2local_vertex_indices 
         self.neighbor_ranks = rank_data.neighbor_ranks
@@ -462,12 +462,13 @@ class ParallelDiscretization(hedge.discretization.Discretization):
                         from_indices.extend(shuffled_other_node_indices)
 
                         # check if the nodes really match up
-                        my_node_indices = [estart+i for i in ldis.face_indices()[face_nr]]
+                        if self.debug:
+                            my_node_indices = [estart+i for i in ldis.face_indices()[face_nr]]
 
-                        for my_i, other_i in zip(my_node_indices, shuffled_other_node_indices):
-                            dist = self.nodes[my_i]-flat_nb_node_coords[other_i]
-                            dist[axis] = 0
-                            assert comp.norm_2(dist) < 1e-14
+                            for my_i, other_i in zip(my_node_indices, shuffled_other_node_indices):
+                                dist = self.nodes[my_i]-flat_nb_node_coords[other_i]
+                                dist[axis] = 0
+                                assert comp.norm_2(dist) < 1e-14
                     else:
                         # continue handling of nonperiodic case
                         nb_vertices = nb_all_facevertices_global[nb_face_idx]
@@ -487,18 +488,20 @@ class ParallelDiscretization(hedge.discretization.Discretization):
                         from_indices.extend(shuffled_other_node_indices)
 
                         # check if the nodes really match up
-                        my_node_indices = [estart+i for i in ldis.face_indices()[face_nr]]
+                        if self.debug:
+                            my_node_indices = [estart+i for i in ldis.face_indices()[face_nr]]
 
-                        for my_i, other_i in zip(my_node_indices, shuffled_other_node_indices):
-                            dist = self.nodes[my_i]-flat_nb_node_coords[other_i]
-                            assert comp.norm_2(dist) < 1e-14
+                            for my_i, other_i in zip(my_node_indices, shuffled_other_node_indices):
+                                dist = self.nodes[my_i]-flat_nb_node_coords[other_i]
+                                assert comp.norm_2(dist) < 1e-14
 
                     # finally, unify FluxFace.h values across boundary
                     nb_h = nb_h_values[nb_face_idx]
                     flux_face = get_flux_face((el, face_nr))
                     flux_face.h = max(nb_h, flux_face.h)
 
-                assert len(from_indices) == len(flat_nb_node_coords)
+                if self.debug:
+                    assert len(from_indices) == len(flat_nb_node_coords)
 
                 # turn from_indices into an IndexMap
 

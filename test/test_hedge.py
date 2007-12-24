@@ -1252,9 +1252,10 @@ class TestHedge(unittest.TestCase):
                         error_l2 = sqrt(error*(discr.mass_operator*error))
                         eoc_rec.add_data_point(order, error_l2)
 
-                    print "%s\n%s\n" % (flux_type.upper(), "-" * len(flux_type))
-                    print eoc_rec.pretty_print(abscissa_label="Poly. Order", 
-                            error_label="L2 Error")
+                    if False:
+                        print "%s\n%s\n" % (flux_type.upper(), "-" * len(flux_type))
+                        print eoc_rec.pretty_print(abscissa_label="Poly. Order", 
+                                error_label="L2 Error")
 
                     self.assert_(eoc_rec.estimate_order_of_convergence()[0,1] > 4)
                     self.assert_(eoc_rec.estimate_order_of_convergence(2)[-1,1] > 10)

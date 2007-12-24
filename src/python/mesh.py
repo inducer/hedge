@@ -779,11 +779,11 @@ def make_ball_mesh(r=0.5, subdivisions=10, max_volume=None,
     rz = [(truncate(r*sin(i*dphi)), r*cos(i*dphi)) for i in range(subdivisions+1)]
 
     mesh_info = MeshInfo()
-    points, facets = generate_surface_of_revolution(rz,
-            closure=EXT_OPEN, radial_subdiv=subdivisions)
+    points, facets, facet_holestarts, facet_markers = generate_surface_of_revolution(
+            rz, closure=EXT_OPEN, radial_subdiv=subdivisions)
 
     mesh_info.set_points(points)
-    mesh_info.set_facets(facets, [1 for i in range(len(facets))])
+    mesh_info.set_facets_ex(facets, facet_holestarts, facet_markers)
     generated_mesh = build(mesh_info, max_volume=max_volume)
 
     return make_conformal_mesh(
@@ -962,6 +962,7 @@ def make_box_mesh(dimensions=(1,1,1), max_volume=None, periodicity=None,
 
     marker_to_tag = {}
     mesh_periodicity = []
+    periodic_tags = set()
 
     for axis, axis_per in enumerate(periodicity):
         minus_marker = 1+2*axis
@@ -985,6 +986,8 @@ def make_box_mesh(dimensions=(1,1,1), max_volume=None, periodicity=None,
             pbcg.set_transform(translation=translation)
 
             mesh_periodicity.append((minus_tag, plus_tag))
+            periodic_tags.add(minus_tag)
+            periodic_tags.add(plus_tag)
         else:
             mesh_periodicity.append(None)
 
@@ -993,10 +996,12 @@ def make_box_mesh(dimensions=(1,1,1), max_volume=None, periodicity=None,
     fvi2fm = generated_mesh.face_vertex_indices_to_face_marker
 
     def wrapped_boundary_tagger(fvi, el, fn):
-        face_marker = fvi2fm[frozenset(fvi)]
+        face_tag = marker_to_tag[fvi2fm[frozenset(fvi)]]
 
-        return [marker_to_tag[face_marker]] \
-                + boundary_tagger(fvi, el, fn)
+        if face_tag in periodic_tags:
+            return [face_tag]
+        else:
+            return [face_tag] + boundary_tagger(fvi, el, fn)
 
     return make_conformal_mesh(
             generated_mesh.points,
