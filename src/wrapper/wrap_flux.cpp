@@ -146,19 +146,6 @@ namespace {
         with_custodian_and_ward_postcall<0, 1,
         return_value_policy<manage_new_object> >());
   }
-
-
-
-
-  // face_group ---------------------------------------------------------------
-  template <class T>
-  class no_compare_indexing_suite :
-    public vector_indexing_suite<T, false, no_compare_indexing_suite<T> >
-  {
-    public:
-      static bool contains(T &container, typename T::value_type const &key)
-      { PYTHON_ERROR(NotImplementedError, "containment checking not supported on this container"); }
-  };
 }
 
 

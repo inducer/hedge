@@ -24,6 +24,7 @@
 
 
 #include <boost/python.hpp>
+#include <boost/python/suite/indexing/vector_indexing_suite.hpp>
 
 
 
@@ -83,6 +84,18 @@
 
 #define DEF_SIMPLE_RW_MEMBER(NAME) \
   def_readwrite(#NAME, &cl::NAME)
+
+
+
+template <class T>
+class no_compare_indexing_suite :
+  public boost::python::vector_indexing_suite<T, false, no_compare_indexing_suite<T> >
+{
+  public:
+    static bool contains(T &container, typename T::value_type const &key)
+    { PYTHON_ERROR(NotImplementedError, "containment checking not supported on this container"); }
+};
+
 
 
 
