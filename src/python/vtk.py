@@ -328,7 +328,8 @@ class DataArray(object):
                 else:
                     raise TypeError, "unrecognized vector format"
 
-                assert typehint == self.type
+                if typehint is not None:
+                    assert typehint == self.type
         else:
             raise ValueError, "cannot convert object of type `%s' to DataArray" % container
 
