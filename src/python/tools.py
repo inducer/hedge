@@ -110,9 +110,18 @@ def plot_1d(f, a, b, steps=100):
 
 
 
-def dot(x, y): 
-    from operator import add
-    return reduce(add, (xi*yi for xi, yi in zip(x,y)))
+def dot(x, y, multiplication=None): 
+    """Compute the dot product of the iterables C{x} and C{y}.
+
+    @arg multiplication: If given, this specifies the binary function
+      applied in place of multiplication. Defaults to C{operator.mul}.
+    """
+    if multiplication is None:
+        from operator import add
+        return reduce(add, (xi*yi for xi, yi in zip(x,y)))
+    else:
+        from operator import add
+        return reduce(add, (multiplication(xi, yi) for xi, yi in zip(x,y)))
 
 
 
@@ -161,19 +170,35 @@ class SubsettableCrossProduct:
         op2 = pymbolic.var("y")
 
         self.functions = []
+        self.component_lcjk = []
         for i, use_component in enumerate(result_subset):
             if use_component:
                 this_expr = 0
+                this_component = []
                 for j, j_real in enumerate(subset_indices(op1_subset)):
                     for k, k_real in enumerate(subset_indices(op2_subset)):
                         lc = levi_civita((i, j_real, k_real))
                         if lc != 0:
                             this_expr += lc*op1[j]*op2[k]
+                            this_component.append((lc, j, k))
                 self.functions.append(pymbolic.compile(this_expr))
+                self.component_lcjk.append(this_component)
 
-    def __call__(self, x, y):
-        from pytools.arithmetic_container import ArithmeticList
-        return ArithmeticList(f(x, y) for f in self.functions)
+    def __call__(self, x, y, three_mult=None):
+        """Compute the subsetted cross product on the indexables C{x} and C{y}.
+
+        @arg three_mult: a function of three arguments C{sign, xj, yk}
+          used in place of the product C{sign*xj*yk}. Defaults to just this
+          product if not given.
+        """
+        if three_mult is None:
+            from pytools.arithmetic_container import ArithmeticList
+            return ArithmeticList(f(x, y) for f in self.functions)
+        else:
+            from pytools.arithmetic_container import ArithmeticList
+            return ArithmeticList(
+                    sum(three_mult(lc, x[j], y[k]) for lc, j, k in lcjk)
+                    for lcjk in self.component_lcjk)
 
 
 
@@ -413,12 +438,20 @@ class FixedSizeSliceAdapter(object):
         else:
             raise TypeError, "invalid index type"
 
+    def get_alist_of_components(self):
+        """Return the adaptee's data as an ArithmeticList of
+        each vectors for each component.
+        """
+        from pytools.arithmetic_container import ArithmeticList
+        return ArithmeticList(
+                self.adaptee[i::self.unit] for i in range(self.unit))
+
     def get_component_major_vector(self):
         """Return the adaptee's data in component-major order.
         
         This gives a vector of order C{A0B0C0A1B1C1...}
         """
-        return num.hstack([self.adaptee[i::self.unit] for i in range(self.unit)])
+        return num.hstack(self.get_alist_of_components())
 
 
 
