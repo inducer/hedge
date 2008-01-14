@@ -67,6 +67,8 @@ void hedge_expose_volume_operators()
     class_<cl>("UniformElementRanges", init<int, int, int>())
       .def("__len__", &cl::size)
       .def("__getitem__", element_ranges_getitem<cl>)
+      .add_property("start", &cl::start)
+      .add_property("el_size", &cl::el_size)
       ;
   }
 

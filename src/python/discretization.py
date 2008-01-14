@@ -829,11 +829,27 @@ def ones_on_boundary(discr, tag=hedge.mesh.TAG_ALL):
 def ones_on_volume(discr, tag=hedge.mesh.TAG_ALL):
     result = discr.volume_zeros()
 
-    for el in discr.mesh.tag_to_elements[tag]:
-        e_start, e_end = discr.find_el_range(el.id)
-        result[e_start:e_end] = 1
+    from hedge._internal import UniformElementRanges
+
+    for eg in discr.element_groups:
+        if isinstance(eg.ranges, UniformElementRanges):
+            result[eg.ranges.start:
+                    eg.ranges.start+len(eg.ranges)*eg.ranges.el_size] = 1
+        else:
+            for e_start, e_end in eg.ranges:
+                result[e_start:e_end] = 1
 
     return result
+
+
+
+
+@work_with_arithmetic_containers
+def integral(discr, volume_vector, tag=hedge.mesh.TAG_ALL):
+    ones = ones_on_volume(discr, tag)
+    mass_op = discr.mass_operator 
+    
+    return ones * (mass_op * volume_vector)
 
 
 
