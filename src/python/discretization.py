@@ -124,6 +124,38 @@ class Discretization(object):
         self._build_interior_face_groups()
         self.boundaries = {}
 
+        # instrumentation -----------------------------------------------------
+        from pytools.log import IntervalTimer, EventCounter
+
+        self.inner_flux_counter = EventCounter("n_inner_flux", 
+                "Number of inner flux computations")
+        self.inner_flux_timer = IntervalTimer("t_inner_flux", 
+                "Time spent computing inner fluxes")
+        self.bdry_flux_counter = EventCounter("n_bdry_flux", 
+                "Number of boundary flux computations")
+        self.bdry_flux_timer = IntervalTimer("t_bdry_flux", 
+                "Time spent computing boundary fluxes")
+
+        self.mass_op_counter = EventCounter("n_mass_op", 
+                "Number of mass operator applications")
+        self.mass_op_timer = IntervalTimer("t_mass_op", 
+                "Time spent applying mass operators")
+        self.diff_op_counter = EventCounter("n_diff_op",
+                "Number of differentiation operator applications")
+        self.diff_op_timer = IntervalTimer("t_diff_op",
+                "Time spent applying applying differentiation operators")
+
+    # instrumentation ---------------------------------------------------------
+    def add_instrumentation(self, mgr):
+        mgr.add_quantity(self.inner_flux_counter)
+        mgr.add_quantity(self.inner_flux_timer)
+        mgr.add_quantity(self.bdry_flux_counter)
+        mgr.add_quantity(self.bdry_flux_timer)
+        mgr.add_quantity(self.mass_op_counter)
+        mgr.add_quantity(self.mass_op_timer)
+        mgr.add_quantity(self.diff_op_counter)
+        mgr.add_quantity(self.diff_op_timer)
+
     # initialization ----------------------------------------------------------
     def _build_element_groups_and_nodes(self, local_discretization):
         from hedge._internal import UniformElementRanges
@@ -476,14 +508,21 @@ class Discretization(object):
 
     # local operators ---------------------------------------------------------
     def perform_mass_operator(self, target):
+        self.mass_op_counter.add()
+
+        self.mass_op_timer.start()
         from hedge._internal import perform_elwise_scaled_operator
         target.begin(len(self.nodes), len(self.nodes))
         for eg in self.element_groups:
             perform_elwise_scaled_operator(
                     eg.ranges, eg.ranges, eg.jacobians, eg.mass_matrix, target)
         target.finalize()
+        self.mass_op_timer.stop()
 
     def perform_inverse_mass_operator(self, target):
+        self.mass_op_counter.add()
+
+        self.mass_op_timer.start()
         from hedge._internal import perform_elwise_scaled_operator
         target.begin(len(self.nodes), len(self.nodes))
         for eg in self.element_groups:
@@ -491,8 +530,12 @@ class Discretization(object):
                    eg.inverse_jacobians, eg.inverse_mass_matrix, 
                    target)
         target.finalize()
+        self.mass_op_timer.stop()
 
     def perform_differentiation_operator(self, coordinate, target):
+        self.diff_op_counter.add()
+        self.diff_op_timer.start()
+
         from hedge._internal import perform_elwise_scaled_operator
 
         target.begin(len(self.nodes), len(self.nodes))
@@ -505,7 +548,12 @@ class Discretization(object):
 
         target.finalize()
 
+        self.diff_op_timer.stop()
+
     def perform_stiffness_operator(self, coordinate, target):
+        self.diff_op_counter.add()
+        self.diff_op_timer.start()
+
         from hedge._internal import perform_elwise_scaled_operator
 
         target.begin(len(self.nodes), len(self.nodes))
@@ -519,7 +567,12 @@ class Discretization(object):
 
         target.finalize()
 
+        self.diff_op_timer.stop()
+
     def perform_stiffness_t_operator(self, coordinate, target):
+        self.diff_op_counter.add()
+        self.diff_op_timer.start()
+
         from hedge._internal import perform_elwise_scaled_operator
 
         target.begin(len(self.nodes), len(self.nodes))
@@ -532,7 +585,12 @@ class Discretization(object):
 
         target.finalize()
 
+        self.diff_op_timer.stop()
+
     def perform_minv_st_operator(self, coordinate, target):
+        self.diff_op_counter.add()
+        self.diff_op_timer.start()
+
         from hedge._internal import perform_elwise_scaled_operator
 
         target.begin(len(self.nodes), len(self.nodes))
@@ -542,6 +600,8 @@ class Discretization(object):
                 perform_elwise_scaled_operator(eg.ranges, eg.ranges, coeff, mat, target)
 
         target.finalize()
+
+        self.diff_op_timer.stop()
 
     # inner flux computation --------------------------------------------------
     def perform_inner_flux(self, int_flux, ext_flux, target):
@@ -578,6 +638,9 @@ class Discretization(object):
         not call this routine, it will be called for you by flux
         operators obtained by get_flux_operator().
         """
+        self.inner_flux_counter.add()
+        self.inner_flux_timer.start()
+
         from hedge._internal import perform_flux_on_one_target, ChainedFlux, NullTarget
 
         if isinstance(target, NullTarget):
@@ -591,11 +654,16 @@ class Discretization(object):
             perform_flux_on_one_target(fg, fmm, ch_int, ch_ext, target)
         target.finalize()
 
+        self.inner_flux_timer.stop()
+
     # boundary flux computation -----------------------------------------------
     def perform_boundary_flux(self, 
             int_flux, int_target, 
             ext_flux, ext_target, 
             tag=hedge.mesh.TAG_ALL):
+        self.bdry_flux_counter.add()
+        self.bdry_flux_timer.start()
+
         from hedge._internal import perform_flux, ChainedFlux
 
         ch_int = ChainedFlux(int_flux)
@@ -612,6 +680,8 @@ class Discretization(object):
                         ch_ext, ext_target)
         int_target.finalize()
         ext_target.finalize()
+
+        self.bdry_flux_timer.stop()
 
     # misc stuff --------------------------------------------------------------
     def dt_non_geometric_factor(self):

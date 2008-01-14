@@ -83,7 +83,7 @@ def main() :
     elif dim == 3:
         a = num.array([0,0,0.3])
         if pcon.is_head_rank:
-            mesh = make_cylinder_mesh(max_volume=0.00004, boundary_tagger=boundary_tagger,
+            mesh = make_cylinder_mesh(max_volume=0.0004, boundary_tagger=boundary_tagger,
                     periodic=False, radial_subdivisions=32)
             #mesh = make_box_mesh(dimensions=(1,1,2*pi/3), max_volume=0.01,
                     #boundary_tagger=boundary_tagger)
@@ -117,11 +117,23 @@ def main() :
                 dt,
                 nsteps)
 
-
-    print "AAFAF", pcon.rank, pcon.ranks
     vis = SiloVisualizer(vis_discr, pcon)
     #vis = VtkVisualizer(vis_discr, pcon, "fld")
 
+    # diagnostics setup -------------------------------------------------------
+    from pytools.log import LogManager, add_general_quantities, add_run_info
+    logmgr = LogManager("advection.dat")
+    add_run_info(logmgr)
+    add_general_quantities(logmgr, dt)
+    discr.add_instrumentation(logmgr)
+
+    from pytools.log import IntervalTimer
+    vis_timer = IntervalTimer("t_vis", "Time spent visualizing")
+    logmgr.add_quantity(vis_timer)
+    stepper_timer = IntervalTimer("t_stepper", "Time spent in the stepper")
+    logmgr.add_quantity(stepper_timer)
+
+    # operator setup ----------------------------------------------------------
     op = StrongAdvectionOperator(discr, a, 
             inflow_u=TimeDependentGivenFunction(u_analytic),
             flux_type="lf")
@@ -138,6 +150,8 @@ def main() :
     stepper = RK4TimeStepper()
     start_step = time()
     for step in range(nsteps):
+        logmgr.tick()
+
         if step % 1 == 0 and pcon.is_head_rank:
             now = time()
             print "timestep %d, t=%f, l2=%f, secs=%f" % (
@@ -147,6 +161,7 @@ def main() :
         t = step*dt
 
         if step % 5 == 0:
+            vis_timer.start()
             visf = vis.make_file("fld-%04d" % step)
             vis.add_data(visf, [
                         ("u", u), 
@@ -157,13 +172,19 @@ def main() :
                         step=step
                         )
             visf.close()
+            vis_timer.stop()
 
+        stepper_timer.start()
         u = stepper(u, t, dt, op.rhs)
+        stepper_timer.stop()
 
         #u_true = discr.interpolate_volume_function(
                 #lambda x: u_analytic(t, x))
 
     vis.close()
+
+    logmgr.tick()
+    logmgr.save()
 
 
 if __name__ == "__main__":

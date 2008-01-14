@@ -327,6 +327,20 @@ class ParallelDiscretization(hedge.discretization.Discretization):
 
         self._setup_neighbor_connections()
 
+        # instrumentation -----------------------------------------------------
+        from pytools.log import IntervalTimer, EventCounter
+
+        self.comm_flux_counter = IntervalTimer("n_comm_flux", 
+                "Number of inner flux communication runs")
+        self.comm_flux_timer = IntervalTimer("t_comm_flux", 
+                "Time spent communicating to compute inner fluxes")
+
+    def add_instrumentation(self, mgr):
+        mgr.add_quantity(self.comm_flux_counter)
+        mgr.add_quantity(self.comm_flux_timer)
+
+        hedge.discretization.Discretization.add_instrumentation(self, mgr)
+
     def _setup_neighbor_connections(self):
         import boost.mpi as mpi
 
@@ -554,6 +568,9 @@ class _ParallelFluxOperator(object):
         import boost.mpi as mpi
         from hedge._internal import irecv_vector, isend_vector
 
+        self.discr.comm_flux_counter.add()
+        self.discr.comm_flux_timer.start()
+
         comm = self.discr.context.communicator
 
         if isinstance(field, ArithmeticList):
@@ -627,6 +644,9 @@ class _ParallelFluxOperator(object):
 
         mpi.wait_all(recv_requests, receive)
         mpi.wait_all(mpi.RequestList(send_requests))
+
+        self.discr.comm_flux_timer.stop()
+
         return result[0]
 
 
