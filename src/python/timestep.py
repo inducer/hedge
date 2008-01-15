@@ -67,6 +67,14 @@ class TimeStepper(object):
 
 
 class RK4TimeStepper(TimeStepper):
+    def __init__(self):
+        from pytools.log import IntervalTimer
+        self.timer = IntervalTimer(
+                "t_rk4", "Time spent doing algebra in RK4")
+
+    def add_instrumentation(self, logmgr):
+        logmgr.add_quantity(self.timer)
+
     def __call__(self, y, t, dt, rhs):
         try:
             self.residual
@@ -74,8 +82,12 @@ class RK4TimeStepper(TimeStepper):
             self.residual = 0*rhs(t, y)
 
         for a, b, c in zip(_RK4A, _RK4B, _RK4C):
-            self.residual = a*self.residual + dt*rhs(t + c*dt, y)
+            this_rhs = rhs(t + c*dt, y)
+
+            self.timer.start()
+            self.residual = a*self.residual + dt*this_rhs
             y += b * self.residual
+            self.timer.stop()
 
         return y
 
