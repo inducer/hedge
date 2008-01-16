@@ -53,6 +53,11 @@ class VariableL2Norm(LogQuantity):
 
         self.mass_op = discr.mass_operator
 
+    @property
+    def default_aggregator(self): 
+        from pytools import norm_2
+        return norm_2
+
     def __call__(self):
         var = self.scope[self.varname]
         if self.indices is not None:

@@ -156,7 +156,7 @@ def main() :
     unorm = VariableL2Norm(discr, locals(), "u")
     logmgr.add_quantity(unorm)
 
-    logmgr.add_watches(["step", "t_sim", "l2_u", "t_step"])
+    logmgr.add_watches(["step.max", "t_sim.max", "l2_u", "t_step.max"])
 
     # timestep loop -----------------------------------------------------------
     for step in range(nsteps):
