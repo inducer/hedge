@@ -145,6 +145,11 @@ class Discretization(object):
         self.diff_op_timer = IntervalTimer("t_diff_op",
                 "Time spent applying applying differentiation operators")
 
+        self.interpolant_counter = EventCounter("n_interp", 
+                "Number of interpolant evaluations")
+        self.interpolant_timer = IntervalTimer("t_interp", 
+                "Time spent evaluating interpolants")
+
     # instrumentation ---------------------------------------------------------
     def add_instrumentation(self, mgr):
         mgr.add_quantity(self.inner_flux_counter)
@@ -155,6 +160,8 @@ class Discretization(object):
         mgr.add_quantity(self.mass_op_timer)
         mgr.add_quantity(self.diff_op_counter)
         mgr.add_quantity(self.diff_op_timer)
+        mgr.add_quantity(self.interpolant_counter)
+        mgr.add_quantity(self.interpolant_timer)
 
     # initialization ----------------------------------------------------------
     def _build_element_groups_and_nodes(self, local_discretization):
@@ -418,31 +425,40 @@ class Discretization(object):
         return num.zeros((len(self.nodes),))
 
     def interpolate_volume_function(self, f):
+        self.interpolant_counter.add()
+
         try:
             # are we interpolating many fields at once?
             shape = f.shape
         except AttributeError:
             # no, just one
             result = self.volume_zeros()
+            self.interpolant_timer.start()
             result[:] = (f(x) for x in self.nodes)
+            self.interpolant_timer.stop()
             return result
         else:
             if len(f.shape) == 1:
                 (count,) = f.shape
                 result = ArithmeticList([self.volume_zeros() for i in range(count)])
 
+                self.interpolant_timer.start()
                 for point_nr, x in enumerate(self.nodes):
                     for field_nr, value in enumerate(f(x)):
                         result[field_nr][point_nr] = value
+                self.interpolant_timer.stop()
+
                 return result
             elif len(f.shape) == 2:
                 h, w = f.shape
                 result = [[self.volume_zeros() for j in range(w)] for i in range(h)]
 
+                self.interpolant_timer.start()
                 for point_nr, x in enumerate(self.nodes):
                     for i, row in enumerate(f(x)):
                         for j, entry in enumerate(row):
                             result[i][j][point_nr] = entry
+                self.interpolant_timer.stop()
 
                 from pytools.arithmetic_container import ArithmeticListMatrix
                 return ArithmeticListMatrix(result)
@@ -454,28 +470,40 @@ class Discretization(object):
         return num.zeros((len(self._get_boundary(tag).nodes),))
 
     def interpolate_boundary_function(self, f, tag=hedge.mesh.TAG_ALL):
+        self.interpolant_counter.add()
+
         try:
             # are we interpolating many fields at once?
             shape = f.shape
         except AttributeError:
             # no, just one
-            return num.array([f(x) for x in self._get_boundary(tag).nodes])
+            self.interpolant_timer.start()
+            result = num.array([f(x) for x in self._get_boundary(tag).nodes])
+            self.interpolant_timer.stop()
+            return result
         else:
             if len(f.shape) == 1:
                 (count,) = f.shape
+
+                self.interpolant_timer.start()
                 result = ArithmeticList([self.boundary_zeros(tag) for i in range(count)])
                 for i, pt in enumerate(self._get_boundary(tag).nodes):
                     for field_nr, value in enumerate(f(pt)):
                         result[field_nr][i] = value
+                self.interpolant_timer.stop()
+
                 return result
             elif len(f.shape) == 2:
                 h, w = f.shape
+
+                self.interpolant_timer.start()
                 result = [[self.boundary_zeros(tag) for j in range(w)] for i in range(h)]
 
                 for point_nr, x in enumerate(self._get_boundary(tag).nodes):
                     for i, row in enumerate(f(x)):
                         for j, entry in enumerate(row):
                             result[i][j][point_nr] = entry
+                self.interpolant_timer.stop()
 
                 from pytools.arithmetic_container import ArithmeticListMatrix
                 return ArithmeticListMatrix(result)

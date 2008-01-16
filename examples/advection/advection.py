@@ -45,7 +45,6 @@ def main() :
     from hedge.parallel import \
             guess_parallelization_context, \
             reassemble_volume_field
-    from time import time
     from hedge.operators import StrongAdvectionOperator, WeakAdvectionOperator
     from hedge.data import TimeDependentGivenFunction
     from math import floor
@@ -83,7 +82,7 @@ def main() :
     elif dim == 3:
         a = num.array([0,0,0.3])
         if pcon.is_head_rank:
-            mesh = make_cylinder_mesh(max_volume=0.0004, boundary_tagger=boundary_tagger,
+            mesh = make_cylinder_mesh(max_volume=0.004, boundary_tagger=boundary_tagger,
                     periodic=False, radial_subdivisions=32)
             #mesh = make_box_mesh(dimensions=(1,1,2*pi/3), max_volume=0.01,
                     #boundary_tagger=boundary_tagger)
@@ -120,19 +119,6 @@ def main() :
     vis = SiloVisualizer(vis_discr, pcon)
     #vis = VtkVisualizer(vis_discr, pcon, "fld")
 
-    # diagnostics setup -------------------------------------------------------
-    from pytools.log import LogManager, add_general_quantities, add_run_info
-    logmgr = LogManager("advection.dat", pcon.communicator)
-    add_run_info(logmgr)
-    add_general_quantities(logmgr, dt)
-    discr.add_instrumentation(logmgr)
-
-    from pytools.log import IntervalTimer
-    vis_timer = IntervalTimer("t_vis", "Time spent visualizing")
-    logmgr.add_quantity(vis_timer)
-    stepper_timer = IntervalTimer("t_stepper", "Time spent in the stepper")
-    logmgr.add_quantity(stepper_timer)
-
     # operator setup ----------------------------------------------------------
     op = StrongAdvectionOperator(discr, a, 
             inflow_u=TimeDependentGivenFunction(u_analytic),
@@ -148,15 +134,33 @@ def main() :
     u = discr.interpolate_volume_function(lambda x: u_analytic(x, 0))
 
     stepper = RK4TimeStepper()
-    start_step = time()
+
+    # diagnostics setup -------------------------------------------------------
+    from pytools.log import LogManager, \
+            add_general_quantities, \
+            add_simulation_quantities, \
+            add_run_info
+
+    logmgr = LogManager("advection.dat", pcon.communicator)
+    add_run_info(logmgr)
+    add_general_quantities(logmgr)
+    add_simulation_quantities(logmgr, dt)
+    discr.add_instrumentation(logmgr)
+
+    from pytools.log import IntervalTimer
+    vis_timer = IntervalTimer("t_vis", "Time spent visualizing")
+    logmgr.add_quantity(vis_timer)
+    stepper.add_instrumentation(logmgr)
+
+    from hedge.log import VariableL2Norm
+    unorm = VariableL2Norm(discr, locals(), "u")
+    logmgr.add_quantity(unorm)
+
+    logmgr.add_watches(["step", "t_sim", "l2_u", "t_step"])
+
+    # timestep loop -----------------------------------------------------------
     for step in range(nsteps):
         logmgr.tick()
-
-        if step % 1 == 0 and pcon.is_head_rank:
-            now = time()
-            print "timestep %d, t=%f, l2=%f, secs=%f" % (
-                    step, dt*step, sqrt(u*(op.mass*u)), now-start_step)
-            start_step = now
 
         t = step*dt
 
@@ -174,9 +178,7 @@ def main() :
             visf.close()
             vis_timer.stop()
 
-        stepper_timer.start()
         u = stepper(u, t, dt, op.rhs)
-        stepper_timer.stop()
 
         #u_true = discr.interpolate_volume_function(
                 #lambda x: u_analytic(t, x))
