@@ -96,6 +96,8 @@ class ParallelizationContext(object):
 
 
 class SerialParallelizationContext(ParallelizationContext):
+    communicator = None
+
     @property
     def rank(self):
         return 0
@@ -330,7 +332,7 @@ class ParallelDiscretization(hedge.discretization.Discretization):
         # instrumentation -----------------------------------------------------
         from pytools.log import IntervalTimer, EventCounter
 
-        self.comm_flux_counter = IntervalTimer("n_comm_flux", 
+        self.comm_flux_counter = EventCounter("n_comm_flux", 
                 "Number of inner flux communication runs")
         self.comm_flux_timer = IntervalTimer("t_comm_flux", 
                 "Time spent communicating to compute inner fluxes")

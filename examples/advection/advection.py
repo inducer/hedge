@@ -122,7 +122,7 @@ def main() :
 
     # diagnostics setup -------------------------------------------------------
     from pytools.log import LogManager, add_general_quantities, add_run_info
-    logmgr = LogManager("advection.dat")
+    logmgr = LogManager("advection.dat", pcon.communicator)
     add_run_info(logmgr)
     add_general_quantities(logmgr, dt)
     discr.add_instrumentation(logmgr)
