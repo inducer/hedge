@@ -387,12 +387,17 @@ class WeakPoissonOperator(Operator,hedge.tools.PylinearOperator):
     def __init__(self, discr, diffusion_tensor=None, 
             dirichlet_bc=hedge.data.ConstantGivenFunction(), dirichlet_tag="dirichlet",
             neumann_bc=hedge.data.ConstantGivenFunction(), neumann_tag="neumann",
-            ldg=True):
+            flux="ip"):
+        """Initialize the weak Poisson operator.
+
+        @arg flux: Either C{"ip"} or C{"ldg"} to indicate which type of flux is 
+        to be used. IP tends to be faster, and is therefore the default.
+        """
         hedge.tools.PylinearOperator.__init__(self)
 
         self.discr = discr
 
-        fs = self.get_weak_flux_set(ldg)
+        fs = self.get_weak_flux_set(flux)
 
         self.flux_u = discr.get_flux_operator(fs.flux_u)
         self.flux_v = discr.get_flux_operator(fs.flux_v)
@@ -445,9 +450,16 @@ class WeakPoissonOperator(Operator,hedge.tools.PylinearOperator):
         after[:] = self.op(before)
 
     # fluxes ------------------------------------------------------------------
-    def get_weak_flux_set(self, ldg):
+    def get_weak_flux_set(self, flux):
         class FluxSet: pass
         fs = FluxSet()
+
+        if flux == "ldg":
+            ldg_terms = True
+        elif flux == "ip":
+            ldg_terms = False
+        else:
+            raise "Invalid flux type '%s'" % flux
 
         from hedge.flux import \
                 FluxVectorPlaceholder, FluxScalarPlaceholder, \
@@ -464,12 +476,13 @@ class WeakPoissonOperator(Operator,hedge.tools.PylinearOperator):
         fs.flux_u = u.avg*normal
         fs.flux_v = dot(v.avg, normal)
 
-        # ldg terms
-        from pytools.arithmetic_container import ArithmeticList 
-        ldg_beta = ArithmeticList([1]*dim)
+        if ldg_terms:
+            # ldg terms
+            from pytools.arithmetic_container import ArithmeticList 
+            ldg_beta = ArithmeticList([1]*dim)
 
-        fs.flux_u = fs.flux_u - (u.int-u.ext)*0.5*ldg_beta
-        fs.flux_v = fs.flux_v + dot((v.int-v.ext)*0.5, ldg_beta)
+            fs.flux_u = fs.flux_u - (u.int-u.ext)*0.5*ldg_beta
+            fs.flux_v = fs.flux_v + dot((v.int-v.ext)*0.5, ldg_beta)
 
         # penalty term
         stab_term = PenaltyTerm() * (u.int - u.ext)

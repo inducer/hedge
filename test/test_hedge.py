@@ -1329,32 +1329,33 @@ class TestHedge(unittest.TestCase):
         from hedge.tools import EOCRecorder
         eocrec = EOCRecorder()
         for order in [1,2,3,4,5]:
-            from hedge.discretization import Discretization
-            from hedge.element import TriangularElement
-            discr = Discretization(mesh, TriangularElement(order), debug=True)
+            for flux in ["ip", "ldg"]:
+                from hedge.discretization import Discretization
+                from hedge.element import TriangularElement
+                discr = Discretization(mesh, TriangularElement(order), debug=True)
 
-            def l2_norm(v):
-                from math import sqrt
-                return sqrt(v*(discr.mass_operator*v))
+                def l2_norm(v):
+                    from math import sqrt
+                    return sqrt(v*(discr.mass_operator*v))
 
-            from hedge.data import GivenFunction
-            from hedge.operators import WeakPoissonOperator
-            op = WeakPoissonOperator(discr, 
-                    dirichlet_tag=TAG_ALL,
-                    dirichlet_bc=GivenFunction(truesol_c),
-                    neumann_tag=TAG_NONE, 
-                    )
+                from hedge.data import GivenFunction
+                from hedge.operators import WeakPoissonOperator
+                op = WeakPoissonOperator(discr, 
+                        dirichlet_tag=TAG_ALL,
+                        dirichlet_bc=GivenFunction(truesol_c),
+                        neumann_tag=TAG_NONE, 
+                        flux=flux)
 
-            if order <= 3:
-                mat = matrix_rep(op)
-                self.assert_(comp.norm_frobenius(mat-mat.T)<1e-12)
-                check_grad_mat()
+                if order <= 3:
+                    mat = matrix_rep(op)
+                    self.assert_(comp.norm_frobenius(mat-mat.T)<1e-12)
+                    check_grad_mat()
 
-            truesol_v = discr.interpolate_volume_function(truesol_c)
-            a_inv = operator.CGOperator.make(-op, 40000, 1e-10)
-            sol_v = -a_inv(op.prepare_rhs(GivenFunction(rhs_c)))
+                truesol_v = discr.interpolate_volume_function(truesol_c)
+                a_inv = operator.CGOperator.make(-op, 40000, 1e-10)
+                sol_v = -a_inv(op.prepare_rhs(GivenFunction(rhs_c)))
 
-            eocrec.add_data_point(order, l2_norm(sol_v-truesol_v))
+                eocrec.add_data_point(order, l2_norm(sol_v-truesol_v))
 
         #print eocrec.pretty_print()
 
