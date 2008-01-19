@@ -637,6 +637,10 @@ class BlockMatrix(object):
         else:
             return NotImplemented
 
+    def add_to_build_matrix(self, bmat):
+        for i, j, chunk in self.chunks:
+            bmat.add_block(i, j, chunk)
+
 
 
 

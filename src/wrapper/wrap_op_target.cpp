@@ -41,8 +41,13 @@ namespace
       .def("finalize", &cl::finalize)
       .def("add_coefficient", &cl::add_coefficient)
       .def("add_coefficients", 
-          (void (cl::*)(unsigned, unsigned, unsigned, unsigned, const matrix &) const)
-          &cl::add_coefficients)
+          (void (cl::*)(unsigned, unsigned, const matrix &) const)
+          &cl::add_coefficients,
+          (arg("i_start"), arg("j_start"), arg("submat")))
+      .def("add_scaled_coefficients", 
+          (void (cl::*)(unsigned, unsigned, typename cl::scalar_type, const matrix &) const)
+          &cl::add_scaled_coefficients,
+          (arg("i_start"), arg("j_start"), arg("factor"), arg("submat")))
       ;
   }
 
@@ -71,10 +76,15 @@ void hedge_expose_op_target()
   {
     typedef coord_matrix_target cl;
     class_<cl> wrapper("MatrixTarget", 
-        init<cl::matrix_type &>()
+        init<cl::matrix_type &, optional<cl::index_type, cl::index_type> >()
         [with_custodian_and_ward<1,2>()]
-        );
+        )
+      ;
+    wrapper
+      .DEF_SIMPLE_METHOD(rebased_target)
+      .add_property("row_offset", &cl::row_offset)
+      .add_property("column_offset", &cl::column_offset)
+      ;
     expose_op_target(wrapper);
   }
-
 }

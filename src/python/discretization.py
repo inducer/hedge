@@ -421,6 +421,9 @@ class Discretization(object):
         """Return the number of nodes in this discretization."""
         return len(self.nodes)
 
+    def len_boundary(self, tag):
+        return len(self._get_boundary(tag).nodes)
+
     def volume_zeros(self):
         return num.zeros((len(self.nodes),))
 
@@ -983,7 +986,7 @@ class _DiscretizationVectorOperator(object):
         return _OperatorSum(self, -op2)
 
     def __neg__(self):
-        return _ScalarMultipleOperator(-1, op)
+        return _ScalarMultipleOperator(-1, self)
 
     def __rmul__(self, scalar):
         value = float(scalar)
@@ -1024,12 +1027,8 @@ class _DifferentiationOperator(_DiscretizationVectorOperator):
         self.perform_func(self.coordinate, make_vector_target(field, result))
         return result
 
-    def matrix(self):
-        from hedge._internal import MatrixTarget
-
-        bmatrix = num.zeros((0,0), flavor=num.SparseBuildMatrix)
-        self.perform_func(self.coordinate, MatrixTarget(bmatrix))
-        return num.asarray(bmatrix, flavor=num.SparseExecuteMatrix)
+    def perform_on(self, target):
+        self.perform_func(self.coordinate, target)
 
 class _DiscretizationMethodOperator(_DiscretizationVectorOperator):
     def __init__(self, discr, perform_func):
@@ -1043,12 +1042,8 @@ class _DiscretizationMethodOperator(_DiscretizationVectorOperator):
         self.perform_func(make_vector_target(field, result))
         return result
 
-    def matrix(self):
-        from hedge._internal import MatrixTarget
-
-        bmatrix = num.zeros((0,0), flavor=num.SparseBuildMatrix)
-        self.perform_func(MatrixTarget(bmatrix))
-        return num.asarray(bmatrix, flavor=num.SparseExecuteMatrix)
+    def perform_on(self, target):
+        self.perform_func(target)
 
 
 
@@ -1089,6 +1084,23 @@ class _DirectFluxOperator(_DiscretizationVectorOperator):
                 mul_single_dep(int_flux, ext_flux, result, field) 
         return result
 
+    def perform_inner(self, tgt):
+        dof = len(self.discr)
+
+        for idx, int_flux, ext_flux in self.flux:
+            self.discr.perform_inner_flux(int_flux, ext_flux, 
+                    tgt.rebased_target(0, dof*idx))
+
+    def perform_int_bdry(self, tag, tgt):
+        from hedge._internal import NullTarget
+        dof = len(self.discr)
+
+        for idx, int_flux, ext_flux in self.flux:
+            self.discr.perform_boundary_flux(
+                    int_flux, tgt.rebased_target(0, dof*idx),
+                    ext_flux, NullTarget(), 
+                    tag)
+
 
 
 
@@ -1097,12 +1109,13 @@ class _FluxMatrixOperator(_DiscretizationVectorOperator):
         _DiscretizationVectorOperator.__init__(self, discr)
 
         from hedge._internal import MatrixTarget
-
         self.flux = flux
+
+        dof = len(self.discr)
 
         self.inner_matrices = {}
         for idx, int_flux, ext_flux in self.flux:
-            inner_bmatrix = num.zeros(shape=(0,0), flavor=num.SparseBuildMatrix)
+            inner_bmatrix = num.zeros(shape=(dof, dof), flavor=num.SparseBuildMatrix)
             discr.perform_inner_flux(int_flux, ext_flux, MatrixTarget(inner_bmatrix))
             self.inner_matrices[idx] = \
                     num.asarray(inner_bmatrix, flavor=num.SparseExecuteMatrix)
@@ -1110,17 +1123,20 @@ class _FluxMatrixOperator(_DiscretizationVectorOperator):
         self.bdry_ops = {}
 
     def __mul__(self, field):
+        dof = len(self.discr)
+
         def mul_single_dep(idx, int_flux, ext_flux, field):
             if isinstance(field, BoundaryPair):
                 from hedge._internal import MatrixTarget
 
                 bpair = field
+                bdry_dof = self.discr.len_boundary(bpair.tag)
 
                 try:
                     int_matrix, ext_matrix = self.bdry_ops[idx, bpair.tag]
                 except KeyError:
-                    int_bmatrix = num.zeros(shape=(0,0), flavor=num.SparseBuildMatrix)
-                    ext_bmatrix = num.zeros(shape=(0,0), flavor=num.SparseBuildMatrix)
+                    int_bmatrix = num.zeros(shape=(dof,dof), flavor=num.SparseBuildMatrix)
+                    ext_bmatrix = num.zeros(shape=(dof,bdry_dof), flavor=num.SparseBuildMatrix)
                     self.discr.perform_boundary_flux(
                             int_flux, MatrixTarget(int_bmatrix), 
                             ext_flux, MatrixTarget(ext_bmatrix), 
@@ -1146,7 +1162,10 @@ class _FluxMatrixOperator(_DiscretizationVectorOperator):
             return mul_single_dep(0, int_flux, ext_flux, field) 
 
     def matrix_inner(self):
-        """Returns a BlockMatrix to compute the lifting of the interior fluxes.
+        """Returns a BlockMatrix to compute the lifting of the domain-interior fluxes.
+
+        This matrix can only capture the interior part of the flux, the exterior-facing
+        part is not taken into account.
 
         The different components are assumed to be run together in one vector,
         in order.
@@ -1168,18 +1187,15 @@ class _VectorFluxOperator(object):
     def __mul__(self, field):
         return ArithmeticList(fo * field for fo in self.flux_operators)
 
-    def matrix_inner(self):
-        """Returns a BlockMatrix to compute the lifting of the interior fluxes.
+    def perform_inner(self, tgt):
+        dof = len(self.discr)
+        for i, fo in enumerate(self.flux_operators):
+            fo.perform_inner(tgt.rebased_target(dof*i, 0))
 
-        The different components are assumed to be run together in one vector,
-        in order.
-        """
-        from hedge.tools import BlockMatrix
-        flen = len(self.discr.volume_zeros())
-        return BlockMatrix(
-            (flen*i, 0, fo.matrix_inner()) 
-            for i, fo in enumerate(self.flux_operators))
-
+    def perform_int_bdry(self, tag, tgt):
+        dof = len(self.discr)
+        for i, fo in enumerate(self.flux_operators):
+            fo.perform_int_bdry(tag, tgt.rebased_target(dof*i, 0))
 
 
 

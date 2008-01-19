@@ -594,6 +594,69 @@ class WeakPoissonOperator(Operator,hedge.tools.PylinearOperator):
                 + self.flux_v_nbdry * pair_with_boundary(w, neumann_bc_w, ntag)
                 )
 
+    def grad_matrix(self):
+        discr = self.discr
+        dim = discr.dimensions
+
+        def assemble_local_vstack(operators):
+            n = len(operators)
+            dof = len(discr)
+            result = num.zeros((n*dof, dof), flavor=num.SparseBuildMatrix)
+
+            from hedge._internal import MatrixTarget
+            tgt = MatrixTarget(result, 0, 0)
+
+            for i, op in enumerate(operators):
+                op.perform_on(tgt.rebased_target(i*dof, 0))
+            return result
+
+        def assemble_local_hstack(operators):
+            n = len(operators)
+            dof = len(discr)
+            result = num.zeros((dof, n*dof), flavor=num.SparseBuildMatrix)
+
+            from hedge._internal import MatrixTarget
+            tgt = MatrixTarget(result, 0, 0)
+
+            for i, op in enumerate(operators):
+                op.perform_on(tgt.rebased_target(0, i*dof))
+            return result
+
+        def assemble_local_diag(operators):
+            n = len(operators)
+            dof = len(discr)
+            result = num.zeros((n*dof, n*dof), flavor=num.SparseBuildMatrix)
+
+            from hedge._internal import MatrixTarget
+            tgt = MatrixTarget(result, 0, 0)
+
+            for i, op in enumerate(operators):
+                op.perform_on(tgt.rebased_target(i*dof, i*dof))
+            return result
+
+        def fast_mat(mat):
+            return num.asarray(mat, flavor=num.SparseExecuteMatrix)
+
+        def assemble_grad():
+            n = self.discr.dimensions
+            dof = len(discr)
+
+            minv = fast_mat(assemble_local_diag([self.m_inv] * dim))
+
+            m_local_grad = fast_mat(-assemble_local_vstack(self.discr.minv_stiffness_t))
+
+            fluxes = num.zeros((n*dof, dof), flavor=num.SparseBuildMatrix)
+            from hedge._internal import MatrixTarget
+            fluxes_tgt = MatrixTarget(fluxes, 0, 0)
+            self.flux_u.perform_inner(fluxes_tgt)
+            self.flux_u_dbdry.perform_int_bdry(self.dirichlet_tag, fluxes_tgt)
+            self.flux_u_nbdry.perform_int_bdry(self.neumann_tag, fluxes_tgt)
+
+            return m_local_grad + minv * fast_mat(fluxes)
+
+        return assemble_grad()
+
+
 
 
 

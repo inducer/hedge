@@ -124,15 +124,13 @@ namespace hedge {
       { }
 
       template <class Container>
-      void add_coefficients(unsigned i_start, unsigned i_stop, 
-          unsigned j_start, unsigned j_stop,
+      void add_coefficients(unsigned i_start, unsigned j_start, 
           const Container &submat) const
       { }
 
       template <class Container>
-      void add_scaled_coefficients(unsigned i_start, unsigned i_stop, 
-          unsigned j_start, unsigned j_stop, scalar_type factor,
-          const Container &submat) const
+      void add_scaled_coefficients(unsigned i_start, unsigned j_start, 
+          scalar_type factor, const Container &submat) const
       { }
   };
 
@@ -163,8 +161,7 @@ namespace hedge {
       { m_result[i] += coeff*m_operand[j]; }
 
       template <class Container>
-      void add_coefficients(unsigned i_start, unsigned i_stop, 
-          unsigned j_start, unsigned j_stop,
+      void add_coefficients(unsigned i_start, unsigned j_start, 
           const Container &submat) const
       {
         /*
@@ -172,17 +169,16 @@ namespace hedge {
           (m_result, boost::numeric::ublas::range(i_start, i_stop));
         axpy_prod(submat, subrange(m_operand, j_start, j_stop), target);
         */
-        noalias(subrange(m_result, i_start, i_stop)) +=
-            prod(submat, subrange(m_operand, j_start, j_stop));
+        noalias(subrange(m_result, i_start, i_start + submat.size1())) +=
+            prod(submat, subrange(m_operand, j_start, j_start + submat.size2()));
       }
 
       template <class Container>
-      void add_scaled_coefficients(unsigned i_start, unsigned i_stop, 
-          unsigned j_start, unsigned j_stop, scalar_type factor,
-          const Container &submat) const
+      void add_scaled_coefficients(unsigned i_start, unsigned j_start, 
+          scalar_type factor, const Container &submat) const
       {
-        noalias(subrange(m_result, i_start, i_stop)) +=
-          factor * prod(submat, subrange(m_operand, j_start, j_stop));
+        noalias(subrange(m_result, i_start, i_start+submat.size1())) +=
+          factor * prod(submat, subrange(m_operand, j_start, j_start+submat.size2()));
       }
       const vector &m_operand;
       vector &m_result;
@@ -195,35 +191,100 @@ namespace hedge {
   class matrix_target {
     public:
       typedef Mat matrix_type;
+      typedef typename Mat::size_type index_type;
       typedef typename Mat::value_type scalar_type;
 
-      matrix_target(matrix_type &matrix)
-        : m_matrix(matrix)
+      matrix_target(matrix_type &matrix, index_type row_offset=0, index_type col_offset=0)
+        : m_matrix(matrix), m_row_offset(row_offset), m_col_offset(col_offset)
       {
       }
 
+      index_type row_offset() const
+      { return m_row_offset; }
+
+      index_type column_offset() const
+      { return m_col_offset; }
+
       void begin(unsigned height, unsigned width) const
-      { m_matrix.resize(height, width); }
+      { 
+        if (height + m_row_offset > m_matrix.size1())
+          throw std::range_error("matrix_target targets unavailable rows");
+        if (width + m_col_offset > m_matrix.size2())
+          throw std::range_error("matrix_target targets unavailable columns");
+      }
 
       void finalize() const
-      { m_matrix.sort(); }
+      { }
+
+      matrix_target rebased_target(index_type row_offset, index_type col_offset)
+      {
+        return matrix_target(m_matrix, 
+            m_row_offset+row_offset, 
+            m_col_offset+col_offset);
+      }
 
       void add_coefficient(unsigned i, unsigned j, scalar_type coeff) const
-      { m_matrix.append_element(i, j, coeff); }
+      { m_matrix.append_element(m_row_offset+i, m_col_offset+j, coeff); }
 
       template <class Container>
-      void add_coefficients(unsigned i_start, unsigned i_stop, 
-          unsigned j_start, unsigned j_stop,
+      void add_coefficients(unsigned i_start, unsigned j_start, 
           const Container &submat) const
-      { subrange(m_matrix, i_start, i_stop, j_start, j_stop) += submat; }
+      { 
+        typename Container::const_iterator1 
+          first1 = submat.begin1(), last1 = submat.end1();
+
+        i_start += m_row_offset;
+        j_start += m_col_offset;
+
+        while (first1 != last1)
+        {
+          typename Container::const_iterator2 
+            first2 = first1.begin(), last2 = first1.end();
+
+          while (first2 != last2)
+          {
+            m_matrix.append_element(
+                i_start+first2.index1(),
+                j_start+first2.index2(),
+                *first2);
+            ++first2;
+          }
+
+          ++first1;
+        }
+      }
 
       template <class Container>
-      void add_scaled_coefficients(unsigned i_start, unsigned i_stop, 
-          unsigned j_start, unsigned j_stop, scalar_type factor,
-          const Container &submat) const
-      { subrange(m_matrix, i_start, i_stop, j_start, j_stop) += factor * submat; }
+      void add_scaled_coefficients(unsigned i_start, unsigned j_start, 
+          scalar_type factor, const Container &submat) const
+      { 
+        //subrange(m_matrix, i_start, i_stop, j_start, j_stop) += factor * submat;
+        typename Container::const_iterator1 
+          first1 = submat.begin1(), last1 = submat.end1();
+
+        i_start += m_row_offset;
+        j_start += m_col_offset;
+
+        while (first1 != last1)
+        {
+          typename Container::const_iterator2 
+            first2 = first1.begin(), last2 = first1.end();
+
+          while (first2 != last2)
+          {
+            m_matrix.append_element(
+                i_start+first2.index1(),
+                j_start+first2.index2(),
+                factor * *first2);
+            ++first2;
+          }
+          ++first1;
+        }
+      }
+
     protected:
       matrix_type &m_matrix;
+      const index_type m_row_offset, m_col_offset;
   };
 
 

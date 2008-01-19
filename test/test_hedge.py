@@ -657,7 +657,7 @@ class TestHedge(unittest.TestCase):
         from pylinear.randomized import make_random_vector
         from operator import add, mul
 
-        thresh = 5e-14
+        thresh = 6e-14
 
         for el in [
                 TriangularElement(3),
@@ -1275,7 +1275,7 @@ class TestHedge(unittest.TestCase):
         self.assert_(count(mesh.tag_to_boundary[TAG_ALL]) == 0)
     # -------------------------------------------------------------------------
     def test_elliptic(self):
-        """Test that elliptic operators turn out symmetric and converge."""
+        """Test that various properties of elliptic operators."""
         import pylinear.array as num
         import pylinear.computation as comp
         import pylinear.operator as operator
@@ -1286,6 +1286,34 @@ class TestHedge(unittest.TestCase):
             for j in range(w):
                 mat[:,j] = op(num.unit_vector(w, j))
             return mat
+
+        def check_grad_mat():
+            from pylinear.randomized import make_random_vector
+            grad_mat = op.grad_matrix()
+
+            #print len(discr), grad_mat.nnz, type(grad_mat)
+            for i in range(10):
+                u = make_random_vector(len(discr), num.Float)
+
+                mat_result = grad_mat * u
+                op_result = num.hstack(op.grad(u))
+
+                self.assert_(
+                        comp.norm_2(mat_result-op_result)*comp.norm_2(op_result)
+                        < 1e-5)
+
+        def check_matrix_tgt():
+            big = num.zeros((20, 20), flavor=num.SparseBuildMatrix)
+            small = num.array([[1,2,3],[4,5,6],[7,8,9]])
+            print small
+            from hedge._internal import MatrixTarget
+            tgt = MatrixTarget(big, 4, 4)
+            tgt.begin(small.shape[0], small.shape[1])
+            print "YO"
+            tgt.add_coefficients(4, 4, small)
+            print "DUDE"
+            tgt.finalize()
+            print big
 
         import pymbolic
         v_x = pymbolic.var("x")
@@ -1320,6 +1348,7 @@ class TestHedge(unittest.TestCase):
             if order <= 3:
                 mat = matrix_rep(op)
                 self.assert_(comp.norm_frobenius(mat-mat.T)<1e-12)
+                check_grad_mat()
 
             truesol_v = discr.interpolate_volume_function(truesol_c)
             a_inv = operator.CGOperator.make(-op, 40000, 1e-10)
@@ -1360,7 +1389,7 @@ class TestHedge(unittest.TestCase):
 
         u2 = discr2.interpolate_volume_function(u_analytic)
         u2_i = p5to2(p2to5(u2))
-        self.assert_(l2_norm(discr2, u2-u2_i) < 1e-15)
+        self.assert_(l2_norm(discr2, u2-u2_i) < 3e-15)
 
 
 

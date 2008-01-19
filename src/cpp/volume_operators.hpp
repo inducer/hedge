@@ -161,9 +161,7 @@ namespace hedge {
     BOOST_FOREACH(const element_range src_er, src_ers)
     {
       const element_range dest_er = *dest_ers_it++;
-      target.add_coefficients(
-          dest_er.first, dest_er.second, src_er.first, src_er.second, 
-          matrix);
+      target.add_coefficients(dest_er.first, src_er.first, matrix);
     }
   }
 
@@ -181,8 +179,7 @@ namespace hedge {
     BOOST_FOREACH(const element_range src_er, src_ers)
     {
       const element_range dest_er = dest_ers[i];
-      target.add_scaled_coefficients(
-          dest_er.first, dest_er.second, src_er.first, src_er.second, 
+      target.add_scaled_coefficients(dest_er.first, src_er.first, 
           scale_factors[i++], matrix);
     }
   }
