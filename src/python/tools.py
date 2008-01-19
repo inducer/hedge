@@ -393,33 +393,45 @@ class FixedSizeSliceAdapter(object):
     We refer to this as 'vector-major' order.
     """
 
-    __slots__ = ["adaptee", "unit"]
+    __slots__ = ["adaptee", "unit", "length"]
 
-    def __init__(self, adaptee, unit):
+    def __init__(self, adaptee, unit, length=None):
         self.adaptee = adaptee
         self.unit = unit
+        self.length = length
+
+        technical_len, remainder = divmod(len(self.adaptee), self.unit)
+        assert remainder == 0
+
+        if self.length is not None:
+            assert self.length <= technical_len
 
     def __len__(self):
-        result, remainder = divmod(len(self.adaptee), self.unit)
-        assert remainder == 0
-        return result
+        if self.length is not None:
+            return self.length
+        else:
+            technical_len, remainder = divmod(len(self.adaptee), self.unit)
+            assert remainder == 0
+            return technical_len
 
     def __iter__(parent):
         class FSSAIterator:
             def __init__(self):
                 self.idx = 0
-
+    
             def next(self):
                 if self.idx >= len(parent):
                     raise StopIteration
                 result = parent[self.idx]
                 self.idx += 1
                 return result
-
+    
         return FSSAIterator()
 
     def __getitem__(self, idx):
         if isinstance(idx, int):
+            if idx >= len(self):
+                raise IndexError, idx
             return self.adaptee[self.unit*idx:self.unit*(idx+1)]
         elif isinstance(idx, slice):
             range_args= idx.indices(self.__len__())
@@ -444,7 +456,7 @@ class FixedSizeSliceAdapter(object):
         """
         from pytools.arithmetic_container import ArithmeticList
         return ArithmeticList(
-                self.adaptee[i::self.unit] for i in range(self.unit))
+                self.adaptee[i:len(self)*self.unit:self.unit] for i in range(self.unit))
 
     def get_component_major_vector(self):
         """Return the adaptee's data in component-major order.
@@ -731,8 +743,7 @@ def parallel_cg(pcon, operator, b, precon=None, x=None, tol=1e-7, max_iterations
     if x is None:
         x = num.zeros((operator.size1(),))
 
-    #if len(pcon.ranks) == 1 and debug_callback is None:
-    if False:
+    if len(pcon.ranks) == 1 and debug_callback is None:
         # use canned single-processor cg if possible
         a_inv = op.CGOperator.make(operator, max_it=max_iterations, 
                 tolerance=tol, precon_op=precon)
