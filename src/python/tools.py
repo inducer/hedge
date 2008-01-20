@@ -1,5 +1,7 @@
 """Miscellaneous helper facilities."""
 
+from __future__ import division
+
 __copyright__ = "Copyright (C) 2007 Andreas Kloeckner"
 
 __license__ = """
@@ -92,8 +94,8 @@ class Reflection(AffineMap):
 
 
 
-def plot_1d(f, a, b, steps=100):
-    h = float(b - a)/steps
+def plot_1d(f, a, b, steps=100, driver=None):
+    h = (b - a)/steps
 
     points = []
     data = []
@@ -102,10 +104,32 @@ def plot_1d(f, a, b, steps=100):
         points.append(x)
         data.append(f(x))
 
-    from Gnuplot import Gnuplot, Data
-    gp = Gnuplot()
-    gp.plot(Data(points, data))
-    raw_input()
+    # autodetect driver
+    if driver is None:
+        try:
+            import pylab
+            driver = "matplotlib"
+        except ImportError:
+            pass
+    if driver is None:
+        try:
+            import Gnuplot
+            driver = "gnuplot"
+        except ImportError:
+            pass
+
+    # actually plot
+    if driver == "matplotlib":
+        from pylab import plot, show
+        plot(points, data)
+        show()
+    elif driver == "gnuplot":
+        from Gnuplot import Gnuplot, Data
+        gp = Gnuplot()
+        gp.plot(Data(points, data))
+        raw_input()
+    else:
+        raise ValueError, "invalid plot driver '%s'" % driver
 
 
 
