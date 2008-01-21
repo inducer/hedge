@@ -87,13 +87,18 @@ def main():
         mesh_data = pcon.receive_mesh()
 
     #for order in [1,2,3,4,5,6]:
-    for order in [2,3,4]:
+    for order in [2,3,4,5,6]:
         discr = pcon.make_discretization(mesh_data, TetrahedralElement(order))
 
         vis = VtkVisualizer(discr, pcon, "em-%d" % order)
 
-        dt = discr.dt_factor(1/sqrt(mu*epsilon))
-        final_time = dt*60
+        mode.set_time(0)
+        fields = discr.interpolate_volume_function(r_sol)
+        op = MaxwellOperator(discr, epsilon, mu, upwind_alpha=1,
+                direct_flux=True)
+
+        dt = discr.dt_factor(op.max_eigenvalue())
+        final_time = 1e-8
         nsteps = int(final_time/dt)+1
         dt = final_time/nsteps
 
@@ -111,10 +116,6 @@ def main():
         #check_time_harmonic_solution(discr, mode, c_sol)
         #continue
 
-        mode.set_time(0)
-        fields = discr.interpolate_volume_function(r_sol)
-        op = MaxwellOperator(discr, epsilon, mu, upwind_alpha=1,
-                direct_flux=True)
         #from pylinear.toybox import write_gnuplot_sparsity_pattern
         #write_gnuplot_sparsity_pattern(
                 #"fluxmat-%d.dat" % pcon.rank, op.n_jump[0].serial_flux_op.int_matrix)
@@ -122,26 +123,49 @@ def main():
         #return
 
         stepper = RK4TimeStepper()
-        from time import time
-        last_tstep = time()
+
+        # diagnostics setup ---------------------------------------------------
+        from pytools.log import LogManager, add_general_quantities, \
+                add_simulation_quantities, add_run_info
+
+        logmgr = LogManager("maxwell-%d.dat" % order, pcon.communicator)
+        add_run_info(logmgr)
+        add_general_quantities(logmgr)
+        add_simulation_quantities(logmgr, dt)
+        discr.add_instrumentation(logmgr)
+        stepper.add_instrumentation(logmgr)
+
+        from pytools.log import IntervalTimer
+        vis_timer = IntervalTimer("t_vis", "Time spent visualizing")
+        logmgr.add_quantity(vis_timer)
+
+        from hedge.log import EMFieldGetter, add_em_quantities
+        field_getter = EMFieldGetter(op, locals(), "fields")
+        add_em_quantities(logmgr, op.c, field_getter)
+        
+        logmgr.add_watches(["step.max", "t_sim.max", "W_field", "t_step.max"])
+
+        # timestep loop -------------------------------------------------------
         t = 0
         for step in range(nsteps):
-            e, h = op.split_fields(fields)
-            print "timestep %d, t=%g l2[e]=%g l2[h]=%g secs=%f" % (
-                    step, t, l2_norm(e), l2_norm(h),
-                    time()-last_tstep)
-            last_tstep = time()
+            logmgr.tick()
 
             if True:
+                vis_timer.start()
+                e, h = op.split_fields(fields)
                 visf = vis.make_file("em-%d-%04d" % (order, step))
                 vis.add_data(visf,
                         [ ("e", e), ("h", h), ],
                         time=t, step=step
                         )
                 visf.close()
+                vis_timer.stop()
 
             fields = stepper(fields, t, dt, op.rhs)
             t += dt
+
+        logmgr.tick()
+        logmgr.save()
 
         mode.set_time(t)
         true_fields = discr.interpolate_volume_function(r_sol)
