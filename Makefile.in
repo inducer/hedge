@@ -1,4 +1,4 @@
-.PHONY	: all install clean tags dist doc
+.PHONY	: all install clean tags dist userdoc devdoc
 
 all: tags
 	${PYTHON_EXE} setup.py build
@@ -20,7 +20,7 @@ userdoc:
 	rm -Rf doc/user-reference
 	mkdir doc/user-reference 
 	${PYTHON_EXE} `which epydoc` \
-	  -o doc/user-reference -n hedge -v --no-private --html \
+	  -o doc/user-reference hedge -v --no-private --html \
 	  --exclude-introspect="hedge\._internal" \
 	  --exclude-introspect="hedge\.vtk" \
 	  --exclude-introspect="hedge\.polynomial" \
@@ -29,5 +29,5 @@ devdoc:
 	rm -Rf doc/dev-reference
 	mkdir doc/dev-reference 
 	${PYTHON_EXE} `which epydoc` \
-	  -o doc/dev-reference -n hedge -v --html \
+	  -o doc/dev-reference -v --html \
 	  hedge
