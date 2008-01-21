@@ -126,7 +126,13 @@ GradTetrahedronBasisFunction = hedge._internal.GradTetrahedronBasisFunction
 
 
 class Element(object):
-    pass
+    def basis_functions(self):
+        """Get a sequence of functions that form a basis of the approximation space."""
+        raise NotImplementedError
+
+    def grad_basis_functions(self):
+        """Get the gradient functions of the basis_functions(), in the same order."""
+        raise NotImplementedError
 
 
 
@@ -469,9 +475,7 @@ class TriangularElement(SimplicialElement):
                 self.generate_mode_identifiers()]
 
     def grad_basis_functions(self):
-        """Get the gradient functions of the basis_functions(),
-        in the same order.
-        """
+        """Get the gradient functions of the basis_functions(), in the same order."""
         return [GradTriangleBasisFunction(*idx) for idx in 
                 self.generate_mode_identifiers()]
 
