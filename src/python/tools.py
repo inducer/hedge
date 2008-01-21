@@ -182,12 +182,16 @@ class SubsettableCrossProduct:
           Given as a 3-sequence of bools.
         @arg op2_subset: The subset of indices of operand 2 to be taken into account.
           Given as a 3-sequence of bools.
-        @arg op2_subset: The subset of indices of operand 2 to be taken into account.
+        @arg result_subset: The subset of indices of the result that are calculated.
           Given as a 3-sequence of bools.
         """
         def subset_indices(subset):
             return [i for i, use_component in enumerate(subset) 
                     if use_component]
+
+        self.op1_subset = op1_subset
+        self.op2_subset = op2_subset
+        self.result_subset = result_subset
 
         import pymbolic
         op1 = pymbolic.var("x")
