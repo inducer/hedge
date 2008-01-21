@@ -242,8 +242,8 @@ class Mesh(pytools.Record):
       as periodic. There is one tuple per axis, so that for example
       a 3D mesh has three tuples.
     @ivar periodic_opposite_faces: a mapping of the form::
-          (element instance, face index) -> 
-            (opposite element instance, face index), axis
+          (face_vertex_indices) -> 
+            (opposite_face_vertex_indices), axis
 
       This maps a face C{(el, face_index)} to its periodicity-induced
       opposite.
@@ -528,14 +528,10 @@ class ConformalMesh(Mesh):
                 (tag, [old2new_el[old_el] for old_el in tag_els])
                 for tag, tag_els in self.tag_to_elements.iteritems())
 
-        periodic_opposite_faces = dict(
-                ((old2new_el[e1], f1), ((old2new_el[e2], f2), axis))
-                for (e1,f1), ((e2,f2), axis) in self.periodic_opposite_faces)
-
         return ConformalMesh(
                 self.points, elements, interfaces,
                 tag_to_boundary, tag_to_elements, self.periodicity,
-                periodic_opposite_faces, self.periodic_opposite_vertices
+                self.periodic_opposite_faces, self.periodic_opposite_vertices
                 )
 
 
@@ -697,8 +693,14 @@ def make_regular_square_mesh(a=-0.5, b=0.5, n=5, periodicity=None,
 
 
 
-def make_square_mesh(a=-0.5, b=0.5, max_area=4e-3, 
+def make_rect_mesh(a=(0,0), b=(1,1), max_area=4e-3, 
         boundary_tagger=(lambda fvi, el, fn: [])):
+    """Create a semi-structured rectangular mesh.
+
+    @arg a: the lower left hand point of the rectangle
+    @arg b: the upper right hand point of the rectangle
+    @arg max_area: maximum area of each triangle
+    """
     def round_trip_connect(start, end):
         for i in range(start, end):
             yield i, i+1
@@ -707,7 +709,7 @@ def make_square_mesh(a=-0.5, b=0.5, max_area=4e-3,
     def needs_refinement(vert_origin, vert_destination, vert_apex, area):
         return area > max_area
 
-    points = [(a,a), (a,b), (b,b), (b,a)]
+    points = [a, (b[0],a[1]), b, (a[0],b[1])]
             
     import meshpy.triangle as triangle
 
@@ -724,6 +726,20 @@ def make_square_mesh(a=-0.5, b=0.5, max_area=4e-3,
             generated_mesh.points,
             generated_mesh.elements,
             boundary_tagger)
+
+
+
+
+
+def make_square_mesh(a=-0.5, b=0.5, max_area=4e-3, 
+        boundary_tagger=(lambda fvi, el, fn: [])):
+    """Create an unstructured square mesh.
+
+    @arg a: the lower x and y coordinate of the square
+    @arg b: the upper x and y coordinate of the square
+    @arg max_area: maximum area of each triangle
+    """
+    return make_rect_mesh((a,a), (b,b), max_area, boundary_tagger)
 
 
 
