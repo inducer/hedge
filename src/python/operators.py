@@ -341,6 +341,11 @@ class MaxwellOperator(TimeDependentOperator):
         """
         return 6*(True,)
 
+    def max_eigenvalue(self):
+        """Return the largest eigenvalue of Maxwell's equations as a hyperbolic system."""
+        from math import sqrt
+        return 1/sqrt(self.mu*self.epsilon)
+
 
 
 
@@ -519,7 +524,7 @@ class WeakPoissonOperator(Operator,hedge.tools.PylinearOperator):
           mass operator is skipped. This is used in L{op}() in order to reduce
           the scheme M{M^{-1} S u = f} to M{S u = M f}, so that the mass operator
           only needs to be applied once, when preparing the right hand side
-          in @L{prepare_minv}.
+          in @L{prepare_rhs}.
         """
         from hedge.discretization import pair_with_boundary
         from hedge.tools import dot
