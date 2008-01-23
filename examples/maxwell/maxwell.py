@@ -98,7 +98,7 @@ def main():
                 direct_flux=True)
 
         dt = discr.dt_factor(op.max_eigenvalue())
-        final_time = 1e-8
+        final_time = 1e-9
         nsteps = int(final_time/dt)+1
         dt = final_time/nsteps
 

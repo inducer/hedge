@@ -53,7 +53,7 @@ class StrongWaveOperator:
         self.m_inv = discr.inverse_mass_operator
 
     def rhs(self, t, w):
-        from hedge.discretization import pair_with_boundary
+        from hedge.discretization import pair_with_boundary, cache_diff_results
 
         u = w[0]
         v = w[1:]
@@ -63,8 +63,8 @@ class StrongWaveOperator:
                 self.discr.boundarize_volume_field(v))
 
         rhs = (join_fields(
-                dot(self.nabla, v), 
-                self.nabla*u)
+                dot(self.nabla, cache_diff_results(v)), 
+                self.nabla*cache_diff_results(u))
                 - self.m_inv*(self.flux*w + self.flux*pair_with_boundary(w, bc)))
 
         if self.source_f is not None:
@@ -92,7 +92,7 @@ def main() :
 
     pcon = guess_parallelization_context()
 
-    dim = 2
+    dim = 3
 
     if dim == 2:
         if pcon.is_head_rank:
@@ -141,16 +141,35 @@ def main() :
     fields = ArithmeticList([discr.volume_zeros()]) # u
     fields.extend([discr.volume_zeros() for i in range(discr.dimensions)]) # v
 
-    from time import time
-    step_start = time()
+    # diagnostics setup -------------------------------------------------------
+    from pytools.log import LogManager, \
+            add_general_quantities, \
+            add_simulation_quantities, \
+            add_run_info
+
+    logmgr = LogManager("advection.dat", pcon.communicator)
+    add_run_info(logmgr)
+    add_general_quantities(logmgr)
+    add_simulation_quantities(logmgr, dt)
+    discr.add_instrumentation(logmgr)
+
+    from pytools.log import IntervalTimer
+    vis_timer = IntervalTimer("t_vis", "Time spent visualizing")
+    logmgr.add_quantity(vis_timer)
+    stepper.add_instrumentation(logmgr)
+
+    from hedge.log import Integral, L1Norm, L2Norm, VariableGetter
+    u_getter = VariableGetter(locals(), "fields", 0)
+    logmgr.add_quantity(L1Norm(u_getter, discr, name="l1_u"))
+    logmgr.add_quantity(L2Norm(u_getter, discr, name="l2_u"))
+
+    logmgr.add_watches(["step.max", "t_sim.max", "l2_u", "t_step.max"])
+
+    # timestep loop -----------------------------------------------------------
     for step in range(nsteps):
+        logmgr.tick()
+
         t = step*dt
-        if step % 1 == 0:
-            now = time()
-            print "timestep %d, t=%f, l2=%g, secs=%f" % (
-                    step, t, sqrt(fields[0]*(op.mass*fields[0])),
-                    now-step_start)
-            step_start = now
 
         if step % 1 == 0:
             visf = vis.make_file("fld-%04d" % step)
@@ -162,6 +181,11 @@ def main() :
             visf.close()
 
         fields = stepper(fields, t, dt, op.rhs)
+
+    vis.close()
+
+    logmgr.tick()
+    logmgr.save()
 
 if __name__ == "__main__":
     #import cProfile as profile

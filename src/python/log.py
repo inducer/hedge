@@ -194,6 +194,7 @@ class L2Norm(LogQuantity):
 
         from math import sqrt
         if isinstance(var, list):
+            from hedge.tools import dot
             return sqrt(dot(var, self.mass_op*var))
         else:
             return sqrt(var*(self.mass_op*var))

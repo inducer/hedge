@@ -553,8 +553,9 @@ class TestHedge(unittest.TestCase):
         import pylinear.computation as comp
         from hedge.mesh import make_disk_mesh
         from hedge.element import TriangularElement
-        from hedge.discretization import Discretization
+        from hedge.discretization import Discretization, cache_diff_results
         from math import sin, cos, sqrt
+
 
         for coord in [0, 1]:
             mesh = make_disk_mesh()
@@ -562,7 +563,11 @@ class TestHedge(unittest.TestCase):
             f = discr.interpolate_volume_function(lambda x: sin(3*x[coord]))
             df = discr.interpolate_volume_function(lambda x: 3*cos(3*x[coord]))
 
-            df_num = discr.nabla[coord] * f
+            nabla = discr.nabla
+            nabla[coord].do_not_warn()
+            
+            df_num = nabla[coord] * cache_diff_results(f)
+            df_num_no_cache = nabla[coord] * f
             error = df_num - df
             #discr.visualize_vtk("diff-err.vtk",
                     #[("f", f), ("df", df), ("df_num", df_num), ("error", error)])
@@ -570,6 +575,12 @@ class TestHedge(unittest.TestCase):
             linf_error = comp.norm_infinity(df_num-df)
             #print linf_error
             self.assert_(linf_error < 3e-5)
+
+            linf_error = comp.norm_infinity(df_num_no_cache-df)
+            self.assert_(linf_error < 3e-5)
+
+            linf_error = comp.norm_infinity(df_num_no_cache-df_num)
+            self.assert_(linf_error < 2e-13)
     # -------------------------------------------------------------------------
     def test_2d_gauss_theorem(self):
         """Verify Gauss's theorem explicitly on a mesh"""
@@ -578,7 +589,10 @@ class TestHedge(unittest.TestCase):
         from hedge.tools import AffineMap
         from hedge.mesh import make_disk_mesh
         from hedge.flux import Flux
-        from hedge.discretization import Discretization, pair_with_boundary
+        from hedge.discretization import \
+                Discretization, \
+                pair_with_boundary, \
+                cache_diff_results
         import pylinear.array as num
         import pylinear.computation as comp
         from pylinear.randomized import make_random_vector
@@ -616,8 +630,8 @@ class TestHedge(unittest.TestCase):
         f1_f = discr.interpolate_boundary_function(f1)
         f2_f = discr.interpolate_boundary_function(f2)
 
-        dx_v = discr.nabla[0] * f1_v
-        dy_v = discr.nabla[1] * f2_v
+        dx_v = discr.nabla[0] * cache_diff_results(f1_v)
+        dy_v = discr.nabla[1] * cache_diff_results(f2_v)
 
         int_div = \
                 ones*(discr.mass_operator*dx_v) + \

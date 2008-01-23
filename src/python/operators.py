@@ -72,11 +72,11 @@ class GradientOperator(Operator):
 
     def __call__(self, u):
         from hedge.mesh import TAG_ALL
-        from hedge.discretization import pair_with_boundary
+        from hedge.discretization import pair_with_boundary, cache_diff_results
 
         bc = self.discr.boundarize_volume_field(u, TAG_ALL)
 
-        return self.nabla*u - self.m_inv*(
+        return self.nabla*cache_diff_results(u) - self.m_inv*(
                 self.flux * u + 
                 self.flux * pair_with_boundary(u, bc, TAG_ALL))
 
@@ -99,12 +99,12 @@ class DivergenceOperator(Operator):
 
     def __call__(self, v):
         from hedge.mesh import TAG_ALL
-        from hedge.discretization import pair_with_boundary
+        from hedge.discretization import pair_with_boundary, cache_diff_results
         from hedge.tools import dot
 
         bc = self.discr.boundarize_volume_field(v, TAG_ALL)
 
-        return dot(self.nabla, v) - self.m_inv*(
+        return dot(self.nabla, cache_diff_results(v)) - self.m_inv*(
                 self.flux * v + 
                 self.flux * pair_with_boundary(v, bc, TAG_ALL))
 
@@ -179,7 +179,7 @@ class StrongAdvectionOperator(AdvectionOperatorBase):
 
         bc_in = self.inflow_u.boundary_interpolant(t, self.discr, self.inflow_tag)
         
-        return dot(self.v, self.nabla*u) - self.m_inv*(
+        return dot(self.v, self.nabla*cache_diff_results(u)) - self.m_inv*(
                 self.flux * u + 
                 self.flux * pair_with_boundary(u, bc_in, self.inflow_tag))
 
@@ -191,13 +191,15 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
         return self.get_weak_flux()
 
     def rhs(self, t, u):
-        from hedge.discretization import pair_with_boundary
+        from hedge.discretization import \
+                pair_with_boundary, \
+                cache_diff_results
         from hedge.tools import dot
 
         bc_in = self.inflow_u.boundary_interpolant(t, self.discr, self.inflow_tag)
         bc_out = self.discr.boundarize_volume_field(u, self.outflow_tag)
 
-        return -dot(self.v, self.minv_st*u) + self.m_inv*(
+        return -dot(self.v, self.minv_st*cache_diff_results(u)) + self.m_inv*(
                 self.flux*u
                 + self.flux * pair_with_boundary(u, bc_in, self.inflow_tag)
                 + self.flux * pair_with_boundary(u, bc_out, self.outflow_tag)
@@ -271,16 +273,16 @@ class MaxwellOperator(TimeDependentOperator):
 
     def rhs(self, t, w):
         from hedge.tools import cross
-        from hedge.discretization import pair_with_boundary
+        from hedge.discretization import pair_with_boundary, cache_diff_results
         from pytools.arithmetic_container import join_fields, ArithmeticList
 
         e, h = self.split_fields(w)
 
         def e_curl(field):
-            return self.e_cross(self.nabla, field)
+            return self.e_cross(self.nabla, cache_diff_results(field))
 
         def h_curl(field):
-            return self.h_cross(self.nabla, field)
+            return self.h_cross(self.nabla, cache_diff_results(field))
 
         bc = join_fields(
                 -self.discr.boundarize_volume_field(e, self.pec_tag),
@@ -509,10 +511,10 @@ class WeakPoissonOperator(Operator,hedge.tools.PylinearOperator):
 
     # operator application, rhs prep ------------------------------------------
     def grad(self, u):
-        from hedge.discretization import pair_with_boundary
+        from hedge.discretization import pair_with_boundary, cache_diff_results
 
         return self.m_inv * (
-                - (self.stiff_t * u)
+                - (self.stiff_t * cache_diff_results(u))
                 + self.flux_u*u
                 + self.flux_u_dbdry*pair_with_boundary(u, 0, self.dirichlet_tag)
                 + self.flux_u_nbdry*pair_with_boundary(u, 0, self.neumann_tag)
@@ -531,7 +533,7 @@ class WeakPoissonOperator(Operator,hedge.tools.PylinearOperator):
           only needs to be applied once, when preparing the right hand side
           in @L{prepare_rhs}.
         """
-        from hedge.discretization import pair_with_boundary
+        from hedge.discretization import pair_with_boundary, cache_diff_results
         from hedge.tools import dot
         from pytools.arithmetic_container import join_fields
 
@@ -545,7 +547,7 @@ class WeakPoissonOperator(Operator,hedge.tools.PylinearOperator):
         neumann_bc_w = join_fields(0, [0]*dim)
 
         result = (
-                -dot(self.stiff_t, v)
+                -dot(self.stiff_t, cache_diff_results(v))
                 + self.flux_v * w
                 + self.flux_v_dbdry * pair_with_boundary(w, dirichlet_bc_w, self.dirichlet_tag)
                 + self.flux_v_nbdry * pair_with_boundary(w, neumann_bc_w, self.neumann_tag)
@@ -584,7 +586,7 @@ class WeakPoissonOperator(Operator,hedge.tools.PylinearOperator):
         """
 
         from pytools.arithmetic_container import ArithmeticList 
-        from hedge.discretization import pair_with_boundary
+        from hedge.discretization import pair_with_boundary, cache_diff_results
         from hedge.tools import dot
         from pytools.arithmetic_container import join_fields
 
@@ -611,7 +613,7 @@ class WeakPoissonOperator(Operator,hedge.tools.PylinearOperator):
         neumann_bc_w = join_fields(0, neumann_bc_v())
 
         return self.discr.mass_operator * rhs.volume_interpolant(self.discr) - (
-                -dot(self.stiff_t, diff_v)
+                -dot(self.stiff_t, cache_diff_results(diff_v))
                 + self.flux_v * w
                 + self.flux_v_dbdry * pair_with_boundary(w, dirichlet_bc_w, dtag)
                 + self.flux_v_nbdry * pair_with_boundary(w, neumann_bc_w, ntag)
@@ -814,7 +816,7 @@ class StrongHeatOperator(TimeDependentOperator):
 
     # right-hand side ---------------------------------------------------------
     def rhs(self, t, u):
-        from hedge.discretization import pair_with_boundary
+        from hedge.discretization import pair_with_boundary, cache_diff_results
         from math import sqrt
         from hedge.tools import dot
         from pytools.arithmetic_container import join_fields
@@ -828,7 +830,7 @@ class StrongHeatOperator(TimeDependentOperator):
         neumann_bc_u = self.neumann_bc_u(t, sqrt_coeff_u)
 
         v = self.m_inv * (
-                self.sqrt_coeff*(self.stiff * u)
+                self.sqrt_coeff*(self.stiff * cache_diff_results(u))
                 - self.flux_u*sqrt_coeff_u
                 - self.flux_u_dbdry*pair_with_boundary(sqrt_coeff_u, dirichlet_bc_u, dtag)
                 - self.flux_u_nbdry*pair_with_boundary(sqrt_coeff_u, neumann_bc_u, ntag)
@@ -843,7 +845,7 @@ class StrongHeatOperator(TimeDependentOperator):
         neumann_bc_w = join_fields(neumann_bc_u, neumann_bc_v)
 
         return self.m_inv * (
-                dot(self.stiff, self.sqrt_coeff*v)
+                dot(self.stiff, cache_diff_results(self.sqrt_coeff*v))
                 - self.flux_v * w
                 - self.flux_v_dbdry * pair_with_boundary(w, dirichlet_bc_w, dtag)
                 - self.flux_v_nbdry * pair_with_boundary(w, neumann_bc_w, ntag)

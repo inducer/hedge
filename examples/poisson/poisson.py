@@ -141,7 +141,7 @@ def main() :
             mat[:,j] = op(num.unit_vector(w, j))
         return mat
 
-    if True:
+    if False:
         mat = matrix_rep(op)
         print comp.norm_frobenius(mat-mat.T)
         #print comp.eigenvalues(mat)
