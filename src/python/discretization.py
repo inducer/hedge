@@ -552,32 +552,6 @@ class Discretization(object):
         group, idx = self.group_map[el_id]
         return group.ranges[idx], group.local_discretization
 
-    # local operators ---------------------------------------------------------
-    def perform_mass_operator(self, target):
-        self.mass_op_counter.add()
-
-        self.mass_op_timer.start()
-        from hedge._internal import perform_elwise_scaled_operator
-        target.begin(len(self.nodes), len(self.nodes))
-        for eg in self.element_groups:
-            perform_elwise_scaled_operator(
-                    eg.ranges, eg.ranges, eg.jacobians, eg.mass_matrix, target)
-        target.finalize()
-        self.mass_op_timer.stop()
-
-    def perform_inverse_mass_operator(self, target):
-        self.mass_op_counter.add()
-
-        self.mass_op_timer.start()
-        from hedge._internal import perform_elwise_scaled_operator
-        target.begin(len(self.nodes), len(self.nodes))
-        for eg in self.element_groups:
-            perform_elwise_scaled_operator(eg.ranges, eg.ranges,
-                   eg.inverse_jacobians, eg.inverse_mass_matrix, 
-                   target)
-        target.finalize()
-        self.mass_op_timer.stop()
-
     # inner flux computation --------------------------------------------------
     def perform_inner_flux(self, int_flux, ext_flux, target):
         """Perform fluxes in the interior of the domain on the 
@@ -742,13 +716,11 @@ class Discretization(object):
                 StiffnessTOperator(self, i) for i in range(self.dimensions))
     @property
     def mass_operator(self):
-        return _DiscretizationMethodOperator(
-                self, self.perform_mass_operator)
+        return MassOperator(self)
 
     @property
     def inverse_mass_operator(self):
-        return _DiscretizationMethodOperator(
-                self, self.perform_inverse_mass_operator)
+        return InverseMassOperator(self)
 
     def get_flux_operator(self, flux, direct=True):
         """Return a flux operator that can be multiplied with
@@ -943,7 +915,7 @@ class _OperatorSum(DiscretizationVectorOperator):
 
 
 
-# local operators -------------------------------------------------------------
+# diff operators --------------------------------------------------------------
 class DiffOperatorBase(DiscretizationVectorOperator):
     def __init__(self, discr, coordinate):
         DiscretizationVectorOperator.__init__(self, discr)
@@ -1005,20 +977,48 @@ class StiffnessTOperator(DiffOperatorBase):
     @staticmethod
     def coefficients(element_group): return element_group.stiffness_coefficients
 
-class _DiscretizationMethodOperator(DiscretizationVectorOperator):
-    def __init__(self, discr, perform_func):
+
+
+
+
+# mass operators --------------------------------------------------------------
+class MassOperatorBase(DiscretizationVectorOperator):
+    def __init__(self, discr):
         DiscretizationVectorOperator.__init__(self, discr)
-        self.perform_func = perform_func
 
     @work_with_arithmetic_containers
     def __mul__(self, field):
         from hedge.tools import make_vector_target
         result = self.discr.volume_zeros()
-        self.perform_func(make_vector_target(field, result))
+        self.perform_on(make_vector_target(field, result))
         return result
 
     def perform_on(self, target):
-        self.perform_func(target)
+        self.discr.mass_op_counter.add()
+
+        self.discr.mass_op_timer.start()
+        from hedge._internal import perform_elwise_scaled_operator
+        target.begin(len(self.discr), len(self.discr))
+        for eg in self.discr.element_groups:
+            perform_elwise_scaled_operator(eg.ranges, eg.ranges,
+                   self.coefficients(eg), self.matrix(eg), 
+                   target)
+        target.finalize()
+        self.discr.mass_op_timer.stop()
+
+class MassOperator(MassOperatorBase):
+    @staticmethod
+    def matrix(element_group): return element_group.mass_matrix
+
+    @staticmethod
+    def coefficients(element_group): return element_group.jacobians
+
+class InverseMassOperator(MassOperatorBase):
+    @staticmethod
+    def matrix(element_group): return element_group.inverse_mass_matrix
+
+    @staticmethod
+    def coefficients(element_group): return element_group.inverse_jacobians
 
 
 
