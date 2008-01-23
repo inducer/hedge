@@ -518,10 +518,13 @@ class Discretization(object):
         result = ArithmeticList([self.boundary_zeros(tag) for i in range(self.dimensions)])
         for fg, ldis in self._get_boundary(tag).face_groups_and_ldis:
             for face_pair in fg.face_pairs:
-                normal = face_pair.flux_face.normal
-                for i in face_pair.opposite_indices:
+                flux_face = fg.flux_faces[face_pair.flux_face_index]
+                normal = flux_face.normal
+                oeb = face_pair.opp_el_base_index
+                opp_index_list = fg.index_lists[face_pair.opp_face_index_list_number]
+                for i in opp_index_list:
                     for j in range(self.dimensions):
-                        result[j][i] = normal[j]
+                        result[j][oeb+i] = normal[j]
 
         return result
 
@@ -922,6 +925,11 @@ class DiffOperatorBase(DiscretizationVectorOperator):
 
         self.xyz_axis = xyz_axis
 
+        self.do_warn = True
+
+    def do_not_warn(self):
+        self.do_warn = False
+
     def __mul__(self, field):
         # this emulates work_with_arithmetic_containers, but has to be more
         # general, because 
@@ -936,8 +944,9 @@ class DiffOperatorBase(DiscretizationVectorOperator):
         self.discr.diff_op_timer.start()
 
         if not isinstance(field, _DiffResultCache):
-            from warnings import warn
-            warn("wrap operand of diff.operator in cache_diff_results() for speed")
+            if self.do_warn:
+                from warnings import warn
+                warn("wrap operand of diff.operator in cache_diff_results() for speed")
 
             result = self.discr.volume_zeros()
             from hedge.tools import make_vector_target
