@@ -196,6 +196,11 @@ namespace hedge {
       const uniform_element_ranges &dest_ers, 
       const vector &scale_factors, const Mat &matrix, vector_target target)
   {
+    if (src_ers.size()*src_ers.el_size() != target.m_operand.size())
+      throw std::runtime_error("operand is of wrong size");
+    if (dest_ers.size()*dest_ers.el_size() != target.m_result.size())
+      throw std::runtime_error("operand is of wrong size");
+
     unsigned i = 0;
     vector new_operand(target.m_operand.size());
     BOOST_FOREACH(const element_range r, src_ers)
@@ -225,6 +230,10 @@ namespace hedge {
       throw std::runtime_error("number of matrix columns != size of src element");
     if (matrix.size1() != dest_ers.el_size())
       throw std::runtime_error("number of matrix rows != size of dest element");
+    if (src_ers.size()*src_ers.el_size() != target.m_operand.size())
+      throw std::runtime_error("operand is of wrong size");
+    if (dest_ers.size()*dest_ers.el_size() != target.m_result.size())
+      throw std::runtime_error("operand is of wrong size");
 
     using namespace boost::numeric::bindings;
     using blas::detail::gemm;
@@ -232,17 +241,17 @@ namespace hedge {
     gemm(
         'T', // "matrix" is row-major
         'N', // a contiguous array of vectors is column-major
-        matrix.size2(),
-        src_ers.size(),
         matrix.size1(),
+        src_ers.size(),
+        matrix.size2(),
         /*alpha*/ 1,
         /*a*/ traits::matrix_storage(matrix), 
-        /*lda*/ matrix.size1(),
+        /*lda*/ matrix.size2(),
         /*b*/ traits::vector_storage(target.m_operand) + src_ers.start(), 
-        /*ldb*/ matrix.size1(),
+        /*ldb*/ src_ers.el_size(),
         /*beta*/ 1,
         /*c*/ traits::vector_storage(target.m_result) + dest_ers.start(), 
-        /*ldc*/ matrix.size2()
+        /*ldc*/ dest_ers.el_size()
         );
   }
 #endif

@@ -1275,7 +1275,7 @@ class TestHedge(unittest.TestCase):
         self.assert_(count(mesh.tag_to_boundary[TAG_ALL]) == 0)
     # -------------------------------------------------------------------------
     def test_elliptic(self):
-        """Test that various properties of elliptic operators."""
+        """Test various properties of elliptic operators."""
         import pylinear.array as num
         import pylinear.computation as comp
         import pylinear.operator as operator
