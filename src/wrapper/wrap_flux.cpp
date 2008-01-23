@@ -19,6 +19,7 @@
 
 #include <vector>
 #include <iostream>
+#include <boost/shared_ptr.hpp>
 #include <boost/tuple/tuple.hpp>
 #include <boost/python.hpp>
 #include <boost/python/stl_iterator.hpp>
@@ -261,7 +262,7 @@ void hedge_expose_fluxes()
 
   {
     typedef face_group cl;
-    class_<cl>("FaceGroup", init<bool>(arg("double_sided")))
+    class_<cl, boost::shared_ptr<cl> >("FaceGroup", init<bool>(arg("double_sided")))
       .DEF_SIMPLE_RW_MEMBER(face_pairs)
       .DEF_SIMPLE_RW_MEMBER(flux_faces)
       .DEF_SIMPLE_RW_MEMBER(index_lists)
