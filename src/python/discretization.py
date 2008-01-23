@@ -104,6 +104,21 @@ class _Boundary(object):
 
 
 
+class _DiffResultCache(object):
+    def __init__(self, vector):
+        self.vector = vector
+        self.diffed_by_local_coordinate = {}
+
+def cache_diff_results(vec):
+    from pytools.arithmetic_container import ArithmeticList
+    if isinstance(vec, list):
+        return [_DiffResultCache(subvec) for subvec in vec]
+    else:
+        return _DiffResultCache(vec)
+
+
+
+
 class Discretization(object):
     """The global approximation space.
 

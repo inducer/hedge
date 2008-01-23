@@ -196,13 +196,6 @@ namespace hedge {
       const uniform_element_ranges &dest_ers, 
       const vector &scale_factors, const Mat &matrix, vector_target target)
   {
-    if (src_ers.size() != dest_ers.size())
-      throw std::runtime_error("element ranges have different sizes");
-    if (matrix.size2() != src_ers.el_size())
-      throw std::runtime_error("number of matrix columns != size of src element");
-    if (matrix.size1() != dest_ers.el_size())
-      throw std::runtime_error("number of matrix rows != size of dest element");
-
     unsigned i = 0;
     vector new_operand(target.m_operand.size());
     BOOST_FOREACH(const element_range r, src_ers)
@@ -210,6 +203,28 @@ namespace hedge {
       noalias(subrange(new_operand, r.first, r.second)) = 
         scale_factors[i++] * subrange(target.m_operand, r.first, r.second);
     }
+
+    perform_elwise_operator(src_ers, dest_ers, matrix, 
+        vector_target(new_operand, target.m_result));
+  }
+
+
+
+
+
+  template <class Mat>
+  inline
+  void perform_elwise_operator(
+      const uniform_element_ranges &src_ers, 
+      const uniform_element_ranges &dest_ers, 
+      const Mat &matrix, vector_target target)
+  {
+    if (src_ers.size() != dest_ers.size())
+      throw std::runtime_error("element ranges have different sizes");
+    if (matrix.size2() != src_ers.el_size())
+      throw std::runtime_error("number of matrix columns != size of src element");
+    if (matrix.size1() != dest_ers.el_size())
+      throw std::runtime_error("number of matrix rows != size of dest element");
 
     using namespace boost::numeric::bindings;
     using blas::detail::gemm;
@@ -223,7 +238,7 @@ namespace hedge {
         /*alpha*/ 1,
         /*a*/ traits::matrix_storage(matrix), 
         /*lda*/ matrix.size1(),
-        /*b*/ traits::vector_storage(new_operand) + src_ers.start(), 
+        /*b*/ traits::vector_storage(target.m_operand) + src_ers.start(), 
         /*ldb*/ matrix.size1(),
         /*beta*/ 1,
         /*c*/ traits::vector_storage(target.m_result) + dest_ers.start(), 

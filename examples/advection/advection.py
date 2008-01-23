@@ -141,8 +141,8 @@ def main() :
     #import code
     #code.interact(local = {'objs': objs})
 
-    from pyrticle._internal import ShapeFunction
-    sf = ShapeFunction(0.25, 2)
+    #from pyrticle._internal import ShapeFunction
+    #sf = ShapeFunction(0.25, 2)
 
     def gauss_hump(x):
         from math import exp
@@ -153,8 +153,8 @@ def main() :
         rsquared = (x*x)/(0.1**2)
         return exp(-rsquared)-0.5*exp(-rsquared/2)
 
-    #u = discr.interpolate_volume_function(lambda x: u_analytic(x, 0))
-    u = discr.interpolate_volume_function(sf)
+    u = discr.interpolate_volume_function(lambda x: u_analytic(x, 0))
+    #u = discr.interpolate_volume_function(sf)
 
     stepper = RK4TimeStepper()
 
