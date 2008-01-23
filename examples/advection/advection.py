@@ -58,7 +58,7 @@ def main() :
 
     pcon = guess_parallelization_context()
 
-    dim = 2
+    dim = 3
 
     job = Job("mesh")
     if dim == 2:

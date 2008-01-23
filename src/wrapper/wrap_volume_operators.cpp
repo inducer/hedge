@@ -85,4 +85,8 @@ void hedge_expose_volume_operators()
   const matrix &,
   DEF_FOR_EACH_OP_TARGET(perform_elwise_scaled_operator, ARG_TYPES);
 #undef ARG_TYPES
+
+  def("perform_elwise_scale", 
+      perform_elwise_scale<uniform_element_ranges>,
+      (arg("ers"), arg("scale_factors"), arg("target")));
 }

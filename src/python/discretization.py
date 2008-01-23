@@ -104,21 +104,6 @@ class _Boundary(object):
 
 
 
-class _DiffResultCache(object):
-    def __init__(self, vector):
-        self.vector = vector
-        self.diffed_by_local_coordinate = {}
-
-def cache_diff_results(vec):
-    from pytools.arithmetic_container import ArithmeticList
-    if isinstance(vec, list):
-        return [_DiffResultCache(subvec) for subvec in vec]
-    else:
-        return _DiffResultCache(vec)
-
-
-
-
 class Discretization(object):
     """The global approximation space.
 
@@ -916,33 +901,103 @@ class _OperatorSum(DiscretizationVectorOperator):
 
 
 # diff operators --------------------------------------------------------------
+class _DiffResultCache(object):
+    def __init__(self, vector):
+        self.vector = vector
+        self.cache = {}
+
+def cache_diff_results(vec):
+    from pytools.arithmetic_container import ArithmeticList
+    if isinstance(vec, list):
+        return [_DiffResultCache(subvec) for subvec in vec]
+    else:
+        return _DiffResultCache(vec)
+
+
+
+
 class DiffOperatorBase(DiscretizationVectorOperator):
-    def __init__(self, discr, coordinate):
+    def __init__(self, discr, xyz_axis):
         DiscretizationVectorOperator.__init__(self, discr)
 
-        self.coordinate = coordinate
+        self.xyz_axis = xyz_axis
 
-    @work_with_arithmetic_containers
     def __mul__(self, field):
+        # this emulates work_with_arithmetic_containers, but has to be more
+        # general, because 
+        # a) _DiffResultCache is not an object supporting arithmetic
+        #    (and for good reason)
+        # b) cache_diff_results returns a plain list (because of a)
+
+        if isinstance(field, list):
+            return ArithmeticList(self * subfield for subfield in field)
+
         self.discr.diff_op_counter.add()
         self.discr.diff_op_timer.start()
 
-        from hedge.tools import make_vector_target
+        if not isinstance(field, _DiffResultCache):
+            from warnings import warn
+            warn("wrap operand of diff.operator in cache_diff_results() for speed")
 
-        result = self.discr.volume_zeros()
-        self.perform_on(make_vector_target(field, result))
+            result = self.discr.volume_zeros()
+            from hedge.tools import make_vector_target
+            self.perform_on(make_vector_target(field, result))
+        else:
+            rst_derivatives = self.get_rst_derivatives(field)
+
+            result = self.discr.volume_zeros()
+
+            from hedge.tools import make_vector_target
+            from hedge._internal import perform_elwise_scale
+
+            for rst_axis in range(self.discr.dimensions):
+                target = make_vector_target(rst_derivatives[rst_axis], result)
+
+                target.begin(len(self.discr), len(self.discr))
+                for eg in self.discr.element_groups:
+                    perform_elwise_scale(eg.ranges,
+                            self.coefficients(eg)[self.xyz_axis][rst_axis],
+                            target)
+                target.finalize()
+
+            return result
 
         self.discr.diff_op_timer.stop()
 
         return result
 
+    def get_rst_derivatives(self, diff_result_cache):
+        def diff(rst_axis):
+            result = self.discr.volume_zeros()
+
+            from hedge.tools import make_vector_target
+            target = make_vector_target(diff_result_cache.vector, result)
+
+            target.begin(len(self.discr), len(self.discr))
+
+            from hedge._internal import perform_elwise_operator
+            for eg in self.discr.element_groups:
+                perform_elwise_operator(eg.ranges, eg.ranges, 
+                        self.matrices(eg)[rst_axis], target)
+
+            target.finalize()
+
+            return result
+
+        try:
+            return diff_result_cache.cache[self.__class__]
+        except KeyError:
+            result = [diff(i) for i in range(self.discr.dimensions)]
+            diff_result_cache.cache[self.__class__] = result
+            return result
+            
     def perform_on(self, target):
         from hedge._internal import perform_elwise_scaled_operator
 
         target.begin(len(self.discr), len(self.discr))
 
         for eg in self.discr.element_groups:
-            for coeff, mat in zip(self.coefficients(eg)[self.coordinate], 
+            for coeff, mat in zip(self.coefficients(eg)[self.xyz_axis], 
                     self.matrices(eg)):
                 perform_elwise_scaled_operator(
                         eg.ranges, eg.ranges, coeff, mat, target)

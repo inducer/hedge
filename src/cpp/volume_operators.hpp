@@ -165,6 +165,9 @@ namespace hedge {
     }
   }
 
+
+
+
   template <class SrcERanges, class DestERanges, class Mat, class OT>
   inline
   void perform_elwise_scaled_operator(
@@ -181,6 +184,23 @@ namespace hedge {
       const element_range dest_er = dest_ers[i];
       target.add_scaled_coefficients(dest_er.first, src_er.first, 
           scale_factors[i++], matrix);
+    }
+  }
+
+
+
+
+  template <class ERanges>
+  inline
+  void perform_elwise_scale(const ERanges &ers, 
+      vector const &scale_factors, vector_target tgt)
+  {
+    unsigned i = 0;
+    BOOST_FOREACH(const element_range er, ers)
+    {
+      noalias(subrange(tgt.m_result, er.first, er.second)) += 
+        scale_factors[i++] * 
+        subrange(tgt.m_operand, er.first, er.second);
     }
   }
 

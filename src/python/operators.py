@@ -174,7 +174,7 @@ class StrongAdvectionOperator(AdvectionOperatorBase):
         return u.int * dot(normal, self.v) - self.get_weak_flux()
 
     def rhs(self, t, u):
-        from hedge.discretization import pair_with_boundary
+        from hedge.discretization import pair_with_boundary, cache_diff_results
         from hedge.tools import dot
 
         bc_in = self.inflow_u.boundary_interpolant(t, self.discr, self.inflow_tag)
