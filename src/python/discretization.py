@@ -578,77 +578,6 @@ class Discretization(object):
         target.finalize()
         self.mass_op_timer.stop()
 
-    def perform_differentiation_operator(self, coordinate, target):
-        self.diff_op_counter.add()
-        self.diff_op_timer.start()
-
-        from hedge._internal import perform_elwise_scaled_operator
-
-        target.begin(len(self.nodes), len(self.nodes))
-
-        for eg in self.element_groups:
-            for coeff, mat in zip(eg.diff_coefficients[coordinate], 
-                    eg.differentiation_matrices):
-                perform_elwise_scaled_operator(eg.ranges, eg.ranges, 
-                        coeff, mat, target)
-
-        target.finalize()
-
-        self.diff_op_timer.stop()
-
-    def perform_stiffness_operator(self, coordinate, target):
-        self.diff_op_counter.add()
-        self.diff_op_timer.start()
-
-        from hedge._internal import perform_elwise_scaled_operator
-
-        target.begin(len(self.nodes), len(self.nodes))
-
-        for eg in self.element_groups:
-            for coeff, mat in zip(eg.stiffness_coefficients[coordinate], 
-                    eg.stiffness_matrices):
-                perform_elwise_scaled_operator(
-                        eg.ranges, eg.ranges,
-                        coeff, mat, target)
-
-        target.finalize()
-
-        self.diff_op_timer.stop()
-
-    def perform_stiffness_t_operator(self, coordinate, target):
-        self.diff_op_counter.add()
-        self.diff_op_timer.start()
-
-        from hedge._internal import perform_elwise_scaled_operator
-
-        target.begin(len(self.nodes), len(self.nodes))
-
-        for eg in self.element_groups:
-            for coeff, mat in zip(eg.stiffness_coefficients[coordinate], 
-                    eg.stiffness_t_matrices):
-                perform_elwise_scaled_operator(
-                        eg.ranges, eg.ranges, coeff, mat, target)
-
-        target.finalize()
-
-        self.diff_op_timer.stop()
-
-    def perform_minv_st_operator(self, coordinate, target):
-        self.diff_op_counter.add()
-        self.diff_op_timer.start()
-
-        from hedge._internal import perform_elwise_scaled_operator
-
-        target.begin(len(self.nodes), len(self.nodes))
-
-        for eg in self.element_groups:
-            for coeff, mat in zip(eg.diff_coefficients[coordinate], eg.minv_st):
-                perform_elwise_scaled_operator(eg.ranges, eg.ranges, coeff, mat, target)
-
-        target.finalize()
-
-        self.diff_op_timer.stop()
-
     # inner flux computation --------------------------------------------------
     def perform_inner_flux(self, int_flux, ext_flux, target):
         """Perform fluxes in the interior of the domain on the 
@@ -795,34 +724,22 @@ class Discretization(object):
     @property
     def nabla(self):
         return ArithmeticList(
-                [_DifferentiationOperator(self, i, self.perform_differentiation_operator) 
-                    for i in range(self.dimensions)]
-                )
-
-    @property
-    def stiffness_operator(self):
-        return ArithmeticList(
-                [_DifferentiationOperator(self, i, 
-                    self.perform_stiffness_operator) 
-                    for i in range(self.dimensions)]
-                )
-
-    @property
-    def stiffness_t_operator(self):
-        return ArithmeticList(
-                [_DifferentiationOperator(self, i, 
-                    self.perform_stiffness_t_operator) 
-                    for i in range(self.dimensions)]
-                )
+                DifferentiationOperator(self, i) for i in range(self.dimensions))
 
     @property
     def minv_stiffness_t(self):
         return ArithmeticList(
-                [_DifferentiationOperator(self, i, 
-                    self.perform_minv_st_operator) 
-                    for i in range(self.dimensions)]
-                )
+                MInvSTOperator(self, i) for i in range(self.dimensions))
 
+    @property
+    def stiffness_operator(self):
+        return ArithmeticList(
+                StiffnessOperator(self, i) for i in range(self.dimensions))
+
+    @property
+    def stiffness_t_operator(self):
+        return ArithmeticList(
+                StiffnessTOperator(self, i) for i in range(self.dimensions))
     @property
     def mass_operator(self):
         return _DiscretizationMethodOperator(
@@ -990,7 +907,7 @@ class PylinearOpWrapper(hedge.tools.PylinearOperator):
 
 
 # operator algebra ------------------------------------------------------------
-class _DiscretizationVectorOperator(object):
+class DiscretizationVectorOperator(object):
     def __init__(self, discr):
         self.discr = discr
 
@@ -1007,7 +924,7 @@ class _DiscretizationVectorOperator(object):
         value = float(scalar)
         return _ScalarMultipleOperator(scalar, self)
 
-class _ScalarMultipleOperator(_DiscretizationVectorOperator):
+class _ScalarMultipleOperator(DiscretizationVectorOperator):
     def __init__(self, scalar, op):
         self.scalar = scalar
         self.op = op
@@ -1015,7 +932,7 @@ class _ScalarMultipleOperator(_DiscretizationVectorOperator):
     def __mul__(self, field):
         return self.scalar*(self.op*field)
 
-class _OperatorSum(_DiscretizationVectorOperator):
+class _OperatorSum(DiscretizationVectorOperator):
     def __init__(self, op1, op2):
         self.op1 = op1
         self.op2 = op2
@@ -1027,27 +944,70 @@ class _OperatorSum(_DiscretizationVectorOperator):
 
 
 # local operators -------------------------------------------------------------
-class _DifferentiationOperator(_DiscretizationVectorOperator):
-    def __init__(self, discr, coordinate, perform_func):
-        _DiscretizationVectorOperator.__init__(self, discr)
+class DiffOperatorBase(DiscretizationVectorOperator):
+    def __init__(self, discr, coordinate):
+        DiscretizationVectorOperator.__init__(self, discr)
 
         self.coordinate = coordinate
-        self.perform_func = perform_func
 
     @work_with_arithmetic_containers
     def __mul__(self, field):
+        self.discr.diff_op_counter.add()
+        self.discr.diff_op_timer.start()
+
         from hedge.tools import make_vector_target
 
         result = self.discr.volume_zeros()
-        self.perform_func(self.coordinate, make_vector_target(field, result))
+        self.perform_on(make_vector_target(field, result))
+
+        self.discr.diff_op_timer.stop()
+
         return result
 
     def perform_on(self, target):
-        self.perform_func(self.coordinate, target)
+        from hedge._internal import perform_elwise_scaled_operator
 
-class _DiscretizationMethodOperator(_DiscretizationVectorOperator):
+        target.begin(len(self.discr), len(self.discr))
+
+        for eg in self.discr.element_groups:
+            for coeff, mat in zip(self.coefficients(eg)[self.coordinate], 
+                    self.matrices(eg)):
+                perform_elwise_scaled_operator(
+                        eg.ranges, eg.ranges, coeff, mat, target)
+
+        target.finalize()
+
+class DifferentiationOperator(DiffOperatorBase):
+    @staticmethod
+    def matrices(element_group): return element_group.differentiation_matrices
+
+    @staticmethod
+    def coefficients(element_group): return element_group.diff_coefficients
+
+class MInvSTOperator(DiffOperatorBase):
+    @staticmethod
+    def matrices(element_group): return element_group.minv_st
+
+    @staticmethod
+    def coefficients(element_group): return element_group.diff_coefficients
+
+class StiffnessOperator(DiffOperatorBase):
+    @staticmethod
+    def matrices(element_group): return element_group.stiffness_matrices
+
+    @staticmethod
+    def coefficients(element_group): return element_group.stiffness_coefficients
+
+class StiffnessTOperator(DiffOperatorBase):
+    @staticmethod
+    def matrices(element_group): return element_group.stiffness_t_matrices
+
+    @staticmethod
+    def coefficients(element_group): return element_group.stiffness_coefficients
+
+class _DiscretizationMethodOperator(DiscretizationVectorOperator):
     def __init__(self, discr, perform_func):
-        _DiscretizationVectorOperator.__init__(self, discr)
+        DiscretizationVectorOperator.__init__(self, discr)
         self.perform_func = perform_func
 
     @work_with_arithmetic_containers
@@ -1064,9 +1024,9 @@ class _DiscretizationMethodOperator(_DiscretizationVectorOperator):
 
 
 # flux operators --------------------------------------------------------------
-class _DirectFluxOperator(_DiscretizationVectorOperator):
+class _DirectFluxOperator(DiscretizationVectorOperator):
     def __init__(self, discr, flux):
-        _DiscretizationVectorOperator.__init__(self, discr)
+        DiscretizationVectorOperator.__init__(self, discr)
         self.flux = flux
 
     def __mul__(self, field):
@@ -1119,9 +1079,9 @@ class _DirectFluxOperator(_DiscretizationVectorOperator):
 
 
 
-class _FluxMatrixOperator(_DiscretizationVectorOperator):
+class _FluxMatrixOperator(DiscretizationVectorOperator):
     def __init__(self, discr, flux):
-        _DiscretizationVectorOperator.__init__(self, discr)
+        DiscretizationVectorOperator.__init__(self, discr)
 
         from hedge._internal import MatrixTarget
         self.flux = flux
