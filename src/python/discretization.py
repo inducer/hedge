@@ -969,8 +969,6 @@ class DiffOperatorBase(DiscretizationVectorOperator):
                             target)
                 target.finalize()
 
-            return result
-
         self.discr.diff_op_timer.stop()
 
         return result
