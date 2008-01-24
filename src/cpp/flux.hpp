@@ -23,6 +23,7 @@
 
 
 
+#include <boost/typeof/typeof.hpp>
 #include <boost/tuple/tuple.hpp>
 #include <boost/utility.hpp>
 #include "base.hpp"
@@ -273,6 +274,18 @@ namespace hedge { namespace fluxes {
       const Operand m_op;
   };
 } }
+
+
+
+
+#include BOOST_TYPEOF_INCREMENT_REGISTRATION_GROUP()
+ 
+BOOST_TYPEOF_REGISTER_TYPE(hedge::fluxes::flux);
+BOOST_TYPEOF_REGISTER_TYPE(hedge::fluxes::constant);
+BOOST_TYPEOF_REGISTER_TYPE(hedge::fluxes::normal);
+BOOST_TYPEOF_REGISTER_TYPE(hedge::fluxes::penalty_term);
+BOOST_TYPEOF_REGISTER_TEMPLATE(hedge::fluxes::binary_operator, 3);
+BOOST_TYPEOF_REGISTER_TEMPLATE(hedge::fluxes::unary_operator, 2);
 
 
 

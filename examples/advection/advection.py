@@ -58,11 +58,11 @@ def main() :
 
     pcon = guess_parallelization_context()
 
-    dim = 3
+    dim = 2
 
     job = Job("mesh")
     if dim == 2:
-        a = num.array([-1,0])
+        a = num.array([-1,0.5])
         if pcon.is_head_rank:
             from hedge.mesh import \
                     make_disk_mesh, \
@@ -78,8 +78,8 @@ def main() :
             #mesh = make_disk_mesh(r=pi, boundary_tagger=boundary_tagger, max_area=0.5)
             #mesh = make_disk_mesh(boundary_tagger=boundary_tagger)
             mesh = make_rect_mesh(
-                    (-0.5, -0.5),
-                    (10, 0.5),
+                    (-0.5, -1.5),
+                    (5, 1.5),
                     max_area=0.3,
                     boundary_tagger=boundary_tagger)
         el_class = TriangularElement
@@ -141,8 +141,8 @@ def main() :
     #import code
     #code.interact(local = {'objs': objs})
 
-    #from pyrticle._internal import ShapeFunction
-    #sf = ShapeFunction(0.25, 2)
+    from pyrticle._internal import ShapeFunction
+    sf = ShapeFunction(0.25, 2)
 
     def gauss_hump(x):
         from math import exp
