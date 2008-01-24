@@ -258,18 +258,16 @@ namespace hedge
 
       for (unsigned i = 0; i < face_length; i++)
       {
-        const int ili = fp.el_base_index+idx_list[i];
-        const int oili = fp.opp_el_base_index+opp_idx_list[i];
+        const int ili = ebi+idx_list[i];
+        const int oili = oebi+opp_idx_list[i];
 
         index_list::const_iterator ilj_iterator = idx_list.begin();
         index_list::const_iterator oilj_iterator = opp_idx_list.begin();
 
-        unsigned j;
-
         vector::value_type res_ili_addition = 0;
         vector::value_type res_oili_addition = 0;
 
-        for (j = 0; j < face_length; j++)
+        for (unsigned j = 0; j < face_length; j++)
         {
           const typename Mat::value_type fmm_entry = fmm(i, j);
 
