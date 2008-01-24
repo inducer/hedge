@@ -23,6 +23,7 @@
 
 
 
+#include <vector>
 #include <boost/numeric/ublas/vector.hpp>
 #include <boost/numeric/ublas/matrix.hpp>
 
@@ -30,6 +31,18 @@
 
 
 namespace hedge {
+  typedef unsigned element_number;
+  typedef unsigned face_number;
+  typedef unsigned vertex_number;
+  typedef unsigned node_index;
+
+  typedef std::vector<element_number> el_id_vector;
+  typedef std::vector<vertex_number> vtx_id_vector;
+  typedef std::pair<element_number, face_number> el_face;
+
+  static const element_number INVALID_ELEMENT = UINT_MAX;
+  static const vertex_number INVALID_VERTEX = UINT_MAX;
+
   typedef boost::numeric::ublas::vector<double> vector;
   typedef boost::numeric::ublas::matrix<double> matrix;
 

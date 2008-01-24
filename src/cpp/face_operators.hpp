@@ -48,14 +48,14 @@ namespace hedge
       opp_flux_face_index(-1)
     { }
 
-    int el_base_index;
-    int opp_el_base_index;
+    node_index el_base_index;
+    node_index opp_el_base_index;
 
-    int face_index_list_number;
-    int opp_face_index_list_number;
+    unsigned face_index_list_number;
+    unsigned opp_face_index_list_number;
 
-    int flux_face_index;
-    int opp_flux_face_index;
+    unsigned flux_face_index;
+    unsigned opp_flux_face_index;
   };
 
   struct face_group

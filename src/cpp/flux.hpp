@@ -35,7 +35,8 @@ namespace hedge { namespace fluxes {
   {
     double h;
     double face_jacobian;
-    unsigned element_id, face_id;
+    element_number element_id;
+    face_number face_id;
     unsigned order;
     hedge::vector normal;
   };
