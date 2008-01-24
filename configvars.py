@@ -7,8 +7,6 @@ vars = [
         "The name of the Boost Python library binary (without lib and .so)"),
     ("BOOST_BINDINGS_INC_DIR", None,
         "The include directory for the Boost bindings library"),
-    ("BOOST_MATH_TOOLKIT_INC_DIR", None,
-        "The include directory for the Boost math toolkit"),
     # -------------------------------------------------------------------------
     ("HAVE_BLAS", False,
         "Whether to build with support for BLAS"),

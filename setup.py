@@ -67,7 +67,6 @@ def main():
             "src/bgl-python",
             "src/cpp",
             ] \
-            + conf["BOOST_MATH_TOOLKIT_INCLUDE_DIRS"] \
             + conf["BOOST_BINDINGS_INCLUDE_DIRS"] \
             + conf["BOOST_INCLUDE_DIRS"]
 
