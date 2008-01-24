@@ -32,8 +32,12 @@ from pytools.arithmetic_container import work_with_arithmetic_containers
 
 
 
-cyl_bessel_j = hedge._internal.cyl_bessel_j
-cyl_neumann = hedge._internal.cyl_neumann
+try:
+    cyl_bessel_j = hedge._internal.cyl_bessel_j
+    cyl_neumann = hedge._internal.cyl_neumann
+except AttributeError:
+    # accept failure because of gcc ICE in boost math-toolkit
+    pass
 
 
 
