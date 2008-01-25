@@ -749,6 +749,8 @@ class CGStateContainer:
         if max_iterations is None:
             max_iterations = 10 * self.operator.size1()
 
+        if comp.norm_2(self.rhs) == 0:
+            return self.rhs
 
         iterations = 0
         delta_0 = delta = self.delta
