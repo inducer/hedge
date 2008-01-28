@@ -230,6 +230,7 @@ void hedge_expose_fluxes()
   {
     typedef face_pair cl;
     class_<cl>("FacePair")
+      .add_static_property("INVALID_INDEX", &cl::get_INVALID_INDEX)
       .DEF_SIMPLE_RW_MEMBER(el_base_index)
       .DEF_SIMPLE_RW_MEMBER(opp_el_base_index)
       .DEF_SIMPLE_RW_MEMBER(face_index_list_number)

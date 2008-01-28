@@ -189,6 +189,10 @@ namespace
 
 void hedge_expose_base()
 {
+  scope().attr("INVALID_ELEMENT") = INVALID_ELEMENT;
+  scope().attr("INVALID_VERTEX") = INVALID_VERTEX;
+  scope().attr("INVALID_NODE") = INVALID_NODE;
+
   {
     typedef std::vector<int> cl;
     class_<cl>("IntVector")

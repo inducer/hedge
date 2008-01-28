@@ -394,6 +394,7 @@ class Discretization(object):
                     identifier=(),
                     generator=lambda: tuple(xrange(len(face_indices))))
             fp.flux_face_index = len(face_group.flux_faces)
+            fp.opp_flux_face_index = FacePair.INVALID_INDEX
             face_group.face_pairs.append(fp)
 
             # create the flux face

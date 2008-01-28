@@ -42,6 +42,7 @@ namespace hedge {
 
   static const element_number INVALID_ELEMENT = UINT_MAX;
   static const vertex_number INVALID_VERTEX = UINT_MAX;
+  static const node_index INVALID_NODE = UINT_MAX;
 
   typedef boost::numeric::ublas::vector<double> vector;
   typedef boost::numeric::ublas::matrix<double> matrix;

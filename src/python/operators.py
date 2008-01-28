@@ -134,10 +134,7 @@ class AdvectionOperatorBase(TimeDependentOperator):
         self.m_inv = discr.inverse_mass_operator
         self.minv_st = discr.minv_stiffness_t
 
-        #print self.get_flux()
         self.flux = discr.get_flux_operator(self.get_flux(), direct=direct_flux)
-        #print self.flux.flux[0][1]
-        #print self.flux.flux[0][2]
 
     flux_types = [
             "central",

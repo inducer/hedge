@@ -39,13 +39,18 @@ namespace hedge
 
   struct face_pair
   {
+    static const unsigned INVALID_INDEX = UINT_MAX;
+
+    static unsigned get_INVALID_INDEX()
+    { return INVALID_INDEX; }
+
     face_pair()
-      : el_base_index(-1),
-      opp_el_base_index(-1),
-      face_index_list_number(-1),
-      opp_face_index_list_number(-1),
-      flux_face_index(-1), 
-      opp_flux_face_index(-1)
+      : el_base_index(INVALID_NODE),
+      opp_el_base_index(INVALID_NODE),
+      face_index_list_number(INVALID_INDEX),
+      opp_face_index_list_number(INVALID_INDEX),
+      flux_face_index(INVALID_INDEX), 
+      opp_flux_face_index(INVALID_INDEX)
     { }
 
     node_index el_base_index;
