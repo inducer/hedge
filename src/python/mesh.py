@@ -763,9 +763,6 @@ def make_rect_mesh(a=(0,0), b=(1,1), max_area=4e-3,
     def wrapped_boundary_tagger(fvi, el, fn):
         btag = marker2tag[fvi2fm[frozenset(fvi)]]
         if btag in periodic_tags:
-            print btag, fvi2fm[frozenset(fvi)], el.face_normals[fn]
-            lfvi = list(fvi)
-            print points[lfvi[0]], points[lfvi[1]]
             return [btag]
         else:
             return [btag] + boundary_tagger(fvi, el, fn)
