@@ -840,10 +840,12 @@ def ones_on_volume(discr, tag=hedge.mesh.TAG_ALL):
 
 @work_with_arithmetic_containers
 def integral(discr, volume_vector, tag=hedge.mesh.TAG_ALL):
-    ones = ones_on_volume(discr, tag)
-    mass_op = discr.mass_operator 
+    try:
+        mass_ones = discr._mass_ones
+    except AttributeError:
+        discr._mass_ones = mass_ones = discr.mass_operator * ones_on_volume(discr, tag)
     
-    return ones * (mass_op * volume_vector)
+    return mass_ones * volume_vector
 
 
 
