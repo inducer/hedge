@@ -696,7 +696,7 @@ def make_regular_square_mesh(a=-0.5, b=0.5, n=5, periodicity=None,
 def make_rect_mesh(a=(0,0), b=(1,1), max_area=4e-3, 
         boundary_tagger=(lambda fvi, el, fn: []),
         periodicity=None, subdivisions=None):
-    """Create a semi-structured rectangular mesh.
+    """Create an unstructured rectangular mesh.
 
     @arg a: the lower left hand point of the rectangle
     @arg b: the upper right hand point of the rectangle

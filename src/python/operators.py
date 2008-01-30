@@ -149,7 +149,10 @@ class AdvectionOperatorBase(TimeDependentOperator):
         u = FluxScalarPlaceholder(0)
         normal = make_normal(self.discr.dimensions)
 
-        if self.flux_type == "central":
+        if isinstance(self.flux_type, (int, float)):
+            return u.avg*dot(normal, self.v) \
+                    - self.flux_type*0.5*comp.norm_2(self.v)*(u.int - u.ext)
+        elif self.flux_type == "central":
             return u.avg*dot(normal, self.v)
         elif self.flux_type in ["lf", "upwind"]:
             return u.avg*dot(normal, self.v) \
