@@ -26,7 +26,7 @@ from hedge.tools import Rotation, dot
 
 
 class StrongWaveOperator:
-    def __init__(self, discr, source_f=None):
+    def __init__(self, discr, source_f=None, flux_type="upwind"):
         self.discr = discr
         self.source_f = source_f
 
@@ -41,6 +41,16 @@ class StrongWaveOperator:
         flux_weak = join_fields(
                 dot(v.avg, normal),
                 u.avg * normal)
+
+        if flux_type == "central":
+            pass
+        elif flux_type == "upwind":
+            # see doc/notes/hedge-notes.tm, generalized from 1D
+            flux_weak += join_fields(
+                    0.5*(u.int-u.ext),
+                    0.5*(v.int-v.ext))
+        else:
+            raise ValueError, "invalid flux type"
 
         flux_strong = join_fields(
                 dot(v.int, normal),
@@ -174,8 +184,10 @@ def main() :
         if step % 1 == 0:
             visf = vis.make_file("fld-%04d" % step)
             vis.add_data(visf,
-                    scalars=[("u", fields[0]), ], 
-                    vectors=[("v", fields[1:]), ],
+                    [
+                        ("u", fields[0]),
+                        ("v", fields[1:]), 
+                    ],
                     time=t,
                     step=step)
             visf.close()
