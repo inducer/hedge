@@ -22,3 +22,4 @@ doc/user-reference
 doc/dev-reference
 *.poly
 *.node
+*.pdf
