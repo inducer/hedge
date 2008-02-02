@@ -1,6 +1,6 @@
 <TeXmacs|1.0.6.12>
 
-<style|<tuple|article|maxima|axiom>>
+<style|<tuple|article|maxima|axiom|mystyle>>
 
 <\body>
   <section|Mapping from 2D equilateral to Unit Coordinates>
@@ -656,6 +656,108 @@
     <tformat|<table|<row|<cell|p<rsub|n+1>>|<cell|=>|<cell|\<alpha\><rsub|n+1>x*p<rsub|n>+\<beta\><rsub|n+1>p<rsub|n>-\<gamma\><rsub|n+1>p<rsub|n-1>>>|<row|<cell|\<alpha\><rsub|n+1>x*p<rsub|n>>|<cell|=>|<cell|p<rsub|n+1>-\<beta\><rsub|n+1>p<rsub|n>+\<gamma\><rsub|n+1>p<rsub|n-1>>>|<row|<cell|x*p<rsub|n>>|<cell|=>|<cell|<frac|1|\<alpha\><rsub|n+1>>p<rsub|n+1>-<frac|\<beta\><rsub|n+1>|\<alpha\><rsub|n+1>>p<rsub|n>+<frac|\<gamma\><rsub|n+1>|\<alpha\><rsub|n+1>>p<rsub|n-1>>>|<row|<cell|>|<cell|=>|<cell|<wide*|<frac|\<gamma\><rsub|n+1>|\<alpha\><rsub|n+1>>|\<wide-underbrace\>><rsub|a<rsub|n>>p<rsub|n-1><wide*|-<frac|\<beta\><rsub|n+1>|\<alpha\><rsub|n+1>>|\<wide-underbrace\>><rsub|b<rsub|n>>p<rsub|n>+<wide*|<frac|1|\<alpha\><rsub|n+1>>|\<wide-underbrace\>><rsub|a<rsub|n+1>>p<rsub|n+1>.>>>>
   </eqnarray*>
 
+  <section|DIY Upwind Fluxes/Riemann Solvers>
+
+  Start with a linear hyperbolic system:
+
+  <\equation*>
+    \<b-u\><rsub|t>=<big|sum><rsub|i>A<rsub|i>\<partial\><rsub|i>\<b-u\>
+  </equation*>
+
+  <\itemize>
+    <item>Pick a unit normal <math|\<b-n\>> of an interface where the states
+    <math|\<b-u\><rsup|->> and <math|\<b-u\><rsup|+>> meet.
+
+    <item>Compute
+
+    <\equation*>
+      A<rsup|\<pm\>>(\<b-n\>)\<assign\><big|sum><rsub|i>n<rsub|i>A<rsub|i><rsup|\<pm\>>
+    </equation*>
+
+    and diagonalize it to <math|D<rsup|\<pm\>>=V*<rsup|\<pm\>>A<rsup|\<pm\>>(\<b-n\>)*(V<rsup|\<pm\>>)<rsup|T>>,
+    resulting in eigenvalues
+
+    <\equation*>
+      \<lambda\><rsub|1><rsup|\<pm\>>\<leqslant\>\<cdots\>\<leqslant\>\<lambda\><rsub|k><rsup|\<pm\>>\<leqslant\>0\<leqslant\>\<lambda\><rsub|k+1><rsup|\<pm\>>\<leqslant\>\<cdots\>\<leqslant\>\<lambda\><rsub|n><rsup|\<pm\>>.
+    </equation*>
+
+    Call <math|\<b-s\><rsup|\<pm\>>\<assign\>V<rsup|\<pm\>>\<b-u\><rsup|\<pm\>>>.
+
+    <item>Consider the space-time diagram of Figure <reference|fig:fluxfan>.
+    Each eigenvalue is imagined to be the speed of a <em|shock> emanating
+    from the point under consideration, and each shock separating one
+    <em|state> from another. The left- and rightmost state are
+    <math|\<b-s\><rsup|->> and <math|\<b-s\><rsup|+>>, of course. The next
+    state from the left is labeled <math|\<b-s\><rsup|\<ast\>>>, the one
+    after that <math|\<b-s\><rsup|\<ast\>\<ast\>>>, up to
+    <math|\<b-s\><rsup|\<ast\>(n-1)>>. These states are a-priori unknown. In
+    addition, the fluxes <math|(D\<b-s\>)<rsup|\<ast\>>,\<ldots\>,(D\<b-s\>)<rsup|\<ast\>(n-1)>>
+    are also unknown: For the moment, there are <math|2(n-1)> unknowns.
+
+    <item>The Rankine-Hugoniot condition
+
+    <\equation*>
+      \<lambda\><rsub|i><rsup|\<pm\>>=<frac|(D\<b-s\>)<rsup|*\<ast\>(i)>-(D\<b-s\>)<rsup|*\<ast\>(i-1)>|\<b-s\><rsup|*\<ast\>(i)>-\<b-s\><rsup|*\<ast\>(i-1)>>
+    </equation*>
+
+    has to hold across each such interface. For convenience, set
+    <math|\<b-s\><rsup|\<ast\>(0)>=\<b-s\><rsup|->> and
+    <math|\<b-s\><rsup|\<ast\>(n)>=\<b-s\><rsup|+>>. This will provide
+    <math|n> equations.
+
+    Naturally, eigenvalues larger than zero (``right-travelling'') use their
+    <math|\<cdot\><rsup|->> values, whereas left-travelling values smaller
+    than zero use their <math|\<cdot\><rsup|+>> values.
+
+    <item>We label <math|\<lambda\><rsub|k>> that eigenvalue whose state
+    straddles zero the line of zero speed--that includes the case of
+    <math|\<lambda\><rsub|k>=0>. If there are several zero eigenvalues (can
+    that even happen?), pick <math|k> as large as possible. It is assumed
+    that the number <math|k> is the same on both sides of the interface, and
+    therefore it carries no <math|\<pm\>> superscript.
+
+    <item>The numerical flux, i.e. the solution that we seek, is the flux
+    <math|(D\<b-s\>)<rsup|\<ast\>(k)>> that straddles zero.
+
+    <item>For non-zero-straddling states, the unknowns
+    <math|(D\<b-s\>)<rsup|\<ast\>(i)>> are found as follows:
+
+    <\itemize>
+      <item>If <math|i\<less\>k>, <math|(D\<b-s\>)<rsup|\<ast\>(i)>=D<rsup|->\<b-s\><rsup|\<ast\>(i)>>.
+
+      <item>If <math|i\<gtr\>k>, <math|(D\<b-s\>)<rsup|\<ast\>(i)>=D<rsup|+>\<b-s\><rsup|\<ast\>(i)>>.
+    </itemize>
+
+    This takes <math|n-2> unknowns out of the picture, leaving us with
+    <math|2(n-1)-(n-2)=n> unknowns.
+
+    <item>The case of a zero eigenvalue deserves special mention, even though
+    its handling is technically no different than before: We simply regard
+    <math|(D\<b-s\>)<rsup|\<ast\>(k)>> as another unkown of the system,
+    which, in addition to <math|{\<b-s\><rsup|*\<ast\>(i)>}<rsub|1><rsup|n-1>>,
+    brings us to <math|n> unknowns. So, while technically the state
+    <math|\<b-s\><rsup|\<ast\>(k)>> falls entirely to the right of zero, we
+    do not use the relation
+
+    <\eqnarray*>
+      <tformat|<table|<row|<cell|(D\<b-s\>)<rsup|\<ast\>(k)>>|<cell|<above|=|<with|mode|text|NO!>>>|<cell|D<rsup|+>\<b-s\><rsup|\<ast\>(k)>.>>>>
+    </eqnarray*>
+
+    Lastly observe that the <math|k>th Rankine-Hugoniot condition dictates
+
+    <\equation*>
+      (D\<b-s\>)<rsup|\<ast\>(k-1)>=(D\<b-s\>)<rsup|\<ast\>(k)>,
+    </equation*>
+
+    ensuring consistency across the zero-speed shock.
+  </itemize>
+
+  I believe that the above can also be applied in the case of degenerate
+  eigenvalues, but haven't checked in detail.
+
+  <big-figure|<postscript|fluxfan.fig|9cm|||||>|<label|fig:fluxfan>Space-Time
+  Diagram of a flux fan.>
+
   <section|Deriving an Upwind Flux for the 1D Wave Equation>
 
   We're dealing with
@@ -762,7 +864,7 @@
   First, we standardize on the use of <math|n<rsup|->>:
 
   <\eqnarray*>
-    <tformat|<table|<row|<cell|\<lambda\><rsub|i><rsup|->(\<b-s\><rsup|\<ast\>>-\<b-s\><rsup|->)+(n*D\<b-s\>)<rsup|\<ast\>>-n<rsup|->(D\<b-s\>)<rsup|\<um\>>>|<cell|=>|<cell|0,>>|<row|<cell|(n*D\<b-s\>)<rsup|\<ast\>>-(n*D\<b-s\>)<rsup|\<ast\>\<ast\>>>|<cell|=>|<cell|0,>>|<row|<cell|-\<lambda\><rsub|i><rsup|+>(\<b-s\><rsup|\<ast\>\<ast\>>-\<b-s\><rsup|+>)+(n*D\<b-s\>)<rsup|\<ast\>\<ast\>>+n<rsup|->(D\<b-s\>)<rsup|+>>|<cell|=>|<cell|0.>>>>
+    <tformat|<table|<row|<cell|\<lambda\><rsub|i><rsup|->(\<b-s\><rsup|\<ast\>>-\<b-s\><rsup|->)+(n*D\<b-s\>)<rsup|\<ast\>>-n<rsup|->(D\<b-s\>)<rsup|\<um\>>>|<cell|=>|<cell|0,>>|<row|<cell|(n*D\<b-s\>)<rsup|\<ast\>>-(n*D\<b-s\>)<rsup|\<ast\>\<ast\>>>|<cell|=>|<cell|0,>>|<row|<cell|-\<lambda\><rsub|i><rsup|+>(\<b-s\><rsup|\<ast\>>-\<b-s\><rsup|+>)+(n*D\<b-s\>)<rsup|\<ast\>\<ast\>>+n<rsup|->(D\<b-s\>)<rsup|+>>|<cell|=>|<cell|0.>>>>
   </eqnarray*>
 
   <with|prog-language|maxima|prog-session|default|<\session>
@@ -805,54 +907,48 @@
     <with|color|black|>>>
       /* suffix "s" for star */
 
-      nDss: covect([nDss1, nDss2]); nDsss:nDss;
+      Dss: covect([Dss1, Dss2]);
 
-      ss: covect([ss1, ss2]);ss:covect([sss1,sss2]);
+      ss: covect([ss1, ss2]);
     </input>
 
     <\output>
       <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o10>)
-      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<with|math-font-family|rm|nDss1>>>|<row|<cell|<with|math-font-family|rm|nDss2>>>>>><right|)>>
+      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<with|math-font-family|rm|Dss1>>>|<row|<cell|<with|math-font-family|rm|Dss2>>>>>><right|)>>
 
       <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o11>)
-      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<with|math-font-family|rm|nDss1>>>|<row|<cell|<with|math-font-family|rm|nDss2>>>>>><right|)>>
-
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o12>)
       <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<with|math-font-family|rm|ss1>>>|<row|<cell|<with|math-font-family|rm|ss2>>>>>><right|)>>
-
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o13>)
-      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<with|math-font-family|rm|sss1>>>|<row|<cell|<with|math-font-family|rm|sss2>>>>>><right|)>>
     </output>
 
-    <\input|<with|color|red|(<with|math-font-family|rm|%i>14)
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>12)
     <with|color|black|>>>
       sp:covect([sp1,sp2]);sm:covect([sm1,sm2])
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o14>)
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o12>)
       <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<with|math-font-family|rm|sp1>>>|<row|<cell|<with|math-font-family|rm|sp2>>>>>><right|)>>
 
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o15>)
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o13>)
       <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<with|math-font-family|rm|sm1>>>|<row|<cell|<with|math-font-family|rm|sm2>>>>>><right|)>>
     </output>
 
-    <\input|<with|color|red|(<with|math-font-family|rm|%i>16)
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>14)
     <with|color|black|>>>
-      eqnsm: cm*(ss -sm)+nDss -n*Dm.sm;
+      eqnsm: cm*(ss-sm)+Dss-Dm.sm;
 
-      eqnsp:-cp*(sss-sp)+nDsss-n*Dp.sp;
+      eqnsp:-cp*(ss-sp)+Dss-Dp.sp;
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o26>)
-      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<with|math-font-family|rm|nDss1>+<with|math-font-family|rm|cm>*<left|(><with|math-font-family|rm|sss1>-<with|math-font-family|rm|sm1><right|)>-<with|math-font-family|rm|cm>*n*<with|math-font-family|rm|sm1>>>|<row|<cell|<with|math-font-family|rm|nDss2>+<with|math-font-family|rm|cm>*<left|(><with|math-font-family|rm|sss2>-<with|math-font-family|rm|sm2><right|)>+<with|math-font-family|rm|cm>*n*<with|math-font-family|rm|sm2>>>>>><right|)>>
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o14>)
+      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<with|math-font-family|rm|cm>*<left|(><with|math-font-family|rm|ss1>-<with|math-font-family|rm|sm1><right|)>-<with|math-font-family|rm|cm>*<with|math-font-family|rm|sm1>+<with|math-font-family|rm|Dss1>>>|<row|<cell|<with|math-font-family|rm|cm>*<left|(><with|math-font-family|rm|ss2>-<with|math-font-family|rm|sm2><right|)>+<with|math-font-family|rm|cm>*<with|math-font-family|rm|sm2>+<with|math-font-family|rm|Dss2>>>>>><right|)>>
 
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o27>)
-      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<with|math-font-family|rm|nDss1>-<with|math-font-family|rm|cp>*<left|(><with|math-font-family|rm|sss>-<with|math-font-family|rm|sp1><right|)>-<with|math-font-family|rm|cp>*n*<with|math-font-family|rm|sp1>>>|<row|<cell|<with|math-font-family|rm|nDss2>-<with|math-font-family|rm|cp>*<left|(><with|math-font-family|rm|sss>-<with|math-font-family|rm|sp2><right|)>+<with|math-font-family|rm|cp>*n*<with|math-font-family|rm|sp2>>>>>><right|)>>
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o15>)
+      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|-<with|math-font-family|rm|cp>*<left|(><with|math-font-family|rm|ss1>-<with|math-font-family|rm|sp1><right|)>-<with|math-font-family|rm|cp>*<with|math-font-family|rm|sp1>+<with|math-font-family|rm|Dss1>>>|<row|<cell|-<with|math-font-family|rm|cp>*<left|(><with|math-font-family|rm|ss2>-<with|math-font-family|rm|sp2><right|)>+<with|math-font-family|rm|cp>*<with|math-font-family|rm|sp2>+<with|math-font-family|rm|Dss2>>>>>><right|)>>
     </output>
 
-    <\input|<with|color|red|(<with|math-font-family|rm|%i>28)
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>16)
     <with|color|black|>>>
       soln:solve([
 
@@ -860,27 +956,21 @@
 
       eqnsp[1,1]=0,eqnsp[2,1]=0
 
-      /*eqnsm2[1,1]=0,eqnsm2[2,1]=0
-
-      eqnsp2[1,1]=0,eqnsp2[2,1]=0*/
-
       ],[
 
-      nDss1, nDss2,
+      Dss1, Dss2,
 
-      ss1, ss2,
-
-      sss1,sss2
+      ss1, ss2
 
       ])
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o28>)
-      <with|color|black|>><left|[><left|[><with|math-font-family|rm|nDss1>=<with|math-font-family|rm|cp>*<with|math-font-family|rm|sss>+<with|math-font-family|rm|cp>*n*<with|math-font-family|rm|sp1>-<with|math-font-family|rm|cp>*<with|math-font-family|rm|sp1>,<with|math-font-family|rm|nDss2>=<with|math-font-family|rm|cp>*<with|math-font-family|rm|sss>-<with|math-font-family|rm|cp>*n*<with|math-font-family|rm|sp2>-<with|math-font-family|rm|cp>*<with|math-font-family|rm|sp2>,<with|math-font-family|rm|ss1>=<with|math-font-family|rm|%r24>,<with|math-font-family|rm|ss2>=<with|math-font-family|rm|%r23>,<with|math-font-family|rm|sss1>=<frac|-<with|math-font-family|rm|cp>*<with|math-font-family|rm|sss>-<with|math-font-family|rm|cp>*n*<with|math-font-family|rm|sp1>+<with|math-font-family|rm|cp>*<with|math-font-family|rm|sp1>+<left|(><with|math-font-family|rm|cm>*n+<with|math-font-family|rm|cm><right|)>*<with|math-font-family|rm|sm1>|<with|math-font-family|rm|cm>>,<with|math-font-family|rm|sss2>=-<frac|<with|math-font-family|rm|cp>*<with|math-font-family|rm|sss>+n*<left|(><with|math-font-family|rm|cm>*<with|math-font-family|rm|sm2>-<with|math-font-family|rm|cp>*<with|math-font-family|rm|sp2><right|)>-<with|math-font-family|rm|cp>*<with|math-font-family|rm|sp2>-<with|math-font-family|rm|cm>*<with|math-font-family|rm|sm2>|<with|math-font-family|rm|cm>><right|]><right|]>>
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o16>)
+      <with|color|black|>><left|[><left|[><with|math-font-family|rm|Dss1>=<frac|2*<with|math-font-family|rm|cm>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|sm1>|<with|math-font-family|rm|cp>+<with|math-font-family|rm|cm>>,<with|math-font-family|rm|Dss2>=-<frac|2*<with|math-font-family|rm|cm>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|sp2>|<with|math-font-family|rm|cp>+<with|math-font-family|rm|cm>>,<with|math-font-family|rm|ss1>=<frac|2*<with|math-font-family|rm|cm>*<with|math-font-family|rm|sm1>|<with|math-font-family|rm|cp>+<with|math-font-family|rm|cm>>,<with|math-font-family|rm|ss2>=<frac|2*<with|math-font-family|rm|cp>*<with|math-font-family|rm|sp2>|<with|math-font-family|rm|cp>+<with|math-font-family|rm|cm>><right|]><right|]>>
     </output>
 
-    <\input|<with|color|red|(<with|math-font-family|rm|%i>29)
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>17)
     <with|color|black|>>>
       \;
     </input>
@@ -903,21 +993,21 @@
   <with|prog-language|maxima|prog-session|default|<\session>
     <\input|<with|color|red|(<with|math-font-family|rm|%i>7)
     <with|color|black|>>>
-      ssreal:ev(flux,soln[1])
+      Dssreal:ev(Dss,soln[1])
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o24>)
-      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<frac|2*<with|math-font-family|rm|cm>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|nm>*<with|math-font-family|rm|sm1>|<with|math-font-family|rm|cp>+<with|math-font-family|rm|cm>>>>|<row|<cell|-<frac|2*<with|math-font-family|rm|cm>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|nm>*<with|math-font-family|rm|sp2>|<with|math-font-family|rm|cp>+<with|math-font-family|rm|cm>>>>>>><right|)>>
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o17>)
+      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<frac|2*<with|math-font-family|rm|cm>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|sm1>|<with|math-font-family|rm|cp>+<with|math-font-family|rm|cm>>>>|<row|<cell|-<frac|2*<with|math-font-family|rm|cm>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|sp2>|<with|math-font-family|rm|cp>+<with|math-font-family|rm|cm>>>>>>><right|)>>
     </output>
 
-    <\input|<with|color|red|(<with|math-font-family|rm|%i>29)
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>18)
     <with|color|black|>>>
       /* recall s = V.w */
 
-      ssrealinw:ev(
+      Dssrealinw:ev(
 
-      ssreal,
+      Dssreal,
 
       [sm1=V[1,1]*um+V[1,2]*vm,\ 
 
@@ -925,21 +1015,21 @@
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o31>)
-      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<frac|2*<with|math-font-family|rm|cm>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|nm>*<left|(><frac|<with|math-font-family|rm|vm>|<sqrt|2>>+<frac|<with|math-font-family|rm|um>|<sqrt|2>><right|)>|<with|math-font-family|rm|cp>+<with|math-font-family|rm|cm>>>>|<row|<cell|-<frac|2*<with|math-font-family|rm|cm>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|nm>*<left|(><frac|<with|math-font-family|rm|vp>|<sqrt|2>>-<frac|<with|math-font-family|rm|up>|<sqrt|2>><right|)>|<with|math-font-family|rm|cp>+<with|math-font-family|rm|cm>>>>>>><right|)>>
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o20>)
+      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<frac|2*<with|math-font-family|rm|cm>*<with|math-font-family|rm|cp>*<left|(><frac|<with|math-font-family|rm|vm>|<sqrt|2>>+<frac|<with|math-font-family|rm|um>|<sqrt|2>><right|)>|<with|math-font-family|rm|cp>+<with|math-font-family|rm|cm>>>>|<row|<cell|-<frac|2*<with|math-font-family|rm|cm>*<with|math-font-family|rm|cp>*<left|(><frac|<with|math-font-family|rm|vp>|<sqrt|2>>-<frac|<with|math-font-family|rm|up>|<sqrt|2>><right|)>|<with|math-font-family|rm|cp>+<with|math-font-family|rm|cm>>>>>>><right|)>>
     </output>
 
-    <\input|<with|color|red|(<with|math-font-family|rm|%i>32)
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>21)
     <with|color|black|>>>
-      ws:ratsimp(transpose(V).ssrealinw)
+      Aws:ratsimp(transpose(V).Dssrealinw)
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o32>)
-      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<frac|<with|math-font-family|rm|cm>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|nm>*<with|math-font-family|rm|vp>+<with|math-font-family|rm|cm>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|nm>*<with|math-font-family|rm|vm>-<with|math-font-family|rm|cm>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|nm>*<with|math-font-family|rm|up>+<with|math-font-family|rm|cm>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|nm>*<with|math-font-family|rm|um>|<with|math-font-family|rm|cp>+<with|math-font-family|rm|cm>>>>|<row|<cell|-<frac|<with|math-font-family|rm|cm>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|nm>*<with|math-font-family|rm|vp>-<with|math-font-family|rm|cm>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|nm>*<with|math-font-family|rm|vm>-<with|math-font-family|rm|cm>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|nm>*<with|math-font-family|rm|up>-<with|math-font-family|rm|cm>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|nm>*<with|math-font-family|rm|um>|<with|math-font-family|rm|cp>+<with|math-font-family|rm|cm>>>>>>><right|)>>
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o21>)
+      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<frac|<with|math-font-family|rm|cm>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|vp>+<with|math-font-family|rm|cm>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|vm>-<with|math-font-family|rm|cm>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|up>+<with|math-font-family|rm|cm>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|um>|<with|math-font-family|rm|cp>+<with|math-font-family|rm|cm>>>>|<row|<cell|-<frac|<with|math-font-family|rm|cm>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|vp>-<with|math-font-family|rm|cm>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|vm>-<with|math-font-family|rm|cm>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|up>-<with|math-font-family|rm|cm>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|um>|<with|math-font-family|rm|cp>+<with|math-font-family|rm|cm>>>>>>><right|)>>
     </output>
 
-    <\input|<with|color|red|(<with|math-font-family|rm|%i>33)
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>22)
     <with|color|black|>>>
       \;
     </input>
@@ -1054,44 +1144,44 @@
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o7>)
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o6>)
       <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<frac|1|<sqrt|2>>>|<cell|<frac|1|<sqrt|2>>>|<cell|0>>|<row|<cell|-<frac|cos
       \<alpha\>|<sqrt|2>>>|<cell|<frac|cos \<alpha\>|<sqrt|2>>>|<cell|sin
       \<alpha\>>>|<row|<cell|-<frac|sin \<alpha\>|<sqrt|2>>>|<cell|<frac|sin
       \<alpha\>|<sqrt|2>>>|<cell|-cos \<alpha\>>>>>><right|)>>
     </output>
 
-    <\input|<with|color|red|(<with|math-font-family|rm|%i>8)
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>7)
     <with|color|black|>>>
       trigsimp(Vpre.transpose(Vpre))
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o10>)
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o7>)
       <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|1>|<cell|0>|<cell|0>>|<row|<cell|0>|<cell|1>|<cell|0>>|<row|<cell|0>|<cell|0>|<cell|1>>>>><right|)>>
     </output>
 
-    <\input|<with|color|red|(<with|math-font-family|rm|%i>11)
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>8)
     <with|color|black|>>>
       D:trigsimp(transpose(Vpre).A(alpha).Vpre)
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o11>)
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o8>)
       <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|-1>|<cell|0>|<cell|0>>|<row|<cell|0>|<cell|1>|<cell|0>>|<row|<cell|0>|<cell|0>|<cell|0>>>>><right|)>>
     </output>
 
-    <\input|<with|color|red|(<with|math-font-family|rm|%i>12)
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>9)
     <with|color|black|>>>
       V:ev(Vpre, [cos(alpha)=nx, sin(alpha)=ny])
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o12>)
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o9>)
       <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<frac|1|<sqrt|2>>>|<cell|<frac|1|<sqrt|2>>>|<cell|0>>|<row|<cell|-<frac|<with|math-font-family|rm|nx>|<sqrt|2>>>|<cell|<frac|<with|math-font-family|rm|nx>|<sqrt|2>>>|<cell|<with|math-font-family|rm|ny>>>|<row|<cell|-<frac|<with|math-font-family|rm|ny>|<sqrt|2>>>|<cell|<frac|<with|math-font-family|rm|ny>|<sqrt|2>>>|<cell|-<with|math-font-family|rm|nx>>>>>><right|)>>
     </output>
 
-    <\input|<with|color|red|(<with|math-font-family|rm|%i>13)
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>10)
     <with|color|black|>>>
       \;
     </input>
@@ -1118,148 +1208,187 @@
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o13>)
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o10>)
       <with|color|black|>><with|mode|text|/usr/share/maxima/5.10.0/share/matrix/eigen.mac>>
     </output>
 
-    <\input|<with|color|red|(<with|math-font-family|rm|%i>14)
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>11)
     <with|color|black|>>>
       load("diag")
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o14>)
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o11>)
       <with|color|black|>><with|mode|text|/usr/share/maxima/5.10.0/share/contrib/diag.mac>>
     </output>
 
-    <\input|<with|color|red|(<with|math-font-family|rm|%i>15)
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>12)
     <with|color|black|>>>
       sm:covect([sm1,sm2,sm3]);sp:covect([sp1,sp2,sp3]);
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o15>)
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o12>)
       <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<with|math-font-family|rm|sm1>>>|<row|<cell|<with|math-font-family|rm|sm2>>>|<row|<cell|<with|math-font-family|rm|sm3>>>>>><right|)>>
 
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o16>)
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o13>)
       <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<with|math-font-family|rm|sp1>>>|<row|<cell|<with|math-font-family|rm|sp2>>>|<row|<cell|<with|math-font-family|rm|sp3>>>>>><right|)>>
     </output>
 
-    <\input|<with|color|red|(<with|math-font-family|rm|%i>17)
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>14)
     <with|color|black|>>>
       ss:covect([ss1,ss2,ss3]);sss:covect([sss1,sss2,sss3]);
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o17>)
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o14>)
       <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<with|math-font-family|rm|ss1>>>|<row|<cell|<with|math-font-family|rm|ss2>>>|<row|<cell|<with|math-font-family|rm|ss3>>>>>><right|)>>
 
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o18>)
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o15>)
       <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<with|math-font-family|rm|sss1>>>|<row|<cell|<with|math-font-family|rm|sss2>>>|<row|<cell|<with|math-font-family|rm|sss3>>>>>><right|)>>
+    </output>
+
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>16)
+    <with|color|black|>>>
+      Dsss:covect([Dsss1,Dsss2,Dsss3]);
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o16>)
+      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<with|math-font-family|rm|Dsss1>>>|<row|<cell|<with|math-font-family|rm|Dsss2>>>|<row|<cell|<with|math-font-family|rm|Dsss3>>>>>><right|)>>
+    </output>
+
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>17)
+    <with|color|black|>>>
+      Dp:ev(c*D,c=cm);Dm:ev(c*D,c=cp);
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o17>)
+      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|-<with|math-font-family|rm|cm>>|<cell|0>|<cell|0>>|<row|<cell|0>|<cell|<with|math-font-family|rm|cm>>|<cell|0>>|<row|<cell|0>|<cell|0>|<cell|0>>>>><right|)>>
+
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o18>)
+      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|-<with|math-font-family|rm|cp>>|<cell|0>|<cell|0>>|<row|<cell|0>|<cell|<with|math-font-family|rm|cp>>|<cell|0>>|<row|<cell|0>|<cell|0>|<cell|0>>>>><right|)>>
     </output>
 
     <\input|<with|color|red|(<with|math-font-family|rm|%i>19)
     <with|color|black|>>>
-      Dss:covect([Dss1,Dss2,Dss3]);
+      eq1:cm*(ss-sm)+(Dm.ss-Dm.sm);
+
+      eq2:(Dm.ss-Dsss);
+
+      eq3:-cp*(sss-sp)+(Dsss-Dp.sp)
     </input>
 
     <\output>
       <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o19>)
-      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<with|math-font-family|rm|Dss1>>>|<row|<cell|<with|math-font-family|rm|Dss2>>>|<row|<cell|<with|math-font-family|rm|Dss3>>>>>><right|)>>
-    </output>
+      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<with|math-font-family|rm|cm>*<left|(><with|math-font-family|rm|ss1>-<with|math-font-family|rm|sm1><right|)>-<with|math-font-family|rm|cp>*<with|math-font-family|rm|ss1>+<with|math-font-family|rm|cp>*<with|math-font-family|rm|sm1>>>|<row|<cell|<with|math-font-family|rm|cm>*<left|(><with|math-font-family|rm|ss2>-<with|math-font-family|rm|sm2><right|)>+<with|math-font-family|rm|cp>*<with|math-font-family|rm|ss2>-<with|math-font-family|rm|cp>*<with|math-font-family|rm|sm2>>>|<row|<cell|<with|math-font-family|rm|cm>*<left|(><with|math-font-family|rm|ss3>-<with|math-font-family|rm|sm3><right|)>>>>>><right|)>>
 
-    <\input|<with|color|red|(<with|math-font-family|rm|%i>20)
-    <with|color|black|>>>
-      Dp:diag([-cp,cp,0]);Dm:diag([-cm,cm,0])
-    </input>
-
-    <\output>
       <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o20>)
-      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|-<with|math-font-family|rm|cp>>|<cell|0>|<cell|0>>|<row|<cell|0>|<cell|<with|math-font-family|rm|cp>>|<cell|0>>|<row|<cell|0>|<cell|0>|<cell|0>>>>><right|)>>
+      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|-<with|math-font-family|rm|cp>*<with|math-font-family|rm|ss1>-<with|math-font-family|rm|Dsss1>>>|<row|<cell|<with|math-font-family|rm|cp>*<with|math-font-family|rm|ss2>-<with|math-font-family|rm|Dsss2>>>|<row|<cell|-<with|math-font-family|rm|Dsss3>>>>>><right|)>>
 
       <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o21>)
-      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|-<with|math-font-family|rm|cm>>|<cell|0>|<cell|0>>|<row|<cell|0>|<cell|<with|math-font-family|rm|cm>>|<cell|0>>|<row|<cell|0>|<cell|0>|<cell|0>>>>><right|)>>
+      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|-<with|math-font-family|rm|cp>*<left|(><with|math-font-family|rm|sss1>-<with|math-font-family|rm|sp1><right|)>+<with|math-font-family|rm|cm>*<with|math-font-family|rm|sp1>+<with|math-font-family|rm|Dsss1>>>|<row|<cell|-<with|math-font-family|rm|cp>*<left|(><with|math-font-family|rm|sss2>-<with|math-font-family|rm|sp2><right|)>-<with|math-font-family|rm|cm>*<with|math-font-family|rm|sp2>+<with|math-font-family|rm|Dsss2>>>|<row|<cell|<with|math-font-family|rm|Dsss3>-<with|math-font-family|rm|cp>*<left|(><with|math-font-family|rm|sss3>-<with|math-font-family|rm|sp3><right|)>>>>>><right|)>>
     </output>
 
     <\input|<with|color|red|(<with|math-font-family|rm|%i>22)
     <with|color|black|>>>
-      eqm1:cm*(ss-sm)+(Dss-Dm.sm)
+      soln:solve([
+
+      eq1[1,1]=0,eq1[2,1]=0,eq1[3,1]=0,
+
+      eq2[1,1]=0,eq2[2,1]=0,eq2[3,1]=0,
+
+      eq3[1,1]=0,eq3[2,1]=0,eq3[3,1]=0
+
+      ],
+
+      [
+
+      ss1,ss2,ss3,
+
+      sss1,sss2,sss3,
+
+      Dsss1,Dsss2,Dsss3])
     </input>
 
     <\output>
       <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o22>)
-      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<with|math-font-family|rm|cm>*<left|(><with|math-font-family|rm|ss1>-<with|math-font-family|rm|sm1><right|)>+<with|math-font-family|rm|cm>*<with|math-font-family|rm|sm1>+<with|math-font-family|rm|Dss1>>>|<row|<cell|<with|math-font-family|rm|cm>*<left|(><with|math-font-family|rm|ss2>-<with|math-font-family|rm|sm2><right|)>-<with|math-font-family|rm|cm>*<with|math-font-family|rm|sm2>+<with|math-font-family|rm|Dss2>>>|<row|<cell|<with|math-font-family|rm|cm>*<left|(><with|math-font-family|rm|ss3>-<with|math-font-family|rm|sm3><right|)>+<with|math-font-family|rm|Dss3>>>>>><right|)>>
+      <with|color|black|>><left|[><left|[><with|math-font-family|rm|ss1>=<with|math-font-family|rm|sm1>,<with|math-font-family|rm|ss2>=<with|math-font-family|rm|sm2>,<with|math-font-family|rm|ss3>=<with|math-font-family|rm|sm3>,<with|math-font-family|rm|sss1>=-<frac|-<with|math-font-family|rm|cp>*<with|math-font-family|rm|sp1>-<with|math-font-family|rm|cm>*<with|math-font-family|rm|sp1>+<with|math-font-family|rm|cp>*<with|math-font-family|rm|sm1>|<with|math-font-family|rm|cp>>,<with|math-font-family|rm|sss2>=<frac|<with|math-font-family|rm|cp>*<left|(><with|math-font-family|rm|sp2>+<with|math-font-family|rm|sm2><right|)>-<with|math-font-family|rm|cm>*<with|math-font-family|rm|sp2>|<with|math-font-family|rm|cp>>,<with|math-font-family|rm|sss3>=<with|math-font-family|rm|sp3>,<with|math-font-family|rm|Dsss1>=-<with|math-font-family|rm|cp>*<with|math-font-family|rm|sm1>,<with|math-font-family|rm|Dsss2>=<with|math-font-family|rm|cp>*<with|math-font-family|rm|sm2>,<with|math-font-family|rm|Dsss3>=0<right|]><right|]>>
     </output>
 
     <\input|<with|color|red|(<with|math-font-family|rm|%i>23)
     <with|color|black|>>>
-      eqp1:-cp*(sss-sp)+(Dss-Dp.sp)
+      Dsssreal:ev(Dsss,soln[1])
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o25>)
+      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|-<with|math-font-family|rm|cp>*<with|math-font-family|rm|sm1>>>|<row|<cell|<with|math-font-family|rm|cp>*<with|math-font-family|rm|sm2>>>|<row|<cell|0>>>>><right|)>>
+    </output>
+
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>36)
+    <with|color|black|>>>
+      wm:covect([um,v1m,v2m])
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o36>)
+      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<with|math-font-family|rm|um>>>|<row|<cell|<with|math-font-family|rm|v1m>>>|<row|<cell|<with|math-font-family|rm|v2m>>>>>><right|)>>
+    </output>
+
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>37)
+    <with|color|black|>>>
+      /*s- in terms of w */
+
+      sminw:V.wm
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o38>)
+      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<frac|<with|math-font-family|rm|v1m>|<sqrt|2>>+<frac|<with|math-font-family|rm|um>|<sqrt|2>>>>|<row|<cell|<with|math-font-family|rm|ny>*<with|math-font-family|rm|v2m>+<frac|<with|math-font-family|rm|nx>*<with|math-font-family|rm|v1m>|<sqrt|2>>-<frac|<with|math-font-family|rm|nx>*<with|math-font-family|rm|um>|<sqrt|2>>>>|<row|<cell|-<with|math-font-family|rm|nx>*<with|math-font-family|rm|v2m>+<frac|<with|math-font-family|rm|ny>*<with|math-font-family|rm|v1m>|<sqrt|2>>-<frac|<with|math-font-family|rm|ny>*<with|math-font-family|rm|um>|<sqrt|2>>>>>>><right|)>>
+    </output>
+
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>39)
+    <with|color|black|>>>
+      /* recall s = V.w */
+
+      Dsssrealinw:ev(
+
+      Dsssreal,
+
+      [sm1=sminw[1,1],\ 
+
+      \ sm2=sminw[2,1]])
     </input>
 
     <\output>
       <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o39>)
-      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|-<with|math-font-family|rm|cp>*<left|(><with|math-font-family|rm|sss1>-<with|math-font-family|rm|sp1><right|)>+<with|math-font-family|rm|cp>*<with|math-font-family|rm|sp1>+<with|math-font-family|rm|Dss1>>>|<row|<cell|-<with|math-font-family|rm|cp>*<left|(><with|math-font-family|rm|sss2>-<with|math-font-family|rm|sp2><right|)>-<with|math-font-family|rm|cp>*<with|math-font-family|rm|sp2>+<with|math-font-family|rm|Dss2>>>|<row|<cell|<with|math-font-family|rm|Dss3>-<with|math-font-family|rm|cp>*<left|(><with|math-font-family|rm|sss3>-<with|math-font-family|rm|sp3><right|)>>>>>><right|)>>
+      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|-<with|math-font-family|rm|cp>*<left|(><frac|<with|math-font-family|rm|v1m>|<sqrt|2>>+<frac|<with|math-font-family|rm|um>|<sqrt|2>><right|)>>>|<row|<cell|<with|math-font-family|rm|cp>*<left|(><with|math-font-family|rm|ny>*<with|math-font-family|rm|v2m>+<frac|<with|math-font-family|rm|nx>*<with|math-font-family|rm|v1m>|<sqrt|2>>-<frac|<with|math-font-family|rm|nx>*<with|math-font-family|rm|um>|<sqrt|2>><right|)>>>|<row|<cell|0>>>>><right|)>>
     </output>
 
     <\input|<with|color|red|(<with|math-font-family|rm|%i>40)
     <with|color|black|>>>
-      eqm2:Dss-Dm.sm
+      Awss:ratsimp(transpose(V).Dsssrealinw)
     </input>
 
     <\output>
       <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o40>)
-      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<with|math-font-family|rm|cm>*<with|math-font-family|rm|sm1>+<with|math-font-family|rm|Dss1>>>|<row|<cell|<with|math-font-family|rm|Dss2>-<with|math-font-family|rm|cm>*<with|math-font-family|rm|sm2>>>|<row|<cell|<with|math-font-family|rm|Dss3>>>>>><right|)>>
+      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|-<frac|2*<with|math-font-family|rm|cp>*<with|math-font-family|rm|nx>*<with|math-font-family|rm|ny>*<with|math-font-family|rm|v2m>+<left|(><sqrt|2>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|nx><rsup|2>+<sqrt|2>*<with|math-font-family|rm|cp><right|)>*<with|math-font-family|rm|v1m>+<left|(><sqrt|2>*<with|math-font-family|rm|cp>-<sqrt|2>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|nx><rsup|2><right|)>*<with|math-font-family|rm|um>|2*<sqrt|2>>>>|<row|<cell|<frac|2*<with|math-font-family|rm|cp>*<with|math-font-family|rm|nx>*<with|math-font-family|rm|ny>*<with|math-font-family|rm|v2m>+<left|(><sqrt|2>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|nx><rsup|2>-<sqrt|2>*<with|math-font-family|rm|cp><right|)>*<with|math-font-family|rm|v1m>+<left|(>-<sqrt|2>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|nx><rsup|2>-<sqrt|2>*<with|math-font-family|rm|cp><right|)>*<with|math-font-family|rm|um>|2*<sqrt|2>>>>|<row|<cell|<frac|2*<with|math-font-family|rm|cp>*<with|math-font-family|rm|ny><rsup|2>*<with|math-font-family|rm|v2m>+<sqrt|2>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|nx>*<with|math-font-family|rm|ny>*<with|math-font-family|rm|v1m>-<sqrt|2>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|nx>*<with|math-font-family|rm|ny>*<with|math-font-family|rm|um>|2>>>>>><right|)>>
     </output>
 
     <\input|<with|color|red|(<with|math-font-family|rm|%i>41)
     <with|color|black|>>>
-      eqp2:Dss-Dp.sp
-    </input>
-
-    <\output>
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o41>)
-      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<with|math-font-family|rm|cp>*<with|math-font-family|rm|sp1>+<with|math-font-family|rm|Dss1>>>|<row|<cell|<with|math-font-family|rm|Dss2>-<with|math-font-family|rm|cp>*<with|math-font-family|rm|sp2>>>|<row|<cell|<with|math-font-family|rm|Dss3>>>>>><right|)>>
-    </output>
-
-    <\input|<with|color|red|(<with|math-font-family|rm|%i>42)
-    <with|color|black|>>>
-      solve([
-
-      eqm1[1,1]=0,eqm1[2,1]=0,eqm1[3,1]=0,
-
-      eqp1[1,1]=0,eqp1[2,1]=0,eqp1[3,1]=0,
-
-      eqm2[1,1]=0,eqm2[2,1]=0,eqm2[3,1]=0
-
-      ],
-
-      [ss1,ss2,ss3,sss1,sss2,sss3,Dss1,Dss2,Dss3])
-    </input>
-
-    <\output>
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o42>)
-      <with|color|black|>><left|[><left|[><with|math-font-family|rm|ss1>=<with|math-font-family|rm|sm1>,<with|math-font-family|rm|ss2>=<with|math-font-family|rm|sm2>,<with|math-font-family|rm|ss3>=<with|math-font-family|rm|sm3>,<with|math-font-family|rm|sss1>=-<frac|<with|math-font-family|rm|cm>*<with|math-font-family|rm|sm1>-2*<with|math-font-family|rm|cp>*<with|math-font-family|rm|sp1>|<with|math-font-family|rm|cp>>,<with|math-font-family|rm|sss2>=<frac|<with|math-font-family|rm|cm>*<with|math-font-family|rm|sm2>|<with|math-font-family|rm|cp>>,<with|math-font-family|rm|sss3>=<with|math-font-family|rm|sp3>,<with|math-font-family|rm|Dss1>=-<with|math-font-family|rm|cm>*<with|math-font-family|rm|sm1>,<with|math-font-family|rm|Dss2>=<with|math-font-family|rm|cm>*<with|math-font-family|rm|sm2>,<with|math-font-family|rm|Dss3>=0<right|]><right|]>>
-    </output>
-
-    <\input|<with|color|red|(<with|math-font-family|rm|%i>43)
-    <with|color|black|>>>
-      eqm1[1,1]
-    </input>
-
-    <\output>
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o26>)
-      <with|color|black|>><with|math-font-family|rm|cm>*<left|(><with|math-font-family|rm|ss1>-<with|math-font-family|rm|sm1><right|)>+<with|math-font-family|rm|cm>*<with|math-font-family|rm|sm1>+<with|math-font-family|rm|Dss1>>
-    </output>
-
-    <\input|<with|color|red|(<with|math-font-family|rm|%i>27)
-    <with|color|black|>>>
       \;
     </input>
   </session>>
+
+  \;
 </body>
 
 <\initial>
   <\collection>
+    <associate|info-flag|detailed>
     <associate|page-orientation|portrait>
     <associate|page-type|letter>
     <associate|par-first|0>
@@ -1275,7 +1404,9 @@
     <associate|auto-13|<tuple|5.4|8>>
     <associate|auto-14|<tuple|6|9>>
     <associate|auto-15|<tuple|7|9>>
-    <associate|auto-16|<tuple|8|12>>
+    <associate|auto-16|<tuple|1|12>>
+    <associate|auto-17|<tuple|8|?>>
+    <associate|auto-18|<tuple|9|?>>
     <associate|auto-2|<tuple|2|1>>
     <associate|auto-3|<tuple|3|3>>
     <associate|auto-4|<tuple|4|4>>
@@ -1284,11 +1415,34 @@
     <associate|auto-7|<tuple|5.2|6>>
     <associate|auto-8|<tuple|5.2.1|6>>
     <associate|auto-9|<tuple|5.2.2|7>>
+    <associate|auto.1-1|<tuple|1|?|#1>>
+    <associate|auto.2-1|<tuple|2|?|#2>>
+    <associate|auto.3-1|<tuple|3|?|#3>>
+    <associate|auto.4-1|<tuple|4|?|#4>>
+    <associate|auto.5-1|<tuple|5|?|#5>>
+    <associate|auto.5-2|<tuple|5.1|?|#5>>
+    <associate|auto.5-3|<tuple|5.2|?|#5>>
+    <associate|auto.5-4|<tuple|5.2.1|?|#5>>
+    <associate|auto.5-5|<tuple|5.2.2|?|#5>>
+    <associate|auto.5-6|<tuple|5.3|?|#5>>
+    <associate|auto.5-7|<tuple|5.3.1|?|#5>>
+    <associate|auto.5-8|<tuple|5.3.2|?|#5>>
+    <associate|auto.5-9|<tuple|5.4|?|#5>>
+    <associate|auto.6-1|<tuple|6|?|#6>>
+    <associate|auto.7-1|<tuple|7|?|#7>>
+    <associate|auto.7-2|<tuple|1|?|#7>>
+    <associate|auto.8-1|<tuple|8|?|#8>>
+    <associate|auto.9-1|<tuple|9|?|#9>>
+    <associate|fig:fluxfan|<tuple|1|?>>
   </collection>
 </references>
 
 <\auxiliary>
   <\collection>
+    <\associate|figure>
+      <tuple|normal|<label|fig:fluxfan>Space-Time Diagram of a flux
+      fan.|<pageref|auto-16>>
+    </associate>
     <\associate|toc>
       <vspace*|1fn><with|font-series|<quote|bold>|math-font-series|<quote|bold>|1<space|2spc>Mapping
       from 2D equilateral to Unit Coordinates>
@@ -1348,15 +1502,19 @@
       Rules> <datoms|<macro|x|<repeat|<arg|x>|<with|font-series|medium|<with|font-size|1|<space|0.2fn>.<space|0.2fn>>>>>|<htab|5mm>>
       <no-break><pageref|auto-14><vspace|0.5fn>
 
-      <vspace*|1fn><with|font-series|<quote|bold>|math-font-series|<quote|bold>|7<space|2spc>Deriving
-      an Upwind Flux for the 1D Wave Equation>
-      <datoms|<macro|x|<repeat|<arg|x>|<with|font-series|medium|<with|font-size|1|<space|0.2fn>.<space|0.2fn>>>>>|<htab|5mm>>
+      <vspace*|1fn><with|font-series|<quote|bold>|math-font-series|<quote|bold>|7<space|2spc>DIY
+      Upwind Fluxes/Riemann Solvers> <datoms|<macro|x|<repeat|<arg|x>|<with|font-series|medium|<with|font-size|1|<space|0.2fn>.<space|0.2fn>>>>>|<htab|5mm>>
       <no-break><pageref|auto-15><vspace|0.5fn>
 
       <vspace*|1fn><with|font-series|<quote|bold>|math-font-series|<quote|bold>|8<space|2spc>Deriving
+      an Upwind Flux for the 1D Wave Equation>
+      <datoms|<macro|x|<repeat|<arg|x>|<with|font-series|medium|<with|font-size|1|<space|0.2fn>.<space|0.2fn>>>>>|<htab|5mm>>
+      <no-break><pageref|auto-17><vspace|0.5fn>
+
+      <vspace*|1fn><with|font-series|<quote|bold>|math-font-series|<quote|bold>|9<space|2spc>Deriving
       an Upwind Flux for the 2D Wave Equation>
       <datoms|<macro|x|<repeat|<arg|x>|<with|font-series|medium|<with|font-size|1|<space|0.2fn>.<space|0.2fn>>>>>|<htab|5mm>>
-      <no-break><pageref|auto-16><vspace|0.5fn>
+      <no-break><pageref|auto-18><vspace|0.5fn>
     </associate>
   </collection>
 </auxiliary>
