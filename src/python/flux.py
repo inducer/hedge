@@ -389,10 +389,12 @@ class FluxCompilationMapper(pymbolic.mapper.RecursiveMapper):
         base = self.rec(expr.base)
         result = base
 
+        chain_base = _internal.ChainedFlux(base)
+
         assert isinstance(expr.exponent, int)
 
         for i in range(1, expr.exponent):
-            result = _internal.ProductFlux(result, base)
+            result = _internal.ProductFlux(_internal.ChainedFlux(result), chain_base)
 
         return result
 
