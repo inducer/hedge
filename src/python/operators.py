@@ -149,13 +149,10 @@ class AdvectionOperatorBase(TimeDependentOperator):
         u = FluxScalarPlaceholder(0)
         normal = make_normal(self.discr.dimensions)
 
-        if isinstance(self.flux_type, (int, float)):
-            return u.avg*dot(normal, self.v) \
-                    - self.flux_type*0.5*comp.norm_2(self.v)*(u.int - u.ext)
-        elif self.flux_type == "central":
-            return u.avg*dot(normal, self.v)
+        if self.flux_type == "central":
+            return u.avg*dot(normal, -self.v)
         elif self.flux_type in ["lf", "upwind"]:
-            return u.avg*dot(normal, self.v) \
+            return u.avg*dot(normal, -self.v) \
                     - 0.5*comp.norm_2(self.v)*(u.int - u.ext)
         else:
             raise ValueError, "invalid flux type"
@@ -171,7 +168,7 @@ class StrongAdvectionOperator(AdvectionOperatorBase):
         u = FluxScalarPlaceholder(0)
         normal = make_normal(self.discr.dimensions)
 
-        return u.int * dot(normal, self.v) - self.get_weak_flux()
+        return u.int * dot(normal, -self.v) - self.get_weak_flux()
 
     def rhs(self, t, u):
         from hedge.discretization import pair_with_boundary, cache_diff_results
@@ -179,7 +176,7 @@ class StrongAdvectionOperator(AdvectionOperatorBase):
 
         bc_in = self.inflow_u.boundary_interpolant(t, self.discr, self.inflow_tag)
         
-        return dot(self.v, self.nabla*cache_diff_results(u)) - self.m_inv*(
+        return dot(-self.v, self.nabla*cache_diff_results(u)) - self.m_inv*(
                 self.flux * u + 
                 self.flux * pair_with_boundary(u, bc_in, self.inflow_tag))
 
@@ -199,7 +196,7 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
         bc_in = self.inflow_u.boundary_interpolant(t, self.discr, self.inflow_tag)
         bc_out = self.discr.boundarize_volume_field(u, self.outflow_tag)
 
-        return -dot(self.v, self.minv_st*cache_diff_results(u)) + self.m_inv*(
+        return -dot(-self.v, self.minv_st*cache_diff_results(u)) + self.m_inv*(
                 self.flux*u
                 + self.flux * pair_with_boundary(u, bc_in, self.inflow_tag)
                 + self.flux * pair_with_boundary(u, bc_out, self.outflow_tag)
