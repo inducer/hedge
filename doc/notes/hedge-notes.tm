@@ -1043,6 +1043,29 @@
     <tformat|<table|<row|<cell|(A\<b-w\>)<rsup|*\<ast\>>>|<cell|=>|<cell|<frac|c<rsup|->c<rsup|+>|c<rsup|->+c<rsup|+>><matrix|<tformat|<table|<row|<cell|v<rsup|+>+v<rsup|->-u<rsup|+>+u<rsup|->>>|<row|<cell|-(v<rsup|+>-v<rsup|->-u<rsup|+>-u<rsup|->)>>>>>>>|<row|<cell|>|<cell|=>|<cell|<frac|c<rsup|->c<rsup|+>|c<rsup|->+c<rsup|+>><matrix|<tformat|<table|<row|<cell|v<rsup|+>+v<rsup|->+u<rsup|->-u<rsup|+>>>|<row|<cell|-v<rsup|+>+v<rsup|->+u<rsup|+>+u<rsup|->>>>>>>>|<row|<cell|>|<cell|=>|<cell|<frac|2c<rsup|->c<rsup|+>|c<rsup|->+c<rsup|+>><matrix|<tformat|<table|<row|<cell|{v}+<frac|[u]|2>>>|<row|<cell|<frac|[v]|2>+{u}>>>>>.>>>>
   </eqnarray*>
 
+  <section|Deriving an Upwind Flux for the 2D Advection Equation>
+
+  We're dealing with
+
+  <\equation*>
+    u<rsub|t>=\<b-v\>\<cdot\>\<nabla\>u,
+  </equation*>
+
+  which we rewrite into matrix conservation form as
+
+  <\equation*>
+    u<rsub|t>=v<rsub|1>u<rsub|x>+v<rsub|2>u<rsub|y>.
+  </equation*>
+
+  We find <math|A(\<b-n\>)=\<b-n\>\<cdot\>\<b-v\>>, and therefore
+
+  <\equation*>
+    (A(\<b-n\>)u)<rsup|\<ast\>>=<choice|<tformat|<table|<row|<cell|\<b-n\>\<cdot\>\<b-v\>u<rsup|->>|<cell|<with|mode|text|if
+    <math|\<b-n\>\<cdot\>\<b-v\>\<geqslant\>0>
+    (outflow)>,>>|<row|<cell|\<b-n\>\<cdot\>\<b-v\>u<rsup|+>>|<cell|<with|mode|text|if
+    <math|\<b-n\>\<cdot\>\<b-v\>\<less\>0> (inflow)>.>>>>>
+  </equation*>
+
   <section|Deriving an Upwind Flux for the 2D Wave Equation>
 
   We're dealing with
@@ -1063,8 +1086,7 @@
     <tformat|<table|<row|<cell|\<b-w\><rsub|t>>|<cell|=>|<cell|c(x)<left|[><wide*|<matrix|<tformat|<table|<row|<cell|0>|<cell|1>|<cell|0>>|<row|<cell|1>|<cell|>|<cell|>>|<row|<cell|0>|<cell|>|<cell|>>>>>|\<wide-underbrace\>><rsub|A<rsub|x>\<assign\>>\<b-w\><rsub|x>+<wide*|<matrix|<tformat|<table|<row|<cell|0>|<cell|0>|<cell|1>>|<row|<cell|0>|<cell|>|<cell|>>|<row|<cell|1>|<cell|>|<cell|>>>>>|\<wide-underbrace\>><rsub|A<rsub|y>\<assign\>>\<b-w\><rsub|y>,<right|]>>>>>
   </eqnarray*>
 
-  where we set <math|\<b-w\>\<assign\>(u,\<b-v\>)>. (to be continued--simply
-  try generalization of 1D expression)
+  where we set <math|\<b-w\>\<assign\>(u,\<b-v\>)>.
 
   <with|prog-language|maxima|prog-session|default|<\session>
     <\input|<with|color|red|(<with|math-font-family|rm|%i>33)
@@ -1105,8 +1127,8 @@
     <\output>
       <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o3>)
       <with|color|black|>>A<left|(>\<alpha\><right|)>:=cos
-      \<alpha\>*<with|math-font-family|rm|Ax>+sin
-      \<alpha\>*<with|math-font-family|rm|Ay>>
+      <left|(>\<alpha\><right|)>*<with|math-font-family|rm|Ax>+sin
+      <left|(>\<alpha\><right|)>*<with|math-font-family|rm|Ay>>
     </output>
 
     <\input|<with|color|red|(<with|math-font-family|rm|%i>4)
@@ -1127,9 +1149,9 @@
     <\output>
       <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o5>)
       <with|color|black|>><left|[><left|[><left|[>-1,1,0<right|]>,<left|[>1,1,1<right|]><right|]>,<left|[>1,-cos
-      \<alpha\>,-sin \<alpha\><right|]>,<left|[>1,cos \<alpha\>,sin
-      \<alpha\><right|]>,<left|[>0,1,-<frac|cos \<alpha\>|sin
-      \<alpha\>><right|]><right|]>>
+      <left|(>\<alpha\><right|)>,-sin <left|(>\<alpha\><right|)><right|]>,<left|[>1,cos
+      <left|(>\<alpha\><right|)>,sin <left|(>\<alpha\><right|)><right|]>,<left|[>0,1,-<frac|cos
+      <left|(>\<alpha\><right|)>|sin <left|(>\<alpha\><right|)>><right|]><right|]>>
     </output>
 
     <\input|<with|color|red|(<with|math-font-family|rm|%i>6)
@@ -1146,9 +1168,12 @@
     <\output>
       <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o6>)
       <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<frac|1|<sqrt|2>>>|<cell|<frac|1|<sqrt|2>>>|<cell|0>>|<row|<cell|-<frac|cos
-      \<alpha\>|<sqrt|2>>>|<cell|<frac|cos \<alpha\>|<sqrt|2>>>|<cell|sin
-      \<alpha\>>>|<row|<cell|-<frac|sin \<alpha\>|<sqrt|2>>>|<cell|<frac|sin
-      \<alpha\>|<sqrt|2>>>|<cell|-cos \<alpha\>>>>>><right|)>>
+      <left|(>\<alpha\><right|)>|<sqrt|2>>>|<cell|<frac|cos
+      <left|(>\<alpha\><right|)>|<sqrt|2>>>|<cell|sin
+      <left|(>\<alpha\><right|)>>>|<row|<cell|-<frac|sin
+      <left|(>\<alpha\><right|)>|<sqrt|2>>>|<cell|<frac|sin
+      <left|(>\<alpha\><right|)>|<sqrt|2>>>|<cell|-cos
+      <left|(>\<alpha\><right|)>>>>>><right|)>>
     </output>
 
     <\input|<with|color|red|(<with|math-font-family|rm|%i>7)
@@ -1194,12 +1219,6 @@
   </equation*>
 
   where <math|D> does not depend on <math|\<b-n\>>.
-
-  The governing equations for the intermediate states read
-
-  <\eqnarray*>
-    <tformat|<table|<row|<cell|\<lambda\><rsub|i><rsup|->(\<b-s\><rsup|\<ast\>>-\<b-s\><rsup|\<um\>>)+(D\<b-s\>)<rsup|\<ast\>>-(D\<b-s\>)<rsup|\<um\>>>|<cell|=>|<cell|0,>>|<row|<cell|(D\<b-s\>)<rsup|\<ast\>>-(D\<b-s\>)<rsup|\<ast\>\<ast\>>>|<cell|=>|<cell|0,>>|<row|<cell|\<lambda\><rsub|i><rsup|+>(\<b-s\><rsup|\<ast\>\<ast\>>-\<b-s\><rsup|+>)+(D\<b-s\>)<rsup|\<ast\>\<ast\>>-(D\<b-s\>)<rsup|+>>|<cell|=>|<cell|0.>>>>
-  </eqnarray*>
 
   <with|prog-language|maxima|prog-session|default|<\session>
     <\input|<with|color|red|(<with|math-font-family|rm|%i>27)
@@ -1323,21 +1342,21 @@
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o25>)
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o23>)
       <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|-<with|math-font-family|rm|cp>*<with|math-font-family|rm|sm1>>>|<row|<cell|<with|math-font-family|rm|cp>*<with|math-font-family|rm|sm2>>>|<row|<cell|0>>>>><right|)>>
     </output>
 
-    <\input|<with|color|red|(<with|math-font-family|rm|%i>36)
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>24)
     <with|color|black|>>>
       wm:covect([um,v1m,v2m])
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o36>)
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o24>)
       <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<with|math-font-family|rm|um>>>|<row|<cell|<with|math-font-family|rm|v1m>>>|<row|<cell|<with|math-font-family|rm|v2m>>>>>><right|)>>
     </output>
 
-    <\input|<with|color|red|(<with|math-font-family|rm|%i>37)
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>25)
     <with|color|black|>>>
       /*s- in terms of w */
 
@@ -1345,11 +1364,11 @@
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o38>)
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o25>)
       <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<frac|<with|math-font-family|rm|v1m>|<sqrt|2>>+<frac|<with|math-font-family|rm|um>|<sqrt|2>>>>|<row|<cell|<with|math-font-family|rm|ny>*<with|math-font-family|rm|v2m>+<frac|<with|math-font-family|rm|nx>*<with|math-font-family|rm|v1m>|<sqrt|2>>-<frac|<with|math-font-family|rm|nx>*<with|math-font-family|rm|um>|<sqrt|2>>>>|<row|<cell|-<with|math-font-family|rm|nx>*<with|math-font-family|rm|v2m>+<frac|<with|math-font-family|rm|ny>*<with|math-font-family|rm|v1m>|<sqrt|2>>-<frac|<with|math-font-family|rm|ny>*<with|math-font-family|rm|um>|<sqrt|2>>>>>>><right|)>>
     </output>
 
-    <\input|<with|color|red|(<with|math-font-family|rm|%i>39)
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>26)
     <with|color|black|>>>
       /* recall s = V.w */
 
@@ -1363,21 +1382,21 @@
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o39>)
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o26>)
       <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|-<with|math-font-family|rm|cp>*<left|(><frac|<with|math-font-family|rm|v1m>|<sqrt|2>>+<frac|<with|math-font-family|rm|um>|<sqrt|2>><right|)>>>|<row|<cell|<with|math-font-family|rm|cp>*<left|(><with|math-font-family|rm|ny>*<with|math-font-family|rm|v2m>+<frac|<with|math-font-family|rm|nx>*<with|math-font-family|rm|v1m>|<sqrt|2>>-<frac|<with|math-font-family|rm|nx>*<with|math-font-family|rm|um>|<sqrt|2>><right|)>>>|<row|<cell|0>>>>><right|)>>
     </output>
 
-    <\input|<with|color|red|(<with|math-font-family|rm|%i>40)
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>27)
     <with|color|black|>>>
       Awss:ratsimp(transpose(V).Dsssrealinw)
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o40>)
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o27>)
       <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|-<frac|2*<with|math-font-family|rm|cp>*<with|math-font-family|rm|nx>*<with|math-font-family|rm|ny>*<with|math-font-family|rm|v2m>+<left|(><sqrt|2>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|nx><rsup|2>+<sqrt|2>*<with|math-font-family|rm|cp><right|)>*<with|math-font-family|rm|v1m>+<left|(><sqrt|2>*<with|math-font-family|rm|cp>-<sqrt|2>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|nx><rsup|2><right|)>*<with|math-font-family|rm|um>|2*<sqrt|2>>>>|<row|<cell|<frac|2*<with|math-font-family|rm|cp>*<with|math-font-family|rm|nx>*<with|math-font-family|rm|ny>*<with|math-font-family|rm|v2m>+<left|(><sqrt|2>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|nx><rsup|2>-<sqrt|2>*<with|math-font-family|rm|cp><right|)>*<with|math-font-family|rm|v1m>+<left|(>-<sqrt|2>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|nx><rsup|2>-<sqrt|2>*<with|math-font-family|rm|cp><right|)>*<with|math-font-family|rm|um>|2*<sqrt|2>>>>|<row|<cell|<frac|2*<with|math-font-family|rm|cp>*<with|math-font-family|rm|ny><rsup|2>*<with|math-font-family|rm|v2m>+<sqrt|2>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|nx>*<with|math-font-family|rm|ny>*<with|math-font-family|rm|v1m>-<sqrt|2>*<with|math-font-family|rm|cp>*<with|math-font-family|rm|nx>*<with|math-font-family|rm|ny>*<with|math-font-family|rm|um>|2>>>>>><right|)>>
     </output>
 
-    <\input|<with|color|red|(<with|math-font-family|rm|%i>41)
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>28)
     <with|color|black|>>>
       \;
     </input>
@@ -1407,6 +1426,7 @@
     <associate|auto-16|<tuple|1|12>>
     <associate|auto-17|<tuple|8|?>>
     <associate|auto-18|<tuple|9|?>>
+    <associate|auto-19|<tuple|10|?>>
     <associate|auto-2|<tuple|2|1>>
     <associate|auto-3|<tuple|3|3>>
     <associate|auto-4|<tuple|4|4>>
@@ -1512,9 +1532,14 @@
       <no-break><pageref|auto-17><vspace|0.5fn>
 
       <vspace*|1fn><with|font-series|<quote|bold>|math-font-series|<quote|bold>|9<space|2spc>Deriving
-      an Upwind Flux for the 2D Wave Equation>
+      an Upwind Flux for the 2D Advection Equation>
       <datoms|<macro|x|<repeat|<arg|x>|<with|font-series|medium|<with|font-size|1|<space|0.2fn>.<space|0.2fn>>>>>|<htab|5mm>>
       <no-break><pageref|auto-18><vspace|0.5fn>
+
+      <vspace*|1fn><with|font-series|<quote|bold>|math-font-series|<quote|bold>|10<space|2spc>Deriving
+      an Upwind Flux for the 2D Wave Equation>
+      <datoms|<macro|x|<repeat|<arg|x>|<with|font-series|medium|<with|font-size|1|<space|0.2fn>.<space|0.2fn>>>>>|<htab|5mm>>
+      <no-break><pageref|auto-19><vspace|0.5fn>
     </associate>
   </collection>
 </auxiliary>
