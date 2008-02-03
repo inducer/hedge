@@ -138,12 +138,12 @@ class AdvectionOperatorBase(TimeDependentOperator):
 
     flux_types = [
             "central",
-            #"upwind",
+            "upwind",
             "lf"
             ]
 
     def get_weak_flux(self):
-        from hedge.flux import make_normal, FluxScalarPlaceholder
+        from hedge.flux import make_normal, FluxScalarPlaceholder, IfPositive
         from hedge.tools import dot
 
         u = FluxScalarPlaceholder(0)
@@ -151,11 +151,20 @@ class AdvectionOperatorBase(TimeDependentOperator):
 
         if self.flux_type == "central":
             return u.avg*dot(normal, -self.v)
-        elif self.flux_type in ["lf", "upwind"]:
+        elif self.flux_type == "lf":
             return u.avg*dot(normal, -self.v) \
                     - 0.5*comp.norm_2(self.v)*(u.int - u.ext)
+        elif self.flux_type == "upwind":
+            return (dot(normal, -self.v)*
+                    IfPositive(dot(normal, self.v),
+                        u.int, # outflow
+                        u.ext, # inflow
+                        ))
         else:
             raise ValueError, "invalid flux type"
+
+    def max_eigenvalue(self):
+        return comp.norm_2(self.v)
 
 
 

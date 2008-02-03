@@ -146,6 +146,9 @@ class IfPositive(Flux):
         self.then = then
         self.else_ = else_
 
+        if FluxDependencyMapper(composite_leaves=True)(criterion):
+            raise ValueError("criterion part of IfPositive may not depend on field values")
+
     def __getinitargs__(self):
         return self.criterion, self.then, self.else_
 
@@ -258,6 +261,8 @@ class FluxStringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
     def map_penalty_term(self, expr, enclosing_prec):
         return "Penalty(%s)" % (expr.power)
 
+    def map_if_positive(self, expr, enclosing_prec):
+        return "IfPositive(%s, %s, %s)" % (expr.criterion, expr.then, expr.else_)
 
 
 
@@ -301,9 +306,6 @@ class FluxNormalizationMapper(pymbolic.mapper.IdentityMapper):
                 coeffs*flattened_product(terms)
                 for terms, coeffs in terms2coeff.iteritems())
 
-
-
-
     def map_product(self, expr):
         from pymbolic.primitives import flattened_product, is_constant
 
@@ -323,6 +325,12 @@ class FluxNormalizationMapper(pymbolic.mapper.IdentityMapper):
 
         return flattened_product([constant] + rest)
 
+    def map_if_positive(self, expr):
+        return IfPositive(
+                self.rec(expr.criterion),
+                self.rec(expr.then),
+                self.rec(expr.else_),
+                )
 
 
 
@@ -343,6 +351,9 @@ class FluxDependencyMapper(pymbolic.mapper.dependency.DependencyMapper):
 
     def map_penalty_term(self, expr):
         return set()
+
+    def map_if_positive(self, expr):
+        return self.rec(expr.criterion) | self.rec(expr.then) | self.rec(expr.else_)
 
 
 
@@ -391,6 +402,12 @@ class FluxCompilationMapper(pymbolic.mapper.RecursiveMapper):
     def map_penalty_term(self, expr):
         return _internal.PenaltyFlux(expr.power)
 
+    def map_if_positive(self, expr):
+        return _internal.IfPositiveFlux(
+                _internal.ChainedFlux(self.rec(expr.criterion)),
+                _internal.ChainedFlux(self.rec(expr.then)),
+                _internal.ChainedFlux(self.rec(expr.else_)),
+                )
 
 
 
@@ -407,6 +424,13 @@ class FluxDifferentiationMapper(pymbolic.mapper.differentiator.DifferentiationMa
 
     def map_penalty_term(self, expr):
         return 0
+
+    def map_if_positive(self, expr):
+        return IfPositive(
+                expr.criterion,
+                self.rec(expr.then),
+                self.rec(expr.else_),
+                )
 
 
 
