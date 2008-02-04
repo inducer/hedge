@@ -1158,7 +1158,7 @@ class TestHedge(unittest.TestCase):
                     ]
 
             def boundary_tagger(vertices, el, face_nr):
-                if el.face_normals[face_nr] * a > 0:
+                if el.face_normals[face_nr] * v < 0:
                     return ["inflow"]
                 else:
                     return ["outflow"]
@@ -1173,7 +1173,7 @@ class TestHedge(unittest.TestCase):
         from hedge.operators import StrongAdvectionOperator
         from hedge.data import TimeDependentGivenFunction
 
-        a = num.array([1,0])
+        v = num.array([-1,0])
 
         mesh = make_mesh()
         discr = Discretization(mesh, TriangularElement(4), debug=True)
@@ -1183,7 +1183,7 @@ class TestHedge(unittest.TestCase):
             else: return (x-0.5)
 
         def u_analytic(x, t):
-            return f(a*x+t)
+            return f(-v*x+t)
 
         u = discr.interpolate_volume_function(lambda x: u_analytic(x, 0))
         dt = 1e-2
@@ -1195,7 +1195,7 @@ class TestHedge(unittest.TestCase):
 
         for flux_type in StrongAdvectionOperator.flux_types:
             stepper = RK4TimeStepper()
-            op = StrongAdvectionOperator(discr, a, 
+            op = StrongAdvectionOperator(discr, v, 
                     inflow_u=TimeDependentGivenFunction(u_analytic),
                     flux_type=flux_type)
             for step in range(nsteps):
@@ -1218,17 +1218,17 @@ class TestHedge(unittest.TestCase):
         from hedge.operators import StrongAdvectionOperator
         from hedge.data import TimeDependentGivenFunction
 
-        a = num.array([0.27,0])
-        norm_a = comp.norm_2(a)
+        v = num.array([0.27,0])
+        norm_a = comp.norm_2(v)
 
         def f(x):
             return sin(x)
 
         def u_analytic(x, t):
-            return f((a*x/norm_a+t*norm_a))
+            return f((-v*x/norm_a+t*norm_a))
 
         def boundary_tagger(vertices, el, face_nr):
-            if el.face_normals[face_nr] * a > 0:
+            if el.face_normals[face_nr] * v < 0:
                 return ["inflow"]
             else:
                 return ["outflow"]
@@ -1248,7 +1248,7 @@ class TestHedge(unittest.TestCase):
 
                     for order in [1,2,3,4,5,6]:
                         discr = Discretization(mesh, TriangularElement(order), debug=True)
-                        op = StrongAdvectionOperator(discr, a, 
+                        op = StrongAdvectionOperator(discr, v, 
                                 inflow_u=TimeDependentGivenFunction(u_analytic),
                                 flux_type=flux_type, direct_flux=direct_flux)
 

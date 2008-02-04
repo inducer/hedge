@@ -207,6 +207,53 @@ namespace hedge { namespace fluxes {
 
 
 
+  template<class Criterion, class ThenPart, class ElsePart>
+  class if_positive : 
+    public flux, 
+    public flux_operators<if_positive<Criterion, ThenPart, ElsePart> >
+  {
+    public:
+      if_positive()
+      { }
+
+      if_positive(
+          const ThenPart &thp,
+          const ElsePart &elp)
+        : m_then_part(thp), m_else_part(elp)
+      { }
+
+      if_positive(const Criterion &crit,
+          const ThenPart &thp,
+          const ElsePart &elp)
+        : m_criterion(crit), m_then_part(thp), m_else_part(elp)
+      { }
+
+      double operator()(const face &local, const face *neighbor) const
+      { 
+        if (m_criterion(local, neighbor) > 0)
+          return m_then_part(local, neighbor);
+        else
+          return m_else_part(local, neighbor);
+      }
+
+      const Criterion &criterion() const
+      { return m_criterion; }
+
+      const ThenPart &then_part() const
+      { return m_then_part; }
+
+      const ElsePart &else_part() const
+      { return m_else_part; }
+
+    protected:
+      const Criterion m_criterion;
+      const ThenPart m_then_part;
+      const ElsePart m_else_part;
+  };
+
+
+
+
   template<class Operation, class Operand1, class Operand2>
   class binary_operator : 
     public flux, 

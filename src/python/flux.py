@@ -21,6 +21,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import hedge._internal as _internal
+from pytools import monkeypatch_method
 from pytools.arithmetic_container import ArithmeticList, \
         work_with_arithmetic_containers
 import pymbolic
@@ -34,31 +35,31 @@ FluxFace = _internal.FluxFace
 
 
 # c++ fluxes debug dumping ----------------------------------------------------
-def _constant_str(self):
+@monkeypatch_method(_internal.ConstantFlux)
+def __str__(self):
     return "ConstantFlux(%s)" % self.value
-def _normal_str(self):
+@monkeypatch_method(_internal.NormalFlux)
+def __str__(self):
     return "NormalFlux(%d)" % self.axis
-def _penalty_str(self):
+@monkeypatch_method(_internal.PenaltyFlux)
+def __str__(self):
     return "PenaltyFlux(%s)" % self.power
-def _penalty_str(self):
-    return "PenaltyFlux(%s)" % self.power
-def _sum_str(self):
+@monkeypatch_method(_internal.SumFlux)
+def __str__(self):
     return "SumFlux(%s, %s)" % (self.operand1, self.operand2)
-def _product_str(self):
+@monkeypatch_method(_internal.ProductFlux)
+def __str__(self):
     return "ProductFlux(%s, %s)" % (self.operand1, self.operand2)
-def _negative_str(self):
+@monkeypatch_method(_internal.NegativeFlux)
+def __str__(self):
     return "NegativeFlux(%s)" % self.operand
-def _chained_str(self):
+@monkeypatch_method(_internal.ChainedFlux)
+def __str__(self):
     #return "ChainedFlux(%s)" % self.child
     return str(self.child)
 
-_internal.ConstantFlux.__str__ = _constant_str
-_internal.NormalFlux.__str__ = _normal_str
-_internal.PenaltyFlux.__str__ = _penalty_str
-_internal.SumFlux.__str__ = _sum_str
-_internal.ProductFlux.__str__ = _product_str
-_internal.NegativeFlux.__str__ = _negative_str
-_internal.ChainedFlux.__str__ = _chained_str
+
+
 
 
 # python fluxes ---------------------------------------------------------------
@@ -136,6 +137,35 @@ class PenaltyTerm(Flux):
     def get_mapper_method(self, mapper):
         return mapper.map_penalty_term
 
+
+
+
+class IfPositive(Flux):
+    def __init__(self, criterion, then, else_):
+        self.criterion = criterion
+        self.then = then
+        self.else_ = else_
+
+        if FluxDependencyMapper(composite_leaves=True)(criterion):
+            raise ValueError("criterion part of IfPositive may not depend on field values")
+
+    def __getinitargs__(self):
+        return self.criterion, self.then, self.else_
+
+    def __eq__(self, other):
+        return (isinstance(other, IfPositive)
+                and self.criterion == other.criterion
+                and self.then == other.then
+                and self.else_ == other.else_)
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def __hash__(self):
+        return 0xfa5814 ^ hash(self.criterion) ^ hash(self.then) ^ hash(self.else_)
+
+    def get_mapper_method(self, mapper):
+        return mapper.map_if_positive
 
 
 
@@ -231,6 +261,8 @@ class FluxStringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
     def map_penalty_term(self, expr, enclosing_prec):
         return "Penalty(%s)" % (expr.power)
 
+    def map_if_positive(self, expr, enclosing_prec):
+        return "IfPositive(%s, %s, %s)" % (expr.criterion, expr.then, expr.else_)
 
 
 
@@ -274,9 +306,6 @@ class FluxNormalizationMapper(pymbolic.mapper.IdentityMapper):
                 coeffs*flattened_product(terms)
                 for terms, coeffs in terms2coeff.iteritems())
 
-
-
-
     def map_product(self, expr):
         from pymbolic.primitives import flattened_product, is_constant
 
@@ -296,6 +325,12 @@ class FluxNormalizationMapper(pymbolic.mapper.IdentityMapper):
 
         return flattened_product([constant] + rest)
 
+    def map_if_positive(self, expr):
+        return IfPositive(
+                self.rec(expr.criterion),
+                self.rec(expr.then),
+                self.rec(expr.else_),
+                )
 
 
 
@@ -317,6 +352,9 @@ class FluxDependencyMapper(pymbolic.mapper.dependency.DependencyMapper):
     def map_penalty_term(self, expr):
         return set()
 
+    def map_if_positive(self, expr):
+        return self.rec(expr.criterion) | self.rec(expr.then) | self.rec(expr.else_)
+
 
 
 
@@ -332,24 +370,31 @@ class FluxCompilationMapper(pymbolic.mapper.RecursiveMapper):
         return _internal.ConstantFlux(expr)
 
     def map_sum(self, expr):
-        return reduce(lambda f1, f2: _internal.make_SumFlux(f1, f2),
+        return reduce(lambda f1, f2: _internal.SumFlux(
+                    _internal.ChainedFlux(f1), 
+                    _internal.ChainedFlux(f2)),
                 (self.rec(c) for c in expr.children))
 
     def map_product(self, expr):
-        return reduce(lambda f1, f2: _internal.make_ProductFlux(f1, f2),
+        return reduce(
+                lambda f1, f2: _internal.ProductFlux(
+                    _internal.ChainedFlux(f1), 
+                    _internal.ChainedFlux(f2)),
                 (self.rec(c) for c in expr.children))
 
     def map_negation(self, expr):
-        return _internal.make_NegativeFlux(self.rec(expr.child))
+        return _internal.NegativeFlux(_internal.ChainedFlux(self.rec(expr.child)))
 
     def map_power(self, expr):
         base = self.rec(expr.base)
         result = base
 
+        chain_base = _internal.ChainedFlux(base)
+
         assert isinstance(expr.exponent, int)
 
         for i in range(1, expr.exponent):
-            result = _internal.make_ProductFlux(result, base)
+            result = _internal.ProductFlux(_internal.ChainedFlux(result), chain_base)
 
         return result
 
@@ -359,6 +404,12 @@ class FluxCompilationMapper(pymbolic.mapper.RecursiveMapper):
     def map_penalty_term(self, expr):
         return _internal.PenaltyFlux(expr.power)
 
+    def map_if_positive(self, expr):
+        return _internal.IfPositiveFlux(
+                _internal.ChainedFlux(self.rec(expr.criterion)),
+                _internal.ChainedFlux(self.rec(expr.then)),
+                _internal.ChainedFlux(self.rec(expr.else_)),
+                )
 
 
 
@@ -375,6 +426,13 @@ class FluxDifferentiationMapper(pymbolic.mapper.differentiator.DifferentiationMa
 
     def map_penalty_term(self, expr):
         return 0
+
+    def map_if_positive(self, expr):
+        return IfPositive(
+                expr.criterion,
+                self.rec(expr.then),
+                self.rec(expr.else_),
+                )
 
 
 

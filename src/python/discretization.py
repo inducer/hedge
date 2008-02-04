@@ -1,5 +1,7 @@
 """Global function space discretization."""
 
+from __future__ import division
+
 __copyright__ = "Copyright (C) 2007 Andreas Kloeckner"
 
 __license__ = """
@@ -1224,8 +1226,51 @@ class _VectorFluxOperator(object):
         self.discr = discr
         self.flux_operators = flux_operators
 
+
+
+
     def __mul__(self, field):
-        return ArithmeticList(fo * field for fo in self.flux_operators)
+        if isinstance(field[0], BoundaryPair):
+        #if True:
+            return ArithmeticList(fo * field for fo in self.flux_operators)
+        else:
+            # this is for performance -- it is faster to apply several fluxes
+            # to a single operand at once
+            result = ArithmeticList(
+                    self.discr.volume_zeros() for f in self.flux_operators)
+
+            def find_field_flux(flux_op, i_field):
+                for idx, int_flux, ext_flux in flux_op.flux:
+                    if idx == i_field:
+                        return int_flux, ext_flux
+                return None
+
+            self.discr.inner_flux_timer.start()
+            from hedge._internal import \
+                    perform_multiple_double_sided_fluxes_on_single_operand, \
+                    ChainedFlux
+            for i_field, f_i in enumerate(field):
+                fluxes_and_results = []
+                for i_result, fo in enumerate(self.flux_operators):
+                    scalar_flux = find_field_flux(fo, i_field)
+                    if scalar_flux is not None:
+                        int_flux, ext_flux = scalar_flux
+                        fluxes_and_results.append(
+                                (ChainedFlux(int_flux), 
+                                    ChainedFlux(ext_flux), 
+                                    result[i_result]))
+                self.discr.inner_flux_counter.add(len(fluxes_and_results))
+                for fg, fmm in self.discr.face_groups:
+                    perform_multiple_double_sided_fluxes_on_single_operand(
+                            fg, fmm, fluxes_and_results, f_i)
+            self.discr.inner_flux_timer.stop()
+
+            return result
+
+
+
+
+
 
     def perform_inner(self, tgt):
         dof = len(self.discr)

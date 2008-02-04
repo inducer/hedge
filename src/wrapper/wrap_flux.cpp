@@ -55,15 +55,6 @@ namespace {
 
 
 
-  template<class Flux>
-  Flux *new_unary_op_flux(const fluxes::flux &op1)
-  {
-    return new Flux(fluxes::chained_flux(op1));
-  }
-
-
-
-
   template<class Operation> 
   void expose_unary_operator(Operation, const std::string &name)
   {
@@ -71,25 +62,13 @@ namespace {
             fluxes::chained_flux> cl;
 
     class_<cl, bases<fluxes::flux>, boost::noncopyable>
-      (name.c_str(), no_init)
+      (name.c_str(), 
+       init<fluxes::chained_flux>(args("operand"))[
+       with_custodian_and_ward<1, 2>()
+       ])
       .add_property("operand", 
           make_function(&cl::operand, return_internal_reference<>()))
       ;
-    def(("make_"+name).c_str(), 
-        new_unary_op_flux<cl>,
-        with_custodian_and_ward_postcall<0, 1,
-        return_value_policy<manage_new_object> >());
-  }
-
-
-
-
-  template<class Flux>
-  Flux *new_binary_op_flux(
-      const fluxes::flux &op1, const fluxes::flux &op2)
-  {
-    return new Flux(
-          fluxes::chained_flux(op1), fluxes::chained_flux(op2));
   }
 
 
@@ -102,28 +81,18 @@ namespace {
             fluxes::chained_flux, fluxes::chained_flux> cl;
 
     class_<cl, bases<fluxes::flux>, boost::noncopyable>
-      (name.c_str(), no_init)
+      (name.c_str(), 
+       init<
+       const fluxes::chained_flux &, 
+       const fluxes::chained_flux &>
+       (args("operand1", "operand2"))
+       [with_custodian_and_ward<1, 2, 
+        with_custodian_and_ward<1, 3> >()])
       .add_property("operand1", 
           make_function(&cl::operand1, return_internal_reference<>()))
       .add_property("operand2", 
           make_function(&cl::operand2, return_internal_reference<>()))
       ;
-
-    def(("make_"+name).c_str(), 
-        new_binary_op_flux<cl>,
-        with_custodian_and_ward_postcall<0, 1, 
-        with_custodian_and_ward_postcall<0, 2,
-        return_value_policy<manage_new_object> > >());
-  }
-
-
-
-
-  template<class Flux>
-  Flux *new_binary_constant_op_flux(
-      const fluxes::flux &op1, double c)
-  {
-    return new Flux(fluxes::chained_flux(op1), fluxes::constant(c));
   }
 
 
@@ -135,17 +104,86 @@ namespace {
     typedef fluxes::binary_operator<Operation, 
             fluxes::chained_flux, fluxes::constant> cl;
     class_<cl, bases<fluxes::flux>, boost::noncopyable>
-      (name.c_str(), no_init)
+      (name.c_str(), 
+       init<const fluxes::chained_flux &, double>
+       (args("operand1", "constant"))[with_custodian_and_ward<1, 2>()])
       .add_property("operand1", 
           make_function(&cl::operand1, return_internal_reference<>()))
       .add_property("operand2", 
           make_function(&cl::operand2, return_internal_reference<>()))
       ;
+  }
 
-    def(("make_"+name).c_str(), 
-        new_binary_constant_op_flux<cl>,
-        with_custodian_and_ward_postcall<0, 1,
-        return_value_policy<manage_new_object> >());
+
+
+
+  double_sided_flux_info<fluxes::chained_flux, fluxes::chained_flux> 
+    parse_dsfi(object tup)
+  {
+    typedef fluxes::chained_flux cf;
+
+    if (len(tup) != 3)
+      PYTHON_ERROR(ValueError, "flux descriptor tuple must have three entries");
+
+    return double_sided_flux_info<cf, cf>(
+        extract<cf>(tup[0]),
+        extract<cf>(tup[1]),
+        extract<hedge::vector &>(tup[2]));
+  }
+
+
+
+
+  void wrap_perform_multiple_double_sided_fluxes_on_single_operand(
+      const face_group &fg,
+      const hedge::matrix &fmm,
+      object fluxes,
+      const hedge::vector &operand)
+  {
+    typedef fluxes::chained_flux cf;
+    typedef double_sided_flux_info<cf, cf> dsfi_t;
+
+    unsigned i = 0;
+    while (unsigned(len(fluxes)) >= i+4)
+    {
+      dsfi_t flux_info[4] = {
+        parse_dsfi(fluxes[i+0]),
+        parse_dsfi(fluxes[i+1]),
+        parse_dsfi(fluxes[i+2]),
+        parse_dsfi(fluxes[i+3])
+      };
+      perform_multiple_double_sided_fluxes_on_single_operand<4>(
+          fg, fmm, flux_info, operand);
+      i += 4;
+    }
+
+    if (unsigned(len(fluxes)) == i+3)
+    {
+      dsfi_t flux_info[3] = {
+        parse_dsfi(fluxes[i+0]),
+        parse_dsfi(fluxes[i+1]),
+        parse_dsfi(fluxes[i+2])
+      };
+      perform_multiple_double_sided_fluxes_on_single_operand<3>(
+          fg, fmm, flux_info, operand);
+    }
+    else if (unsigned(len(fluxes)) == i+2)
+    {
+      dsfi_t flux_info[2] = {
+        parse_dsfi(fluxes[i+0]),
+        parse_dsfi(fluxes[i+1])
+      };
+      perform_multiple_double_sided_fluxes_on_single_operand<2>(
+          fg, fmm, flux_info, operand);
+    }
+    else if (unsigned(len(fluxes)) == i+1)
+    {
+      dsfi_t flux_info[1] = {
+        parse_dsfi(fluxes[i+0]),
+      };
+      perform_multiple_double_sided_fluxes_on_single_operand<1>(
+          fg, fmm, flux_info, operand);
+    }
   }
 }
 
@@ -204,9 +242,35 @@ void hedge_expose_fluxes()
       ;
   }
 
+  {
+    typedef fluxes::if_positive<fluxes::chained_flux, 
+            fluxes::chained_flux, fluxes::chained_flux> cl;
+
+    class_<cl, bases<fluxes::flux>, boost::noncopyable>
+      ("IfPositiveFlux", 
+       init<
+         const fluxes::chained_flux &,
+         const fluxes::chained_flux &,
+         const fluxes::chained_flux &
+         >(args("criterion", "then_part", "else_part"))[
+           with_custodian_and_ward<1, 2, 
+           with_custodian_and_ward<1, 3,
+           with_custodian_and_ward<1, 4> > >()]
+       )
+      .add_property("criterion", 
+          make_function(&cl::criterion, return_internal_reference<>()))
+      .add_property("then_part", 
+          make_function(&cl::then_part, return_internal_reference<>()))
+      .add_property("else_part", 
+          make_function(&cl::else_part, return_internal_reference<>()))
+      ;
+  }
+
   expose_binary_operator(std::plus<double>(), "SumFlux");
   expose_binary_operator(std::minus<double>(), "DifferenceFlux");
   expose_binary_operator(std::multiplies<double>(), "ProductFlux");
+  expose_binary_constant_operator(std::multiplies<double>(), 
+      "ProductWithConstantFlux");
   expose_binary_constant_operator(std::multiplies<double>(), 
       "ProductWithConstantFlux");
 
@@ -269,5 +333,8 @@ void hedge_expose_fluxes()
       .DEF_SIMPLE_RW_MEMBER(index_lists)
       ;
   }
+
+  def("perform_multiple_double_sided_fluxes_on_single_operand",
+      wrap_perform_multiple_double_sided_fluxes_on_single_operand);
 }
 

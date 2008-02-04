@@ -17,70 +17,11 @@
 
 
 
+from __future__ import division
 import pylinear.array as num
 import pylinear.computation as comp
 from pytools.arithmetic_container import ArithmeticList, join_fields
-from hedge.tools import Rotation, dot
-
-
-
-
-class StrongWaveOperator:
-    def __init__(self, discr, source_f=None, flux_type="upwind"):
-        self.discr = discr
-        self.source_f = source_f
-
-        from hedge.flux import FluxVectorPlaceholder, make_normal
-
-        dim = discr.dimensions
-        w = FluxVectorPlaceholder(1+dim)
-        u = w[0]
-        v = w[1:]
-        normal = make_normal(dim)
-
-        flux_weak = join_fields(
-                dot(v.avg, normal),
-                u.avg * normal)
-
-        if flux_type == "central":
-            pass
-        elif flux_type == "upwind":
-            # see doc/notes/hedge-notes.tm, generalized from 1D
-            flux_weak += join_fields(
-                    0.5*(u.int-u.ext),
-                    0.5*(v.int-v.ext))
-        else:
-            raise ValueError, "invalid flux type"
-
-        flux_strong = join_fields(
-                dot(v.int, normal),
-                u.int * normal) - flux_weak
-
-        self.flux = discr.get_flux_operator(flux_strong)
-
-        self.nabla = discr.nabla
-        self.mass = discr.mass_operator
-        self.m_inv = discr.inverse_mass_operator
-
-    def rhs(self, t, w):
-        from hedge.discretization import pair_with_boundary, cache_diff_results
-
-        u = w[0]
-        v = w[1:]
-
-        bc = join_fields(
-                -self.discr.boundarize_volume_field(u),
-                self.discr.boundarize_volume_field(v))
-
-        rhs = (join_fields(
-                dot(self.nabla, cache_diff_results(v)), 
-                self.nabla*cache_diff_results(u))
-                - self.m_inv*(self.flux*w + self.flux*pair_with_boundary(w, bc)))
-
-        if self.source_f is not None:
-            rhs[0] += self.source_f(t)
-
-        return rhs
+from hedge.tools import dot
 
 
 
@@ -125,16 +66,11 @@ def main() :
     else:
         mesh_data = pcon.receive_mesh()
 
-    discr = pcon.make_discretization(mesh_data, el_class(3))
+    discr = pcon.make_discretization(mesh_data, el_class(7))
     stepper = RK4TimeStepper()
     #stepper = AdamsBashforthTimeStepper(1)
     vis = VtkVisualizer(discr, pcon, "fld")
 
-    dt = discr.dt_factor(1)
-    nsteps = int(10/dt)
-    if pcon.is_head_rank:
-        print "dt", dt
-        print "nsteps", nsteps
 
     def source_u(x):
         return exp(-x*x*256)
@@ -147,9 +83,16 @@ def main() :
         else:
             return source_u_vec
 
-    op = StrongWaveOperator(discr, source_vec_getter)
+    from hedge.operators import StrongWaveOperator
+    op = StrongWaveOperator(5, discr, source_vec_getter)
     fields = ArithmeticList([discr.volume_zeros()]) # u
     fields.extend([discr.volume_zeros() for i in range(discr.dimensions)]) # v
+
+    dt = discr.dt_factor(op.max_eigenvalue())
+    nsteps = int(10/dt)
+    if pcon.is_head_rank:
+        print "dt", dt
+        print "nsteps", nsteps
 
     # diagnostics setup -------------------------------------------------------
     from pytools.log import LogManager, \
@@ -157,7 +100,7 @@ def main() :
             add_simulation_quantities, \
             add_run_info
 
-    logmgr = LogManager("advection.dat", pcon.communicator)
+    logmgr = LogManager("wave.dat", pcon.communicator)
     add_run_info(logmgr)
     add_general_quantities(logmgr)
     add_simulation_quantities(logmgr, dt)
@@ -181,7 +124,7 @@ def main() :
 
         t = step*dt
 
-        if step % 1 == 0:
+        if False:
             visf = vis.make_file("fld-%04d" % step)
             vis.add_data(visf,
                     [

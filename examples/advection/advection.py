@@ -24,121 +24,6 @@ import pylinear.computation as comp
 
 
 
-def min_vertex_distance(discr):
-    def min_vertex_distance_for_el(el):
-        vertices = [discr.mesh.points[vi] 
-                for vi in el.vertex_indices]
-
-        return min(min(comp.norm_2(vi-vj)
-                for i, vi in enumerate(vertices)
-                if i != j)
-                for j, vj in enumerate(vertices))
-
-    return min(min_vertex_distance_for_el(el) 
-            for el in discr.mesh.elements)
-
-
-
-
-def make_corrugated_rect_mesh(a=(0,0), b=(1,1), max_area=0.1, 
-        boundary_tagger=(lambda fvi, el, fn: []),
-        n=3):
-    import meshpy.triangle as triangle
-
-    def round_trip_connect(start, end):
-        for i in range(start, end):
-            yield i, i+1
-        yield end, start
-
-    def needs_refinement(vert_origin, vert_destination, vert_apex, area):
-        return area > max_area
-
-    a = num.asarray(a)
-    b = num.asarray(b)
-    size = b-a
-    x = num.array([1,0])
-    y = num.array([0,1])
-    xsize = size[0]
-    ysize = size[1]
-
-    marker2tag = {
-            1: "minus_x", 
-            2: "plus_x", 
-            3: "bdry", 
-            }
-
-    points = [a, num.array([a[0], b[1]])]
-    facets = [(0,1)]
-
-    last_lower_idx = 0
-    last_upper_idx = 1
-
-    def add_pt(pt):
-        result = len(points)
-        points.append(pt)
-        return result
-
-    for i in range(n):
-        last_lower_pt = points[last_lower_idx]
-        last_upper_pt = points[last_upper_idx]
-        upper_tooth_idx = add_pt(last_upper_pt + x*xsize*0.5 + y*ysize)
-        upper_tube_idx = add_pt(last_upper_pt + x*xsize)
-        lower_tooth_idx = add_pt(last_lower_pt + x*xsize*0.5 - y*ysize)
-        lower_tube_idx = add_pt(last_lower_pt + x*xsize)
-
-        facets.append((last_upper_idx, upper_tooth_idx))
-        facets.append((upper_tooth_idx, upper_tube_idx))
-        facets.append((last_lower_idx, lower_tooth_idx))
-        facets.append((lower_tooth_idx, lower_tube_idx))
-
-        last_lower_idx = lower_tube_idx
-        last_upper_idx = upper_tube_idx
-
-    facets.append((last_lower_idx, last_upper_idx))
-    facet_markers = [1] + [3] * (len(facets)-2) + [2]
-    subdivisions = [5] + [3] * (len(facets)-2) + [5]
-
-    assert len(facets) == len(facet_markers)
-    assert len(facets) == len(subdivisions)
-
-    points, facets, facet_markers = triangle.subdivide_facets(
-            subdivisions, points, facets, facet_markers)
-            
-    mesh_info = triangle.MeshInfo()
-    mesh_info.set_points(points)
-    mesh_info.set_facets(facets, facet_markers)
-    
-    mesh_periodicity = [("minus_x", "plus_x"), None]
-    periodic_tags = set(mesh_periodicity[0])
-
-    generated_mesh = triangle.build(mesh_info, 
-            refinement_func=needs_refinement,
-            allow_boundary_steiner=False)
-
-    fvi2fm = dict((frozenset(fvi), marker) for fvi, marker in
-        zip(generated_mesh.facets, generated_mesh.facet_markers))
-
-    def wrapped_boundary_tagger(fvi, el, fn):
-        btag = marker2tag[fvi2fm[frozenset(fvi)]]
-        if btag in periodic_tags:
-            print el.face_normals[fn], btag, fvi2fm[frozenset(fvi)]
-            return [btag]
-        else:
-            return [btag] + boundary_tagger(fvi, el, fn)
-
-    from hedge.mesh import make_conformal_mesh
-    return make_conformal_mesh(
-            generated_mesh.points,
-            generated_mesh.elements,
-            #boundary_tagger,
-            wrapped_boundary_tagger,
-            periodicity=mesh_periodicity
-            )
-
-
-
-
-
 def main() :
     from hedge.element import \
             TriangularElement, \
@@ -163,10 +48,10 @@ def main() :
             #return 0
 
     def u_analytic(x, t):
-        return f((a*x/norm_a+t*norm_a))
+        return f((-v*x/norm_v+t*norm_v))
 
     def boundary_tagger(vertices, el, face_nr):
-        if el.face_normals[face_nr] * a > 0:
+        if el.face_normals[face_nr] * v < 0:
             return ["inflow"]
         else:
             return ["outflow"]
@@ -177,7 +62,7 @@ def main() :
 
     job = Job("mesh")
     if dim == 2:
-        a = num.array([-1,0])
+        v = num.array([1,0])
         if pcon.is_head_rank:
             from hedge.mesh import \
                     make_disk_mesh, \
@@ -201,24 +86,18 @@ def main() :
                         boundary_tagger=boundary_tagger,
                         periodicity=(True, False),
                         )
-            if False:
+            if True:
                 mesh = make_rect_mesh(
                         (-0.5, -1.5),
                         (5, 1.5),
                         max_area=0.3,
                         boundary_tagger=boundary_tagger,
-                        periodicity=(True, False),
+                        #periodicity=(True, False),
                         subdivisions=(10,5),
                         )
-            mesh = make_corrugated_rect_mesh(
-                    (-0.5, -0.5),
-                    (0.5, 0.5),
-                    boundary_tagger=boundary_tagger,
-                    max_area=0.08)
-
         el_class = TriangularElement
     elif dim == 3:
-        a = num.array([0,0,0.3])
+        v = num.array([0,0,0.3])
         if pcon.is_head_rank:
             from hedge.mesh import make_cylinder_mesh, make_ball_mesh, make_box_mesh
 
@@ -233,7 +112,7 @@ def main() :
     else:
         raise RuntimeError, "bad number of dimensions"
 
-    norm_a = comp.norm_2(a)
+    norm_v = comp.norm_2(v)
 
     if pcon.is_head_rank:
         mesh_data = pcon.distribute_mesh(mesh)
@@ -247,15 +126,6 @@ def main() :
     vis_discr = discr
     job.done()
 
-    dt = discr.dt_factor(norm_a)
-    nsteps = int(700/dt)
-
-    if pcon.is_head_rank:
-        print "%d elements, dt=%g, nsteps=%d" % (
-                len(discr.mesh.elements),
-                dt,
-                nsteps)
-
     vis = SiloVisualizer(vis_discr, pcon)
     #vis = VtkVisualizer(vis_discr, pcon, "fld")
 
@@ -265,10 +135,10 @@ def main() :
             TimeConstantGivenFunction, \
             TimeDependentGivenFunction
     from hedge.operators import StrongAdvectionOperator, WeakAdvectionOperator
-    op = StrongAdvectionOperator(discr, a, 
+    op = StrongAdvectionOperator(discr, v, 
             inflow_u=TimeConstantGivenFunction(ConstantGivenFunction()),
             #inflow_u=TimeDependentGivenFunction(u_analytic)),
-            flux_type="lf")
+            flux_type="upwind")
 
     #from sizer import scanner
     #objs = scanner.Objects()
@@ -276,7 +146,7 @@ def main() :
     #code.interact(local = {'objs': objs})
 
     from pyrticle._internal import ShapeFunction
-    sf = ShapeFunction(0.5*min_vertex_distance(discr), 2)
+    sf = ShapeFunction(0.3, 2)
 
     def gauss_hump(x):
         from math import exp
@@ -291,7 +161,17 @@ def main() :
     u = discr.interpolate_volume_function(sf)
     u /= integral(discr, u)
 
+    # timestep setup ----------------------------------------------------------
     stepper = RK4TimeStepper()
+
+    dt = discr.dt_factor(op.max_eigenvalue())
+    nsteps = int(700/dt)
+
+    if pcon.is_head_rank:
+        print "%d elements, dt=%g, nsteps=%d" % (
+                len(discr.mesh.elements),
+                dt,
+                nsteps)
 
     # diagnostics setup -------------------------------------------------------
     from pytools.log import LogManager, \
