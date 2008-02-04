@@ -113,6 +113,67 @@ namespace {
           make_function(&cl::operand2, return_internal_reference<>()))
       ;
   }
+
+
+
+
+  double_sided_flux_info<fluxes::chained_flux, fluxes::chained_flux> 
+    parse_dsfi(object tup)
+  {
+    typedef fluxes::chained_flux cf;
+
+    if (len(tup) != 3)
+      PYTHON_ERROR(ValueError, "flux descriptor tuple must have three entries");
+
+    return double_sided_flux_info<cf, cf>(
+        extract<cf>(tup[0]),
+        extract<cf>(tup[1]),
+        extract<hedge::vector &>(tup[2]));
+  }
+
+
+
+
+  void wrap_perform_multiple_double_sided_fluxes_on_single_operand(
+      const face_group &fg,
+      const hedge::matrix &fmm,
+      object fluxes,
+      const hedge::vector &operand)
+  {
+    typedef fluxes::chained_flux cf;
+    typedef double_sided_flux_info<cf, cf> dsfi_t;
+
+    unsigned i = 0;
+    while (unsigned(len(fluxes)) >= i+3)
+    {
+      dsfi_t flux_info[3] = {
+        parse_dsfi(fluxes[i+0]),
+        parse_dsfi(fluxes[i+1]),
+        parse_dsfi(fluxes[i+2])
+      };
+      perform_multiple_double_sided_fluxes_on_single_operand<3>(
+          fg, fmm, flux_info, operand);
+      i += 3;
+    }
+
+    if (unsigned(len(fluxes)) == i+2)
+    {
+      dsfi_t flux_info[2] = {
+        parse_dsfi(fluxes[i+0]),
+        parse_dsfi(fluxes[i+1])
+      };
+      perform_multiple_double_sided_fluxes_on_single_operand<2>(
+          fg, fmm, flux_info, operand);
+    }
+    else if (unsigned(len(fluxes)) == i+1)
+    {
+      dsfi_t flux_info[1] = {
+        parse_dsfi(fluxes[i+0]),
+      };
+      perform_multiple_double_sided_fluxes_on_single_operand<1>(
+          fg, fmm, flux_info, operand);
+    }
+  }
 }
 
 
@@ -261,5 +322,8 @@ void hedge_expose_fluxes()
       .DEF_SIMPLE_RW_MEMBER(index_lists)
       ;
   }
+
+  def("perform_multiple_double_sided_fluxes_on_single_operand",
+      wrap_perform_multiple_double_sided_fluxes_on_single_operand);
 }
 

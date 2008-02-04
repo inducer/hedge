@@ -85,7 +85,7 @@ namespace hedge
 
 
   template <class LFlux, class LTarget, class NFlux, class NTarget>
-  struct flux_data
+  struct flux_target_data
   {
     typedef LFlux local_flux_t;
     typedef NFlux neighbor_flux_t;
@@ -98,7 +98,7 @@ namespace hedge
     neighbor_flux_t neighbor_flux;
     neighbor_target_t neighbor_target;
 
-    flux_data(LFlux lflux, LTarget ltarget, NFlux nflux, NTarget ntarget)
+    flux_target_data(LFlux lflux, LTarget ltarget, NFlux nflux, NTarget ntarget)
       : local_flux(lflux), local_target(ltarget), 
       neighbor_flux(nflux), neighbor_target(ntarget)
     { }
@@ -108,10 +108,10 @@ namespace hedge
 
 
   template <class LFlux, class LTarget, class NFlux, class NTarget>
-  flux_data<LFlux, LTarget, NFlux, NTarget> make_flux_data(
+  flux_target_data<LFlux, LTarget, NFlux, NTarget> make_flux_data(
       LFlux lflux, LTarget ltarget, NFlux nflux, NTarget ntarget)
   {
-    return flux_data<LFlux, LTarget, NFlux, NTarget>(lflux, ltarget, nflux, ntarget);
+    return flux_target_data<LFlux, LTarget, NFlux, NTarget>(lflux, ltarget, nflux, ntarget);
   }
 
 
@@ -294,6 +294,96 @@ namespace hedge
 
         result[ili] += res_ili_addition;
         result[oili] += res_oili_addition;
+      }
+    }
+  }
+
+
+
+
+  template <class LFlux, class NFlux>
+  struct double_sided_flux_info
+  {
+    const LFlux local_flux;
+    const NFlux neighbor_flux;
+    hedge::vector &result;
+
+    double_sided_flux_info(
+        const LFlux lflux,
+        const NFlux nflux,
+        hedge::vector &res)
+      : local_flux(lflux), neighbor_flux(nflux), result(res)
+    { }
+  };
+
+
+
+
+  template <unsigned flux_count, class Mat, class DSFluxInfoType>
+  void perform_multiple_double_sided_fluxes_on_single_operand(const face_group &fg, 
+      const Mat &fmm, const DSFluxInfoType flux_info[flux_count],
+      const hedge::vector &operand
+      )
+  {
+    const unsigned face_length = fmm.size1();
+
+    assert(fmm.size1() == fmm.size2());
+
+    BOOST_FOREACH(const face_pair &fp, fg.face_pairs)
+    {
+      const fluxes::face &flux_face = fg.flux_faces[fp.flux_face_index];
+      const fluxes::face &opp_flux_face = fg.flux_faces[fp.opp_flux_face_index];
+
+
+      const index_list &idx_list = fg.index_lists[fp.face_index_list_number];
+      const index_list &opp_idx_list = fg.index_lists[fp.opp_face_index_list_number];
+
+      assert(face_length == index_list.size());
+      assert(face_length == opp_index_list.size());
+
+      const int ebi = fp.el_base_index;
+      const int oebi = fp.opp_el_base_index;
+
+      const double fj = flux_face.face_jacobian;
+      for (unsigned i_flux = 0; i_flux < flux_count; ++i_flux)
+      {
+        const double local_coeff_here = 
+          fj*flux_info[i_flux].local_flux(flux_face, &opp_flux_face);
+        const double neighbor_coeff_here = 
+          fj*flux_info[i_flux].neighbor_flux(flux_face, &opp_flux_face);
+        const double local_coeff_opp = 
+          fj*flux_info[i_flux].local_flux(opp_flux_face, &flux_face);
+        const double neighbor_coeff_opp = 
+          fj*flux_info[i_flux].neighbor_flux(opp_flux_face, &flux_face);
+
+        for (unsigned i = 0; i < face_length; i++)
+        {
+          const int ili = ebi+idx_list[i];
+          const int oili = oebi+opp_idx_list[i];
+
+          index_list::const_iterator ilj_iterator = idx_list.begin();
+          index_list::const_iterator oilj_iterator = opp_idx_list.begin();
+
+          vector::value_type res_ili_additions = 0;
+          vector::value_type res_oili_additions = 0;
+
+          for (unsigned j = 0; j < face_length; j++)
+          {
+            const typename Mat::value_type fmm_entry = fmm(i, j);
+
+            const int ilj = ebi+*ilj_iterator++;
+            const int oilj = oebi+*oilj_iterator++;
+
+            res_ili_additions += 
+              operand[ilj]*local_coeff_here*fmm_entry
+              +operand[oilj]*neighbor_coeff_here*fmm_entry;
+            res_oili_additions += 
+              operand[oilj]*local_coeff_opp*fmm_entry
+              +operand[ilj]*neighbor_coeff_opp*fmm_entry;
+          }
+          flux_info[i_flux].result[ili] += res_ili_additions;
+          flux_info[i_flux].result[oili] += res_oili_additions;
+        }
       }
     }
   }
