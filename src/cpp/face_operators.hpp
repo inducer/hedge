@@ -315,36 +315,21 @@ namespace hedge
 
 
 
-  template <unsigned flux_count, class Mat, class DSFluxInfoType>
-  void perform_multiple_double_sided_fluxes_on_single_operand(const face_group &fg, 
-      const Mat &fmm, const DSFluxInfoType flux_info[flux_count],
-      const hedge::vector &operand
-      )
+  template <unsigned flux_count, class DSFluxInfoType>
+  struct multiple_flux_coeffs
   {
-    const unsigned face_length = fmm.size1();
+    double local_coeff_here[flux_count];
+    double local_coeff_opp[flux_count];
+    double neighbor_coeff_here[flux_count];
+    double neighbor_coeff_opp[flux_count];
 
-    assert(fmm.size1() == fmm.size2());
-
-    BOOST_FOREACH(const face_pair &fp, fg.face_pairs)
+    multiple_flux_coeffs(
+        const fluxes::face &flux_face,
+        const fluxes::face &opp_flux_face,
+        const DSFluxInfoType flux_info[flux_count]
+        )
     {
-      const fluxes::face &flux_face = fg.flux_faces[fp.flux_face_index];
-      const fluxes::face &opp_flux_face = fg.flux_faces[fp.opp_flux_face_index];
-
-
-      const index_list &idx_list = fg.index_lists[fp.face_index_list_number];
-      const index_list &opp_idx_list = fg.index_lists[fp.opp_face_index_list_number];
-
-      assert(face_length == index_list.size());
-      assert(face_length == opp_index_list.size());
-
-      const int ebi = fp.el_base_index;
-      const int oebi = fp.opp_el_base_index;
-
       const double fj = flux_face.face_jacobian;
-      double local_coeff_here[flux_count];
-      double local_coeff_opp[flux_count];
-      double neighbor_coeff_here[flux_count];
-      double neighbor_coeff_opp[flux_count];
 
       for (unsigned i_flux = 0; i_flux < flux_count; ++i_flux)
       {
@@ -357,6 +342,37 @@ namespace hedge
         neighbor_coeff_opp[i_flux] = 
           fj*flux_info[i_flux].neighbor_flux(opp_flux_face, &flux_face);
       }
+    }
+  };
+
+
+
+
+  template <unsigned flux_count, class Mat, class DSFluxInfoType>
+  void perform_multiple_double_sided_fluxes_on_single_operand(const face_group &fg, 
+      const Mat &fmm, const DSFluxInfoType flux_info[flux_count],
+      const hedge::vector &operand
+      )
+  {
+    const unsigned face_length = fmm.size1();
+
+    assert(fmm.size1() == fmm.size2());
+
+    BOOST_FOREACH(const face_pair &fp, fg.face_pairs)
+    {
+      const index_list &idx_list = fg.index_lists[fp.face_index_list_number];
+      const index_list &opp_idx_list = fg.index_lists[fp.opp_face_index_list_number];
+
+      assert(face_length == index_list.size());
+      assert(face_length == opp_index_list.size());
+
+      const int ebi = fp.el_base_index;
+      const int oebi = fp.opp_el_base_index;
+
+      const multiple_flux_coeffs<flux_count, DSFluxInfoType> coeffs(
+          fg.flux_faces[fp.flux_face_index],
+          fg.flux_faces[fp.opp_flux_face_index],
+          flux_info);
 
       for (unsigned i = 0; i < face_length; i++)
       {
@@ -385,11 +401,11 @@ namespace hedge
           for (unsigned i_flux = 0; i_flux < flux_count; ++i_flux)
           {
             res_ili_additions[i_flux] += 
-              fmmopilj*local_coeff_here[i_flux]
-              +fmmopoilj*neighbor_coeff_here[i_flux];
+              fmmopilj*coeffs.local_coeff_here[i_flux]
+              +fmmopoilj*coeffs.neighbor_coeff_here[i_flux];
             res_oili_additions[i_flux] += 
-              fmmopoilj*local_coeff_opp[i_flux]
-              +fmmopilj*neighbor_coeff_opp[i_flux];
+              fmmopoilj*coeffs.local_coeff_opp[i_flux]
+              +fmmopilj*coeffs.neighbor_coeff_opp[i_flux];
           }
         }
 

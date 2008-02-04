@@ -55,7 +55,7 @@ def main() :
         el_class = TriangularElement
     elif dim == 3:
         if pcon.is_head_rank:
-            mesh = make_ball_mesh(max_volume=0.001)
+            mesh = make_ball_mesh(max_volume=0.0005)
         el_class = TetrahedralElement
     else:
         raise RuntimeError, "bad number of dimensions"

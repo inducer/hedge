@@ -1231,7 +1231,6 @@ class _VectorFluxOperator(object):
 
     def __mul__(self, field):
         if isinstance(field[0], BoundaryPair):
-        #if True:
             return ArithmeticList(fo * field for fo in self.flux_operators)
         else:
             # this is for performance -- it is faster to apply several fluxes
