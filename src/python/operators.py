@@ -214,6 +214,78 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
 
 
 
+class StrongWaveOperator:
+    def __init__(self, c, discr, source_f=None, flux_type="upwind"):
+        self.c = c
+        self.discr = discr
+        self.source_f = source_f
+
+        assert c > 0
+
+        from hedge.flux import FluxVectorPlaceholder, make_normal
+
+        dim = discr.dimensions
+        w = FluxVectorPlaceholder(1+dim)
+        u = w[0]
+        v = w[1:]
+        normal = make_normal(dim)
+
+        from pytools.arithmetic_container import join_fields
+        from hedge.tools import dot
+
+        flux_weak = join_fields(
+                dot(v.avg, normal),
+                u.avg * normal)
+        if flux_type == "central":
+            pass
+        elif flux_type == "upwind":
+            # see doc/notes/hedge-notes.tm, generalized from 1D
+            from pytools.arithmetic_container import outer_product
+            n_outer_n = outer_product(normal, normal)
+            flux_weak -= join_fields(
+                    0.5*(u.int-u.ext),
+                    0.5*(n_outer_n*(v.int-v.ext)))
+        else:
+            raise ValueError, "invalid flux type"
+
+        flux_strong = join_fields(
+                dot(v.int, normal),
+                u.int * normal) - flux_weak
+
+        self.flux = discr.get_flux_operator(self.c*flux_strong)
+
+        self.nabla = discr.nabla
+        self.mass = discr.mass_operator
+        self.m_inv = discr.inverse_mass_operator
+
+    def rhs(self, t, w):
+        from hedge.discretization import pair_with_boundary, cache_diff_results
+        from pytools.arithmetic_container import join_fields
+        from hedge.tools import dot
+
+        u = w[0]
+        v = w[1:]
+
+        bc = join_fields(
+                -self.discr.boundarize_volume_field(u),
+                self.discr.boundarize_volume_field(v))
+
+        rhs = (join_fields(
+                self.c*dot(self.nabla, cache_diff_results(v)), 
+                self.c*self.nabla*cache_diff_results(u))
+                - self.m_inv*(self.flux*w + self.flux*pair_with_boundary(w, bc)))
+
+        if self.source_f is not None:
+            rhs[0] += self.source_f(t)
+
+        return rhs
+
+    def max_eigenvalue(self):
+        return self.c
+
+
+
+
 class MaxwellOperator(TimeDependentOperator):
     """A 3D Maxwell operator with PEC boundaries.
 

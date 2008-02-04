@@ -92,7 +92,7 @@ def main() :
                         (5, 1.5),
                         max_area=0.3,
                         boundary_tagger=boundary_tagger,
-                        periodicity=(True, False),
+                        #periodicity=(True, False),
                         subdivisions=(10,5),
                         )
         el_class = TriangularElement

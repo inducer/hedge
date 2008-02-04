@@ -1,5 +1,7 @@
 """Global function space discretization."""
 
+from __future__ import division
+
 __copyright__ = "Copyright (C) 2007 Andreas Kloeckner"
 
 __license__ = """
