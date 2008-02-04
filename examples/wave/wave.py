@@ -66,7 +66,7 @@ def main() :
     else:
         mesh_data = pcon.receive_mesh()
 
-    discr = pcon.make_discretization(mesh_data, el_class(3))
+    discr = pcon.make_discretization(mesh_data, el_class(7))
     stepper = RK4TimeStepper()
     #stepper = AdamsBashforthTimeStepper(1)
     vis = VtkVisualizer(discr, pcon, "fld")
@@ -100,7 +100,7 @@ def main() :
             add_simulation_quantities, \
             add_run_info
 
-    logmgr = LogManager("advection.dat", pcon.communicator)
+    logmgr = LogManager("wave.dat", pcon.communicator)
     add_run_info(logmgr)
     add_general_quantities(logmgr)
     add_simulation_quantities(logmgr, dt)
@@ -124,7 +124,7 @@ def main() :
 
         t = step*dt
 
-        if step % 1 == 0:
+        if False:
             visf = vis.make_file("fld-%04d" % step)
             vis.add_data(visf,
                     [

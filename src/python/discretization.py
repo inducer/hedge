@@ -1245,6 +1245,7 @@ class _VectorFluxOperator(object):
                         return int_flux, ext_flux
                 return None
 
+            self.discr.inner_flux_timer.start()
             from hedge._internal import \
                     perform_multiple_double_sided_fluxes_on_single_operand, \
                     ChainedFlux
@@ -1258,9 +1259,11 @@ class _VectorFluxOperator(object):
                                 (ChainedFlux(int_flux), 
                                     ChainedFlux(ext_flux), 
                                     result[i_result]))
+                self.discr.inner_flux_counter.add(len(fluxes_and_results))
                 for fg, fmm in self.discr.face_groups:
                     perform_multiple_double_sided_fluxes_on_single_operand(
                             fg, fmm, fluxes_and_results, f_i)
+            self.discr.inner_flux_timer.stop()
 
             return result
 

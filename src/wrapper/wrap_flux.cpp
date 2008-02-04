@@ -144,7 +144,20 @@ namespace {
     typedef double_sided_flux_info<cf, cf> dsfi_t;
 
     unsigned i = 0;
-    while (unsigned(len(fluxes)) >= i+3)
+    while (unsigned(len(fluxes)) >= i+4)
+    {
+      dsfi_t flux_info[4] = {
+        parse_dsfi(fluxes[i+0]),
+        parse_dsfi(fluxes[i+1]),
+        parse_dsfi(fluxes[i+2]),
+        parse_dsfi(fluxes[i+3])
+      };
+      perform_multiple_double_sided_fluxes_on_single_operand<4>(
+          fg, fmm, flux_info, operand);
+      i += 4;
+    }
+
+    if (unsigned(len(fluxes)) == i+3)
     {
       dsfi_t flux_info[3] = {
         parse_dsfi(fluxes[i+0]),
@@ -153,10 +166,8 @@ namespace {
       };
       perform_multiple_double_sided_fluxes_on_single_operand<3>(
           fg, fmm, flux_info, operand);
-      i += 3;
     }
-
-    if (unsigned(len(fluxes)) == i+2)
+    else if (unsigned(len(fluxes)) == i+2)
     {
       dsfi_t flux_info[2] = {
         parse_dsfi(fluxes[i+0]),
