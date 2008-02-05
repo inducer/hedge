@@ -1230,13 +1230,17 @@ class _VectorFluxOperator(object):
 
 
     def __mul__(self, field):
-        if isinstance(field[0], BoundaryPair):
+        if isinstance(field, BoundaryPair) or (
+                isinstance(field, list) and isinstance(field[0], BoundaryPair)):
             return ArithmeticList(fo * field for fo in self.flux_operators)
         else:
             # this is for performance -- it is faster to apply several fluxes
             # to a single operand at once
             result = ArithmeticList(
                     self.discr.volume_zeros() for f in self.flux_operators)
+
+            if not isinstance(field, list):
+                field = [field]
 
             def find_field_flux(flux_op, i_field):
                 for idx, int_flux, ext_flux in flux_op.flux:
