@@ -410,6 +410,10 @@ class IntervalElement(SimplicialElement):
         return IntervalFaceIndexShuffle()
 
     # time step scaling -------------------------------------------------------
+    def dt_non_geometric_factor(self):
+        unodes = self.unit_nodes()
+        return comp.norm_2(unodes[0] - unodes[1])
+
     def dt_geometric_factor(self, vertices, el):
         return abs(el.map.jacobian)
 

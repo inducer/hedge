@@ -167,8 +167,9 @@ def main() :
     # timestep setup ----------------------------------------------------------
     stepper = RK4TimeStepper()
 
-    dt = discr.dt_factor(op.max_eigenvalue()) / 100
+    dt = discr.dt_factor(op.max_eigenvalue())
     nsteps = int(700/dt)
+    print discr.dt_non_geometric_factor()
 
     if pcon.is_head_rank:
         print "%d elements, dt=%g, nsteps=%d" % (
@@ -211,6 +212,7 @@ def main() :
             visf = vis.make_file("fld-%04d" % step)
             vis.add_data(visf, [
                         ("u", u), 
+                        ("logu", num.log10(num.abs(u)+1e-15)), 
                         #("u_true", u_true), 
                         ], 
                         #expressions=[("error", "u-u_true")]
