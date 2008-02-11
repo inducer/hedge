@@ -110,7 +110,36 @@ class SimplicialElement(Element):
         for xi in unit_coords:
             if xi < -1:
                 return False
-        return sum(unit_coords) < -(self.dimensions-2)
+        return sum(unit_coords) <= -(self.dimensions-2)
+
+
+
+
+class Interval(SimplicialElement):
+    dimensions = 1
+    @staticmethod
+    def face_vertices(vertices):
+        return [(vertices[0], vertices[1]), ]
+
+    @classmethod
+    def _reorder_vertices(cls, vertex_indices, vertices, map):
+        vi = vertex_indices
+        if vertices[0][0] > vertices[1][0]: # make sure we're ordered left-right
+            return (vi[1], vi[0])
+        else:
+            return None
+
+    @staticmethod
+    def face_normals_and_jacobians(vertices, affine_map):
+        """Compute the normals and face jacobians of the unit element
+        transformed according to `affine_map'.
+
+        Returns a pair of lists [normals], [jacobians].
+        """
+        return [
+                num.array([-1]), 
+                num.array([1])
+                ], [1, 1]
 
 
 
@@ -432,7 +461,9 @@ def make_conformal_mesh(points, elements,
         raise ValueError, "mesh contains no points"
 
     dim = len(points[0])
-    if dim == 2:
+    if dim == 1:
+        el_class = Interval
+    elif dim == 2:
         el_class = Triangle
     elif dim == 3:
         el_class = Tetrahedron
@@ -571,6 +602,51 @@ def check_bc_coverage(mesh, bc_tags):
 
 
 # mesh producers for simple geometries ----------------------------------------
+def make_1d_mesh(points, left_tag=None, right_tag=None, periodic=False, 
+        boundary_tagger=None):
+    def force_array(pt):
+        if not num.Vector.is_a(pt):
+            return num.array([pt])
+        else:
+            return pt
+
+    def my_boundary_tagger(fvi, el, fn):
+        if el.face_normals[fn] < 0:
+            return left_tag
+        else:
+            return right_tag
+
+    if periodic:
+        left_tag = "x_minus"
+        right_tag = "x_plus"
+        return make_conformal_mesh(
+                [force_array(pt) for pt in points],
+                [(i,i+1) for i in range(len(points)-1)],
+                periodicity=[("x_minus", "x_plus")],
+                boundary_tagger=boundary_tagger)
+    else:
+        return make_conformal_mesh(
+                [force_array(pt) for pt in points],
+                [(i,i+1) for i in range(len(points)-1)],
+                boundary_tagger=boundary_tagger or my_boundary_tagger)
+
+
+
+
+
+def make_uniform_1d_mesh(a, b, el_count, left_tag=None, right_tag=None, periodic=False,
+        boundary_tagger=None):
+    dx = (b-a)/n
+    return make_1d_mesh(
+            [a+dx*i for i in range(el_count+1)],
+            left_tag=left_tag,
+            right_tag=right_tag,
+            periodic=periodic,
+            boundary_tagger=boundary_tagger)
+
+
+
+
 def make_single_element_mesh(a=-0.5, b=0.5, 
         boundary_tagger=(lambda vertices, face_indices: [])):
     n = 2

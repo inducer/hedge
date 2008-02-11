@@ -28,7 +28,7 @@ from hedge.tools import AffineMap
 import hedge._internal
 from math import sqrt, sin, cos, exp, pi
 from pytools import memoize
-from hedge.mesh import Triangle, Tetrahedron
+import hedge.mesh
 
 
 
@@ -292,6 +292,119 @@ class SimplicialElement(Element):
 
 
 
+class IntervalElement(SimplicialElement):
+    """An arbitrary-order triangular finite element.
+
+    Coordinate systems used:
+    ========================
+
+    unit coordinates (r)::
+
+    ---[--------0--------]--->
+       -1                1
+    """
+
+    dimensions = 1
+    has_local_jacobians = False
+    geometry = hedge.mesh.Interval
+
+    def __init__(self, order):
+        self.order = order
+
+    # numbering ---------------------------------------------------------------
+    @memoize
+    def node_tuples(self):
+        """Generate tuples enumerating the node indices present
+        in this element. Each tuple has a length equal to the dimension
+        of the element. The tuples constituents are non-negative integers
+        whose sum is less than or equal to the order of the element.
+        
+        The order in which these nodes are generated dictates the local 
+        node numbering.
+        """
+        return [i for i in range(self.order+1)]
+
+    def faces_for_node_tuple(self, node_idx):
+        """Return the list of face indices of faces on which the node 
+        represented by C{node_idx} lies.
+        """
+
+        if node_idx == 0:
+            return [0]
+        elif node_idx == self.order:
+            return [1]
+        else:
+            return []
+
+    # node wrangling ----------------------------------------------------------
+    def nodes(self):
+        """Generate warped nodes in equilateral coordinates (x,)."""
+
+        from hedge.quadrature import legendre_gauss_lobatto_points
+        return [num.array([x]) for x in legendre_gauss_lobatto_points(self.order)]
+    equilateral_nodes = nodes
+    unit_nodes = nodes
+
+    @memoize
+    def get_submesh_indices(self):
+        """Return a list of tuples of indices into the node list that
+        generate a tesselation of the reference element."""
+
+        return [(i,i+1) for i in range(self.order)]
+
+    # basis functions ---------------------------------------------------------
+    @memoize
+    def basis_functions(self):
+        """Get a sequence of functions that form a basis of the approximation space.
+
+        The approximation space is spanned by the polynomials:::
+
+          r**i for i <= N
+        """
+        from hedge.polynomial import LegendreFunction
+        return [LegendreFunction(idx[0]) for idx in self.generate_mode_identifiers()]
+
+    def grad_basis_functions(self):
+        """Get the gradient functions of the basis_functions(), in the same order."""
+        from hedge.polynomial import LegendreFunction
+        return [[DiffLegendreFunction(idx[0]) 
+            for idx in self.generate_mode_identifiers()]]
+
+    # face operations ---------------------------------------------------------
+    @memoize
+    def face_mass_matrix(self):
+        from hedge.polynomial import legendre_vandermonde
+        unodes = self.unit_nodes()
+        face_vandermonde = legendre_vandermonde(
+                [unodes[i][0] for i in self.face_indices()[0]],
+                self.order)
+
+        return 1/(face_vandermonde*face_vandermonde.T)
+
+    @staticmethod
+    def get_face_index_shuffle_to_match(face_1_vertices, face_2_vertices):
+        if set(face_1_vertices) != set(face_2_vertices):
+            raise FaceVertexMismatch("face vertices do not match")
+
+        class IntervalFaceIndexShuffle:
+            def __hash__(self):
+                return 0x3472477
+
+            def __eq__(self, other):
+                return True
+
+            def __call__(self, indices):
+                return indices
+
+        return IntervalFaceIndexShuffle()
+
+    # time step scaling -------------------------------------------------------
+    def dt_geometric_factor(self, vertices, el):
+        return abs(el.map.jacobian)
+
+
+
+
 class TriangularElement(SimplicialElement):
     """An arbitrary-order triangular finite element.
 
@@ -344,7 +457,7 @@ class TriangularElement(SimplicialElement):
 
     dimensions = 2
     has_local_jacobians = False
-    geometry = Triangle
+    geometry = hedge.mesh.Triangle
 
     def __init__(self, order):
         self.order = order
@@ -581,7 +694,7 @@ class TetrahedralElement(SimplicialElement):
 
     dimensions = 3
     has_local_jacobians = False
-    geometry = Tetrahedron
+    geometry = hedge.mesh.Tetrahedron
 
     def __init__(self, order):
         self.order = order

@@ -58,10 +58,17 @@ def main() :
 
     pcon = guess_parallelization_context()
 
-    dim = 2
+    dim = 1
 
     job = Job("mesh")
-    if dim == 2:
+    if dim == 1:
+        v = num.array([1])
+        if pcon.is_head_rank:
+            from hedge.mesh import make_uniform_1d_mesh
+            mesh = make_uniform_1d_mesh(-3, 5, 17, periodic=True)
+
+        el_class = IntervalElement
+    elif dim == 2:
         v = num.array([1,0])
         if pcon.is_head_rank:
             from hedge.mesh import \

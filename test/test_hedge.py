@@ -64,7 +64,7 @@ class Monomial:
 
 class TestHedge(unittest.TestCase):
     def test_timestep_accuracy(self):
-        """Check that all timesteppers have the advertised accuracy."""
+        """Check that all timesteppers have the advertised accuracy"""
         import pylinear.array as num
         from math import sqrt, log, sin, cos
         from hedge.tools import EOCRecorder
@@ -116,9 +116,15 @@ class TestHedge(unittest.TestCase):
     # -------------------------------------------------------------------------
     def test_face_vertex_order(self):
         """Verify that face_indices() emits face vertex indices in the right order"""
-        from hedge.element import TriangularElement, TetrahedralElement
+        from hedge.element import \
+                IntervalElement, \
+                TriangularElement, \
+                TetrahedralElement
 
-        for el in [TriangularElement(5), TetrahedralElement(5)]:
+        for el in [
+                IntervalElement(5),
+                TriangularElement(5), 
+                TetrahedralElement(5)]:
             vertex_indices = el.vertex_indices()
             for fn, (face_vertices, face_indices) in enumerate(zip(
                     el.geometry.face_vertices(vertex_indices), 
@@ -219,11 +225,17 @@ class TestHedge(unittest.TestCase):
     # -------------------------------------------------------------------------
     def test_simp_nodes(self):
         """Verify basic assumptions on simplex interpolation nodes"""
-        from hedge.element import TriangularElement, TetrahedralElement
+        from hedge.element import \
+                IntervalElement, \
+                TriangularElement, \
+                TetrahedralElement
 
-        triorder = 8
-        tri = TriangularElement(triorder)
-        els = [tri, TriangularElement(17), TetrahedralElement(13)]
+        els = [
+                IntervalElement(3), 
+                IntervalElement(19), 
+                TriangularElement(8), 
+                TriangularElement(17), 
+                TetrahedralElement(13)]
 
         for el in els:
             eps = 1e-10
@@ -319,12 +331,19 @@ class TestHedge(unittest.TestCase):
     def test_simp_basis_grad(self):
         """Do a simplistic FD-style check on the differentiation matrix"""
         from itertools import izip
-        from hedge.element import TriangularElement, TetrahedralElement
+        from hedge.element import \
+                IntervalElement, \
+                TriangularElement, \
+                TetrahedralElement
         from random import uniform
         import pylinear.array as num
         import pylinear.computation as comp
 
-        els = [(1, TriangularElement(8)), (3,TetrahedralElement(7))]
+        els = [
+                (1, IntervalElement(5)), 
+                (1, TriangularElement(8)), 
+                (3,TetrahedralElement(7))]
+
         for err_factor, el in els:
             d = el.dimensions
             for i_bf, (bf, gradbf) in \
@@ -379,7 +398,10 @@ class TestHedge(unittest.TestCase):
     def test_simp_face_normals_and_jacobians(self):
         """Check computed face normals and face jacobians on simplicial elements
         """
-        from hedge.element import TriangularElement, TetrahedralElement
+        from hedge.element import \
+                IntervalElement, \
+                TriangularElement, \
+                TetrahedralElement
         from hedge.mesh import Triangle
         from hedge.tools import AffineMap
         import pylinear.array as num
@@ -387,6 +409,7 @@ class TestHedge(unittest.TestCase):
         from pylinear.randomized import make_random_vector
 
         for el in [
+                IntervalElement(3), 
                 TetrahedralElement(1), 
                 TriangularElement(4), 
                 ]:
@@ -663,7 +686,10 @@ class TestHedge(unittest.TestCase):
     def test_simp_mass_and_diff_matrices_by_monomial(self):
         """Verify simplicial mass and differentiation matrices using monomials"""
 
-        from hedge.element import TriangularElement, TetrahedralElement
+        from hedge.element import \
+                IntervalElement, \
+                TriangularElement, \
+                TetrahedralElement
         from pytools import generate_nonnegative_integer_tuples_summing_to_at_most
 
         import pylinear.array as num
@@ -674,6 +700,7 @@ class TestHedge(unittest.TestCase):
         thresh = 6e-14
 
         for el in [
+                IntervalElement(5),
                 TriangularElement(3),
                 TetrahedralElement(5),
                 ]:
