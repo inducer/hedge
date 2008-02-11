@@ -119,7 +119,7 @@ class Interval(SimplicialElement):
     dimensions = 1
     @staticmethod
     def face_vertices(vertices):
-        return [(vertices[0], vertices[1]), ]
+        return [(vertices[0],), (vertices[1],) ]
 
     @classmethod
     def _reorder_vertices(cls, vertex_indices, vertices, map):
@@ -136,10 +136,16 @@ class Interval(SimplicialElement):
 
         Returns a pair of lists [normals], [jacobians].
         """
-        return [
-                num.array([-1]), 
-                num.array([1])
-                ], [1, 1]
+        if affine_map.jacobian < 0:
+            return [
+                    num.array([1]), 
+                    num.array([-1])
+                    ], [1, 1]
+        else:
+            return [
+                    num.array([-1]), 
+                    num.array([1])
+                    ], [1, 1]
 
 
 
@@ -449,8 +455,8 @@ def make_conformal_mesh(points, elements,
       (element) and returns the a list of tags that apply
       to that element.
     @param periodicity: either None or is a list of tuples
-      just like the one documented for the `periodicity'
-      member of class Mesh.
+      just like the one documented for the C{periodicity}
+      member of class L{Mesh}.
     @param _is_rankbdry_face: an implementation detail, 
       should not be used from user code. It is a function
       returning whether a given face identified by 
@@ -611,10 +617,10 @@ def make_1d_mesh(points, left_tag=None, right_tag=None, periodic=False,
             return pt
 
     def my_boundary_tagger(fvi, el, fn):
-        if el.face_normals[fn] < 0:
-            return left_tag
+        if el.face_normals[fn][0] < 0:
+            return [left_tag]
         else:
-            return right_tag
+            return [right_tag]
 
     if periodic:
         left_tag = "x_minus"
@@ -623,7 +629,7 @@ def make_1d_mesh(points, left_tag=None, right_tag=None, periodic=False,
                 [force_array(pt) for pt in points],
                 [(i,i+1) for i in range(len(points)-1)],
                 periodicity=[("x_minus", "x_plus")],
-                boundary_tagger=boundary_tagger)
+                boundary_tagger=my_boundary_tagger)
     else:
         return make_conformal_mesh(
                 [force_array(pt) for pt in points],
@@ -636,7 +642,7 @@ def make_1d_mesh(points, left_tag=None, right_tag=None, periodic=False,
 
 def make_uniform_1d_mesh(a, b, el_count, left_tag=None, right_tag=None, periodic=False,
         boundary_tagger=None):
-    dx = (b-a)/n
+    dx = (b-a)/el_count
     return make_1d_mesh(
             [a+dx*i for i in range(el_count+1)],
             left_tag=left_tag,

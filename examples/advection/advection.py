@@ -26,6 +26,7 @@ import pylinear.computation as comp
 
 def main() :
     from hedge.element import \
+            IntervalElement, \
             TriangularElement, \
             TetrahedralElement
     from hedge.timestep import RK4TimeStepper
@@ -65,7 +66,7 @@ def main() :
         v = num.array([1])
         if pcon.is_head_rank:
             from hedge.mesh import make_uniform_1d_mesh
-            mesh = make_uniform_1d_mesh(-3, 5, 17, periodic=True)
+            mesh = make_uniform_1d_mesh(-2, 5, 50, periodic=True)
 
         el_class = IntervalElement
     elif dim == 2:
@@ -128,7 +129,7 @@ def main() :
     job.done()
 
     job = Job("discretization")
-    mesh_data = mesh_data.reordered_by("cuthill")
+    #mesh_data = mesh_data.reordered_by("cuthill")
     discr = pcon.make_discretization(mesh_data, el_class(7))
     vis_discr = discr
     job.done()
@@ -146,11 +147,6 @@ def main() :
             inflow_u=TimeConstantGivenFunction(ConstantGivenFunction()),
             #inflow_u=TimeDependentGivenFunction(u_analytic)),
             flux_type="upwind")
-
-    #from sizer import scanner
-    #objs = scanner.Objects()
-    #import code
-    #code.interact(local = {'objs': objs})
 
     from pyrticle._internal import ShapeFunction
     sf = ShapeFunction(0.3, 2)
@@ -171,7 +167,7 @@ def main() :
     # timestep setup ----------------------------------------------------------
     stepper = RK4TimeStepper()
 
-    dt = discr.dt_factor(op.max_eigenvalue())
+    dt = discr.dt_factor(op.max_eigenvalue()) / 100
     nsteps = int(700/dt)
 
     if pcon.is_head_rank:

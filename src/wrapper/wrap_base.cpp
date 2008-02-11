@@ -25,6 +25,7 @@
 #include <boost/python/suite/indexing/vector_indexing_suite.hpp>
 #include <boost/numeric/ublas/vector_proxy.hpp>
 #include <boost/numeric/ublas/matrix_proxy.hpp>
+#include <boost/numeric/ublas/io.hpp>
 #include <boost/numeric/bindings/traits/traits.hpp>
 #include <boost/numeric/bindings/traits/ublas_matrix.hpp>
 
@@ -56,13 +57,13 @@ namespace
 
 
   // affine map ---------------------------------------------------------------
-  affine_map *get_simplex_map_unit_to_global(const unsigned dimensions, object vertices)
+  affine_map *get_simplex_map_unit_to_global(const int dimensions, object vertices)
   {
     matrix mat(dimensions, dimensions);
 
     const vector &vertex0 = extract<vector const &>(vertices[0]);
     vector vsum = ublas::zero_vector<vector::value_type>(dimensions);
-    for (unsigned i = 0; i < dimensions; i++)
+    for (int i = 0; i < dimensions; i++)
     {
       const vector &vertex = extract<vector const &>(vertices[i+1]);
       vsum += vertex;

@@ -231,7 +231,6 @@ class TestHedge(unittest.TestCase):
                 TetrahedralElement
 
         els = [
-                IntervalElement(3), 
                 IntervalElement(19), 
                 TriangularElement(8), 
                 TriangularElement(17), 
@@ -247,12 +246,16 @@ class TestHedge(unittest.TestCase):
                     self.assert_(uc >= -1-eps)
                 self.assert_(sum(ux) <= 1+eps)
 
-            equnodes = list(el.equidistant_unit_nodes())
-            self.assert_(len(equnodes) == el.node_count())
-            for ux in equnodes:
-                for uc in ux:
-                    self.assert_(uc >= -1-eps)
-                self.assert_(sum(ux) <= 1+eps)
+            try:
+                equnodes = list(el.equidistant_unit_nodes())
+            except AttributeError:
+                assert isinstance(el, IntervalElement)
+            else:
+                self.assert_(len(equnodes) == el.node_count())
+                for ux in equnodes:
+                    for uc in ux:
+                        self.assert_(uc >= -1-eps)
+                    self.assert_(sum(ux) <= 1+eps)
 
             for indices in el.node_tuples():
                 for index in indices:
@@ -447,7 +450,9 @@ class TestHedge(unittest.TestCase):
                     opp_node = (set(all_vertex_indices) - set(fvi)).__iter__().next()
                     mapped_opposite = vertices[opp_node]
 
-                    if el.dimensions == 2:
+                    if el.dimensions == 1:
+                        true_jac = 1
+                    elif el.dimensions == 2:
                         true_jac = comp.norm_2(mapped_corners[1]-mapped_corners[0])/2
                     elif el.dimensions == 3:
                         mapped_face_projection = num.array(comp.orthonormalize(mapped_face_basis))
@@ -457,7 +462,7 @@ class TestHedge(unittest.TestCase):
                                 .get_map_unit_to_global(projected_corners)
                                 .jacobian)
                     else:
-                        assert False
+                        assert False, "this test does not support %d dimensions yet" % el.dimensions
 
                     #print abs(true_jac-jac)/true_jac
                     #print "aft, bef", comp.norm_2(mapped_end-mapped_start),comp.norm_2(end-start)
@@ -544,6 +549,32 @@ class TestHedge(unittest.TestCase):
         self.assert_(err_1 < 1e-11)
         self.assert_(err_2 < 1e-11)
     # -------------------------------------------------------------------------
+    def test_1d_mass_mat_trig(self):
+        """Check the integral of some trig functions on an interval using the mass matrix"""
+        from hedge.mesh import make_uniform_1d_mesh
+        from hedge.element import IntervalElement
+        from hedge.discretization import Discretization, integral
+        from math import sqrt, pi, cos, sin
+
+        mesh = make_uniform_1d_mesh(-4*pi, 9*pi, 17, periodic=True)
+        discr = Discretization(mesh, IntervalElement(8), debug=True)
+
+        f = discr.interpolate_volume_function(lambda x: cos(x[0])**2)
+        ones = discr.interpolate_volume_function(lambda x: 1)
+
+        num_integral_1 = ones * (discr.mass_operator * f)
+        num_integral_2 = f * (discr.mass_operator * ones)
+        num_integral_3 = integral(discr, f)
+
+        true_integral = 13*pi/2
+        err_1 = abs(num_integral_1-true_integral)
+        err_2 = abs(num_integral_2-true_integral)
+        err_3 = abs(num_integral_3-true_integral)
+
+        self.assert_(err_1 < 1e-10)
+        self.assert_(err_2 < 1e-10)
+        self.assert_(err_3 < 1e-10)
+    # -------------------------------------------------------------------------
     def test_tri_mass_mat_trig(self):
         """Check the integral of some trig functions on a square using the mass matrix"""
 
@@ -558,7 +589,6 @@ class TestHedge(unittest.TestCase):
         f = discr.interpolate_volume_function(lambda x: cos(x[0])**2*sin(x[1])**2)
         ones = discr.interpolate_volume_function(lambda x: 1)
 
-        #discr.visualize_vtk("trig.vtk", [("f", f)])
         num_integral_1 = ones * (discr.mass_operator * f)
         num_integral_2 = f * (discr.mass_operator * ones)
         true_integral = pi**2
@@ -730,13 +760,19 @@ class TestHedge(unittest.TestCase):
     def test_simp_gauss_theorem(self):
         """Verify Gauss's theorem explicitly on simplicial elements"""
 
-        from hedge.element import TriangularElement, TetrahedralElement
+        from hedge.element import \
+                IntervalElement, \
+                TriangularElement, \
+                TetrahedralElement
         from hedge.tools import AffineMap
         import pylinear.array as num
         import pylinear.computation as comp
         from pylinear.randomized import make_random_vector
         from operator import add
         from math import sin, cos, sqrt, exp, pi
+
+        def f1_1d(x):
+            return sin(3*x[0])
 
         def f1_2d(x):
             return sin(3*x[0])+cos(3*x[1])
@@ -764,6 +800,10 @@ class TestHedge(unittest.TestCase):
                         for dmat, coeff in zip(matrices, col)))
 
         array = num.array
+
+        intervals = [
+                [array([-0.5]), array([17.])]
+                ]
 
         triangles = [
                 [array([-7.1687642250744492, 0.63058995062684642]), array([9.9744219044921199, 6.6530989283689781]), array([12.269380138171147, -17.529689194536481])],
@@ -793,8 +833,9 @@ class TestHedge(unittest.TestCase):
                 ]
 
         for el_geoms, el, f in [
-                (triangles, TriangularElement(9), (f1_2d, f2_2d)),
-                (tets, TetrahedralElement(1), (f1_3d, f2_3d, f3_3d)),
+                (intervals, IntervalElement(9), [f1_1d]),
+                (triangles, TriangularElement(9), [f1_2d, f2_2d]),
+                (tets, TetrahedralElement(1), [f1_3d, f2_3d, f3_3d]),
                 ]:
             for vertices in el_geoms:
                 ones = num.ones((el.node_count(),))

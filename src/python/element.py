@@ -322,16 +322,16 @@ class IntervalElement(SimplicialElement):
         The order in which these nodes are generated dictates the local 
         node numbering.
         """
-        return [i for i in range(self.order+1)]
+        return [(i,) for i in range(self.order+1)]
 
     def faces_for_node_tuple(self, node_idx):
         """Return the list of face indices of faces on which the node 
         represented by C{node_idx} lies.
         """
 
-        if node_idx == 0:
+        if node_idx == (0,):
             return [0]
-        elif node_idx == self.order:
+        elif node_idx == (self.order,):
             return [1]
         else:
             return []
@@ -342,6 +342,7 @@ class IntervalElement(SimplicialElement):
 
         from hedge.quadrature import legendre_gauss_lobatto_points
         return [num.array([x]) for x in legendre_gauss_lobatto_points(self.order)]
+
     equilateral_nodes = nodes
     unit_nodes = nodes
 
@@ -362,24 +363,34 @@ class IntervalElement(SimplicialElement):
           r**i for i <= N
         """
         from hedge.polynomial import LegendreFunction
-        return [LegendreFunction(idx[0]) for idx in self.generate_mode_identifiers()]
+
+        class VectorLF:
+            def __init__(self, n):
+                self.lf = LegendreFunction(n)
+
+            def __call__(self, x):
+                return self.lf(x[0])
+
+        return [VectorLF(idx[0]) for idx in self.generate_mode_identifiers()]
 
     def grad_basis_functions(self):
         """Get the gradient functions of the basis_functions(), in the same order."""
-        from hedge.polynomial import LegendreFunction
-        return [[DiffLegendreFunction(idx[0]) 
-            for idx in self.generate_mode_identifiers()]]
+        from hedge.polynomial import DiffLegendreFunction
+
+        class DiffVectorLF:
+            def __init__(self, n):
+                self.dlf = DiffLegendreFunction(n)
+
+            def __call__(self, x):
+                return num.array([self.dlf(x[0])])
+
+        return [DiffVectorLF(idx[0]) 
+            for idx in self.generate_mode_identifiers()]
 
     # face operations ---------------------------------------------------------
     @memoize
     def face_mass_matrix(self):
-        from hedge.polynomial import legendre_vandermonde
-        unodes = self.unit_nodes()
-        face_vandermonde = legendre_vandermonde(
-                [unodes[i][0] for i in self.face_indices()[0]],
-                self.order)
-
-        return 1/(face_vandermonde*face_vandermonde.T)
+        return num.array([[1]])
 
     @staticmethod
     def get_face_index_shuffle_to_match(face_1_vertices, face_2_vertices):

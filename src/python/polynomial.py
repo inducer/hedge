@@ -36,27 +36,11 @@ DiffJacobiFunction = hedge._internal.DiffJacobiPolynomial
 
 
 
-class diff_jacobi_function_2(object):
-    def __init__(self, alpha, beta, N):
-        from math import sqrt
-        if N == 0:
-            self.jf = lambda x: 0
-            self.factor = 0
-        else:
-            self.jf = jacobi_function(alpha+1, beta+1, N-1)
-            self.factor = sqrt(N*(N+alpha+beta+1))
-
-    def __call__(self, x):
-        return self.factor*self.jf(x)
-
-
-
-
 class LegendreFunction(JacobiFunction):
     def __init__(self, N):
         JacobiFunction.__init__(self, 0, 0, N)
         
-class DiffLegendreFunction(JacobiFunction):
+class DiffLegendreFunction(DiffJacobiFunction):
     def __init__(self, N):
         DiffJacobiFunction.__init__(self, 0, 0, N)
 

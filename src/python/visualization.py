@@ -181,8 +181,8 @@ class VtkVisualizer(Visualizer, hedge.tools.Closable):
             self.timestep_to_pathnames = None
 
         from hedge.vtk import UnstructuredGrid, DataArray, \
-                VTK_TRIANGLE, VTK_TETRA, VF_LIST_OF_VECTORS
-        from hedge.element import Triangle, Tetrahedron
+                VTK_LINE, VTK_TRIANGLE, VTK_TETRA, VF_LIST_OF_VECTORS
+        from hedge.mesh import Interval, Triangle, Tetrahedron
 
         # For now, we use IntVector here because the Python allocator
         # is somewhat reluctant to return allocated chunks of memory
@@ -201,12 +201,14 @@ class VtkVisualizer(Visualizer, hedge.tools.Closable):
                     for j in element:
                         cells.append(el_start+j)
 
-            if ldis.geometry is Triangle:
+            if ldis.geometry is Interval:
+                vtk_eltype = VTK_LINE
+            elif ldis.geometry is Triangle:
                 vtk_eltype = VTK_TRIANGLE
             elif ldis.geometry is Tetrahedron:
                 vtk_eltype = VTK_TETRA
             else:
-                raise RuntimeError, "unsupported element type: %s" % type(ldis.geometry)
+                raise RuntimeError, "unsupported element type: %s" % ldis.geometry
 
             cell_types.extend([vtk_eltype] * len(smi) * len(eg.members))
 
@@ -371,13 +373,17 @@ class SiloVisualizer(Visualizer):
 
                 yield nodelist_size_estimate, generate_coarse_elements(eg)
 
-        dim = discr.dimensions
-        self.fine_mesh = SiloMeshData(dim, 
-                discr.nodes.get_component_major_vector(), 
-                generate_fine_element_groups())
-        self.coarse_mesh = SiloMeshData(dim, 
-                discr.mesh.points.get_component_major_vector(), 
-                generate_coarse_element_groups())
+        self.dim = discr.dimensions
+        if self.dim != 1:
+            self.fine_mesh = SiloMeshData(self.dim, 
+                    discr.nodes.get_component_major_vector(), 
+                    generate_fine_element_groups())
+            self.coarse_mesh = SiloMeshData(self.dim, 
+                    discr.mesh.points.get_component_major_vector(), 
+                    generate_coarse_element_groups())
+        else:
+            self.xvals = discr.nodes.get_component_major_vector()
+            
         self.pcontext = pcontext
 
     def close(self):
@@ -416,20 +422,30 @@ class SiloVisualizer(Visualizer):
         if step is not None:
             mesh_opts[DBOPT_CYCLE] = int(step)
 
-        self.fine_mesh.put_mesh(silo, "finezonelist", "finemesh", mesh_opts)
-        self.coarse_mesh.put_mesh(silo, "coarsezonelist", "mesh", mesh_opts)
+        if self.dim == 1:
+            for name, field in variables:
+                if isinstance(field, list) and len(field) > 1:
+                    from warnings import warn
+                    warn("Silo visualization does not support vectors in 1D, ignoring '%s'" % name)
+                else:
+                    if isinstance(field, list):
+                        field = field[0]
+                    silo.put_curve(name, self.xvals, scale_factor*field, mesh_opts)
+        else:
+            self.fine_mesh.put_mesh(silo, "finezonelist", "finemesh", mesh_opts)
+            self.coarse_mesh.put_mesh(silo, "coarsezonelist", "mesh", mesh_opts)
 
-        # put data
-        for name, field in variables:
-            if isinstance(field, list) and len(field) > 1:
-                silo.put_ucdvar(name, "finemesh", 
-                        ["%s_comp%d" % (name, i) 
-                            for i in range(len(field))],
-                        scale_factor*field, DB_NODECENT)
-            else:
-                if isinstance(field, list):
-                    field = field[0]
-                silo.put_ucdvar1(name, "finemesh", scale_factor*field, DB_NODECENT)
+            # put data
+            for name, field in variables:
+                if isinstance(field, list) and len(field) > 1:
+                    silo.put_ucdvar(name, "finemesh", 
+                            ["%s_comp%d" % (name, i) 
+                                for i in range(len(field))],
+                            scale_factor*field, DB_NODECENT)
+                else:
+                    if isinstance(field, list):
+                        field = field[0]
+                    silo.put_ucdvar1(name, "finemesh", scale_factor*field, DB_NODECENT)
 
         if expressions:
             silo.put_defvars("defvars", expressions)
