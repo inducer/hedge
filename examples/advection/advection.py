@@ -149,7 +149,7 @@ def main() :
             flux_type="upwind")
 
     from pyrticle._internal import ShapeFunction
-    sf = ShapeFunction(0.3, 2)
+    sf = ShapeFunction(1, 2, alpha=12)
 
     def gauss_hump(x):
         from math import exp
@@ -167,7 +167,7 @@ def main() :
     # timestep setup ----------------------------------------------------------
     stepper = RK4TimeStepper()
 
-    dt = discr.dt_factor(op.max_eigenvalue())
+    dt = discr.dt_factor(op.max_eigenvalue()) /10000
     nsteps = int(700/dt)
     print discr.dt_non_geometric_factor()
 
@@ -202,7 +202,10 @@ def main() :
     logmgr.add_watches(["step.max", "t_sim.max", "l2_u", "t_step.max"])
 
     # timestep loop -----------------------------------------------------------
-    for step in range(nsteps):
+    def logmap(x, low_exp=15):
+        return 0.1*num.log10(num.abs(x)+1e-15)
+
+    for step in xrange(nsteps):
         logmgr.tick()
 
         t = step*dt
@@ -212,7 +215,7 @@ def main() :
             visf = vis.make_file("fld-%04d" % step)
             vis.add_data(visf, [
                         ("u", u), 
-                        ("logu", num.log10(num.abs(u)+1e-15)), 
+                        ("logu", logmap(u)), 
                         #("u_true", u_true), 
                         ], 
                         #expressions=[("error", "u-u_true")]
