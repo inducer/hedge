@@ -24,3 +24,5 @@ doc/dev-reference
 *.node
 *.bak
 *.pdf
+*.tif
+*-journal
