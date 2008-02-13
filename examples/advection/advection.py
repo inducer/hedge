@@ -160,6 +160,13 @@ def main() :
         rsquared = (x*x)/(0.1**2)
         return exp(-rsquared)-0.5*exp(-rsquared/2)
 
+    hump_width = 2
+    def c_inf_hump(x):
+        if abs(x) > hump_width:
+            return 0
+        else:
+            exp(-1/(x-hump_width)**2)* exp(-1/(x+hump_width)**2)
+
     #u = discr.interpolate_volume_function(lambda x: u_analytic(x, 0))
     u = discr.interpolate_volume_function(sf)
     u /= integral(discr, u)
@@ -167,7 +174,7 @@ def main() :
     # timestep setup ----------------------------------------------------------
     stepper = RK4TimeStepper()
 
-    dt = discr.dt_factor(op.max_eigenvalue()) /10000
+    dt = discr.dt_factor(op.max_eigenvalue())
     nsteps = int(700/dt)
     print discr.dt_non_geometric_factor()
 
