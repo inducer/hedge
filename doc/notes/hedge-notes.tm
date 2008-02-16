@@ -763,6 +763,520 @@
   <big-figure|<postscript|fluxfan.fig|9cm|||||>|<label|fig:fluxfan>Space-Time
   Diagram of a flux fan.>
 
+  <subsection|Comments by Akil>
+
+  <subsubsection|Zero eigenvalues>
+
+  I'm not entirely sure that the case of zero eigenvalues actually comes out
+  well. Let's consider the following: adopting your notation above, let's
+  assume we have <math|n> eigenvalues for each element,
+  <math|\<lambda\><rsub|i><rsup|\<pm\>>>, <math|i = 1,2,\<ldots\>n>. Let
+  <math|N>, <math|M>, and <math|P> represent the number of negative, zero,
+  and positive eigenvalues, respectively. (Recall that we're assuming that
+  <math|sign(\<lambda\><rsub|i><rsup|+>) = sign(\<lambda\><rsub|i><rsup|->)>
+  for all <math|i>.) We have <math|N+M+P=n>, and we assume at least two of
+  these numbers are nonzero. (If only one of them is nonzero, upwinding is
+  trivial.)
+
+  \;
+
+  We start with the <math|2*(n-1)> unknowns
+  <math|<left|{><with|math-font-series|bold|s><rsup|\<asterisk\>(i)>,
+  <left|(>D*<with|math-font-series|bold|s><right|)><rsup|\<asterisk\>(i)><right|}><rsub|i=1><rsup|n-1>>.\ 
+
+  \;
+
+  I'm adopting the convention that positive eigenvalues correspond to
+  right-traveling waves. We have the following Rankine-Hugoniot conditions:
+
+  <\equation>
+    <tabular|<tformat|<cwith|3|3|3|3|cell-halign|l>|<table|<row|<cell|\<lambda\><rsup|-><rsub|i>>|<cell|=>|<cell|<frac|(D\<b-s\>)<rsup|*\<ast\>(i)>-(D\<b-s\>)<rsup|*\<ast\>(i-1)>|\<b-s\><rsup|*\<ast\>(i)>-\<b-s\><rsup|*\<ast\>(i-1)>>,>|<cell|>|<cell|i
+    = 1, 2, \<ldots\>,N>>|<row|<cell|>|<cell|>|<cell|>|<cell|>|<cell|>>|<row|<cell|0>|<cell|=>|<cell|(D\<b-s\>)<rsup|*\<ast\>(i)>-(D\<b-s\>)<rsup|*\<ast\>(i-1)>,>|<cell|>|<cell|i
+    = N+1, \<ldots\>,N+Z>>|<row|<cell|>|<cell|>|<cell|>|<cell|>|<cell|>>|<row|<cell|\<lambda\><rsup|+><rsub|i>>|<cell|=>|<cell|<frac|(D\<b-s\>)<rsup|*\<ast\>(i)>-(D\<b-s\>)<rsup|*\<ast\>(i-1)>|\<b-s\><rsup|*\<ast\>(i)>-\<b-s\><rsup|*\<ast\>(i-1)>>,>|<cell|>|<cell|i
+    = N+Z+1, \<ldots\>,n>>>>><right|}> \ n \ (linear)
+    equations<label|eq:rh-all>
+  </equation>
+
+  \;
+
+  \;
+
+  If I understand what we're doing, we consider the unknowns <math|<left|{>
+  <left|(>D*<with|math-font-series|bold|s><right|)><rsup|\<asterisk\>(i)><right|}><rsub|i=1,
+  2, \<ldots\><with|math-font-series|bold|N-1>,
+  <with|math-font-series|bold|N+Z+1>, \<ldots\>, n>> as anisotropic
+  (directionally-biased) unknowns with explicit connections to the
+  <math|<with|math-font-series|bold|s><rsup|\<asterisk\>(i)>> given by the
+  auxilliary equations
+
+  <\equation>
+    <tabular|<tformat|<table|<row|<cell|(D\<b-s\>)<rsup|*\<ast\>(i)> =
+    D<rsup|->\<b-s\><rsup|*\<ast\>(i)>>|<cell|>|<cell|i = 1, 2,
+    \<ldots\>,N-1>>|<row|<cell|>|<cell|>|<cell|>>|<row|<cell|(D\<b-s\>)<rsup|*\<ast\>(i)>
+    = D<rsup|+>\<b-s\><rsup|*\<ast\>(i)>>|<cell|>|<cell|i = N+Z+1, \<ldots\>,
+    n>>>>><right|}> \ N+P-2 \ \ (linear) equations<label|eq:rh-aux>
+  </equation>
+
+  \;
+
+  However, I don't see what we do for the unknowns which make contact with
+  the zero eigenvalue(s). You mention that if <math|Z=1> with
+  <math|\<lambda\><rsub|k>=0> we would have\ 
+
+  <\equation*>
+    <tabular|<tformat|<table|<row|<cell|(D\<b-s\>)<rsup|\<ast\>(k)>>|<cell|<above|=|<with|mode|text|NO!>>>|<cell|D<rsup|+>\<b-s\><rsup|\<ast\>(k)>.>>>>>
+  </equation*>
+
+  But then I'd also claim that\ 
+
+  <\equation*>
+    <tabular|<tformat|<table|<row|<cell|(D\<b-s\>)<rsup|\<ast\>(k-1)>>|<cell|<above|=|<with|mode|text|NO!>>>|<cell|D<rsup|->\<b-s\><rsup|\<ast\>(k-1)>.>>>>>
+  </equation*>
+
+  I cannot think of a reason why we'd treat
+  <with|mode|math|(D\<b-s\>)<rsup|\<ast\>(k-1)>> any differently from
+  <with|mode|math|(D\<b-s\>)<rsup|\<ast\>(k)>> since I don't think it's the
+  case that <with|mode|math|(D\<b-s\>)<rsup|\<ast\>(k)>> `belongs' to
+  <math|\<lambda\><rsub|k>=0> in any way. If <math|Z=0>, then indeed
+  (<reference|eq:rh-aux>) gives us <math|N+P-2 = n-2> equations to add to the
+  <math|n> equations in (<reference|eq:rh-all>) giving <math|2*n-2> equations
+  to couple the <math|2(n-1)> unknowns. But if <math|Z=1>, then
+  (<reference|eq:rh-aux>) gives us <math|N+P-2=n-3> equations to couple with
+  the <math|n> from (<reference|eq:rh-all>). That's <math|2*n-3> equations
+  for <math|2*n-2> unknowns. Conversely, if instead we adopted the convention
+
+  <\equation*>
+    <tabular|<tformat|<table|<row|<cell|(D\<b-s\>)<rsup|\<ast\>(k)>>|<cell|<above|=|<with|mode|text|YES!>>>|<cell|D<rsup|+>\<b-s\><rsup|\<ast\>(k)>>>|<row|<cell|>|<cell|>|<cell|>>|<row|<cell|(D\<b-s\>)<rsup|\<ast\>(k-1)>>|<cell|<above|=|<with|mode|text|YES!>>>|<cell|D<rsup|+>\<b-s\><rsup|\<ast\>(k)>,>>>>>
+  </equation*>
+
+  then we'd have 2 equations plus <math|N+P-2=n-3> from
+  (<reference|eq:rh-aux>) plus <math|n> from (<reference|eq:rh-all>) giving
+  us <math|2*n-1> equations for <math|2*n-2> unknowns.\ 
+
+  \;
+
+  In general, if we don't adopt any directional bias for states adjacent to
+  the zero eigenvalue, then for <math|Z\<gtr\>0> zero eigenvalues, we'd have
+  <math|2*n-2-Z> equations for <math|2*n-2> unknowns, and if we do adopt
+  directional bias for states adjacent to the zero eigenvalue, then we'd have
+  <math|2n-Z> equations for <math|2n-2> unknowns (If
+  <math|\<lambda\><rsub|k>=\<lambda\><rsub|k+1>=0>, I don't see how you can
+  adopt a directional bias for <with|mode|math|(D\<b-s\>)<rsup|\<ast\>(k)>>.)
+
+  \;
+
+  You make the comment above that ``We simply regard
+  <math|(D\<b-s\>)<rsup|\<ast\>(k)>> as another unkown of the system, which,
+  in addition to <math|{\<b-s\><rsup|*\<ast\>(i)>}<rsub|1><rsup|n-1>>, brings
+  us to <math|n> unknowns.''
+
+  \;
+
+  If I understand this correctly, this indeed does make <math|n> equations
+  and <math|n> unknowns, but you treat <with|mode|math|(D\<b-s\>)<rsup|\<ast\>(k)>>
+  differently than <with|mode|math|(D\<b-s\>)<rsup|\<ast\>(k+1)>> (non
+  directionally-biased vs. directionally biased) and, again, I don't see how
+  you can consistently make this choice given that, to me,
+  <with|mode|math|(D\<b-s\>)<rsup|\<ast\>(k+1)>> is no more directionally
+  unbiased than <with|mode|math|(D\<b-s\>)<rsup|\<ast\>(k)>>.\ 
+
+  <subsubsection|Degenerate eigenvalues>
+
+  \;
+
+  Another comment: degenerate eigenvalues should be ok: let's suppose that
+  <math|\<lambda\><rsub|k>=\<lambda\><rsub|k+1>>. Then there is an
+  intermediate state <math|<with|math-font-series|bold|s><rsup|\<asterisk\>(k)>>
+  separating <math|<with|math-font-series|bold|s><rsup|\<asterisk\>(k-1)>>
+  and <math|<with|math-font-series|bold|s><rsup|\<asterisk\>(k+1)>>. This
+  will give us\ 
+
+  <\equation*>
+    <tabular|<tformat|<table|<row|<cell|\<lambda\><rsub|k>=<frac|(D\<b-s\>)<rsup|*\<ast\>(k+1)>-(D\<b-s\>)<rsup|*\<ast\>(k)>|\<b-s\><rsup|*\<ast\>(k+1)>-\<b-s\><rsup|*\<ast\>(k)>>>>|<row|<cell|>>|<row|<cell|\<lambda\><rsub|k>=<frac|(D\<b-s\>)<rsup|*\<ast\>(k)>-(D\<b-s\>)<rsup|*\<ast\>(k-1)>|\<b-s\><rsup|*\<ast\>(k)>-\<b-s\><rsup|*\<ast\>(k-1)>>>>>>>
+  </equation*>
+
+  Using these equations to eliminate the unknowns
+  <with|mode|math|(D\<b-s\>)<rsup|*\<ast\>(k)>> and
+  <with|mode|math|\<b-s\><rsup|*\<ast\>(k)>> gives us the Rankine-Hugoniot
+  condition relating <with|mode|math|\<b-s\><rsup|*\<ast\>(k-1)>> to
+  <with|mode|math|\<b-s\><rsup|*\<ast\>(k+1)>>:
+
+  <\equation*>
+    \<lambda\><rsub|k>=<frac|(D\<b-s\>)<rsup|*\<ast\>(k+1)>-(D\<b-s\>)<rsup|*\<ast\>(k-1)>|\<b-s\><rsup|*\<ast\>(k+1)>-\<b-s\><rsup|*\<ast\>(k-1)>>.
+  </equation*>
+
+  This is the same condition one would get if we pretended that states
+  <with|mode|math|(D\<b-s\>)<rsup|*\<ast\>(k)>> and
+  <with|mode|math|\<b-s\><rsup|*\<ast\>(k)>>, the states straddled by the
+  shocks of the same speed, did not exist and merrily went about our
+  upwinding.\ 
+
+  \;
+
+  Note that this also means that a <math|Z>-fold degeneracy in the zero
+  eigenvalue isn't a problem either, as long as we can sort out the simple
+  zero eigenvalue case.
+
+  <subsection|More random comments by Akil>
+
+  We seem to be pretty confident that if there does not exist any 0
+  eigenvalue, then everything is fine. Kittens meow, rainbows shine, and the
+  world is happy. But we've also established that we don't know what's going
+  on when <math|\<exists\> \ \ \<lambda\>=0>. However, let's boil things down
+  to the simplest case we can. We know degenerate eigenvalues pose no problem
+  (see my comment last time), and multiple simple (+) or (<math|->)
+  eigenvalues are likewise fine. So let's consider this model case:
+
+  <\equation*>
+    A<rsup|\<pm\>>(<wide|<with|math-font-series|bold|n>|^>):<with|math-font|Bbb*|R><rsup|3>\<rightarrow\><with|math-font|Bbb*|R><rsup|3>,
+    \ \ \<lambda\><rsup|\<pm\>><rsub|1>\<less\>0,
+    \<lambda\><rsup|\<pm\>><rsub|2>=0, \ \ \ and
+    \ \ \ \<lambda\><rsup|\<pm\>><rsub|3>\<gtr\>0.
+  </equation*>
+
+  We assume the greatest generality possible here:
+  <math|\<lambda\><rsub|\<cdot\>><rsup|\<pm\>>> can be different magnitudes,
+  but they have the same sign. In line with a strong hyperbolic system, we
+  assume that <math|A<rsup|\<pm\>>> is diagonalizable as
+
+  <\equation*>
+    A<rsup|\<pm\>>=V<rsup|\<pm\>>\<Lambda\><rsup|\<pm\>><left|(>V<rsup|\<pm\>><right|)><rsup|T>,
+  </equation*>
+
+  where <math|\<Lambda\><rsup|\<pm\>>> are diagonal matrices containing the
+  <math|\<lambda\><rsup|\<pm\>><rsub|i>>. We introduce the eigenvectors
+
+  <\equation*>
+    (V<rsup|\<pm\>>) =<left|(><tabular|<tformat|<table|<row|<cell|<with|math-font-series|bold|v><rsub|1><rsup|\<pm\>>>|<cell|<with|math-font-series|bold|v><rsub|2><rsup|\<pm\>>>|<cell|<with|math-font-series|bold|v><rsub|3><rsup|\<pm\>>>>>>><right|)>
+  </equation*>
+
+  Here, all eigenvalues are simple, and <math|<left|{><with|math-font-series|bold|v><rsub|i><rsup|\<pm\>><right|}><rsub|i=1><rsup|3>>
+  span <math|<with|math-font|Bbb*|R><rsup|3>> for each (+) or (<math|->).
+  <with|font-series|bold|Note:> there is no reason to assume that, e.g.
+  <math|<left|{><with|math-font-series|bold|v><rsub|1><rsup|+>,
+  <with|math-font-series|bold|v><rsub|2><rsup|->,
+  <with|math-font-series|bold|v><rsub|3><rsup|-><right|}>> span
+  <math|<with|math-font|Bbb*|R><rsup|3>>. Or we shall not assume so here, at
+  least. Although, to be fair, if this is not the case, then we can have the
+  case of a genuine shock forming, which is kind of ridiculous. Of course, we
+  have that <math|\<lambda\><rsub|i><rsup|\<pm\>>> is associated with
+  <math|<with|math-font-series|bold|v><rsub|i><rsup|\<pm\>>>. We also assume
+  that\ 
+
+  <\equation*>
+    <tabular|<tformat|<table|<row|<cell|<with|math-font-series|bold|u><rsup|->=<big|sum><rsub|i=1><rsup|3>\<mu\><rsup|-><rsub|i><with|math-font-series|bold|v><rsub|i><rsup|->>|<cell|>|<cell|<with|math-font-series|bold|u><rsup|+>=<big|sum><rsub|i=1><rsup|3>\<mu\><rsub|i><rsup|+><with|math-font-series|bold|v><rsub|i><rsup|+>>>>>>,
+  </equation*>
+
+  which we can do since the <math|<with|math-font-series|bold|v><rsub|i>>'s
+  span. And of course, I just realized that the
+  <math|\<mu\><rsub|i><rsup|\<pm\>>> are the entries in
+  <math|<with|math-font-series|bold|s><rsup|\<pm\>><rsub|i>>. Go math.\ 
+
+  \;
+
+  We introduce the intermediate states <math|<with|math-font-series|bold|u><rsup|\<asterisk\>>>
+  and <math|<with|math-font-series|bold|u><rsup|\<asterisk\>\<asterisk\>>>,
+  with their appropriate fluxes <math|(A<with|math-font-series|bold|u>)<rsup|\<asterisk\>>>
+  and <math|(A<with|math-font-series|bold|u>)<rsup|\<asterisk\>\<asterisk\>>>.
+  All four of these, at the moment, are unknown.\ 
+
+  \;
+
+  We note that at the end of the day, we want some flux\ 
+
+  <\equation*>
+    (A<with|math-font-series|bold|u>)<rsup|#>
+  </equation*>
+
+  (yes that's horrible notation; leave me alone! wahhh!)
+
+  \;
+
+  All of our algorithms will attempt to find this quantity. Now, we consider
+  three possible algorithms for upwind flux computations.\ 
+
+  <subsubsection|Stoopid upwinding>
+
+  The motivation here is simple: the 255 view of upwinding is the following:
+  the evolution equation for <math|u<rsup|->> should not allow boundary
+  conditions that impose <math|<with|math-font-series|bold|v><rsub|1><rsup|->>;
+  similarly, the evolution equation for <math|u<rsup|+>> should not allow
+  boundary conditions that impose <math|<with|math-font-series|bold|v><rsub|3><rsup|+>>.
+  This is algorithmically consistent with vanilla upwinding
+  <math|u<rsub|t>=a*u<rsub|x>>. The algorithm then is the following:
+
+  <\enumerate>
+    <item>We simply set <math|<with|math-font-series|bold|u><rsup|\<asterisk\>>=<with|math-font-series|bold|u><rsup|->-\<mu\><rsup|-><rsub|2>*<with|math-font-series|bold|v><rsup|-><rsub|2>-\<mu\><rsup|-><rsub|1><with|math-font-series|bold|v><rsup|-><rsub|1>=\<mu\><rsup|-><rsub|3><with|math-font-series|bold|v><rsup|-><rsub|3>>.
+    Also set <math|<with|math-font-series|bold|u><rsup|\<asterisk\>\<asterisk\>>=<with|math-font-series|bold|u><rsup|+>-\<mu\><rsup|+><rsub|2>*<with|math-font-series|bold|v><rsup|+><rsub|2>-\<mu\><rsup|+><rsub|3><with|math-font-series|bold|v><rsup|+><rsub|3>=\<mu\><rsub|1><rsup|+><with|math-font-series|bold|v><rsup|+><rsub|1>>.\ 
+
+    <item>Set <math|(A<with|math-font-series|bold|u>)<rsup|\<asterisk\>>=A<rsup|-><with|math-font-series|bold|u><rsup|\<asterisk\>>>
+    and <math|(A*<with|math-font-series|bold|u>)<rsup|\<asterisk\>\<asterisk\>>=A<rsup|+>*<with|math-font-series|bold|u><rsup|\<asterisk\>\<asterisk\>>>.\ 
+
+    <item>Use the flux <math|(A<with|math-font-series|bold|s>)<rsup|#>=(A<with|math-font-series|bold|u>)<rsup|\<asterisk\>>+(A*<with|math-font-series|bold|u>)<rsup|\<asterisk\>\<asterisk\>>=\<mu\><rsup|-><rsub|3><with|math-font-series|bold|v><rsup|-><rsub|3>+\<mu\><rsub|1><rsup|+><with|math-font-series|bold|v><rsup|+><rsub|1>>.
+  </enumerate>
+
+  \;
+
+  Advantages of this flux:
+
+  <\itemize>
+    <item>It's easy
+
+    <item>It's very intuitive
+
+    <item>It's consistent with usual upwinding if <math|A<rsup|+>=A<rsup|->>.
+  </itemize>
+
+  Disadvantages:
+
+  <\itemize>
+    <item>There is no motivation for it other than, ``it's upwinding''.
+
+    <item>Where'r the R-H conditions? Actually, these are
+    <with|font-series|bold|almost> exactly those conditions: see below....
+  </itemize>
+
+  <subsubsection|R-H Conditions with Directional Bias>
+
+  In this formulation, we impose the Rankine-Hugoniot conditions, which in
+  this case read
+
+  <\equation*>
+    <tabular|<tformat|<cwith|3|3|1|1|cell-halign|r>|<table|<row|<cell|\<lambda\><rsub|1><rsup|->(<with|math-font-series|bold|u><rsup|\<asterisk\>>-<with|math-font-series|bold|u><rsup|->)>|<cell|=>|<cell|<left|(>A<with|math-font-series|bold|u><right|)><rsup|\<asterisk\>>-A<rsup|-><with|math-font-series|bold|u><rsup|->>>|<row|<cell|>|<cell|>|<cell|>>|<row|<cell|(A<with|math-font-series|bold|u><right|)><rsup|\<asterisk\>>>|<cell|=>|<cell|(A<with|math-font-series|bold|u><right|)><rsup|\<asterisk\>\<asterisk\>>>>|<row|<cell|>|<cell|>|<cell|>>|<row|<cell|\<lambda\><rsub|3><rsup|+>(<with|math-font-series|bold|u><rsup|\<asterisk\>\<asterisk\>>-<with|math-font-series|bold|u><rsup|+>)>|<cell|=>|<cell|<left|(>A<with|math-font-series|bold|u><right|)><rsup|\<asterisk\>\<asterisk\>>-A<rsup|+><with|math-font-series|bold|u><rsup|+>>>>>>
+  </equation*>
+
+  \;
+
+  However, we also impose `directional bias', which means that intermediate
+  states which are adjacent to, but not overlapping, the zero-speed shock
+  inherit the operators from their respective sides. In math, this reads
+
+  <\equation*>
+    <tabular|<tformat|<table|<row|<cell|(A<with|math-font-series|bold|u><right|)><rsup|\<asterisk\>>=A<rsup|-><with|math-font-series|bold|u><rsup|\<asterisk\>>>|<cell|>|<cell|(A<with|math-font-series|bold|u><right|)><rsup|\<asterisk\>\<asterisk\>>=A<rsup|+><with|math-font-series|bold|u><rsup|\<asterisk\>\<asterisk\>>.>>>>>
+  </equation*>
+
+  This is very interesting set of conditions: it seemingly over-determines
+  the system, and the R-H conditions become\ 
+
+  <\equation*>
+    <tabular|<tformat|<cwith|3|3|1|1|cell-halign|r>|<table|<row|<cell|<left|(>A<rsup|->-\<lambda\><rsub|1><rsup|->I<right|)><left|(><with|math-font-series|bold|u><rsup|\<asterisk\>>-<with|math-font-series|bold|u><rsup|-><right|)>>|<cell|=>|<cell|0>>|<row|<cell|>|<cell|>|<cell|>>|<row|<cell|A<rsup|-><with|math-font-series|bold|u><rsup|\<asterisk\>>>|<cell|=>|<cell|A<rsup|+><with|math-font-series|bold|u><rsup|\<asterisk\>\<asterisk\>>>>|<row|<cell|>|<cell|>|<cell|>>|<row|<cell|<left|(>A<rsup|+>-\<lambda\><rsub|3><rsup|+>I<right|)><left|(><with|math-font-series|bold|u><rsup|\<asterisk\>\<asterisk\>>-<with|math-font-series|bold|u><rsup|+><right|)>>|<cell|=>|<cell|0>>>>>
+  </equation*>
+
+  \;
+
+  This means that the quantity <with|mode|math|<with|math-font-series|bold|u><rsup|\<asterisk\>>-<with|math-font-series|bold|u><rsup|->>
+  *must* be a multiple of <math|<with|math-font-series|bold|v><rsup|-><rsub|1>>.
+  I.e.,\ 
+
+  <\equation*>
+    <with|math-font-series|bold|u><rsup|\<asterisk\>>=\<nu\><rsub|1><with|math-font-series|bold|v><rsub|1><rsup|->+\<mu\><rsub|2><rsup|-><with|math-font-series|bold|v><rsub|2><rsup|->+\<mu\><rsub|3><rsup|-><with|math-font-series|bold|v><rsub|3><rsup|->,
+  </equation*>
+
+  for some unknown scalar <math|\<nu\><rsub|1>>. A similar argument leads us
+  to\ 
+
+  <\equation*>
+    <with|math-font-series|bold|u><rsup|\<asterisk\>\<asterisk\>>=\<mu\><rsup|+><rsub|1><with|math-font-series|bold|v><rsub|1><rsup|+>+\<mu\><rsub|2><rsup|+><with|math-font-series|bold|v><rsub|2><rsup|+>+\<nu\><rsub|3><with|math-font-series|bold|v><rsub|3><rsup|+>.
+  </equation*>
+
+  It is worth stressing that our unknown vectors
+  <math|<with|math-font-series|bold|u><rsup|\<asterisk\>>> and
+  <math|<with|math-font-series|bold|u><rsup|\<asterisk\>\<asterisk\>>>,
+  previously a full 6 unknowns, are now merely two unknowns,
+  <math|\<nu\><rsub|1>> and <math|\<nu\><rsub|3>>. This will be true for any
+  size of the matrices <math|A<rsup|\<pm\>>>.\ 
+
+  \;
+
+  <with|font-shape|italic|Note that this has a strikingly similar flavor to
+  `stoopid upwinding': in that case, we would have <math|\<nu\><rsub|1>=0>
+  and <math|\<nu\><rsub|3>=0>. If we impose directional bias, `Stoopid
+  upwinding' automatically satisfies all but one of the R-H conditions: the
+  one at <math|\<lambda\>=0>.>
+
+  \;
+
+  Of course, we are still overdetermined: we have one R-H condition left:
+  three equations, two unknowns. What's left? The <math|\<lambda\>=0>
+  conditions boils down to\ 
+
+  <\equation*>
+    \<nu\><rsub|1>\<lambda\><rsub|1><rsup|->*<with|math-font-series|bold|v><rsub|1><rsup|->-\<nu\><rsub|3>*\<lambda\><rsub|3><rsup|+><with|math-font-series|bold|v><rsub|3><rsup|+>=\<mu\><rsub|1><rsup|+>\<lambda\><rsub|1><rsup|+><with|math-font-series|bold|v><rsub|1><rsup|+>-\<mu\><rsub|3><rsup|->\<lambda\><rsub|3><rsup|-><with|math-font-series|bold|v><rsub|3><rsup|->,
+  </equation*>
+
+  where the unknowns are <math|\<nu\><rsub|1>> and <math|\<nu\><rsub|3>>.
+  Note that we *need* this equation to be satisifed independent of the
+  unknowns <math|\<mu\><rsub|1><rsup|+>> and <math|\<mu\><rsub|3><rsup|->>,
+  which are dependent on the incoming waves
+  <math|<with|math-font-series|bold|u><rsup|\<pm\>>>, over which we have no
+  control. This means that we require that
+  <math|span<left|{><with|math-font-series|bold|v><rsub|1><rsup|+>,
+  <with|math-font-series|bold|v><rsub|3><rsup|-><right|}>\<subset\>span<left|{><with|math-font-series|bold|v><rsub|1><rsup|->,<with|math-font-series|bold|v><rsub|3><rsup|+><right|}>>.
+  Note that since <math|<with|math-font-series|bold|v><rsub|1><rsup|+>\<perp\><with|math-font-series|bold|v><rsub|3><rsup|+>>,
+  and <math|<with|math-font-series|bold|v><rsub|1><rsup|->\<perp\><with|math-font-series|bold|v><rsub|3><rsup|->>,
+  then we must have that <math|<with|math-font-series|bold|v><rsub|1><rsup|+>\<parallel\><with|math-font-series|bold|v><rsub|1><rsup|+>>
+  and <math|<with|math-font-series|bold|v><rsub|3><rsup|->\<parallel\><with|math-font-series|bold|v><rsub|3><rsup|->>.
+  Then (and only then!) will we be able to solve for the fluxes we wish for
+  any values of <math|\<mu\><rsup|\<pm\>><rsub|\<cdot\>>>.\ 
+
+  \;
+
+  In this simple case, our condition states that
+  <math|<with|math-font-series|bold|v><rsub|1><rsup|+>=c<rsub|1>*<with|math-font-series|bold|v><rsub|1><rsup|->>
+  and <math|<with|math-font-series|bold|v><rsub|3><rsup|+>=c<rsub|3>*<with|math-font-series|bold|v><rsub|3><rsup|->>.
+  I.e., that left traveling waves stay left-traveling waves and
+  right-traveling waves do the same. Then we have that\ 
+
+  <\equation*>
+    <tabular|<tformat|<table|<row|<cell|\<nu\><rsub|1>=c<rsub|1>*\<mu\><rsub|1><rsup|+>*<frac|\<lambda\><rsub|1><rsup|+>|\<lambda\><rsub|1><rsup|->>>|<cell|>|<cell|\<nu\><rsub|3>=\<mu\><rsub|3><rsup|-><frac|\<lambda\><rsub|3><rsup|->|c<rsub|3>*\<lambda\><rsub|3><rsup|+>>>>>>>,
+  </equation*>
+
+  which uniquely determines the flux as\ 
+
+  <\equation*>
+    <left|(>A<with|math-font-series|bold|u><right|)><rsup|#>=A<rsup|-><with|math-font-series|bold|u><rsup|\<asterisk\>>=A<rsup|+><with|math-font-series|bold|u><rsup|\<asterisk\>\<asterisk\>>=\<nu\><rsub|1>\<lambda\><rsub|1><rsup|-><with|math-font-series|bold|v><rsub|1><rsup|->+\<mu\><rsub|3><rsup|->\<lambda\><rsub|3><rsup|-><with|math-font-series|bold|v><rsub|3><rsup|->=\<mu\><rsup|+><rsub|1>\<lambda\><rsub|1><rsup|+><with|math-font-series|bold|v><rsub|1><rsup|+>+\<nu\><rsub|3>\<lambda\><rsub|3><rsup|+><with|math-font-series|bold|v><rsub|3><rsup|+>.
+  </equation*>
+
+  \;
+
+  The above considerations lead us to the following theorem:
+
+  <\theorem>
+    (Well-posedness of Rankine-Hugoniot directionally-biased upwinding)
+
+    Let <math|A<rsup|\<pm\>>(<wide|<with|math-font-series|bold|n>|^>)>
+    represent the (discontinuous) operator of a multidimensional strongly
+    hyperbolic linear wave equation at an element interface. Assume
+    diagonalizations of the form\ 
+
+    <\equation*>
+      <tabular|<tformat|<table|<row|<cell|A<rsup|\<pm\>>=V<rsup|\<pm\>>\<Lambda\><rsup|\<pm\>><left|(>V<rsup|\<pm\>><right|)><rsup|T>,>>|<row|<cell|>>|<row|<cell|V<rsup|\<pm\>>=<left|(><tabular|<tformat|<table|<row|<cell|<with|math-font-series|bold|v><rsup|\<pm\>><rsub|1>>|<cell|<with|math-font-series|bold|v><rsub|2><rsup|\<pm\>>>|<cell|\<cdots\>>|<cell|<with|math-font-series|bold|v><rsub|n><rsup|\<pm\>>>>>>><right|)>>>>>>
+    </equation*>
+
+    \;
+
+    Let the evolving <math|<with|math-font-series|bold|u>\<in\><with|math-font|Bbb*|R><rsup|n>>.
+    The known values of <math|<with|math-font-series|bold|u>> at the element
+    interfaces admit the decomposition\ 
+
+    <\equation*>
+      <tabular|<tformat|<table|<row|<cell|<with|math-font-series|bold|u><rsup|->=<big|sum><rsub|i=1><rsup|n>\<mu\><rsub|i><rsup|-><with|math-font-series|bold|v><rsub|i><rsup|->>|<cell|>|<cell|<with|math-font-series|bold|u><rsup|+>=<big|sum><rsub|i=1><rsup|n>\<mu\><rsub|i><rsup|+><with|math-font-series|bold|v><rsub|i><rsup|+>.>>>>>
+    </equation*>
+
+    Assume that each diagonal matrix <math|\<Lambda\><rsup|\<pm\>>> contains
+    eigenvalues <math|\<lambda\><rsub|i><rsup|\<pm\>>> such that the
+    following quantities are well-defined:
+
+    <\equation*>
+      <tabular|<tformat|<table|<row|<cell|<with|math-font|cal|P><rsup|+>=<left|{>i:
+      \<lambda\><rsup|+><rsub|i>\<gtr\>0<right|}>>|<cell|>|<cell|<with|math-font|cal|N><rsup|+>=<left|{>i:
+      \<lambda\><rsup|+><rsub|i>\<less\>0<right|}>>|<cell|>|<cell|<with|math-font|cal|Z><rsup|+>=<left|{>i:
+      \<lambda\><rsup|+><rsub|i>=0<right|}>>>|<row|<cell|>|<cell|>|<cell|>|<cell|>|<cell|>>|<row|<cell|<with|math-font|cal|P><rsup|->=<left|{>i:
+      \<lambda\><rsup|-><rsub|i>\<gtr\>0<right|}>>|<cell|>|<cell|<with|math-font|cal|N><rsup|->=<left|{>i:
+      \<lambda\><rsup|-><rsub|i>\<less\>0<right|}>>|<cell|>|<cell|<with|math-font|cal|Z><rsup|->=<left|{>i:
+      \<lambda\><rsup|-><rsub|i>=0<right|}>>>|<row|<cell|>|<cell|>|<cell|>|<cell|>|<cell|>>|<row|<cell|P
+      =<left|\|><with|math-font|cal|P><rsup|+><right|\|>=<left|\|><with|math-font|cal|P><rsup|-><right|\|>>|<cell|>|<cell|N
+      =<left|\|><with|math-font|cal|N><rsup|+><right|\|>=<left|\|><with|math-font|cal|N><rsup|-><right|\|>>|<cell|>|<cell|Z
+      =<left|\|><with|math-font|cal|Z><rsup|+><right|\|>=<left|\|><with|math-font|cal|Z><rsup|-><right|\|>.>>>>>
+    </equation*>
+
+    Note that this gives us <math|P+Z+N=n>. Associate with each eigenvalue
+    <math|\<lambda\><rsup|\<pm\>><rsub|i>> the eigenvector
+    <math|<with|math-font-series|bold|v><rsub|i><rsup|\<pm\>>>. Define the
+    following vector subspaces of <math|<with|math-font|Bbb*|R><rsup|n>>:
+
+    <\equation*>
+      <tabular|<tformat|<table|<row|<cell|<with|math-font|cal|W><rsub|<with|math-font|cal|P>><rsup|+>=span<left|{><with|math-font-series|bold|v><rsub|i><rsup|+>:i\<in\><with|math-font|cal|P><rsup|+><right|}>>|<cell|>|<cell|<with|math-font|cal|W><rsub|<with|math-font|cal|N>><rsup|+>=span<left|{><with|math-font-series|bold|v><rsub|i><rsup|+>:i\<in\><with|math-font|cal|N><rsup|+><right|}>>|<cell|>|<cell|<with|math-font|cal|W><rsub|<with|math-font|cal|Z>><rsup|+>=span<left|{><with|math-font-series|bold|v><rsub|i><rsup|+>:i\<in\><with|math-font|cal|Z><rsup|+><right|}>>>|<row|<cell|>|<cell|>|<cell|>|<cell|>|<cell|>>|<row|<cell|<with|math-font|cal|W><rsub|<with|math-font|cal|P>><rsup|->=span<left|{><with|math-font-series|bold|v><rsub|i><rsup|->:i\<in\><with|math-font|cal|P><rsup|-><right|}>>|<cell|>|<cell|<with|math-font|cal|W><rsub|<with|math-font|cal|N>><rsup|->=span<left|{><with|math-font-series|bold|v><rsub|i><rsup|->:i\<in\><with|math-font|cal|N><rsup|-><right|}>>|<cell|>|<cell|<with|math-font|cal|W><rsub|<with|math-font|cal|Z>><rsup|->=span<left|{><with|math-font-series|bold|v><rsub|i><rsup|->:i\<in\><with|math-font|cal|Z><rsup|-><right|}>>>>>>
+    </equation*>
+
+    \;
+
+    Define the <math|(n-1)> intermediate states
+    <math|<left|{><with|math-font-series|bold|u><rsup|\<asterisk\>(i)><right|}><rsub|i=1><rsup|n-1>>
+    and the associated fluxes <math|<left|{><left|(>A<with|math-font-series|bold|u><right|)><rsup|\<asterisk\>(i)><right|}><rsup|n-1><rsub|i=1>>
+    such that <math|<with|math-font-series|bold|u><rsup|\<asterisk\>(i)>> and
+    <with|mode|math|<left|(>A<with|math-font-series|bold|u><right|)><rsup|\<asterisk\>(i)>>
+    `lies between' eigenvalues <math|\<lambda\><rsub|i><rsup|\<pm\>>> and
+    <math|\<lambda\><rsub|i+1><rsup|\<pm\>>> (see figure
+    <reference|fig:fluxfan>). Now define the unsuperscripted eigenvalues as\ 
+
+    <\equation*>
+      <tabular|<tformat|<table|<row|<cell|<left|{>\<lambda\><rsub|i><right|}><rsub|i=1><rsup|N>=sort<left|{>\<lambda\><rsub|i><rsup|->:
+      i\<in\><with|math-font|cal|N><rsup|-><right|}>>>|<row|<cell|>>|<row|<cell|<left|{>\<lambda\><rsub|i><right|}><rsub|i=N+1><rsup|N+Z>=sort<left|{>\<lambda\><rsub|i><rsup|->:
+      i\<in\><with|math-font|cal|Z><rsup|-><right|}>>>|<row|<cell|>>|<row|<cell|<left|{>\<lambda\><rsub|i><right|}><rsub|i=N+1><rsup|N+Z>=sort<left|{>\<lambda\><rsub|i><rsup|+>:
+      i\<in\><with|math-font|cal|P><rsup|+><right|}>>>>>>
+    </equation*>
+
+    \;
+
+    Define the numerical flux as\ 
+
+    <\equation*>
+      <left|(>A<with|math-font-series|bold|u><right|)><rsup|#>\<assign\><left|(>A<with|math-font-series|bold|u><right|)><rsup|\<asterisk\>(q)>,
+    </equation*>
+
+    where <math|q = argmin<left|{><left|\|>\<lambda\><rsub|i><right|\|><right|}><rsub|i=1><rsup|N>>.\ 
+
+    \;
+
+    Assume the following conditions:
+
+    <\enumerate>
+      <item><math|Z\<gtr\>0>
+
+      <item>Imposition of the Rankine-Hugoniot condition across eigenvalues:
+
+      <\equation*>
+        \<lambda\><rsub|i><left|(><with|math-font-series|bold|u><rsup|\<asterisk\>(i)>-<with|math-font-series|bold|u><rsup|\<asterisk\>(i-1)><right|)>
+        = <left|(>A<with|math-font-series|bold|u><right|)><rsup|\<asterisk\>(i)>-<left|(>A<with|math-font-series|bold|u><right|)><rsup|\<asterisk\>(i-1)><hspace|1cm>
+        \<forall\> \ \ i = 1, 2, \<ldots\>n,
+      </equation*>
+
+      where we define <math|<with|math-font-series|bold|u><rsup|\<asterisk\>(0)>=<with|math-font-series|bold|u><rsup|->>
+      and <math|<with|math-font-series|bold|u><rsup|\<asterisk\>(n)>=<with|math-font-series|bold|u><rsup|+>>.\ 
+
+      <item>Directional biasing:
+
+      <\equation*>
+        (A<with|math-font-series|bold|u>)<rsup|\<asterisk\>(i)>=<left|{><tabular|<tformat|<table|<row|<cell|A<rsup|-><with|math-font-series|bold|u><rsup|\<asterisk\>(i)>>|<cell|>|<cell|if>|<cell|>|<cell|i
+        = 1, 2, \<ldots\>,N>>|<row|<cell|>|<cell|>|<cell|>|<cell|>|<cell|>>|<row|<cell|A<rsup|+><with|math-font-series|bold|u><rsup|\<asterisk\>(i)>>|<cell|>|<cell|if>|<cell|>|<cell|i
+        = n-1, n-2, \<ldots\>,n-P>>>>>
+      </equation*>
+
+      <item><math|<with|math-font|cal|W><rsup|+><rsub|<with|math-font|cal|P>>=<with|math-font|cal|W><rsup|-><rsub|<with|math-font|cal|P>>>
+      and <math|<with|math-font|cal|W><rsub|<with|math-font|cal|N>><rsup|->=<with|math-font|cal|W><rsup|+><rsub|<with|math-font|cal|N>>>
+      \ (<math|\<Longrightarrow\><with|math-font|cal|W<rsub|Z><rsup|->>=<with|math-font|cal|W><rsub|<with|math-font|cal|Z>><rsup|+>>)
+    </enumerate>
+
+    \;
+
+    Then the numerical flux <math|<left|(>A<with|math-font-series|bold|u><right|)><rsup|#>>
+    exists and is unique. It is given by\ 
+
+    <\equation*>
+      <tabular|<tformat|<table|<row|<cell|<left|(>A<with|math-font-series|bold|u><right|)><rsup|#>>|<cell|=>|<cell|<big|sum><rsub|i=1><rsup|N>\<nu\><rsub|i>\<lambda\><rsub|i><with|math-font-series|bold|v><rsub|i><rsup|->+<big|sum><rsub|i=n-P+1><rsup|n>\<mu\><rsub|i><rsup|->\<lambda\><rsub|i><with|math-font-series|bold|v><rsub|i><rsup|->>>|<row|<cell|>|<cell|>|<cell|>>|<row|<cell|>|<cell|=>|<cell|<big|sum><rsub|i=1><rsup|N>\<mu\><rsup|+><rsub|i>\<lambda\><rsub|i><with|math-font-series|bold|v><rsub|i><rsup|+>+<big|sum><rsub|i=n-P+1><rsup|n>\<nu\><rsub|i>\<lambda\><rsub|i><with|math-font-series|bold|v><rsub|i><rsup|+>,>>>>>
+    </equation*>
+
+    \;
+
+    where the <math|N> unknowns <math|<left|{>\<nu\><rsub|i><right|}><rsub|i=1><rsup|N>>
+    satisfy the rank <math|N> system\ 
+
+    <\equation*>
+      <left|(><tabular|<tformat|<table|<row|<cell|\<lambda\><rsub|1><with|math-font-series|bold|v><rsub|1><rsup|->>|<cell|\<lambda\><rsub|2><with|math-font-series|bold|v><rsub|2><rsup|->>|<cell|>|<cell|\<cdots\>>|<cell|>|<cell|\<lambda\><rsub|N><with|math-font-series|bold|v><rsub|N><rsup|->>>>>><right|)><left|(><tabular|<tformat|<table|<row|<cell|\<nu\><rsub|1>>>|<row|<cell|\<nu\><rsub|2>>>|<row|<cell|\<vdots\>>>|<row|<cell|\<nu\><rsub|N>>>>>><right|)>=<big|sum><rsub|i=1><rsup|N>\<mu\><rsup|+><rsub|i>\<lambda\><rsub|i><with|math-font-series|bold|v><rsub|i><rsup|+>,
+    </equation*>
+
+    and the <math|P> unknowns <math|<left|{>\<nu\><rsub|i><right|}><rsub|i=n-P+1><rsup|n>>
+    satisfy the rank <math|P> system\ 
+
+    <\equation*>
+      <left|(><tabular|<tformat|<table|<row|<cell|\<lambda\><rsub|n-P+1><with|math-font-series|bold|v><rsub|n-P+1><rsup|+>>|<cell|\<lambda\><rsub|n-P+2><with|math-font-series|bold|v><rsub|n-P+2><rsup|+>>|<cell|>|<cell|\<cdots\>>|<cell|>|<cell|\<lambda\><rsub|n><with|math-font-series|bold|v><rsub|n><rsup|+>>>>>><right|)><left|(><tabular|<tformat|<table|<row|<cell|\<nu\><rsub|n-P+1>>>|<row|<cell|\<nu\><rsub|n-P+2>>>|<row|<cell|\<vdots\>>>|<row|<cell|\<nu\><rsub|n>>>>>><right|)>=<big|sum><rsub|i=n-P+1><rsup|n>\<mu\><rsup|-><rsub|i>\<lambda\><rsub|i><with|math-font-series|bold|v><rsub|i><rsup|->.
+    </equation*>
+  </theorem>
+
+  Note that this theorem even takes into account degeneracies in any
+  eigenvalue.
+
   <subsection|Deriving an Upwind Flux for the 1D Wave Equation>
 
   We're dealing with
@@ -1817,6 +2331,197 @@
   <\eqnarray*>
     <tformat|<table|<row|<cell|(\<Pi\>*u)<rsup|\<ast\>>>|<cell|=>|<cell|\<b-n\>\<cdot\><average|c\<b-v\>>+<frac|[c*u]<rsup|->-[c*u]<rsup|+>|2>>>|<row|<cell|(\<Pi\>\<b-v\>)<rsup|\<ast\>>>|<cell|=>|<cell|\<b-n\><average|c*u>+<frac|1|2>(\<b-n\>\<otimes\>\<b-n\>)\<cdot\>[c<rsup|->\<b-v\><rsup|->-c<rsup|+>\<b-v\><rsup|+>].>>>>
   </eqnarray*>
+
+  <section|Sommerfeld Boundary Conditions for the Wave Equation>
+
+  \;
+
+  <with|prog-language|maxima|prog-session|default|<\session>
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>33)
+    <with|color|black|>>>
+      kill(all)
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o0>)
+      <with|color|black|>><with|math-font-family|bf|done>>
+    </output>
+
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>1)
+    <with|color|black|>>>
+      Ax:matrix([0,1,0,0],[1,0,0,0],[0,0,0,0],[0,0,0,0])
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o1>)
+      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|0>|<cell|1>|<cell|0>|<cell|0>>|<row|<cell|1>|<cell|0>|<cell|0>|<cell|0>>|<row|<cell|0>|<cell|0>|<cell|0>|<cell|0>>|<row|<cell|0>|<cell|0>|<cell|0>|<cell|0>>>>><right|)>>
+    </output>
+
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>2)
+    <with|color|black|>>>
+      Ay:matrix([0,0,1,0],[0,0,0,0],[1,0,0,0],[0,0,0,0])
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o2>)
+      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|0>|<cell|0>|<cell|1>|<cell|0>>|<row|<cell|0>|<cell|0>|<cell|0>|<cell|0>>|<row|<cell|1>|<cell|0>|<cell|0>|<cell|0>>|<row|<cell|0>|<cell|0>|<cell|0>|<cell|0>>>>><right|)>>
+    </output>
+
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>3)
+    <with|color|black|>>>
+      Az:matrix([0,0,0,1],[0,0,0,0],[0,0,0,0],[1,0,0,0])
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o3>)
+      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|0>|<cell|0>|<cell|0>|<cell|1>>|<row|<cell|0>|<cell|0>|<cell|0>|<cell|0>>|<row|<cell|0>|<cell|0>|<cell|0>|<cell|0>>|<row|<cell|1>|<cell|0>|<cell|0>|<cell|0>>>>><right|)>>
+    </output>
+
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>4)
+    <with|color|black|>>>
+      A:nx*Ax+ny*Ay+nz*Az
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o4>)
+      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|0>|<cell|<with|math-font-family|rm|nx>>|<cell|<with|math-font-family|rm|ny>>|<cell|<with|math-font-family|rm|nz>>>|<row|<cell|<with|math-font-family|rm|nx>>|<cell|0>|<cell|0>|<cell|0>>|<row|<cell|<with|math-font-family|rm|ny>>|<cell|0>|<cell|0>|<cell|0>>|<row|<cell|<with|math-font-family|rm|nz>>|<cell|0>|<cell|0>|<cell|0>>>>><right|)>>
+    </output>
+
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>5)
+    <with|color|black|>>>
+      evresult:ratsubst(1,nx^2+ny^2+nz^2,eigenvectors(A))
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o5>)
+      <with|color|black|>><left|[><left|[><left|[>-1,1,0<right|]>,<left|[>1,1,2<right|]><right|]>,<left|[>1,-<with|math-font-family|rm|nx>,-<with|math-font-family|rm|ny>,-<with|math-font-family|rm|nz><right|]>,<left|[>1,<with|math-font-family|rm|nx>,<with|math-font-family|rm|ny>,<with|math-font-family|rm|nz><right|]>,<left|[>0,1,0,-<frac|<with|math-font-family|rm|nx>|<with|math-font-family|rm|nz>><right|]>,<left|[>0,0,1,-<frac|<with|math-font-family|rm|ny>|<with|math-font-family|rm|nz>><right|]><right|]>>
+    </output>
+
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>6)
+    <with|color|black|>>>
+      /* figure out orthogonal ev4/ev5 */
+
+      ev4:nz*evresult[4];
+
+      ev5:nz*evresult[5];
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o6>)
+      <with|color|black|>><left|[>0,<with|math-font-family|rm|nz>,0,-<with|math-font-family|rm|nx><right|]>>
+
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o7>)
+      <with|color|black|>><left|[>0,0,<with|math-font-family|rm|nz>,-<with|math-font-family|rm|ny><right|]>>
+    </output>
+
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>8)
+    <with|color|black|>>>
+      normev4:ev4/sqrt(ev4.ev4);
+
+      normev5:ev5/sqrt(ev5.ev5)
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o8>)
+      <with|color|black|>><left|[>0,<frac|<with|math-font-family|rm|nz>|<sqrt|<with|math-font-family|rm|nz><rsup|2>+<with|math-font-family|rm|nx><rsup|2>>>,0,-<frac|<with|math-font-family|rm|nx>|<sqrt|<with|math-font-family|rm|nz><rsup|2>+<with|math-font-family|rm|nx><rsup|2>>><right|]>>
+
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o9>)
+      <with|color|black|>><left|[>0,0,<frac|<with|math-font-family|rm|nz>|<sqrt|<with|math-font-family|rm|nz><rsup|2>+<with|math-font-family|rm|ny><rsup|2>>>,-<frac|<with|math-font-family|rm|ny>|<sqrt|<with|math-font-family|rm|nz><rsup|2>+<with|math-font-family|rm|ny><rsup|2>>><right|]>>
+    </output>
+
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>10)
+    <with|color|black|>>>
+      preev5:normev5-normev4.normev5*normev4;
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o10>)
+      <with|color|black|>><left|[>0,-<frac|<with|math-font-family|rm|nx>*<with|math-font-family|rm|ny>*<with|math-font-family|rm|nz>|<left|(><with|math-font-family|rm|nz><rsup|2>+<with|math-font-family|rm|nx><rsup|2><right|)>*<sqrt|<with|math-font-family|rm|nz><rsup|2>+<with|math-font-family|rm|ny><rsup|2>>>,<frac|<with|math-font-family|rm|nz>|<sqrt|<with|math-font-family|rm|nz><rsup|2>+<with|math-font-family|rm|ny><rsup|2>>>,<frac|<with|math-font-family|rm|nx><rsup|2>*<with|math-font-family|rm|ny>|<left|(><with|math-font-family|rm|nz><rsup|2>+<with|math-font-family|rm|nx><rsup|2><right|)>*<sqrt|<with|math-font-family|rm|nz><rsup|2>+<with|math-font-family|rm|ny><rsup|2>>>-<frac|<with|math-font-family|rm|ny>|<sqrt|<with|math-font-family|rm|nz><rsup|2>+<with|math-font-family|rm|ny><rsup|2>>><right|]>>
+    </output>
+
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>11)
+    <with|color|black|>>>
+      ratsimp(preev4.preev5)
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o11>)
+      <with|color|black|>><with|math-font-family|rm|preev4>\<cdot\><left|[>0,-<frac|<with|math-font-family|rm|nx>*<with|math-font-family|rm|ny>*<with|math-font-family|rm|nz>|<left|(><with|math-font-family|rm|nz><rsup|2>+<with|math-font-family|rm|nx><rsup|2><right|)>*<sqrt|<with|math-font-family|rm|nz><rsup|2>+<with|math-font-family|rm|ny><rsup|2>>>,<frac|<with|math-font-family|rm|nz>|<sqrt|<with|math-font-family|rm|nz><rsup|2>+<with|math-font-family|rm|ny><rsup|2>>>,-<frac|<with|math-font-family|rm|ny>*<with|math-font-family|rm|nz><rsup|2>*<sqrt|<with|math-font-family|rm|nz><rsup|2>+<with|math-font-family|rm|ny><rsup|2>>|<with|math-font-family|rm|nz><rsup|4>+<left|(><with|math-font-family|rm|ny><rsup|2>+<with|math-font-family|rm|nx><rsup|2><right|)>*<with|math-font-family|rm|nz><rsup|2>+<with|math-font-family|rm|nx><rsup|2>*<with|math-font-family|rm|ny><rsup|2>><right|]>>
+    </output>
+
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>12)
+    <with|color|black|>>>
+      pre2ev5:ratsimp(preev5*sqrt(nz^2+ny^2)*(nz^2+nx^2))
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o12>)
+      <with|color|black|>><left|[>0,-<with|math-font-family|rm|nx>*<with|math-font-family|rm|ny>*<with|math-font-family|rm|nz>,<with|math-font-family|rm|nz><rsup|3>+<with|math-font-family|rm|nx><rsup|2>*<with|math-font-family|rm|nz>,-<with|math-font-family|rm|ny>*<with|math-font-family|rm|nz><rsup|2><right|]>>
+    </output>
+
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>13)
+    <with|color|black|>>>
+      normpre2ev5:ratsubst(1,nx^2+ny^2+nz^2,pre2ev5.pre2ev5)
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o13>)
+      <with|color|black|>><with|math-font-family|rm|ny><rsup|4>+<left|(><with|math-font-family|rm|nx><rsup|2>-2<right|)>*<with|math-font-family|rm|ny><rsup|2>-<with|math-font-family|rm|nx><rsup|2>+1>
+    </output>
+
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>14)
+    <with|color|black|>>>
+      V:transpose(matrix(
+
+      evresult[2]/sqrt(2),
+
+      evresult[3]/sqrt(2),
+
+      normev4,
+
+      pre2ev5/sqrt(normpre2ev5)))
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o14>)
+      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<frac|1|<sqrt|2>>>|<cell|<frac|1|<sqrt|2>>>|<cell|0>|<cell|0>>|<row|<cell|-<frac|<with|math-font-family|rm|nx>|<sqrt|2>>>|<cell|<frac|<with|math-font-family|rm|nx>|<sqrt|2>>>|<cell|<frac|<with|math-font-family|rm|nz>|<sqrt|<with|math-font-family|rm|nz><rsup|2>+<with|math-font-family|rm|nx><rsup|2>>>>|<cell|-<frac|<with|math-font-family|rm|nx>*<with|math-font-family|rm|ny>*<with|math-font-family|rm|nz>|<sqrt|<with|math-font-family|rm|ny><rsup|4>+<left|(><with|math-font-family|rm|nx><rsup|2>-2<right|)>*<with|math-font-family|rm|ny><rsup|2>-<with|math-font-family|rm|nx><rsup|2>+1>>>>|<row|<cell|-<frac|<with|math-font-family|rm|ny>|<sqrt|2>>>|<cell|<frac|<with|math-font-family|rm|ny>|<sqrt|2>>>|<cell|0>|<cell|<frac|<with|math-font-family|rm|nz><rsup|3>+<with|math-font-family|rm|nx><rsup|2>*<with|math-font-family|rm|nz>|<sqrt|<with|math-font-family|rm|ny><rsup|4>+<left|(><with|math-font-family|rm|nx><rsup|2>-2<right|)>*<with|math-font-family|rm|ny><rsup|2>-<with|math-font-family|rm|nx><rsup|2>+1>>>>|<row|<cell|-<frac|<with|math-font-family|rm|nz>|<sqrt|2>>>|<cell|<frac|<with|math-font-family|rm|nz>|<sqrt|2>>>|<cell|-<frac|<with|math-font-family|rm|nx>|<sqrt|<with|math-font-family|rm|nz><rsup|2>+<with|math-font-family|rm|nx><rsup|2>>>>|<cell|-<frac|<with|math-font-family|rm|ny>*<with|math-font-family|rm|nz><rsup|2>|<sqrt|<with|math-font-family|rm|ny><rsup|4>+<left|(><with|math-font-family|rm|nx><rsup|2>-2<right|)>*<with|math-font-family|rm|ny><rsup|2>-<with|math-font-family|rm|nx><rsup|2>+1>>>>>>><right|)>>
+    </output>
+
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>15)
+    <with|color|black|>>>
+      ratsimp(col(V,4).col(V,3))
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o15>)
+      <with|color|black|>>0>
+    </output>
+
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>16)
+    <with|color|black|>>>
+      ratsubst(1,nz^2+ny^2+nx^2,ratsimp(transpose(V).V))
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o16>)
+      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|1>|<cell|0>|<cell|0>|<cell|0>>|<row|<cell|0>|<cell|1>|<cell|0>|<cell|0>>|<row|<cell|0>|<cell|0>|<cell|1>|<cell|0>>|<row|<cell|0>|<cell|0>|<cell|0>|<cell|1>>>>><right|)>>
+    </output>
+
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>17)
+    <with|color|black|>>>
+      D:ratsubst(1,nz^2+ny^2+nx^2,trigsimp(transpose(V).A.V))
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o17>)
+      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|-1>|<cell|0>|<cell|0>|<cell|0>>|<row|<cell|0>|<cell|1>|<cell|0>|<cell|0>>|<row|<cell|0>|<cell|0>|<cell|0>|<cell|0>>|<row|<cell|0>|<cell|0>|<cell|0>|<cell|0>>>>><right|)>>
+    </output>
+
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>18)
+    <with|color|black|>>>
+      \;
+    </input>
+  </session>>
 </body>
 
 <\initial>
@@ -1840,10 +2545,17 @@
     <associate|auto-16|<tuple|7.1|10>>
     <associate|auto-17|<tuple|1|11>>
     <associate|auto-18|<tuple|7.2|11>>
-    <associate|auto-19|<tuple|7.3|14>>
+    <associate|auto-19|<tuple|7.2.1|14>>
     <associate|auto-2|<tuple|2|1>>
-    <associate|auto-20|<tuple|7.4|14>>
-    <associate|auto-21|<tuple|7.5|18>>
+    <associate|auto-20|<tuple|7.2.2|14>>
+    <associate|auto-21|<tuple|7.3|18>>
+    <associate|auto-22|<tuple|7.3.1|?>>
+    <associate|auto-23|<tuple|7.3.2|?>>
+    <associate|auto-24|<tuple|7.4|?>>
+    <associate|auto-25|<tuple|7.5|?>>
+    <associate|auto-26|<tuple|7.6|?>>
+    <associate|auto-27|<tuple|7.7|?>>
+    <associate|auto-28|<tuple|8|?>>
     <associate|auto-3|<tuple|3|3>>
     <associate|auto-4|<tuple|4|4>>
     <associate|auto-5|<tuple|5|6>>
@@ -1869,6 +2581,8 @@
     <associate|auto.7-2|<tuple|1|?|#7>>
     <associate|auto.8-1|<tuple|8|?|#8>>
     <associate|auto.9-1|<tuple|9|?|#9>>
+    <associate|eq:rh-all|<tuple|1|?>>
+    <associate|eq:rh-aux|<tuple|2|?>>
     <associate|fig:fluxfan|<tuple|1|11>>
   </collection>
 </references>
