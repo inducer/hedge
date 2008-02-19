@@ -143,7 +143,7 @@ def main() :
             TimeConstantGivenFunction, \
             TimeDependentGivenFunction
     from hedge.operators import StrongAdvectionOperator, WeakAdvectionOperator
-    op = StrongAdvectionOperator(discr, v, 
+    op = WeakAdvectionOperator(discr, v, 
             inflow_u=TimeConstantGivenFunction(ConstantGivenFunction()),
             #inflow_u=TimeDependentGivenFunction(u_analytic)),
             flux_type="upwind")

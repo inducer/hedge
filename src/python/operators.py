@@ -208,7 +208,7 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
         bc_in = self.inflow_u.boundary_interpolant(t, self.discr, self.inflow_tag)
         bc_out = self.discr.boundarize_volume_field(u, self.outflow_tag)
 
-        return -dot(-self.v, self.minv_st*cache_diff_results(u)) + self.m_inv*(
+        return dot(self.v, self.minv_st*cache_diff_results(u)) - self.m_inv*(
                 self.flux*u
                 + self.flux * pair_with_boundary(u, bc_in, self.inflow_tag)
                 + self.flux * pair_with_boundary(u, bc_out, self.outflow_tag)
