@@ -90,7 +90,8 @@ def main() :
         else:
             return source_u_vec
 
-    from hedge.operators import StrongWaveOperator, Diagonalized1DWaveOperator
+    from hedge.operators import StrongWaveOperator
+    from diagwave import Diagonalized1DWaveOperator
     from hedge.mesh import TAG_ALL, TAG_NONE
     op = StrongWaveOperator(1, discr, 
             source_vec_getter,
