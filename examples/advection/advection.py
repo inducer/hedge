@@ -59,7 +59,7 @@ def main() :
 
     pcon = guess_parallelization_context()
 
-    dim = 1
+    dim = 2
 
     job = Job("mesh")
     if dim == 1:
@@ -70,7 +70,7 @@ def main() :
 
         el_class = IntervalElement
     elif dim == 2:
-        v = num.array([1,0])
+        v = num.array([2,0])
         if pcon.is_head_rank:
             from hedge.mesh import \
                     make_disk_mesh, \

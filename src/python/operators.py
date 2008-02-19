@@ -150,12 +150,12 @@ class AdvectionOperatorBase(TimeDependentOperator):
         normal = make_normal(self.discr.dimensions)
 
         if self.flux_type == "central":
-            return u.avg*dot(normal, -self.v)
+            return u.avg*dot(normal, self.v)
         elif self.flux_type == "lf":
-            return u.avg*dot(normal, -self.v) \
+            return u.avg*dot(normal, self.v) \
                     - 0.5*comp.norm_2(self.v)*(u.int - u.ext)
         elif self.flux_type == "upwind":
-            return (dot(normal, -self.v)*
+            return (dot(normal, self.v)*
                     IfPositive(dot(normal, self.v),
                         u.int, # outflow
                         u.ext, # inflow
@@ -177,7 +177,7 @@ class StrongAdvectionOperator(AdvectionOperatorBase):
         u = FluxScalarPlaceholder(0)
         normal = make_normal(self.discr.dimensions)
 
-        return u.int * dot(normal, -self.v) - self.get_weak_flux()
+        return u.int * dot(normal, self.v) - self.get_weak_flux()
 
     def rhs(self, t, u):
         from hedge.discretization import pair_with_boundary, cache_diff_results
@@ -186,7 +186,7 @@ class StrongAdvectionOperator(AdvectionOperatorBase):
         bc_in = self.inflow_u.boundary_interpolant(t, self.discr, self.inflow_tag)
         #bc_out = 0.5*self.discr.boundarize_volume_field(u, self.outflow_tag)
         
-        return dot(-self.v, self.nabla*cache_diff_results(u)) - self.m_inv*(
+        return -dot(self.v, self.nabla*cache_diff_results(u)) + self.m_inv*(
                 self.flux * u
                 + self.flux * pair_with_boundary(u, bc_in, self.inflow_tag)
                 #+ self.flux * pair_with_boundary(u, bc_out, self.outflow_tag)
@@ -247,7 +247,6 @@ class Diagonalized1DWaveOperator:
 
         from pytools.arithmetic_container import join_fields
         from hedge.tools import dot
-
 
         coeff_sign = join_fields(-1, 1)
         flux_weak = s.avg*normal[0]*coeff_sign

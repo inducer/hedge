@@ -92,7 +92,14 @@ def main() :
 
     from hedge.operators import StrongWaveOperator, Diagonalized1DWaveOperator
     from hedge.mesh import TAG_ALL, TAG_NONE
-    op = Diagonalized1DWaveOperator(1, discr, 
+    op = StrongWaveOperator(1, discr, 
+            source_vec_getter,
+            dirichlet_tag=TAG_NONE,
+            neumann_tag=TAG_NONE,
+            radiation_tag=TAG_ALL,
+            flux_type="central",
+            )
+    op_char = Diagonalized1DWaveOperator(1, discr, 
             source_vec_getter,
             dirichlet_tag=TAG_NONE,
             neumann_tag=TAG_NONE,
@@ -148,16 +155,26 @@ def main() :
             def vlmz(f): return discr.volumize_boundary_field(f, TAG_ALL)
             visf = vis.make_file("fld-%04d" % step)
 
-            s = op.Vt*fields
+            s = op_char.Vt*fields
+
+            rhs_char = op_char.rhs(t, fields)
+            rhs_op = op.rhs(t, fields)
+
             vis.add_data(visf,
                     [
                         ("u", fields[0]),
                         ("v", fields[1:]), 
                         ("s0", s[0]), 
                         ("s1", s[1]), 
+                        ("rhschar0", rhs_char[0]), 
+                        ("rhschar1", rhs_char[1]), 
+                        ("rhsop0", rhs_op[0]), 
+                        ("rhsop1", rhs_op[1]), 
+                        ("rhsdiff0", (rhs_op-rhs_char)[0]), 
+                        ("rhsdiff1", (rhs_op-rhs_char)[1]), 
                     ],
                     time=t,
-                    scale_factor=5e1,
+                    #scale_factor=5e1,
                     step=step)
             visf.close()
 
