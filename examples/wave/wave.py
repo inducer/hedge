@@ -28,6 +28,7 @@ from hedge.tools import dot
 
 def main() :
     from hedge.element import \
+            IntervalElement, \
             TriangularElement, \
             TetrahedralElement
     from hedge.timestep import RK4TimeStepper, AdamsBashforthTimeStepper
@@ -43,14 +44,20 @@ def main() :
 
     pcon = guess_parallelization_context()
 
-    dim = 3
+    dim = 1
 
-    if dim == 2:
+    if dim == 1:
         if pcon.is_head_rank:
-            #mesh = make_disk_mesh()
+            from hedge.mesh import make_uniform_1d_mesh
+            mesh = make_uniform_1d_mesh(-1, 1, 50)
+
+        el_class = IntervalElement
+    elif dim == 2:
+        if pcon.is_head_rank:
+            mesh = make_disk_mesh(max_area=1e-3)
             #mesh = make_regular_square_mesh(
                     #n=9, periodicity=(True,True))
-            mesh = make_square_mesh(max_area=0.008)
+            #mesh = make_square_mesh(max_area=0.008)
             #mesh.transform(Rotation(pi/8))
         el_class = TriangularElement
     elif dim == 3:
@@ -66,30 +73,41 @@ def main() :
     else:
         mesh_data = pcon.receive_mesh()
 
-    discr = pcon.make_discretization(mesh_data, el_class(7))
+    discr = pcon.make_discretization(mesh_data, el_class(3))
     stepper = RK4TimeStepper()
     #stepper = AdamsBashforthTimeStepper(1)
-    vis = VtkVisualizer(discr, pcon, "fld")
-
+    #vis = VtkVisualizer(discr, pcon, "fld")
+    vis = SiloVisualizer(discr, pcon)
 
     def source_u(x):
-        return exp(-x*x*256)
+        return exp(-x*x*1024)
 
     source_u_vec = discr.interpolate_volume_function(source_u)
 
     def source_vec_getter(t):
-        if t > 0.1:
+        if t > 1e-2:
             return discr.volume_zeros()
         else:
             return source_u_vec
 
-    from hedge.operators import StrongWaveOperator
-    op = StrongWaveOperator(5, discr, source_vec_getter)
-    fields = ArithmeticList([discr.volume_zeros()]) # u
-    fields.extend([discr.volume_zeros() for i in range(discr.dimensions)]) # v
+    from hedge.operators import StrongWaveOperator, Diagonalized1DWaveOperator
+    from hedge.mesh import TAG_ALL, TAG_NONE
+    op = Diagonalized1DWaveOperator(1, discr, 
+            source_vec_getter,
+            dirichlet_tag=TAG_NONE,
+            neumann_tag=TAG_NONE,
+            radiation_tag=TAG_ALL,
+            flux_type="central",
+            )
 
-    dt = discr.dt_factor(op.max_eigenvalue())
-    nsteps = int(10/dt)
+    fields = join_fields(discr.volume_zeros(),
+            [discr.volume_zeros() for i in range(discr.dimensions)])
+    #fields = join_fields(
+            #discr.interpolate_volume_function(lambda x: sin(x[0])),
+            #[discr.volume_zeros() for i in range(discr.dimensions)]) # v
+
+    dt = discr.dt_factor(op.max_eigenvalue()) / 2
+    nsteps = int(3/dt)
     if pcon.is_head_rank:
         print "dt", dt
         print "nsteps", nsteps
@@ -124,18 +142,24 @@ def main() :
 
         t = step*dt
 
-        if False:
+        fields = stepper(fields, t, dt, op.rhs)
+
+        if step % 1 == 0:
+            def vlmz(f): return discr.volumize_boundary_field(f, TAG_ALL)
             visf = vis.make_file("fld-%04d" % step)
+
+            s = op.Vt*fields
             vis.add_data(visf,
                     [
                         ("u", fields[0]),
                         ("v", fields[1:]), 
+                        ("s0", s[0]), 
+                        ("s1", s[1]), 
                     ],
                     time=t,
+                    scale_factor=5e1,
                     step=step)
             visf.close()
-
-        fields = stepper(fields, t, dt, op.rhs)
 
     vis.close()
 
