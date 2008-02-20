@@ -153,7 +153,7 @@ class AdvectionOperatorBase(TimeDependentOperator):
             return u.avg*dot(normal, self.v)
         elif self.flux_type == "lf":
             return u.avg*dot(normal, self.v) \
-                    - 0.5*comp.norm_2(self.v)*(u.int - u.ext)
+                    + 0.5*comp.norm_2(self.v)*(u.int - u.ext)
         elif self.flux_type == "upwind":
             return (dot(normal, self.v)*
                     IfPositive(dot(normal, self.v),
