@@ -1254,8 +1254,6 @@ class TestHedge(unittest.TestCase):
             return f(-v*x+t)
 
         u = discr.interpolate_volume_function(lambda x: u_analytic(x, 0))
-        dt = 1e-2
-        nsteps = int(1/dt)
 
         sym_map = SymmetryMap(discr, 
                 lambda x: num.array([x[0], -x[1]]),
@@ -1266,11 +1264,14 @@ class TestHedge(unittest.TestCase):
             op = StrongAdvectionOperator(discr, v, 
                     inflow_u=TimeDependentGivenFunction(u_analytic),
                     flux_type=flux_type)
-            for step in range(nsteps):
+
+            dt = discr.dt_factor(op.max_eigenvalue())
+            nsteps = int(1/dt)
+            for step in xrange(nsteps):
                 u = stepper(u, step*dt, dt, op.rhs)
                 sym_error_u = u-sym_map(u)
                 sym_error_u_l2 = sqrt(sym_error_u*(discr.mass_operator*sym_error_u))
-                self.assert_(sym_error_u_l2 < 1e-13)
+                self.assert_(sym_error_u_l2 < 1e-15)
     # -------------------------------------------------------------------------
     def test_convergence_advec_2d(self):
         """Test whether 2D advection actually converges"""
@@ -1473,7 +1474,47 @@ class TestHedge(unittest.TestCase):
         u2 = discr2.interpolate_volume_function(u_analytic)
         u2_i = p5to2(p2to5(u2))
         self.assert_(l2_norm(discr2, u2-u2_i) < 3e-15)
+    # -------------------------------------------------------------------------
+    def test_filter(self):
+        """Exercise mode-based filtering."""
 
+        import pylinear.array as num
+        import pylinear.computation as comp
+        from hedge.mesh import make_disk_mesh
+        from hedge.discretization import Discretization, integral
+        from hedge.element import TriangularElement
+        from math import sin
+
+        mesh = make_disk_mesh(r=3.4, max_area=0.5)
+        discr = Discretization(mesh, TriangularElement(5), debug=True)
+
+        from hedge.discretization import Filter, ExponentialFilterResponseFunction
+        half_filter = Filter(discr, lambda mid, ldis: 0.5)
+        for fmat in half_filter.filter_matrices:
+            n,m = fmat.shape
+            self.assert_(comp.norm_frobenius(fmat - 0.5*num.eye(n, m)) < 1e-15)
+
+        def l2_norm(v):
+            from math import sqrt
+            return sqrt(v*(discr.mass_operator*v))
+
+        def test_freq(n):
+            a = num.array([1,n])
+
+            def u_analytic(x):
+                return sin(a*x)
+
+            exp_filter = Filter(discr, ExponentialFilterResponseFunction(0.9, 3))
+
+            u = discr.interpolate_volume_function(u_analytic)
+            filt_u = exp_filter(u)
+            self.assert_(abs(integral(discr, u) - integral(discr, filt_u)) < 1e-15)
+            self.assert_(0.98 < l2_norm(filt_u) / l2_norm(u) < 0.99999)
+
+        test_freq(3)
+        test_freq(5)
+        test_freq(9)
+        test_freq(17)
 
 
 

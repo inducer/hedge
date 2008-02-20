@@ -1373,8 +1373,8 @@ class Projector:
             # build interpolation matrix
             from_matrix = from_ldis.vandermonde()
             to_matrix = to_ldis.vandermonde()
-            #self.interp_matrices.append(from_matrix <<num.leftsolve>> (to_matrix*pmat))
-            self.interp_matrices.append(to_matrix*pmat*(1/from_matrix))
+            self.interp_matrices.append(from_matrix <<num.leftsolve>> (to_matrix*pmat))
+            #self.interp_matrices.append(to_matrix*pmat*(1/from_matrix))
 
     @work_with_arithmetic_containers
     def __call__(self, from_vec):
@@ -1396,3 +1396,74 @@ class Projector:
 
         return result
 
+
+
+
+# filter ----------------------------------------------------------------------
+class ExponentialFilterResponseFunction:
+    """A typical exponential-falloff mode response filter function.
+
+    See description in Section 5.6.1 of Jacobs/Hesthaven.
+    """
+    def __init__(self, min_amplification=0.1, order=6):
+        """Construct the filter function.
+
+        @arg min_amplification: The amplification factor applied to the highest mode.
+        @arg order: The order of the filter. This controls how fast (or slow) the
+          C{min_amplification} is reached.
+
+        The amplification factor of the lowest-order (constant) mode is always 1.
+        """
+        from math import log
+        self.alpha = -log(min_amplification)
+        self.order = order
+
+    def __call__(self, mode_idx, ldis):
+        eta = max(mode_idx)/ldis.order
+
+        from math import exp
+        return exp(-self.alpha * eta**self.order)
+
+
+
+
+class Filter:
+    def __init__(self, discr, mode_response_func):
+        """Construct a filter.
+
+        @arg discr: The L{Discretization} for which the filter is to be
+          constructed.
+        @mode_response_func: A function mapping 
+          C{(mode_tuple, local_discretization)} to a float indicating the
+          factor by which this mode is to be multiplied after filtering.
+        """
+        self.discr = discr
+
+        self.filter_matrices = []
+        for eg in discr.element_groups:
+            ldis = eg.local_discretization
+
+            node_count = ldis.node_count()
+
+            filter_coeffs = [mode_response_func(mid, ldis)
+                for mid in ldis.generate_mode_identifiers()] 
+
+            # build filter matrix
+            vdm = ldis.vandermonde()
+            self.filter_matrices.append(vdm <<num.leftsolve>> 
+                    (vdm*num.diagonal_matrix(num.array(filter_coeffs))))
+
+    @work_with_arithmetic_containers
+    def __call__(self, vec):
+        from hedge._internal import perform_elwise_operator, VectorTarget
+        result = self.discr.volume_zeros()
+
+        target = VectorTarget(vec, result)
+
+        target.begin(len(self.discr), len(self.discr))
+        for eg, fmat in zip(self.discr.element_groups, self.filter_matrices):
+            perform_elwise_operator(eg.ranges, eg.ranges, fmat, target)
+
+        target.finalize()
+
+        return result

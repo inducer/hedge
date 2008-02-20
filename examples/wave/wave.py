@@ -54,10 +54,10 @@ def main() :
         el_class = IntervalElement
     elif dim == 2:
         if pcon.is_head_rank:
-            mesh = make_disk_mesh(max_area=5e-3)
+            #mesh = make_disk_mesh(max_area=5e-3)
             #mesh = make_regular_square_mesh(
                     #n=9, periodicity=(True,True))
-            #mesh = make_square_mesh(max_area=0.008)
+            mesh = make_square_mesh(max_area=0.008)
             #mesh.transform(Rotation(pi/8))
         el_class = TriangularElement
     elif dim == 3:

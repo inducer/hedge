@@ -96,11 +96,11 @@ def main() :
                         )
             if True:
                 mesh = make_rect_mesh(
-                        (-0.5, -1.5),
+                        (-1, -1.5),
                         (5, 1.5),
                         max_area=0.3,
                         boundary_tagger=boundary_tagger,
-                        #periodicity=(True, False),
+                        periodicity=(True, False),
                         subdivisions=(10,5),
                         )
         el_class = TriangularElement
@@ -176,7 +176,6 @@ def main() :
 
     dt = discr.dt_factor(op.max_eigenvalue())
     nsteps = int(700/dt)
-    print discr.dt_non_geometric_factor()
 
     if pcon.is_head_rank:
         print "%d elements, dt=%g, nsteps=%d" % (
