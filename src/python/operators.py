@@ -324,8 +324,12 @@ class StrongWaveOperator:
                 #rad_v
 
                 # s-space dirichlet
-                0.5*(rad_v+rad_u),
-                -0.5*(rad_v+rad_u),
+                #0.5*(rad_v+rad_u),
+                #-0.5*(rad_v+rad_u),
+
+                # direct translation of diagonalized BCs
+                0.5*(rad_u-ac_multiply(rad_n,rad_v)),
+                0.5*(rad_v-num.multiply(rad_n[0],rad_u)),
                 )
         self.rad_bc = rad_bc
 

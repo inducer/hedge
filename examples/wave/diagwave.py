@@ -76,9 +76,9 @@ class Diagonalized1DWaveOperator:
         rad_n = self.radiation_normals
         ind_right = (rad_n[0]+1)/2
         ind_left = -(rad_n[0]-1)/2
-        rad_bc = (
-                ac_multiply(ind_right, join_fields(0, rad_s[1]))+
-                ac_multiply(ind_left, join_fields(rad_s[0], 0))
+        rad_bc = join_fields(
+                num.multiply(ind_left, rad_s[0]),
+                num.multiply(ind_right, rad_s[1])
                 )
         self.rad_bc = rad_bc
         rhs = (-self.c*self.coeff_sign*(self.nabla[0]*cache_diff_results(s))

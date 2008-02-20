@@ -550,12 +550,7 @@
   Using the summation convention, we find
 
   <\eqnarray*>
-    <tformat|<table|<row|<cell|0>|<cell|=>|<cell|<big|int><rsub|T<rsub|k>>u<rsub|t>\<varphi\>+<big|int><rsub|T<rsub|k>>(v\<cdot\>\<nabla\>u)\<varphi\>>>|<row|<cell|>|<cell|=>|<cell|<big|int><rsub|T<rsub|k>>u<rsub|t>\<varphi\>-<big|int><rsub|D<rsub|k>>v*u\<cdot\>\<nabla\>\<varphi\>+<big|int><rsub|T<rsub|k>>\<nabla\>\<cdot\>(v*u*\<varphi\>)>>|<row|<cell|>|<cell|=>|<cell|<big|int><rsub|T<rsub|k>>u<rsub|t>\<varphi\>-<big|int><rsub|D<rsub|k>>v*u\<cdot\>\<nabla\>\<varphi\>+<big|int><rsub|\<partial\>T<rsub|k>>v*u\<varphi\>\<cdot\>n>>|<row|<cell|>|<cell|\<approx\>>|<cell|<big|int><rsub|T<rsub|k>>u<rsub|t>\<varphi\>-<big|int><rsub|D<rsub|k>>v*u\<cdot\>\<nabla\>\<varphi\>+<big|int><rsub|\<partial\>T<rsub|k>>(v*u)<rsup|\<ast\>>\<varphi\>\<cdot\>n>>|<row|<cell|>|<cell|\<approx\>>|<cell|<big|int><rsub|T<rsub|k>>\<partial\><rsub|t>u<rsub|i>l<rsub|i>l<rsub|j>-<big|int><rsub|T<rsub|k>><matrix|<tformat|<table|<row|<cell|a<rsub|1>u<rsub|i>l<rsub|i>>>|<row|<cell|a<rsub|2>u<rsub|i>l<rsub|i>>>>>>\<cdot\><matrix|<tformat|<table|<row|<cell|\<partial\><rsub|x<rsub|2>>l<rsub|j>>>|<row|<cell|\<partial\><rsub|x<rsub|2>>l<rsub|j>>>>>>+<big|sum><rsub|F\<subset\>\<partial\>T<rsub|k>><big|int><rsub|F><matrix|<tformat|<table|<row|<cell|(v<rsub|1>u<rsub|i>)<rsup|\<ast\>>l<rsub|i><rsup|F>l<rsub|j><rsup|F>>>|<row|<cell|(v<rsub|2>u<rsub|i>)<rsup|\<ast\>>l<rsub|i><rsup|F>l<rsub|j><rsup|F>>>>>>\<cdot\>n>>|<row|<cell|>|<cell|=>|<cell|M<rsub|i
-    j><rsup|k>\<partial\><rsub|t>u<rsub|i>-v<rsub|1>S<rsub|i
-    j,\<partial\>x<rsub|1>><rsup|k>u<rsub|i>-v<rsub|2>S<rsub|i
-    j,\<partial\>x<rsub|2>><rsup|k>u<rsub|i>+<big|sum><rsub|F\<subset\>\<partial\>T<rsub|k>><left|[>(v<rsub|1>u<rsub|i>)<rsup|\<ast\>>M<rsub|i
-    j><rsup|F>n<rsub|1>+(v<rsub|2>u<rsub|i>)<rsup|\<ast\>>M<rsub|i
-    j><rsup|F>n<rsub|2><right|]>>>|<row|<cell|>|<cell|=>|<cell|(M<rsup|k>)<rsup|T>\<partial\><rsub|t>\<b-u\>-v<rsub|1>(S<rsub|\<partial\>x<rsub|1>><rsup|k>)<rsup|T>\<b-u\>-v<rsub|2>(S<rsub|\<partial\>x<rsub|2>><rsup|k>)<rsup|T>\<b-u\>+<big|sum><rsub|F\<subset\>\<partial\>T<rsub|k>><left|[>(v<rsub|1>u<rsub|F>)<rsup|\<ast\>><rsub|>(M<rsup|F>)<rsup|T>n<rsub|1>+(v<rsub|2>u<rsub|F>)<rsup|\<ast\>><rsub|2>(M<rsup|F>)<rsup|T>n<rsub|2><right|]>>>>>
+    <tformat|<table|<row|<cell|0>|<cell|=>|<cell|<big|int><rsub|T<rsub|k>>u<rsub|t>\<varphi\>+<big|int><rsub|T<rsub|k>>(v\<cdot\>\<nabla\>u)\<varphi\>>>|<row|<cell|>|<cell|=>|<cell|<big|int><rsub|T<rsub|k>>u<rsub|t>\<varphi\>-<big|int><rsub|D<rsub|k>>v*u\<cdot\>\<nabla\>\<varphi\>+<big|int><rsub|T<rsub|k>>\<nabla\>\<cdot\>(v*u*\<varphi\>)>>|<row|<cell|>|<cell|=>|<cell|<big|int><rsub|T<rsub|k>>u<rsub|t>\<varphi\>-<big|int><rsub|D<rsub|k>>v*u\<cdot\>\<nabla\>\<varphi\>+<big|int><rsub|\<partial\>T<rsub|k>>v*u\<varphi\>\<cdot\>n>>|<row|<cell|>|<cell|\<approx\>>|<cell|<big|int><rsub|T<rsub|k>>u<rsub|t>\<varphi\>-<big|int><rsub|D<rsub|k>>v*u\<cdot\>\<nabla\>\<varphi\>+<big|int><rsub|\<partial\>T<rsub|k>>(v*u)<rsup|\<ast\>>\<varphi\>\<cdot\>n>>|<row|<cell|>|<cell|\<approx\>>|<cell|<big|int><rsub|T<rsub|k>>\<partial\><rsub|t>u<rsub|i>l<rsub|i>l<rsub|j>-<big|int><rsub|T<rsub|k>><matrix|<tformat|<table|<row|<cell|a<rsub|1>u<rsub|i>l<rsub|i>>>|<row|<cell|a<rsub|2>u<rsub|i>l<rsub|i>>>>>>\<cdot\><matrix|<tformat|<table|<row|<cell|\<partial\><rsub|x<rsub|2>>l<rsub|j>>>|<row|<cell|\<partial\><rsub|x<rsub|2>>l<rsub|j>>>>>>+<big|sum><rsub|F\<subset\>\<partial\>T<rsub|k>><big|int><rsub|F><matrix|<tformat|<table|<row|<cell|(v<rsub|1>u<rsub|i>)<rsup|\<ast\>>l<rsub|i><rsup|F>l<rsub|j><rsup|F>>>|<row|<cell|(v<rsub|2>u<rsub|i>)<rsup|\<ast\>>l<rsub|i><rsup|F>l<rsub|j><rsup|F>>>>>>\<cdot\>n>>|<row|<cell|>|<cell|=>|<cell|>>|<row|<cell|>|<cell|=>|<cell|>>>>
   </eqnarray*>
 
   <subsubsection|Strong DG>
@@ -2588,25 +2583,42 @@
 
     <\input|<with|color|red|(<with|math-font-family|rm|%i>10)
     <with|color|black|>>>
-      bdryspinw:ev([0,sminw[1,1]]);
+      /* indicator for left and right */
+
+      iright:(n+1)/2;ileft:-(n-1)/2;
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o23>)
-      <with|color|black|>><left|[>0,<frac|n*<with|math-font-family|rm|vm>|<sqrt|2>>+<frac|n*<with|math-font-family|rm|um>|<sqrt|2>><right|]>>
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o12>)
+      <with|color|black|>><frac|n+1|2>>
+
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o13>)
+      <with|color|black|>><frac|1-n|2>>
     </output>
 
-    <\input|<with|color|red|(<with|math-font-family|rm|%i>24)
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>14)
+    <with|color|black|>>>
+      bdryspinw:ratsubst(1,n^2,
+
+      ev([ileft*sminw[1,1],iright*sminw[2,1]]));
+    </input>
+
+    <\output>
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o14>)
+      <with|color|black|>><left|[><frac|<left|(>n-1<right|)>*<with|math-font-family|rm|vm>+<left|(>n-1<right|)>*<with|math-font-family|rm|um>|2*<sqrt|2>>,-<frac|<left|(>n+1<right|)>*<with|math-font-family|rm|vm>+<left|(>-n-1<right|)>*<with|math-font-family|rm|um>|2*<sqrt|2>><right|]>>
+    </output>
+
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>15)
     <with|color|black|>>>
       ratsubst(1,n^2,ratsimp(V.bdryspinw))
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o24>)
-      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<frac|<with|math-font-family|rm|vm>+<with|math-font-family|rm|um>|2>>>|<row|<cell|-<frac|<with|math-font-family|rm|vm>+<with|math-font-family|rm|um>|2>>>>>><right|)>>
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o26>)
+      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|-<frac|<with|math-font-family|rm|vm>-<with|math-font-family|rm|um>|2>>>|<row|<cell|<frac|<with|math-font-family|rm|vm>-<with|math-font-family|rm|um>|2>>>>>><right|)>>
     </output>
 
-    <\input|<with|color|red|(<with|math-font-family|rm|%i>25)
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>27)
     <with|color|black|>>>
       sp:[s1p,s2p];sm:[s1m,s2m];
 
