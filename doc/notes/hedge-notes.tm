@@ -2496,7 +2496,7 @@
 
     <\input|<with|color|red|(<with|math-font-family|rm|%i>28)
     <with|color|black|>>>
-      /* new problem ------------------------------------------ */
+      /* 1D problem ------------------------------------------ */
 
       kill(all);
     </input>
@@ -2598,72 +2598,24 @@
 
     <\input|<with|color|red|(<with|math-font-family|rm|%i>14)
     <with|color|black|>>>
-      bdryspinw:ratsubst(1,n^2,
+      bdryspinw:(/*ratsubst(1,n^2,*/
 
-      ev([ileft*sminw[1,1],iright*sminw[2,1]]));
+      [ileft*sminw[1,1],iright*sminw[2,1]]);
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o14>)
-      <with|color|black|>><left|[><frac|<left|(>n-1<right|)>*<with|math-font-family|rm|vm>+<left|(>n-1<right|)>*<with|math-font-family|rm|um>|2*<sqrt|2>>,-<frac|<left|(>n+1<right|)>*<with|math-font-family|rm|vm>+<left|(>-n-1<right|)>*<with|math-font-family|rm|um>|2*<sqrt|2>><right|]>>
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o16>)
+      <with|color|black|>><left|[><frac|<left|(>1-n<right|)>*<left|(><frac|n*<with|math-font-family|rm|vm>|<sqrt|2>>+<frac|n*<with|math-font-family|rm|um>|<sqrt|2>><right|)>|2>,<frac|<left|(>n+1<right|)>*<left|(><frac|n*<with|math-font-family|rm|um>|<sqrt|2>>-<frac|n*<with|math-font-family|rm|vm>|<sqrt|2>><right|)>|2><right|]>>
     </output>
 
-    <\input|<with|color|red|(<with|math-font-family|rm|%i>15)
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>17)
     <with|color|black|>>>
       ratsubst(1,n^2,ratsimp(V.bdryspinw))
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o26>)
-      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|-<frac|<with|math-font-family|rm|vm>-<with|math-font-family|rm|um>|2>>>|<row|<cell|<frac|<with|math-font-family|rm|vm>-<with|math-font-family|rm|um>|2>>>>>><right|)>>
-    </output>
-
-    <\input|<with|color|red|(<with|math-font-family|rm|%i>27)
-    <with|color|black|>>>
-      sp:[s1p,s2p];sm:[s1m,s2m];
-
-      wmins:V.sm;
-
-      wpins:V.sp;
-    </input>
-
-    <\output>
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o14>)
-      <with|color|black|>><left|[><with|math-font-family|rm|s1p>,<with|math-font-family|rm|s2p><right|]>>
-
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o15>)
-      <with|color|black|>><left|[><with|math-font-family|rm|s1m>,<with|math-font-family|rm|s2m><right|]>>
-
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o16>)
-      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<frac|n*<with|math-font-family|rm|s2m>|<sqrt|2>>+<frac|n*<with|math-font-family|rm|s1m>|<sqrt|2>>>>|<row|<cell|<frac|n*<with|math-font-family|rm|s1m>|<sqrt|2>>-<frac|n*<with|math-font-family|rm|s2m>|<sqrt|2>>>>>>><right|)>>
-
       <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o17>)
-      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<frac|n*<with|math-font-family|rm|s2p>|<sqrt|2>>+<frac|n*<with|math-font-family|rm|s1p>|<sqrt|2>>>>|<row|<cell|<frac|n*<with|math-font-family|rm|s1p>|<sqrt|2>>-<frac|n*<with|math-font-family|rm|s2p>|<sqrt|2>>>>>>><right|)>>
-    </output>
-
-    <\input|<with|color|red|(<with|math-font-family|rm|%i>18)
-    <with|color|black|>>>
-      dirichletsp:transpose(V).[-um,vm];
-
-      neumannsp:transpose(V).[um,-vm];
-    </input>
-
-    <\output>
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o18>)
-      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<frac|n*<with|math-font-family|rm|vm>|<sqrt|2>>-<frac|n*<with|math-font-family|rm|um>|<sqrt|2>>>>|<row|<cell|-<frac|n*<with|math-font-family|rm|vm>|<sqrt|2>>-<frac|n*<with|math-font-family|rm|um>|<sqrt|2>>>>>>><right|)>>
-
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o19>)
-      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|<frac|n*<with|math-font-family|rm|um>|<sqrt|2>>-<frac|n*<with|math-font-family|rm|vm>|<sqrt|2>>>>|<row|<cell|<frac|n*<with|math-font-family|rm|vm>|<sqrt|2>>+<frac|n*<with|math-font-family|rm|um>|<sqrt|2>>>>>>><right|)>>
-    </output>
-
-    <\input|<with|color|red|(<with|math-font-family|rm|%i>20)
-    <with|color|black|>>>
-      ratsubst(1,n^2,ratsimp(ev(dirichletsp,[um=wmins[1,1],vm=wmins[2,1]])))
-    </input>
-
-    <\output>
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o20>)
-      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|-<with|math-font-family|rm|s2m>>>|<row|<cell|-<with|math-font-family|rm|s1m>>>>>><right|)>>
+      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|-<frac|n*<with|math-font-family|rm|vm>-<with|math-font-family|rm|um>|2>>>|<row|<cell|<frac|<with|math-font-family|rm|vm>-n*<with|math-font-family|rm|um>|2>>>>>><right|)>>
     </output>
 
     <\input|<with|color|red|(<with|math-font-family|rm|%i>21)

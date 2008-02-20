@@ -315,19 +315,6 @@ class StrongWaveOperator:
         rad_v = self.discr.boundarize_volume_field(v, self.radiation_tag)
         rad_n = self.radiation_normals
         rad_bc = join_fields(
-                #0.5*(rad_u - ac_multiply(rad_v, rad_n)),
-                #0.5*(ac_multiply(rad_u, rad_n)
-                    #+ self.radn_outer_radn.times(rad_v, num.multiply))
-
-                # fake dirichlet
-                #-rad_u,
-                #rad_v
-
-                # s-space dirichlet
-                #0.5*(rad_v+rad_u),
-                #-0.5*(rad_v+rad_u),
-
-                # direct translation of diagonalized BCs
                 0.5*(rad_u-ac_multiply(rad_n,rad_v)),
                 0.5*(rad_v-num.multiply(rad_n[0],rad_u)),
                 )
