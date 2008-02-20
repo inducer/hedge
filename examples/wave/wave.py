@@ -44,7 +44,7 @@ def main() :
 
     pcon = guess_parallelization_context()
 
-    dim = 1
+    dim = 2
 
     if dim == 1:
         if pcon.is_head_rank:
@@ -54,7 +54,7 @@ def main() :
         el_class = IntervalElement
     elif dim == 2:
         if pcon.is_head_rank:
-            mesh = make_disk_mesh(max_area=1e-3)
+            mesh = make_disk_mesh(max_area=5e-3)
             #mesh = make_regular_square_mesh(
                     #n=9, periodicity=(True,True))
             #mesh = make_square_mesh(max_area=0.008)
@@ -80,7 +80,7 @@ def main() :
     vis = SiloVisualizer(discr, pcon)
 
     def source_u(x):
-        return exp(-x*x*1024)
+        return exp(-x*x*512)
 
     source_u_vec = discr.interpolate_volume_function(source_u)
 
@@ -97,7 +97,7 @@ def main() :
             dirichlet_tag=TAG_NONE,
             neumann_tag=TAG_NONE,
             radiation_tag=TAG_ALL,
-            flux_type="central",
+            flux_type="upwind",
             )
 
     fields = join_fields(discr.volume_zeros(),

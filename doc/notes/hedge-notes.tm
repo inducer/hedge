@@ -2440,11 +2440,11 @@
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o10>)
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o9>)
       <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|-c>|<cell|0>|<cell|0>>|<row|<cell|0>|<cell|c>|<cell|0>>|<row|<cell|0>|<cell|0>|<cell|0>>>>><right|)>>
     </output>
 
-    <\input|<with|color|red|(<with|math-font-family|rm|%i>12)
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>10)
     <with|color|black|>>>
       wm:[um,v1m,v2m];
 
@@ -2476,25 +2476,25 @@
 
     <\input|<with|color|red|(<with|math-font-family|rm|%i>14)
     <with|color|black|>>>
-      bdryspinw:ev([-sminw[1,1],sminw[2,1],0/*sminw[3,1]*/]);
+      bdryspinw:ev([0,sminw[2,1],sminw[3,1]]);
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o24>)
-      <with|color|black|>><left|[>-<frac|<with|math-font-family|rm|ny>*<with|math-font-family|rm|v2m>|<sqrt|2>>-<frac|<with|math-font-family|rm|nx>*<with|math-font-family|rm|v1m>|<sqrt|2>>-<frac|<with|math-font-family|rm|um>|<sqrt|2>>,-<frac|<with|math-font-family|rm|ny>*<with|math-font-family|rm|v2m>|<sqrt|2>>-<frac|<with|math-font-family|rm|nx>*<with|math-font-family|rm|v1m>|<sqrt|2>>+<frac|<with|math-font-family|rm|um>|<sqrt|2>>,0<right|]>>
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o23>)
+      <with|color|black|>><left|[>0,-<frac|<with|math-font-family|rm|ny>*<with|math-font-family|rm|v2m>|<sqrt|2>>-<frac|<with|math-font-family|rm|nx>*<with|math-font-family|rm|v1m>|<sqrt|2>>+<frac|<with|math-font-family|rm|um>|<sqrt|2>>,<with|math-font-family|rm|ny>*<with|math-font-family|rm|v1m>-<with|math-font-family|rm|nx>*<with|math-font-family|rm|v2m><right|]>>
     </output>
 
-    <\input|<with|color|red|(<with|math-font-family|rm|%i>25)
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>24)
     <with|color|black|>>>
       ratsimp(ratsubst(1,ny^2+nx^2, V.bdryspinw))
     </input>
 
     <\output>
-      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o26>)
-      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|-<with|math-font-family|rm|ny>*<with|math-font-family|rm|v2m>-<with|math-font-family|rm|nx>*<with|math-font-family|rm|v1m>>>|<row|<cell|-<with|math-font-family|rm|nx>*<with|math-font-family|rm|um>>>|<row|<cell|-<with|math-font-family|rm|ny>*<with|math-font-family|rm|um>>>>>><right|)>>
+      <with|mode|math|math-display|true|<with|mode|text|font-family|tt|color|red|(<with|math-font-family|rm|%o24>)
+      <with|color|black|>><left|(><tabular*|<tformat|<table|<row|<cell|-<frac|<with|math-font-family|rm|ny>*<with|math-font-family|rm|v2m>+<with|math-font-family|rm|nx>*<with|math-font-family|rm|v1m>-<with|math-font-family|rm|um>|2>>>|<row|<cell|-<frac|<with|math-font-family|rm|nx>*<with|math-font-family|rm|ny>*<with|math-font-family|rm|v2m>+<left|(><with|math-font-family|rm|nx><rsup|2>-2<right|)>*<with|math-font-family|rm|v1m>+<with|math-font-family|rm|nx>*<with|math-font-family|rm|um>|2>>>|<row|<cell|<frac|<left|(><with|math-font-family|rm|nx><rsup|2>+1<right|)>*<with|math-font-family|rm|v2m>-<with|math-font-family|rm|nx>*<with|math-font-family|rm|ny>*<with|math-font-family|rm|v1m>-<with|math-font-family|rm|ny>*<with|math-font-family|rm|um>|2>>>>>><right|)>>
     </output>
 
-    <\input|<with|color|red|(<with|math-font-family|rm|%i>28)
+    <\input|<with|color|red|(<with|math-font-family|rm|%i>25)
     <with|color|black|>>>
       /* 1D problem ------------------------------------------ */
 

@@ -314,9 +314,14 @@ class StrongWaveOperator:
         rad_u = self.discr.boundarize_volume_field(u, self.radiation_tag)
         rad_v = self.discr.boundarize_volume_field(v, self.radiation_tag)
         rad_n = self.radiation_normals
+        #rad_bc = join_fields(
+                #0.5*(rad_u-ac_multiply(rad_n,rad_v)),
+                #0.5*(rad_v -ac_multiply(rad_n,rad_u)),
+                #)
         rad_bc = join_fields(
-                0.5*(rad_u-ac_multiply(rad_n,rad_v)),
-                0.5*(rad_v-num.multiply(rad_n[0],rad_u)),
+                0.5*(rad_u - dot(rad_n, rad_v, num.multiply)),
+                0.5*(self.radn_outer_radn.times(rad_v, num.multiply) - 
+                    ac_multiply(rad_n,rad_u)),
                 )
         self.rad_bc = rad_bc
 
