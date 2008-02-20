@@ -218,12 +218,12 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
 
 
 class StrongWaveOperator:
-    """This operator discretizes the Wave equation S{part}tt u = S{Delta} u.
+    """This operator discretizes the Wave equation S{part}tt u = c^2 S{Delta} u.
 
     To be precise, we discretize the hyperbolic system
 
-      * S{part}t u - div v = 0
-      * S{part}t v - grad u = 0
+      * S{part}t u - c div v = 0
+      * S{part}t v - c grad u = 0
 
     Note that this is not unique--we could also choose a different sign for M{v}.
     """

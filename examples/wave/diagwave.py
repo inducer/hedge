@@ -40,7 +40,7 @@ class Diagonalized1DWaveOperator:
         from pytools.arithmetic_container import join_fields
         from hedge.tools import dot
 
-        coeff_sign = join_fields(1, -1)
+        coeff_sign = self.coeff_sign = join_fields(-1, 1)
         flux_weak = s.avg*normal[0]*coeff_sign
         flux_strong = coeff_sign * s.int * normal[0] - flux_weak
 
@@ -90,11 +90,8 @@ class Diagonalized1DWaveOperator:
                 ac_multiply(ind_left, join_fields(0, rad_s[1]))
                 )
         self.rad_bc = rad_bc
-
-        rhs = (-join_fields(
-            self.c*self.nabla*cache_diff_results(s[0]),
-            -self.c*self.nabla*cache_diff_results(s[1]),
-            ) + self.m_inv * (
+        rhs = (-self.c*self.coeff_sign*(self.nabla[0]*cache_diff_results(s))
+                + self.m_inv * (
                 self.flux*s 
                 + self.flux * pair_with_boundary(s, rad_bc, self.radiation_tag)
                 ))

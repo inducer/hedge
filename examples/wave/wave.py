@@ -175,7 +175,7 @@ def main() :
                         ("rhsdiff1", (rhs_op-rhs_char)[1]), 
                     ],
                     time=t,
-                    #scale_factor=5e1,
+                    scale_factor=2e1,
                     step=step)
             visf.close()
 
