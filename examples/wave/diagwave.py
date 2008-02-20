@@ -77,17 +77,8 @@ class Diagonalized1DWaveOperator:
         ind_right = (rad_n[0]+1)/2
         ind_left = -(rad_n[0]-1)/2
         rad_bc = (
-                #0.5*(rad_u - ac_multiply(rad_v, rad_n)),
-                #0.5*(ac_multiply(rad_u, rad_n)
-                    #+ self.radn_outer_radn.times(rad_v, num.multiply))
-
-                # fake dirichlet
-                #-rad_u,
-                #rad_v
-
-                # s-space dirichlet
-                ac_multiply(ind_right, join_fields(rad_s[0], 0))+
-                ac_multiply(ind_left, join_fields(0, rad_s[1]))
+                ac_multiply(ind_right, join_fields(0, rad_s[1]))+
+                ac_multiply(ind_left, join_fields(rad_s[0], 0))
                 )
         self.rad_bc = rad_bc
         rhs = (-self.c*self.coeff_sign*(self.nabla[0]*cache_diff_results(s))

@@ -107,6 +107,7 @@ def main() :
             radiation_tag=TAG_ALL,
             flux_type="central",
             )
+    op = op_char
 
     fields = join_fields(discr.volume_zeros(),
             [discr.volume_zeros() for i in range(discr.dimensions)])
