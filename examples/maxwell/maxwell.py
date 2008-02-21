@@ -152,7 +152,7 @@ def main():
 
             if True:
                 vis_timer.start()
-                e, h = op.split_fields(fields)
+                e, h = op.split_eh(fields)
                 visf = vis.make_file("em-%d-%04d" % (order, step))
                 vis.add_data(visf,
                         [ ("e", e), ("h", h), ],

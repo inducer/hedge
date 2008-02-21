@@ -257,13 +257,13 @@ class EMFieldGetter(object):
     @property
     def e(self):
         fields = self.scope[self.varname]
-        e, h = self.maxwell_op.split_fields(fields)
+        e, h = self.maxwell_op.split_eh(fields)
         return e
 
     @property
     def h(self):
         fields = self.scope[self.varname]
-        e, h = self.maxwell_op.split_fields(fields)
+        e, h = self.maxwell_op.split_eh(fields)
         return h
 
 

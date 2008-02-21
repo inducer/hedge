@@ -101,14 +101,14 @@ def main():
                 current=TimeIntervalGivenFunction(
                     GivenFunction(CurrentSource()), off_time=final_time/10)
                 )
-        fields = ArithmeticList([discr.volume_zeros() for i in range(op.component_count())])
+        fields = op.assemble_fields()
 
         stepper = RK4TimeStepper()
         from time import time
         last_tstep = time()
         t = 0
         for step in range(nsteps):
-            e, h = op.split_fields(fields)
+            e, h = op.split_eh(fields)
             print "timestep %d, t=%g l2[e]=%g l2[h]=%g secs=%f" % (
                     step, t, l2_norm(e), l2_norm(h),
                     time()-last_tstep)

@@ -226,6 +226,9 @@ class FluxVectorPlaceholder(object):
         else:
             self.scalars = scalars
 
+    def __len__(self):
+        return len(self.scalars)
+
     def __getitem__(self, idx):
         if isinstance(idx, int):
             return self.scalars[idx]

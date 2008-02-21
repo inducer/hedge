@@ -362,8 +362,8 @@ class MaxwellOperator(TimeDependentOperator):
         from pytools.arithmetic_container import join_fields
         from hedge.tools import SubsettableCrossProduct
 
-        e_subset = self.get_subset()[0:3]
-        h_subset = self.get_subset()[3:6]
+        e_subset = self.get_eh_subset()[0:3]
+        h_subset = self.get_eh_subset()[3:6]
 
         e_cross = self.e_cross = SubsettableCrossProduct(
                 op2_subset=e_subset, result_subset=h_subset)
@@ -385,8 +385,8 @@ class MaxwellOperator(TimeDependentOperator):
         dim = discr.dimensions
         normal = make_normal(dim)
 
-        w = FluxVectorPlaceholder(self.component_count())
-        e, h = self.split_fields(w)
+        w = FluxVectorPlaceholder(self.count_subset(self.get_eh_subset()))
+        e, h = self.split_eh(w)
 
         Z = sqrt(mu/epsilon)
         Y = 1/Z
@@ -412,9 +412,9 @@ class MaxwellOperator(TimeDependentOperator):
     def rhs(self, t, w):
         from hedge.tools import cross
         from hedge.discretization import pair_with_boundary, cache_diff_results
-        from pytools.arithmetic_container import join_fields, ArithmeticList
+        from pytools.arithmetic_container import join_fields
 
-        e, h = self.split_fields(w)
+        e, h = self.split_eh(w)
 
         def e_curl(field):
             return self.e_cross(self.nabla, cache_diff_results(field))
@@ -437,7 +437,7 @@ class MaxwellOperator(TimeDependentOperator):
         if self.current is not None:
             j = self.current.volume_interpolant(t, self.discr)
             e_idx = 0 
-            for j_idx, use_component in enumerate(self.get_subset()[0:3]):
+            for j_idx, use_component in enumerate(self.get_eh_subset()[0:3]):
                 if use_component:
                     local_op_fields[e_idx] -= j[j_idx]
                     e_idx += 1
@@ -447,9 +447,23 @@ class MaxwellOperator(TimeDependentOperator):
                     +self.flux * pair_with_boundary(w, bc, self.pec_tag)
                     )
 
-    def split_fields(self, w):
-        e_subset = self.get_subset()[0:3]
-        h_subset = self.get_subset()[3:6]
+    def assemble_fields(self, e=None, h=None):
+        e_components = self.count_subset(self.get_eh_subset()[0:3])
+        h_components = self.count_subset(self.get_eh_subset()[3:6])
+
+        from pytools.arithmetic_container import join_fields, ArithmeticList
+        if e is None:
+            e = ArithmeticList(
+                    self.discr.volume_zeros() for i in xrange(e_components))
+        if h is None:
+            h = ArithmeticList(
+                    self.discr.volume_zeros() for i in xrange(h_components))
+
+        return join_fields(e, h)
+
+    def split_eh(self, w):
+        e_subset = self.get_eh_subset()[0:3]
+        h_subset = self.get_eh_subset()[3:6]
 
         idx = 0
 
@@ -475,11 +489,12 @@ class MaxwellOperator(TimeDependentOperator):
         else:
             return e, h
 
-    def component_count(self):
+    @staticmethod
+    def count_subset(subset):
         from pytools import len_iterable
-        return len_iterable(uc for uc in self.get_subset() if uc)
+        return len_iterable(uc for uc in subset if uc)
 
-    def get_subset(self):
+    def get_eh_subset(self):
         """Return a 6-tuple of C{bool}s indicating whether field components 
         are to be computed. The fields are numbered in the order specified
         in the class documentation.
@@ -500,7 +515,7 @@ class TMMaxwellOperator(MaxwellOperator):
     Field order is [Ez Hx Hy].
     """
 
-    def get_subset(self):
+    def get_eh_subset(self):
         return (
                 (False,False,True) # only ez
                 +
@@ -516,7 +531,7 @@ class TEMaxwellOperator(MaxwellOperator):
     Field order is [Ex Ey Hz].
     """
 
-    def get_subset(self):
+    def get_eh_subset(self):
         return (
                 (True,True,False) # ex and ey
                 +
