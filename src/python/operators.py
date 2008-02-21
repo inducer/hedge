@@ -267,11 +267,9 @@ class StrongWaveOperator:
             pass
         elif flux_type == "upwind":
             # see doc/notes/hedge-notes.tm
-            from pytools.arithmetic_container import outer_product
-            n_outer_n = outer_product(normal, normal)
             flux_weak -= join_fields(
                     0.5*(u.int-u.ext),
-                    0.5*(n_outer_n*(v.int-v.ext)))
+                    0.5*(normal * dot(normal, v.int-v.ext)))
         else:
             raise ValueError, "invalid flux type"
 
@@ -286,11 +284,6 @@ class StrongWaveOperator:
         self.m_inv = discr.inverse_mass_operator
 
         self.radiation_normals = discr.boundary_normals(self.radiation_tag)
-        from pytools.arithmetic_container import outer_product
-        self.radn_outer_radn = outer_product(
-                self.radiation_normals, 
-                self.radiation_normals,
-                mult_op=num.multiply)
 
     def rhs(self, t, w):
         from hedge.discretization import pair_with_boundary, cache_diff_results
@@ -314,16 +307,10 @@ class StrongWaveOperator:
         rad_u = self.discr.boundarize_volume_field(u, self.radiation_tag)
         rad_v = self.discr.boundarize_volume_field(v, self.radiation_tag)
         rad_n = self.radiation_normals
-        #rad_bc = join_fields(
-                #0.5*(rad_u-ac_multiply(rad_n,rad_v)),
-                #0.5*(rad_v -ac_multiply(rad_n,rad_u)),
-                #)
         rad_bc = join_fields(
                 0.5*(rad_u - dot(rad_n, rad_v, num.multiply)),
-                0.5*(self.radn_outer_radn.times(rad_v, num.multiply) - 
-                    ac_multiply(rad_n,rad_u)),
+                0.5*ac_multiply(rad_n, dot(rad_n, rad_v, num.multiply) - rad_u)
                 )
-        self.rad_bc = rad_bc
 
         rhs = (-join_fields(
             -self.c*dot(self.nabla, cache_diff_results(v)), 
@@ -451,14 +438,12 @@ class MaxwellOperator(TimeDependentOperator):
         e_components = self.count_subset(self.get_eh_subset()[0:3])
         h_components = self.count_subset(self.get_eh_subset()[3:6])
 
-        from pytools.arithmetic_container import join_fields, ArithmeticList
         if e is None:
-            e = ArithmeticList(
-                    self.discr.volume_zeros() for i in xrange(e_components))
+            e = [self.discr.volume_zeros() for i in xrange(e_components)]
         if h is None:
-            h = ArithmeticList(
-                    self.discr.volume_zeros() for i in xrange(h_components))
+            h = [self.discr.volume_zeros() for i in xrange(h_components)]
 
+        from pytools.arithmetic_container import join_fields, ArithmeticList
         return join_fields(e, h)
 
     def split_eh(self, w):
