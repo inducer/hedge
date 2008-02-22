@@ -411,12 +411,10 @@ class MaxwellOperator(TimeDependentOperator):
         def h_curl(field):
             return self.h_cross(self.nabla, cache_diff_results(field))
 
-        bc = join_fields(
+        pec_bc = join_fields(
                 -self.discr.boundarize_volume_field(e, self.pec_tag),
                 self.discr.boundarize_volume_field(h, self.pec_tag)
                 )
-
-        bpair = pair_with_boundary(w, bc, self.pec_tag)
 
         local_op_fields = join_fields(
                 1/self.epsilon * h_curl(h),
@@ -433,7 +431,7 @@ class MaxwellOperator(TimeDependentOperator):
             
         return local_op_fields + self.m_inv*(
                     self.flux * w
-                    +self.flux * pair_with_boundary(w, bc, self.pec_tag)
+                    +self.flux * pair_with_boundary(w, pec_bc, self.pec_tag)
                     )
 
     def assemble_fields(self, e=None, h=None):
