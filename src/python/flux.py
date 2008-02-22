@@ -459,31 +459,38 @@ def compile_flux(flux):
             
         in_fields.sort(in_fields_cmp)
 
-        max_in_field = max(in_field.index for in_field in in_fields)
+        result = []
 
-        # find d<flux> / d<in_fields>
-        in_derivatives = dict(
-                ((in_field.index, in_field.is_local),
-                normalize_flux(FluxDifferentiationMapper(in_field)(flux)))
-                for in_field in in_fields)
+        if in_fields:
+            max_in_field = max(in_field.index for in_field in in_fields)
 
-        # check for (invalid) nonlinearity
-        for i, deriv in in_derivatives.iteritems():
-            if FluxDependencyMapper()(deriv):
-                raise ValueError, "Flux is nonlinear in component %d" % i
+            # find d<flux> / d<in_fields>
+            in_derivatives = dict(
+                    ((in_field.index, in_field.is_local),
+                    normalize_flux(FluxDifferentiationMapper(in_field)(flux)))
+                    for in_field in in_fields)
 
-        flux._compiled = []
-        for in_field_idx in range(max_in_field+1):
-            int = in_derivatives.get((in_field_idx, True), 0)
-            ext = in_derivatives.get((in_field_idx, False), 0)
+            # check for (invalid) nonlinearity
+            for i, deriv in in_derivatives.iteritems():
+                if FluxDependencyMapper()(deriv):
+                    raise ValueError, "Flux is nonlinear in component %d" % i
 
-            if int or ext:
-                flux._compiled.append(
-                        (in_field_idx, 
-                            compile_scalar_single_dep_flux(int),
-                            compile_scalar_single_dep_flux(ext),))
+            for in_field_idx in range(max_in_field+1):
+                int = in_derivatives.get((in_field_idx, True), 0)
+                ext = in_derivatives.get((in_field_idx, False), 0)
 
-        return flux._compiled
+                if int or ext:
+                    result.append(
+                            (in_field_idx, 
+                                compile_scalar_single_dep_flux(int),
+                                compile_scalar_single_dep_flux(ext),))
+
+        try:
+            flux._compiled = result
+        except AttributeError:
+            pass # ok if we can't set cache
+
+        return result
 
     try:
         return flux._compiled
