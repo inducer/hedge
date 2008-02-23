@@ -1,0 +1,42 @@
+load("eigen");
+load("itensor");
+
+assert(condition):=if not condition then error("Assertion violated") else true$
+
+/* A matrix resulting from a cross product */
+cpmat(coord):=genmatrix(
+  lambda ([i,j], levi_civita([coord,i,j])),
+  3,3);
+
+/* A constant matrix of size n x m */
+constmatrix(n,m,c):=genmatrix(lambda ([i,j], c),n,m);
+
+vstack(a,b):=append(a,b);
+
+hstack(a,b):=transpose(append(transpose(a),transpose(b)));
+
+blockmat(a11,a12,a21,a22):=vstack(hstack(a11,a12),hstack(a21,a22))$
+
+crossprod(a,b):=makelist(
+  sum(sum(
+      levi_civita([i,j,k])*a[j]*b[k],
+   j,1,3),k,1,3),i,1,3)$
+
+/* Simplification for expressions stemming from hyperbolic systems */
+hypsimp(x):=ratsimp(ratsubst(1,n.n,x))$
+
+fullhypsimp(x):=hypsimp(
+  ratsubst(
+    last(n)^2,
+    1-sum(n[i]^2,i,1,length(n)-1),
+    x)
+  );
+
+hypdiagonalize(A):=block([evA, V, invV],
+  evA:hypsimp(eigenvectors(A)),
+  V:transpose(apply(matrix, makelist(evA[i],i,2,length(evA)))),
+  invV:hypsimp(invert(V)),
+  assert(hypsimp(V.invV)=ident(length(A))),
+  D:hypsimp(invV.A.V),
+  [V, D, invV]);
+

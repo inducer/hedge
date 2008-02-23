@@ -1,0 +1,32 @@
+kill(all);
+
+load("myhelpers.mac");
+
+n:[nx,ny,nz];
+
+dims:length(n);
+
+assume(c>0);
+
+esymmatrix(n, v, i,j):=ematrix(n,n,v,i,j)+ematrix(n,n,v,j,i);
+wave_A:sum(n[i]*esymmatrix(dims,-c, 1+i,1),i,1,dims);
+
+[wave_V, wave_D, wave_invV]:hypdiagonalize(wave_A);
+
+wave_wm:[um,v1m,v2m];
+wave_wp:[up,v1p,v2p];
+
+wave_sminw:wave_invV.wave_wm;
+wave_spinw:wave_invV.wave_wp;
+
+wave_radbdryspinw:makelist( 
+  if wave_D[i,i] >= 0 then wave_sminw[i,1] else 0,
+  i, 1, length(wave_D));
+wave_radbdrywp:fullhypsimp(wave_V.wave_radbdryspinw);
+
+print("Radiation boundary condition for the wave equation:");
+print(wave_radbdrywp);
+
+/* ------------------------------------------------------------------------- */
+
+wave_Dp:subst(wave

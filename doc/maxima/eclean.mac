@@ -1,0 +1,50 @@
+kill(all);
+load("ecleanbase.mac");
+
+/* ------------------------------------------------------------------------- */
+
+eclean_radbdryspinw:makelist(
+  if eclean_D[i,i] >= 0 then eclean_sminw[i,1] else 0,
+i, 1, length(eclean_D))$
+
+print("Radiation boundary condition for E-divclean system:");
+print(fullhypsimp(eclean_V.eclean_radbdryspinw));
+
+/* ------------------------------------------------------------------------- */
+
+/*
+eclean_munzpecwithphi(phival):=fullhypsimp(eclean_invV.
+        vstack(vstack(-eclean_Emins, eclean_Hmins), [phival]));
+
+print("Munz et al PEC boundary with phi+=0:");
+print(eclean_munzpecwithphi(0));
+print("Munz et al PEC boundary with phi+=phi-:");
+print(eclean_munzpecwithphi(eclean_phimins));
+print("Munz et al PEC boundary with phi+=-phi-:");
+print(eclean_munzpecwithphi(-eclean_phimins));
+*/
+
+/* ------------------------------------------------------------------------- */
+
+eclean_chiradbdryspinw:[
+  -eclean_sminw[3,1],
+  -eclean_sminw[4,1],
+  -eclean_sminw[1,1],
+  -eclean_sminw[2,1],
+  0,
+  eclean_sminw[6,1],
+  eclean_sminw[7,1]
+  ]$
+
+eclean_chiradwp:fullhypsimp(eclean_V.eclean_chiradbdryspinw);
+
+print("PEC+chirad BC for div E cleaning system");
+print(eclean_chiradwp);
+
+eclean_pecwp:vstack(vstack(-max_Em,max_Hm),[0]);
+
+print("Limit of PEC+chirad BC as %phi, %chi -> 0");
+print(fullhypsimp(limit(limit(
+  subst([%phi[m]=phi],eclean_chiradwp),phi,0),%chi,0)));
+
+

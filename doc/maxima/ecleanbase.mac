@@ -1,0 +1,29 @@
+load("maxwellbase.mac");
+
+assume(%chi>0);
+
+eclean_Asimp:blockmat(
+  max_Asimp,
+  vstack(epsinv*muinv*covect(n),constmatrix(3,1,0)),
+  hstack(%chi^2*n,constmatrix(1,3,0)),
+  zeromatrix(1,1)
+);
+
+[eclean_V, eclean_D, eclean_invV]:max_invsubst(hypdiagonalize(eclean_Asimp));
+eclean_A:max_invsubst(eclean_Asimp);
+
+eclean_wm:vstack(max_wm,[%phi[m]]);
+eclean_wp:vstack(max_wp,[%phi[p]]);
+
+eclean_sm:makelist(sm[i],i,1,length(eclean_D));
+eclean_sp:makelist(sp[i],i,1,length(eclean_D));
+
+eclean_sminw:hypsimp(eclean_invV.eclean_wm);
+eclean_spinw:hypsimp(eclean_invV.eclean_wp);
+
+eclean_wmins:hypsimp(eclean_V.eclean_sm);
+eclean_wpins:hypsimp(eclean_V.eclean_sp);
+
+eclean_Emins:makelist(eclean_wmins[i,1],i,1,3);
+eclean_Hmins:makelist(eclean_wmins[i,1],i,4,6);
+eclean_phimins:eclean_wmins[7,1];

@@ -1,0 +1,56 @@
+kill(all);
+
+load("maxwellbase.mac");
+
+/* ------------------------------------------------------------------------- */
+
+max_radbdryspinw:makelist(
+  if max_D[i,i] >= 0 then max_sminw[i,1] else 0,
+i, 1, 6)$
+
+print("Radiation boundary condition for Maxwell's:");
+print(fullhypsimp(max_V.max_radbdryspinw));
+
+/* ------------------------------------------------------------------------- */
+max_pecbdrywpins:vstack(-max_Emins,max_Hmins);
+
+print("PEC bdry condition for Maxwell's in terms of characteristic variables (s)");
+max_pecbdryspinw:fullhypsimp(max_invV.max_pecbdrywpins);
+print(max_pecbdryspinw);
+
+/* ------------------------------------------------------------------------- */
+
+max_fluxinw:fullhypsimp(
+max_V . max_D . makelist(
+  if max_D[i,i] >= 0 then 
+    max_sminw[i,1]
+  else
+    max_spinw[i,1], 
+i, 1, length(max_D)));
+
+print("Stoopid upwind flux for Maxwell's:");
+print(max_fluxinw);
+
+/* ------------------------------------------------------------------------- */
+
+/*
+"Rankine-Hugoniot upwind flux -------------------------------------------------"$
+Dmaxp:subst([epsilon=epsilon[p],mu=mu[p]],Dmax)$
+Dmaxm:subst([epsilon=epsilon[m],mu=mu[m]],Dmax)$
+
+"verify Maxwell flux against known value --------------------------------------"$
+
+maxZ:sqrt(%mu/%epsilon)$
+maxY:sqrt(%epsilon/%mu)$
+
+knownmaxstrongDfluxinw:ratsimp(vstack(
+  -1/(2*%epsilon)
+  *(crossprod(n,(maxHm-maxHp)-1/maxZ*crossprod(n,maxEm-maxEp))),
+  1/(2*%mu)
+  *(crossprod(n,(maxEm-maxEp)+1/maxY*crossprod(n,maxHm-maxHp)))
+  ))$
+
+ratsimp(maxwm-maxDfluxinw);
+hypsimp((maxwm-maxDfluxinw)-knownmaxstrongDfluxinw);
+hypsimp(maxDfluxinw-known2maxstrongDfluxinw);
+*/
