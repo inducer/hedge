@@ -45,7 +45,6 @@ else
 print("Wave equation flux in terms of characteristic variables:");
 print(wave_sflux);
 
-
 print("Wave equation flux in terms of physical variables:");
 wave_wflux:ratsimp(wave_V.ev(wave_sflux, [sm=wave_sminw,sp=wave_spinw]));
 print(wave_wflux);

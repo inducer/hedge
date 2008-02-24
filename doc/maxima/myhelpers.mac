@@ -84,7 +84,7 @@ hyp_upwind_flux(evs, D):=block([evvars, Dp, Dm, n, midstates, states, unknowns],
         i, 1, length(evs)),
 
       veceqns:apply(append, makelist(
-        (if evs[i] > 0 then evsp[i] else evsm[i]) *(states[i+1]-states[i])
+        -(if evs[i] > 0 then evsp[i] else evsm[i]) *(states[i+1]-states[i])
         +(biasedD[i][1].states[i+1]-biasedD[i][2].states[i]),
         i,1,length(evs))),
 
@@ -115,7 +115,7 @@ hyp_upwind_flux(evs, D):=block([evvars, Dp, Dm, n, midstates, states, unknowns],
         [Dp.last(states)]),
 
       veceqns:apply(append, makelist(
-        (if evs[i] > 0 then evsp[i] else evsm[i]) *(states[i+1]-states[i])
+        -(if evs[i] > 0 then evsp[i] else evsm[i]) *(states[i+1]-states[i])
         +(Dstates[i+1]-Dstates[i]),
         i,1,length(evs))),
 

@@ -1,5 +1,10 @@
 kill(all);
 
+/* Enable this for TeXmacs output:
+%epsilon:epsilon;
+%mu:mu;
+*/
+
 load("maxwellbase.mac");
 
 /* ------------------------------------------------------------------------- */
@@ -19,38 +24,79 @@ max_pecbdryspinw:fullhypsimp(max_invV.max_pecbdrywpins);
 print(max_pecbdryspinw);
 
 /* ------------------------------------------------------------------------- */
-
-max_fluxinw:fullhypsimp(
-max_V . max_D . makelist(
-  if max_D[i,i] >= 0 then 
-    max_sminw[i,1]
-  else
-    max_spinw[i,1], 
-i, 1, length(max_D)));
-
-print("Stoopid upwind flux for Maxwell's:");
-print(max_fluxinw);
-
+/* Simple upwinded flux */
 /* ------------------------------------------------------------------------- */
 
-/*
-"Rankine-Hugoniot upwind flux -------------------------------------------------"$
-Dmaxp:subst([epsilon=epsilon[p],mu=mu[p]],Dmax)$
-Dmaxm:subst([epsilon=epsilon[m],mu=mu[m]],Dmax)$
+max_sfluxstoopid:max_D . makelist(
+  if max_D[i,i] >= 0 then 
+    sm[i,1]
+  else
+    sp[i,1], 
+  i, 1, length(max_D));
 
-"verify Maxwell flux against known value --------------------------------------"$
+max_wfluxstoopid:fullhypsimp(max_V . ev(max_sfluxstoopid, [sm=max_sminw,sp=max_spinw]));
 
-maxZ:sqrt(%mu/%epsilon)$
-maxY:sqrt(%epsilon/%mu)$
+print("Stoopid upwind flux for Maxwell's in terms of characteristic variables:");
+print(max_sfluxstoopid);
+print("Stoopid upwind flux for Maxwell's in terms of physical variables:");
+print(max_wfluxstoopid);
 
-knownmaxstrongDfluxinw:ratsimp(vstack(
+/* ------------------------------------------------------------------------- */
+/* Rankine-Hugoniot flux */
+/* ------------------------------------------------------------------------- */
+
+max_Dinc:subst([1/(sqrt(%epsilon)*sqrt(%mu))=c], max_D);
+max_sflux:hyp_upwind_flux([-c,0,c], max_Dinc);
+
+print("Maxwell's flux in terms of characteristic variables:");
+print(max_sflux);
+
+/* FIXME: max_V should not depend on epsilon and mu, but it does 
+   For now, make cp and cm equal. */
+
+max_sflux:subst(
+  [cp=1/(sqrt(%epsilon)*sqrt(%mu)), cm=1/(sqrt(%epsilon)*sqrt(%mu))], 
+  max_sflux);
+
+print("Maxwell's flux in terms of physical variables:");
+max_wflux:fullhypsimp(max_V.ev(max_sflux, [sm=max_sminw,sp=max_spinw]));
+print(max_wflux);
+
+/* ------------------------------------------------------------------------- */
+/* known flux value*/
+/* ------------------------------------------------------------------------- */
+
+max_Z:sqrt(%mu/%epsilon)$
+max_Y:sqrt(%epsilon/%mu)$
+
+max_knownstrongwflux:ratsimp(vstack(
   -1/(2*%epsilon)
-  *(crossprod(n,(maxHm-maxHp)-1/maxZ*crossprod(n,maxEm-maxEp))),
+  *(crossprod(n,(max_Hm-max_Hp)-1/max_Z*crossprod(n,max_Em-max_Ep))),
   1/(2*%mu)
-  *(crossprod(n,(maxEm-maxEp)+1/maxY*crossprod(n,maxHm-maxHp)))
+  *(crossprod(n,(max_Em-max_Ep)+1/max_Y*crossprod(n,max_Hm-max_Hp)))
   ))$
+print("comparison of computed and known flux:");
+max_stronglocalpart:max_A.max_wm;
+max_stronglocalpart_2:vstack(
+  1/%epsilon*crossprod(n,max_Hm),
+  -1/%mu*crossprod(n,max_Em));
+print(ratsimp(max_stronglocalpart-max_stronglocalpart_2));
+  
+/*
+print(hypsimp((max_stronglocalpart-max_wflux)));
+print(hypsimp(max_knownstrongwflux));
+print(hypsimp((max_stronglocalpart-max_wflux)-max_knownstrongwflux));
+*/
 
-ratsimp(maxwm-maxDfluxinw);
-hypsimp((maxwm-maxDfluxinw)-knownmaxstrongDfluxinw);
-hypsimp(maxDfluxinw-known2maxstrongDfluxinw);
+max_apparentwflux:ratsimp(vstack(
+  1/(2*%epsilon)
+  *(crossprod(n,(max_Hm+max_Hp)-1/max_Z*crossprod(n,max_Em-max_Ep))),
+  -1/(2*%mu)
+  *(crossprod(n,(max_Em+max_Ep)+1/max_Y*crossprod(n,max_Hm-max_Hp)))
+  ))$
+print(hypsimp((max_apparentwflux-max_wflux)));
+/*
+print(hypsimp((max_stronglocalpart-max_wflux)));
+print(hypsimp(max_apparentstrongwflux));
+print(hypsimp((max_stronglocalpart-max_wflux)-max_apparentstrongwflux));
 */
