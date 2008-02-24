@@ -2,19 +2,25 @@ kill(all);
 
 load("myhelpers.mac");
 
-n:[nx,ny,nz];
+/* redefine this to change dimensionality: */
+n:[nx,ny]; 
 
 dims:length(n);
 
 assume(c>0);
 
+if dims = 1 then n:[1];
+
 esymmatrix(n, v, i,j):=ematrix(n,n,v,i,j)+ematrix(n,n,v,j,i);
-wave_A:sum(n[i]*esymmatrix(dims,-c, 1+i,1),i,1,dims);
+wave_A:sum(n[i]*esymmatrix(dims+1,-c, 1+i,1),i,1,dims);
 
 [wave_V, wave_D, wave_invV]:hypdiagonalize(wave_A);
 
-wave_wm:[um,v1m,v2m];
-wave_wp:[up,v1p,v2p];
+wave_wm:append([um],makelist(concat(vm,i),i,1,dims));
+wave_wp:append([um],makelist(concat(vp,i),i,1,dims));
+
+wave_sm:makelist(concat(sm,i),i,1,length(wave_D));
+wave_sp:makelist(concat(sp,i),i,1,length(wave_D));
 
 wave_sminw:wave_invV.wave_wm;
 wave_spinw:wave_invV.wave_wp;
@@ -29,4 +35,17 @@ print(wave_radbdrywp);
 
 /* ------------------------------------------------------------------------- */
 
-wave_Dp:subst(wave
+wave_eigenvalues:makelist(wave_D[i,i], i, 1, length(wave_D));
+
+if member(0, wave_eigenvalues) then
+  wave_sflux:hyp_upwind_flux([-c,0,c], wave_D)
+else
+  wave_sflux:hyp_upwind_flux([-c,c], wave_D);
+
+print("Wave equation flux in terms of characteristic variables:");
+print(wave_sflux);
+
+
+print("Wave equation flux in terms of physical variables:");
+wave_wflux:ratsimp(wave_V.ev(wave_sflux, [sm=wave_sminw,sp=wave_spinw]));
+print(wave_wflux);
