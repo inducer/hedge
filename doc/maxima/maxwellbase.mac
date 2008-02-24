@@ -6,10 +6,15 @@ assume(%epsilon>0);
 assume(epsinv>0);
 assume(muinv>0);
 
+/* A hyperbolic system matrix resulting from a curl */
+curlmat(coord):=genmatrix(
+  lambda ([i,j], levi_civita([coord,j,i])),
+  3,3);
+
 max_submat(i):=blockmat(
   zeromatrix(3,3),
-  -epsinv*cpmat(i), /* epsinv = 1/epsilon */
-  muinv*cpmat(i), /* muinv = 1/mu */
+  -epsinv*curlmat(i), /* epsinv = 1/epsilon */
+  muinv*curlmat(i), /* muinv = 1/mu */
   zeromatrix(3,3)
   );
 

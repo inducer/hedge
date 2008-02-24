@@ -4,10 +4,6 @@ load("diag");
 
 assert(condition):=if not condition then error("Assertion violated") else true$
 
-/* A matrix resulting from a cross product */
-cpmat(coord):=genmatrix(
-  lambda ([i,j], levi_civita([coord,i,j])),
-  3,3);
 
 /* A constant matrix of size n x m */
 constmatrix(n,m,c):=genmatrix(lambda ([i,j], c),n,m);

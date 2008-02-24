@@ -75,28 +75,17 @@ max_knownstrongwflux:ratsimp(vstack(
   1/(2*%mu)
   *(crossprod(n,(max_Em-max_Ep)+1/max_Y*crossprod(n,max_Hm-max_Hp)))
   ))$
-print("comparison of computed and known flux:");
-max_stronglocalpart:max_A.max_wm;
-max_stronglocalpart_2:vstack(
-  1/%epsilon*crossprod(n,max_Hm),
-  -1/%mu*crossprod(n,max_Em));
-print(ratsimp(max_stronglocalpart-max_stronglocalpart_2));
-  
-/*
-print(hypsimp((max_stronglocalpart-max_wflux)));
-print(hypsimp(max_knownstrongwflux));
-print(hypsimp((max_stronglocalpart-max_wflux)-max_knownstrongwflux));
-*/
 
-max_apparentwflux:ratsimp(vstack(
-  1/(2*%epsilon)
-  *(crossprod(n,(max_Hm+max_Hp)-1/max_Z*crossprod(n,max_Em-max_Ep))),
-  -1/(2*%mu)
-  *(crossprod(n,(max_Em+max_Ep)+1/max_Y*crossprod(n,max_Hm-max_Hp)))
-  ))$
-print(hypsimp((max_apparentwflux-max_wflux)));
-/*
-print(hypsimp((max_stronglocalpart-max_wflux)));
-print(hypsimp(max_apparentstrongwflux));
-print(hypsimp((max_stronglocalpart-max_wflux)-max_apparentstrongwflux));
-*/
+norm_2_squared(v):=v.v;
+
+max_stronglocalpart:max_A.max_wm;
+
+max_stronglocalpart_2:vstack(
+  -1/%epsilon*crossprod(n,max_Hm),
+  1/%mu*crossprod(n,max_Em));
+
+assert(ratsimp(norm_2_squared(max_stronglocalpart-max_stronglocalpart_2))=0);
+
+assert(norm_2_squared(hypsimp(
+  (max_stronglocalpart-max_wflux)
+  -max_knownstrongwflux))=0);
