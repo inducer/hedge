@@ -1,0 +1,29 @@
+kill(all);
+load("ehcleanbase.mac");
+
+/* ------------------------------------------------------------------------- */
+/* flux */
+/* ------------------------------------------------------------------------- */
+
+ehclean_Dinc:ratsubst(c,1/(sqrt(%epsilon)*sqrt(%mu)), ehclean_D);
+print(ehclean_Dinc);
+ehclean_sflux:hyp_upwind_flux([-%chi*c,-c,c,%chi*c], ehclean_Dinc);
+
+print("e-clean system flux in terms of characteristic variables:");
+print(covect(ehclean_sflux));
+
+/* FIXME: ehclean_V should not depend on epsilon and mu, but it does 
+   For now, make cp and cm equal. */
+/*
+ehclean_sflux:subst(
+  [cp=1/(sqrt(%epsilon)*sqrt(%mu)), 
+   cm=1/(sqrt(%epsilon)*sqrt(%mu)),
+   %chip=%chi,
+   %chim=%chi], 
+  ehclean_sflux);
+
+print("e-clean system flux in terms of physical variables:");
+ehclean_wflux:fullhypsimp(ehclean_V.ev(ehclean_sflux, 
+  [sm=ehclean_sminw,sp=ehclean_spinw]));
+print(ehclean_wflux);
+*/

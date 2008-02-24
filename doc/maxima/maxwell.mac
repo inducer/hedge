@@ -65,6 +65,7 @@ print(max_wflux);
 /* ------------------------------------------------------------------------- */
 /* known flux value*/
 /* ------------------------------------------------------------------------- */
+max_stronglocalpart:max_A.max_wm;
 
 max_Z:sqrt(%mu/%epsilon)$
 max_Y:sqrt(%epsilon/%mu)$
@@ -78,14 +79,8 @@ max_knownstrongwflux:ratsimp(vstack(
 
 norm_2_squared(v):=v.v;
 
-max_stronglocalpart:max_A.max_wm;
-
-max_stronglocalpart_2:vstack(
-  -1/%epsilon*crossprod(n,max_Hm),
-  1/%mu*crossprod(n,max_Em));
-
-assert(ratsimp(norm_2_squared(max_stronglocalpart-max_stronglocalpart_2))=0);
+max_strongwflux:max_stronglocalpart-max_wflux;
 
 assert(norm_2_squared(hypsimp(
-  (max_stronglocalpart-max_wflux)
+  (max_strongwflux)
   -max_knownstrongwflux))=0);

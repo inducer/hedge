@@ -1,6 +1,9 @@
 kill(all);
+load("maxwell.mac");
 load("ecleanbase.mac");
 
+/* ------------------------------------------------------------------------- */
+/* Radiation BCs */
 /* ------------------------------------------------------------------------- */
 
 eclean_radbdryspinw:makelist(
@@ -10,6 +13,8 @@ i, 1, length(eclean_D))$
 print("Radiation boundary condition for E-divclean system:");
 print(fullhypsimp(eclean_V.eclean_radbdryspinw));
 
+/* ------------------------------------------------------------------------- */
+/* Munz et al's dysfunctional fluxes */
 /* ------------------------------------------------------------------------- */
 
 /*
@@ -25,7 +30,41 @@ print(eclean_munzpecwithphi(-eclean_phimins));
 */
 
 /* ------------------------------------------------------------------------- */
+/* flux */
+/* ------------------------------------------------------------------------- */
 
+eclean_Dinc:ratsubst(c,1/(sqrt(%epsilon)*sqrt(%mu)), eclean_D);
+eclean_sflux:hyp_upwind_flux([-%chi*c,-c,0,c,%chi*c], eclean_Dinc);
+
+print("e-clean system flux in terms of characteristic variables:");
+print(eclean_sflux);
+
+/* FIXME: eclean_V should not depend on epsilon and mu, but it does 
+   For now, make cp and cm equal. */
+
+eclean_sflux:subst(
+  [cp=1/(sqrt(%epsilon)*sqrt(%mu)), 
+   cm=1/(sqrt(%epsilon)*sqrt(%mu)),
+   %chip=%chi,
+   %chim=%chi], 
+  eclean_sflux);
+
+print("e-clean system flux in terms of physical variables:");
+eclean_wflux:fullhypsimp(eclean_V.ev(eclean_sflux, 
+  [sm=eclean_sminw,sp=eclean_spinw]));
+print(eclean_wflux);
+
+eclean_stronglocalpart:eclean_A.eclean_wm;
+eclean_strongwflux:eclean_stronglocalpart-eclean_wflux;
+
+eclean_maxstrongdiff:fullhypsimp(
+  eclean_strongwflux
+  -append(max_strongwflux,matrix([0]))
+  );
+print("e-clean additional strong-form flux wrt Maxwell system:");
+print(eclean_maxstrongdiff);
+
+/* ------------------------------------------------------------------------- */
 eclean_chiradbdryspinw:[
   -eclean_sminw[3,1],
   -eclean_sminw[4,1],
@@ -46,5 +85,3 @@ eclean_pecwp:vstack(vstack(-max_Em,max_Hm),[0]);
 print("Limit of PEC+chirad BC as %phi, %chi -> 0");
 print(fullhypsimp(limit(limit(
   subst([%phi[m]=phi],eclean_chiradwp),phi,0),%chi,0)));
-
-
