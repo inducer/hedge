@@ -46,3 +46,23 @@ max_wpins:hypsimp(max_V.max_sp);
 max_Emins:makelist(max_wmins[i,1],i,1,3);
 max_Hmins:makelist(max_wmins[i,1],i,4,6);
 
+/* ------------------------------------------------------------------------- */
+/* Rankine-Hugoniot flux */
+/* ------------------------------------------------------------------------- */
+
+max_Dinc:subst([1/(sqrt(%epsilon)*sqrt(%mu))=c], max_D);
+max_sflux:hyp_upwind_flux([-c,0,c], max_Dinc);
+
+/* FIXME: max_V should not depend on epsilon and mu, but it does 
+   For now, make cp and cm equal. */
+
+max_sflux:subst(
+  [cp=1/(sqrt(%epsilon)*sqrt(%mu)), cm=1/(sqrt(%epsilon)*sqrt(%mu))], 
+  max_sflux);
+
+max_wflux:fullhypsimp(max_V.ev(max_sflux, [sm=max_sminw,sp=max_spinw]));
+
+max_stronglocalpart:max_A.max_wm;
+
+max_strongwflux:max_stronglocalpart-max_wflux;
+

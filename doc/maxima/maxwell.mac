@@ -45,28 +45,15 @@ print(max_wfluxstoopid);
 /* Rankine-Hugoniot flux */
 /* ------------------------------------------------------------------------- */
 
-max_Dinc:subst([1/(sqrt(%epsilon)*sqrt(%mu))=c], max_D);
-max_sflux:hyp_upwind_flux([-c,0,c], max_Dinc);
-
 print("Maxwell's flux in terms of characteristic variables:");
 print(max_sflux);
 
-/* FIXME: max_V should not depend on epsilon and mu, but it does 
-   For now, make cp and cm equal. */
-
-max_sflux:subst(
-  [cp=1/(sqrt(%epsilon)*sqrt(%mu)), cm=1/(sqrt(%epsilon)*sqrt(%mu))], 
-  max_sflux);
-
 print("Maxwell's flux in terms of physical variables:");
-max_wflux:fullhypsimp(max_V.ev(max_sflux, [sm=max_sminw,sp=max_spinw]));
 print(max_wflux);
 
 /* ------------------------------------------------------------------------- */
 /* known flux value*/
 /* ------------------------------------------------------------------------- */
-max_stronglocalpart:max_A.max_wm;
-
 max_Z:sqrt(%mu/%epsilon)$
 max_Y:sqrt(%epsilon/%mu)$
 
@@ -78,8 +65,6 @@ max_knownstrongwflux:ratsimp(vstack(
   ))$
 
 norm_2_squared(v):=v.v;
-
-max_strongwflux:max_stronglocalpart-max_wflux;
 
 assert(norm_2_squared(hypsimp(
   (max_strongwflux)
