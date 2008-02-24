@@ -149,7 +149,7 @@ def main() :
             flux_type="upwind")
 
     from pyrticle._internal import ShapeFunction
-    sf = ShapeFunction(1, 2, alpha=12)
+    sf = ShapeFunction(1, 2, alpha=1)
 
     def gauss_hump(x):
         from math import exp
@@ -211,6 +211,9 @@ def main() :
     def logmap(x, low_exp=15):
         return 0.1*num.log10(num.abs(x)+1e-15)
 
+    from hedge.discretization import Filter, ExponentialFilterResponseFunction
+    filter = Filter(discr, ExponentialFilterResponseFunction(0.97, 3))
+
     for step in xrange(nsteps):
         logmgr.tick()
 
@@ -231,7 +234,11 @@ def main() :
             visf.close()
             vis_timer.stop()
 
+
+        #u = filter(stepper(u, t, dt, op.rhs))
         u = stepper(u, t, dt, op.rhs)
+        #if step % 1 == 0:
+            #u = filter(u)
 
         #u_true = discr.interpolate_volume_function(
                 #lambda x: u_analytic(t, x))

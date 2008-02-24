@@ -378,8 +378,9 @@ class MaxwellOperator(TimeDependentOperator):
         Z = sqrt(mu/epsilon)
         Y = 1/Z
 
+        # see Hesthaven/Warburton, Nodal DG, Sec. 6.5
         fluxes = join_fields(
-                # flux e, see Hesthaven/Warburton, Nodal DG, Sec. 6.5
+                # flux e, 
                 1/epsilon*(
                     -1/2*h_cross(normal, 
                         h.int-h.ext
@@ -417,8 +418,8 @@ class MaxwellOperator(TimeDependentOperator):
                 )
 
         local_op_fields = join_fields(
-                1/self.epsilon * h_curl(h),
-                - 1/self.mu * e_curl(e),
+                - 1/self.epsilon * h_curl(h),
+                1/self.mu * e_curl(e),
                 )
 
         if self.current is not None:
@@ -429,7 +430,7 @@ class MaxwellOperator(TimeDependentOperator):
                     local_op_fields[e_idx] -= j[j_idx]
                     e_idx += 1
             
-        return local_op_fields + self.m_inv*(
+        return - local_op_fields + self.m_inv*(
                     self.flux * w
                     +self.flux * pair_with_boundary(w, pec_bc, self.pec_tag)
                     )
