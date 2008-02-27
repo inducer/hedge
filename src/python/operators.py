@@ -340,8 +340,8 @@ class MaxwellOperator(TimeDependentOperator):
     """
 
     def __init__(self, discr, epsilon, mu, upwind_alpha=1, 
-            pec_tag=hedge.mesh.TAG_ALL, direct_flux=True,
-            current=None):
+            pec_tag=hedge.mesh.TAG_ALL, 
+            direct_flux=True, current=None):
         from hedge.flux import make_normal, FluxVectorPlaceholder
         from hedge.mesh import check_bc_coverage
         from hedge.discretization import pair_with_boundary
@@ -378,8 +378,9 @@ class MaxwellOperator(TimeDependentOperator):
         Z = sqrt(mu/epsilon)
         Y = 1/Z
 
-        fluxes = join_fields(
-                # flux e, see Hesthaven/Warburton, Nodal DG, Sec. 6.5
+        # see Hesthaven/Warburton, Nodal DG, Sec. 6.5
+        self.flux = join_fields(
+                # flux e, 
                 1/epsilon*(
                     -1/2*h_cross(normal, 
                         h.int-h.ext
@@ -393,10 +394,25 @@ class MaxwellOperator(TimeDependentOperator):
                     ),
                 )
 
-        self.flux = discr.get_flux_operator(fluxes, direct=direct_flux)
+        self.flux_op = discr.get_flux_operator(self.flux, direct=direct_flux)
 
         self.nabla = discr.nabla
         self.m_inv = discr.inverse_mass_operator
+
+    def local_op(self, e, h):
+        # in conservation form: u_t + A u_x = 0
+        def e_curl(field):
+            return self.e_cross(self.nabla, field)
+
+        def h_curl(field):
+            return self.h_cross(self.nabla, field)
+
+        from pytools.arithmetic_container import join_fields
+
+        return join_fields(
+                - 1/self.epsilon * h_curl(h),
+                1/self.mu * e_curl(e),
+                )
 
     def rhs(self, t, w):
         from hedge.tools import cross
@@ -405,20 +421,9 @@ class MaxwellOperator(TimeDependentOperator):
 
         e, h = self.split_eh(w)
 
-        def e_curl(field):
-            return self.e_cross(self.nabla, cache_diff_results(field))
-
-        def h_curl(field):
-            return self.h_cross(self.nabla, cache_diff_results(field))
-
         pec_bc = join_fields(
                 -self.discr.boundarize_volume_field(e, self.pec_tag),
                 self.discr.boundarize_volume_field(h, self.pec_tag)
-                )
-
-        local_op_fields = join_fields(
-                1/self.epsilon * h_curl(h),
-                - 1/self.mu * e_curl(e),
                 )
 
         if self.current is not None:
@@ -429,9 +434,10 @@ class MaxwellOperator(TimeDependentOperator):
                     local_op_fields[e_idx] -= j[j_idx]
                     e_idx += 1
             
-        return local_op_fields + self.m_inv*(
-                    self.flux * w
-                    +self.flux * pair_with_boundary(w, pec_bc, self.pec_tag)
+        return - self.local_op(cache_diff_results(e), cache_diff_results(h)) \
+                + self.m_inv*(
+                    self.flux_op * w
+                    +self.flux_op * pair_with_boundary(w, pec_bc, self.pec_tag)
                     )
 
     def assemble_fields(self, e=None, h=None):
