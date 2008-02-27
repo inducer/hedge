@@ -237,7 +237,10 @@ class StrongWaveOperator:
         self.discr = discr
         self.source_f = source_f
 
-        assert c > 0, "wave speed has to be positive"
+        if self.c > 0:
+            self.sign = 1
+        else:
+            self.sign = -1
 
         self.dirichlet_tag = dirichlet_tag
         self.neumann_tag = neumann_tag
@@ -267,7 +270,7 @@ class StrongWaveOperator:
             pass
         elif flux_type == "upwind":
             # see doc/notes/hedge-notes.tm
-            flux_weak -= join_fields(
+            flux_weak -= self.sign*join_fields(
                     0.5*(u.int-u.ext),
                     0.5*(normal * dot(normal, v.int-v.ext)))
         else:
@@ -308,8 +311,8 @@ class StrongWaveOperator:
         rad_v = self.discr.boundarize_volume_field(v, self.radiation_tag)
         rad_n = self.radiation_normals
         rad_bc = join_fields(
-                0.5*(rad_u - dot(rad_n, rad_v, num.multiply)),
-                0.5*ac_multiply(rad_n, dot(rad_n, rad_v, num.multiply) - rad_u)
+                0.5*(rad_u - self.sign*dot(rad_n, rad_v, num.multiply)),
+                0.5*ac_multiply(rad_n, dot(rad_n, rad_v, num.multiply) - self.sign*rad_u)
                 )
 
         rhs = (-join_fields(
@@ -328,7 +331,7 @@ class StrongWaveOperator:
         return rhs
 
     def max_eigenvalue(self):
-        return self.c
+        return abs(self.c)
 
 
 
