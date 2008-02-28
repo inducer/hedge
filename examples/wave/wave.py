@@ -92,7 +92,7 @@ def main() :
 
     from hedge.operators import StrongWaveOperator
     from hedge.mesh import TAG_ALL, TAG_NONE
-    op = StrongWaveOperator(1, discr, 
+    op = StrongWaveOperator(-1, discr, 
             source_vec_getter,
             dirichlet_tag=TAG_NONE,
             neumann_tag=TAG_NONE,
