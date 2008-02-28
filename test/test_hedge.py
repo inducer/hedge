@@ -1271,7 +1271,7 @@ class TestHedge(unittest.TestCase):
                 u = stepper(u, step*dt, dt, op.rhs)
                 sym_error_u = u-sym_map(u)
                 sym_error_u_l2 = sqrt(sym_error_u*(discr.mass_operator*sym_error_u))
-                self.assert_(sym_error_u_l2 < 1e-15)
+                self.assert_(sym_error_u_l2 < 2e-15)
     # -------------------------------------------------------------------------
     def test_convergence_advec_2d(self):
         """Test whether 2D advection actually converges"""
@@ -1492,7 +1492,7 @@ class TestHedge(unittest.TestCase):
         half_filter = Filter(discr, lambda mid, ldis: 0.5)
         for fmat in half_filter.filter_matrices:
             n,m = fmat.shape
-            self.assert_(comp.norm_frobenius(fmat - 0.5*num.eye(n, m)) < 1e-15)
+            self.assert_(comp.norm_frobenius(fmat - 0.5*num.eye(n, m)) < 2e-15)
 
         def l2_norm(v):
             from math import sqrt
@@ -1508,7 +1508,7 @@ class TestHedge(unittest.TestCase):
 
             u = discr.interpolate_volume_function(u_analytic)
             filt_u = exp_filter(u)
-            self.assert_(abs(integral(discr, u) - integral(discr, filt_u)) < 1e-15)
+            self.assert_(abs(integral(discr, u) - integral(discr, filt_u)) < 3e-15)
             self.assert_(0.98 < l2_norm(filt_u) / l2_norm(u) < 0.99999)
 
         test_freq(3)
