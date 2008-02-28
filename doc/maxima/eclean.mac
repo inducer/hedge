@@ -161,18 +161,3 @@ print(fullhypsimp(ev(eclean_strongwflux,
   [Ep=subrange(eclean_chiradwp,1,3),
    Hp=subrange(eclean_chiradwp,4,6),
    %phi[p]=eclean_chiradwp[7,1]])));
-
-nsubst(x):=subst([Normal(0)=nx,Normal(1)=ny],x);
-wave: nsubst(subst([Int=I,Ext=E],
-   c*(Int[0]*Normal(0) + (-1)*(0.5*(Int[0] + Ext[0])*Normal(0) + (-1)*(-1)*0.5*Normal(0)*(Normal(0)*(Int[1] + (-1)*Ext[1]) + Normal(1)*(Int[2] + (-1)*Ext[2]))))
-  ));
-hyp:nsubst(subst([
-        Int[0]=I[1], Int[1]=I[2], Int[3]=I[0],
-        Ext[0]=E[1], Ext[1]=E[2], Ext[3]=E[0]],
-   0.5*c*Normal(0)*(Int[3] + (-1)*Ext[3] + (-1)*(Normal(0)*(Int[0] + (-1)*Ext[0]) + Normal(1)*(Int[1] + (-1)*Ext[1])))
-  ));
-print(wave);
-print(hyp);
-print(ratsimp(wave-hyp));
-
-
