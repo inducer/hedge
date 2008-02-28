@@ -25,6 +25,7 @@ from pytools import monkeypatch_method
 from pytools.arithmetic_container import ArithmeticList, \
         work_with_arithmetic_containers
 import pymbolic
+import pymbolic.mapper.collector
 
 
 
@@ -270,63 +271,12 @@ class FluxStringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
 
 
 
-class FluxNormalizationMapper(pymbolic.mapper.IdentityMapper):
+class FluxNormalizationMapper(pymbolic.mapper.collector.TermCollector):
     def map_constant_flux(self, expr):
         if expr.local_c == expr.neighbor_c:
             return expr.local_c
         else:
             return expr
-
-    def map_sum(self, expr):
-        from pymbolic.primitives import \
-                flattened_sum, flattened_product, \
-                Product, is_constant
-
-        terms2coeff = {}
-
-        def add_term(coeff, terms):
-            terms2coeff[terms] = terms2coeff.get(terms, 0)  + coeff
-
-        for kid in expr.children:
-            kid = self.rec(kid)
-
-            if isinstance(kid, Product):
-                pkids = kid.children
-            else:
-                pkids = [kid]
-
-            coeffs = []
-            terms = set()
-            for p_kid in pkids:
-                if is_constant(p_kid):
-                    coeffs.append(p_kid)
-                else:
-                    terms.add(p_kid)
-
-            add_term(flattened_product(coeffs), frozenset(terms))
-
-        return flattened_sum(
-                coeffs*flattened_product(terms)
-                for terms, coeffs in terms2coeff.iteritems())
-
-    def map_product(self, expr):
-        from pymbolic.primitives import flattened_product, is_constant
-
-        constants = []
-        rest = []
-
-        for kid in expr.children:
-            kid = self.rec(kid)
-
-            if is_constant(kid):
-                constants.append(kid)
-            else:
-                rest.append(kid)
-
-        from operator import mul
-        constant = reduce(mul, constants, 1)
-
-        return flattened_product([constant] + rest)
 
     def map_if_positive(self, expr):
         return IfPositive(
@@ -340,7 +290,9 @@ class FluxNormalizationMapper(pymbolic.mapper.IdentityMapper):
         
 def normalize_flux(flux):
     from pymbolic import expand, flatten
-    return FluxNormalizationMapper()(flatten(expand(flux)))
+    from pymbolic.mapper.constant_folder import CommutativeConstantFoldingMapper
+    return CommutativeConstantFoldingMapper()(FluxNormalizationMapper()(
+        flatten(expand(flux))))
 
 
 
@@ -445,6 +397,7 @@ def compile_flux(flux):
     def compile_scalar_single_dep_flux(flux):
         return FluxCompilationMapper()(flux)
 
+    print "ENTER", flux
     def compile_scalar_flux(flux):
         def in_fields_cmp(a, b):
             return cmp(a.index, b.index) \
@@ -461,6 +414,8 @@ def compile_flux(flux):
 
         result = []
 
+        print in_fields
+
         if in_fields:
             max_in_field = max(in_field.index for in_field in in_fields)
 
@@ -468,8 +423,12 @@ def compile_flux(flux):
             in_derivatives = dict(
                     ((in_field.index, in_field.is_local),
                     normalize_flux(FluxDifferentiationMapper(in_field)(flux)))
+                    #FluxDifferentiationMapper(in_field)(flux))
                     for in_field in in_fields)
+            for (ifi, iloc), diff in in_derivatives.iteritems():
+                print ifi, iloc, diff
 
+            print "PUT NORM BACK IN"
             # check for (invalid) nonlinearity
             for i, deriv in in_derivatives.iteritems():
                 if FluxDependencyMapper()(deriv):
@@ -493,6 +452,8 @@ def compile_flux(flux):
         return result
 
     try:
-        return flux._compiled
+        result = flux._compiled
+        print "ALREADY COMPILED"
+        return result
     except AttributeError:
         return compile_scalar_flux(flux)

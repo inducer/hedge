@@ -280,6 +280,8 @@ class StrongWaveOperator:
                 dot(v.int, normal),
                 u.int * normal) - flux_weak
 
+        print "wave", (-self.c*flux_strong)[1]
+
         self.flux = discr.get_flux_operator(-self.c*flux_strong)
 
         self.nabla = discr.nabla
@@ -318,12 +320,12 @@ class StrongWaveOperator:
         rhs = (-join_fields(
             -self.c*dot(self.nabla, cache_diff_results(v)), 
             -self.c*self.nabla*cache_diff_results(u)
-            ) + self.m_inv * (
+            ) + (self.m_inv * (
                 self.flux*w 
                 + self.flux * pair_with_boundary(w, dir_bc, self.dirichlet_tag)
                 + self.flux * pair_with_boundary(w, neu_bc, self.neumann_tag)
                 + self.flux * pair_with_boundary(w, rad_bc, self.radiation_tag)
-                ))
+                )))
 
         if self.source_f is not None:
             rhs[0] += self.source_f(t)
