@@ -2,10 +2,19 @@ load("maxwellbase.mac");
 
 assume(%chi>0);
 
+/*
 eclean_Asimp:blockmat(
   max_Asimp,
   vstack(epsinv*muinv*covect(n),constmatrix(3,1,0)),
   hstack(%chi^2*n,constmatrix(1,3,0)),
+  zeromatrix(1,1)
+);
+*/
+
+eclean_Asimp:blockmat(
+  max_Asimp,
+  vstack(%chi*sqrt(epsinv*muinv)*covect(n),constmatrix(3,1,0)),
+  hstack(%chi*sqrt(epsinv*muinv)*n,constmatrix(1,3,0)),
   zeromatrix(1,1)
 );
 

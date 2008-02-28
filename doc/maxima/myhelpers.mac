@@ -4,11 +4,12 @@ load("diag");
 
 assert(condition):=if not condition then error("Assertion violated") else true$
 
+norm_2_squared(v):=v.v;
 
 /* A constant matrix of size n x m */
 constmatrix(n,m,c):=genmatrix(lambda ([i,j], c),n,m);
 
-vstack(a,b):=append(a,b);
+vstack:append;
 
 hstack(a,b):=transpose(append(transpose(a),transpose(b)));
 
@@ -18,6 +19,8 @@ crossprod(a,b):=makelist(
   sum(sum(
       levi_civita([i,j,k])*a[j]*b[k],
    j,1,3),k,1,3),i,1,3)$
+
+subrange(v, start, stop):=makelist(v[i,1],i,start,stop);
 
 /* ------------------------------------------------------------------------- */
 /* Simplification for expressions stemming from hyperbolic systems */
@@ -117,6 +120,7 @@ hyp_upwind_flux(evs, D):=block([evvars, Dp, Dm, n, midstates, states, unknowns],
 
       eqns:makelist(veceqns[i,1], i, 1, length(veceqns)),
 
+      print(covect(eqns)),
       soln:solve(eqns, unknowns),
       assert(length(soln)=1),
 

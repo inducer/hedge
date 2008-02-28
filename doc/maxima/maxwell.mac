@@ -17,7 +17,7 @@ print("Radiation boundary condition for Maxwell's:");
 print(fullhypsimp(max_V.max_radbdryspinw));
 
 /* ------------------------------------------------------------------------- */
-max_pecbdrywpins:vstack(-max_Emins,max_Hmins);
+max_pecbdrywpins:ev(max_pecbdrywp,[Em=max_Emins, Hm=max_Hmins]);
 
 print("PEC bdry condition for Maxwell's in terms of characteristic variables (s)");
 max_pecbdryspinw:fullhypsimp(max_invV.max_pecbdrywpins);
@@ -63,8 +63,6 @@ max_knownstrongwflux:ratsimp(vstack(
   1/(2*%mu)
   *(crossprod(n,(max_Em-max_Ep)+1/max_Y*crossprod(n,max_Hm-max_Hp)))
   ))$
-
-norm_2_squared(v):=v.v;
 
 assert(norm_2_squared(hypsimp(
   (max_strongwflux)

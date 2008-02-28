@@ -9,7 +9,7 @@ ehclean_Dinc:ratsubst(c,1/(sqrt(%epsilon)*sqrt(%mu)), ehclean_D);
 print(ehclean_Dinc);
 ehclean_sflux:hyp_upwind_flux([-%chi*c,-c,c,%chi*c], ehclean_Dinc);
 
-print("e-clean system flux in terms of characteristic variables:");
+print("eh-clean system flux in terms of characteristic variables:");
 print(covect(ehclean_sflux));
 
 /* FIXME: ehclean_V should not depend on epsilon and mu, but it does 
