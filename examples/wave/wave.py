@@ -44,12 +44,12 @@ def main() :
 
     pcon = guess_parallelization_context()
 
-    dim = 2
+    dim = 1
 
     if dim == 1:
         if pcon.is_head_rank:
             from hedge.mesh import make_uniform_1d_mesh
-            mesh = make_uniform_1d_mesh(-1, 1, 50)
+            mesh = make_uniform_1d_mesh(-10, 10, 500)
 
         el_class = IntervalElement
     elif dim == 2:
@@ -73,7 +73,7 @@ def main() :
     else:
         mesh_data = pcon.receive_mesh()
 
-    discr = pcon.make_discretization(mesh_data, el_class(3))
+    discr = pcon.make_discretization(mesh_data, el_class(7))
     stepper = RK4TimeStepper()
     #stepper = AdamsBashforthTimeStepper(1)
     #vis = VtkVisualizer(discr, pcon, "fld")
@@ -94,9 +94,9 @@ def main() :
     from hedge.mesh import TAG_ALL, TAG_NONE
     op = StrongWaveOperator(-1, discr, 
             source_vec_getter,
-            dirichlet_tag=TAG_NONE,
+            dirichlet_tag=TAG_ALL,
             neumann_tag=TAG_NONE,
-            radiation_tag=TAG_ALL,
+            radiation_tag=TAG_NONE,
             flux_type="upwind",
             )
 
@@ -106,8 +106,8 @@ def main() :
             #discr.interpolate_volume_function(lambda x: sin(x[0])),
             #[discr.volume_zeros() for i in range(discr.dimensions)]) # v
 
-    dt = discr.dt_factor(op.max_eigenvalue()) / 2
-    nsteps = int(3/dt)
+    dt = discr.dt_factor(op.max_eigenvalue())
+    nsteps = int(10/dt)
     if pcon.is_head_rank:
         print "dt", dt
         print "nsteps", nsteps
@@ -142,10 +142,7 @@ def main() :
 
         t = step*dt
 
-        fields = stepper(fields, t, dt, op.rhs)
-
-        if step % 1 == 0:
-            def vlmz(f): return discr.volumize_boundary_field(f, TAG_ALL)
+        if step % 10 == 0:
             visf = vis.make_file("fld-%04d" % step)
 
             vis.add_data(visf,
@@ -157,6 +154,11 @@ def main() :
                     scale_factor=2e1,
                     step=step)
             visf.close()
+
+        def rhs(t, y):
+            return op.rhs(t, y) - 3*join_fields(fields[0], 0*fields[1:])
+
+        fields = stepper(fields, t, dt, rhs)
 
     vis.close()
 

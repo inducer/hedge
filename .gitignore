@@ -25,4 +25,6 @@ doc/dev-reference
 *.bak
 *.pdf
 *.tif
+*.mpeg
 *-journal
+visitlog.py
