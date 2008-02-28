@@ -280,8 +280,6 @@ class StrongWaveOperator:
                 dot(v.int, normal),
                 u.int * normal) - flux_weak
 
-        print "wave", (-self.c*flux_strong)[1]
-
         self.flux = discr.get_flux_operator(-self.c*flux_strong)
 
         self.nabla = discr.nabla

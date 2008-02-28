@@ -397,7 +397,6 @@ def compile_flux(flux):
     def compile_scalar_single_dep_flux(flux):
         return FluxCompilationMapper()(flux)
 
-    print "ENTER", flux
     def compile_scalar_flux(flux):
         def in_fields_cmp(a, b):
             return cmp(a.index, b.index) \
@@ -414,8 +413,6 @@ def compile_flux(flux):
 
         result = []
 
-        print in_fields
-
         if in_fields:
             max_in_field = max(in_field.index for in_field in in_fields)
 
@@ -423,12 +420,8 @@ def compile_flux(flux):
             in_derivatives = dict(
                     ((in_field.index, in_field.is_local),
                     normalize_flux(FluxDifferentiationMapper(in_field)(flux)))
-                    #FluxDifferentiationMapper(in_field)(flux))
                     for in_field in in_fields)
-            for (ifi, iloc), diff in in_derivatives.iteritems():
-                print ifi, iloc, diff
 
-            print "PUT NORM BACK IN"
             # check for (invalid) nonlinearity
             for i, deriv in in_derivatives.iteritems():
                 if FluxDependencyMapper()(deriv):
@@ -452,8 +445,6 @@ def compile_flux(flux):
         return result
 
     try:
-        result = flux._compiled
-        print "ALREADY COMPILED"
-        return result
+        return flux._compiled
     except AttributeError:
         return compile_scalar_flux(flux)
