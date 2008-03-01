@@ -97,7 +97,7 @@ namespace
         stl_input_iterator<unsigned>(),
         back_inserter(v));
     return PyString_FromStringAndSize(
-        reinterpret_cast<const char *>(v.data()), v.size()*sizeof(T));
+        reinterpret_cast<const char *>(&v.front()), v.size()*sizeof(T));
   }
 
 
