@@ -1271,7 +1271,7 @@ class TestHedge(unittest.TestCase):
                 u = stepper(u, step*dt, dt, op.rhs)
                 sym_error_u = u-sym_map(u)
                 sym_error_u_l2 = sqrt(sym_error_u*(discr.mass_operator*sym_error_u))
-                self.assert_(sym_error_u_l2 < 2e-15)
+                self.assert_(sym_error_u_l2 < 4e-15)
     # -------------------------------------------------------------------------
     def test_convergence_advec_2d(self):
         """Test whether 2D advection actually converges"""
