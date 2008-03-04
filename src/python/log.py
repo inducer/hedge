@@ -328,14 +328,15 @@ class EMFieldMomentum(MultiLogQuantity):
 
 
 class EMFieldDivergenceD(LogQuantity):
-    def __init__(self, fields, name="divD"):
+    def __init__(self, maxwell_op, fields, name="divD"):
         LogQuantity.__init__(self, name, "C", "Integral over div D")
 
         self.fields = fields
         self.discr = self.fields.maxwell_op.discr
 
         from hedge.operators import DivergenceOperator
-        self.div_op = DivergenceOperator(self.discr)
+        self.div_op = DivergenceOperator(self.discr,
+                maxwell_op.get_eh_subset()[:3])
 
     def __call__(self):
         max_op = self.fields.maxwell_op
@@ -349,12 +350,13 @@ class EMFieldDivergenceD(LogQuantity):
 
 
 class EMFieldDivergenceB(MultiLogQuantity):
-    def __init__(self, fields, names=None):
+    def __init__(self, maxwell_op, fields, names=None):
         self.fields = fields
         self.discr = self.fields.maxwell_op.discr
 
         from hedge.operators import DivergenceOperator
-        self.div_op = DivergenceOperator(self.discr)
+        self.div_op = DivergenceOperator(self.discr,
+                maxwell_op.get_eh_subset()[3:])
 
         if names is None:
             names = ["divB", "err_divB_l1"]
@@ -375,8 +377,8 @@ class EMFieldDivergenceB(MultiLogQuantity):
 
 
 
-def add_em_quantities(mgr, c0, fields):
+def add_em_quantities(mgr, maxwell_op, fields):
     mgr.add_quantity(EMFieldEnergy(fields))
-    mgr.add_quantity(EMFieldMomentum(fields, c0))
-    mgr.add_quantity(EMFieldDivergenceD(fields))
-    mgr.add_quantity(EMFieldDivergenceB(fields))
+    mgr.add_quantity(EMFieldMomentum(fields, maxwell_op.c))
+    mgr.add_quantity(EMFieldDivergenceD(maxwell_op, fields))
+    mgr.add_quantity(EMFieldDivergenceB(maxwell_op, fields))

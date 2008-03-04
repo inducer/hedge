@@ -84,8 +84,14 @@ class GradientOperator(Operator):
 
 
 class DivergenceOperator(Operator):
-    def __init__(self, discr):
+    def __init__(self, discr, subset=None):
         self.discr = discr
+
+        if subset is None:
+            subset = self.subset = discr.dimensions * [True,]
+        else:
+            # chop off any extra dimensions
+            subset = self.subset = subset[:discr.dimensions]
 
         from hedge.flux import make_normal, FluxVectorPlaceholder
         v = FluxVectorPlaceholder(discr.dimensions)
@@ -94,17 +100,26 @@ class DivergenceOperator(Operator):
         self.m_inv = discr.inverse_mass_operator
         normal = make_normal(self.discr.dimensions)
 
-        from hedge.tools import dot
-        self.flux = discr.get_flux_operator(dot(v.int-v.avg, normal))
+        flux = 0
+        for i, i_enabled in enumerate(subset):
+            if i_enabled:
+                flux += (v.int-v.avg)[i]*normal[i]
+
+        self.flux = discr.get_flux_operator(flux)
 
     def __call__(self, v):
         from hedge.mesh import TAG_ALL
         from hedge.discretization import pair_with_boundary, cache_diff_results
-        from hedge.tools import dot
 
         bc = self.discr.boundarize_volume_field(v, TAG_ALL)
 
-        return dot(self.nabla, cache_diff_results(v)) - self.m_inv*(
+        v_cache = cache_diff_results(v)
+        local_op_result = self.discr.volume_zeros()
+        for i, i_enabled in enumerate(self.subset):
+            if i_enabled:
+                local_op_result += self.nabla[i]*v_cache[i]
+        
+        return local_op_result - self.m_inv*(
                 self.flux * v + 
                 self.flux * pair_with_boundary(v, bc, TAG_ALL))
 
