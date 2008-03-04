@@ -26,8 +26,6 @@ BOOST_MPI_LIBRARIES = [$str{BOOST_MPI_LIBNAME}]
 
 if not MPICXX:
     MPICXX = MPICC
-
-BLAS_LIBRARIES = $str{BLAS_LIB_NAMES}.split(",")
 # --------------------------------------------------------------------
 # Compiler flags
 # --------------------------------------------------------------------
