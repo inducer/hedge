@@ -280,11 +280,10 @@ class Mesh(pytools.Record):
           (face_vertex_indices) -> 
             (opposite_face_vertex_indices), axis
 
-      This maps a face C{(el, face_index)} to its periodicity-induced
-      opposite.
+      This maps a face to its periodicity-induced opposite.
 
     @ivar periodic_opposite_vertices: a mapping of the form::
-          vertex_index -> [opposite_vertex_indices]
+          vertex_index -> [(opposite_vertex_index, axis), ...]
 
       This maps one vertex to a list of its periodicity-induced 
       opposites.
@@ -385,8 +384,8 @@ def _build_mesh_data_dict(points, elements, boundary_tagger, periodicity, is_ran
             plus_to_minus = reverse_dictionary(minus_to_plus)
 
             for a, b in minus_to_plus.iteritems():
-                periodic_opposite_vertices.setdefault(a, []).append(b)
-                periodic_opposite_vertices.setdefault(b, []).append(a)
+                periodic_opposite_vertices.setdefault(a, []).append((b, axis))
+                periodic_opposite_vertices.setdefault(b, []).append((a, axis))
 
             # establish face connectivity
             for minus_face in minus_faces:

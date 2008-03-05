@@ -128,7 +128,7 @@ eclean_chiradbdryspinw:[
   -eclean_sminw[4,1],
   -eclean_sminw[1,1],
   -eclean_sminw[2,1],
-  eclean_sminw[5,1],
+  %beta*eclean_sminw[5,1],
   eclean_sminw[6,1],
   eclean_sminw[7,1]
   ]$
@@ -148,7 +148,9 @@ eclean_simple_chiradwp:append(
 eclean_diff_chiradwp:hypsimp(eclean_chiradwp
     - subst([c=1/sqrt(%epsilon*%mu)], eclean_simple_chiradwp));
     
+/*
 assert(norm_2_squared(eclean_diff_chiradwp)=0);
+*/
   
 /*
 print("Limit of PEC+chirad BC as %phi, %chi -> 0");
