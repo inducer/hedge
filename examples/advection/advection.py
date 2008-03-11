@@ -189,7 +189,7 @@ def main() :
             add_simulation_quantities, \
             add_run_info
 
-    logmgr = LogManager("advection.dat", pcon.communicator)
+    logmgr = LogManager("advection.dat", "w", pcon.communicator)
     add_run_info(logmgr)
     add_general_quantities(logmgr)
     add_simulation_quantities(logmgr, dt)

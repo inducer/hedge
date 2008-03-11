@@ -128,7 +128,7 @@ def main():
         from pytools.log import LogManager, add_general_quantities, \
                 add_simulation_quantities, add_run_info
 
-        logmgr = LogManager("maxwell-%d.dat" % order, pcon.communicator)
+        logmgr = LogManager("maxwell-%d.dat" % order, "w", pcon.communicator)
         add_run_info(logmgr)
         add_general_quantities(logmgr)
         add_simulation_quantities(logmgr, dt)

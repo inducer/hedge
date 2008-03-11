@@ -44,7 +44,7 @@ def main() :
 
     pcon = guess_parallelization_context()
 
-    dim = 1
+    dim = 2
 
     if dim == 1:
         if pcon.is_head_rank:
@@ -76,8 +76,8 @@ def main() :
     discr = pcon.make_discretization(mesh_data, el_class(7))
     stepper = RK4TimeStepper()
     #stepper = AdamsBashforthTimeStepper(1)
-    #vis = VtkVisualizer(discr, pcon, "fld")
-    vis = SiloVisualizer(discr, pcon)
+    vis = VtkVisualizer(discr, pcon, "fld")
+    #vis = SiloVisualizer(discr, pcon)
 
     def source_u(x):
         return exp(-x*x*512)
@@ -94,9 +94,9 @@ def main() :
     from hedge.mesh import TAG_ALL, TAG_NONE
     op = StrongWaveOperator(-1, discr, 
             source_vec_getter,
-            dirichlet_tag=TAG_ALL,
+            dirichlet_tag=TAG_NONE,
             neumann_tag=TAG_NONE,
-            radiation_tag=TAG_NONE,
+            radiation_tag=TAG_ALL,
             flux_type="upwind",
             )
 
@@ -118,7 +118,7 @@ def main() :
             add_simulation_quantities, \
             add_run_info
 
-    logmgr = LogManager("wave.dat", pcon.communicator)
+    logmgr = LogManager("wave.dat", "w", pcon.communicator)
     add_run_info(logmgr)
     add_general_quantities(logmgr)
     add_simulation_quantities(logmgr, dt)
