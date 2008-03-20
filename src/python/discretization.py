@@ -597,10 +597,10 @@ class Discretization(object):
         self.inner_flux_timer.stop()
 
     # boundary flux computation -----------------------------------------------
-    def perform_boundary_flux(self, 
+    def _perform_boundary_flux(self, 
             int_flux, int_target, 
             ext_flux, ext_target, 
-            tag=hedge.mesh.TAG_ALL):
+            bdry):
         self.bdry_flux_counter.add()
         self.bdry_flux_timer.start()
 
@@ -608,8 +608,6 @@ class Discretization(object):
 
         ch_int = ChainedFlux(int_flux)
         ch_ext = ChainedFlux(ext_flux)
-
-        bdry = self._get_boundary(tag)
 
         int_target.begin(len(self.nodes), len(self.nodes))
         ext_target.begin(len(self.nodes), len(bdry.nodes))
@@ -1099,32 +1097,70 @@ class _DirectFluxOperator(DiscretizationVectorOperator):
     def __mul__(self, field):
         from hedge.tools import make_vector_target
 
-        def mul_single_dep(int_flux, ext_flux, result, field):
-            if isinstance(field, BoundaryPair):
-                bpair = field
-                self.discr.perform_boundary_flux(
-                        int_flux, make_vector_target(bpair.field, result),
-                        ext_flux, make_vector_target(bpair.bfield, result), 
-                        bpair.tag)
-            else:
-                self.discr.perform_inner_flux(
-                        int_flux, ext_flux, make_vector_target(field, result))
+        if isinstance(field, BoundaryPair):
+            # boundary flux
+            bpair = field
+            bdry = self.discr._get_boundary(bpair.tag)
 
-        result = self.discr.volume_zeros()
-        if isinstance(field, ArithmeticList):
-            for idx, int_flux, ext_flux in self.flux:
-                if not (0 <= idx < len(field)):
-                    raise RuntimeError, "flux depends on out-of-bounds field index"
-                mul_single_dep(int_flux, ext_flux, result, field[idx]) 
+            if not bdry.nodes:
+                return 0
+
+            result = self.discr.volume_zeros()
+
+            field = bpair.field
+            bfield = bpair.bfield
+
+            class ZeroVector:
+                def __getitem__(self, idx):
+                    return 0
+
+            if isinstance(field, ArithmeticList) or isinstance(bfield, ArithmeticList):
+                if bfield == 0:
+                    bfield = ZeroVector()
+                if field == 0:
+                    field = ZeroVector()
+
+                for idx, int_flux, ext_flux in self.flux:
+                    if not (0 <= idx < len(field)):
+                        raise RuntimeError, "flux depends on out-of-bounds field index"
+                    self.discr._perform_boundary_flux(
+                            int_flux, make_vector_target(field[idx], result),
+                            ext_flux, make_vector_target(bfield[idx], result), 
+                            bdry)
+            else:
+                if len(self.flux) > 1:
+                    raise RuntimeError, "only found one field to process, but flux has multiple field dependencies"
+                if len(self.flux) == 1:
+                    idx, int_flux, ext_flux = self.flux[0]
+                    if idx != 0:
+                        raise RuntimeError, "flux depends on out-of-bounds field index"
+                    self.discr._perform_boundary_flux(
+                            int_flux, make_vector_target(field, result),
+                            ext_flux, make_vector_target(bfield, result), 
+                            bdry)
+            return result
+
         else:
-            if len(self.flux) > 1:
-                raise RuntimeError, "only found one field to process, but flux has multiple field dependencies"
-            if len(self.flux) == 1:
-                idx, int_flux, ext_flux = self.flux[0]
-                if idx != 0:
-                    raise RuntimeError, "flux depends on out-of-bounds field index"
-                mul_single_dep(int_flux, ext_flux, result, field) 
-        return result
+            # inner flux
+            result = self.discr.volume_zeros()
+
+            if isinstance(field, ArithmeticList):
+                for idx, int_flux, ext_flux in self.flux:
+                    if not (0 <= idx < len(field)):
+                        raise RuntimeError, "flux depends on out-of-bounds field index"
+                    self.discr.perform_inner_flux(
+                            int_flux, ext_flux, make_vector_target(field[idx], result))
+            else:
+                if len(self.flux) > 1:
+                    raise RuntimeError, "only found one field to process, but flux has multiple field dependencies"
+                if len(self.flux) == 1:
+                    idx, int_flux, ext_flux = self.flux[0]
+                    if idx != 0:
+                        raise RuntimeError, "flux depends on out-of-bounds field index"
+                    self.discr.perform_inner_flux(
+                            int_flux, ext_flux, make_vector_target(field, result))
+
+            return result
 
     def perform_inner(self, tgt):
         dof = len(self.discr)
@@ -1138,10 +1174,10 @@ class _DirectFluxOperator(DiscretizationVectorOperator):
         dof = len(self.discr)
 
         for idx, int_flux, ext_flux in self.flux:
-            self.discr.perform_boundary_flux(
+            self.discr._perform_boundary_flux(
                     int_flux, tgt.rebased_target(0, dof*idx),
                     ext_flux, NullTarget(), 
-                    tag)
+                    self.discr._get_boundary(tag))
 
 
 
@@ -1182,7 +1218,7 @@ class _FluxMatrixOperator(DiscretizationVectorOperator):
                     self.discr.perform_boundary_flux(
                             int_flux, MatrixTarget(int_bmatrix), 
                             ext_flux, MatrixTarget(ext_bmatrix), 
-                            bpair.tag)
+                            self.discr._get_boundary(tag))
                     int_matrix = num.asarray(int_bmatrix, flavor=num.SparseExecuteMatrix)
                     ext_matrix = num.asarray(ext_bmatrix, flavor=num.SparseExecuteMatrix)
 
@@ -1307,15 +1343,9 @@ def pair_with_boundary(field, bfield, tag=hedge.mesh.TAG_ALL):
     """Create a L{BoundaryPair} out of the volume field C{field}
     and the boundary field C{field}.
 
-    Accepts ArithmeticList or 0 for either argument.
+    Also accepts ArithmeticList or 0 for either argument.
     """
-    if isinstance(field, ArithmeticList):
-        assert isinstance(bfield, ArithmeticList)
-        return ArithmeticList([
-            BoundaryPair(sub_f, sub_bf, tag) for sub_f, sub_bf in zip(field, bfield)
-            ])
-    else:
-        return BoundaryPair(field, bfield, tag)
+    return BoundaryPair(field, bfield, tag)
 
 
 

@@ -678,7 +678,7 @@ class WeakPoissonOperator(Operator,hedge.tools.PylinearOperator):
         return self.m_inv * (
                 - (self.stiff_t * cache_diff_results(u))
                 + self.flux_u*u
-                + self.flux_u_dbdry*pair_with_boundary(u, 0, self.dirichlet_tag)
+                #+ self.flux_u_dbdry*pair_with_boundary(u, 0, self.dirichlet_tag)
                 + self.flux_u_nbdry*pair_with_boundary(u, 0, self.neumann_tag)
                 )
 

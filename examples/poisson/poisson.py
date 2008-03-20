@@ -44,7 +44,7 @@ def main() :
 
     pcon = guess_parallelization_context()
 
-    dim = 3
+    dim = 2
 
     def boundary_tagger(fvi, el, fn):
         from math import atan2, pi
@@ -62,8 +62,9 @@ def main() :
 
     if dim == 2:
         if pcon.is_head_rank:
-            #mesh = make_disk_mesh(r=0.5, boundary_tagger=boundary_tagger)
-            mesh = make_regular_square_mesh(n=3, boundary_tagger=boundary_tagger, periodicity=(True,False))
+            mesh = make_disk_mesh(r=0.5, boundary_tagger=boundary_tagger,
+                    max_area=1e-2)
+            #mesh = make_regular_square_mesh(n=3, boundary_tagger=boundary_tagger, periodicity=(True,False))
             #mesh = make_regular_square_mesh(n=9)
             #mesh = make_square_mesh(max_area=0.1, boundary_tagger=boundary_tagger)
             #mesh.transform(Reflection(0,2))
@@ -169,8 +170,21 @@ def main() :
     #a_inv.debug_level = 1
     #u = -a_inv(op.prepare_rhs(GivenFunction(rhs_c)))
 
+    if True:
+        u = GivenFunction(rhs_c).volume_interpolant(discr)
+
+        N = 3000
+        from time import time
+        start = time()
+        for i in xrange(N):
+            op.grad(u)
+        print (time()-start)/N
+        return
+
     from hedge.tools import parallel_cg
-    u = -parallel_cg(pcon, -op, op.prepare_rhs(GivenFunction(rhs_c)), debug=True, tol=1e-4)
+    u = -parallel_cg(pcon, -op, op.prepare_rhs(GivenFunction(rhs_c)), 
+            debug=True, tol=1e-10)
+    print len(u)
 
     from hedge.discretization import ones_on_boundary
     visf = vis.make_file("fld")
@@ -180,6 +194,7 @@ def main() :
         ("neu", ones_on_boundary(discr, "neumann")), 
         ])
     visf.close()
+
 
 
 
