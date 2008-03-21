@@ -907,17 +907,10 @@ class _OperatorSum(DiscretizationVectorOperator):
 
 
 # diff operators --------------------------------------------------------------
-class _DiffResultCache(object):
+class cache_diff_results(object):
     def __init__(self, vector):
         self.vector = vector
         self.cache = {}
-
-def cache_diff_results(vec):
-    from pytools.arithmetic_container import ArithmeticList
-    if isinstance(vec, list):
-        return [_DiffResultCache(subvec) for subvec in vec]
-    else:
-        return _DiffResultCache(vec)
 
 
 
@@ -934,28 +927,45 @@ class DiffOperatorBase(DiscretizationVectorOperator):
         self.do_warn = False
 
     def __mul__(self, field):
-        # this emulates work_with_arithmetic_containers, but has to be more
-        # general, because 
-        # a) _DiffResultCache is not an object supporting arithmetic
-        #    (and for good reason)
-        # b) cache_diff_results returns a plain list (because of a)
+        if isinstance(field, cache_diff_results):
+            cache = field.cache
+            field = field.vector
+        else:
+            if self.do_warn:
+                from warnings import warn
+                warn("wrap operand of differential operator in cache_diff_results() for speed")
 
-        if isinstance(field, list):
-            return ArithmeticList(self * subfield for subfield in field)
+            # this "cache" will be freed right away, storing to it in the 
+            # non-default case does no performance harm
+            cache = {}
 
         self.discr.diff_op_counter.add()
         self.discr.diff_op_timer.start()
 
-        if not isinstance(field, _DiffResultCache):
-            if self.do_warn:
-                from warnings import warn
-                warn("wrap operand of diff.operator in cache_diff_results() for speed")
-
+        def diff_rst(rst_axis, field):
             result = self.discr.volume_zeros()
+
             from hedge.tools import make_vector_target
-            self.perform_on(make_vector_target(field, result))
-        else:
-            rst_derivatives = self.get_rst_derivatives(field)
+            target = make_vector_target(field, result)
+
+            target.begin(len(self.discr), len(self.discr))
+
+            from hedge._internal import perform_elwise_operator
+            for eg in self.discr.element_groups:
+                perform_elwise_operator(eg.ranges, eg.ranges, 
+                        self.matrices(eg)[rst_axis], target)
+
+            target.finalize()
+
+            return result
+
+        def diff_xyz_with_cache(idx, field):
+            try:
+                rst_derivatives = cache[self.__class__, idx]
+            except KeyError:
+                rst_derivatives = [diff_rst(i, field) 
+                        for i in range(self.discr.dimensions)]
+                cache[self.__class__, idx] = rst_derivatives
 
             result = self.discr.volume_zeros()
 
@@ -971,35 +981,19 @@ class DiffOperatorBase(DiscretizationVectorOperator):
                             self.coefficients(eg)[self.xyz_axis][rst_axis],
                             target)
                 target.finalize()
+            return result
+
+        if isinstance(field, ArithmeticList):
+            result = ArithmeticList(
+                    diff_xyz_with_cache(subfield)
+                    for idx, subfield in enumerate(field))
+        else:
+            result = diff_xyz_with_cache(0, field)
 
         self.discr.diff_op_timer.stop()
-
         return result
 
-    def get_rst_derivatives(self, diff_result_cache):
-        def diff(rst_axis):
-            result = self.discr.volume_zeros()
 
-            from hedge.tools import make_vector_target
-            target = make_vector_target(diff_result_cache.vector, result)
-
-            target.begin(len(self.discr), len(self.discr))
-
-            from hedge._internal import perform_elwise_operator
-            for eg in self.discr.element_groups:
-                perform_elwise_operator(eg.ranges, eg.ranges, 
-                        self.matrices(eg)[rst_axis], target)
-
-            target.finalize()
-
-            return result
-
-        try:
-            return diff_result_cache.cache[self.__class__]
-        except KeyError:
-            result = [diff(i) for i in range(self.discr.dimensions)]
-            diff_result_cache.cache[self.__class__] = result
-            return result
             
     def perform_on(self, target):
         from hedge._internal import perform_elwise_scaled_operator
@@ -1201,43 +1195,74 @@ class _FluxMatrixOperator(DiscretizationVectorOperator):
         self.bdry_ops = {}
 
     def __mul__(self, field):
-        dof = len(self.discr)
 
-        def mul_single_dep(idx, int_flux, ext_flux, field):
-            if isinstance(field, BoundaryPair):
+        def get_bdry_op(idx, bdry, int_flux, ext_flux):
+            try:
+                return self.bdry_ops[idx, bdry]
+            except KeyError:
+                dof = len(self.discr)
+                bdry_dof = len(bdry.nodes)
+
                 from hedge._internal import MatrixTarget
 
-                bpair = field
-                bdry_dof = self.discr.len_boundary(bpair.tag)
+                int_bmatrix = num.zeros(shape=(dof,dof), flavor=num.SparseBuildMatrix)
+                ext_bmatrix = num.zeros(shape=(dof,bdry_dof), flavor=num.SparseBuildMatrix)
+                self.discr._perform_boundary_flux(
+                        int_flux, MatrixTarget(int_bmatrix), 
+                        ext_flux, MatrixTarget(ext_bmatrix), 
+                        bdry)
+                int_matrix = num.asarray(int_bmatrix, flavor=num.SparseExecuteMatrix)
+                ext_matrix = num.asarray(ext_bmatrix, flavor=num.SparseExecuteMatrix)
 
-                try:
-                    int_matrix, ext_matrix = self.bdry_ops[idx, bpair.tag]
-                except KeyError:
-                    int_bmatrix = num.zeros(shape=(dof,dof), flavor=num.SparseBuildMatrix)
-                    ext_bmatrix = num.zeros(shape=(dof,bdry_dof), flavor=num.SparseBuildMatrix)
-                    self.discr.perform_boundary_flux(
-                            int_flux, MatrixTarget(int_bmatrix), 
-                            ext_flux, MatrixTarget(ext_bmatrix), 
-                            self.discr._get_boundary(tag))
-                    int_matrix = num.asarray(int_bmatrix, flavor=num.SparseExecuteMatrix)
-                    ext_matrix = num.asarray(ext_bmatrix, flavor=num.SparseExecuteMatrix)
+                self.bdry_ops[idx, bdry] = int_matrix, ext_matrix
 
-                    self.bdry_ops[idx, bpair.tag] = int_matrix, ext_matrix
+                return int_matrix, ext_matrix
 
-                return int_matrix*bpair.field + ext_matrix*bpair.bfield
+        if isinstance(field, BoundaryPair):
+            # boundary flux
+            bpair = field
+            bdry = self.discr._get_boundary(bpair.tag)
+
+            if not bdry.nodes:
+                return 0
+
+            class ZeroVector:
+                def __getitem__(self, idx):
+                    return 0
+
+            field = bpair.field
+            bfield = bpair.bfield
+
+            if isinstance(field, ArithmeticList) or isinstance(bfield, ArithmeticList):
+                if bfield == 0:
+                    bfield = ZeroVector()
+                if field == 0:
+                    field = ZeroVector()
+
+            if isinstance(field, ArithmeticList):
+                result = self.discr.volume_zeros()
+                for idx, int_flux, ext_flux in self.flux:
+                    int_matrix, ext_matrix = get_bdry_op(idx, bdry, int_flux, ext_flux)
+                    result += int_matrix*bpair.field + ext_matrix*bpair.bfield
+                return result
             else:
-                return self.inner_matrices[idx] * field
+                assert len(self.flux) == 1
+                idx, int_flux, ext_flux = self.flux[0]
+                assert idx == 0
 
-        if isinstance(field, ArithmeticList):
-            result = self.discr.volume_zeros()
-            for idx, int_flux, ext_flux in self.flux:
-                result += mul_single_dep(idx, int_flux, ext_flux, field[idx]) 
-            return result
+                int_matrix, ext_matrix = get_bdry_op(0, bdry, int_flux, ext_flux)
+                return int_matrix*bpair.field + ext_matrix*bpair.bfield
         else:
-            assert len(self.flux) == 1
-            idx, int_flux, ext_flux = self.flux[0]
-            assert idx == 0
-            return mul_single_dep(0, int_flux, ext_flux, field) 
+            if isinstance(field, ArithmeticList):
+                result = self.discr.volume_zeros()
+                for idx, int_flux, ext_flux in self.flux:
+                    result += self.inner_matrices[idx] * field[idx]
+                return result
+            else:
+                assert len(self.flux) == 1
+                idx, int_flux, ext_flux = self.flux[0]
+                assert idx == 0
+                return self.inner_matrices[0] * field
 
     def matrix_inner(self):
         """Returns a BlockMatrix to compute the lifting of the domain-interior fluxes.
@@ -1267,7 +1292,7 @@ class _VectorFluxOperator(object):
 
     def __mul__(self, field):
         if isinstance(field, BoundaryPair) or (
-                isinstance(field, list) and isinstance(field[0], BoundaryPair)):
+                isinstance(field, ArithmeticList) and isinstance(field[0], BoundaryPair)):
             return ArithmeticList(fo * field for fo in self.flux_operators)
         else:
             # this is for performance -- it is faster to apply several fluxes
@@ -1275,7 +1300,7 @@ class _VectorFluxOperator(object):
             result = ArithmeticList(
                     self.discr.volume_zeros() for f in self.flux_operators)
 
-            if not isinstance(field, list):
+            if not isinstance(field, ArithmeticList):
                 field = [field]
 
             def find_field_flux(flux_op, i_field):

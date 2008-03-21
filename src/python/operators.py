@@ -675,12 +675,21 @@ class WeakPoissonOperator(Operator,hedge.tools.PylinearOperator):
     def grad(self, u):
         from hedge.discretization import pair_with_boundary, cache_diff_results
 
+        if False:
+            return self.m_inv * (
+                    - (self.stiff_t * cache_diff_results(u))
+                    + self.flux_u*u
+                    + self.flux_u_dbdry*pair_with_boundary(u, 0, self.dirichlet_tag)
+                    + self.flux_u_nbdry*pair_with_boundary(u, 0, self.neumann_tag)
+                    )
+
         return self.m_inv * (
                 - (self.stiff_t * cache_diff_results(u))
                 + self.flux_u*u
-                #+ self.flux_u_dbdry*pair_with_boundary(u, 0, self.dirichlet_tag)
+                + self.flux_u_dbdry*pair_with_boundary(u, 0, self.dirichlet_tag)
                 + self.flux_u_nbdry*pair_with_boundary(u, 0, self.neumann_tag)
                 )
+
 
     def div(self, v, u=None, apply_minv=True):
         """Compute the divergence of v using an LDG operator.

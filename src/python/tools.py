@@ -287,7 +287,7 @@ def make_vector_target(argument, result):
     case a dummy operator is returned.
     """
     from hedge._internal import NullTarget, VectorTarget
-    if isinstance(argument, (int, float)) and argument == 0:
+    if argument == 0:
         return NullTarget()
     else:
         return VectorTarget(argument, result)
