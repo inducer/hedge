@@ -446,7 +446,7 @@ class Discretization(object):
         else:
             if len(f.shape) == 1:
                 (count,) = f.shape
-                result = ArithmeticList([self.volume_zeros() for i in range(count)])
+                result = ArithmeticList(self.volume_zeros() for i in xrange(count))
 
                 self.interpolant_timer.start()
                 for point_nr, x in enumerate(self.nodes):
@@ -457,7 +457,7 @@ class Discretization(object):
                 return result
             elif len(f.shape) == 2:
                 h, w = f.shape
-                result = [[self.volume_zeros() for j in range(w)] for i in range(h)]
+                result = [[self.volume_zeros() for j in xrange(w)] for i in xrange(h)]
 
                 self.interpolant_timer.start()
                 for point_nr, x in enumerate(self.nodes):
@@ -492,7 +492,7 @@ class Discretization(object):
                 (count,) = f.shape
 
                 self.interpolant_timer.start()
-                result = ArithmeticList([self.boundary_zeros(tag) for i in range(count)])
+                result = ArithmeticList([self.boundary_zeros(tag) for i in xrange(count)])
                 for i, pt in enumerate(self._get_boundary(tag).nodes):
                     for field_nr, value in enumerate(f(pt)):
                         result[field_nr][i] = value
@@ -503,7 +503,7 @@ class Discretization(object):
                 h, w = f.shape
 
                 self.interpolant_timer.start()
-                result = [[self.boundary_zeros(tag) for j in range(w)] for i in range(h)]
+                result = [[self.boundary_zeros(tag) for j in xrange(w)] for i in xrange(h)]
 
                 for point_nr, x in enumerate(self._get_boundary(tag).nodes):
                     for i, row in enumerate(f(x)):
@@ -907,10 +907,16 @@ class _OperatorSum(DiscretizationVectorOperator):
 
 
 # diff operators --------------------------------------------------------------
-class cache_diff_results(object):
+class _DiffRSTCache(object):
     def __init__(self, vector):
         self.vector = vector
         self.cache = {}
+
+def cache_diff_results(vec):
+    if isinstance(vec, ArithmeticList):
+        return [_DiffRSTCache(subfield) for subfield in vec]
+    else:
+        return _DiffRSTCache(vec)
 
 
 
@@ -927,17 +933,6 @@ class DiffOperatorBase(DiscretizationVectorOperator):
         self.do_warn = False
 
     def __mul__(self, field):
-        if isinstance(field, cache_diff_results):
-            cache = field.cache
-            field = field.vector
-        else:
-            if self.do_warn:
-                from warnings import warn
-                warn("wrap operand of differential operator in cache_diff_results() for speed")
-
-            # this "cache" will be freed right away, storing to it in the 
-            # non-default case does no performance harm
-            cache = {}
 
         self.discr.diff_op_counter.add()
         self.discr.diff_op_timer.start()
@@ -960,12 +955,24 @@ class DiffOperatorBase(DiscretizationVectorOperator):
             return result
 
         def diff_xyz_with_cache(idx, field):
+            if isinstance(field, _DiffRSTCache):
+                cache = field.cache
+                field = field.vector
+            else:
+                if self.do_warn:
+                    from warnings import warn
+                    warn("wrap operand of differential operator in cache_diff_results() for speed")
+
+                # this "cache" will be freed right away, storing to it in the 
+                # non-default case does no performance harm
+                cache = {}
+
             try:
-                rst_derivatives = cache[self.__class__, idx]
+                rst_derivatives = cache[self.__class__]
             except KeyError:
                 rst_derivatives = [diff_rst(i, field) 
                         for i in range(self.discr.dimensions)]
-                cache[self.__class__, idx] = rst_derivatives
+                cache[self.__class__] = rst_derivatives
 
             result = self.discr.volume_zeros()
 

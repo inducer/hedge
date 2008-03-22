@@ -173,13 +173,14 @@ def main() :
     if True:
         u = GivenFunction(rhs_c).volume_interpolant(discr)
 
-        N = 10000
+        N = 3000
         from time import time
         start = time()
-        z = num.arange(3000)
+
         for i in xrange(N):
-            op.grad(u)
-        print (time()-start)/N
+            op.op(u)
+
+        print (time()-start)/(10*N)
         return
 
     from hedge.tools import parallel_cg
