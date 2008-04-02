@@ -21,7 +21,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import pytools
-from pytools.arithmetic_container import work_with_arithmetic_containers
+import numpy
 import hedge.discretization
 import hedge.mesh
 
@@ -560,7 +560,6 @@ class _ParallelFluxOperator(object):
 
     def __mul__(self, field):
         from hedge.discretization import pair_with_boundary, BoundaryPair
-        from pytools.arithmetic_container import ArithmeticList
 
         if isinstance(field, BoundaryPair):
             return self.serial_flux_op * field
@@ -573,37 +572,19 @@ class _ParallelFluxOperator(object):
 
         comm = self.discr.context.communicator
 
-        if isinstance(field, ArithmeticList):
-            field_count = len(field)
-            if field_count:
-                if isinstance(field[0], BoundaryPair):
-                    return self.serial_flux_op * field
+        from hedge.tools import log_shape
+        ls = log_shape(field)
 
+        if ls != ():
+            assert len(ls) == 1
+            field_count = ls[0]
         else:
             field_count = None
 
-        def boundary_zeros(tag):
-            if field_count is not None:
-                return num.hstack([
-                    self.discr.boundary_zeros(tag)
-                    for field_i in range(field_count)])
-            else:
-                return self.discr.boundary_zeros(tag)
-
-        def boundarize(field, tag):
-            if field_count is not None:
-                return num.hstack([
-                    self.discr.boundarize_volume_field(component, tag)
-                    for component in field])
-            else:
-                return self.discr.boundarize_volume_field(field, tag)
-
-        def unstack(field, tag):
+        def fix_shape(field, tag):
             if field_count is not None:
                 bdry_len = len(self.discr._get_boundary(tag).nodes)
-                return ArithmeticList(
-                    field[i*bdry_len:(i+1)*bdry_len]
-                    for i in range(field_count))
+                return numpy.reshape(field, (field_count, bdry_len))
             else:
                 return field
 
@@ -615,7 +596,9 @@ class _ParallelFluxOperator(object):
         # RequestList, so we need to provide our own life support for these vectors.
 
         neigh_recv_vecs = dict(
-                (rank, boundary_zeros(hedge.mesh.TAG_RANK_BOUNDARY(rank)))
+                (rank, self.discr.boundary_zeros(
+                    hedge.mesh.TAG_RANK_BOUNDARY(rank), 
+                    shape=ls))
                 for rank in self.discr.neighbor_ranks)
 
         recv_requests = mpi.RequestList(
@@ -623,7 +606,10 @@ class _ParallelFluxOperator(object):
                 for rank in self.discr.neighbor_ranks)
 
         send_requests = [isend_vector(comm, rank, 1,
-            boundarize(field, hedge.mesh.TAG_RANK_BOUNDARY(rank)))
+            self.discr.boundarize_volume_field(
+                field, 
+                hedge.mesh.TAG_RANK_BOUNDARY(rank))
+            )
             for rank in self.discr.neighbor_ranks]
 
         result = [self.serial_flux_op * field]
@@ -633,7 +619,7 @@ class _ParallelFluxOperator(object):
 
             tag = hedge.mesh.TAG_RANK_BOUNDARY(status.source)
 
-            foreign_order_bfield = unstack(neigh_recv_vecs[status.source], tag)
+            foreign_order_bfield = fix_shape(neigh_recv_vecs[status.source], tag)
 
             bfield = apply_index_map(
                     self.discr.from_neighbor_maps[status.source],
@@ -667,7 +653,6 @@ def guess_parallelization_context():
 
 
 
-@work_with_arithmetic_containers
 def reassemble_volume_field(pcon, global_discr, local_discr, field):
     from pytools import reverse_dictionary
     local2global_element = reverse_dictionary(

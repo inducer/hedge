@@ -60,7 +60,7 @@ namespace
   mpi::request irecv_vector(
       mpi::communicator &comm,
       int dest, int tag,
-      vector &v)
+      vector v)
   {
     return comm.irecv(dest, tag, traits::vector_storage(v), traits::vector_size(v));
   }

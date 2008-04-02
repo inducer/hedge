@@ -696,12 +696,18 @@ class DisabledFixedSizeSliceAdapter(object):
 
 
 # index map tools -------------------------------------------------------------
-@work_with_arithmetic_containers
 def apply_index_map(imap, vector):
     from hedge._internal import VectorTarget, perform_index_map
 
-    result = num.zeros_like(vector, shape=(imap.to_length,))
-    perform_index_map(imap, VectorTarget(vector, result))
+    ls = log_shape(vector)
+    if ls == ():
+        result = numpy.zeros(shape=(imap.to_length,), dtype=float)
+        perform_index_map(imap, VectorTarget(vector, result))
+    else:
+        result = numpy.zeros(shape=ls+(imap.to_length,), dtype=float)
+        from pytools import indices_in_shape
+        for i in indices_in_shape(ls):
+            perform_index_map(imap, VectorTarget(vector[i], result[i]))
     return result
 
 
@@ -710,8 +716,15 @@ def apply_index_map(imap, vector):
 def apply_inverse_index_map(imap, vector):
     from hedge._internal import VectorTarget, perform_inverse_index_map
 
-    result = num.zeros_like(vector, shape=(imap.from_length,))
-    perform_inverse_index_map(imap, VectorTarget(vector, result))
+    ls = log_shape(vector)
+    if ls == ():
+        result = numpy.zeros(shape=(imap.from_length,), dtype=float)
+        perform_inverse_index_map(imap, VectorTarget(vector, result))
+    else:
+        result = numpy.zeros(shape=ls+(imap.from_length,), dtype=float)
+        from pytools import indices_in_shape
+        for i in indices_in_shape(ls):
+            perform_inverse_index_map(imap, VectorTarget(vector[i], result[i]))
     return result
 
 

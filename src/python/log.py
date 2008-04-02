@@ -159,6 +159,11 @@ class EMFieldEnergy(LogQuantity):
         LogQuantity.__init__(self, name, "J", "Field Energy")
         self.fields = fields
 
+    @property
+    def default_aggregator(self): 
+        from pytools import norm_2
+        return norm_2
+
     def __call__(self):
         max_op = self.fields.maxwell_op
 
