@@ -17,3 +17,5 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 """
 
+# make sure numpy-to-C++ converters are available
+import pyublas

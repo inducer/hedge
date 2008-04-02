@@ -23,7 +23,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 
-import pylinear.array as num
+import numpy
 from pytools import memoize
 import hedge._internal
 
@@ -54,7 +54,7 @@ def generic_vandermonde(points, functions):
     where C{functions} is the list of M{f_j} and points is 
     the list of M{x_i}.
     """
-    v = num.zeros((len(points), len(functions)))
+    v = numpy.zeros((len(points), len(functions)))
     for i, x in enumerate(points):
         for j, f in enumerate(functions):
             v[i,j] = f(x)
@@ -74,7 +74,7 @@ def generic_multi_vandermonde(points, functions):
     matrix is returned for each return value.
     """
     count = len(functions[0](points[0]))
-    result = [num.zeros((len(points), len(functions))) for n in range(count)]
+    result = [numpy.zeros((len(points), len(functions))) for n in range(count)]
 
     for i, x in enumerate(points):
         for j, f in enumerate(functions):

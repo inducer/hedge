@@ -18,9 +18,8 @@
 
 
 from __future__ import division
-import pylinear.array as num
-import pylinear.operator as operator
-import pylinear.computation as comp
+import numpy
+import numpy.linalg as la
 from hedge.tools import Reflection, Rotation, dot
 
 
@@ -99,7 +98,7 @@ def main() :
             return 1
 
     def rhs_c(x):
-        if comp.norm_2(x) < 0.1:
+        if la.norm(x) < 0.1:
             return 1000
         else:
             return 0
@@ -113,7 +112,7 @@ def main() :
             return result
 
     def my_diff_tensor():
-        result = num.identity(dim)
+        result = numpy.eye(dim)
         result[0,0] = 0.1
         return result
 
@@ -170,17 +169,23 @@ def main() :
     #a_inv.debug_level = 1
     #u = -a_inv(op.prepare_rhs(GivenFunction(rhs_c)))
 
-    if True:
+    numpy.seterr('raise')
+    if False:
         u = GivenFunction(rhs_c).volume_interpolant(discr)
 
         N = 3000
         from time import time
         start = time()
-
+        
+        #z = num.arange(17)
+        #u = numpy.array([z,z])
+        #u = ArithmeticList([z,z])
+        #u = [z,z]
         for i in xrange(N):
-            op.op(u)
+            #op.op(u)
+            op.grad(u)
 
-        print (time()-start)/(10*N)
+        print (time()-start)/(N)
         return
 
     from hedge.tools import parallel_cg

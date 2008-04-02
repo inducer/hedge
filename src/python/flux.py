@@ -20,10 +20,9 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 
+import numpy
 import hedge._internal as _internal
 from pytools import monkeypatch_method
-from pytools.arithmetic_container import ArithmeticList, \
-        work_with_arithmetic_containers
 import pymbolic
 import pymbolic.mapper.collector
 
@@ -172,7 +171,8 @@ class IfPositive(Flux):
 
 
 def make_normal(dimensions):
-    return ArithmeticList([Normal(i) for i in range(dimensions)])
+    from hedge.tools import amap
+    return amap(Normal,  range(dimensions))
 
 
 
@@ -238,15 +238,15 @@ class FluxVectorPlaceholder(object):
 
     @property
     def int(self):
-        return ArithmeticList(scalar.int for scalar in self.scalars)
+        return numpy.array([scalar.int for scalar in self.scalars])
 
     @property
     def ext(self):
-        return ArithmeticList(scalar.ext for scalar in self.scalars)
+        return numpy.array([scalar.ext for scalar in self.scalars])
 
     @property
     def avg(self):
-        return ArithmeticList(scalar.avg for scalar in self.scalars)
+        return numpy.array([scalar.avg for scalar in self.scalars])
 
 
 
@@ -392,8 +392,11 @@ class FluxDifferentiationMapper(pymbolic.mapper.differentiator.DifferentiationMa
 
 
 
-@work_with_arithmetic_containers
 def compile_flux(flux):
+    from hedge.tools import is_obj_array
+    if is_obj_array(flux):
+        return numpy.array([compile_flux(subflux) for subflux in flux])
+
     def compile_scalar_single_dep_flux(flux):
         return FluxCompilationMapper()(flux)
 

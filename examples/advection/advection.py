@@ -18,8 +18,8 @@
 
 
 from __future__ import division
-import pylinear.array as num
-import pylinear.computation as comp
+import numpy
+import numpy.linalg as la
 
 
 
@@ -33,7 +33,6 @@ def main() :
     from hedge.discretization import Discretization, ones_on_boundary, integral
     from hedge.visualization import SiloVisualizer, VtkVisualizer
     from hedge.tools import dot, mem_checkpoint
-    from pytools.arithmetic_container import ArithmeticList
     from pytools.stopwatch import Job
     from math import sin, cos, pi, sqrt
     from hedge.parallel import \
@@ -52,7 +51,7 @@ def main() :
         return f((-v*x/norm_v+t*norm_v))
 
     def boundary_tagger(vertices, el, face_nr):
-        if el.face_normals[face_nr] * v < 0:
+        if numpy.dot(el.face_normals[face_nr], v) < 0:
             return ["inflow"]
         else:
             return ["outflow"]
@@ -63,14 +62,14 @@ def main() :
 
     job = Job("mesh")
     if dim == 1:
-        v = num.array([1])
+        v = numpy.array([1])
         if pcon.is_head_rank:
             from hedge.mesh import make_uniform_1d_mesh
             mesh = make_uniform_1d_mesh(-2, 5, 50, periodic=True)
 
         el_class = IntervalElement
     elif dim == 2:
-        v = num.array([2,0])
+        v = numpy.array([2,0])
         if pcon.is_head_rank:
             from hedge.mesh import \
                     make_disk_mesh, \
@@ -105,7 +104,7 @@ def main() :
                         )
         el_class = TriangularElement
     elif dim == 3:
-        v = num.array([0,0,0.3])
+        v = numpy.array([0,0,0.3])
         if pcon.is_head_rank:
             from hedge.mesh import make_cylinder_mesh, make_ball_mesh, make_box_mesh
 
@@ -120,7 +119,7 @@ def main() :
     else:
         raise RuntimeError, "bad number of dimensions"
 
-    norm_v = comp.norm_2(v)
+    norm_v = la.norm(v)
 
     if pcon.is_head_rank:
         mesh_data = pcon.distribute_mesh(mesh)
@@ -148,12 +147,12 @@ def main() :
             #inflow_u=TimeDependentGivenFunction(u_analytic)),
             flux_type="upwind")
 
-    from pyrticle._internal import ShapeFunction
-    sf = ShapeFunction(1, 2, alpha=1)
+    #from pyrticle._internal import ShapeFunction
+    #sf = ShapeFunction(1, 2, alpha=1)
 
     def gauss_hump(x):
         from math import exp
-        rsquared = (x*x)/(0.1**2)
+        rsquared = numpy.dot(x, x)/(0.1**2)
         return exp(-rsquared)
     def gauss2_hump(x):
         from math import exp
@@ -168,7 +167,7 @@ def main() :
             exp(-1/(x-hump_width)**2)* exp(-1/(x+hump_width)**2)
 
     #u = discr.interpolate_volume_function(lambda x: u_analytic(x, 0))
-    u = discr.interpolate_volume_function(sf)
+    u = discr.interpolate_volume_function(gauss_hump)
     u /= integral(discr, u)
 
     # timestep setup ----------------------------------------------------------
@@ -209,7 +208,7 @@ def main() :
 
     # timestep loop -----------------------------------------------------------
     def logmap(x, low_exp=15):
-        return 0.1*num.log10(num.abs(x)+1e-15)
+        return 0.1*numpy.log10(numpy.abs(x)+1e-15)
 
     from hedge.discretization import Filter, ExponentialFilterResponseFunction
     filter = Filter(discr, ExponentialFilterResponseFunction(0.97, 3))

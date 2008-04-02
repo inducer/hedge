@@ -22,12 +22,9 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 
-import pylinear.array as num
-import pylinear.computation as comp
-import pylinear.operator as operator
-from pytools.arithmetic_container import \
-        work_with_arithmetic_containers, \
-        ArithmeticList
+import numpy
+import numpy.linalg as la
+import pyublas
 import hedge.tools
 import hedge.mesh
 import hedge._internal
@@ -152,6 +149,8 @@ class Discretization(object):
         self.interpolant_timer = IntervalTimer("t_interp", 
                 "Time spent evaluating interpolants")
 
+        self.instrumented = False
+
     # instrumentation ---------------------------------------------------------
     def add_instrumentation(self, mgr):
         mgr.add_quantity(self.inner_flux_counter)
@@ -165,10 +164,36 @@ class Discretization(object):
         mgr.add_quantity(self.interpolant_counter)
         mgr.add_quantity(self.interpolant_timer)
 
+        from pytools.log import time_and_count_function
+        self.interpolate_volume_function = \
+                time_and_count_function(
+                        self.interpolate_volume_function,
+                        self.interpolant_timer,
+                        self.interpolant_counter)
+
+        self.interpolate_boundary_function = \
+                time_and_count_function(
+                        self.interpolate_boundary_function,
+                        self.interpolant_timer,
+                        self.interpolant_counter)
+
+        self.perform_inner_flux = \
+                time_and_count_function(
+                        self.perform_inner_flux,
+                        self.inner_flux_timer,
+                        self.inner_flux_counter)
+
+        self._perform_boundary_flux = \
+                time_and_count_function(
+                        self._perform_boundary_flux,
+                        self.bdry_flux_timer,
+                        self.bdry_flux_counter)
+
+        self.instrumented = True
+
     # initialization ----------------------------------------------------------
     def _build_element_groups_and_nodes(self, local_discretization):
         from hedge._internal import UniformElementRanges
-        from hedge.tools import FixedSizeSliceAdapter
 
         eg = _ElementGroup()
         eg.members = self.mesh.elements
@@ -179,13 +204,20 @@ class Discretization(object):
                 len(self.mesh.elements))
 
         nodes_per_el = ldis.node_count()
-        self.nodes = FixedSizeSliceAdapter(
-                num.empty((self.dimensions * nodes_per_el * len(self.mesh.elements),)),
-                self.dimensions)
+        # mem layout:
+        # [....element....][...element...]
+        #  |    \
+        #  [node.]
+        #   | | |
+        #   x y z
 
-        unit_nodes = FixedSizeSliceAdapter(
-                num.empty((self.dimensions * nodes_per_el,)),
-                self.dimensions)
+        self.nodes = numpy.empty(
+                (len(self.mesh.elements)*nodes_per_el, self.dimensions),
+                dtype=float, order="C")
+
+        unit_nodes = numpy.empty( (nodes_per_el, self.dimensions),
+                dtype=float, order="C")
+
         for i_node, node in enumerate(ldis.unit_nodes()):
             unit_nodes[i_node] = node
 
@@ -193,19 +225,16 @@ class Discretization(object):
 
         for el in self.mesh.elements:
             map_element_nodes(
-                    self.nodes.adaptee,
+                    self.nodes,
                     el.id*nodes_per_el*self.dimensions,
                     el.map,
-                    unit_nodes.adaptee,
+                    unit_nodes,
                     self.dimensions)
 
         self.group_map = [(eg, i) for i in range(len(self.mesh.elements))]
         self.element_groups = [eg]
 
     def _calculate_local_matrices(self):
-        from pytools.arithmetic_container import ArithmeticList
-        AL = ArithmeticList
-
         for eg in self.element_groups:
             ldis = eg.local_discretization
 
@@ -213,20 +242,23 @@ class Discretization(object):
             immat = eg.inverse_mass_matrix = ldis.inverse_mass_matrix()
             dmats = eg.differentiation_matrices = \
                     ldis.differentiation_matrices()
-            smats = eg.stiffness_matrices = AL(mmat*d for d in dmats)
-            smats = eg.stiffness_t_matrices = AL(d.T*mmat.T for d in dmats)
-            eg.minv_st = AL(immat*d.T*mmat for d in dmats)
+            smats = eg.stiffness_matrices = numpy.array(
+                    [numpy.dot(mmat, d) for d in dmats])
+            smats = eg.stiffness_t_matrices = numpy.array(
+                    [numpy.dot(d.T, mmat.T) for d in dmats])
+            eg.minv_st = numpy.array(
+                    [numpy.dot(numpy.dot(immat,d.T), mmat) for d in dmats])
 
-            eg.jacobians = num.array([
+            eg.jacobians = numpy.array([
                 abs(el.map.jacobian) 
                 for el in eg.members])
-            eg.inverse_jacobians = num.array([
+            eg.inverse_jacobians = numpy.array([
                 abs(el.inverse_map.jacobian) 
                 for el in eg.members])
 
             eg.diff_coefficients = [ # over global diff. coordinate
                     [ # local diff. coordinate
-                        num.array([
+                        numpy.array([
                             el.inverse_map
                             .matrix[loc_coord, glob_coord]
                             for el in eg.members
@@ -238,7 +270,7 @@ class Discretization(object):
 
             eg.stiffness_coefficients = [ # over global diff. coordinate
                     [ # local diff. coordinate
-                        num.array([
+                        numpy.array([
                             abs(el.map.jacobian)*el.inverse_map
                             .matrix[loc_coord, glob_coord]
                             for el in eg.members
@@ -257,7 +289,7 @@ class Discretization(object):
         f.element_id = el.id
         f.face_id = fi
         f.order = ldis.order
-        f.normal = el.face_normals[fi]
+        f.normal = pyublas.why_not(el.face_normals[fi])
 
         # This crude approximation is shamelessly stolen from sledge.
         # There's an important caveat, however (which took me the better
@@ -298,7 +330,7 @@ class Discretization(object):
 
                     for i, j in zip(findices_l, findices_shuffled_n):
                         dist = self.nodes[estart_l+i]-self.nodes[estart_n+j]
-                        assert comp.norm_2(dist) < 1e-14
+                        assert la.norm(dist) < 1e-14
 
             except FaceVertexMismatch:
                 # this happens if vertices_l is not a permutation of vertices_n.
@@ -315,7 +347,7 @@ class Discretization(object):
                     for i, j in zip(findices_l, findices_shuffled_n):
                         dist = self.nodes[estart_l+i]-self.nodes[estart_n+j]
                         dist[axis] = 0 
-                        assert comp.norm_2(dist) < 1e-14
+                        assert la.norm(dist) < 1e-14
 
             # create and fill the face pair
             fp = FacePair()
@@ -427,107 +459,54 @@ class Discretization(object):
     def len_boundary(self, tag):
         return len(self._get_boundary(tag).nodes)
 
-    def volume_zeros(self):
-        return num.zeros((len(self.nodes),))
+    def volume_zeros(self, shape=()):
+        return numpy.zeros(shape+(len(self.nodes),), dtype=float)
 
     def interpolate_volume_function(self, f):
-        self.interpolant_counter.add()
-
         try:
             # are we interpolating many fields at once?
             shape = f.shape
         except AttributeError:
             # no, just one
             result = self.volume_zeros()
-            self.interpolant_timer.start()
-            result[:] = (f(x) for x in self.nodes)
-            self.interpolant_timer.stop()
+            for i, x in enumerate(self.nodes):
+                result[i] = f(x)
             return result
         else:
-            if len(f.shape) == 1:
-                (count,) = f.shape
-                result = ArithmeticList(self.volume_zeros() for i in xrange(count))
+            result = self.volume_zeros(shape)
+            for point_nr, x in enumerate(self.nodes):
+                result[(slice(None),)*len(shape), point_nr] = f(x)
+            return result
 
-                self.interpolant_timer.start()
-                for point_nr, x in enumerate(self.nodes):
-                    for field_nr, value in enumerate(f(x)):
-                        result[field_nr][point_nr] = value
-                self.interpolant_timer.stop()
-
-                return result
-            elif len(f.shape) == 2:
-                h, w = f.shape
-                result = [[self.volume_zeros() for j in xrange(w)] for i in xrange(h)]
-
-                self.interpolant_timer.start()
-                for point_nr, x in enumerate(self.nodes):
-                    for i, row in enumerate(f(x)):
-                        for j, entry in enumerate(row):
-                            result[i][j][point_nr] = entry
-                self.interpolant_timer.stop()
-
-                from pytools.arithmetic_container import ArithmeticListMatrix
-                return ArithmeticListMatrix(result)
-            else:
-                raise NotImplementedError, "only scalars, vectors and matrices are "\
-                        "supported for volume interpolation"
-
-    def boundary_zeros(self, tag=hedge.mesh.TAG_ALL):
-        return num.zeros((len(self._get_boundary(tag).nodes),))
+    def boundary_zeros(self, tag=hedge.mesh.TAG_ALL, shape=()):
+        return numpy.zeros(shape+(len(self._get_boundary(tag).nodes),),
+                dtype=float)
 
     def interpolate_boundary_function(self, f, tag=hedge.mesh.TAG_ALL):
-        self.interpolant_counter.add()
-
         try:
             # are we interpolating many fields at once?
             shape = f.shape
         except AttributeError:
             # no, just one
-            self.interpolant_timer.start()
-            result = num.array([f(x) for x in self._get_boundary(tag).nodes])
-            self.interpolant_timer.stop()
+            result = self.boundary_zeros(tag=tag)
+            for i, x in enumerate(self._get_boundary(tag).nodes):
+                result[i] = f(x)
             return result
         else:
-            if len(f.shape) == 1:
-                (count,) = f.shape
-
-                self.interpolant_timer.start()
-                result = ArithmeticList([self.boundary_zeros(tag) for i in xrange(count)])
-                for i, pt in enumerate(self._get_boundary(tag).nodes):
-                    for field_nr, value in enumerate(f(pt)):
-                        result[field_nr][i] = value
-                self.interpolant_timer.stop()
-
-                return result
-            elif len(f.shape) == 2:
-                h, w = f.shape
-
-                self.interpolant_timer.start()
-                result = [[self.boundary_zeros(tag) for j in xrange(w)] for i in xrange(h)]
-
-                for point_nr, x in enumerate(self._get_boundary(tag).nodes):
-                    for i, row in enumerate(f(x)):
-                        for j, entry in enumerate(row):
-                            result[i][j][point_nr] = entry
-                self.interpolant_timer.stop()
-
-                from pytools.arithmetic_container import ArithmeticListMatrix
-                return ArithmeticListMatrix(result)
-            else:
-                raise NotImplementedError, "only scalars, vectors and matrices vectors are supported "\
-                        "for boundary interpolation"
+            result = self.boundary_zeros(tag=tag, shape=shape)
+            for point_nr, x in enumerate(self._get_boundary(tag).nodes):
+                result[(slice(None),)*len(shape), point_nr] = f(x)
+            return result
 
     def boundary_normals(self, tag=hedge.mesh.TAG_ALL):
-        result = ArithmeticList([self.boundary_zeros(tag) for i in range(self.dimensions)])
+        result = self.boundary_zeros(tag=tag, shape=(self.dimensions,))
         for fg, ldis in self._get_boundary(tag).face_groups_and_ldis:
             for face_pair in fg.face_pairs:
                 flux_face = fg.flux_faces[face_pair.flux_face_index]
-                normal = flux_face.normal
                 oeb = face_pair.opp_el_base_index
                 opp_index_list = fg.index_lists[face_pair.opp_face_index_list_number]
                 for i in opp_index_list:
-                    for j in range(self.dimensions):
-                        result[j][oeb+i] = normal[j]
+                    result[:,oeb+i] = flux_face.normal
 
         return result
 
@@ -578,9 +557,6 @@ class Discretization(object):
         not call this routine, it will be called for you by flux
         operators obtained by get_flux_operator().
         """
-        self.inner_flux_counter.add()
-        self.inner_flux_timer.start()
-
         from hedge._internal import perform_flux_on_one_target, ChainedFlux, NullTarget
 
         if isinstance(target, NullTarget):
@@ -594,16 +570,11 @@ class Discretization(object):
             perform_flux_on_one_target(fg, fmm, ch_int, ch_ext, target)
         target.finalize()
 
-        self.inner_flux_timer.stop()
-
     # boundary flux computation -----------------------------------------------
     def _perform_boundary_flux(self, 
             int_flux, int_target, 
             ext_flux, ext_target, 
             bdry):
-        self.bdry_flux_counter.add()
-        self.bdry_flux_timer.start()
-
         from hedge._internal import perform_flux, ChainedFlux
 
         ch_int = ChainedFlux(int_flux)
@@ -618,8 +589,6 @@ class Discretization(object):
                         ch_ext, ext_target)
         int_target.finalize()
         ext_target.finalize()
-
-        self.bdry_flux_timer.stop()
 
     # misc stuff --------------------------------------------------------------
     def dt_non_geometric_factor(self):
@@ -638,34 +607,49 @@ class Discretization(object):
                 * self.dt_non_geometric_factor() \
                 * self.dt_geometric_factor()
 
-    @work_with_arithmetic_containers
     def volumize_boundary_field(self, bfield, tag=hedge.mesh.TAG_ALL):
         from hedge._internal import perform_inverse_index_map
-        from hedge.tools import make_vector_target
+        from hedge.tools import make_vector_target, log_shape
 
-        result = self.volume_zeros()
+        ls = log_shape(bfield)
+        result = self.volume_zeros(ls)
         bdry = self._get_boundary(tag)
 
-        target = make_vector_target(bfield, result)
-        target.begin(len(self.nodes), len(bdry.nodes))
-        perform_inverse_index_map(bdry.index_map, target)
-        target.finalize()
+        if ls != ():
+            from pytools import indices_in_shape
+            for i in indices_in_shape(ls):
+                target = make_vector_target(bfield[i], result[i])
+                target.begin(len(self.nodes), len(bdry.nodes))
+                perform_inverse_index_map(bdry.index_map, target)
+                target.finalize()
+        else:
+            target = make_vector_target(bfield, result)
+            target.begin(len(self.nodes), len(bdry.nodes))
+            perform_inverse_index_map(bdry.index_map, target)
+            target.finalize()
 
         return result
 
-    @work_with_arithmetic_containers
     def boundarize_volume_field(self, field, tag=hedge.mesh.TAG_ALL):
         from hedge._internal import perform_index_map
-        from hedge.tools import make_vector_target
+        from hedge.tools import make_vector_target, log_shape
 
-        result = self.boundary_zeros(tag)
-
+        ls = log_shape(field)
+        result = self.boundary_zeros(tag, ls)
         bdry = self._get_boundary(tag)
 
-        target = make_vector_target(field, result)
-        target.begin(len(bdry.nodes), len(self.nodes))
-        perform_index_map(bdry.index_map, target)
-        target.finalize()
+        if ls != ():
+            from pytools import indices_in_shape
+            for i in indices_in_shape(ls):
+                target = make_vector_target(field[i], result[i])
+                target.begin(len(bdry.nodes), len(self.nodes))
+                perform_index_map(bdry.index_map, target)
+                target.finalize()
+        else:
+            target = make_vector_target(field, result)
+            target.begin(len(bdry.nodes), len(self.nodes))
+            perform_index_map(bdry.index_map, target)
+            target.finalize()
 
         return result
 
@@ -686,23 +670,24 @@ class Discretization(object):
     # operator binding functions --------------------------------------------------
     @property
     def nabla(self):
-        return ArithmeticList(
-                DifferentiationOperator(self, i) for i in range(self.dimensions))
+        return DiffOperatorVector(self,
+                [DifferentiationOperator(self, i) for i in range(self.dimensions)])
 
     @property
     def minv_stiffness_t(self):
-        return ArithmeticList(
-                MInvSTOperator(self, i) for i in range(self.dimensions))
+        return DiffOperatorVector(self,
+                [MInvSTOperator(self, i) for i in range(self.dimensions)])
 
     @property
     def stiffness_operator(self):
-        return ArithmeticList(
-                StiffnessOperator(self, i) for i in range(self.dimensions))
+        return DiffOperatorVector(self,
+                [StiffnessOperator(self, i) for i in range(self.dimensions)])
 
     @property
     def stiffness_t_operator(self):
-        return ArithmeticList(
-                StiffnessTOperator(self, i) for i in range(self.dimensions))
+        return DiffOperatorVector(self,
+                [StiffnessTOperator(self, i) for i in range(self.dimensions)])
+
     @property
     def mass_operator(self):
         return MassOperator(self)
@@ -722,6 +707,7 @@ class Discretization(object):
         """
 
         from hedge.flux import compile_flux
+        from hedge.tools import is_obj_array
 
         def get_scalar_flux_operator(flux):
             if direct:
@@ -732,7 +718,7 @@ class Discretization(object):
         if isinstance(flux, tuple):
             # a tuple of int/ext fluxes
             return get_scalar_flux_operator([(0,) + flux])
-        elif isinstance(flux, ArithmeticList):
+        elif is_obj_array(flux):
             return _VectorFluxOperator(self, 
                     [get_scalar_flux_operator(compile_flux(flux_component)) 
                         for flux_component in flux])
@@ -769,7 +755,7 @@ class SymmetryMap(object):
                     pt = discr.nodes[i_pt]
                     mapped_pt = sym_map(pt)
                     for m_i_pt in range(mapped_start, mapped_stop):
-                        if comp.norm_2(discr.nodes[m_i_pt] - mapped_pt) < threshold:
+                        if la.norm(discr.nodes[m_i_pt] - mapped_pt) < threshold:
                             self.map[i_pt] = m_i_pt
                             break
 
@@ -838,20 +824,39 @@ def ones_on_volume(discr, tag=hedge.mesh.TAG_ALL):
 
 
 
-@work_with_arithmetic_containers
+#@work_with_arithmetic_containers
 def integral(discr, volume_vector, tag=hedge.mesh.TAG_ALL):
     try:
         mass_ones = discr._mass_ones
     except AttributeError:
         discr._mass_ones = mass_ones = discr.mass_operator * ones_on_volume(discr, tag)
     
-    return mass_ones * volume_vector
+    return numpy.dot(mass_ones, volume_vector)
 
 
 
 
-# pylinear operator wrapper ---------------------------------------------------
-class PylinearOpWrapper(hedge.tools.PylinearOperator):
+def norm(discr, volume_vector, p=2):
+    if p == numpy.Inf:
+        return numpy.abs(volume_vector).max()
+    else:
+        from hedge.tools import log_shape
+
+        ls = log_shape(volume_vector)
+        if ls == ():
+            return integral(discr,
+                    numpy.abs(volume_vector)**p
+                    )**(1/p)
+        else:
+            assert len(log_shape) == 1
+            return sum(
+                    integral(discr, numpy.abs(subv)**p)
+                    for subv in volume_vector)**(1/p)
+
+    
+
+# operator wrapper ------------------------------------------------------------
+class OpWrapper(hedge.tools.OperatorBase):
     def __init__(self,  discr_op):
         operator.Operator(num.Float64).__init__(self)
         self.discr_op = discr_op
@@ -907,16 +912,32 @@ class _OperatorSum(DiscretizationVectorOperator):
 
 
 # diff operators --------------------------------------------------------------
-class _DiffRSTCache(object):
+class _DiffResultsCache(object):
     def __init__(self, vector):
         self.vector = vector
         self.cache = {}
 
+    def lookup(self, diff_op):
+        return self.cache.get(diff_op, None)
+
+    def set(self, diff_op, value):
+        self.cache[diff_op] = value
+
+
+
+
 def cache_diff_results(vec):
-    if isinstance(vec, ArithmeticList):
-        return [_DiffRSTCache(subfield) for subfield in vec]
+    from hedge.tools import log_shape
+    ls = log_shape(vec)
+
+    if ls == ():
+        return _DiffResultsCache(vec)
     else:
-        return _DiffRSTCache(vec)
+        result = numpy.empty(ls, dtype=object)
+        from pytools import indices_in_shape
+        for i in indices_in_shape(ls):
+            result[i] = _DiffResultsCache(vec[i])
+        return result
 
 
 
@@ -929,78 +950,81 @@ class DiffOperatorBase(DiscretizationVectorOperator):
 
         self.do_warn = True
 
+        if self.discr.instrumented:
+            from pytools.log import time_and_count_function
+            self.__mul__ = \
+                    time_and_count_function(
+                            self.__mul__,
+                            self.discr.diff_op_timer,
+                            self.discr.diff_op_counter)
+
     def do_not_warn(self):
         self.do_warn = False
 
-    def __mul__(self, field):
+    def diff_rst(self, rst_axis, field):
+        result = self.discr.volume_zeros()
 
-        self.discr.diff_op_counter.add()
-        self.discr.diff_op_timer.start()
+        from hedge.tools import make_vector_target
+        target = make_vector_target(field, result)
 
-        def diff_rst(rst_axis, field):
-            result = self.discr.volume_zeros()
+        target.begin(len(self.discr), len(self.discr))
 
-            from hedge.tools import make_vector_target
-            target = make_vector_target(field, result)
+        from hedge._internal import perform_elwise_operator
+        for eg in self.discr.element_groups:
+            perform_elwise_operator(eg.ranges, eg.ranges, 
+                    self.matrices(eg)[rst_axis], target)
 
-            target.begin(len(self.discr), len(self.discr))
+        target.finalize()
 
-            from hedge._internal import perform_elwise_operator
-            for eg in self.discr.element_groups:
-                perform_elwise_operator(eg.ranges, eg.ranges, 
-                        self.matrices(eg)[rst_axis], target)
-
-            target.finalize()
-
-            return result
-
-        def diff_xyz_with_cache(idx, field):
-            if isinstance(field, _DiffRSTCache):
-                cache = field.cache
-                field = field.vector
-            else:
-                if self.do_warn:
-                    from warnings import warn
-                    warn("wrap operand of differential operator in cache_diff_results() for speed")
-
-                # this "cache" will be freed right away, storing to it in the 
-                # non-default case does no performance harm
-                cache = {}
-
-            try:
-                rst_derivatives = cache[self.__class__]
-            except KeyError:
-                rst_derivatives = [diff_rst(i, field) 
-                        for i in range(self.discr.dimensions)]
-                cache[self.__class__] = rst_derivatives
-
-            result = self.discr.volume_zeros()
-
-            from hedge.tools import make_vector_target
-            from hedge._internal import perform_elwise_scale
-
-            for rst_axis in range(self.discr.dimensions):
-                target = make_vector_target(rst_derivatives[rst_axis], result)
-
-                target.begin(len(self.discr), len(self.discr))
-                for eg in self.discr.element_groups:
-                    perform_elwise_scale(eg.ranges,
-                            self.coefficients(eg)[self.xyz_axis][rst_axis],
-                            target)
-                target.finalize()
-            return result
-
-        if isinstance(field, ArithmeticList):
-            result = ArithmeticList(
-                    diff_xyz_with_cache(subfield)
-                    for idx, subfield in enumerate(field))
-        else:
-            result = diff_xyz_with_cache(0, field)
-
-        self.discr.diff_op_timer.stop()
         return result
 
+    def diff_xyz(self, field, result):
+        if isinstance(field, _DiffResultsCache):
+            cache = field
+            field = cache.vector
+            rst_derivatives = cache.lookup(self.__class__)
+        else:
+            cache = None
+            rst_derivatives = None
+            if self.do_warn:
+                from warnings import warn
+                warn("wrap operand of differential operator in cache_diff_results() for speed")
 
+        if rst_derivatives is None:
+            rst_derivatives = [self.diff_rst(i, field) 
+                    for i in range(self.discr.dimensions)]
+            if cache:
+                cache.set(self.__class__, rst_derivatives)
+
+        from hedge.tools import make_vector_target
+        from hedge._internal import perform_elwise_scale
+
+        for rst_axis in range(self.discr.dimensions):
+            target = make_vector_target(rst_derivatives[rst_axis], result)
+
+            target.begin(len(self.discr), len(self.discr))
+            for eg in self.discr.element_groups:
+                perform_elwise_scale(eg.ranges,
+                        self.coefficients(eg)[self.xyz_axis][rst_axis],
+                        target)
+            target.finalize()
+        return result
+
+    def __mul__(self, field):
+        from hedge.tools import log_shape
+        lshape = log_shape(field)
+
+        result = self.discr.volume_zeros(lshape)
+
+        if lshape == ():
+            from pytools import indices_in_shape
+            self.diff_xyz(field, result)
+        else:
+            from pytools import indices_in_shape
+            for i in indices_in_shape(lshape):
+                self.diff_xyz(field[i], result[i])
+
+        return result
             
     def perform_on(self, target):
         from hedge._internal import perform_elwise_scaled_operator
@@ -1043,6 +1067,22 @@ class StiffnessTOperator(DiffOperatorBase):
     @staticmethod
     def coefficients(element_group): return element_group.stiffness_coefficients
 
+class DiffOperatorVector(object):
+    def __init__(self, discr, operators):
+        self.discr = discr
+        self.operators = operators
+
+    def __len__(self):
+        return len(self.operators)
+
+    def __getitem__(self, i):
+        return self.operators[i]
+
+    def __mul__(self, field):
+        result = self.discr.volume_zeros(shape=(len(self),))
+        for i, op in enumerate(self):
+            op.diff_xyz(field, result[i])
+        return result
 
 
 
@@ -1052,17 +1092,27 @@ class MassOperatorBase(DiscretizationVectorOperator):
     def __init__(self, discr):
         DiscretizationVectorOperator.__init__(self, discr)
 
-    @work_with_arithmetic_containers
+        if self.discr.instrumented:
+            from pytools.log import time_and_count_function
+            self.perform_on = \
+                    time_and_count_function(
+                            self.perform_on,
+                            self.discr.mass_op_timer,
+                            self.discr.mass_op_counter)
+
+
     def __mul__(self, field):
-        from hedge.tools import make_vector_target
-        result = self.discr.volume_zeros()
-        self.perform_on(make_vector_target(field, result))
+        from hedge.tools import log_shape, make_vector_target
+        lshape = log_shape(field)
+        result = self.discr.volume_zeros(lshape)
+
+        from pytools import indices_in_shape
+        for i in indices_in_shape(lshape):
+            self.perform_on(make_vector_target(field[i], result[i]))
+
         return result
 
     def perform_on(self, target):
-        self.discr.mass_op_counter.add()
-
-        self.discr.mass_op_timer.start()
         from hedge._internal import perform_elwise_scaled_operator
         target.begin(len(self.discr), len(self.discr))
         for eg in self.discr.element_groups:
@@ -1070,7 +1120,6 @@ class MassOperatorBase(DiscretizationVectorOperator):
                    self.coefficients(eg), self.matrix(eg), 
                    target)
         target.finalize()
-        self.discr.mass_op_timer.stop()
 
 class MassOperator(MassOperatorBase):
     @staticmethod
@@ -1095,8 +1144,8 @@ class _DirectFluxOperator(DiscretizationVectorOperator):
         DiscretizationVectorOperator.__init__(self, discr)
         self.flux = flux
 
-    def __mul__(self, field):
-        from hedge.tools import make_vector_target
+    def mul_to(self, field, out):
+        from hedge.tools import make_vector_target, log_shape
 
         if isinstance(field, BoundaryPair):
             # boundary flux
@@ -1106,62 +1155,67 @@ class _DirectFluxOperator(DiscretizationVectorOperator):
             if not bdry.nodes:
                 return 0
 
-            result = self.discr.volume_zeros()
-
             field = bpair.field
             bfield = bpair.bfield
 
             class ZeroVector:
+                dtype = 0
                 def __getitem__(self, idx):
                     return 0
 
-            if isinstance(field, ArithmeticList) or isinstance(bfield, ArithmeticList):
-                if bfield == 0:
+            if log_shape(field) != () or log_shape(field) != ():
+                if isinstance(bfield, int) and bfield == 0:
                     bfield = ZeroVector()
-                if field == 0:
+                if isinstance(field, int) and field == 0:
                     field = ZeroVector()
 
                 for idx, int_flux, ext_flux in self.flux:
                     if not (0 <= idx < len(field)):
                         raise RuntimeError, "flux depends on out-of-bounds field index"
                     self.discr._perform_boundary_flux(
-                            int_flux, make_vector_target(field[idx], result),
-                            ext_flux, make_vector_target(bfield[idx], result), 
+                            int_flux, make_vector_target(field[idx], out),
+                            ext_flux, make_vector_target(bfield[idx], out), 
                             bdry)
             else:
-                if len(self.flux) > 1:
-                    raise RuntimeError, "only found one field to process, but flux has multiple field dependencies"
                 if len(self.flux) == 1:
                     idx, int_flux, ext_flux = self.flux[0]
                     if idx != 0:
                         raise RuntimeError, "flux depends on out-of-bounds field index"
                     self.discr._perform_boundary_flux(
-                            int_flux, make_vector_target(field, result),
-                            ext_flux, make_vector_target(bfield, result), 
+                            int_flux, make_vector_target(field, out),
+                            ext_flux, make_vector_target(bfield, out), 
                             bdry)
-            return result
+                elif len(self.flux) > 1:
+                    raise RuntimeError, "only found one field to process, but flux has multiple field dependencies"
+
+            return out
 
         else:
             # inner flux
-            result = self.discr.volume_zeros()
-
-            if isinstance(field, ArithmeticList):
+            from hedge.tools import log_shape
+            ls = log_shape(field)
+            if ls != ():
+                assert len(ls) == 1
                 for idx, int_flux, ext_flux in self.flux:
                     if not (0 <= idx < len(field)):
                         raise RuntimeError, "flux depends on out-of-bounds field index"
                     self.discr.perform_inner_flux(
-                            int_flux, ext_flux, make_vector_target(field[idx], result))
+                            int_flux, ext_flux, make_vector_target(field[idx], out))
             else:
                 if len(self.flux) > 1:
                     raise RuntimeError, "only found one field to process, but flux has multiple field dependencies"
-                if len(self.flux) == 1:
-                    idx, int_flux, ext_flux = self.flux[0]
-                    if idx != 0:
-                        raise RuntimeError, "flux depends on out-of-bounds field index"
-                    self.discr.perform_inner_flux(
-                            int_flux, ext_flux, make_vector_target(field, result))
 
-            return result
+                idx, int_flux, ext_flux = self.flux[0]
+                if idx != 0:
+                    raise RuntimeError, "flux depends on out-of-bounds field index"
+                self.discr.perform_inner_flux(
+                        int_flux, ext_flux, make_vector_target(field, out))
+
+            return out
+
+    def __mul__(self, field):
+        result = self.discr.volume_zeros()
+        return self.mul_to(field, result)
 
     def perform_inner(self, tgt):
         dof = len(self.discr)
@@ -1194,10 +1248,10 @@ class _FluxMatrixOperator(DiscretizationVectorOperator):
 
         self.inner_matrices = {}
         for idx, int_flux, ext_flux in self.flux:
-            inner_bmatrix = num.zeros(shape=(dof, dof), flavor=num.SparseBuildMatrix)
+            inner_bmatrix = pyublas.zeros(shape=(dof, dof), flavor=pyublas.SparseBuildMatrix)
             discr.perform_inner_flux(int_flux, ext_flux, MatrixTarget(inner_bmatrix))
             self.inner_matrices[idx] = \
-                    num.asarray(inner_bmatrix, flavor=num.SparseExecuteMatrix)
+                    pyublas.asarray(inner_bmatrix, flavor=pyublas.SparseExecuteMatrix)
 
         self.bdry_ops = {}
 
@@ -1212,14 +1266,14 @@ class _FluxMatrixOperator(DiscretizationVectorOperator):
 
                 from hedge._internal import MatrixTarget
 
-                int_bmatrix = num.zeros(shape=(dof,dof), flavor=num.SparseBuildMatrix)
-                ext_bmatrix = num.zeros(shape=(dof,bdry_dof), flavor=num.SparseBuildMatrix)
+                int_bmatrix = pyublas.zeros(shape=(dof,dof), flavor=pyublas.SparseBuildMatrix)
+                ext_bmatrix = pyublas.zeros(shape=(dof,bdry_dof), flavor=pyublas.SparseBuildMatrix)
                 self.discr._perform_boundary_flux(
                         int_flux, MatrixTarget(int_bmatrix), 
                         ext_flux, MatrixTarget(ext_bmatrix), 
                         bdry)
-                int_matrix = num.asarray(int_bmatrix, flavor=num.SparseExecuteMatrix)
-                ext_matrix = num.asarray(ext_bmatrix, flavor=num.SparseExecuteMatrix)
+                int_matrix = pyublas.asarray(int_bmatrix, flavor=pyublas.SparseExecuteMatrix)
+                ext_matrix = pyublas.asarray(ext_bmatrix, flavor=pyublas.SparseExecuteMatrix)
 
                 self.bdry_ops[idx, bdry] = int_matrix, ext_matrix
 
@@ -1240,13 +1294,17 @@ class _FluxMatrixOperator(DiscretizationVectorOperator):
             field = bpair.field
             bfield = bpair.bfield
 
-            if isinstance(field, ArithmeticList) or isinstance(bfield, ArithmeticList):
-                if bfield == 0:
+            from hedge.tools import log_shape
+            ls_f = log_shape(field)
+            ls_bf = log_shape(bfield)
+
+            if ls_f != () or ls_bf != ():
+                if isinstance(bfield, int) and bfield == 0:
                     bfield = ZeroVector()
-                if field == 0:
+                elif isinstance(field, int) and field == 0:
                     field = ZeroVector()
 
-            if isinstance(field, ArithmeticList):
+                assert len(ls) == 1
                 result = self.discr.volume_zeros()
                 for idx, int_flux, ext_flux in self.flux:
                     int_matrix, ext_matrix = get_bdry_op(idx, bdry, int_flux, ext_flux)
@@ -1260,7 +1318,11 @@ class _FluxMatrixOperator(DiscretizationVectorOperator):
                 int_matrix, ext_matrix = get_bdry_op(0, bdry, int_flux, ext_flux)
                 return int_matrix*bpair.field + ext_matrix*bpair.bfield
         else:
-            if isinstance(field, ArithmeticList):
+            from hedge.tools import log_shape
+
+            ls = log_shape(field)
+            if ls != ():
+                assert len(ls) == 1
                 result = self.discr.volume_zeros()
                 for idx, int_flux, ext_flux in self.flux:
                     result += self.inner_matrices[idx] * field[idx]
@@ -1294,49 +1356,61 @@ class _VectorFluxOperator(object):
         self.discr = discr
         self.flux_operators = flux_operators
 
-
-
+        if discr.instrumented:
+            from pytools.log import time_and_count_function
+            self._do_inner_flux = \
+                    time_and_count_function(
+                            self._do_inner_flux,
+                            self.discr.inner_flux_timer,
+                            self.discr.inner_flux_counter,
+                            increment=sum(len(fo) for fo in self.flux_operators))
 
     def __mul__(self, field):
-        if isinstance(field, BoundaryPair) or (
-                isinstance(field, ArithmeticList) and isinstance(field[0], BoundaryPair)):
-            return ArithmeticList(fo * field for fo in self.flux_operators)
-        else:
-            # this is for performance -- it is faster to apply several fluxes
-            # to a single operand at once
-            result = ArithmeticList(
-                    self.discr.volume_zeros() for f in self.flux_operators)
+        if isinstance(field, BoundaryPair):
+            result = self.discr.volume_zeros(
+                    shape=(len(self.flux_operators),))
 
-            if not isinstance(field, ArithmeticList):
-                field = [field]
-
-            def find_field_flux(flux_op, i_field):
-                for idx, int_flux, ext_flux in flux_op.flux:
-                    if idx == i_field:
-                        return int_flux, ext_flux
-                return None
-
-            self.discr.inner_flux_timer.start()
-            from hedge._internal import \
-                    perform_multiple_double_sided_fluxes_on_single_operand, \
-                    ChainedFlux
-            for i_field, f_i in enumerate(field):
-                fluxes_and_results = []
-                for i_result, fo in enumerate(self.flux_operators):
-                    scalar_flux = find_field_flux(fo, i_field)
-                    if scalar_flux is not None:
-                        int_flux, ext_flux = scalar_flux
-                        fluxes_and_results.append(
-                                (ChainedFlux(int_flux), 
-                                    ChainedFlux(ext_flux), 
-                                    result[i_result]))
-                self.discr.inner_flux_counter.add(len(fluxes_and_results))
-                for fg, fmm in self.discr.face_groups:
-                    perform_multiple_double_sided_fluxes_on_single_operand(
-                            fg, fmm, fluxes_and_results, f_i)
-            self.discr.inner_flux_timer.stop()
+            for i, fop_i in enumerate(self.flux_operators):
+                fop_i.mul_to(field, result[i])
 
             return result
+        else:
+            return self._do_inner_flux(field)
+
+    def _do_inner_flux(self, field):
+        # this is for performance -- it is faster to apply several fluxes
+        # to a single operand at once
+        result = self.discr.volume_zeros(
+                shape=(len(self.flux_operators),))
+
+        def find_field_flux(flux_op, i_field):
+            for idx, int_flux, ext_flux in flux_op.flux:
+                if idx == i_field:
+                    return int_flux, ext_flux
+            return None
+
+        from hedge.tools import log_shape
+        if log_shape(field) == ():
+            field = field[numpy.newaxis,:]
+
+        from hedge._internal import \
+                perform_multiple_double_sided_fluxes_on_single_operand, \
+                ChainedFlux
+        for i_field, f_i in enumerate(field):
+            fluxes_and_results = []
+            for i_result, fo in enumerate(self.flux_operators):
+                scalar_flux = find_field_flux(fo, i_field)
+                if scalar_flux is not None:
+                    int_flux, ext_flux = scalar_flux
+                    fluxes_and_results.append(
+                            (ChainedFlux(int_flux), 
+                                ChainedFlux(ext_flux), 
+                                result[i_result]))
+            for fg, fmm in self.discr.face_groups:
+                perform_multiple_double_sided_fluxes_on_single_operand(
+                        fg, fmm, fluxes_and_results, f_i)
+
+        return result
 
 
 
@@ -1401,6 +1475,8 @@ class Projector:
             for from_el, to_el in zip(from_eg.members, to_eg.members):
                 assert from_el is to_el
 
+            from hedge.tools import permutation_matrix
+
             # assemble the from->to mode permutation matrix, guided by 
             # mode identifiers
             if to_count > from_count:
@@ -1413,10 +1489,9 @@ class Projector:
                     for from_nid in from_ldis.generate_mode_identifiers()
                     ]
 
-                pmat = num.permutation_matrix(
+                pmat = permutation_matrix(
                     to_indices=to_indices, 
-                    h=to_count, w=from_count,
-                    flavor=num.DenseMatrix)
+                    h=to_count, w=from_count)
             else:
                 from_node_ids_to_idx = dict(
                         (nid, i) for i, nid in 
@@ -1427,18 +1502,22 @@ class Projector:
                     for to_nid in to_ldis.generate_mode_identifiers()
                     ]
 
-                pmat = num.permutation_matrix(
+                pmat = permutation_matrix(
                     from_indices=from_indices, 
-                    h=to_count, w=from_count,
-                    flavor=num.DenseMatrix)
+                    h=to_count, w=from_count)
 
             # build interpolation matrix
             from_matrix = from_ldis.vandermonde()
             to_matrix = to_ldis.vandermonde()
-            self.interp_matrices.append(from_matrix <<num.leftsolve>> (to_matrix*pmat))
-            #self.interp_matrices.append(to_matrix*pmat*(1/from_matrix))
 
-    @work_with_arithmetic_containers
+            from hedge.tools import leftsolve
+            from numpy import dot
+            self.interp_matrices.append(
+                    numpy.asarray(
+                        leftsolve(from_matrix, dot(to_matrix, pmat)),
+                        order="C"))
+
+    #@work_with_arithmetic_containers
     def __call__(self, from_vec):
         from hedge._internal import perform_elwise_operator, VectorTarget
         result = self.to_discr.volume_zeros()
@@ -1512,10 +1591,14 @@ class Filter:
 
             # build filter matrix
             vdm = ldis.vandermonde()
-            self.filter_matrices.append(vdm <<num.leftsolve>> 
-                    (vdm*num.diagonal_matrix(num.array(filter_coeffs))))
+            from hedge.tools import leftsolve
+            from numpy import dot
+            self.filter_matrices.append(numpy.asarray(
+                leftsolve(vdm,
+                    dot(vdm, numpy.diag(filter_coeffs))),
+                order="C"))
 
-    @work_with_arithmetic_containers
+    #@work_with_arithmetic_containers
     def __call__(self, vec):
         from hedge._internal import perform_elwise_operator, VectorTarget
         result = self.discr.volume_zeros()

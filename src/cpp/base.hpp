@@ -26,6 +26,7 @@
 #include <vector>
 #include <boost/numeric/ublas/vector.hpp>
 #include <boost/numeric/ublas/matrix.hpp>
+#include <pyublas/numpy.hpp>
 
 
 
@@ -44,8 +45,8 @@ namespace hedge {
   static const vertex_number INVALID_VERTEX = UINT_MAX;
   static const node_index INVALID_NODE = UINT_MAX;
 
-  typedef boost::numeric::ublas::vector<double> vector;
-  typedef boost::numeric::ublas::matrix<double> matrix;
+  typedef pyublas::numpy_vector<double> vector;
+  typedef pyublas::numpy_matrix<double> matrix;
 
   class affine_map
   {

@@ -20,7 +20,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 
-import pylinear.array as num
+import numpy
 
 
 
@@ -71,7 +71,6 @@ CELL_NODE_COUNT = {
 
 VF_LIST_OF_COMPONENTS = 0 # [[x0,y0,z0], [x1,y1,z1]
 VF_LIST_OF_VECTORS = 1 # [[x0,x1], [y0,y1], [z0,z1]]
-VF_INTERLEAVED = 2 # [[x0,x1,y0,y1,z0,z1]
 
 
 
@@ -263,7 +262,6 @@ class DataArray(object):
                 bufferize_list_of_components, \
                 bufferize_int32, \
                 bufferize_uint8
-        from hedge.tools import FixedSizeSliceAdapter
 
         def vec_type(vec):
             # FIXME
@@ -271,42 +269,8 @@ class DataArray(object):
 
         from hedge._internal import IntVector
 
-        if num.Vector.is_a(container):
-            if vector_format == VF_INTERLEAVED:
-                if components is None:
-                    raise ValueError, "VF_INTERLEAVED requires `components' argument"
-                self.components = components
-                if vector_padding != components:
-                    raise ValueError, "padding is not supported for VF_INTERLEAVED"
-            else:
-                self.components = 1
-            self.type = vec_type(container)
-            buffer = bufferize_vector(container)
-
-        elif isinstance(container, FixedSizeSliceAdapter):
-            if container.unit == vector_padding and num.Vector.is_a(container.adaptee):
-                buffer = bufferize_vector(container.adaptee)
-                self.type = vec_type(container.adaptee)
-                self.components = container.unit
-            else:
-                self.type = vec_type(container[0])
-                self.components = components or len(container[0])
-                if self.components < vector_padding:
-                    self.components = vector_padding
-                buffer =  bufferize_list_of_vectors(container, self.components)
-
-        elif isinstance(container, (list, IntVector)):
-            if len(container) == 0 or not num.Vector.is_a(container[0]):
-                self.components = 1
-                if typehint == VTK_UINT8:
-                    self.type = VTK_UINT8
-                    buffer = bufferize_uint8(container)
-                elif typehint == VTK_INT32: 
-                    self.type = VTK_INT32
-                    buffer = bufferize_int32(container)
-                else:
-                    raise ValueError, "unsupported typehint"
-            else:
+        if isinstance(container, numpy.ndarray):
+            if container.dtype == object:
                 if vector_format == VF_LIST_OF_COMPONENTS:
                     ctr = list(container)
                     if len(ctr) > 1:
@@ -325,8 +289,30 @@ class DataArray(object):
                     if self.components < vector_padding:
                         self.components = vector_padding
                     buffer =  bufferize_list_of_vectors(container, self.components)
+
                 else:
                     raise TypeError, "unrecognized vector format"
+            else:
+                if len(container.shape) > 1:
+                    assert len(container.shape) == 2, "numpy vectors of rank >2 are not supported"
+                    assert container.strides[1] == container.itemsize, "2D numpy arrays must be row-major"
+                    self.components = container.shape[1]
+                else:
+                    self.components = 1
+                self.type = vec_type(container)
+                buffer = bufferize_vector(container)
+
+        elif isinstance(container, IntVector):
+            self.components = 1
+            if typehint == VTK_UINT8:
+                self.type = VTK_UINT8
+                buffer = bufferize_uint8(container)
+            elif typehint == VTK_INT32: 
+                self.type = VTK_INT32
+                buffer = bufferize_int32(container)
+            else:
+                raise ValueError, "unsupported typehint"
+
 
                 if typehint is not None:
                     assert typehint == self.type

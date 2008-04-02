@@ -61,11 +61,11 @@ namespace
   {
     matrix mat(dimensions, dimensions);
 
-    const vector &vertex0 = extract<vector const &>(vertices[0]);
+    const vector &vertex0 = extract<vector>(vertices[0]);
     vector vsum = ublas::zero_vector<vector::value_type>(dimensions);
     for (int i = 0; i < dimensions; i++)
     {
-      const vector &vertex = extract<vector const &>(vertices[i+1]);
+      const vector &vertex = extract<vector>(vertices[i+1]);
       vsum += vertex;
       column(mat, i) = 0.5*(vertex-vertex0);
     }
@@ -76,9 +76,10 @@ namespace
 
 
 
-  void map_element_nodes(vector &all_nodes, const unsigned el_start, 
+  void map_element_nodes(vector all_nodes, const unsigned el_start, 
       const affine_map &map, const vector &unit_nodes, const unsigned dim)
   {
+    // vectors, even if they're copied, have reference semantics
     for (unsigned nstart = 0; nstart < unit_nodes.size(); nstart += dim)
       subrange(all_nodes, el_start+nstart, el_start+nstart+dim) = 
         map(subrange(unit_nodes, nstart, nstart+dim));
@@ -157,17 +158,7 @@ namespace
 
       unsigned i = component_num++;
 
-      extract<const vector &> extract_vec(o);
-      if (extract_vec.check())
-      {
-        const vector &v = extract_vec();
-        BOOST_FOREACH(const vector::value_type x, v)
-        {
-          result[i] = x;
-          i += component_count;
-        }
-      }
-      else if (o == object())
+      if (o == object())
       {
         for (unsigned j = 0; j<vec_count; j++)
         {
@@ -175,8 +166,15 @@ namespace
           i += component_count;
         }
       }
-      else
-        PYTHON_ERROR(ValueError, "vec_list must consist of vectors or Nones.");
+      else 
+      {
+        vector v(handle<>(borrowed(o.ptr())));
+        BOOST_FOREACH(const vector::value_type x, v)
+        {
+          result[i] = x;
+          i += component_count;
+        }
+      }
     }
 
     return PyString_FromStringAndSize(
@@ -207,11 +205,9 @@ void hedge_expose_base()
     typedef affine_map cl;
     class_<cl>("AffineMap", init<const matrix &, const vector &>())
       .add_property("matrix", 
-          make_function(&cl::matrix, 
-            return_internal_reference<>()))
+          make_function(&cl::matrix, return_value_policy<return_by_value>()))
       .add_property("vector", 
-          make_function(&cl::vector, 
-            return_internal_reference<>()))
+          make_function(&cl::vector, return_value_policy<return_by_value>()))
       .def("__call__", &affine_map::operator())
 
       .enable_pickling()

@@ -18,6 +18,8 @@
 
 
 from __future__ import division
+import numpy
+import numpy.linalg as la
 import unittest
 
 
@@ -25,10 +27,8 @@ import unittest
 
 class Monomial:
     def __init__(self, exponents, factor=1):
-        import pylinear.array as num
-
         self.exponents = exponents
-        self.ones = num.ones((len(self.exponents),))
+        self.ones = numpy.ones((len(self.exponents),))
         self.factor = factor
 
     def __call__(self, x):
@@ -65,14 +65,14 @@ class Monomial:
 class TestHedge(unittest.TestCase):
     def test_timestep_accuracy(self):
         """Check that all timesteppers have the advertised accuracy"""
-        import pylinear.array as num
         from math import sqrt, log, sin, cos
         from hedge.tools import EOCRecorder
 
         def rhs(t, y):
             u = y[0]
             v = y[1]
-            return num.array([v, -u/t**2])
+            rhs = numpy.array([v, -u/t**2])
+            return rhs
 
         def soln(t):
             inner = sqrt(3)/2*log(t)
@@ -83,13 +83,15 @@ class TestHedge(unittest.TestCase):
 
         def get_error(stepper, dt):
             t = 1
-            y = num.array([1, 3])
+            y = numpy.array([1, 3])
             final_t = 10
             nsteps = int((final_t-t)/dt)
 
+            hist = []
             for i in range(nsteps):
                 y = stepper(y, t, dt, rhs)
                 t += dt
+                hist.append(y)
 
             return abs(y[0]-soln(t))
 
@@ -98,19 +100,20 @@ class TestHedge(unittest.TestCase):
             for n in range(4,8):
                 dt = 2**(-n)
                 stepper = stepper_getter()
-                eocrec.add_data_point(1/dt, get_error(stepper, dt))
+                error = get_error(stepper,dt)
+                eocrec.add_data_point(1/dt, error)
 
             #print stepper
             #print eocrec.pretty_print()
 
-            self.assert_(eocrec.estimate_order_of_convergence()[0,1] > order*0.95)
+            orderest = eocrec.estimate_order_of_convergence()[0,1]
+            #print orderest, order
+            self.assert_(orderest > order*0.95)
 
         from hedge.timestep import RK4TimeStepper, AdamsBashforthTimeStepper
 
-        verify_timestep_order(lambda : AdamsBashforthTimeStepper(1), 1)
-        verify_timestep_order(lambda : AdamsBashforthTimeStepper(2), 2)
-        verify_timestep_order(lambda : AdamsBashforthTimeStepper(3), 3)
-        verify_timestep_order(lambda : AdamsBashforthTimeStepper(4), 4)
+        for o in range(1,5):
+            verify_timestep_order(lambda : AdamsBashforthTimeStepper(o), o)
         verify_timestep_order(RK4TimeStepper, 4)
 
     # -------------------------------------------------------------------------
@@ -214,8 +217,8 @@ class TestHedge(unittest.TestCase):
         from hedge.element import WarpFactorCalculator
         wfc = WarpFactorCalculator(n)
 
-        self.assert_(abs(wfc.int_f(-1)) < 4e-15)
-        self.assert_(abs(wfc.int_f(1)) < 4e-15)
+        self.assert_(abs(wfc.int_f(-1)) < 1e-12)
+        self.assert_(abs(wfc.int_f(1)) < 1e-12)
 
         from hedge.quadrature import LegendreGaussQuadrature
 
@@ -265,7 +268,6 @@ class TestHedge(unittest.TestCase):
     def test_tri_nodes_against_known_values(self):
         """Check triangle nodes against a previous implementation"""
         from hedge.element import TriangularElement, TetrahedralElement
-
         triorder = 8
         tri = TriangularElement(triorder)
 
@@ -283,14 +285,13 @@ class TestHedge(unittest.TestCase):
                 alpha = 5/3
 
             from hedge.element import WarpFactorCalculator
-            import pylinear.array as num
             from math import sin, cos, pi
 
             warp = WarpFactorCalculator(self.order)
 
-            edge1dir = num.array([1,0])
-            edge2dir = num.array([cos(2*pi/3), sin(2*pi/3)])
-            edge3dir = num.array([cos(4*pi/3), sin(4*pi/3)])
+            edge1dir = numpy.array([1,0])
+            edge2dir = numpy.array([cos(2*pi/3), sin(2*pi/3)])
+            edge3dir = numpy.array([cos(4*pi/3), sin(4*pi/3)])
 
             for bary in self.equidistant_barycentric_nodes():
                 lambda1, lambda2, lambda3 = bary
@@ -319,10 +320,9 @@ class TestHedge(unittest.TestCase):
             for ux in tri_equilateral_nodes_reference(tri):
                 outf.write("%g\t%g\n" % tuple(ux))
 
-        from pylinear.computation import norm_2
         for n1, n2 in zip(tri.equilateral_nodes(), 
                 tri_equilateral_nodes_reference(tri)):
-            self.assert_(norm_2(n1-n2) < 3e-15)
+            self.assert_(la.norm(n1-n2) < 3e-15)
 
         def node_indices_2(order):
             for n in range(0, order+1):
@@ -339,8 +339,6 @@ class TestHedge(unittest.TestCase):
                 TriangularElement, \
                 TetrahedralElement
         from random import uniform
-        import pylinear.array as num
-        import pylinear.computation as comp
 
         els = [
                 (1, IntervalElement(5)), 
@@ -354,7 +352,7 @@ class TestHedge(unittest.TestCase):
                 for i in range(10):
                     base = -0.95
                     remaining = 1.90
-                    r = num.zeros((d,))
+                    r = numpy.zeros((d,))
                     for i in range(d):
                         rn = uniform(0, remaining)
                         r[i] = base+rn
@@ -362,12 +360,12 @@ class TestHedge(unittest.TestCase):
 
                     from pytools import wandering_element
                     h = 1e-4
-                    gradbf_v = num.array(gradbf(r))
-                    approx_gradbf_v = num.array([
+                    gradbf_v = numpy.array(gradbf(r))
+                    approx_gradbf_v = numpy.array([
                         (bf(r+h*dir) - bf(r-h*dir))/(2*h)
-                        for dir in [num.array(dir) for dir in wandering_element(d)]
+                        for dir in [numpy.array(dir) for dir in wandering_element(d)]
                         ])
-                    err = comp.norm_infinity(approx_gradbf_v-gradbf_v)
+                    err = la.norm(approx_gradbf_v-gradbf_v, numpy.Inf)
                     #print el.dimensions, el.order, i_bf, err
                     self.assert_(err < err_factor*h)
     # -------------------------------------------------------------------------
@@ -380,8 +378,6 @@ class TestHedge(unittest.TestCase):
         """
 
         from hedge.element import TriangularElement
-        import pylinear.array as num
-        import pylinear.computation as comp
 
         tri = TriangularElement(8)
         unodes = tri.unit_nodes()
@@ -390,13 +386,14 @@ class TestHedge(unittest.TestCase):
             start = unodes[face_i[0]]
             end = unodes[face_i[-1]]
             dir = end-start
-            dir /= comp.norm_2_squared(dir)
-            pfp = num.array([dir*(unodes[i]-start) for i in face_i])
+            dir /= numpy.dot(dir, dir)
+            pfp = numpy.array([numpy.dot(dir, unodes[i]-start) for i in face_i])
             projected_face_points.append(pfp)
 
         first_points =  projected_face_points[0]
         for points in projected_face_points[1:]:
-            self.assert_(comp.norm_infinity(points-first_points) < 1e-15)
+            error = la.norm(points-first_points, numpy.Inf)
+            self.assert_(error < 1e-15)
     # -------------------------------------------------------------------------
     def test_simp_face_normals_and_jacobians(self):
         """Check computed face normals and face jacobians on simplicial elements
@@ -407,9 +404,7 @@ class TestHedge(unittest.TestCase):
                 TetrahedralElement
         from hedge.mesh import Triangle
         from hedge.tools import AffineMap
-        import pylinear.array as num
-        import pylinear.computation as comp
-        from pylinear.randomized import make_random_vector
+        from numpy import dot
 
         for el in [
                 IntervalElement(3), 
@@ -419,7 +414,7 @@ class TestHedge(unittest.TestCase):
             for i in range(50):
                 geo = el.geometry
 
-                vertices = [make_random_vector(el.dimensions, num.Float) 
+                vertices = [numpy.random.randn(el.dimensions) 
                         for vi in range(el.dimensions+1)]
                 #array = num.array
                 #vertices = [array([-1, -1.0, -1.0]), array([1, -1.0, -1.0]), array([-1.0, 1, -1.0]), array([-1.0, -1.0, 1.0])]
@@ -442,7 +437,7 @@ class TestHedge(unittest.TestCase):
                     for fi in face_i:
                         face_node = nodes[fi]
                         for mc in mapped_corners:
-                            if comp.norm_2(mc-face_node) < 1e-13:
+                            if la.norm(mc-face_node) < 1e-13:
                                 close_nodes += 1
 
                     self.assert_(close_nodes == len(mapped_corners))
@@ -453,11 +448,14 @@ class TestHedge(unittest.TestCase):
                     if el.dimensions == 1:
                         true_jac = 1
                     elif el.dimensions == 2:
-                        true_jac = comp.norm_2(mapped_corners[1]-mapped_corners[0])/2
+                        true_jac = la.norm(mapped_corners[1]-mapped_corners[0])/2
                     elif el.dimensions == 3:
-                        mapped_face_projection = num.array(comp.orthonormalize(mapped_face_basis))
-                        projected_corners = [num.zeros((2,))] + [mapped_face_projection*v 
-                                for v in mapped_face_basis]
+                        from hedge.tools import orthonormalize
+                        mapped_face_projection = numpy.array(
+                                orthonormalize(mapped_face_basis))
+                        projected_corners = (
+                                [ numpy.zeros((2,))] 
+                                + [dot(mapped_face_projection, v) for v in mapped_face_basis])
                         true_jac = abs(Triangle
                                 .get_map_unit_to_global(projected_corners)
                                 .jacobian)
@@ -465,23 +463,19 @@ class TestHedge(unittest.TestCase):
                         assert False, "this test does not support %d dimensions yet" % el.dimensions
 
                     #print abs(true_jac-jac)/true_jac
-                    #print "aft, bef", comp.norm_2(mapped_end-mapped_start),comp.norm_2(end-start)
+                    #print "aft, bef", la.norm(mapped_end-mapped_start),la.norm(end-start)
 
                     self.assert_(abs(true_jac - jac)/true_jac < 1e-13)
-                    self.assert_(abs(comp.norm_2(normal) - 1) < 1e-13)
+                    self.assert_(abs(la.norm(normal) - 1) < 1e-13)
                     for mfbv in mapped_face_basis:
-                        self.assert_(abs(normal*mfbv) < 1e-13)
+                        self.assert_(abs(dot(normal, mfbv)) < 1e-13)
 
                     for mc in mapped_corners:
-                        self.assert_((mapped_opposite-mc)*normal < 0)
+                        self.assert_(dot(mapped_opposite-mc, normal) < 0)
     # -------------------------------------------------------------------------
     def test_tri_map(self):
         """Verify that the mapping and node-building operations maintain triangle vertices"""
         from hedge.element import TriangularElement
-        import pylinear.array as num
-        import pylinear.computation as comp
-        from pylinear.randomized import \
-                make_random_vector
 
         n = 8
         tri = TriangularElement(n)
@@ -492,32 +486,32 @@ class TestHedge(unittest.TestCase):
         corners = [unodes[i] for i in corner_indices]
 
         for i in range(10):
-            vertices = [make_random_vector(2, num.Float) for vi in range(3)]
+            vertices = [numpy.random.randn(2) for vi in range(3)]
             map = tri.geometry.get_map_unit_to_global(vertices)
             global_corners = [map(pt) for pt in corners]
             for gc, v in zip(global_corners, vertices):
-                self.assert_(comp.norm_2(gc-v) < 1e-12)
+                self.assert_(la.norm(gc-v) < 1e-12)
     # -------------------------------------------------------------------------
     def test_tri_map_jacobian_and_mass_matrix(self):
         """Verify whether tri map jacobians recover known values of triangle area"""
         from hedge.element import TriangularElement
-        import pylinear.array as num
-        import pylinear.computation as comp
-        from pylinear.randomized import make_random_vector
         from math import sqrt, exp, pi
 
-        edata = TriangularElement(9)
-        ones = num.ones((edata.node_count(),))
-        unit_tri_area = 2
-        self.assert_(abs(ones*(edata.mass_matrix()*ones)-unit_tri_area) < 1e-11)
+        for i in range(1,10):
+            edata = TriangularElement(i)
+            ones = numpy.ones((edata.node_count(),))
+            unit_tri_area = 2
+            error = la.norm(
+                numpy.dot(ones,numpy.dot(edata.mass_matrix(), ones))-unit_tri_area)
+            self.assert_(error < 1e-14)
 
         for i in range(10):
-            vertices = [make_random_vector(2, num.Float) for vi in range(3)]
+            vertices = [numpy.random.randn(2) for vi in range(3)]
             map = edata.geometry.get_map_unit_to_global(vertices)
-            mat = num.zeros((2,2))
+            mat = numpy.zeros((2,2))
             mat[:,0] = (vertices[1] - vertices[0])
             mat[:,1] = (vertices[2] - vertices[0])
-            tri_area = abs(comp.determinant(mat)/2)
+            tri_area = abs(la.det(mat)/2)
             tri_area_2 = abs(unit_tri_area*map.jacobian)
             self.assert_(abs(tri_area - tri_area_2)/tri_area < 1e-15)
     # -------------------------------------------------------------------------
@@ -555,6 +549,7 @@ class TestHedge(unittest.TestCase):
         from hedge.element import IntervalElement
         from hedge.discretization import Discretization, integral
         from math import sqrt, pi, cos, sin
+        from numpy import dot
 
         mesh = make_uniform_1d_mesh(-4*pi, 9*pi, 17, periodic=True)
         discr = Discretization(mesh, IntervalElement(8), debug=True)
@@ -562,8 +557,8 @@ class TestHedge(unittest.TestCase):
         f = discr.interpolate_volume_function(lambda x: cos(x[0])**2)
         ones = discr.interpolate_volume_function(lambda x: 1)
 
-        num_integral_1 = ones * (discr.mass_operator * f)
-        num_integral_2 = f * (discr.mass_operator * ones)
+        num_integral_1 = dot(ones, discr.mass_operator * f)
+        num_integral_2 = dot(f, discr.mass_operator * ones)
         num_integral_3 = integral(discr, f)
 
         true_integral = 13*pi/2
@@ -581,7 +576,6 @@ class TestHedge(unittest.TestCase):
         from hedge.mesh import make_square_mesh
         from hedge.element import TriangularElement
         from hedge.discretization import Discretization
-        import pylinear.computation as comp
         from math import sqrt, pi, cos, sin
 
         mesh = make_square_mesh(a=-pi, b=pi, max_area=(2*pi/10)**2/2)
@@ -589,8 +583,8 @@ class TestHedge(unittest.TestCase):
         f = discr.interpolate_volume_function(lambda x: cos(x[0])**2*sin(x[1])**2)
         ones = discr.interpolate_volume_function(lambda x: 1)
 
-        num_integral_1 = ones * (discr.mass_operator * f)
-        num_integral_2 = f * (discr.mass_operator * ones)
+        num_integral_1 = numpy.dot(ones, discr.mass_operator * f)
+        num_integral_2 = numpy.dot(f, discr.mass_operator * ones)
         true_integral = pi**2
         err_1 = abs(num_integral_1-true_integral)
         err_2 = abs(num_integral_2-true_integral)
@@ -603,7 +597,6 @@ class TestHedge(unittest.TestCase):
         
         Uses sines as the function to differentiate.
         """
-        import pylinear.computation as comp
         from hedge.mesh import make_disk_mesh
         from hedge.element import TriangularElement
         from hedge.discretization import Discretization, cache_diff_results
@@ -625,14 +618,14 @@ class TestHedge(unittest.TestCase):
             #discr.visualize_vtk("diff-err.vtk",
                     #[("f", f), ("df", df), ("df_num", df_num), ("error", error)])
 
-            linf_error = comp.norm_infinity(df_num-df)
+            linf_error = la.norm(df_num-df, numpy.Inf)
             #print linf_error
             self.assert_(linf_error < 3e-5)
 
-            linf_error = comp.norm_infinity(df_num_no_cache-df)
+            linf_error = la.norm(df_num_no_cache-df, numpy.Inf)
             self.assert_(linf_error < 3e-5)
 
-            linf_error = comp.norm_infinity(df_num_no_cache-df_num)
+            linf_error = la.norm(df_num_no_cache-df_num, numpy.Inf)
             self.assert_(linf_error < 2e-13)
     # -------------------------------------------------------------------------
     def test_2d_gauss_theorem(self):
@@ -646,10 +639,8 @@ class TestHedge(unittest.TestCase):
                 Discretization, \
                 pair_with_boundary, \
                 cache_diff_results
-        import pylinear.array as num
-        import pylinear.computation as comp
-        from pylinear.randomized import make_random_vector
         from math import sin, cos, sqrt, exp, pi
+        from numpy import dot
 
         class NormalFlux(Flux):
             def __init__(self, coordinate):
@@ -687,13 +678,13 @@ class TestHedge(unittest.TestCase):
         dy_v = discr.nabla[1] * cache_diff_results(f2_v)
 
         int_div = \
-                ones*(discr.mass_operator*dx_v) + \
-                ones*(discr.mass_operator*dy_v)
+                dot(ones, discr.mass_operator*dx_v) + \
+                dot(ones, discr.mass_operator*dy_v)
 
-        boundary_int = (
+        boundary_int = dot(
                 discr.get_flux_operator(one_sided_x)*pair_with_boundary(f1_v, face_zeros) +
-                discr.get_flux_operator(one_sided_y)*pair_with_boundary(f2_v, face_zeros)
-                )*ones
+                discr.get_flux_operator(one_sided_y)*pair_with_boundary(f2_v, face_zeros),
+                ones)
 
         #print abs(boundary_int-int_div)
         self.assert_(abs(boundary_int-int_div) < 5e-15)
@@ -722,13 +713,11 @@ class TestHedge(unittest.TestCase):
                 TetrahedralElement
         from pytools import generate_nonnegative_integer_tuples_summing_to_at_most
 
-        import pylinear.array as num
-        import pylinear.computation as comp
-        from pylinear.randomized import make_random_vector
         from operator import add, mul
 
-        thresh = 6e-14
+        thresh = 1e-13
 
+        from numpy import dot
         for el in [
                 IntervalElement(5),
                 TriangularElement(3),
@@ -736,13 +725,13 @@ class TestHedge(unittest.TestCase):
                 ]:
             for comb in generate_nonnegative_integer_tuples_summing_to_at_most(
                     el.order, el.dimensions):
-                ones = num.ones((el.node_count(),))
+                ones = numpy.ones((el.node_count(),))
                 unodes = el.unit_nodes()
                 f = Monomial(comb)
-                f_n = num.array([f(x) for x in unodes])
-                int_f_n = ones*el.mass_matrix()*f_n
+                f_n = numpy.array([f(x) for x in unodes])
+                int_f_n = dot(ones, dot(el.mass_matrix(), f_n))
                 int_f = f.theoretical_integral()
-                err = abs(int_f - int_f_n)
+                err = la.norm(int_f - int_f_n)
                 if err > thresh:
                     print "bad", el, comb, int_f, int_f_n, err
                 self.assert_(err < thresh)
@@ -750,9 +739,9 @@ class TestHedge(unittest.TestCase):
                 dmats = el.differentiation_matrices()
                 for i in range(el.dimensions):
                     df = f.diff(i)
-                    df = num.array([df(x) for x in unodes])/2
-                    df_n = dmats[i]*f_n
-                    err = comp.norm_infinity(df - df_n)
+                    df = numpy.array([df(x) for x in unodes])/2
+                    df_n = dot(dmats[i], f_n)
+                    err = la.norm(df - df_n, numpy.Inf)
                     if err > thresh:
                         print "bad-diff", comb, i, err
                     self.assert_(err < thresh)
@@ -765,11 +754,10 @@ class TestHedge(unittest.TestCase):
                 TriangularElement, \
                 TetrahedralElement
         from hedge.tools import AffineMap
-        import pylinear.array as num
-        import pylinear.computation as comp
-        from pylinear.randomized import make_random_vector
         from operator import add
         from math import sin, cos, sqrt, exp, pi
+
+        from numpy import dot
 
         def f1_1d(x):
             return sin(3*x[0])
@@ -796,10 +784,10 @@ class TestHedge(unittest.TestCase):
         def d(imap, coordinate, field):
             col = imap.matrix[:, coordinate]
             matrices = el.differentiation_matrices()
-            return reduce(add, (dmat*coeff*field
+            return reduce(add, (coeff*dot(dmat, field)
                         for dmat, coeff in zip(matrices, col)))
 
-        array = num.array
+        array = numpy.array
 
         intervals = [
                 [array([-0.5]), array([17.])]
@@ -838,26 +826,29 @@ class TestHedge(unittest.TestCase):
                 (tets, TetrahedralElement(1), [f1_3d, f2_3d, f3_3d]),
                 ]:
             for vertices in el_geoms:
-                ones = num.ones((el.node_count(),))
-                face_ones = num.ones((len(el.face_indices()[0]),))
+                ones = numpy.ones((el.node_count(),))
+                face_ones = numpy.ones((len(el.face_indices()[0]),))
 
                 map = el.geometry.get_map_unit_to_global(vertices)
                 imap = map.inverted()
 
                 mapped_points = [map(node) for node in el.unit_nodes()]
 
-                f_n = [num.array([fi(x) for x in mapped_points])
+                f_n = [numpy.array([fi(x) for x in mapped_points])
                         for fi in f]
                 df_n = [d(imap, i, f_n[i]) for i, fi_n in enumerate(f_n)]
 
                 int_div_f = abs(map.jacobian)*sum(
-                        ones*el.mass_matrix()*dfi_n for dfi_n in df_n)
+                        dot(ones, dot(el.mass_matrix(), dfi_n)) for dfi_n in df_n)
 
                 if False:
                     boundary_comp = [
                             array([
-                                fjac * face_ones * el.face_mass_matrix() 
-                                * num.take(fi_n, face_indices) * n_coord
+                                fjac 
+                                * dot(face_ones,
+                                    dot(el.face_mass_matrix(),
+                                        num.take(fi_n, face_indices)) )
+                                * n_coord
                                 for fi_n, n_coord in zip(f_n, n)])
                             for face_indices, n, fjac
                             in zip(el.face_indices(), *el.face_normals_and_jacobians(vertices, map))
@@ -865,8 +856,11 @@ class TestHedge(unittest.TestCase):
 
                 boundary_sum = sum(
                         sum(
-                            fjac * face_ones * el.face_mass_matrix() 
-                            * num.take(fi_n, face_indices) * n_coord
+                            fjac 
+                            * dot(face_ones,
+                                dot(el.face_mass_matrix(), 
+                                    numpy.take(fi_n, face_indices)))
+                            * n_coord
                             for fi_n, n_coord in zip(f_n, n))
                         for face_indices, n, fjac
                         in zip(el.face_indices(), 
@@ -886,6 +880,8 @@ class TestHedge(unittest.TestCase):
         """Test orthogonality of simplicial bases using Grundmann-Moeller cubature"""
         from hedge.quadrature import SimplexCubature
         from hedge.element import TriangularElement, TetrahedralElement
+
+        from numpy import dot
 
         for order, ebound in [
                 (1, 2e-15),
@@ -918,26 +914,20 @@ class TestHedge(unittest.TestCase):
         """Check that a 1D mass matrix for Legendre-Gauss points gives the right weights"""
         from hedge.quadrature import LegendreGaussQuadrature
         from hedge.polynomial import legendre_vandermonde
-        import pylinear.array as num
-        import pylinear.computation as comp
 
         for n in range(13):
             lgq = LegendreGaussQuadrature(n)
             vdm = legendre_vandermonde(lgq.points, n)
-            mass_mat = 1/(vdm*vdm.T)
-            ones = num.ones((mass_mat.shape[0],))
-            self.assert_(comp.norm_infinity(
-                    ((vdm*vdm.T) <<num.solve>> ones)
-                    -
-                    num.array(lgq.weights)) < 2e-14)
+            mass_mat = la.inv(numpy.dot(vdm, vdm.T))
+            ones = numpy.ones((mass_mat.shape[0],))
+            self.assert_(la.norm(
+                la.solve(numpy.dot(vdm, vdm.T), ones) -
+                    numpy.array(lgq.weights), numpy.Inf) < 2e-14)
     # -------------------------------------------------------------------------
     def test_mapping_differences_tri(self):
         """Check that triangle interpolation is independent of mapping to reference
         """
         from hedge.element import TriangularElement
-        import pylinear.array as num
-        import pylinear.computation as comp
-        from pylinear.randomized import make_random_vector
         from random import random
         from pytools import generate_permutations
 
@@ -966,10 +956,10 @@ class TestHedge(unittest.TestCase):
         tri = TriangularElement(5)
 
         for trial_number in range(10):
-            vertices = [make_random_vector(2, num.Float) for vi in range(3)]
+            vertices = [numpy.random.randn(2) for vi in range(3)]
             map = tri.geometry.get_map_unit_to_global(vertices)
             nodes = [map(node) for node in tri.unit_nodes()]
-            node_values = num.array([random() for node in nodes])
+            node_values = numpy.array([random() for node in nodes])
 
             functions = []
             for pvertices in generate_permutations(vertices):
@@ -980,15 +970,15 @@ class TestHedge(unittest.TestCase):
                 nodematch = {}
                 for pi, pn in enumerate(pnodes):
                     for i, n in enumerate(nodes):
-                        if comp.norm_2(n - pn) < 1e-13:
+                        if la.norm(n - pn) < 1e-13:
                             nodematch[pi] = i
                             break
 
-                pnode_values = num.array([node_values[nodematch[pi]] 
+                pnode_values = numpy.array([node_values[nodematch[pi]] 
                         for pi in range(len(nodes))])
 
                 interp_f = LinearCombinationOfFunctions(
-                        tri.vandermonde() <<num.solve>> pnode_values,
+                        la.solve(tri.vandermonde(), pnode_values),
                         tri.basis_functions(),
                         pmap.inverted())
 
@@ -1070,11 +1060,10 @@ class TestHedge(unittest.TestCase):
         from hedge.discretization import Discretization, ones_on_volume
         discr = Discretization(mesh, TriangularElement(4), debug=True)
 
-        import pylinear.array as num
-        u_i = num.multiply(
+        u_i = numpy.multiply(
                 discr.interpolate_volume_function(lambda x: sin(x[0]-x[1])),
                 ones_on_volume(discr, "lower"))
-        u_o = num.multiply(
+        u_o = numpy.multiply(
                 discr.interpolate_volume_function(lambda x: cos(x[0]-x[1])),
                 ones_on_volume(discr, "upper"))
         u = u_i + u_o
@@ -1087,7 +1076,7 @@ class TestHedge(unittest.TestCase):
                 (fluxu.int - fluxu.ext)*make_normal(discr.dimensions)[1]) * u
 
         ones = discr.interpolate_volume_function(lambda x: 1)
-        self.assert_(abs(res*ones) < 5e-14)
+        self.assert_(abs(numpy.dot(res, ones)) < 5e-14)
     # -------------------------------------------------------------------------
     def test_interior_fluxes_tet(self):
         """Check tetrahedron surface integrals computed using interior fluxes
@@ -1160,11 +1149,10 @@ class TestHedge(unittest.TestCase):
         from hedge.discretization import Discretization, ones_on_volume
         discr = Discretization(mesh, TetrahedralElement(4), debug=True)
 
-        import pylinear.array as num
-        u_l = num.multiply(
+        u_l = numpy.multiply(
                 discr.interpolate_volume_function(lambda x: sin(x[0]-x[1]+x[2])),
                 ones_on_volume(discr, "lower"))
-        u_u = num.multiply(
+        u_u = numpy.multiply(
                 discr.interpolate_volume_function(lambda x: cos(x[0]-x[1]+x[2])),
                 ones_on_volume(discr, "upper"))
         u = u_l + u_u
@@ -1182,15 +1170,14 @@ class TestHedge(unittest.TestCase):
         res = discr.get_flux_operator(
                 (fluxu.int - fluxu.ext)*make_normal(discr.dimensions)[1]) * u
         ones = discr.interpolate_volume_function(lambda x: 1)
-        self.assert_(abs(res*ones) < 5e-14)
+        self.assert_(abs(numpy.dot(res,ones)) < 5e-14)
     # -------------------------------------------------------------------------
     def test_symmetry_preservation_2d(self):
         """Test whether we preserve symmetry in a symmetric 2D advection problem"""
-
-        import pylinear.array as num
+        from numpy import dot
 
         def make_mesh():
-            array = num.array
+            array = numpy.array
 
             #
             #    1---8---2
@@ -1226,7 +1213,7 @@ class TestHedge(unittest.TestCase):
                     ]
 
             def boundary_tagger(vertices, el, face_nr):
-                if el.face_normals[face_nr] * v < 0:
+                if dot(el.face_normals[face_nr], v) < 0:
                     return ["inflow"]
                 else:
                     return ["outflow"]
@@ -1241,7 +1228,7 @@ class TestHedge(unittest.TestCase):
         from hedge.operators import StrongAdvectionOperator
         from hedge.data import TimeDependentGivenFunction
 
-        v = num.array([-1,0])
+        v = numpy.array([-1,0])
 
         mesh = make_mesh()
         discr = Discretization(mesh, TriangularElement(4), debug=True)
@@ -1251,12 +1238,12 @@ class TestHedge(unittest.TestCase):
             else: return (x-0.5)
 
         def u_analytic(x, t):
-            return f(-v*x+t)
+            return f(-dot(v, x)+t)
 
         u = discr.interpolate_volume_function(lambda x: u_analytic(x, 0))
 
         sym_map = SymmetryMap(discr, 
-                lambda x: num.array([x[0], -x[1]]),
+                lambda x: numpy.array([x[0], -x[1]]),
                 {0:3, 2:1, 5:6, 7:4})
 
         for flux_type in StrongAdvectionOperator.flux_types:
@@ -1270,14 +1257,12 @@ class TestHedge(unittest.TestCase):
             for step in xrange(nsteps):
                 u = stepper(u, step*dt, dt, op.rhs)
                 sym_error_u = u-sym_map(u)
-                sym_error_u_l2 = sqrt(sym_error_u*(discr.mass_operator*sym_error_u))
+                sym_error_u_l2 = sqrt(dot(sym_error_u, (discr.mass_operator*sym_error_u)))
                 self.assert_(sym_error_u_l2 < 4e-15)
     # -------------------------------------------------------------------------
     def test_convergence_advec_2d(self):
         """Test whether 2D advection actually converges"""
 
-        import pylinear.array as num
-        import pylinear.computation as comp
         from hedge.mesh import make_disk_mesh, make_regular_rect_mesh
         from hedge.discretization import Discretization, pair_with_boundary
         from hedge.element import TriangularElement
@@ -1287,17 +1272,19 @@ class TestHedge(unittest.TestCase):
         from hedge.operators import StrongAdvectionOperator
         from hedge.data import TimeDependentGivenFunction
 
-        v = num.array([0.27,0])
-        norm_a = comp.norm_2(v)
+        v = numpy.array([0.27,0])
+        norm_a = la.norm(v)
+
+        from numpy import dot
 
         def f(x):
             return sin(x)
 
         def u_analytic(x, t):
-            return f((-v*x/norm_a+t*norm_a))
+            return f((-dot(v, x)/norm_a+t*norm_a))
 
         def boundary_tagger(vertices, el, face_nr):
-            if el.face_normals[face_nr] * v < 0:
+            if dot(el.face_normals[face_nr], v) < 0:
                 return ["inflow"]
             else:
                 return ["outflow"]
@@ -1332,7 +1319,7 @@ class TestHedge(unittest.TestCase):
                         u_true = discr.interpolate_volume_function(
                                 lambda x: u_analytic(x, nsteps*dt))
                         error = u-u_true
-                        error_l2 = sqrt(error*(discr.mass_operator*error))
+                        error_l2 = sqrt(dot(error, discr.mass_operator*error))
                         eoc_rec.add_data_point(order, error_l2)
 
                     if False:
@@ -1359,30 +1346,28 @@ class TestHedge(unittest.TestCase):
     # -------------------------------------------------------------------------
     def test_elliptic(self):
         """Test various properties of elliptic operators."""
-        import pylinear.array as num
-        import pylinear.computation as comp
-        import pylinear.operator as operator
 
+        from hedge.tools import unit_vector
         def matrix_rep(op):
             h,w = op.shape
-            mat = num.zeros(op.shape)
+            mat = numpy.zeros(op.shape)
             for j in range(w):
-                mat[:,j] = op(num.unit_vector(w, j))
+                mat[:,j] = op(unit_vector(w, j))
             return mat
 
         def check_grad_mat():
-            from pylinear.randomized import make_random_vector
             grad_mat = op.grad_matrix()
 
             #print len(discr), grad_mat.nnz, type(grad_mat)
             for i in range(10):
-                u = make_random_vector(len(discr), num.Float)
+                u = numpy.random.randn(len(discr))
 
                 mat_result = grad_mat * u
-                op_result = num.hstack(op.grad(u))
+                op_result = numpy.hstack(op.grad(u))
 
+                err = la.norm(mat_result-op_result)*la.norm(op_result)
                 self.assert_(
-                        comp.norm_2(mat_result-op_result)*comp.norm_2(op_result)
+                        la.norm(mat_result-op_result)*la.norm(op_result)
                         < 1e-5)
 
         def check_matrix_tgt():
@@ -1412,14 +1397,10 @@ class TestHedge(unittest.TestCase):
         from hedge.tools import EOCRecorder
         eocrec = EOCRecorder()
         for order in [1,2,3,4,5]:
-            for flux in ["ip", "ldg"]:
-                from hedge.discretization import Discretization
+            for flux in ["ldg", "ip"]:
+                from hedge.discretization import Discretization, norm
                 from hedge.element import TriangularElement
                 discr = Discretization(mesh, TriangularElement(order), debug=True)
-
-                def l2_norm(v):
-                    from math import sqrt
-                    return sqrt(v*(discr.mass_operator*v))
 
                 from hedge.data import GivenFunction
                 from hedge.operators import WeakPoissonOperator
@@ -1431,14 +1412,16 @@ class TestHedge(unittest.TestCase):
 
                 if order <= 3:
                     mat = matrix_rep(op)
-                    self.assert_(comp.norm_frobenius(mat-mat.T)<1e-12)
+                    sym_err = la.norm(mat-mat.T)
+                    self.assert_(sym_err<1e-12)
                     check_grad_mat()
 
+                import pyublasext
                 truesol_v = discr.interpolate_volume_function(truesol_c)
-                a_inv = operator.CGOperator.make(-op, 40000, 1e-10)
+                a_inv = pyublasext.CGOperator.make(-op, 40000, 1e-10)
                 sol_v = -a_inv(op.prepare_rhs(GivenFunction(rhs_c)))
 
-                eocrec.add_data_point(order, l2_norm(sol_v-truesol_v))
+                eocrec.add_data_point(order, norm(discr, sol_v-truesol_v))
 
         #print eocrec.pretty_print()
 
@@ -1447,18 +1430,18 @@ class TestHedge(unittest.TestCase):
     def test_projection(self):
         """Test whether projection between different orders works"""
 
-        import pylinear.array as num
-        import pylinear.computation as comp
         from hedge.mesh import make_disk_mesh
-        from hedge.discretization import Discretization, Projector
+        from hedge.discretization import Discretization, Projector, norm
         from hedge.element import TriangularElement
         from hedge.tools import EOCRecorder
         from math import sin, pi, sqrt
 
-        a = num.array([1,3])
+        from numpy import dot
+
+        a = numpy.array([1,3])
 
         def u_analytic(x):
-            return sin(a*x)
+            return sin(dot(a, x))
 
         mesh = make_disk_mesh(r=pi, max_area=0.5)
 
@@ -1467,21 +1450,15 @@ class TestHedge(unittest.TestCase):
         p2to5 = Projector(discr2, discr5)
         p5to2 = Projector(discr5, discr2)
 
-        def l2_norm(discr, v):
-            from math import sqrt
-            return sqrt(v*(discr.mass_operator*v))
-
         u2 = discr2.interpolate_volume_function(u_analytic)
         u2_i = p5to2(p2to5(u2))
-        self.assert_(l2_norm(discr2, u2-u2_i) < 3e-15)
+        self.assert_(norm(discr2, u2-u2_i) < 3e-15)
     # -------------------------------------------------------------------------
     def test_filter(self):
         """Exercise mode-based filtering."""
 
-        import pylinear.array as num
-        import pylinear.computation as comp
         from hedge.mesh import make_disk_mesh
-        from hedge.discretization import Discretization, integral
+        from hedge.discretization import Discretization, integral, norm
         from hedge.element import TriangularElement
         from math import sin
 
@@ -1492,24 +1469,25 @@ class TestHedge(unittest.TestCase):
         half_filter = Filter(discr, lambda mid, ldis: 0.5)
         for fmat in half_filter.filter_matrices:
             n,m = fmat.shape
-            self.assert_(comp.norm_frobenius(fmat - 0.5*num.eye(n, m)) < 2e-15)
+            self.assert_(la.norm(fmat - 0.5*numpy.eye(n, m)) < 2e-15)
 
-        def l2_norm(v):
-            from math import sqrt
-            return sqrt(v*(discr.mass_operator*v))
+        from numpy import dot
 
         def test_freq(n):
-            a = num.array([1,n])
+            a = numpy.array([1,n])
 
             def u_analytic(x):
-                return sin(a*x)
+                return sin(dot(a, x))
 
             exp_filter = Filter(discr, ExponentialFilterResponseFunction(0.9, 3))
 
             u = discr.interpolate_volume_function(u_analytic)
             filt_u = exp_filter(u)
-            self.assert_(abs(integral(discr, u) - integral(discr, filt_u)) < 3e-15)
-            self.assert_(0.98 < l2_norm(filt_u) / l2_norm(u) < 0.99999)
+
+            int_error = abs(integral(discr, u) - integral(discr, filt_u))
+            l2_ratio = norm(discr, filt_u) / norm(discr, u)
+            self.assert_(int_error < 5e-15)
+            self.assert_(0.975 < l2_ratio < 0.99999)
 
         test_freq(3)
         test_freq(5)

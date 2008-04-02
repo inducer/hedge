@@ -125,12 +125,12 @@ namespace hedge {
 
       template <class Container>
       void add_coefficients(unsigned i_start, unsigned j_start, 
-          const Container &submat) const
+          const Container &submat)
       { }
 
       template <class Container>
       void add_scaled_coefficients(unsigned i_start, unsigned j_start, 
-          scalar_type factor, const Container &submat) const
+          scalar_type factor, const Container &submat)
       { }
   };
 
@@ -141,7 +141,7 @@ namespace hedge {
     public:
       typedef vector::value_type scalar_type;
 
-      vector_target(const vector &operand, vector &result)
+      vector_target(const vector operand, vector result)
         : m_operand(operand), m_result(result)
       { }
       void begin(unsigned height, unsigned width) const
@@ -157,12 +157,12 @@ namespace hedge {
       void finalize() const
       { }
 
-      void add_coefficient(unsigned i, unsigned j, scalar_type coeff) const
+      void add_coefficient(unsigned i, unsigned j, scalar_type coeff)
       { m_result[i] += coeff*m_operand[j]; }
 
       template <class Container>
       void add_coefficients(unsigned i_start, unsigned j_start, 
-          const Container &submat) const
+          const Container &submat)
       {
         /*
         boost::numeric::ublas::vector_range<vector> target
@@ -175,13 +175,14 @@ namespace hedge {
 
       template <class Container>
       void add_scaled_coefficients(unsigned i_start, unsigned j_start, 
-          scalar_type factor, const Container &submat) const
+          scalar_type factor, const Container &submat)
       {
         noalias(subrange(m_result, i_start, i_start+submat.size1())) +=
           factor * prod(submat, subrange(m_operand, j_start, j_start+submat.size2()));
       }
-      const vector &m_operand;
-      vector &m_result;
+
+      const vector m_operand;
+      vector m_result;
   };
 
 
@@ -223,12 +224,12 @@ namespace hedge {
             m_col_offset+col_offset);
       }
 
-      void add_coefficient(unsigned i, unsigned j, scalar_type coeff) const
+      void add_coefficient(unsigned i, unsigned j, scalar_type coeff)
       { m_matrix.append_element(m_row_offset+i, m_col_offset+j, coeff); }
 
       template <class Container>
       void add_coefficients(unsigned i_start, unsigned j_start, 
-          const Container &submat) const
+          const Container &submat)
       { 
         typename Container::const_iterator1 
           first1 = submat.begin1(), last1 = submat.end1();
@@ -256,7 +257,7 @@ namespace hedge {
 
       template <class Container>
       void add_scaled_coefficients(unsigned i_start, unsigned j_start, 
-          scalar_type factor, const Container &submat) const
+          scalar_type factor, const Container &submat)
       { 
         //subrange(m_matrix, i_start, i_stop, j_start, j_stop) += factor * submat;
         typename Container::const_iterator1 

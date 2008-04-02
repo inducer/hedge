@@ -41,11 +41,11 @@ namespace
       .def("finalize", &cl::finalize)
       .def("add_coefficient", &cl::add_coefficient)
       .def("add_coefficients", 
-          (void (cl::*)(unsigned, unsigned, const matrix &) const)
+          (void (cl::*)(unsigned, unsigned, const matrix &))
           &cl::add_coefficients,
           (arg("i_start"), arg("j_start"), arg("submat")))
       .def("add_scaled_coefficients", 
-          (void (cl::*)(unsigned, unsigned, typename cl::scalar_type, const matrix &) const)
+          (void (cl::*)(unsigned, unsigned, typename cl::scalar_type, const matrix &))
           &cl::add_scaled_coefficients,
           (arg("i_start"), arg("j_start"), arg("factor"), arg("submat")))
       ;
@@ -66,10 +66,7 @@ void hedge_expose_op_target()
 
   {
     typedef vector_target cl;
-    class_<cl> wrapper("VectorTarget", 
-        init<const vector &, vector &>()
-        [with_custodian_and_ward<1,2, with_custodian_and_ward<1,3> >()]
-        );
+    class_<cl> wrapper("VectorTarget", init<const vector, vector>());
     expose_op_target(wrapper);
   }
 

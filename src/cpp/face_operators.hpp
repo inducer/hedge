@@ -235,6 +235,9 @@ namespace hedge
 
     assert(fmm.size1() == fmm.size2());
 
+    const vector::const_iterator op_it = target.m_operand.begin();
+    const vector::iterator result_it = target.m_result.begin();
+
     BOOST_FOREACH(const face_pair &fp, fg.face_pairs)
     {
       const fluxes::face &flux_face = fg.flux_faces[fp.flux_face_index];
@@ -255,9 +258,6 @@ namespace hedge
       assert(face_length == index_list.size());
       assert(face_length == opp_index_list.size());
 
-      const vector &operand = target.m_operand;
-      vector &result = target.m_result;
-
       const int ebi = fp.el_base_index;
       const int oebi = fp.opp_el_base_index;
 
@@ -276,8 +276,8 @@ namespace hedge
         {
           const typename Mat::value_type fmm_entry = fmm(i, j);
 
-          const double fmmopilj = operand[ebi+*ilj_iterator++]*fmm_entry;
-          const double fmmopoilj = operand[oebi+*oilj_iterator++]*fmm_entry;
+          const double fmmopilj = op_it[ebi+*ilj_iterator++]*fmm_entry;
+          const double fmmopoilj = op_it[oebi+*oilj_iterator++]*fmm_entry;
 
           /*
           __builtin_prefetch(&operand[ebi+ilj_iterator[0]], 0, 1);
@@ -288,8 +288,8 @@ namespace hedge
           res_oili_addition += fmmopoilj*local_coeff_opp +fmmopilj*neighbor_coeff_opp;
         }
 
-        result[ili] += res_ili_addition;
-        result[oili] += res_oili_addition;
+        result_it[ili] += res_ili_addition;
+        result_it[oili] += res_oili_addition;
       }
     }
   }
@@ -302,12 +302,12 @@ namespace hedge
   {
     const LFlux local_flux;
     const NFlux neighbor_flux;
-    hedge::vector &result;
+    hedge::vector result;
 
     double_sided_flux_info(
         const LFlux lflux,
         const NFlux nflux,
-        hedge::vector &res)
+        hedge::vector res)
       : local_flux(lflux), neighbor_flux(nflux), result(res)
     { }
   };
@@ -350,13 +350,15 @@ namespace hedge
 
   template <unsigned flux_count, class Mat, class DSFluxInfoType>
   void perform_multiple_double_sided_fluxes_on_single_operand(const face_group &fg, 
-      const Mat &fmm, const DSFluxInfoType flux_info[flux_count],
+      const Mat &fmm, DSFluxInfoType flux_info[flux_count],
       const hedge::vector &operand
       )
   {
     const unsigned face_length = fmm.size1();
 
     assert(fmm.size1() == fmm.size2());
+
+    hedge::vector::const_iterator op_it = operand.begin();
 
     BOOST_FOREACH(const face_pair &fp, fg.face_pairs)
     {
@@ -395,8 +397,8 @@ namespace hedge
         {
           const typename Mat::value_type fmm_entry = fmm(i, j);
 
-          const double fmmopilj = operand[ebi+*ilj_iterator++]*fmm_entry;
-          const double fmmopoilj = operand[oebi+*oilj_iterator++]*fmm_entry;
+          const double fmmopilj = op_it[ebi+*ilj_iterator++]*fmm_entry;
+          const double fmmopoilj = op_it[oebi+*oilj_iterator++]*fmm_entry;
 
           for (unsigned i_flux = 0; i_flux < flux_count; ++i_flux)
           {

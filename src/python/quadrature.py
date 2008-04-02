@@ -22,8 +22,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 
-import pylinear.array as num
-import pylinear.computation as comp
+import numpy
 
 
 
@@ -40,14 +39,14 @@ def jacobi_gauss_lobatto_points(alpha, beta, N):
     of type (alpha,beta) > -1 ( <> -0.5).
     """
 
-    x = num.zeros((N+1,))
+    x = numpy.zeros((N+1,))
     x[0] = -1
     x[-1] = 1
 
     if N == 1:
         return x
 
-    x[1:-1] = num.array(
+    x[1:-1] = numpy.array(
             JacobiGaussQuadrature(alpha+1, beta+1, N-2).points
             ).real
     return x
@@ -131,7 +130,7 @@ class JacobiGaussQuadrature(Quadrature):
                         ((2*n+apb)*(2*n+apb+2))
                         )
 
-        T = num.zeros((N+1, N+1))
+        T = numpy.zeros((N+1, N+1))
 
         for n in range(N+1):
             T[n,n] = b(n)
@@ -142,10 +141,11 @@ class JacobiGaussQuadrature(Quadrature):
                 T[n,n+1] = next_a
                 current_a = next_a
 
-        assert comp.norm_frobenius(T-T.T) < 1e-12
-        eigvec, eigval = comp.diagonalize_hermitian(T)
-        #eigvec = eigvec.T
-        assert comp.norm_frobenius(T*eigvec -  eigvec*num.diagonal_matrix(eigval)) < 1e-12
+        assert numpy.linalg.norm(T-T.T) < 1e-12
+        eigval, eigvec = numpy.linalg.eigh(T)
+
+        from numpy import dot, diag
+        assert numpy.linalg.norm(dot(T, eigvec) -  dot(eigvec, diag(eigval))) < 1e-12
 
         from hedge.polynomial import JacobiFunction
         p0 = JacobiFunction(alpha, beta, 0)
@@ -262,11 +262,10 @@ class SimplexCubature(object):
 
                     points_to_weights[point] = points_to_weights.get(point, 0) + weight
 
-        import pylinear.array as num
         from operator import add
 
-        vertices = [-1 * num.ones((n,))] \
-                + [num.array(x) for x in wandering_element(n, landscape=-1, wanderer=1)]
+        vertices = [-1 * numpy.ones((n,))] \
+                + [numpy.array(x) for x in wandering_element(n, landscape=-1, wanderer=1)]
 
         self.pos_points = []
         self.pos_weights = []

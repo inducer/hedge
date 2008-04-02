@@ -22,8 +22,9 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 
-import pylinear.array as num
-import pylinear.computation as comp
+import numpy
+import numpy.linalg as la
+import pyublas
 from hedge.tools import AffineMap
 import hedge._internal
 from math import sqrt, sin, cos, exp, pi
@@ -52,7 +53,7 @@ class WarpFactorCalculator:
 
         # Find lgl and equidistant interpolation points
         r_lgl = legendre_gauss_lobatto_points(N)
-        r_eq  = num.linspace(-1,1,N+1)
+        r_eq  = numpy.linspace(-1,1,N+1)
 
         self.int_f = newton_interpolation_function(r_eq, r_lgl - r_eq)
 
@@ -242,7 +243,7 @@ class SimplicialElement(Element):
 
         # see doc/hedge-notes.tm
         v = self.vandermonde()
-        return v*v.T
+        return numpy.dot(v, v.T)
 
     @memoize
     def mass_matrix(self):
@@ -251,7 +252,7 @@ class SimplicialElement(Element):
         the global mass matrix.
         """
 
-        return 1/self.inverse_mass_matrix()
+        return numpy.asarray(la.inv(self.inverse_mass_matrix()), order="C")
 
     @memoize
     def grad_vandermonde(self):
@@ -271,9 +272,10 @@ class SimplicialElement(Element):
         coordinate directions.
         """
 
+        from hedge.tools import leftsolve
         # see doc/hedge-notes.tm
         v = self.vandermonde()
-        return [v <<num.leftsolve>> vdiff for vdiff in self.grad_vandermonde()]
+        return [leftsolve(v, vdiff) for vdiff in self.grad_vandermonde()]
 
     # time step scaling -------------------------------------------------------
     def dt_non_geometric_factor(self):
@@ -282,7 +284,7 @@ class SimplicialElement(Element):
 
         return 2/3*\
                 min(min(min(
-                    comp.norm_2(unodes[face_node_index]-unodes[vertex_index])
+                    la.norm(unodes[face_node_index]-unodes[vertex_index])
                     for vertex_index in vertex_indices
                     if vertex_index != face_node_index)
                     for face_node_index in face_indices)
@@ -341,7 +343,7 @@ class IntervalElement(SimplicialElement):
         """Generate warped nodes in equilateral coordinates (x,)."""
 
         from hedge.quadrature import legendre_gauss_lobatto_points
-        return [num.array([x]) for x in legendre_gauss_lobatto_points(self.order)]
+        return [numpy.array([x]) for x in legendre_gauss_lobatto_points(self.order)]
 
     equilateral_nodes = nodes
     unit_nodes = nodes
@@ -382,7 +384,7 @@ class IntervalElement(SimplicialElement):
                 self.dlf = DiffLegendreFunction(n)
 
             def __call__(self, x):
-                return num.array([self.dlf(x[0])])
+                return numpy.array([self.dlf(x[0])])
 
         return [DiffVectorLF(idx[0]) 
             for idx in self.generate_mode_identifiers()]
@@ -390,7 +392,7 @@ class IntervalElement(SimplicialElement):
     # face operations ---------------------------------------------------------
     @memoize
     def face_mass_matrix(self):
-        return num.array([[1]])
+        return numpy.array([[1]])
 
     @staticmethod
     def get_face_index_shuffle_to_match(face_1_vertices, face_2_vertices):
@@ -537,14 +539,14 @@ class TriangularElement(SimplicialElement):
         to the barycentric coordinates (lambda1..lambdaN)."""
 
         # reflects vertices in equilateral coordinates
-        return num.array([
+        return numpy.array([
             (-lambda1  +lambda2            ),
             (-lambda1  -lambda2  +2*lambda3)/sqrt(3.0)])
 
     # see doc/hedge-notes.tm
     equilateral_to_unit = AffineMap(
-            num.array([[1,-1/sqrt(3)], [0,2/sqrt(3)]]),
-                num.array([-1/3,-1/3]))
+            numpy.array([[1,-1/sqrt(3)], [0,2/sqrt(3)]]),
+                numpy.array([-1/3,-1/3]))
 
     def equilateral_nodes(self):
         """Generate warped nodes in equilateral coordinates (x,y)."""
@@ -616,7 +618,10 @@ class TriangularElement(SimplicialElement):
                 [unodes[i][0] for i in self.face_indices()[0]],
                 self.order)
 
-        return 1/(face_vandermonde*face_vandermonde.T)
+        return numpy.asarray(
+                la.inv(
+                    numpy.dot(face_vandermonde, face_vandermonde.T)),
+                order="C")
 
     @staticmethod
     def get_face_index_shuffle_to_match(face_1_vertices, face_2_vertices):
@@ -651,7 +656,7 @@ class TriangularElement(SimplicialElement):
     # time step scaling -------------------------------------------------------
     def dt_geometric_factor(self, vertices, el):
         area = abs(2*el.map.jacobian)
-        semiperimeter = sum(comp.norm_2(vertices[vi1]-vertices[vi2]) 
+        semiperimeter = sum(la.norm(vertices[vi1]-vertices[vi2]) 
                 for vi1, vi2 in [(0,1), (1,2), (2,0)])/2
         return area/semiperimeter
 
@@ -812,7 +817,7 @@ class TetrahedralElement(SimplicialElement):
         to the barycentric coordinates (lambda1..lambdaN)."""
 
         # reflects vertices in equilateral coordinates
-        return num.array([
+        return numpy.array([
             (-lambda1  +lambda2                        ),
             (-lambda1  -lambda2  +2*lambda3            )/sqrt(3.0),
             (-lambda1  -lambda2  -  lambda3  +3*lambda4)/sqrt(6.0),
@@ -820,12 +825,12 @@ class TetrahedralElement(SimplicialElement):
 
     # see doc/hedge-notes.tm
     equilateral_to_unit = AffineMap(
-            num.array([
+            numpy.array([
                 [1,-1/sqrt(3),-1/sqrt(6)], 
                 [0, 2/sqrt(3),-1/sqrt(6)],
                 [0,         0,   sqrt(6)/2]
                 ]),
-                num.array([-1/2,-1/2,-1/2]))
+                numpy.array([-1/2,-1/2,-1/2]))
 
     def equilateral_nodes(self):
         """Generate warped nodes in equilateral coordinates (x,y)."""
@@ -865,7 +870,7 @@ class TetrahedralElement(SimplicialElement):
             directions = [normalize(v2-v1), normalize((v3)-(v1+v2)/2)]
 
             # the two should be orthogonal
-            assert abs(directions[0]*directions[1]) < 1e-16
+            assert abs(numpy.dot(directions[0],directions[1])) < 1e-16
 
             # find the vertex opposite to the current face
             opp_vertex_index = (set(all_vertex_indices) - set(fvi)).__iter__().next()
@@ -976,7 +981,10 @@ class TetrahedralElement(SimplicialElement):
                 [unodes[i][:2] for i in face_indices[0]],
                 basis)
 
-        return 1/(face_vandermonde*face_vandermonde.T)
+        return numpy.asarray(
+                la.inv(
+                    numpy.dot(face_vandermonde, face_vandermonde.T)),
+                order="C")
 
     def get_face_index_shuffle_to_match(self, face_1_vertices, face_2_vertices):
         (a,b,c) = face_1_vertices

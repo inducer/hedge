@@ -136,6 +136,7 @@ if __name__ == '__main__':
                 if flag in cflags:
                     cflags.remove(flag)
             cflags.append("-O3")
+            #cflags.append("-g")
             cvars['OPT'] = str.join(' ', cflags)
             cvars["CFLAGS"] = cvars["BASECFLAGS"] + " " + cvars["OPT"]
     # and now call main

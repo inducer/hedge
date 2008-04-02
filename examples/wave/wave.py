@@ -18,10 +18,9 @@
 
 
 from __future__ import division
-import pylinear.array as num
-import pylinear.computation as comp
-from pytools.arithmetic_container import ArithmeticList, join_fields
 from hedge.tools import dot
+import numpy
+import numpy.linalg as la
 
 
 
@@ -80,7 +79,7 @@ def main() :
     #vis = SiloVisualizer(discr, pcon)
 
     def source_u(x):
-        return exp(-x*x*512)
+        return exp(-numpy.dot(x, x)*512)
 
     source_u_vec = discr.interpolate_volume_function(source_u)
 
@@ -100,6 +99,7 @@ def main() :
             flux_type="upwind",
             )
 
+    from hedge.tools import join_fields
     fields = join_fields(discr.volume_zeros(),
             [discr.volume_zeros() for i in range(discr.dimensions)])
     #fields = join_fields(
@@ -129,8 +129,8 @@ def main() :
     logmgr.add_quantity(vis_timer)
     stepper.add_instrumentation(logmgr)
 
-    from hedge.log import Integral, L1Norm, L2Norm, VariableGetter
-    u_getter = VariableGetter(locals(), "fields", 0)
+    from hedge.log import Integral, L1Norm, L2Norm
+    u_getter = lambda: fields[0]
     logmgr.add_quantity(L1Norm(u_getter, discr, name="l1_u"))
     logmgr.add_quantity(L2Norm(u_getter, discr, name="l2_u"))
 
@@ -149,9 +149,11 @@ def main() :
                     [
                         ("u", fields[0]),
                         ("v", fields[1:]), 
+                        ("n", discr.volumize_boundary_field(
+                            discr.boundary_normals())),
                     ],
                     time=t,
-                    scale_factor=2e1,
+                    #scale_factor=2e1,
                     step=step)
             visf.close()
 

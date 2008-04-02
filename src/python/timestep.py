@@ -86,7 +86,7 @@ class RK4TimeStepper(TimeStepper):
 
             self.timer.start()
             self.residual = a*self.residual + dt*this_rhs
-            y += b * self.residual
+            y = y + b * self.residual
             self.timer.stop()
 
         return y
@@ -96,11 +96,12 @@ class RK4TimeStepper(TimeStepper):
 
 class AdamsBashforthTimeStepper(TimeStepper):
     def __init__(self, order, startup_stepper=RK4TimeStepper()):
-        if order < 1:
-            raise ValueError, "unsupported order in Adams-Bashforth"
         try:
             self.coefficients = _ABCoefficients[order]
         except IndexError:
+            self.coefficients = None
+
+        if self.coefficients is None:
             raise ValueError, "unsupported order in Adams-Bashforth"
 
         self.f_history = []

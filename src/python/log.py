@@ -22,7 +22,8 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 from pytools.log import LogQuantity, MultiLogQuantity
-import pylinear.array as num
+import numpy
+import numpy.linalg as la
 
 
 
@@ -32,39 +33,6 @@ def axis_name(axis):
     elif axis == 1: return "y"
     elif axis == 2: return "z"
     else: raise RuntimeError, "invalid axis index"
-
-
-
-
-class VariableGetter(object):
-    """A function object returning the value of a named variable from a given scope.
-
-    May also extract a set of given subindices before returning the variable.
-    """
-
-    def __init__(self, scope, varname, indices=None):
-        """Construct the accessor.
-
-        @arg scope: the scope in which the variable may be looked up.
-          You may obtain the current local scope by calling 
-          C{locals()}.
-        @arg varname: the name under which the variable is looked up 
-          in the C{scope}.
-        @arg indices: A C{slice} or a single index indicating the subset
-          of C{varname} to return.
-        """
-        self.scope = scope
-        self.varname = varname
-        self.indices = None
-
-    def name(self):
-        return self.varname
-
-    def __call__(self):
-        var = self.scope[self.varname]
-        if self.indices is not None:
-            var = var[self.indices]
-        return var
 
 
 
@@ -103,9 +71,11 @@ class Integral(LogQuantity):
         var = self.getter()
 
         from hedge.discretization import integral
-        if isinstance(var, list):
+        from hedge.tools import log_shape
+
+        if len(log_shape(var)) == 1:
             return sum(
-                    integral(self.discr, num.absolute(v))
+                    integral(self.discr, numpy.abs(v))
                     for v in var)
         else:
             return integral(self.discr, var)
@@ -113,134 +83,56 @@ class Integral(LogQuantity):
 
 
 
-class L1Norm(LogQuantity):
-    """Log the L1 norm of a variable in a scope."""
+class LpNorm(LogQuantity):
+    """Log the Lp norm of a variable in a scope."""
 
-    def __init__(self, getter, discr, name=None, 
+    def __init__(self, getter, discr, p=2, name=None, 
             unit="1", description=None):
-        """Construct the L1 norm logger.
+        """Construct the Lp norm logger.
 
         @arg getter: a callable that returns the value of which to 
           take the norm.
         @arg discr: a L{Discretization} to which the variable belongs.
+        @arg p: the power of the norm.
         @arg name: the name reported to the C{LogManager}.
         @arg unit: the unit of measure for the log quantity.
         @arg description: A description fed to the C{LogManager}.
         """
         self.getter = getter
+        self.discr = discr
+        self.p = p
 
         if name is None:
             try:
-                name = "l1_%s" % self.getter.name()
+                name = "l%f_%s" % (p, self.getter.name())
             except AttributeError:
                 raise ValueError, "must specify a name"
 
         LogQuantity.__init__(self, name, unit, description)
 
-        self.discr = discr
-
     @property
     def default_aggregator(self): 
-        from pytools import norm_1
-        return norm_1
+        from pytools import norm_inf, Norm
+
+        if self.p == numpy.Inf:
+            return norm_inf
+        else:
+            return Norm(self.p)
 
     def __call__(self):
         var = self.getter()
 
-        from hedge.discretization import integral
-        if isinstance(var, list):
+        from hedge.discretization import norm
+        from hedge.tools import log_shape
+
+
+        if len(log_shape(var)) == 1:
             return sum(
-                    integral(self.discr, num.absolute(v))
+                    integral(self.discr, numpy.abs(v))
                     for v in var)
         else:
-            return integral(self.discr, num.absolute(var))
-
-
-
-
-class L2Norm(LogQuantity):
-    """Log the L2 norm of a variable in a scope."""
-
-    def __init__(self, getter, discr, name=None, 
-            unit="1", description=None):
-        """Construct the L2 norm logger.
-
-        @arg getter: a callable that returns the value of which to 
-          take the norm.
-        @arg discr: a L{Discretization} to which the variable belongs.
-        @arg name: the name reported to the C{LogManager}.
-        @arg unit: the unit of measure for the log quantity.
-        @arg description: A description fed to the C{LogManager}.
-        """
-        self.getter = getter
-
-        if name is None:
-            try:
-                name = "l2_%s" % self.getter.name()
-            except AttributeError:
-                raise ValueError, "must specify a name"
-
-        LogQuantity.__init__(self, name, unit, description)
-
-        self.mass_op = discr.mass_operator
-
-    @property
-    def default_aggregator(self): 
-        from pytools import norm_2
-        return norm_2
-
-    def __call__(self):
-        var = self.getter()
-
-        from math import sqrt
-        if isinstance(var, list):
-            from hedge.tools import dot
-            return sqrt(dot(var, self.mass_op*var))
-        else:
-            return sqrt(var*(self.mass_op*var))
-
-
-
-
-class LInfNorm(LogQuantity):
-    """Log the LS{infin} norm of a variable in a scope."""
-
-    def __init__(self, getter, discr, name=None, 
-            unit="1", description=None):
-        """Construct the LS{infin} norm logger.
-
-        @arg getter: a callable that returns the value of which to 
-          take the norm.
-        @arg discr: a L{Discretization} to which the variable belongs.
-        @arg name: the name reported to the C{LogManager}.
-        @arg unit: the unit of measure for the log quantity.
-        @arg description: A description fed to the C{LogManager}.
-        """
-        self.getter = getter
-
-        if name is None:
-            try:
-                name = "linf_%s" % self.getter.name()
-            except AttributeError:
-                raise ValueError, "must specify a name"
-
-        LogQuantity.__init__(self, name, unit, description)
-
-        self.discr = discr
-
-    @property
-    def default_aggregator(self): 
-        from pytools import norm_inf
-        return norm_inf
-
-    def __call__(self):
-        var = self.getter()
-
-        from hedge.discretization import integral
-        if isinstance(var, list):
-            return max(max(num.absolute(v)) for v in var)
-        else:
-            return max(num.absolute(var))
+            ab = numpy.abs(var)
+            return integral(self.discr, numpy.abs(var))
 
 
 
@@ -282,10 +174,10 @@ class EMFieldEnergy(LogQuantity):
         d = max_op.epsilon * e
         b = max_op.mu * h
 
-        from hedge.tools import dot
+        from hedge.tools import ptwise_dot
         energy_density = 1/2*(
-                dot(e, d, num.multiply) 
-                + dot(h, b, num.multiply))
+                ptwise_dot(e, d) 
+                + ptwise_dot(h, b))
 
         from hedge.discretization import integral
         return integral(max_op.discr, energy_density)

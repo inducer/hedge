@@ -23,8 +23,9 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 
-import pylinear.array as num
-import pylinear.computation as comp
+import numpy
+import numpy.linalg as la
+import pyublas
 import hedge.tools
 import hedge.mesh
 import hedge.data
@@ -168,7 +169,7 @@ class AdvectionOperatorBase(TimeDependentOperator):
             return u.avg*dot(normal, self.v)
         elif self.flux_type == "lf":
             return u.avg*dot(normal, self.v) \
-                    + 0.5*comp.norm_2(self.v)*(u.int - u.ext)
+                    + 0.5*la.norm(self.v)*(u.int - u.ext)
         elif self.flux_type == "upwind":
             return (dot(normal, self.v)*
                     IfPositive(dot(normal, self.v),
@@ -179,7 +180,7 @@ class AdvectionOperatorBase(TimeDependentOperator):
             raise ValueError, "invalid flux type"
 
     def max_eigenvalue(self):
-        return comp.norm_2(self.v)
+        return la.norm(self.v)
 
 
 
@@ -275,8 +276,7 @@ class StrongWaveOperator:
         v = w[1:]
         normal = make_normal(dim)
 
-        from pytools.arithmetic_container import join_fields
-        from hedge.tools import dot
+        from hedge.tools import dot, join_fields
 
         flux_weak = join_fields(
                 dot(v.avg, normal),
@@ -305,8 +305,7 @@ class StrongWaveOperator:
 
     def rhs(self, t, w):
         from hedge.discretization import pair_with_boundary, cache_diff_results
-        from pytools.arithmetic_container import join_fields
-        from hedge.tools import dot
+        from hedge.tools import dot, join_fields, ptwise_dot
 
         u = w[0]
         v = w[1:]
@@ -319,21 +318,20 @@ class StrongWaveOperator:
                 self.discr.boundarize_volume_field(u, self.neumann_tag),
                 -self.discr.boundarize_volume_field(v, self.neumann_tag))
         
-        from pytools.arithmetic_container import work_with_arithmetic_containers
-        ac_multiply = work_with_arithmetic_containers(num.multiply)
-
         rad_u = self.discr.boundarize_volume_field(u, self.radiation_tag)
         rad_v = self.discr.boundarize_volume_field(v, self.radiation_tag)
         rad_n = self.radiation_normals
         rad_bc = join_fields(
-                0.5*(rad_u - self.sign*dot(rad_n, rad_v, num.multiply)),
-                0.5*ac_multiply(rad_n, dot(rad_n, rad_v, num.multiply) - self.sign*rad_u)
+                0.5*(rad_u - self.sign*ptwise_dot(rad_n, rad_v)),
+                0.5*rad_n*(ptwise_dot(rad_n, rad_v) - self.sign*rad_u)
                 )
+
+        from hedge.tools import to_obj_array
 
         rhs = (-join_fields(
             -self.c*dot(self.nabla, cache_diff_results(v)), 
-            -self.c*self.nabla*cache_diff_results(u)
-            ) + (self.m_inv * (
+            -self.c*(self.nabla*cache_diff_results(u))
+            ) + to_obj_array(self.m_inv * (
                 self.flux*w 
                 + self.flux * pair_with_boundary(w, dir_bc, self.dirichlet_tag)
                 + self.flux * pair_with_boundary(w, neu_bc, self.neumann_tag)
@@ -550,7 +548,7 @@ class TEMaxwellOperator(MaxwellOperator):
 
 
 
-class WeakPoissonOperator(Operator,hedge.tools.PylinearOperator):
+class WeakPoissonOperator(Operator, hedge.tools.OperatorBase):
     """Implements the Local Discontinuous Galerkin (LDG) Method for elliptic
     operators.
 
@@ -567,7 +565,7 @@ class WeakPoissonOperator(Operator,hedge.tools.PylinearOperator):
         @arg flux: Either C{"ip"} or C{"ldg"} to indicate which type of flux is 
         to be used. IP tends to be faster, and is therefore the default.
         """
-        hedge.tools.PylinearOperator.__init__(self)
+        hedge.tools.OperatorBase.__init__(self)
 
         self.discr = discr
 
@@ -592,19 +590,13 @@ class WeakPoissonOperator(Operator,hedge.tools.PylinearOperator):
         # treat diffusion tensor
         if diffusion_tensor is None:
             diffusion_tensor = hedge.data.ConstantGivenFunction(
-                    num.identity(discr.dimensions))
+                    numpy.eye(discr.dimensions))
 
-        from pytools.arithmetic_container import ArithmeticListMatrix
         if isinstance(diffusion_tensor, hedge.data.ConstantGivenFunction):
-            self.diffusion = self.neu_diff = \
-                    ArithmeticListMatrix(diffusion_tensor.value)
+            self.diffusion = self.neu_diff = diffusion_tensor.value
         else:
-            def fast_diagonal_mat(vec):
-                return num.diagonal_matrix(vec, flavor=num.SparseExecuteMatrix)
-            self.diffusion = diffusion_tensor.volume_interpolant(discr).map(
-                    fast_diagonal_mat)
-            self.neu_diff = diffusion_tensor.boundary_interpolant(discr, neumann_tag).map(
-                    fast_diagonal_mat)
+            self.diffusion = diffusion_tensor.volume_interpolant(discr)
+            self.neu_diff = diffusion_tensor.boundary_interpolant(discr, neumann_tag)
 
         self.dirichlet_bc = dirichlet_bc
         self.dirichlet_tag = dirichlet_tag
@@ -638,7 +630,7 @@ class WeakPoissonOperator(Operator,hedge.tools.PylinearOperator):
         from hedge.flux import \
                 FluxVectorPlaceholder, FluxScalarPlaceholder, \
                 make_normal, PenaltyTerm
-        from hedge.tools import dot
+        from numpy import dot
 
         dim = self.discr.dimensions
         vec = FluxVectorPlaceholder(1+dim)
@@ -652,8 +644,7 @@ class WeakPoissonOperator(Operator,hedge.tools.PylinearOperator):
 
         if ldg_terms:
             # ldg terms
-            from pytools.arithmetic_container import ArithmeticList 
-            ldg_beta = ArithmeticList([1]*dim)
+            ldg_beta = numpy.array([1]*dim)
 
             fs.flux_u = fs.flux_u - (u.int-u.ext)*0.5*ldg_beta
             fs.flux_v = fs.flux_v + dot((v.int-v.ext)*0.5, ldg_beta)
@@ -682,7 +673,6 @@ class WeakPoissonOperator(Operator,hedge.tools.PylinearOperator):
                 + self.flux_u_nbdry*pair_with_boundary(u, 0, self.neumann_tag)
                 )
 
-
     def div(self, v, u=None, apply_minv=True):
         """Compute the divergence of v using an LDG operator.
 
@@ -697,8 +687,7 @@ class WeakPoissonOperator(Operator,hedge.tools.PylinearOperator):
           in @L{prepare_rhs}.
         """
         from hedge.discretization import pair_with_boundary, cache_diff_results
-        from hedge.tools import dot
-        from pytools.arithmetic_container import join_fields
+        from hedge.tools import join_fields
 
         dim = self.discr.dimensions
 
@@ -710,7 +699,7 @@ class WeakPoissonOperator(Operator,hedge.tools.PylinearOperator):
         neumann_bc_w = join_fields(0, [0]*dim)
 
         result = (
-                -dot(self.stiff_t, cache_diff_results(v))
+                -numpy.dot(self.stiff_t, cache_diff_results(v))
                 + self.flux_v * w
                 + self.flux_v_dbdry * pair_with_boundary(w, dirichlet_bc_w, self.dirichlet_tag)
                 + self.flux_v_nbdry * pair_with_boundary(w, neumann_bc_w, self.neumann_tag)
@@ -721,7 +710,10 @@ class WeakPoissonOperator(Operator,hedge.tools.PylinearOperator):
             return result
 
     def op(self, u):
-        return self.div(self.diffusion * self.grad(u), u, apply_minv=False)
+        from hedge.tools import ptwise_dot
+        return self.div(
+                ptwise_dot(self.diffusion, self.grad(u)), 
+                u, apply_minv=False)
 
     def prepare_rhs(self, rhs):
         """Perform the rhs(*) function in the class description, i.e.
@@ -748,10 +740,8 @@ class WeakPoissonOperator(Operator,hedge.tools.PylinearOperator):
         M f - A Minv g - h
         """
 
-        from pytools.arithmetic_container import ArithmeticList 
         from hedge.discretization import pair_with_boundary, cache_diff_results
-        from hedge.tools import dot
-        from pytools.arithmetic_container import join_fields
+        from hedge.tools import dot, join_fields
 
         dim = self.discr.dimensions
 
@@ -762,14 +752,14 @@ class WeakPoissonOperator(Operator,hedge.tools.PylinearOperator):
         vpart = self.m_inv * (
                 (self.flux_u_dbdry*pair_with_boundary(0, dirichlet_bc_u, dtag))
                 )
-        diff_v = self.diffusion * vpart
+
+        from hedge.tools import ptwise_dot
+        diff_v = ptwise_dot(self.diffusion, vpart)
 
         def neumann_bc_v():
-            from pytools.arithmetic_container import work_with_arithmetic_containers
-            ac_multiply = work_with_arithmetic_containers(num.multiply)
-
-            return self.neu_diff * ac_multiply(self.neumann_normals,
-                    self.neumann_bc.boundary_interpolant(self.discr, ntag))
+            return ptwise_dot(self.neu_diff, 
+                    self.neumann_normals*
+                        self.neumann_bc.boundary_interpolant(self.discr, ntag))
 
         w = join_fields(0, diff_v)
         dirichlet_bc_w = join_fields(dirichlet_bc_u, [0]*dim)
@@ -789,7 +779,7 @@ class WeakPoissonOperator(Operator,hedge.tools.PylinearOperator):
         def assemble_local_vstack(operators):
             n = len(operators)
             dof = len(discr)
-            result = num.zeros((n*dof, dof), flavor=num.SparseBuildMatrix)
+            result = pyublas.zeros((n*dof, dof), flavor=pyublas.SparseBuildMatrix)
 
             from hedge._internal import MatrixTarget
             tgt = MatrixTarget(result, 0, 0)
@@ -801,7 +791,7 @@ class WeakPoissonOperator(Operator,hedge.tools.PylinearOperator):
         def assemble_local_hstack(operators):
             n = len(operators)
             dof = len(discr)
-            result = num.zeros((dof, n*dof), flavor=num.SparseBuildMatrix)
+            result = pyublas.zeros((dof, n*dof), flavor=pyublas.SparseBuildMatrix)
 
             from hedge._internal import MatrixTarget
             tgt = MatrixTarget(result, 0, 0)
@@ -813,7 +803,7 @@ class WeakPoissonOperator(Operator,hedge.tools.PylinearOperator):
         def assemble_local_diag(operators):
             n = len(operators)
             dof = len(discr)
-            result = num.zeros((n*dof, n*dof), flavor=num.SparseBuildMatrix)
+            result = pyublas.zeros((n*dof, n*dof), flavor=pyublas.SparseBuildMatrix)
 
             from hedge._internal import MatrixTarget
             tgt = MatrixTarget(result, 0, 0)
@@ -823,7 +813,7 @@ class WeakPoissonOperator(Operator,hedge.tools.PylinearOperator):
             return result
 
         def fast_mat(mat):
-            return num.asarray(mat, flavor=num.SparseExecuteMatrix)
+            return pyublas.asarray(mat, flavor=pyublas.SparseExecuteMatrix)
 
         def assemble_grad():
             n = self.discr.dimensions
@@ -833,7 +823,7 @@ class WeakPoissonOperator(Operator,hedge.tools.PylinearOperator):
 
             m_local_grad = fast_mat(-assemble_local_vstack(self.discr.minv_stiffness_t))
 
-            fluxes = num.zeros((n*dof, dof), flavor=num.SparseBuildMatrix)
+            fluxes = pyublas.zeros((n*dof, dof), flavor=pyublas.SparseBuildMatrix)
             from hedge._internal import MatrixTarget
             fluxes_tgt = MatrixTarget(fluxes, 0, 0)
             self.flux_u.perform_inner(fluxes_tgt)

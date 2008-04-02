@@ -21,6 +21,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import hedge.tools 
+import pyublas
 
 
 
@@ -376,10 +377,10 @@ class SiloVisualizer(Visualizer):
         self.dim = discr.dimensions
         if self.dim != 1:
             self.fine_mesh = SiloMeshData(self.dim, 
-                    discr.nodes.get_component_major_vector(), 
+                    discr.nodes.T.copy(), 
                     generate_fine_element_groups())
             self.coarse_mesh = SiloMeshData(self.dim, 
-                    discr.mesh.points.get_component_major_vector(), 
+                    discr.mesh.points.T.copy(), 
                     generate_coarse_element_groups())
         else:
             self.xvals = discr.nodes.get_component_major_vector()
@@ -435,16 +436,21 @@ class SiloVisualizer(Visualizer):
             self.fine_mesh.put_mesh(silo, "finezonelist", "finemesh", mesh_opts)
             self.coarse_mesh.put_mesh(silo, "coarsezonelist", "mesh", mesh_opts)
 
+            from hedge.tools import log_shape
+
             # put data
             for name, field in variables:
-                if isinstance(field, list) and len(field) > 1:
+                ls = log_shape(field)
+                if ls != () and ls[0] > 1:
+                    assert len(ls) == 1
                     silo.put_ucdvar(name, "finemesh", 
                             ["%s_comp%d" % (name, i) 
-                                for i in range(len(field))],
+                                for i in range(ls[0])],
                             scale_factor*field, DB_NODECENT)
                 else:
-                    if isinstance(field, list):
+                    if ls != ():
                         field = field[0]
+                    pyublas.why_not(field)
                     silo.put_ucdvar1(name, "finemesh", scale_factor*field, DB_NODECENT)
 
         if expressions:

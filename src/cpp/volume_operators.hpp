@@ -28,6 +28,7 @@
 #include <boost/foreach.hpp>
 #include <boost/numeric/bindings/blas/blas3.hpp>
 #include <boost/numeric/bindings/traits/traits.hpp>
+#include <boost/numeric/bindings/traits/matrix_traits.hpp>
 #include <boost/numeric/bindings/traits/ublas_matrix.hpp>
 #include <boost/iterator/iterator_facade.hpp>
 #include "base.hpp"
@@ -265,7 +266,7 @@ namespace hedge {
         src_ers.size(),
         matrix.size2(),
         /*alpha*/ 1,
-        /*a*/ traits::matrix_storage(matrix), 
+        /*a*/ boost::numeric::bindings::traits::matrix_storage(matrix.as_ublas()),
         /*lda*/ matrix.size2(),
         /*b*/ traits::vector_storage(target.m_operand) + src_ers.start(), 
         /*ldb*/ src_ers.el_size(),

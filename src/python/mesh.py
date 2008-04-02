@@ -23,8 +23,11 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import pytools
-import pylinear.array as num
-import pylinear.computation as comp
+import numpy
+import numpy.linalg as la
+
+# make sure AffineMap monkeypatch happens
+import hedge.tools
 
 
 
@@ -138,13 +141,13 @@ class Interval(SimplicialElement):
         """
         if affine_map.jacobian < 0:
             return [
-                    num.array([1]), 
-                    num.array([-1])
+                    numpy.array([1], dtype=float), 
+                    numpy.array([-1], dtype=float)
                     ], [1, 1]
         else:
             return [
-                    num.array([-1]), 
-                    num.array([1])
+                    numpy.array([-1], dtype=float), 
+                    numpy.array([1], dtype=float)
                     ], [1, 1]
 
 
@@ -184,12 +187,12 @@ class Triangle(SimplicialElement):
         orient = sign(affine_map.jacobian)
         face1 = m[:,1] - m[:,0]
         raw_normals = [
-                orient*num.array([m[1,0], -m[0,0]]),
-                orient*num.array([face1[1], -face1[0]]),
-                orient*num.array([-m[1,1], m[0,1]]),
+                orient*numpy.array([m[1,0], -m[0,0]]),
+                orient*numpy.array([face1[1], -face1[0]]),
+                orient*numpy.array([-m[1,1], m[0,1]]),
                 ]
 
-        face_lengths = [comp.norm_2(fn) for fn in raw_normals]
+        face_lengths = [numpy.linalg.norm(fn) for fn in raw_normals]
         return [n/fl for n, fl in zip(raw_normals, face_lengths)], \
                 face_lengths
 
@@ -231,8 +234,8 @@ class Tetrahedron(SimplicialElement):
         element_orientation = sign(affine_map.jacobian)
 
         def fj_and_normal(fo, pts):
-            normal = (pts[1]-pts[0]) <<num.cross>> (pts[2]-pts[0])
-            n_length = comp.norm_2(normal)
+            normal = numpy.cross(pts[1]-pts[0], pts[2]-pts[0])
+            n_length = la.norm(normal)
 
             # ||n_length|| is the area of the parallelogram spanned by the two
             # vectors above. Half of that is the area of the triangle we're interested
@@ -476,10 +479,7 @@ def make_conformal_mesh(points, elements,
         raise ValueError, "%d-dimensional meshes are unsupported" % dim
 
     # build points and elements
-    from hedge.tools import FixedSizeSliceAdapter
-    new_points = FixedSizeSliceAdapter(num.empty((dim*len(points),)), dim)
-    for i, p in enumerate(points):
-        new_points[i] = p
+    new_points = numpy.array(points, dtype=float, order="C")
 
     element_objs = [make_element(el_class, id, vert_indices, new_points) 
         for id, vert_indices in enumerate(elements)]
@@ -610,8 +610,8 @@ def check_bc_coverage(mesh, bc_tags):
 def make_1d_mesh(points, left_tag=None, right_tag=None, periodic=False, 
         boundary_tagger=None):
     def force_array(pt):
-        if not num.Vector.is_a(pt):
-            return num.array([pt])
+        if not isinstance(pt, numpy.ndarray):
+            return numpy.array([pt])
         else:
             return pt
 
@@ -697,13 +697,13 @@ def make_regular_rect_mesh(a=(0,0), b=(1,1), n=(5,5), periodicity=None,
     """
     node_dict = {}
     points = []
-    points_1d = [num.linspace(a_i, b_i, n_i)
+    points_1d = [numpy.linspace(a_i, b_i, n_i)
             for a_i, b_i, n_i in zip(a, b, n)]
 
     for j in range(n[1]):
         for i in range(n[0]):
             node_dict[i,j] = len(points)
-            points.append(num.array([points_1d[0][i], points_1d[1][j]]))
+            points.append(numpy.array([points_1d[0][i], points_1d[1][j]]))
 
     elements = []
 
@@ -903,7 +903,7 @@ def make_disk_mesh(r=0.5, faces=50, max_area=4e-3,
         return area > max_area
 
     points = [(r*cos(angle), r*sin(angle))
-            for angle in num.linspace(0, 2*pi, faces, endpoint=False)]
+            for angle in numpy.linspace(0, 2*pi, faces, endpoint=False)]
             
     import meshpy.triangle as triangle
 

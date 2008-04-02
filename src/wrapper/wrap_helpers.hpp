@@ -40,8 +40,8 @@
 
 #define DEF_FOR_EACH_OP_TARGET(NAME, ARG_TYPES) \
   def(#NAME, (void (*)(ARG_TYPES null_target)) NAME); \
-  def(#NAME, (void (*)(ARG_TYPES vector_target)) NAME); \
-  def(#NAME, (void (*)(ARG_TYPES coord_matrix_target)) NAME);
+  def(#NAME, (void (*)(ARG_TYPES coord_matrix_target)) NAME); \
+  def(#NAME, (void (*)(ARG_TYPES vector_target)) NAME);
 
 #define EXPOSE_FLUX_PERFORM(FLUX_CLASS) \
   def("perform_flux", (void (*)(\
@@ -85,6 +85,9 @@
 
 #define DEF_SIMPLE_FUNCTION(NAME) \
   def(#NAME, &NAME)
+
+#define DEF_SIMPLE_RO_MEMBER(NAME) \
+  def_readonly(#NAME, &cl::NAME)
 
 #define DEF_SIMPLE_RW_MEMBER(NAME) \
   def_readwrite(#NAME, &cl::NAME)

@@ -21,8 +21,6 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import pytools
-import pylinear.array as num
-import pylinear.computation as comp
 from pytools.arithmetic_container import work_with_arithmetic_containers
 import hedge.discretization
 import hedge.mesh

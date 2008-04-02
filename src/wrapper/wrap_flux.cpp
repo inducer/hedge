@@ -128,7 +128,7 @@ namespace {
     return double_sided_flux_info<cf, cf>(
         extract<cf>(tup[0]),
         extract<cf>(tup[1]),
-        extract<hedge::vector &>(tup[2]));
+        extract<hedge::vector>(tup[2]));
   }
 
 
@@ -288,7 +288,7 @@ void hedge_expose_fluxes()
       .DEF_SIMPLE_RW_MEMBER(element_id)
       .DEF_SIMPLE_RW_MEMBER(face_id)
       .DEF_SIMPLE_RW_MEMBER(order)
-      .DEF_SIMPLE_RW_MEMBER(normal)
+      .def(pyublas::by_value_rw_member("normal", &cl::normal))
       ;
   }
   {

@@ -23,21 +23,17 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 
-import pylinear.array as num
-import pylinear.computation as comp
-import pylinear.operator as op
+import numpy
+import numpy.linalg as la
+import pyublas
+import pyublasext
 import hedge._internal
 from pytools.arithmetic_container import work_with_arithmetic_containers
 
 
 
-
-try:
-    cyl_bessel_j = hedge._internal.cyl_bessel_j
-    cyl_neumann = hedge._internal.cyl_neumann
-except AttributeError:
-    # accept failure because of gcc ICE in boost math-toolkit
-    pass
+cyl_bessel_j = hedge._internal.cyl_bessel_j
+cyl_neumann = hedge._internal.cyl_neumann
 
 
 
@@ -59,14 +55,15 @@ def _affine_map_jacobian(self):
     try:
         return self._jacobian
     except AttributeError:
-        self._jacobian = comp.determinant(self.matrix)
+        self._jacobian = numpy.linalg.det(self.matrix)
         return self._jacobian
 AffineMap.jacobian = property(_affine_map_jacobian)
 
 def _affine_map_inverted(self):
     """Return a new AffineMap that is the inverse of this one.
     """
-    return AffineMap(1/self.matrix, -self.matrix <<num.solve>> self.vector)
+    return AffineMap(numpy.asarray(numpy.linalg.inv(self.matrix), order="c"), 
+            -numpy.linalg.solve(self.matrix, self.vector))
 AffineMap.inverted = _affine_map_inverted
 
 def _affine_map___getinitargs__(self):
@@ -150,6 +147,100 @@ def dot(x, y, multiplication=None):
     else:
         from operator import add
         return reduce(add, (multiplication(xi, yi) for xi, yi in zip(x,y)))
+
+
+
+
+# obj array helpers -----------------------------------------------------------
+def is_obj_array(val):
+    try:
+        return val.dtype == object
+    except AttributeError:
+        return False
+
+
+
+
+def to_obj_array(ary):
+    ls = log_shape(ary)
+    result = numpy.empty(ls, dtype=object)
+
+    from pytools import indices_in_shape
+    for i in indices_in_shape(ls):
+        result[i] = ary[i]
+
+    return result
+
+
+
+
+def join_fields(*args):
+    res_list = []
+    for arg in args:
+        if isinstance(arg, list):
+            res_list.extend(arg)
+        elif isinstance(arg, numpy.ndarray):
+            if log_shape(arg) == ():
+                res_list.append(arg)
+            else:
+                res_list.extend(arg)
+        else:
+            res_list.append(arg)
+
+    result = numpy.empty((len(res_list),), dtype=object)
+    for i, v in enumerate(res_list):
+        result[i] = v
+
+    return result
+
+
+
+
+def log_shape(array):
+    """Returns the "logical shape" of the array.
+
+    The "logical shape" is the shape that's left when the node-depending
+    dimension has been eliminated."""
+
+    try:
+        if array.dtype == object:
+            return array.shape
+        else:
+            return array.shape[:-1]
+    except AttributeError:
+        return ()
+
+
+
+
+def ptwise_dot(a1, a2):
+    dofs = a2.shape[-1]
+    a2_log_shape = a2.shape[:-1]
+
+    if a1.shape[-1] == dofs:
+        a1_log_shape = a1.shape[:-1]
+    else:
+        a1_log_shape = a1.shape
+
+    assert a1_log_shape[-1] == a2_log_shape[0]
+    len_k = a2_log_shape[0]
+
+    result = numpy.empty(a1_log_shape[:-1]+a2_log_shape[1:]+(dofs,), dtype=a1.dtype)
+    from pytools import indices_in_shape
+    for a1_i in indices_in_shape(a1_log_shape[:-1]):
+        for a2_i in indices_in_shape(a2_log_shape[1:]):
+            result[a1_i+a2_i] = sum(
+                    a1[a1_i+(k,)] * a2[(k,)+a2_i]
+                    for k in xrange(len_k)
+                    )
+
+    return result
+
+
+
+
+def amap(f, obj_array):
+    return numpy.array([f(x) for x in obj_array], dtype=object)
 
 
 
@@ -241,9 +332,7 @@ cross = SubsettableCrossProduct()
 
 
 def normalize(v):
-    from pylinear.computation import norm_2
-
-    return v/norm_2(v)
+    return v/numpy.linalg.norm(v)
 
 
 
@@ -268,7 +357,7 @@ def find_matching_vertices_along_axis(axis, points_a, points_b, numbers_a, numbe
         for j, pj in enumerate(points_b):
             dist = pi-pj
             dist[axis] = 0
-            if comp.norm_2(dist) < 1e-12:
+            if la.norm(dist) < 1e-12:
                 a_to_b[numbers_a[i]] = numbers_b[j]
                 found = True
                 break
@@ -287,11 +376,126 @@ def make_vector_target(argument, result):
     case a dummy operator is returned.
     """
     from hedge._internal import NullTarget, VectorTarget
-    if argument == 0:
+    if isinstance(argument, int) and argument == 0:
         return NullTarget()
     else:
         return VectorTarget(argument, result)
 
+
+
+
+
+# linear algebra tools --------------------------------------------------------
+def orthonormalize(vectors, discard_threshold=None):
+    """Carry out a modified [1] Gram-Schmidt orthonormalization on
+    vectors.
+
+    If, during orthonormalization, the 2-norm of a vector drops 
+    below C{discard_threshold}, then this vector is silently 
+    discarded. If C{discard_threshold} is C{None}, then no vector
+    will ever be dropped, and a zero 2-norm encountered during
+    orthonormalization will throw an L{OrthonormalizationError}.
+
+    [1] U{http://en.wikipedia.org/wiki/Gram%E2%80%93Schmidt_process}
+    """
+
+    from numpy import dot
+    done_vectors = []
+
+    for v in vectors:
+        my_v = v.copy()
+        for done_v in done_vectors:
+            my_v = my_v - dot(my_v, done_v.conjugate()) * done_v
+        v_norm = la.norm(my_v)
+
+        if discard_threshold is None:
+            if v_norm == 0:
+                raise RuntimeError, "Orthogonalization failed"
+        else:
+            if v_norm < discard_threshold:
+                continue
+
+        my_v /= v_norm
+        done_vectors.append(my_v)
+
+    return done_vectors
+
+
+
+
+def permutation_matrix(to_indices=None, from_indices=None, h=None, w=None,
+        dtype=None, flavor=None):
+    """Return a permutation matrix.
+
+    If to_indices is specified, the resulting permutation 
+    matrix P satisfies the condition
+
+    P * e[i] = e[to_indices[i]] for i=1,...,len(to_indices)
+
+    where e[i] is the i-th unit vector. The height of P is 
+    determined either implicitly by the maximum of to_indices
+    or explicitly by the parameter h.
+
+    If from_indices is specified, the resulting permutation 
+    matrix P satisfies the condition
+
+    P * e[from_indices[i]] = e[i] for i=1,...,len(from_indices)
+    
+    where e[i] is the i-th unit vector. The width of P is
+    determined either implicitly by the maximum of from_indices
+    of explicitly by the parameter w.
+
+    If both to_indices and from_indices is specified, a ValueError
+    exception is raised.
+    """
+    if to_indices is not None and from_indices is not None:
+        raise ValueError, "only one of to_indices and from_indices may " \
+                "be specified"
+
+    if to_indices is not None:
+        if h is None:
+            h = max(to_indices)+1
+        w = len(to_indices)
+    else:
+        if w is None:
+            w = max(from_indices)+1
+        h = len(from_indices)
+
+    if flavor is None:
+        result = numpy.zeros((h,w), dtype=dtype)
+
+        if to_indices is not None:
+            for j, i in enumerate(to_indices):
+                result[i,j] = 1
+        else:
+            for i, j in enumerate(from_indices):
+                result[i,j] = 1
+    else:
+        result = pyublas.zeros((h,w), dtype=dtype, flavor=flavor)
+
+        if to_indices is not None:
+            for j, i in enumerate(to_indices):
+                result.add_element(i, j, 1)
+        else:
+            for i, j in enumerate(from_indices):
+                result.add_element(i, j, 1)
+
+    return result
+
+
+
+
+def leftsolve(A, B):
+    return la.solve(A.T, B.T).T
+
+
+
+
+def unit_vector(n, i, dtype=None):
+    """Return the i-th unit vector of size n, with the given dtype."""
+    result = numpy.zeros((n,), dtype=dtype)
+    result[i] = 1
+    return result
 
 
 
@@ -306,14 +510,12 @@ def estimate_order_of_convergence(abscissae, errors):
     constant and order for the given data set. It returns a tuple (constant, order).
     Both inputs must be PyLinear vectors.
     """
-    import pylinear.toybox as toybox
-
     assert len(abscissae) == len(errors)
     if len(abscissae) <= 1:
         raise RuntimeError, "Need more than one value to guess order of convergence."
 
-    coefficients = toybox.fit_polynomial(num.log10(abscissae), num.log10(errors), 1)
-    return 10**coefficients[0], -coefficients[1]
+    coefficients = numpy.polyfit(numpy.log10(abscissae), numpy.log10(errors), 1)
+    return 10**coefficients[-1], -coefficients[-2]
 
 
   
@@ -326,15 +528,15 @@ class EOCRecorder(object):
         self.history.append((abscissa, error))
 
     def estimate_order_of_convergence(self, gliding_mean = None):
-        abscissae = num.array([ a for a,e in self.history ])
-        errors = num.array([ e for a,e in self.history ])
+        abscissae = numpy.array([ a for a,e in self.history ])
+        errors = numpy.array([ e for a,e in self.history ])
 
         size = len(abscissae)
         if gliding_mean is None:
             gliding_mean = size
 
         data_points = size - gliding_mean + 1
-        result = num.zeros((data_points, 2), num.Float)
+        result = numpy.zeros((data_points, 2), float)
         for i in range(data_points):
             result[i,0], result[i,1] = estimate_order_of_convergence(
                 abscissae[i:i+gliding_mean], errors[i:i+gliding_mean])
@@ -411,7 +613,7 @@ def mem_checkpoint(name=None):
 
 
 
-class FixedSizeSliceAdapter(object):
+class DisabledFixedSizeSliceAdapter(object):
     """Adapts an indexable object C{idxable} so that C{idxable[i]}
     refers to the slice C{adaptee[i*unit:(i+1)*unit]}. This effectively
     turns one long vector into storage space of lots of identically-sized
@@ -676,18 +878,16 @@ class BlockMatrix(object):
 
 
 
-
-import pylinear.operator
-PylinearOperator = pylinear.operator.Operator(num.Float64)
-
-
-
-
 # parallel cg -----------------------------------------------------------------
+OperatorBase = pyublasext.Operator(float)
+
+
+
+
 class CGStateContainer:
     def __init__(self, pcon, operator, precon=None):
         if precon is None:
-            precon = op.IdentityOperator.make(operator.dtype, operator.size1())
+            precon = pyublasext.IdentityOperator.make(operator.dtype, operator.size1())
 
         self.pcon = pcon
         self.operator = operator
@@ -695,13 +895,13 @@ class CGStateContainer:
 
         if len(pcon.ranks) == 1:
             def inner(a, b):
-                return a*num.conjugate(b)
+                return numpy.dot(a, b.conj())
         else:
             from boost.mpi import all_reduce
             from operator import add
 
             def inner(a, b):
-                local = a*num.conjugate(b)
+                local = numpy.dot(a, b.conj())
                 return all_reduce(pcon.communicator, local, add)
 
         self.inner = inner
@@ -710,7 +910,7 @@ class CGStateContainer:
         self.rhs = rhs
 
         if x is None:
-            x = num.zeros((self.operator.size1(),))
+            x = numpy.zeros((self.operator.size1(),))
         self.x = x
 
         self.residual = rhs - self.operator(x)
@@ -749,7 +949,7 @@ class CGStateContainer:
         if max_iterations is None:
             max_iterations = 10 * self.operator.size1()
 
-        if comp.norm_2(self.rhs) == 0:
+        if la.norm(self.rhs) == 0:
             return self.rhs
 
         iterations = 0
@@ -779,11 +979,12 @@ class CGStateContainer:
 def parallel_cg(pcon, operator, b, precon=None, x=None, tol=1e-7, max_iterations=None, 
         debug=False, debug_callback=None):
     if x is None:
-        x = num.zeros((operator.size1(),))
+        x = numpy.zeros((operator.size1(),))
 
     if len(pcon.ranks) == 1 and debug_callback is None:
         # use canned single-processor cg if possible
-        a_inv = op.CGOperator.make(operator, max_it=max_iterations, 
+        import pyublasext
+        a_inv = pyublasext.CGOperator.make(operator, max_it=max_iterations, 
                 tolerance=tol, precon_op=precon)
         if debug:
             a_inv.debug_level = 1

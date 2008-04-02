@@ -18,6 +18,7 @@
 
 
 #include <boost/python.hpp>
+#include <boost/numeric/ublas/io.hpp>
 #include "op_target.hpp"
 #include "volume_operators.hpp"
 #include "wrap_helpers.hpp"
