@@ -859,16 +859,16 @@ def norm(discr, volume_vector, p=2):
 
         ls = log_shape(volume_vector)
         if ls == ():
-            return numpy.dot(
+            return float(numpy.dot(
                     volume_vector,
-                    discr.mass_operator * volume_vector)**(1/p)
+                    discr.mass_operator * volume_vector)**(1/p))
         else:
             assert len(ls) == 1
-            return sum(
+            return float(sum(
                     numpy.dot(
                         subv,
                         discr.mass_operator * subv)
-                    for subv in volume_vector)**(1/p)
+                    for subv in volume_vector)**(1/p))
 
     
 

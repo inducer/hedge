@@ -24,49 +24,58 @@ import unittest
 
 
 class TestParallel(unittest.TestCase):
-    def test_convergence_advec_3d(self):
-        """Test whether 2D advection actually converges"""
+    def test_convergence_advec(self):
+        """Test whether 2/3D advection actually converges"""
 
-        import pylinear.array as num
-        import pylinear.computation as comp
-        from hedge.mesh import make_ball_mesh, make_box_mesh
-        from hedge.discretization import Discretization, pair_with_boundary
-        from hedge.element import TetrahedralElement
+        import numpy
+        import numpy.linalg as la
+        from hedge.mesh import make_ball_mesh, make_box_mesh, make_rect_mesh
+        from hedge.discretization import Discretization, pair_with_boundary, norm
+        from hedge.element import TetrahedralElement, TriangularElement
         from hedge.timestep import RK4TimeStepper
         from hedge.tools import EOCRecorder
         from math import sin, pi, sqrt
         from hedge.operators import StrongAdvectionOperator
         from hedge.data import TimeDependentGivenFunction
         from hedge.parallel import guess_parallelization_context
+        from hedge.visualization import SiloVisualizer
 
         pcon = guess_parallelization_context()
 
-        debug_output = False
+        debug_output = True
 
-        a = num.array([0.27,0])
-        norm_a = comp.norm_2(a)
+        # note: x component must remain zero because x-periodicity is used
+        v = numpy.array([0.0,0.9,0.3])
 
         def f(x):
             return sin(x)
 
         def u_analytic(x, t):
-            return f((a*x/norm_a+t*norm_a))
+            return f((numpy.dot(-v[:dims],x)/la.norm(v[:dims])+t*la.norm(v[:dims])))
 
         def boundary_tagger(vertices, el, face_nr):
-            if el.face_normals[face_nr] * a > 0:
+            face_normal = el.face_normals[face_nr]
+            if numpy.dot(face_normal, v[:len(face_normal)]) < 0:
                 return ["inflow"]
             else:
                 return ["outflow"]
 
-        for mesh in [
-                # periodic
-                make_box_mesh(dimensions=(2*pi, 2, 2), max_volume=0.4,
-                    periodicity=(True, False, False),
-                    boundary_tagger=boundary_tagger, 
-                    ),
-                # non-periodic
-                make_ball_mesh(r=pi, boundary_tagger=boundary_tagger, max_volume=0.7),
-                ]:
+        for i_mesh, mesh in enumerate([
+            # 2D semiperiodic
+            make_rect_mesh(b=(2*pi,3), max_area=0.4,
+                periodicity=(True, False),
+                subdivisions=(5,10),
+                boundary_tagger=boundary_tagger, 
+                ),
+            # 3D x-periodic
+            make_box_mesh(dimensions=(2*pi, 2, 2), max_volume=0.4,
+                periodicity=(True, False, False),
+                boundary_tagger=boundary_tagger, 
+                ),
+            # non-periodic
+            make_ball_mesh(r=pi, 
+                boundary_tagger=boundary_tagger, max_volume=0.7),
+            ]):
             for flux_type in StrongAdvectionOperator.flux_types:
                 for random_partition in [True, False]:
                     eoc_rec = EOCRecorder()
@@ -88,17 +97,30 @@ class TestParallel(unittest.TestCase):
                         else:
                             mesh_data = pcon.receive_mesh()
 
+                        dims = mesh.points.shape[1]
+                        if dims == 2:
+                            el_class = TriangularElement
+                        else:
+                            el_class = TetrahedralElement
+
                         discr = pcon.make_discretization(mesh_data, 
-                                TetrahedralElement(order), debug=True)
-                        op = StrongAdvectionOperator(discr, a, 
+                                el_class(order), debug=True)
+
+                        op = StrongAdvectionOperator(discr, v[:dims], 
                                 inflow_u=TimeDependentGivenFunction(u_analytic),
                                 flux_type=flux_type)
+                        vis = SiloVisualizer(discr, pcon)
 
                         u = discr.interpolate_volume_function(lambda x: u_analytic(x, 0))
-                        dt = discr.dt_factor(norm_a)
+                        ic = u.copy()
+
+                        dt = discr.dt_factor(op.max_eigenvalue())
                         nsteps = int(1/dt)
                         if debug_output and pcon.is_head_rank:
                             print "#steps=%d #elements=%d" % (nsteps, len(mesh.elements))
+
+                        test_name = "test-%s-o%d-m%d-r%s" % (
+                                flux_type, order, i_mesh, random_partition)
 
                         stepper = RK4TimeStepper()
                         for step in range(nsteps):
@@ -107,10 +129,18 @@ class TestParallel(unittest.TestCase):
                         u_true = discr.interpolate_volume_function(
                                 lambda x: u_analytic(x, nsteps*dt))
                         error = u-u_true
-                        my_l2_error = sqrt(error*(discr.mass_operator*error))
+                        my_l2_error = norm(discr, error)
 
-                        from boost.mpi import all_reduce
+                        if debug_output:
+                            visf = vis.make_file(test_name+"-final")
+                            vis.add_data(visf, [
+                                ("u", u),
+                                ("u_true", u_true),
+                                ("ic", ic)])
+                            visf.close()
+
                         from operator import add
+                        from boost.mpi import all_reduce
                         l2_error = all_reduce(pcon.communicator, my_l2_error, add)
 
                         eoc_rec.add_data_point(order, l2_error)

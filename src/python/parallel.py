@@ -22,6 +22,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 import pytools
 import numpy
+import numpy.linalg as la
 import hedge.discretization
 import hedge.mesh
 
@@ -482,7 +483,7 @@ class ParallelDiscretization(hedge.discretization.Discretization):
                             for my_i, other_i in zip(my_node_indices, shuffled_other_node_indices):
                                 dist = self.nodes[my_i]-flat_nb_node_coords[other_i]
                                 dist[axis] = 0
-                                assert comp.norm_2(dist) < 1e-14
+                                assert la.norm(dist) < 1e-14
                     else:
                         # continue handling of nonperiodic case
                         nb_vertices = nb_all_facevertices_global[nb_face_idx]
@@ -507,7 +508,7 @@ class ParallelDiscretization(hedge.discretization.Discretization):
 
                             for my_i, other_i in zip(my_node_indices, shuffled_other_node_indices):
                                 dist = self.nodes[my_i]-flat_nb_node_coords[other_i]
-                                assert comp.norm_2(dist) < 1e-14
+                                assert la.norm(dist) < 1e-14
 
                     # finally, unify FluxFace.h values across boundary
                     nb_h = nb_h_values[nb_face_idx]
