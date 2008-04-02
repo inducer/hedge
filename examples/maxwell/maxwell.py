@@ -18,8 +18,8 @@
 
 
 from __future__ import division
-import pylinear.array as num
-import pylinear.computation as comp
+import numpy
+import numpy.linalg as la
 
 
 
@@ -32,7 +32,8 @@ def main():
             VtkVisualizer, \
             SiloVisualizer, \
             get_rank_partition
-    from hedge.tools import dot, EOCRecorder
+    from hedge.discretization import norm
+    from hedge.tools import EOCRecorder, to_obj_array
     from math import sqrt, pi
     from analytic_solutions import \
             check_time_harmonic_solution, \
@@ -93,7 +94,7 @@ def main():
         vis = VtkVisualizer(discr, pcon, "em-%d" % order)
 
         mode.set_time(0)
-        fields = discr.interpolate_volume_function(r_sol)
+        fields = to_obj_array(discr.interpolate_volume_function(r_sol))
         op = MaxwellOperator(discr, epsilon, mu, upwind_alpha=1,
                 direct_flux=True)
 
@@ -109,9 +110,6 @@ def main():
             print "dt", dt
             print "nsteps", nsteps
             print "#elements=", len(mesh.elements)
-
-        def l2_norm(field):
-            return sqrt(dot(field, discr.mass_operator*field))
 
         #check_time_harmonic_solution(discr, mode, c_sol)
         #continue
@@ -141,7 +139,7 @@ def main():
 
         from hedge.log import EMFieldGetter, add_em_quantities
         field_getter = EMFieldGetter(op, locals(), "fields")
-        add_em_quantities(logmgr, op.c, field_getter)
+        add_em_quantities(logmgr, op, field_getter)
         
         logmgr.add_watches(["step.max", "t_sim.max", "W_field", "t_step.max"])
 
@@ -167,9 +165,11 @@ def main():
         logmgr.tick()
         logmgr.save()
 
+        numpy.seterr('raise')
         mode.set_time(t)
-        true_fields = discr.interpolate_volume_function(r_sol)
-        eoc_rec.add_data_point(order, l2_norm(fields-true_fields))
+        true_fields = to_obj_array(discr.interpolate_volume_function(r_sol))
+
+        eoc_rec.add_data_point(order, norm(discr, fields-true_fields))
 
         print
         print eoc_rec.pretty_print("P.Deg.", "L2 Error")

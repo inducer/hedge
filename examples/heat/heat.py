@@ -17,9 +17,9 @@
 
 
 
-import pylinear.array as num
-import pylinear.computation as comp
-from hedge.tools import Rotation, dot
+import numpy
+import numpy.linalg as la
+from hedge.tools import Rotation
 
 
 
@@ -84,7 +84,7 @@ def main() :
         print "nsteps", nsteps
 
     def u0(x):
-        if comp.norm_2(x) < 0.2:
+        if la.norm(x) < 0.2:
             #return exp(-100*x*x)
             return 1
         else:
@@ -111,13 +111,37 @@ def main() :
             )
     u = discr.interpolate_volume_function(u0)
 
+    # diagnostics setup -------------------------------------------------------
+    from pytools.log import LogManager, \
+            add_general_quantities, \
+            add_simulation_quantities, \
+            add_run_info
+
+    logmgr = LogManager("heat.dat", "w", pcon.communicator)
+    add_run_info(logmgr)
+    add_general_quantities(logmgr)
+    add_simulation_quantities(logmgr, dt)
+    discr.add_instrumentation(logmgr)
+
+    from pytools.log import IntervalTimer
+    vis_timer = IntervalTimer("t_vis", "Time spent visualizing")
+    logmgr.add_quantity(vis_timer)
+    stepper.add_instrumentation(logmgr)
+
+    from hedge.log import Integral, LpNorm
+    u_getter = lambda: u
+    logmgr.add_quantity(LpNorm(u_getter, discr, 1, name="l1_u"))
+    logmgr.add_quantity(LpNorm(u_getter, discr, name="l2_u"))
+
+    logmgr.add_watches(["step.max", "t_sim.max", "l2_u", "t_step.max"])
+
+    # timestep loop -----------------------------------------------------------
     for step in range(nsteps):
+        logmgr.tick()
         t = step*dt
-        if step % 10 == 0:
-            print "timestep %d, t=%f, l2=%g" % (
-                    step, t, sqrt(u*(op.mass*u)))
 
         if step % 10 == 0:
+            vis_timer.start()
             visf = vis.make_file("fld-%04d" % step)
             vis.add_data(visf,
                     [("u", u), ], 
@@ -125,6 +149,7 @@ def main() :
                     #write_coarse_mesh=True
                     )
             visf.close()
+            vis_timer.stop()
 
         u = stepper(u, t, dt, op.rhs)
 

@@ -475,7 +475,7 @@ class Discretization(object):
         else:
             result = self.volume_zeros(shape)
             for point_nr, x in enumerate(self.nodes):
-                result[(slice(None),)*len(shape), point_nr] = f(x)
+                result[(slice(None),)*len(shape) + (point_nr,)] = f(x)
             return result
 
     def boundary_zeros(self, tag=hedge.mesh.TAG_ALL, shape=()):
@@ -495,7 +495,7 @@ class Discretization(object):
         else:
             result = self.boundary_zeros(tag=tag, shape=shape)
             for point_nr, x in enumerate(self._get_boundary(tag).nodes):
-                result[(slice(None),)*len(shape), point_nr] = f(x)
+                result[(slice(None),)*len(shape) + (point_nr,)] = f(x)
             return result
 
     def boundary_normals(self, tag=hedge.mesh.TAG_ALL):
@@ -824,14 +824,26 @@ def ones_on_volume(discr, tag=hedge.mesh.TAG_ALL):
 
 
 
-#@work_with_arithmetic_containers
 def integral(discr, volume_vector, tag=hedge.mesh.TAG_ALL):
     try:
         mass_ones = discr._mass_ones
     except AttributeError:
         discr._mass_ones = mass_ones = discr.mass_operator * ones_on_volume(discr, tag)
     
-    return numpy.dot(mass_ones, volume_vector)
+    from hedge.tools import log_shape
+
+    ls = log_shape(volume_vector)
+    if ls == ():
+        return numpy.dot(mass_ones, volume_vector)
+    else:
+        result = numpy.zeros(shape=ls, dtype=float)
+        
+        from pytools import indices_in_shape
+        for i in indices_in_shape(ls):
+            result[i] = numpy.dot(mass_ones, volume_vector[i])
+            #result[i] = (discr.mass_operator*volume_vector[i]).sum()
+
+        return result
 
 
 
@@ -842,15 +854,20 @@ def norm(discr, volume_vector, p=2):
     else:
         from hedge.tools import log_shape
 
+        if p != 2:
+            volume_vector = numpy.abs(volume_vector)**(p/2)
+
         ls = log_shape(volume_vector)
         if ls == ():
-            return integral(discr,
-                    numpy.abs(volume_vector)**p
-                    )**(1/p)
+            return numpy.dot(
+                    volume_vector,
+                    discr.mass_operator * volume_vector)**(1/p)
         else:
-            assert len(log_shape) == 1
+            assert len(ls) == 1
             return sum(
-                    integral(discr, numpy.abs(subv)**p)
+                    numpy.dot(
+                        subv,
+                        discr.mass_operator * subv)
                     for subv in volume_vector)**(1/p)
 
     

@@ -20,7 +20,7 @@
 from __future__ import division
 import numpy
 import numpy.linalg as la
-from hedge.tools import Reflection, Rotation, dot
+from hedge.tools import Reflection, Rotation
 
 
 

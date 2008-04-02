@@ -18,7 +18,6 @@
 
 
 from __future__ import division
-from hedge.tools import dot
 import numpy
 import numpy.linalg as la
 

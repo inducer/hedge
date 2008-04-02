@@ -32,7 +32,7 @@ def main() :
     from hedge.timestep import RK4TimeStepper
     from hedge.discretization import Discretization, ones_on_boundary, integral
     from hedge.visualization import SiloVisualizer, VtkVisualizer
-    from hedge.tools import dot, mem_checkpoint
+    from hedge.tools import mem_checkpoint
     from pytools.stopwatch import Job
     from math import sin, cos, pi, sqrt
     from hedge.parallel import \
@@ -199,10 +199,11 @@ def main() :
     logmgr.add_quantity(vis_timer)
     stepper.add_instrumentation(logmgr)
 
-    from hedge.log import Integral, L1Norm, L2Norm, VariableGetter
-    logmgr.add_quantity(Integral(VariableGetter(locals(), "u"), discr))
-    logmgr.add_quantity(L1Norm(VariableGetter(locals(), "u"), discr))
-    logmgr.add_quantity(L2Norm(VariableGetter(locals(), "u"), discr))
+    from hedge.log import Integral, LpNorm
+    u_getter = lambda: u
+    logmgr.add_quantity(Integral(u_getter, discr, name="int_u"))
+    logmgr.add_quantity(LpNorm(u_getter, discr, p=1, name="l1_u"))
+    logmgr.add_quantity(LpNorm(u_getter, discr, name="l2_u"))
 
     logmgr.add_watches(["step.max", "t_sim.max", "l2_u", "t_step.max"])
 

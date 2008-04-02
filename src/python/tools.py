@@ -135,22 +135,6 @@ def plot_1d(f, a, b, steps=100, driver=None):
 
 
 
-def dot(x, y, multiplication=None): 
-    """Compute the dot product of the iterables C{x} and C{y}.
-
-    @arg multiplication: If given, this specifies the binary function
-      applied in place of multiplication. Defaults to C{operator.mul}.
-    """
-    if multiplication is None:
-        from operator import add
-        return reduce(add, (xi*yi for xi, yi in zip(x,y)))
-    else:
-        from operator import add
-        return reduce(add, (multiplication(xi, yi) for xi, yi in zip(x,y)))
-
-
-
-
 # obj array helpers -----------------------------------------------------------
 def is_obj_array(val):
     try:
@@ -214,18 +198,28 @@ def log_shape(array):
 
 
 def ptwise_dot(a1, a2):
-    dofs = a2.shape[-1]
-    a2_log_shape = a2.shape[:-1]
-
-    if a1.shape[-1] == dofs:
-        a1_log_shape = a1.shape[:-1]
-    else:
+    if a1.dtype == object:
         a1_log_shape = a1.shape
+        a2_log_shape = log_shape(a2)
 
-    assert a1_log_shape[-1] == a2_log_shape[0]
-    len_k = a2_log_shape[0]
+        assert a1_log_shape[-1] == a2_log_shape[0]
+        len_k = a2_log_shape[0]
 
-    result = numpy.empty(a1_log_shape[:-1]+a2_log_shape[1:]+(dofs,), dtype=a1.dtype)
+        result = numpy.empty(a1_log_shape[:-1]+a2_log_shape[1:], dtype=a1.dtype)
+    else:
+        dofs = a2.shape[-1]
+        a2_log_shape = a2.shape[:-1]
+
+        if a1.shape[-1] == dofs:
+            a1_log_shape = a1.shape[:-1]
+        else:
+            a1_log_shape = a1.shape
+
+        assert a1_log_shape[-1] == a2_log_shape[0]
+        len_k = a2_log_shape[0]
+
+        result = numpy.empty(a1_log_shape[:-1]+a2_log_shape[1:]+(dofs,), dtype=a1.dtype)
+
     from pytools import indices_in_shape
     for a1_i in indices_in_shape(a1_log_shape[:-1]):
         for a2_i in indices_in_shape(a2_log_shape[1:]):
@@ -315,13 +309,11 @@ class SubsettableCrossProduct:
           product if not given.
         """
         if three_mult is None:
-            from pytools.arithmetic_container import ArithmeticList
-            return ArithmeticList(f(x, y) for f in self.functions)
+            return join_fields(*[f(x, y) for f in self.functions])
         else:
-            from pytools.arithmetic_container import ArithmeticList
-            return ArithmeticList(
-                    sum(three_mult(lc, x[j], y[k]) for lc, j, k in lcjk)
-                    for lcjk in self.component_lcjk)
+            return join_fields(
+                    *[sum(three_mult(lc, x[j], y[k]) for lc, j, k in lcjk)
+                    for lcjk in self.component_lcjk])
 
 
 

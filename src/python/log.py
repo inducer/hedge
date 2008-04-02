@@ -201,8 +201,7 @@ class EMFieldMomentum(MultiLogQuantity):
         e = self.fields.e
         h = self.fields.h
 
-        poynting_s = max_op.h_cross(e, h, 
-                three_mult=lambda lc, x, y: lc*num.multiply(x,y))
+        poynting_s = max_op.h_cross(e, h)
 
         momentum_density = poynting_s/self.c0**2
 
@@ -257,7 +256,7 @@ class EMFieldDivergenceB(MultiLogQuantity):
         div_b = self.div_op(b)
         
         from hedge.discretization import integral
-        return [integral(self.discr, div_b), integral(self.discr, num.absolute(div_b))]
+        return [integral(self.discr, div_b), integral(self.discr, numpy.absolute(div_b))]
 
 
 
