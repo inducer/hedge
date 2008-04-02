@@ -28,3 +28,4 @@ doc/dev-reference
 *.mpeg
 *-journal
 visitlog.py
+*.log
