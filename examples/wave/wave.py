@@ -129,10 +129,10 @@ def main() :
     logmgr.add_quantity(vis_timer)
     stepper.add_instrumentation(logmgr)
 
-    from hedge.log import Integral, L1Norm, L2Norm
+    from hedge.log import Integral, LpNorm
     u_getter = lambda: fields[0]
-    logmgr.add_quantity(L1Norm(u_getter, discr, name="l1_u"))
-    logmgr.add_quantity(L2Norm(u_getter, discr, name="l2_u"))
+    logmgr.add_quantity(LpNorm(u_getter, discr, 1, name="l1_u"))
+    logmgr.add_quantity(LpNorm(u_getter, discr, name="l2_u"))
 
     logmgr.add_watches(["step.max", "t_sim.max", "l2_u", "t_step.max"])
 

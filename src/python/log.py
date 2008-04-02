@@ -104,7 +104,7 @@ class LpNorm(LogQuantity):
 
         if name is None:
             try:
-                name = "l%f_%s" % (p, self.getter.name())
+                name = "l%d_%s" % (int(p), self.getter.name())
             except AttributeError:
                 raise ValueError, "must specify a name"
 
@@ -125,14 +125,7 @@ class LpNorm(LogQuantity):
         from hedge.discretization import norm
         from hedge.tools import log_shape
 
-
-        if len(log_shape(var)) == 1:
-            return sum(
-                    integral(self.discr, numpy.abs(v))
-                    for v in var)
-        else:
-            ab = numpy.abs(var)
-            return integral(self.discr, numpy.abs(var))
+        return norm(self.discr, var, self.p)
 
 
 

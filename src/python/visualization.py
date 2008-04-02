@@ -214,7 +214,7 @@ class VtkVisualizer(Visualizer, hedge.tools.Closable):
             cell_types.extend([vtk_eltype] * len(smi) * len(eg.members))
 
         self.grid = UnstructuredGrid(
-                (len(discr.nodes), 
+                (len(discr), 
                     DataArray("points", discr.nodes, vector_format=VF_LIST_OF_VECTORS)),
                 cells, cell_types)
 
@@ -293,9 +293,10 @@ class VtkVisualizer(Visualizer, hedge.tools.Closable):
                     DeprecationWarning)
             variables = scalars + vectors
 
-        from hedge.vtk import DataArray
+        from hedge.vtk import DataArray, VF_LIST_OF_COMPONENTS
         for name, field in variables:
-            visf.grid.add_pointdata(DataArray(name, scale_factor*field))
+            visf.grid.add_pointdata(DataArray(name, scale_factor*field,
+                vector_format=VF_LIST_OF_COMPONENTS))
 
         self.register_pathname(time, visf.get_head_pathname())
 

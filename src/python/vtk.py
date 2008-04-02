@@ -294,8 +294,19 @@ class DataArray(object):
                     raise TypeError, "unrecognized vector format"
             else:
                 if len(container.shape) > 1:
+                    if vector_format == VF_LIST_OF_COMPONENTS:
+                        container = container.T.copy()
+
                     assert len(container.shape) == 2, "numpy vectors of rank >2 are not supported"
                     assert container.strides[1] == container.itemsize, "2D numpy arrays must be row-major"
+                    if vector_padding > container.shape[1]:
+                        container = numpy.asarray(numpy.hstack((
+                                container, 
+                                numpy.zeros((
+                                    container.shape[0], 
+                                    vector_padding-container.shape[1],
+                                    ),
+                                    container.dtype))), order="C")
                     self.components = container.shape[1]
                 else:
                     self.components = 1
