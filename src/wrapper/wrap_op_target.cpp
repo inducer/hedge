@@ -18,6 +18,7 @@
 
 
 #include <boost/python.hpp>
+#include <pyublas/python_helpers.hpp>
 #include "op_target.hpp"
 #include "wrap_helpers.hpp"
 
@@ -51,6 +52,17 @@ namespace
       ;
   }
 
+  
+
+  vector_target *make_vector_target(const hedge::vector argument, hedge::vector result)
+  {
+    return new vector_target(argument, result);
+  }
+
+  null_target *make_null_target(int, hedge::vector result)
+  {
+    return new null_target;
+  }
 }
 
 
@@ -69,6 +81,11 @@ void hedge_expose_op_target()
     class_<cl> wrapper("VectorTarget", init<const vector, vector>());
     expose_op_target(wrapper);
   }
+
+  def("make_vector_target", make_vector_target, 
+      return_value_policy<manage_new_object>());
+  def("make_vector_target", make_null_target,
+      return_value_policy<manage_new_object>());
 
   {
     typedef coord_matrix_target cl;

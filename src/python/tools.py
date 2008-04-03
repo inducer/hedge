@@ -193,7 +193,7 @@ def log_shape(array):
     dimension has been eliminated."""
 
     try:
-        if array.dtype == object:
+        if array.dtype.char == "O":
             return array.shape
         else:
             return array.shape[:-1]
@@ -367,18 +367,7 @@ def find_matching_vertices_along_axis(axis, points_a, points_b, numbers_a, numbe
 
 
 
-def make_vector_target(argument, result):
-    """Creates a VectorTarget for an OperatorTarget with `argument'
-    and `result'. Normally, C{argument} and C{result} should be 
-    vectors. However, C{argument} may also be the scalar 0, in which
-    case a dummy operator is returned.
-    """
-    from hedge._internal import NullTarget, VectorTarget
-    if isinstance(argument, int) and argument == 0:
-        return NullTarget()
-    else:
-        return VectorTarget(argument, result)
-
+make_vector_target = hedge._internal.make_vector_target
 
 
 

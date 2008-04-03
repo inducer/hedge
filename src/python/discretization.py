@@ -459,6 +459,9 @@ class Discretization(object):
     def len_boundary(self, tag):
         return len(self._get_boundary(tag).nodes)
 
+    def volume_empty(self, shape=()):
+        return numpy.empty(shape+(len(self.nodes),), dtype=float)
+
     def volume_zeros(self, shape=()):
         return numpy.zeros(shape+(len(self.nodes),), dtype=float)
 

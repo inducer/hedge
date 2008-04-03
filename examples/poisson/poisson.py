@@ -173,7 +173,7 @@ def main() :
     if False:
         u = GivenFunction(rhs_c).volume_interpolant(discr)
 
-        N = 3000
+        N = 30000
         from time import time
         start = time()
         
@@ -182,8 +182,8 @@ def main() :
         #u = ArithmeticList([z,z])
         #u = [z,z]
         for i in xrange(N):
-            #op.op(u)
-            op.grad(u)
+            op.op(u)
+            #op.grad(u)
 
         print (time()-start)/(N)
         return
