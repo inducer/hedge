@@ -303,8 +303,8 @@ class Mesh(pytools.Record):
             return self._bounding_box
         except AttributeError:
             self._bounding_box = (
-                    reduce(num.minimum, self.points),
-                    reduce(num.maximum, self.points),
+                    numpy.min(self.points, axis=0),
+                    numpy.max(self.points, axis=0),
                     )
             return self._bounding_box
 

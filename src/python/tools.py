@@ -158,6 +158,16 @@ def to_obj_array(ary):
 
 
 
+def make_obj_array(res_list):
+    result = numpy.empty((len(res_list),), dtype=object)
+    for i, v in enumerate(res_list):
+        result[i] = v
+
+    return result
+
+
+
+
 def join_fields(*args):
     res_list = []
     for arg in args:
@@ -171,11 +181,7 @@ def join_fields(*args):
         else:
             res_list.append(arg)
 
-    result = numpy.empty((len(res_list),), dtype=object)
-    for i, v in enumerate(res_list):
-        result[i] = v
-
-    return result
+    return make_obj_array(res_list)
 
 
 
