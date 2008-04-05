@@ -21,7 +21,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import hedge.tools 
-import pyublas
+import numpy
 
 
 
@@ -378,13 +378,13 @@ class SiloVisualizer(Visualizer):
         self.dim = discr.dimensions
         if self.dim != 1:
             self.fine_mesh = SiloMeshData(self.dim, 
-                    discr.nodes.T.copy(), 
+                    numpy.asarray(discr.nodes.T, order="C"),
                     generate_fine_element_groups())
             self.coarse_mesh = SiloMeshData(self.dim, 
-                    discr.mesh.points.T.copy(), 
+                    numpy.asarray(discr.mesh.points.T, order="C"),
                     generate_coarse_element_groups())
         else:
-            self.xvals = discr.nodes.get_component_major_vector()
+            self.xvals = numpy.asarray(discr.nodes.T, order="C")
             
         self.pcontext = pcontext
 
@@ -451,7 +451,6 @@ class SiloVisualizer(Visualizer):
                 else:
                     if ls != ():
                         field = field[0]
-                    pyublas.why_not(field)
                     silo.put_ucdvar1(name, "finemesh", scale_factor*field, DB_NODECENT)
 
         if expressions:

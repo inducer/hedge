@@ -30,11 +30,6 @@ def main() :
             TriangularElement, \
             TetrahedralElement
     from hedge.timestep import RK4TimeStepper, AdamsBashforthTimeStepper
-    from hedge.mesh import \
-            make_disk_mesh, \
-            make_regular_square_mesh, \
-            make_square_mesh, \
-            make_ball_mesh
     from hedge.visualization import SiloVisualizer, VtkVisualizer
     from pytools.stopwatch import Job
     from math import sin, cos, pi, exp, sqrt
@@ -51,11 +46,16 @@ def main() :
 
         el_class = IntervalElement
     elif dim == 2:
+        from hedge.mesh import \
+                make_disk_mesh, \
+                make_regular_square_mesh, \
+                make_square_mesh, \
+                make_rect_mesh
         if pcon.is_head_rank:
             #mesh = make_disk_mesh(max_area=5e-3)
             #mesh = make_regular_square_mesh(
                     #n=9, periodicity=(True,True))
-            mesh = make_square_mesh(max_area=0.008)
+            mesh = make_rect_mesh(a=(-0.5,-0.5),b=(3.5,0.5),max_area=0.008)
             #mesh.transform(Rotation(pi/8))
         el_class = TriangularElement
     elif dim == 3:
@@ -74,27 +74,25 @@ def main() :
     discr = pcon.make_discretization(mesh_data, el_class(7))
     stepper = RK4TimeStepper()
     #stepper = AdamsBashforthTimeStepper(1)
-    vis = VtkVisualizer(discr, pcon, "fld")
-    #vis = SiloVisualizer(discr, pcon)
+    #vis = VtkVisualizer(discr, pcon, "fld")
+    vis = SiloVisualizer(discr, pcon)
 
     def source_u(x):
-        return exp(-numpy.dot(x, x)*512)
+        return exp(-numpy.dot(x, x)*128)
 
     source_u_vec = discr.interpolate_volume_function(source_u)
 
     def source_vec_getter(t):
-        if t > 1e-2:
-            return discr.volume_zeros()
-        else:
-            return source_u_vec
+        from math import sin
+        return source_u_vec*sin(10*t)
 
     from hedge.operators import StrongWaveOperator
     from hedge.mesh import TAG_ALL, TAG_NONE
     op = StrongWaveOperator(-1, discr, 
             source_vec_getter,
-            dirichlet_tag=TAG_NONE,
+            dirichlet_tag=TAG_ALL,
             neumann_tag=TAG_NONE,
-            radiation_tag=TAG_ALL,
+            radiation_tag=TAG_NONE,
             flux_type="upwind",
             )
 

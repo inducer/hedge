@@ -25,10 +25,6 @@ import numpy.linalg as la
 
 
 def main() :
-    from hedge.element import \
-            IntervalElement, \
-            TriangularElement, \
-            TetrahedralElement
     from hedge.timestep import RK4TimeStepper
     from hedge.discretization import Discretization, ones_on_boundary, integral
     from hedge.visualization import SiloVisualizer, VtkVisualizer
@@ -58,16 +54,70 @@ def main() :
 
     pcon = guess_parallelization_context()
 
-    dim = 2
+    dim = 1
 
     job = Job("mesh")
     if dim == 1:
         v = numpy.array([1])
         if pcon.is_head_rank:
             from hedge.mesh import make_uniform_1d_mesh
-            mesh = make_uniform_1d_mesh(-2, 5, 50, periodic=True)
+            mesh = make_uniform_1d_mesh(-2, 5, 10, periodic=True)
 
-        el_class = IntervalElement
+        from hedge.element import \
+                IntervalPolynomialElement, \
+                IntervalFourierElement
+        el_class = IntervalPolynomialElement
+
+        n = 12
+        p = IntervalPolynomialElement(n)
+        f = IntervalFourierElement(n)
+        print "Poly"
+        print la.norm(p.vandermonde(),2)
+        print la.norm(la.inv(p.vandermonde()),2)
+        print "Fourier"
+        def a2s(ary):
+            return numpy.array2string(ary,
+                    max_line_width=130, precision=3, suppress_small=True)
+        #print a2s(f.vandermonde())
+        u,s,vh = la.svd(f.vandermonde())
+        print s
+        from pylab import plot, legend, show
+
+        #plot(list(f.equidistant_unit_nodes()), f.nodes(), 'o')
+        #show()
+        # vander: nodal<-modal
+        # columns of v (rows of vh): modal acceptors
+        # columns of u (rows of uh): nodal yielders
+
+        class LComb:
+            def __init__(self, coeff):
+                self.coeff = coeff
+
+            def __call__(self, x):
+                return numpy.dot(
+                        self.coeff,
+                        [fu(x) for fu in f.basis_functions()])
+
+        if False:
+            for i, ui in list(enumerate(u.T)):
+                plot(f.nodes(), ui, label="%d: %g" % (i, s[i]))
+                legend()
+                show()
+        points = numpy.linspace(-1, 1, 200)
+        from hedge.tools import unit_vector
+        for i, (vi, ui) in list(enumerate(zip(vh, u.T)))[12:]:
+            print vi
+            for j in range(len(vi)):
+                func = LComb(vi * unit_vector(len(vi), j))
+                plot(points, [func(x) for x in points], color="#dddddd", label="%d: %g" % (i, s[i]))
+            func = LComb(vi)
+            plot(points, [func(x) for x in points], label="%d: %g" % (i, s[i]))
+            plot(f.nodes(), s[i]*ui, "o", label="%d: %g" % (i, s[i]))
+
+            show()
+
+        return
+
     elif dim == 2:
         v = numpy.array([2,0])
         if pcon.is_head_rank:
@@ -102,6 +152,8 @@ def main() :
                         periodicity=(True, False),
                         subdivisions=(10,5),
                         )
+
+        from hedge.element import TriangularElement
         el_class = TriangularElement
     elif dim == 3:
         v = numpy.array([0,0,0.3])
@@ -115,6 +167,8 @@ def main() :
             #mesh = make_box_mesh(max_volume=0.01, boundary_tagger=boundary_tagger)
             #mesh = make_ball_mesh(boundary_tagger=boundary_tagger)
             #mesh = make_cylinder_mesh(max_volume=0.01, boundary_tagger=boundary_tagger)
+
+        from hedge.element import TetrahedralElement
         el_class = TetrahedralElement
     else:
         raise RuntimeError, "bad number of dimensions"
@@ -129,7 +183,7 @@ def main() :
 
     job = Job("discretization")
     #mesh_data = mesh_data.reordered_by("cuthill")
-    discr = pcon.make_discretization(mesh_data, el_class(7))
+    discr = pcon.make_discretization(mesh_data, el_class(8))
     vis_discr = discr
     job.done()
 
@@ -152,7 +206,7 @@ def main() :
 
     def gauss_hump(x):
         from math import exp
-        rsquared = numpy.dot(x, x)/(0.1**2)
+        rsquared = numpy.dot(x, x)/(0.3**2)
         return exp(-rsquared)
     def gauss2_hump(x):
         from math import exp

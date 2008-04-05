@@ -135,6 +135,58 @@ class Element(object):
         """Get the gradient functions of the basis_functions(), in the same order."""
         raise NotImplementedError
 
+    # matrices ----------------------------------------------------------------
+    @memoize
+    def vandermonde(self):
+        from hedge.polynomial import generic_vandermonde
+
+        return generic_vandermonde(
+                list(self.unit_nodes()),
+                list(self.basis_functions()))
+
+    @memoize
+    def inverse_mass_matrix(self):
+        """Return the inverse of the mass matrix of the unit element 
+        with respect to the nodal coefficients. Divide by the Jacobian 
+        to obtain the global mass matrix.
+        """
+
+        # see doc/hedge-notes.tm
+        v = self.vandermonde()
+        return numpy.dot(v, v.T)
+
+    @memoize
+    def mass_matrix(self):
+        """Return the mass matrix of the unit element with respect 
+        to the nodal coefficients. Multiply by the Jacobian to obtain
+        the global mass matrix.
+        """
+
+        return numpy.asarray(la.inv(self.inverse_mass_matrix()), order="C")
+
+    @memoize
+    def grad_vandermonde(self):
+        """Compute the Vandermonde matrices of the grad_basis_functions().
+        Return a list of these matrices."""
+
+        from hedge.polynomial import generic_multi_vandermonde
+
+        return generic_multi_vandermonde(
+                list(self.unit_nodes()),
+                list(self.grad_basis_functions()))
+
+    @memoize
+    def differentiation_matrices(self):
+        """Return matrices that map the nodal values of a function
+        to the nodal values of its derivative in each of the unit
+        coordinate directions.
+        """
+
+        from hedge.tools import leftsolve
+        # see doc/hedge-notes.tm
+        v = self.vandermonde()
+        return [leftsolve(v, vdiff) for vdiff in self.grad_vandermonde()]
+
 
 
 
@@ -225,58 +277,6 @@ class SimplicialElement(Element):
         return generate_nonnegative_integer_tuples_summing_to_at_most(
                 self.order, self.dimensions)
 
-    # matrices ----------------------------------------------------------------
-    @memoize
-    def vandermonde(self):
-        from hedge.polynomial import generic_vandermonde
-
-        return generic_vandermonde(
-                list(self.unit_nodes()),
-                list(self.basis_functions()))
-
-    @memoize
-    def inverse_mass_matrix(self):
-        """Return the inverse of the mass matrix of the unit element 
-        with respect to the nodal coefficients. Divide by the Jacobian 
-        to obtain the global mass matrix.
-        """
-
-        # see doc/hedge-notes.tm
-        v = self.vandermonde()
-        return numpy.dot(v, v.T)
-
-    @memoize
-    def mass_matrix(self):
-        """Return the mass matrix of the unit element with respect 
-        to the nodal coefficients. Multiply by the Jacobian to obtain
-        the global mass matrix.
-        """
-
-        return numpy.asarray(la.inv(self.inverse_mass_matrix()), order="C")
-
-    @memoize
-    def grad_vandermonde(self):
-        """Compute the Vandermonde matrices of the grad_basis_functions().
-        Return a list of these matrices."""
-
-        from hedge.polynomial import generic_multi_vandermonde
-
-        return generic_multi_vandermonde(
-                list(self.unit_nodes()),
-                list(self.grad_basis_functions()))
-
-    @memoize
-    def differentiation_matrices(self):
-        """Return matrices that map the nodal values of a function
-        to the nodal values of its derivative in each of the unit
-        coordinate directions.
-        """
-
-        from hedge.tools import leftsolve
-        # see doc/hedge-notes.tm
-        v = self.vandermonde()
-        return [leftsolve(v, vdiff) for vdiff in self.grad_vandermonde()]
-
     # time step scaling -------------------------------------------------------
     def dt_non_geometric_factor(self):
         unodes = self.unit_nodes()
@@ -295,23 +295,9 @@ class SimplicialElement(Element):
 
 
 class IntervalElement(SimplicialElement):
-    """An arbitrary-order triangular finite element.
-
-    Coordinate systems used:
-    ========================
-
-    unit coordinates (r)::
-
-    ---[--------0--------]--->
-       -1                1
-    """
-
     dimensions = 1
     has_local_jacobians = False
     geometry = hedge.mesh.Interval
-
-    def __init__(self, order):
-        self.order = order
 
     # numbering ---------------------------------------------------------------
     @memoize
@@ -339,21 +325,63 @@ class IntervalElement(SimplicialElement):
             return []
 
     # node wrangling ----------------------------------------------------------
-    def nodes(self):
-        """Generate warped nodes in equilateral coordinates (x,)."""
-
-        from hedge.quadrature import legendre_gauss_lobatto_points
-        return [numpy.array([x]) for x in legendre_gauss_lobatto_points(self.order)]
-
-    equilateral_nodes = nodes
-    unit_nodes = nodes
-
     @memoize
     def get_submesh_indices(self):
         """Return a list of tuples of indices into the node list that
         generate a tesselation of the reference element."""
 
         return [(i,i+1) for i in range(self.order)]
+
+    # face operations ---------------------------------------------------------
+    @memoize
+    def face_mass_matrix(self):
+        return numpy.array([[1]], dtype=float)
+
+    @staticmethod
+    def get_face_index_shuffle_to_match(face_1_vertices, face_2_vertices):
+        if set(face_1_vertices) != set(face_2_vertices):
+            raise FaceVertexMismatch("face vertices do not match")
+
+        class IntervalFaceIndexShuffle:
+            def __hash__(self):
+                return 0x3472477
+
+            def __eq__(self, other):
+                return True
+
+            def __call__(self, indices):
+                return indices
+
+        return IntervalFaceIndexShuffle()
+
+
+
+
+
+class IntervalPolynomialElement(IntervalElement):
+    """An arbitrary-order polynomial finite interval element.
+
+    Coordinate systems used:
+    ========================
+
+    unit coordinates (r)::
+
+    ---[--------0--------]--->
+       -1                1
+    """
+
+    def __init__(self, order):
+        self.order = order
+
+    # node wrangling ----------------------------------------------------------
+    def nodes(self):
+        """Generate warped nodes in unit coordinates (r,)."""
+
+        from hedge.quadrature import legendre_gauss_lobatto_points
+        return [numpy.array([x]) for x in legendre_gauss_lobatto_points(self.order)]
+
+    equilateral_nodes = nodes
+    unit_nodes = nodes
 
     # basis functions ---------------------------------------------------------
     @memoize
@@ -389,32 +417,129 @@ class IntervalElement(SimplicialElement):
         return [DiffVectorLF(idx[0]) 
             for idx in self.generate_mode_identifiers()]
 
-    # face operations ---------------------------------------------------------
-    @memoize
-    def face_mass_matrix(self):
-        return numpy.array([[1]])
+    # time step scaling -------------------------------------------------------
+    def dt_non_geometric_factor(self):
+        unodes = self.unit_nodes()
+        return la.norm(unodes[0] - unodes[1])
 
+    def dt_geometric_factor(self, vertices, el):
+        return abs(el.map.jacobian)
+
+
+
+
+class IntervalFourierElement(IntervalElement):
+    """An arbitrary-order Fourier finite interval element.
+
+    Coordinate systems used:
+    ========================
+
+    unit coordinates (r)::
+
+    ---[--------0--------]--->
+       -1                1
+    """
+
+    dimensions = 1
+    has_local_jacobians = False
+    geometry = hedge.mesh.Interval
+
+    def __init__(self, order):
+        if order % 2 != 0:
+            raise ValueError, "Fourier interval elements only exist for even orders"
+
+        self.order = order
+
+    # node wrangling ----------------------------------------------------------
     @staticmethod
-    def get_face_index_shuffle_to_match(face_1_vertices, face_2_vertices):
-        if set(face_1_vertices) != set(face_2_vertices):
-            raise FaceVertexMismatch("face vertices do not match")
+    def barycentric_to_equilateral((lambda1, lambda2)):
+        """Return the equilateral (x,) coordinate corresponding
+        to the barycentric coordinates (lambda1..lambdaN)."""
 
-        class IntervalFaceIndexShuffle:
-            def __hash__(self):
-                return 0x3472477
+        return numpy.array([ (-lambda1  +lambda2)], dtype=float)
 
-            def __eq__(self, other):
-                return True
+    equilateral_to_unit = AffineMap(
+            numpy.array([[1]], dtype=float),
+                numpy.array([0], dtype=float))
 
-            def __call__(self, indices):
-                return indices
+    def nodes(self):
+        """Generate warped nodes in unit coordinates (r,)."""
 
-        return IntervalFaceIndexShuffle()
+        from math import pi
+        eq_points = numpy.fromiter(self.equidistant_unit_nodes(), dtype=float)
+        #return 2/pi*numpy.arcsin(eq_points)
+        return numpy.sin(pi/2*eq_points)
+        #return eq_points
+        #alpha = 0.7
+        #return alpha*numpy.sin(pi/2*eq_points)**3+(1-alpha)*eq_points
+
+    equilateral_nodes = nodes
+    unit_nodes = nodes
+
+
+    # basis functions ---------------------------------------------------------
+    @memoize
+    def basis_functions(self):
+        """Get a sequence of functions that form a basis of the approximation space.
+
+        The approximation space is spanned by the polynomials:::
+
+          r**i for i <= N
+        """
+        from math import sin, cos, pi
+
+        class SineBasisFunc:
+            def __init__(self, n):
+                self.n = n
+
+            def __call__(self, x):
+                return sin(pi/2*self.n*x)
+
+        class CosineBasisFunc:
+            def __init__(self, n):
+                self.n = n
+
+            def __call__(self, x):
+                return cos(pi/2*self.n*x)
+
+        def const_bf(x):
+            return 0.5
+
+        from pytools import flatten
+        return [const_bf] + list(flatten(
+                [[SineBasisFunc(n), CosineBasisFunc(n)] 
+                    for n in range(1, 1+int(self.order/2))]))
+
+    def grad_basis_functions(self):
+        """Get the gradient functions of the basis_functions(), in the same order."""
+        from math import sin, cos, pi
+
+        class DiffSineBasisFunc:
+            def __init__(self, n):
+                self.n = n
+
+            def __call__(self, x):
+                return numpy.array([pi/2*self.n*cos(pi/2*self.n*x)])
+
+        class DiffCosineBasisFunc:
+            def __init__(self, n):
+                self.n = n
+
+            def __call__(self, x):
+                return numpy.array([pi/2*self.n*-sin(pi/2*self.n*x)])
+
+        def diff_const_bf(x):
+            return numpy.array([0])
+
+        from pytools import flatten
+        return [diff_const_bf] + list(flatten(
+                [[DiffSineBasisFunc(n), DiffCosineBasisFunc(n)] 
+                    for n in range(1, 1+int(self.order/2))]))
 
     # time step scaling -------------------------------------------------------
     def dt_non_geometric_factor(self):
         unodes = self.unit_nodes()
-        return comp.norm_2(unodes[0] - unodes[1])
+        return la.norm(unodes[0] - unodes[1])/100
 
     def dt_geometric_factor(self, vertices, el):
         return abs(el.map.jacobian)
