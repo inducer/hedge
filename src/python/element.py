@@ -294,7 +294,7 @@ class SimplicialElement(Element):
 
 
 
-class IntervalElement(SimplicialElement):
+class IntervalElementBase(SimplicialElement):
     dimensions = 1
     has_local_jacobians = False
     geometry = hedge.mesh.Interval
@@ -358,7 +358,7 @@ class IntervalElement(SimplicialElement):
 
 
 
-class IntervalPolynomialElement(IntervalElement):
+class IntervalElement(IntervalElementBase):
     """An arbitrary-order polynomial finite interval element.
 
     Coordinate systems used:
@@ -421,125 +421,6 @@ class IntervalPolynomialElement(IntervalElement):
     def dt_non_geometric_factor(self):
         unodes = self.unit_nodes()
         return la.norm(unodes[0] - unodes[1])
-
-    def dt_geometric_factor(self, vertices, el):
-        return abs(el.map.jacobian)
-
-
-
-
-class IntervalFourierElement(IntervalElement):
-    """An arbitrary-order Fourier finite interval element.
-
-    Coordinate systems used:
-    ========================
-
-    unit coordinates (r)::
-
-    ---[--------0--------]--->
-       -1                1
-    """
-
-    dimensions = 1
-    has_local_jacobians = False
-    geometry = hedge.mesh.Interval
-
-    def __init__(self, order):
-        if order % 2 != 0:
-            raise ValueError, "Fourier interval elements only exist for even orders"
-
-        self.order = order
-
-    # node wrangling ----------------------------------------------------------
-    @staticmethod
-    def barycentric_to_equilateral((lambda1, lambda2)):
-        """Return the equilateral (x,) coordinate corresponding
-        to the barycentric coordinates (lambda1..lambdaN)."""
-
-        return numpy.array([ (-lambda1  +lambda2)], dtype=float)
-
-    equilateral_to_unit = AffineMap(
-            numpy.array([[1]], dtype=float),
-                numpy.array([0], dtype=float))
-
-    def nodes(self):
-        """Generate warped nodes in unit coordinates (r,)."""
-
-        from math import pi
-        eq_points = numpy.fromiter(self.equidistant_unit_nodes(), dtype=float)
-        #return 2/pi*numpy.arcsin(eq_points)
-        return numpy.sin(pi/2*eq_points)
-        #return eq_points
-        #alpha = 0.7
-        #return alpha*numpy.sin(pi/2*eq_points)**3+(1-alpha)*eq_points
-
-    equilateral_nodes = nodes
-    unit_nodes = nodes
-
-
-    # basis functions ---------------------------------------------------------
-    @memoize
-    def basis_functions(self):
-        """Get a sequence of functions that form a basis of the approximation space.
-
-        The approximation space is spanned by the polynomials:::
-
-          r**i for i <= N
-        """
-        from math import sin, cos, pi
-
-        class SineBasisFunc:
-            def __init__(self, n):
-                self.n = n
-
-            def __call__(self, x):
-                return sin(pi/2*self.n*x)
-
-        class CosineBasisFunc:
-            def __init__(self, n):
-                self.n = n
-
-            def __call__(self, x):
-                return cos(pi/2*self.n*x)
-
-        def const_bf(x):
-            return 0.5
-
-        from pytools import flatten
-        return [const_bf] + list(flatten(
-                [[SineBasisFunc(n), CosineBasisFunc(n)] 
-                    for n in range(1, 1+int(self.order/2))]))
-
-    def grad_basis_functions(self):
-        """Get the gradient functions of the basis_functions(), in the same order."""
-        from math import sin, cos, pi
-
-        class DiffSineBasisFunc:
-            def __init__(self, n):
-                self.n = n
-
-            def __call__(self, x):
-                return numpy.array([pi/2*self.n*cos(pi/2*self.n*x)])
-
-        class DiffCosineBasisFunc:
-            def __init__(self, n):
-                self.n = n
-
-            def __call__(self, x):
-                return numpy.array([pi/2*self.n*-sin(pi/2*self.n*x)])
-
-        def diff_const_bf(x):
-            return numpy.array([0])
-
-        from pytools import flatten
-        return [diff_const_bf] + list(flatten(
-                [[DiffSineBasisFunc(n), DiffCosineBasisFunc(n)] 
-                    for n in range(1, 1+int(self.order/2))]))
-
-    # time step scaling -------------------------------------------------------
-    def dt_non_geometric_factor(self):
-        unodes = self.unit_nodes()
-        return la.norm(unodes[0] - unodes[1])/100
 
     def dt_geometric_factor(self, vertices, el):
         return abs(el.map.jacobian)
