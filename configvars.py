@@ -6,6 +6,9 @@ vars = [
     ("BOOST_PYTHON_LIBNAME", "boost_python-gcc42-mt",
         "The name of the Boost Python library binary (without lib and .so)"),
     # -------------------------------------------------------------------------
+    ("NUMPY_INC_DIR", None,
+        "Include directory for NumPy"),
+    # -------------------------------------------------------------------------
     ("BOOST_BINDINGS_INC_DIR", None,
         "The include directory for the Boost bindings library"),
     # -------------------------------------------------------------------------

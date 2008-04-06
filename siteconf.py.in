@@ -26,6 +26,16 @@ BOOST_MPI_LIBRARIES = [$str{BOOST_MPI_LIBNAME}]
 
 if not MPICXX:
     MPICXX = MPICC
+
+NUMPY_INC_DIRS=[]
+if not NUMPY_INC_DIRS:
+    try:
+        import numpy
+        from os.path import join
+        NUMPY_INC_DIRS.append(
+            join(numpy.__path__[0], "core", "include"))
+    except:
+        pass
 # --------------------------------------------------------------------
 # Compiler flags
 # --------------------------------------------------------------------
