@@ -65,11 +65,11 @@ def main():
         cvars["CXX"] = conf["MPICXX"]
 
     INCLUDE_DIRS = [
-            "src/bgl-python",
             "src/cpp",
             ] \
             + conf["BOOST_BINDINGS_INCLUDE_DIRS"] \
-            + conf["BOOST_INCLUDE_DIRS"]
+            + conf["BOOST_INCLUDE_DIRS"] \
+            + conf["NUMPY_INC_DIRS"]
 
     conf["BLAS_INCLUDE_DIRS"] = []
     conf["USE_BLAS"] = conf["HAVE_BLAS"]
