@@ -1534,23 +1534,27 @@ class Projector:
                         leftsolve(from_matrix, dot(to_matrix, pmat)),
                         order="C"))
 
-    #@work_with_arithmetic_containers
     def __call__(self, from_vec):
         from hedge._internal import perform_elwise_operator, VectorTarget
-        result = self.to_discr.volume_zeros()
+        from hedge.tools import log_shape
 
-        target = VectorTarget(from_vec, result)
+        ls = log_shape(from_vec)
+        result = self.to_discr.volume_zeros(ls)
 
-        target.begin(len(self.to_discr), len(self.from_discr))
-        for from_eg, to_eg, imat in zip(
-                self.from_discr.element_groups, 
-                self.to_discr.element_groups, 
-                self.interp_matrices):
-            perform_elwise_operator(
-                    from_eg.ranges, to_eg.ranges, 
-                    imat, target)
+        from pytools import indices_in_shape
+        for i in indices_in_shape(ls):
+            target = VectorTarget(from_vec[i], result[i])
 
-        target.finalize()
+            target.begin(len(self.to_discr), len(self.from_discr))
+            for from_eg, to_eg, imat in zip(
+                    self.from_discr.element_groups, 
+                    self.to_discr.element_groups, 
+                    self.interp_matrices):
+                perform_elwise_operator(
+                        from_eg.ranges, to_eg.ranges, 
+                        imat, target)
+
+            target.finalize()
 
         return result
 
@@ -1615,17 +1619,22 @@ class Filter:
                     dot(vdm, numpy.diag(filter_coeffs))),
                 order="C"))
 
-    #@work_with_arithmetic_containers
     def __call__(self, vec):
-        from hedge._internal import perform_elwise_operator, VectorTarget
-        result = self.discr.volume_zeros()
+        from hedge.tools import log_shape
 
-        target = VectorTarget(vec, result)
+        ls = log_shape(vec)
+        result = self.discr.volume_zeros(ls)
 
-        target.begin(len(self.discr), len(self.discr))
-        for eg, fmat in zip(self.discr.element_groups, self.filter_matrices):
-            perform_elwise_operator(eg.ranges, eg.ranges, fmat, target)
+        from pytools import indices_in_shape
+        for i in indices_in_shape(ls):
+            from hedge._internal import perform_elwise_operator, VectorTarget
 
-        target.finalize()
+            target = VectorTarget(vec[i], result[i])
+
+            target.begin(len(self.discr), len(self.discr))
+            for eg, fmat in zip(self.discr.element_groups, self.filter_matrices):
+                perform_elwise_operator(eg.ranges, eg.ranges, fmat, target)
+
+            target.finalize()
 
         return result
