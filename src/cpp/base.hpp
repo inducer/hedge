@@ -45,34 +45,34 @@ namespace hedge {
   static const vertex_number INVALID_VERTEX = UINT_MAX;
   static const node_index INVALID_NODE = UINT_MAX;
 
-  typedef pyublas::numpy_vector<double> vector;
-  typedef pyublas::numpy_matrix<double> matrix;
+  typedef pyublas::numpy_vector<double> py_vector;
+  typedef pyublas::numpy_matrix<double> py_matrix;
 
   class affine_map
   {
     private:
-      hedge::matrix m_matrix;
-      hedge::vector m_vector;
+      hedge::py_matrix m_matrix;
+      hedge::py_vector m_vector;
 
     public:
       affine_map()
       { }
 
       affine_map(
-          const hedge::matrix &mat, 
-          const hedge::vector &vec)
+          const hedge::py_matrix &mat, 
+          const hedge::py_vector &vec)
         : m_matrix(mat), m_vector(vec)
       { }
 
-      const hedge::vector operator()(const hedge::vector &op) const
+      const hedge::py_vector operator()(const hedge::py_vector &op) const
       {
         return prod(m_matrix, op) + m_vector;
       }
 
-      const hedge::vector &vector() const
+      const hedge::py_vector &vector() const
       { return m_vector; }
 
-      const hedge::matrix &matrix() const
+      const hedge::py_matrix &matrix() const
       { return m_matrix; }
   };
 }

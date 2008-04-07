@@ -42,11 +42,11 @@ namespace
       .def("finalize", &cl::finalize)
       .def("add_coefficient", &cl::add_coefficient)
       .def("add_coefficients", 
-          (void (cl::*)(unsigned, unsigned, const matrix &))
+          (void (cl::*)(unsigned, unsigned, const py_matrix &))
           &cl::add_coefficients,
           (arg("i_start"), arg("j_start"), arg("submat")))
       .def("add_scaled_coefficients", 
-          (void (cl::*)(unsigned, unsigned, typename cl::scalar_type, const matrix &))
+          (void (cl::*)(unsigned, unsigned, typename cl::scalar_type, const py_matrix &))
           &cl::add_scaled_coefficients,
           (arg("i_start"), arg("j_start"), arg("factor"), arg("submat")))
       ;
@@ -54,12 +54,12 @@ namespace
 
   
 
-  vector_target *make_vector_target(const hedge::vector argument, hedge::vector result)
+  vector_target *make_vector_target(const hedge::py_vector argument, hedge::py_vector result)
   {
     return new vector_target(argument, result);
   }
 
-  null_target *make_null_target(int, hedge::vector result)
+  null_target *make_null_target(int, hedge::py_vector result)
   {
     return new null_target;
   }
@@ -78,7 +78,7 @@ void hedge_expose_op_target()
 
   {
     typedef vector_target cl;
-    class_<cl> wrapper("VectorTarget", init<const vector, vector>());
+    class_<cl> wrapper("VectorTarget", init<const py_vector, py_vector>());
     expose_op_target(wrapper);
   }
 

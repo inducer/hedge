@@ -59,13 +59,13 @@ namespace
   // affine map ---------------------------------------------------------------
   affine_map *get_simplex_map_unit_to_global(const int dimensions, object vertices)
   {
-    matrix mat(dimensions, dimensions);
+    py_matrix mat(dimensions, dimensions);
 
-    const vector &vertex0 = extract<vector>(vertices[0]);
-    vector vsum = ublas::zero_vector<vector::value_type>(dimensions);
+    const py_vector &vertex0 = extract<py_vector>(vertices[0]);
+    py_vector vsum = ublas::zero_vector<py_vector::value_type>(dimensions);
     for (int i = 0; i < dimensions; i++)
     {
-      const vector &vertex = extract<vector>(vertices[i+1]);
+      const py_vector &vertex = extract<py_vector>(vertices[i+1]);
       vsum += vertex;
       column(mat, i) = 0.5*(vertex-vertex0);
     }
@@ -76,8 +76,8 @@ namespace
 
 
 
-  void map_element_nodes(vector all_nodes, const unsigned el_start, 
-      const affine_map &map, const vector &unit_nodes, const unsigned dim)
+  void map_element_nodes(py_vector all_nodes, const unsigned el_start, 
+      const affine_map &map, const py_vector &unit_nodes, const unsigned dim)
   {
     // vectors, even if they're copied, have reference semantics
     for (unsigned nstart = 0; nstart < unit_nodes.size(); nstart += dim)
@@ -104,11 +104,11 @@ namespace
 
 
 
-  PyObject *bufferize_vector(const vector &v)
+  PyObject *bufferize_vector(const py_vector &v)
   {
     return PyString_FromStringAndSize(
         reinterpret_cast<const char *>(traits::vector_storage(v)), 
-        v.size()*sizeof(vector::value_type));
+        v.size()*sizeof(py_vector::value_type));
   }
 
 
@@ -118,18 +118,18 @@ namespace
   {
     int vec_count = len(vec_list);
     unsigned data_size = component_count*vec_count;
-    boost::scoped_array<vector::value_type> result(
-        new vector::value_type[data_size]);
+    boost::scoped_array<py_vector::value_type> result(
+        new py_vector::value_type[data_size]);
 
     unsigned vec_num = 0;
-    BOOST_FOREACH(const vector &v, make_pair(
-        stl_input_iterator<const vector &>(vec_list), 
-        stl_input_iterator<const vector &>()))
+    BOOST_FOREACH(const py_vector &v, make_pair(
+        stl_input_iterator<const py_vector &>(vec_list), 
+        stl_input_iterator<const py_vector &>()))
     {
       unsigned i = (vec_num++)*component_count;
       unsigned start = i;
 
-      BOOST_FOREACH(const vector::value_type x, v)
+      BOOST_FOREACH(const py_vector::value_type x, v)
         result[i++] = x;
       while (i < start + component_count)
         result[i++] = 0;
@@ -137,7 +137,7 @@ namespace
 
     return PyString_FromStringAndSize(
         reinterpret_cast<const char *>(result.get()), 
-        data_size*sizeof(vector::value_type));
+        data_size*sizeof(py_vector::value_type));
   }
 
 
@@ -147,8 +147,8 @@ namespace
   {
     int component_count = len(vec_list);
     unsigned data_size = component_count*vec_count;
-    boost::scoped_array<vector::value_type> result(
-        new vector::value_type[data_size]);
+    boost::scoped_array<py_vector::value_type> result(
+        new py_vector::value_type[data_size]);
 
     unsigned component_num = 0;
     BOOST_FOREACH(object o, make_pair(
@@ -168,8 +168,8 @@ namespace
       }
       else 
       {
-        vector v(handle<>(borrowed(o.ptr())));
-        BOOST_FOREACH(const vector::value_type x, v)
+        py_vector v(handle<>(borrowed(o.ptr())));
+        BOOST_FOREACH(const py_vector::value_type x, v)
         {
           result[i] = x;
           i += component_count;
@@ -179,7 +179,7 @@ namespace
 
     return PyString_FromStringAndSize(
         reinterpret_cast<const char *>(result.get()), 
-        data_size*sizeof(vector::value_type));
+        data_size*sizeof(py_vector::value_type));
   }
 }
 
@@ -203,7 +203,7 @@ void hedge_expose_base()
 
   {
     typedef affine_map cl;
-    class_<cl>("AffineMap", init<const matrix &, const vector &>())
+    class_<cl>("AffineMap", init<const py_matrix &, const py_vector &>())
       .add_property("matrix", 
           make_function(&cl::matrix, return_value_policy<return_by_value>()))
       .add_property("vector", 

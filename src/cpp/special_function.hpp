@@ -129,7 +129,7 @@ namespace hedge {
         : m_i(i), m_j(j), m_f(0, 0, i), m_g(2*i+1, 0, j)
       { }
 
-      double operator()(const vector &x)
+      double operator()(const py_vector &x)
       {
         double r = x[0];
         double s = x[1];
@@ -158,7 +158,7 @@ namespace hedge {
         : m_i(i), m_j(j), m_f(0, 0, i), m_df(0, 0, i), m_g(2*i+1, 0, j), m_dg(2*i+1, 0, j)
       { }
 
-      boost::tuple<double, double> operator()(const vector &x)
+      boost::tuple<double, double> operator()(const py_vector &x)
       {
         double r = x[0];
         double s = x[1];
@@ -207,7 +207,7 @@ namespace hedge {
         : m_i(i), m_j(j), m_k(k), m_f(0, 0, i), m_g(2*i+1, 0, j), m_h(2*i+2*j+2, 0, k)
       { }
 
-      double operator()(const vector &x)
+      double operator()(const py_vector &x)
       {
         double r = x[0];
         double s = x[1];
@@ -255,7 +255,7 @@ namespace hedge {
         m_dh(2*i+2*j+2, 0, k)
       { }
 
-      boost::tuple<double, double, double> operator()(const vector &x)
+      boost::tuple<double, double, double> operator()(const py_vector &x)
       {
         double r = x[0];
         double s = x[1];

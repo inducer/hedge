@@ -112,7 +112,7 @@ namespace hedge {
 
   class null_target {
     public:
-      typedef vector::value_type scalar_type;
+      typedef py_vector::value_type scalar_type;
 
       void begin(unsigned height, unsigned width) const
       { }
@@ -139,9 +139,9 @@ namespace hedge {
 
   class vector_target {
     public:
-      typedef vector::value_type scalar_type;
+      typedef py_vector::value_type scalar_type;
 
-      vector_target(const vector operand, vector result)
+      vector_target(const py_vector operand, py_vector result)
         : m_operand(operand), m_result(result)
       { }
       void begin(unsigned height, unsigned width) const
@@ -181,8 +181,8 @@ namespace hedge {
           factor * prod(submat, subrange(m_operand, j_start, j_start+submat.size2()));
       }
 
-      const vector m_operand;
-      vector m_result;
+      const py_vector m_operand;
+      py_vector m_result;
   };
 
 

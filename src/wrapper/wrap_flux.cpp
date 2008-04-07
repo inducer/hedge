@@ -128,7 +128,7 @@ namespace {
     return double_sided_flux_info<cf, cf>(
         extract<cf>(tup[0]),
         extract<cf>(tup[1]),
-        extract<hedge::vector>(tup[2]));
+        extract<hedge::py_vector>(tup[2]));
   }
 
 
@@ -136,9 +136,9 @@ namespace {
 
   void wrap_perform_multiple_double_sided_fluxes_on_single_operand(
       const face_group &fg,
-      const hedge::matrix &fmm,
+      const hedge::py_matrix &fmm,
       object fluxes,
-      const hedge::vector &operand)
+      const hedge::py_vector &operand)
   {
     typedef fluxes::chained_flux cf;
     typedef double_sided_flux_info<cf, cf> dsfi_t;

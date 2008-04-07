@@ -174,7 +174,7 @@ namespace hedge {
   void perform_elwise_scaled_operator(
       const SrcERanges &src_ers, 
       const DestERanges &dest_ers,
-      const vector &scale_factors, const Mat &matrix, OT target)
+      const py_vector &scale_factors, const Mat &matrix, OT target)
   {
     if (src_ers.size() != dest_ers.size())
       throw std::runtime_error("element ranges have different sizes");
@@ -194,7 +194,7 @@ namespace hedge {
   template <class ERanges>
   inline
   void perform_elwise_scale(const ERanges &ers, 
-      vector const &scale_factors, vector_target tgt)
+      py_vector const &scale_factors, vector_target tgt)
   {
     unsigned i = 0;
     BOOST_FOREACH(const element_range er, ers)
@@ -215,7 +215,7 @@ namespace hedge {
   void perform_elwise_scaled_operator(
       const uniform_element_ranges &src_ers, 
       const uniform_element_ranges &dest_ers, 
-      const vector &scale_factors, const Mat &matrix, vector_target target)
+      const py_vector &scale_factors, const Mat &matrix, vector_target target)
   {
     if (src_ers.size()*src_ers.el_size() != target.m_operand.size())
       throw std::runtime_error("operand is of wrong size");
@@ -223,7 +223,7 @@ namespace hedge {
       throw std::runtime_error("operand is of wrong size");
 
     unsigned i = 0;
-    vector new_operand(target.m_operand.size());
+    py_vector new_operand(target.m_operand.size());
     BOOST_FOREACH(const element_range r, src_ers)
     {
       noalias(subrange(new_operand, r.first, r.second)) = 

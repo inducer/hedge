@@ -76,14 +76,14 @@ void hedge_expose_volume_operators()
 #define ARG_TYPES \
   const uniform_element_ranges &, \
   const uniform_element_ranges &, \
-  const matrix &,
+  const py_matrix &,
   DEF_FOR_EACH_OP_TARGET(perform_elwise_operator, ARG_TYPES);
 #undef ARG_TYPES
 #define ARG_TYPES \
   const uniform_element_ranges &, \
   const uniform_element_ranges &, \
-  const vector &, \
-  const matrix &,
+  const py_vector &, \
+  const py_matrix &,
   DEF_FOR_EACH_OP_TARGET(perform_elwise_scaled_operator, ARG_TYPES);
 #undef ARG_TYPES
 

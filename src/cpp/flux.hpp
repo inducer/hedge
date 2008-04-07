@@ -39,7 +39,7 @@ namespace hedge { namespace fluxes {
     element_number element_id;
     face_number face_id;
     unsigned order;
-    hedge::vector normal;
+    hedge::py_vector normal;
   };
 
 

@@ -49,7 +49,7 @@ namespace
   mpi::request isend_vector(
       mpi::communicator &comm,
       int dest, int tag,
-      const vector &v)
+      const py_vector &v)
   {
     return comm.isend(dest, tag, traits::vector_storage(v), traits::vector_size(v));
   }
@@ -60,7 +60,7 @@ namespace
   mpi::request irecv_vector(
       mpi::communicator &comm,
       int dest, int tag,
-      vector v)
+      py_vector v)
   {
     return comm.irecv(dest, tag, traits::vector_storage(v), traits::vector_size(v));
   }
