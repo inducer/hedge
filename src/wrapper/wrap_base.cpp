@@ -82,7 +82,7 @@ namespace
     // vectors, even if they're copied, have reference semantics
     for (unsigned nstart = 0; nstart < unit_nodes.size(); nstart += dim)
       subrange(all_nodes, el_start+nstart, el_start+nstart+dim) = 
-        map(subrange(unit_nodes, nstart, nstart+dim));
+        map.apply<py_vector>(subrange(unit_nodes, nstart, nstart+dim));
   }
 
 
@@ -208,7 +208,9 @@ void hedge_expose_base()
           make_function(&cl::matrix, return_value_policy<return_by_value>()))
       .add_property("vector", 
           make_function(&cl::vector, return_value_policy<return_by_value>()))
-      .def("__call__", &affine_map::operator())
+      .def("__call__", 
+          (const py_vector (cl::*)(const py_vector &) const) 
+          &affine_map::operator())
 
       .enable_pickling()
       ;

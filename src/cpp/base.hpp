@@ -64,7 +64,14 @@ namespace hedge {
         : m_matrix(mat), m_vector(vec)
       { }
 
-      const hedge::py_vector operator()(const hedge::py_vector &op) const
+      template <class VecType>
+      const VecType operator()(const VecType &op) const
+      {
+        return prod(m_matrix, op) + m_vector;
+      }
+
+      template <class ResultType, class VecType>
+      const ResultType apply(const VecType &op) const
       {
         return prod(m_matrix, op) + m_vector;
       }
