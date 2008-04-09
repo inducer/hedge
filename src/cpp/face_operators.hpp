@@ -136,8 +136,8 @@ namespace hedge
       const index_list &idx_list = fg.index_lists[fp.face_index_list_number];
       const index_list &opp_idx_list = fg.index_lists[fp.opp_face_index_list_number];
 
-      assert(face_length == index_list.size());
-      assert(face_length == opp_index_list.size());
+      assert(face_length == idx_list.size());
+      assert(face_length == opp_idx_list.size());
 
       for (unsigned i = 0; i < face_length; i++)
       {
@@ -185,8 +185,8 @@ namespace hedge
       const index_list &idx_list = fg.index_lists[fp.face_index_list_number];
       const index_list &opp_idx_list = fg.index_lists[fp.opp_face_index_list_number];
 
-      assert(face_length == index_list.size());
-      assert(face_length == opp_index_list.size());
+      assert(face_length == idx_list.size());
+      assert(face_length == opp_idx_list.size());
 
       for (unsigned i = 0; i < face_length; i++)
       {
@@ -255,8 +255,8 @@ namespace hedge
       const index_list &idx_list = fg.index_lists[fp.face_index_list_number];
       const index_list &opp_idx_list = fg.index_lists[fp.opp_face_index_list_number];
 
-      assert(face_length == index_list.size());
-      assert(face_length == opp_index_list.size());
+      assert(face_length == idx_list.size());
+      assert(face_length == opp_idx_list.size());
 
       const int ebi = fp.el_base_index;
       const int oebi = fp.opp_el_base_index;
@@ -365,8 +365,8 @@ namespace hedge
       const index_list &idx_list = fg.index_lists[fp.face_index_list_number];
       const index_list &opp_idx_list = fg.index_lists[fp.opp_face_index_list_number];
 
-      assert(face_length == index_list.size());
-      assert(face_length == opp_index_list.size());
+      assert(face_length == idx_list.size());
+      assert(face_length == opp_idx_list.size());
 
       const int ebi = fp.el_base_index;
       const int oebi = fp.opp_el_base_index;
