@@ -29,3 +29,4 @@ doc/dev-reference
 *-journal
 visitlog.py
 *.log
+.figleaf

@@ -171,7 +171,7 @@ class MPIParallelizationContext(ParallelizationContext):
 
             from pymetis import part_graph
             cuts, partition = part_graph(partition, 
-                    mesh.element_adjacency_graph)
+                    mesh.element_adjacency_graph())
 
         # find ranks to which we need to distribute
         target_ranks = set()

@@ -88,6 +88,15 @@ class Element(pytools.Record):
     def _reorder_vertices(vertex_indices, vertices):
         return vertex_indices
 
+    def bounding_box(self, vertices):
+        my_verts = numpy.array([vertices[vi] for vi in self.vertex_indices])
+        return numpy.min(my_verts, axis=0), numpy.max(my_verts, axis=0)
+
+    def centroid(self, vertices):
+        my_verts = numpy.array([vertices[vi] for vi in self.vertex_indices])
+        return numpy.average(my_verts, axis=0)
+
+
 
 
 
@@ -297,7 +306,6 @@ class Mesh(pytools.Record):
             yield face1, face2
             yield face2, face1
 
-    @property
     def bounding_box(self):
         try:
             return self._bounding_box
@@ -308,7 +316,6 @@ class Mesh(pytools.Record):
                     )
             return self._bounding_box
 
-    @property
     def element_adjacency_graph(self):
         """Return a dictionary mapping each element id to a
         list of adjacent element ids.
@@ -519,7 +526,7 @@ class ConformalMesh(Mesh):
     def get_reorder_oldnumbers(self, method):
         if method == "cuthill":
             from hedge.tools import cuthill_mckee
-            return cuthill_mckee(self.element_adjacency_graph)
+            return cuthill_mckee(self.element_adjacency_graph())
         else:
             raise ValueError, "invalid mesh reorder method"
 
