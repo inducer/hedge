@@ -54,8 +54,7 @@ def get_config_schema():
 
 def main():
     import glob
-    from aksetup_helper import hack_distutils, \
-            get_config, setup, Extension
+    from aksetup_helper import hack_distutils, get_config, setup, Extension
 
     hack_distutils()
     conf = get_config()
@@ -96,14 +95,14 @@ def main():
     conf["BLAS_INC_DIR"] = []
     conf["USE_BLAS"] = conf["HAVE_BLAS"]
 
-    def handle_component(conf, comp):
+    def handle_component(comp):
         if conf["USE_"+comp]:
             EXTRA_DEFINES["USE_"+comp] = 1
             EXTRA_INCLUDE_DIRS.extend(conf[comp+"_INC_DIR"])
             EXTRA_LIBRARY_DIRS.extend(conf[comp+"_LIB_DIR"])
             EXTRA_LIBRARIES.extend(conf[comp+"_LIBNAME"])
 
-    handle_component(conf, "BLAS")
+    handle_component("BLAS")
 
     setup(name="hedge",
             # metadata
@@ -116,18 +115,17 @@ def main():
 
             # dependencies
             setup_requires=[
-                "PyUblas",
+                "PyUblas>=0.92",
                 ],
             install_requires=[
                 "pytools",
-                "PyUblasExt",
                 "pymbolic",
-                "PyUblasExt",
+                "meshpy",
+                "pymetis",
                 ],
             extras_require = {
-                "mesh":  ["meshpy"],
+                "elliptic": ["PyUblasExt>=0.92"],
                 "silo": ["pylo"],
-                "parallel": ["pymetis"],
                 },
 
             # build info
