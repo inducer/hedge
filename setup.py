@@ -54,7 +54,7 @@ def get_config_schema():
 
 def main():
     import glob
-    from ak_setup_helper import hack_distutils, \
+    from aksetup_helper import hack_distutils, \
             get_config, setup, Extension
 
     hack_distutils()
