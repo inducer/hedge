@@ -21,7 +21,7 @@
 
 
 def get_config_schema():
-    from ak_setup_helper import ConfigSchema, Option, \
+    from aksetup_helper import ConfigSchema, Option, \
             IncludeDir, LibraryDir, Libraries, \
             Switch, StringListOption
 
