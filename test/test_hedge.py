@@ -224,8 +224,7 @@ class TestHedge(unittest.TestCase):
         from hedge.quadrature import LegendreGaussQuadrature
 
         lgq = LegendreGaussQuadrature(n)
-        #print abs(lgq(wfc))
-        self.assert_(abs(lgq(wfc)) < 4e-14)
+        self.assert_(abs(lgq(wfc)) < 6e-14)
     # -------------------------------------------------------------------------
     def test_simp_nodes(self):
         """Verify basic assumptions on simplex interpolation nodes"""
@@ -1395,6 +1394,12 @@ class TestHedge(unittest.TestCase):
         mesh = make_disk_mesh(r=0.5, max_area=0.1, faces=20)
         mesh = mesh.reordered_by("cuthill")
 
+        try:
+            import pyublasext
+            can_solve = True
+        except ImportError:
+            can_solve = False
+
         from hedge.tools import EOCRecorder
         eocrec = EOCRecorder()
         for order in [1,2,3,4,5]:
@@ -1417,16 +1422,16 @@ class TestHedge(unittest.TestCase):
                     self.assert_(sym_err<1e-12)
                     check_grad_mat()
 
-                import pyublasext
-                truesol_v = discr.interpolate_volume_function(truesol_c)
-                a_inv = pyublasext.CGOperator.make(-op, 40000, 1e-10)
-                sol_v = -a_inv(op.prepare_rhs(GivenFunction(rhs_c)))
+                if can_solve:
+                    truesol_v = discr.interpolate_volume_function(truesol_c)
+                    a_inv = pyublasext.CGOperator.make(-op, 40000, 1e-10)
+                    sol_v = -a_inv(op.prepare_rhs(GivenFunction(rhs_c)))
 
-                eocrec.add_data_point(order, norm(discr, sol_v-truesol_v))
+                    eocrec.add_data_point(order, norm(discr, sol_v-truesol_v))
 
-        #print eocrec.pretty_print()
-
-        self.assert_(eocrec.estimate_order_of_convergence()[0,1] > 8)
+        if can_solve:
+            #print eocrec.pretty_print()
+            self.assert_(eocrec.estimate_order_of_convergence()[0,1] > 8)
     # -------------------------------------------------------------------------
     def test_projection(self):
         """Test whether projection between different orders works"""

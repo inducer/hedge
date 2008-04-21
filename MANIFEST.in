@@ -1,0 +1,20 @@
+include src/cpp/*.hpp
+include src/wrapper/*.hpp
+
+include bin/rm-vis
+include doc/maxima/*.mac
+include doc/notes/*.fig
+include doc/notes/*.tm
+include doc/notes/*.ts
+
+include TODO
+include HACKING
+include LICENSE
+include examples/*/*.py
+include test/*.py
+
+include ez_setup.py
+include configure
+include Makefile.in
+include aksetup_helper.py
+include README_SETUP.txt

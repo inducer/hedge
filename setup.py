@@ -47,6 +47,8 @@ def get_config_schema():
 
         StringListOption("CXXFLAGS", [], 
             help="Any extra C++ compiler options to include"),
+        StringListOption("LDFLAGS", [], 
+            help="Any extra linker options to include"),
         ])
 
 
@@ -107,25 +109,55 @@ def main():
     setup(name="hedge",
             # metadata
             version="0.90",
-            description="The Hybrid-and-Easy Discontinuous Galerkin Environment",
+            description="Hybrid Easy Discontinuous Galerkin Environment",
+            long_description="""
+            hedge is an unstructured, high-order, parallel
+            Discontinuous Galerkin solver for partial differential
+            equations.   
+            
+            Features:
+
+            * Supports simplicial unstructured meshes in two and
+              three dimensions (i.e. triangles and tetrahedra)
+            * Approximates using orthogonal polynomials of any degree
+              (and therefore to any order of accuracy) you specify at
+              runtime
+            * Solves PDEs in parallel using MPI Easy to use
+            * Contains powerful parallel visualization features.
+            """,
             author=u"Andreas Kloeckner",
             author_email="inform@tiker.net",
             license = "GPLv3",
             url="http://mathema.tician.de/software/hedge",
+            classifiers=[
+              'Environment :: Console',
+              'Development Status :: 4 - Beta',
+              'Intended Audience :: Developers',
+              'Intended Audience :: Other Audience',
+              'Intended Audience :: Science/Research',
+              'License :: OSI Approved :: GNU General Public License (GPL)',
+              'Natural Language :: English',
+              'Programming Language :: C++',
+              'Programming Language :: Python',
+              'Topic :: Scientific/Engineering',
+              'Topic :: Scientific/Engineering :: Mathematics',
+              'Topic :: Scientific/Engineering :: Physics',
+              'Topic :: Scientific/Engineering :: Visualization',
+              ],
 
             # dependencies
             setup_requires=[
                 "PyUblas>=0.92",
                 ],
             install_requires=[
-                "pytools",
-                "pymbolic",
-                "meshpy",
-                "pymetis",
+                "pytools>=2",
+                "pymbolic>=0.90",
+                "meshpy>=0.91",
                 ],
             extras_require = {
                 "elliptic": ["PyUblasExt>=0.92"],
                 "silo": ["pylo"],
+                "parallel": ["PyMetis>=0.91"],
                 },
 
             # build info
@@ -151,6 +183,7 @@ def main():
                     libraries=LIBRARIES + EXTRA_LIBRARIES,
                     define_macros=list(EXTRA_DEFINES.iteritems()),
                     extra_compile_args=conf["CXXFLAGS"],
+                    extra_link_args=conf["CXXFLAGS"],
                     ),
                 ],
             data_files=[("include/hedge", glob.glob("src/cpp/*.hpp"))],

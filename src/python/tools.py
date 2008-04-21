@@ -26,7 +26,6 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 import numpy
 import numpy.linalg as la
 import pyublas
-import pyublasext
 import hedge._internal
 from pytools.arithmetic_container import work_with_arithmetic_containers
 
@@ -879,13 +878,31 @@ class BlockMatrix(object):
 
 
 # parallel cg -----------------------------------------------------------------
-OperatorBase = pyublasext.Operator(float)
+try:
+    import pyublasext
+    OperatorBase = pyublasext.Operator(float)
+except ImportError:
+    class OperatorBase(object):
+        @property
+        def dtype(self):
+            return float
+
+        @property
+        def shape(self):
+            return (self.size1(), self.size2())
+
+        def __call__(self, op2):
+            temp = numpy.zeros((self.shape[0],), op2.dtype)
+            self.apply(op2, temp)
+            return temp
+
 
 
 
 
 class CGStateContainer:
     def __init__(self, pcon, operator, precon=None):
+        import pyublasext
         if precon is None:
             precon = pyublasext.IdentityOperator.make(operator.dtype, operator.size1())
 

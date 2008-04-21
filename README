@@ -10,26 +10,12 @@ part takes care of high-level control, while the low-level C++ part takes
 care of crunching the numbers, resulting in a fast code that is extremely
 easy to use.
 
-To compile Hedge, you need the following prerequisites:
-
-- Boost 1.34 or newer
-  http://www.boost.org 
-- Boost Linear Algebra Bindings
-  http://news.tiker.net/software/boost-bindings
-- Boost Math Toolbox
-  http://freespace.virgin.net/boost.regex/toolkit/html/
-- meshpy
-  http://news.tiker.net/software/meshpy
-- pylinear
-  http://news.tiker.net/software/pylinear
-- pytools
-  NO URL YET
-
-If you want visualization, you might want to get one of these two:
-- paraview (http://paraview.org/)
-- visit (http://www.llnl.gov/visit/)
+See the build instructions at [1] to learn how to compile hedge.
 
 Andreas Kloeckner <kloeckner@dam.brown.edu>
 
 Acknowledgements:
 Akil Narayan for testing and many discussions about naming and terminology.
+
+[1] http://mathema.tician.de/software/hedge/build 
+
