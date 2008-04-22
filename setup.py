@@ -30,8 +30,6 @@ def get_config_schema():
         LibraryDir("BOOST", []),
         Libraries("BOOST_PYTHON", ["boost_python-gcc42-mt"]),
 
-        IncludeDir("NUMPY"),
-
         IncludeDir("BOOST_BINDINGS", []),
 
         Switch("HAVE_BLAS", False, "Whether to build with support for BLAS"),
@@ -56,7 +54,8 @@ def get_config_schema():
 
 def main():
     import glob
-    from aksetup_helper import hack_distutils, get_config, setup, Extension
+    from aksetup_helper import hack_distutils, get_config, setup, \
+            PyUblasExtension
 
     hack_distutils()
     conf = get_config()
@@ -79,20 +78,11 @@ def main():
         cvars["CC"] = conf["MPICC"]
         cvars["CXX"] = conf["MPICXX"]
 
-    if conf["NUMPY_INC_DIR"] is None:
-        try:
-            import numpy
-            from os.path import join
-            conf["NUMPY_INC_DIR"] = [join(numpy.__path__[0], "core", "include")]
-        except:
-            pass
-
     INCLUDE_DIRS = [
             "src/cpp",
             ] \
             + conf["BOOST_BINDINGS_INC_DIR"] \
             + conf["BOOST_INC_DIR"] \
-            + conf["NUMPY_INC_DIR"]
 
     conf["BLAS_INC_DIR"] = []
     conf["USE_BLAS"] = conf["HAVE_BLAS"]
@@ -108,7 +98,7 @@ def main():
 
     setup(name="hedge",
             # metadata
-            version="0.90",
+            version="0.90.1",
             description="Hybrid Easy Discontinuous Galerkin Environment",
             long_description="""
             hedge is an unstructured, high-order, parallel
@@ -122,8 +112,9 @@ def main():
             * Approximates using orthogonal polynomials of any degree
               (and therefore to any order of accuracy) you specify at
               runtime
-            * Solves PDEs in parallel using MPI Easy to use
-            * Contains powerful parallel visualization features.
+            * Solves PDEs in parallel using MPI 
+            * Easy to use
+            * Contains powerful parallel visualization features
             """,
             author=u"Andreas Kloeckner",
             author_email="inform@tiker.net",
@@ -147,9 +138,10 @@ def main():
 
             # dependencies
             setup_requires=[
-                "PyUblas>=0.92",
+                "PyUblas>=0.92.1",
                 ],
             install_requires=[
+                "PyUblas>=0.92.1",
                 "pytools>=2",
                 "pymbolic>=0.90",
                 "meshpy>=0.91",
@@ -168,7 +160,7 @@ def main():
             ext_package="hedge",
 
             ext_modules=[
-                Extension("_internal", 
+                PyUblasExtension("_internal", 
                     ["src/wrapper/wrap_main.cpp", 
                         "src/wrapper/wrap_base.cpp", 
                         "src/wrapper/wrap_special_function.cpp", 

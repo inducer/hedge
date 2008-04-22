@@ -882,6 +882,8 @@ try:
     import pyublasext
     OperatorBase = pyublasext.Operator(float)
 except ImportError:
+    # just enough stopgaps to solve elliptic problems
+
     class OperatorBase(object):
         @property
         def dtype(self):
@@ -896,15 +898,46 @@ except ImportError:
             self.apply(op2, temp)
             return temp
 
+        def __neg__(self):
+            return NegOperator(self)
+
+    class NegOperator(OperatorBase):
+        def __init__(self, op):
+            self.op = op
+
+        def size1(self): return self.op.size1()
+        def size2(self): return self.op.size2()
+
+        @property
+        def shape(self):
+            return (self.size1(), self.size2())
+
+        def apply(self, op1, op2):
+            self.op.apply(op1, op2)
+            op2 *= -1
+
+    class IdentityOperator(OperatorBase):
+        def __init__(self, dtype, n):
+            assert dtype == float
+            self.n = n
+
+        def size1(self): return self.n
+        def size2(self): return self.n
+
+        def apply(self, op1, op2):
+            op2[:] = op1[:]
 
 
 
 
 class CGStateContainer:
     def __init__(self, pcon, operator, precon=None):
-        import pyublasext
         if precon is None:
-            precon = pyublasext.IdentityOperator.make(operator.dtype, operator.size1())
+            try:
+                import pyublasext
+                precon = pyublasext.IdentityOperator.make(operator.dtype, operator.size1())
+            except ImportError:
+                precon = IdentityOperator(operator.dtype, operator.size1())
 
         self.pcon = pcon
         self.operator = operator
@@ -998,7 +1031,13 @@ def parallel_cg(pcon, operator, b, precon=None, x=None, tol=1e-7, max_iterations
     if x is None:
         x = numpy.zeros((operator.size1(),))
 
-    if len(pcon.ranks) == 1 and debug_callback is None:
+    try:
+        import pyublasext
+        have_pyublasext = True
+    except ImportError:
+        have_pyublasext = False
+
+    if have_pyublasext and len(pcon.ranks) == 1 and debug_callback is None:
         # use canned single-processor cg if possible
         import pyublasext
         a_inv = pyublasext.CGOperator.make(operator, max_it=max_iterations, 

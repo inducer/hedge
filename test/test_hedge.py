@@ -1263,6 +1263,7 @@ class TestHedge(unittest.TestCase):
     def test_convergence_advec_2d(self):
         """Test whether 2D advection actually converges"""
 
+        import pyublas
         from hedge.mesh import make_disk_mesh, make_regular_rect_mesh
         from hedge.discretization import Discretization, pair_with_boundary
         from hedge.element import TriangularElement
@@ -1299,7 +1300,10 @@ class TestHedge(unittest.TestCase):
                     )
                 ]:
             for flux_type in StrongAdvectionOperator.flux_types:
-                for direct_flux in [True, False]:
+                flux_directnesses = [True]
+                if pyublas.has_sparse_wrappers():
+                    flux_directnesses.append(False)
+                for direct_flux in flux_directnesses:
                     eoc_rec = EOCRecorder()
 
                     for order in [1,2,3,4,5,6]:
@@ -1356,6 +1360,10 @@ class TestHedge(unittest.TestCase):
             return mat
 
         def check_grad_mat():
+            import pyublas
+            if not pyublas.has_sparse_wrappers():
+                return
+
             grad_mat = op.grad_matrix()
 
             #print len(discr), grad_mat.nnz, type(grad_mat)
@@ -1394,11 +1402,8 @@ class TestHedge(unittest.TestCase):
         mesh = make_disk_mesh(r=0.5, max_area=0.1, faces=20)
         mesh = mesh.reordered_by("cuthill")
 
-        try:
-            import pyublasext
-            can_solve = True
-        except ImportError:
-            can_solve = False
+        from hedge.parallel import SerialParallelizationContext
+        pcon = SerialParallelizationContext()
 
         from hedge.tools import EOCRecorder
         eocrec = EOCRecorder()
@@ -1422,16 +1427,17 @@ class TestHedge(unittest.TestCase):
                     self.assert_(sym_err<1e-12)
                     check_grad_mat()
 
-                if can_solve:
-                    truesol_v = discr.interpolate_volume_function(truesol_c)
-                    a_inv = pyublasext.CGOperator.make(-op, 40000, 1e-10)
-                    sol_v = -a_inv(op.prepare_rhs(GivenFunction(rhs_c)))
+                from hedge.tools import parallel_cg
+                truesol_v = discr.interpolate_volume_function(truesol_c)
+                sol_v = -parallel_cg(
+                        pcon, -op, 
+                        op.prepare_rhs(GivenFunction(rhs_c)),
+                        tol=1e-10, max_iterations=40000)
 
-                    eocrec.add_data_point(order, norm(discr, sol_v-truesol_v))
+                eocrec.add_data_point(order, norm(discr, sol_v-truesol_v))
 
-        if can_solve:
-            #print eocrec.pretty_print()
-            self.assert_(eocrec.estimate_order_of_convergence()[0,1] > 8)
+        #print eocrec.pretty_print()
+        self.assert_(eocrec.estimate_order_of_convergence()[0,1] > 8)
     # -------------------------------------------------------------------------
     def test_projection(self):
         """Test whether projection between different orders works"""

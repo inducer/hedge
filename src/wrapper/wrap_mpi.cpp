@@ -26,20 +26,17 @@
 
 
 
-#ifdef USE_MPI
-
-
-
-
-#include <boost/mpi.hpp>
-
-
-
-
-namespace mpi = boost::mpi;
 using namespace hedge;
 using namespace boost::python;
 using namespace boost::numeric::bindings;
+
+
+
+
+#ifdef USE_MPI
+
+#include <boost/mpi.hpp>
+namespace mpi = boost::mpi;
 
 
 

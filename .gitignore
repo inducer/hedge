@@ -31,4 +31,5 @@ visitlog.py
 *.log
 .figleaf
 dist
-*.egg-info
+*.egg*
+MANIFEST
