@@ -26,10 +26,9 @@ import numpy.linalg as la
 
 def main() :
     from hedge.timestep import RK4TimeStepper
-    from hedge.discretization import Discretization, ones_on_boundary, integral
-    from hedge.visualization import SiloVisualizer, VtkVisualizer
+    from hedge.discretization import Discretization,  integral
+    from hedge.visualization import VtkVisualizer, SiloVisualizer
     from hedge.tools import mem_checkpoint
-    from pytools.stopwatch import Job
     from math import sin, cos, pi, sqrt
     from hedge.parallel import \
             guess_parallelization_context, \
@@ -38,13 +37,9 @@ def main() :
 
     def f(x):
         return sin(pi*x)
-        #if int(floor(x)) % 2 == 0:
-            #return 1
-        #else:
-            #return 0
 
     def u_analytic(x, t):
-        return f((-v*x/norm_v+t*norm_v))
+        return f((-numpy.dot(v, x)/norm_v+t*norm_v))
 
     def boundary_tagger(vertices, el, face_nr):
         if numpy.dot(el.face_normals[face_nr], v) < 0:
@@ -54,14 +49,13 @@ def main() :
 
     pcon = guess_parallelization_context()
 
-    dim = 1
+    dim = 2
 
-    job = Job("mesh")
     if dim == 1:
         v = numpy.array([1])
         if pcon.is_head_rank:
             from hedge.mesh import make_uniform_1d_mesh
-            mesh = make_uniform_1d_mesh(-2, 5, 10, periodic=True)
+            mesh = make_uniform_1d_mesh(0, 2, 10, periodic=True)
 
         from hedge.element import IntervalElement
         el_class = IntervalElement
@@ -69,52 +63,18 @@ def main() :
     elif dim == 2:
         v = numpy.array([2,0])
         if pcon.is_head_rank:
-            from hedge.mesh import \
-                    make_disk_mesh, \
-                    make_square_mesh, \
-                    make_rect_mesh, \
-                    make_regular_square_mesh, \
-                    make_regular_rect_mesh, \
-                    make_single_element_mesh
-        
-            #mesh = make_square_mesh(max_area=0.0003, boundary_tagger=boundary_tagger)
-            #mesh = make_regular_square_mesh(a=-r, b=r, boundary_tagger=boundary_tagger, n=3)
-            #mesh = make_single_element_mesh(boundary_tagger=boundary_tagger)
-            #mesh = make_disk_mesh(r=pi, boundary_tagger=boundary_tagger, max_area=0.5)
-            #mesh = make_disk_mesh(boundary_tagger=boundary_tagger)
+            from hedge.mesh import make_disk_mesh
+            mesh = make_disk_mesh(boundary_tagger=boundary_tagger)
             
-            if False:
-                mesh = make_regular_rect_mesh(
-                        (-0.5, -1.5),
-                        (5, 1.5),
-                        n=(10,5),
-                        boundary_tagger=boundary_tagger,
-                        periodicity=(True, False),
-                        )
-            if True:
-                mesh = make_rect_mesh(
-                        (-1, -1.5),
-                        (5, 1.5),
-                        max_area=0.3,
-                        boundary_tagger=boundary_tagger,
-                        periodicity=(True, False),
-                        subdivisions=(10,5),
-                        )
-
         from hedge.element import TriangularElement
         el_class = TriangularElement
     elif dim == 3:
-        v = numpy.array([0,0,0.3])
+        v = numpy.array([0,0,1])
         if pcon.is_head_rank:
             from hedge.mesh import make_cylinder_mesh, make_ball_mesh, make_box_mesh
 
-            mesh = make_cylinder_mesh(max_volume=0.004, boundary_tagger=boundary_tagger,
+            mesh = make_cylinder_mesh(max_volume=0.04, height=2, boundary_tagger=boundary_tagger,
                     periodic=False, radial_subdivisions=32)
-            #mesh = make_box_mesh(dimensions=(1,1,2*pi/3), max_volume=0.01,
-                    #boundary_tagger=boundary_tagger)
-            #mesh = make_box_mesh(max_volume=0.01, boundary_tagger=boundary_tagger)
-            #mesh = make_ball_mesh(boundary_tagger=boundary_tagger)
-            #mesh = make_cylinder_mesh(max_volume=0.01, boundary_tagger=boundary_tagger)
 
         from hedge.element import TetrahedralElement
         el_class = TetrahedralElement
@@ -127,16 +87,15 @@ def main() :
         mesh_data = pcon.distribute_mesh(mesh)
     else:
         mesh_data = pcon.receive_mesh()
-    job.done()
 
-    job = Job("discretization")
-    #mesh_data = mesh_data.reordered_by("cuthill")
-    discr = pcon.make_discretization(mesh_data, el_class(8))
+    if dim != 1:
+        mesh_data = mesh_data.reordered_by("cuthill")
+
+    discr = pcon.make_discretization(mesh_data, el_class(4))
     vis_discr = discr
-    job.done()
 
-    vis = SiloVisualizer(vis_discr, pcon)
-    #vis = VtkVisualizer(vis_discr, pcon, "fld")
+    vis = VtkVisualizer(vis_discr, pcon, "fld")
+    #vis = SiloVisualizer(vis_discr, pcon)
 
     # operator setup ----------------------------------------------------------
     from hedge.data import \
@@ -145,32 +104,10 @@ def main() :
             TimeDependentGivenFunction
     from hedge.operators import StrongAdvectionOperator, WeakAdvectionOperator
     op = WeakAdvectionOperator(discr, v, 
-            inflow_u=TimeConstantGivenFunction(ConstantGivenFunction()),
-            #inflow_u=TimeDependentGivenFunction(u_analytic)),
+            inflow_u=TimeDependentGivenFunction(u_analytic),
             flux_type="upwind")
 
-    #from pyrticle._internal import ShapeFunction
-    #sf = ShapeFunction(1, 2, alpha=1)
-
-    def gauss_hump(x):
-        from math import exp
-        rsquared = numpy.dot(x, x)/(0.3**2)
-        return exp(-rsquared)
-    def gauss2_hump(x):
-        from math import exp
-        rsquared = (x*x)/(0.1**2)
-        return exp(-rsquared)-0.5*exp(-rsquared/2)
-
-    hump_width = 2
-    def c_inf_hump(x):
-        if abs(x) > hump_width:
-            return 0
-        else:
-            exp(-1/(x-hump_width)**2)* exp(-1/(x+hump_width)**2)
-
-    #u = discr.interpolate_volume_function(lambda x: u_analytic(x, 0))
-    u = discr.interpolate_volume_function(gauss_hump)
-    u /= integral(discr, u)
+    u = discr.interpolate_volume_function(lambda x: u_analytic(x, 0))
 
     # timestep setup ----------------------------------------------------------
     stepper = RK4TimeStepper()
@@ -196,9 +133,6 @@ def main() :
     add_simulation_quantities(logmgr, dt)
     discr.add_instrumentation(logmgr)
 
-    from pytools.log import IntervalTimer
-    vis_timer = IntervalTimer("t_vis", "Time spent visualizing")
-    logmgr.add_quantity(vis_timer)
     stepper.add_instrumentation(logmgr)
 
     from hedge.log import Integral, LpNorm
@@ -210,40 +144,21 @@ def main() :
     logmgr.add_watches(["step.max", "t_sim.max", "l2_u", "t_step.max"])
 
     # timestep loop -----------------------------------------------------------
-    def logmap(x, low_exp=15):
-        return 0.1*numpy.log10(numpy.abs(x)+1e-15)
-
-    from hedge.discretization import Filter, ExponentialFilterResponseFunction
-    filter = Filter(discr, ExponentialFilterResponseFunction(0.97, 3))
-
     for step in xrange(nsteps):
         logmgr.tick()
 
         t = step*dt
 
         if step % 5 == 0:
-            vis_timer.start()
             visf = vis.make_file("fld-%04d" % step)
-            vis.add_data(visf, [
-                        ("u", u), 
-                        ("logu", logmap(u)), 
-                        #("u_true", u_true), 
-                        ], 
-                        #expressions=[("error", "u-u_true")]
+            vis.add_data(visf, [ ("u", u), ], 
                         time=t, 
                         step=step
                         )
             visf.close()
-            vis_timer.stop()
 
 
-        #u = filter(stepper(u, t, dt, op.rhs))
         u = stepper(u, t, dt, op.rhs)
-        #if step % 1 == 0:
-            #u = filter(u)
-
-        #u_true = discr.interpolate_volume_function(
-                #lambda x: u_analytic(t, x))
 
     vis.close()
 
@@ -252,8 +167,4 @@ def main() :
 
 
 if __name__ == "__main__":
-    #import cProfile as profile
-    #profile.run("main()", "advec.prof")
     main()
-
-

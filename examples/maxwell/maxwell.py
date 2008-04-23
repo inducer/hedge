@@ -87,7 +87,6 @@ def main():
     else:
         mesh_data = pcon.receive_mesh()
 
-    #for order in [1,2,3,4,5,6]:
     for order in [2,3,4,5,6]:
         discr = pcon.make_discretization(mesh_data, TetrahedralElement(order))
 
@@ -110,15 +109,6 @@ def main():
             print "dt", dt
             print "nsteps", nsteps
             print "#elements=", len(mesh.elements)
-
-        #check_time_harmonic_solution(discr, mode, c_sol)
-        #continue
-
-        #from pylinear.toybox import write_gnuplot_sparsity_pattern
-        #write_gnuplot_sparsity_pattern(
-                #"fluxmat-%d.dat" % pcon.rank, op.n_jump[0].serial_flux_op.int_matrix)
-
-        #return
 
         stepper = RK4TimeStepper()
 
@@ -175,6 +165,4 @@ def main():
         print eoc_rec.pretty_print("P.Deg.", "L2 Error")
 
 if __name__ == "__main__":
-    import cProfile as profile
-    #profile.run("main()", "wave2d.prof")
     main()

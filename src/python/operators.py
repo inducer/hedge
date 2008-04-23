@@ -439,18 +439,20 @@ class MaxwellOperator(TimeDependentOperator):
 
         if self.current is not None:
             j = self.current.volume_interpolant(t, self.discr)
-            e_idx = 0 
+            j_rhs = []
             for j_idx, use_component in enumerate(self.get_eh_subset()[0:3]):
                 if use_component:
-                    local_op_fields[e_idx] -= j[j_idx]
-                    e_idx += 1
+                    j_rhs.append(-j[j_idx])
+            rhs = self.assemble_fields(e=j_rhs)
+        else:
+            rhs = self.assemble_fields()
             
         from hedge.tools import to_obj_array
         return - self.local_op(cache_diff_results(e), cache_diff_results(h)) \
                 + to_obj_array(self.m_inv*(
                     self.flux_op * w
                     +self.flux_op * pair_with_boundary(w, pec_bc, self.pec_tag)
-                    ))
+                    )) + rhs
 
     def assemble_fields(self, e=None, h=None):
         e_components = self.count_subset(self.get_eh_subset()[0:3])

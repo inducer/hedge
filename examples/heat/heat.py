@@ -25,16 +25,8 @@ from hedge.tools import Rotation
 
 
 def main() :
-    from hedge.element import \
-            TriangularElement, \
-            TetrahedralElement
-    from hedge.operators import StrongHeatOperator
+    from hedge.element import TriangularElement, TetrahedralElement
     from hedge.timestep import RK4TimeStepper
-    from hedge.mesh import \
-            make_disk_mesh, \
-            make_regular_square_mesh, \
-            make_square_mesh, \
-            make_ball_mesh
     from hedge.visualization import SiloVisualizer, VtkVisualizer
     from math import sin, cos, pi, exp, sqrt
     from hedge.parallel import guess_parallelization_context
@@ -53,15 +45,12 @@ def main() :
 
     if dim == 2:
         if pcon.is_head_rank:
+            from hedge.mesh import make_disk_mesh
             mesh = make_disk_mesh(r=0.5, boundary_tagger=boundary_tagger)
-            #mesh = make_regular_square_mesh(
-                    #n=9, periodicity=(True,True))
-            #mesh = make_regular_square_mesh(n=9)
-            #mesh = make_square_mesh(max_area=0.008)
-            #mesh.transform(Rotation(pi/8))
         el_class = TriangularElement
     elif dim == 3:
         if pcon.is_head_rank:
+            from hedge.mesh import make_ball_mesh
             mesh = make_ball_mesh(max_volume=0.001)
         el_class = TetrahedralElement
     else:
@@ -79,13 +68,13 @@ def main() :
 
     dt = discr.dt_factor(1)**2 / 5
     nsteps = int(1/dt)
+
     if pcon.is_head_rank:
         print "dt", dt
         print "nsteps", nsteps
 
     def u0(x):
         if la.norm(x) < 0.2:
-            #return exp(-100*x*x)
             return 1
         else:
             return 0
@@ -102,6 +91,7 @@ def main() :
     def neumann_bc(t, x):
         return 2
 
+    from hedge.operators import StrongHeatOperator
     op = StrongHeatOperator(discr, 
             #coeff=coeff,
             dirichlet_tag="dirichlet",
@@ -123,9 +113,6 @@ def main() :
     add_simulation_quantities(logmgr, dt)
     discr.add_instrumentation(logmgr)
 
-    from pytools.log import IntervalTimer
-    vis_timer = IntervalTimer("t_vis", "Time spent visualizing")
-    logmgr.add_quantity(vis_timer)
     stepper.add_instrumentation(logmgr)
 
     from hedge.log import Integral, LpNorm
@@ -141,20 +128,15 @@ def main() :
         t = step*dt
 
         if step % 10 == 0:
-            vis_timer.start()
             visf = vis.make_file("fld-%04d" % step)
-            vis.add_data(visf,
-                    [("u", u), ], 
-                    time=t, step=step, 
-                    #write_coarse_mesh=True
-                    )
+            vis.add_data(visf, [("u", u), ], time=t, step=step)
             visf.close()
-            vis_timer.stop()
 
         u = stepper(u, t, dt, op.rhs)
 
+
+
+
 if __name__ == "__main__":
-    #import cProfile as profile
-    #profile.run("main()", "wave2d.prof")
     main()
 

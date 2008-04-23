@@ -18,8 +18,8 @@
 
 
 from __future__ import division
-import pylinear.array as num
-import pylinear.computation as comp
+import numpy
+import numpy.linalg as la
 
 
 
@@ -33,7 +33,6 @@ def main():
             SiloVisualizer, \
             get_rank_partition
     from pylo import DB_VARTYPE_VECTOR
-    from hedge.tools import dot, EOCRecorder
     from math import sqrt, pi, exp
     from analytic_solutions import \
             check_time_harmonic_solution, \
@@ -55,8 +54,6 @@ def main():
     epsilon = 1*epsilon0
     mu = 1*mu0
 
-    #eoc_rec = EOCRecorder()
-
     cylindrical = False
     periodic = False
 
@@ -71,9 +68,8 @@ def main():
         shape = (3,)
 
         def __call__(self, x):
-            return [0,0,exp(-80*comp.norm_2_squared(x))]
+            return [0,0,exp(-80*la.norm(x))]
 
-    #for order in [1,2,3,4,5,6]:
     for order in [3]:
         discr = pcon.make_discretization(mesh_data, TriangularElement(order))
 
@@ -93,8 +89,7 @@ def main():
             print "nsteps", nsteps
             print "#elements=", len(mesh.elements)
 
-        def l2_norm(field):
-            return sqrt(dot(field, discr.mass_operator*field))
+        from hedge.discretization import norm
 
         op = TMMaxwellOperator(discr, epsilon, mu, upwind_alpha=1,
                 direct_flux=True,
@@ -110,7 +105,7 @@ def main():
         for step in range(nsteps):
             e, h = op.split_eh(fields)
             print "timestep %d, t=%g l2[e]=%g l2[h]=%g secs=%f" % (
-                    step, t, l2_norm(e), l2_norm(h),
+                    step, t, norm(discr, e), norm(discr, h),
                     time()-last_tstep)
             last_tstep = time()
 

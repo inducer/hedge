@@ -46,20 +46,13 @@ def main() :
 
         el_class = IntervalElement
     elif dim == 2:
-        from hedge.mesh import \
-                make_disk_mesh, \
-                make_regular_square_mesh, \
-                make_square_mesh, \
-                make_rect_mesh
+        from hedge.mesh import make_rect_mesh
         if pcon.is_head_rank:
-            #mesh = make_disk_mesh(max_area=5e-3)
-            #mesh = make_regular_square_mesh(
-                    #n=9, periodicity=(True,True))
-            mesh = make_rect_mesh(a=(-0.5,-0.5),b=(3.5,0.5),max_area=0.008)
-            #mesh.transform(Rotation(pi/8))
+            mesh = make_rect_mesh(a=(-0.5,-0.5),b=(0.5,0.5),max_area=0.008)
         el_class = TriangularElement
     elif dim == 3:
         if pcon.is_head_rank:
+            from hedge.mesh import make_ball_mesh
             mesh = make_ball_mesh(max_volume=0.0005)
         el_class = TetrahedralElement
     else:
@@ -71,9 +64,9 @@ def main() :
     else:
         mesh_data = pcon.receive_mesh()
 
-    discr = pcon.make_discretization(mesh_data, el_class(7))
+    discr = pcon.make_discretization(mesh_data, el_class(4))
     stepper = RK4TimeStepper()
-    #stepper = AdamsBashforthTimeStepper(1)
+
     vis = VtkVisualizer(discr, pcon, "fld")
     #vis = SiloVisualizer(discr, pcon)
 
@@ -90,18 +83,15 @@ def main() :
     from hedge.mesh import TAG_ALL, TAG_NONE
     op = StrongWaveOperator(-1, discr, 
             source_vec_getter,
-            dirichlet_tag=TAG_ALL,
+            dirichlet_tag=TAG_NONE,
             neumann_tag=TAG_NONE,
-            radiation_tag=TAG_NONE,
+            radiation_tag=TAG_ALL,
             flux_type="upwind",
             )
 
     from hedge.tools import join_fields
     fields = join_fields(discr.volume_zeros(),
             [discr.volume_zeros() for i in range(discr.dimensions)])
-    #fields = join_fields(
-            #discr.interpolate_volume_function(lambda x: sin(x[0])),
-            #[discr.volume_zeros() for i in range(discr.dimensions)]) # v
 
     dt = discr.dt_factor(op.max_eigenvalue())
     nsteps = int(10/dt)
@@ -146,18 +136,12 @@ def main() :
                     [
                         ("u", fields[0]),
                         ("v", fields[1:]), 
-                        ("n", discr.volumize_boundary_field(
-                            discr.boundary_normals())),
                     ],
                     time=t,
-                    #scale_factor=2e1,
                     step=step)
             visf.close()
 
-        def rhs(t, y):
-            return op.rhs(t, y) - 3*join_fields(fields[0], 0*fields[1:])
-
-        fields = stepper(fields, t, dt, rhs)
+        fields = stepper(fields, t, dt, op.rhs)
 
     vis.close()
 
@@ -165,7 +149,5 @@ def main() :
     logmgr.save()
 
 if __name__ == "__main__":
-    #import cProfile as profile
-    #profile.run("main()", "wave2d.prof")
     main()
 
