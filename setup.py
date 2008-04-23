@@ -63,7 +63,7 @@ def main():
     LIBRARY_DIRS = conf["BOOST_LIB_DIR"]
     LIBRARIES = conf["BOOST_PYTHON_LIBNAME"]
 
-    EXTRA_DEFINES = {}
+    EXTRA_DEFINES = { "PYUBLAS_HAVE_BOOST_BINDINGS":1 }
     EXTRA_INCLUDE_DIRS = []
     EXTRA_LIBRARY_DIRS = []
     EXTRA_LIBRARIES = []
@@ -142,7 +142,7 @@ def main():
                 ],
             install_requires=[
                 "PyUblas>=0.92.1",
-                "pytools>=2",
+                "pytools>=3",
                 "pymbolic>=0.90",
                 "meshpy>=0.91",
                 ],

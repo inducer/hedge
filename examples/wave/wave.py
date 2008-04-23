@@ -74,8 +74,8 @@ def main() :
     discr = pcon.make_discretization(mesh_data, el_class(7))
     stepper = RK4TimeStepper()
     #stepper = AdamsBashforthTimeStepper(1)
-    #vis = VtkVisualizer(discr, pcon, "fld")
-    vis = SiloVisualizer(discr, pcon)
+    vis = VtkVisualizer(discr, pcon, "fld")
+    #vis = SiloVisualizer(discr, pcon)
 
     def source_u(x):
         return exp(-numpy.dot(x, x)*128)
