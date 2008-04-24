@@ -58,7 +58,7 @@ def main():
             PyUblasExtension
 
     hack_distutils()
-    conf = get_config()
+    conf = get_config(get_config_schema())
 
     LIBRARY_DIRS = conf["BOOST_LIB_DIR"]
     LIBRARIES = conf["BOOST_PYTHON_LIBNAME"]
@@ -138,10 +138,10 @@ def main():
 
             # dependencies
             setup_requires=[
-                "PyUblas>=0.92.1",
+                "PyUblas>=0.92.2",
                 ],
             install_requires=[
-                "PyUblas>=0.92.1",
+                "PyUblas>=0.92.2",
                 "pytools>=3",
                 "pymbolic>=0.90",
                 "meshpy>=0.91",

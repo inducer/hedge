@@ -55,10 +55,6 @@ class _FaceGroup(hedge._internal.FaceGroup):
         for fil in self.face_index_lists:
             intvec = IntVector(fil)
 
-            # allow prefetching a few entries past the end
-            for i in range(4):
-                intvec.append(intvec[-1])
-
             self.index_lists.append(intvec)
 
         del self.face_index_lists
