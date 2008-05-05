@@ -1078,3 +1078,10 @@ class TetrahedralElement(SimplicialElement):
         return abs(el.map.jacobian)/max(abs(fj) for fj in el.face_jacobians)
 
 
+
+
+ELEMENTS = [IntervalElement, TriangularElement, TetrahedralElement]
+
+
+
+
