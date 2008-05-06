@@ -1570,7 +1570,7 @@ class ExponentialFilterResponseFunction:
         """Construct the filter function.
 
         @arg min_amplification: The amplification factor applied to the highest mode.
-        @arg order: The order of the filter. This controls how fast (or slow) the
+        @arg order: The order of the filter. This controls how fast (or slowly) the
           C{min_amplification} is reached.
 
         The amplification factor of the lowest-order (constant) mode is always 1.
@@ -1600,7 +1600,8 @@ class Filter:
         """
         self.discr = discr
 
-        self.filter_matrices = []
+        self.filter_map = {}
+
         for eg in discr.element_groups:
             ldis = eg.local_discretization
 
@@ -1613,10 +1614,11 @@ class Filter:
             vdm = ldis.vandermonde()
             from hedge.tools import leftsolve
             from numpy import dot
-            self.filter_matrices.append(numpy.asarray(
+            mat = numpy.asarray(
                 leftsolve(vdm,
                     dot(vdm, numpy.diag(filter_coeffs))),
-                order="C"))
+                order="C")
+            self.filter_map[eg] = mat
 
     def __call__(self, vec):
         from hedge.tools import log_shape
@@ -1631,9 +1633,13 @@ class Filter:
             target = VectorTarget(vec[i], result[i])
 
             target.begin(len(self.discr), len(self.discr))
-            for eg, fmat in zip(self.discr.element_groups, self.filter_matrices):
-                perform_elwise_operator(eg.ranges, eg.ranges, fmat, target)
+            for eg in self.discr.element_groups:
+                perform_elwise_operator(eg.ranges, eg.ranges, 
+                        self.filter_map[eg], target)
 
             target.finalize()
 
         return result
+
+    def get_filter_matrix(self, el_group):
+        return self.filter_map[el_group]
