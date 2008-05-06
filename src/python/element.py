@@ -482,8 +482,9 @@ class TriangularElement(SimplicialElement):
     has_local_jacobians = False
     geometry = hedge.mesh.Triangle
 
-    def __init__(self, order):
+    def __init__(self, order, fancy_node_ordering=True):
         self.order = order
+        self.fancy_node_ordering = fancy_node_ordering
 
     # numbering ---------------------------------------------------------------
     @memoize
@@ -499,6 +500,9 @@ class TriangularElement(SimplicialElement):
         from pytools import generate_nonnegative_integer_tuples_summing_to_at_most
         node_tups = list(generate_nonnegative_integer_tuples_summing_to_at_most(
                 self.order, self.dimensions))
+
+        if not self.fancy_node_ordering:
+            return node_tups
 
         faces_to_nodes = {}
         for node_tup in node_tups:

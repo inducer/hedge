@@ -306,12 +306,13 @@ class MPIParallelizationContext(ParallelizationContext):
 
 
 class ParallelDiscretization(hedge.discretization.Discretization):
-    def __init__(self, pcon, rank_data, local_discretization, debug=False):
+    def __init__(self, pcon, rank_data, local_discretization=None, 
+            order=None, debug=False):
         self.received_bdrys = {}
         self.context = pcon
 
         hedge.discretization.Discretization.__init__(self,
-                rank_data.mesh, local_discretization, debug=debug)
+                rank_data.mesh, local_discretization, order, debug=debug)
 
         self.global2local_vertex_indices = rank_data.global2local_vertex_indices 
         self.neighbor_ranks = rank_data.neighbor_ranks
