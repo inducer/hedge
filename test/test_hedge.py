@@ -1479,7 +1479,8 @@ class TestHedge(unittest.TestCase):
 
         from hedge.discretization import Filter, ExponentialFilterResponseFunction
         half_filter = Filter(discr, lambda mid, ldis: 0.5)
-        for fmat in half_filter.filter_matrices:
+        for eg in discr.element_groups:
+            fmat = half_filter.get_filter_matrix(eg)
             n,m = fmat.shape
             self.assert_(la.norm(fmat - 0.5*numpy.eye(n, m)) < 2e-15)
 
