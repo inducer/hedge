@@ -1580,7 +1580,7 @@ class ExponentialFilterResponseFunction:
         self.order = order
 
     def __call__(self, mode_idx, ldis):
-        eta = max(mode_idx)/ldis.order
+        eta = sum(mode_idx)/ldis.order
 
         from math import exp
         return exp(-self.alpha * eta**self.order)
@@ -1609,6 +1609,9 @@ class Filter:
 
             filter_coeffs = [mode_response_func(mid, ldis)
                 for mid in ldis.generate_mode_identifiers()] 
+
+            for mid in ldis.generate_mode_identifiers():
+                print mid, mode_response_func(mid, ldis)
 
             # build filter matrix
             vdm = ldis.vandermonde()
