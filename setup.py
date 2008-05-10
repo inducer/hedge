@@ -175,7 +175,7 @@ def main():
                     libraries=LIBRARIES + EXTRA_LIBRARIES,
                     define_macros=list(EXTRA_DEFINES.iteritems()),
                     extra_compile_args=conf["CXXFLAGS"],
-                    extra_link_args=conf["CXXFLAGS"],
+                    extra_link_args=conf["LDFLAGS"],
                     ),
                 ],
             data_files=[("include/hedge", glob.glob("src/cpp/*.hpp"))],

@@ -312,12 +312,13 @@ class SiloMeshData(object):
         from pylo import IntVector
         self.ndims = dim
         self.nodelist = IntVector()
+        self.shapetypes = IntVector()
         self.shapesizes = IntVector()
         self.shapecounts = IntVector()
         self.nshapetypes = 0
         self.nzones = 0
 
-        for nodelist_size_estimate, eg in element_groups:
+        for nodelist_size_estimate, eg, ldis in element_groups:
             poly_count = 0
             poly_length = None
             self.nodelist.reserve(len(self.nodelist) + nodelist_size_estimate)
@@ -329,15 +330,31 @@ class SiloMeshData(object):
                 poly_length = len(self.nodelist) - prev_nodelist_len
 
             if poly_count:
+                try:
+                    from pylo import DB_ZONETYPE_TRIANGLE, DB_ZONETYPE_TET
+                except ImportError:
+                    pass
+                else:
+                    from hedge.mesh import Triangle, Tetrahedron
+                    if ldis.geometry is Triangle:
+                        self.shapetypes.append(DB_ZONETYPE_TRIANGLE)
+                    elif ldis.geometry is Tetrahedron:
+                        self.shapetypes.append(DB_ZONETYPE_TRIANGLE)
+                    else:
+                        raise RuntimeError, "unsupported element type: %s" % ldis.geometry
+            
                 self.shapesizes.append(poly_length)
                 self.shapecounts.append(poly_count)
                 self.nshapetypes += 1
                 self.nzones += poly_count
 
     def put_mesh(self, silo, zonelist_name, mesh_name, mesh_opts):
-        # put zone list
-        silo.put_zonelist(zonelist_name, self.nzones, self.ndims, self.nodelist,
-                self.shapesizes, self.shapecounts)
+        if self.shapetypes:
+            silo.put_zonelist_2(zonelist_name, self.nzones, self.ndims, self.nodelist,
+                    0, 0, self.shapetypes, self.shapesizes, self.shapecounts)
+        else:
+            silo.put_zonelist(zonelist_name, self.nzones, self.ndims, self.nodelist,
+                    self.shapesizes, self.shapecounts)
 
         silo.put_ucdmesh(mesh_name, [], self.coords, self.nzones,
                 zonelist_name, None, mesh_opts)
@@ -359,7 +376,7 @@ class SiloVisualizer(Visualizer):
                 ldis = eg.local_discretization
                 smi = ldis.get_submesh_indices()
                 nodelist_size_estimate = len(eg.members) * len(smi) * len(smi[0])
-                yield nodelist_size_estimate, generate_fine_elements(eg)
+                yield nodelist_size_estimate, generate_fine_elements(eg), ldis
 
         def generate_coarse_elements(eg):
             for el in eg.members:
@@ -373,7 +390,8 @@ class SiloVisualizer(Visualizer):
                 else:
                     nodelist_size_estimate = 0
 
-                yield nodelist_size_estimate, generate_coarse_elements(eg)
+                yield (nodelist_size_estimate, generate_coarse_elements(eg),
+                        eg.local_discretization)
 
         self.dim = discr.dimensions
         if self.dim != 1:
