@@ -339,7 +339,7 @@ class SiloMeshData(object):
         silo.put_zonelist(zonelist_name, self.nzones, self.ndims, self.nodelist,
                 self.shapesizes, self.shapecounts)
 
-        silo.put_ucdmesh(mesh_name, self.ndims, [], self.coords, self.nzones,
+        silo.put_ucdmesh(mesh_name, [], self.coords, self.nzones,
                 zonelist_name, None, mesh_opts)
 
 
