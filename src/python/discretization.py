@@ -132,7 +132,10 @@ class Discretization(object):
         self._build_interior_face_groups()
         self.boundaries = {}
 
-        # instrumentation -----------------------------------------------------
+        self.instrumented = False
+
+    # instrumentation ---------------------------------------------------------
+    def add_instrumentation(self, mgr):
         from pytools.log import IntervalTimer, EventCounter
 
         self.inner_flux_counter = EventCounter("n_inner_flux", 
@@ -158,10 +161,6 @@ class Discretization(object):
         self.interpolant_timer = IntervalTimer("t_interp", 
                 "Time spent evaluating interpolants")
 
-        self.instrumented = False
-
-    # instrumentation ---------------------------------------------------------
-    def add_instrumentation(self, mgr):
         mgr.add_quantity(self.inner_flux_counter)
         mgr.add_quantity(self.inner_flux_timer)
         mgr.add_quantity(self.bdry_flux_counter)
@@ -220,6 +219,8 @@ class Discretization(object):
         #   | | |
         #   x y z
 
+        # nodes should not be a multi-d array: this would break once
+        # p-adaptivity is implemented
         self.nodes = numpy.empty(
                 (len(self.mesh.elements)*nodes_per_el, self.dimensions),
                 dtype=float, order="C")

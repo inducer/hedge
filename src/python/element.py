@@ -28,7 +28,7 @@ import pyublas
 from hedge.tools import AffineMap
 import hedge._internal
 from math import sqrt, sin, cos, exp, pi
-from pytools import memoize
+from pytools import memoize_method
 import hedge.mesh
 
 
@@ -136,7 +136,7 @@ class Element(object):
         raise NotImplementedError
 
     # matrices ----------------------------------------------------------------
-    @memoize
+    @memoize_method
     def vandermonde(self):
         from hedge.polynomial import generic_vandermonde
 
@@ -144,7 +144,7 @@ class Element(object):
                 list(self.unit_nodes()),
                 list(self.basis_functions()))
 
-    @memoize
+    @memoize_method
     def inverse_mass_matrix(self):
         """Return the inverse of the mass matrix of the unit element 
         with respect to the nodal coefficients. Divide by the Jacobian 
@@ -155,7 +155,7 @@ class Element(object):
         v = self.vandermonde()
         return numpy.dot(v, v.T)
 
-    @memoize
+    @memoize_method
     def mass_matrix(self):
         """Return the mass matrix of the unit element with respect 
         to the nodal coefficients. Multiply by the Jacobian to obtain
@@ -164,7 +164,7 @@ class Element(object):
 
         return numpy.asarray(la.inv(self.inverse_mass_matrix()), order="C")
 
-    @memoize
+    @memoize_method
     def grad_vandermonde(self):
         """Compute the Vandermonde matrices of the grad_basis_functions().
         Return a list of these matrices."""
@@ -175,7 +175,7 @@ class Element(object):
                 list(self.unit_nodes()),
                 list(self.grad_basis_functions()))
 
-    @memoize
+    @memoize_method
     def differentiation_matrices(self):
         """Return matrices that map the nodal values of a function
         to the nodal values of its derivative in each of the unit
@@ -200,7 +200,7 @@ class SimplicialElement(Element):
         from pytools import factorial
         return int(reduce(mul, (o+1+i for i in range(d)))/factorial(d))
 
-    @memoize
+    @memoize_method
     def vertex_indices(self):
         """Return the list of the vertices' node indices."""
         from pytools import wandering_element
@@ -216,7 +216,7 @@ class SimplicialElement(Element):
 
         return [node_tup_to_idx[vt] for vt in vertex_tuples]
 
-    @memoize
+    @memoize_method
     def face_indices(self):
         """Return a list of face index lists. Each face index list contains
         the local node numbers of the nodes on that face.
@@ -258,7 +258,7 @@ class SimplicialElement(Element):
         for bary in self.equidistant_barycentric_nodes():
             yield self.equilateral_to_unit(self.barycentric_to_equilateral(bary))
 
-    @memoize
+    @memoize_method
     def unit_nodes(self):
         """Generate the warped nodes in unit coordinates (r,s,...)."""
         return [self.equilateral_to_unit(node)
@@ -300,7 +300,7 @@ class IntervalElementBase(SimplicialElement):
     geometry = hedge.mesh.Interval
 
     # numbering ---------------------------------------------------------------
-    @memoize
+    @memoize_method
     def node_tuples(self):
         """Generate tuples enumerating the node indices present
         in this element. Each tuple has a length equal to the dimension
@@ -325,7 +325,7 @@ class IntervalElementBase(SimplicialElement):
             return []
 
     # node wrangling ----------------------------------------------------------
-    @memoize
+    @memoize_method
     def get_submesh_indices(self):
         """Return a list of tuples of indices into the node list that
         generate a tesselation of the reference element."""
@@ -333,7 +333,7 @@ class IntervalElementBase(SimplicialElement):
         return [(i,i+1) for i in range(self.order)]
 
     # face operations ---------------------------------------------------------
-    @memoize
+    @memoize_method
     def face_mass_matrix(self):
         return numpy.array([[1]], dtype=float)
 
@@ -384,7 +384,7 @@ class IntervalElement(IntervalElementBase):
     unit_nodes = nodes
 
     # basis functions ---------------------------------------------------------
-    @memoize
+    @memoize_method
     def basis_functions(self):
         """Get a sequence of functions that form a basis of the approximation space.
 
@@ -487,7 +487,7 @@ class TriangularElement(SimplicialElement):
         self.fancy_node_ordering = fancy_node_ordering
 
     # numbering ---------------------------------------------------------------
-    @memoize
+    @memoize_method
     def node_tuples(self):
         """Generate tuples enumerating the node indices present
         in this element. Each tuple has a length equal to the dimension
@@ -583,7 +583,7 @@ class TriangularElement(SimplicialElement):
         for bp in self.equidistant_barycentric_nodes():
             yield self.barycentric_to_equilateral(bp) + warp(bp)
 
-    @memoize
+    @memoize_method
     def get_submesh_indices(self):
         """Return a list of tuples of indices into the node list that
         generate a tesselation of the reference element."""
@@ -603,7 +603,7 @@ class TriangularElement(SimplicialElement):
         return result
 
     # basis functions ---------------------------------------------------------
-    @memoize
+    @memoize_method
     def basis_functions(self):
         """Get a sequence of functions that form a basis of the approximation space.
 
@@ -620,7 +620,7 @@ class TriangularElement(SimplicialElement):
                 self.generate_mode_identifiers()]
 
     # face operations ---------------------------------------------------------
-    @memoize
+    @memoize_method
     def face_mass_matrix(self):
         from hedge.polynomial import legendre_vandermonde
         unodes = self.unit_nodes()
@@ -730,7 +730,7 @@ class TetrahedralElement(SimplicialElement):
         self.order = order
 
     # numbering ---------------------------------------------------------------
-    @memoize
+    @memoize_method
     def node_tuples(self):
         """Generate tuples enumerating the node indices present
         in this element. Each tuple has a length equal to the dimension
@@ -906,7 +906,7 @@ class TetrahedralElement(SimplicialElement):
 
         return equi_points
 
-    @memoize
+    @memoize_method
     def get_submesh_indices(self):
         """Return a list of tuples of indices into the node list that
         generate a tesselation of the reference element."""
@@ -954,7 +954,7 @@ class TetrahedralElement(SimplicialElement):
         return result
 
     # basis functions ---------------------------------------------------------
-    @memoize
+    @memoize_method
     def basis_functions(self):
         """Get a sequence of functions that form a basis of the approximation space.
 
@@ -973,7 +973,7 @@ class TetrahedralElement(SimplicialElement):
                 self.generate_mode_identifiers()]
 
     # face operations ---------------------------------------------------------
-    @memoize
+    @memoize_method
     def face_mass_matrix(self):
         from hedge.polynomial import generic_vandermonde
 

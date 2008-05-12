@@ -1500,7 +1500,7 @@ class TestHedge(unittest.TestCase):
             int_error = abs(integral(discr, u) - integral(discr, filt_u))
             l2_ratio = norm(discr, filt_u) / norm(discr, u)
             self.assert_(int_error < 5e-15)
-            self.assert_(0.975 < l2_ratio < 0.99999)
+            self.assert_(0.96 < l2_ratio < 0.99999)
 
         test_freq(3)
         test_freq(5)

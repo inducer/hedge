@@ -113,9 +113,14 @@ class SerialParallelizationContext(ParallelizationContext):
         return mesh
 
     def make_discretization(self, mesh_data, *args, **kwargs):
-        from hedge.discretization import Discretization
+        
+        if "discr_class" in kwargs:
+            discr_class = kwargs["discr_class"]
+            del kwargs["discr_class"]
+        else:
+            discr_class = hedge.discretization.Discretization
 
-        return Discretization(mesh_data, *args, **kwargs)
+        return discr_class(mesh_data, *args, **kwargs)
 
 
 
@@ -167,7 +172,7 @@ class MPIParallelizationContext(ParallelizationContext):
         # compute partition using Metis, if necessary
         if isinstance(partition, int):
             if partition == 1:
-                return 
+                return mesh
 
             from pymetis import part_graph
             cuts, partition = part_graph(partition, 
