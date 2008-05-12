@@ -315,7 +315,6 @@ class SiloMeshData(object):
         self.shapetypes = IntVector()
         self.shapesizes = IntVector()
         self.shapecounts = IntVector()
-        self.nshapetypes = 0
         self.nzones = 0
 
         for nodelist_size_estimate, eg, ldis in element_groups:
@@ -339,17 +338,17 @@ class SiloMeshData(object):
                     if ldis.geometry is Triangle:
                         self.shapetypes.append(DB_ZONETYPE_TRIANGLE)
                     elif ldis.geometry is Tetrahedron:
-                        self.shapetypes.append(DB_ZONETYPE_TRIANGLE)
+                        self.shapetypes.append(DB_ZONETYPE_TET)
                     else:
                         raise RuntimeError, "unsupported element type: %s" % ldis.geometry
             
                 self.shapesizes.append(poly_length)
                 self.shapecounts.append(poly_count)
-                self.nshapetypes += 1
                 self.nzones += poly_count
 
     def put_mesh(self, silo, zonelist_name, mesh_name, mesh_opts):
         if self.shapetypes:
+            assert len(self.shapetypes) == len(self.shapesizes)
             silo.put_zonelist_2(zonelist_name, self.nzones, self.ndims, self.nodelist,
                     0, 0, self.shapetypes, self.shapesizes, self.shapecounts)
         else:
