@@ -98,7 +98,7 @@ def main():
 
     setup(name="hedge",
             # metadata
-            version="0.90.1",
+            version="0.91",
             description="Hybrid Easy Discontinuous Galerkin Environment",
             long_description="""
             hedge is an unstructured, high-order, parallel
@@ -114,7 +114,7 @@ def main():
               runtime
             * Solves PDEs in parallel using MPI 
             * Easy to use
-            * Contains powerful parallel visualization features
+            * Powerful Parallel Visualization
             """,
             author=u"Andreas Kloeckner",
             author_email="inform@tiker.net",

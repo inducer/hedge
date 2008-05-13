@@ -36,25 +36,25 @@ FluxFace = _internal.FluxFace
 
 # c++ fluxes debug dumping ----------------------------------------------------
 @monkeypatch_method(_internal.ConstantFlux)
-def __str__(self):
+def __repr__(self):
     return "ConstantFlux(%s)" % self.value
 @monkeypatch_method(_internal.NormalFlux)
-def __str__(self):
+def __repr__(self):
     return "NormalFlux(%d)" % self.axis
 @monkeypatch_method(_internal.PenaltyFlux)
-def __str__(self):
+def __repr__(self):
     return "PenaltyFlux(%s)" % self.power
 @monkeypatch_method(_internal.SumFlux)
-def __str__(self):
+def __repr__(self):
     return "SumFlux(%s, %s)" % (self.operand1, self.operand2)
 @monkeypatch_method(_internal.ProductFlux)
-def __str__(self):
+def __repr__(self):
     return "ProductFlux(%s, %s)" % (self.operand1, self.operand2)
 @monkeypatch_method(_internal.NegativeFlux)
-def __str__(self):
+def __repr__(self):
     return "NegativeFlux(%s)" % self.operand
 @monkeypatch_method(_internal.ChainedFlux)
-def __str__(self):
+def __repr__(self):
     #return "ChainedFlux(%s)" % self.child
     return str(self.child)
 
@@ -64,8 +64,8 @@ def __str__(self):
 
 # python fluxes ---------------------------------------------------------------
 class Flux(pymbolic.primitives.AlgebraicLeaf, _internal.Flux):
-    def stringify(self, enclosing_prec, use_repr_for_constants=False):
-        return FluxStringifyMapper(use_repr_for_constants)(self, enclosing_prec)
+    def stringifier(self):
+        return FluxStringifyMapper
 
     def perform(self, face_group, which_faces, fmm, target):
         _internal.ChainedFlux(self).perform(face_group, which_faces, fmm, target)
@@ -313,62 +313,6 @@ class FluxDependencyMapper(pymbolic.mapper.dependency.DependencyMapper):
 
 
 
-class FluxCompilationMapper(pymbolic.mapper.RecursiveMapper):
-    def handle_unsupported_expression(self, expr):
-        if isinstance(expr, _internal.Flux):
-            return expr
-        else:
-            pymbolic.mapper.RecursiveMapper.\
-                    handle_unsupported_expression(self, expr)
-
-    def map_constant(self, expr):
-        return _internal.ConstantFlux(expr)
-
-    def map_sum(self, expr):
-        return reduce(lambda f1, f2: _internal.SumFlux(
-                    _internal.ChainedFlux(f1), 
-                    _internal.ChainedFlux(f2)),
-                (self.rec(c) for c in expr.children))
-
-    def map_product(self, expr):
-        return reduce(
-                lambda f1, f2: _internal.ProductFlux(
-                    _internal.ChainedFlux(f1), 
-                    _internal.ChainedFlux(f2)),
-                (self.rec(c) for c in expr.children))
-
-    def map_negation(self, expr):
-        return _internal.NegativeFlux(_internal.ChainedFlux(self.rec(expr.child)))
-
-    def map_power(self, expr):
-        base = self.rec(expr.base)
-        result = base
-
-        chain_base = _internal.ChainedFlux(base)
-
-        assert isinstance(expr.exponent, int)
-
-        for i in range(1, expr.exponent):
-            result = _internal.ProductFlux(_internal.ChainedFlux(result), chain_base)
-
-        return result
-
-    def map_normal(self, expr):
-        return _internal.NormalFlux(expr.axis)
-
-    def map_penalty_term(self, expr):
-        return _internal.PenaltyFlux(expr.power)
-
-    def map_if_positive(self, expr):
-        return _internal.IfPositiveFlux(
-                _internal.ChainedFlux(self.rec(expr.criterion)),
-                _internal.ChainedFlux(self.rec(expr.then)),
-                _internal.ChainedFlux(self.rec(expr.else_)),
-                )
-
-
-
-
 class FluxDifferentiationMapper(pymbolic.mapper.differentiator.DifferentiationMapper):
     def map_field_component(self, expr):
         if expr == self.variable:
@@ -392,13 +336,16 @@ class FluxDifferentiationMapper(pymbolic.mapper.differentiator.DifferentiationMa
 
 
 
-def compile_flux(flux):
+def analyze_flux(flux):
+    """For a multi-dependency scalar or vector flux passed in,
+    return a list of tuples C{(in_field_idx, int, ext)}, where C{int}
+    and C{ext} are the (expressions of the) flux coefficients for the
+    dependency with number C{in_field_idx}.
+    """
+
     from hedge.tools import is_obj_array
     if is_obj_array(flux):
         return numpy.array([compile_flux(subflux) for subflux in flux])
-
-    def compile_scalar_single_dep_flux(flux):
-        return FluxCompilationMapper()(flux)
 
     def compile_scalar_flux(flux):
         def in_fields_cmp(a, b):
@@ -435,10 +382,7 @@ def compile_flux(flux):
                 ext = in_derivatives.get((in_field_idx, False), 0)
 
                 if int or ext:
-                    result.append(
-                            (in_field_idx, 
-                                compile_scalar_single_dep_flux(int),
-                                compile_scalar_single_dep_flux(ext),))
+                    result.append((in_field_idx, int, ext))
 
         try:
             flux._compiled = result
