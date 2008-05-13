@@ -30,14 +30,14 @@ def main() :
     from hedge.mesh import make_rect_mesh
     mesh = make_rect_mesh(a=(-0.5,-0.5),b=(0.5,0.5),max_area=0.008)
 
-    from hedge.discretization import Discretization
+    from hedge.discr_precompiled import Discretization
     from hedge.element import TriangularElement
     discr = Discretization(mesh, TriangularElement(4))
 
     from hedge.visualization import VtkVisualizer
     vis = VtkVisualizer(discr, None, "fld")
 
-    def source_u(x):
+    def source_u(x, el):
         return exp(-numpy.dot(x, x)*128)
 
     source_u_vec = discr.interpolate_volume_function(source_u)
@@ -46,7 +46,7 @@ def main() :
         from math import sin
         return source_u_vec*sin(10*t)
 
-    from hedge.operators import StrongWaveOperator
+    from hedge.pde import StrongWaveOperator
     from hedge.mesh import TAG_ALL, TAG_NONE
     op = StrongWaveOperator(-1, discr, 
             source_vec_getter,

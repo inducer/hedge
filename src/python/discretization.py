@@ -648,7 +648,7 @@ class Discretization(object):
         flux.
         """
         from hedge.optemplate import FluxOperator, VectorFluxOperator
-        from hedge.tools import is_obj_array
+        from hedge.tools import is_obj_array, make_obj_array
         if is_obj_array(flux):
             return VectorFluxOperator(self, flux)
         else:

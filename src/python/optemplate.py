@@ -126,8 +126,15 @@ class StiffnessTOperator(DiffOperatorBase):
 
 
 
-class DiffOperatorVector(pymbolic.primitives.Vector):
-    pass
+def DiffOperatorVector(els):
+    from hedge.tools import join_fields
+    return join_fields(*els)
+    
+
+    
+
+#class DiffOperatorVector(pymbolic.primitives.Vector):
+    #pass
 
 
 
@@ -176,19 +183,25 @@ class FluxOperator(Operator):
 
 
 
-class VectorFluxOperator(Operator):
+class VectorFluxOperator(object):
     def __init__(self, discr, fluxes):
-        Operator.__init__(self, discr)
+        self.discr = discr
         self.fluxes = fluxes
 
-    def get_mapper_method(self, mapper): 
-        return mapper.map_vector_flux
+    def __mul__(self, arg):
+        if isinstance(arg, int) and arg == 0:
+            return 0
+        from hedge.tools import make_obj_array
+        return make_obj_array(
+                [OperatorBinding(FluxOperator(self.discr, f), arg)
+                    for f in self.fluxes])
+                
 
 
 
 
 # other parts of an operator template -----------------------------------------
-class BoundaryPair(pymbolic.primitives.Leaf):
+class _BoundaryPair(pymbolic.primitives.Leaf):
     """Represents a pairing of a volume and a boundary field, used for the
     application of boundary fluxes.
     """
@@ -203,6 +216,15 @@ class BoundaryPair(pymbolic.primitives.Leaf):
 
     def stringifier(self):
         return StringifyMapper
+
+
+
+
+def pair_with_boundary(field, bfield, tag=hedge.mesh.TAG_ALL):
+    if tag is hedge.mesh.TAG_NONE:
+        return 0
+    else:
+        return _BoundaryPair(field, bfield, tag)
 
 
 
