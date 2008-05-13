@@ -512,13 +512,13 @@ class Discretization(object):
         from hedge.optemplate import Field
         return self.as_function(self.mass_operator*Field("u"))
 
-    def integral(self, volume_vector, tag=hedge.mesh.TAG_ALL):
+    def integral(self, volume_vector):
         mass_op = self._get_mass_op_function()
 
         try:
             mass_ones = self._mass_ones
         except AttributeError:
-            self._mass_ones = mass_ones = mass_op(u=ones_on_volume(self, tag))
+            self._mass_ones = mass_ones = mass_op(u=ones_on_volume(self))
         
         from hedge.tools import log_shape
 
@@ -741,7 +741,7 @@ def generate_random_constant_on_elements(discr):
 
 
 
-def ones_on_boundary(discr, tag=hedge.mesh.TAG_ALL):
+def ones_on_boundary(discr):
     result = discr.volume_zeros()
 
     try:

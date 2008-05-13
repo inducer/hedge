@@ -530,8 +530,10 @@ class TestHedge(unittest.TestCase):
 
         mesh = make_disk_mesh()
         discr = Discretization(make_disk_mesh(), TriangularElement(4), debug=True)
-        f = discr.interpolate_volume_function(lambda x: exp(-x*x/(2*sigma_squared)))
-        ones = discr.interpolate_volume_function(lambda x: 1)
+        f = discr.interpolate_volume_function(
+                lambda x, el: exp(-x*x/(2*sigma_squared)))
+        ones = discr.interpolate_volume_function(
+                lambda x, el: 1)
 
         #discr.visualize_vtk("gaussian.vtk", [("f", f)])
         num_integral_1 = ones * (discr.mass_operator * f)
@@ -553,8 +555,10 @@ class TestHedge(unittest.TestCase):
         mesh = make_uniform_1d_mesh(-4*pi, 9*pi, 17, periodic=True)
         discr = Discretization(mesh, IntervalElement(8), debug=True)
 
-        f = discr.interpolate_volume_function(lambda x: cos(x[0])**2)
-        ones = discr.interpolate_volume_function(lambda x: 1)
+        f = discr.interpolate_volume_function(
+                lambda x, el: cos(x[0])**2)
+        ones = discr.interpolate_volume_function(
+                lambda x, el: 1)
 
         mass_op = discr._get_mass_op_function()
         num_integral_1 = dot(ones, mass_op(u=f))
@@ -579,8 +583,10 @@ class TestHedge(unittest.TestCase):
 
         mesh = make_square_mesh(a=-pi, b=pi, max_area=(2*pi/10)**2/2)
         discr = Discretization(mesh, TriangularElement(8), debug=True)
-        f = discr.interpolate_volume_function(lambda x: cos(x[0])**2*sin(x[1])**2)
-        ones = discr.interpolate_volume_function(lambda x: 1)
+        f = discr.interpolate_volume_function(
+                lambda x, el: cos(x[0])**2*sin(x[1])**2)
+        ones = discr.interpolate_volume_function(
+                lambda x, el: 1)
 
         from hedge.optemplate import Field
         optp = discr.mass_operator * Field("f")
@@ -607,8 +613,10 @@ class TestHedge(unittest.TestCase):
         for coord in [0, 1]:
             mesh = make_disk_mesh()
             discr = Discretization(make_disk_mesh(), TriangularElement(4), debug=True)
-            f = discr.interpolate_volume_function(lambda x: sin(3*x[coord]))
-            df = discr.interpolate_volume_function(lambda x: 3*cos(3*x[coord]))
+            f = discr.interpolate_volume_function(
+                    lambda x, el: sin(3*x[coord]))
+            df = discr.interpolate_volume_function(
+                    lambda x, el: 3*cos(3*x[coord]))
 
             nabla = discr.nabla
             
@@ -640,9 +648,9 @@ class TestHedge(unittest.TestCase):
         one_sided_x = flux_f_ph.int*normal[0]
         one_sided_y = flux_f_ph.int*normal[1]
 
-        def f1(x):
+        def f1(x, el):
             return sin(3*x[0])+cos(3*x[1])
-        def f2(x):
+        def f2(x, el):
             return sin(2*x[0])+cos(x[1])
 
         from hedge.discretization import ones_on_volume
@@ -1030,29 +1038,40 @@ class TestHedge(unittest.TestCase):
         from hedge.mesh import make_conformal_mesh
         mesh = make_conformal_mesh(
                 generated_mesh.points,
-                generated_mesh.elements,
-                element_tagger=element_tagger)
+                generated_mesh.elements)
 
         from hedge.element import TriangularElement
         from hedge.discretization import ones_on_volume
         discr = Discretization(mesh, TriangularElement(4), debug=True)
 
-        u_i = numpy.multiply(
-                discr.interpolate_volume_function(lambda x: sin(x[0]-x[1])),
-                ones_on_volume(discr, "lower"))
-        u_o = numpy.multiply(
-                discr.interpolate_volume_function(lambda x: cos(x[0]-x[1])),
-                ones_on_volume(discr, "upper"))
-        u = u_i + u_o
+        def f_u(x, el):
+            if generated_mesh.element_attributes[el.id] == 1:
+                return cos(x[0]-x[1])
+            else:
+                return 0
+
+        def f_l(x, el):
+            if generated_mesh.element_attributes[el.id] == 0:
+                return sin(x[0]-x[1])
+            else:
+                return 0
+
+        u_l = discr.interpolate_volume_function(f_l)
+        u_u = discr.interpolate_volume_function(f_u)
+        u = u_u + u_u
 
         #discr.visualize_vtk("dual.vtk", [("u", u)])
 
         from hedge.flux import make_normal, FluxScalarPlaceholder
+        from hedge.optemplate import Field
         fluxu = FluxScalarPlaceholder()
-        res = discr.get_flux_operator(
-                (fluxu.int - fluxu.ext)*make_normal(discr.dimensions)[1]) * u
+        res = discr.execute(discr.get_flux_operator(
+                (fluxu.int - fluxu.ext)
+                *make_normal(discr.dimensions)[1]) * Field("u"),
+                u=u)
 
-        ones = discr.interpolate_volume_function(lambda x: 1)
+        from hedge.discretization import ones_on_volume
+        ones = ones_on_volume(discr)
         self.assert_(abs(numpy.dot(res, ones)) < 5e-14)
     # -------------------------------------------------------------------------
     def test_interior_fluxes_tet(self):
@@ -1108,43 +1127,51 @@ class TestHedge(unittest.TestCase):
 
         generated_mesh = tet.build(mesh_info, attributes=True, volume_constraints=True)
 
-        def element_tagger(el):
-            if generated_mesh.element_attributes[el.id] == 1:
-                return ["upper"]
-            else:
-                return ["lower"]
-
         from hedge.mesh import make_conformal_mesh
         mesh = make_conformal_mesh(
                 generated_mesh.points,
-                generated_mesh.elements,
-                element_tagger=element_tagger)
+                generated_mesh.elements)
 
         from hedge.element import TetrahedralElement
         from hedge.discretization import ones_on_volume
         discr = Discretization(mesh, TetrahedralElement(4), debug=True)
 
-        u_l = numpy.multiply(
-                discr.interpolate_volume_function(lambda x: sin(x[0]-x[1]+x[2])),
-                ones_on_volume(discr, "lower"))
-        u_u = numpy.multiply(
-                discr.interpolate_volume_function(lambda x: cos(x[0]-x[1]+x[2])),
-                ones_on_volume(discr, "upper"))
+        def f_u(x, el):
+            if generated_mesh.element_attributes[el.id] == 1:
+                return cos(x[0]-x[1]+x[2])
+            else:
+                return 0
+
+        def f_l(x, el):
+            if generated_mesh.element_attributes[el.id] == 0:
+                return sin(x[0]-x[1]+x[2])
+            else:
+                return 0
+
+        u_l = discr.interpolate_volume_function(f_l)
+        u_u = discr.interpolate_volume_function(f_u)
         u = u_l + u_u
 
         # visualize the produced field
         #from hedge.visualization import SiloVisualizer
         #vis = SiloVisualizer(discr)
-        #vis("sandwich.silo", [("u_l", u_l), ("u_u", u_u)], expressions=[("u", "u_l+u_u")],
-                #write_coarse_mesh=True)
+        #visf = vis.make_file("sandwich")
+        #vis.add_data(visf,
+                #[("u_l", u_l), ("u_u", u_u)], 
+                #expressions=[("u", "u_l+u_u")])
 
         # make sure the surface integral of the difference 
         # between top and bottom is zero
         from hedge.flux import make_normal, FluxScalarPlaceholder
+        from hedge.optemplate import Field
         fluxu = FluxScalarPlaceholder()
-        res = discr.get_flux_operator(
-                (fluxu.int - fluxu.ext)*make_normal(discr.dimensions)[1]) * u
-        ones = discr.interpolate_volume_function(lambda x: 1)
+        res = discr.execute(discr.get_flux_operator(
+                (fluxu.int - fluxu.ext)
+                *make_normal(discr.dimensions)[1]) * Field("u"),
+                u=u)
+
+        from hedge.discretization import ones_on_volume
+        ones = ones_on_volume(discr)
         self.assert_(abs(numpy.dot(res,ones)) < 5e-14)
     # -------------------------------------------------------------------------
     def test_symmetry_preservation_2d(self):
@@ -1215,7 +1242,8 @@ class TestHedge(unittest.TestCase):
         def u_analytic(x, t):
             return f(-dot(v, x)+t)
 
-        u = discr.interpolate_volume_function(lambda x: u_analytic(x, 0))
+        u = discr.interpolate_volume_function(
+                lambda x, el: u_analytic(x, 0))
 
         sym_map = SymmetryMap(discr, 
                 lambda x: numpy.array([x[0], -x[1]]),
@@ -1282,7 +1310,8 @@ class TestHedge(unittest.TestCase):
                             inflow_u=TimeDependentGivenFunction(u_analytic),
                             flux_type=flux_type)
 
-                    u = discr.interpolate_volume_function(lambda x: u_analytic(x, 0))
+                    u = discr.interpolate_volume_function(
+                            lambda x, el: u_analytic(x, 0))
                     dt = discr.dt_factor(norm_a)
                     nsteps = int(1/dt)
 
@@ -1291,7 +1320,7 @@ class TestHedge(unittest.TestCase):
                         u = stepper(u, step*dt, dt, op.rhs)
 
                     u_true = discr.interpolate_volume_function(
-                            lambda x: u_analytic(x, nsteps*dt))
+                            lambda x, el: u_analytic(x, nsteps*dt))
                     error = u-u_true
                     error_l2 = discr.norm(error)
                     eoc_rec.add_data_point(order, error_l2)
@@ -1397,7 +1426,8 @@ class TestHedge(unittest.TestCase):
                     check_grad_mat()
 
                 from hedge.tools import parallel_cg
-                truesol_v = discr.interpolate_volume_function(truesol_c)
+                truesol_v = discr.interpolate_volume_function(
+                        lambda x, el: truesol_c(x))
                 sol_v = -parallel_cg(
                         pcon, -op, 
                         op.prepare_rhs(GivenFunction(rhs_c)),
@@ -1421,7 +1451,7 @@ class TestHedge(unittest.TestCase):
 
         a = numpy.array([1,3])
 
-        def u_analytic(x):
+        def u_analytic(x, el):
             return sin(dot(a, x))
 
         mesh = make_disk_mesh(r=pi, max_area=0.5)
@@ -1457,7 +1487,7 @@ class TestHedge(unittest.TestCase):
         def test_freq(n):
             a = numpy.array([1,n])
 
-            def u_analytic(x):
+            def u_analytic(x, el):
                 return sin(dot(a, x))
 
             exp_filter = Filter(discr, ExponentialFilterResponseFunction(0.9, 3))

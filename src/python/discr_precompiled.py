@@ -313,15 +313,16 @@ class Discretization(hedge.discretization.Discretization):
             shape = f.shape
         except AttributeError:
             # no, just one
-            result = self.volume_zeros()
-            for i, x in enumerate(self.nodes):
-                result[i] = f(x)
-            return result
-        else:
-            result = self.volume_zeros(shape)
-            for point_nr, x in enumerate(self.nodes):
-                result[(slice(None),)*len(shape) + (point_nr,)] = f(x)
-            return result
+            shape = ()
+
+        slice_pfx = (slice(None),)*len(shape)
+        result = self.volume_zeros(shape)
+        for eg in self.element_groups:
+            for el, rng in zip(eg.members, eg.ranges):
+                for point_nr in xrange(*rng):
+                    result[slice_pfx + (point_nr,)] = \
+                            f(self.nodes[point_nr], el)
+        return result
 
     def boundary_zeros(self, tag=hedge.mesh.TAG_ALL, shape=()):
         return numpy.zeros(shape+(len(self.get_boundary(tag).nodes),),
@@ -331,17 +332,16 @@ class Discretization(hedge.discretization.Discretization):
         try:
             # are we interpolating many fields at once?
             shape = f.shape
+
         except AttributeError:
             # no, just one
-            result = self.boundary_zeros(tag=tag)
-            for i, x in enumerate(self.get_boundary(tag).nodes):
-                result[i] = f(x)
-            return result
-        else:
-            result = self.boundary_zeros(tag=tag, shape=shape)
-            for point_nr, x in enumerate(self.get_boundary(tag).nodes):
-                result[(slice(None),)*len(shape) + (point_nr,)] = f(x)
-            return result
+            shape = ()
+
+        slice_pfx = (slice(None),)*len(shape)
+        result = self.boundary_zeros(tag=tag, shape=shape)
+        for point_nr, x in enumerate(self.get_boundary(tag).nodes):
+            result[slice_pfx + (point_nr,)] = f(x)
+        return result
 
     def boundary_normals(self, tag=hedge.mesh.TAG_ALL):
         result = self.boundary_zeros(tag=tag, shape=(self.dimensions,))
