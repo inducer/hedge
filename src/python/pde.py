@@ -244,7 +244,7 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
         m_inv = self.discr.inverse_mass_operator
         minv_st = self.discr.minv_stiffness_t
 
-        return numpy.dot(self.v, self.minv_st*cache_diff_results(u)) - self.m_inv*(
+        return numpy.dot(self.v, minv_st*u) - m_inv*(
                 self.flux*u
                 + self.flux * BoundaryPair(u, bc_in, self.inflow_tag)
                 + self.flux * BoundaryPair(u, bc_out, self.outflow_tag)
@@ -254,7 +254,8 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
         bc_in = self.inflow_u.boundary_interpolant(t, self.discr, self.inflow_tag)
         bc_out = self.discr.boundarize_volume_field(u, self.outflow_tag)
 
-        return self.discr.execute(self.op_template(), u=u, bc_in=bc_in)
+        return self.discr.execute(self.op_template(), 
+                u=u, bc_in=bc_in, bc_out=bc_out)
 
 
 

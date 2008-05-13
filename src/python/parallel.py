@@ -118,7 +118,8 @@ class SerialParallelizationContext(ParallelizationContext):
             discr_class = kwargs["discr_class"]
             del kwargs["discr_class"]
         else:
-            discr_class = hedge.discretization.Discretization
+            from hedge.discr_precompiled import Discretization
+            discr_class = Discretization
 
         return discr_class(mesh_data, *args, **kwargs)
 

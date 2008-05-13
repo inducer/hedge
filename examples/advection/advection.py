@@ -26,7 +26,6 @@ import numpy.linalg as la
 
 def main() :
     from hedge.timestep import RK4TimeStepper
-    from hedge.discretization import Discretization,  integral
     from hedge.visualization import VtkVisualizer, SiloVisualizer
     from hedge.tools import mem_checkpoint
     from math import sin, cos, pi, sqrt
@@ -102,12 +101,12 @@ def main() :
             ConstantGivenFunction, \
             TimeConstantGivenFunction, \
             TimeDependentGivenFunction
-    from hedge.operators import StrongAdvectionOperator, WeakAdvectionOperator
+    from hedge.pde import StrongAdvectionOperator, WeakAdvectionOperator
     op = WeakAdvectionOperator(discr, v, 
             inflow_u=TimeDependentGivenFunction(u_analytic),
             flux_type="upwind")
 
-    u = discr.interpolate_volume_function(lambda x: u_analytic(x, 0))
+    u = discr.interpolate_volume_function(lambda x, el: u_analytic(x, 0))
 
     # timestep setup ----------------------------------------------------------
     stepper = RK4TimeStepper()

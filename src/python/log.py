@@ -70,15 +70,14 @@ class Integral(LogQuantity):
     def __call__(self):
         var = self.getter()
 
-        from hedge.discretization import integral
         from hedge.tools import log_shape
 
         if len(log_shape(var)) == 1:
             return sum(
-                    integral(self.discr, numpy.abs(v))
+                    self.discr.integral(numpy.abs(v))
                     for v in var)
         else:
-            return integral(self.discr, var)
+            return self.discr.integral(var)
 
 
 
@@ -122,10 +121,8 @@ class LpNorm(LogQuantity):
     def __call__(self):
         var = self.getter()
 
-        from hedge.discretization import norm
         from hedge.tools import log_shape
-
-        return norm(self.discr, var, self.p)
+        return self.discr.norm(var, self.p)
 
 
 
