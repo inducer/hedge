@@ -29,6 +29,7 @@ import pyublas
 import hedge.tools
 import hedge.mesh
 import hedge.data
+from pytools import memoize_method
 
 
 
@@ -66,20 +67,29 @@ class GradientOperator(Operator):
         from hedge.flux import make_normal, FluxScalarPlaceholder
         u = FluxScalarPlaceholder()
 
-        self.nabla = discr.nabla
-        self.m_inv = discr.inverse_mass_operator
         normal = make_normal(self.discr.dimensions)
         self.flux = discr.get_flux_operator(u.int*normal - u.avg*normal)
 
+    @memoize_method
+    def op_template(self):
+        from hedge.mesh import TAG_ALL
+        from hedge.optemplate import Field, BoundaryPair
+
+        u = Field("u")
+        bc = Field("bc")
+
+        nabla = discr.nabla
+        m_inv = discr.inverse_mass_operator
+
+        return nabla*u - m_inv*(
+                self.flux * u + 
+                self.flux * BoundaryPair(u, bc, TAG_ALL))
+
     def __call__(self, u):
         from hedge.mesh import TAG_ALL
-        from hedge.discretization import pair_with_boundary, cache_diff_results
 
-        bc = self.discr.boundarize_volume_field(u, TAG_ALL)
-
-        return self.nabla*cache_diff_results(u) - self.m_inv*(
-                self.flux * u + 
-                self.flux * pair_with_boundary(u, bc, TAG_ALL))
+        return self.discr.execute(self.op_template(), u=u, 
+                bc=self.discr.boundarize_volume_field(u, TAG_ALL))
 
 
 
@@ -97,8 +107,6 @@ class DivergenceOperator(Operator):
         from hedge.flux import make_normal, FluxVectorPlaceholder
         v = FluxVectorPlaceholder(discr.dimensions)
 
-        self.nabla = discr.nabla
-        self.m_inv = discr.inverse_mass_operator
         normal = make_normal(self.discr.dimensions)
 
         flux = 0
@@ -108,21 +116,32 @@ class DivergenceOperator(Operator):
 
         self.flux = discr.get_flux_operator(flux)
 
-    def __call__(self, v):
+    @memoize_method
+    def op_template(self):
         from hedge.mesh import TAG_ALL
-        from hedge.discretization import pair_with_boundary, cache_diff_results
+        from hedge.optemplate import make_vector_field, BoundaryPair
 
-        bc = self.discr.boundarize_volume_field(v, TAG_ALL)
+        nabla = discr.nabla
+        m_inv = discr.inverse_mass_operator
 
-        v_cache = cache_diff_results(v)
-        local_op_result = self.discr.volume_zeros()
+        v = make_vector_field("v", self.discr.dimensions)
+        bc = make_vector_field("bc", self.discr.dimensions)
+
+        local_op_result = 0
         for i, i_enabled in enumerate(self.subset):
             if i_enabled:
-                local_op_result += self.nabla[i]*v_cache[i]
+                local_op_result += nabla[i]*v[i]
         
-        return local_op_result - self.m_inv*(
+        return local_op_result - m_inv*(
                 self.flux * v + 
-                self.flux * pair_with_boundary(v, bc, TAG_ALL))
+                self.flux * BoundaryPair(v, bc, TAG_ALL))
+        
+    def __call__(self, v):
+        from hedge.mesh import TAG_ALL
+
+        return self.discr.execute(self.op_template(), v=v, 
+                bc=self.discr.boundarize_volume_field(v, TAG_ALL))
+
 
 
 
@@ -132,8 +151,7 @@ class AdvectionOperatorBase(TimeDependentOperator):
             inflow_tag="inflow",
             inflow_u=hedge.data.make_tdep_constant(0),
             outflow_tag="outflow",
-            flux_type="central",
-            direct_flux=True
+            flux_type="central"
             ):
         self.discr = discr
         self.v = v
@@ -145,12 +163,7 @@ class AdvectionOperatorBase(TimeDependentOperator):
         from hedge.mesh import check_bc_coverage
         check_bc_coverage(discr.mesh, [inflow_tag, outflow_tag])
 
-        self.nabla = discr.nabla
-        self.mass = discr.mass_operator
-        self.m_inv = discr.inverse_mass_operator
-        self.minv_st = discr.minv_stiffness_t
-
-        self.flux = discr.get_flux_operator(self.get_flux(), direct=direct_flux)
+        self.flux = discr.get_flux_operator(self.get_flux())
 
     flux_types = [
             "central",
@@ -193,17 +206,26 @@ class StrongAdvectionOperator(AdvectionOperatorBase):
 
         return u.int * numpy.dot(normal, self.v) - self.get_weak_flux()
 
-    def rhs(self, t, u):
-        from hedge.discretization import pair_with_boundary, cache_diff_results
+    @memoize_method
+    def op_template(self):
+        from hedge.optemplate import Field, BoundaryPair
+        u = Field("u")
+        bc_in = Field("bc_in")
 
+        nabla = self.discr.nabla
+        m_inv = self.discr.inverse_mass_operator
+
+        return -numpy.dot(self.v, nabla*u) + m_inv*(
+                self.flux * u
+                + self.flux * BoundaryPair(u, bc_in, self.inflow_tag)
+                #+ self.flux * BoundaryPair(u, bc_out, self.outflow_tag)
+                )
+
+    def rhs(self, t, u):
         bc_in = self.inflow_u.boundary_interpolant(t, self.discr, self.inflow_tag)
         #bc_out = 0.5*self.discr.boundarize_volume_field(u, self.outflow_tag)
-        
-        return -numpy.dot(self.v, self.nabla*cache_diff_results(u)) + self.m_inv*(
-                self.flux * u
-                + self.flux * pair_with_boundary(u, bc_in, self.inflow_tag)
-                #+ self.flux * pair_with_boundary(u, bc_out, self.outflow_tag)
-                )
+
+        return self.discr.execute(self.op_template(), u=u, bc_in=bc_in)
 
 
 
@@ -212,19 +234,28 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
     def get_flux(self):
         return self.get_weak_flux()
 
-    def rhs(self, t, u):
-        from hedge.discretization import \
-                pair_with_boundary, \
-                cache_diff_results
+    @memoize_method
+    def op_template(self):
+        from hedge.optemplate import Field, BoundaryPair
+        u = Field("u")
+        bc_in = Field("bc_in")
+        bc_out = Field("bc_out")
 
-        bc_in = self.inflow_u.boundary_interpolant(t, self.discr, self.inflow_tag)
-        bc_out = self.discr.boundarize_volume_field(u, self.outflow_tag)
+        m_inv = self.discr.inverse_mass_operator
+        minv_st = self.discr.minv_stiffness_t
 
         return numpy.dot(self.v, self.minv_st*cache_diff_results(u)) - self.m_inv*(
                 self.flux*u
-                + self.flux * pair_with_boundary(u, bc_in, self.inflow_tag)
-                + self.flux * pair_with_boundary(u, bc_out, self.outflow_tag)
+                + self.flux * BoundaryPair(u, bc_in, self.inflow_tag)
+                + self.flux * BoundaryPair(u, bc_out, self.outflow_tag)
                 )
+
+    def rhs(self, t, u):
+        bc_in = self.inflow_u.boundary_interpolant(t, self.discr, self.inflow_tag)
+        bc_out = self.discr.boundarize_volume_field(u, self.outflow_tag)
+
+        return self.discr.execute(self.op_template(), u=u, bc_in=bc_in)
+
 
 
 
@@ -352,8 +383,7 @@ class MaxwellOperator(TimeDependentOperator):
     """
 
     def __init__(self, discr, epsilon, mu, upwind_alpha=1, 
-            pec_tag=hedge.mesh.TAG_ALL, 
-            direct_flux=True, current=None):
+            pec_tag=hedge.mesh.TAG_ALL, current=None):
         from hedge.flux import make_normal, FluxVectorPlaceholder
         from hedge.mesh import check_bc_coverage
         from hedge.discretization import pair_with_boundary
@@ -405,7 +435,7 @@ class MaxwellOperator(TimeDependentOperator):
                     ),
                 )
 
-        self.flux_op = discr.get_flux_operator(self.flux, direct=direct_flux)
+        self.flux_op = discr.get_flux_operator(self.flux)
 
         self.nabla = discr.nabla
         self.m_inv = discr.inverse_mass_operator

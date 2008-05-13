@@ -29,6 +29,7 @@ import hedge.tools
 import hedge.mesh
 import hedge.optemplate
 import hedge._internal
+from pytools import memoize_method
 
 
 
@@ -96,6 +97,17 @@ class _Boundary(object):
         self.face_groups_and_ldis = face_groups_and_ldis
         self.el_face_to_face_group_and_flux_face_index = \
                 el_face_to_face_group_and_flux_face_index
+
+
+
+
+class OpTemplateFunction:
+    def __init__(self, discr, pp_optemplate):
+        self.discr = discr
+        self.pp_optemplate = pp_optemplate
+
+    def __call__(self, **vars):
+        return self.discr.run_preprocessed_optemplate(self.pp_optemplate, vars)
 
 
 
@@ -495,11 +507,57 @@ class Discretization(object):
         raise NotImplementedError
 
     # scalar reduction --------------------------------------------------------
+    @memoize_method
+    def _get_mass_op_function(self):
+        from hedge.optemplate import Field
+        return self.as_function(self.mass_operator*Field("u"))
+
     def integral(self, volume_vector, tag=hedge.mesh.TAG_ALL):
-        raise NotImplementedError
+        mass_op = self._get_mass_op_function()
+
+        try:
+            mass_ones = self._mass_ones
+        except AttributeError:
+            self._mass_ones = mass_ones = mass_op(u=ones_on_volume(self, tag))
+        
+        from hedge.tools import log_shape
+
+        ls = log_shape(volume_vector)
+        if ls == ():
+            return numpy.dot(mass_ones, volume_vector)
+        else:
+            result = numpy.zeros(shape=ls, dtype=float)
+            
+            from pytools import indices_in_shape
+            for i in indices_in_shape(ls):
+                result[i] = numpy.dot(mass_ones, volume_vector[i])
+                #result[i] = (self.mass_operator*volume_vector[i]).sum()
+
+            return result
 
     def norm(self, volume_vector, p=2):
-        raise NotImplementedError
+        mass_op = self._get_mass_op_function()
+
+        if p == numpy.Inf:
+            return numpy.abs(volume_vector).max()
+        else:
+            from hedge.tools import log_shape
+
+            if p != 2:
+                volume_vector = numpy.abs(volume_vector)**(p/2)
+
+            ls = log_shape(volume_vector)
+            if ls == ():
+                return float(numpy.dot(
+                        volume_vector,
+                        mass_op(u=volume_vector))**(1/p))
+            else:
+                assert len(ls) == 1
+                return float(sum(
+                        numpy.dot(
+                            subv,
+                            mass_op(u=self.mass_operator))
+                        for subv in volume_vector)**(1/p))
 
     # element data retrieval --------------------------------------------------
     def find_el_range(self, el_id):
@@ -550,28 +608,28 @@ class Discretization(object):
         from hedge.tools import join_fields
         from hedge.optemplate import DiffOperatorVector, DifferentiationOperator
         return DiffOperatorVector(
-                [DifferentiationOperator(self, i) for i in range(self.dimensions)])
+                tuple(DifferentiationOperator(self, i) for i in range(self.dimensions)))
 
     @property
     def minv_stiffness_t(self):
         from hedge.tools import join_fields
         from hedge.optemplate import DiffOperatorVector, MInvSTOperator
         return DiffOperatorVector(
-            [MInvSTOperator(self, i) for i in range(self.dimensions)])
+            tuple(MInvSTOperator(self, i) for i in range(self.dimensions)))
 
     @property
     def stiffness_operator(self):
         from hedge.tools import join_fields
         from hedge.optemplate import DiffOperatorVector, StiffnessOperator
         return DiffOperatorVector(
-            [StiffnessOperator(self, i) for i in range(self.dimensions)])
+            tuple(StiffnessOperator(self, i) for i in range(self.dimensions)))
 
     @property
     def stiffness_t_operator(self):
         from hedge.tools import join_fields
         from hedge.optemplate import DiffOperatorVector, StiffnessTOperator
         return DiffOperatorVector(
-            [StiffnessTOperator(self, i) for i in range(self.dimensions)])
+            tuple(StiffnessTOperator(self, i) for i in range(self.dimensions)))
 
     @property
     def mass_operator(self):
@@ -603,19 +661,26 @@ class Discretization(object):
     def run_preprocessed_optemplate(self, optemplate, vars):
         raise NotImplementedError
 
-    def execute(self, optemplate, **vars):
+    def _get_pp_optemplate(self, optemplate):
         try:
             self.optemplate_preproc_cache
         except AttributeError:
             self.optemplate_preproc_cache = {}
 
         try:
-            pp_optemplate = self.optemplate_preproc_cache[optemplate]
+            return self.optemplate_preproc_cache[optemplate]
         except KeyError:
             pp_optemplate = self.optemplate_preproc_cache[optemplate] = \
                     self.preprocess_optemplate(optemplate)
+            return pp_optemplate
 
-        return self.run_preprocessed_optemplate(pp_optemplate, vars)
+    def execute(self, optemplate, **vars):
+        return self.run_preprocessed_optemplate(
+                self._get_pp_optemplate(optemplate), 
+                vars)
+    
+    def as_function(self, optemplate):
+        return OpTemplateFunction(self, self._get_pp_optemplate(optemplate))
 
 
 

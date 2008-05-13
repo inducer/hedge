@@ -401,56 +401,6 @@ class Discretization(hedge.discretization.Discretization):
 
         return result
 
-    # scalar reduction --------------------------------------------------------
-    def integral(self, volume_vector, tag=hedge.mesh.TAG_ALL):
-        try:
-            mass_ones = self._mass_ones
-        except AttributeError:
-            self._mass_ones = mass_ones = self.mass_operator * ones_on_volume(self, tag)
-        
-        from hedge.tools import log_shape
-
-        ls = log_shape(volume_vector)
-        if ls == ():
-            return numpy.dot(mass_ones, volume_vector)
-        else:
-            result = numpy.zeros(shape=ls, dtype=float)
-            
-            from pytools import indices_in_shape
-            for i in indices_in_shape(ls):
-                result[i] = numpy.dot(mass_ones, volume_vector[i])
-                #result[i] = (self.mass_operator*volume_vector[i]).sum()
-
-            return result
-
-
-
-
-    def norm(self, volume_vector, p=2):
-        if p == numpy.Inf:
-            return numpy.abs(volume_vector).max()
-        else:
-            from hedge.tools import log_shape
-
-            if p != 2:
-                volume_vector = numpy.abs(volume_vector)**(p/2)
-
-            ls = log_shape(volume_vector)
-            if ls == ():
-                return float(numpy.dot(
-                        volume_vector,
-                        self.mass_operator * volume_vector)**(1/p))
-            else:
-                assert len(ls) == 1
-                return float(sum(
-                        numpy.dot(
-                            subv,
-                            self.mass_operator * subv)
-                        for subv in volume_vector)**(1/p))
-
-
-
-
     # inner flux computation --------------------------------------------------
     def perform_inner_flux(self, int_flux, ext_flux, target):
         """Perform fluxes in the interior of the domain on the 

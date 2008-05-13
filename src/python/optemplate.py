@@ -34,8 +34,10 @@ import hedge.mesh
 class Field(pymbolic.primitives.Variable):
     pass
 
-class VectorField(pymbolic.primitives.Variable):
-    pass
+def make_vector_field(name, components):
+    from hedge.tools import join_fields
+    vfld = pymbolic.primitives.Variable(name)
+    return join_fields(*[vfld[i] for i in range(components)])
 
 
 
@@ -124,19 +126,8 @@ class StiffnessTOperator(DiffOperatorBase):
 
 
 
-class DiffOperatorVector(object):
-    def __init__(self, operators):
-        self.operators = operators
-
-    def __len__(self):
-        return len(self.operators)
-
-    def __getitem__(self, i):
-        return self.operators[i]
-
-    def __mul__(self, field):
-        from hedge.tools import join_fields
-        return join_fields(*[op*field for op in self.operators])
+class DiffOperatorVector(pymbolic.primitives.Vector):
+    pass
 
 
 

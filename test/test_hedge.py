@@ -22,6 +22,7 @@ from __future__ import division
 import numpy
 import numpy.linalg as la
 import unittest
+from hedge.discr_precompiled import Discretization
 
 
 
@@ -523,7 +524,6 @@ class TestHedge(unittest.TestCase):
 
         from hedge.mesh import make_disk_mesh
         from hedge.element import TriangularElement
-        from hedge.discretization import Discretization
         from math import sqrt, exp, pi
 
         sigma_squared = 1/219.3
@@ -547,7 +547,6 @@ class TestHedge(unittest.TestCase):
         """Check the integral of some trig functions on an interval using the mass matrix"""
         from hedge.mesh import make_uniform_1d_mesh
         from hedge.element import IntervalElement
-        from hedge.discretization import Discretization, integral
         from math import sqrt, pi, cos, sin
         from numpy import dot
 
@@ -557,9 +556,10 @@ class TestHedge(unittest.TestCase):
         f = discr.interpolate_volume_function(lambda x: cos(x[0])**2)
         ones = discr.interpolate_volume_function(lambda x: 1)
 
-        num_integral_1 = dot(ones, discr.mass_operator * f)
-        num_integral_2 = dot(f, discr.mass_operator * ones)
-        num_integral_3 = integral(discr, f)
+        mass_op = discr._get_mass_op_function()
+        num_integral_1 = dot(ones, mass_op(u=f))
+        num_integral_2 = dot(f, mass_op(u=ones))
+        num_integral_3 = discr.integral(f)
 
         true_integral = 13*pi/2
         err_1 = abs(num_integral_1-true_integral)
@@ -575,7 +575,6 @@ class TestHedge(unittest.TestCase):
 
         from hedge.mesh import make_square_mesh
         from hedge.element import TriangularElement
-        from hedge.discretization import Discretization
         from math import sqrt, pi, cos, sin
 
         mesh = make_square_mesh(a=-pi, b=pi, max_area=(2*pi/10)**2/2)
@@ -583,8 +582,11 @@ class TestHedge(unittest.TestCase):
         f = discr.interpolate_volume_function(lambda x: cos(x[0])**2*sin(x[1])**2)
         ones = discr.interpolate_volume_function(lambda x: 1)
 
-        num_integral_1 = numpy.dot(ones, discr.mass_operator * f)
-        num_integral_2 = numpy.dot(f, discr.mass_operator * ones)
+        from hedge.optemplate import Field
+        optp = discr.mass_operator * Field("f")
+
+        num_integral_1 = numpy.dot(ones, discr.execute(optp, f=f))
+        num_integral_2 = numpy.dot(f, discr.execute(optp, f=ones))
         true_integral = pi**2
         err_1 = abs(num_integral_1-true_integral)
         err_2 = abs(num_integral_2-true_integral)
@@ -599,7 +601,6 @@ class TestHedge(unittest.TestCase):
         """
         from hedge.mesh import make_disk_mesh
         from hedge.element import TriangularElement
-        from hedge.discretization import Discretization, cache_diff_results
         from math import sin, cos, sqrt
 
 
@@ -610,23 +611,16 @@ class TestHedge(unittest.TestCase):
             df = discr.interpolate_volume_function(lambda x: 3*cos(3*x[coord]))
 
             nabla = discr.nabla
-            nabla[coord].do_not_warn()
             
-            df_num = nabla[coord] * cache_diff_results(f)
-            df_num_no_cache = nabla[coord] * f
-            error = df_num - df
+            from hedge.optemplate import Field
+            optp = nabla[coord] * Field("f")
+            df_num = discr.execute(optp, f=f)
             #discr.visualize_vtk("diff-err.vtk",
                     #[("f", f), ("df", df), ("df_num", df_num), ("error", error)])
 
             linf_error = la.norm(df_num-df, numpy.Inf)
             #print linf_error
             self.assert_(linf_error < 3e-5)
-
-            linf_error = la.norm(df_num_no_cache-df, numpy.Inf)
-            self.assert_(linf_error < 3e-5)
-
-            linf_error = la.norm(df_num_no_cache-df_num, numpy.Inf)
-            self.assert_(linf_error < 2e-13)
     # -------------------------------------------------------------------------
     def test_2d_gauss_theorem(self):
         """Verify Gauss's theorem explicitly on a mesh"""
@@ -635,55 +629,38 @@ class TestHedge(unittest.TestCase):
         from hedge.tools import AffineMap
         from hedge.mesh import make_disk_mesh
         from hedge.flux import Flux
-        from hedge.discretization import \
-                Discretization, \
-                pair_with_boundary, \
-                cache_diff_results
         from math import sin, cos, sqrt, exp, pi
         from numpy import dot
 
-        class NormalFlux(Flux):
-            def __init__(self, coordinate):
-                Flux.__init__(self)
-                self.coordinate = coordinate
+        discr = Discretization(make_disk_mesh(), order=2, debug=True)
 
-            def __call__(self, int_face, ext_face):
-                return int_face.normal[self.coordinate]
-
-        class ZeroFlux(Flux):
-            def __call__(self, int_face, ext_face):
-                return 0
-
-        one_sided_x = (NormalFlux(0), ZeroFlux())
-        one_sided_y = (NormalFlux(1), ZeroFlux())
+        from hedge.flux import make_normal, FluxScalarPlaceholder, IfPositive
+        normal = make_normal(discr.dimensions)
+        flux_f_ph = FluxScalarPlaceholder(0)
+        one_sided_x = flux_f_ph.int*normal[0]
+        one_sided_y = flux_f_ph.int*normal[1]
 
         def f1(x):
             return sin(3*x[0])+cos(3*x[1])
         def f2(x):
             return sin(2*x[0])+cos(x[1])
 
-        edata = TriangularElement(2)
-
-        discr = Discretization(make_disk_mesh(), edata, debug=True)
-        ones = discr.interpolate_volume_function(lambda x: 1)
-        face_zeros = discr.boundary_zeros()
-
+        from hedge.discretization import ones_on_volume
+        ones = ones_on_volume(discr)
         f1_v = discr.interpolate_volume_function(f1)
         f2_v = discr.interpolate_volume_function(f2)
 
-        f1_f = discr.interpolate_boundary_function(f1)
-        f2_f = discr.interpolate_boundary_function(f2)
+        from hedge.optemplate import BoundaryPair, Field
+        diff_optp = discr.nabla[0] * Field("f1") + discr.nabla[1] * Field("f2")
 
-        dx_v = discr.nabla[0] * cache_diff_results(f1_v)
-        dy_v = discr.nabla[1] * cache_diff_results(f2_v)
+        int_div = discr.integral(discr.execute(diff_optp, f1=f1_v, f2=f2_v))
 
-        int_div = \
-                dot(ones, discr.mass_operator*dx_v) + \
-                dot(ones, discr.mass_operator*dy_v)
-
+        flux_optp = (
+                discr.get_flux_operator(one_sided_x)*BoundaryPair(Field("f1"), Field("fz")) +
+                discr.get_flux_operator(one_sided_y)*BoundaryPair(Field("f2"), Field("fz")))
         boundary_int = dot(
-                discr.get_flux_operator(one_sided_x)*pair_with_boundary(f1_v, face_zeros) +
-                discr.get_flux_operator(one_sided_y)*pair_with_boundary(f2_v, face_zeros),
+                discr.execute(flux_optp, 
+                    f1=f1_v, f2=f2_v, fz=discr.boundary_zeros()), 
                 ones)
 
         #print abs(boundary_int-int_div)
@@ -1057,7 +1034,7 @@ class TestHedge(unittest.TestCase):
                 element_tagger=element_tagger)
 
         from hedge.element import TriangularElement
-        from hedge.discretization import Discretization, ones_on_volume
+        from hedge.discretization import ones_on_volume
         discr = Discretization(mesh, TriangularElement(4), debug=True)
 
         u_i = numpy.multiply(
@@ -1130,8 +1107,6 @@ class TestHedge(unittest.TestCase):
                 ]
 
         generated_mesh = tet.build(mesh_info, attributes=True, volume_constraints=True)
-        #mesh.write_vtk("sandwich-mesh.vtk")
-
 
         def element_tagger(el):
             if generated_mesh.element_attributes[el.id] == 1:
@@ -1146,7 +1121,7 @@ class TestHedge(unittest.TestCase):
                 element_tagger=element_tagger)
 
         from hedge.element import TetrahedralElement
-        from hedge.discretization import Discretization, ones_on_volume
+        from hedge.discretization import ones_on_volume
         discr = Discretization(mesh, TetrahedralElement(4), debug=True)
 
         u_l = numpy.multiply(
@@ -1221,11 +1196,11 @@ class TestHedge(unittest.TestCase):
             from hedge.mesh import make_conformal_mesh
             return make_conformal_mesh(points, elements, boundary_tagger)
 
-        from hedge.discretization import Discretization, SymmetryMap
+        from hedge.discretization import SymmetryMap
         from hedge.element import TriangularElement
         from hedge.timestep import RK4TimeStepper
         from math import sqrt
-        from hedge.operators import StrongAdvectionOperator
+        from hedge.pde import StrongAdvectionOperator
         from hedge.data import TimeDependentGivenFunction
 
         v = numpy.array([-1,0])
@@ -1257,7 +1232,7 @@ class TestHedge(unittest.TestCase):
             for step in xrange(nsteps):
                 u = stepper(u, step*dt, dt, op.rhs)
                 sym_error_u = u-sym_map(u)
-                sym_error_u_l2 = sqrt(dot(sym_error_u, (discr.mass_operator*sym_error_u)))
+                sym_error_u_l2 = discr.norm(sym_error_u)
                 self.assert_(sym_error_u_l2 < 4e-15)
     # -------------------------------------------------------------------------
     def test_convergence_advec_2d(self):
@@ -1265,12 +1240,11 @@ class TestHedge(unittest.TestCase):
 
         import pyublas
         from hedge.mesh import make_disk_mesh, make_regular_rect_mesh
-        from hedge.discretization import Discretization, pair_with_boundary
         from hedge.element import TriangularElement
         from hedge.timestep import RK4TimeStepper
         from hedge.tools import EOCRecorder
         from math import sin, pi, sqrt
-        from hedge.operators import StrongAdvectionOperator
+        from hedge.pde import StrongAdvectionOperator
         from hedge.data import TimeDependentGivenFunction
 
         v = numpy.array([0.27,0])
@@ -1300,39 +1274,35 @@ class TestHedge(unittest.TestCase):
                     )
                 ]:
             for flux_type in StrongAdvectionOperator.flux_types:
-                flux_directnesses = [True]
-                if pyublas.has_sparse_wrappers():
-                    flux_directnesses.append(False)
-                for direct_flux in flux_directnesses:
-                    eoc_rec = EOCRecorder()
+                eoc_rec = EOCRecorder()
 
-                    for order in [1,2,3,4,5,6]:
-                        discr = Discretization(mesh, TriangularElement(order), debug=True)
-                        op = StrongAdvectionOperator(discr, v, 
-                                inflow_u=TimeDependentGivenFunction(u_analytic),
-                                flux_type=flux_type, direct_flux=direct_flux)
+                for order in [1,2,3,4,5,6]:
+                    discr = Discretization(mesh, TriangularElement(order), debug=True)
+                    op = StrongAdvectionOperator(discr, v, 
+                            inflow_u=TimeDependentGivenFunction(u_analytic),
+                            flux_type=flux_type)
 
-                        u = discr.interpolate_volume_function(lambda x: u_analytic(x, 0))
-                        dt = discr.dt_factor(norm_a)
-                        nsteps = int(1/dt)
+                    u = discr.interpolate_volume_function(lambda x: u_analytic(x, 0))
+                    dt = discr.dt_factor(norm_a)
+                    nsteps = int(1/dt)
 
-                        stepper = RK4TimeStepper()
-                        for step in range(nsteps):
-                            u = stepper(u, step*dt, dt, op.rhs)
+                    stepper = RK4TimeStepper()
+                    for step in range(nsteps):
+                        u = stepper(u, step*dt, dt, op.rhs)
 
-                        u_true = discr.interpolate_volume_function(
-                                lambda x: u_analytic(x, nsteps*dt))
-                        error = u-u_true
-                        error_l2 = sqrt(dot(error, discr.mass_operator*error))
-                        eoc_rec.add_data_point(order, error_l2)
+                    u_true = discr.interpolate_volume_function(
+                            lambda x: u_analytic(x, nsteps*dt))
+                    error = u-u_true
+                    error_l2 = discr.norm(error)
+                    eoc_rec.add_data_point(order, error_l2)
 
-                    if False:
-                        print "%s\n%s\n" % (flux_type.upper(), "-" * len(flux_type))
-                        print eoc_rec.pretty_print(abscissa_label="Poly. Order", 
-                                error_label="L2 Error")
+                if False:
+                    print "%s\n%s\n" % (flux_type.upper(), "-" * len(flux_type))
+                    print eoc_rec.pretty_print(abscissa_label="Poly. Order", 
+                            error_label="L2 Error")
 
-                    self.assert_(eoc_rec.estimate_order_of_convergence()[0,1] > 4)
-                    self.assert_(eoc_rec.estimate_order_of_convergence(2)[-1,1] > 10)
+                self.assert_(eoc_rec.estimate_order_of_convergence()[0,1] > 4)
+                self.assert_(eoc_rec.estimate_order_of_convergence(2)[-1,1] > 10)
     # -------------------------------------------------------------------------
     def test_all_periodic_no_boundary(self):
         """Test that an all-periodic brick has no boundary."""
@@ -1409,12 +1379,11 @@ class TestHedge(unittest.TestCase):
         eocrec = EOCRecorder()
         for order in [1,2,3,4,5]:
             for flux in ["ldg", "ip"]:
-                from hedge.discretization import Discretization, norm
                 from hedge.element import TriangularElement
                 discr = Discretization(mesh, TriangularElement(order), debug=True)
 
                 from hedge.data import GivenFunction
-                from hedge.operators import WeakPoissonOperator
+                from hedge.pde import WeakPoissonOperator
                 op = WeakPoissonOperator(discr, 
                         dirichlet_tag=TAG_ALL,
                         dirichlet_bc=GivenFunction(truesol_c),
@@ -1443,7 +1412,7 @@ class TestHedge(unittest.TestCase):
         """Test whether projection between different orders works"""
 
         from hedge.mesh import make_disk_mesh
-        from hedge.discretization import Discretization, Projector, norm
+        from hedge.discretization import Projector
         from hedge.element import TriangularElement
         from hedge.tools import EOCRecorder
         from math import sin, pi, sqrt
@@ -1464,13 +1433,12 @@ class TestHedge(unittest.TestCase):
 
         u2 = discr2.interpolate_volume_function(u_analytic)
         u2_i = p5to2(p2to5(u2))
-        self.assert_(norm(discr2, u2-u2_i) < 3e-15)
+        self.assert_(discr2.norm(u2-u2_i) < 3e-15)
     # -------------------------------------------------------------------------
     def test_filter(self):
         """Exercise mode-based filtering."""
 
         from hedge.mesh import make_disk_mesh
-        from hedge.discretization import Discretization, integral, norm
         from hedge.element import TriangularElement
         from math import sin
 
@@ -1497,8 +1465,8 @@ class TestHedge(unittest.TestCase):
             u = discr.interpolate_volume_function(u_analytic)
             filt_u = exp_filter(u)
 
-            int_error = abs(integral(discr, u) - integral(discr, filt_u))
-            l2_ratio = norm(discr, filt_u) / norm(discr, u)
+            int_error = abs(discr.integral(u) - discr.integral(filt_u))
+            l2_ratio = discr.norm(filt_u) / discr.norm(u)
             self.assert_(int_error < 5e-15)
             self.assert_(0.96 < l2_ratio < 0.99999)
 
