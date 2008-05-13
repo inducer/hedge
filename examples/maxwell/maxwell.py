@@ -32,7 +32,6 @@ def main():
             VtkVisualizer, \
             SiloVisualizer, \
             get_rank_partition
-    from hedge.discretization import norm
     from hedge.tools import EOCRecorder, to_obj_array
     from math import sqrt, pi
     from analytic_solutions import \
@@ -43,7 +42,7 @@ def main():
             CylindricalCavityMode, \
             RectangularWaveguideMode, \
             RectangularCavityMode
-    from hedge.operators import MaxwellOperator
+    from hedge.pde import MaxwellOperator
     from hedge.parallel import guess_parallelization_context
 
     pcon = guess_parallelization_context()
@@ -94,8 +93,7 @@ def main():
 
         mode.set_time(0)
         fields = to_obj_array(discr.interpolate_volume_function(r_sol))
-        op = MaxwellOperator(discr, epsilon, mu, upwind_alpha=1,
-                direct_flux=True)
+        op = MaxwellOperator(discr, epsilon, mu, upwind_alpha=1)
 
         dt = discr.dt_factor(op.max_eigenvalue())
         final_time = 1e-9
@@ -159,7 +157,7 @@ def main():
         mode.set_time(t)
         true_fields = to_obj_array(discr.interpolate_volume_function(r_sol))
 
-        eoc_rec.add_data_point(order, norm(discr, fields-true_fields))
+        eoc_rec.add_data_point(order, discr.norm(fields-true_fields))
 
         print
         print eoc_rec.pretty_print("P.Deg.", "L2 Error")

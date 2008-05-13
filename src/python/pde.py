@@ -125,8 +125,8 @@ class DivergenceOperator(Operator):
                 OpTemplate
 
 
-        nabla = discr.nabla
-        m_inv = discr.inverse_mass_operator
+        nabla = self.discr.nabla
+        m_inv = self.discr.inverse_mass_operator
 
         v = make_vector_field("v", self.discr.dimensions)
         bc = make_vector_field("bc", self.discr.dimensions)
@@ -136,9 +136,10 @@ class DivergenceOperator(Operator):
             if i_enabled:
                 local_op_result += nabla[i]*v[i]
         
-        return OpTemplate(local_op_result - m_inv*(
+        opt = local_op_result - m_inv*(
                 self.flux * v + 
-                self.flux * pair_with_boundary(v, bc, TAG_ALL)))
+                self.flux * pair_with_boundary(v, bc, TAG_ALL))
+        return OpTemplate(opt)
         
     def __call__(self, v):
         from hedge.mesh import TAG_ALL
@@ -413,7 +414,6 @@ class MaxwellOperator(TimeDependentOperator):
             pec_tag=hedge.mesh.TAG_ALL, current=None):
         from hedge.flux import make_normal, FluxVectorPlaceholder
         from hedge.mesh import check_bc_coverage
-        from hedge.discretization import pair_with_boundary
         from math import sqrt
         from hedge.tools import SubsettableCrossProduct, join_fields
 
@@ -464,27 +464,43 @@ class MaxwellOperator(TimeDependentOperator):
 
         self.flux_op = discr.get_flux_operator(self.flux)
 
-        self.nabla = discr.nabla
-        self.m_inv = discr.inverse_mass_operator
-
     def local_op(self, e, h):
         # in conservation form: u_t + A u_x = 0
         def e_curl(field):
-            return self.e_cross(self.nabla, field)
+            return self.e_cross(nabla, field)
 
         def h_curl(field):
-            return self.h_cross(self.nabla, field)
+            return self.h_cross(nabla, field)
 
         from hedge.tools import join_fields
+
+        nabla = self.discr.nabla
 
         return join_fields(
                 - 1/self.epsilon * h_curl(h),
                 1/self.mu * e_curl(e),
                 )
 
+    @memoize_method
+    def op_template(self):
+        from hedge.optemplate import make_vector_field, \
+                pair_with_boundary, OpTemplate
+
+        fld_cnt = self.count_subset(self.get_eh_subset())
+        w = make_vector_field("w", fld_cnt)
+        e,h = self.split_eh(w)
+        pec_bc = make_vector_field("pec_bc", fld_cnt)
+
+        m_inv = self.discr.inverse_mass_operator
+
+        return OpTemplate(- self.local_op(e, h) \
+                + m_inv*(
+                    self.flux_op * w
+                    +self.flux_op * pair_with_boundary(w, pec_bc, self.pec_tag)
+                    ))
+
     def rhs(self, t, w):
         from hedge.tools import cross
-        from hedge.discretization import pair_with_boundary, cache_diff_results
         from hedge.tools import join_fields
 
         e, h = self.split_eh(w)
@@ -503,13 +519,10 @@ class MaxwellOperator(TimeDependentOperator):
             rhs = self.assemble_fields(e=j_rhs)
         else:
             rhs = self.assemble_fields()
-            
+            + rhs 
         from hedge.tools import to_obj_array
-        return - self.local_op(cache_diff_results(e), cache_diff_results(h)) \
-                + to_obj_array(self.m_inv*(
-                    self.flux_op * w
-                    +self.flux_op * pair_with_boundary(w, pec_bc, self.pec_tag)
-                    )) + rhs
+        return self.discr.execute(
+                self.op_template(), w=w, pec_bc=pec_bc)
 
     def assemble_fields(self, e=None, h=None):
         e_components = self.count_subset(self.get_eh_subset()[0:3])

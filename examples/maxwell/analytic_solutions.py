@@ -36,8 +36,8 @@ class RealPartAdapter:
     def shape(self):
         return self.adaptee.shape
 
-    def __call__(self, x):
-        return [xi.real for xi in self.adaptee(x)]
+    def __call__(self, x, el):
+        return [xi.real for xi in self.adaptee(x, el)]
 
 class SplitComplexAdapter:
     def __init__(self, adaptee):
@@ -48,8 +48,8 @@ class SplitComplexAdapter:
         (n,) = self.adaptee.shape
         return (n*2,)
 
-    def __call__(self, x):
-        ad_x = self.adaptee(x)
+    def __call__(self, x, el):
+        ad_x = self.adaptee(x, el)
         return [xi.real for xi in ad_x] + [xi.imag for xi in ad_x]
 
 class CartesianAdapter:
@@ -60,12 +60,12 @@ class CartesianAdapter:
     def shape(self):
         return self.adaptee.shape
 
-    def __call__(self, x):
+    def __call__(self, x, el):
         xy = x[:2]
         r = sqrt(xy*xy)
         phi = atan2(x[1], x[0])
 
-        prev_result = self.adaptee(x)
+        prev_result = self.adaptee(x, el)
         result = []
         i = 0
         while i < len(prev_result):
@@ -131,7 +131,7 @@ class CylindricalCavityMode:
     def shape(self):
         return (6,)
 
-    def __call__(self, x):
+    def __call__(self, x, el):
         # coordinates -----------------------------------------------------
         xy = x[:2]
         r = sqrt(xy*xy)
@@ -215,7 +215,7 @@ class RectangularWaveguideMode:
     def shape(self):
         return (6,)
 
-    def __call__(self, x):
+    def __call__(self, x, el):
         f,g,h = self.factors
         omega = self.omega
         k = self.k

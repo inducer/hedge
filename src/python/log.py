@@ -174,8 +174,7 @@ class EMFieldEnergy(LogQuantity):
                 ptwise_dot(e, d) 
                 + ptwise_dot(h, b))
 
-        from hedge.discretization import integral
-        return integral(max_op.discr, energy_density)
+        return max_op.discr.integral(energy_density)
 
 
 
@@ -206,9 +205,7 @@ class EMFieldMomentum(MultiLogQuantity):
         poynting_s = max_op.h_cross(e, h)
 
         momentum_density = poynting_s/self.c0**2
-
-        from hedge.discretization import integral
-        return integral(max_op.discr, momentum_density)
+        return max_op.discr.integral(momentum_density)
 
 
 
@@ -220,7 +217,7 @@ class EMFieldDivergenceD(LogQuantity):
         self.fields = fields
         self.discr = self.fields.maxwell_op.discr
 
-        from hedge.operators import DivergenceOperator
+        from hedge.pde import DivergenceOperator
         self.div_op = DivergenceOperator(self.discr,
                 maxwell_op.get_eh_subset()[:3])
 
@@ -229,8 +226,7 @@ class EMFieldDivergenceD(LogQuantity):
         d = max_op.epsilon * self.fields.e
         div_d = self.div_op(d)
         
-        from hedge.discretization import integral
-        return integral(self.discr, div_d)
+        return self.discr.integral(div_d)
 
 
 
@@ -240,7 +236,7 @@ class EMFieldDivergenceB(MultiLogQuantity):
         self.fields = fields
         self.discr = self.fields.maxwell_op.discr
 
-        from hedge.operators import DivergenceOperator
+        from hedge.pde import DivergenceOperator
         self.div_op = DivergenceOperator(self.discr,
                 maxwell_op.get_eh_subset()[3:])
 
@@ -257,8 +253,8 @@ class EMFieldDivergenceB(MultiLogQuantity):
         b = max_op.mu * self.fields.h
         div_b = self.div_op(b)
         
-        from hedge.discretization import integral
-        return [integral(self.discr, div_b), integral(self.discr, numpy.absolute(div_b))]
+        return [self.discr.integral(div_b), 
+                self.discr.integral(numpy.absolute(div_b))]
 
 
 

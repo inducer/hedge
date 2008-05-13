@@ -171,6 +171,13 @@ class FluxOperator(Operator):
         Operator.__init__(self, discr)
         self.flux = flux
 
+    def __mul__(self, arg):
+        from hedge.tools import is_obj_array
+        if isinstance(arg, Field) or is_obj_array(arg):
+            return OperatorBinding(self, arg)
+        else:
+            return Operator.__mul__(self, arg)
+
     def get_mapper_method(self, mapper): 
         return mapper.map_flux
 

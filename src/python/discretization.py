@@ -556,7 +556,7 @@ class Discretization(object):
                 return float(sum(
                         numpy.dot(
                             subv,
-                            mass_op(u=self.mass_operator))
+                            mass_op(u=subv))
                         for subv in volume_vector)**(1/p))
 
     # element data retrieval --------------------------------------------------
