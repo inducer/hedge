@@ -658,14 +658,16 @@ class TestHedge(unittest.TestCase):
         f1_v = discr.interpolate_volume_function(f1)
         f2_v = discr.interpolate_volume_function(f2)
 
-        from hedge.optemplate import BoundaryPair, Field
+        from hedge.optemplate import pair_with_boundary, Field
         diff_optp = discr.nabla[0] * Field("f1") + discr.nabla[1] * Field("f2")
 
         int_div = discr.integral(discr.execute(diff_optp, f1=f1_v, f2=f2_v))
 
         flux_optp = (
-                discr.get_flux_operator(one_sided_x)*BoundaryPair(Field("f1"), Field("fz")) +
-                discr.get_flux_operator(one_sided_y)*BoundaryPair(Field("f2"), Field("fz")))
+                discr.get_flux_operator(one_sided_x)
+                *pair_with_boundary(Field("f1"), Field("fz")) +
+                discr.get_flux_operator(one_sided_y)
+                *pair_with_boundary(Field("f2"), Field("fz")))
         boundary_int = dot(
                 discr.execute(flux_optp, 
                     f1=f1_v, f2=f2_v, fz=discr.boundary_zeros()), 

@@ -133,12 +133,6 @@ def DiffOperatorVector(els):
 
     
 
-#class DiffOperatorVector(pymbolic.primitives.Vector):
-    #pass
-
-
-
-
 # mass operators --------------------------------------------------------------
 class MassOperatorBase(Operator):
     pass
@@ -201,7 +195,7 @@ class VectorFluxOperator(object):
 
 
 # other parts of an operator template -----------------------------------------
-class _BoundaryPair(pymbolic.primitives.Leaf):
+class _BoundaryPair(pymbolic.primitives.AlgebraicLeaf):
     """Represents a pairing of a volume and a boundary field, used for the
     application of boundary fluxes.
     """
@@ -225,6 +219,13 @@ def pair_with_boundary(field, bfield, tag=hedge.mesh.TAG_ALL):
         return 0
     else:
         return _BoundaryPair(field, bfield, tag)
+
+
+
+
+class OpTemplate:
+    def __init__(self, expr):
+        self.expr = expr
 
 
 
@@ -261,28 +262,6 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
 
 
 
-class LocalOpReducerMixin(object):
-    def map_diff(self, expr, *args, **kwargs):
-        return self.map_diff_base(expr, *args, **kwargs)
-
-    def map_minv_st(self, expr, enclosing_prec):
-        return self.map_diff_base(expr, *args, **kwargs)
-
-    def map_stiffness(self, expr, enclosing_prec):
-        return self.map_diff_base(expr, *args, **kwargs)
-
-    def map_stiffness_t(self, expr, enclosing_prec):
-        return self.map_diff_base(expr, *args, **kwargs)
-
-    def map_mass(self, expr, enclosing_prec):
-        return self.map_mass_base(expr, *args, **kwargs)
-
-    def map_inverse_mass(self, expr, enclosing_prec):
-        return self.map_mass_base(expr, *args, **kwargs)
-
-
-
-
 class BoundOpMapperMixin(object):
     def map_operator_binding(self, expr):
         return expr.op.get_mapper_method(self)(expr.op, expr.field)
@@ -313,6 +292,9 @@ class LocalOpReducerMixin(object):
 
 
 class OperatorBinder(pymbolic.mapper.IdentityMapper):
+    def handle_unsupported_expression(self, expr):
+        return expr
+
     def map_product(self, expr):
         def generate_new_children():
             it = iter(expr.children)
@@ -341,4 +323,3 @@ class OperatorBinder(pymbolic.mapper.IdentityMapper):
 class Evaluator(pymbolic.mapper.evaluator.EvaluationMapper):
     def map_boundary_pair(self, bp):
         return BoundaryPair(self.rec(bp.field), self.rec(bp.bfield), bp.tag)
-

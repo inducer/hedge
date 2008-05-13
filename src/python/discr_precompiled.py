@@ -93,6 +93,15 @@ class _FluxOpCompileMapper(pymbolic.mapper.IdentityMapper):
     """Replaces each flux operator in an operator template
     with one that has a compiled flux.
     """
+    def handle_unsupported_expression(self, expr):
+        return expr
+
+    def map_operator_binding(self, expr):
+        from hedge.optemplate import OperatorBinding
+        return OperatorBinding(
+                self.rec(expr.op), 
+                self.rec(expr.field))
+
     def compile_flux(self, scalar_flux):
         coeff_comp = _FluxCoefficientCompiler()
         from hedge.flux import analyze_flux
@@ -103,12 +112,6 @@ class _FluxOpCompileMapper(pymbolic.mapper.IdentityMapper):
     def map_flux(self, flux_op):
         from hedge.optemplate import FluxOperator
         return FluxOperator(flux_op.discr, self.compile_flux(flux_op.flux))
-
-    def map_vector_flux(self, flux_op):
-        from hedge.optemplate import VectorFluxOperator
-        from hedge.tools import join_fields
-        return VectorFluxOperator(flux_op.discr, 
-                join_fields(*[self.compile_flux(f )for f in flux_op.fluxes]))
 
 
 
@@ -285,9 +288,9 @@ class _ExecutionMapper(hedge.optemplate.Evaluator,
         return result
 
     def map_flux(self, op, field_expr):
-        from hedge.optemplate import BoundaryPair
+        from hedge.optemplate import _BoundaryPair
 
-        if isinstance(field_expr, BoundaryPair):
+        if isinstance(field_expr, _BoundaryPair):
             bp = field_expr
             return self.scalar_bdry_flux(
                     op.flux, 

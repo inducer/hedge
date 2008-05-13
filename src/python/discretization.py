@@ -605,40 +605,44 @@ class Discretization(object):
     # operator binding functions --------------------------------------------------
     @property
     def nabla(self):
-        from hedge.tools import join_fields
-        from hedge.optemplate import DiffOperatorVector, DifferentiationOperator
-        return DiffOperatorVector(
-                tuple(DifferentiationOperator(self, i) for i in range(self.dimensions)))
+        from hedge.tools import make_obj_array
+        from hedge.optemplate import DifferentiationOperator
+        return make_obj_array(
+                [DifferentiationOperator(self, i) 
+                    for i in range(self.dimensions)])
 
     @property
     def minv_stiffness_t(self):
-        from hedge.tools import join_fields
-        from hedge.optemplate import DiffOperatorVector, MInvSTOperator
-        return DiffOperatorVector(
-            tuple(MInvSTOperator(self, i) for i in range(self.dimensions)))
+        from hedge.tools import make_obj_array
+        from hedge.optemplate import MInvSTOperator
+        return make_obj_array(
+            [MInvSTOperator(self, i) 
+                for i in range(self.dimensions)])
 
     @property
     def stiffness_operator(self):
-        from hedge.tools import join_fields
-        from hedge.optemplate import DiffOperatorVector, StiffnessOperator
-        return DiffOperatorVector(
-            tuple(StiffnessOperator(self, i) for i in range(self.dimensions)))
+        from hedge.tools import make_obj_array
+        from hedge.optemplate import StiffnessOperator
+        return make_obj_array(
+            [StiffnessOperator(self, i) 
+                for i in range(self.dimensions)])
 
     @property
     def stiffness_t_operator(self):
-        from hedge.tools import join_fields
-        from hedge.optemplate import DiffOperatorVector, StiffnessTOperator
-        return DiffOperatorVector(
-            tuple(StiffnessTOperator(self, i) for i in range(self.dimensions)))
+        from hedge.tools import make_obj_array
+        from hedge.optemplate import StiffnessTOperator
+        return make_obj_array(
+            [StiffnessTOperator(self, i) 
+                for i in range(self.dimensions)])
 
     @property
     def mass_operator(self):
-        from hedge.optemplate import DiffOperatorVector, MassOperator
+        from hedge.optemplate import MassOperator
         return MassOperator(self)
 
     @property
     def inverse_mass_operator(self):
-        from hedge.optemplate import DiffOperatorVector, InverseMassOperator
+        from hedge.optemplate import InverseMassOperator
         return InverseMassOperator(self)
 
     def get_flux_operator(self, flux):
@@ -667,11 +671,17 @@ class Discretization(object):
         except AttributeError:
             self.optemplate_preproc_cache = {}
 
+        from hedge.optemplate import OpTemplate
+        if isinstance(optemplate, OpTemplate):
+            optp_expr = optemplate.expr
+        else:
+            optp_expr = optemplate
+
         try:
             return self.optemplate_preproc_cache[optemplate]
         except KeyError:
             pp_optemplate = self.optemplate_preproc_cache[optemplate] = \
-                    self.preprocess_optemplate(optemplate)
+                    self.preprocess_optemplate(optp_expr)
             return pp_optemplate
 
     def execute(self, optemplate, **vars):

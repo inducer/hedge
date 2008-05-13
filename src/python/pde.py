@@ -73,7 +73,8 @@ class GradientOperator(Operator):
     @memoize_method
     def op_template(self):
         from hedge.mesh import TAG_ALL
-        from hedge.optemplate import Field, pair_with_boundary
+        from hedge.optemplate import Field, pair_with_boundary, \
+                OpTemplate
 
         u = Field("u")
         bc = Field("bc")
@@ -81,9 +82,9 @@ class GradientOperator(Operator):
         nabla = discr.nabla
         m_inv = discr.inverse_mass_operator
 
-        return nabla*u - m_inv*(
+        return OpTemplate(nabla*u - m_inv*(
                 self.flux * u + 
-                self.flux * pair_with_boundary(u, bc, TAG_ALL))
+                self.flux * pair_with_boundary(u, bc, TAG_ALL)))
 
     def __call__(self, u):
         from hedge.mesh import TAG_ALL
@@ -119,7 +120,10 @@ class DivergenceOperator(Operator):
     @memoize_method
     def op_template(self):
         from hedge.mesh import TAG_ALL
-        from hedge.optemplate import make_vector_field, pair_with_boundary
+        from hedge.optemplate import \
+                make_vector_field, pair_with_boundary, \
+                OpTemplate
+
 
         nabla = discr.nabla
         m_inv = discr.inverse_mass_operator
@@ -132,9 +136,9 @@ class DivergenceOperator(Operator):
             if i_enabled:
                 local_op_result += nabla[i]*v[i]
         
-        return local_op_result - m_inv*(
+        return OpTemplate(local_op_result - m_inv*(
                 self.flux * v + 
-                self.flux * pair_with_boundary(v, bc, TAG_ALL))
+                self.flux * pair_with_boundary(v, bc, TAG_ALL)))
         
     def __call__(self, v):
         from hedge.mesh import TAG_ALL
@@ -208,18 +212,19 @@ class StrongAdvectionOperator(AdvectionOperatorBase):
 
     @memoize_method
     def op_template(self):
-        from hedge.optemplate import Field, pair_with_boundary
+        from hedge.optemplate import Field, pair_with_boundary, \
+                OpTemplate
         u = Field("u")
         bc_in = Field("bc_in")
 
         nabla = self.discr.nabla
         m_inv = self.discr.inverse_mass_operator
 
-        return -numpy.dot(self.v, nabla*u) + m_inv*(
+        return OpTemplate(-numpy.dot(self.v, nabla*u) + m_inv*(
                 self.flux * u
                 + self.flux * pair_with_boundary(u, bc_in, self.inflow_tag)
                 #+ self.flux * pair_with_boundary(u, bc_out, self.outflow_tag)
-                )
+                ))
 
     def rhs(self, t, u):
         bc_in = self.inflow_u.boundary_interpolant(t, self.discr, self.inflow_tag)
@@ -236,7 +241,9 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
 
     @memoize_method
     def op_template(self):
-        from hedge.optemplate import Field, pair_with_boundary
+        from hedge.optemplate import Field, pair_with_boundary, \
+                OpTemplate
+
         u = Field("u")
         bc_in = Field("bc_in")
         bc_out = Field("bc_out")
@@ -244,11 +251,12 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
         m_inv = self.discr.inverse_mass_operator
         minv_st = self.discr.minv_stiffness_t
 
-        return numpy.dot(self.v, minv_st*u) - m_inv*(
-                self.flux*u
-                + self.flux * pair_with_boundary(u, bc_in, self.inflow_tag)
-                + self.flux * pair_with_boundary(u, bc_out, self.outflow_tag)
-                )
+        return OpTemplate(
+                numpy.dot(self.v, minv_st*u) - m_inv*(
+                    self.flux*u
+                    + self.flux * pair_with_boundary(u, bc_in, self.inflow_tag)
+                    + self.flux * pair_with_boundary(u, bc_out, self.outflow_tag)
+                    ))
 
     def rhs(self, t, u):
         bc_in = self.inflow_u.boundary_interpolant(t, self.discr, self.inflow_tag)
@@ -329,7 +337,10 @@ class StrongWaveOperator:
 
     @memoize_method
     def op_template(self):
-        from hedge.optemplate import make_vector_field, pair_with_boundary
+        from hedge.optemplate import \
+                make_vector_field, \
+                pair_with_boundary, \
+                OpTemplate
 
         d = self.discr.dimensions
 
@@ -354,10 +365,7 @@ class StrongWaveOperator:
                 + self.flux * pair_with_boundary(w, neu_bc, self.neumann_tag)
                 + self.flux * pair_with_boundary(w, rad_bc, self.radiation_tag)
                 ))
-        for x in result:
-            print x
-            print "----------------------------------"
-        return result
+        return OpTemplate(result)
     
     def rhs(self, t, w):
         from hedge.tools import join_fields, ptwise_dot

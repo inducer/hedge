@@ -272,6 +272,9 @@ class FluxStringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
 
 
 class FluxNormalizationMapper(pymbolic.mapper.collector.TermCollector):
+    def handle_unsupported_expression(self, expr):
+        return expr
+
     def map_constant_flux(self, expr):
         if expr.local_c == expr.neighbor_c:
             return expr.local_c

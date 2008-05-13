@@ -70,7 +70,7 @@ def main() :
     vis = VtkVisualizer(discr, pcon, "fld")
     #vis = SiloVisualizer(discr, pcon)
 
-    def source_u(x):
+    def source_u(x, el):
         return exp(-numpy.dot(x, x)*128)
 
     source_u_vec = discr.interpolate_volume_function(source_u)
@@ -79,7 +79,7 @@ def main() :
         from math import sin
         return source_u_vec*sin(10*t)
 
-    from hedge.operators import StrongWaveOperator
+    from hedge.pde import StrongWaveOperator
     from hedge.mesh import TAG_ALL, TAG_NONE
     op = StrongWaveOperator(-1, discr, 
             source_vec_getter,
