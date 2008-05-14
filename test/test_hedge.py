@@ -1237,11 +1237,11 @@ class TestHedge(unittest.TestCase):
             if x < 0.5: return 0
             else: return (x-0.5)
 
-        def u_analytic(x, t):
+        def u_analytic(x, el, t):
             return f(-dot(v, x)+t)
 
         u = discr.interpolate_volume_function(
-                lambda x, el: u_analytic(x, 0))
+                lambda x, el: u_analytic(x, el, 0))
 
         sym_map = SymmetryMap(discr, 
                 lambda x: numpy.array([x[0], -x[1]]),
@@ -1281,7 +1281,7 @@ class TestHedge(unittest.TestCase):
         def f(x):
             return sin(x)
 
-        def u_analytic(x, t):
+        def u_analytic(x, el, t):
             return f((-dot(v, x)/norm_a+t*norm_a))
 
         def boundary_tagger(vertices, el, face_nr):
@@ -1309,7 +1309,7 @@ class TestHedge(unittest.TestCase):
                             flux_type=flux_type)
 
                     u = discr.interpolate_volume_function(
-                            lambda x, el: u_analytic(x, 0))
+                            lambda x, el: u_analytic(x, el, 0))
                     dt = discr.dt_factor(norm_a)
                     nsteps = int(1/dt)
 
@@ -1318,7 +1318,7 @@ class TestHedge(unittest.TestCase):
                         u = stepper(u, step*dt, dt, op.rhs)
 
                     u_true = discr.interpolate_volume_function(
-                            lambda x, el: u_analytic(x, nsteps*dt))
+                            lambda x, el: u_analytic(x, el, nsteps*dt))
                     error = u-u_true
                     error_l2 = discr.norm(error)
                     eoc_rec.add_data_point(order, error_l2)
@@ -1413,7 +1413,8 @@ class TestHedge(unittest.TestCase):
                 from hedge.pde import WeakPoissonOperator
                 op = WeakPoissonOperator(discr, 
                         dirichlet_tag=TAG_ALL,
-                        dirichlet_bc=GivenFunction(truesol_c),
+                        dirichlet_bc=GivenFunction(
+                            lambda x, el: truesol_c(x)),
                         neumann_tag=TAG_NONE, 
                         flux=flux)
 
