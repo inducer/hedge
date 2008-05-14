@@ -68,7 +68,7 @@ def main() :
         from math import sin
         return sin(10*x[0])
 
-    def rhs_c(x):
+    def rhs_c(x, el):
         if la.norm(x) < 0.1:
             return 1000
         else:
@@ -79,7 +79,7 @@ def main() :
         result[0,0] = 0.1
         return result
 
-    from hedge.operators import WeakPoissonOperator
+    from hedge.pde import WeakPoissonOperator
     op = WeakPoissonOperator(discr, 
             diffusion_tensor=ConstantGivenFunction(my_diff_tensor()),
 

@@ -560,9 +560,8 @@ class TestHedge(unittest.TestCase):
         ones = discr.interpolate_volume_function(
                 lambda x, el: 1)
 
-        mass_op = discr._get_mass_op_function()
-        num_integral_1 = dot(ones, mass_op(u=f))
-        num_integral_2 = dot(f, mass_op(u=ones))
+        num_integral_1 = dot(ones, discr.mass_operator.apply(f))
+        num_integral_2 = dot(f, discr.mass_operator.apply(ones))
         num_integral_3 = discr.integral(f)
 
         true_integral = 13*pi/2
@@ -588,11 +587,8 @@ class TestHedge(unittest.TestCase):
         ones = discr.interpolate_volume_function(
                 lambda x, el: 1)
 
-        from hedge.optemplate import Field
-        optp = discr.mass_operator * Field("f")
-
-        num_integral_1 = numpy.dot(ones, discr.execute(optp, f=f))
-        num_integral_2 = numpy.dot(f, discr.execute(optp, f=ones))
+        num_integral_1 = numpy.dot(ones, discr.mass_operator.apply(f))
+        num_integral_2 = numpy.dot(f, discr.mass_operator.apply(ones))
         true_integral = pi**2
         err_1 = abs(num_integral_1-true_integral)
         err_2 = abs(num_integral_2-true_integral)
@@ -620,9 +616,7 @@ class TestHedge(unittest.TestCase):
 
             nabla = discr.nabla
             
-            from hedge.optemplate import Field
-            optp = nabla[coord] * Field("f")
-            df_num = discr.execute(optp, f=f)
+            df_num = discr.nabla[coord].apply(f)
             #discr.visualize_vtk("diff-err.vtk",
                     #[("f", f), ("df", df), ("df_num", df_num), ("error", error)])
 
@@ -661,7 +655,9 @@ class TestHedge(unittest.TestCase):
         from hedge.optemplate import pair_with_boundary, Field
         diff_optp = discr.nabla[0] * Field("f1") + discr.nabla[1] * Field("f2")
 
-        int_div = discr.integral(discr.execute(diff_optp, f1=f1_v, f2=f2_v))
+        int_div = discr.integral(
+                discr.nabla[0].apply(f1_v) 
+                + discr.nabla[1].apply(f2_v))
 
         flux_optp = (
                 discr.get_flux_operator(one_sided_x)
@@ -1397,7 +1393,7 @@ class TestHedge(unittest.TestCase):
         truesol = pymbolic.parse("math.sin(x[0]**2*x[1]**2)")
         truesol_c = pymbolic.compile(truesol, variables=["x"])
         rhs = pymbolic.simplify(pymbolic.laplace(truesol, [v_x[0], v_x[1]]))
-        rhs_c = pymbolic.compile(rhs, variables=["x"])
+        rhs_c = pymbolic.compile(rhs, variables=["x", "el"])
 
         from hedge.mesh import make_disk_mesh, TAG_ALL, TAG_NONE
         mesh = make_disk_mesh(r=0.5, max_area=0.1, faces=20)
@@ -1425,7 +1421,7 @@ class TestHedge(unittest.TestCase):
                     mat = matrix_rep(op)
                     sym_err = la.norm(mat-mat.T)
                     self.assert_(sym_err<1e-12)
-                    check_grad_mat()
+                    #check_grad_mat()
 
                 from hedge.tools import parallel_cg
                 truesol_v = discr.interpolate_volume_function(
@@ -1435,7 +1431,7 @@ class TestHedge(unittest.TestCase):
                         op.prepare_rhs(GivenFunction(rhs_c)),
                         tol=1e-10, max_iterations=40000)
 
-                eocrec.add_data_point(order, norm(discr, sol_v-truesol_v))
+                eocrec.add_data_point(order, discr.norm(sol_v-truesol_v))
 
         #print eocrec.pretty_print()
         self.assert_(eocrec.estimate_order_of_convergence()[0,1] > 8)

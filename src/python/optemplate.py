@@ -50,6 +50,13 @@ class Operator(pymbolic.primitives.Leaf):
     def stringifier(self):
         return StringifyMapper
 
+    def __call__(self, *args, **kwargs):
+        # prevent lazy-eval semantics from kicking in
+        raise RuntimeError, "symbolic operators are not callable"
+
+    def apply(self, field):
+        return self.discr.execute(self * Field("f"), f=field)
+
 
 
 

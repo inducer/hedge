@@ -507,18 +507,11 @@ class Discretization(object):
         raise NotImplementedError
 
     # scalar reduction --------------------------------------------------------
-    @memoize_method
-    def _get_mass_op_function(self):
-        from hedge.optemplate import Field
-        return self.as_function(self.mass_operator*Field("u"))
-
     def integral(self, volume_vector):
-        mass_op = self._get_mass_op_function()
-
         try:
             mass_ones = self._mass_ones
         except AttributeError:
-            self._mass_ones = mass_ones = mass_op(u=ones_on_volume(self))
+            self._mass_ones = mass_ones = self.mass_operator.apply(ones_on_volume(self))
         
         from hedge.tools import log_shape
 
@@ -536,8 +529,6 @@ class Discretization(object):
             return result
 
     def norm(self, volume_vector, p=2):
-        mass_op = self._get_mass_op_function()
-
         if p == numpy.Inf:
             return numpy.abs(volume_vector).max()
         else:
@@ -550,13 +541,13 @@ class Discretization(object):
             if ls == ():
                 return float(numpy.dot(
                         volume_vector,
-                        mass_op(u=volume_vector))**(1/p))
+                        self.mass_operator.apply(volume_vector))**(1/p))
             else:
                 assert len(ls) == 1
                 return float(sum(
                         numpy.dot(
                             subv,
-                            mass_op(u=subv))
+                            self.mass_operator.apply(subv))
                         for subv in volume_vector)**(1/p))
 
     # element data retrieval --------------------------------------------------
@@ -604,6 +595,7 @@ class Discretization(object):
 
     # operator binding functions --------------------------------------------------
     @property
+    @memoize_method
     def nabla(self):
         from hedge.tools import make_obj_array
         from hedge.optemplate import DifferentiationOperator
@@ -612,6 +604,7 @@ class Discretization(object):
                     for i in range(self.dimensions)])
 
     @property
+    @memoize_method
     def minv_stiffness_t(self):
         from hedge.tools import make_obj_array
         from hedge.optemplate import MInvSTOperator
@@ -620,6 +613,7 @@ class Discretization(object):
                 for i in range(self.dimensions)])
 
     @property
+    @memoize_method
     def stiffness_operator(self):
         from hedge.tools import make_obj_array
         from hedge.optemplate import StiffnessOperator
@@ -628,6 +622,7 @@ class Discretization(object):
                 for i in range(self.dimensions)])
 
     @property
+    @memoize_method
     def stiffness_t_operator(self):
         from hedge.tools import make_obj_array
         from hedge.optemplate import StiffnessTOperator
@@ -636,11 +631,13 @@ class Discretization(object):
                 for i in range(self.dimensions)])
 
     @property
+    @memoize_method
     def mass_operator(self):
         from hedge.optemplate import MassOperator
         return MassOperator(self)
 
     @property
+    @memoize_method
     def inverse_mass_operator(self):
         from hedge.optemplate import InverseMassOperator
         return InverseMassOperator(self)

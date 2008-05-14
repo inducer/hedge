@@ -202,28 +202,22 @@ def log_shape(array):
 
 
 
-def ptwise_dot(a1, a2):
+def ptwise_dot(a1, a2, dofs=None):
     if a1.dtype == object:
         a1_log_shape = a1.shape
         a2_log_shape = log_shape(a2)
-
-        assert a1_log_shape[-1] == a2_log_shape[0]
-        len_k = a2_log_shape[0]
-
-        result = numpy.empty(a1_log_shape[:-1]+a2_log_shape[1:], dtype=a1.dtype)
     else:
-        dofs = a2.shape[-1]
-        a2_log_shape = a2.shape[:-1]
+        a2_log_shape = log_shape(a2)
 
-        if a1.shape[-1] == dofs:
+        if dofs is not None and a1.shape[-1] == dofs:
             a1_log_shape = a1.shape[:-1]
         else:
             a1_log_shape = a1.shape
 
-        assert a1_log_shape[-1] == a2_log_shape[0]
-        len_k = a2_log_shape[0]
+    assert a1_log_shape[-1] == a2_log_shape[0]
+    len_k = a2_log_shape[0]
 
-        result = numpy.empty(a1_log_shape[:-1]+a2_log_shape[1:]+(dofs,), dtype=a1.dtype)
+    result = numpy.empty(a1_log_shape[:-1]+a2_log_shape[1:], dtype=object)
 
     from pytools import indices_in_shape
     for a1_i in indices_in_shape(a1_log_shape[:-1]):
