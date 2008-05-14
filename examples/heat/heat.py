@@ -73,13 +73,13 @@ def main() :
         print "dt", dt
         print "nsteps", nsteps
 
-    def u0(x):
+    def u0(x, el):
         if la.norm(x) < 0.2:
             return 1
         else:
             return 0
 
-    def coeff(x):
+    def coeff(x, el):
         if x[0] < 0:
             return 0.25
         else:
@@ -91,7 +91,7 @@ def main() :
     def neumann_bc(t, x):
         return 2
 
-    from hedge.operators import StrongHeatOperator
+    from hedge.pde import StrongHeatOperator
     op = StrongHeatOperator(discr, 
             #coeff=coeff,
             dirichlet_tag="dirichlet",

@@ -60,7 +60,7 @@ class Operator(pymbolic.primitives.Leaf):
 
 
 
-class OperatorBinding(pymbolic.primitives.Leaf):
+class OperatorBinding(pymbolic.primitives.AlgebraicLeaf):
     def __init__(self, op, field):
         self.op = op
         self.field = field

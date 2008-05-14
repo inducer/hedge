@@ -202,6 +202,27 @@ def log_shape(array):
 
 
 
+def ptwise_mul(a, b):
+    a_log_shape = log_shape(a)
+    b_log_shape = log_shape(b)
+
+    from pytools import indices_in_shape
+
+    if a_log_shape == ():
+        result = numpy.empty(b_log_shape, dtype=object)
+        for i in indices_in_shape(b_log_shape):
+            result[i] = a*b[i]
+    elif b_log_shape == ():
+        result = numpy.empty(a_log_shape, dtype=object)
+        for i in indices_in_shape(a_log_shape):
+            result[i] = a[i]*b
+    else:
+        raise ValueError, "ptwise_mul can't handle two non-scalars"
+
+    return result
+            
+
+
 def ptwise_dot(a1, a2, dofs=None):
     if a1.dtype == object:
         a1_log_shape = a1.shape

@@ -35,7 +35,7 @@ class _ConstantFunctionContainer:
     def shape(self):
         return self.value.shape
 
-    def __call__(self, x):
+    def __call__(self, x, el):
         return self.value
 
 
@@ -237,7 +237,7 @@ class TimeDependentGivenFunction(ITimeDependentGivenFunction):
         self.f = f
 
     def volume_interpolant(self, t, discr):
-        return discr.interpolate_volume_function(lambda x: self.f(x,t))
+        return discr.interpolate_volume_function(lambda x, el: self.f(x,t))
 
     def boundary_interpolant(self, t, discr, tag=hedge.mesh.TAG_ALL):
         return discr.interpolate_boundary_function(lambda x: self.f(x, t), tag)

@@ -343,7 +343,7 @@ class Discretization(hedge.discretization.Discretization):
         slice_pfx = (slice(None),)*len(shape)
         result = self.boundary_zeros(tag=tag, shape=shape)
         for point_nr, x in enumerate(self.get_boundary(tag).nodes):
-            result[slice_pfx + (point_nr,)] = f(x)
+            result[slice_pfx + (point_nr,)] = f(x, None) # FIXME
         return result
 
     def boundary_normals(self, tag=hedge.mesh.TAG_ALL):

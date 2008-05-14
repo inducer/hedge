@@ -1057,8 +1057,46 @@ class StrongHeatOperator(TimeDependentOperator):
                 )
 
     # right-hand side ---------------------------------------------------------
+    @memoize_method
+    def grad_op_template(self):
+        from hedge.optemplate import Field, \
+                pair_with_boundary, OpTemplate
+
+        stiff = self.discr.stiffness_operator
+        m_inv = self.discr.inverse_mass_operator
+        
+        u = Field("u")
+        sqrt_coeff_u = Field("sqrt_coeff_u")
+        dir_bc_u = Field("dir_bc_u")
+        neu_bc_u = Field("neu_bc_u")
+
+        return OpTemplate(self.m_inv * (
+                self.stiff * u
+                - self.flux_u*sqrt_coeff_u
+                - self.flux_u_dbdry*pair_with_boundary(sqrt_coeff_u, dir_bc_u, self.dirichlet_tag)
+                - self.flux_u_nbdry*pair_with_boundary(sqrt_coeff_u, neu_bc_u, self.neumann_tag)
+                ))
+
+    @memoize_method
+    def div_op_template(self):
+        from hedge.optemplate import make_vector_field, \
+                pair_with_boundary, OpTemplate
+
+        d = self.discr.dimensions
+        w = make_vector_field("w", 1+d)
+        v = w[1:]
+
+        dir_bc_w = make_vector_field("dir_bc_w", 1+d)
+        neu_bc_w = make_vector_field("neu_bc_w", 1+d)
+
+        return OpTemplate(self.m_inv * (
+                numpy.dot(self.stiff, v)
+                - self.flux_v * w
+                - self.flux_v_dbdry * pair_with_boundary(w, dir_bc_w, self.dirichlet_tag)
+                - self.flux_v_nbdry * pair_with_boundary(w, neu_bc_w, self.neumann_tag)
+                ))
+
     def rhs(self, t, u):
-        from hedge.discretization import pair_with_boundary, cache_diff_results
         from math import sqrt
         from hedge.tools import join_fields
 
@@ -1067,27 +1105,22 @@ class StrongHeatOperator(TimeDependentOperator):
 
         sqrt_coeff_u = self.sqrt_coeff * u
 
-        dirichlet_bc_u = self.dirichlet_bc_u(t, sqrt_coeff_u)
-        neumann_bc_u = self.neumann_bc_u(t, sqrt_coeff_u)
+        dir_bc_u = self.dirichlet_bc_u(t, sqrt_coeff_u)
+        neu_bc_u = self.neumann_bc_u(t, sqrt_coeff_u)
 
-        v = self.m_inv * (
-                self.sqrt_coeff*(self.stiff * cache_diff_results(u))
-                - self.flux_u*sqrt_coeff_u
-                - self.flux_u_dbdry*pair_with_boundary(sqrt_coeff_u, dirichlet_bc_u, dtag)
-                - self.flux_u_nbdry*pair_with_boundary(sqrt_coeff_u, neumann_bc_u, ntag)
-                )
-        sqrt_coeff_v = self.sqrt_coeff * v
+        v = self.discr.execute(self.grad_op_template(),
+                u=u, sqrt_coeff_u=sqrt_coeff_u,
+                dir_bc_u=dir_bc_u, neu_bc_u=neu_bc_u)
 
-        dirichlet_bc_v = self.dirichlet_bc_v(t, sqrt_coeff_v)
-        neumann_bc_v = self.neumann_bc_v(t, sqrt_coeff_v)
+        from hedge.tools import ptwise_mul
+        sqrt_coeff_v = ptwise_mul(self.sqrt_coeff, v)
+
+        dir_bc_v = self.dirichlet_bc_v(t, sqrt_coeff_v)
+        neu_bc_v = self.neumann_bc_v(t, sqrt_coeff_v)
 
         w = join_fields(sqrt_coeff_u, sqrt_coeff_v)
-        dirichlet_bc_w = join_fields(dirichlet_bc_u, dirichlet_bc_v)
-        neumann_bc_w = join_fields(neumann_bc_u, neumann_bc_v)
+        dir_bc_w = join_fields(dir_bc_u, dir_bc_v)
+        neu_bc_w = join_fields(neu_bc_u, neu_bc_v)
 
-        return self.m_inv * (
-                numpy.dot(self.stiff, cache_diff_results(self.sqrt_coeff*v))
-                - self.flux_v * w
-                - self.flux_v_dbdry * pair_with_boundary(w, dirichlet_bc_w, dtag)
-                - self.flux_v_nbdry * pair_with_boundary(w, neumann_bc_w, ntag)
-                )
+        return self.discr.execute(self.div_op_template(),
+                w=w, dir_bc_w=dir_bc_w, neu_bc_w=neu_bc_w)
