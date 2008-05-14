@@ -42,10 +42,9 @@ def main():
             CylindricalCavityMode, \
             RectangularWaveguideMode, \
             RectangularCavityMode
-    from hedge.operators import TEMaxwellOperator, TMMaxwellOperator
+    from hedge.pde import TEMaxwellOperator, TMMaxwellOperator
     from hedge.parallel import guess_parallelization_context
     from hedge.data import GivenFunction, TimeIntervalGivenFunction
-    from pytools.arithmetic_container import ArithmeticList
 
     pcon = guess_parallelization_context()
 
@@ -67,7 +66,7 @@ def main():
     class CurrentSource:
         shape = (3,)
 
-        def __call__(self, x):
+        def __call__(self, x, el):
             return [0,0,exp(-80*la.norm(x))]
 
     for order in [3]:
@@ -89,10 +88,7 @@ def main():
             print "nsteps", nsteps
             print "#elements=", len(mesh.elements)
 
-        from hedge.discretization import norm
-
         op = TMMaxwellOperator(discr, epsilon, mu, upwind_alpha=1,
-                direct_flux=True,
                 current=TimeIntervalGivenFunction(
                     GivenFunction(CurrentSource()), off_time=final_time/10)
                 )
@@ -105,7 +101,7 @@ def main():
         for step in range(nsteps):
             e, h = op.split_eh(fields)
             print "timestep %d, t=%g l2[e]=%g l2[h]=%g secs=%f" % (
-                    step, t, norm(discr, e), norm(discr, h),
+                    step, t, discr.norm(e), discr.norm(h),
                     time()-last_tstep)
             last_tstep = time()
 
