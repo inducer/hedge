@@ -43,12 +43,9 @@ def _floor(value, multiple_of=1):
 
 
 class DeviceData:
-    def __init__(self, dev=None):
+    def __init__(self, dev):
         import pycuda.driver as drv
 
-        if dev is None:
-            assert drv.Device.count() >= 1
-            dev = drv.Device(0)
         self.max_threads = dev.get_attribute(drv.device_attribute.MAX_THREADS_PER_BLOCK)
         self.warp_size = dev.get_attribute(drv.device_attribute.WARP_SIZE)
         self.thread_blocks_per_mp = 8
@@ -56,14 +53,14 @@ class DeviceData:
         self.registers = dev.get_attribute(drv.device_attribute.REGISTERS_PER_BLOCK)
         self.shared_memory = dev.get_attribute(drv.device_attribute.MAX_SHARED_MEMORY_PER_BLOCK)
 
+    def align_bytes(self):
+        return 16
+
 
 
 
 class OccupancyRecord:
-    def __init__(self, threads, shared_mem=0, registers=0, devdata=None):
-        if devdata is None:
-            devdata = DeviceData()
-
+    def __init__(self, devdata, threads, shared_mem=0, registers=0):
         if threads > devdata.max_threads:
             raise ValueError("too many threads")
 
@@ -102,11 +99,25 @@ class Parallelism:
 
 
 class ExecutionPlan:
-    def __init__(self, ldis, flux_par, float_size=4, int_size=4):
+    def __init__(self, devdata, ldis, flux_par, 
+            extfaces=None, float_size=4, int_size=4):
+        self.devdata = devdata
         self.ldis = ldis
         self.flux_par = flux_par
+        self.extfaces = extfaces
         self.float_size = float_size
         self.int_size = int_size
+
+    def copy(self, devdata=None, ldis=None, flux_par=None, 
+            extfaces=None, float_size=None, int_size=None):
+        return ExecutionPlan(
+                devdata or self.devdata,
+                ldis or self.ldis,
+                flux_par or self.flux_par,
+                extfaces or self.extfaces,
+                float_size or self.float_size,
+                int_size or self.int_size,
+                )
 
     def dofs_per_el(self):
         return self.ldis.node_count()
@@ -139,50 +150,65 @@ class ExecutionPlan:
         # How many of my faces do I need to tesselate this face area?
         return macrocube_face_area * factorial(d-1)
 
+    def get_extface_count(self):
+        if self.extfaces is None:
+            return _ceiling(self.estimate_extface_count())
+        else:
+            return self.extfaces
+
     def int_dof_smem(self):
-        return self.block_el() * self.dofs_per_el() * self.float_size
+        return _ceiling(self.block_el() * self.dofs_per_el() 
+                * self.float_size, 
+                self.devdata.align_bytes())
 
     @memoize_method
     def ext_dof_smem(self):
-        return (self.estimate_extface_count()
-                * self.dofs_per_face() * self.float_size)
+        return _ceiling(self.get_extface_count()
+                * self.dofs_per_face() * self.float_size,
+                self.devdata.align_bytes())
 
     @memoize_method
     def face_count(self):
-        from math import ceil
         return (self.block_el() * self.faces_per_el() + 
-                int(ceil(self.estimate_extface_count()))
-                )
+                self.get_extface_count())
 
-    @memoize_method
-    def shared_mem_use(self):
-        facepair_count = self.face_count() // 2
-
+    def indexing_bytes_per_face_pair(self):
         # How much planning info per face pair?
         # h, order, face_jacobian, normal
         # a_base, b_base, a_ilist_number, b_ilist_number
         # bwrite_base, bwrite_ilist_number
         # Total: 3+d floats, 6 ints
 
-        planning_smem = (3+self.ldis.dimensions)*self.float_size + 6*self.int_size
-        return self.int_dof_smem() + self.ext_dof_smem() + planning_smem
+        return (3+self.ldis.dimensions)*self.float_size + 6*self.int_size
+
+    def indexing_smem(self):
+        return _ceiling(
+                self.indexing_bytes_per_face_pair()*self.facepair_count(),
+                self.devdata.align_bytes())
+
+    def facepair_count(self):
+        return (self.face_count()+1) // 2
+
+    @memoize_method
+    def shared_mem_use(self):
+        return (self.int_dof_smem() 
+                + self.ext_dof_smem() 
+                + self.indexing_smem())
 
     def threads(self):
         return self.flux_par.p*self.faces_per_el()*self.dofs_per_face()
 
-    def invalid_reason(self, devdata=None):
-        if devdata is None:
-            devdata = DeviceData()
-
-        if self.threads() >= devdata.max_threads:
+    def invalid_reason(self):
+        if self.threads() >= self.devdata.max_threads:
             return "too many threads"
-        if self.shared_mem_use() >= devdata.shared_memory:
+        if self.shared_mem_use() >= self.devdata.shared_memory:
             return "too much shared memory"
         return None
 
     @memoize_method
     def occupancy_record(self):
-        return OccupancyRecord(self.threads(), self.shared_mem_use())
+        return OccupancyRecord(self.devdata,
+                self.threads(), self.shared_mem_use())
 
     @memoize_method
     def find_localop_par(self):
@@ -194,63 +220,139 @@ class ExecutionPlan:
         else:
             return Parallelism(threads, ser+1)
 
+    def __str__(self):
+            return "flux_par=%s threads=%d int_smem=%d ext_smem=%d ind_smem=%d smem=%d occ=%f" % (
+                    self.flux_par, self.threads(), 
+                    self.int_dof_smem(), 
+                    self.ext_dof_smem(),
+                    self.indexing_smem(),
+                    self.shared_mem_use(), 
+                    self.occupancy_record().occupancy)
 
 
 
 class CudaDiscretization(hedge.discretization.Discretization):
-    def __init__(self, *args, **kwargs):
-        # argument parsing ----------------------------------------------------
+    def make_plan(self, ldis, mesh):
+        def generate_valid_plans():
+            for pe in range(2,32):
+                for se in range(1,256):
+                    flux_par = Parallelism(pe, se)
+                    plan = ExecutionPlan(self.devdata, ldis, flux_par)
+                    if plan.invalid_reason() is None:
+                        yield plan
 
-        if "plan" in kwargs:
-            plan = kwargs["plan"]
-            del kwargs["plan"]
-        else:
-            plan = None
+        plans = list(generate_valid_plans())
 
-        if "init_cuda" in kwargs:
-            init_cuda = kwargs["init_cuda"]
-            del kwargs["init_cuda"]
-        else:
-            init_cuda = True
+        if not plans:
+            raise RuntimeError, "no valid CUDA execution plans found"
 
-        # cuda initialization -------------------------------------------------
+        max_occup = max(plan.occupancy_record().occupancy for plan in plans)
+        good_plans = [p for p in generate_valid_plans()
+                if p.occupancy_record().occupancy > max_occup - 1e-10]
+
+        from pytools import argmax2
+        return argmax2((p, p.block_el()) for p in good_plans)
+
+
+
+
+    def partition_mesh(self, mesh, plan):
+        # search for mesh partition that matches plan
+        from pymetis import part_graph
+        part_count = len(mesh.elements)//plan.flux_par.total()+1
+        while True:
+            cuts, partition = part_graph(part_count,
+                    mesh.element_adjacency_graph(),
+                    vweights=[1000]*len(mesh.elements))
+
+            # prepare a mapping from (el, face_nr) to the block
+            # at the other end of the interface, if different from
+            # current. concurrently, prepare a mapping 
+            #  block# -> # of interfaces
+            elface2block = {}
+            block2extifaces = {}
+
+            for elface1, elface2 in mesh.interfaces:
+                e1, f1 = elface1
+                e2, f2 = elface2
+                r1 = partition[e1.id]
+                r2 = partition[e2.id]
+
+                if r1 != r2:
+                    block2extifaces[r1] = block2extifaces.get(r1, 0) + 1
+                    block2extifaces[r2] = block2extifaces.get(r2, 0) + 1
+
+                    elface2block[elface1] = r2
+                    elface2block[elface2] = r1
+
+            blocks = {}
+            for el_id, block in enumerate(partition):
+                blocks.setdefault(block, []).append(el_id)
+
+            block_elements = max(len(block_els) for block_els in blocks.itervalues())
+            flux_par_s = _ceiling(block_elements/plan.flux_par.p)
+            actual_plan = plan.copy(
+                    extfaces=max(block2extifaces.itervalues()),
+                    flux_par=Parallelism(plan.flux_par.p, flux_par_s))
+
+            if (flux_par_s == plan.flux_par.s and
+                    abs(plan.occupancy_record().occupancy -
+                        actual_plan.occupancy_record().occupancy) < 1e-10):
+                break
+
+            part_count += 1
+
+        if False:
+            from matplotlib.pylab import hist, show
+            print plan.get_extface_count()
+            hist(block2extifaces.values())
+            show()
+            hist([len(block_els) for block_els in blocks.itervalues()])
+            show()
+            
+        return block_elements, actual_plan, blocks, partition
+
+
+
+
+    def __init__(self, mesh, local_discretization=None, 
+            order=None, plan=None, init_cuda=True, debug=False, 
+            dev=None):
+        ldis = self.get_local_discretization(mesh, local_discretization, order)
+
+        import pycuda.driver as cuda
         if init_cuda:
-            import pycuda.driver as cuda
             cuda.init()
 
-        hedge.discretization.Discretization.__init__(self, *args, **kwargs)
+        if dev is None:
+            assert cuda.Device.count() >= 1
+            dev = cuda.Device(0)
 
-        # plan generation -----------------------------------------------------
-        eg, = self.element_groups
+        self.device = dev
+        self.devdata = DeviceData(dev)
 
         if plan is None:
-            def generate_valid_plans():
-                for pe in range(2,32):
-                    for se in range(1,256):
-                        flux_par = Parallelism(pe, se)
-                        plan = ExecutionPlan(eg.local_discretization, flux_par)
-                        if plan.invalid_reason() is None:
-                            yield plan
+            plan = self.make_plan(ldis, mesh)
+            print "projected:", plan
 
-            plans = list(generate_valid_plans())
+        block_elements, plan, blocks, partition = self.partition_mesh(
+                mesh, plan)
+        self.plan = plan
+        print "actual:", plan
 
-            if not plans:
-                raise RuntimeError, "no valid CUDA execution plans found"
+        # initialize superclass -----------------------------------------------
+        hedge.discretization.Discretization.__init__(self, mesh, ldis, debug=debug)
 
-            max_occup = max(plan.occupancy_record().occupancy for plan in plans)
-            good_plans = [p for p in generate_valid_plans()
-                    if p.occupancy_record().occupancy > max_occup - 1e-10]
 
-            from pytools import argmax2
-            self.plan = argmax2((p, p.block_el()) for p in good_plans)
 
-            print "cuda plan: flux_par=%s threads=%d int_smem=%d ext_smem=%d smem=%d occ=%f" % (
-                    self.plan.flux_par, self.plan.threads(), 
-                    self.plan.int_dof_smem(), self.plan.ext_dof_smem(),
-                    self.plan.shared_mem_use(), 
-                    self.plan.occupancy_record().occupancy)
-        else:
-            self.plan = plan
+
+
+
+
+
+
+
+
             
 
 
@@ -302,3 +404,4 @@ if __name__ == "__main__":
     drv.init()
 
     _test_planner()
+
