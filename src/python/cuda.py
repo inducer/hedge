@@ -183,6 +183,8 @@ class ExecutionPlan:
 
     def indexing_smem(self):
         return _ceiling(
+                self.int_size+ # number of active elements in block
+                self.int_size+ # number of active faces in block
                 self.indexing_bytes_per_face_pair()*self.facepair_count(),
                 self.devdata.align_bytes())
 
@@ -191,7 +193,8 @@ class ExecutionPlan:
 
     @memoize_method
     def shared_mem_use(self):
-        return (self.int_dof_smem() 
+        return (64 # for parameters
+                + self.int_dof_smem() 
                 + self.ext_dof_smem() 
                 + self.indexing_smem())
 
@@ -310,7 +313,7 @@ class CudaDiscretization(hedge.discretization.Discretization):
             hist([len(block_els) for block_els in blocks.itervalues()])
             show()
             
-        return block_elements, actual_plan, blocks, partition
+        return actual_plan, blocks, partition
 
 
 
@@ -335,10 +338,9 @@ class CudaDiscretization(hedge.discretization.Discretization):
             plan = self.make_plan(ldis, mesh)
             print "projected:", plan
 
-        block_elements, plan, blocks, partition = self.partition_mesh(
-                mesh, plan)
-        self.plan = plan
-        print "actual:", plan
+        self.plan, self.blocks, self.partition = self.partition_mesh(mesh, plan)
+        del plan
+        print "actual:", self.plan
 
         # initialize superclass -----------------------------------------------
         hedge.discretization.Discretization.__init__(self, mesh, ldis, debug=debug)
