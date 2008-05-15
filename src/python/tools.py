@@ -223,6 +223,7 @@ def ptwise_mul(a, b):
             
 
 
+
 def ptwise_dot(a1, a2, dofs=None):
     if a1.dtype == object:
         a1_log_shape = a1.shape

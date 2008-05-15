@@ -30,12 +30,11 @@ class TestParallel(unittest.TestCase):
         import numpy
         import numpy.linalg as la
         from hedge.mesh import make_ball_mesh, make_box_mesh, make_rect_mesh
-        from hedge.discretization import Discretization, pair_with_boundary, norm
         from hedge.element import TetrahedralElement, TriangularElement
         from hedge.timestep import RK4TimeStepper
         from hedge.tools import EOCRecorder
         from math import sin, pi, sqrt
-        from hedge.operators import StrongAdvectionOperator
+        from hedge.pde import StrongAdvectionOperator
         from hedge.data import TimeDependentGivenFunction
         from hedge.parallel import guess_parallelization_context
         from hedge.visualization import SiloVisualizer
@@ -50,7 +49,7 @@ class TestParallel(unittest.TestCase):
         def f(x):
             return sin(x)
 
-        def u_analytic(x, t):
+        def u_analytic(x, el, t):
             return f((numpy.dot(-v[:dims],x)/la.norm(v[:dims])+t*la.norm(v[:dims])))
 
         def boundary_tagger(vertices, el, face_nr):
@@ -111,7 +110,7 @@ class TestParallel(unittest.TestCase):
                                 flux_type=flux_type)
                         vis = SiloVisualizer(discr, pcon)
 
-                        u = discr.interpolate_volume_function(lambda x: u_analytic(x, 0))
+                        u = discr.interpolate_volume_function(lambda x, el: u_analytic(x, el, 0))
                         ic = u.copy()
 
                         dt = discr.dt_factor(op.max_eigenvalue())
@@ -127,9 +126,9 @@ class TestParallel(unittest.TestCase):
                             u = stepper(u, step*dt, dt, op.rhs)
 
                         u_true = discr.interpolate_volume_function(
-                                lambda x: u_analytic(x, nsteps*dt))
+                                lambda x, el: u_analytic(x, el, nsteps*dt))
                         error = u-u_true
-                        my_l2_error = norm(discr, error)
+                        my_l2_error = discr.norm(error)
 
                         if debug_output:
                             visf = vis.make_file(test_name+"-final")

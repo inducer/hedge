@@ -24,6 +24,7 @@ import pytools
 import numpy
 import numpy.linalg as la
 import hedge.discretization
+import hedge.discr_precompiled
 import hedge.mesh
 
 
@@ -311,7 +312,83 @@ class MPIParallelizationContext(ParallelizationContext):
 
 
 
-class ParallelDiscretization(hedge.discretization.Discretization):
+class ExecutionMapper(hedge.discr_precompiled.ExecutionMapper):
+    def scalar_inner_flux(self, flux, field, out=None):
+        import boost.mpi as mpi
+        from hedge._internal import irecv_vector, isend_vector
+
+        self.discr.comm_flux_counter.add()
+        self.discr.comm_flux_timer.start()
+        comm = self.discr.context.communicator
+
+        from hedge.tools import log_shape
+        ls = log_shape(field)
+
+        if ls != ():
+            assert len(ls) == 1
+            field_count = ls[0]
+        else:
+            field_count = None
+
+        def fix_shape(field, tag):
+            if field_count is not None:
+                bdry_len = len(self.discr.get_boundary(tag).nodes)
+                return numpy.reshape(field, (field_count, bdry_len))
+            else:
+                return field
+
+        # Subtlety here: The vectors for isend and irecv need to stay allocated
+        # for as long as the request is not completed. The wrapper aids this
+        # by making sure the vector outlives the request by using Boost.Python's
+        # with_custodian_and_ward mechanism. However, this "life support" gets
+        # eliminated if the only reference to the request is from inside a 
+        # RequestList, so we need to provide our own life support for these vectors.
+
+        neigh_recv_vecs = dict(
+                (rank, self.discr.boundary_zeros(
+                    hedge.mesh.TAG_RANK_BOUNDARY(rank), 
+                    shape=ls))
+                for rank in self.discr.neighbor_ranks)
+
+        recv_requests = mpi.RequestList(
+                irecv_vector(comm, rank, 1, neigh_recv_vecs[rank])
+                for rank in self.discr.neighbor_ranks)
+
+        send_requests = [isend_vector(comm, rank, 1,
+            self.discr.boundarize_volume_field(
+                field, 
+                hedge.mesh.TAG_RANK_BOUNDARY(rank))
+            )
+            for rank in self.discr.neighbor_ranks]
+
+        result = [hedge.discr_precompiled.ExecutionMapper
+                .scalar_inner_flux(self, flux, field)]
+
+        def receive(_, status):
+            from hedge.tools import apply_index_map
+
+            tag = hedge.mesh.TAG_RANK_BOUNDARY(status.source)
+
+            foreign_order_bfield = fix_shape(neigh_recv_vecs[status.source], tag)
+
+            bfield = apply_index_map(
+                    self.discr.from_neighbor_maps[status.source],
+                    foreign_order_bfield)
+
+            result[0] += self.scalar_bdry_flux(
+                    flux, field, bfield, tag)
+
+        mpi.wait_all(recv_requests, receive)
+        mpi.wait_all(mpi.RequestList(send_requests))
+
+        self.discr.comm_flux_timer.stop()
+
+        return result[0]
+
+
+
+
+class ParallelDiscretization(hedge.discr_precompiled.Discretization):
     def __init__(self, pcon, rank_data, local_discretization=None, 
             order=None, debug=False):
         self.received_bdrys = {}
@@ -370,7 +447,7 @@ class ParallelDiscretization(hedge.discretization.Discretization):
             for rank in self.neighbor_ranks:
                 bdry_tag = hedge.mesh.TAG_RANK_BOUNDARY(rank)
                 rank_bdry = self.mesh.tag_to_boundary[bdry_tag]
-                rank_discr_boundary = self._get_boundary(bdry_tag)
+                rank_discr_boundary = self.get_boundary(bdry_tag)
 
                 # a list of global vertex numbers for each face
                 my_vertices_global = [
@@ -416,7 +493,7 @@ class ParallelDiscretization(hedge.discretization.Discretization):
                     received_packets.iteritems():
                 bdry_tag = hedge.mesh.TAG_RANK_BOUNDARY(rank)
                 rank_bdry = self.mesh.tag_to_boundary[bdry_tag]
-                rank_discr_boundary = self._get_boundary(bdry_tag)
+                rank_discr_boundary = self.get_boundary(bdry_tag)
 
                 flat_nb_node_coords = list(flatten(nb_node_coords))
 
@@ -545,104 +622,8 @@ class ParallelDiscretization(hedge.discretization.Discretization):
                 Discretization.dt_geometric_factor(self),
                 min)
 
-    def get_flux_operator(self, flux, direct=True):
-        """Return a flux operator that can be multiplied with
-        a volume field to obtain the lifted interior fluxes
-        or with a boundary pair to obtain the lifted boundary
-        flux.
-
-        `direct' determines whether the operator is applied in a
-        matrix-free fashion or uses precomputed matrices.
-        """
-        return _ParallelFluxOperator(self, flux, direct)
-
-
-
-
-class _ParallelFluxOperator(object):
-    def __init__(self, discr, flux, direct):
-        self.discr = discr
-        from hedge.discretization import Discretization
-        self.serial_flux_op = Discretization.get_flux_operator(
-                discr, flux, direct)
-
-    def __mul__(self, field):
-        from hedge.discretization import pair_with_boundary, BoundaryPair
-
-        if isinstance(field, BoundaryPair):
-            return self.serial_flux_op * field
-
-        import boost.mpi as mpi
-        from hedge._internal import irecv_vector, isend_vector
-
-        self.discr.comm_flux_counter.add()
-        self.discr.comm_flux_timer.start()
-
-        comm = self.discr.context.communicator
-
-        from hedge.tools import log_shape
-        ls = log_shape(field)
-
-        if ls != ():
-            assert len(ls) == 1
-            field_count = ls[0]
-        else:
-            field_count = None
-
-        def fix_shape(field, tag):
-            if field_count is not None:
-                bdry_len = len(self.discr._get_boundary(tag).nodes)
-                return numpy.reshape(field, (field_count, bdry_len))
-            else:
-                return field
-
-        # Subtlety here: The vectors for isend and irecv need to stay allocated
-        # for as long as the request is not completed. The wrapper aids this
-        # by making sure the vector outlives the request by using Boost.Python's
-        # with_custodian_and_ward mechanism. However, this "life support" gets
-        # eliminated if the only reference to the request is from inside a 
-        # RequestList, so we need to provide our own life support for these vectors.
-
-        neigh_recv_vecs = dict(
-                (rank, self.discr.boundary_zeros(
-                    hedge.mesh.TAG_RANK_BOUNDARY(rank), 
-                    shape=ls))
-                for rank in self.discr.neighbor_ranks)
-
-        recv_requests = mpi.RequestList(
-                irecv_vector(comm, rank, 1, neigh_recv_vecs[rank])
-                for rank in self.discr.neighbor_ranks)
-
-        send_requests = [isend_vector(comm, rank, 1,
-            self.discr.boundarize_volume_field(
-                field, 
-                hedge.mesh.TAG_RANK_BOUNDARY(rank))
-            )
-            for rank in self.discr.neighbor_ranks]
-
-        result = [self.serial_flux_op * field]
-
-        def receive(_, status):
-            from hedge.tools import apply_index_map
-
-            tag = hedge.mesh.TAG_RANK_BOUNDARY(status.source)
-
-            foreign_order_bfield = fix_shape(neigh_recv_vecs[status.source], tag)
-
-            bfield = apply_index_map(
-                    self.discr.from_neighbor_maps[status.source],
-                    foreign_order_bfield)
-
-            result[0] += self.serial_flux_op * \
-                    pair_with_boundary(field, bfield, tag)
-
-        mpi.wait_all(recv_requests, receive)
-        mpi.wait_all(mpi.RequestList(send_requests))
-
-        self.discr.comm_flux_timer.stop()
-
-        return result[0]
-
+    def run_preprocessed_optemplate(self, pp_optemplate, vars):
+        return ExecutionMapper(vars, self)(pp_optemplate)
 
 
 

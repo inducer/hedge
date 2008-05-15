@@ -116,7 +116,7 @@ class _FluxOpCompileMapper(pymbolic.mapper.IdentityMapper):
 
 
 
-class _ExecutionMapper(hedge.optemplate.Evaluator,
+class ExecutionMapper(hedge.optemplate.Evaluator,
         hedge.optemplate.BoundOpMapperMixin, 
         hedge.optemplate.LocalOpReducerMixin):
     def __init__(self, context, discr):
@@ -481,5 +481,5 @@ class Discretization(hedge.discretization.Discretization):
                                 _FluxOpCompileMapper()(optemplate)))
 
     def run_preprocessed_optemplate(self, pp_optemplate, vars):
-        return _ExecutionMapper(vars, self)(pp_optemplate)
+        return ExecutionMapper(vars, self)(pp_optemplate)
 
