@@ -46,7 +46,18 @@ namespace
     return fim.release();
   }
 
+
+
+  unsigned from_index_map_len(const from_index_map &fim)
+  { return fim.m_map.size(); }
+  unsigned from_index_map_getitem(const from_index_map &fim, unsigned i)
+  { return fim.m_map.at(i); }
 }
+
+
+
+
+
 void hedge_expose_index_map()
 {
   {
@@ -55,6 +66,8 @@ void hedge_expose_index_map()
       .def("__init__", make_constructor(make_from_index_map))
       .def_readonly("from_length", &cl::m_from_length)
       .def_readonly("to_length", &cl::m_to_length)
+      .def("__len__", from_index_map_len)
+      .def("__getitem__", from_index_map_getitem)
       ;
   }
 

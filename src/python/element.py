@@ -192,6 +192,7 @@ class Element(object):
 
 class SimplicialElement(Element):
     # numbering ---------------------------------------------------------------
+    @memoize_method
     def node_count(self):
         """Return the number of interpolation nodes in this element."""
         d = self.dimensions
@@ -199,6 +200,10 @@ class SimplicialElement(Element):
         from operator import mul
         from pytools import factorial
         return int(reduce(mul, (o+1+i for i in range(d)))/factorial(d))
+
+    @memoize_method
+    def face_node_count(self):
+        return len(self.face_indices()[0])
 
     @memoize_method
     def vertex_indices(self):

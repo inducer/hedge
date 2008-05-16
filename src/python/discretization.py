@@ -337,6 +337,7 @@ class Discretization(object):
         # part of a week to figure out):
         # h on both sides of an interface must be the same, otherwise
         # the penalty term will behave very oddly.
+        # This unification happens below.
         f.h = abs(el.map.jacobian/f.face_jacobian)
 
         return f
@@ -501,28 +502,108 @@ class Discretization(object):
         return len(self.get_boundary(tag).nodes)
 
     def volume_empty(self, shape=()):
-        raise NotImplementedError
+        return numpy.empty(shape+(len(self.nodes),), dtype=float)
 
     def volume_zeros(self, shape=()):
-        raise NotImplementedError
+        return numpy.zeros(shape+(len(self.nodes),), dtype=float)
 
-    def interpolate_volume_function(self, f):
-        raise NotImplementedError
+    def interpolate_volume_function(self, f, tgt_factory=None):
+        try:
+            # are we interpolating many fields at once?
+            shape = f.shape
+        except AttributeError:
+            # no, just one
+            shape = ()
+
+        slice_pfx = (slice(None),)*len(shape)
+        out = (tgt_factory or self.volume_empty)(shape)
+        for eg in self.element_groups:
+            for el, rng in zip(eg.members, eg.ranges):
+                for point_nr in xrange(*rng):
+                    out[slice_pfx + (point_nr,)] = \
+                            f(self.nodes[point_nr], el)
+        return out
+
+    def boundary_empty(self, tag=hedge.mesh.TAG_ALL, shape=()):
+        return numpy.empty(shape+(len(self.get_boundary(tag).nodes),),
+                dtype=float)
 
     def boundary_zeros(self, tag=hedge.mesh.TAG_ALL, shape=()):
-        raise NotImplementedError
+        return numpy.zeros(shape+(len(self.get_boundary(tag).nodes),),
+                dtype=float)
 
-    def interpolate_boundary_function(self, f, tag=hedge.mesh.TAG_ALL):
-        raise NotImplementedError
+    def interpolate_boundary_function(self, f, tag=hedge.mesh.TAG_ALL, tgt_factory=None):
+        try:
+            # are we interpolating many fields at once?
+            shape = f.shape
+
+        except AttributeError:
+            # no, just one
+            shape = ()
+
+        out = (tgt_factory or self.boundary_zeros)(tag, shape)
+        slice_pfx = (slice(None),)*len(shape)
+        for point_nr, x in enumerate(self.get_boundary(tag).nodes):
+            out[slice_pfx + (point_nr,)] = f(x, None) # FIXME
+        return out
 
     def boundary_normals(self, tag=hedge.mesh.TAG_ALL):
-        raise NotImplementedError
+        result = self.boundary_zeros(tag=tag, shape=(self.dimensions,))
+        for fg, ldis in self.get_boundary(tag).face_groups_and_ldis:
+            for face_pair in fg.face_pairs:
+                flux_face = fg.flux_faces[face_pair.flux_face_index]
+                oeb = face_pair.opp_el_base_index
+                opp_index_list = fg.index_lists[face_pair.opp_face_index_list_number]
+                for i in opp_index_list:
+                    result[:,oeb+i] = flux_face.normal
+
+        return result
 
     def volumize_boundary_field(self, bfield, tag=hedge.mesh.TAG_ALL):
-        raise NotImplementedError
+        from hedge._internal import perform_inverse_index_map
+        from hedge.tools import make_vector_target, log_shape
+
+        ls = log_shape(bfield)
+        result = self.volume_zeros(ls)
+        bdry = self.get_boundary(tag)
+
+        if ls != ():
+            from pytools import indices_in_shape
+            for i in indices_in_shape(ls):
+                target = make_vector_target(bfield[i], result[i])
+                target.begin(len(self.nodes), len(bdry.nodes))
+                perform_inverse_index_map(bdry.index_map, target)
+                target.finalize()
+        else:
+            target = make_vector_target(bfield, result)
+            target.begin(len(self.nodes), len(bdry.nodes))
+            perform_inverse_index_map(bdry.index_map, target)
+            target.finalize()
+
+        return result
 
     def boundarize_volume_field(self, field, tag=hedge.mesh.TAG_ALL):
-        raise NotImplementedError
+        from hedge._internal import perform_index_map
+        from hedge.tools import make_vector_target, log_shape
+
+        ls = log_shape(field)
+        result = self.boundary_zeros(tag, ls)
+        bdry = self.get_boundary(tag)
+
+        if ls != ():
+            from pytools import indices_in_shape
+            for i in indices_in_shape(ls):
+                target = make_vector_target(field[i], result[i])
+                target.begin(len(bdry.nodes), len(self.nodes))
+                perform_index_map(bdry.index_map, target)
+                target.finalize()
+        else:
+            target = make_vector_target(field, result)
+            target.begin(len(bdry.nodes), len(self.nodes))
+            perform_index_map(bdry.index_map, target)
+            target.finalize()
+
+        return result
 
     # scalar reduction --------------------------------------------------------
     def integral(self, volume_vector):
@@ -802,298 +883,6 @@ def ones_on_volume(discr, tag=hedge.mesh.TAG_ALL):
                 result[e_start:e_end] = 1
 
     return result
-
-
-
-
-
-
-    
-
-# flux operators --------------------------------------------------------------
-class OldDirectFluxOperator:
-    def __init__(self, discr, flux):
-        LazyOperator.__init__(self, discr)
-        self.flux = flux
-
-    def apply_to(self, field, out=None):
-        if out is None:
-            result = self.discr.volume_zeros()
-
-        from hedge.tools import make_vector_target, log_shape
-
-        if isinstance(field, BoundaryPair):
-            # boundary flux
-            bpair = field
-            bdry = self.discr.get_boundary(bpair.tag)
-
-            if not bdry.nodes:
-                return 0
-
-            field = bpair.field
-            bfield = bpair.bfield
-
-            class ZeroVector:
-                dtype = 0
-                def __getitem__(self, idx):
-                    return 0
-
-            if log_shape(field) != () or log_shape(field) != ():
-                if isinstance(bfield, int) and bfield == 0:
-                    bfield = ZeroVector()
-                if isinstance(field, int) and field == 0:
-                    field = ZeroVector()
-
-                for idx, int_flux, ext_flux in self.flux:
-                    if not (0 <= idx < len(field)):
-                        raise RuntimeError, "flux depends on out-of-bounds field index"
-                    self.discr._perform_boundary_flux(
-                            int_flux, make_vector_target(field[idx], out),
-                            ext_flux, make_vector_target(bfield[idx], out), 
-                            bdry)
-            else:
-                if len(self.flux) == 1:
-                    idx, int_flux, ext_flux = self.flux[0]
-                    if idx != 0:
-                        raise RuntimeError, "flux depends on out-of-bounds field index"
-                    self.discr._perform_boundary_flux(
-                            int_flux, make_vector_target(field, out),
-                            ext_flux, make_vector_target(bfield, out), 
-                            bdry)
-                elif len(self.flux) > 1:
-                    raise RuntimeError, "only found one field to process, but flux has multiple field dependencies"
-
-            return out
-
-        else:
-            # inner flux
-            from hedge.tools import log_shape
-            ls = log_shape(field)
-            if ls != ():
-                pass
-            else:
-                if len(self.flux) > 1:
-                    raise RuntimeError, "only found one field to process, but flux has multiple field dependencies"
-
-                idx, int_flux, ext_flux = self.flux[0]
-                if idx != 0:
-                    raise RuntimeError, "flux depends on out-of-bounds field index"
-                self.discr.perform_inner_flux(
-                        int_flux, ext_flux, make_vector_target(field, out))
-
-            return out
-
-    def perform_inner(self, tgt):
-        dof = len(self.discr)
-
-        for idx, int_flux, ext_flux in self.flux:
-            self.discr.perform_inner_flux(int_flux, ext_flux, 
-                    tgt.rebased_target(0, dof*idx))
-
-    def perform_int_bdry(self, tag, tgt):
-        from hedge._internal import NullTarget
-        dof = len(self.discr)
-
-        for idx, int_flux, ext_flux in self.flux:
-            self.discr._perform_boundary_flux(
-                    int_flux, tgt.rebased_target(0, dof*idx),
-                    ext_flux, NullTarget(), 
-                    self.discr.get_boundary(tag))
-
-
-
-
-class OldFluxMatrixOperator:
-    def __init__(self, discr, flux):
-        LazyOperator.__init__(self, discr)
-
-        from hedge._internal import MatrixTarget
-        self.flux = flux
-
-        dof = len(self.discr)
-
-        self.inner_matrices = {}
-        for idx, int_flux, ext_flux in self.flux:
-            inner_bmatrix = pyublas.zeros(shape=(dof, dof), flavor=pyublas.SparseBuildMatrix)
-            discr.perform_inner_flux(int_flux, ext_flux, MatrixTarget(inner_bmatrix))
-            self.inner_matrices[idx] = \
-                    pyublas.asarray(inner_bmatrix, flavor=pyublas.SparseExecuteMatrix)
-
-        self.bdry_ops = {}
-
-    def apply_to(self, field):
-
-        def get_bdry_op(idx, bdry, int_flux, ext_flux):
-            try:
-                return self.bdry_ops[idx, bdry]
-            except KeyError:
-                dof = len(self.discr)
-                bdry_dof = len(bdry.nodes)
-
-                from hedge._internal import MatrixTarget
-
-                int_bmatrix = pyublas.zeros(shape=(dof,dof), flavor=pyublas.SparseBuildMatrix)
-                ext_bmatrix = pyublas.zeros(shape=(dof,bdry_dof), flavor=pyublas.SparseBuildMatrix)
-                self.discr._perform_boundary_flux(
-                        int_flux, MatrixTarget(int_bmatrix), 
-                        ext_flux, MatrixTarget(ext_bmatrix), 
-                        bdry)
-                int_matrix = pyublas.asarray(int_bmatrix, flavor=pyublas.SparseExecuteMatrix)
-                ext_matrix = pyublas.asarray(ext_bmatrix, flavor=pyublas.SparseExecuteMatrix)
-
-                self.bdry_ops[idx, bdry] = int_matrix, ext_matrix
-
-                return int_matrix, ext_matrix
-
-        if isinstance(field, BoundaryPair):
-            # boundary flux
-            bpair = field
-            bdry = self.discr.get_boundary(bpair.tag)
-
-            if not bdry.nodes:
-                return 0
-
-            class ZeroVector:
-                def __getitem__(self, idx):
-                    return 0
-
-            field = bpair.field
-            bfield = bpair.bfield
-
-            from hedge.tools import log_shape
-            ls_f = log_shape(field)
-            ls_bf = log_shape(bfield)
-
-            if ls_f != () or ls_bf != ():
-                if isinstance(bfield, int) and bfield == 0:
-                    bfield = ZeroVector()
-                elif isinstance(field, int) and field == 0:
-                    field = ZeroVector()
-
-                assert len(ls) == 1
-                result = self.discr.volume_zeros()
-                for idx, int_flux, ext_flux in self.flux:
-                    int_matrix, ext_matrix = get_bdry_op(idx, bdry, int_flux, ext_flux)
-                    result += int_matrix*bpair.field + ext_matrix*bpair.bfield
-                return result
-            else:
-                assert len(self.flux) == 1
-                idx, int_flux, ext_flux = self.flux[0]
-                assert idx == 0
-
-                int_matrix, ext_matrix = get_bdry_op(0, bdry, int_flux, ext_flux)
-                return int_matrix*bpair.field + ext_matrix*bpair.bfield
-        else:
-            from hedge.tools import log_shape
-
-            ls = log_shape(field)
-            if ls != ():
-                assert len(ls) == 1
-                result = self.discr.volume_zeros()
-                for idx, int_flux, ext_flux in self.flux:
-                    result += self.inner_matrices[idx] * field[idx]
-                return result
-            else:
-                assert len(self.flux) == 1
-                idx, int_flux, ext_flux = self.flux[0]
-                assert idx == 0
-                return self.inner_matrices[0] * field
-
-    def matrix_inner(self):
-        """Returns a BlockMatrix to compute the lifting of the domain-interior fluxes.
-
-        This matrix can only capture the interior part of the flux, the exterior-facing
-        part is not taken into account.
-
-        The different components are assumed to be run together in one vector,
-        in order.
-        """
-        from hedge.tools import BlockMatrix
-        flen = len(self.discr.volume_zeros())
-        return BlockMatrix(
-                (0, flen*idx, self.inner_matrices[idx])
-                for idx, int_flux, ext_flux in self.flux)
-
-
-
-
-class OldVectorFluxOperator(object):
-    def __init__(self, discr, flux_operators):
-        self.discr = discr
-        self.flux_operators = flux_operators
-
-        if discr.instrumented:
-            from pytools.log import time_and_count_function
-            self._do_inner_flux = \
-                    time_and_count_function(
-                            self._do_inner_flux,
-                            self.discr.inner_flux_timer,
-                            self.discr.inner_flux_counter,
-                            increment=sum(len(fo) for fo in self.flux_operators))
-
-    def __mul__(self, field):
-        result = self.discr.volume_zeros(
-                shape=(len(self.flux_operators),), dtype=object)
-        for i, fop_i in enumerate(self.flux_operators):
-            result[i] = fop_i * field
-        return result
-
-    def apply_to(self, field):
-        if isinstance(field, BoundaryPair):
-            result = self.discr.volume_zeros(
-                    shape=(len(self.flux_operators),))
-
-            for i, fop_i in enumerate(self.flux_operators):
-                fop_i.apply_to(field, result[i])
-
-            return result
-        else:
-            return self._do_inner_flux(field)
-
-    def _do_inner_flux(self, field):
-        # this is for performance -- it is faster to apply several fluxes
-        # to a single operand at once
-        result = self.discr.volume_zeros(
-                shape=(len(self.flux_operators),))
-
-        def find_field_flux(flux_op, i_field):
-            for idx, int_flux, ext_flux in flux_op.flux:
-                if idx == i_field:
-                    return int_flux, ext_flux
-            return None
-
-        from hedge.tools import log_shape
-        if log_shape(field) == ():
-            field = field[numpy.newaxis,:]
-
-        from hedge._internal import \
-                perform_multiple_double_sided_fluxes_on_single_operand, \
-                ChainedFlux
-        for i_field, f_i in enumerate(field):
-            fluxes_and_results = []
-            for i_result, fo in enumerate(self.flux_operators):
-                scalar_flux = find_field_flux(fo, i_field)
-                if scalar_flux is not None:
-                    int_flux, ext_flux = scalar_flux
-                    fluxes_and_results.append(
-                            (ChainedFlux(int_flux), 
-                                ChainedFlux(ext_flux), 
-                                result[i_result]))
-            for fg, fmm in self.discr.face_groups:
-                perform_multiple_double_sided_fluxes_on_single_operand(
-                        fg, fmm, fluxes_and_results, f_i)
-
-        return result
-
-    def perform_inner(self, tgt):
-        dof = len(self.discr)
-        for i, fo in enumerate(self.flux_operators):
-            fo.perform_inner(tgt.rebased_target(dof*i, 0))
-
-    def perform_int_bdry(self, tag, tgt):
-        dof = len(self.discr)
-        for i, fo in enumerate(self.flux_operators):
-            fo.perform_int_bdry(tag, tgt.rebased_target(dof*i, 0))
 
 
 
