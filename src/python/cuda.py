@@ -102,6 +102,99 @@ class Parallelism:
 
 
 
+# C generation utilities ------------------------------------------------------
+class StructField(object):
+    def __init__(self, name, type):
+        self.name = name
+        self.type = numpy.dtype(type)
+
+    def struct_format(self):
+        return self.dtype.char
+
+    @staticmethod
+    def ctype(dtype):
+        if dtype == numpy.int32:
+            return "int"
+        elif dtype == numpy.uint32:
+            return "unsigned int"
+        elif dtype == numpy.int16:
+            return "short int"
+        elif dtype == numpy.uint16:
+            return "short unsigned int"
+        elif dtype == numpy.int8:
+            return "signed char"
+        elif dtype == numpy.uint8:
+            return "unsigned char"
+        elif dtype == numpy.intp or dtype == numpy.uintp:
+            return "void *"
+        elif dtype == numpy.float32:
+            return "float"
+        elif dtype == numpy.float64:
+            return "double"
+        else:
+            raise ValueError, "unable to map dtype '%s'" % dtype
+
+    def cdecl(self):
+        return "  %s %s;\n" % (self.ctype(self.type), self.name)
+    
+    def struct_format(self):
+        return self.dtype.char
+
+    def prepare(self, arg):
+        return [arg]
+
+    def __len__(self):
+        return self.type.itemsize
+
+
+
+
+class ArrayStructField(StructField):
+    def __init__(self, name, type, count):
+        StructField.__init__(self, name, type)
+        self.count = count
+
+    def struct_format(self):
+        return "%d%s" % (self.count, StructField.struct_format(self))
+
+    def cdecl(self):
+        return "  %s %s[%d];\n" % (self.ctype(self.type), self.name, self.count)
+
+    def prepare(self, arg):
+        assert len(arg) == self.count
+        return arg
+
+    def __len__(self):
+        return self.count * StructField.__len__(self)
+
+
+
+
+class Struct(object):
+    def __init__(self, fields):
+        self.fields = fields
+
+    def make(self, **kwargs):
+        import struct
+        data = []
+        for f in self.fields:
+            data.extend(f.prepare(kwargs[f.name]))
+        return struct.pack(self.struct_format(), data)
+
+    @memoize_method
+    def struct_format(self, name):
+        return "".join(f.struct_format() for f in self.fields)
+
+    @memoize_method
+    def cdecl(self, name):
+        return "struct %s\n{\n%s};\n" % (name, "".join(f.cdecl() for f in self.fields))
+
+    def __len__(self):
+        return sum(len(f) for f in self.fields)
+
+
+
+
 class ExecutionPlan:
     def __init__(self, devdata, ldis, flux_par, 
             extfaces=None, float_size=4, int_size=4):
@@ -176,20 +269,27 @@ class ExecutionPlan:
         return (self.block_el() * self.faces_per_el() + 
                 self.get_extface_count())
 
-    def indexing_bytes_per_face_pair(self):
-        # How much planning info per face pair?
-        # h, order, face_jacobian, normal
-        # a_base, b_base, a_ilist_number, b_ilist_number
-        # bwrite_base, bwrite_ilist_number
-        # Total: 3+d floats, 6 ints
-
-        return (3+self.ldis.dimensions)*self.float_size + 6*self.int_size
+    @memoize_method
+    def get_facepair_struct(self):
+        return Struct([
+            StructField("h", numpy.float32),
+            StructField("order", numpy.float32),
+            StructField("face_jacobian", numpy.float32),
+            ArrayStructField("normal", numpy.float32, self.ldis.dimensions),
+            StructField("a_base", numpy.uint16),
+            StructField("b_base", numpy.uint16),
+            StructField("a_ilist_number", numpy.uint8),
+            StructField("b_write_ilist_number", numpy.uint8),
+            StructField("a_flux", numpy.uint8),
+            StructField("b_flux", numpy.uint8),
+            StructField("b_write_base", numpy.uint32),
+            ])
 
     def indexing_smem(self):
         return _ceiling(
                 self.int_size+ # number of active elements in block
                 self.int_size+ # number of active faces in block
-                self.indexing_bytes_per_face_pair()*self.facepair_count(),
+                len(self.get_facepair_struct())*self.facepair_count(),
                 self.devdata.align_bytes())
 
     def facepair_count(self):
@@ -736,6 +836,7 @@ class CudaDiscretization(hedge.discretization.Discretization):
     del s
 
     # optemplate processing ---------------------------------------------------
+    
     def preprocess_optemplate(self, optemplate):
         print optemplate
         raise NotImplementedError
