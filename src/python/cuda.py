@@ -31,21 +31,40 @@ import hedge.discretization
 
 
 
+# tools -----------------------------------------------------------------------
 def _ceiling(value, multiple_of=1):
-    """Mimicks the Excel "ceiling" function."""
+    """Round C{value} up to be a C{multiple_of} something."""
+    # Mimicks the Excel "floor" function (for code stolen from occupany calculator)
 
     from math import ceil
     return int(ceil(value/multiple_of))*multiple_of
 
 def _floor(value, multiple_of=1):
-    """Mimicks the Excel "floor" function."""
+    """Round C{value} down to be a C{multiple_of} something."""
+    # Mimicks the Excel "floor" function (for code stolen from occupany calculator)
 
     from math import floor
     return int(floor(value/multiple_of))*multiple_of
 
+def vec_to_gpu(field):
+    from hedge.tools import log_shape
+    ls = log_shape(field)
+    if ls != ():
+        result = numpy.array(ls, dtype=object)
+
+        from pytools import indices_in_shape
+
+        for i in indices_in_shape(ls):
+            result[i] = gpuarray.to_gpu(field[i])
+        return result
+    else:
+        return gpuarray.to_gpu(field)
 
 
 
+
+
+# knowledge about hardware ----------------------------------------------------
 class DeviceData:
     def __init__(self, dev):
         import pycuda.driver as drv
@@ -56,6 +75,9 @@ class DeviceData:
         self.warps_per_mp = 24
         self.registers = dev.get_attribute(drv.device_attribute.REGISTERS_PER_BLOCK)
         self.shared_memory = dev.get_attribute(drv.device_attribute.MAX_SHARED_MEMORY_PER_BLOCK)
+
+    def align(self, bytes):
+        return _ceiling(bytes, self.align_bytes())
 
     def align_bytes(self):
         return 16
@@ -68,6 +90,7 @@ class OccupancyRecord:
         if threads > devdata.max_threads:
             raise ValueError("too many threads")
 
+        # copied literally from occupancy calculator
         alloc_warps = _ceiling(threads/devdata.warp_size)
         alloc_regs = _ceiling(alloc_warps*2, 4)*16*registers
         alloc_smem = _ceiling(shared_mem, 512)
@@ -88,25 +111,11 @@ class OccupancyRecord:
 
 
 
-class Parallelism:
-    def __init__(self, parallel, serial):
-        self.p = parallel
-        self.s = serial
-
-    def total(self):
-        return self.p*self.s
-
-    def __str__(self):
-        return "(p%d s%d)" % (self.p, self.s)
-
-
-
-
 # C generation utilities ------------------------------------------------------
 class StructField(object):
-    def __init__(self, name, type):
+    def __init__(self, name, dtype):
         self.name = name
-        self.type = numpy.dtype(type)
+        self.dtype = numpy.dtype(dtype)
 
     def struct_format(self):
         return self.dtype.char
@@ -135,7 +144,7 @@ class StructField(object):
             raise ValueError, "unable to map dtype '%s'" % dtype
 
     def cdecl(self):
-        return "  %s %s;\n" % (self.ctype(self.type), self.name)
+        return "  %s %s;\n" % (self.ctype(self.dtype), self.name)
     
     def struct_format(self):
         return self.dtype.char
@@ -144,21 +153,21 @@ class StructField(object):
         return [arg]
 
     def __len__(self):
-        return self.type.itemsize
+        return self.dtype.itemsize
 
 
 
 
 class ArrayStructField(StructField):
-    def __init__(self, name, type, count):
-        StructField.__init__(self, name, type)
+    def __init__(self, name, dtype, count):
+        StructField.__init__(self, name, dtype)
         self.count = count
 
     def struct_format(self):
         return "%d%s" % (self.count, StructField.struct_format(self))
 
     def cdecl(self):
-        return "  %s %s[%d];\n" % (self.ctype(self.type), self.name, self.count)
+        return "  %s %s[%d];\n" % (self.ctype(self.dtype), self.name, self.count)
 
     def prepare(self, arg):
         assert len(arg) == self.count
@@ -179,10 +188,10 @@ class Struct(object):
         data = []
         for f in self.fields:
             data.extend(f.prepare(kwargs[f.name]))
-        return struct.pack(self.struct_format(), data)
+        return struct.pack(self.struct_format(), *data)
 
     @memoize_method
-    def struct_format(self, name):
+    def struct_format(self):
         return "".join(f.struct_format() for f in self.fields)
 
     @memoize_method
@@ -190,28 +199,51 @@ class Struct(object):
         return "struct %s\n{\n%s};\n" % (name, "".join(f.cdecl() for f in self.fields))
 
     def __len__(self):
-        return sum(len(f) for f in self.fields)
+        a = sum(len(f) for f in self.fields)
+        from struct import calcsize
+        b = calcsize(self.struct_format())
+        assert a == b
+        return a
+
+
+
+
+# planning --------------------------------------------------------------------
+class Parallelism:
+    def __init__(self, parallel, serial):
+        self.p = parallel
+        self.s = serial
+
+    def total(self):
+        return self.p*self.s
+
+    def __str__(self):
+        return "(p%d s%d)" % (self.p, self.s)
 
 
 
 
 class ExecutionPlan:
     def __init__(self, devdata, ldis, flux_par, 
-            extfaces=None, float_size=4, int_size=4):
+            max_ext_faces=None, max_faces=None, float_size=4, int_size=4):
         self.devdata = devdata
         self.ldis = ldis
         self.flux_par = flux_par
-        self.extfaces = extfaces
+
+        self.max_ext_faces = max_ext_faces
+        self.max_faces = max_faces
+
         self.float_size = float_size
         self.int_size = int_size
 
     def copy(self, devdata=None, ldis=None, flux_par=None, 
-            extfaces=None, float_size=None, int_size=None):
+            max_ext_faces=None, max_faces=None, float_size=None, int_size=None):
         return ExecutionPlan(
                 devdata or self.devdata,
                 ldis or self.ldis,
                 flux_par or self.flux_par,
-                extfaces or self.extfaces,
+                max_ext_faces or self.max_ext_faces,
+                max_faces or self.max_faces,
                 float_size or self.float_size,
                 int_size or self.int_size,
                 )
@@ -223,7 +255,7 @@ class ExecutionPlan:
         return self.ldis.face_node_count()
 
     def faces_per_el(self):
-        return len(self.ldis.face_indices())
+        return self.ldis.face_count()
 
     def block_el(self):
         return self.flux_par.total()
@@ -248,29 +280,22 @@ class ExecutionPlan:
         return macrocube_face_area * factorial(d-1)
 
     def get_extface_count(self):
-        if self.extfaces is None:
+        if self.max_ext_faces is None:
             return _ceiling(self.estimate_extface_count())
         else:
-            return self.extfaces
+            return self.max_ext_faces
 
     def int_dof_smem(self):
-        return _ceiling(self.block_el() * self.dofs_per_el() 
-                * self.float_size, 
-                self.devdata.align_bytes())
+        return self.devdata.align(self.block_el() * self.dofs_per_el() 
+                * self.float_size)
 
     @memoize_method
     def ext_dof_smem(self):
-        return _ceiling(self.get_extface_count()
-                * self.dofs_per_face() * self.float_size,
-                self.devdata.align_bytes())
+        return self.devdata.align(self.get_extface_count()
+                * self.dofs_per_face() * self.float_size)
 
     @memoize_method
-    def face_count(self):
-        return (self.block_el() * self.faces_per_el() + 
-                self.get_extface_count())
-
-    @memoize_method
-    def get_facepair_struct(self):
+    def get_face_pair_struct(self):
         return Struct([
             StructField("h", numpy.float32),
             StructField("order", numpy.float32),
@@ -279,20 +304,42 @@ class ExecutionPlan:
             StructField("a_base", numpy.uint16),
             StructField("b_base", numpy.uint16),
             StructField("a_ilist_number", numpy.uint8),
-            StructField("b_write_ilist_number", numpy.uint8),
-            StructField("a_flux", numpy.uint8),
-            StructField("b_flux", numpy.uint8),
-            StructField("b_write_base", numpy.uint32),
+            StructField("b_ilist_number", numpy.uint8),
+            StructField("bdry_flux_number", numpy.uint8), # 0 if not on boundary
+            StructField("reserved", numpy.uint8),
+            StructField("b_global_base", numpy.uint32),
+
+            # memory handling here deserves a comment.
+            # Interior face (bdry_flux_number==0) dofs are duplicated if they cross
+            # a block boundary. The flux results for these dofs are written out 
+            # to b_global_base in addition to their local location.
+            #
+            # Boundary face (bdry_flux_number!=0) dofs are read from b_global_base
+            # linearly (not (!) using b_global_ilist_number) into the extface
+            # space at b_base. They are not written out again.
+            ])
+
+    @memoize_method
+    def get_block_header_struct(self):
+        return Struct([
+            StructField("els_in_block", numpy.int16),
+            StructField("face_pairs_in_block", numpy.int16),
             ])
 
     def indexing_smem(self):
-        return _ceiling(
-                self.int_size+ # number of active elements in block
-                self.int_size+ # number of active faces in block
-                len(self.get_facepair_struct())*self.facepair_count(),
-                self.devdata.align_bytes())
+        return self.devdata.align(
+                len(self.get_block_header_struct())
+                +len(self.get_face_pair_struct())*self.face_pair_count())
 
-    def facepair_count(self):
+    @memoize_method
+    def face_count(self):
+        if self.max_faces is not None:
+            return self.max_faces
+        else:
+            return (self.block_el() * self.faces_per_el() + 
+                    self.get_extface_count())
+
+    def face_pair_count(self):
         return (self.face_count()+1) // 2
 
     @memoize_method
@@ -385,13 +432,14 @@ class GPUFaceStorage(object):
         self.opposite = None
 
 class GPUInteriorFaceStorage(GPUFaceStorage):
-    """Describes storage locations for a face belongi
+    """Describes storage locations for a face local to an element in a block.
 
     @ivar el_face: a tuple C{(element, face_number)}.
     @ivar cpu_slice: the base index of the element in CPU numbering.
     @ivar native_index_list_id: 
     @ivar native_block: block in which element is to be found.
     @ivar native_block_el_num: number of this element in the C{native_block}.
+    @ivar flux_face:
     @ivar dup_block: 
     @ivar dup_ext_face_number:
     """
@@ -402,16 +450,17 @@ class GPUInteriorFaceStorage(GPUFaceStorage):
             "dup_block", "dup_ext_face_number", "dup_index_list_id"]
 
     def __init__(self, el_face, cpu_slice, native_index_list_id,
-            native_block, native_block_el_num):
+            native_block, native_block_el_num, flux_face):
         GPUFaceStorage.__init__(self)
         self.el_face = el_face
         self.cpu_slice = cpu_slice
         self.native_index_list_id = native_index_list_id
         self.native_block = native_block
         self.native_block_el_num = native_block_el_num
+        self.flux_face = flux_face
 
 class GPUBoundaryFaceStorage(GPUFaceStorage):
-    """Describes storage locations for a face.
+    """Describes storage locations for a boundary face.
 
     @ivar bdry_index: this face's starting index in the global boundary array.
     @ivar dup_block: 
@@ -422,25 +471,6 @@ class GPUBoundaryFaceStorage(GPUFaceStorage):
     def __init__(self, bdry_index):
         GPUFaceStorage.__init__(self)
         self.bdry_index = 0
-
-
-
-
-# tools -----------------------------------------------------------------------
-def vec_to_gpu(field):
-    from hedge.tools import log_shape
-    ls = log_shape(field)
-    if ls != ():
-        result = numpy.array(ls, dtype=object)
-
-        from pytools import indices_in_shape
-
-        for i in indices_in_shape(ls):
-            result[i] = gpuarray.to_gpu(field[i])
-        return result
-    else:
-        return gpuarray.to_gpu(field)
-
 
 
 
@@ -480,18 +510,19 @@ class CudaDiscretization(hedge.discretization.Discretization):
                     mesh.element_adjacency_graph(),
                     vweights=[1000]*len(mesh.elements))
 
-            # prepare a mapping:  block# -> # of interfaces
+            # prepare a mapping:  block# -> # of external interfaces
             block2extifaces = {}
 
-            for elface1, elface2 in mesh.interfaces:
-                e1, f1 = elface1
-                e2, f2 = elface2
-                r1 = partition[e1.id]
-                r2 = partition[e2.id]
+            for (e1, f1), (e2, f2) in mesh.both_interfaces():
+                b1 = partition[e1.id]
+                b2 = partition[e2.id]
 
-                if r1 != r2:
-                    block2extifaces[r1] = block2extifaces.get(r1, 0) + 1
-                    block2extifaces[r2] = block2extifaces.get(r2, 0) + 1
+                if b1 != b2:
+                    block2extifaces[b1] = block2extifaces.get(b1, 0) + 1
+
+            for el, face_nbr in mesh.tag_to_boundary[hedge.mesh.TAG_ALL]:
+                b1 = partition[el.id]
+                block2extifaces[b1] = block2extifaces.get(b1, 0) + 1
 
             blocks = {}
             for el_id, block in enumerate(partition):
@@ -500,8 +531,13 @@ class CudaDiscretization(hedge.discretization.Discretization):
             block_elements = max(len(block_els) for block_els in blocks.itervalues())
             flux_par_s = _ceiling(block_elements/plan.flux_par.p)
             actual_plan = plan.copy(
-                    extfaces=max(block2extifaces.itervalues()),
+                    max_ext_faces=max(block2extifaces.itervalues()),
+                    max_faces=max(
+                        len(blocks[b])*plan.faces_per_el()
+                        + block2extifaces[b]
+                        for b in range(len(blocks))),
                     flux_par=Parallelism(plan.flux_par.p, flux_par_s))
+            assert actual_plan.max_faces % 2 == 0
 
             if (flux_par_s == plan.flux_par.s and
                     abs(plan.occupancy_record().occupancy -
@@ -542,22 +578,31 @@ class CudaDiscretization(hedge.discretization.Discretization):
         self.device = dev
         self.devdata = DeviceData(dev)
 
+        # make preliminary plan
         if plan is None:
             plan = self._make_plan(ldis, mesh)
-            print "projected:", plan
+        print "projected:", plan
 
+        # partition mesh, obtain updated plan
         self.plan, self.partition = self._partition_mesh(mesh, plan)
         del plan
         print "actual:", self.plan
 
-        # initialize superclass -----------------------------------------------
+        # initialize superclass
         hedge.discretization.Discretization.__init__(self, mesh, ldis, debug=debug)
 
+        # build our own data structures
         self.blocks = self._build_blocks()
         self.face_storage_map = self._build_face_storage_map()
 
         self.int_dof_floats = self.plan.int_dof_smem()//self.plan.float_size
         self.ext_dof_floats = self.plan.ext_dof_smem()//self.plan.float_size
+
+        # check the ext_dof_smem estimate
+        assert (self.devdata.align(
+            max(len(block.ext_faces)*self.plan.dofs_per_face()
+                for block in self.blocks)*self.plan.float_size)
+            == self.plan.ext_dof_smem())
 
 
 
@@ -607,10 +652,11 @@ class CudaDiscretization(hedge.discretization.Discretization):
             iln = get_face_index_list_number(int_fg.index_lists[ilist_number])
             result = GPUInteriorFaceStorage(
                 elface, 
-                slice(*self.find_el_range(el.id)), 
-                iln,
-                block, 
-                block.get_el_index(el), 
+                cpu_slice=slice(*self.find_el_range(el.id)), 
+                native_index_list_id=iln,
+                native_block=block, 
+                native_block_el_num=block.get_el_index(el), 
+                flux_face=flux_face
                 )
             fsm[elface] = result
             return result
@@ -836,8 +882,98 @@ class CudaDiscretization(hedge.discretization.Discretization):
     del s
 
     # optemplate processing ---------------------------------------------------
+    @memoize_method
+    def assemble_indexing_info(self):
+        result = ""
+        block_len = self.plan.indexing_smem()
+        block_dofs = self.int_dof_floats + self.ext_dof_floats
+
+        INVALID_U8 = (1<<8) - 1
+        INVALID_U16 = (1<<16) - 1
+        INVALID_U32 = (1<<32) - 1
+
+        block_lengths = []
+
+        for block in self.blocks:
+            ldis = block.local_discretization
+            el_dofs = ldis.node_count()
+
+            faces_todo = set((el,face_nbr)
+                    for el in block.elements
+                    for face_nbr in range(ldis.face_count()))
+            fp_blocks = []
+
+            bf = isame = idiff = 0
+            while faces_todo:
+                elface = faces_todo.pop()
+
+                int_face = self.face_storage_map[elface]
+                opp = int_face.opposite
+
+                if isinstance(opp, GPUBoundaryFaceStorage):
+                    # boundary face
+                    b_base = INVALID_U16
+                    bdry_flux_number = 1
+                    b_global_base = opp.bdry_index
+                    b_ilist_number = INVALID_U8
+                    bf += 1
+                else:
+                    # interior face
+                    b_base = opp.native_block_el_num*el_dofs
+                    bdry_flux_number = 0
+                    if opp.native_block == int_face.native_block:
+                        # same block
+                        faces_todo.remove(opp.el_face)
+                        b_global_base = INVALID_U32
+                        b_ilist_number = opp.native_index_list_id
+                        isame += 1
+                    else:
+                        # different block
+                        b_global_base = (
+                                opp.native_block_el_num*el_dofs
+                                + block_dofs*opp.native_block.number)
+                        b_ilist_number = INVALID_U8
+                        idiff += 1
+
+                fp_blocks.append(
+                        self.plan.get_face_pair_struct().make(
+                            h=int_face.flux_face.h,
+                            order=int_face.flux_face.order,
+                            face_jacobian=int_face.flux_face.face_jacobian,
+                            normal=int_face.flux_face.normal,
+                            a_base=int_face.native_block_el_num*el_dofs,
+                            b_base=b_base,
+                            a_ilist_number=int_face.native_index_list_id,
+                            b_ilist_number=b_ilist_number,
+                            bdry_flux_number=bdry_flux_number,
+                            reserved=0,
+                            b_global_base=b_global_base,
+                            ))
+
+            bheader = self.plan.get_block_header_struct().make(
+                    els_in_block=len(block.elements),
+                    face_pairs_in_block=len(fp_blocks)
+                    )
+            block_data = bheader + "".join(fp_blocks)
+
+            # take care of alignment
+            missing_bytes = block_len - len(block_data)
+            assert missing_bytes >= 0
+            block_data = block_data + "\x00"*missing_bytes
+            block_lengths.append(len(block_data))
+
+            result += block_data
+
+        # make sure our estimate is achieved
+        print max(block_lengths), self.plan.indexing_smem()
+        assert max(block_lengths) == self.plan.indexing_smem()
+        assert len(result) == block_len*len(self.blocks)
+        result_gpu = cuda.mem_alloc(len(result))
+        cuda.memcpy_htod(result_gpu, result)
+        return result_gpu
     
     def preprocess_optemplate(self, optemplate):
+        ind_inf = self.assemble_indexing_info()
         print optemplate
         raise NotImplementedError
 

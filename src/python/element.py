@@ -202,6 +202,10 @@ class SimplicialElement(Element):
         return int(reduce(mul, (o+1+i for i in range(d)))/factorial(d))
 
     @memoize_method
+    def face_count(self):
+        return len(self.face_indices())
+
+    @memoize_method
     def face_node_count(self):
         return len(self.face_indices()[0])
 

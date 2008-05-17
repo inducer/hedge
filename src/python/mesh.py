@@ -592,7 +592,6 @@ def check_bc_coverage(mesh, bc_tags):
     bdry_to_tag = {}
     all_bdry_faces = mesh.tag_to_boundary[TAG_ALL]
     bdry_face_countdown = len(all_bdry_faces)
-    bdry_face_countdown_2 = len(set(mesh.tag_to_boundary[TAG_ALL]))
 
     for tag in bc_tags:
         for el_face in mesh.tag_to_boundary.get(tag, []):
