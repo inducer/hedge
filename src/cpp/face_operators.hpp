@@ -49,12 +49,14 @@ namespace hedge
       node_index el_base_index;
       unsigned face_index_list_number;
       unsigned flux_face_index;
+      /** An element numbering local to this face_group. */
       unsigned local_el_number;
 
       side()
         : el_base_index(INVALID_NODE),
         face_index_list_number(INVALID_INDEX),
-        flux_face_index(INVALID_INDEX)
+        flux_face_index(INVALID_INDEX),
+        local_el_number(INVALID_INDEX)
       { }
     };
 

@@ -51,7 +51,7 @@ class _FaceGroup(hedge._internal.FaceGroup):
             self.face_index_list_register[identifier] = new_idx
             return new_idx
 
-    def commit_face_index_lists(self):
+    def commit(self):
         from hedge._internal import IntVector
 
         if self.face_index_lists:
@@ -62,6 +62,18 @@ class _FaceGroup(hedge._internal.FaceGroup):
                         
             for i, fil in enumerate(self.face_index_lists):
                 self.index_lists[i] = fil
+
+        local_element_numbers = {}
+        def register_element(el_id):
+            return local_element_numbers.setdefault(
+                    el_id, len(local_element_numbers))
+
+        for fp in self.face_pairs:
+            for side in [fp.loc, fp.opp]:
+                if side.flux_face_index != fp.INVALID_INDEX:
+                    side.local_el_number = register_element(
+                        self.flux_faces[side.flux_face_index].element_id)
+        self.local_element_count = len(local_element_numbers)
 
         del self.face_index_lists
         del self.face_index_list_register
@@ -413,7 +425,8 @@ class Discretization(object):
             fg.flux_faces.append(flux_face_l)
             fg.flux_faces.append(flux_face_n)
 
-        fg.commit_face_index_lists()
+        fg.commit()
+        assert fg.local_element_count == len(self.mesh.elements)
 
         if len(fg.face_pairs):
             self.face_groups = [(fg, ldis_l.face_mass_matrix())]
@@ -476,7 +489,7 @@ class Discretization(object):
             el_face_to_face_group_and_flux_face_index[ef] = \
                     face_group, len(face_group.flux_faces)-1
 
-        face_group.commit_face_index_lists()
+        face_group.commit()
 
         bdry = _Boundary(
                 nodes=nodes,
