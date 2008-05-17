@@ -54,10 +54,14 @@ class _FaceGroup(hedge._internal.FaceGroup):
     def commit_face_index_lists(self):
         from hedge._internal import IntVector
 
-        for fil in self.face_index_lists:
-            intvec = IntVector(fil)
-
-            self.index_lists.append(intvec)
+        if self.face_index_lists:
+            face_length = len(self.face_index_lists[0])
+            self.index_lists = numpy.empty(
+                    (len(self.face_index_lists), face_length),
+                    dtype=numpy.uint32, order="C")
+                        
+            for i, fil in enumerate(self.face_index_lists):
+                self.index_lists[i] = fil
 
         del self.face_index_lists
         del self.face_index_list_register
@@ -383,18 +387,19 @@ class Discretization(object):
             # create and fill the face pair
             fp = FacePair()
 
-            fp.el_base_index = estart_l
-            fp.opp_el_base_index = estart_n
+            fp.loc.el_base_index = estart_l
+            fp.opp.el_base_index = estart_n
 
-            fp.face_index_list_number = fg.register_face_indices(
+            fp.loc.face_index_list_number = fg.register_face_indices(
                     identifier=fi_l, 
                     generator=lambda: findices_l)
-            fp.opp_face_index_list_number = fg.register_face_indices(
+            fp.opp.face_index_list_number = fg.register_face_indices(
                     identifier=(fi_n, findices_shuffle_op_n),
                     generator=lambda : findices_shuffle_op_n(findices_n))
 
-            fp.flux_face_index = len(fg.flux_faces)
-            fp.opp_flux_face_index = len(fg.flux_faces)+1
+            fp.loc.flux_face_index = len(fg.flux_faces)
+            fp.opp.flux_face_index = len(fg.flux_faces)+1
+            assert len(fp.__dict__) == 0
 
             fg.face_pairs.append(fp)
 
@@ -450,16 +455,18 @@ class Discretization(object):
 
             # create the face pair
             fp = FacePair()
-            fp.el_base_index = el_start
-            fp.opp_el_base_index = f_start
-            fp.face_index_list_number = face_group.register_face_indices(
+            fp.loc.el_base_index = el_start
+            fp.opp.el_base_index = f_start
+            fp.loc.face_index_list_number = face_group.register_face_indices(
                     identifier=face_nr,
                     generator=lambda: face_indices)
-            fp.opp_face_index_list_number = face_group.register_face_indices(
+            fp.opp.face_index_list_number = face_group.register_face_indices(
                     identifier=(),
                     generator=lambda: tuple(xrange(len(face_indices))))
-            fp.flux_face_index = len(face_group.flux_faces)
-            fp.opp_flux_face_index = FacePair.INVALID_INDEX
+            fp.loc.flux_face_index = len(face_group.flux_faces)
+            fp.opp.flux_face_index = FacePair.INVALID_INDEX
+            assert len(fp.__dict__) == 0
+
             face_group.face_pairs.append(fp)
 
             # create the flux face

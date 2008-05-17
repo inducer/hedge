@@ -292,15 +292,19 @@ void hedge_expose_fluxes()
       ;
   }
   {
+    typedef face_pair::side cl;
+    class_<cl>("FacePairSide")
+      .DEF_SIMPLE_RW_MEMBER(el_base_index)
+      .DEF_SIMPLE_RW_MEMBER(face_index_list_number)
+      .DEF_SIMPLE_RW_MEMBER(flux_face_index)
+      ;
+  }
+  {
     typedef face_pair cl;
     class_<cl>("FacePair")
       .add_static_property("INVALID_INDEX", &cl::get_INVALID_INDEX)
-      .DEF_SIMPLE_RW_MEMBER(el_base_index)
-      .DEF_SIMPLE_RW_MEMBER(opp_el_base_index)
-      .DEF_SIMPLE_RW_MEMBER(face_index_list_number)
-      .DEF_SIMPLE_RW_MEMBER(opp_face_index_list_number)
-      .DEF_SIMPLE_RW_MEMBER(flux_face_index)
-      .DEF_SIMPLE_RW_MEMBER(opp_flux_face_index)
+      .DEF_SIMPLE_RW_MEMBER(loc)
+      .DEF_SIMPLE_RW_MEMBER(opp)
       ;
   }
 
@@ -319,18 +323,12 @@ void hedge_expose_fluxes()
   }
 
   {
-    typedef face_group::index_list_vector cl;
-    class_<cl>("IndexListVector")
-      .def(no_compare_indexing_suite<cl>())
-      ;
-  }
-
-  {
     typedef face_group cl;
     class_<cl, boost::shared_ptr<cl> >("FaceGroup", init<bool>(arg("double_sided")))
       .DEF_SIMPLE_RW_MEMBER(face_pairs)
       .DEF_SIMPLE_RW_MEMBER(flux_faces)
-      .DEF_SIMPLE_RW_MEMBER(index_lists)
+      .DEF_BYVAL_RW_MEMBER(index_lists)
+      .DEF_SIMPLE_RW_MEMBER(local_element_count)
       ;
   }
 

@@ -92,6 +92,11 @@
 #define DEF_SIMPLE_RW_MEMBER(NAME) \
   def_readwrite(#NAME, &cl::NAME)
 
+#define DEF_BYVAL_RO_MEMBER(NAME) \
+  def(pyublas::by_value_ro_member(#NAME, &cl::NAME))
+
+#define DEF_BYVAL_RW_MEMBER(NAME) \
+  def(pyublas::by_value_rw_member(#NAME, &cl::NAME))
 
 
 template <class T>

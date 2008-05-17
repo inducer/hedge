@@ -1011,8 +1011,6 @@ class CudaDiscretization(hedge.discretization.Discretization):
     def preprocess_optemplate(self, optemplate):
         ind_inf = self._assemble_indexing_info()
         print optemplate
-        from hedge.mesh import TAG_ALL
-        self.gpu_boundary_embedding(TAG_ALL)
         raise NotImplementedError
 
     def run_preprocessed_optemplate(self, pp_optemplate, vars):

@@ -187,6 +187,20 @@ class Element(object):
         v = self.vandermonde()
         return [leftsolve(v, vdiff) for vdiff in self.grad_vandermonde()]
 
+    @memoize_method
+    def lifting_matrix(self):
+        """Return a matrix that combines the effect of the inverse
+        mass matrix applied after the face mass matrix to a vector
+        of the shape::
+
+            [face_1_dofs]+[face_2_dofs]+...+[face_n_dofs]
+
+        Observe that this automatically maps this vector to a volume
+        contribution.
+        """
+
+
+
 
 
 

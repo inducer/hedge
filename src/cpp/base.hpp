@@ -48,6 +48,9 @@ namespace hedge {
   typedef pyublas::numpy_vector<double> py_vector;
   typedef pyublas::numpy_matrix<double> py_matrix;
 
+  typedef boost::numeric::ublas::vector<double> dyn_vector;
+  typedef boost::numeric::ublas::matrix<double> dyn_matrix;
+
   class affine_map
   {
     private:
