@@ -32,6 +32,11 @@ import hedge.discretization
 
 
 # tools -----------------------------------------------------------------------
+def _exact_div(dividend, divisor):
+    quot, rem = divmod(dividend, divisor)
+    assert rem == 0
+    return quot
+
 def _ceiling(value, multiple_of=1):
     """Round C{value} up to be a C{multiple_of} something."""
     # Mimicks the Excel "floor" function (for code stolen from occupany calculator)
@@ -78,6 +83,9 @@ class DeviceData:
 
     def align(self, bytes):
         return _ceiling(bytes, self.align_bytes())
+
+    def align_dtype(self, elements, dtype_size):
+        return _ceiling(elements, _exact_div(self.align_bytes(), dtype_size))
 
     def align_bytes(self):
         return 16
@@ -291,8 +299,8 @@ class ExecutionPlan:
 
     @memoize_method
     def ext_dof_smem(self):
-        return self.devdata.align(self.get_extface_count()
-                * self.dofs_per_face() * self.float_size)
+        return self.devdata.align(self.get_extface_count()*
+                self.dofs_per_face() * self.float_size)
 
     @memoize_method
     def get_face_pair_struct(self):
@@ -425,7 +433,8 @@ class GPUBlock(object):
 class GPUFaceStorage(object):
     """Describes where the dofs of an element face are stored.
 
-    @ivar el_face: a tuple (element, face_number).
+    @ivar opposite: the L{GPUFacestorage} instance for the face
+      oposite to this one.
     """
 
     def __init__(self):
@@ -462,15 +471,25 @@ class GPUInteriorFaceStorage(GPUFaceStorage):
 class GPUBoundaryFaceStorage(GPUFaceStorage):
     """Describes storage locations for a boundary face.
 
-    @ivar bdry_index: this face's starting index in the global boundary array.
+    @ivar cpu_bdry_index_in_floats: this face's starting index 
+      in the CPU-based TAG_ALL boundary array [floats].
+    @ivar gpu_bdry_index_in_floats: this face's starting index 
+      in the GPU-based TAG_ALL boundary array [floats].
     @ivar dup_block: 
     @ivar dup_ext_face_number:
     """
-    __slots__ = ["opposite", "bdry_index", "dup_block", "dup_ext_face_number"]
+    __slots__ = ["opposite", 
+            "cpu_bdry_index_in_floats", 
+            "gpu_bdry_index_in_floats", 
+            "dup_block", "dup_ext_face_number"]
 
-    def __init__(self, bdry_index):
+    def __init__(self, 
+            cpu_bdry_index_in_floats,
+            gpu_bdry_index_in_floats,
+            ):
         GPUFaceStorage.__init__(self)
-        self.bdry_index = 0
+        self.cpu_bdry_index_in_floats = cpu_bdry_index_in_floats
+        self.gpu_bdry_index_in_floats = gpu_bdry_index_in_floats
 
 
 
@@ -629,10 +648,10 @@ class CudaDiscretization(hedge.discretization.Discretization):
 
 
     def _build_face_storage_map(self):
+        # Side effects:
+        # - fill in GPUBlock.extfaces
+        # - set self.aligned_boundary_floats
         fsm = {}
-
-        from hedge.mesh import TAG_ALL
-        all_bdry = self.get_boundary(TAG_ALL)
 
         face_index_list_register = {}
         self.index_lists = []
@@ -683,20 +702,28 @@ class CudaDiscretization(hedge.discretization.Discretization):
                 face1.dup_ext_face_number = face1.dup_block.register_ext_face(face1)
                 face2.dup_ext_face_number = face2.dup_block.register_ext_face(face2)
             
-        (bdry_fg, ldis), = all_bdry.face_groups_and_ldis
-        for fp in bdry_fg.face_pairs:
-            assert fp.opp_flux_face_index == fp.INVALID_INDEX
-            assert (tuple(bdry_fg.index_lists[fp.opp_face_index_list_number]) 
-                    == id_face_index_list)
+        self.aligned_boundary_floats = 0
+        from hedge.mesh import TAG_ALL
+        for bdry_fg, ldis in self.get_boundary(TAG_ALL).face_groups_and_ldis:
+            aligned_fnc = self.devdata.align_dtype(ldis.face_node_count(), 
+                    self.plan.float_size)
+            for fp in bdry_fg.face_pairs:
+                assert fp.opp_flux_face_index == fp.INVALID_INDEX
+                assert (tuple(bdry_fg.index_lists[fp.opp_face_index_list_number]) 
+                        == id_face_index_list)
 
-            face1 = make_int_face(
-                    bdry_fg.flux_faces[fp.flux_face_index], 
-                    fp.face_index_list_number)
-            face2 = GPUBoundaryFaceStorage(fp.opp_el_base_index)
-            face1.opposite = face2
-            face2.opposite = face1
-            face2.dup_block = face1.native_block
-            face2.dup_ext_face_number = face2.dup_block.register_ext_face(face2)
+                face1 = make_int_face(
+                        bdry_fg.flux_faces[fp.flux_face_index], 
+                        fp.face_index_list_number)
+                face2 = GPUBoundaryFaceStorage(
+                        fp.opp_el_base_index,
+                        self.aligned_boundary_floats
+                        )
+                self.aligned_boundary_floats += aligned_fnc
+                face1.opposite = face2
+                face2.opposite = face1
+                face2.dup_block = face1.native_block
+                face2.dup_ext_face_number = face2.dup_block.register_ext_face(face2)
 
         return fsm
 
@@ -709,7 +736,7 @@ class CudaDiscretization(hedge.discretization.Discretization):
     def gpu_dof_count(self):
         return self.block_dof_count() * len(self.blocks)
 
-    def to_gpu(self, field):
+    def volume_to_gpu(self, field):
         from hedge.tools import log_shape
         ls = log_shape(field)
         if ls != ():
@@ -718,7 +745,7 @@ class CudaDiscretization(hedge.discretization.Discretization):
             from pytools import indices_in_shape
 
             for i in indices_in_shape(ls):
-                result[i] = self.to_gpu(field[i])
+                result[i] = self.volume_to_gpu(field[i])
             return result
         else:
             copy_vec = numpy.empty((self.gpu_dof_count(),), dtype=numpy.float32)
@@ -748,7 +775,7 @@ class CudaDiscretization(hedge.discretization.Discretization):
 
             return gpuarray.to_gpu(copy_vec)
 
-    def from_gpu(self, field, check=None):
+    def volume_from_gpu(self, field, check=None):
         if check is None:
             check = self.debug
 
@@ -794,34 +821,47 @@ class CudaDiscretization(hedge.discretization.Discretization):
             return result
 
     @memoize_method
-    def get_bdry_embedding(self, tag):
-        bdry = self.get_boundary(tag)
-        entire_bdry = self.get_boundary(hedge.mesh.TAG_ALL)
-        if tag == hedge.mesh.TAG_ALL:
-            return numpy.arange(len(entire_bdry.nodes))
-        else:
-            inverse_imap_entire = dict(
-                    (gi, fi) for fi, gi in enumerate(entire_bdry.index_map))
-            return numpy.array(
-                    [inverse_imap_entire[gi] for gi in bdry.index_map])
+    def gpu_boundary_embedding(self, tag):
+        """Return an array of indices embedding a CPU boundary
+        field for C{tag} into the GPU boundary field."""
 
-    def to_full_bdry(self, tag, field):
-        if tag == hedge.mesh.TAG_ALL:
-            return field
+        bdry = self.get_boundary(tag)
+        result = numpy.empty(
+                (len(bdry.nodes),),
+                dtype=numpy.intp)
+        result.fill(-1)
+
+        cpu_base = 0
+        for elface in self.mesh.tag_to_boundary.get(tag, []):
+            face_stor = self.face_storage_map[elface]
+            bdry_stor = face_stor.opposite
+            assert isinstance(bdry_stor, GPUBoundaryFaceStorage)
+
+            face_len = (bdry_stor.opposite.native_block
+                    .local_discretization.face_node_count())
+            gpu_base = bdry_stor.gpu_bdry_index_in_floats
+            result[cpu_base:cpu_base+face_len] = \
+                    numpy.arange(gpu_base, gpu_base+face_len)
+            cpu_base += face_len
+
+        assert (result>=0).all()
+        return result
+
+    def boundary_to_gpu(self, tag, field):
+        from hedge.tools import log_shape
+        ls = log_shape(field)
+        if ls != ():
+            from pytools import indices_in_shape
+            result = numpy.array(ls, dtype=object)
+            for i in indices_in_shape(shape):
+                result[i] = self.boundary_to_gpu(field[i], tag)
+            return result
         else:
-            from hedge.tools import log_shape
-            ls = log_shape(field)
-            if ls != ():
-                from pytools import indices_in_shape
-                result = numpy.array(ls, dtype=object)
-                for i in indices_in_shape(shape):
-                    result[i] = self.to_full_bdry(field[i], tag)
-                return result
-            else:
-                s = hedge.discretization.Discretization
-                result = s.boundary_empty(self, hedge.mesh.TAG_ALL)
-                result[self.get_bdry_embedding(tag)] = field
-                return result
+            result = cuda.pagelocked_empty(
+                    (self.aligned_boundary_floats,),
+                    dtype=field.dtype)
+            result[self.gpu_boundary_embedding(tag)] = field
+            return cuda.to_device(result)
 
     # vector construction -----------------------------------------------------
     def volume_empty(self, shape=()):
@@ -838,33 +878,32 @@ class CudaDiscretization(hedge.discretization.Discretization):
         def tgt_factory(shape):
             return s.volume_empty(self, shape)
 
-        return self.to_gpu(
+        return self.volume_to_gpu(
                 s.interpolate_volume_function(self, f, tgt_factory))
 
-    def boundary_empty(self, tag=hedge.mesh.TAG_ALL, shape=()):
+    def _new_bdry(self, tag, shape, create_func):
         result = numpy.empty(shape, dtype=object)
         from pytools import indices_in_shape
         bdry = self.get_boundary(TAG_ALL)
         for i in indices_in_shape(shape):
-            result[i] = gpuarray.empty((len(bdry.nodes),), dtype=numpy.float32)
+            result[i] = create_func(
+                    (self.aligned_boundary_floats), 
+                    dtype=numpy.float32)
         return result
+    
+    def boundary_empty(self, tag=hedge.mesh.TAG_ALL, shape=(), host=False):
+        return self._new_bdry(tag, shape, gpuarray.empty)
 
-    def boundary_zeros(self, tag=hedge.mesh.TAG_ALL, shape=()):
-        result = numpy.zeros(shape, dtype=object)
-        bdry = self.get_boundary(TAG_ALL)
-        from pytools import indices_in_shape
-        for i in indices_in_shape(shape):
-            result[i] = gpuarray.zeros((len(bdry.nodes),), dtype=numpy.float32)
-        return result
+    def boundary_zeros(self, tag=hedge.mesh.TAG_ALL, shape=(), host=False):
+        return self._new_bdry(tag, shape, gpuarray.zeros)
 
     def interpolate_boundary_function(self, f, tag=hedge.mesh.TAG_ALL):
         s = hedge.discretization.Discretization
         def tgt_factory(shape, tag):
             return s.boundary_empty(self, shape, tag)
 
-        return vec_to_gpu(
-                self.to_full_bdry(tag,
-                s.interpolate_boundary_function(self, f, tag, tgt_factory)))
+        return self.boundary_to_gpu(tag,
+                s.interpolate_boundary_function(self, f, tag, tgt_factory))
 
     def boundary_normals(self, tag=hedge.mesh.TAG_ALL):
         raise NotImplementedError
@@ -883,7 +922,7 @@ class CudaDiscretization(hedge.discretization.Discretization):
 
     # optemplate processing ---------------------------------------------------
     @memoize_method
-    def assemble_indexing_info(self):
+    def _assemble_indexing_info(self):
         result = ""
         block_len = self.plan.indexing_smem()
         block_dofs = self.int_dof_floats + self.ext_dof_floats
@@ -914,7 +953,7 @@ class CudaDiscretization(hedge.discretization.Discretization):
                     # boundary face
                     b_base = INVALID_U16
                     bdry_flux_number = 1
-                    b_global_base = opp.bdry_index
+                    b_global_base = opp.gpu_bdry_index_in_floats
                     b_ilist_number = INVALID_U8
                     bf += 1
                 else:
@@ -964,17 +1003,16 @@ class CudaDiscretization(hedge.discretization.Discretization):
 
             result += block_data
 
-        # make sure our estimate is achieved
-        print max(block_lengths), self.plan.indexing_smem()
+        # make sure the indexing_smem estimate is achieved
         assert max(block_lengths) == self.plan.indexing_smem()
         assert len(result) == block_len*len(self.blocks)
-        result_gpu = cuda.mem_alloc(len(result))
-        cuda.memcpy_htod(result_gpu, result)
-        return result_gpu
+        return cuda.to_device(result)
     
     def preprocess_optemplate(self, optemplate):
-        ind_inf = self.assemble_indexing_info()
+        ind_inf = self._assemble_indexing_info()
         print optemplate
+        from hedge.mesh import TAG_ALL
+        self.gpu_boundary_embedding(TAG_ALL)
         raise NotImplementedError
 
     def run_preprocessed_optemplate(self, pp_optemplate, vars):

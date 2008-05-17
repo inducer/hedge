@@ -143,17 +143,6 @@ class Discretization(object):
 
         local_discretization = self.get_local_discretization(
                 mesh, local_discretization, order)
-        if local_discretization is None and order is None:
-            raise ValueError, "must supply either local_discretization or order"
-        if local_discretization is not None and order is not None:
-            raise ValueError, "must supply only one of local_discretization and order"
-        if local_discretization is None:
-            from hedge.element import ELEMENTS
-            from pytools import one
-            ldis_class = one(
-                    ldis_class for ldis_class in ELEMENTS
-                    if isinstance(mesh.elements[0], ldis_class.geometry))
-            local_discretization = ldis_class(order)
 
         self.dimensions = local_discretization.dimensions
         self.debug = debug

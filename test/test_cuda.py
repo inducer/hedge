@@ -37,8 +37,8 @@ class TestHedge(unittest.TestCase):
         from hedge.cuda import CudaDiscretization
         discr = CudaDiscretization(mesh, order=4, init_cuda=False, debug=True)
         a = numpy.arange(len(discr), dtype=numpy.float32)
-        a_gpu = discr.to_gpu(a)
-        a_copy = discr.from_gpu(a_gpu)
+        a_gpu = discr.volume_to_gpu(a)
+        a_copy = discr.volume_from_gpu(a_gpu)
         diff = a - a_copy
         assert la.norm(diff) < 1e-10 * la.norm(a)
 
