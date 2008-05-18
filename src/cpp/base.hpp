@@ -46,10 +46,15 @@ namespace hedge {
   static const node_index INVALID_NODE = UINT_MAX;
 
   typedef pyublas::numpy_vector<double> py_vector;
+  typedef pyublas::numpy_vector<unsigned> py_uint_vector;
   typedef pyublas::numpy_matrix<double> py_matrix;
+  typedef pyublas::numpy_matrix<double, 
+          boost::numeric::ublas::column_major> py_fortran_matrix;
 
   typedef boost::numeric::ublas::vector<double> dyn_vector;
   typedef boost::numeric::ublas::matrix<double> dyn_matrix;
+  typedef boost::numeric::ublas::matrix<double, 
+          boost::numeric::ublas::column_major> dyn_fortran_matrix;
 
   class affine_map
   {

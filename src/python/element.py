@@ -188,9 +188,33 @@ class Element(object):
         return [leftsolve(v, vdiff) for vdiff in self.grad_vandermonde()]
 
     @memoize_method
+    def multi_face_mass_matrix(self):
+        """Return a matrix that combines the effect of multiple face
+        mass matrices applied to a vector of the shape::
+
+            [face_1_dofs]+[face_2_dofs]+...+[face_n_dofs]
+
+        Observe that this automatically maps this vector to a volume
+        contribution.
+        """
+        fnc = self.face_node_count()
+
+        result = numpy.zeros(
+                (self.node_count(), self.face_count()*fnc),
+                dtype=numpy.float)
+
+        fmm = self.face_mass_matrix()
+
+        for i_face, f_indices in enumerate(self.face_indices()):
+            for i_dof, f_index in enumerate(f_indices):
+                result[f_index, i_face*fnc:(i_face+1)*fnc] = fmm[i_dof]
+
+        return result
+
+    @memoize_method
     def lifting_matrix(self):
         """Return a matrix that combines the effect of the inverse
-        mass matrix applied after the face mass matrix to a vector
+        mass matrix applied after the multi-face mass matrix to a vector
         of the shape::
 
             [face_1_dofs]+[face_2_dofs]+...+[face_n_dofs]
@@ -198,8 +222,8 @@ class Element(object):
         Observe that this automatically maps this vector to a volume
         contribution.
         """
-
-
+        return numpy.dot(self.inverse_mass_matrix(),
+                self.multi_face_mass_matrix())
 
 
 

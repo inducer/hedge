@@ -305,6 +305,7 @@ void hedge_expose_fluxes()
       .add_static_property("INVALID_INDEX", &cl::get_INVALID_INDEX)
       .DEF_SIMPLE_RW_MEMBER(loc)
       .DEF_SIMPLE_RW_MEMBER(opp)
+      .DEF_SIMPLE_RW_MEMBER(opp_native_write_map)
       ;
   }
 
@@ -324,11 +325,12 @@ void hedge_expose_fluxes()
 
   {
     typedef face_group cl;
-    class_<cl, boost::shared_ptr<cl> >("FaceGroup", init<bool>(arg("double_sided")))
+    class_<cl, boost::shared_ptr<cl> >("FaceGroup", init<bool>(args("double_sided")))
       .DEF_SIMPLE_RW_MEMBER(face_pairs)
       .DEF_SIMPLE_RW_MEMBER(flux_faces)
       .DEF_BYVAL_RW_MEMBER(index_lists)
-      .DEF_SIMPLE_RW_MEMBER(local_element_count)
+      .DEF_SIMPLE_RW_MEMBER(element_count)
+      .DEF_SIMPLE_RW_MEMBER(face_count)
       ;
   }
 

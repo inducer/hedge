@@ -38,20 +38,27 @@ class _FaceGroup(hedge._internal.FaceGroup):
     def __init__(self, double_sided):
         hedge._internal.FaceGroup.__init__(self, double_sided)
         self.face_index_lists = []
-        self.face_index_list_register = {}
+        self.fil_id_to_number = {}
+        self.fil_to_number = {}
 
     def register_face_indices(self, identifier, generator):
 
         try:
-            return self.face_index_list_register[identifier]
+            return self.fil_id_to_number[identifier]
         except KeyError:
-            new_idx = len(self.face_index_lists)
-            fil = generator()
-            self.face_index_lists.append(fil)
-            self.face_index_list_register[identifier] = new_idx
-            return new_idx
+            fil = tuple(generator())
+            try:
+                nbr = self.fil_to_number[fil]
+            except KeyError:
+                nbr = len(self.face_index_lists)
+                self.face_index_lists.append(fil)
+                self.fil_id_to_number[identifier] = nbr
+                self.fil_to_number[fil] = nbr
+            else:
+                self.fil_id_to_number[identifier] = nbr
+            return nbr
 
-    def commit(self):
+    def commit(self, element_count, ldis_int, ldis_ext):
         from hedge._internal import IntVector
 
         if self.face_index_lists:
@@ -63,20 +70,18 @@ class _FaceGroup(hedge._internal.FaceGroup):
             for i, fil in enumerate(self.face_index_lists):
                 self.index_lists[i] = fil
 
-        local_element_numbers = {}
-        def register_element(el_id):
-            return local_element_numbers.setdefault(
-                    el_id, len(local_element_numbers))
+        self.element_count = element_count
+        if ldis_int is None:
+            self.face_count = 0
+        else:
+            self.face_count = ldis_int.face_count()
 
-        for fp in self.face_pairs:
-            for side in [fp.loc, fp.opp]:
-                if side.flux_face_index != fp.INVALID_INDEX:
-                    side.local_el_number = register_element(
-                        self.flux_faces[side.flux_face_index].element_id)
-        self.local_element_count = len(local_element_numbers)
+        self.ldis_int = ldis_int
+        self.ldis_ext = ldis_ext
 
         del self.face_index_lists
-        del self.face_index_list_register
+        del self.fil_id_to_number
+        del self.fil_to_number
 
 
 
@@ -105,12 +110,12 @@ class _ElementGroup(object):
 
 
 class _Boundary(object):
-    def __init__(self, nodes, ranges, index_map, face_groups_and_ldis,
+    def __init__(self, nodes, ranges, index_map, face_groups,
             el_face_to_face_group_and_flux_face_index={}):
         self.nodes = nodes
         self.ranges = ranges
         self.index_map = index_map
-        self.face_groups_and_ldis = face_groups_and_ldis
+        self.face_groups = face_groups
         self.el_face_to_face_group_and_flux_face_index = \
                 el_face_to_face_group_and_flux_face_index
 
@@ -348,10 +353,13 @@ class Discretization(object):
         return f
 
     def _build_interior_face_groups(self):
-        from hedge._internal import FaceGroup, FacePair
+        from hedge._internal import FacePair
         from hedge.element import FaceVertexMismatch
 
         fg = _FaceGroup(double_sided=True)
+
+        all_ldis_l = []
+        all_ldis_n = []
 
         # find and match node indices along faces
         for i, (local_face, neigh_face) in enumerate(self.mesh.interfaces):
@@ -360,6 +368,9 @@ class Discretization(object):
 
             (estart_l, eend_l), ldis_l = self.find_el_data(e_l.id)
             (estart_n, eend_n), ldis_n = self.find_el_data(e_n.id)
+
+            all_ldis_l.append(ldis_l)
+            all_ldis_n.append(ldis_n)
 
             vertices_l = e_l.faces[fi_l]
             vertices_n = e_n.faces[fi_n]
@@ -408,6 +419,12 @@ class Discretization(object):
             fp.opp.face_index_list_number = fg.register_face_indices(
                     identifier=(fi_n, findices_shuffle_op_n),
                     generator=lambda : findices_shuffle_op_n(findices_n))
+            from pytools import get_write_to_map_from_permutation
+            fp.opp_native_write_map = fg.register_face_indices(
+                    identifier=(fi_n, findices_shuffle_op_n, "wtm"),
+                    generator=lambda : 
+                    get_write_to_map_from_permutation(
+                    findices_shuffle_op_n(findices_n), findices_n))
 
             fp.loc.flux_face_index = len(fg.flux_faces)
             fp.opp.flux_face_index = len(fg.flux_faces)+1
@@ -425,11 +442,14 @@ class Discretization(object):
             fg.flux_faces.append(flux_face_l)
             fg.flux_faces.append(flux_face_n)
 
-        fg.commit()
-        assert fg.local_element_count == len(self.mesh.elements)
+        from pytools import single_valued
+        ldis_l = single_valued(all_ldis_l)
+        ldis_n = single_valued(all_ldis_n)
+
+        fg.commit(len(self.mesh.elements), ldis_l, ldis_n)
 
         if len(fg.face_pairs):
-            self.face_groups = [(fg, ldis_l.face_mass_matrix())]
+            self.face_groups = [fg]
         else:
             self.face_groups = []
         
@@ -489,13 +509,14 @@ class Discretization(object):
             el_face_to_face_group_and_flux_face_index[ef] = \
                     face_group, len(face_group.flux_faces)-1
 
-        face_group.commit()
+        face_group.commit(
+                len(self.mesh.elements), ldis, ldis)
 
         bdry = _Boundary(
                 nodes=nodes,
                 ranges=face_ranges,
                 index_map=IndexMap(len(self.nodes), len(index_map), index_map),
-                face_groups_and_ldis=[(face_group, ldis)],
+                face_groups=[face_group],
                 el_face_to_face_group_and_flux_face_index=
                 el_face_to_face_group_and_flux_face_index)
 
@@ -558,7 +579,7 @@ class Discretization(object):
 
     def boundary_normals(self, tag=hedge.mesh.TAG_ALL):
         result = self.boundary_zeros(tag=tag, shape=(self.dimensions,))
-        for fg, ldis in self.get_boundary(tag).face_groups_and_ldis:
+        for fg in self.get_boundary(tag).face_groups:
             for face_pair in fg.face_pairs:
                 flux_face = fg.flux_faces[face_pair.flux_face_index]
                 oeb = face_pair.opp_el_base_index

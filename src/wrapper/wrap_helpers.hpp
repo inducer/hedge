@@ -70,11 +70,11 @@
       hedge::perform_flux_detailed); \
   def("perform_flux_on_one_target", (void (*)(\
           const hedge::face_group &, const py_matrix &, \
-          FLUX_CLASS, FLUX_CLASS, hedge::vector_target)) \
+          FLUX_CLASS, FLUX_CLASS, hedge::vector_target, bool)) \
       hedge::perform_flux_on_one_target); \
   def("perform_flux_on_one_target", (void (*)(\
           const hedge::face_group &, const py_matrix &, \
-          FLUX_CLASS, FLUX_CLASS, hedge::coord_matrix_target)) \
+          FLUX_CLASS, FLUX_CLASS, hedge::coord_matrix_target, bool)) \
       hedge::perform_flux_on_one_target); \
 
 #define ENUM_VALUE(NAME) \

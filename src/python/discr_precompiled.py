@@ -348,8 +348,13 @@ class Discretization(hedge.discretization.Discretization):
         ch_ext = ChainedFlux(ext_flux)
 
         target.begin(len(self.nodes), len(self.nodes))
-        for fg, fmm in self.face_groups:
-            perform_flux_on_one_target(fg, fmm, ch_int, ch_ext, target)
+        for fg in self.face_groups:
+            if self.newflux:
+                fmm = fg.ldis_int.multi_face_mass_matrix()
+            else:
+                fmm = fg.ldis_int.face_mass_matrix()
+            perform_flux_on_one_target(
+                    fg, fmm, ch_int, ch_ext, target, self.newflux)
         target.finalize()
 
     # boundary flux computation -----------------------------------------------
@@ -365,8 +370,8 @@ class Discretization(hedge.discretization.Discretization):
         int_target.begin(len(self.nodes), len(self.nodes))
         ext_target.begin(len(self.nodes), len(bdry.nodes))
         if bdry.nodes:
-            for fg, ldis in bdry.face_groups_and_ldis:
-                perform_flux(fg, ldis.face_mass_matrix(), 
+            for fg in bdry.face_groups:
+                perform_flux(fg, fg.ldis_int.face_mass_matrix(), 
                         ch_int, int_target, 
                         ch_ext, ext_target)
         int_target.finalize()

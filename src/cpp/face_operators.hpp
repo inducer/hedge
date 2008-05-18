@@ -24,6 +24,8 @@
 
 
 #include <boost/foreach.hpp>
+#include <boost/numeric/bindings/traits/ublas_matrix.hpp>
+#include <boost/numeric/bindings/blas/blas3.hpp>
 #include <vector>
 #include <utility>
 #include "base.hpp"
@@ -35,7 +37,7 @@
 
 namespace hedge 
 {
-  typedef pyublas::numpy_vector<unsigned> index_lists_t;
+  typedef py_uint_vector index_lists_t;
 
   struct face_pair
   {
@@ -49,18 +51,20 @@ namespace hedge
       node_index el_base_index;
       unsigned face_index_list_number;
       unsigned flux_face_index;
-      /** An element numbering local to this face_group. */
-      unsigned local_el_number;
 
       side()
         : el_base_index(INVALID_NODE),
         face_index_list_number(INVALID_INDEX),
-        flux_face_index(INVALID_INDEX),
-        local_el_number(INVALID_INDEX)
+        flux_face_index(INVALID_INDEX)
       { }
     };
 
     side loc, opp;
+    unsigned opp_native_write_map;
+
+    face_pair()
+      : opp_native_write_map(INVALID_INDEX)
+    { }
   };
 
   struct face_group
@@ -77,10 +81,13 @@ namespace hedge
       /** The number of elements touched by this face group.
        * Used for sizing a temporary.
        */
-      unsigned local_element_count;
+      unsigned element_count;
+      unsigned face_count;
 
       face_group(bool d_sided)
-        : double_sided(d_sided), local_element_count(0)
+        : double_sided(d_sided), 
+        element_count(0), 
+        face_count(0)
       { }
 
       unsigned face_length() const
@@ -128,7 +135,7 @@ namespace hedge
 
 
   template <class Mat, class FData>
-  void perform_single_sided_flux(const face_group &fg, const Mat &fmm, FData fdata)
+  void perform_single_sided_flux(const face_group &fg, const Mat &mat, FData fdata)
   {
     BOOST_FOREACH(const face_pair &fp, fg.face_pairs)
     {
@@ -150,14 +157,14 @@ namespace hedge
         
         for (unsigned j = 0; j < fg.face_length(); j++)
         {
-          const typename Mat::value_type fmm_entry = fmm(i, j);
+          const typename Mat::value_type mat_entry = mat(i, j);
 
           fdata.local_target.add_coefficient(
               lili, fp.loc.el_base_index+loc_idx_list[j], 
-              local_coeff*fmm_entry);
+              local_coeff*mat_entry);
           fdata.neighbor_target.add_coefficient(
               lili, fp.opp.el_base_index+opp_idx_list[j], 
-              neighbor_coeff*fmm_entry);
+              neighbor_coeff*mat_entry);
         }
       }
     }
@@ -167,7 +174,7 @@ namespace hedge
 
 
   template <class Mat, class FData>
-  void perform_double_sided_flux(const face_group &fg, const Mat &fmm, FData fdata)
+  void perform_double_sided_flux(const face_group &fg, const Mat &mat, FData fdata)
   {
     BOOST_FOREACH(const face_pair &fp, fg.face_pairs)
     {
@@ -204,24 +211,24 @@ namespace hedge
 
         for (j = 0; j < fg.face_length(); j++)
         {
-          const typename Mat::value_type fmm_entry = fmm(i, j);
+          const typename Mat::value_type mat_entry = mat(i, j);
 
           const int lilj = fp.loc.el_base_index+*lilj_iterator++;
           const int oilj = fp.opp.el_base_index+*oilj_iterator++;
 
           fdata.local_target.add_coefficient(
               lili, lilj, 
-              local_coeff_here*fmm_entry);
+              local_coeff_here*mat_entry);
           fdata.neighbor_target.add_coefficient(
               lili, oilj, 
-              neighbor_coeff_here*fmm_entry);
+              neighbor_coeff_here*mat_entry);
 
           fdata.local_target.add_coefficient(
               oili, oilj, 
-              local_coeff_opp*fmm_entry);
+              local_coeff_opp*mat_entry);
           fdata.neighbor_target.add_coefficient(
               oili, lilj, 
-              neighbor_coeff_opp*fmm_entry);
+              neighbor_coeff_opp*mat_entry);
         }
       }
     }
@@ -230,15 +237,18 @@ namespace hedge
 
 
 
-  template <class Mat, class LFlux, class NFlux>
+  template <class LFlux, class NFlux>
   void perform_double_sided_flux_on_single_vector_target(const face_group &fg, 
-      const Mat &fmm, LFlux local_flux, NFlux neighbor_flux, vector_target target
+      const py_matrix &mat, LFlux local_flux, NFlux neighbor_flux, vector_target target,
+      bool newflux
       )
   {
     const py_vector::const_iterator op_it = target.m_operand.begin();
     const py_vector::iterator result_it = target.m_result.begin();
 
-    bool multi_face = fmm.size2() > fg.face_length();
+    dyn_vector flux_temp(
+        fg.face_count*fg.face_length()*fg.element_count);
+    flux_temp.clear();
 
     BOOST_FOREACH(const face_pair &fp, fg.face_pairs)
     {
@@ -266,6 +276,31 @@ namespace hedge
       const int lebi = fp.loc.el_base_index;
       const int oebi = fp.opp.el_base_index;
 
+      if (newflux)
+      {
+        index_lists_t::const_iterator opp_write_map = 
+          fg.index_list(fp.opp_native_write_map);
+        const unsigned loc_tempbase = 
+          fg.face_length()*(
+              loc_flux_face.element_id*fg.face_count 
+              + loc_flux_face.face_id);
+        const unsigned opp_tempbase = 
+          fg.face_length()*(
+              opp_flux_face.element_id*fg.face_count 
+              + opp_flux_face.face_id);
+
+        for (unsigned i = 0; i < fg.face_length(); i++)
+        {
+          const double loc_val = op_it[lebi+loc_idx_list[i]];
+          const double opp_val = op_it[oebi+opp_idx_list[i]];
+          flux_temp[loc_tempbase+i] = 
+            local_coeff_here*loc_val + neighbor_coeff_here*opp_val;
+          flux_temp[opp_tempbase+opp_write_map[i]] = 
+            local_coeff_opp*opp_val + neighbor_coeff_opp*loc_val;
+        }
+
+      }
+      else
       for (unsigned i = 0; i < fg.face_length(); i++)
       {
         const int lili = lebi+loc_idx_list[i];
@@ -279,10 +314,10 @@ namespace hedge
 
         for (unsigned j = 0; j < fg.face_length(); j++)
         {
-          const typename Mat::value_type fmm_entry = fmm(i, j);
+          double mat_entry = mat(i, j);
 
-          const double fmmop_lilj = op_it[lebi+*lilj_iterator++]*fmm_entry;
-          const double fmmop_oilj = op_it[oebi+*oilj_iterator++]*fmm_entry;
+          const double matop_lilj = op_it[lebi+*lilj_iterator++]*mat_entry;
+          const double matop_oilj = op_it[oebi+*oilj_iterator++]*mat_entry;
 
           /*
           __builtin_prefetch(&operand[ebi+ilj_iterator[0]], 0, 1);
@@ -290,16 +325,40 @@ namespace hedge
           */
 
           res_lili_addition += 
-             fmmop_lilj*local_coeff_here
-            +fmmop_oilj*neighbor_coeff_here;
+             matop_lilj*local_coeff_here
+            +matop_oilj*neighbor_coeff_here;
           res_oili_addition += 
-            fmmop_oilj*local_coeff_opp 
-            +fmmop_lilj*neighbor_coeff_opp;
+            matop_oilj*local_coeff_opp 
+            +matop_lilj*neighbor_coeff_opp;
         }
 
         result_it[lili] += res_lili_addition;
         result_it[oili] += res_oili_addition;
       }
+    }
+
+    if (newflux)
+    {
+      using namespace boost::numeric::bindings;
+      using blas::detail::gemm;
+
+      const py_matrix &matrix = mat;
+
+      gemm(
+          'T', // "matrix" is row-major
+          'N', // a contiguous array of vectors is column-major
+          matrix.size1(),
+          fg.element_count,
+          matrix.size2(),
+          /*alpha*/ 1,
+          /*a*/ traits::matrix_storage(matrix.as_ublas()), 
+          /*lda*/ matrix.size2(),
+          /*b*/ traits::vector_storage(flux_temp), 
+          /*ldb*/ fg.face_count*fg.face_length(),
+          /*beta*/ 1,
+          /*c*/ traits::vector_storage(target.m_result), 
+          /*ldc*/ matrix.size1()
+          );
     }
   }
 
@@ -359,7 +418,7 @@ namespace hedge
 
   template <unsigned flux_count, class Mat, class DSFluxInfoType>
   void perform_multiple_double_sided_fluxes_on_single_operand(const face_group &fg, 
-      const Mat &fmm, DSFluxInfoType flux_info[flux_count],
+      const Mat &mat, DSFluxInfoType flux_info[flux_count],
       const hedge::py_vector &operand
       )
   {
@@ -399,19 +458,19 @@ namespace hedge
 
         for (unsigned j = 0; j < fg.face_length(); j++)
         {
-          const typename Mat::value_type fmm_entry = fmm(i, j);
+          const typename Mat::value_type mat_entry = mat(i, j);
 
-          const double fmmop_lilj = op_it[lebi+*lilj_iterator++]*fmm_entry;
-          const double fmmop_oilj = op_it[oebi+*oilj_iterator++]*fmm_entry;
+          const double matop_lilj = op_it[lebi+*lilj_iterator++]*mat_entry;
+          const double matop_oilj = op_it[oebi+*oilj_iterator++]*mat_entry;
 
           for (unsigned i_flux = 0; i_flux < flux_count; ++i_flux)
           {
             res_lili_additions[i_flux] += 
-              fmmop_lilj*coeffs.local_coeff_here[i_flux]
-              +fmmop_oilj*coeffs.neighbor_coeff_here[i_flux];
+              matop_lilj*coeffs.local_coeff_here[i_flux]
+              +matop_oilj*coeffs.neighbor_coeff_here[i_flux];
             res_oili_additions[i_flux] += 
-              fmmop_oilj*coeffs.local_coeff_opp[i_flux]
-              +fmmop_lilj*coeffs.neighbor_coeff_opp[i_flux];
+              matop_oilj*coeffs.local_coeff_opp[i_flux]
+              +matop_lilj*coeffs.neighbor_coeff_opp[i_flux];
           }
         }
 
@@ -428,39 +487,39 @@ namespace hedge
 
 
   template <class Mat, class LFlux, class NFlux>
-  void perform_flux_on_one_target(const face_group &fg, const Mat& fmm,
-      LFlux lflux, NFlux nflux, vector_target target)
+  void perform_flux_on_one_target(const face_group &fg, const Mat& mat,
+      LFlux lflux, NFlux nflux, vector_target target, bool newflux)
   {
     if (fg.double_sided)
-      perform_double_sided_flux_on_single_vector_target(fg, fmm, lflux, nflux, target);
+      perform_double_sided_flux_on_single_vector_target(fg, mat, lflux, nflux, target, newflux);
     else
-      perform_single_sided_flux(fg, fmm, make_flux_data(lflux, target, nflux, target));
+      perform_single_sided_flux(fg, mat, make_flux_data(lflux, target, nflux, target));
   }
 
 
 
 
   template <class Mat, class LFlux, class NFlux, class Target>
-  void perform_flux_on_one_target(const face_group &fg, const Mat& fmm,
-      LFlux lflux, NFlux nflux, Target target)
+  void perform_flux_on_one_target(const face_group &fg, const Mat& mat,
+      LFlux lflux, NFlux nflux, Target target, bool newflux)
   {
     if (fg.double_sided)
-      perform_double_sided_flux(fg, fmm, make_flux_data(lflux, target, nflux, target));
+      perform_double_sided_flux(fg, mat, make_flux_data(lflux, target, nflux, target));
     else
-      perform_single_sided_flux(fg, fmm, make_flux_data(lflux, target, nflux, target));
+      perform_single_sided_flux(fg, mat, make_flux_data(lflux, target, nflux, target));
   }
 
 
 
 
   template <class Mat, class LFlux, class LTarget, class NFlux, class NTarget>
-  void perform_flux_detailed(const face_group &fg, const Mat& fmm,
+  void perform_flux_detailed(const face_group &fg, const Mat& mat,
       LFlux lflux, LTarget ltarget, NFlux nflux, NTarget ntarget)
   {
     if (fg.double_sided)
-      perform_double_sided_flux(fg, fmm, make_flux_data(lflux, ltarget, nflux, ntarget));
+      perform_double_sided_flux(fg, mat, make_flux_data(lflux, ltarget, nflux, ntarget));
     else
-      perform_single_sided_flux(fg, fmm, make_flux_data(lflux, ltarget, nflux, ntarget));
+      perform_single_sided_flux(fg, mat, make_flux_data(lflux, ltarget, nflux, ntarget));
   }
 }
 
