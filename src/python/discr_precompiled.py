@@ -208,27 +208,21 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         if out is None:
             out = self.discr.volume_zeros()
 
-        from hedge.tools import make_vector_target
-        target = make_vector_target(field, out)
+        from hedge._internal import perform_double_sided_flux, ChainedFlux
 
-        from hedge._internal import perform_flux_on_one_target, ChainedFlux, NullTarget
-        if isinstance(target, NullTarget):
-            return out
-
-        ch_int = ChainedFlux(int_coeff)
-        ch_ext = ChainedFlux(ext_coeff)
-
-        target.begin(len(self.discr.nodes), len(self.discr.nodes))
         for fg in self.discr.face_groups:
             if lift:
-                nf = True
-                mat = fg.ldis_loc.lifting_matrix()
+                perform_double_sided_flux(
+                        fg, fg.ldis_loc.lifting_matrix(), 
+                        fg.local_el_inverse_jacobians,
+                        ChainedFlux(int_coeff), ChainedFlux(ext_coeff),
+                        field, out)
             else:
-                nf = False
-                mat = fg.ldis_loc.face_mass_matrix()
-            perform_flux_on_one_target(
-                    fg, mat, ch_int, ch_ext, target, nf)
-        target.finalize()
+                perform_double_sided_flux(
+                        fg, fg.ldis_loc.face_mass_matrix(), 
+                        None,
+                        ChainedFlux(int_coeff), ChainedFlux(ext_coeff),
+                        field, out)
 
         return out
 
@@ -237,29 +231,26 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         if out is None:
             out = self.discr.volume_zeros()
 
-        assert not lift
-
         bdry = self.discr.get_boundary(tag)
         if not bdry.nodes:
             return 0
 
-        from hedge.tools import make_vector_target
-        int_target = make_vector_target(field, out)
-        ext_target = make_vector_target(bfield, out)
+        from hedge._internal import perform_single_sided_flux, ChainedFlux
 
-        from hedge._internal import perform_flux, ChainedFlux
-        ch_int = ChainedFlux(int_coeff)
-        ch_ext = ChainedFlux(ext_coeff)
-
-        int_target.begin(len(self.discr.nodes), len(self.discr.nodes))
-        ext_target.begin(len(self.discr.nodes), len(bdry.nodes))
         if bdry.nodes:
             for fg in bdry.face_groups:
-                perform_flux(fg, fg.ldis_loc.face_mass_matrix(), 
-                        ch_int, int_target, 
-                        ch_ext, ext_target)
-        int_target.finalize()
-        ext_target.finalize()
+                if lift:
+                    perform_single_sided_flux(
+                            fg, fg.ldis_loc.lifting_matrix(), 
+                            fg.local_el_inverse_jacobians,
+                            ChainedFlux(int_coeff), ChainedFlux(ext_coeff),
+                            field, bfield, out)
+                else:
+                    perform_single_sided_flux(
+                            fg, fg.ldis_loc.face_mass_matrix(), 
+                            None,
+                            ChainedFlux(int_coeff), ChainedFlux(ext_coeff),
+                            field, bfield, out)
 
         return out
 

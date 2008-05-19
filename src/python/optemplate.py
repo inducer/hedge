@@ -392,8 +392,7 @@ class _InnerInverseMassContractor(pymbolic.mapper.RecursiveMapper):
             return OperatorBinding(
                     MInvSTOperator(self.discr, binding.op.xyz_axis),
                     binding.field)
-        elif (isinstance(binding.op, _FluxCoefficientOperator) 
-                and not isinstance(binding.field, BoundaryPair)):
+        elif isinstance(binding.op, _FluxCoefficientOperator):
             return OperatorBinding(
                     _LiftingFluxCoefficientOperator(
                         self.discr, 

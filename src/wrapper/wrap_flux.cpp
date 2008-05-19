@@ -113,78 +113,6 @@ namespace {
           make_function(&cl::operand2, return_internal_reference<>()))
       ;
   }
-
-
-
-
-  double_sided_flux_info<fluxes::chained_flux, fluxes::chained_flux> 
-    parse_dsfi(object tup)
-  {
-    typedef fluxes::chained_flux cf;
-
-    if (len(tup) != 3)
-      PYTHON_ERROR(ValueError, "flux descriptor tuple must have three entries");
-
-    return double_sided_flux_info<cf, cf>(
-        extract<cf>(tup[0]),
-        extract<cf>(tup[1]),
-        extract<hedge::py_vector>(tup[2]));
-  }
-
-
-
-
-  void wrap_perform_multiple_double_sided_fluxes_on_single_operand(
-      const face_group &fg,
-      const hedge::py_matrix &fmm,
-      object fluxes,
-      const hedge::py_vector &operand)
-  {
-    typedef fluxes::chained_flux cf;
-    typedef double_sided_flux_info<cf, cf> dsfi_t;
-
-    unsigned i = 0;
-    while (unsigned(len(fluxes)) >= i+4)
-    {
-      dsfi_t flux_info[4] = {
-        parse_dsfi(fluxes[i+0]),
-        parse_dsfi(fluxes[i+1]),
-        parse_dsfi(fluxes[i+2]),
-        parse_dsfi(fluxes[i+3])
-      };
-      perform_multiple_double_sided_fluxes_on_single_operand<4>(
-          fg, fmm, flux_info, operand);
-      i += 4;
-    }
-
-    if (unsigned(len(fluxes)) == i+3)
-    {
-      dsfi_t flux_info[3] = {
-        parse_dsfi(fluxes[i+0]),
-        parse_dsfi(fluxes[i+1]),
-        parse_dsfi(fluxes[i+2])
-      };
-      perform_multiple_double_sided_fluxes_on_single_operand<3>(
-          fg, fmm, flux_info, operand);
-    }
-    else if (unsigned(len(fluxes)) == i+2)
-    {
-      dsfi_t flux_info[2] = {
-        parse_dsfi(fluxes[i+0]),
-        parse_dsfi(fluxes[i+1])
-      };
-      perform_multiple_double_sided_fluxes_on_single_operand<2>(
-          fg, fmm, flux_info, operand);
-    }
-    else if (unsigned(len(fluxes)) == i+1)
-    {
-      dsfi_t flux_info[1] = {
-        parse_dsfi(fluxes[i+0]),
-      };
-      perform_multiple_double_sided_fluxes_on_single_operand<1>(
-          fg, fmm, flux_info, operand);
-    }
-  }
 }
 
 
@@ -208,7 +136,6 @@ void hedge_expose_fluxes()
       .add_property("child", 
           make_function(&cl::child, return_internal_reference<>()))
       ;
-    EXPOSE_FLUX_PERFORM(cl)
   }
 
   {
@@ -324,11 +251,22 @@ void hedge_expose_fluxes()
       .DEF_SIMPLE_RW_MEMBER(element_count)
       .DEF_SIMPLE_RW_MEMBER(face_count)
       .DEF_BYVAL_RW_MEMBER(local_el_to_global_el_base)
-      .DEF_BYVAL_RW_MEMBER(local_el_inverse_jacobians)
       ;
   }
 
-  def("perform_multiple_double_sided_fluxes_on_single_operand",
-      wrap_perform_multiple_double_sided_fluxes_on_single_operand);
+  def("perform_single_sided_flux", 
+      perform_single_sided_flux<
+      fluxes::chained_flux, fluxes::chained_flux, 
+      py_vector, py_vector>);
+  def("perform_single_sided_flux", 
+      perform_single_sided_flux<
+      fluxes::chained_flux, fluxes::chained_flux, 
+      ublas::zero_vector<double>, py_vector>);
+  def("perform_single_sided_flux", 
+      perform_single_sided_flux<
+      fluxes::chained_flux, fluxes::chained_flux, 
+      py_vector, ublas::zero_vector<double> >);
+  def("perform_double_sided_flux", 
+      perform_double_sided_flux<fluxes::chained_flux, fluxes::chained_flux>);
 }
 
