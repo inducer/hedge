@@ -580,8 +580,11 @@ class ConformalMesh(Mesh):
 
 
 
-def check_bc_coverage(mesh, bc_tags):
-    """Verify complete boundary condition coverage.
+def check_bc_coverage(mesh, bc_tags, incomplete_ok=False):
+    """Verify boundary condition coverage.
+
+    @arg incomplete_ok: Do not report an error if some faces are not covered
+      by the boundary conditions.
     
     Given a list of boundary tags as C{bc_tags}, this function verifies
     that
@@ -602,7 +605,7 @@ def check_bc_coverage(mesh, bc_tags):
                 bdry_to_tag[el_face] = tag
                 bdry_face_countdown -= 1
 
-    if bdry_face_countdown > 0:
+    if bdry_face_countdown > 0 and not incomplete_ok:
         raise RuntimeError, "No BCs on faces %s" % (
                 set(all_bdry_faces)-set(bdry_to_tag.keys()))
     elif bdry_face_countdown < 0:

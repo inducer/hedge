@@ -191,7 +191,7 @@ class FluxOperator(Operator):
 
 
 
-class _FluxCoefficientOperator(Operator):
+class FluxCoefficientOperator(Operator):
     """Results in a volume-global vector with data along the faces,
     obtained by computing the flux and applying the face mass matrix.
     """
@@ -203,10 +203,12 @@ class _FluxCoefficientOperator(Operator):
     def get_mapper_method(self, mapper): 
         return mapper.map_flux_coefficient
 
+    def __getinitargs__(self):
+        return (self.discr, self.int_coeff, self.ext_coeff)
 
 
 
-class _LiftingFluxCoefficientOperator(Operator):
+class LiftingFluxCoefficientOperator(Operator):
     """Results in a volume-global vector with data along the faces,
     obtained by computing the flux and applying the face mass matrix
     and the inverse volume mass matrix.
@@ -218,6 +220,9 @@ class _LiftingFluxCoefficientOperator(Operator):
 
     def get_mapper_method(self, mapper): 
         return mapper.map_lift_coefficient
+
+    def __getinitargs__(self):
+        return (self.discr, self.int_coeff, self.ext_coeff)
 
 
 
@@ -255,6 +260,13 @@ class BoundaryPair(pymbolic.primitives.AlgebraicLeaf):
 
     def stringifier(self):
         return StringifyMapper
+    
+    def __getinitargs__(self):
+        return (self.field, self.bfield, self.tag)
+
+    def __hash__(self):
+        from pytools import hash_combine
+        return hash_combine(self.__class__, self.field, self.bfield, self.tag)
 
 
 
@@ -392,9 +404,9 @@ class _InnerInverseMassContractor(pymbolic.mapper.RecursiveMapper):
             return OperatorBinding(
                     MInvSTOperator(self.discr, binding.op.xyz_axis),
                     binding.field)
-        elif isinstance(binding.op, _FluxCoefficientOperator):
+        elif isinstance(binding.op, FluxCoefficientOperator):
             return OperatorBinding(
-                    _LiftingFluxCoefficientOperator(
+                    LiftingFluxCoefficientOperator(
                         self.discr, 
                         binding.op.int_coeff, binding.op.ext_coeff),
                     binding.field)
@@ -449,7 +461,7 @@ class InverseMassContractor(pymbolic.mapper.IdentityMapper):
 
 class FluxDecomposer(pymbolic.mapper.IdentityMapper):
     """Replaces each L{FluxOperator} in an operator template
-    with a sum of L{_FluxCoefficientOperator}s.
+    with a sum of L{FluxCoefficientOperator}s.
     """
     # assumes all flux operators to be bound
 
@@ -473,7 +485,7 @@ class FluxDecomposer(pymbolic.mapper.IdentityMapper):
         from pymbolic import flattened_sum
         return flattened_sum(
                 OperatorBinding(
-                    _FluxCoefficientOperator(discr,
+                    FluxCoefficientOperator(discr,
                         self.compile_coefficient(int_flux),
                         self.compile_coefficient(ext_flux),
                         ),
@@ -506,7 +518,7 @@ class FluxDecomposer(pymbolic.mapper.IdentityMapper):
         from pymbolic import flattened_sum
         return flattened_sum(
                 OperatorBinding(
-                    _FluxCoefficientOperator(discr,
+                    FluxCoefficientOperator(discr,
                         self.compile_coefficient(int_flux),
                         self.compile_coefficient(ext_flux),
                         ),
