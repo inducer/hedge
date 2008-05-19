@@ -46,16 +46,18 @@ namespace hedge
     static unsigned get_INVALID_INDEX()
     { return INVALID_INDEX; }
 
-    struct side
+    struct side : public fluxes::face
     {
-      node_index el_base_index;
+      node_number_t el_base_index;
       unsigned face_index_list_number;
-      unsigned flux_face_index;
+
+      /** An element number local to this face group. */
+      unsigned local_el_number;
 
       side()
         : el_base_index(INVALID_NODE),
         face_index_list_number(INVALID_INDEX),
-        flux_face_index(INVALID_INDEX)
+        local_el_number(INVALID_INDEX)
       { }
     };
 
@@ -71,10 +73,8 @@ namespace hedge
   {
     public:
       typedef std::vector<face_pair> face_pair_vector;
-      typedef std::vector<fluxes::face> flux_face_vector;
 
       face_pair_vector face_pairs;
-      flux_face_vector flux_faces;
       index_lists_t index_lists;
 
       const bool double_sided;
@@ -83,6 +83,8 @@ namespace hedge
        */
       unsigned element_count;
       unsigned face_count;
+      bool el_number_local_is_global;
+      py_uint_vector local_el_indices_in_global_vec;
 
       face_group(bool d_sided)
         : double_sided(d_sided), 
@@ -139,12 +141,10 @@ namespace hedge
   {
     BOOST_FOREACH(const face_pair &fp, fg.face_pairs)
     {
-      const fluxes::face &flux_face = fg.flux_faces[fp.loc.flux_face_index];
-
       const double local_coeff = 
-        flux_face.face_jacobian*fdata.local_flux(flux_face, 0);
+        fp.loc.face_jacobian*fdata.local_flux(fp.loc, 0);
       const double neighbor_coeff = 
-        flux_face.face_jacobian*fdata.neighbor_flux(flux_face, 0);
+        fp.loc.face_jacobian*fdata.neighbor_flux(fp.loc, 0);
 
       index_lists_t::const_iterator loc_idx_list = 
         fg.index_list(fp.loc.face_index_list_number);
@@ -178,21 +178,18 @@ namespace hedge
   {
     BOOST_FOREACH(const face_pair &fp, fg.face_pairs)
     {
-      const fluxes::face &loc_flux_face = fg.flux_faces[fp.loc.flux_face_index];
-      const fluxes::face &opp_flux_face = fg.flux_faces[fp.opp.flux_face_index];
-
       const double local_coeff_here = 
-        loc_flux_face.face_jacobian*fdata.local_flux(
-            loc_flux_face, &opp_flux_face);
+        fp.loc.face_jacobian*fdata.local_flux(
+            fp.loc, &fp.opp);
       const double neighbor_coeff_here = 
-        loc_flux_face.face_jacobian*fdata.neighbor_flux(
-            loc_flux_face, &opp_flux_face);
+        fp.loc.face_jacobian*fdata.neighbor_flux(
+            fp.loc, &fp.opp);
       const double local_coeff_opp = 
-        loc_flux_face.face_jacobian*fdata.local_flux(
-            opp_flux_face, &loc_flux_face);
+        fp.loc.face_jacobian*fdata.local_flux(
+            fp.opp, &fp.loc);
       const double neighbor_coeff_opp = 
-        loc_flux_face.face_jacobian*fdata.neighbor_flux(
-            opp_flux_face, &loc_flux_face);
+        fp.loc.face_jacobian*fdata.neighbor_flux(
+            fp.opp, &fp.loc);
 
       index_lists_t::const_iterator loc_idx_list = 
         fg.index_list(fp.loc.face_index_list_number);
@@ -252,21 +249,18 @@ namespace hedge
 
     BOOST_FOREACH(const face_pair &fp, fg.face_pairs)
     {
-      const fluxes::face &loc_flux_face = fg.flux_faces[fp.loc.flux_face_index];
-      const fluxes::face &opp_flux_face = fg.flux_faces[fp.opp.flux_face_index];
-
       const double local_coeff_here = 
-        loc_flux_face.face_jacobian*local_flux(
-            loc_flux_face, &opp_flux_face);
+        fp.loc.face_jacobian*local_flux(
+            fp.loc, &fp.opp);
       const double neighbor_coeff_here = 
-        loc_flux_face.face_jacobian*neighbor_flux(
-            loc_flux_face, &opp_flux_face);
+        fp.loc.face_jacobian*neighbor_flux(
+            fp.loc, &fp.opp);
       const double local_coeff_opp = 
-        loc_flux_face.face_jacobian*local_flux(
-            opp_flux_face, &loc_flux_face);
+        fp.loc.face_jacobian*local_flux(
+            fp.opp, &fp.loc);
       const double neighbor_coeff_opp = 
-        loc_flux_face.face_jacobian*neighbor_flux(
-            opp_flux_face, &loc_flux_face);
+        fp.loc.face_jacobian*neighbor_flux(
+            fp.opp, &fp.loc);
 
       index_lists_t::const_iterator loc_idx_list = 
         fg.index_list(fp.loc.face_index_list_number);
@@ -282,12 +276,12 @@ namespace hedge
           fg.index_list(fp.opp_native_write_map);
         const unsigned loc_tempbase = 
           fg.face_length()*(
-              loc_flux_face.element_id*fg.face_count 
-              + loc_flux_face.face_id);
+              fp.loc.element_id*fg.face_count 
+              + fp.loc.face_id);
         const unsigned opp_tempbase = 
           fg.face_length()*(
-              opp_flux_face.element_id*fg.face_count 
-              + opp_flux_face.face_id);
+              fp.opp.element_id*fg.face_count 
+              + fp.opp.face_id);
 
         for (unsigned i = 0; i < fg.face_length(); i++)
         {
@@ -392,23 +386,22 @@ namespace hedge
     double neighbor_coeff_opp[flux_count];
 
     multiple_flux_coeffs(
-        const fluxes::face &loc_flux_face,
-        const fluxes::face &opp_flux_face,
+        const face_pair &fp,
         const DSFluxInfoType flux_info[flux_count]
         )
     {
-      const double fj = loc_flux_face.face_jacobian;
+      const double fj = fp.loc.face_jacobian;
 
       for (unsigned i_flux = 0; i_flux < flux_count; ++i_flux)
       {
         local_coeff_here[i_flux] = 
-          fj*flux_info[i_flux].local_flux(loc_flux_face, &opp_flux_face);
+          fj*flux_info[i_flux].local_flux(fp.loc, &fp.opp);
         neighbor_coeff_here[i_flux] = 
-          fj*flux_info[i_flux].neighbor_flux(loc_flux_face, &opp_flux_face);
+          fj*flux_info[i_flux].neighbor_flux(fp.loc, &fp.opp);
         local_coeff_opp[i_flux] = 
-          fj*flux_info[i_flux].local_flux(opp_flux_face, &loc_flux_face);
+          fj*flux_info[i_flux].local_flux(fp.opp, &fp.loc);
         neighbor_coeff_opp[i_flux] = 
-          fj*flux_info[i_flux].neighbor_flux(opp_flux_face, &loc_flux_face);
+          fj*flux_info[i_flux].neighbor_flux(fp.opp, &fp.loc);
       }
     }
   };
@@ -435,9 +428,7 @@ namespace hedge
       const int oebi = fp.opp.el_base_index;
 
       const multiple_flux_coeffs<flux_count, DSFluxInfoType> coeffs(
-          fg.flux_faces[fp.loc.flux_face_index],
-          fg.flux_faces[fp.opp.flux_face_index],
-          flux_info);
+          fp, flux_info);
 
       for (unsigned i = 0; i < fg.face_length(); i++)
       {

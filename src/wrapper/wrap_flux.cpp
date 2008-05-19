@@ -293,10 +293,10 @@ void hedge_expose_fluxes()
   }
   {
     typedef face_pair::side cl;
-    class_<cl>("FacePairSide")
+    class_<cl, bases<fluxes::face> >("FacePairSide")
       .DEF_SIMPLE_RW_MEMBER(el_base_index)
       .DEF_SIMPLE_RW_MEMBER(face_index_list_number)
-      .DEF_SIMPLE_RW_MEMBER(flux_face_index)
+      .DEF_SIMPLE_RW_MEMBER(local_el_number)
       ;
   }
   {
@@ -317,20 +317,14 @@ void hedge_expose_fluxes()
   }
 
   {
-    typedef face_group::flux_face_vector cl;
-    class_<cl>("FluxFaceVector")
-      .def(no_compare_indexing_suite<cl>())
-      ;
-  }
-
-  {
     typedef face_group cl;
     class_<cl, boost::shared_ptr<cl> >("FaceGroup", init<bool>(args("double_sided")))
       .DEF_SIMPLE_RW_MEMBER(face_pairs)
-      .DEF_SIMPLE_RW_MEMBER(flux_faces)
       .DEF_BYVAL_RW_MEMBER(index_lists)
       .DEF_SIMPLE_RW_MEMBER(element_count)
       .DEF_SIMPLE_RW_MEMBER(face_count)
+      .DEF_SIMPLE_RW_MEMBER(el_number_local_is_global)
+      .DEF_BYVAL_RW_MEMBER(local_el_indices_in_global_vec)
       ;
   }
 

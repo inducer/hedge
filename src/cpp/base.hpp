@@ -32,18 +32,19 @@
 
 
 namespace hedge {
-  typedef unsigned element_number;
-  typedef unsigned face_number;
-  typedef unsigned vertex_number;
-  typedef unsigned node_index;
+  typedef unsigned element_number_t;
+  typedef unsigned face_number_t;
+  typedef unsigned vertex_number_t;
+  typedef unsigned node_number_t;
 
-  typedef std::vector<element_number> el_id_vector;
-  typedef std::vector<vertex_number> vtx_id_vector;
-  typedef std::pair<element_number, face_number> el_face;
+  typedef std::vector<element_number_t> el_id_vector;
+  typedef std::vector<vertex_number_t> vtx_id_vector;
+  typedef std::pair<element_number_t, face_number_t> el_face_t;
 
-  static const element_number INVALID_ELEMENT = UINT_MAX;
-  static const vertex_number INVALID_VERTEX = UINT_MAX;
-  static const node_index INVALID_NODE = UINT_MAX;
+  static const element_number_t INVALID_ELEMENT = UINT_MAX;
+  static const face_number_t INVALID_FACE = UINT_MAX;
+  static const vertex_number_t INVALID_VERTEX = UINT_MAX;
+  static const node_number_t INVALID_NODE = UINT_MAX;
 
   typedef pyublas::numpy_vector<double> py_vector;
   typedef pyublas::numpy_vector<unsigned> py_uint_vector;

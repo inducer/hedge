@@ -110,13 +110,13 @@ class _ElementGroup(object):
 
 class _Boundary(object):
     def __init__(self, nodes, ranges, index_map, face_groups,
-            el_face_to_face_group_and_flux_face_index={}):
+            el_face_to_face_group_and_face_pair={}):
         self.nodes = nodes
         self.ranges = ranges
         self.index_map = index_map
         self.face_groups = face_groups
-        self.el_face_to_face_group_and_flux_face_index = \
-                el_face_to_face_group_and_flux_face_index
+        self.el_face_to_face_group_and_face_pair = \
+                el_face_to_face_group_and_face_pair
 
 
 
@@ -330,11 +330,7 @@ class Discretization(object):
                     for glob_coord in range(ldis.dimensions)
                     ]
 
-    def _make_flux_face(self, ldis, (el, fi)):
-        from hedge.flux import FluxFace
-
-        f = FluxFace()
-
+    def _set_flux_face_data(self, f, ldis, (el, fi)):
         f.face_jacobian = el.face_jacobians[fi]
         f.element_id = el.id
         f.face_id = fi
@@ -348,8 +344,6 @@ class Discretization(object):
         # the penalty term will behave very oddly.
         # This unification happens below.
         f.h = abs(el.map.jacobian/f.face_jacobian)
-
-        return f
 
     def _build_interior_face_groups(self):
         from hedge._internal import FacePair
@@ -425,21 +419,17 @@ class Discretization(object):
                     get_write_to_map_from_permutation(
                     findices_shuffle_op_n(findices_n), findices_n))
 
-            fp.loc.flux_face_index = len(fg.flux_faces)
-            fp.opp.flux_face_index = len(fg.flux_faces)+1
-            assert len(fp.__dict__) == 0
-
-            fg.face_pairs.append(fp)
-
-            # create the flux faces
-            flux_face_l = self._make_flux_face(ldis_l, local_face)
-            flux_face_n = self._make_flux_face(ldis_n, neigh_face)
+            self._set_flux_face_data(fp.loc, ldis_l, local_face)
+            self._set_flux_face_data(fp.opp, ldis_n, neigh_face)
 
             # unify h across the faces
-            flux_face_l.h = flux_face_n.h = max(flux_face_l.h, flux_face_n.h)
+            fp.loc.h = fp.opp.h = max(fp.loc.h, fp.opp.h)
 
-            fg.flux_faces.append(flux_face_l)
-            fg.flux_faces.append(flux_face_n)
+            assert len(fp.__dict__) == 0
+            assert len(fp.loc.__dict__) == 0
+            assert len(fp.opp.__dict__) == 0
+
+            fg.face_pairs.append(fp)
 
         from pytools import single_valued
         ldis_l = single_valued(all_ldis_l)
@@ -472,7 +462,7 @@ class Discretization(object):
         index_map = []
         face_group = _FaceGroup(double_sided=False)
         ldis = None # if this boundary is empty, we might as well have no ldis
-        el_face_to_face_group_and_flux_face_index = {}
+        el_face_to_face_group_and_face_pair = {}
 
         for ef in self.mesh.tag_to_boundary.get(tag, []):
             el, face_nr = ef
@@ -495,18 +485,16 @@ class Discretization(object):
             fp.opp.face_index_list_number = face_group.register_face_index_list(
                     identifier=(),
                     generator=lambda: tuple(xrange(len(face_indices))))
-            fp.loc.flux_face_index = len(face_group.flux_faces)
-            fp.opp.flux_face_index = FacePair.INVALID_INDEX
+            self._set_flux_face_data(fp.loc, ldis, ef)
             assert len(fp.__dict__) == 0
+            assert len(fp.loc.__dict__) == 0
+            assert len(fp.opp.__dict__) == 0
 
             face_group.face_pairs.append(fp)
 
-            # create the flux face
-            face_group.flux_faces.append(self._make_flux_face(ldis, ef))
-            
             # and make it possible to find it later
-            el_face_to_face_group_and_flux_face_index[ef] = \
-                    face_group, len(face_group.flux_faces)-1
+            el_face_to_face_group_and_face_pair[ef] = \
+                    face_group, len(face_group.face_pairs)-1
 
         face_group.commit(
                 len(self.mesh.elements), ldis, ldis)
@@ -516,8 +504,8 @@ class Discretization(object):
                 ranges=face_ranges,
                 index_map=IndexMap(len(self.nodes), len(index_map), index_map),
                 face_groups=[face_group],
-                el_face_to_face_group_and_flux_face_index=
-                el_face_to_face_group_and_flux_face_index)
+                el_face_to_face_group_and_face_pair=
+                el_face_to_face_group_and_face_pair)
 
         self.boundaries[tag] = bdry
         return bdry

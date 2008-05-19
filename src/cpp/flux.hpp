@@ -36,10 +36,16 @@ namespace hedge { namespace fluxes {
   {
     double h;
     double face_jacobian;
-    element_number element_id;
-    face_number face_id;
+    element_number_t element_id;
+    face_number_t face_id;
     unsigned order;
     hedge::py_vector normal;
+
+    face()
+      : h(0), face_jacobian(0), 
+      element_id(INVALID_ELEMENT), face_id(INVALID_FACE),
+      order(0)
+    { }
   };
 
 
