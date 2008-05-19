@@ -221,11 +221,11 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             nf = True
             if nf:
                 if lift:
-                    fmm = fg.ldis_int.lifting_matrix()
+                    fmm = fg.ldis_loc.lifting_matrix()
                 else:
-                    fmm = fg.ldis_int.multi_face_mass_matrix()
+                    fmm = fg.ldis_loc.multi_face_mass_matrix()
             else:
-                fmm = fg.ldis_int.face_mass_matrix()
+                fmm = fg.ldis_loc.face_mass_matrix()
             perform_flux_on_one_target(
                     fg, fmm, ch_int, ch_ext, target, nf)
         target.finalize()
@@ -327,7 +327,7 @@ class Discretization(hedge.discretization.Discretization):
         ext_target.begin(len(self.nodes), len(bdry.nodes))
         if bdry.nodes:
             for fg in bdry.face_groups:
-                perform_flux(fg, fg.ldis_int.face_mass_matrix(), 
+                perform_flux(fg, fg.ldis_loc.face_mass_matrix(), 
                         ch_int, int_target, 
                         ch_ext, ext_target)
         int_target.finalize()

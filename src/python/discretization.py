@@ -57,7 +57,7 @@ class _FaceGroup(hedge._internal.FaceGroup):
                 self.fil_id_to_number[identifier] = nbr
             return nbr
 
-    def commit(self, discr, ldis_int, ldis_ext):
+    def commit(self, discr, ldis_loc, ldis_opp):
         from hedge._internal import IntVector
 
         if self.face_index_lists:
@@ -69,10 +69,10 @@ class _FaceGroup(hedge._internal.FaceGroup):
             for i, fil in enumerate(self.face_index_lists):
                 self.index_lists[i] = fil
 
-        if ldis_int is None:
+        if ldis_loc is None:
             self.face_count = 0
         else:
-            self.face_count = ldis_int.face_count()
+            self.face_count = ldis_loc.face_count()
 
         # number elements locally
         used_bases_and_els = list(set(
@@ -98,8 +98,8 @@ class _FaceGroup(hedge._internal.FaceGroup):
                     for bae in used_bases_and_els),
                 dtype=float)
 
-        self.ldis_int = ldis_int
-        self.ldis_ext = ldis_ext
+        self.ldis_loc = ldis_loc
+        self.ldis_opp = ldis_opp
 
         del self.face_index_lists
         del self.fil_id_to_number

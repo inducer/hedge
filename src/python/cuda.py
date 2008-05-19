@@ -27,6 +27,7 @@ import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
 from pytools import memoize_method
 import hedge.discretization
+import hedge._internal
 
 
 
@@ -639,7 +640,7 @@ class CudaDiscretization(hedge.discretization.Discretization):
             eg, = self.element_groups
             return GPUBlock(block_num, 
                     local_discretization=eg.local_discretization,
-                    cpu_slices=[slice(*self.find_el_range(el.id)) for el in elements], 
+                    cpu_slices=[self.find_el_range(el.id) for el in elements], 
                     elements=elements)
 
         return [make_block(block_num) for block_num in range(block_count)]
@@ -671,7 +672,7 @@ class CudaDiscretization(hedge.discretization.Discretization):
             iln = get_face_index_list_number(int_fg.index_lists[ilist_number])
             result = GPUInteriorFaceStorage(
                 elface, 
-                cpu_slice=slice(*self.find_el_range(el.id)), 
+                cpu_slice=self.find_el_range(el.id), 
                 native_index_list_id=iln,
                 native_block=block, 
                 native_block_el_num=block.get_el_index(el), 
@@ -680,18 +681,14 @@ class CudaDiscretization(hedge.discretization.Discretization):
             fsm[elface] = result
             return result
 
-        (int_fg, fmm), = self.face_groups
-        id_face_index_list = tuple(xrange(fmm.shape[0]))
+        int_fg, = self.face_groups
+        id_face_index_list = tuple(xrange(int_fg.ldis_loc.face_node_count()))
         id_face_index_list_number = get_face_index_list_number(id_face_index_list)
         assert id_face_index_list_number == 0
 
         for fp in int_fg.face_pairs:
-            face1 = make_int_face(
-                    int_fg.flux_faces[fp.flux_face_index], 
-                    fp.face_index_list_number)
-            face2 = make_int_face(
-                    int_fg.flux_faces[fp.opp_flux_face_index], 
-                    fp.opp_face_index_list_number)
+            face1 = make_int_face(fp.loc, fp.loc.face_index_list_number)
+            face2 = make_int_face(fp.opp, fp.opp.face_index_list_number)
             face1.opposite = face2
             face2.opposite = face1
 
@@ -704,19 +701,18 @@ class CudaDiscretization(hedge.discretization.Discretization):
             
         self.aligned_boundary_floats = 0
         from hedge.mesh import TAG_ALL
-        for bdry_fg, ldis in self.get_boundary(TAG_ALL).face_groups_and_ldis:
+        for bdry_fg in self.get_boundary(TAG_ALL).face_groups:
+            ldis = bdry_fg.ldis_loc
             aligned_fnc = self.devdata.align_dtype(ldis.face_node_count(), 
                     self.plan.float_size)
             for fp in bdry_fg.face_pairs:
-                assert fp.opp_flux_face_index == fp.INVALID_INDEX
-                assert (tuple(bdry_fg.index_lists[fp.opp_face_index_list_number]) 
+                assert fp.opp.element_id == hedge._internal.INVALID_ELEMENT
+                assert (tuple(bdry_fg.index_lists[fp.opp.face_index_list_number]) 
                         == id_face_index_list)
 
-                face1 = make_int_face(
-                        bdry_fg.flux_faces[fp.flux_face_index], 
-                        fp.face_index_list_number)
+                face1 = make_int_face(fp.loc, fp.loc.face_index_list_number)
                 face2 = GPUBoundaryFaceStorage(
-                        fp.opp_el_base_index,
+                        fp.opp.el_base_index,
                         self.aligned_boundary_floats
                         )
                 self.aligned_boundary_floats += aligned_fnc
