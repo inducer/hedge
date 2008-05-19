@@ -191,7 +191,10 @@ class FluxOperator(Operator):
 
 
 
-class FluxCoefficientOperator(Operator):
+class _FluxCoefficientOperator(Operator):
+    """Results in a volume-global vector with data along the faces,
+    obtained by computing the flux and applying the face mas matrix.
+    """
     def __init__(self, discr, int_coeff, ext_coeff):
         Operator.__init__(self, discr)
         self.int_coeff = int_coeff
@@ -203,7 +206,10 @@ class FluxCoefficientOperator(Operator):
 
 
 
-class LiftingFluxCoefficientOperator(Operator):
+class _PreLiftingFluxCoefficientOperator(Operator):
+    """Results in a dict mapping L{hedge.discretization._ElementGroup}s to
+    a vector containing the dofs for each face, in order, for each element.
+    """
     def __init__(self, discr, int_coeff, ext_coeff):
         Operator.__init__(self, discr)
         self.int_coeff = int_coeff
@@ -437,7 +443,7 @@ class InverseMassContractor(pymbolic.mapper.IdentityMapper):
 
 class FluxDecomposer(pymbolic.mapper.IdentityMapper):
     """Replaces each L{FluxOperator} in an operator template
-    with a sum of L{FluxCoefficientOperator}s.
+    with a sum of L{_FluxCoefficientOperator}s.
     """
     # assumes all flux operators to be bound
 
@@ -461,7 +467,7 @@ class FluxDecomposer(pymbolic.mapper.IdentityMapper):
         from pymbolic import flattened_sum
         return flattened_sum(
                 OperatorBinding(
-                    FluxCoefficientOperator(discr,
+                    _FluxCoefficientOperator(discr,
                         self.compile_coefficient(int_flux),
                         self.compile_coefficient(ext_flux),
                         ),
@@ -494,7 +500,7 @@ class FluxDecomposer(pymbolic.mapper.IdentityMapper):
         from pymbolic import flattened_sum
         return flattened_sum(
                 OperatorBinding(
-                    FluxCoefficientOperator(discr,
+                    _FluxCoefficientOperator(discr,
                         self.compile_coefficient(int_flux),
                         self.compile_coefficient(ext_flux),
                         ),

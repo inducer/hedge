@@ -22,7 +22,6 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 import numpy
 import hedge._internal as _internal
-from pytools import monkeypatch_method
 import pymbolic
 import pymbolic.mapper.collector
 

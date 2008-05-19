@@ -365,8 +365,8 @@ class Discretization(object):
             e_l, fi_l = local_face
             e_n, fi_n = neigh_face
 
-            (estart_l, eend_l), ldis_l = self.find_el_data(e_l.id)
-            (estart_n, eend_n), ldis_n = self.find_el_data(e_n.id)
+            eslice_l, ldis_l = self.find_el_data(e_l.id)
+            eslice_n, ldis_n = self.find_el_data(e_n.id)
 
             all_ldis_l.append(ldis_l)
             all_ldis_n.append(ldis_n)
@@ -386,7 +386,7 @@ class Discretization(object):
                     findices_shuffled_n = findices_shuffle_op_n(findices_n)
 
                     for i, j in zip(findices_l, findices_shuffled_n):
-                        dist = self.nodes[estart_l+i]-self.nodes[estart_n+j]
+                        dist = self.nodes[eslice_l.start+i]-self.nodes[eslice_n.start+j]
                         assert la.norm(dist) < 1e-14
 
             except FaceVertexMismatch:
@@ -402,15 +402,15 @@ class Discretization(object):
                     findices_shuffled_n = findices_shuffle_op_n(findices_n)
 
                     for i, j in zip(findices_l, findices_shuffled_n):
-                        dist = self.nodes[estart_l+i]-self.nodes[estart_n+j]
+                        dist = self.nodes[eslice_l.start+i]-self.nodes[eslice_n.start+j]
                         dist[axis] = 0 
                         assert la.norm(dist) < 1e-14
 
             # create and fill the face pair
             fp = FacePair()
 
-            fp.loc.el_base_index = estart_l
-            fp.opp.el_base_index = estart_n
+            fp.loc.el_base_index = eslice_l.start
+            fp.opp.el_base_index = eslice_n.start
 
             fp.loc.face_index_list_number = fg.register_face_index_list(
                     identifier=fi_l, 
@@ -477,17 +477,17 @@ class Discretization(object):
         for ef in self.mesh.tag_to_boundary.get(tag, []):
             el, face_nr = ef
 
-            (el_start, el_end), ldis = self.find_el_data(el.id)
+            el_slice, ldis = self.find_el_data(el.id)
             face_indices = ldis.face_indices()[face_nr]
 
             f_start = len(nodes)
-            nodes += [self.nodes[el_start+i] for i in face_indices]
+            nodes += [self.nodes[el_slice.start+i] for i in face_indices]
             face_ranges[ef] = (f_start, len(nodes))
-            index_map.extend(el_start+i for i in face_indices)
+            index_map.extend(el_slice.start+i for i in face_indices)
 
             # create the face pair
             fp = FacePair()
-            fp.loc.el_base_index = el_start
+            fp.loc.el_base_index = el_slice.start
             fp.opp.el_base_index = f_start
             fp.loc.face_index_list_number = face_group.register_face_index_list(
                     identifier=face_nr,
@@ -547,10 +547,10 @@ class Discretization(object):
         slice_pfx = (slice(None),)*len(shape)
         out = (tgt_factory or self.volume_empty)(shape)
         for eg in self.element_groups:
-            for el, rng in zip(eg.members, eg.ranges):
-                for point_nr in xrange(*rng):
+            for el, el_slice in zip(eg.members, eg.ranges):
+                for point_nr in xrange(el_slice.start, el_slice.stop):
                     out[slice_pfx + (point_nr,)] = \
-                            f(self.nodes[point_nr], el)
+                                f(self.nodes[point_nr], el)
         return out
 
     def boundary_empty(self, tag=hedge.mesh.TAG_ALL, shape=()):
@@ -696,14 +696,6 @@ class Discretization(object):
                 return i
         raise ValueError, "not a valid dof index"
         
-    def find_face(self, idx):
-        el_id = self.find_element(idx)
-        el_start, el_stop = self.element_group[el_id]
-        for f_id, face_indices in enumerate(self.element_map[el_id].face_indices()):
-            if idx-el_start in face_indices:
-                return el_id, f_id, idx-el_start
-        raise ValueError, "not a valid face dof index"
-
     # misc stuff --------------------------------------------------------------
     def dt_non_geometric_factor(self):
         distinct_ldis = set(eg.local_discretization for eg in self.element_groups)

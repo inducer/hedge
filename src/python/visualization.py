@@ -197,10 +197,10 @@ class VtkVisualizer(Visualizer, hedge.tools.Closable):
             smi = ldis.get_submesh_indices()
 
             cells.reserve(len(cells)+len(smi)*len(eg.members))
-            for el, (el_start, el_stop) in zip(eg.members, eg.ranges):
+            for el, el_slice in zip(eg.members, eg.ranges):
                 for element in smi:
                     for j in element:
-                        cells.append(el_start+j)
+                        cells.append(el_slice.start+j)
 
             if ldis.geometry is Interval:
                 vtk_eltype = VTK_LINE
@@ -366,9 +366,9 @@ class SiloVisualizer(Visualizer):
         def generate_fine_elements(eg):
             ldis = eg.local_discretization
             smi = ldis.get_submesh_indices()
-            for el, (el_start, el_stop) in zip(eg.members, eg.ranges):
+            for el, el_slice in zip(eg.members, eg.ranges):
                 for element in smi:
-                    yield [el_start+j for j in element]
+                    yield [el_slice.start+j for j in element]
 
         def generate_fine_element_groups():
             for eg in discr.element_groups:

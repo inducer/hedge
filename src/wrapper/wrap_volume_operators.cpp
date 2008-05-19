@@ -18,6 +18,7 @@
 
 
 #include <boost/python.hpp>
+#include <boost/python/slice.hpp>
 #include <boost/numeric/ublas/io.hpp>
 #include "op_target.hpp"
 #include "volume_operators.hpp"
@@ -36,15 +37,15 @@ namespace ublas = boost::numeric::ublas;
 namespace
 {
   template <class ER>
-  tuple element_ranges_getitem(const ER &er, int i)
+  slice element_ranges_getitem(const ER &er, int i)
   {
     if (i < 0)
       i += er.size();
     if (i < 0 || i >= int(er.size()))
       PYTHON_ERROR(IndexError, "element_ranges index out of bounds");
 
-    const element_range &erng = er[i];
-    return make_tuple(erng.first, erng.second);
+    const element_range erng = er[i];
+    return slice(erng.first, erng.second);
   }
 }
 

@@ -29,6 +29,7 @@ import hedge.discretization
 import hedge.optemplate
 import pymbolic.mapper
 import hedge._internal as _internal
+from pytools import monkeypatch_method
 
 
 
