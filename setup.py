@@ -153,10 +153,16 @@ def main():
                 },
 
             # build info
-            packages=["hedge"],
+            packages=[
+                    "hedge", 
+                    "hedge.cuda"
+                    ],
             zip_safe=False,
 
-            package_dir={"hedge": "src/python"},
+            package_dir={
+                    "hedge": "src/python",
+                    "hedge.cuda": "src/python/cuda"
+                    },
             ext_package="hedge",
 
             ext_modules=[
