@@ -65,6 +65,7 @@ def __repr__(self):
 
 
 
+# flux compilation ------------------------------------------------------------
 class _FluxCoefficientCompiler(pymbolic.mapper.RecursiveMapper):
     def handle_unsupported_expression(self, expr):
         if isinstance(expr, _internal.Flux):
@@ -131,6 +132,7 @@ class _FluxOpCompileMapper(hedge.optemplate.FluxDecomposer):
 
 
 
+# exec mapper -----------------------------------------------------------------
 class ExecutionMapper(hedge.optemplate.Evaluator,
         hedge.optemplate.BoundOpMapperMixin, 
         hedge.optemplate.LocalOpReducerMixin):
@@ -218,16 +220,14 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
         target.begin(len(self.discr.nodes), len(self.discr.nodes))
         for fg in self.discr.face_groups:
-            nf = True
-            if nf:
-                if lift:
-                    fmm = fg.ldis_loc.lifting_matrix()
-                else:
-                    fmm = fg.ldis_loc.multi_face_mass_matrix()
+            if lift:
+                nf = True
+                mat = fg.ldis_loc.lifting_matrix()
             else:
-                fmm = fg.ldis_loc.face_mass_matrix()
+                nf = False
+                mat = fg.ldis_loc.face_mass_matrix()
             perform_flux_on_one_target(
-                    fg, fmm, ch_int, ch_ext, target, nf)
+                    fg, mat, ch_int, ch_ext, target, nf)
         target.finalize()
 
         return out
@@ -244,10 +244,22 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             return 0
 
         from hedge.tools import make_vector_target
-        self.discr._perform_boundary_flux(
-                int_coeff, make_vector_target(field, out),
-                ext_coeff, make_vector_target(bfield, out), 
-                bdry)
+        int_target = make_vector_target(field, out)
+        ext_target = make_vector_target(bfield, out)
+
+        from hedge._internal import perform_flux, ChainedFlux
+        ch_int = ChainedFlux(int_coeff)
+        ch_ext = ChainedFlux(ext_coeff)
+
+        int_target.begin(len(self.discr.nodes), len(self.discr.nodes))
+        ext_target.begin(len(self.discr.nodes), len(bdry.nodes))
+        if bdry.nodes:
+            for fg in bdry.face_groups:
+                perform_flux(fg, fg.ldis_loc.face_mass_matrix(), 
+                        ch_int, int_target, 
+                        ch_ext, ext_target)
+        int_target.finalize()
+        ext_target.finalize()
 
         return out
 
@@ -312,31 +324,12 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
 
 
+
 class Discretization(hedge.discretization.Discretization):
-    # boundary flux computation -----------------------------------------------
-    def _perform_boundary_flux(self, 
-            int_flux, int_target, 
-            ext_flux, ext_target, 
-            bdry):
-        from hedge._internal import perform_flux, ChainedFlux
-
-        ch_int = ChainedFlux(int_flux)
-        ch_ext = ChainedFlux(ext_flux)
-
-        int_target.begin(len(self.nodes), len(self.nodes))
-        ext_target.begin(len(self.nodes), len(bdry.nodes))
-        if bdry.nodes:
-            for fg in bdry.face_groups:
-                perform_flux(fg, fg.ldis_loc.face_mass_matrix(), 
-                        ch_int, int_target, 
-                        ch_ext, ext_target)
-        int_target.finalize()
-        ext_target.finalize()
-
-    # op template execution ---------------------------------------------------
     def preprocess_optemplate(self, optemplate):
         from hedge.optemplate import OperatorBinder, InverseMassContractor
         from pymbolic.mapper.constant_folder import CommutativeConstantFoldingMapper
+        #print optemplate
         result = (
                 InverseMassContractor()(
                     CommutativeConstantFoldingMapper()(

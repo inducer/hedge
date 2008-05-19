@@ -1071,7 +1071,7 @@ class TestHedge(unittest.TestCase):
         from hedge.discretization import ones_on_volume
         ones = ones_on_volume(discr)
         err = abs(numpy.dot(res, ones))
-        print err
+        #print err
         self.assert_(err < 5e-14)
     # -------------------------------------------------------------------------
     def test_interior_fluxes_tet(self):
@@ -1423,7 +1423,7 @@ class TestHedge(unittest.TestCase):
                 if order <= 3:
                     mat = matrix_rep(op)
                     sym_err = la.norm(mat-mat.T)
-                    print sym_err
+                    #print sym_err
                     self.assert_(sym_err<1e-12)
                     #check_grad_mat()
 
