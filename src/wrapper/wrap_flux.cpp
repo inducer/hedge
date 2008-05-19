@@ -257,16 +257,28 @@ void hedge_expose_fluxes()
   def("perform_single_sided_flux", 
       perform_single_sided_flux<
       fluxes::chained_flux, fluxes::chained_flux, 
-      py_vector, py_vector>);
+      py_vector, py_vector>,
+      args("fg", "mat", "elwise_post_scaling", "int_flux", "ext_flux", 
+            "loc_operand", "opp_operand", "result")
+     );
   def("perform_single_sided_flux", 
       perform_single_sided_flux<
       fluxes::chained_flux, fluxes::chained_flux, 
-      ublas::zero_vector<double>, py_vector>);
+      ublas::zero_vector<double>, py_vector>,
+      args("fg", "mat", "elwise_post_scaling", "int_flux", "ext_flux", 
+            "loc_operand", "opp_operand", "result")
+      );
   def("perform_single_sided_flux", 
       perform_single_sided_flux<
       fluxes::chained_flux, fluxes::chained_flux, 
-      py_vector, ublas::zero_vector<double> >);
+      py_vector, ublas::zero_vector<double> >,
+      args("fg", "mat", "elwise_post_scaling", "int_flux", "ext_flux", 
+            "loc_operand", "opp_operand", "result")
+     );
   def("perform_double_sided_flux", 
-      perform_double_sided_flux<fluxes::chained_flux, fluxes::chained_flux>);
+      perform_double_sided_flux<fluxes::chained_flux, fluxes::chained_flux>,
+      args("fg", "mat", "elwise_post_scaling", "int_flux", "ext_flux",
+        "operand", "result")
+      );
 }
 

@@ -188,7 +188,7 @@ namespace hedge
   inline
   void perform_single_sided_flux(const face_group &fg, 
       const py_matrix &mat, 
-      const py_vector &elwise_post_scaling,
+      const pyublas::invalid_ok<py_vector> &elwise_post_scaling,
       IntFlux int_flux, ExtFlux ext_flux, 
       const LocOperand loc_operand,
       const OppOperand opp_operand,
@@ -233,7 +233,7 @@ namespace hedge
       }
     }
 
-    finish_flux(fg, mat, elwise_post_scaling, flux_temp, result);
+    finish_flux(fg, mat, *elwise_post_scaling, flux_temp, result);
   }
 
 
@@ -243,7 +243,7 @@ namespace hedge
   inline
   void perform_double_sided_flux(const face_group &fg, 
       const py_matrix &mat, 
-      const py_vector &elwise_post_scaling,
+      const pyublas::invalid_ok<py_vector> &elwise_post_scaling,
       IntFlux int_flux, ExtFlux ext_flux, 
       const py_vector &operand,
       py_vector result
@@ -300,7 +300,7 @@ namespace hedge
       }
     }
 
-    finish_flux(fg, mat, elwise_post_scaling, flux_temp, result);
+    finish_flux(fg, mat, *elwise_post_scaling, flux_temp, result);
   }
 }
 
