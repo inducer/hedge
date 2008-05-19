@@ -34,37 +34,6 @@ FluxFace = _internal.FluxFace
 
 
 
-# c++ fluxes debug dumping ----------------------------------------------------
-@monkeypatch_method(_internal.ConstantFlux)
-def __repr__(self):
-    return str(self.value)
-@monkeypatch_method(_internal.NormalFlux)
-def __repr__(self):
-    return "n[%d]" % self.axis
-@monkeypatch_method(_internal.PenaltyFlux)
-def __repr__(self):
-    return "penalty(%s)" % self.power
-@monkeypatch_method(_internal.SumFlux)
-def __repr__(self):
-    return "(%s+%s)" % (self.operand1, self.operand2)
-@monkeypatch_method(_internal.ProductFlux)
-def __repr__(self):
-    return "(%s*%s)" % (self.operand1, self.operand2)
-@monkeypatch_method(_internal.NegativeFlux)
-def __repr__(self):
-    return "-%s" % self.operand
-@monkeypatch_method(_internal.ChainedFlux)
-def __repr__(self):
-    #return "ChainedFlux(%s)" % self.child
-    return str(self.child)
-@monkeypatch_method(_internal.IfPositiveFlux)
-def __repr__(self):
-    return "(If %s>0 then %s else %s)" % (self.criterion, self.then_part, self.else_part)
-
-
-
-
-
 # python fluxes ---------------------------------------------------------------
 class Flux(pymbolic.primitives.AlgebraicLeaf, _internal.Flux):
     def stringifier(self):

@@ -441,10 +441,6 @@ class FluxDecomposer(pymbolic.mapper.IdentityMapper):
     """
     # assumes all flux operators to be bound
 
-    def handle_unsupported_expression(self, expr):
-        print "UNSUPP", expr
-        return expr
-
     def compile_coefficient(self, coeff):
         return coeff
 
