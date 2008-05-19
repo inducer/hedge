@@ -172,7 +172,7 @@ class InverseMassOperator(MassOperatorBase):
 
 
 
-# flux operators --------------------------------------------------------------
+# flux-like operators ---------------------------------------------------------
 class FluxOperator(Operator):
     def __init__(self, discr, flux):
         Operator.__init__(self, discr)
@@ -187,6 +187,30 @@ class FluxOperator(Operator):
 
     def get_mapper_method(self, mapper): 
         return mapper.map_flux
+
+
+
+
+class FluxCoefficientOperator(Operator):
+    def __init__(self, discr, int_coeff, ext_coeff):
+        Operator.__init__(self, discr)
+        self.int_coeff = int_coeff
+        self.ext_coeff = ext_coeff
+
+    def get_mapper_method(self, mapper): 
+        return mapper.map_flux_coefficient
+
+
+
+
+class LiftingFluxCoefficientOperator(Operator):
+    def __init__(self, discr, int_coeff, ext_coeff):
+        Operator.__init__(self, discr)
+        self.int_coeff = int_coeff
+        self.ext_coeff = ext_coeff
+
+    def get_mapper_method(self, mapper): 
+        return mapper.map_lift_coefficient
 
 
 
@@ -209,7 +233,7 @@ class VectorFluxOperator(object):
 
 
 # other parts of an operator template -----------------------------------------
-class _BoundaryPair(pymbolic.primitives.AlgebraicLeaf):
+class BoundaryPair(pymbolic.primitives.AlgebraicLeaf):
     """Represents a pairing of a volume and a boundary field, used for the
     application of boundary fluxes.
     """
@@ -232,7 +256,7 @@ def pair_with_boundary(field, bfield, tag=hedge.mesh.TAG_ALL):
     if tag is hedge.mesh.TAG_NONE:
         return 0
     else:
-        return _BoundaryPair(field, bfield, tag)
+        return BoundaryPair(field, bfield, tag)
 
 
 
@@ -245,21 +269,37 @@ class OpTemplate:
 
 
 # mappers ---------------------------------------------------------------------
+class IdentityMapper(pymbolic.mapper.IdentityMapper):
+    def map_operator_binding(self, expr, *args, **kwargs):
+        return expr.__class__(
+                self.rec(expr.op, *args, **kwargs),
+                self.rec(expr.field, *args, **kwargs))
+
+    def map_boundary_pair(self, expr, *args, **kwargs):
+        return expr.__class__(
+                self.rec(expr.field, *args, **kwargs),
+                self.rec(expr.bfield, *args, **kwargs),
+                expr.tag)
+
+
+
+
+
 class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
     def map_boundary_pair(self, expr, enclosing_prec):
         return "BPair(%s, %s, %s)" % (expr.field, expr.bfield, repr(expr.tag))
 
     def map_diff(self, expr, enclosing_prec):
-        return "Diff(%d)" % expr.xyz_axis
+        return "Diff%d" % expr.xyz_axis
 
     def map_minv_st(self, expr, enclosing_prec):
-        return "MInvST(%d)" % expr.xyz_axis
+        return "MInvST%d" % expr.xyz_axis
 
     def map_stiffness(self, expr, enclosing_prec):
-        return "Stiff(%d)" % expr.xyz_axis
+        return "Stiff%d" % expr.xyz_axis
 
     def map_stiffness_t(self, expr, enclosing_prec):
-        return "StiffT(%d)" % expr.xyz_axis
+        return "StiffT%d" % expr.xyz_axis
 
     def map_mass(self, expr, enclosing_prec):
         return "M"
@@ -269,6 +309,12 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
 
     def map_flux(self, expr, enclosing_prec):
         return "Flux(%s)" % expr.flux
+
+    def map_flux_coefficient(self, expr, enclosing_prec):
+        return "FluxCoeff(int=%s, ext=%s)" % (expr.int_coeff, expr.ext_coeff)
+
+    def map_lift_coefficient(self, expr, enclosing_prec):
+        return "LiftFluxCoeff(int=%s, ext=%s)" % (expr.int_coeff, expr.ext_coeff)
 
     def map_operator_binding(self, expr, enclosing_prec):
         return "<%s>(%s)" % (expr.op, expr.field)
@@ -305,31 +351,184 @@ class LocalOpReducerMixin(object):
 
 
 
-class OperatorBinder(pymbolic.mapper.IdentityMapper):
+class OperatorBinder(IdentityMapper):
     def handle_unsupported_expression(self, expr):
         return expr
 
     def map_product(self, expr):
-        def generate_new_children():
-            it = iter(expr.children)
-            while True:
-                try:
-                    child = it.next()
-                except StopIteration:
-                    break
-
-                if isinstance(child, Operator):
-                    try:
-                        operand = it.next()
-                    except StopIteration:
-                        raise ValueError("no operand for to bind '%s'" % child)
-
-                    yield OperatorBinding(child, self.rec(operand))
-                else:
-                    yield self.rec(child)
+        if len(expr.children) == 0:
+            return expr
 
         from pymbolic.primitives import flattened_product
-        return flattened_product(generate_new_children())
+        first = expr.children[0]
+        if isinstance(first, Operator):
+            return OperatorBinding(first, 
+                    self.rec(flattened_product(expr.children[1:])))
+        else:
+            return first * self.rec(flattened_product(expr.children[1:]))
+
+
+
+
+class _InnerInverseMassContractor(pymbolic.mapper.RecursiveMapper):
+    def __init__(self, discr):
+        self.discr = discr
+
+    def map_operator_binding(self, binding):
+        if isinstance(binding.op, MassOperator):
+            return binding.field
+        elif isinstance(binding.op, StiffnessOperator):
+            return OperatorBinding(
+                    DifferentiationOperator(self.discr, binding.op.xyz_axis),
+                    binding.field)
+        elif isinstance(binding.op, StiffnessTOperator):
+            return OperatorBinding(
+                    MInvSTOperator(self.discr, binding.op.xyz_axis),
+                    binding.field)
+        elif isinstance(binding.op, FluxOperator):
+            return OperatorBinding(
+                    LiftOperator(self.discr, binding.op.flux),
+                    binding.field)
+        else:
+            return OperatorBinding(
+                InverseMassOperator(self.discr),
+                binding)
+
+    def map_sum(self, expr):
+        return expr.__class__(tuple(self.rec(child) for child in expr.children))
+
+    def map_product(self, expr):
+        def is_scalar(expr):
+            return isinstance(ch, (int, float, complex))
+
+        from pytools import count
+        nonscalar_count = count(ch 
+                for ch in expr.children
+                if not is_scalar(ch))
+
+        if nonscalar_count > 1:
+            # too complicated, don't touch it
+            return expr
+        else:
+            def do_map(expr):
+                if is_scalar(expr):
+                    return expr
+                else:
+                    return self.rec(expr)
+            return expr.__class__(tuple(
+                do_map(child, *args, **kwargs) for child in expr.children))
+
+
+
+        
+class InverseMassContractor(pymbolic.mapper.IdentityMapper):
+    # assumes all operators to be bound
+
+    def map_operator_binding(self, binding):
+        # we only care about bindings of inverse mass operators
+        if not isinstance(binding.op, InverseMassOperator):
+            return binding.__class__(binding.op,
+                    self.rec(binding.field))
+        else:
+            return  _InnerInverseMassContractor(binding.op.discr)(binding.field)
+
+
+
+
+class FluxDecomposer(pymbolic.mapper.IdentityMapper):
+    """Replaces each L{FluxOperator} in an operator template
+    with a sum of L{FluxCoefficientOperator}s.
+    """
+    # assumes all flux operators to be bound
+
+    def handle_unsupported_expression(self, expr):
+        print "UNSUPP", expr
+        return expr
+
+    def compile_coefficient(self, coeff):
+        return coeff
+
+    @staticmethod
+    def _subscript(field, idx, is_scalar):
+        if is_scalar:
+            return field
+        else:
+            return field[idx]
+
+    def _map_inner_flux(self, discr, analyzed_flux, field):
+        from hedge.tools import log_shape
+        lsf = log_shape(field)
+        is_scalar = lsf == ()
+        if not is_scalar:
+            assert len(lsf) == 1
+
+        from pymbolic import flattened_sum
+        return flattened_sum(
+                OperatorBinding(
+                    FluxCoefficientOperator(discr,
+                        self.compile_coefficient(int_flux),
+                        self.compile_coefficient(ext_flux),
+                        ),
+                    self._subscript(field, idx, is_scalar)
+                    )
+                    for idx, int_flux, ext_flux in analyzed_flux)
+
+    def _map_bdry_flux(self, discr, analyzed_flux, field, bfield, tag):
+        class ZeroVector:
+            dtype = 0
+            def __getitem__(self, idx):
+                return 0
+
+        from hedge.tools import log_shape
+        lsf = log_shape(field)
+        blsf = log_shape(bfield)
+
+        is_scalar = lsf == () and blsf == ()
+        if not is_scalar:
+            assert len(lsf) == 1
+
+            if isinstance(bfield, int) and bfield == 0:
+                bfield = ZeroVector()
+            elif isinstance(field, int) and field == 0:
+                field = ZeroVector()
+            else:
+                assert lsf == blsf
+
+
+        from pymbolic import flattened_sum
+        return flattened_sum(
+                OperatorBinding(
+                    FluxCoefficientOperator(discr,
+                        self.compile_coefficient(int_flux),
+                        self.compile_coefficient(ext_flux),
+                        ),
+                    BoundaryPair(
+                        self._subscript(field, idx, is_scalar),
+                        self._subscript(bfield, idx, is_scalar),
+                        tag)
+                    )
+                    for idx, int_flux, ext_flux in analyzed_flux)
+
+
+    def map_operator_binding(self, binding):
+        # we only care about bindings of flux operators
+        if not isinstance(binding.op, FluxOperator):
+            return binding.__class__(binding.op,
+                    self.rec(binding.field))
+
+        from hedge.flux import analyze_flux
+        if isinstance(binding.field, BoundaryPair):
+            bpair = binding.field
+            return self._map_bdry_flux(binding.op.discr,
+                    analyze_flux(binding.op.flux), 
+                    bpair.field,
+                    bpair.bfield,
+                    bpair.tag)
+        else:
+            return self._map_inner_flux(
+                    binding.op.discr,
+                    analyze_flux(binding.op.flux), 
+                    binding.field)
 
 
 

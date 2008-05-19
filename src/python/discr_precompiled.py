@@ -89,29 +89,12 @@ class _FluxCoefficientCompiler(pymbolic.mapper.RecursiveMapper):
 
 
 
-class _FluxOpCompileMapper(pymbolic.mapper.IdentityMapper):
-    """Replaces each flux operator in an operator template
-    with one that has a compiled flux.
-    """
-    def handle_unsupported_expression(self, expr):
-        return expr
+class _FluxOpCompileMapper(hedge.optemplate.FluxDecomposer):
+    def __init__(self):
+        self.coeff_comp = _FluxCoefficientCompiler()
 
-    def map_operator_binding(self, expr):
-        from hedge.optemplate import OperatorBinding
-        return OperatorBinding(
-                self.rec(expr.op), 
-                self.rec(expr.field))
-
-    def compile_flux(self, scalar_flux):
-        coeff_comp = _FluxCoefficientCompiler()
-        from hedge.flux import analyze_flux
-
-        return [(in_f_idx, coeff_comp(int), coeff_comp(ext))
-                    for in_f_idx, int, ext in analyze_flux(scalar_flux)]
-
-    def map_flux(self, flux_op):
-        from hedge.optemplate import FluxOperator
-        return FluxOperator(flux_op.discr, self.compile_flux(flux_op.flux))
+    def compile_coefficient(self, coeff):
+        return self.coeff_comp(coeff)
 
 
 
@@ -187,65 +170,30 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             target.finalize()
         return result
 
-    def scalar_inner_flux(self, flux, field, out=None):
+    def scalar_inner_flux(self, int_coeff, ext_coeff, field, out=None):
         if out is None:
             out = self.discr.volume_zeros()
 
-        from hedge.tools import make_vector_target, log_shape
-        lsf = log_shape(field)
-
-        is_scalar = log_shape(field) == ()
-        if not is_scalar:
-            assert len(lsf) == 1
-
-        for idx, int_flux, ext_flux in flux:
-            if is_scalar:
-                field_idx = ()
-            else:
-                field_idx = idx
-
-            self.discr.perform_inner_flux(
-                    int_flux, ext_flux, make_vector_target(field[field_idx], out))
+        from hedge.tools import make_vector_target
+        self.discr.perform_inner_flux(
+                int_coeff, ext_coeff, 
+                make_vector_target(field, out))
         return out
 
 
-    def scalar_bdry_flux(self, flux, field, bfield, tag, out=None):
+    def scalar_bdry_flux(self, int_coeff, ext_coeff, field, bfield, tag, out=None):
         if out is None:
             out = self.discr.volume_zeros()
 
         bdry = self.discr.get_boundary(tag)
-
         if not bdry.nodes:
             return 0
 
-        class ZeroVector:
-            dtype = 0
-            def __getitem__(self, idx):
-                return 0
-
-        if isinstance(bfield, int) and bfield == 0:
-            bfield = ZeroVector()
-        if isinstance(field, int) and field == 0:
-            field = ZeroVector()
-
-        from hedge.tools import make_vector_target, log_shape
-        lsf = log_shape(field)
-        assert lsf == log_shape(bfield) 
-
-        is_scalar = log_shape(field) == ()
-        if not is_scalar:
-            assert len(lsf) == 1
-
-        for idx, int_flux, ext_flux in flux:
-            if is_scalar:
-                field_idx = ()
-            else:
-                field_idx = idx
-
-            self.discr._perform_boundary_flux(
-                    int_flux, make_vector_target(field[field_idx], out),
-                    ext_flux, make_vector_target(bfield[field_idx], out), 
-                    bdry)
+        from hedge.tools import make_vector_target
+        self.discr._perform_boundary_flux(
+                int_coeff, make_vector_target(field, out),
+                ext_coeff, make_vector_target(bfield, out), 
+                bdry)
 
         return out
 
@@ -287,18 +235,20 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
         return result
 
-    def map_flux(self, op, field_expr):
-        from hedge.optemplate import _BoundaryPair
+    def map_flux_coefficient(self, op, field_expr):
+        from hedge.optemplate import BoundaryPair
 
-        if isinstance(field_expr, _BoundaryPair):
+        if isinstance(field_expr, BoundaryPair):
             bp = field_expr
             return self.scalar_bdry_flux(
-                    op.flux, 
+                    op.int_coeff, op.ext_coeff,
                     self.rec(bp.field), self.rec(bp.bfield), 
                     bp.tag)
         else:
             field = self.rec(field_expr)
-            return self.scalar_inner_flux(op.flux, field)
+            return self.scalar_inner_flux(
+                    op.int_coeff, op.ext_coeff,
+                    field)
 
 
 
@@ -349,12 +299,13 @@ class Discretization(hedge.discretization.Discretization):
 
         target.begin(len(self.nodes), len(self.nodes))
         for fg in self.face_groups:
-            if self.newflux:
+            nf = True
+            if nf:
                 fmm = fg.ldis_int.multi_face_mass_matrix()
             else:
                 fmm = fg.ldis_int.face_mass_matrix()
             perform_flux_on_one_target(
-                    fg, fmm, ch_int, ch_ext, target, self.newflux)
+                    fg, fmm, ch_int, ch_ext, target, nf)
         target.finalize()
 
     # boundary flux computation -----------------------------------------------
@@ -379,11 +330,17 @@ class Discretization(hedge.discretization.Discretization):
 
     # op template execution ---------------------------------------------------
     def preprocess_optemplate(self, optemplate):
-        from hedge.optemplate import OperatorBinder
+        from hedge.optemplate import OperatorBinder, InverseMassContractor
         from pymbolic.mapper.constant_folder import CommutativeConstantFoldingMapper
-        return CommutativeConstantFoldingMapper()(
+        from traceback import print_stack
+        result = (
+#                InverseMassContractor()(
+                    CommutativeConstantFoldingMapper()(
+                        _FluxOpCompileMapper()(
                             OperatorBinder()(
-                                _FluxOpCompileMapper()(optemplate)))
+                                optemplate))))#)
+        #print result
+        return result
 
     def run_preprocessed_optemplate(self, pp_optemplate, vars):
         return ExecutionMapper(vars, self)(pp_optemplate)

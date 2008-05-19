@@ -37,26 +37,29 @@ FluxFace = _internal.FluxFace
 # c++ fluxes debug dumping ----------------------------------------------------
 @monkeypatch_method(_internal.ConstantFlux)
 def __repr__(self):
-    return "ConstantFlux(%s)" % self.value
+    return str(self.value)
 @monkeypatch_method(_internal.NormalFlux)
 def __repr__(self):
-    return "NormalFlux(%d)" % self.axis
+    return "n[%d]" % self.axis
 @monkeypatch_method(_internal.PenaltyFlux)
 def __repr__(self):
-    return "PenaltyFlux(%s)" % self.power
+    return "penalty(%s)" % self.power
 @monkeypatch_method(_internal.SumFlux)
 def __repr__(self):
-    return "SumFlux(%s, %s)" % (self.operand1, self.operand2)
+    return "(%s+%s)" % (self.operand1, self.operand2)
 @monkeypatch_method(_internal.ProductFlux)
 def __repr__(self):
-    return "ProductFlux(%s, %s)" % (self.operand1, self.operand2)
+    return "(%s*%s)" % (self.operand1, self.operand2)
 @monkeypatch_method(_internal.NegativeFlux)
 def __repr__(self):
-    return "NegativeFlux(%s)" % self.operand
+    return "-%s" % self.operand
 @monkeypatch_method(_internal.ChainedFlux)
 def __repr__(self):
     #return "ChainedFlux(%s)" % self.child
     return str(self.child)
+@monkeypatch_method(_internal.IfPositiveFlux)
+def __repr__(self):
+    return "(If %s>0 then %s else %s)" % (self.criterion, self.then_part, self.else_part)
 
 
 

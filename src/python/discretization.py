@@ -41,8 +41,7 @@ class _FaceGroup(hedge._internal.FaceGroup):
         self.fil_id_to_number = {}
         self.fil_to_number = {}
 
-    def register_face_indices(self, identifier, generator):
-
+    def register_face_index_list(self, identifier, generator):
         try:
             return self.fil_id_to_number[identifier]
         except KeyError:
@@ -413,14 +412,14 @@ class Discretization(object):
             fp.loc.el_base_index = estart_l
             fp.opp.el_base_index = estart_n
 
-            fp.loc.face_index_list_number = fg.register_face_indices(
+            fp.loc.face_index_list_number = fg.register_face_index_list(
                     identifier=fi_l, 
                     generator=lambda: findices_l)
-            fp.opp.face_index_list_number = fg.register_face_indices(
+            fp.opp.face_index_list_number = fg.register_face_index_list(
                     identifier=(fi_n, findices_shuffle_op_n),
                     generator=lambda : findices_shuffle_op_n(findices_n))
             from pytools import get_write_to_map_from_permutation
-            fp.opp_native_write_map = fg.register_face_indices(
+            fp.opp_native_write_map = fg.register_face_index_list(
                     identifier=(fi_n, findices_shuffle_op_n, "wtm"),
                     generator=lambda : 
                     get_write_to_map_from_permutation(
@@ -490,10 +489,10 @@ class Discretization(object):
             fp = FacePair()
             fp.loc.el_base_index = el_start
             fp.opp.el_base_index = f_start
-            fp.loc.face_index_list_number = face_group.register_face_indices(
+            fp.loc.face_index_list_number = face_group.register_face_index_list(
                     identifier=face_nr,
                     generator=lambda: face_indices)
-            fp.opp.face_index_list_number = face_group.register_face_indices(
+            fp.opp.face_index_list_number = face_group.register_face_index_list(
                     identifier=(),
                     generator=lambda: tuple(xrange(len(face_indices))))
             fp.loc.flux_face_index = len(face_group.flux_faces)
