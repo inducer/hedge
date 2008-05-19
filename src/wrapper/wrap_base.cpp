@@ -233,4 +233,9 @@ void hedge_expose_base()
   DEF_SIMPLE_FUNCTION(bufferize_vector);
   DEF_SIMPLE_FUNCTION(bufferize_list_of_vectors);
   DEF_SIMPLE_FUNCTION(bufferize_list_of_components);
+
+  {
+    typedef ublas::zero_vector<double> cl;
+    class_<cl>("ZeroVector");
+  }
 }

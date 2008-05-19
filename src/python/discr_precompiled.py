@@ -208,6 +208,9 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         if out is None:
             out = self.discr.volume_zeros()
 
+        if isinstance(field, (int, float, complex)) and field == 0:
+            return 0
+
         from hedge._internal import perform_double_sided_flux, ChainedFlux
 
         for fg in self.discr.face_groups:
@@ -219,7 +222,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                         field, out)
             else:
                 perform_double_sided_flux(
-                        fg, fg.ldis_loc.face_mass_matrix(), 
+                        fg, fg.ldis_loc.multi_face_mass_matrix(), 
                         None,
                         ChainedFlux(int_coeff), ChainedFlux(ext_coeff),
                         field, out)
@@ -235,7 +238,12 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         if not bdry.nodes:
             return 0
 
-        from hedge._internal import perform_single_sided_flux, ChainedFlux
+        from hedge._internal import \
+                perform_single_sided_flux, ChainedFlux, ZeroVector
+        if isinstance(field, (int, float, complex)) and field == 0:
+            field = ZeroVector()
+        if isinstance(bfield, (int, float, complex)) and bfield == 0:
+            bfield = ZeroVector()
 
         if bdry.nodes:
             for fg in bdry.face_groups:
@@ -247,7 +255,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                             field, bfield, out)
                 else:
                     perform_single_sided_flux(
-                            fg, fg.ldis_loc.face_mass_matrix(), 
+                            fg, fg.ldis_loc.multi_face_mass_matrix(), 
                             None,
                             ChainedFlux(int_coeff), ChainedFlux(ext_coeff),
                             field, bfield, out)
