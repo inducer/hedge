@@ -313,29 +313,13 @@ class MPIParallelizationContext(ParallelizationContext):
 
 
 class ExecutionMapper(hedge.discr_precompiled.ExecutionMapper):
-    def scalar_inner_flux(self, flux, field, out=None):
+    def scalar_inner_flux(self, int_coeff, ext_coeff, field, lift, out=None):
         import boost.mpi as mpi
         from hedge._internal import irecv_vector, isend_vector
 
         self.discr.comm_flux_counter.add()
         self.discr.comm_flux_timer.start()
         comm = self.discr.context.communicator
-
-        from hedge.tools import log_shape
-        ls = log_shape(field)
-
-        if ls != ():
-            assert len(ls) == 1
-            field_count = ls[0]
-        else:
-            field_count = None
-
-        def fix_shape(field, tag):
-            if field_count is not None:
-                bdry_len = len(self.discr.get_boundary(tag).nodes)
-                return numpy.reshape(field, (field_count, bdry_len))
-            else:
-                return field
 
         # Subtlety here: The vectors for isend and irecv need to stay allocated
         # for as long as the request is not completed. The wrapper aids this
@@ -345,9 +329,7 @@ class ExecutionMapper(hedge.discr_precompiled.ExecutionMapper):
         # RequestList, so we need to provide our own life support for these vectors.
 
         neigh_recv_vecs = dict(
-                (rank, self.discr.boundary_zeros(
-                    hedge.mesh.TAG_RANK_BOUNDARY(rank), 
-                    shape=ls))
+                (rank, self.discr.boundary_zeros(hedge.mesh.TAG_RANK_BOUNDARY(rank)))
                 for rank in self.discr.neighbor_ranks)
 
         recv_requests = mpi.RequestList(
@@ -362,21 +344,21 @@ class ExecutionMapper(hedge.discr_precompiled.ExecutionMapper):
             for rank in self.discr.neighbor_ranks]
 
         result = [hedge.discr_precompiled.ExecutionMapper
-                .scalar_inner_flux(self, flux, field)]
+                .scalar_inner_flux(self, int_coeff, ext_coeff, field, lift, out)]
 
         def receive(_, status):
             from hedge.tools import apply_index_map
 
             tag = hedge.mesh.TAG_RANK_BOUNDARY(status.source)
 
-            foreign_order_bfield = fix_shape(neigh_recv_vecs[status.source], tag)
+            foreign_order_bfield = neigh_recv_vecs[status.source]
 
             bfield = apply_index_map(
                     self.discr.from_neighbor_maps[status.source],
                     foreign_order_bfield)
 
-            result[0] += self.scalar_bdry_flux(
-                    flux, field, bfield, tag)
+            self.scalar_bdry_flux(
+                    int_coeff, ext_coeff, field, bfield, tag, lift, out=result[0])
 
         mpi.wait_all(recv_requests, receive)
         mpi.wait_all(mpi.RequestList(send_requests))
@@ -431,11 +413,6 @@ class ParallelDiscretization(hedge.discr_precompiled.Discretization):
 
         comm = self.context.communicator
 
-        def get_flux_face(el_face):
-            face_group, ffi = (rank_discr_boundary
-                    .el_face_to_face_group_and_flux_face_index[el_face])
-            return face_group.flux_faces[ffi]
-
         if self.neighbor_ranks:
             # send interface information to neighboring ranks -----------------
             from pytools import reverse_dictionary
@@ -461,15 +438,17 @@ class ParallelDiscretization(hedge.discr_precompiled.Discretization):
 
                 my_node_coords = []
                 for el, face_nr in rank_bdry:
-                    (estart, eend), ldis = self.find_el_data(el.id)
+                    eslice, ldis = self.find_el_data(el.id)
                     findices = ldis.face_indices()[face_nr]
+
                     my_node_coords.append(
-                            [self.nodes[estart+i] for i in findices])
+                            [self.nodes[eslice.start+i] for i in findices])
 
                 # compile a list of FluxFace.h values for unification
                 # across the rank boundary
 
-                my_h_values = [get_flux_face(el_face).h for el_face in rank_bdry]
+                my_h_values = [rank_discr_boundary.find_flux_face(el_face).h 
+                        for el_face in rank_bdry]
                 
                 packet = (my_vertices_global, my_node_coords, my_h_values)
 
@@ -526,12 +505,13 @@ class ParallelDiscretization(hedge.discr_precompiled.Discretization):
                         return result
 
                 for el, face_nr in rank_bdry:
-                    (estart, eend), ldis = self.find_el_data(el.id)
+                    eslice, ldis = self.find_el_data(el.id)
 
                     my_vertices = el.faces[face_nr]
                     my_global_vertices = tuple(local2global_vertex_indices[vi]
                             for vi in my_vertices)
 
+                    face_node_count = ldis.face_node_count()
                     try:
                         nb_face_idx = nb_face_order[frozenset(my_global_vertices)]
                         # continue below in else part
@@ -546,7 +526,6 @@ class ParallelDiscretization(hedge.discr_precompiled.Discretization):
 
                         assert axis == axis2
                         
-                        face_node_count = len(nb_node_coords[nb_face_idx])
                         nb_face_start = nb_face_starts[nb_face_idx]
 
                         shuffle_op = \
@@ -562,7 +541,7 @@ class ParallelDiscretization(hedge.discr_precompiled.Discretization):
 
                         # check if the nodes really match up
                         if self.debug:
-                            my_node_indices = [estart+i for i in ldis.face_indices()[face_nr]]
+                            my_node_indices = [eslice.start+i for i in ldis.face_indices()[face_nr]]
 
                             for my_i, other_i in zip(my_node_indices, shuffled_other_node_indices):
                                 dist = self.nodes[my_i]-flat_nb_node_coords[other_i]
@@ -572,7 +551,6 @@ class ParallelDiscretization(hedge.discr_precompiled.Discretization):
                         # continue handling of nonperiodic case
                         nb_vertices = nb_all_facevertices_global[nb_face_idx]
 
-                        face_node_count = len(nb_node_coords[nb_face_idx])
                         nb_face_start = nb_face_starts[nb_face_idx]
 
                         shuffle_op = \
@@ -588,7 +566,8 @@ class ParallelDiscretization(hedge.discr_precompiled.Discretization):
 
                         # check if the nodes really match up
                         if self.debug:
-                            my_node_indices = [estart+i for i in ldis.face_indices()[face_nr]]
+                            my_node_indices = [eslice.start+i 
+                                    for i in ldis.face_indices()[face_nr]]
 
                             for my_i, other_i in zip(my_node_indices, shuffled_other_node_indices):
                                 dist = self.nodes[my_i]-flat_nb_node_coords[other_i]
@@ -596,7 +575,7 @@ class ParallelDiscretization(hedge.discr_precompiled.Discretization):
 
                     # finally, unify FluxFace.h values across boundary
                     nb_h = nb_h_values[nb_face_idx]
-                    flux_face = get_flux_face((el, face_nr))
+                    flux_face = rank_discr_boundary.find_flux_face((el, face_nr))
                     flux_face.h = max(nb_h, flux_face.h)
 
                 if self.debug:
@@ -607,6 +586,9 @@ class ParallelDiscretization(hedge.discr_precompiled.Discretization):
                 from hedge._internal import IndexMap
                 self.from_neighbor_maps[rank] = IndexMap(
                         len(from_indices), len(from_indices), from_indices)
+
+
+
 
     def dt_non_geometric_factor(self):
         import boost.mpi as mpi
@@ -649,8 +631,8 @@ def reassemble_volume_field(pcon, global_discr, local_discr, field):
 
     send_packet = {}
     for eg in local_discr.element_groups:
-        for el, (estart, eend) in zip(eg.members, eg.ranges):
-            send_packet[local2global_element[el.id]] = field[estart:eend]
+        for el, eslice in zip(eg.members, eg.ranges):
+            send_packet[local2global_element[el.id]] = field[eslice]
 
     def reduction(a, b):
         a.update(b)
@@ -664,10 +646,10 @@ def reassemble_volume_field(pcon, global_discr, local_discr, field):
     if pcon.is_head_rank:
         result = global_discr.volume_zeros()
         for eg in global_discr.element_groups:
-            for el, (estart, eend) in zip(eg.members, eg.ranges):
+            for el, eslice in zip(eg.members, eg.ranges):
                 my_part = gfield_parts[el.id]
-                assert len(my_part) == eend-estart
-                result[estart:eend] = my_part
+                assert len(my_part) == eslice.stop-eslice.start
+                result[eslice] = my_part
         return result
     else:
         return None

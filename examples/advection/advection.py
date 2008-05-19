@@ -37,7 +37,7 @@ def main() :
     def f(x):
         return sin(pi*x)
 
-    def u_analytic(x, t):
+    def u_analytic(x, el, t):
         return f((-numpy.dot(v, x)/norm_v+t*norm_v))
 
     def boundary_tagger(vertices, el, face_nr):
@@ -90,7 +90,7 @@ def main() :
     if dim != 1:
         mesh_data = mesh_data.reordered_by("cuthill")
 
-    discr = pcon.make_discretization(mesh_data, el_class(4))
+    discr = pcon.make_discretization(mesh_data, el_class(4), debug=True)
     vis_discr = discr
 
     vis = VtkVisualizer(vis_discr, pcon, "fld")
@@ -106,7 +106,7 @@ def main() :
             inflow_u=TimeDependentGivenFunction(u_analytic),
             flux_type="upwind")
 
-    u = discr.interpolate_volume_function(lambda x, el: u_analytic(x, 0))
+    u = discr.interpolate_volume_function(lambda x, el: u_analytic(x, el, 0))
 
     # timestep setup ----------------------------------------------------------
     stepper = RK4TimeStepper()
