@@ -91,7 +91,7 @@ namespace hedge
       { }
 
       unsigned element_count() const
-      { return local_el_to_global_el_base.dims()[0]; }
+      { return local_el_to_global_el_base.size(); }
 
       unsigned face_length() const
       { return index_lists.dims()[1]; }
@@ -108,20 +108,22 @@ namespace hedge
   static
   void finish_flux(
       const face_group &fg,
-      const py_matrix &mat, 
+      const py_matrix &matrix, 
       const py_vector &elwise_post_scaling,
-      const py_vector &flux_temp,
+      const dyn_vector &flux_temp,
       py_vector &result)
   {
     using namespace boost::numeric::bindings;
     using blas::detail::gemm;
 
-    const py_matrix &matrix = mat;
-
     const unsigned el_length_result = matrix.size1();
     const unsigned el_length_temp = fg.face_count*fg.face_length();
 
+    if (el_length_temp != matrix.size2())
+      throw std::runtime_error("matrix size mismatch in finish_flux");
+
     dyn_vector result_temp(el_length_result*fg.element_count());
+    result_temp.clear();
     gemm(
         'T', // "matrix" is row-major
         'N', // a contiguous array of vectors is column-major
@@ -135,7 +137,7 @@ namespace hedge
         /*ldb*/ el_length_temp,
         /*beta*/ 0,
         /*c*/ traits::vector_storage(result_temp), 
-        /*ldc*/ matrix.size1()
+        /*ldc*/ el_length_result
         );
 
     if (elwise_post_scaling.is_valid())
