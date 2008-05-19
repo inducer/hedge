@@ -266,44 +266,37 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
 
     # entry points ------------------------------------------------------------
-    def map_diff_base(self, op, field_expr):
+    def map_diff_base(self, op, field_expr, out=None):
         field = self.rec(field_expr)
 
-        from hedge.tools import log_shape
-        lshape = log_shape(field)
-        result = self.discr.volume_zeros(lshape)
+        if out is None:
+            out = self.discr.volume_zeros()
+        self.diff_xyz(op, field_expr, field, out)
+        return out
 
-        from pytools import indices_in_shape
-        for i in indices_in_shape(lshape):
-            self.diff_xyz(op, field_expr[i], field[i], result[i])
-
-        return result
-
-    def map_mass_base(self, op, field_expr):
+    def map_mass_base(self, op, field_expr, out=None):
         field = self.rec(field_expr)
 
         if isinstance(field, (float, int)) and field == 0:
             return 0
 
-        from hedge.tools import log_shape, make_vector_target
-        lshape = log_shape(field)
-        result = self.discr.volume_zeros(lshape)
+        from hedge.tools import make_vector_target
+        if out is None:
+            out = self.discr.volume_zeros()
 
-        from pytools import indices_in_shape
         from hedge._internal import perform_elwise_scaled_operator
-        for i in indices_in_shape(lshape):
-            target = make_vector_target(field[i], result[i])
+        target = make_vector_target(field, out)
 
-            target.begin(len(self.discr), len(self.discr))
-            for eg in self.discr.element_groups:
-                perform_elwise_scaled_operator(eg.ranges, eg.ranges,
-                       op.coefficients(eg), op.matrix(eg), 
-                       target)
-            target.finalize()
+        target.begin(len(self.discr), len(self.discr))
+        for eg in self.discr.element_groups:
+            perform_elwise_scaled_operator(eg.ranges, eg.ranges,
+                   op.coefficients(eg), op.matrix(eg), 
+                   target)
+        target.finalize()
 
-        return result
+        return out
 
-    def map_flux_coefficient(self, op, field_expr, lift=False):
+    def map_flux_coefficient(self, op, field_expr, out=None, lift=False):
         from hedge.optemplate import BoundaryPair
 
         if isinstance(field_expr, BoundaryPair):
@@ -311,15 +304,30 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             return self.scalar_bdry_flux(
                     op.int_coeff, op.ext_coeff,
                     self.rec(bp.field), self.rec(bp.bfield), 
-                    bp.tag, lift)
+                    bp.tag, lift, out)
         else:
             field = self.rec(field_expr)
             return self.scalar_inner_flux(
                     op.int_coeff, op.ext_coeff,
-                    field, lift)
+                    field, lift, out)
 
-    def map_lift_coefficient(self, op, field_expr):
-        return self.map_flux_coefficient(op, field_expr, lift=True)
+    def map_lift_coefficient(self, op, field_expr, out=None):
+        return self.map_flux_coefficient(op, field_expr, out, lift=True)
+
+    def map_sum(self, expr, out=None):
+        if out is None:
+            out = self.discr.volume_zeros()
+        for child in expr.children:
+            result = self.rec(child, out)
+            if result is not out:
+                out += result
+        return out
+
+    def map_product(self, expr, out=None):
+        return hedge.optemplate.Evaluator.map_product(self, expr)
+
+    def map_variable(self, expr, out=None):
+        return hedge.optemplate.Evaluator.map_variable(self, expr)
 
 
 

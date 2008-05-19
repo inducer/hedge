@@ -330,8 +330,8 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
 
 
 class BoundOpMapperMixin(object):
-    def map_operator_binding(self, expr):
-        return expr.op.get_mapper_method(self)(expr.op, expr.field)
+    def map_operator_binding(self, expr, *args, **kwargs):
+        return expr.op.get_mapper_method(self)(expr.op, expr.field, *args, **kwargs)
 
 
 
