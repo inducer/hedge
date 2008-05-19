@@ -57,7 +57,7 @@ class _FaceGroup(hedge._internal.FaceGroup):
                 self.fil_id_to_number[identifier] = nbr
             return nbr
 
-    def commit(self, element_count, ldis_int, ldis_ext):
+    def commit(self, discr, ldis_int, ldis_ext):
         from hedge._internal import IntVector
 
         if self.face_index_lists:
@@ -69,11 +69,34 @@ class _FaceGroup(hedge._internal.FaceGroup):
             for i, fil in enumerate(self.face_index_lists):
                 self.index_lists[i] = fil
 
-        self.element_count = element_count
         if ldis_int is None:
             self.face_count = 0
         else:
             self.face_count = ldis_int.face_count()
+
+        # number elements locally
+        used_bases_and_els = list(set(
+                (side.el_base_index, side.element_id)
+                for fp in self.face_pairs
+                for side in [fp.loc, fp.opp]
+                if side.element_id != hedge._internal.INVALID_ELEMENT))
+
+        used_bases_and_els.sort()
+        el_id_to_local_number = dict(
+                (bae[1], i) for i, bae in enumerate(used_bases_and_els))
+        self.local_el_to_global_el_base = numpy.fromiter(
+                (bae[0] for bae in used_bases_and_els), dtype=numpy.uint32)
+
+        for fp in self.face_pairs:
+            for side in [fp.loc, fp.opp]:
+                if side.element_id != hedge._internal.INVALID_ELEMENT:
+                    side.local_el_number = el_id_to_local_number[side.element_id]
+
+        # transfer inverse jacobians
+        self.local_el_inverse_jacobians = numpy.fromiter(
+                (abs(discr.mesh.elements[bae[1]].inverse_map.jacobian) 
+                    for bae in used_bases_and_els),
+                dtype=float)
 
         self.ldis_int = ldis_int
         self.ldis_ext = ldis_ext
@@ -224,18 +247,6 @@ class Discretization(object):
                         self.interpolate_boundary_function,
                         self.interpolant_timer,
                         self.interpolant_counter)
-
-        self.perform_inner_flux = \
-                time_and_count_function(
-                        self.perform_inner_flux,
-                        self.inner_flux_timer,
-                        self.inner_flux_counter)
-
-        self._perform_boundary_flux = \
-                time_and_count_function(
-                        self._perform_boundary_flux,
-                        self.bdry_flux_timer,
-                        self.bdry_flux_counter)
 
         self.instrumented = True
 
@@ -435,7 +446,7 @@ class Discretization(object):
         ldis_l = single_valued(all_ldis_l)
         ldis_n = single_valued(all_ldis_n)
 
-        fg.commit(len(self.mesh.elements), ldis_l, ldis_n)
+        fg.commit(self, ldis_l, ldis_n)
 
         if len(fg.face_pairs):
             self.face_groups = [fg]
@@ -496,8 +507,7 @@ class Discretization(object):
             el_face_to_face_group_and_face_pair[ef] = \
                     face_group, len(face_group.face_pairs)-1
 
-        face_group.commit(
-                len(self.mesh.elements), ldis, ldis)
+        face_group.commit(self, ldis, ldis)
 
         bdry = _Boundary(
                 nodes=nodes,
@@ -820,19 +830,19 @@ class SymmetryMap(object):
         self.map = {}
 
         for eg in discr.element_groups:
-            for el, (el_start, el_stop) in zip(eg.members, eg.ranges):
+            for el, el_slice in zip(eg.members, eg.ranges):
                 mapped_i_el = complete_el_map[el.id]
-                mapped_start, mapped_stop = discr.find_el_range(mapped_i_el)
-                for i_pt in range(el_start, el_stop):
+                mapped_slice = discr.find_el_range(mapped_i_el)
+                for i_pt in range(el_slice.start, el_slice.stop):
                     pt = discr.nodes[i_pt]
                     mapped_pt = sym_map(pt)
-                    for m_i_pt in range(mapped_start, mapped_stop):
+                    for m_i_pt in range(mapped_slice.start, mapped_slice.stop):
                         if la.norm(discr.nodes[m_i_pt] - mapped_pt) < threshold:
                             self.map[i_pt] = m_i_pt
                             break
 
                     if i_pt not in self.map:
-                        for m_i_pt in range(mapped_start, mapped_stop):
+                        for m_i_pt in range(mapped_slice.start, mapped_slice.stop):
                             print comp.norm_2(discr.nodes[m_i_pt] - mapped_pt)
                         raise RuntimeError, "no symmetry match found"
 

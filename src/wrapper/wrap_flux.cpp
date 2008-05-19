@@ -323,8 +323,8 @@ void hedge_expose_fluxes()
       .DEF_BYVAL_RW_MEMBER(index_lists)
       .DEF_SIMPLE_RW_MEMBER(element_count)
       .DEF_SIMPLE_RW_MEMBER(face_count)
-      .DEF_SIMPLE_RW_MEMBER(el_number_local_is_global)
-      .DEF_BYVAL_RW_MEMBER(local_el_indices_in_global_vec)
+      .DEF_BYVAL_RW_MEMBER(local_el_to_global_el_base)
+      .DEF_BYVAL_RW_MEMBER(local_el_inverse_jacobians)
       ;
   }
 

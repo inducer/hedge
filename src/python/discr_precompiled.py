@@ -202,20 +202,42 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             target.finalize()
         return result
 
-    def scalar_inner_flux(self, int_coeff, ext_coeff, field, out=None):
+    def scalar_inner_flux(self, int_coeff, ext_coeff, field, lift, out=None):
         if out is None:
             out = self.discr.volume_zeros()
 
         from hedge.tools import make_vector_target
-        self.discr.perform_inner_flux(
-                int_coeff, ext_coeff, 
-                make_vector_target(field, out))
+        target = make_vector_target(field, out)
+
+        from hedge._internal import perform_flux_on_one_target, ChainedFlux, NullTarget
+        if isinstance(target, NullTarget):
+            return out
+
+        ch_int = ChainedFlux(int_coeff)
+        ch_ext = ChainedFlux(ext_coeff)
+
+        target.begin(len(self.discr.nodes), len(self.discr.nodes))
+        for fg in self.discr.face_groups:
+            nf = True
+            if nf:
+                if lift:
+                    fmm = fg.ldis_int.lifting_matrix()
+                else:
+                    fmm = fg.ldis_int.multi_face_mass_matrix()
+            else:
+                fmm = fg.ldis_int.face_mass_matrix()
+            perform_flux_on_one_target(
+                    fg, fmm, ch_int, ch_ext, target, nf)
+        target.finalize()
+
         return out
 
 
-    def scalar_bdry_flux(self, int_coeff, ext_coeff, field, bfield, tag, out=None):
+    def scalar_bdry_flux(self, int_coeff, ext_coeff, field, bfield, tag, lift, out=None):
         if out is None:
             out = self.discr.volume_zeros()
+
+        assert not lift
 
         bdry = self.discr.get_boundary(tag)
         if not bdry.nodes:
@@ -249,6 +271,9 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
     def map_mass_base(self, op, field_expr):
         field = self.rec(field_expr)
 
+        if isinstance(field, (float, int)) and field == 0:
+            return 0
+
         from hedge.tools import log_shape, make_vector_target
         lshape = log_shape(field)
         result = self.discr.volume_zeros(lshape)
@@ -267,7 +292,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
         return result
 
-    def map_flux_coefficient(self, op, field_expr):
+    def map_flux_coefficient(self, op, field_expr, lift=False):
         from hedge.optemplate import BoundaryPair
 
         if isinstance(field_expr, BoundaryPair):
@@ -275,71 +300,19 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             return self.scalar_bdry_flux(
                     op.int_coeff, op.ext_coeff,
                     self.rec(bp.field), self.rec(bp.bfield), 
-                    bp.tag)
+                    bp.tag, lift)
         else:
             field = self.rec(field_expr)
             return self.scalar_inner_flux(
                     op.int_coeff, op.ext_coeff,
-                    field)
+                    field, lift)
 
+    def map_lift_coefficient(self, op, field_expr):
+        return self.map_flux_coefficient(op, field_expr, lift=True)
 
 
 
 class Discretization(hedge.discretization.Discretization):
-    # inner flux computation --------------------------------------------------
-    def perform_inner_flux(self, int_flux, ext_flux, target):
-        """Perform fluxes in the interior of the domain on the 
-        given operator target.  This performs the contribution::
-
-          M_{i,j} := \sum_{interior faces f} \int_f
-            (  
-               int_flux(f) * \phi_j
-               + 
-               ext_flux(f) * \phi_{opp(j)}
-             )
-             \phi_i
-        
-        on the given target. opp(j) denotes the dof with its node
-        opposite from node j on the face opposite f.
-
-        Thus the matrix product M*u, where u is the full volume field
-        results in::
-
-          v_i := M_{i,j} u_j
-            = \sum_{interior faces f} \int_f
-            (  
-               int_flux(f) * u^-
-               + 
-               ext_flux(f) * u^+
-             )
-             \phi_i
-
-        For more on operator targets, see src/cpp/op_target.hpp.
-
-        Both local_flux and neighbor_flux must be instances of
-        hedge.flux.Flux, i.e. compiled fluxes. Typically, you will
-        not call this routine, it will be called for you by flux
-        operators obtained by get_flux_operator().
-        """
-        from hedge._internal import perform_flux_on_one_target, ChainedFlux, NullTarget
-
-        if isinstance(target, NullTarget):
-            return
-
-        ch_int = ChainedFlux(int_flux)
-        ch_ext = ChainedFlux(ext_flux)
-
-        target.begin(len(self.nodes), len(self.nodes))
-        for fg in self.face_groups:
-            nf = True
-            if nf:
-                fmm = fg.ldis_int.multi_face_mass_matrix()
-            else:
-                fmm = fg.ldis_int.face_mass_matrix()
-            perform_flux_on_one_target(
-                    fg, fmm, ch_int, ch_ext, target, nf)
-        target.finalize()
-
     # boundary flux computation -----------------------------------------------
     def _perform_boundary_flux(self, 
             int_flux, int_target, 
@@ -364,13 +337,12 @@ class Discretization(hedge.discretization.Discretization):
     def preprocess_optemplate(self, optemplate):
         from hedge.optemplate import OperatorBinder, InverseMassContractor
         from pymbolic.mapper.constant_folder import CommutativeConstantFoldingMapper
-        from traceback import print_stack
         result = (
-#                InverseMassContractor()(
+                InverseMassContractor()(
                     CommutativeConstantFoldingMapper()(
                         _FluxOpCompileMapper()(
                             OperatorBinder()(
-                                optemplate))))#)
+                                optemplate)))))
         #print result
         return result
 

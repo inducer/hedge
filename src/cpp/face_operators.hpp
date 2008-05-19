@@ -26,6 +26,7 @@
 #include <boost/foreach.hpp>
 #include <boost/numeric/bindings/traits/ublas_matrix.hpp>
 #include <boost/numeric/bindings/blas/blas3.hpp>
+#include <boost/numeric/ublas/vector_proxy.hpp>
 #include <vector>
 #include <utility>
 #include "base.hpp"
@@ -38,6 +39,7 @@
 namespace hedge 
 {
   typedef py_uint_vector index_lists_t;
+  typedef unsigned index_list_number_t;
 
   struct face_pair
   {
@@ -49,7 +51,7 @@ namespace hedge
     struct side : public fluxes::face
     {
       node_number_t el_base_index;
-      unsigned face_index_list_number;
+      index_list_number_t face_index_list_number;
 
       /** An element number local to this face group. */
       unsigned local_el_number;
@@ -62,7 +64,7 @@ namespace hedge
     };
 
     side loc, opp;
-    unsigned opp_native_write_map;
+    index_list_number_t opp_native_write_map;
 
     face_pair()
       : opp_native_write_map(INVALID_INDEX)
@@ -81,20 +83,22 @@ namespace hedge
       /** The number of elements touched by this face group.
        * Used for sizing a temporary.
        */
-      unsigned element_count;
       unsigned face_count;
-      bool el_number_local_is_global;
-      py_uint_vector local_el_indices_in_global_vec;
+      py_uint_vector local_el_to_global_el_base;
+      py_vector local_el_inverse_jacobians;
 
       face_group(bool d_sided)
         : double_sided(d_sided), 
-        element_count(0), 
         face_count(0)
       { }
 
+      unsigned element_count() const
+      { return local_el_to_global_el_base.dims()[0]; }
+
       unsigned face_length() const
       { return index_lists.dims()[1]; }
-      index_lists_t::const_iterator index_list(unsigned number) const
+
+      index_lists_t::const_iterator index_list(index_list_number_t number) const
       { 
         return index_lists.begin() + face_length()*number;
       }
@@ -243,8 +247,8 @@ namespace hedge
     const py_vector::const_iterator op_it = target.m_operand.begin();
     const py_vector::iterator result_it = target.m_result.begin();
 
-    dyn_vector flux_temp(
-        fg.face_count*fg.face_length()*fg.element_count);
+    const unsigned el_length_temp = fg.face_count*fg.face_length();
+    dyn_vector flux_temp(el_length_temp*fg.element_count());
     flux_temp.clear();
 
     BOOST_FOREACH(const face_pair &fp, fg.face_pairs)
@@ -276,11 +280,11 @@ namespace hedge
           fg.index_list(fp.opp_native_write_map);
         const unsigned loc_tempbase = 
           fg.face_length()*(
-              fp.loc.element_id*fg.face_count 
+              fp.loc.local_el_number*fg.face_count 
               + fp.loc.face_id);
         const unsigned opp_tempbase = 
           fg.face_length()*(
-              fp.opp.element_id*fg.face_count 
+              fp.opp.local_el_number*fg.face_count 
               + fp.opp.face_id);
 
         for (unsigned i = 0; i < fg.face_length(); i++)
@@ -338,21 +342,33 @@ namespace hedge
 
       const py_matrix &matrix = mat;
 
+      const unsigned el_length_result = matrix.size1();
+      dyn_vector result_temp(el_length_result*fg.element_count());
       gemm(
           'T', // "matrix" is row-major
           'N', // a contiguous array of vectors is column-major
           matrix.size1(),
-          fg.element_count,
+          fg.element_count(),
           matrix.size2(),
           /*alpha*/ 1,
           /*a*/ traits::matrix_storage(matrix.as_ublas()), 
           /*lda*/ matrix.size2(),
           /*b*/ traits::vector_storage(flux_temp), 
-          /*ldb*/ fg.face_count*fg.face_length(),
-          /*beta*/ 1,
-          /*c*/ traits::vector_storage(target.m_result), 
+          /*ldb*/ el_length_temp,
+          /*beta*/ 0,
+          /*c*/ traits::vector_storage(result_temp), 
           /*ldc*/ matrix.size1()
           );
+
+      py_vector::const_iterator i_jac = fg.local_el_inverse_jacobians.begin();
+      for (unsigned i_loc_el = 0; i_loc_el < fg.element_count(); ++i_loc_el)
+        noalias(
+            subrange(target.m_result,
+              fg.local_el_to_global_el_base[i_loc_el],
+              fg.local_el_to_global_el_base[i_loc_el]+el_length_result))
+          += *i_jac++ * subrange(result_temp,
+            el_length_result*i_loc_el,
+            el_length_result*(i_loc_el+1));
     }
   }
 

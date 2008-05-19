@@ -1070,7 +1070,9 @@ class TestHedge(unittest.TestCase):
 
         from hedge.discretization import ones_on_volume
         ones = ones_on_volume(discr)
-        self.assert_(abs(numpy.dot(res, ones)) < 5e-14)
+        err = abs(numpy.dot(res, ones))
+        print err
+        self.assert_(err < 5e-14)
     # -------------------------------------------------------------------------
     def test_interior_fluxes_tet(self):
         """Check tetrahedron surface integrals computed using interior fluxes
@@ -1421,6 +1423,7 @@ class TestHedge(unittest.TestCase):
                 if order <= 3:
                     mat = matrix_rep(op)
                     sym_err = la.norm(mat-mat.T)
+                    print sym_err
                     self.assert_(sym_err<1e-12)
                     #check_grad_mat()
 

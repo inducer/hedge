@@ -193,7 +193,7 @@ class FluxOperator(Operator):
 
 class _FluxCoefficientOperator(Operator):
     """Results in a volume-global vector with data along the faces,
-    obtained by computing the flux and applying the face mas matrix.
+    obtained by computing the flux and applying the face mass matrix.
     """
     def __init__(self, discr, int_coeff, ext_coeff):
         Operator.__init__(self, discr)
@@ -206,9 +206,10 @@ class _FluxCoefficientOperator(Operator):
 
 
 
-class _PreLiftingFluxCoefficientOperator(Operator):
-    """Results in a dict mapping L{hedge.discretization._ElementGroup}s to
-    a vector containing the dofs for each face, in order, for each element.
+class _LiftingFluxCoefficientOperator(Operator):
+    """Results in a volume-global vector with data along the faces,
+    obtained by computing the flux and applying the face mass matrix
+    and the inverse volume mass matrix.
     """
     def __init__(self, discr, int_coeff, ext_coeff):
         Operator.__init__(self, discr)
@@ -391,9 +392,12 @@ class _InnerInverseMassContractor(pymbolic.mapper.RecursiveMapper):
             return OperatorBinding(
                     MInvSTOperator(self.discr, binding.op.xyz_axis),
                     binding.field)
-        elif isinstance(binding.op, FluxOperator):
+        elif (isinstance(binding.op, _FluxCoefficientOperator) 
+                and not isinstance(binding.field, BoundaryPair)):
             return OperatorBinding(
-                    LiftOperator(self.discr, binding.op.flux),
+                    _LiftingFluxCoefficientOperator(
+                        self.discr, 
+                        binding.op.int_coeff, binding.op.ext_coeff),
                     binding.field)
         else:
             return OperatorBinding(
@@ -405,10 +409,10 @@ class _InnerInverseMassContractor(pymbolic.mapper.RecursiveMapper):
 
     def map_product(self, expr):
         def is_scalar(expr):
-            return isinstance(ch, (int, float, complex))
+            return isinstance(expr, (int, float, complex))
 
-        from pytools import count
-        nonscalar_count = count(ch 
+        from pytools import len_iterable
+        nonscalar_count = len_iterable(ch 
                 for ch in expr.children
                 if not is_scalar(ch))
 
@@ -422,13 +426,16 @@ class _InnerInverseMassContractor(pymbolic.mapper.RecursiveMapper):
                 else:
                     return self.rec(expr)
             return expr.__class__(tuple(
-                do_map(child, *args, **kwargs) for child in expr.children))
+                do_map(child) for child in expr.children))
 
 
 
         
 class InverseMassContractor(pymbolic.mapper.IdentityMapper):
     # assumes all operators to be bound
+
+    def map_boundary_pair(self, bp):
+        return BoundaryPair(self.rec(bp.field), self.rec(bp.bfield), bp.tag)
 
     def map_operator_binding(self, binding):
         # we only care about bindings of inverse mass operators
