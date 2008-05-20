@@ -23,6 +23,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 from pytools import memoize_method
 import hedge.optemplate
+import pycuda.driver as cuda
 
 
 
@@ -32,7 +33,11 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         hedge.optemplate.LocalOpReducerMixin):
     def __init__(self, context, executor):
         hedge.optemplate.Evaluator.__init__(self, context)
-        self.executor = executor
+        self.ex = executor
+
+    def map_diff_base(self, op, field_expr, out=None):
+        ii = self.ex.indexing_info()
+        raise NotImplementedError
 
 
 
@@ -56,6 +61,8 @@ class OpTemplateWithEnvironment(object):
 
     @memoize_method
     def indexing_info(self):
+        discr = self.discr
+
         result = ""
         block_len = discr.plan.indexing_smem()
         block_dofs = discr.int_dof_floats + discr.ext_dof_floats
@@ -65,6 +72,8 @@ class OpTemplateWithEnvironment(object):
         INVALID_U32 = (1<<32) - 1
 
         block_lengths = []
+
+        from hedge.cuda.discretization import GPUBoundaryFaceStorage
 
         for block in discr.blocks:
             ldis = block.local_discretization

@@ -116,20 +116,20 @@ class ExecutionPlan:
 
     @memoize_method
     def get_face_pair_struct(self):
-        from hedge.cuda.cgen import Struct, StructField, ArrayStructField
+        from hedge.cuda.cgen import Struct, POD, ArrayOf
 
-        return Struct([
-            StructField("h", numpy.float32),
-            StructField("order", numpy.float32),
-            StructField("face_jacobian", numpy.float32),
-            ArrayStructField("normal", numpy.float32, self.ldis.dimensions),
-            StructField("a_base", numpy.uint16),
-            StructField("b_base", numpy.uint16),
-            StructField("a_ilist_number", numpy.uint8),
-            StructField("b_ilist_number", numpy.uint8),
-            StructField("bdry_flux_number", numpy.uint8), # 0 if not on boundary
-            StructField("reserved", numpy.uint8),
-            StructField("b_global_base", numpy.uint32),
+        return Struct("face_pair", [
+            POD(numpy.float32, "h", ),
+            POD(numpy.float32, "order"),
+            POD(numpy.float32, "face_jacobian"),
+            ArrayOf(POD(numpy.float32, "normal"), self.ldis.dimensions),
+            POD(numpy.uint16, "a_base"),
+            POD(numpy.uint16, "b_base"),
+            POD(numpy.uint8, "a_ilist_number"),
+            POD(numpy.uint8, "b_ilist_number"),
+            POD(numpy.uint8, "bdry_flux_number"), # 0 if not on boundary
+            POD(numpy.uint8, "reserved"),
+            POD(numpy.uint32, "b_global_base"),
 
             # memory handling here deserves a comment.
             # Interior face (bdry_flux_number==0) dofs are duplicated if they cross
@@ -143,11 +143,11 @@ class ExecutionPlan:
 
     @memoize_method
     def get_block_header_struct(self):
-        from hedge.cuda.cgen import Struct, StructField
+        from hedge.cuda.cgen import Struct, POD
 
-        return Struct([
-            StructField("els_in_block", numpy.int16),
-            StructField("face_pairs_in_block", numpy.int16),
+        return Struct("block_header", [
+            POD(numpy.int16, "els_in_block"),
+            POD(numpy.int16, "face_pairs_in_block"),
             ])
 
     def indexing_smem(self):
