@@ -328,29 +328,29 @@ class Discretization(object):
                 abs(el.inverse_map.jacobian) 
                 for el in eg.members])
 
-            eg.diff_coefficients = [ # over global diff. coordinate
+            eg.diff_coefficients = numpy.array([ # over global diff. coordinate
                     [ # local diff. coordinate
-                        numpy.array([
+                        [
                             el.inverse_map
                             .matrix[loc_coord, glob_coord]
                             for el in eg.members
-                            ])
+                            ]
                         for loc_coord in range(ldis.dimensions)
                         ]
                     for glob_coord in range(ldis.dimensions)
-                    ]
+                    ])
 
-            eg.stiffness_coefficients = [ # over global diff. coordinate
+            eg.stiffness_coefficients = numpy.array([ # over global diff. coordinate
                     [ # local diff. coordinate
-                        numpy.array([
+                        [
                             abs(el.map.jacobian)*el.inverse_map
                             .matrix[loc_coord, glob_coord]
                             for el in eg.members
-                            ])
+                            ]
                         for loc_coord in range(ldis.dimensions)
                         ]
                     for glob_coord in range(ldis.dimensions)
-                    ]
+                    ])
 
     def _set_flux_face_data(self, f, ldis, (el, fi)):
         f.face_jacobian = el.face_jacobians[fi]
