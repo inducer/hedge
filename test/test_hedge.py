@@ -665,8 +665,7 @@ class TestHedge(unittest.TestCase):
                 discr.get_flux_operator(one_sided_y)
                 *pair_with_boundary(Field("f2"), Field("fz")))
         boundary_int = dot(
-                discr.execute(flux_optp, 
-                    f1=f1_v, f2=f2_v, fz=discr.boundary_zeros()), 
+                discr.compile(flux_optp)(f1=f1_v, f2=f2_v, fz=discr.boundary_zeros()), 
                 ones)
 
         #print abs(boundary_int-int_div)
@@ -1063,10 +1062,9 @@ class TestHedge(unittest.TestCase):
         from hedge.flux import make_normal, FluxScalarPlaceholder
         from hedge.optemplate import Field
         fluxu = FluxScalarPlaceholder()
-        res = discr.execute(discr.get_flux_operator(
+        res = discr.compile(discr.get_flux_operator(
                 (fluxu.int - fluxu.ext)
-                *make_normal(discr.dimensions)[1]) * Field("u"),
-                u=u)
+                *make_normal(discr.dimensions)[1]) * Field("u"))(u=u)
 
         from hedge.discretization import ones_on_volume
         ones = ones_on_volume(discr)
@@ -1165,10 +1163,9 @@ class TestHedge(unittest.TestCase):
         from hedge.flux import make_normal, FluxScalarPlaceholder
         from hedge.optemplate import Field
         fluxu = FluxScalarPlaceholder()
-        res = discr.execute(discr.get_flux_operator(
+        res = discr.compile(discr.get_flux_operator(
                 (fluxu.int - fluxu.ext)
-                *make_normal(discr.dimensions)[1]) * Field("u"),
-                u=u)
+                *make_normal(discr.dimensions)[1]) * Field("u"))(u=u)
 
         from hedge.discretization import ones_on_volume
         ones = ones_on_volume(discr)

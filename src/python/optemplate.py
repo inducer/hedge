@@ -55,7 +55,7 @@ class Operator(pymbolic.primitives.Leaf):
         raise RuntimeError, "symbolic operators are not callable"
 
     def apply(self, field):
-        return self.discr.execute(self * Field("f"), f=field)
+        return self.discr.compile(self * Field("f"))(f=field)
 
 
 

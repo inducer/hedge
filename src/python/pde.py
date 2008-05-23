@@ -73,8 +73,7 @@ class GradientOperator(Operator):
     @memoize_method
     def op_template(self):
         from hedge.mesh import TAG_ALL
-        from hedge.optemplate import Field, pair_with_boundary, \
-                OpTemplate
+        from hedge.optemplate import Field, pair_with_boundary
 
         u = Field("u")
         bc = Field("bc")
@@ -82,14 +81,14 @@ class GradientOperator(Operator):
         nabla = discr.nabla
         m_inv = discr.inverse_mass_operator
 
-        return OpTemplate(nabla*u - m_inv*(
+        return self.discr.compile(nabla*u - m_inv*(
                 self.flux * u + 
                 self.flux * pair_with_boundary(u, bc, TAG_ALL)))
 
     def __call__(self, u):
         from hedge.mesh import TAG_ALL
 
-        return self.discr.execute(self.op_template(), u=u, 
+        return self.op_template()(u=u, 
                 bc=self.discr.boundarize_volume_field(u, TAG_ALL))
 
 
@@ -120,11 +119,8 @@ class DivergenceOperator(Operator):
     @memoize_method
     def op_template(self):
         from hedge.mesh import TAG_ALL
-        from hedge.optemplate import \
-                make_vector_field, pair_with_boundary, \
-                OpTemplate
-
-
+        from hedge.optemplate import make_vector_field, pair_with_boundary
+                
         nabla = self.discr.nabla
         m_inv = self.discr.inverse_mass_operator
 
@@ -139,12 +135,12 @@ class DivergenceOperator(Operator):
         opt = local_op_result - m_inv*(
                 self.flux * v + 
                 self.flux * pair_with_boundary(v, bc, TAG_ALL))
-        return OpTemplate(opt)
+        return self.discr.compile(opt)
         
     def __call__(self, v):
         from hedge.mesh import TAG_ALL
 
-        return self.discr.execute(self.op_template(), v=v, 
+        return self.op_template()(v=v, 
                 bc=self.discr.boundarize_volume_field(v, TAG_ALL))
 
 
@@ -477,8 +473,7 @@ class MaxwellOperator(TimeDependentOperator):
 
     @memoize_method
     def op_template(self):
-        from hedge.optemplate import make_vector_field, \
-                pair_with_boundary, OpTemplate
+        from hedge.optemplate import make_vector_field, pair_with_boundary
 
         fld_cnt = self.count_subset(self.get_eh_subset())
         w = make_vector_field("w", fld_cnt)
@@ -487,7 +482,7 @@ class MaxwellOperator(TimeDependentOperator):
 
         m_inv = self.discr.inverse_mass_operator
 
-        return OpTemplate(- self.local_op(e, h) \
+        return self.discr.compile(- self.local_op(e, h) \
                 + m_inv*(
                     self.flux_op * w
                     +self.flux_op * pair_with_boundary(w, pec_bc, self.pec_tag)
@@ -514,8 +509,7 @@ class MaxwellOperator(TimeDependentOperator):
         else:
             rhs = self.assemble_fields()
         from hedge.tools import to_obj_array
-        return self.discr.execute(
-                self.op_template(), w=w, pec_bc=pec_bc)+rhs
+        return self.op_template()(w=w, pec_bc=pec_bc)+rhs
 
     def assemble_fields(self, e=None, h=None):
         e_components = self.count_subset(self.get_eh_subset()[0:3])
@@ -722,15 +716,14 @@ class WeakPoissonOperator(Operator, hedge.tools.OperatorBase):
     # operator application, rhs prep ------------------------------------------
     @memoize_method
     def grad_op_template(self):
-        from hedge.optemplate import Field, \
-                pair_with_boundary, OpTemplate
+        from hedge.optemplate import Field, pair_with_boundary
 
         stiff_t = self.discr.stiffness_t_operator
         m_inv = self.discr.inverse_mass_operator
 
         u = Field("u")
 
-        return OpTemplate(m_inv * (
+        return self.discr.compile(m_inv * (
                 - (stiff_t * u)
                 + self.flux_u*u
                 + self.flux_u_dbdry*pair_with_boundary(u, 0, self.dirichlet_tag)
@@ -738,14 +731,11 @@ class WeakPoissonOperator(Operator, hedge.tools.OperatorBase):
                 ))
 
     def grad(self, u):
-        return self.discr.execute(
-                self.grad_op_template(),
-                u=u)
+        return self.grad_op_template()(u=u)
 
     @memoize_method
     def div_op_template(self, apply_minv):
-        from hedge.optemplate import make_vector_field, \
-                pair_with_boundary, OpTemplate
+        from hedge.optemplate import make_vector_field, pair_with_boundary
 
         d = self.discr.dimensions
         w = make_vector_field("w", 1+d)
@@ -764,9 +754,9 @@ class WeakPoissonOperator(Operator, hedge.tools.OperatorBase):
                 )
 
         if apply_minv:
-            return OpTemplate(self.m_inv * result)
+            return self.discr.compile(self.m_inv * result)
         else:
-            return OpTemplate(result)
+            return self.discr.compile(result)
 
     def div(self, v, u=None, apply_minv=True):
         """Compute the divergence of v using an LDG operator.
@@ -792,7 +782,7 @@ class WeakPoissonOperator(Operator, hedge.tools.OperatorBase):
         dir_bc_w = join_fields(0, [0]*dim)
         neu_bc_w = join_fields(0, [0]*dim)
 
-        return self.discr.execute(self.div_op_template(apply_minv),
+        return self.div_op_template(apply_minv)(
                 w=w, dir_bc_w=dir_bc_w, neu_bc_w=neu_bc_w)
 
     def op(self, u):
@@ -803,10 +793,9 @@ class WeakPoissonOperator(Operator, hedge.tools.OperatorBase):
 
     @memoize_method
     def grad_bc_op_template(self):
-        from hedge.optemplate import Field, \
-                pair_with_boundary, OpTemplate
+        from hedge.optemplate import Field, pair_with_boundary
 
-        return OpTemplate(
+        return self.discr.compile(
                 self.discr.inverse_mass_operator * 
                 (self.flux_u_dbdry*pair_with_boundary(0, Field("dir_bc_u"), 
                     self.dirichlet_tag))
@@ -845,8 +834,7 @@ class WeakPoissonOperator(Operator, hedge.tools.OperatorBase):
         ntag = self.neumann_tag
 
         dir_bc_u = self.dirichlet_bc.boundary_interpolant(self.discr, dtag)
-        vpart = self.discr.execute(self.grad_bc_op_template(),
-                dir_bc_u=dir_bc_u)
+        vpart = self.grad_bc_op_template()(dir_bc_u=dir_bc_u)
 
         from hedge.tools import ptwise_dot
         diff_v = ptwise_dot(self.diffusion, vpart)
@@ -862,7 +850,7 @@ class WeakPoissonOperator(Operator, hedge.tools.OperatorBase):
         neu_bc_w = join_fields(0, neu_bc_v())
 
         return (self.discr.mass_operator.apply(rhs.volume_interpolant(self.discr))
-                - self.discr.execute(self.div_op_template(False), 
+                - self.div_op_template(False)(
                     w=w, dir_bc_w=dir_bc_w, neu_bc_w=neu_bc_w))
 
     def grad_matrix(self):
@@ -1053,8 +1041,7 @@ class StrongHeatOperator(TimeDependentOperator):
     # right-hand side ---------------------------------------------------------
     @memoize_method
     def grad_op_template(self):
-        from hedge.optemplate import Field, \
-                pair_with_boundary, OpTemplate
+        from hedge.optemplate import Field, pair_with_boundary
 
         stiff = self.discr.stiffness_operator
         m_inv = self.discr.inverse_mass_operator
@@ -1064,7 +1051,7 @@ class StrongHeatOperator(TimeDependentOperator):
         dir_bc_u = Field("dir_bc_u")
         neu_bc_u = Field("neu_bc_u")
 
-        return OpTemplate(self.m_inv * (
+        return self.discr.compile(self.m_inv * (
                 self.stiff * u
                 - self.flux_u*sqrt_coeff_u
                 - self.flux_u_dbdry*pair_with_boundary(sqrt_coeff_u, dir_bc_u, self.dirichlet_tag)
@@ -1073,8 +1060,7 @@ class StrongHeatOperator(TimeDependentOperator):
 
     @memoize_method
     def div_op_template(self):
-        from hedge.optemplate import make_vector_field, \
-                pair_with_boundary, OpTemplate
+        from hedge.optemplate import make_vector_field, pair_with_boundary
 
         d = self.discr.dimensions
         w = make_vector_field("w", 1+d)
@@ -1083,7 +1069,7 @@ class StrongHeatOperator(TimeDependentOperator):
         dir_bc_w = make_vector_field("dir_bc_w", 1+d)
         neu_bc_w = make_vector_field("neu_bc_w", 1+d)
 
-        return OpTemplate(self.m_inv * (
+        return self.discr.compile(self.m_inv * (
                 numpy.dot(self.stiff, v)
                 - self.flux_v * w
                 - self.flux_v_dbdry * pair_with_boundary(w, dir_bc_w, self.dirichlet_tag)
@@ -1102,7 +1088,7 @@ class StrongHeatOperator(TimeDependentOperator):
         dir_bc_u = self.dirichlet_bc_u(t, sqrt_coeff_u)
         neu_bc_u = self.neumann_bc_u(t, sqrt_coeff_u)
 
-        v = self.discr.execute(self.grad_op_template(),
+        v = self.grad_op_template()(
                 u=u, sqrt_coeff_u=sqrt_coeff_u,
                 dir_bc_u=dir_bc_u, neu_bc_u=neu_bc_u)
 
@@ -1116,5 +1102,5 @@ class StrongHeatOperator(TimeDependentOperator):
         dir_bc_w = join_fields(dir_bc_u, dir_bc_v)
         neu_bc_w = join_fields(neu_bc_u, neu_bc_v)
 
-        return self.discr.execute(self.div_op_template(),
+        return self.div_op_template()(
                 w=w, dir_bc_w=dir_bc_w, neu_bc_w=neu_bc_w)

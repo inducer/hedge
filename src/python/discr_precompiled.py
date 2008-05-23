@@ -335,7 +335,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 class CompiledOpTemplate:
     def __init__(self, discr, pp_optemplate):
         self.discr = discr
-        self.pp_optemplate
+        self.pp_optemplate = pp_optemplate
 
     def __call__(self, **vars):
         return ExecutionMapper(vars, self.discr)(self.pp_optemplate)
@@ -354,6 +354,6 @@ class Discretization(hedge.discretization.Discretization):
                         _FluxOpCompileMapper()(
                             OperatorBinder()(
                                 optemplate)))))
-        #print result
-        return result
+
+        return CompiledOpTemplate(self, result)
 
