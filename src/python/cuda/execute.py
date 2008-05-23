@@ -21,6 +21,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 
+import numpy
 from pytools import memoize_method
 import hedge.optemplate
 import pycuda.driver as cuda
@@ -36,8 +37,33 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         self.ex = executor
 
     def map_diff_base(self, op, field_expr, out=None):
-        ii = self.ex.indexing_info()
-        raise NotImplementedError
+        import sys
+        sys.exit(1)
+
+        field = self.rec(field_expr)
+
+        ii = self.ex.localop_indexing_info()
+        func, texrefs = self.ex.get_diff_kernel()
+
+        discr = self.ex.discr
+        d = discr.dimensions
+
+        lop_par = discr.plan.find_localop_par()
+        #rst_diff = [discr.volume_zeros() for axis in range(d)]
+        #xyz_diff = [discr.volume_zeros() for axis in range(d)]
+        #args = rst_diff+xyz_diff+[field, ii.headers, ii.facedups]
+
+        kwargs = {
+                "shared": discr.plan.shared_mem_use(),
+                "texrefs": texrefs, 
+                "block_shape": (discr.plan.dofs_per_el(), lop_par.p, 1),
+                "grid": (len(discr.blocks), 1)
+                }
+
+        #func(*args, **kwargs)
+
+        print "TSCHUES"
+        sys.exit(1)
 
 
 
@@ -52,26 +78,224 @@ class OpTemplateWithEnvironment(object):
         from hedge.cuda.optemplate import BoundaryCombiner
 
         self.optemplate = (
-                BoundaryCombiner(self.discr)(
+                BoundaryCombiner(discr)(
                     InverseMassContractor()(
                         CommutativeConstantFoldingMapper()(
                             FluxDecomposer()(
                                 OperatorBinder()(
                                     optemplate))))))
 
-    @memoize_method
-    def indexing_info(self):
+    def execute(self, vars):
+        return ExecutionMapper(vars, self)(self.optemplate)
+
+    # code generation ---------------------------------------------------------
+    #@memoize_method
+    def get_diff_kernel(self):
+        from hedge.cuda.cgen import \
+                Pointer, POD, Value, ArrayOf, Const, \
+                Module, FunctionDeclaration, FunctionBody, Block, \
+                Comment, Line, \
+                CudaShared, CudaGlobal, Static, \
+                Define, \
+                Constant, Initializer, If, For, Statement
+                
+        discr = self.discr
+        d = discr.dimensions
+        dims = range(d)
+
+        lop_par = discr.plan.find_localop_par()
+        ind_info = self.localop_indexing_info()
+        ilist_data = self.index_list_data()
+
+        texref_names = ["diff_rst%d_matrix" % i for i in dims]
+
+        f_decl = CudaGlobal(FunctionDeclaration(Value("void", "apply_diff_mat"), 
+            [Pointer(POD(numpy.float32, "drst%d" % i)) for i in dims]
+            + [Pointer(POD(numpy.float32, "dxyz%d" % i)) for i in dims]
+            +
+            [
+                Pointer(POD(numpy.float32, "field")),
+                Pointer(Value("localop_block_header", "block_headers")),
+                Pointer(POD(numpy.uint32, "gmem_ind_info")),
+                ]
+            ))
+
+        cmod = Module(
+            [Value("texture<float, 2, cudaReadModeElementType>", name)
+                for name in texref_names]
+            +[
+                self.localop_block_header_struct(),
+                self.localop_facedup_struct(),
+                Define("DOFS_PER_EL", discr.plan.dofs_per_el()),
+                Define("DOFS_BLOCK_BASE", "(blockIdx.x*BLOCK_DOFS)"),
+                Define("BLOCK_DOFS", discr.int_dof_floats + discr.ext_dof_floats),
+                Define("ILIST_LENGTH", ilist_data.single_ilist_length),
+                Define("LOP_IND_INFO_BLOCK_SIZE", ind_info.block_size),
+                Line(),
+                ilist_data.initializer,
+                Line(),
+                CudaShared(Value("localop_block_header", "block_header")),
+                CudaShared(ArrayOf(Value("localop_facedup", "facedups"), 
+                    ind_info.max_facedups_in_block)),
+                CudaShared(ArrayOf(POD(numpy.float32, "int_dofs"), 
+                    discr.int_dof_floats)),
+                Line(),
+                ])
+
+        S = Statement
+        f_body = Block()
+        f_body.extend_log_block("Variable initializations", [
+            Constant(POD(numpy.uint16, "dofs_per_el"), "blockDim.x"),
+            Constant(POD(numpy.uint16, "concurrent_els"), "blockDim.y"),
+            Constant(POD(numpy.uint16, "el_dof"), "threadIdx.x"),
+            Constant(POD(numpy.uint16, "block_el"), "threadIdx.y"),
+            Constant(POD(numpy.uint16, "thread_count"), "dofs_per_el*concurrent_els"),
+            Constant(POD(numpy.uint16, "thread_num"), "block_el*dofs_per_el + el_dof"),
+            ])
+            
+        f_body.extend_log_block("load block header in thread 0", [
+            If("thread_num == 0",
+                S("block_header = block_headers[blockIdx.x]")),
+            S("__syncthreads()"),
+            ])
+
+        f_body.extend_log_block("load internal dofs", [
+            For("unsigned dof_nr = thread_num", 
+                "dof_nr < block_header.els_in_block*DOFS_PER_EL", 
+                "dof_nr += thread_count",
+                S("int_dofs[dof_nr] = field[DOFS_BLOCK_BASE+dof_nr]"),
+                ),
+            S("__syncthreads()"),
+            ])
+
+        from hedge.cuda.cgen import dtype_to_ctype
+        copy_dtype = numpy.dtype(numpy.int32)
+        copy_dtype_str = dtype_to_ctype(copy_dtype)
+        f_body.extend_log_block("load indexing info", [
+            Constant(Pointer(POD(copy_dtype, "facedups_block_base")), 
+                ("(%s *)" % copy_dtype_str)+
+                "(gmem_ind_info + blockIdx.x*LOP_IND_INFO_BLOCK_SIZE)"),
+            For("unsigned facedup_word_nr = thread_num", 
+                "facedup_word_nr*sizeof(int) < "
+                "sizeof(localop_facedup)*block_header.facedups_in_block", 
+                "facedup_word_nr += thread_count",
+                S("((%s *) facedups)[facedup_word_nr] = facedups_block_base[facedup_word_nr]"
+                    % copy_dtype_str)
+                ),
+            S("__syncthreads()"),
+            ])
+        # ---------------------------------------------------------------------
+        for axis in dims:
+            f_body.extend([
+                    Comment("perform local diff along axis %d" % axis),
+                    For("unsigned el_nr = block_el",
+                        "el_nr < block_header.els_in_block",
+                        "el_nr += concurrent_els", Block([
+                            Initializer(POD(numpy.float32, "accum"), 0),
+                            For("unsigned j = 0", "j < DOFS_PER_EL", "++j",
+                                S("accum += tex2D(diff_rst%d_matrix, el_dof, j)"
+                                    "* int_dofs[el_nr*DOFS_PER_EL+el_dof]" % axis)
+                                ),
+                            S("drst%d[DOFS_BLOCK_BASE+el_nr*DOFS_PER_EL+el_dof]"
+                                "= accum" % axis),
+                            ])
+                        ),
+
+                    Line(),
+                    ])
+            
+        cmod.append(FunctionBody(f_decl, f_body))
+
+        mod = cuda.SourceModule(cmod, keep=True)
+        texrefs = [mod.get_texref(name) for name in texref_names]
+        for texref, dmat in zip(texrefs, discr.plan.ldis.differentiation_matrices()):
+            cuda.matrix_to_texref(dmat, texref)
+
+        return mod.get_function("apply_diff_mat"), texrefs
+
+    # gpu data blocks ---------------------------------------------------------
+    #@memoize_method
+    def get_diffmat_array(self, diff_op_cls, elgroup, axis):
+        return cuda.matrix_to_array(diff_op_cls.matrices(elgroup)[axis])
+
+    #@memoize_method
+    def localop_block_header_struct(self):
+        from hedge.cuda.cgen import Struct, POD
+
+        return Struct("localop_block_header", [
+            POD(numpy.uint16, "els_in_block"),
+            POD(numpy.uint16, "facedups_in_block"),
+            ])
+
+    #@memoize_method
+    def localop_facedup_struct(self):
+        from hedge.cuda.cgen import Struct, POD
+
+        return Struct("localop_facedup", [
+            POD(numpy.uint16, "smem_face_base"),
+            POD(numpy.uint8, "smem_face_ilist_number"),
+            POD(numpy.uint8, "reserved"),
+            POD(numpy.uint32, "dup_global_base"),
+            ])
+
+    #@memoize_method
+    def localop_rst_to_xyz(self):
+        pass
+
+    #@memoize_method
+    def localop_indexing_info(self):
+        discr = self.discr
+        headers = []
+        blocks = []
+        facedup_counts = []
+
+        from hedge.cuda.discretization import GPUInteriorFaceStorage
+        for block in discr.blocks:
+            ldis = block.local_discretization
+            el_dofs = ldis.node_count()
+            face_dofs = ldis.node_count()
+            facedup_count = 0 
+
+            block_data = ""
+            for extface in block.ext_faces_from_me:
+                if not isinstance(extface, GPUInteriorFaceStorage):
+                    continue
+                facedup_count += 1
+                block_data += self.localop_facedup_struct().make(
+                        smem_face_base=el_dofs*extface.native_block_el_num,
+                        smem_face_ilist_number=extface.native_index_list_id,
+                        reserved=0,
+                        dup_global_base=extface.dup_global_base)
+
+            headers.append(self.localop_block_header_struct().make(
+                        els_in_block=len(block.elements),
+                        facedups_in_block=facedup_count))
+            blocks.append(block_data)
+            facedup_counts.append(facedup_count)
+
+        block_size = discr.devdata.align(max(len(b) for b in blocks))
+        from hedge.cuda.tools import pad_and_join
+        from pytools import Record
+        return Record(
+                block_size=block_size, 
+                max_facedups_in_block=max(facedup_counts),
+                headers=cuda.to_device("".join(headers)),
+                facedups=cuda.to_device(pad_and_join(blocks, block_size)),
+                )
+
+
+    #@memoize_method
+    def flux_indexing_info(self):
         discr = self.discr
 
-        result = ""
         block_len = discr.plan.indexing_smem()
-        block_dofs = discr.int_dof_floats + discr.ext_dof_floats
 
         INVALID_U8 = (1<<8) - 1
         INVALID_U16 = (1<<16) - 1
         INVALID_U32 = (1<<32) - 1
 
-        block_lengths = []
+        headers = []
+        blocks = []
 
         from hedge.cuda.discretization import GPUBoundaryFaceStorage
 
@@ -84,7 +308,6 @@ class OpTemplateWithEnvironment(object):
                     for face_nbr in range(ldis.face_count()))
             fp_blocks = []
 
-            bf = isame = idiff = 0
             while faces_todo:
                 elface = faces_todo.pop()
 
@@ -97,7 +320,6 @@ class OpTemplateWithEnvironment(object):
                     bdry_flux_number = 1
                     b_global_base = opp.gpu_bdry_index_in_floats
                     b_ilist_number = INVALID_U8
-                    bf += 1
                 else:
                     # interior face
                     b_base = opp.native_block_el_num*el_dofs
@@ -107,14 +329,10 @@ class OpTemplateWithEnvironment(object):
                         faces_todo.remove(opp.el_face)
                         b_global_base = INVALID_U32
                         b_ilist_number = opp.native_index_list_id
-                        isame += 1
                     else:
                         # different block
-                        b_global_base = (
-                                opp.native_block_el_num*el_dofs
-                                + block_dofs*opp.native_block.number)
+                        b_global_base = opp.dup_global_base
                         b_ilist_number = INVALID_U8
-                        idiff += 1
 
                 fp_blocks.append(
                         discr.plan.get_face_pair_struct().make(
@@ -131,24 +349,45 @@ class OpTemplateWithEnvironment(object):
                             b_global_base=b_global_base,
                             ))
 
-            bheader = discr.plan.get_block_header_struct().make(
+            headers.append(discr.plan.get_block_header_struct().make(
                     els_in_block=len(block.elements),
                     face_pairs_in_block=len(fp_blocks)
-                    )
-            block_data = bheader + "".join(fp_blocks)
-
-            # take care of alignment
-            missing_bytes = block_len - len(block_data)
-            assert missing_bytes >= 0
-            block_data = block_data + "\x00"*missing_bytes
-            block_lengths.append(len(block_data))
-
-            result += block_data
+                    ))
+            blocks.append("".join(fp_blocks))
 
         # make sure the indexing_smem estimate is achieved
-        assert max(block_lengths) == discr.plan.indexing_smem()
-        assert len(result) == block_len*len(discr.blocks)
-        return cuda.to_device(result)
+        assert max(len(b) for b in blocks) == block_len
 
-    def execute(self, vars):
-        return ExecutionMapper(vars, self)(self.optemplate)
+        from hedge.cuda.tools import pad_and_join
+        facepair_blocks = pad_and_join(blocks)
+        assert len(facepair_blocks) == block_len*len(discr.blocks)
+
+        from pytools import Record
+        return Record(
+            headers="".join(headers),
+            facepair_blocks=cuda.to_device(facepair_blocks))
+
+    #@memoize_method
+    def index_list_data(self):
+        discr = self.discr
+
+        from pytools import single_valued
+        ilist_length = single_valued(len(il) for il in discr.index_lists)
+
+        if ilist_length > 256:
+            tp = numpy.uint16
+        else:
+            tp = numpy.uint8
+
+        from hedge.cuda.cgen import ArrayInitializer, ArrayOf, POD, CudaConstant
+
+        from pytools import flatten, Record
+        flat_ilists = list(flatten(discr.index_lists))
+        return Record(
+                single_ilist_length=ilist_length,
+                initializer=ArrayInitializer(
+                    CudaConstant(
+                        ArrayOf(POD(tp, "index_lists"))),
+                    flat_ilists
+                    )
+                )

@@ -105,9 +105,12 @@ class ExecutionPlan:
         else:
             return self.max_ext_faces
 
+    def int_dofs(self):
+        return self.devdata.align_dtype(self.block_el() * self.dofs_per_el(),
+                self.float_size)
+
     def int_dof_smem(self):
-        return self.devdata.align(self.block_el() * self.dofs_per_el() 
-                * self.float_size)
+        return self.int_dofs() * self.float_size
 
     @memoize_method
     def ext_dof_smem(self):
@@ -152,8 +155,7 @@ class ExecutionPlan:
 
     def indexing_smem(self):
         return self.devdata.align(
-                len(self.get_block_header_struct())
-                +len(self.get_face_pair_struct())*self.face_pair_count())
+                len(self.get_face_pair_struct())*self.face_pair_count())
 
     @memoize_method
     def face_count(self):
@@ -168,7 +170,7 @@ class ExecutionPlan:
 
     @memoize_method
     def shared_mem_use(self):
-        return (64 # for parameters
+        return (128 # parameters, block header, small extra stuff
                 + self.int_dof_smem() 
                 + self.ext_dof_smem() 
                 + self.indexing_smem())

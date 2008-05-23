@@ -30,6 +30,7 @@ from pytools import memoize_method
 
 
 def dtype_to_ctype(dtype):
+    dtype = numpy.dtype(dtype)
     if dtype == numpy.int32:
         return "int"
     elif dtype == numpy.uint32:
@@ -151,6 +152,10 @@ class Typedef(DeclSpecifier):
     def __init__(self, subdecl):
         DeclSpecifier.__init__(self, subdecl, "typedef")
 
+class Static(DeclSpecifier):
+    def __init__(self, subdecl):
+        DeclSpecifier.__init__(self, subdecl, "static")
+
 class CudaGlobal(DeclSpecifier):
     def __init__(self, subdecl):
         DeclSpecifier.__init__(self, subdecl, "__global__")
@@ -163,17 +168,31 @@ class CudaShared(DeclSpecifier):
     def __init__(self, subdecl):
         DeclSpecifier.__init__(self, subdecl, "__shared__")
 
+class CudaConstant(DeclSpecifier):
+    def __init__(self, subdecl):
+        DeclSpecifier.__init__(self, subdecl, "__constant__")
 
 
 
 class Const(NestedDeclarator):
     def get_decl_pair(self):
         sub_tp, sub_decl = self.subdecl.get_decl_pair()
-        if self.count is None:
-            count_str = ""
-        else:
-            count_str = str(self.count)
         return sub_tp, ("const %s" % sub_decl)
+
+class Pointer(NestedDeclarator):
+    def __init__(self, subdecl, count=None):
+        NestedDeclarator.__init__(self, subdecl)
+        self.count = count
+
+    def get_decl_pair(self):
+        sub_tp, sub_decl = self.subdecl.get_decl_pair()
+        return sub_tp, ("*%s" % sub_decl)
+
+    def struct_args(self, data):
+        return data
+
+    def struct_format(self):
+        return "P"
 
 class ArrayOf(NestedDeclarator):
     def __init__(self, subdecl, count=None):
@@ -222,10 +241,11 @@ class FunctionDeclaration(NestedDeclarator):
 
 
 class Struct(Declarator):
-    def __init__(self, tpname, fields, declname=None):
+    def __init__(self, tpname, fields, declname=None, debug=False):
         self.tpname = tpname
         self.fields = fields
         self.declname = declname
+        self.debug = debug
 
     def get_decl_pair(self):
         def get_tp():
@@ -245,7 +265,7 @@ class Struct(Declarator):
         data = []
         for f in self.fields:
             data.extend(f.struct_args(kwargs[f.name]))
-        if False:
+        if self.debug:
             print self
             print data
             print self.struct_format()
@@ -342,6 +362,14 @@ class DoWhile(Generable):
 
 
 # simple statements -----------------------------------------------------------
+class Define(Generable):
+    def __init__(self, symbol, value):
+        self.symbol = symbol
+        self.value = value
+
+    def generate(self):
+        yield "#define %s %s" % (self.symbol, self.value)
+
 class Statement(Generable):
     def __init__(self, text):
         self.text = text
@@ -349,26 +377,12 @@ class Statement(Generable):
     def generate(self):
         yield self.text+";"
 
-class Assign(Generable):
-    def __init__(self, target, expr, op="="):
-        self.target = target
-        self.expr = expr
-        self.op = op
+class Line(Generable):
+    def __init__(self, text=""):
+        self.text = text
 
     def generate(self):
-        yield "%s %s %s;" % (self.target, self.op, self.expr)
-
-class BlankLine(Generable):
-    def generate(self):
-        yield ""
-
-class Continue(Generable):
-    def generate(self):
-        yield "continue;"
-
-class Break(Generable):
-    def generate(self):
-        yield "break;"
+        yield self.text
 
 class Comment(Generable):
     def __init__(self, text):
@@ -377,32 +391,34 @@ class Comment(Generable):
     def generate(self):
         yield "/* %s */" % self.text
 
-class Return(Generable):
-    def __init__(self, expr=None):
-        self.expr = expr
+
+
+# initializers ----------------------------------------------------------------
+class Initializer(Generable):
+    def __init__(self, vdecl, data):
+        self.vdecl = vdecl
+        self.data = data
 
     def generate(self):
-        if self.expr is None:
-            yield "return;"
-        else:
-            yield "return %s;" % self.expr
+        tp_lines, tp_decl = self.vdecl.get_decl_pair()
+        tp_lines = list(tp_lines)
+        for line in tp_lines[:-1]:
+            yield line
+        yield "%s %s = %s;" % (tp_lines[-1], tp_decl, self.data)
 
+def Constant(vdecl, data):
+    return Initializer(Const(vdecl), data)
 
-
-
-
-# block -----------------------------------------------------------------------
-class Block(Generable):
-    def __init__(self, contents):
-        self.contents = contents
+class ArrayInitializer(Generable):
+    def __init__(self, vdecl, data):
+        self.vdecl = vdecl
+        self.data = data
 
     def generate(self):
-        yield "{"
-        for item in self.contents:
-            for item_line in item.generate():
-                yield "  " + item_line
-        yield "}"
-        
+        for v_line in self.vdecl.generate(with_semicolon=False):
+            yield v_line
+        yield "  = { %s };" % (", ".join(repr(item) for item in self.data))
+
 class FunctionBody(Generable):
     def __init__(self, fdecl, body):
         self.fdecl = fdecl
@@ -417,14 +433,36 @@ class FunctionBody(Generable):
 
 
 
-class Module(Generable):
-    def __init__(self, contents):
-        self.contents = contents
 
+# block -----------------------------------------------------------------------
+class Block(Generable):
+    def __init__(self, contents=[]):
+        self.contents = contents[:]
+
+    def generate(self):
+        yield "{"
+        for item in self.contents:
+            for item_line in item.generate():
+                yield "  " + item_line
+        yield "}"
+
+    def append(self, data):
+        self.contents.append(data)
+
+    def extend(self, data):
+        self.contents.extend(data)
+        
+    def extend_log_block(self, descr, data):
+        self.contents.append(Comment(descr))
+        self.contents.extend(data)
+        self.contents.append(Line())
+        
+class Module(Block):
     def generate(self):
         for c in self.contents:
             for line in c.generate():
                 yield line
+
 
 
 

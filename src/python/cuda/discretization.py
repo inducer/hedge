@@ -41,27 +41,34 @@ class GPUBlock(object):
       storage locations for the block's elements.
     @ivar elements: A list of L{hedge.mesh.Element} instances representing the
       elements in this block.
-    @ivar ext_faces: A list of C{GPUFaceStorage} instances.
+    @ivar ext_faces_from_me: A list of L{GPUInteriorFaceStorage} instances representing
+      faces native to this block that are duplicated in other blocks.
+    @ivar ext_faces_to_me: A list of L{GPUFaceStorage} instances representing faces
+      native to other blocks that are duplicated in this block.
     """
     __slots__ = ["number", "local_discretization", "cpu_slices", "elements", 
-            "ext_faces"]
+            "ext_faces_from_me", "ext_faces_to_me"]
 
     def __init__(self, number, local_discretization, cpu_slices, elements):
         self.number = number
         self.local_discretization = local_discretization
         self.cpu_slices = cpu_slices
         self.elements = elements
-        self.ext_faces = []
+        self.ext_faces_from_me = []
+        self.ext_faces_to_me = []
 
     def get_el_index(self, sought_el):
         from pytools import one
         return one(i for i, el in enumerate(self.elements)
                 if el == sought_el)
 
-    def register_ext_face(self, face):
-        result = len(self.ext_faces)
-        self.ext_faces.append(face)
+    def register_ext_face_to_me(self, face):
+        result = len(self.ext_faces_to_me)
+        self.ext_faces_to_me.append(face)
         return result
+
+    def register_ext_face_from_me(self, face):
+        self.ext_faces_from_me.append(face)
 
 
 
@@ -72,9 +79,16 @@ class GPUFaceStorage(object):
     @ivar opposite: the L{GPUFacestorage} instance for the face
       oposite to this one.
     """
+    __slots__ = ["opposite"]
 
     def __init__(self):
         self.opposite = None
+
+    def set_opposite(self, opp):
+        if self.opposite is None:
+            self.opposite = opp
+        else:
+            assert self.opposite is opp
 
 class GPUInteriorFaceStorage(GPUFaceStorage):
     """Describes storage locations for a face local to an element in a block.
@@ -84,15 +98,17 @@ class GPUInteriorFaceStorage(GPUFaceStorage):
     @ivar native_index_list_id: 
     @ivar native_block: block in which element is to be found.
     @ivar native_block_el_num: number of this element in the C{native_block}.
-    @ivar flux_face:
     @ivar dup_block: 
     @ivar dup_ext_face_number:
+    @ivar dup_global_base:
+    @ivar flux_face:
     """
     __slots__ = [
-            "opposite",
             "el_face", "cpu_slice", "native_index_list_id",
             "native_block", "native_block_el_num",
-            "dup_block", "dup_ext_face_number", "dup_index_list_id"]
+            "dup_block", "dup_ext_face_number", "dup_index_list_id",
+            "dup_global_base",
+            "flux_face"]
 
     def __init__(self, el_face, cpu_slice, native_index_list_id,
             native_block, native_block_el_num, flux_face):
@@ -114,7 +130,7 @@ class GPUBoundaryFaceStorage(GPUFaceStorage):
     @ivar dup_block: 
     @ivar dup_ext_face_number:
     """
-    __slots__ = ["opposite", 
+    __slots__ = [
             "cpu_bdry_index_in_floats", 
             "gpu_bdry_index_in_floats", 
             "dup_block", "dup_ext_face_number"]
@@ -253,15 +269,16 @@ class Discretization(hedge.discretization.Discretization):
         hedge.discretization.Discretization.__init__(self, mesh, ldis, debug=debug)
 
         # build our own data structures
+        from hedge.cuda.tools import exact_div
+        self.int_dof_floats = exact_div(self.plan.int_dof_smem(), self.plan.float_size)
+        self.ext_dof_floats = exact_div(self.plan.ext_dof_smem(), self.plan.float_size)
+
         self.blocks = self._build_blocks()
         self.face_storage_map = self._build_face_storage_map()
 
-        self.int_dof_floats = self.plan.int_dof_smem()//self.plan.float_size
-        self.ext_dof_floats = self.plan.ext_dof_smem()//self.plan.float_size
-
         # check the ext_dof_smem estimate
         assert (self.devdata.align(
-            max(len(block.ext_faces)*self.plan.dofs_per_face()
+            max(len(block.ext_faces_to_me)*self.plan.dofs_per_face()
                 for block in self.blocks)*self.plan.float_size)
             == self.plan.ext_dof_smem())
 
@@ -308,8 +325,9 @@ class Discretization(hedge.discretization.Discretization):
 
         def make_int_face(flux_face, ilist_number):
             el = self.mesh.elements[flux_face.element_id]
-            block = self.blocks[self.partition[el.id]]
             elface = (el, flux_face.face_id)
+
+            block = self.blocks[self.partition[el.id]]
             iln = get_face_index_list_number(int_fg.index_lists[ilist_number])
             result = GPUInteriorFaceStorage(
                 elface, 
@@ -319,14 +337,33 @@ class Discretization(hedge.discretization.Discretization):
                 native_block_el_num=block.get_el_index(el), 
                 flux_face=flux_face
                 )
+
+            assert elface not in fsm
             fsm[elface] = result
             return result
+
+        block_dofs = self.int_dof_floats + self.ext_dof_floats
+
+        def set_dup_info_1(loc_face, opp_face):
+            loc_face.dup_block = opp_face.native_block
+            loc_face.dup_ext_face_number = \
+                    loc_face.dup_block.register_ext_face_to_me(loc_face)
+            loc_face.native_block.register_ext_face_from_me(loc_face)
+
+        def set_dup_info_2(loc_face, opp_face):
+            # split in two for data dep on dup_ext_face_number
+            loc_face.dup_global_base = (
+                   opp_face.native_block.number*block_dofs
+                    + self.int_dof_floats
+                    + (opp_face.native_block.local_discretization.face_node_count()
+                        *loc_face.dup_ext_face_number))
 
         int_fg, = self.face_groups
         id_face_index_list = tuple(xrange(int_fg.ldis_loc.face_node_count()))
         id_face_index_list_number = get_face_index_list_number(id_face_index_list)
         assert id_face_index_list_number == 0
 
+        from pytools import single_valued
         for fp in int_fg.face_pairs:
             face1 = make_int_face(fp.loc, fp.loc.face_index_list_number)
             face2 = make_int_face(fp.opp, fp.opp.face_index_list_number)
@@ -335,10 +372,9 @@ class Discretization(hedge.discretization.Discretization):
 
             if face1.native_block != face2.native_block:
                 # allocate resources for duplicated face
-                face1.dup_block = face2.native_block
-                face2.dup_block = face1.native_block
-                face1.dup_ext_face_number = face1.dup_block.register_ext_face(face1)
-                face2.dup_ext_face_number = face2.dup_block.register_ext_face(face2)
+                for func in [set_dup_info_1, set_dup_info_2]:
+                    for face_tup in [(face1, face2), (face2, face1)]:
+                        func(*face_tup)
             
         self.aligned_boundary_floats = 0
         from hedge.mesh import TAG_ALL
@@ -360,7 +396,7 @@ class Discretization(hedge.discretization.Discretization):
                 face1.opposite = face2
                 face2.opposite = face1
                 face2.dup_block = face1.native_block
-                face2.dup_ext_face_number = face2.dup_block.register_ext_face(face2)
+                face2.dup_ext_face_number = face1.native_block.register_ext_face_to_me(face2)
 
         return fsm
 
@@ -401,9 +437,10 @@ class Discretization(hedge.discretization.Discretization):
                     el_offset += el_length
 
                 ef_start = block_offset+self.int_dof_floats
-                for i_ef, ext_face in enumerate(block.ext_faces):
+                for i_ef, ext_face in enumerate(block.ext_faces_to_me):
                     if isinstance(ext_face, GPUInteriorFaceStorage):
                         f_start = ef_start+face_length*i_ef
+                        assert f_start == ext_face.dup_global_base
                         il = ext_face.opposite.cpu_slice.start + \
                                 self.index_lists[ext_face.native_index_list_id]
                         copy_vec[f_start:f_start+face_length] = field[il] 
@@ -445,9 +482,10 @@ class Discretization(hedge.discretization.Discretization):
 
                 if check:
                     ef_start = block_offset+self.int_dof_floats
-                    for i_ef, ext_face in enumerate(block.ext_faces):
+                    for i_ef, ext_face in enumerate(block.ext_faces_to_me):
                         if isinstance(ext_face, GPUInteriorFaceStorage):
                             f_start = ef_start+face_length*i_ef
+                            assert f_start == ext_face.dup_global_base
                             il = ext_face.opposite.cpu_slice.start + \
                                     self.index_lists[ext_face.native_index_list_id]
                             diff = result[il] - copied_vec[f_start:f_start+face_length]
@@ -559,8 +597,10 @@ class Discretization(hedge.discretization.Discretization):
 
     # optemplate processing ---------------------------------------------------
     def preprocess_optemplate(self, optemplate):
+        return
         from hedge.cuda.execute import OpTemplateWithEnvironment
-        return OpTemplateWithEnvironment(self, optemplate)
+        from weakref import proxy
+        return OpTemplateWithEnvironment(weakproxy(self), optemplate)
 
     def run_preprocessed_optemplate(self, o_with_e, vars):
         return o_with_e.execute(vars)

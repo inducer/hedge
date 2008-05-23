@@ -218,6 +218,8 @@ class StrongAdvectionOperator(AdvectionOperatorBase):
         u = Field("u")
         bc_in = Field("bc_in")
 
+        return
+
         nabla = self.discr.nabla
         m_inv = self.discr.inverse_mass_operator
 

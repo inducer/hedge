@@ -56,10 +56,18 @@ def vec_to_gpu(field):
     else:
         return gpuarray.to_gpu(field)
 
+def pad_and_join(blocks, block_size):
+    def pad(s):
+        missing_bytes = block_size - len(s)
+        assert missing_bytes >= 0
+        return s + "\x00"*missing_bytes
+
+    return "".join(pad(b) for b in blocks)
 
 
 
 
+# knowledge about hardware ----------------------------------------------------
 class DeviceData:
     def __init__(self, dev):
         import pycuda.driver as drv
