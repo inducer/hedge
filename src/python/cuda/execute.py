@@ -216,8 +216,11 @@ class OpTemplateWithEnvironment(object):
                 localop_facedup_struct(),
                 Define("EL_DOF", "threadIdx.x"),
                 Define("BLOCK_EL", "threadIdx.y"),
-                Define("DOFS_PER_EL", discr.plan.dofs_per_el()),
+                Define("DOFS_PER_EL", "blockDim.x"),
+                Define("CONCURRENT_ELS", "blockDim.y"),
                 Define("DOFS_BLOCK_BASE", "(blockIdx.x*BLOCK_DOFS)"),
+                Define("THREAD_NUM", "(BLOCK_EL*DOFS_PER_EL + EL_DOF)"),
+                Define("THREAD_COUNT", "(DOFS_PER_EL*CONCURRENT_ELS)"),
                 Define("BLOCK_DOFS", discr.int_dof_floats + discr.ext_dof_floats),
                 Define("ILIST_LENGTH", ilist_data.single_ilist_length),
                 Define("LOP_IND_INFO_BLOCK_SIZE", ind_info.block_size),
@@ -234,26 +237,17 @@ class OpTemplateWithEnvironment(object):
 
         S = Statement
         f_body = Block()
-        f_body.extend_log_block("Variable initializations", [
-            Constant(POD(numpy.uint16, "dofs_per_el"), "blockDim.x"),
-            Constant(POD(numpy.uint16, "concurrent_els"), "blockDim.y"),
-            Constant(POD(numpy.uint16, "thread_count"), "dofs_per_el*concurrent_els"),
-            Constant(POD(numpy.uint16, "thread_num"), "BLOCK_EL*dofs_per_el + EL_DOF"),
-            S("dbgbuf[0] = blockDim.x"),
-            S("dbgbuf[1] = blockDim.y"),
-            S("dbgbuf[2] = blockDim.z"),
-            ])
             
         f_body.extend_log_block("load block header in thread 0", [
-            If("thread_num == 0",
+            If("THREAD_NUM == 0",
                 S("block_header = block_headers[blockIdx.x]")),
             S("__syncthreads()"),
             ])
 
         f_body.extend_log_block("load internal dofs", [
-            For("unsigned dof_nr = thread_num", 
+            For("unsigned dof_nr = THREAD_NUM", 
                 "dof_nr < block_header.els_in_block*DOFS_PER_EL", 
-                "dof_nr += thread_count",
+                "dof_nr += THREAD_COUNT",
                 S("int_dofs[dof_nr] = field[DOFS_BLOCK_BASE+dof_nr]"),
                 ),
             S("__syncthreads()"),
@@ -266,10 +260,10 @@ class OpTemplateWithEnvironment(object):
             Constant(Pointer(POD(copy_dtype, "facedups_block_base")), 
                 ("(%s *)" % copy_dtype_str)+
                 "(gmem_ind_info + blockIdx.x*LOP_IND_INFO_BLOCK_SIZE)"),
-            For("unsigned facedup_word_nr = thread_num", 
+            For("unsigned facedup_word_nr = THREAD_NUM", 
                 "facedup_word_nr*sizeof(int) < "
                 "sizeof(localop_facedup)*block_header.facedups_in_block", 
-                "facedup_word_nr += thread_count",
+                "facedup_word_nr += THREAD_COUNT",
                 S("((%s *) facedups)[facedup_word_nr] = facedups_block_base[facedup_word_nr]"
                     % copy_dtype_str)
                 ),
@@ -280,7 +274,7 @@ class OpTemplateWithEnvironment(object):
             f_body.extend_log_block("perform local diff along axis %d" % axis, [
                 For("unsigned el_nr = BLOCK_EL",
                     "el_nr < block_header.els_in_block",
-                    "el_nr += concurrent_els", Block([
+                    "el_nr += CONCURRENT_ELS", Block([
                         Initializer(POD(numpy.float32, "accum"), 0),
                         For("unsigned j = 0", "j < DOFS_PER_EL", "++j",
                             S("accum += tex2D(diff_rst%d_matrix, EL_DOF, j)"
