@@ -280,13 +280,6 @@ def pair_with_boundary(field, bfield, tag=hedge.mesh.TAG_ALL):
 
 
 
-class OpTemplate:
-    def __init__(self, expr):
-        self.expr = expr
-
-
-
-
 # mappers ---------------------------------------------------------------------
 class IdentityMapper(pymbolic.mapper.IdentityMapper):
     def map_operator_binding(self, expr, *args, **kwargs):

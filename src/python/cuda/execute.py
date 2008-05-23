@@ -37,21 +37,19 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         self.ex = executor
 
     def map_diff_base(self, op, field_expr, out=None):
-        import sys
-        sys.exit(1)
-
         field = self.rec(field_expr)
 
         ii = self.ex.localop_indexing_info()
+        print ii.__dict__
         func, texrefs = self.ex.get_diff_kernel()
 
         discr = self.ex.discr
         d = discr.dimensions
 
         lop_par = discr.plan.find_localop_par()
-        #rst_diff = [discr.volume_zeros() for axis in range(d)]
-        #xyz_diff = [discr.volume_zeros() for axis in range(d)]
-        #args = rst_diff+xyz_diff+[field, ii.headers, ii.facedups]
+        rst_diff = [discr.volume_zeros() for axis in range(d)]
+        xyz_diff = [discr.volume_zeros() for axis in range(d)]
+        args = rst_diff+xyz_diff+[field, ii.headers, ii.facedups]
 
         kwargs = {
                 "shared": discr.plan.shared_mem_use(),
@@ -60,9 +58,10 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                 "grid": (len(discr.blocks), 1)
                 }
 
-        #func(*args, **kwargs)
+        func(*args, **kwargs)
 
         print "TSCHUES"
+        import sys
         sys.exit(1)
 
 
@@ -85,11 +84,11 @@ class OpTemplateWithEnvironment(object):
                                 OperatorBinder()(
                                     optemplate))))))
 
-    def execute(self, vars):
+    def __call__(self, **vars):
         return ExecutionMapper(vars, self)(self.optemplate)
 
     # code generation ---------------------------------------------------------
-    #@memoize_method
+    @memoize_method
     def get_diff_kernel(self):
         from hedge.cuda.cgen import \
                 Pointer, POD, Value, ArrayOf, Const, \
@@ -105,6 +104,7 @@ class OpTemplateWithEnvironment(object):
 
         lop_par = discr.plan.find_localop_par()
         ind_info = self.localop_indexing_info()
+        print ind_info.__dict__
         ilist_data = self.index_list_data()
 
         texref_names = ["diff_rst%d_matrix" % i for i in dims]
@@ -214,11 +214,11 @@ class OpTemplateWithEnvironment(object):
         return mod.get_function("apply_diff_mat"), texrefs
 
     # gpu data blocks ---------------------------------------------------------
-    #@memoize_method
+    @memoize_method
     def get_diffmat_array(self, diff_op_cls, elgroup, axis):
         return cuda.matrix_to_array(diff_op_cls.matrices(elgroup)[axis])
 
-    #@memoize_method
+    @memoize_method
     def localop_block_header_struct(self):
         from hedge.cuda.cgen import Struct, POD
 
@@ -227,7 +227,7 @@ class OpTemplateWithEnvironment(object):
             POD(numpy.uint16, "facedups_in_block"),
             ])
 
-    #@memoize_method
+    @memoize_method
     def localop_facedup_struct(self):
         from hedge.cuda.cgen import Struct, POD
 
@@ -238,11 +238,11 @@ class OpTemplateWithEnvironment(object):
             POD(numpy.uint32, "dup_global_base"),
             ])
 
-    #@memoize_method
+    @memoize_method
     def localop_rst_to_xyz(self):
         pass
 
-    #@memoize_method
+    @memoize_method
     def localop_indexing_info(self):
         discr = self.discr
         headers = []
@@ -284,7 +284,7 @@ class OpTemplateWithEnvironment(object):
                 )
 
 
-    #@memoize_method
+    @memoize_method
     def flux_indexing_info(self):
         discr = self.discr
 
@@ -367,7 +367,7 @@ class OpTemplateWithEnvironment(object):
             headers="".join(headers),
             facepair_blocks=cuda.to_device(facepair_blocks))
 
-    #@memoize_method
+    @memoize_method
     def index_list_data(self):
         discr = self.discr
 

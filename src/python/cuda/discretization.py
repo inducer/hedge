@@ -596,11 +596,6 @@ class Discretization(hedge.discretization.Discretization):
     del s
 
     # optemplate processing ---------------------------------------------------
-    def preprocess_optemplate(self, optemplate):
-        return
+    def compile(self, optemplate):
         from hedge.cuda.execute import OpTemplateWithEnvironment
-        from weakref import proxy
-        return OpTemplateWithEnvironment(weakproxy(self), optemplate)
-
-    def run_preprocessed_optemplate(self, o_with_e, vars):
-        return o_with_e.execute(vars)
+        return OpTemplateWithEnvironment(self, optemplate)

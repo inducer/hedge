@@ -213,17 +213,14 @@ class StrongAdvectionOperator(AdvectionOperatorBase):
 
     @memoize_method
     def op_template(self):
-        from hedge.optemplate import Field, pair_with_boundary, \
-                OpTemplate
+        from hedge.optemplate import Field, pair_with_boundary
         u = Field("u")
         bc_in = Field("bc_in")
-
-        return
 
         nabla = self.discr.nabla
         m_inv = self.discr.inverse_mass_operator
 
-        return OpTemplate(-numpy.dot(self.v, nabla*u) + m_inv*(
+        return self.discr.compile(-numpy.dot(self.v, nabla*u) + m_inv*(
                 self.flux * u
                 + self.flux * pair_with_boundary(u, bc_in, self.inflow_tag)
                 #+ self.flux * pair_with_boundary(u, bc_out, self.outflow_tag)
@@ -232,7 +229,7 @@ class StrongAdvectionOperator(AdvectionOperatorBase):
     def rhs(self, t, u):
         bc_in = self.inflow_u.boundary_interpolant(t, self.discr, self.inflow_tag)
         #bc_out = 0.5*self.discr.boundarize_volume_field(u, self.outflow_tag)
-        return self.discr.execute(self.op_template(), u=u, bc_in=bc_in)
+        return self.op_template()(u=u, bc_in=bc_in)
 
 
 
@@ -243,8 +240,7 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
 
     @memoize_method
     def op_template(self):
-        from hedge.optemplate import Field, pair_with_boundary, \
-                OpTemplate
+        from hedge.optemplate import Field, pair_with_boundary
 
         u = Field("u")
         bc_in = Field("bc_in")
@@ -253,7 +249,7 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
         m_inv = self.discr.inverse_mass_operator
         minv_st = self.discr.minv_stiffness_t
 
-        return OpTemplate(
+        return self.discr.compile(
                 numpy.dot(self.v, minv_st*u) - m_inv*(
                     self.flux*u
                     + self.flux * pair_with_boundary(u, bc_in, self.inflow_tag)
@@ -264,8 +260,7 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
         bc_in = self.inflow_u.boundary_interpolant(t, self.discr, self.inflow_tag)
         bc_out = self.discr.boundarize_volume_field(u, self.outflow_tag)
 
-        return self.discr.execute(self.op_template(), 
-                u=u, bc_in=bc_in, bc_out=bc_out)
+        return self.op_template()(u=u, bc_in=bc_in, bc_out=bc_out)
 
 
 
@@ -341,8 +336,7 @@ class StrongWaveOperator:
     def op_template(self):
         from hedge.optemplate import \
                 make_vector_field, \
-                pair_with_boundary, \
-                OpTemplate
+                pair_with_boundary
 
         d = self.discr.dimensions
 
@@ -367,7 +361,7 @@ class StrongWaveOperator:
                 + self.flux * pair_with_boundary(w, neu_bc, self.neumann_tag)
                 + self.flux * pair_with_boundary(w, rad_bc, self.radiation_tag)
                 ))
-        return OpTemplate(result)
+        return self.discr.compile(result)
     
     def rhs(self, t, w):
         from hedge.tools import join_fields, ptwise_dot
@@ -391,8 +385,7 @@ class StrongWaveOperator:
                 0.5*rad_n*(ptwise_dot(rad_n, rad_v) - self.sign*rad_u)
                 )
 
-        rhs = self.discr.execute(self.op_template(),
-                w=w, dir_bc=dir_bc, neu_bc=neu_bc, rad_bc=rad_bc)
+        rhs = self.op_template()(w=w, dir_bc=dir_bc, neu_bc=neu_bc, rad_bc=rad_bc)
 
         if self.source_f is not None:
             rhs[0] += self.source_f(t)

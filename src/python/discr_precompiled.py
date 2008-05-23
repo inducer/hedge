@@ -332,8 +332,19 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
 
 
+class CompiledOpTemplate:
+    def __init__(self, discr, pp_optemplate):
+        self.discr = discr
+        self.pp_optemplate
+
+    def __call__(self, **vars):
+        return ExecutionMapper(vars, self.discr)(self.pp_optemplate)
+
+
+
+
 class Discretization(hedge.discretization.Discretization):
-    def preprocess_optemplate(self, optemplate):
+    def compile(self, optemplate):
         from hedge.optemplate import OperatorBinder, InverseMassContractor
         from pymbolic.mapper.constant_folder import CommutativeConstantFoldingMapper
         #print optemplate
@@ -345,7 +356,4 @@ class Discretization(hedge.discretization.Discretization):
                                 optemplate)))))
         #print result
         return result
-
-    def run_preprocessed_optemplate(self, pp_optemplate, vars):
-        return ExecutionMapper(vars, self)(pp_optemplate)
 

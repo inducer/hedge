@@ -724,7 +724,6 @@ class Discretization(object):
 
     # operator binding functions --------------------------------------------------
     @property
-    @memoize_method
     def nabla(self):
         from hedge.tools import make_obj_array
         from hedge.optemplate import DifferentiationOperator
@@ -733,7 +732,6 @@ class Discretization(object):
                     for i in range(self.dimensions)])
 
     @property
-    @memoize_method
     def minv_stiffness_t(self):
         from hedge.tools import make_obj_array
         from hedge.optemplate import MInvSTOperator
@@ -742,7 +740,6 @@ class Discretization(object):
                 for i in range(self.dimensions)])
 
     @property
-    @memoize_method
     def stiffness_operator(self):
         from hedge.tools import make_obj_array
         from hedge.optemplate import StiffnessOperator
@@ -751,7 +748,6 @@ class Discretization(object):
                 for i in range(self.dimensions)])
 
     @property
-    @memoize_method
     def stiffness_t_operator(self):
         from hedge.tools import make_obj_array
         from hedge.optemplate import StiffnessTOperator
@@ -760,13 +756,11 @@ class Discretization(object):
                 for i in range(self.dimensions)])
 
     @property
-    @memoize_method
     def mass_operator(self):
         from hedge.optemplate import MassOperator
         return MassOperator(self)
 
     @property
-    @memoize_method
     def inverse_mass_operator(self):
         from hedge.optemplate import InverseMassOperator
         return InverseMassOperator(self)
@@ -785,38 +779,8 @@ class Discretization(object):
             return FluxOperator(self, flux)
 
     # op template execution ---------------------------------------------------
-    def preprocess_optemplate(self, optemplate):
+    def compile(self, optemplate):
         raise NotImplementedError
-
-    def run_preprocessed_optemplate(self, optemplate, vars):
-        raise NotImplementedError
-
-    def _get_pp_optemplate(self, optemplate):
-        try:
-            self.optemplate_preproc_cache
-        except AttributeError:
-            self.optemplate_preproc_cache = {}
-
-        from hedge.optemplate import OpTemplate
-        if isinstance(optemplate, OpTemplate):
-            optp_expr = optemplate.expr
-        else:
-            optp_expr = optemplate
-
-        try:
-            return self.optemplate_preproc_cache[optemplate]
-        except KeyError:
-            pp_optemplate = self.optemplate_preproc_cache[optemplate] = \
-                    self.preprocess_optemplate(optp_expr)
-            return pp_optemplate
-
-    def execute(self, optemplate, **vars):
-        return self.run_preprocessed_optemplate(
-                self._get_pp_optemplate(optemplate), 
-                vars)
-    
-    def as_function(self, optemplate):
-        return OpTemplateFunction(self, self._get_pp_optemplate(optemplate))
 
 
 
