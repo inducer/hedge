@@ -40,7 +40,6 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         field = self.rec(field_expr)
 
         ii = self.ex.localop_indexing_info()
-        print ii.__dict__
         func, texrefs = self.ex.get_diff_kernel()
 
         discr = self.ex.discr
@@ -104,7 +103,6 @@ class OpTemplateWithEnvironment(object):
 
         lop_par = discr.plan.find_localop_par()
         ind_info = self.localop_indexing_info()
-        print ind_info.__dict__
         ilist_data = self.index_list_data()
 
         texref_names = ["diff_rst%d_matrix" % i for i in dims]
@@ -116,7 +114,7 @@ class OpTemplateWithEnvironment(object):
             [
                 Pointer(POD(numpy.float32, "field")),
                 Pointer(Value("localop_block_header", "block_headers")),
-                Pointer(POD(numpy.uint32, "gmem_ind_info")),
+                Pointer(POD(numpy.uint8, "gmem_ind_info")),
                 ]
             ))
 
@@ -274,13 +272,19 @@ class OpTemplateWithEnvironment(object):
             facedup_counts.append(facedup_count)
 
         block_size = discr.devdata.align(max(len(b) for b in blocks))
+
         from hedge.cuda.tools import pad_and_join
+        all_headers = "".join(headers)
+        all_blocks = pad_and_join(blocks, block_size)
+        
         from pytools import Record
         return Record(
                 block_size=block_size, 
                 max_facedups_in_block=max(facedup_counts),
-                headers=cuda.to_device("".join(headers)),
-                facedups=cuda.to_device(pad_and_join(blocks, block_size)),
+                headers=cuda.to_device(all_headers),
+                facedups=cuda.to_device(all_blocks),
+                all_headers=all_headers,
+                all_blocks=all_blocks,
                 )
 
 
