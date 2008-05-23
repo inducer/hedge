@@ -117,45 +117,20 @@ class ExecutionPlan:
         return self.devdata.align(self.get_extface_count()*
                 self.dofs_per_face() * self.float_size)
 
-    @memoize_method
-    def get_face_pair_struct(self):
-        from hedge.cuda.cgen import Struct, POD, ArrayOf
-
-        return Struct("face_pair", [
-            POD(numpy.float32, "h", ),
-            POD(numpy.float32, "order"),
-            POD(numpy.float32, "face_jacobian"),
-            ArrayOf(POD(numpy.float32, "normal"), self.ldis.dimensions),
-            POD(numpy.uint16, "a_base"),
-            POD(numpy.uint16, "b_base"),
-            POD(numpy.uint8, "a_ilist_number"),
-            POD(numpy.uint8, "b_ilist_number"),
-            POD(numpy.uint8, "bdry_flux_number"), # 0 if not on boundary
-            POD(numpy.uint8, "reserved"),
-            POD(numpy.uint32, "b_global_base"),
-
-            # memory handling here deserves a comment.
-            # Interior face (bdry_flux_number==0) dofs are duplicated if they cross
-            # a block boundary. The flux results for these dofs are written out 
-            # to b_global_base in addition to their local location.
-            #
-            # Boundary face (bdry_flux_number!=0) dofs are read from b_global_base
-            # linearly (not (!) using b_global_ilist_number) into the extface
-            # space at b_base. They are not written out again.
-            ])
-
-    @memoize_method
-    def get_block_header_struct(self):
-        from hedge.cuda.cgen import Struct, POD
-
-        return Struct("block_header", [
-            POD(numpy.int16, "els_in_block"),
-            POD(numpy.int16, "face_pairs_in_block"),
-            ])
-
-    def indexing_smem(self):
+    def flux_indexing_smem(self):
+        from hedge.cuda.execute import flux_face_pair_struct
         return self.devdata.align(
-                len(self.get_face_pair_struct())*self.face_pair_count())
+                len(flux_face_pair_struct(self.ldis.dimensions))
+                *self.face_pair_count())
+
+    @memoize_method
+    def localop_indexing_smem(self):
+        from hedge.cuda.execute import localop_facedup_struct
+        return self.devdata.align(
+                len(localop_facedup_struct())
+                # mildly off: should be ext_faces_from_me, add 256 bytes of fudge
+                * self.get_extface_count() + 128
+                )
 
     @memoize_method
     def face_count(self):
@@ -169,46 +144,79 @@ class ExecutionPlan:
         return (self.face_count()+1) // 2
 
     @memoize_method
-    def shared_mem_use(self):
+    def flux_shared_mem_use(self):
         return (128 # parameters, block header, small extra stuff
                 + self.int_dof_smem() 
                 + self.ext_dof_smem() 
-                + self.indexing_smem())
+                + self.flux_indexing_smem())
 
-    def threads(self):
+    @memoize_method
+    def localop_shared_mem_use(self):
+        return (128 # parameters, block header, small extra stuff
+                + self.int_dof_smem() 
+                + self.localop_indexing_smem())
+
+    def flux_threads(self):
         return self.flux_par.p*self.faces_per_el()*self.dofs_per_face()
 
     def invalid_reason(self):
-        if self.threads() >= self.devdata.max_threads:
+        if self.flux_threads() >= self.devdata.max_threads:
             return "too many threads"
-        if self.shared_mem_use() >= self.devdata.shared_memory:
+        if self.flux_shared_mem_use() >= self.devdata.shared_memory:
             return "too much shared memory"
         return None
 
     @memoize_method
-    def occupancy_record(self):
+    def flux_occupancy_record(self):
         from hedge.cuda.tools import OccupancyRecord
         return OccupancyRecord(self.devdata,
-                self.threads(), self.shared_mem_use())
-
+                self.flux_threads(), self.flux_shared_mem_use())
+    
     @memoize_method
     def find_localop_par(self):
-        threads = self.threads()
-        total_threads = self.block_el()*self.dofs_per_el()
-        ser, rem = divmod(total_threads, threads)
-        if rem == 0:
-            return Parallelism(threads, ser)
-        else:
-            return Parallelism(threads, ser+1)
+        from hedge.cuda.tools import int_ceiling, OccupancyRecord
+
+        els_per_block = self.flux_par.total()
+        localop_plans = []
+        for par in range(1,els_per_block):
+            els_per_block
+            ser = int_ceiling(els_per_block/par)
+            threads = par * self.dofs_per_el()
+
+            localop_par = Parallelism(par, ser)
+            if threads >= self.devdata.max_threads:
+                continue
+            occ = OccupancyRecord(self.devdata, threads, 
+                    shared_mem=self.localop_shared_mem_use())
+            localop_plans.append((occ, localop_par))
+
+        max_occup = max(plan[0].occupancy for plan in localop_plans)
+        good_plans = [p for p in localop_plans
+                if p[0].occupancy > max_occup - 1e-10]
+
+        # minimum parallelism is better to smooth out inefficiencies due to
+        # rounding up the number of serial steps
+        from pytools import argmin2
+        return argmin2((p[1], p[1].p) for p in good_plans)
 
     def __str__(self):
-            return "flux_par=%s threads=%d int_smem=%d ext_smem=%d ind_smem=%d smem=%d occ=%f" % (
-                    self.flux_par, self.threads(), 
+            return (
+                    "flux: par=%s threads=%d int_smem=%d ext_smem=%d "
+                    "ind_smem=%d smem=%d occ=%f\n"
+                    "localop: par=%s threads=%d ind_smem=%d smem=%d" % (
+                    self.flux_par, 
+                    self.flux_threads(), 
                     self.int_dof_smem(), 
                     self.ext_dof_smem(),
-                    self.indexing_smem(),
-                    self.shared_mem_use(), 
-                    self.occupancy_record().occupancy)
+                    self.flux_indexing_smem(),
+                    self.flux_shared_mem_use(), 
+                    self.flux_occupancy_record().occupancy,
+
+                    self.find_localop_par(), 
+                    self.find_localop_par().p*self.dofs_per_el(), 
+                    self.localop_indexing_smem(), 
+                    self.localop_shared_mem_use(),
+                    ))
 
 
 

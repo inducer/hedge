@@ -164,9 +164,9 @@ class Discretization(hedge.discretization.Discretization):
         if not plans:
             raise RuntimeError, "no valid CUDA execution plans found"
 
-        max_occup = max(plan.occupancy_record().occupancy for plan in plans)
+        max_occup = max(plan.flux_occupancy_record().occupancy for plan in plans)
         good_plans = [p for p in generate_valid_plans()
-                if p.occupancy_record().occupancy > max_occup - 1e-10]
+                if p.flux_occupancy_record().occupancy > max_occup - 1e-10]
 
         from pytools import argmax2
         return argmax2((p, p.block_el()) for p in good_plans)
@@ -216,8 +216,8 @@ class Discretization(hedge.discretization.Discretization):
             assert actual_plan.max_faces % 2 == 0
 
             if (flux_par_s == plan.flux_par.s and
-                    abs(plan.occupancy_record().occupancy -
-                        actual_plan.occupancy_record().occupancy) < 1e-10):
+                    abs(plan.flux_occupancy_record().occupancy -
+                        actual_plan.flux_occupancy_record().occupancy) < 1e-10):
                 break
 
             part_count += 1
@@ -282,8 +282,8 @@ class Discretization(hedge.discretization.Discretization):
                 for block in self.blocks)*self.plan.float_size)
             == self.plan.ext_dof_smem())
 
-
-
+        from hedge.discr_precompiled import Discretization
+        self.test_discr = Discretization(mesh, ldis)
 
     def _build_blocks(self):
         block_el_numbers = {}
