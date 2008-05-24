@@ -118,32 +118,46 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                 }
         dbgbuf = gpuarray.zeros(kwargs["block"][:1], numpy.float32)
 
-        rst_diff = [discr.volume_zeros() for axis in range(d)]
         xyz_diff = [discr.volume_zeros() for axis in range(d)]
-        args = [dbgbuf]+rst_diff+xyz_diff+[field, ii.headers, ii.facedups]
+        elgroup, = discr.element_groups
+        rst_to_xyz = self.ex.localop_rst_to_xyz(op, elgroup)
+        args = [dbgbuf]+xyz_diff+[
+                field, 
+                ii.headers, ii.facedups, 
+                rst_to_xyz.dev_data
+                ]
 
         print kwargs
 
         f = discr.volume_from_gpu(field)
         func(*args, **kwargs)
-        dr = discr.volume_from_gpu(rst_diff[0])
+        dx = discr.volume_from_gpu(xyz_diff[0])
 
         if True:
             test_discr = discr.test_discr
-            real_dr = test_discr.volume_zeros()
-            from hedge.tools import make_vector_target
-            target = make_vector_target(f.astype(numpy.float64), real_dr)
+            real_dx = test_discr.nabla[0].apply(f.astype(numpy.float64))
 
-            target.begin(len(test_discr), len(test_discr))
-
-            from hedge._internal import perform_elwise_operator
-            for eg in test_discr.element_groups:
-                perform_elwise_operator(eg.ranges, eg.ranges, 
-                        op.matrices(eg)[0], target)
-
-            target.finalize()
-
-            print la.norm(dr-real_dr)/la.norm(real_dr)
+            print la.norm(dx-real_dx)/la.norm(real_dx)
+            numpy.set_printoptions(precision=3)
+            #print dx[:n]
+            #print real_dx[:n]
+            diff = dx-real_dx
+            struc = ""
+            n = discr.plan.dofs_per_el()
+            for block in discr.blocks:
+                for el in block.elements:
+                    s = discr.find_el_range(el.id)
+                    if numpy.max(numpy.abs(diff[s])) > 1e-3:
+                        struc += "*"
+                        if False:
+                            print dx[s]
+                            print real_dx[s]
+                            print diff[s]
+                            raw_input()
+                    else:
+                        struc += "."
+                struc += "\n"
+            print struc
         
         print "DEBUG"
         print dbgbuf
@@ -199,12 +213,12 @@ class OpTemplateWithEnvironment(object):
 
         f_decl = CudaGlobal(FunctionDeclaration(Value("void", "apply_diff_mat"), 
             [Pointer(POD(numpy.float32, "dbgbuf"))]
-            + [Pointer(POD(numpy.float32, "drst%d" % i)) for i in dims]
             + [Pointer(POD(numpy.float32, "dxyz%d" % i)) for i in dims]
             + [
                 Pointer(POD(numpy.float32, "field")),
                 Pointer(Value("localop_block_header", "block_headers")),
                 Pointer(POD(numpy.uint8, "gmem_ind_info")),
+                Pointer(POD(numpy.float32, "gmem_rst_to_xyz")),
                 ]
             ))
 
@@ -218,18 +232,23 @@ class OpTemplateWithEnvironment(object):
                 Define("BLOCK_EL", "threadIdx.y"),
                 Define("DOFS_PER_EL", "blockDim.x"),
                 Define("CONCURRENT_ELS", "blockDim.y"),
+                Define("SERIAL_ELS", str(lop_par.s)),
                 Define("DOFS_BLOCK_BASE", "(blockIdx.x*BLOCK_DOFS)"),
                 Define("THREAD_NUM", "(BLOCK_EL*DOFS_PER_EL + EL_DOF)"),
                 Define("THREAD_COUNT", "(DOFS_PER_EL*CONCURRENT_ELS)"),
                 Define("BLOCK_DOFS", discr.int_dof_floats + discr.ext_dof_floats),
                 Define("ILIST_LENGTH", ilist_data.single_ilist_length),
                 Define("LOP_IND_INFO_BLOCK_SIZE", ind_info.block_size),
+                Define("RST2XYZ_SUBBLOCK_SIZE", 
+                    self.localop_floats_per_rst_to_xyz_subblock()),
                 Line(),
                 ilist_data.initializer,
                 Line(),
                 CudaShared(Value("localop_block_header", "block_header")),
                 CudaShared(ArrayOf(Value("localop_facedup", "facedups"), 
                     ind_info.max_facedups_in_block)),
+                CudaShared(ArrayOf(POD(numpy.float32, "rst_to_xyz_coefficients"), 
+                    d*d*lop_par.s)),
                 CudaShared(ArrayOf(POD(numpy.float32, "int_dofs"), 
                     discr.int_dof_floats)),
                 Line(),
@@ -250,7 +269,6 @@ class OpTemplateWithEnvironment(object):
                 "dof_nr += THREAD_COUNT",
                 S("int_dofs[dof_nr] = field[DOFS_BLOCK_BASE+dof_nr]"),
                 ),
-            S("__syncthreads()"),
             ])
 
         from hedge.cuda.cgen import dtype_to_ctype
@@ -270,25 +288,54 @@ class OpTemplateWithEnvironment(object):
             S("__syncthreads()"),
             ])
         # ---------------------------------------------------------------------
+        for_loop_body = Block()
+
+        for_loop_body.extend_log_block("load rst_to_xyz_coefficients" , [
+            Initializer(POD(numpy.int32, "r2x_base"),
+                "(blockIdx.x * SERIAL_ELS + serial_el) * "
+                "RST2XYZ_SUBBLOCK_SIZE"),
+            For("unsigned i = THREAD_NUM", 
+                "i < %d" % (d*d*lop_par.s),
+                "i += THREAD_COUNT",
+                S("rst_to_xyz_coefficients[i] = "
+                    "gmem_rst_to_xyz[r2x_base+i]")),
+            ])
+
         for axis in dims:
-            f_body.extend_log_block("perform local diff along axis %d" % axis, [
-                For("unsigned el_nr = BLOCK_EL",
-                    "el_nr < block_header.els_in_block",
-                    "el_nr += CONCURRENT_ELS", Block([
-                        Initializer(POD(numpy.float32, "accum"), 0),
-                        For("unsigned j = 0", "j < DOFS_PER_EL", "++j",
-                            S("accum += tex2D(diff_rst%d_matrix, EL_DOF, j)"
-                                "* int_dofs[el_nr*DOFS_PER_EL+j]" % axis)
-                            ),
-                        S("drst%d[DOFS_BLOCK_BASE+el_nr*DOFS_PER_EL+EL_DOF]"
-                            "= accum" % axis),
-                        ])
+            drst_var = "drst%d" % axis
+            for_loop_body.extend_log_block("perform local diff along axis %d" % axis, [
+                Initializer(POD(numpy.float32, drst_var), 0),
+                For("unsigned j = 0", "j < DOFS_PER_EL", "++j",
+                    S("%s += tex2D(diff_rst%d_matrix, EL_DOF, j)"
+                        "* int_dofs[base_dof_nr+j]" % (drst_var, axis))
                     ),
                 ])
+
+        for_loop_body.append( S("__syncthreads()"))
+
+        for glob_axis in dims:
+            for_loop_body.append(
+                S(("dxyz%d[DOFS_BLOCK_BASE+base_dof_nr+EL_DOF] = " % glob_axis) +
+                    (" + ".join(
+                        "rst_to_xyz_coefficients[BLOCK_EL+%d]"
+                        "*"
+                        "drst%d" % (lop_par.p*(d*glob_axis+loc_axis), loc_axis)
+                        for loc_axis in dims
+                        )
+                    )))
+
+        f_body.extend_log_block("perform global diff", [
+            Initializer(POD(numpy.uint8, "serial_el"), 0),
+            For("unsigned base_dof_nr = BLOCK_EL*DOFS_PER_EL",
+                "base_dof_nr < block_header.els_in_block*DOFS_PER_EL",
+                "base_dof_nr += CONCURRENT_ELS*DOFS_PER_EL, ++serial_el", 
+                for_loop_body)])
             
         cmod.append(FunctionBody(f_decl, f_body))
 
-        mod = cuda.SourceModule(cmod, keep=True)
+        mod = cuda.SourceModule(cmod, keep=True, 
+                #options=["--maxrregcount=12"]
+                )
         texrefs = [mod.get_texref(name) for name in texref_names]
         for texref, dmat in zip(texrefs, discr.plan.ldis.differentiation_matrices()):
             cuda.matrix_to_texref(dmat, texref)
@@ -300,9 +347,54 @@ class OpTemplateWithEnvironment(object):
     def get_diffmat_array(self, diff_op_cls, elgroup, axis):
         return cuda.matrix_to_array(diff_op_cls.matrices(elgroup)[axis])
 
+    def localop_floats_per_rst_to_xyz_subblock(self):
+        discr = self.discr
+        d = discr.dimensions
+        return discr.devdata.align_dtype(
+                d*d*discr.plan.find_localop_par().p, self.discr.plan.float_size)
+
     @memoize_method
-    def localop_rst_to_xyz(self):
-        pass
+    def localop_rst_to_xyz(self, diff_op, elgroup):
+        discr = self.discr
+        lop_par = discr.plan.find_localop_par()
+
+        # a subblock is one chunk of elements that one thread block
+        # works on simultaneously
+        floats_per_subblock = self.localop_floats_per_rst_to_xyz_subblock()
+        bytes_per_subblock = floats_per_subblock*self.discr.plan.float_size
+
+        coeffs = diff_op.coefficients(elgroup)
+
+        subblocks = []
+        
+        def get_el_index_in_el_group(el):
+            mygroup, idx = discr.group_map[el.id]
+            assert mygroup is elgroup
+            return idx
+
+        for block in discr.blocks:
+            for subblock in range(lop_par.s):
+                subblock_elgroup_indices = numpy.fromiter(
+                        (get_el_index_in_el_group(el)
+                        for el in block.elements[
+                            subblock*lop_par.p:(subblock+1)*lop_par.p]),
+                        dtype=numpy.intp)
+
+                subblocks.append(
+                    coeffs[:,:,subblock_elgroup_indices]
+                    .flatten().astype(numpy.float32))
+                #numpy.set_printoptions(precision=3)
+                #print coeffs[:,:,subblock_elgroup_indices].flatten()
+                #print coeffs[:,:,subblock_elgroup_indices]
+                #raw_input()
+
+        from hedge.cuda.tools import pad_and_join
+        from pytools import Record
+        return Record(
+                dev_data=cuda.to_device(
+                    pad_and_join((str(buffer(s)) for s in subblocks), 
+                        bytes_per_subblock)),
+                floats_per_subblock=floats_per_subblock)
 
     @memoize_method
     def localop_indexing_info(self):
