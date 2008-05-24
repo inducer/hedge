@@ -84,7 +84,7 @@ def localop_facedup_struct():
     return Struct("localop_facedup", [
         POD(numpy.uint16, "smem_face_base"),
         POD(numpy.uint8, "smem_face_ilist_number"),
-        POD(numpy.uint8, "reserved"),
+        POD(numpy.uint8, "smem_element_number"),
         POD(numpy.uint32, "dup_global_base"),
         ])
 
@@ -131,7 +131,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
         f = discr.volume_from_gpu(field)
         func(*args, **kwargs)
-        dx = discr.volume_from_gpu(xyz_diff[0])
+        dx = discr.volume_from_gpu(xyz_diff[0], check=True)
 
         if True:
             test_discr = discr.test_discr
@@ -211,7 +211,6 @@ class OpTemplateWithEnvironment(object):
                 Define("BLOCK_EL", "threadIdx.y"),
                 Define("DOFS_PER_EL", discr.plan.dofs_per_el()),
                 Define("CONCURRENT_ELS", lop_par.p),
-                Define("SERIAL_ELS", str(lop_par.s)),
                 Define("DOFS_BLOCK_BASE", "(blockIdx.x*BLOCK_DOFS)"),
                 Define("THREAD_NUM", "(BLOCK_EL*DOFS_PER_EL + EL_DOF)"),
                 Define("THREAD_COUNT", "(DOFS_PER_EL*CONCURRENT_ELS)"),
@@ -220,6 +219,12 @@ class OpTemplateWithEnvironment(object):
                 Define("LOP_IND_INFO_BLOCK_SIZE", ind_info.block_size),
                 Define("RST2XYZ_BLOCK_SIZE", 
                     self.localop_floats_per_rst_to_xyz_block()),
+                Line(),
+                Comment("face-related stuff"),
+                Define("DOFS_PER_FACE", discr.plan.dofs_per_face()),
+                Define("CONCURRENT_FACES", 
+                    discr.plan.dofs_per_el()*lop_par.p
+                    //discr.plan.dofs_per_face()),
                 Line(),
                 ilist_data.initializer,
                 Line(),
@@ -277,53 +282,89 @@ class OpTemplateWithEnvironment(object):
             S("__syncthreads()"),
             ])
 
-        # ---------------------------------------------------------------------
-        for_loop_body = Block()
+        def get_scalar_diff_code(el_nr, dest_dof, dest_pattern):
+            code = []
+            for axis in dims:
+                code.append(
+                    Initializer(POD(numpy.float32, "drst%d" % axis), 0))
 
-        for axis in dims:
-            for_loop_body.append(
-                Initializer(POD(numpy.float32, "drst%d" % axis), 0))
+            code.append(Line())
 
-        for_loop_body.append(Line())
+            tex_channels = ["x", "y", "z", "w"]
+            code.append(
+                For("unsigned j = 0", "j < DOFS_PER_EL", "++j", Block([
+                    S("float%d diff_ij = tex2D(diff_rst_matrices, (%s) , j)" 
+                        % (self.diffmat_channels(), dest_dof)),
+                    Initializer(POD(numpy.float32, "field_value"),
+                        "int_dofs[(%s)*DOFS_PER_EL+j]" % el_nr),
+                    Line(),
+                    ]+[
+                    S("drst%d += diff_ij.%s * field_value" 
+                        % (axis, tex_channels[axis]))
+                    for axis in dims
+                    ]))
+                )
 
-        tex_channels = ["x", "y", "z", "w"]
-        for_loop_body.append(
-            For("unsigned j = 0", "j < DOFS_PER_EL", "++j", Block([
-                S("float%d diff_ij = tex2D(diff_rst_matrices, EL_DOF, j)" 
-                    % self.diffmat_channels()),
-                Initializer(POD(numpy.float32, "field_value"),
-                    "int_dofs[base_el*DOFS_PER_EL+j]"),
-                Line(),
-                ]+[
-                S("drst%d += diff_ij.%s * field_value" 
-                    % (axis, tex_channels[axis]))
-                for axis in dims
-                ]))
-            )
+            code.append(Line())
 
-        for_loop_body.append(Line())
+            for glob_axis in dims:
+                code.append(
+                    Assign(
+                        dest_pattern % glob_axis,
+                        " + ".join(
+                            "rst_to_xyz_coefficients[%d + %d*(%s)]"
+                            "*"
+                            "drst%d" % (
+                                d*glob_axis+loc_axis, 
+                                d*d,
+                                el_nr,
+                                loc_axis)
+                            for loc_axis in dims
+                            )
+                        ))
+            return code
 
-        for glob_axis in dims:
-            for_loop_body.append(
-                Assign(
-                    "dxyz%d[DOFS_BLOCK_BASE+base_el*DOFS_PER_EL+EL_DOF]" % glob_axis,
-                    " + ".join(
-                        "rst_to_xyz_coefficients[%d + %d*base_el]"
-                        "*"
-                        "drst%d" % (
-                            d*glob_axis+loc_axis, 
-                            d*d,
-                            loc_axis)
-                        for loc_axis in dims
-                        )
-                    ))
-
-        f_body.extend_log_block("perform global diff", [
+        # global diff on volume -----------------------------------------------
+        f_body.extend_log_block("perform global diff on volume", [
             For("unsigned base_el = BLOCK_EL",
                 "base_el < block_header.els_in_block",
                 "base_el += CONCURRENT_ELS", 
-                for_loop_body)])
+                Block(get_scalar_diff_code(
+                    "base_el",
+                    "EL_DOF",
+                    "dxyz%d[DOFS_BLOCK_BASE+base_el*DOFS_PER_EL+EL_DOF]" 
+                    ))
+                )])
+
+        # global diff on duplicated faces -------------------------------------
+        f_body.extend_log_block("perform global diff on dup faces", [
+            Initializer(Const(POD(numpy.int16, "block_face")),
+                "THREAD_NUM / DOFS_PER_FACE"),
+            Initializer(Const(POD(numpy.int16, "face_dof")),
+                "THREAD_NUM - DOFS_PER_FACE*block_face"),
+            For("unsigned face_nr = block_face",
+                "face_nr < block_header.facedups_in_block",
+                "face_nr += CONCURRENT_FACES", Block([
+                    Initializer(POD(numpy.uint16, "face_el_dof"),
+                        "index_lists["
+                        "facedups[face_nr].smem_face_ilist_number*DOFS_PER_FACE"
+                        "+face_dof"
+                        "]"),
+                    Initializer(POD(numpy.uint16, "face_el_nr"),
+                        "facedups[face_nr].smem_element_number"),
+                    Initializer(POD(numpy.uint32, "tgt_dof"),
+                        "facedups[face_nr].dup_global_base+face_dof"),
+                    Line(),
+                    ]+get_scalar_diff_code(
+                        "face_el_nr",
+                        "face_el_dof",
+                        "dxyz%d[tgt_dof]" 
+                        )
+                    )
+                )
+            ])
             
+        # finish off ----------------------------------------------------------
         cmod.append(FunctionBody(f_decl, f_body))
 
         mod = cuda.SourceModule(cmod, keep=True, 
@@ -426,7 +467,7 @@ class OpTemplateWithEnvironment(object):
                 block_data += localop_facedup_struct().make(
                         smem_face_base=el_dofs*extface.native_block_el_num,
                         smem_face_ilist_number=extface.native_index_list_id,
-                        reserved=0,
+                        smem_element_number=extface.native_block_el_num,
                         dup_global_base=extface.dup_global_base)
 
             headers.append(localop_block_header_struct().make(
