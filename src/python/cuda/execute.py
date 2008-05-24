@@ -120,11 +120,10 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
         xyz_diff = [discr.volume_zeros() for axis in range(d)]
         elgroup, = discr.element_groups
-        rst_to_xyz = self.ex.localop_rst_to_xyz(op, elgroup)
         args = [dbgbuf]+xyz_diff+[
                 field, 
                 ii.headers, ii.facedups, 
-                rst_to_xyz.dev_data
+                self.ex.localop_rst_to_xyz(op, elgroup)
                 ]
 
         print kwargs
@@ -199,7 +198,7 @@ class OpTemplateWithEnvironment(object):
                 Comment, Line, \
                 CudaShared, CudaGlobal, Static, \
                 Define, \
-                Constant, Initializer, If, For, Statement
+                Constant, Initializer, If, For, Statement, Assign
                 
         discr = self.discr
         d = discr.dimensions
@@ -208,6 +207,7 @@ class OpTemplateWithEnvironment(object):
         lop_par = discr.plan.find_localop_par()
         ind_info = self.localop_indexing_info()
         ilist_data = self.index_list_data()
+        rst2xyz_coeffs_size_unaligned = d*d*lop_par.total()
 
         texref_names = ["diff_rst%d_matrix" % i for i in dims]
 
@@ -230,8 +230,8 @@ class OpTemplateWithEnvironment(object):
                 localop_facedup_struct(),
                 Define("EL_DOF", "threadIdx.x"),
                 Define("BLOCK_EL", "threadIdx.y"),
-                Define("DOFS_PER_EL", "blockDim.x"),
-                Define("CONCURRENT_ELS", "blockDim.y"),
+                Define("DOFS_PER_EL", discr.plan.dofs_per_el()),
+                Define("CONCURRENT_ELS", lop_par.p),
                 Define("SERIAL_ELS", str(lop_par.s)),
                 Define("DOFS_BLOCK_BASE", "(blockIdx.x*BLOCK_DOFS)"),
                 Define("THREAD_NUM", "(BLOCK_EL*DOFS_PER_EL + EL_DOF)"),
@@ -239,8 +239,8 @@ class OpTemplateWithEnvironment(object):
                 Define("BLOCK_DOFS", discr.int_dof_floats + discr.ext_dof_floats),
                 Define("ILIST_LENGTH", ilist_data.single_ilist_length),
                 Define("LOP_IND_INFO_BLOCK_SIZE", ind_info.block_size),
-                Define("RST2XYZ_SUBBLOCK_SIZE", 
-                    self.localop_floats_per_rst_to_xyz_subblock()),
+                Define("RST2XYZ_BLOCK_SIZE", 
+                    self.localop_floats_per_rst_to_xyz_block()),
                 Line(),
                 ilist_data.initializer,
                 Line(),
@@ -248,7 +248,7 @@ class OpTemplateWithEnvironment(object):
                 CudaShared(ArrayOf(Value("localop_facedup", "facedups"), 
                     ind_info.max_facedups_in_block)),
                 CudaShared(ArrayOf(POD(numpy.float32, "rst_to_xyz_coefficients"), 
-                    d*d*lop_par.s)),
+                    rst2xyz_coeffs_size_unaligned)),
                 CudaShared(ArrayOf(POD(numpy.float32, "int_dofs"), 
                     discr.int_dof_floats)),
                 Line(),
@@ -285,21 +285,21 @@ class OpTemplateWithEnvironment(object):
                 S("((%s *) facedups)[facedup_word_nr] = facedups_block_base[facedup_word_nr]"
                     % copy_dtype_str)
                 ),
-            S("__syncthreads()"),
             ])
         # ---------------------------------------------------------------------
-        for_loop_body = Block()
-
-        for_loop_body.extend_log_block("load rst_to_xyz_coefficients" , [
+        f_body.extend_log_block("load rst_to_xyz_coefficients" , [
             Initializer(POD(numpy.int32, "r2x_base"),
-                "(blockIdx.x * SERIAL_ELS + serial_el) * "
-                "RST2XYZ_SUBBLOCK_SIZE"),
+                "blockIdx.x * RST2XYZ_BLOCK_SIZE"),
             For("unsigned i = THREAD_NUM", 
-                "i < %d" % (d*d*lop_par.s),
+                "i < %d" % (d*d*lop_par.total()),
                 "i += THREAD_COUNT",
                 S("rst_to_xyz_coefficients[i] = "
                     "gmem_rst_to_xyz[r2x_base+i]")),
+            S("__syncthreads()"),
             ])
+
+        # ---------------------------------------------------------------------
+        for_loop_body = Block()
 
         for axis in dims:
             drst_var = "drst%d" % axis
@@ -307,28 +307,29 @@ class OpTemplateWithEnvironment(object):
                 Initializer(POD(numpy.float32, drst_var), 0),
                 For("unsigned j = 0", "j < DOFS_PER_EL", "++j",
                     S("%s += tex2D(diff_rst%d_matrix, EL_DOF, j)"
-                        "* int_dofs[base_dof_nr+j]" % (drst_var, axis))
+                        "* int_dofs[base_el*DOFS_PER_EL+j]" % (drst_var, axis))
                     ),
                 ])
 
-        for_loop_body.append( S("__syncthreads()"))
-
         for glob_axis in dims:
             for_loop_body.append(
-                S(("dxyz%d[DOFS_BLOCK_BASE+base_dof_nr+EL_DOF] = " % glob_axis) +
-                    (" + ".join(
-                        "rst_to_xyz_coefficients[BLOCK_EL+%d]"
+                Assign(
+                    "dxyz%d[DOFS_BLOCK_BASE+base_el*DOFS_PER_EL+EL_DOF]" % glob_axis,
+                    " + ".join(
+                        "rst_to_xyz_coefficients[%d + %d*base_el]"
                         "*"
-                        "drst%d" % (lop_par.p*(d*glob_axis+loc_axis), loc_axis)
+                        "drst%d" % (
+                            d*glob_axis+loc_axis, 
+                            d*d,
+                            loc_axis)
                         for loc_axis in dims
                         )
-                    )))
+                    ))
 
         f_body.extend_log_block("perform global diff", [
-            Initializer(POD(numpy.uint8, "serial_el"), 0),
-            For("unsigned base_dof_nr = BLOCK_EL*DOFS_PER_EL",
-                "base_dof_nr < block_header.els_in_block*DOFS_PER_EL",
-                "base_dof_nr += CONCURRENT_ELS*DOFS_PER_EL, ++serial_el", 
+            For("unsigned base_el = BLOCK_EL",
+                "base_el < block_header.els_in_block",
+                "base_el += CONCURRENT_ELS", 
                 for_loop_body)])
             
         cmod.append(FunctionBody(f_decl, f_body))
@@ -347,25 +348,24 @@ class OpTemplateWithEnvironment(object):
     def get_diffmat_array(self, diff_op_cls, elgroup, axis):
         return cuda.matrix_to_array(diff_op_cls.matrices(elgroup)[axis])
 
-    def localop_floats_per_rst_to_xyz_subblock(self):
+    def localop_floats_per_rst_to_xyz_block(self):
         discr = self.discr
         d = discr.dimensions
         return discr.devdata.align_dtype(
-                d*d*discr.plan.find_localop_par().p, self.discr.plan.float_size)
+                d*d*discr.plan.find_localop_par().total(), 
+                self.discr.plan.float_size)
 
     @memoize_method
     def localop_rst_to_xyz(self, diff_op, elgroup):
         discr = self.discr
-        lop_par = discr.plan.find_localop_par()
 
-        # a subblock is one chunk of elements that one thread block
-        # works on simultaneously
-        floats_per_subblock = self.localop_floats_per_rst_to_xyz_subblock()
-        bytes_per_subblock = floats_per_subblock*self.discr.plan.float_size
+        floats_per_block = self.localop_floats_per_rst_to_xyz_block()
+        bytes_per_block = floats_per_block*discr.plan.float_size
+        print bytes_per_block
 
         coeffs = diff_op.coefficients(elgroup)
 
-        subblocks = []
+        blocks = []
         
         def get_el_index_in_el_group(el):
             mygroup, idx = discr.group_map[el.id]
@@ -373,28 +373,23 @@ class OpTemplateWithEnvironment(object):
             return idx
 
         for block in discr.blocks:
-            for subblock in range(lop_par.s):
-                subblock_elgroup_indices = numpy.fromiter(
-                        (get_el_index_in_el_group(el)
-                        for el in block.elements[
-                            subblock*lop_par.p:(subblock+1)*lop_par.p]),
-                        dtype=numpy.intp)
+            block_elgroup_indices = numpy.fromiter(
+                    (get_el_index_in_el_group(el) for el in block.elements),
+                    dtype=numpy.intp)
 
-                subblocks.append(
-                    coeffs[:,:,subblock_elgroup_indices]
-                    .flatten().astype(numpy.float32))
-                #numpy.set_printoptions(precision=3)
-                #print coeffs[:,:,subblock_elgroup_indices].flatten()
-                #print coeffs[:,:,subblock_elgroup_indices]
-                #raw_input()
+            flattened = (coeffs[:,:,block_elgroup_indices]
+                .transpose(2,0,1).flatten().astype(numpy.float32))
+            blocks.append(flattened)
+                
+            #numpy.set_printoptions(precision=3)
+            #print flattened
+            #print coeffs[:,:,block_elgroup_indices]
+            #raw_input()
 
         from hedge.cuda.tools import pad_and_join
-        from pytools import Record
-        return Record(
-                dev_data=cuda.to_device(
-                    pad_and_join((str(buffer(s)) for s in subblocks), 
-                        bytes_per_subblock)),
-                floats_per_subblock=floats_per_subblock)
+        return cuda.to_device(
+                    pad_and_join((str(buffer(s)) for s in blocks), 
+                        bytes_per_block))
 
     @memoize_method
     def localop_indexing_info(self):

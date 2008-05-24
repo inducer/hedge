@@ -377,6 +377,14 @@ class Statement(Generable):
     def generate(self):
         yield self.text+";"
 
+class Assign(Generable):
+    def __init__(self, lvalue, rvalue):
+        self.lvalue = lvalue
+        self.rvalue = rvalue
+
+    def generate(self):
+        yield "%s = %s;" % (self.lvalue, self.rvalue)
+
 class Line(Generable):
     def __init__(self, text=""):
         self.text = text
