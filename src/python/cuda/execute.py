@@ -106,13 +106,14 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         d = discr.dimensions
 
         ii = self.ex.localop_indexing_info()
-        func, texrefs = self.ex.get_diff_kernel()
+        eg, = discr.element_groups
+        func, texref = self.ex.get_bound_diff_kernel(op.__class__, eg)
 
         lop_par = discr.plan.find_localop_par()
         
         kwargs = {
                 "shared": discr.plan.localop_shared_mem_use(),
-                "texrefs": texrefs, 
+                "texrefs": [texref], 
                 "block": (discr.plan.dofs_per_el(), lop_par.p, 1),
                 "grid": (len(discr.blocks), 1)
                 }
@@ -137,26 +138,6 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             real_dx = test_discr.nabla[0].apply(f.astype(numpy.float64))
 
             print la.norm(dx-real_dx)/la.norm(real_dx)
-            numpy.set_printoptions(precision=3)
-            #print dx[:n]
-            #print real_dx[:n]
-            diff = dx-real_dx
-            struc = ""
-            n = discr.plan.dofs_per_el()
-            for block in discr.blocks:
-                for el in block.elements:
-                    s = discr.find_el_range(el.id)
-                    if numpy.max(numpy.abs(diff[s])) > 1e-3:
-                        struc += "*"
-                        if False:
-                            print dx[s]
-                            print real_dx[s]
-                            print diff[s]
-                            raw_input()
-                    else:
-                        struc += "."
-                struc += "\n"
-            print struc
         
         print "DEBUG"
         print dbgbuf
@@ -208,8 +189,7 @@ class OpTemplateWithEnvironment(object):
         ind_info = self.localop_indexing_info()
         ilist_data = self.index_list_data()
         rst2xyz_coeffs_size_unaligned = d*d*lop_par.total()
-
-        texref_names = ["diff_rst%d_matrix" % i for i in dims]
+        elgroup, = discr.element_groups
 
         f_decl = CudaGlobal(FunctionDeclaration(Value("void", "apply_diff_mat"), 
             [Pointer(POD(numpy.float32, "dbgbuf"))]
@@ -222,10 +202,9 @@ class OpTemplateWithEnvironment(object):
                 ]
             ))
 
-        cmod = Module(
-            [Value("texture<float, 2, cudaReadModeElementType>", name)
-                for name in texref_names]
-            +[
+        cmod = Module([
+                Value("texture<float%d, 2, cudaReadModeElementType>" 
+                    % self.diffmat_channels(), "diff_rst_matrices"),
                 localop_block_header_struct(),
                 localop_facedup_struct(),
                 Define("EL_DOF", "threadIdx.x"),
@@ -302,14 +281,27 @@ class OpTemplateWithEnvironment(object):
         for_loop_body = Block()
 
         for axis in dims:
-            drst_var = "drst%d" % axis
-            for_loop_body.extend_log_block("perform local diff along axis %d" % axis, [
-                Initializer(POD(numpy.float32, drst_var), 0),
-                For("unsigned j = 0", "j < DOFS_PER_EL", "++j",
-                    S("%s += tex2D(diff_rst%d_matrix, EL_DOF, j)"
-                        "* int_dofs[base_el*DOFS_PER_EL+j]" % (drst_var, axis))
-                    ),
-                ])
+            for_loop_body.append(
+                Initializer(POD(numpy.float32, "drst%d" % axis), 0))
+
+        for_loop_body.append(Line())
+
+        tex_channels = ["x", "y", "z", "w"]
+        for_loop_body.append(
+            For("unsigned j = 0", "j < DOFS_PER_EL", "++j", Block([
+                S("float%d diff_ij = tex2D(diff_rst_matrices, EL_DOF, j)" 
+                    % self.diffmat_channels()),
+                Initializer(POD(numpy.float32, "field_value"),
+                    "int_dofs[base_el*DOFS_PER_EL+j]"),
+                Line(),
+                ]+[
+                S("drst%d += diff_ij.%s * field_value" 
+                    % (axis, tex_channels[axis]))
+                for axis in dims
+                ]))
+            )
+
+        for_loop_body.append(Line())
 
         for glob_axis in dims:
             for_loop_body.append(
@@ -337,16 +329,38 @@ class OpTemplateWithEnvironment(object):
         mod = cuda.SourceModule(cmod, keep=True, 
                 #options=["--maxrregcount=12"]
                 )
-        texrefs = [mod.get_texref(name) for name in texref_names]
-        for texref, dmat in zip(texrefs, discr.plan.ldis.differentiation_matrices()):
-            cuda.matrix_to_texref(dmat, texref)
 
-        return mod.get_function("apply_diff_mat"), texrefs
+        return (mod.get_function("apply_diff_mat"), 
+                mod.get_texref("diff_rst_matrices"))
+
+    @memoize_method
+    def get_bound_diff_kernel(self, diff_op_cls, elgroup):
+        kernel, texref = self.get_diff_kernel()
+        cuda.bind_array_to_texref(
+                self.diffmat_array(diff_op_cls, elgroup),
+                texref)
+
+        return kernel, texref
 
     # gpu data blocks ---------------------------------------------------------
+    def diffmat_channels(self):
+        return min(ch
+                for ch in [1,2,4]
+                if ch >= self.discr.dimensions)
+
     @memoize_method
-    def get_diffmat_array(self, diff_op_cls, elgroup, axis):
-        return cuda.matrix_to_array(diff_op_cls.matrices(elgroup)[axis])
+    def diffmat_array(self, diff_op_cls, elgroup):
+        diffmats = diff_op_cls.matrices(elgroup)[:]
+        channel_count = self.diffmat_channels()
+
+        from pytools import single_valued
+        diffmat_shape = single_valued(dm.shape for dm in diffmats)
+        while channel_count > len(diffmats):
+            diffmats.append(
+                    numpy.zeros(diffmat_shape, dtype=numpy.float32))
+        
+        from pytools import Record
+        return cuda.make_multichannel_2d_array(diffmats)
 
     def localop_floats_per_rst_to_xyz_block(self):
         discr = self.discr
@@ -361,7 +375,6 @@ class OpTemplateWithEnvironment(object):
 
         floats_per_block = self.localop_floats_per_rst_to_xyz_block()
         bytes_per_block = floats_per_block*discr.plan.float_size
-        print bytes_per_block
 
         coeffs = diff_op.coefficients(elgroup)
 
