@@ -94,11 +94,22 @@ def localop_facedup_struct():
 class ExecutionMapper(hedge.optemplate.Evaluator,
         hedge.optemplate.BoundOpMapperMixin, 
         hedge.optemplate.LocalOpReducerMixin):
+
     def __init__(self, context, executor):
         hedge.optemplate.Evaluator.__init__(self, context)
         self.ex = executor
 
+        self.diff_xyz_cache = {}
+
     def map_diff_base(self, op, field_expr, out=None):
+        try:
+            xyz_diff = self.diff_xyz_cache[op.__class__, field_expr]
+        except KeyError:
+            pass
+        else:
+            print "HIT"
+            return xyz_diff[op.xyz_axis]
+
         field = self.rec(field_expr)
 
         discr = self.ex.discr
@@ -116,21 +127,18 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                 "block": (discr.plan.dofs_per_el(), lop_par.p, 1),
                 "grid": (len(discr.blocks), 1)
                 }
-        dbgbuf = gpuarray.zeros(kwargs["block"][:1], numpy.float32)
 
         xyz_diff = [discr.volume_zeros() for axis in range(d)]
         elgroup, = discr.element_groups
-        args = [dbgbuf]+xyz_diff+[
+        args = xyz_diff+[
                 field, 
                 ii.headers, ii.facedups, 
                 self.ex.localop_rst_to_xyz(op, elgroup)
                 ]
 
-        print kwargs
-
         func(*args, **kwargs)
 
-        if True:
+        if False:
             f = discr.volume_from_gpu(field)
             dx = discr.volume_from_gpu(xyz_diff[0], check=True)
             
@@ -139,13 +147,8 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
             print la.norm(dx-real_dx)/la.norm(real_dx)
         
-        print "DEBUG"
-        print dbgbuf
-
-
-        print "TSCHUES"
-        import sys
-        sys.exit(0)
+        self.diff_xyz_cache[op.__class__, field_expr] = xyz_diff
+        return xyz_diff[op.xyz_axis]
 
 
 
@@ -192,8 +195,7 @@ class OpTemplateWithEnvironment(object):
         elgroup, = discr.element_groups
 
         f_decl = CudaGlobal(FunctionDeclaration(Value("void", "apply_diff_mat"), 
-            [Pointer(POD(numpy.float32, "dbgbuf"))]
-            + [Pointer(POD(numpy.float32, "dxyz%d" % i)) for i in dims]
+            [Pointer(POD(numpy.float32, "dxyz%d" % i)) for i in dims]
             + [
                 Pointer(POD(numpy.float32, "field")),
                 Pointer(Value("localop_block_header", "block_headers")),
@@ -355,7 +357,6 @@ class OpTemplateWithEnvironment(object):
                     Initializer(POD(numpy.uint32, "tgt_dof"),
                         "facedups[face_nr].dup_global_base+face_dof"),
                     Line(),
-                    #S("dxyz0[tgt_dof] = face_nr"),
                     ]+get_scalar_diff_code("face_el_nr", "face_el_dof",
                         "dxyz%d[tgt_dof]" )
                     )
@@ -365,7 +366,8 @@ class OpTemplateWithEnvironment(object):
         # finish off ----------------------------------------------------------
         cmod.append(FunctionBody(f_decl, f_body))
 
-        mod = cuda.SourceModule(cmod, keep=True, 
+        mod = cuda.SourceModule(cmod, 
+                #keep=True, 
                 #options=["--maxrregcount=12"]
                 )
 
