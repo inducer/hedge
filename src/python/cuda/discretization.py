@@ -44,8 +44,10 @@ class GPUBlock(object):
       elements in this block.
     @ivar ext_faces_from_me: A list of L{GPUInteriorFaceStorage} instances representing
       faces native to this block that are duplicated in other blocks.
+      This points to faces native to this block.
     @ivar ext_faces_to_me: A list of L{GPUFaceStorage} instances representing faces
       native to other blocks that are duplicated in this block.
+      This points to faces native to other blocks.
     """
     __slots__ = ["number", "local_discretization", "cpu_slices", "elements", 
             "ext_faces_from_me", "ext_faces_to_me"]
@@ -440,9 +442,10 @@ class Discretization(hedge.discretization.Discretization):
                 ef_start = block_offset+self.int_dof_floats
                 for i_ef, ext_face in enumerate(block.ext_faces_to_me):
                     if isinstance(ext_face, GPUInteriorFaceStorage):
+                        assert ext_face.native_block is not block
                         f_start = ef_start+face_length*i_ef
                         assert f_start == ext_face.dup_global_base
-                        il = ext_face.opposite.cpu_slice.start + \
+                        il = ext_face.cpu_slice.start + \
                                 self.index_lists[ext_face.native_index_list_id]
                         copy_vec[f_start:f_start+face_length] = field[il] 
 
@@ -472,7 +475,6 @@ class Discretization(hedge.discretization.Discretization):
 
             block_offset = 0
             for block in self.blocks:
-                face_length = block.local_discretization.face_node_count()
                 el_length = block.local_discretization.node_count()
 
                 # write internal dofs
@@ -481,18 +483,20 @@ class Discretization(hedge.discretization.Discretization):
                     result[cpu_slice] = copied_vec[el_offset:el_offset+el_length]
                     el_offset += el_length
 
-                if check:
-                    ef_start = block_offset+self.int_dof_floats
+                block_offset += block_dofs
+
+            if check:
+                for block in self.blocks:
+                    face_length = block.local_discretization.face_node_count()
+                    ef_start = block.number*block_dofs+self.int_dof_floats
                     for i_ef, ext_face in enumerate(block.ext_faces_to_me):
                         if isinstance(ext_face, GPUInteriorFaceStorage):
                             f_start = ef_start+face_length*i_ef
                             assert f_start == ext_face.dup_global_base
-                            il = ext_face.opposite.cpu_slice.start + \
+                            il = ext_face.cpu_slice.start + \
                                     self.index_lists[ext_face.native_index_list_id]
                             diff = result[il] - copied_vec[f_start:f_start+face_length]
                             assert la.norm(diff) < 1e-10 * la.norm(result)
-                        
-                block_offset += block_dofs
 
             return result
 

@@ -82,9 +82,8 @@ def localop_facedup_struct():
     from hedge.cuda.cgen import Struct, POD
 
     return Struct("localop_facedup", [
-        POD(numpy.uint16, "smem_face_base"),
-        POD(numpy.uint8, "smem_face_ilist_number"),
-        POD(numpy.uint8, "smem_element_number"),
+        POD(numpy.uint16, "smem_face_ilist_number"),
+        POD(numpy.uint16, "smem_element_number"),
         POD(numpy.uint32, "dup_global_base"),
         ])
 
@@ -129,11 +128,12 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
         print kwargs
 
-        f = discr.volume_from_gpu(field)
         func(*args, **kwargs)
-        dx = discr.volume_from_gpu(xyz_diff[0], check=True)
 
         if True:
+            f = discr.volume_from_gpu(field)
+            dx = discr.volume_from_gpu(xyz_diff[0], check=True)
+            
             test_discr = discr.test_discr
             real_dx = test_discr.nabla[0].apply(f.astype(numpy.float64))
 
@@ -355,11 +355,9 @@ class OpTemplateWithEnvironment(object):
                     Initializer(POD(numpy.uint32, "tgt_dof"),
                         "facedups[face_nr].dup_global_base+face_dof"),
                     Line(),
-                    ]+get_scalar_diff_code(
-                        "face_el_nr",
-                        "face_el_dof",
-                        "dxyz%d[tgt_dof]" 
-                        )
+                    #S("dxyz0[tgt_dof] = face_nr"),
+                    ]+get_scalar_diff_code("face_el_nr", "face_el_dof",
+                        "dxyz%d[tgt_dof]" )
                     )
                 )
             ])
@@ -461,14 +459,15 @@ class OpTemplateWithEnvironment(object):
 
             block_data = ""
             for extface in block.ext_faces_from_me:
-                if not isinstance(extface, GPUInteriorFaceStorage):
-                    continue
+                #assert extface.native_block is block
+                assert isinstance(extface, GPUInteriorFaceStorage)
                 facedup_count += 1
                 block_data += localop_facedup_struct().make(
-                        smem_face_base=el_dofs*extface.native_block_el_num,
                         smem_face_ilist_number=extface.native_index_list_id,
                         smem_element_number=extface.native_block_el_num,
                         dup_global_base=extface.dup_global_base)
+
+            #raw_input()
 
             headers.append(localop_block_header_struct().make(
                         els_in_block=len(block.elements),
