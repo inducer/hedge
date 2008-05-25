@@ -128,7 +128,8 @@ class BoundaryCombiner(hedge.optemplate.IdentityMapper):
                     ext_coeff=inner_flux_op.ext_coeff,
                     boundaries=boundaries)
 
-            result.append(wflux)
+            from hedge.optemplate import OperatorBinding
+            result.append(OperatorBinding(wflux, inner_var))
 
         # make sure we got everything
         for var, flux_ops in arg_to_flux.iteritems():

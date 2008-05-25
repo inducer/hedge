@@ -150,6 +150,37 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         self.diff_xyz_cache[op.__class__, field_expr] = xyz_diff
         return xyz_diff[op.xyz_axis]
 
+    def map_whole_domain_flux(self, op, field_expr, out=None):
+        print op
+        print field_expr
+
+        field = self.rec(field_expr)
+        discr = self.ex.discr
+
+        ii = self.ex.flux_indexing_info()
+        func, texref = self.ex.get_flux_kernel(op)
+
+        flux_par = discr.plan.flux_par
+        
+        kwargs = {
+                "shared": discr.plan.flux_shared_mem_use(),
+                "texrefs": [texref], 
+                "block": (discr.plan.dofs_per_face(), 
+                    discr.plan.faces_per_el(),
+                    flux_par.p),
+                "grid": (len(discr.blocks), 1)
+                }
+
+        flux = discr.volume_zeros() 
+        elgroup, = discr.element_groups
+        args = [flux, field, ii.headers, ii.facepair_blocks]
+
+        func(*args, **kwargs)
+
+        print "TSCHUES"
+        import sys
+        sys.exit(1)
+
 
 
 
@@ -173,7 +204,10 @@ class OpTemplateWithEnvironment(object):
     def __call__(self, **vars):
         return ExecutionMapper(vars, self)(self.optemplate)
 
-    # code generation ---------------------------------------------------------
+
+
+
+    # diff kernel -------------------------------------------------------------
     @memoize_method
     def get_diff_kernel(self):
         from hedge.cuda.cgen import \
@@ -190,7 +224,6 @@ class OpTemplateWithEnvironment(object):
 
         lop_par = discr.plan.find_localop_par()
         ind_info = self.localop_indexing_info()
-        ilist_data = self.index_list_data()
         rst2xyz_coeffs_size_unaligned = d*d*lop_par.total()
         elgroup, = discr.element_groups
 
@@ -217,7 +250,6 @@ class OpTemplateWithEnvironment(object):
                 Define("THREAD_NUM", "(BLOCK_EL*DOFS_PER_EL + EL_DOF)"),
                 Define("THREAD_COUNT", "(DOFS_PER_EL*CONCURRENT_ELS)"),
                 Define("BLOCK_DOFS", discr.int_dof_floats + discr.ext_dof_floats),
-                Define("ILIST_LENGTH", ilist_data.single_ilist_length),
                 Define("LOP_IND_INFO_BLOCK_SIZE", ind_info.block_size),
                 Define("RST2XYZ_BLOCK_SIZE", 
                     self.localop_floats_per_rst_to_xyz_block()),
@@ -228,7 +260,7 @@ class OpTemplateWithEnvironment(object):
                     discr.plan.dofs_per_el()*lop_par.p
                     //discr.plan.dofs_per_face()),
                 Line(),
-                ilist_data.initializer,
+                self.index_list_data(),
                 Line(),
                 CudaShared(Value("localop_block_header", "block_header")),
                 CudaShared(ArrayOf(Value("localop_facedup", "facedups"), 
@@ -383,6 +415,111 @@ class OpTemplateWithEnvironment(object):
 
         return kernel, texref
 
+
+
+
+    # flux kernel -------------------------------------------------------------
+    @memoize_method
+    def get_flux_kernel(self, wdflux):
+        from hedge.cuda.cgen import \
+                Pointer, POD, Value, ArrayOf, Const, \
+                Module, FunctionDeclaration, FunctionBody, Block, \
+                Comment, Line, \
+                CudaShared, CudaGlobal, Static, \
+                Define, \
+                Constant, Initializer, If, For, Statement, Assign
+                
+        discr = self.discr
+        d = discr.dimensions
+        dims = range(d)
+
+        lop_par = discr.plan.find_localop_par()
+        ind_info = self.flux_indexing_info()
+        rst2xyz_coeffs_size_unaligned = d*d*lop_par.total()
+        elgroup, = discr.element_groups
+
+        f_decl = CudaGlobal(FunctionDeclaration(Value("void", "apply_flux"), 
+            [
+                Pointer(POD(numpy.float32, "flux")),
+                Pointer(POD(numpy.float32, "field")),
+                Pointer(Value("flux_block_header", "block_headers")),
+                Pointer(POD(numpy.uint8, "gmem_ind_info")),
+                ]
+            ))
+
+        cmod = Module([
+                Value("texture<float, 2, cudaReadModeElementType>", "lift_matrix"),
+                flux_block_header_struct(),
+                flux_facepair_struct(),
+                Define("FACE_DOF", "threadIdx.x"),
+                Define("EL_FACE", "threadIdx.y"),
+                Define("BLOCK_EL", "threadIdx.z"),
+                Define("DOFS_PER_FACE", discr.plan.dofs_per_face()),
+                Define("CONCURRENT_FACES", discr.plan.faces_per_el()*flux_par.p),
+                Define("DOFS_BLOCK_BASE", "(blockIdx.x*BLOCK_DOFS)"),
+                Define("THREAD_NUM", "(BLOCK_EL*DOFS_PER_EL + FACE_DOF)"),
+                Define("THREAD_COUNT", "(DOFS_PER_FACE*CONCURRENT_FACES)"),
+                Define("BLOCK_DOFS", discr.int_dof_floats + discr.ext_dof_floats),
+                Line(),
+                Comment("element-related stuff"),
+                Define("DOFS_PER_EL", discr.plan.dofs_per_el()),
+                Line(),
+                self.index_list_data(),
+                Line(),
+                CudaShared(Value("flux_block_header", "block_header")),
+                CudaShared(ArrayOf(Value("flux_face_pair", "face_pairs"), 
+                    ind_info.max_face_pairs_in_block)),
+                CudaShared(ArrayOf(POD(numpy.float32, "int_dofs"), 
+                    discr.int_dof_floats)),
+                CudaShared(ArrayOf(POD(numpy.float32, "ext_dofs"), 
+                    discr.ext_dof_floats)),
+                Line(),
+                ])
+
+        S = Statement
+        f_body = Block()
+            
+        f_body.extend_log_block("load block header in thread 0", [
+            If("THREAD_NUM == 0",
+                S("block_header = block_headers[blockIdx.x]")),
+            S("__syncthreads()"),
+            ])
+
+        f_body.extend_log_block("load internal dofs", [
+            For("unsigned dof_nr = THREAD_NUM", 
+                "dof_nr < block_header.els_in_block*DOFS_PER_EL", 
+                "dof_nr += THREAD_COUNT",
+                S("int_dofs[dof_nr] = field[DOFS_BLOCK_BASE+dof_nr]"),
+                ),
+            ])
+
+        from hedge.cuda.cgen import dtype_to_ctype
+        copy_dtype = numpy.dtype(numpy.int32)
+        copy_dtype_str = dtype_to_ctype(copy_dtype)
+        f_body.extend_log_block("load indexing info", [
+            Constant(Pointer(POD(copy_dtype, "facedups_block_base")), 
+                ("(%s *)" % copy_dtype_str)+
+                "(gmem_ind_info + blockIdx.x*LOP_IND_INFO_BLOCK_SIZE)"),
+            For("unsigned facedup_word_nr = THREAD_NUM", 
+                "facedup_word_nr*sizeof(int) < "
+                "sizeof(localop_facedup)*block_header.facedups_in_block", 
+                "facedup_word_nr += THREAD_COUNT",
+                S("((%s *) facedups)[facedup_word_nr] = facedups_block_base[facedup_word_nr]"
+                    % copy_dtype_str)
+                ),
+            ])
+            
+        # finish off ----------------------------------------------------------
+        cmod.append(FunctionBody(f_decl, f_body))
+
+        mod = cuda.SourceModule(cmod, 
+                keep=True, 
+                #options=["--maxrregcount=12"]
+                )
+
+        return (mod.get_function("apply_flux"), 
+                mod.get_texref("lift_matrix"))
+
     # gpu data blocks ---------------------------------------------------------
     def diffmat_channels(self):
         return min(ch
@@ -498,7 +635,7 @@ class OpTemplateWithEnvironment(object):
     def flux_indexing_info(self):
         discr = self.discr
 
-        block_len = discr.plan.indexing_smem()
+        block_len = discr.plan.flux_indexing_smem()
 
         INVALID_U8 = (1<<8) - 1
         INVALID_U16 = (1<<16) - 1
@@ -506,6 +643,7 @@ class OpTemplateWithEnvironment(object):
 
         headers = []
         blocks = []
+        fp_counts = []
 
         from hedge.cuda.discretization import GPUBoundaryFaceStorage
 
@@ -545,7 +683,7 @@ class OpTemplateWithEnvironment(object):
                         b_ilist_number = INVALID_U8
 
                 fp_blocks.append(
-                        discr.plan.get_face_pair_struct().make(
+                        flux_face_pair_struct(discr.dimensions).make(
                             h=int_face.flux_face.h,
                             order=int_face.flux_face.order,
                             face_jacobian=int_face.flux_face.face_jacobian,
@@ -559,11 +697,12 @@ class OpTemplateWithEnvironment(object):
                             b_global_base=b_global_base,
                             ))
 
-            headers.append(discr.plan.get_block_header_struct().make(
+            headers.append(flux_block_header_struct().make(
                     els_in_block=len(block.elements),
                     face_pairs_in_block=len(fp_blocks)
                     ))
             blocks.append("".join(fp_blocks))
+            fp_counts.append(len(fp_blocks))
 
         # make sure the indexing_smem estimate is achieved
         assert max(len(b) for b in blocks) == block_len
@@ -572,10 +711,13 @@ class OpTemplateWithEnvironment(object):
         facepair_blocks = pad_and_join(blocks)
         assert len(facepair_blocks) == block_len*len(discr.blocks)
 
+        assert max(fp_counts) == discr.plan.face_pair_count()
         from pytools import Record
         return Record(
             headers="".join(headers),
-            facepair_blocks=cuda.to_device(facepair_blocks))
+            face_pair_blocks=cuda.to_device(facepair_blocks),
+            max_face_pairs_in_block=max(fp_counts)
+            )
 
     @memoize_method
     def index_list_data(self):
@@ -593,11 +735,8 @@ class OpTemplateWithEnvironment(object):
 
         from pytools import flatten, Record
         flat_ilists = list(flatten(discr.index_lists))
-        return Record(
-                single_ilist_length=ilist_length,
-                initializer=ArrayInitializer(
+        return ArrayInitializer(
                     CudaConstant(
                         ArrayOf(POD(tp, "index_lists"))),
                     flat_ilists
                     )
-                )
