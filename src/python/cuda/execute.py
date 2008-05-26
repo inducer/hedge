@@ -116,9 +116,9 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         discr = self.ex.discr
         d = discr.dimensions
 
-        localop_data = self.ex.localop_data()
         eg, = discr.element_groups
-        func, texref = self.ex.get_bound_diff_kernel(op.__class__, eg)
+        localop_data = self.ex.localop_data(op, eg)
+        func, texref = self.ex.get_diff_kernel(op.__class__, eg)
 
         lop_par = discr.plan.find_localop_par()
         
@@ -131,10 +131,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
         xyz_diff = [discr.volume_zeros() for axis in range(d)]
         elgroup, = discr.element_groups
-        args = xyz_diff+[
-                field, localop_data.device_memory,
-                self.ex.localop_rst_to_xyz(op, elgroup),
-                ]
+        args = xyz_diff+[field, localop_data.device_memory]
 
         func(*args, **kwargs)
 
@@ -240,7 +237,7 @@ class OpTemplateWithEnvironment(object):
         return code
 
     @memoize_method
-    def get_diff_kernel(self):
+    def get_diff_kernel(self, diff_op_cls, elgroup):
         from hedge.cuda.cgen import \
                 Pointer, POD, Value, ArrayOf, Const, \
                 Module, FunctionDeclaration, FunctionBody, Block, \
@@ -254,7 +251,7 @@ class OpTemplateWithEnvironment(object):
         dims = range(d)
 
         lop_par = discr.plan.find_localop_par()
-        lop_data = self.localop_data()
+        lop_data = self.localop_data(diff_op_cls, elgroup)
         rst2xyz_coeffs_size_unaligned = d*d*lop_par.total()
         elgroup, = discr.element_groups
 
@@ -265,7 +262,6 @@ class OpTemplateWithEnvironment(object):
             + [
                 Pointer(POD(float_type, "field")),
                 Pointer(POD(numpy.uint8, "gmem_data")),
-                Pointer(POD(float_type, "gmem_rst_to_xyz")),
                 ]
             ))
 
@@ -283,8 +279,6 @@ class OpTemplateWithEnvironment(object):
                 Define("THREAD_COUNT", "(DOFS_PER_EL*CONCURRENT_ELS)"),
                 Define("BLOCK_DOF_COUNT", discr.block_dof_count()),
                 Define("DATA_BLOCK_SIZE", lop_data.block_size),
-                Define("RST2XYZ_BLOCK_SIZE", 
-                    self.localop_floats_per_rst_to_xyz_block()),
                 Line(),
                 Comment("face-related stuff"),
                 Define("DOFS_PER_FACE", discr.plan.dofs_per_face()),
@@ -296,8 +290,6 @@ class OpTemplateWithEnvironment(object):
                 Line(),
                 lop_data.struct,
                 CudaShared(Value("localop_data", "data")),
-                CudaShared(ArrayOf(POD(float_type, "rst_to_xyz_coefficients"), 
-                    rst2xyz_coeffs_size_unaligned)),
                 CudaShared(ArrayOf(POD(float_type, "int_dofs"), 
                     discr.int_dof_floats)),
                 Line(),
@@ -312,7 +304,10 @@ class OpTemplateWithEnvironment(object):
             bytes="sizeof(localop_data)",
             descr="load localop_data"))
 
-        f_body.append( S("__syncthreads()"))
+        f_body.extend([
+            S("__syncthreads()"),
+            Line()
+            ])
 
         f_body.extend_log_block("load internal dofs", [
             For("unsigned dof_nr = THREAD_NUM", 
@@ -322,16 +317,9 @@ class OpTemplateWithEnvironment(object):
                 ),
             ])
 
-        # ---------------------------------------------------------------------
-        f_body.extend_log_block("load rst_to_xyz_coefficients" , [
-            Initializer(POD(numpy.int32, "r2x_base"),
-                "blockIdx.x * RST2XYZ_BLOCK_SIZE"),
-            For("unsigned i = THREAD_NUM", 
-                "i < %d" % (d*d*lop_par.total()),
-                "i += THREAD_COUNT",
-                S("rst_to_xyz_coefficients[i] = "
-                    "gmem_rst_to_xyz[r2x_base+i]")),
+        f_body.extend([
             S("__syncthreads()"),
+            Line()
             ])
 
         # ---------------------------------------------------------------------
@@ -365,7 +353,7 @@ class OpTemplateWithEnvironment(object):
                     Assign(
                         dest_pattern % glob_axis,
                         " + ".join(
-                            "rst_to_xyz_coefficients[%d + %d*(%s)]"
+                            "data.rst_to_xyz_coefficients[%d + %d*(%s)]"
                             "*"
                             "drst%d" % (
                                 d*glob_axis+loc_axis, 
@@ -422,17 +410,13 @@ class OpTemplateWithEnvironment(object):
                 #options=["--maxrregcount=12"]
                 )
 
-        return (mod.get_function("apply_diff_mat"), 
-                mod.get_texref("diff_rst_matrices"))
+        texref = mod.get_texref("diff_rst_matrices")
 
-    @memoize_method
-    def get_bound_diff_kernel(self, diff_op_cls, elgroup):
-        kernel, texref = self.get_diff_kernel()
         cuda.bind_array_to_texref(
                 self.diffmat_array(diff_op_cls, elgroup),
                 texref)
 
-        return kernel, texref
+        return mod.get_function("apply_diff_mat"), texref
 
 
 
@@ -576,18 +560,12 @@ class OpTemplateWithEnvironment(object):
         from pytools import Record
         return cuda.make_multichannel_2d_array(diffmats)
 
-    def localop_floats_per_rst_to_xyz_block(self):
-        discr = self.discr
-        d = discr.dimensions
-        return discr.devdata.align_dtype(
-                d*d*discr.plan.find_localop_par().total(), 
-                self.discr.plan.float_size)
-
     @memoize_method
     def localop_rst_to_xyz(self, diff_op, elgroup):
         discr = self.discr
+        d = discr.dimensions
 
-        floats_per_block = self.localop_floats_per_rst_to_xyz_block()
+        floats_per_block = d*d*discr.plan.find_localop_par().total()
         bytes_per_block = floats_per_block*discr.plan.float_size
 
         coeffs = diff_op.coefficients(elgroup)
@@ -599,6 +577,7 @@ class OpTemplateWithEnvironment(object):
             assert mygroup is elgroup
             return idx
 
+        from hedge.cuda.tools import pad
         for block in discr.blocks:
             block_elgroup_indices = numpy.fromiter(
                     (get_el_index_in_el_group(el) for el in block.elements),
@@ -606,17 +585,12 @@ class OpTemplateWithEnvironment(object):
 
             flattened = (coeffs[:,:,block_elgroup_indices]
                 .transpose(2,0,1).flatten().astype(discr.plan.float_type))
-            blocks.append(flattened)
+            blocks.append(pad(str(buffer(flattened)), bytes_per_block))
                 
-            #numpy.set_printoptions(precision=3)
-            #print flattened
-            #print coeffs[:,:,block_elgroup_indices]
-            #raw_input()
-
-        from hedge.cuda.tools import pad_and_join
-        return cuda.to_device(
-                    pad_and_join((str(buffer(s)) for s in blocks), 
-                        bytes_per_block))
+        from hedge.cuda.cgen import POD, ArrayOf
+        return blocks, ArrayOf(
+                POD(discr.plan.float_type, "rst_to_xyz_coefficients"),
+                floats_per_block)
 
     @memoize_method
     def facedup_blocks(self):
@@ -657,7 +631,7 @@ class OpTemplateWithEnvironment(object):
         return headers, blocks
 
     @memoize_method
-    def localop_data(self):
+    def localop_data(self, op, elgroup):
         discr = self.discr
         headers, blocks = self.facedup_blocks()
 
@@ -666,7 +640,9 @@ class OpTemplateWithEnvironment(object):
 
         return make_superblocks(
                 discr.devdata, "localop_data",
-                [(headers, Value(block_header_struct().tpname, "header"))],
+                [(headers, Value(block_header_struct().tpname, "header")),
+                    self.localop_rst_to_xyz(op, elgroup)
+                    ],
                 [(blocks, Value(facedup_struct().tpname, "facedups"))],
                     )
 
