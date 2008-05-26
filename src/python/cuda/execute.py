@@ -116,7 +116,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         discr = self.ex.discr
         d = discr.dimensions
 
-        facedups = self.ex.facedup_data()
+        localop_data = self.ex.localop_data()
         eg, = discr.element_groups
         func, texref = self.ex.get_bound_diff_kernel(op.__class__, eg)
 
@@ -132,9 +132,8 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         xyz_diff = [discr.volume_zeros() for axis in range(d)]
         elgroup, = discr.element_groups
         args = xyz_diff+[
-                field, 
-                facedups.headers, facedups.facedups, 
-                self.ex.localop_rst_to_xyz(op, elgroup)
+                field, localop_data.device_memory,
+                self.ex.localop_rst_to_xyz(op, elgroup),
                 ]
 
         func(*args, **kwargs)
@@ -255,7 +254,7 @@ class OpTemplateWithEnvironment(object):
         dims = range(d)
 
         lop_par = discr.plan.find_localop_par()
-        facedups = self.facedup_data()
+        lop_data = self.localop_data()
         rst2xyz_coeffs_size_unaligned = d*d*lop_par.total()
         elgroup, = discr.element_groups
 
@@ -265,8 +264,7 @@ class OpTemplateWithEnvironment(object):
             [Pointer(POD(float_type, "dxyz%d" % i)) for i in dims]
             + [
                 Pointer(POD(float_type, "field")),
-                Pointer(Value("block_header", "block_headers")),
-                Pointer(POD(numpy.uint8, "gmem_facedups")),
+                Pointer(POD(numpy.uint8, "gmem_data")),
                 Pointer(POD(float_type, "gmem_rst_to_xyz")),
                 ]
             ))
@@ -284,7 +282,7 @@ class OpTemplateWithEnvironment(object):
                 Define("THREAD_NUM", "(BLOCK_EL*DOFS_PER_EL + EL_DOF)"),
                 Define("THREAD_COUNT", "(DOFS_PER_EL*CONCURRENT_ELS)"),
                 Define("BLOCK_DOF_COUNT", discr.block_dof_count()),
-                Define("FACEDUP_BLOCK_SIZE", facedups.block_size),
+                Define("DATA_BLOCK_SIZE", lop_data.block_size),
                 Define("RST2XYZ_BLOCK_SIZE", 
                     self.localop_floats_per_rst_to_xyz_block()),
                 Line(),
@@ -296,9 +294,8 @@ class OpTemplateWithEnvironment(object):
                 Line(),
                 self.index_list_data(),
                 Line(),
-                CudaShared(Value("block_header", "header")),
-                CudaShared(ArrayOf(Value("facedup", "facedups"), 
-                    facedups.max_facedups_in_block)),
+                lop_data.struct,
+                CudaShared(Value("localop_data", "data")),
                 CudaShared(ArrayOf(POD(float_type, "rst_to_xyz_coefficients"), 
                     rst2xyz_coeffs_size_unaligned)),
                 CudaShared(ArrayOf(POD(float_type, "int_dofs"), 
@@ -309,25 +306,21 @@ class OpTemplateWithEnvironment(object):
         S = Statement
         f_body = Block()
             
-        f_body.extend_log_block("load block header in thread 0", [
-            If("THREAD_NUM == 0",
-                S("header = block_headers[blockIdx.x]")),
-            S("__syncthreads()"),
-            ])
+        f_body.extend(self.get_load_code(
+            dest="&data",
+            base="gmem_data + blockIdx.x*DATA_BLOCK_SIZE",
+            bytes="sizeof(localop_data)",
+            descr="load localop_data"))
+
+        f_body.append( S("__syncthreads()"))
 
         f_body.extend_log_block("load internal dofs", [
             For("unsigned dof_nr = THREAD_NUM", 
-                "dof_nr < header.els_in_block*DOFS_PER_EL", 
+                "dof_nr < data.header.els_in_block*DOFS_PER_EL", 
                 "dof_nr += THREAD_COUNT",
                 S("int_dofs[dof_nr] = field[DOFS_BLOCK_BASE+dof_nr]"),
                 ),
             ])
-
-        f_body.extend(self.get_load_code(
-            dest="facedups",
-            base="gmem_facedups + blockIdx.x*FACEDUP_BLOCK_SIZE",
-            bytes="sizeof(facedup)*header.facedups_in_block",
-            descr="load facedups"))
 
         # ---------------------------------------------------------------------
         f_body.extend_log_block("load rst_to_xyz_coefficients" , [
@@ -341,6 +334,7 @@ class OpTemplateWithEnvironment(object):
             S("__syncthreads()"),
             ])
 
+        # ---------------------------------------------------------------------
         def get_scalar_diff_code(el_nr, dest_dof, dest_pattern):
             code = []
             for axis in dims:
@@ -386,7 +380,7 @@ class OpTemplateWithEnvironment(object):
         # global diff on volume -----------------------------------------------
         f_body.extend_log_block("perform global diff on volume", [
             For("unsigned base_el = BLOCK_EL",
-                "base_el < header.els_in_block",
+                "base_el < data.header.els_in_block",
                 "base_el += CONCURRENT_ELS", 
                 Block(get_scalar_diff_code(
                     "base_el",
@@ -402,17 +396,17 @@ class OpTemplateWithEnvironment(object):
             Initializer(Const(POD(numpy.int16, "face_dof")),
                 "THREAD_NUM - DOFS_PER_FACE*block_face"),
             For("unsigned face_nr = block_face",
-                "face_nr < header.facedups_in_block",
+                "face_nr < data.header.facedups_in_block",
                 "face_nr += CONCURRENT_FACES", Block([
                     Initializer(POD(numpy.uint16, "face_el_dof"),
                         "index_lists["
-                        "facedups[face_nr].smem_face_ilist_number*DOFS_PER_FACE"
+                        "data.facedups[face_nr].smem_face_ilist_number*DOFS_PER_FACE"
                         "+face_dof"
                         "]"),
                     Initializer(POD(numpy.uint16, "face_el_nr"),
-                        "facedups[face_nr].smem_element_number"),
+                        "data.facedups[face_nr].smem_element_number"),
                     Initializer(POD(numpy.uint32, "tgt_dof"),
-                        "facedups[face_nr].dup_global_base+face_dof"),
+                        "data.facedups[face_nr].dup_global_base+face_dof"),
                     Line(),
                     ]+get_scalar_diff_code("face_el_nr", "face_el_dof",
                         "dxyz%d[tgt_dof]" )
@@ -625,11 +619,10 @@ class OpTemplateWithEnvironment(object):
                         bytes_per_block))
 
     @memoize_method
-    def facedup_data(self):
+    def facedup_blocks(self):
         discr = self.discr
         headers = []
         blocks = []
-        facedup_counts = []
 
         from hedge.cuda.discretization import GPUInteriorFaceStorage
         for block in discr.blocks:
@@ -639,17 +632,17 @@ class OpTemplateWithEnvironment(object):
             facedup_count = 0 
             block_boundary_count = 0
 
-            block_data = ""
+            structs = []
             for extface in block.ext_faces_from_me:
                 assert extface.native_block is block
                 assert isinstance(extface, GPUInteriorFaceStorage)
                 if isinstance(extface.opposite, GPUInteriorFaceStorage):
                     facedup_count += 1
-                    block_data += facedup_struct().make(
+                    structs.append(facedup_struct().make(
                             smem_element_number=extface.native_block_el_num,
                             face_number=extface.el_face[1],
                             smem_face_ilist_number=extface.native_index_list_id,
-                            dup_global_base=extface.dup_global_base)
+                            dup_global_base=extface.dup_global_base))
                 else:
                     block_boundary_count += 1
 
@@ -659,24 +652,21 @@ class OpTemplateWithEnvironment(object):
                         boundaries_in_block=block_boundary_count,
                         reserved=0,
                         ))
-            blocks.append(block_data)
-            facedup_counts.append(facedup_count)
+            blocks.append(structs)
 
-        block_size = discr.devdata.align(max(len(b) for b in blocks))
+        return headers, blocks
 
-        assert block_size < discr.plan.localop_indexing_smem()
+    @memoize_method
+    def localop_data(self):
+        discr = self.discr
+        headers, blocks = self.facedup_blocks()
 
-        from hedge.cuda.tools import pad_and_join
-        all_headers = "".join(headers)
-        all_blocks = pad_and_join(blocks, block_size)
-        
-        from pytools import Record
-        return Record(
-                block_size=block_size, 
-                max_facedups_in_block=max(facedup_counts),
-                headers=cuda.to_device(all_headers),
-                facedups=cuda.to_device(all_blocks),
-                )
+        from hedge.cuda.tools import make_superblocks
+        return make_superblocks(
+                discr.devdata, "localop_data",
+                block_header_struct(),
+                headers,
+                [("facedups", blocks, facedup_struct())])
 
     @memoize_method
     def flux_aux_info(self):

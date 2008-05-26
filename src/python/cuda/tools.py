@@ -61,13 +61,13 @@ def vec_to_gpu(field):
     else:
         return gpuarray.to_gpu(field)
 
-def pad_and_join(blocks, block_size):
-    def pad(s):
-        missing_bytes = block_size - len(s)
-        assert missing_bytes >= 0
-        return s + "\x00"*missing_bytes
+def pad(s, block_size):
+    missing_bytes = block_size - len(s)
+    assert missing_bytes >= 0
+    return s + "\x00"*missing_bytes
 
-    return "".join(pad(b) for b in blocks)
+def pad_and_join(blocks, block_size):
+    return "".join(pad(b, block_size) for b in blocks)
 
 def make_blocks(devdata, data):
     from pytools import Record
@@ -82,6 +82,59 @@ def make_blocks(devdata, data):
             block_size=block_size,
             )
 
+def make_superblocks(devdata, struct_name, header_type, headers, data):
+    from pytools import Record
+    from hedge.cuda.tools import pad_and_join
+    from pytools import Record
+
+    # data = [(name, [ [ struct1, struct2, ...], ... ], type), ...]
+
+    blocks = [
+            ["".join(s) for s in part_data]
+            for part_name, part_data, part_type in data]
+    block_sizes = [
+            max(len(b) for b in part_blocks)
+            for part_blocks in blocks]
+
+    from pytools import single_valued
+    block_count = single_valued(
+            len(part_blocks) for part_blocks in blocks)
+
+    from hedge.cuda.cgen import Struct, Value, ArrayOf
+
+    struct_members = []
+    if header_type is not None:
+        assert block_count == len(headers)
+        struct_members.append(
+                Value(header_type.tpname, "header"))
+
+    for part_name, part_data, part_type in data:
+        struct_members.append(
+                ArrayOf(Value(part_type.tpname, part_name), 
+                    max(len(s) for s in part_data)))
+
+    superblocks = []
+    for superblock_num in range(block_count):
+        data = ""
+        if header_type is not None:
+            data += headers[superblock_num]
+
+        for part_blocks, part_size in zip(blocks, block_sizes):
+            data += pad(part_blocks[superblock_num], part_size)
+
+        superblocks.append(data)
+
+    superblock_size = devdata.align(
+            single_valued(len(sb) for sb in superblocks))
+
+    data = pad_and_join(superblocks, superblock_size)
+    assert len(data) == superblock_size*block_count
+
+    return Record(
+            struct=Struct(struct_name, struct_members),
+            device_memory=cuda.to_device(data),
+            block_size=superblock_size,
+            )
 
 
 
