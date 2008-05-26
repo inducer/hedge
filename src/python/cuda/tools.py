@@ -82,44 +82,44 @@ def make_blocks(devdata, data):
             block_size=block_size,
             )
 
-def make_superblocks(devdata, struct_name, header_type, headers, data):
+def make_superblocks(devdata, struct_name, single_item, multi_item):
     from pytools import Record
     from hedge.cuda.tools import pad_and_join
     from pytools import Record
 
-    # data = [(name, [ [ struct1, struct2, ...], ... ], type), ...]
+    # single_item = [([ block1, block2, ... ], decl), ...]
+    # multi_item = [([ [ item1, item2, ...], ... ], decl), ...]
 
-    blocks = [
+    multi_blocks = [
             ["".join(s) for s in part_data]
-            for part_name, part_data, part_type in data]
+            for part_data, part_decls in multi_item]
     block_sizes = [
             max(len(b) for b in part_blocks)
-            for part_blocks in blocks]
+            for part_blocks in multi_blocks]
 
     from pytools import single_valued
     block_count = single_valued(
-            len(part_blocks) for part_blocks in blocks)
+            len(part_blocks) for part_blocks in multi_blocks)
 
     from hedge.cuda.cgen import Struct, Value, ArrayOf
 
     struct_members = []
-    if header_type is not None:
-        assert block_count == len(headers)
-        struct_members.append(
-                Value(header_type.tpname, "header"))
+    for part_data, part_decl in single_item:
+        assert block_count == len(part_data)
+        single_valued(len(block) for block in part_data)
+        struct_members.append(part_decl)
 
-    for part_name, part_data, part_type in data:
+    for part_data, part_decl in multi_item:
         struct_members.append(
-                ArrayOf(Value(part_type.tpname, part_name), 
-                    max(len(s) for s in part_data)))
+                ArrayOf(part_decl, max(len(s) for s in part_data)))
 
     superblocks = []
     for superblock_num in range(block_count):
         data = ""
-        if header_type is not None:
-            data += headers[superblock_num]
+        for part_data, part_decl in single_item:
+            data += part_data[superblock_num]
 
-        for part_blocks, part_size in zip(blocks, block_sizes):
+        for part_blocks, part_size in zip(multi_blocks, block_sizes):
             data += pad(part_blocks[superblock_num], part_size)
 
         superblocks.append(data)

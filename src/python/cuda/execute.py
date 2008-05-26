@@ -661,12 +661,14 @@ class OpTemplateWithEnvironment(object):
         discr = self.discr
         headers, blocks = self.facedup_blocks()
 
+        from hedge.cuda.cgen import Value
         from hedge.cuda.tools import make_superblocks
+
         return make_superblocks(
                 discr.devdata, "localop_data",
-                block_header_struct(),
-                headers,
-                [("facedups", blocks, facedup_struct())])
+                [(headers, Value(block_header_struct().tpname, "header"))],
+                [(blocks, Value(facedup_struct().tpname, "facedups"))],
+                    )
 
     @memoize_method
     def flux_aux_info(self):
