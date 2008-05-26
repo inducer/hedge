@@ -22,6 +22,11 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 
+import pycuda.driver as cuda
+
+
+
+
 # tools -----------------------------------------------------------------------
 def exact_div(dividend, divisor):
     quot, rem = divmod(dividend, divisor)
@@ -63,6 +68,19 @@ def pad_and_join(blocks, block_size):
         return s + "\x00"*missing_bytes
 
     return "".join(pad(b) for b in blocks)
+
+def make_blocks(devdata, data):
+    from pytools import Record
+    from hedge.cuda.tools import pad_and_join
+    from pytools import Record
+
+    blocks = ["".join(b) for b in data]
+    block_size = devdata.align(max(len(b) for b in blocks))
+    return Record(
+            blocks=cuda.to_device(pad_and_join(blocks, block_size)),
+            max_per_block=max(len(b) for b in data),
+            block_size=block_size,
+            )
 
 
 

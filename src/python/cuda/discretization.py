@@ -172,7 +172,7 @@ class Discretization(hedge.discretization.Discretization):
                 if p.flux_occupancy_record().occupancy > max_occup - 1e-10]
 
         from pytools import argmax2
-        return argmax2((p, p.block_el()) for p in good_plans)
+        return argmax2((p, p.elements_per_block()) for p in good_plans)
 
 
 
@@ -400,6 +400,10 @@ class Discretization(hedge.discretization.Discretization):
                 face2.opposite = face1
                 face2.dup_block = face1.native_block
                 face2.dup_ext_face_number = face1.native_block.register_ext_face_to_me(face2)
+                face1.native_block.register_ext_face_from_me(face1)
+
+        for block in self.blocks:
+            assert len(block.ext_faces_from_me) == len(block.ext_faces_to_me)
 
         return fsm
 

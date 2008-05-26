@@ -44,7 +44,9 @@ class Parallelism:
 
 class ExecutionPlan:
     def __init__(self, devdata, ldis, flux_par, 
-            max_ext_faces=None, max_faces=None, float_size=4, int_size=4):
+            max_ext_faces=None, max_faces=None, 
+            float_type=numpy.dtype(numpy.float32), 
+            ):
         self.devdata = devdata
         self.ldis = ldis
         self.flux_par = flux_par
@@ -52,19 +54,21 @@ class ExecutionPlan:
         self.max_ext_faces = max_ext_faces
         self.max_faces = max_faces
 
-        self.float_size = float_size
-        self.int_size = int_size
+        self.float_type = float_type
+
+    @property
+    def float_size(self):
+        return self.float_type.itemsize
 
     def copy(self, devdata=None, ldis=None, flux_par=None, 
-            max_ext_faces=None, max_faces=None, float_size=None, int_size=None):
+            max_ext_faces=None, max_faces=None, float_type=None):
         return ExecutionPlan(
                 devdata or self.devdata,
                 ldis or self.ldis,
                 flux_par or self.flux_par,
                 max_ext_faces or self.max_ext_faces,
                 max_faces or self.max_faces,
-                float_size or self.float_size,
-                int_size or self.int_size,
+                float_type or self.float_type,
                 )
 
     def dofs_per_el(self):
@@ -76,7 +80,7 @@ class ExecutionPlan:
     def faces_per_el(self):
         return self.ldis.face_count()
 
-    def block_el(self):
+    def elements_per_block(self):
         return self.flux_par.total()
 
     @memoize_method
@@ -86,7 +90,7 @@ class ExecutionPlan:
         # How many equivalent cubes would I need to tesselate the same space
         # as the elements in my thread block?
         from pytools import factorial
-        equiv_cubes = self.block_el() / factorial(d)
+        equiv_cubes = self.elements_per_block() / factorial(d)
 
         # If these cubes in turn formed a perfect macro-cube, how long would
         # its side be?
@@ -107,7 +111,7 @@ class ExecutionPlan:
             return self.max_ext_faces
 
     def int_dofs(self):
-        return self.devdata.align_dtype(self.block_el() * self.dofs_per_el(),
+        return self.devdata.align_dtype(self.elements_per_block() * self.dofs_per_el(),
                 self.float_size)
 
     def int_dof_smem(self):
@@ -118,27 +122,47 @@ class ExecutionPlan:
         return self.devdata.align(self.get_extface_count()*
                 self.dofs_per_face() * self.float_size)
 
-    def flux_indexing_smem(self):
-        from hedge.cuda.execute import flux_face_pair_struct
+    def flux_location_smem(self):
+        from hedge.cuda.execute import flux_face_location_struct
         return self.devdata.align(
-                len(flux_face_pair_struct(self.ldis.dimensions))
-                *self.face_pair_count())
+                    len(flux_face_location_struct())
+                    * self.elements_per_block() 
+                    * self.faces_per_el())
+
+    def flux_properties_smem(self):
+        from hedge.cuda.execute import flux_face_properties_struct
+        return self.devdata.align(
+                len(flux_face_properties_struct(self.float_type, self.ldis.dimensions))
+                * self.face_pair_count()) 
+
+    def flux_aux_smem(self):
+        return (self.flux_location_smem() 
+                + self.flux_properties_smem() 
+                + self.facedup_smem()
+                )
 
     @memoize_method
-    def localop_indexing_smem(self):
-        from hedge.cuda.execute import localop_facedup_struct
+    def facedup_smem(self):
+        from hedge.cuda.execute import facedup_struct
         return self.devdata.align(
-                len(localop_facedup_struct())
-                # mildly off: should be ext_faces_from_me, add 256 bytes of fudge
-                * self.get_extface_count() + 128
+                len(facedup_struct())
+                # number of dup'd faces:
+                # face duplication is symmetric, except at the 
+                # boundary, where a duplicated write is not
+                # necessary, so there are strictly fewer
+                # dup faces than ext_faces_to.
+                * self.get_extface_count() 
                 )
+
+    def localop_indexing_smem(self):
+        return self.facedup_smem()
 
     @memoize_method
     def face_count(self):
         if self.max_faces is not None:
             return self.max_faces
         else:
-            return (self.block_el() * self.faces_per_el() + 
+            return (self.elements_per_block() * self.faces_per_el() + 
                     self.get_extface_count())
 
     def face_pair_count(self):
@@ -149,7 +173,9 @@ class ExecutionPlan:
         return (128 # parameters, block header, small extra stuff
                 + self.int_dof_smem() 
                 + self.ext_dof_smem() 
-                + self.flux_indexing_smem())
+                + self.flux_aux_smem()
+                + self.facedup_smem()
+                )
 
     @memoize_method
     def localop_shared_mem_use(self):
@@ -158,7 +184,7 @@ class ExecutionPlan:
                 + self.localop_indexing_smem())
 
     def flux_threads(self):
-        return self.flux_par.p*self.faces_per_el()*self.dofs_per_face()
+        return self.flux_par.p*self.dofs_per_el()
 
     def invalid_reason(self):
         if self.flux_threads() >= self.devdata.max_threads:
@@ -171,45 +197,23 @@ class ExecutionPlan:
     def flux_occupancy_record(self):
         from hedge.cuda.tools import OccupancyRecord
         return OccupancyRecord(self.devdata,
-                self.flux_threads(), self.flux_shared_mem_use())
+                self.flux_threads(), self.flux_shared_mem_use(),
+                registers=14)
     
     @memoize_method
     def find_localop_par(self):
-        from hedge.cuda.tools import int_ceiling, OccupancyRecord
-
-        els_per_block = self.flux_par.total()
-        localop_plans = []
-        for par in range(1,els_per_block):
-            els_per_block
-            ser = int_ceiling(els_per_block/par)
-            threads = par * self.dofs_per_el()
-
-            localop_par = Parallelism(par, ser)
-            if threads >= self.devdata.max_threads:
-                continue
-            occ = OccupancyRecord(self.devdata, threads, 
-                    shared_mem=self.localop_shared_mem_use())
-            localop_plans.append((occ, localop_par))
-
-        max_occup = max(plan[0].occupancy for plan in localop_plans)
-        good_plans = [p for p in localop_plans
-                if p[0].occupancy > max_occup - 1e-10]
-
-        # minimum parallelism is better to smooth out inefficiencies due to
-        # rounding up the number of serial steps
-        from pytools import argmin2
-        return argmin2((p[1], p[1].p) for p in good_plans)
+        return self.flux_par
 
     def __str__(self):
             return (
                     "flux: par=%s threads=%d int_smem=%d ext_smem=%d "
-                    "ind_smem=%d smem=%d occ=%f\n"
+                    "aux_smem=%d smem=%d occ=%f\n"
                     "localop: par=%s threads=%d ind_smem=%d smem=%d" % (
                     self.flux_par, 
                     self.flux_threads(), 
                     self.int_dof_smem(), 
                     self.ext_dof_smem(),
-                    self.flux_indexing_smem(),
+                    self.flux_aux_smem(),
                     self.flux_shared_mem_use(), 
                     self.flux_occupancy_record().occupancy,
 
