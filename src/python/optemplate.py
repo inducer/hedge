@@ -452,7 +452,7 @@ class InverseMassContractor(pymbolic.mapper.IdentityMapper):
 
 
 
-class FluxDecomposer(pymbolic.mapper.IdentityMapper):
+class FluxDecomposer(IdentityMapper):
     """Replaces each L{FluxOperator} in an operator template
     with a sum of L{FluxCoefficientOperator}s.
     """
@@ -525,23 +525,32 @@ class FluxDecomposer(pymbolic.mapper.IdentityMapper):
 
     def map_operator_binding(self, binding):
         # we only care about bindings of flux operators
-        if not isinstance(binding.op, FluxOperator):
+        if isinstance(binding.op, FluxOperator):
+            from hedge.flux import analyze_flux
+            if isinstance(binding.field, BoundaryPair):
+                bpair = binding.field
+                return self._map_bdry_flux(binding.op.discr,
+                        analyze_flux(binding.op.flux), 
+                        bpair.field,
+                        bpair.bfield,
+                        bpair.tag)
+            else:
+                return self._map_inner_flux(
+                        binding.op.discr,
+                        analyze_flux(binding.op.flux), 
+                        binding.field)
+        elif isinstance(binding.op, (FluxCoefficientOperator, LiftingFluxCoefficientOperator)):
+            return OperatorBinding(
+                    binding.op.__class__(
+                        binding.op.discr,
+                        self.compile_coefficient(binding.op.int_coeff),
+                        self.compile_coefficient(binding.op.ext_coeff),
+                        ),
+                    self.rec(binding.field)
+                    )
+        else:
             return binding.__class__(binding.op,
                     self.rec(binding.field))
-
-        from hedge.flux import analyze_flux
-        if isinstance(binding.field, BoundaryPair):
-            bpair = binding.field
-            return self._map_bdry_flux(binding.op.discr,
-                    analyze_flux(binding.op.flux), 
-                    bpair.field,
-                    bpair.bfield,
-                    bpair.tag)
-        else:
-            return self._map_inner_flux(
-                    binding.op.discr,
-                    analyze_flux(binding.op.flux), 
-                    binding.field)
 
 
 

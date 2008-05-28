@@ -167,9 +167,14 @@ class Discretization(hedge.discretization.Discretization):
         if not plans:
             raise RuntimeError, "no valid CUDA execution plans found"
 
-        max_occup = max(plan.flux_occupancy_record().occupancy for plan in plans)
+        desired_occup = max(plan.flux_occupancy_record().occupancy for plan in plans)
+        print desired_occup
+        if desired_occup > 0.66:
+            # see http://forums.nvidia.com/lofiversion/index.php?t67766.html
+            desired_occup = 0.66
         good_plans = [p for p in generate_valid_plans()
-                if p.flux_occupancy_record().occupancy > max_occup - 1e-10]
+                if p.flux_occupancy_record().occupancy >= desired_occup - 1e-10
+                ]
 
         from pytools import argmax2
         return argmax2((p, p.elements_per_block()) for p in good_plans)
@@ -180,7 +185,7 @@ class Discretization(hedge.discretization.Discretization):
     def _partition_mesh(self, mesh, plan):
         # search for mesh partition that matches plan
         from pymetis import part_graph
-        part_count = len(mesh.elements)//plan.flux_par.total()+1
+        orig_part_count = part_count = len(mesh.elements)//plan.flux_par.total()+1
         while True:
             cuts, partition = part_graph(part_count,
                     mesh.element_adjacency_graph(),
@@ -224,6 +229,8 @@ class Discretization(hedge.discretization.Discretization):
                 break
 
             part_count += 1
+
+        print "blocks: theoretical:%d practical:%d" % (orig_part_count, part_count)
 
         if False:
             from matplotlib.pylab import hist, show
@@ -545,7 +552,7 @@ class Discretization(hedge.discretization.Discretization):
                     (self.aligned_boundary_floats,),
                     dtype=field.dtype)
             result[self.gpu_boundary_embedding(tag)] = field
-            return cuda.to_device(result)
+            return gpuarray.to_gpu(result)
 
     # vector construction -----------------------------------------------------
     def volume_empty(self, shape=()):

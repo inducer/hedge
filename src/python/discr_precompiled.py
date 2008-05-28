@@ -127,7 +127,10 @@ class _FluxOpCompileMapper(hedge.optemplate.FluxDecomposer):
         self.coeff_comp = _FluxCoefficientCompiler()
 
     def compile_coefficient(self, coeff):
-        return self.coeff_comp(coeff)
+        if isinstance(coeff, _internal.Flux):
+            return coeff
+        else:
+            return self.coeff_comp(coeff)
 
 
 

@@ -42,7 +42,8 @@ class StringifyMapper(hedge.optemplate.StringifyMapper):
 
 
 class WholeDomainFluxOperator(hedge.optemplate.Operator):
-    def __init__(self, discr, is_lift, int_coeff, ext_coeff, boundaries):
+    def __init__(self, discr, is_lift, int_coeff, ext_coeff, boundaries, 
+            flux_optemplate=None):
         """@arg boundaries: A list of C{(tag, int_coeff, ext_coeff, bfield)} tuples.
         """
         hedge.optemplate.Operator.__init__(self, discr)
@@ -50,6 +51,7 @@ class WholeDomainFluxOperator(hedge.optemplate.Operator):
         self.int_coeff = int_coeff
         self.ext_coeff = ext_coeff
         self.boundaries = boundaries
+        self.flux_optemplate = flux_optemplate
 
     def stringifier(self):
         return StringifyMapper
@@ -100,6 +102,8 @@ class BoundaryCombiner(hedge.optemplate.IdentityMapper):
                 # empty already--that's ok
                 continue
 
+            flux_optemplate_summands = [OperatorBinding(inner_flux_op, inner_var)]
+
             boundaries = []
             for bp in arg_to_flux:
                 if isinstance(bp, BoundaryPair) and bp.field == inner_var:
@@ -112,6 +116,8 @@ class BoundaryCombiner(hedge.optemplate.IdentityMapper):
                                 bflux_op.int_coeff,
                                 bflux_op.ext_coeff,
                                 bp.bfield))
+                            flux_optemplate_summands.append(
+                                    OperatorBinding(bflux_op, bp))
 
             from hedge.mesh import check_bc_coverage
             # FIXME This raises an exception if some BCs overlap.
@@ -121,12 +127,14 @@ class BoundaryCombiner(hedge.optemplate.IdentityMapper):
                     [b[0] for b in boundaries],
                     incomplete_ok=True)
 
+            from pymbolic import flattened_sum
             wflux = WholeDomainFluxOperator(
                     self.discr,
                     is_lift=isinstance(inner_flux_op, LiftingFluxCoefficientOperator),
                     int_coeff=inner_flux_op.int_coeff,
                     ext_coeff=inner_flux_op.ext_coeff,
-                    boundaries=boundaries)
+                    boundaries=boundaries,
+                    flux_optemplate=flattened_sum(flux_optemplate_summands))
 
             from hedge.optemplate import OperatorBinding
             result.append(OperatorBinding(wflux, inner_var))

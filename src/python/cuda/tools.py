@@ -159,6 +159,9 @@ class DeviceData:
     def align_bytes(self):
         return 16
 
+    def coalesce(self, thread_count):
+        return int_ceiling(thread_count, 16)
+
 
 
 

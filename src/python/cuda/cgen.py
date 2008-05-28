@@ -286,6 +286,7 @@ class Struct(Declarator):
 
 
 
+# control flow/statement stuff ------------------------------------------------
 class If(Generable):
     def __init__(self, condition, then_, else_=None):
         self.condition = condition
@@ -357,6 +358,11 @@ class DoWhile(Generable):
             for line in self.body.generate():
                 yield "  "+line
         yield "while (%s)" % self.condition
+
+def make_multiple_ifs(conditions_and_blocks, base=None):
+    for cond, block in conditions_and_blocks[::-1]:
+        base = If(cond, block, base)
+    return base
 
 
 
