@@ -99,29 +99,32 @@ class GPUInteriorFaceStorage(GPUFaceStorage):
     @ivar el_face: a tuple C{(element, face_number)}.
     @ivar cpu_slice: the base index of the element in CPU numbering.
     @ivar native_index_list_id: 
+    @ivar int_flux_index_list_id:
+    @ivar ext_flux_index_list_id:
     @ivar native_block: block in which element is to be found.
     @ivar native_block_el_num: number of this element in the C{native_block}.
     @ivar dup_block: 
     @ivar dup_ext_face_number:
     @ivar dup_global_base:
-    @ivar flux_face:
+    @ivar face_pair_side:
     """
     __slots__ = [
             "el_face", "cpu_slice", "native_index_list_id",
+            "int_flux_index_list_id", "ext_flux_index_list_id",
             "native_block", "native_block_el_num",
             "dup_block", "dup_ext_face_number", "dup_index_list_id",
             "dup_global_base",
-            "flux_face"]
+            "face_pair_side"]
 
     def __init__(self, el_face, cpu_slice, native_index_list_id,
-            native_block, native_block_el_num, flux_face):
+            native_block, native_block_el_num, face_pair_side):
         GPUFaceStorage.__init__(self)
         self.el_face = el_face
         self.cpu_slice = cpu_slice
         self.native_index_list_id = native_index_list_id
         self.native_block = native_block
         self.native_block_el_num = native_block_el_num
-        self.flux_face = flux_face
+        self.face_pair_side = face_pair_side
 
 class GPUBoundaryFaceStorage(GPUFaceStorage):
     """Describes storage locations for a boundary face.
@@ -132,19 +135,23 @@ class GPUBoundaryFaceStorage(GPUFaceStorage):
       in the GPU-based TAG_ALL boundary array [floats].
     @ivar dup_block: 
     @ivar dup_ext_face_number:
+    @ivar face_pair_side:
     """
     __slots__ = [
             "cpu_bdry_index_in_floats", 
             "gpu_bdry_index_in_floats", 
-            "dup_block", "dup_ext_face_number"]
+            "dup_block", "dup_ext_face_number",
+            "face_pair_side"]
 
     def __init__(self, 
             cpu_bdry_index_in_floats,
             gpu_bdry_index_in_floats,
+            face_pair_side
             ):
         GPUFaceStorage.__init__(self)
         self.cpu_bdry_index_in_floats = cpu_bdry_index_in_floats
         self.gpu_bdry_index_in_floats = gpu_bdry_index_in_floats
+        self.face_pair_side = face_pair_side
 
 
 
@@ -333,63 +340,114 @@ class Discretization(hedge.discretization.Discretization):
                 return face_index_list_register.setdefault(
                         tuple(il), len(face_index_list_register))
 
-        def make_int_face(flux_face, ilist_number):
-            el = self.mesh.elements[flux_face.element_id]
-            elface = (el, flux_face.face_id)
+        def make_int_face(face_pair_side):
+            el = self.mesh.elements[face_pair_side.element_id]
+            elface = (el, face_pair_side.face_id)
 
             block = self.blocks[self.partition[el.id]]
-            iln = get_face_index_list_number(int_fg.index_lists[ilist_number])
+            iln = get_face_index_list_number(
+                    ldis.face_indices()[face_pair_side.face_id])
             result = GPUInteriorFaceStorage(
                 elface, 
                 cpu_slice=self.find_el_range(el.id), 
                 native_index_list_id=iln,
                 native_block=block, 
                 native_block_el_num=block.get_el_index(el), 
-                flux_face=flux_face
+                face_pair_side=face_pair_side
                 )
 
             assert elface not in fsm
             fsm[elface] = result
             return result
 
-        block_dofs = self.int_dof_floats + self.ext_dof_floats
 
-        def set_dup_info_1(loc_face, opp_face):
-            loc_face.dup_block = opp_face.native_block
-            loc_face.dup_ext_face_number = \
-                    loc_face.dup_block.register_ext_face_to_me(loc_face)
-            loc_face.native_block.register_ext_face_from_me(loc_face)
+        def narrow_ilist(in_el_ilist, native_el_ilist):
+            return get_read_from_map_from_permutation
 
-        def set_dup_info_2(loc_face, opp_face):
-            # split in two for data dep on dup_ext_face_number
-            loc_face.dup_global_base = (
-                   opp_face.native_block.number*block_dofs
-                    + self.int_dof_floats
-                    + (opp_face.native_block.local_discretization.face_node_count()
-                        *loc_face.dup_ext_face_number))
+            el_dof_to_face_dof = dict(
+                    (el_dof, i)
+                    for i, el_dof in enumerate(native_el_ilist))
+            return tuple(el_dof_to_face_dof[el_dof]
+                    for el_dof in in_el_ilist)
+
+        block_dofs = self.block_dof_count()
 
         int_fg, = self.face_groups
-        id_face_index_list = tuple(xrange(int_fg.ldis_loc.face_node_count()))
+        ldis = int_fg.ldis_loc
+        assert ldis == int_fg.ldis_opp
+
+        id_face_index_list = tuple(xrange(ldis.face_node_count()))
         id_face_index_list_number = get_face_index_list_number(id_face_index_list)
         assert id_face_index_list_number == 0
 
         from pytools import single_valued
         for fp in int_fg.face_pairs:
-            face1 = make_int_face(fp.loc, fp.loc.face_index_list_number)
-            face2 = make_int_face(fp.opp, fp.opp.face_index_list_number)
+            face1 = make_int_face(fp.loc)
+            face2 = make_int_face(fp.opp)
             face1.opposite = face2
             face2.opposite = face1
 
             if face1.native_block != face2.native_block:
                 # allocate resources for duplicated face
-                for func in [set_dup_info_1, set_dup_info_2]:
-                    for face_tup in [(face1, face2), (face2, face1)]:
-                        func(*face_tup)
+                for loc_face, opp_face in [(face1, face2), (face2, face1)]:
+                    loc_face.dup_block = opp_face.native_block
+                    loc_face.dup_ext_face_number = \
+                            loc_face.dup_block.register_ext_face_to_me(loc_face)
+                    loc_face.native_block.register_ext_face_from_me(loc_face)
+
+                # split in two for data dep on dup_ext_face_number
+                for loc_face, opp_face in [(face1, face2), (face2, face1)]:
+                    loc_face.dup_global_base = (
+                           opp_face.native_block.number*block_dofs
+                            + self.int_dof_floats
+                            + (opp_face.native_block.local_discretization.face_node_count()
+                                *loc_face.dup_ext_face_number))
+
+                # The face pair spans different blocks, and therefore
+                # both faces are duplicated in the respective other
+                # block.  The existing index lists refer to their
+                # locations within full elements. Because only the
+                # dofs that are actually on the face are duplicated,
+                # and not the whole element, we need to narrow down
+                # the index list to only the face dofs.
+
+                f_ind = ldis.face_indices()
+                face1_in_el_ilist = tuple(int_fg.index_lists[
+                    fp.loc.face_index_list_number])
+                face2_in_el_ilist = tuple(int_fg.index_lists[
+                    fp.opp.face_index_list_number])
+
+                from pytools import get_read_from_map_from_permutation \
+                        as grfm
+                face1_in_face_ilist = grfm(
+                        f_ind[fp.loc.face_id], face1_in_el_ilist)
+                face2_in_face_ilist = grfm(
+                        f_ind[fp.opp.face_id], face2_in_el_ilist)
+
+                gfiln = get_face_index_list_number
+                face1.int_flux_index_list_id = gfiln(face1_in_el_ilist)
+                face1.ext_flux_index_list_id = gfiln(face2_in_face_ilist)
+                face2.int_flux_index_list_id = gfiln(face2_in_el_ilist)
+                face2.ext_flux_index_list_id = gfiln(face1_in_face_ilist)
+            else:
+                # Both faces in the same block. They retain
+                # their respective index lists.
+                face1.int_flux_index_list_id = \
+                        face2.ext_flux_index_list_id = \
+                        get_face_index_list_number(
+                                tuple(int_fg.index_lists[
+                                    fp.loc.face_index_list_number]))
+                face2.int_flux_index_list_id = \
+                        face1.ext_flux_index_list_id = \
+                        get_face_index_list_number(
+                                tuple(int_fg.index_lists[
+                                    fp.opp.face_index_list_number]))
+                        
             
         self.aligned_boundary_floats = 0
         from hedge.mesh import TAG_ALL
         for bdry_fg in self.get_boundary(TAG_ALL).face_groups:
-            ldis = bdry_fg.ldis_loc
+            assert ldis == bdry_fg.ldis_loc
             aligned_fnc = self.devdata.align_dtype(ldis.face_node_count(), 
                     self.plan.float_size)
             for fp in bdry_fg.face_pairs:
@@ -397,10 +455,11 @@ class Discretization(hedge.discretization.Discretization):
                 assert (tuple(bdry_fg.index_lists[fp.opp.face_index_list_number]) 
                         == id_face_index_list)
 
-                face1 = make_int_face(fp.loc, fp.loc.face_index_list_number)
+                face1 = make_int_face(fp.loc)
                 face2 = GPUBoundaryFaceStorage(
                         fp.opp.el_base_index,
-                        self.aligned_boundary_floats
+                        self.aligned_boundary_floats,
+                        fp.opp
                         )
                 self.aligned_boundary_floats += aligned_fnc
                 face1.opposite = face2
@@ -408,6 +467,15 @@ class Discretization(hedge.discretization.Discretization):
                 face2.dup_block = face1.native_block
                 face2.dup_ext_face_number = face1.native_block.register_ext_face_to_me(face2)
                 face1.native_block.register_ext_face_from_me(face1)
+
+                face1.int_flux_index_list_id = \
+                        get_face_index_list_number(
+                                tuple(int_fg.index_lists[
+                                    fp.loc.face_index_list_number]))
+                face1.ext_flux_index_list_id = \
+                        get_face_index_list_number(
+                                tuple(int_fg.index_lists[
+                                    fp.opp.face_index_list_number]))
 
         for block in self.blocks:
             assert len(block.ext_faces_from_me) == len(block.ext_faces_to_me)
