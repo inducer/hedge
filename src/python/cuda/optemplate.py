@@ -46,12 +46,43 @@ class WholeDomainFluxOperator(hedge.optemplate.Operator):
             flux_optemplate=None):
         """@arg boundaries: A list of C{(tag, int_coeff, ext_coeff, bfield)} tuples.
         """
+        flux_to_number = {}
+        def register_flux(int_coeff, ext_coeff):
+            try:
+                return flux_to_number[int_coeff, ext_coeff]
+            except KeyError:
+                number = len(self.fluxes)
+                flux_to_number[int_coeff, ext_coeff] = number
+                self.fluxes.append((int_coeff, ext_coeff))
+                return number
+
         hedge.optemplate.Operator.__init__(self, discr)
+        self.fluxes = []
         self.is_lift = is_lift
-        self.int_coeff = int_coeff
-        self.ext_coeff = ext_coeff
-        self.boundaries = boundaries
+        self.interior_flux_number = \
+                register_flux(int_coeff, ext_coeff)
+        from pytools import Record
+        self.boundaries = [
+                Record(
+                    tag=tag,
+                    flux_number=register_flux(int_coeff, ext_coeff),
+                    bfield_expr=bfield_expr)
+                for tag, int_coeff, ext_coeff, bfield_expr in boundaries]
+                
         self.flux_optemplate = flux_optemplate
+
+        self.elface_to_boundary = {}
+        for b in self.boundaries:
+            for elface in discr.mesh.tag_to_boundary.get(b.tag, []):
+                if elface in self.elface_to_boundary:
+                    raise ValueError, "face contained in two boundaries of WholeDomainFlux"
+                self.elface_to_boundary[elface] = b
+
+    def elface_to_flux_number(self, elface):
+        try:
+            return self.elface_to_boundary[elface].flux_number
+        except KeyError:
+            return len(self.fluxes)
 
     def stringifier(self):
         return StringifyMapper
@@ -118,14 +149,6 @@ class BoundaryCombiner(hedge.optemplate.IdentityMapper):
                                 bp.bfield))
                             flux_optemplate_summands.append(
                                     OperatorBinding(bflux_op, bp))
-
-            from hedge.mesh import check_bc_coverage
-            # FIXME This raises an exception if some BCs overlap.
-            # While uncommon, this is not invalid and should be 
-            # dealt with more gracefully.
-            check_bc_coverage(self.discr.mesh, 
-                    [b[0] for b in boundaries],
-                    incomplete_ok=True)
 
             from pymbolic import flattened_sum
             wflux = WholeDomainFluxOperator(

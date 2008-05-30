@@ -162,8 +162,10 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             
             test_discr = discr.test_discr
             real_dx = test_discr.nabla[0].apply(f.astype(numpy.float64))
+            
+            diff = dx - real_dx
 
-            print la.norm(dx-real_dx)/la.norm(real_dx)
+            print la.norm(diff)/la.norm(real_dx)
         
         self.diff_xyz_cache[op.__class__, field_expr] = xyz_diff
         return xyz_diff[op.xyz_axis]
@@ -173,7 +175,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         discr = self.ex.discr
 
         eg, = discr.element_groups
-        fdata = self.ex.flux_data(eg)
+        fdata = self.ex.flux_data(op, eg)
         mod, func, texrefs = self.ex.get_flux_kernel(op)
 
         debugbuf = gpuarray.zeros((500,), dtype=numpy.float32)
@@ -191,11 +193,11 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
         flux = discr.volume_zeros() 
         bfield = None
-        for tag, int_coeff, ext_coeff, bfield_expr in op.boundaries:
+        for boundary in op.boundaries:
             if bfield is None:
-                bfield = self.rec(bfield_expr)
+                bfield = self.rec(boundary.bfield_expr)
             else:
-                bfield = bfield + self.rec(bfield_expr)
+                bfield = bfield + self.rec(boundary.bfield_expr)
             
         args = [debugbuf, flux, field, bfield, fdata.device_memory]
 
@@ -205,8 +207,9 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             print op.flux_optemplate
             cot = discr.test_discr.compile(op.flux_optemplate)
             ctx = {field_expr.name: discr.volume_from_gpu(field).astype(numpy.float64)}
-            for tag, int_coeff, ext_coeff, bfield in op.boundaries:
-                ctx[bfield.name] = discr.test_discr.boundary_zeros(tag)
+            for boundary in op.boundaries:
+                ctx[boundary.bfield_expr.name] = \
+                        discr.test_discr.boundary_zeros(boundary.tag)
             true_flux = cot(**ctx)
 
             copied_flux = discr.volume_from_gpu(flux)
@@ -219,9 +222,10 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                 for i_el, el in enumerate(block.elements):
                     s = discr.find_el_range(el.id)
                     relerr = la.norm(diff[s])/la.norm(true_flux[s])
-                    if relerr > 1e-5:
+                    if relerr > 1e-4:
                         struc += "*"
-                        if False:
+                        if True:
+                            print "XXX", relerr
                             print copied_flux[s]
                             print true_flux[s]
                             print diff[s]
@@ -238,8 +242,6 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                 struc += "\n"
             print struc
 
-            print copied_flux[:35]
-            print true_flux[:35]
             print la.norm(copied_flux-true_flux)
 
         if False:
@@ -506,7 +508,7 @@ class OpTemplateWithEnvironment(object):
 
         flux_par = discr.plan.find_localop_par()
         elgroup, = discr.element_groups
-        flux_data = self.flux_data(elgroup)
+        flux_data = self.flux_data(wdflux, elgroup)
 
         float_type = discr.plan.float_type
 
@@ -610,6 +612,9 @@ class OpTemplateWithEnvironment(object):
             from hedge.cuda.cgen import make_multiple_ifs
             from pymbolic.mapper.stringifier import PREC_NONE
             return [
+                Initializer(
+                    POD(numpy.uint8, "flux_number"),
+                    "(floc->prop_block_number_and_flux_and_side>>1) & 7"),
                 ArrayOf(POD(discr.plan.float_type, "normal"),
                     discr.dimensions),
                 If("floc->prop_block_number_and_flux_and_side & 1",
@@ -618,22 +623,9 @@ class OpTemplateWithEnvironment(object):
                     Block([Assign("normal[%d]" % i, "fprops->normal[%d]" % i)
                         for i in range(discr.dimensions)])
                     ),
-                Initializer(
-                    POD(numpy.uint8, "flux_number"),
-                    "(floc->prop_block_number_and_flux_and_side>>1) & 7"),
                 make_multiple_ifs(
-                    [("flux_number == 0",
-                        Block([
-                            Assign("int_coeff", 
-                                FluxToCodeMapper(repr)(wdflux.int_coeff, PREC_NONE),
-                                ),
-                            Assign("ext_coeff", 
-                                FluxToCodeMapper(repr)(wdflux.ext_coeff, PREC_NONE),
-                                ),
-                            ])
-                        )]+
                     [
-                    ("flux_number == %d" % (i+1),
+                    ("flux_number == %d" % flux_nr,
                         Block([
                             Assign("int_coeff", 
                                 FluxToCodeMapper(repr)(int_coeff, PREC_NONE),
@@ -641,12 +633,16 @@ class OpTemplateWithEnvironment(object):
                             Assign("ext_coeff", 
                                 FluxToCodeMapper(repr)(ext_coeff, PREC_NONE),
                                 ),
-                            ]
-                            )
+                            ])
                         )
-                    for i, (tag, int_coeff, ext_coeff, bfield)
-                    in enumerate(wdflux.boundaries)
-                    ]),
+                    for flux_nr, (int_coeff, ext_coeff)
+                    in enumerate(wdflux.fluxes)
+                    ],
+                    base= Block([
+                        Assign("int_coeff", 0),
+                        Assign("ext_coeff", 0),
+                        ])
+                    ),
                 S("int_coeff *= fprops->face_jacobian"),
                 S("ext_coeff *= fprops->face_jacobian"),
                 ]
@@ -857,7 +853,7 @@ class OpTemplateWithEnvironment(object):
                     )
 
     @memoize_method
-    def flux_data(self, elgroup):
+    def flux_data(self, wdflux, elgroup):
         discr = self.discr
 
         f_prop_blocks = []
@@ -896,7 +892,7 @@ class OpTemplateWithEnvironment(object):
                 assert 0 <= flux_number < 1<<3
                 return result | flux_number << 1
 
-            for el in block.elements:
+            for i_el, el in enumerate(block.elements):
                 for face_nbr in range(ldis.face_count()):
                     elface = el, face_nbr
 
@@ -905,7 +901,8 @@ class OpTemplateWithEnvironment(object):
 
                     if isinstance(opp, GPUBoundaryFaceStorage):
                         # boundary face
-                        flux_number = 1
+                        flux_number = wdflux.elface_to_flux_number(
+                                int_face.el_face)
 
                         b_base = discr.int_dof_floats+opp.dup_ext_face_number*face_dofs
 
@@ -916,7 +913,7 @@ class OpTemplateWithEnvironment(object):
                             ))
                     else:
                         # interior face
-                        flux_number = 0
+                        flux_number = wdflux.interior_flux_number
 
                         if opp.native_block == int_face.native_block:
                             # same block

@@ -59,7 +59,11 @@ class FieldComponent(Flux):
         return self.index, self.is_local
 
     def __hash__(self):
-        return 0x7371afcd ^ hash(self.index) ^ hash(self.is_local)
+        from pytools import hash_combine
+        return hash_combine(
+                self.__class__,
+                self.index,
+                self.is_local)
 
     def get_mapper_method(self, mapper):
         return mapper.map_field_component
@@ -81,7 +85,10 @@ class Normal(Flux):
         return not self.__eq__(other)
 
     def __hash__(self):
-        return 0xa931ff ^ hash(self.axis)
+        from pytools import hash_combine
+        return hash_combine(
+                self.__class__,
+                self.axis)
 
     def get_mapper_method(self, mapper):
         return mapper.map_normal
@@ -103,7 +110,10 @@ class PenaltyTerm(Flux):
         return not self.__eq__(other)
 
     def __hash__(self):
-        return 0x9f194 ^ hash(self.power)
+        from pytools import hash_combine
+        return hash_combine(
+                self.__class__,
+                self.power)
 
     def get_mapper_method(self, mapper):
         return mapper.map_penalty_term
@@ -133,7 +143,12 @@ class IfPositive(Flux):
         return not self.__eq__(other)
 
     def __hash__(self):
-        return 0xfa5814 ^ hash(self.criterion) ^ hash(self.then) ^ hash(self.else_)
+        from pytools import hash_combine
+        return hash_combine(
+                self.__class__,
+                self.criterion,
+                self.then,
+                self.else_)
 
     def get_mapper_method(self, mapper):
         return mapper.map_if_positive

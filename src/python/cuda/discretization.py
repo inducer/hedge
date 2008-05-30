@@ -619,6 +619,17 @@ class Discretization(hedge.discretization.Discretization):
             result = cuda.pagelocked_empty(
                     (self.aligned_boundary_floats,),
                     dtype=field.dtype)
+
+            # The boundary cannot be completely uninitialized,
+            # because it might contain NaNs. If a certain part of the
+            # boundary is to be ignored, it is simply multiplied by
+            # zero, which won't make the NaNs disappear.
+
+            # Therefore, as a second best solution, fill the boundary
+            # with a bogus value so that we can tell if it actually
+            # enters the computation.
+
+            result.fill(17) 
             result[self.gpu_boundary_embedding(tag)] = field
             return gpuarray.to_gpu(result)
 
