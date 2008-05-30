@@ -213,8 +213,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                         discr.test_discr.boundary_zeros(boundary.tag)
             true_flux = cot(**ctx)
 
-            #copied_flux = discr.volume_from_gpu(flux, check=True)
-            copied_flux = discr.volume_from_gpu(flux)
+            copied_flux = discr.volume_from_gpu(flux, check=True)
 
             diff = copied_flux-true_flux
 
@@ -662,11 +661,11 @@ class OpTemplateWithEnvironment(object):
                 S("ext_coeff *= fprops->face_jacobian"),
                 ]
 
-        def code_flux_on_face():
-            return Block([
+        def add_up_flux_on_faces(**kwargs):
+            face_loop_body = Block([
                 Initializer(Pointer(Value(
                     "flux_face_location", "floc")),
-                    "data.face_locations+(el_nr*FACES_PER_EL+face_nr)"),
+                    "data.face_locations+((%(el_nr)s)*FACES_PER_EL+face_nr)" % kwargs),
                 Initializer(Pointer(Value(
                     "flux_face_properties", "fprops")),
                     "data.face_properties"
@@ -686,14 +685,18 @@ class OpTemplateWithEnvironment(object):
                     "facedof_nr < DOFS_PER_FACE",
                     "++facedof_nr",
                     S("result += "
-                        "tex2D(lift_matrix, EL_DOF, facedof_nr+face_nr*DOFS_PER_FACE)"
+                        "tex2D(lift_matrix, (%(el_dof)s), facedof_nr+face_nr*DOFS_PER_FACE)"
                         "* ("
                         "int_coeff*dofs[floc->a_base + ilist_a[facedof_nr]]"
                         "+"
                         "ext_coeff*dofs[floc->b_base + ilist_b[facedof_nr]]"
-                        ")")
+                        ")" % kwargs)
                     )
                 ])
+
+            return For("unsigned short face_nr = 0",
+                            "face_nr < FACES_PER_EL",
+                            "++face_nr", face_loop_body)
 
         f_body.extend_log_block("compute the fluxes", [
                 For("unsigned short el_nr = BLOCK_EL",
@@ -701,10 +704,9 @@ class OpTemplateWithEnvironment(object):
                     "el_nr += CONCURRENT_ELS",
                     Block([
                         Initializer(POD(discr.plan.float_type, "result"), "0"),
-                        For("unsigned short face_nr = 0",
-                            "face_nr < FACES_PER_EL",
-                            "++face_nr",
-                            code_flux_on_face()
+                        add_up_flux_on_faces(
+                            el_dof="EL_DOF",
+                            el_nr="el_nr",
                             ),
                         Assign(
                             "flux[DOFS_BLOCK_BASE+el_nr*DOFS_PER_EL+EL_DOF]",
@@ -712,6 +714,32 @@ class OpTemplateWithEnvironment(object):
                         ])
                     )
                 ])
+
+        f_body.extend_log_block("compute the fluxes on dup faces", [
+            Initializer(Const(POD(numpy.int16, "block_face")),
+                "THREAD_NUM / DOFS_PER_FACE"),
+            Initializer(Const(POD(numpy.int16, "face_dof")),
+                "THREAD_NUM - DOFS_PER_FACE*block_face"),
+            For("unsigned short dest_face_nr = block_face",
+                "dest_face_nr < data.header.facedups_in_block",
+                "dest_face_nr += CONCURRENT_FACES", Block([
+                    Initializer(POD(numpy.uint16, "face_el_dof"),
+                        "index_lists["
+                        "data.facedups[dest_face_nr].smem_face_ilist_number*DOFS_PER_FACE"
+                        "+face_dof"
+                        "]"),
+                    Initializer(POD(discr.plan.float_type, "result"), "0"),
+                    add_up_flux_on_faces(
+                        el_dof="face_el_dof",
+                        el_nr="data.facedups[dest_face_nr].smem_element_number",
+                        ),
+                    Assign(
+                        "flux[data.facedups[dest_face_nr].dup_global_base+face_dof]",
+                        "data.inverse_jacobians[data.facedups[dest_face_nr].smem_element_number]"
+                        "* result"),
+                    ])
+                )
+            ])
 
         # finish off ----------------------------------------------------------
         cmod.append(FunctionBody(f_decl, f_body))
