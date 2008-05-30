@@ -192,7 +192,7 @@ class Discretization(object):
             return local_discretization
 
     def __init__(self, mesh, local_discretization=None, 
-            order=None, debug=False):
+            order=None, debug=False, default_scalar_type=numpy.float64):
         self.mesh = mesh
 
         local_discretization = self.get_local_discretization(
@@ -207,6 +207,8 @@ class Discretization(object):
         self.boundaries = {}
 
         self.instrumented = False
+
+        self.default_scalar_type = default_scalar_type
 
     # instrumentation ---------------------------------------------------------
     def add_instrumentation(self, mgr):
@@ -539,13 +541,17 @@ class Discretization(object):
     def len_boundary(self, tag):
         return len(self.get_boundary(tag).nodes)
 
-    def volume_empty(self, shape=()):
-        return numpy.empty(shape+(len(self.nodes),), dtype=float)
+    def volume_empty(self, shape=(), dtype=None):
+        if dtype is None:
+            dtype = self.default_scalar_type
+        return numpy.empty(shape+(len(self.nodes),), dtype)
 
-    def volume_zeros(self, shape=()):
-        return numpy.zeros(shape+(len(self.nodes),), dtype=float)
+    def volume_zeros(self, shape=(), dtype=None):
+        if dtype is None:
+            dtype = self.default_scalar_type
+        return numpy.zeros(shape+(len(self.nodes),), dtype)
 
-    def interpolate_volume_function(self, f, tgt_factory=None):
+    def interpolate_volume_function(self, f, tgt_factory=None, dtype=None):
         try:
             # are we interpolating many fields at once?
             shape = f.shape
@@ -554,7 +560,7 @@ class Discretization(object):
             shape = ()
 
         slice_pfx = (slice(None),)*len(shape)
-        out = (tgt_factory or self.volume_empty)(shape)
+        out = (tgt_factory or self.volume_empty)(shape, dtype)
         for eg in self.element_groups:
             for el, el_slice in zip(eg.members, eg.ranges):
                 for point_nr in xrange(el_slice.start, el_slice.stop):
@@ -562,15 +568,19 @@ class Discretization(object):
                                 f(self.nodes[point_nr], el)
         return out
 
-    def boundary_empty(self, tag=hedge.mesh.TAG_ALL, shape=()):
-        return numpy.empty(shape+(len(self.get_boundary(tag).nodes),),
-                dtype=float)
+    def boundary_empty(self, tag=hedge.mesh.TAG_ALL, shape=(), dtype=None):
+        if dtype is None:
+            dtype = self.default_scalar_type
+        return numpy.empty(shape+(len(self.get_boundary(tag).nodes),), dtype)
 
-    def boundary_zeros(self, tag=hedge.mesh.TAG_ALL, shape=()):
-        return numpy.zeros(shape+(len(self.get_boundary(tag).nodes),),
-                dtype=float)
+    def boundary_zeros(self, tag=hedge.mesh.TAG_ALL, shape=(), dtype=None):
+        if dtype is None:
+            dtype = self.default_scalar_type
 
-    def interpolate_boundary_function(self, f, tag=hedge.mesh.TAG_ALL, tgt_factory=None):
+        return numpy.zeros(shape+(len(self.get_boundary(tag).nodes),), dtype)
+
+    def interpolate_boundary_function(self, f, tag=hedge.mesh.TAG_ALL, 
+            tgt_factory=None, dtype=None):
         try:
             # are we interpolating many fields at once?
             shape = f.shape
@@ -579,14 +589,14 @@ class Discretization(object):
             # no, just one
             shape = ()
 
-        out = (tgt_factory or self.boundary_zeros)(tag, shape)
+        out = (tgt_factory or self.boundary_zeros)(tag, shape, dtype)
         slice_pfx = (slice(None),)*len(shape)
         for point_nr, x in enumerate(self.get_boundary(tag).nodes):
             out[slice_pfx + (point_nr,)] = f(x, None) # FIXME
         return out
 
-    def boundary_normals(self, tag=hedge.mesh.TAG_ALL):
-        result = self.boundary_zeros(tag=tag, shape=(self.dimensions,))
+    def boundary_normals(self, tag=hedge.mesh.TAG_ALL, dtype=None):
+        result = self.boundary_zeros(tag=tag, shape=(self.dimensions,), dtype=dtype)
         for fg in self.get_boundary(tag).face_groups:
             for face_pair in fg.face_pairs:
                 flux_face = fg.flux_faces[face_pair.flux_face_index]

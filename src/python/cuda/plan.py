@@ -45,7 +45,7 @@ class Parallelism:
 class ExecutionPlan:
     def __init__(self, devdata, ldis, flux_par, 
             max_ext_faces=None, max_faces=None, 
-            float_type=numpy.dtype(numpy.float32), 
+            float_type=numpy.float32, 
             ):
         self.devdata = devdata
         self.ldis = ldis
@@ -54,7 +54,7 @@ class ExecutionPlan:
         self.max_ext_faces = max_ext_faces
         self.max_faces = max_faces
 
-        self.float_type = float_type
+        self.float_type = numpy.dtype(float_type)
 
     @property
     def float_size(self):

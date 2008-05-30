@@ -158,14 +158,15 @@ class GPUBoundaryFaceStorage(GPUFaceStorage):
 
 # GPU discretization ----------------------------------------------------------
 class Discretization(hedge.discretization.Discretization):
-    def _make_plan(self, ldis, mesh):
+    def _make_plan(self, ldis, mesh, float_type):
         from hedge.cuda.plan import ExecutionPlan, Parallelism
 
         def generate_valid_plans():
             for pe in range(2,32):
                 for se in range(1,256):
                     flux_par = Parallelism(pe, se)
-                    plan = ExecutionPlan(self.devdata, ldis, flux_par)
+                    plan = ExecutionPlan(self.devdata, ldis, flux_par,
+                            float_type=float_type)
                     if plan.invalid_reason() is None:
                         yield plan
 
@@ -175,7 +176,6 @@ class Discretization(hedge.discretization.Discretization):
             raise RuntimeError, "no valid CUDA execution plans found"
 
         desired_occup = max(plan.flux_occupancy_record().occupancy for plan in plans)
-        print desired_occup
         if desired_occup > 0.66:
             # see http://forums.nvidia.com/lofiversion/index.php?t67766.html
             desired_occup = 0.66
@@ -254,7 +254,7 @@ class Discretization(hedge.discretization.Discretization):
 
     def __init__(self, mesh, local_discretization=None, 
             order=None, plan=None, init_cuda=True, debug=False, 
-            dev=None):
+            dev=None, default_scalar_type=numpy.float32):
         ldis = self.get_local_discretization(mesh, local_discretization, order)
 
         if init_cuda:
@@ -274,7 +274,7 @@ class Discretization(hedge.discretization.Discretization):
 
         # make preliminary plan
         if plan is None:
-            plan = self._make_plan(ldis, mesh)
+            plan = self._make_plan(ldis, mesh, default_scalar_type)
         print "projected:", plan
 
         # partition mesh, obtain updated plan
@@ -283,7 +283,8 @@ class Discretization(hedge.discretization.Discretization):
         print "actual:", self.plan
 
         # initialize superclass
-        hedge.discretization.Discretization.__init__(self, mesh, ldis, debug=debug)
+        hedge.discretization.Discretization.__init__(self, mesh, ldis, debug=debug,
+                default_scalar_type=default_scalar_type)
 
         # build our own data structures
         from hedge.cuda.tools import exact_div
@@ -470,11 +471,11 @@ class Discretization(hedge.discretization.Discretization):
 
                 face1.int_flux_index_list_id = \
                         get_face_index_list_number(
-                                tuple(int_fg.index_lists[
+                                tuple(bdry_fg.index_lists[
                                     fp.loc.face_index_list_number]))
                 face1.ext_flux_index_list_id = \
                         get_face_index_list_number(
-                                tuple(int_fg.index_lists[
+                                tuple(bdry_fg.index_lists[
                                     fp.opp.face_index_list_number]))
 
         for block in self.blocks:
@@ -623,7 +624,7 @@ class Discretization(hedge.discretization.Discretization):
             # The boundary cannot be completely uninitialized,
             # because it might contain NaNs. If a certain part of the
             # boundary is to be ignored, it is simply multiplied by
-            # zero, which won't make the NaNs disappear.
+            # zero in the kernel, which won't make the NaNs disappear.
 
             # Therefore, as a second best solution, fill the boundary
             # with a bogus value so that we can tell if it actually
@@ -634,43 +635,50 @@ class Discretization(hedge.discretization.Discretization):
             return gpuarray.to_gpu(result)
 
     # vector construction -----------------------------------------------------
-    def volume_empty(self, shape=()):
-        return gpuarray.empty(shape+(self.gpu_dof_count(),), dtype=numpy.float32)
+    def volume_empty(self, shape=(), dtype=None):
+        if dtype is None:
+            dtype = self.plan.float_type
+
+        return gpuarray.empty(shape+(self.gpu_dof_count(),), dtype=dtype)
 
     def volume_zeros(self, shape=()):
         result = self.volume_empty(shape)
         result.fill(0)
         return result
 
-    def interpolate_volume_function(self, f):
+    def interpolate_volume_function(self, f, dtype=None):
         s = hedge.discretization.Discretization
 
-        def tgt_factory(shape):
-            return s.volume_empty(self, shape)
+        def tgt_factory(shape, dtype):
+            return s.volume_empty(self, shape, dtype)
 
         return self.volume_to_gpu(
                 s.interpolate_volume_function(self, f, tgt_factory))
 
-    def _new_bdry(self, tag, shape, create_func):
+    def _new_bdry(self, tag, shape, create_func, dtype):
+        if dtype is None:
+            dtype = self.default_scalar_type
+
+        if shape == ():
+            return create_func((self.aligned_boundary_floats), dtype=dtype)
+
         result = numpy.empty(shape, dtype=object)
         from pytools import indices_in_shape
         bdry = self.get_boundary(TAG_ALL)
         for i in indices_in_shape(shape):
-            result[i] = create_func(
-                    (self.aligned_boundary_floats), 
-                    dtype=numpy.float32)
+            result[i] = create_func((self.aligned_boundary_floats), dtype=dtype)
         return result
     
-    def boundary_empty(self, tag=hedge.mesh.TAG_ALL, shape=(), host=False):
-        return self._new_bdry(tag, shape, gpuarray.empty)
+    def boundary_empty(self, tag=hedge.mesh.TAG_ALL, shape=(), dtype=None):
+        return self._new_bdry(tag, shape, gpuarray.empty, dtype)
 
-    def boundary_zeros(self, tag=hedge.mesh.TAG_ALL, shape=(), host=False):
-        return self._new_bdry(tag, shape, gpuarray.zeros)
+    def boundary_zeros(self, tag=hedge.mesh.TAG_ALL, shape=(), dtype=None):
+        return self._new_bdry(tag, shape, gpuarray.zeros, dtype)
 
     def interpolate_boundary_function(self, f, tag=hedge.mesh.TAG_ALL):
         s = hedge.discretization.Discretization
-        def tgt_factory(shape, tag):
-            return s.boundary_empty(self, shape, tag)
+        def tgt_factory(shape, tag, dtype):
+            return s.boundary_zeros(self, shape, tag, dtype)
 
         return self.boundary_to_gpu(tag,
                 s.interpolate_boundary_function(self, f, tag, tgt_factory))

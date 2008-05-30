@@ -133,8 +133,6 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             print "HIT"
             return xyz_diff[op.xyz_axis]
 
-        field = self.rec(field_expr)
-
         discr = self.ex.discr
         d = discr.dimensions
 
@@ -149,6 +147,9 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                 "block": (discr.plan.dofs_per_el(), lop_par.p, 1),
                 "grid": (len(discr.blocks), 1)
                 }
+
+        field = self.rec(field_expr)
+        assert field.dtype == discr.plan.float_type
 
         xyz_diff = [discr.volume_empty() for axis in range(d)]
         elgroup, = discr.element_groups
@@ -178,7 +179,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         fdata = self.ex.flux_data(op, eg)
         mod, func, texrefs = self.ex.get_flux_kernel(op)
 
-        debugbuf = gpuarray.zeros((500,), dtype=numpy.float32)
+        debugbuf = gpuarray.zeros((512,), dtype=numpy.float32)
 
         flux_par = discr.plan.flux_par
         
@@ -199,12 +200,14 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             else:
                 bfield = bfield + self.rec(boundary.bfield_expr)
             
+        assert field.dtype == discr.plan.float_type
+        assert bfield.dtype == discr.plan.float_type
+
         args = [debugbuf, flux, field, bfield, fdata.device_memory]
 
         func(*args, **kwargs)
 
         if True:
-            print op.flux_optemplate
             cot = discr.test_discr.compile(op.flux_optemplate)
             ctx = {field_expr.name: discr.volume_from_gpu(field).astype(numpy.float64)}
             for boundary in op.boundaries:
@@ -225,28 +228,40 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                     if relerr > 1e-4:
                         struc += "*"
                         if True:
-                            print "XXX", relerr
+                            print "block %d, el %d, global el #%d, rel.l2err=%g" % (
+                                    block.number, i_el, el.id, relerr)
                             print copied_flux[s]
                             print true_flux[s]
                             print diff[s]
                             raw_input()
                     elif numpy.isnan(relerr):
                         struc += "N"
-                        print "block %d, el %d, global el #%d, rel.l2err=%g" % (
-                                block.number, i_el, el.id, relerr)
                     else:
                         if numpy.max(numpy.abs(true_flux[s])) == 0:
                             struc += "0"
                         else:
                             struc += "."
                 struc += "\n"
+            print
             print struc
 
             print la.norm(copied_flux-true_flux)
 
         if False:
+            copied_bfield = bfield.get()
+            face_len = discr.plan.ldis.face_node_count()
+            aligned_face_len = discr.devdata.align_dtype(face_len, 4)
+            for elface in discr.mesh.tag_to_boundary.get('inflow', []):
+                face_stor = discr.face_storage_map[elface]
+                bdry_stor = face_stor.opposite
+                gpu_base = bdry_stor.gpu_bdry_index_in_floats
+                print gpu_base, copied_bfield[gpu_base:gpu_base+aligned_face_len]
+                raw_input()
+
+        if True:
+            copied_debugbuf = debugbuf.get()
             print "DEBUG"
-            print debugbuf
+            print numpy.reshape(copied_debugbuf, (len(copied_debugbuf)//16, 16))
 
         print "TSCHUES"
         import sys
@@ -593,9 +608,14 @@ class OpTemplateWithEnvironment(object):
                 Block([
                     For("unsigned bdry_nr = block_face",
                         "bdry_nr < data.header.boundaries_in_block",
+                        #"bdry_nr < CONCURRENT_COALESCED_FACES",
                         "bdry_nr += CONCURRENT_COALESCED_FACES",
                         Block([
-                            Assign("dofs[data.boundary_loads[bdry_nr].smem_base + face_dof]",
+                            #Assign("debugbuf[THREAD_NUM]", "data.boundary_loads[bdry_nr].global_base+face_dof"),
+                            #Assign("debugbuf[THREAD_NUM]", "bfield[THREAD_NUM]"),
+                            Assign(
+                                #"debugbuf[THREAD_NUM] = "
+                                "dofs[data.boundary_loads[bdry_nr].smem_base + face_dof]",
                                 "bfield[data.boundary_loads[bdry_nr].global_base + face_dof]")
                             ])
                         )
@@ -607,7 +627,6 @@ class OpTemplateWithEnvironment(object):
             ])
             
         # actually do the flux computation ------------------------------------
-
         def flux_coefficients_getter():
             from hedge.cuda.cgen import make_multiple_ifs
             from pymbolic.mapper.stringifier import PREC_NONE
@@ -893,6 +912,8 @@ class OpTemplateWithEnvironment(object):
                 return result | flux_number << 1
 
             for i_el, el in enumerate(block.elements):
+                print "block %d, el %d, glob.el %d" % (
+                        block.number, i_el, el.id),
                 for face_nbr in range(ldis.face_count()):
                     elface = el, face_nbr
 
@@ -911,6 +932,7 @@ class OpTemplateWithEnvironment(object):
                             smem_base=b_base,
                             reserved=0,
                             ))
+                        print "bdy%d" % flux_number,
                     else:
                         # interior face
                         flux_number = wdflux.interior_flux_number
@@ -918,9 +940,11 @@ class OpTemplateWithEnvironment(object):
                         if opp.native_block == int_face.native_block:
                             # same block
                             b_base = opp.native_block_el_num*el_dofs
+                            print "same",
                         else:
                             # different block
                             b_base = discr.int_dof_floats+opp.dup_ext_face_number*face_dofs
+                            print "diff",
 
                     f_loc_structs.append(
                             flux_face_location_struct().make(
@@ -931,6 +955,7 @@ class OpTemplateWithEnvironment(object):
                                 a_ilist_number=int_face.int_flux_index_list_id,
                                 b_ilist_number=int_face.ext_flux_index_list_id,
                                 ))
+                print
 
             f_prop_blocks.append(f_prop_structs)
             f_loc_blocks.append(f_loc_structs)
