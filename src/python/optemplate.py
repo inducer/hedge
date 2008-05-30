@@ -507,7 +507,6 @@ class FluxDecomposer(IdentityMapper):
             else:
                 assert lsf == blsf
 
-
         from pymbolic import flattened_sum
         return flattened_sum(
                 OperatorBinding(

@@ -1062,9 +1062,10 @@ class TestHedge(unittest.TestCase):
         from hedge.flux import make_normal, FluxScalarPlaceholder
         from hedge.optemplate import Field
         fluxu = FluxScalarPlaceholder()
-        res = discr.compile(discr.get_flux_operator(
-                (fluxu.int - fluxu.ext)
-                *make_normal(discr.dimensions)[1]) * Field("u"))(u=u)
+        res = discr.compile(
+                discr.get_flux_operator(
+                    (fluxu.int - fluxu.ext) * make_normal(discr.dimensions)[1]) 
+                * Field("u"))(u=u)
 
         from hedge.discretization import ones_on_volume
         ones = ones_on_volume(discr)
