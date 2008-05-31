@@ -388,6 +388,19 @@ class Discretization(hedge.discretization.Discretization):
             face1.opposite = face2
             face2.opposite = face1
 
+            def apply_write_map(wmap, sequence):
+                result = [None] * len(sequence)
+                for wm_i, seq_i in zip(wmap, sequence):
+                    result[wm_i] = seq_i
+                assert None not in result
+                return tuple(result)
+
+            face1_in_el_ilist = tuple(int_fg.index_lists[
+                fp.loc.face_index_list_number])
+            face2_in_el_ilist = tuple(int_fg.index_lists[
+                fp.opp.face_index_list_number])
+            opp_write_map = tuple(int_fg.index_lists[fp.opp_native_write_map])
+
             if face1.native_block != face2.native_block:
                 # allocate resources for duplicated face
                 for loc_face, opp_face in [(face1, face2), (face2, face1)]:
@@ -412,14 +425,15 @@ class Discretization(hedge.discretization.Discretization):
                 # and not the whole element, we need to narrow down
                 # the index list to only the face dofs.
 
-                f_ind = ldis.face_indices()
-                face1_in_el_ilist = tuple(int_fg.index_lists[
-                    fp.loc.face_index_list_number])
-                face2_in_el_ilist = tuple(int_fg.index_lists[
-                    fp.opp.face_index_list_number])
+                # In addition, while the "loc" part of the facepair is already
+                # in its native face order, the "opp" side has been permuted
+                # to match its face dof order. This needs to be reversed for
+                # face2.
+
 
                 from pytools import get_read_from_map_from_permutation \
                         as grfm
+                f_ind = ldis.face_indices()
                 face1_in_face_ilist = grfm(
                         f_ind[fp.loc.face_id], face1_in_el_ilist)
                 face2_in_face_ilist = grfm(
@@ -428,22 +442,23 @@ class Discretization(hedge.discretization.Discretization):
                 gfiln = get_face_index_list_number
                 face1.int_flux_index_list_id = gfiln(face1_in_el_ilist)
                 face1.ext_flux_index_list_id = gfiln(face2_in_face_ilist)
-                face2.int_flux_index_list_id = gfiln(face2_in_el_ilist)
-                face2.ext_flux_index_list_id = gfiln(face1_in_face_ilist)
+
+                face2.int_flux_index_list_id = gfiln(
+                        apply_write_map(opp_write_map, face2_in_el_ilist))
+                face2.ext_flux_index_list_id = gfiln(
+                        apply_write_map(opp_write_map, face1_in_face_ilist))
             else:
                 # Both faces in the same block. They retain
                 # their respective index lists.
-                face1.int_flux_index_list_id = \
-                        face2.ext_flux_index_list_id = \
-                        get_face_index_list_number(
-                                tuple(int_fg.index_lists[
-                                    fp.loc.face_index_list_number]))
-                face2.int_flux_index_list_id = \
-                        face1.ext_flux_index_list_id = \
-                        get_face_index_list_number(
-                                tuple(int_fg.index_lists[
-                                    fp.opp.face_index_list_number]))
-                        
+
+                gfiln = get_face_index_list_number
+                face1.int_flux_index_list_id = gfiln(face1_in_el_ilist)
+                face1.ext_flux_index_list_id = gfiln(face2_in_el_ilist)
+
+                face2.int_flux_index_list_id = gfiln(
+                        apply_write_map(opp_write_map, face2_in_el_ilist))
+                face2.ext_flux_index_list_id = gfiln(
+                        apply_write_map(opp_write_map, face1_in_el_ilist))
             
         self.aligned_boundary_floats = 0
         from hedge.mesh import TAG_ALL
@@ -566,6 +581,9 @@ class Discretization(hedge.discretization.Discretization):
                 block_offset += block_dofs
 
             if check:
+                norm_result = la.norm(result)
+                max_error = 0
+                violation_count = 0
                 for block in self.blocks:
                     face_length = block.local_discretization.face_node_count()
                     ef_start = block.number*block_dofs+self.int_dof_floats
@@ -576,7 +594,13 @@ class Discretization(hedge.discretization.Discretization):
                             il = ext_face.cpu_slice.start + \
                                     self.index_lists[ext_face.native_index_list_id]
                             diff = result[il] - copied_vec[f_start:f_start+face_length]
-                            assert la.norm(diff) < 1e-10 * la.norm(result)
+                            if la.norm(diff) >= 1e-10 * norm_result:
+                                violation_count += 1
+                                max_error = max(max_error, la.norm(diff)/norm_result)
+
+                if max_error != 0:
+                    print("large relative dup consistency error: %g (%d times)" % (
+                        max_error, violation_count))
 
             return result
 

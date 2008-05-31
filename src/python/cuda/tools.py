@@ -134,6 +134,7 @@ def make_superblocks(devdata, struct_name, single_item, multi_item):
             struct=Struct(struct_name, struct_members),
             device_memory=cuda.to_device(data),
             block_size=superblock_size,
+            data=data,
             )
 
 
