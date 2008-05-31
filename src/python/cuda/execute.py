@@ -207,6 +207,11 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         func(*args, **kwargs)
 
         if False:
+            copied_debugbuf = debugbuf.get()
+            print "DEBUG"
+            print numpy.reshape(copied_debugbuf, (len(copied_debugbuf)//16, 16))
+
+        if False:
             cot = discr.test_discr.compile(op.flux_optemplate)
             ctx = {field_expr.name: 
                     discr.volume_from_gpu(field, check=True).astype(numpy.float64)
@@ -240,6 +245,13 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                                 raw_input()
                         elif numpy.isnan(relerr):
                             struc += "N"
+                            if True:
+                                print "block %d, el %d, global el #%d, rel.l2err=%g" % (
+                                        block.number, i_el, el.id, relerr)
+                                print copied_flux[s]
+                                print true_flux[s]
+                                print diff[s]
+                                raw_input()
                         else:
                             if numpy.max(numpy.abs(true_flux[s])) == 0:
                                 struc += "0"
@@ -249,6 +261,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                 print
                 print struc
 
+            print la.norm(diff)/norm_true
             assert la.norm(diff)/norm_true < 1e-6
 
         if False:
@@ -262,10 +275,6 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                 print gpu_base, copied_bfield[gpu_base:gpu_base+aligned_face_len]
                 raw_input()
 
-        if False:
-            copied_debugbuf = debugbuf.get()
-            print "DEBUG"
-            print numpy.reshape(copied_debugbuf, (len(copied_debugbuf)//16, 16))
 
         return flux
 
@@ -577,6 +586,7 @@ class OpTemplateWithEnvironment(object):
                 Line(),
                 flux_data.struct,
                 Line(),
+                #CudaShared(Value("float", "shared_debug")),
                 CudaShared(Value("flux_data", "data")),
                 CudaShared(ArrayOf(POD(float_type, "dofs"),
                     "BLOCK_DOF_COUNT")),
@@ -599,6 +609,9 @@ class OpTemplateWithEnvironment(object):
                 "dof_nr += THREAD_COUNT",
                 S("dofs[dof_nr] = field[DOFS_BLOCK_BASE+dof_nr]"),
                 ),
+            Line(),
+            Comment("avoid write-after-write hazard with boundary load"),
+            S("__syncthreads()"),
             ])
 
         f_body.extend_log_block("load boundary dofs", [Block([
@@ -614,7 +627,7 @@ class OpTemplateWithEnvironment(object):
                         Block([
                             Assign(
                                 "dofs[data.boundary_loads[bdry_nr].smem_base + face_dof]",
-                                "bfield[data.boundary_loads[bdry_nr].global_base + face_dof]")
+                                "bfield[data.boundary_loads[bdry_nr].global_base + face_dof]"),
                             ])
                         )
                     ])
@@ -693,7 +706,7 @@ class OpTemplateWithEnvironment(object):
                         "int_coeff*dofs[floc->a_base + ilist_a[facedof_nr]]"
                         "+"
                         "ext_coeff*dofs[floc->b_base + ilist_b[facedof_nr]]"
-                        ")" % kwargs)
+                        ")" % kwargs),
                     )
                 ])
 
@@ -713,6 +726,7 @@ class OpTemplateWithEnvironment(object):
                             ),
                         Assign(
                             "flux[DOFS_BLOCK_BASE+el_nr*DOFS_PER_EL+EL_DOF]",
+                            #"shared_debug",
                             "data.inverse_jacobians[el_nr] * result"),
                         ])
                     )
@@ -738,6 +752,7 @@ class OpTemplateWithEnvironment(object):
                         ),
                     Assign(
                         "flux[data.facedups[dest_face_nr].dup_global_base+face_dof]",
+                        #"shared_debug",
                         "data.inverse_jacobians[data.facedups[dest_face_nr].smem_element_number]"
                         "* result"),
                     ])
@@ -1014,6 +1029,17 @@ class OpTemplateWithEnvironment(object):
                         Value(boundary_load_struct().tpname, 
                             "boundary_loads")),
                     ])
+
+    @memoize_method
+    def lift_matrix_initializer(self, ldis):
+        return [
+                Typedef(POD(tp, "index_list_entry_t")),
+                ArrayInitializer(
+                    CudaConstant(
+                        ArrayOf(POD(tp, "index_lists"))),
+                    flat_ilists
+                    )
+                ]
 
     @memoize_method
     def index_list_data(self):
