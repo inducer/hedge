@@ -192,12 +192,18 @@ class ExecutionPlan:
     def flux_threads(self):
         return self.flux_par.p*self.dofs_per_el()
 
+    def flux_registers(self):
+        return 18
+
     def invalid_reason(self):
         if self.flux_threads() >= self.devdata.max_threads:
             return "too many threads"
 
         if self.flux_shared_mem_use() >= int(self.devdata.shared_memory): 
             return "too much shared memory"
+
+        if self.flux_threads()*self.flux_registers() > self.devdata.registers:
+            return "too many registers"
         return None
 
     @memoize_method
@@ -205,7 +211,7 @@ class ExecutionPlan:
         from hedge.cuda.tools import OccupancyRecord
         return OccupancyRecord(self.devdata,
                 self.flux_threads(), self.flux_shared_mem_use(),
-                registers=16)
+                registers=self.flux_registers())
     
     @memoize_method
     def find_localop_par(self):

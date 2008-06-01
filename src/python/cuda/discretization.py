@@ -179,7 +179,8 @@ class Discretization(hedge.discretization.Discretization):
         if desired_occup > 0.66:
             # see http://forums.nvidia.com/lofiversion/index.php?t67766.html
             desired_occup = 0.66
-        good_plans = [p for p in generate_valid_plans()
+
+        good_plans = [p for p in plans
                 if p.flux_occupancy_record().occupancy >= desired_occup - 1e-10
                 ]
 

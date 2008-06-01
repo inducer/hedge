@@ -275,7 +275,6 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                 print gpu_base, copied_bfield[gpu_base:gpu_base+aligned_face_len]
                 raw_input()
 
-
         return flux
 
 
@@ -483,7 +482,7 @@ class OpTemplateWithEnvironment(object):
                 "face_nr < data.header.facedups_in_block",
                 "face_nr += CONCURRENT_FACES", Block([
                     Initializer(POD(numpy.uint16, "face_el_dof"),
-                        "index_lists["
+                        "const_index_lists["
                         "data.facedups[face_nr].smem_face_ilist_number*DOFS_PER_FACE"
                         "+face_dof"
                         "]"),
@@ -525,7 +524,7 @@ class OpTemplateWithEnvironment(object):
                 Module, FunctionDeclaration, FunctionBody, Block, \
                 Comment, Line, \
                 CudaShared, CudaGlobal, Static, \
-                Define, \
+                Define, Pragma, \
                 Constant, Initializer, If, For, Statement, Assign
                 
         discr = self.discr
@@ -553,7 +552,7 @@ class OpTemplateWithEnvironment(object):
 
         cmod = Module([
                 Value("texture<float, 2, cudaReadModeElementType>", 
-                    "lift_matrix"),
+                    "lift_matrix_tex"),
                 block_header_struct(),
                 facedup_struct(),
                 flux_face_properties_struct(float_type, discr.dimensions),
@@ -584,9 +583,14 @@ class OpTemplateWithEnvironment(object):
                 Line(),
                 ] + self.index_list_data() + [
                 Line(),
+                self.lift_matrix_initializer(discr.plan.ldis),
+                Line(),
                 flux_data.struct,
                 Line(),
-                #CudaShared(Value("float", "shared_debug")),
+                CudaShared(POD(discr.plan.float_type, "dummy_dest")),
+                #CudaShared(ArrayOf(
+                    #POD(numpy.uint32, "shared_index_lists"),
+                    #"INDEX_LISTS_LENGTH")),
                 CudaShared(Value("flux_data", "data")),
                 CudaShared(ArrayOf(POD(float_type, "dofs"),
                     "BLOCK_DOF_COUNT")),
@@ -636,6 +640,27 @@ class OpTemplateWithEnvironment(object):
             Line(),
             S("__syncthreads()"),
             ])
+
+        if False:
+            f_body.extend(self.get_load_code(
+                dest="shared_index_lists",
+                base="const_index_lists",
+                bytes="sizeof(const_index_lists)",
+                descr="load index lists into shared")
+                +[ S("__syncthreads()"), Line() ])
+
+        if False:
+            f_body.extend([
+                Block([
+                    For("unsigned word_nr = THREAD_NUM", 
+                        "word_nr < INDEX_LISTS_LENGTH", 
+                        "word_nr += THREAD_COUNT",
+                        Statement("shared_index_lists[word_nr] = const_index_lists[word_nr]")
+                        ),
+                    ]),
+                Line(),
+                S("__syncthreads()"),
+                ])
             
         # actually do the flux computation ------------------------------------
         def flux_coefficients_getter():
@@ -691,21 +716,24 @@ class OpTemplateWithEnvironment(object):
                 ]+flux_coefficients_getter()+[
                 Initializer(Pointer(Value(
                     "index_list_entry_t", "ilist_a")),
-                    "index_lists + floc->a_ilist_number*DOFS_PER_FACE"
+                    "const_index_lists + floc->a_ilist_number*DOFS_PER_FACE"
                     ),
                 Initializer(Pointer(Value(
                     "index_list_entry_t", "ilist_b")),
-                    "index_lists + floc->b_ilist_number*DOFS_PER_FACE"
+                    "const_index_lists + floc->b_ilist_number*DOFS_PER_FACE"
                     ),
+                Initializer(POD(numpy.uint16, "a_base"), "floc->a_base"),
+                Initializer(POD(numpy.uint16, "b_base"), "floc->b_base"),
                 For("unsigned short facedof_nr = 0",
                     "facedof_nr < DOFS_PER_FACE",
                     "++facedof_nr",
                     S("result += "
-                        "tex2D(lift_matrix, (%(el_dof)s), facedof_nr+face_nr*DOFS_PER_FACE)"
+                        "tex2D(lift_matrix_tex, (%(el_dof)s), facedof_nr+face_nr*DOFS_PER_FACE)"
+                        #"lift_matrix[(%(el_dof)s)][facedof_nr+face_nr*DOFS_PER_FACE]"
                         "* ("
-                        "int_coeff*dofs[floc->a_base + ilist_a[facedof_nr]]"
+                        "int_coeff*dofs[a_base + ilist_a[facedof_nr]]"
                         "+"
-                        "ext_coeff*dofs[floc->b_base + ilist_b[facedof_nr]]"
+                        "ext_coeff*dofs[b_base + ilist_b[facedof_nr]]"
                         ")" % kwargs),
                     )
                 ])
@@ -741,7 +769,7 @@ class OpTemplateWithEnvironment(object):
                 "dest_face_nr < data.header.facedups_in_block",
                 "dest_face_nr += CONCURRENT_FACES", Block([
                     Initializer(POD(numpy.uint16, "face_el_dof"),
-                        "index_lists["
+                        "const_index_lists["
                         "data.facedups[dest_face_nr].smem_face_ilist_number*DOFS_PER_FACE"
                         "+face_dof"
                         "]"),
@@ -764,10 +792,10 @@ class OpTemplateWithEnvironment(object):
 
         mod = cuda.SourceModule(cmod, 
                 keep=True, 
-                options=["--maxrregcount=16"]
+                #options=["--maxrregcount=16"]
                 )
 
-        texref = mod.get_texref("lift_matrix")
+        texref = mod.get_texref("lift_matrix_tex")
         if wdflux.is_lift:
             cuda.matrix_to_texref(discr.plan.ldis.lifting_matrix(), texref)
         else:
@@ -1030,16 +1058,28 @@ class OpTemplateWithEnvironment(object):
                             "boundary_loads")),
                     ])
 
+    def const_matrix_initializer(self, matrix, name):
+        from hedge.cuda.cgen import ArrayInitializer, ArrayOf, \
+                Typedef, POD, CudaConstant
+
+        return ArrayInitializer(
+                CudaConstant(
+                        ArrayOf(
+                            ArrayOf(
+                                POD(self.discr.plan.float_type, name),
+                                matrix.shape[0],
+                                ),
+                            matrix.shape[1]
+                            )
+                        ),
+                ["{ %s }" % ", ".join(repr(entry) for entry in row)
+                    for row in matrix]
+                )
+
     @memoize_method
     def lift_matrix_initializer(self, ldis):
-        return [
-                Typedef(POD(tp, "index_list_entry_t")),
-                ArrayInitializer(
-                    CudaConstant(
-                        ArrayOf(POD(tp, "index_lists"))),
-                    flat_ilists
-                    )
-                ]
+        return self.const_matrix_initializer(
+                ldis.lifting_matrix(), "lift_matrix")
 
     @memoize_method
     def index_list_data(self):
@@ -1054,15 +1094,19 @@ class OpTemplateWithEnvironment(object):
             tp = numpy.uint8
 
         from hedge.cuda.cgen import ArrayInitializer, ArrayOf, \
-                Typedef, POD, CudaConstant
+                Typedef, POD, Value, CudaConstant, Define
 
         from pytools import flatten, Record
         flat_ilists = list(flatten(discr.index_lists))
         return [
+                Define("INDEX_LISTS_LENGTH", len(flat_ilists)),
                 Typedef(POD(tp, "index_list_entry_t")),
                 ArrayInitializer(
                     CudaConstant(
-                        ArrayOf(POD(tp, "index_lists"))),
+                        ArrayOf(Value(
+                            "index_list_entry_t", 
+                            "const_index_lists"),
+                        "INDEX_LISTS_LENGTH")),
                     flat_ilists
                     )
                 ]

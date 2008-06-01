@@ -376,6 +376,13 @@ class Define(Generable):
     def generate(self):
         yield "#define %s %s" % (self.symbol, self.value)
 
+class Pragma(Generable):
+    def __init__(self, value):
+        self.value = value
+
+    def generate(self):
+        yield "#pragma %s" % (self.value)
+
 class Statement(Generable):
     def __init__(self, text):
         self.text = text
@@ -431,7 +438,7 @@ class ArrayInitializer(Generable):
     def generate(self):
         for v_line in self.vdecl.generate(with_semicolon=False):
             yield v_line
-        yield "  = { %s };" % (", ".join(repr(item) for item in self.data))
+        yield "  = { %s };" % (", ".join(str(item) for item in self.data))
 
 class FunctionBody(Generable):
     def __init__(self, fdecl, body):
