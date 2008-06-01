@@ -40,8 +40,8 @@ def block_header_struct():
     return Struct("block_header", [
         POD(numpy.uint16, "els_in_block"),
         POD(numpy.uint16, "facedup_reads_in_block"),
-        POD(numpy.uint16, "facedup_writes_in_block"),
         POD(numpy.uint16, "boundaries_in_block"),
+        POD(numpy.uint16, "reserved"),
         ])
 
 @memoize
@@ -82,17 +82,6 @@ def facedup_read_struct():
         POD(numpy.uint32, "global_base"),
         ])
     
-@memoize
-def facedup_write_struct():
-    from hedge.cuda.cgen import Struct, POD
-
-    return Struct("facedup_write", [
-        POD(numpy.uint16, "smem_element_number"),
-        POD(numpy.uint8, "face_number"),
-        POD(numpy.uint8, "smem_face_ilist_number"),
-        POD(numpy.uint32, "dup_global_base"),
-        ])
-
 @memoize
 def boundary_load_struct():
     from hedge.cuda.cgen import Struct, POD
@@ -877,9 +866,10 @@ class OpTemplateWithEnvironment(object):
         discr = self.discr
         headers = []
         read_blocks = []
-        write_blocks = []
 
-        from hedge.cuda.discretization import GPUInteriorFaceStorage
+        from hedge.cuda.discretization import \
+                GPUInteriorFaceStorage, \
+                GPUBoundaryFaceStorage
         for block in discr.blocks:
             ldis = block.local_discretization
             el_dofs = ldis.node_count()
@@ -887,19 +877,6 @@ class OpTemplateWithEnvironment(object):
             block_boundary_count = 0
 
             read_structs = []
-            write_structs = []
-            for myface in block.ext_faces_from_me:
-                assert myface.native_block is block
-                assert isinstance(myface, GPUInteriorFaceStorage)
-                if isinstance(myface.opposite, GPUInteriorFaceStorage):
-                    write_structs.append(facedup_write_struct().make(
-                        smem_element_number=myface.native_block_el_num,
-                        face_number=myface.el_face[1],
-                        smem_face_ilist_number=myface.native_index_list_id,
-                        dup_global_base=myface.dup_global_base))
-                else:
-                    block_boundary_count += 1
-
             for extface in block.ext_faces_to_me:
                 myface = extface.opposite
                 assert myface.native_block is block
@@ -916,23 +893,23 @@ class OpTemplateWithEnvironment(object):
                             extface.native_block.number*discr.int_dof_count
                             + ldis.node_count()*extface.native_block_el_num)
                         ))
+                else:
+                    block_boundary_count += 1
 
             headers.append(block_header_struct().make(
                         els_in_block=len(block.elements),
                         facedup_reads_in_block=len(read_structs),
-                        facedup_writes_in_block=len(write_structs),
                         boundaries_in_block=block_boundary_count,
                         reserved=0,
                         ))
             read_blocks.append(read_structs)
-            write_blocks.append(write_structs)
 
-        return headers, read_blocks, write_blocks
+        return headers, read_blocks
 
     @memoize_method
     def localop_data(self, op, elgroup):
         discr = self.discr
-        headers, read_facedups, write_facedups = self.facedup_blocks()
+        headers, read_facedups = self.facedup_blocks()
 
         from hedge.cuda.cgen import Value
         from hedge.cuda.tools import make_superblocks
@@ -1035,8 +1012,7 @@ class OpTemplateWithEnvironment(object):
             f_loc_blocks.append(f_loc_structs)
             bdry_load_blocks.append(bdry_load_structs)
         
-        headers, facedup_read_blocks, facedup_write_blocks = \
-                self.facedup_blocks()
+        headers, facedup_read_blocks = self.facedup_blocks()
 
         from hedge.cuda.cgen import Value
         from hedge.cuda.tools import make_superblocks

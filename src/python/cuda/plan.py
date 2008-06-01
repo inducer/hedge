@@ -143,9 +143,9 @@ class ExecutionPlan:
 
     @memoize_method
     def facedup_smem(self):
-        from hedge.cuda.execute import facedup_write_struct
+        from hedge.cuda.execute import facedup_read_struct
         return self.devdata.align(
-                len(facedup_write_struct())
+                len(facedup_read_struct())
                 # number of dup'd faces:
                 # face duplication is symmetric, except at the 
                 # boundary, where a duplicated write is not
