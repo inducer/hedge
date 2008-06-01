@@ -914,17 +914,34 @@ class OpTemplateWithEnvironment(object):
 
             read_structs = []
             write_structs = []
-            for extface in block.ext_faces_from_me:
-                assert extface.native_block is block
-                assert isinstance(extface, GPUInteriorFaceStorage)
-                if isinstance(extface.opposite, GPUInteriorFaceStorage):
+            for myface in block.ext_faces_from_me:
+                assert myface.native_block is block
+                assert isinstance(myface, GPUInteriorFaceStorage)
+                if isinstance(myface.opposite, GPUInteriorFaceStorage):
                     write_structs.append(facedup_write_struct().make(
-                            smem_element_number=extface.native_block_el_num,
-                            face_number=extface.el_face[1],
-                            smem_face_ilist_number=extface.native_index_list_id,
-                            dup_global_base=extface.dup_global_base))
+                        smem_element_number=myface.native_block_el_num,
+                        face_number=myface.el_face[1],
+                        smem_face_ilist_number=myface.native_index_list_id,
+                        dup_global_base=myface.dup_global_base))
                 else:
                     block_boundary_count += 1
+
+            for extface in block.ext_faces_to_me:
+                myface = extface.opposite
+                assert myface.native_block is block
+                assert isinstance(myface, GPUInteriorFaceStorage)
+                if isinstance(extface, GPUInteriorFaceStorage):
+                    ldis = extface.native_block.local_discretization
+
+                    read_structs.append(facedup_read_struct().make(
+                        smem_base=(self.discr.int_dof_floats
+                            +extface.dup_ext_face_number*ldis.face_node_count()),
+                        reserved=0,
+                        global_ilist_number=extface.native_index_list_id,
+                        global_base=(
+                            extface.native_block.number*discr.block_dof_count()
+                            + ldis.node_count()*extface.native_block_el_num)
+                        ))
 
             headers.append(block_header_struct().make(
                         els_in_block=len(block.elements),
