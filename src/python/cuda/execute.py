@@ -180,18 +180,17 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         fdata = self.ex.flux_data(op, eg)
         mod, func, texrefs = self.ex.get_flux_kernel(op)
 
-        debugbuf = gpuarray.zeros((512,), dtype=numpy.float32)
+        #debugbuf = gpuarray.zeros((512,), dtype=numpy.float32)
 
         flux_par = discr.plan.flux_par
         
-        #print "lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
         kwargs = {
                 "texrefs": texrefs, 
                 "block": (discr.plan.dofs_per_el(), flux_par.p, 1),
                 "grid": (len(discr.blocks), 1)
                 }
 
-        flux = discr.volume_zeros() 
+        flux = discr.volume_empty() 
         bfield = None
         for boundary in op.boundaries:
             if bfield is None:
@@ -202,7 +201,9 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         assert field.dtype == discr.plan.float_type
         assert bfield.dtype == discr.plan.float_type
 
-        args = [debugbuf, flux, field, bfield, fdata.device_memory]
+        args = [
+                #debugbuf, 
+                flux, field, bfield, fdata.device_memory]
 
         func(*args, **kwargs)
 
@@ -478,6 +479,7 @@ class OpTemplateWithEnvironment(object):
                 keep=True, 
                 #options=["--maxrregcount=12"]
                 )
+        print "lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
 
         texref = mod.get_texref("diff_rst_matrices")
 
@@ -513,7 +515,7 @@ class OpTemplateWithEnvironment(object):
 
         f_decl = CudaGlobal(FunctionDeclaration(Value("void", "apply_flux"), 
             [
-                Pointer(POD(float_type, "debugbuf")),
+                #Pointer(POD(float_type, "debugbuf")),
                 Pointer(POD(float_type, "flux")),
                 Pointer(POD(float_type, "field")),
                 Pointer(POD(float_type, "bfield")),
@@ -768,6 +770,7 @@ class OpTemplateWithEnvironment(object):
                 keep=True, 
                 #options=["--maxrregcount=16"]
                 )
+        print "lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
 
         texref = mod.get_texref("lift_matrix_tex")
         if wdflux.is_lift:
