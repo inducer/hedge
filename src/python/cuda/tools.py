@@ -99,7 +99,7 @@ def make_superblocks(devdata, struct_name, single_item, multi_item):
 
     from pytools import single_valued
     block_count = single_valued(
-            len(part_blocks) for part_blocks in multi_blocks)
+            len(si_part_blocks) for si_part_blocks, si_part_decl in single_item)
 
     from hedge.cuda.cgen import Struct, Value, ArrayOf
 
@@ -120,6 +120,7 @@ def make_superblocks(devdata, struct_name, single_item, multi_item):
             data += part_data[superblock_num]
 
         for part_blocks, part_size in zip(multi_blocks, block_sizes):
+            assert block_count == len(part_blocks)
             data += pad(part_blocks[superblock_num], part_size)
 
         superblocks.append(data)
