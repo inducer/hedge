@@ -383,10 +383,10 @@ class OpTemplateWithEnvironment(object):
                 Define("BLOCK_EL", "threadIdx.y"),
                 Define("DOFS_PER_EL", discr.plan.dofs_per_el()),
                 Define("CONCURRENT_ELS", lop_par.p),
-                Define("DOFS_BLOCK_BASE", "(blockIdx.x*BLOCK_DOF_COUNT)"),
                 Define("THREAD_NUM", "(BLOCK_EL*DOFS_PER_EL + EL_DOF)"),
                 Define("THREAD_COUNT", "(DOFS_PER_EL*CONCURRENT_ELS)"),
-                Define("BLOCK_DOF_COUNT", discr.block_dof_count()),
+                Define("INT_DOF_COUNT", discr.int_dof_count),
+                Define("DOFS_BLOCK_BASE", "(blockIdx.x*INT_DOF_COUNT)"),
                 Define("DATA_BLOCK_SIZE", lop_data.block_size),
                 Line(),
                 Comment("face-related stuff"),
@@ -400,7 +400,7 @@ class OpTemplateWithEnvironment(object):
                 lop_data.struct,
                 CudaShared(Value("localop_data", "data")),
                 CudaShared(ArrayOf(POD(float_type, "int_dofs"), 
-                    discr.int_dof_floats)),
+                    discr.int_dof_count)),
                 Line(),
                 ])
 
@@ -548,11 +548,10 @@ class OpTemplateWithEnvironment(object):
                 Define("BLOCK_EL", "threadIdx.y"),
                 Define("DOFS_PER_EL", discr.plan.dofs_per_el()),
                 Define("CONCURRENT_ELS", flux_par.p),
-                Define("DOFS_BLOCK_BASE", "(blockIdx.x*BLOCK_DOF_COUNT)"),
                 Define("THREAD_NUM", "(BLOCK_EL*DOFS_PER_EL + EL_DOF)"),
                 Define("THREAD_COUNT", "(DOFS_PER_EL*CONCURRENT_ELS)"),
-                Define("INT_DOF_COUNT", discr.int_dof_floats),
-                Define("BLOCK_DOF_COUNT", discr.block_dof_count()),
+                Define("INT_DOF_COUNT", discr.int_dof_count),
+                Define("DOFS_BLOCK_BASE", "(blockIdx.x*INT_DOF_COUNT)"),
                 Define("DATA_BLOCK_SIZE", flux_data.block_size),
                 Line(),
                 Comment("face-related stuff"),
@@ -573,13 +572,13 @@ class OpTemplateWithEnvironment(object):
                 Line(),
                 flux_data.struct,
                 Line(),
-                CudaShared(POD(discr.plan.float_type, "dummy_dest")),
+                #CudaShared(POD(discr.plan.float_type, "dummy_dest")),
                 #CudaShared(ArrayOf(
                     #POD(numpy.uint32, "shared_index_lists"),
                     #"INDEX_LISTS_LENGTH")),
                 CudaShared(Value("flux_data", "data")),
                 CudaShared(ArrayOf(POD(float_type, "dofs"),
-                    "BLOCK_DOF_COUNT")),
+                    discr.int_dof_count+discr.ext_dof_count)),
                 Line(),
                 ])
 
@@ -909,12 +908,12 @@ class OpTemplateWithEnvironment(object):
                     ldis = extface.native_block.local_discretization
 
                     read_structs.append(facedup_read_struct().make(
-                        smem_base=(self.discr.int_dof_floats
+                        smem_base=(self.discr.int_dof_count
                             +extface.dup_ext_face_number*ldis.face_node_count()),
                         reserved=0,
                         global_ilist_number=extface.native_index_list_id,
                         global_base=(
-                            extface.native_block.number*discr.block_dof_count()
+                            extface.native_block.number*discr.int_dof_count
                             + ldis.node_count()*extface.native_block_el_num)
                         ))
 
@@ -1000,7 +999,7 @@ class OpTemplateWithEnvironment(object):
                         flux_number = wdflux.elface_to_flux_number(
                                 int_face.el_face)
 
-                        b_base = discr.int_dof_floats+opp.dup_ext_face_number*face_dofs
+                        b_base = discr.int_dof_count+opp.dup_ext_face_number*face_dofs
 
                         bdry_load_structs.append(boundary_load_struct().make(
                             global_base=opp.gpu_bdry_index_in_floats,
@@ -1018,7 +1017,7 @@ class OpTemplateWithEnvironment(object):
                             print>>outf, "same",
                         else:
                             # different block
-                            b_base = discr.int_dof_floats+opp.dup_ext_face_number*face_dofs
+                            b_base = discr.int_dof_count+opp.dup_ext_face_number*face_dofs
                             print>>outf, "diff",
 
                     f_loc_structs.append(

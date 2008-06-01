@@ -289,8 +289,8 @@ class Discretization(hedge.discretization.Discretization):
 
         # build our own data structures
         from hedge.cuda.tools import exact_div
-        self.int_dof_floats = exact_div(self.plan.int_dof_smem(), self.plan.float_size)
-        self.ext_dof_floats = exact_div(self.plan.ext_dof_smem(), self.plan.float_size)
+        self.int_dof_count = exact_div(self.plan.int_dof_smem(), self.plan.float_size)
+        self.ext_dof_count = exact_div(self.plan.ext_dof_smem(), self.plan.float_size)
 
         self.blocks = self._build_blocks()
         self.face_storage_map = self._build_face_storage_map()
@@ -372,7 +372,7 @@ class Discretization(hedge.discretization.Discretization):
             return tuple(el_dof_to_face_dof[el_dof]
                     for el_dof in in_el_ilist)
 
-        block_dofs = self.block_dof_count()
+        block_dofs = self.int_dof_count
 
         int_fg, = self.face_groups
         ldis = int_fg.ldis_loc
@@ -414,7 +414,7 @@ class Discretization(hedge.discretization.Discretization):
                 for loc_face, opp_face in [(face1, face2), (face2, face1)]:
                     loc_face.dup_global_base = (
                            opp_face.native_block.number*block_dofs
-                            + self.int_dof_floats
+                            + self.int_dof_count
                             + (opp_face.native_block.local_discretization.face_node_count()
                                 *loc_face.dup_ext_face_number))
 
@@ -502,11 +502,8 @@ class Discretization(hedge.discretization.Discretization):
 
 
 
-    def block_dof_count(self):
-        return self.int_dof_floats + self.ext_dof_floats
-
     def gpu_dof_count(self):
-        return self.block_dof_count() * len(self.blocks)
+        return self.int_dof_count * len(self.blocks)
 
     def volume_to_gpu(self, field):
         from hedge.tools import log_shape
@@ -522,8 +519,6 @@ class Discretization(hedge.discretization.Discretization):
         else:
             copy_vec = numpy.empty((self.gpu_dof_count(),), dtype=numpy.float32)
 
-            block_dofs = self.block_dof_count()
-
             block_offset = 0
             for block in self.blocks:
                 face_length = block.local_discretization.face_node_count()
@@ -534,7 +529,7 @@ class Discretization(hedge.discretization.Discretization):
                     copy_vec[el_offset:el_offset+el_length] = field[cpu_slice]
                     el_offset += el_length
 
-                block_offset += block_dofs
+                block_offset += self.int_dof_count
 
             return gpuarray.to_gpu(copy_vec)
 
@@ -553,8 +548,6 @@ class Discretization(hedge.discretization.Discretization):
             copied_vec = field.get(pagelocked=True)
             result = numpy.empty(shape=(len(self),), dtype=copied_vec.dtype)
 
-            block_dofs = self.block_dof_count()
-
             block_offset = 0
             for block in self.blocks:
                 el_length = block.local_discretization.node_count()
@@ -564,7 +557,7 @@ class Discretization(hedge.discretization.Discretization):
                     result[cpu_slice] = copied_vec[el_offset:el_offset+el_length]
                     el_offset += el_length
 
-                block_offset += block_dofs
+                block_offset += self.int_dof_count
 
             return result
 
