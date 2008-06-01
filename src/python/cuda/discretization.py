@@ -529,30 +529,16 @@ class Discretization(hedge.discretization.Discretization):
                 face_length = block.local_discretization.face_node_count()
                 el_length = block.local_discretization.node_count()
 
-                # write internal dofs
                 el_offset = block_offset
                 for cpu_slice in block.cpu_slices:
                     copy_vec[el_offset:el_offset+el_length] = field[cpu_slice]
                     el_offset += el_length
 
-                ef_start = block_offset+self.int_dof_floats
-                for i_ef, ext_face in enumerate(block.ext_faces_to_me):
-                    if isinstance(ext_face, GPUInteriorFaceStorage):
-                        assert ext_face.native_block is not block
-                        f_start = ef_start+face_length*i_ef
-                        assert f_start == ext_face.dup_global_base
-                        il = ext_face.cpu_slice.start + \
-                                self.index_lists[ext_face.native_index_list_id]
-                        copy_vec[f_start:f_start+face_length] = field[il] 
-
                 block_offset += block_dofs
 
             return gpuarray.to_gpu(copy_vec)
 
-    def volume_from_gpu(self, field, check=None):
-        if check is None:
-            check = self.debug
-
+    def volume_from_gpu(self, field):
         from hedge.tools import log_shape
         ls = log_shape(field)
         if ls != ():
@@ -573,35 +559,12 @@ class Discretization(hedge.discretization.Discretization):
             for block in self.blocks:
                 el_length = block.local_discretization.node_count()
 
-                # write internal dofs
                 el_offset = block_offset
                 for cpu_slice in block.cpu_slices:
                     result[cpu_slice] = copied_vec[el_offset:el_offset+el_length]
                     el_offset += el_length
 
                 block_offset += block_dofs
-
-            if check:
-                norm_result = la.norm(result)
-                max_error = 0
-                violation_count = 0
-                for block in self.blocks:
-                    face_length = block.local_discretization.face_node_count()
-                    ef_start = block.number*block_dofs+self.int_dof_floats
-                    for i_ef, ext_face in enumerate(block.ext_faces_to_me):
-                        if isinstance(ext_face, GPUInteriorFaceStorage):
-                            f_start = ef_start+face_length*i_ef
-                            assert f_start == ext_face.dup_global_base
-                            il = ext_face.cpu_slice.start + \
-                                    self.index_lists[ext_face.native_index_list_id]
-                            diff = result[il] - copied_vec[f_start:f_start+face_length]
-                            if la.norm(diff) >= 1e-10 * norm_result:
-                                violation_count += 1
-                                max_error = max(max_error, la.norm(diff)/norm_result)
-
-                if max_error != 0:
-                    print("large relative dup consistency error: %g (%d times)" % (
-                        max_error, violation_count))
 
             return result
 

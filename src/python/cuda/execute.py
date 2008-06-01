@@ -551,6 +551,7 @@ class OpTemplateWithEnvironment(object):
                 Define("DOFS_BLOCK_BASE", "(blockIdx.x*BLOCK_DOF_COUNT)"),
                 Define("THREAD_NUM", "(BLOCK_EL*DOFS_PER_EL + EL_DOF)"),
                 Define("THREAD_COUNT", "(DOFS_PER_EL*CONCURRENT_ELS)"),
+                Define("INT_DOF_COUNT", discr.int_dof_floats),
                 Define("BLOCK_DOF_COUNT", discr.block_dof_count()),
                 Define("DATA_BLOCK_SIZE", flux_data.block_size),
                 Line(),
@@ -594,7 +595,7 @@ class OpTemplateWithEnvironment(object):
 
         f_body.extend_log_block("load dofs", [
             For("unsigned dof_nr = THREAD_NUM", 
-                "dof_nr < BLOCK_DOF_COUNT", 
+                "dof_nr < INT_DOF_COUNT", 
                 "dof_nr += THREAD_COUNT",
                 S("dofs[dof_nr] = field[DOFS_BLOCK_BASE+dof_nr]"),
                 ),
