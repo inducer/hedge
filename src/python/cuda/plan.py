@@ -119,46 +119,6 @@ class ExecutionPlan:
         return self.int_dofs() * self.float_size
 
     @memoize_method
-    def ext_dof_smem(self):
-        return self.devdata.align(self.get_extface_count()*
-                self.dofs_per_face() * self.float_size)
-
-    def flux_location_smem(self):
-        from hedge.cuda.execute import flux_face_location_struct
-        return self.devdata.align(
-                    len(flux_face_location_struct())
-                    * self.elements_per_block() 
-                    * self.faces_per_el())
-
-    def flux_properties_smem(self):
-        from hedge.cuda.execute import flux_face_properties_struct
-        return self.devdata.align(
-                len(flux_face_properties_struct(self.float_type, self.ldis.dimensions))
-                * self.face_pair_count()) 
-
-    def flux_aux_smem(self):
-        return (self.flux_location_smem() 
-                + self.flux_properties_smem() 
-                + self.facedup_smem()
-                )
-
-    @memoize_method
-    def facedup_smem(self):
-        from hedge.cuda.execute import facedup_read_struct
-        return self.devdata.align(
-                len(facedup_read_struct())
-                # number of dup'd faces:
-                # face duplication is symmetric, except at the 
-                # boundary, where a duplicated write is not
-                # necessary, so there are strictly fewer
-                # dup faces than ext_faces_to.
-                * self.get_extface_count() 
-                )
-
-    def localop_indexing_smem(self):
-        return self.facedup_smem()
-
-    @memoize_method
     def face_count(self):
         if self.max_faces is not None:
             return self.max_faces
@@ -171,18 +131,18 @@ class ExecutionPlan:
 
     @memoize_method
     def flux_shared_mem_use(self):
+        from hedge.cuda.execute import face_pair_struct
+        d = self.ldis.dimensions
+
         return (128 # parameters, block header, small extra stuff
-                + self.int_dof_smem() 
-                + self.ext_dof_smem() 
-                + self.flux_aux_smem()
-                + self.facedup_smem()
+                + self.flux_par.total()*self.faces_per_el()*self.dofs_per_face()*self.float_size
+                + len(face_pair_struct(self.float_type, d))*self.face_pair_count()
                 )
 
     @memoize_method
     def localop_shared_mem_use(self):
         return (128 # parameters, block header, small extra stuff
                 + self.int_dof_smem() 
-                + self.localop_indexing_smem()
                 # rst2xyz coefficients
                 + (self.elements_per_block()
                     * self.ldis.dimensions
@@ -194,7 +154,7 @@ class ExecutionPlan:
         return self.flux_par.p*self.dofs_per_el()
 
     def flux_registers(self):
-        return 18
+        return 16
 
     def invalid_reason(self):
         if self.flux_threads() >= self.devdata.max_threads:
@@ -220,40 +180,17 @@ class ExecutionPlan:
 
     def __str__(self):
             return (
-                    "flux: par=%s threads=%d int_smem=%d ext_smem=%d "
-                    "aux_smem=%d smem=%d occ=%f\n"
-                    "localop: par=%s threads=%d ind_smem=%d smem=%d" % (
+                    "flux: par=%s threads=%d smem=%d occ=%f\n"
+                    "localop: par=%s threads=%d smem=%d" % (
                     self.flux_par, 
                     self.flux_threads(), 
-                    self.int_dof_smem(), 
-                    self.ext_dof_smem(),
-                    self.flux_aux_smem(),
                     self.flux_shared_mem_use(), 
                     self.flux_occupancy_record().occupancy,
 
                     self.find_localop_par(), 
                     self.find_localop_par().p*self.dofs_per_el(), 
-                    self.localop_indexing_smem(), 
                     self.localop_shared_mem_use(),
                     ))
-
-
-
-
-
-class ExecutionPlanWithFluxTemp(ExecutionPlan):
-    def flux_registers(self):
-        return 12
-
-    @memoize_method
-    def flux_shared_mem_use(self):
-        from hedge.cuda.execute import face_pair_struct
-        d = self.ldis.dimensions
-
-        return (128 # parameters, block header, small extra stuff
-                + self.flux_par.total()*self.faces_per_el()*self.dofs_per_face()*self.float_size
-                + len(face_pair_struct(self.float_type, d))*self.face_pair_count()
-                )
 
 
 

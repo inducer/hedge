@@ -42,36 +42,21 @@ class GPUBlock(object):
       storage locations for the block's elements.
     @ivar elements: A list of L{hedge.mesh.Element} instances representing the
       elements in this block.
-    @ivar ext_faces_from_me: A list of L{GPUInteriorFaceStorage} instances representing
-      faces native to this block that are duplicated in other blocks.
-      This points to faces native to this block.
-    @ivar ext_faces_to_me: A list of L{GPUFaceStorage} instances representing faces
-      native to other blocks that are duplicated in this block.
-      This points to faces native to other blocks.
     """
     __slots__ = ["number", "local_discretization", "cpu_slices", "elements", 
-            "ext_faces_from_me", "ext_faces_to_me"]
+            ]
 
     def __init__(self, number, local_discretization, cpu_slices, elements):
         self.number = number
         self.local_discretization = local_discretization
         self.cpu_slices = cpu_slices
         self.elements = elements
-        self.ext_faces_from_me = []
-        self.ext_faces_to_me = []
 
     def get_el_index(self, sought_el):
         from pytools import one
         return one(i for i, el in enumerate(self.elements)
                 if el == sought_el)
 
-    def register_ext_face_to_me(self, face):
-        result = len(self.ext_faces_to_me)
-        self.ext_faces_to_me.append(face)
-        return result
-
-    def register_ext_face_from_me(self, face):
-        self.ext_faces_from_me.append(face)
 
 
 
@@ -100,8 +85,6 @@ class GPUInteriorFaceStorage(GPUFaceStorage):
     @ivar cpu_slice: the base index of the element in CPU numbering.
     @ivar native_index_list_id: 
     @ivar opp_write_index_list_id:
-    @ivar dup_int_flux_index_list_id:
-    @ivar dup_ext_flux_index_list_id:
     @ivar native_block: block in which element is to be found.
     @ivar native_block_el_num: number of this element in the C{native_block}.
     @ivar face_pair_side:
@@ -110,8 +93,6 @@ class GPUInteriorFaceStorage(GPUFaceStorage):
             "el_face", "cpu_slice", 
             "native_index_list_id", "opp_write_index_list_id",
             "global_int_flux_index_list_id", "global_ext_flux_index_list_id",
-            "dup_int_flux_index_list_id", "dup_ext_flux_index_list_id",
-            "dup_block", "dup_ext_face_number",
             "native_block", "native_block_el_num",
             "face_pair_side"]
 
@@ -138,7 +119,7 @@ class GPUBoundaryFaceStorage(GPUFaceStorage):
             "cpu_bdry_index_in_floats", 
             "gpu_bdry_index_in_floats", 
             "face_pair_side",
-            "dup_block", "dup_ext_face_number"]
+            ]
 
     def __init__(self, 
             cpu_bdry_index_in_floats,
@@ -158,14 +139,13 @@ class Discretization(hedge.discretization.Discretization):
     def _make_plan(self, ldis, mesh, float_type):
         from hedge.cuda.plan import \
                 ExecutionPlan, \
-                ExecutionPlanWithFluxTemp, \
                 Parallelism
 
         def generate_valid_plans():
             for pe in range(2,32):
                 for se in range(1,256):
                     flux_par = Parallelism(pe, se)
-                    plan = ExecutionPlanWithFluxTemp(self.devdata, ldis, flux_par,
+                    plan = ExecutionPlan(self.devdata, ldis, flux_par,
                             float_type=float_type)
                     if plan.invalid_reason() is None:
                         yield plan
@@ -290,17 +270,11 @@ class Discretization(hedge.discretization.Discretization):
         # build our own data structures
         from hedge.cuda.tools import exact_div
         self.int_dof_count = exact_div(self.plan.int_dof_smem(), self.plan.float_size)
-        self.ext_dof_count = exact_div(self.plan.ext_dof_smem(), self.plan.float_size)
 
         self.blocks = self._build_blocks()
         self.face_storage_map = self._build_face_storage_map()
 
-        # check the ext_dof_smem estimate
-        assert (self.devdata.align(
-            max(len(block.ext_faces_to_me)*self.plan.dofs_per_face()
-                for block in self.blocks)*self.plan.float_size)
-            == self.plan.ext_dof_smem())
-
+        # make a reference discretization
         from hedge.discr_precompiled import Discretization
         self.test_discr = Discretization(mesh, ldis)
 
@@ -421,53 +395,6 @@ class Discretization(hedge.discretization.Discretization):
                         apply_write_map(opp_write_map, face1_in_el_ilist),
                         f_ind[fp.loc.face_id]))
 
-            if face1.native_block != face2.native_block:
-                # allocate resources for duplicated face
-                for loc_face, opp_face in [(face1, face2), (face2, face1)]:
-                    loc_face.dup_block = opp_face.native_block
-                    loc_face.dup_ext_face_number = \
-                            loc_face.dup_block.register_ext_face_to_me(loc_face)
-                    loc_face.native_block.register_ext_face_from_me(loc_face)
-
-                # The existing index lists refer to their
-                # locations within full elements. Because only the
-                # dofs that are actually on the face are duplicated,
-                # and not the whole element, we need to narrow down
-                # the index list to only the face dofs.
-
-                # In addition, while the "loc" part of the facepair is already
-                # in its native face order, the "opp" side has been permuted
-                # to match its face dof order. This needs to be reversed for
-                # face2.
-
-                from pytools import get_read_from_map_from_permutation as grfm
-                face1_in_face_ilist = grfm(
-                        f_ind[fp.loc.face_id], face1_in_el_ilist)
-                face2_in_face_ilist = grfm(
-                        f_ind[fp.opp.face_id], face2_in_el_ilist)
-
-                face1.dup_int_flux_index_list_id = gfiln(face1_in_el_ilist)
-                face1.dup_ext_flux_index_list_id = gfiln(face2_in_face_ilist)
-
-                face2.dup_int_flux_index_list_id = gfiln(
-                        apply_write_map(opp_write_map, face2_in_el_ilist))
-                face2.dup_ext_flux_index_list_id = gfiln(
-                        apply_write_map(opp_write_map, face1_in_face_ilist))
-            else:
-                # Both faces in the same block. They retain
-                # their respective index lists.
-
-                gfiln = get_face_index_list_number
-                face1.dup_int_flux_index_list_id = gfiln(face1_in_el_ilist)
-                face1.dup_ext_flux_index_list_id = gfiln(face2_in_el_ilist)
-
-                face2.dup_int_flux_index_list_id = gfiln(
-                        apply_write_map(opp_write_map, face2_in_el_ilist))
-                face2.dup_ext_flux_index_list_id = gfiln(
-                        apply_write_map(opp_write_map, face1_in_el_ilist))
-
-
-
         self.aligned_boundary_floats = 0
         from hedge.mesh import TAG_ALL
         for bdry_fg in self.get_boundary(TAG_ALL).face_groups:
@@ -488,23 +415,15 @@ class Discretization(hedge.discretization.Discretization):
                 self.aligned_boundary_floats += aligned_fnc
                 face1.opposite = face2
                 face2.opposite = face1
-                face2.dup_block = face1.native_block
-                face2.dup_ext_face_number = face1.native_block.register_ext_face_to_me(face2)
-                face1.native_block.register_ext_face_from_me(face1)
 
                 face1.global_int_flux_index_list_id = \
-                        face1.dup_int_flux_index_list_id = \
                         get_face_index_list_number(
                                 tuple(bdry_fg.index_lists[
                                     fp.loc.face_index_list_number]))
                 face1.global_ext_flux_index_list_id = \
-                        face1.dup_ext_flux_index_list_id = \
                         get_face_index_list_number(
                                 tuple(bdry_fg.index_lists[
                                     fp.opp.face_index_list_number]))
-
-        for block in self.blocks:
-            assert len(block.ext_faces_from_me) == len(block.ext_faces_to_me)
 
         return fsm
 
