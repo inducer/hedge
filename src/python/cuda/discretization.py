@@ -417,7 +417,9 @@ class Discretization(hedge.discretization.Discretization):
             face1.opp_write_index_list_id = gfiln(
                     gwtm(face2_in_el_ilist, f_ind[fp.opp.face_id]))
             face2.opp_write_index_list_id = gfiln(
-                    gwtm(face1_in_el_ilist, f_ind[fp.loc.face_id]))
+                    gwtm(
+                        apply_write_map(opp_write_map, face1_in_el_ilist),
+                        f_ind[fp.loc.face_id]))
 
             if face1.native_block != face2.native_block:
                 # allocate resources for duplicated face

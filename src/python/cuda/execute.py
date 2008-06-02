@@ -270,11 +270,12 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
         func(*args, **kwargs)
 
-        if True:
+        if False:
             copied_debugbuf = debugbuf.get()
             print "DEBUG"
             #print numpy.reshape(copied_debugbuf, (len(copied_debugbuf)//16, 16))
             print copied_debugbuf
+            raw_input()
 
         if True:
             cot = discr.test_discr.compile(op.flux_optemplate)
@@ -301,7 +302,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                         relerr = la.norm(diff[s])/norm_true
                         if relerr > 1e-4:
                             struc += "*"
-                            if False:
+                            if True:
                                 print "block %d, el %d, global el #%d, rel.l2err=%g" % (
                                         block.number, i_el, el.id, relerr)
                                 print copied_flux[s]
@@ -321,10 +322,18 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                             if numpy.max(numpy.abs(true_flux[s])) == 0:
                                 struc += "0"
                             else:
+                                if False:
+                                    print "block %d, el %d, global el #%d, rel.l2err=%g" % (
+                                            block.number, i_el, el.id, relerr)
+                                    print copied_flux[s]
+                                    print true_flux[s]
+                                    print diff[s]
+                                    raw_input()
                                 struc += "."
                     struc += "\n"
                 print
                 print struc
+                raw_input()
 
             print la.norm(diff)/norm_true
             assert la.norm(diff)/norm_true < 1e-6
@@ -998,6 +1007,8 @@ class OpTemplateWithEnvironment(object):
                 Define("CONCURRENT_ELS", flux_par.p),
                 Define("THREAD_NUM", "(BLOCK_EL*DOFS_PER_EL + EL_DOF)"),
                 Define("THREAD_COUNT", "(DOFS_PER_EL*CONCURRENT_ELS)"),
+                Define("INT_DOF_COUNT", discr.int_dof_count),
+                Define("DOFS_BLOCK_BASE", "(blockIdx.x*INT_DOF_COUNT)"),
                 Define("DATA_BLOCK_SIZE", flux_with_temp_data.block_size),
                 Line(),
                 Comment("face-related stuff"),
@@ -1019,7 +1030,6 @@ class OpTemplateWithEnvironment(object):
                 CudaShared(Value("flux_data", "data")),
                 CudaShared(ArrayOf(POD(float_type, "fluxes_on_faces"),
                     "ELS_PER_BLOCK*FACES_PER_EL*DOFS_PER_FACE"
-                    "+ DOFS_PER_FACE" # dumping ground for unwanted output
                     )),
                 Line(),
                 ])
@@ -1060,8 +1070,6 @@ class OpTemplateWithEnvironment(object):
                         Assign("%sext_coeff" % prefix, 0),
                         ])
                     ),
-                S("%sint_coeff *= fpair->face_jacobian" % prefix),
-                S("%sext_coeff *= fpair->face_jacobian" % prefix),
                 ]
 
         f_body.extend_log_block("compute the fluxes", [Block([
@@ -1094,20 +1102,26 @@ class OpTemplateWithEnvironment(object):
                             "[fpair->b_base + b_ilist[facedof_nr]]"),
                         ]
                         +flux_coeff_getter("fpair->a_flux_number", "a_", False)
-                        +flux_coeff_getter("fpair->b_flux_number_and_bdry_flag >> 1", "b_", True)
                         +[
-                        Initializer(Pointer(Value(
-                            "index_list_entry_t", "b_write_ilist")),
-                            "const_index_lists + fpair->b_write_ilist_index"
-                            ),
-                        Assign("debugbuf[THREAD_NUM]",
-                            "fpair->h"),
                         Assign(
                             "fluxes_on_faces[fpair->a_dest+facedof_nr]",
-                            "a_int_coeff*a_value+b_ext_coeff*b_value"),
-                        Assign(
-                            "fluxes_on_faces[fpair->b_dest+b_write_ilist[facedof_nr]]",
-                            "b_int_coeff*b_value+a_ext_coeff*a_value"),
+                            "fpair->face_jacobian*("
+                            "a_int_coeff*a_value+a_ext_coeff*b_value"
+                            ")"),
+                        If("fpair->b_dest != (1<<16)-1", Block(
+                            flux_coeff_getter("fpair->b_flux_number_and_bdry_flag >> 1", "b_", True)
+                            +[
+                            Initializer(Pointer(Value(
+                                "index_list_entry_t", "b_write_ilist")),
+                                "const_index_lists + fpair->b_write_ilist_index"
+                                ),
+                            Assign(
+                                "fluxes_on_faces[fpair->b_dest+b_write_ilist[facedof_nr]]",
+                                "fpair->face_jacobian*("
+                                "b_int_coeff*b_value+b_ext_coeff*a_value"
+                                ")"
+                                ),
+                            ]))
                         ])
                     )
                 )
@@ -1129,7 +1143,7 @@ class OpTemplateWithEnvironment(object):
                             "*fluxes_on_faces[facedof_nr+base_el*FACES_PER_EL*DOFS_PER_FACE]")
                         ),
                     Assign(
-                        "flux[base_el*DOFS_PER_EL+EL_DOF]",
+                        "flux[DOFS_BLOCK_BASE+base_el*DOFS_PER_EL+EL_DOF]",
                         "data.inverse_jacobians[base_el]*result")
                     ])
                 )
@@ -1304,10 +1318,13 @@ class OpTemplateWithEnvironment(object):
         headers = []
         fp_blocks = []
 
+        INVALID_DEST = (1<<16)-1
+
         from hedge.cuda.discretization import GPUBoundaryFaceStorage
 
         fp_struct = face_pair_struct(discr.plan.float_type, discr.dimensions)
 
+        outf = open("el_faces.txt", "w")
         for block in discr.blocks:
             ldis = block.local_discretization
             el_dofs = ldis.node_count()
@@ -1325,6 +1342,10 @@ class OpTemplateWithEnvironment(object):
                 a_face = discr.face_storage_map[elface]
                 b_face = a_face.opposite
 
+                print>>outf, "block %d el %d (global: %d) face %d" % (
+                        block.number, a_face.native_block_el_num,
+                        elface[0].id, elface[1]),
+                        
                 if isinstance(b_face, GPUBoundaryFaceStorage):
                     # boundary face
                     b_base = b_face.gpu_bdry_index_in_floats
@@ -1333,9 +1354,8 @@ class OpTemplateWithEnvironment(object):
                     b_flux_number = len(wdflux.fluxes) # invalid
                     b_load_from_bdry = 1
                     b_write_index_list = 0 # doesn't matter
-
-                    # write b portion into dumping ground
-                    b_dest = elface_dofs*discr.plan.flux_par.total()
+                    b_dest = INVALID_DEST
+                    print>>outf, "bdy%d" % a_flux_number
 
                 else:
                     # interior face
@@ -1354,11 +1374,14 @@ class OpTemplateWithEnvironment(object):
                         b_dest = (
                                 elface_dofs*b_face.native_block_el_num
                                 +b_face.el_face[1]*face_dofs)
+                        print>>outf, "same el %d (global: %d) face %d" % (
+                                b_face.native_block_el_num,
+                                b_face.el_face[0].id, b_face.el_face[1])
                     else:
                         # different block
                         b_write_index_list = 0 # doesn't matter
-                        # write b portion into dumping ground
-                        b_dest = elface_dofs*discr.plan.flux_par.total()
+                        b_dest = INVALID_DEST
+                        print>>outf, "diff"
 
                 fp_structs.append(
                         fp_struct.make(
@@ -1391,7 +1414,7 @@ class OpTemplateWithEnvironment(object):
 
             headers.append(flux_header_struct().make(
                     els_in_block=len(block.elements),
-                    facepairs_in_block=len(fp_blocks)
+                    facepairs_in_block=len(fp_structs)
                     ))
             fp_blocks.append(fp_structs)
 

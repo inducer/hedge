@@ -111,7 +111,8 @@ class ExecutionPlan:
             return self.max_ext_faces
 
     def int_dofs(self):
-        return self.devdata.align_dtype(self.elements_per_block() * self.dofs_per_el(),
+        return self.devdata.align_dtype(
+                self.elements_per_block() * self.dofs_per_el(),
                 self.float_size)
 
     def int_dof_smem(self):
