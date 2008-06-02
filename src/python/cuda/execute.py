@@ -1227,7 +1227,7 @@ class OpTemplateWithEnvironment(object):
                     if b_face.native_block == a_face.native_block:
                         # same block
                         faces_todo.remove(b_face.el_face)
-                        b_write_index_list = None
+                        b_write_index_list = a_face.opp_write_index_list_id
                         b_dest = (
                                 elface_dofs*b_face.native_block_el_num
                                 +b_face.el_face[1]*face_dofs)

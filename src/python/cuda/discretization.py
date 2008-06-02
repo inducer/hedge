@@ -99,7 +99,7 @@ class GPUInteriorFaceStorage(GPUFaceStorage):
     @ivar el_face: a tuple C{(element, face_number)}.
     @ivar cpu_slice: the base index of the element in CPU numbering.
     @ivar native_index_list_id: 
-    @ivar write_index_list_id:
+    @ivar opp_write_index_list_id:
     @ivar dup_int_flux_index_list_id:
     @ivar dup_ext_flux_index_list_id:
     @ivar native_block: block in which element is to be found.
@@ -108,7 +108,8 @@ class GPUInteriorFaceStorage(GPUFaceStorage):
     """
     __slots__ = [
             "el_face", "cpu_slice", 
-            "native_index_list_id", "write_index_list_id",
+            "native_index_list_id", "opp_write_index_list_id",
+            "global_int_flux_index_list_id", "global_ext_flux_index_list_id",
             "dup_int_flux_index_list_id", "dup_ext_flux_index_list_id",
             "dup_block", "dup_ext_face_number",
             "native_block", "native_block_el_num",
@@ -392,11 +393,28 @@ class Discretization(hedge.discretization.Discretization):
                 assert None not in result
                 return tuple(result)
 
+            f_ind = ldis.face_indices()
             face1_in_el_ilist = tuple(int_fg.index_lists[
                 fp.loc.face_index_list_number])
             face2_in_el_ilist = tuple(int_fg.index_lists[
                 fp.opp.face_index_list_number])
             opp_write_map = tuple(int_fg.index_lists[fp.opp_native_write_map])
+                
+            gfiln = get_face_index_list_number
+            face1.global_int_flux_index_list_id = gfiln(face1_in_el_ilist)
+            face1.global_ext_flux_index_list_id = gfiln(face2_in_el_ilist)
+
+            face2.global_int_flux_index_list_id = gfiln(
+                    apply_write_map(opp_write_map, face2_in_el_ilist))
+            face2.global_ext_flux_index_list_id = gfiln(
+                    apply_write_map(opp_write_map, face1_in_el_ilist))
+
+            from pytools import get_write_to_map_from_permutation as gwtm
+            assert gwtm(face2_in_el_ilist, f_ind[fp.opp.face_id]) == opp_write_map
+            face1.opp_write_index_list_id = gfiln(
+                    gwtm(face2_in_el_ilist, f_ind[fp.opp.face_id]))
+            face2.opp_write_index_list_id = gfiln(
+                    gwtm(face1_in_el_ilist, f_ind[fp.loc.face_id]))
 
             if face1.native_block != face2.native_block:
                 # allocate resources for duplicated face
@@ -417,15 +435,12 @@ class Discretization(hedge.discretization.Discretization):
                 # to match its face dof order. This needs to be reversed for
                 # face2.
 
-                from pytools import get_read_from_map_from_permutation \
-                        as grfm
-                f_ind = ldis.face_indices()
+                from pytools import get_read_from_map_from_permutation as grfm
                 face1_in_face_ilist = grfm(
                         f_ind[fp.loc.face_id], face1_in_el_ilist)
                 face2_in_face_ilist = grfm(
                         f_ind[fp.opp.face_id], face2_in_el_ilist)
 
-                gfiln = get_face_index_list_number
                 face1.dup_int_flux_index_list_id = gfiln(face1_in_el_ilist)
                 face1.dup_ext_flux_index_list_id = gfiln(face2_in_face_ilist)
 
@@ -445,7 +460,9 @@ class Discretization(hedge.discretization.Discretization):
                         apply_write_map(opp_write_map, face2_in_el_ilist))
                 face2.dup_ext_flux_index_list_id = gfiln(
                         apply_write_map(opp_write_map, face1_in_el_ilist))
-            
+
+
+
         self.aligned_boundary_floats = 0
         from hedge.mesh import TAG_ALL
         for bdry_fg in self.get_boundary(TAG_ALL).face_groups:
