@@ -611,6 +611,7 @@ class OpTemplateWithEnvironment(object):
                     [POD(float_type, "field_value"),
                         Value("float%d" % self.diffmat_channels(),
                             "diff_ij"),
+                        Line(),
                         ]
                     +list(flatten( [
                         S("diff_ij = tex2D(diff_rst_matrices, (%s) , %d)" 
@@ -622,26 +623,9 @@ class OpTemplateWithEnvironment(object):
                         S("drst%d += diff_ij.%s * field_value" 
                             % (axis, tex_channels[axis]))
                         for axis in dims
-                        ]
+                        ]+[Line()]
                         for j in range(discr.plan.dofs_per_el())))
                     )
-
-            if False:
-                code.append(
-                        For("unsigned short j = 0", "j < DOFS_PER_EL", "++j", Block([
-                            S("float%d diff_ij = tex2D(diff_rst_matrices, (%s) , j)" 
-                                % (self.diffmat_channels(), dest_dof)),
-                            Initializer(POD(float_type, "field_value"),
-                                "int_dofs[(%s)*DOFS_PER_EL+j]" % el_nr),
-                            Line(),
-                            ]+[
-                                S("drst%d += diff_ij.%s * field_value" 
-                                    % (axis, tex_channels[axis]))
-                                for axis in dims
-                                ]))
-                            )
-
-            code.append(Line())
 
             for glob_axis in dims:
                 code.append(
