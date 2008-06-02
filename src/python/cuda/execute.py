@@ -614,8 +614,12 @@ class OpTemplateWithEnvironment(object):
                         Line(),
                         ]
                     +list(flatten( [
-                        S("diff_ij = tex2D(diff_rst_matrices, (%s) , %d)" 
-                            % (dest_dof, j)),
+                        Assign(
+                            "diff_ij", 
+                            "tex2D(diff_rst_matrices, (%(dest_dof)s), %(j)d)" 
+                            % {"dest_dof":dest_dof, "j":j}
+                            #"make_float4(0.1234,0.1234,0.1234,0.1234)"
+                            ),
                         Assign("field_value", "int_dofs[(%s)*DOFS_PER_EL+%d]" % (el_nr, j)),
                         Line(),
                         ]
@@ -1182,7 +1186,9 @@ class OpTemplateWithEnvironment(object):
 
     @memoize_method
     def diffmat_array(self, diff_op_cls, elgroup):
-        diffmats = diff_op_cls.matrices(elgroup)[:]
+        diffmats = [m for m in diff_op_cls.matrices(elgroup)]
+
+        # pad to admissible channel count
         channel_count = self.diffmat_channels()
 
         from pytools import single_valued
