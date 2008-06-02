@@ -78,7 +78,7 @@ class WholeDomainFluxOperator(hedge.optemplate.Operator):
                     raise ValueError, "face contained in two boundaries of WholeDomainFlux"
                 self.elface_to_boundary[elface] = b
 
-    def elface_to_flux_number(self, elface):
+    def boundary_elface_to_flux_number(self, elface):
         try:
             return self.elface_to_boundary[elface].flux_number
         except KeyError:

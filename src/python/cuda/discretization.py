@@ -99,21 +99,19 @@ class GPUInteriorFaceStorage(GPUFaceStorage):
     @ivar el_face: a tuple C{(element, face_number)}.
     @ivar cpu_slice: the base index of the element in CPU numbering.
     @ivar native_index_list_id: 
-    @ivar int_flux_index_list_id:
-    @ivar ext_flux_index_list_id:
+    @ivar write_index_list_id:
+    @ivar dup_int_flux_index_list_id:
+    @ivar dup_ext_flux_index_list_id:
     @ivar native_block: block in which element is to be found.
     @ivar native_block_el_num: number of this element in the C{native_block}.
-    @ivar dup_block: 
-    @ivar dup_ext_face_number:
-    @ivar dup_global_base:
     @ivar face_pair_side:
     """
     __slots__ = [
-            "el_face", "cpu_slice", "native_index_list_id",
-            "int_flux_index_list_id", "ext_flux_index_list_id",
+            "el_face", "cpu_slice", 
+            "native_index_list_id", "write_index_list_id",
+            "dup_int_flux_index_list_id", "dup_ext_flux_index_list_id",
+            "dup_block", "dup_ext_face_number",
             "native_block", "native_block_el_num",
-            "dup_block", "dup_ext_face_number", "dup_index_list_id",
-            "dup_global_base",
             "face_pair_side"]
 
     def __init__(self, el_face, cpu_slice, native_index_list_id,
@@ -133,15 +131,13 @@ class GPUBoundaryFaceStorage(GPUFaceStorage):
       in the CPU-based TAG_ALL boundary array [floats].
     @ivar gpu_bdry_index_in_floats: this face's starting index 
       in the GPU-based TAG_ALL boundary array [floats].
-    @ivar dup_block: 
-    @ivar dup_ext_face_number:
     @ivar face_pair_side:
     """
     __slots__ = [
             "cpu_bdry_index_in_floats", 
             "gpu_bdry_index_in_floats", 
-            "dup_block", "dup_ext_face_number",
-            "face_pair_side"]
+            "face_pair_side",
+            "dup_block", "dup_ext_face_number"]
 
     def __init__(self, 
             cpu_bdry_index_in_floats,
@@ -410,17 +406,7 @@ class Discretization(hedge.discretization.Discretization):
                             loc_face.dup_block.register_ext_face_to_me(loc_face)
                     loc_face.native_block.register_ext_face_from_me(loc_face)
 
-                # split in two for data dep on dup_ext_face_number
-                for loc_face, opp_face in [(face1, face2), (face2, face1)]:
-                    loc_face.dup_global_base = (
-                           opp_face.native_block.number*block_dofs
-                            + self.int_dof_count
-                            + (opp_face.native_block.local_discretization.face_node_count()
-                                *loc_face.dup_ext_face_number))
-
-                # The face pair spans different blocks, and therefore
-                # both faces are duplicated in the respective other
-                # block.  The existing index lists refer to their
+                # The existing index lists refer to their
                 # locations within full elements. Because only the
                 # dofs that are actually on the face are duplicated,
                 # and not the whole element, we need to narrow down
@@ -431,7 +417,6 @@ class Discretization(hedge.discretization.Discretization):
                 # to match its face dof order. This needs to be reversed for
                 # face2.
 
-
                 from pytools import get_read_from_map_from_permutation \
                         as grfm
                 f_ind = ldis.face_indices()
@@ -441,24 +426,24 @@ class Discretization(hedge.discretization.Discretization):
                         f_ind[fp.opp.face_id], face2_in_el_ilist)
 
                 gfiln = get_face_index_list_number
-                face1.int_flux_index_list_id = gfiln(face1_in_el_ilist)
-                face1.ext_flux_index_list_id = gfiln(face2_in_face_ilist)
+                face1.dup_int_flux_index_list_id = gfiln(face1_in_el_ilist)
+                face1.dup_ext_flux_index_list_id = gfiln(face2_in_face_ilist)
 
-                face2.int_flux_index_list_id = gfiln(
+                face2.dup_int_flux_index_list_id = gfiln(
                         apply_write_map(opp_write_map, face2_in_el_ilist))
-                face2.ext_flux_index_list_id = gfiln(
+                face2.dup_ext_flux_index_list_id = gfiln(
                         apply_write_map(opp_write_map, face1_in_face_ilist))
             else:
                 # Both faces in the same block. They retain
                 # their respective index lists.
 
                 gfiln = get_face_index_list_number
-                face1.int_flux_index_list_id = gfiln(face1_in_el_ilist)
-                face1.ext_flux_index_list_id = gfiln(face2_in_el_ilist)
+                face1.dup_int_flux_index_list_id = gfiln(face1_in_el_ilist)
+                face1.dup_ext_flux_index_list_id = gfiln(face2_in_el_ilist)
 
-                face2.int_flux_index_list_id = gfiln(
+                face2.dup_int_flux_index_list_id = gfiln(
                         apply_write_map(opp_write_map, face2_in_el_ilist))
-                face2.ext_flux_index_list_id = gfiln(
+                face2.dup_ext_flux_index_list_id = gfiln(
                         apply_write_map(opp_write_map, face1_in_el_ilist))
             
         self.aligned_boundary_floats = 0
@@ -485,11 +470,11 @@ class Discretization(hedge.discretization.Discretization):
                 face2.dup_ext_face_number = face1.native_block.register_ext_face_to_me(face2)
                 face1.native_block.register_ext_face_from_me(face1)
 
-                face1.int_flux_index_list_id = \
+                face1.dup_int_flux_index_list_id = \
                         get_face_index_list_number(
                                 tuple(bdry_fg.index_lists[
                                     fp.loc.face_index_list_number]))
-                face1.ext_flux_index_list_id = \
+                face1.dup_ext_flux_index_list_id = \
                         get_face_index_list_number(
                                 tuple(bdry_fg.index_lists[
                                     fp.opp.face_index_list_number]))
