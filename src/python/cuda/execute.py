@@ -262,10 +262,10 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         assert field.dtype == discr.plan.float_type
         assert bfield.dtype == discr.plan.float_type
 
-        debugbuf = gpuarray.zeros((512,), dtype=numpy.float32)
+        #debugbuf = gpuarray.zeros((512,), dtype=numpy.float32)
 
         args = [
-                debugbuf, 
+                #debugbuf, 
                 flux, field, bfield, fdata.device_memory]
 
         func(*args, **kwargs)
@@ -277,7 +277,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             print copied_debugbuf
             raw_input()
 
-        if True:
+        if False:
             cot = discr.test_discr.compile(op.flux_optemplate)
             ctx = {field_expr.name: 
                     discr.volume_from_gpu(field).astype(numpy.float64)
@@ -983,7 +983,7 @@ class OpTemplateWithEnvironment(object):
 
         f_decl = CudaGlobal(FunctionDeclaration(Value("void", "apply_flux"), 
             [
-                Pointer(POD(float_type, "debugbuf")),
+                #Pointer(POD(float_type, "debugbuf")),
                 Pointer(POD(float_type, "flux")),
                 Pointer(POD(float_type, "field")),
                 Pointer(POD(float_type, "bfield")),

@@ -62,7 +62,7 @@ class ExecutionPlan:
 
     def copy(self, devdata=None, ldis=None, flux_par=None, 
             max_ext_faces=None, max_faces=None, float_type=None):
-        return ExecutionPlan(
+        return self.__class__(
                 devdata or self.devdata,
                 ldis or self.ldis,
                 flux_par or self.flux_par,
@@ -242,8 +242,8 @@ class ExecutionPlan:
 
 
 class ExecutionPlanWithFluxTemp(ExecutionPlan):
-    #def flux_registers(self):
-        #return 14
+    def flux_registers(self):
+        return 12
 
     @memoize_method
     def flux_shared_mem_use(self):
