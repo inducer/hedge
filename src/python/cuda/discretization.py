@@ -156,13 +156,16 @@ class GPUBoundaryFaceStorage(GPUFaceStorage):
 # GPU discretization ----------------------------------------------------------
 class Discretization(hedge.discretization.Discretization):
     def _make_plan(self, ldis, mesh, float_type):
-        from hedge.cuda.plan import ExecutionPlan, Parallelism
+        from hedge.cuda.plan import \
+                ExecutionPlan, \
+                ExecutionPlanWithFluxTemp, \
+                Parallelism
 
         def generate_valid_plans():
             for pe in range(2,32):
                 for se in range(1,256):
                     flux_par = Parallelism(pe, se)
-                    plan = ExecutionPlan(self.devdata, ldis, flux_par,
+                    plan = ExecutionPlanWithFluxTemp(self.devdata, ldis, flux_par,
                             float_type=float_type)
                     if plan.invalid_reason() is None:
                         yield plan
@@ -228,7 +231,7 @@ class Discretization(hedge.discretization.Discretization):
                     flux_par=Parallelism(plan.flux_par.p, flux_par_s))
             assert actual_plan.max_faces % 2 == 0
 
-            if (flux_par_s == plan.flux_par.s and
+            if (flux_par_s <= plan.flux_par.s and
                     abs(plan.flux_occupancy_record().occupancy -
                         actual_plan.flux_occupancy_record().occupancy) < 1e-10):
                 break
@@ -487,11 +490,13 @@ class Discretization(hedge.discretization.Discretization):
                 face2.dup_ext_face_number = face1.native_block.register_ext_face_to_me(face2)
                 face1.native_block.register_ext_face_from_me(face1)
 
-                face1.dup_int_flux_index_list_id = \
+                face1.global_int_flux_index_list_id = \
+                        face1.dup_int_flux_index_list_id = \
                         get_face_index_list_number(
                                 tuple(bdry_fg.index_lists[
                                     fp.loc.face_index_list_number]))
-                face1.dup_ext_flux_index_list_id = \
+                face1.global_ext_flux_index_list_id = \
+                        face1.dup_ext_flux_index_list_id = \
                         get_face_index_list_number(
                                 tuple(bdry_fg.index_lists[
                                     fp.opp.face_index_list_number]))

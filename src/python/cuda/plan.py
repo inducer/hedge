@@ -239,6 +239,25 @@ class ExecutionPlan:
 
 
 
+
+class ExecutionPlanWithFluxTemp(ExecutionPlan):
+    #def flux_registers(self):
+        #return 14
+
+    @memoize_method
+    def flux_shared_mem_use(self):
+        from hedge.cuda.execute import face_pair_struct
+        d = self.ldis.dimensions
+
+        return (128 # parameters, block header, small extra stuff
+                + self.flux_par.total()*self.faces_per_el()*self.dofs_per_face()*self.float_size
+                + len(face_pair_struct(self.float_type, d))*self.face_pair_count()
+                )
+
+
+
+
+
 def _test_planner():
     from hedge.element import TetrahedralElement
     for order in [3]:

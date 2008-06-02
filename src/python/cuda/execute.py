@@ -103,7 +103,7 @@ def flux_header_struct():
 
 @memoize
 def face_pair_struct(float_type, dims):
-    from hedge.cuda.cgen import Struct, POD
+    from hedge.cuda.cgen import Struct, POD, ArrayOf
     return Struct("face_pair", [
         POD(float_type, "h", ),
         POD(float_type, "order"),
@@ -145,7 +145,13 @@ class FluxToCodeMapper(pymbolic.mapper.stringifier.StringifyMapper):
 
 class FluxToCodeMapper2(pymbolic.mapper.stringifier.StringifyMapper):
     def __init__(self, flip_normal):
-        pymbolic.mapper.stringifier.StringifyMapper(self, repr)
+        def float_mapper(x):
+            if isinstance(x, float):
+                return "%sf" % repr(x)
+            else:
+                return repr(x)
+
+        pymbolic.mapper.stringifier.StringifyMapper.__init__(self, float_mapper)
         self.flip_normal = flip_normal
 
     def map_normal(self, expr, enclosing_prec):
@@ -216,7 +222,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
         if False:
             f = discr.volume_from_gpu(field)
-            dx = discr.volume_from_gpu(xyz_diff[0], check=True)
+            dx = discr.volume_from_gpu(xyz_diff[0])
             
             test_discr = discr.test_discr
             real_dx = test_discr.nabla[0].apply(f.astype(numpy.float64))
@@ -230,6 +236,113 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         return xyz_diff[op.xyz_axis]
 
     def map_whole_domain_flux(self, op, field_expr, out=None):
+        field = self.rec(field_expr)
+        discr = self.ex.discr
+
+        eg, = discr.element_groups
+        fdata = self.ex.flux_with_temp_data(op, eg)
+        mod, func, texrefs = self.ex.get_flux_with_temp_kernel(op)
+
+        flux_par = discr.plan.flux_par
+        
+        kwargs = {
+                "texrefs": texrefs, 
+                "block": (discr.plan.dofs_per_el(), flux_par.p, 1),
+                "grid": (len(discr.blocks), 1)
+                }
+
+        flux = discr.volume_empty() 
+        bfield = None
+        for boundary in op.boundaries:
+            if bfield is None:
+                bfield = self.rec(boundary.bfield_expr)
+            else:
+                bfield = bfield + self.rec(boundary.bfield_expr)
+            
+        assert field.dtype == discr.plan.float_type
+        assert bfield.dtype == discr.plan.float_type
+
+        debugbuf = gpuarray.zeros((512,), dtype=numpy.float32)
+
+        args = [
+                debugbuf, 
+                flux, field, bfield, fdata.device_memory]
+
+        func(*args, **kwargs)
+
+        if True:
+            copied_debugbuf = debugbuf.get()
+            print "DEBUG"
+            #print numpy.reshape(copied_debugbuf, (len(copied_debugbuf)//16, 16))
+            print copied_debugbuf
+
+        if True:
+            cot = discr.test_discr.compile(op.flux_optemplate)
+            ctx = {field_expr.name: 
+                    discr.volume_from_gpu(field).astype(numpy.float64)
+                    }
+            for boundary in op.boundaries:
+                ctx[boundary.bfield_expr.name] = \
+                        discr.test_discr.boundary_zeros(boundary.tag)
+            true_flux = cot(**ctx)
+            
+            copied_flux = discr.volume_from_gpu(flux)
+
+            diff = copied_flux-true_flux
+
+            norm_true = la.norm(true_flux)
+
+            if True:
+                numpy.seterr(all="ignore")
+                struc = ""
+                for block in discr.blocks:
+                    for i_el, el in enumerate(block.elements):
+                        s = discr.find_el_range(el.id)
+                        relerr = la.norm(diff[s])/norm_true
+                        if relerr > 1e-4:
+                            struc += "*"
+                            if False:
+                                print "block %d, el %d, global el #%d, rel.l2err=%g" % (
+                                        block.number, i_el, el.id, relerr)
+                                print copied_flux[s]
+                                print true_flux[s]
+                                print diff[s]
+                                raw_input()
+                        elif numpy.isnan(relerr):
+                            struc += "N"
+                            if False:
+                                print "block %d, el %d, global el #%d, rel.l2err=%g" % (
+                                        block.number, i_el, el.id, relerr)
+                                print copied_flux[s]
+                                print true_flux[s]
+                                print diff[s]
+                                raw_input()
+                        else:
+                            if numpy.max(numpy.abs(true_flux[s])) == 0:
+                                struc += "0"
+                            else:
+                                struc += "."
+                    struc += "\n"
+                print
+                print struc
+
+            print la.norm(diff)/norm_true
+            assert la.norm(diff)/norm_true < 1e-6
+
+        if False:
+            copied_bfield = bfield.get()
+            face_len = discr.plan.ldis.face_node_count()
+            aligned_face_len = discr.devdata.align_dtype(face_len, 4)
+            for elface in discr.mesh.tag_to_boundary.get('inflow', []):
+                face_stor = discr.face_storage_map[elface]
+                bdry_stor = face_stor.opposite
+                gpu_base = bdry_stor.gpu_bdry_index_in_floats
+                print gpu_base, copied_bfield[gpu_base:gpu_base+aligned_face_len]
+                raw_input()
+
+        return flux
+
+    def map_whole_domain_flux_2(self, op, field_expr, out=None):
         field = self.rec(field_expr)
         discr = self.ex.discr
 
@@ -616,8 +729,6 @@ class OpTemplateWithEnvironment(object):
                 Line(),
                 ] + self.index_list_data() + [
                 Line(),
-                self.lift_matrix_initializer(discr.plan.ldis),
-                Line(),
                 flux_data.struct,
                 Line(),
                 #CudaShared(POD(discr.plan.float_type, "dummy_dest")),
@@ -863,7 +974,7 @@ class OpTemplateWithEnvironment(object):
 
         f_decl = CudaGlobal(FunctionDeclaration(Value("void", "apply_flux"), 
             [
-                #Pointer(POD(float_type, "debugbuf")),
+                Pointer(POD(float_type, "debugbuf")),
                 Pointer(POD(float_type, "flux")),
                 Pointer(POD(float_type, "field")),
                 Pointer(POD(float_type, "bfield")),
@@ -877,11 +988,8 @@ class OpTemplateWithEnvironment(object):
         cmod = Module([
                 Value("texture<float, 2, cudaReadModeElementType>", 
                     "lift_matrix_tex"),
-                block_header_struct(),
-                face_pair_struct(),
-                flux_face_properties_struct(float_type, discr.dimensions),
-                flux_face_location_struct(),
-                boundary_load_struct(),
+                flux_header_struct(),
+                face_pair_struct(float_type, discr.dimensions),
                 Line(),
                 Define("ELS_PER_BLOCK", flux_par.total()),
                 Define("EL_DOF", "threadIdx.x"),
@@ -906,11 +1014,9 @@ class OpTemplateWithEnvironment(object):
                 Line(),
                 ] + self.index_list_data() + [
                 Line(),
-                self.lift_matrix_initializer(discr.plan.ldis),
-                Line(),
                 flux_with_temp_data.struct,
                 Line(),
-                CudaShared(Value("flux_with_temp_data", "data")),
+                CudaShared(Value("flux_data", "data")),
                 CudaShared(ArrayOf(POD(float_type, "fluxes_on_faces"),
                     "ELS_PER_BLOCK*FACES_PER_EL*DOFS_PER_FACE"
                     "+ DOFS_PER_FACE" # dumping ground for unwanted output
@@ -924,22 +1030,24 @@ class OpTemplateWithEnvironment(object):
         f_body.extend(self.get_load_code(
             dest="&data",
             base="gmem_data + blockIdx.x*DATA_BLOCK_SIZE",
-            bytes="sizeof(face_pair)",
+            bytes="sizeof(flux_data)",
             descr="load face_pair data")
             +[ S("__syncthreads()"), Line() ])
 
-        def flux_coeff_getter(prefix, flip_normal):
+        def flux_coeff_getter(flux_number_expr, prefix, flip_normal):
             from hedge.cuda.cgen import make_multiple_ifs
             from pymbolic.mapper.stringifier import PREC_NONE
             return [
+                POD(float_type, "%sint_coeff" % prefix),
+                POD(float_type, "%sext_coeff" % prefix),
                 make_multiple_ifs(
                     [
-                    ("fpair->%sflux_number == %d" % (prefix, flux_nr),
+                    ("(%s) == %d" % (flux_number_expr, flux_nr),
                         Block([
-                            Assign("%s_int_coeff" % prefix, 
+                            Assign("%sint_coeff" % prefix, 
                                 FluxToCodeMapper2(flip_normal)(int_coeff, PREC_NONE),
                                 ),
-                            Assign("%s_ext_coeff" % prefix, 
+                            Assign("%sext_coeff" % prefix, 
                                 FluxToCodeMapper2(flip_normal)(ext_coeff, PREC_NONE),
                                 ),
                             ])
@@ -956,19 +1064,19 @@ class OpTemplateWithEnvironment(object):
                 S("%sext_coeff *= fpair->face_jacobian" % prefix),
                 ]
 
-        f_body.extend_log_block("compute the fluxes", [
+        f_body.extend_log_block("compute the fluxes", [Block([
             Initializer(Const(POD(numpy.int16, "block_face")),
                 "THREAD_NUM / COALESCED_DOFS_PER_FACE"),
-            Initializer(Const(POD(numpy.int16, "face_dof")),
+            Initializer(Const(POD(numpy.int16, "facedof_nr")),
                 "THREAD_NUM - COALESCED_DOFS_PER_FACE*block_face"),
-            If("face_dof < DOFS_PER_FACE && block_face < CONCURRENT_COALESCED_FACES",
+            If("facedof_nr < DOFS_PER_FACE && block_face < CONCURRENT_COALESCED_FACES",
                 For("unsigned fpair_nr = block_face",
                     "fpair_nr < data.header.facepairs_in_block",
                     "fpair_nr += CONCURRENT_COALESCED_FACES",
                     Block([
                         Initializer(Pointer(
                             Value("face_pair", "fpair")),
-                            "data.facepairs[fpair_nr]"),
+                            "data.facepairs+fpair_nr"),
                         Initializer(Pointer(Value(
                             "index_list_entry_t", "a_ilist")),
                             "const_index_lists + fpair->a_ilist_index"
@@ -979,28 +1087,32 @@ class OpTemplateWithEnvironment(object):
                             ),
                         Initializer(
                             POD(float_type, "a_value"),
-                            "field[fpair->a_base + a_ilist[face_dof]]"),
+                            "field[fpair->a_base + a_ilist[facedof_nr]]"),
                         Initializer(
                             POD(float_type, "b_value"),
-                            "(fpair->b_load_from_bdry ? bfield : field )"
-                            "[fpair->b_base + b_ilist[face_dof]]"),
+                            "((fpair->b_flux_number_and_bdry_flag & 1) ? bfield : field )"
+                            "[fpair->b_base + b_ilist[facedof_nr]]"),
                         ]
-                        +flux_coeff_getter("a_", False)
-                        +flux_coeff_getter("b_", True)
+                        +flux_coeff_getter("fpair->a_flux_number", "a_", False)
+                        +flux_coeff_getter("fpair->b_flux_number_and_bdry_flag >> 1", "b_", True)
                         +[
                         Initializer(Pointer(Value(
                             "index_list_entry_t", "b_write_ilist")),
                             "const_index_lists + fpair->b_write_ilist_index"
                             ),
+                        Assign("debugbuf[THREAD_NUM]",
+                            "fpair->h"),
                         Assign(
-                            "fluxes_on_faces[fpair->a_dest+face_dof]",
+                            "fluxes_on_faces[fpair->a_dest+facedof_nr]",
                             "a_int_coeff*a_value+b_ext_coeff*b_value"),
                         Assign(
-                            "fluxes_on_faces[fpair->b_dest+b_write_ilist[face_dof]]",
+                            "fluxes_on_faces[fpair->b_dest+b_write_ilist[facedof_nr]]",
                             "b_int_coeff*b_value+a_ext_coeff*a_value"),
                         ])
                     )
                 )
+            ]),
+            S("__syncthreads()")
             ])
 
         f_body.extend_log_block("apply lifting matrix", [
@@ -1009,16 +1121,16 @@ class OpTemplateWithEnvironment(object):
                 "base_el += CONCURRENT_ELS", 
                 Block([
                     Initializer(POD(float_type, "result"), 0),
-                    For("unsigned face_dof = 0",
-                        "face_dof < FACES_PER_EL*DOFS_PER_FACE",
-                        "++face_dof",
+                    For("unsigned facedof_nr = 0",
+                        "facedof_nr < FACES_PER_EL*DOFS_PER_FACE",
+                        "++facedof_nr",
                         S("result += "
                             "tex2D(lift_matrix_tex, EL_DOF, facedof_nr)"
-                            "*fluxes_on_faces[face_dof+base_el*FACES_PER_EL*DOFS_PER_FACE]")
+                            "*fluxes_on_faces[facedof_nr+base_el*FACES_PER_EL*DOFS_PER_FACE]")
                         ),
                     Assign(
                         "flux[base_el*DOFS_PER_EL+EL_DOF]",
-                        "result")
+                        "data.inverse_jacobians[base_el]*result")
                     ])
                 )
             ])
@@ -1040,6 +1152,7 @@ class OpTemplateWithEnvironment(object):
         texrefs = [texref]
 
         return mod, mod.get_function("apply_flux"), texrefs
+
     # gpu data blocks ---------------------------------------------------------
     def diffmat_channels(self):
         return min(ch
@@ -1187,10 +1300,17 @@ class OpTemplateWithEnvironment(object):
     @memoize_method
     def flux_with_temp_data(self, wdflux, elgroup):
         discr = self.discr
+
+        headers = []
         fp_blocks = []
+
+        from hedge.cuda.discretization import GPUBoundaryFaceStorage
+
+        fp_struct = face_pair_struct(discr.plan.float_type, discr.dimensions)
 
         for block in discr.blocks:
             ldis = block.local_discretization
+            el_dofs = ldis.node_count()
             elface_dofs = ldis.face_node_count()*ldis.face_count()
             face_dofs = ldis.face_node_count()
 
@@ -1219,7 +1339,10 @@ class OpTemplateWithEnvironment(object):
 
                 else:
                     # interior face
-                    b_base = b_face.native_block_el_num*el_dofs
+                    b_base = (
+                            b_face.native_block.number*discr.int_dof_count
+                            +b_face.native_block_el_num*el_dofs)
+
                     a_flux_number = wdflux.interior_flux_number
                     b_flux_number = wdflux.interior_flux_number
                     b_load_from_bdry = 0
@@ -1238,24 +1361,27 @@ class OpTemplateWithEnvironment(object):
                         b_dest = elface_dofs*discr.plan.flux_par.total()
 
                 fp_structs.append(
-                        face_pair_struct(discr.plan.float_type, discr.dimensions).make(
-                            h=a_face.flux_face.h,
-                            order=a_face.flux_face.order,
-                            face_jacobian=a_face.flux_face.face_jacobian,
-                            normal=a_face.flux_face.normal,
+                        fp_struct.make(
+                            h=a_face.face_pair_side.h,
+                            order=a_face.face_pair_side.order,
+                            face_jacobian=a_face.face_pair_side.face_jacobian,
+                            normal=a_face.face_pair_side.normal,
 
-                            a_base=a_face.native_block_el_num*el_dofs,
+                            a_base=(
+                                a_face.native_block.number*discr.int_dof_count
+                                +a_face.native_block_el_num*el_dofs),
                             b_base=b_base,
 
                             a_ilist_index= \
-                                    a_face.int_flux_index_list_id*face_dofs,
+                                    a_face.global_int_flux_index_list_id*face_dofs,
                             b_ilist_index= \
-                                    a_face.ext_flux_index_list_id*face_dofs,
+                                    a_face.global_ext_flux_index_list_id*face_dofs,
 
                             a_flux_number=a_flux_number,
                             b_flux_number_and_bdry_flag=\
-                                    b_flux_number << 1 + b_load_from_bdry,
-                            b_write_index_list=b_write_index_list,
+                                    (b_flux_number << 1) + b_load_from_bdry,
+                            b_write_ilist_index= \
+                                    b_write_index_list*face_dofs,
 
                             a_dest= \
                                     elface_dofs*a_face.native_block_el_num
@@ -1263,9 +1389,9 @@ class OpTemplateWithEnvironment(object):
                             b_dest=b_dest
                             ))
 
-            headers.append(flux_block_header_struct().make(
+            headers.append(flux_header_struct().make(
                     els_in_block=len(block.elements),
-                    face_pairs_in_block=len(fp_blocks)
+                    facepairs_in_block=len(fp_blocks)
                     ))
             fp_blocks.append(fp_structs)
 
@@ -1278,11 +1404,7 @@ class OpTemplateWithEnvironment(object):
                     (headers, Value(flux_header_struct().tpname, "header")),
                     self.flux_inverse_jacobians(elgroup),
                     ],
-                [
-                    (fp_blocks, 
-                        Value(face_pair_struct().tpname, 
-                            "facepairs")),
-                    ])
+                [ (fp_blocks, Value(fp_struct.tpname, "facepairs")), ])
 
 
     @memoize_method
