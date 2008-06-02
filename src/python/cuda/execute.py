@@ -606,19 +606,40 @@ class OpTemplateWithEnvironment(object):
             code.append(Line())
 
             tex_channels = ["x", "y", "z", "w"]
-            code.append(
-                For("unsigned short j = 0", "j < DOFS_PER_EL", "++j", Block([
-                    S("float%d diff_ij = tex2D(diff_rst_matrices, (%s) , j)" 
-                        % (self.diffmat_channels(), dest_dof)),
-                    Initializer(POD(float_type, "field_value"),
-                        "int_dofs[(%s)*DOFS_PER_EL+j]" % el_nr),
-                    Line(),
-                    ]+[
-                    S("drst%d += diff_ij.%s * field_value" 
-                        % (axis, tex_channels[axis]))
-                    for axis in dims
-                    ]))
-                )
+            from pytools import flatten
+            code.extend(
+                    [POD(float_type, "field_value"),
+                        Value("float%d" % self.diffmat_channels(),
+                            "diff_ij"),
+                        ]
+                    +list(flatten( [
+                        S("diff_ij = tex2D(diff_rst_matrices, (%s) , %d)" 
+                            % (dest_dof, j)),
+                        Assign("field_value", "int_dofs[(%s)*DOFS_PER_EL+%d]" % (el_nr, j)),
+                        Line(),
+                        ]
+                        +[
+                        S("drst%d += diff_ij.%s * field_value" 
+                            % (axis, tex_channels[axis]))
+                        for axis in dims
+                        ]
+                        for j in range(discr.plan.dofs_per_el())))
+                    )
+
+            if False:
+                code.append(
+                        For("unsigned short j = 0", "j < DOFS_PER_EL", "++j", Block([
+                            S("float%d diff_ij = tex2D(diff_rst_matrices, (%s) , j)" 
+                                % (self.diffmat_channels(), dest_dof)),
+                            Initializer(POD(float_type, "field_value"),
+                                "int_dofs[(%s)*DOFS_PER_EL+j]" % el_nr),
+                            Line(),
+                            ]+[
+                                S("drst%d += diff_ij.%s * field_value" 
+                                    % (axis, tex_channels[axis]))
+                                for axis in dims
+                                ]))
+                            )
 
             code.append(Line())
 
@@ -656,7 +677,7 @@ class OpTemplateWithEnvironment(object):
 
         mod = cuda.SourceModule(cmod, 
                 keep=True, 
-                #options=["--maxrregcount=12"]
+                options=["--maxrregcount=16"]
                 )
         print "lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
 
@@ -972,14 +993,15 @@ class OpTemplateWithEnvironment(object):
                 Constant, Initializer, If, For, Statement, Assign
                 
         discr = self.discr
+        plan = discr.plan
         d = discr.dimensions
         dims = range(d)
 
-        flux_par = discr.plan.find_localop_par()
+        flux_par = plan.find_localop_par()
         elgroup, = discr.element_groups
         flux_with_temp_data = self.flux_with_temp_data(wdflux, elgroup)
 
-        float_type = discr.plan.float_type
+        float_type = plan.float_type
 
         f_decl = CudaGlobal(FunctionDeclaration(Value("void", "apply_flux"), 
             [
@@ -992,7 +1014,7 @@ class OpTemplateWithEnvironment(object):
             ))
 
         coalesced_dofs_per_face = discr.devdata.coalesce(
-                discr.plan.dofs_per_face())
+                plan.dofs_per_face())
 
         cmod = Module([
                 Value("texture<float, 2, cudaReadModeElementType>", 
@@ -1003,7 +1025,7 @@ class OpTemplateWithEnvironment(object):
                 Define("ELS_PER_BLOCK", flux_par.total()),
                 Define("EL_DOF", "threadIdx.x"),
                 Define("BLOCK_EL", "threadIdx.y"),
-                Define("DOFS_PER_EL", discr.plan.dofs_per_el()),
+                Define("DOFS_PER_EL", plan.dofs_per_el()),
                 Define("CONCURRENT_ELS", flux_par.p),
                 Define("THREAD_NUM", "(BLOCK_EL*DOFS_PER_EL + EL_DOF)"),
                 Define("THREAD_COUNT", "(DOFS_PER_EL*CONCURRENT_ELS)"),
@@ -1012,15 +1034,15 @@ class OpTemplateWithEnvironment(object):
                 Define("DATA_BLOCK_SIZE", flux_with_temp_data.block_size),
                 Line(),
                 Comment("face-related stuff"),
-                Define("DOFS_PER_FACE", discr.plan.dofs_per_face()),
-                Define("FACES_PER_EL", discr.plan.faces_per_el()),
+                Define("DOFS_PER_FACE", plan.dofs_per_face()),
+                Define("FACES_PER_EL", plan.faces_per_el()),
                 Define("COALESCED_DOFS_PER_FACE", 
                     coalesced_dofs_per_face),
                 Define("CONCURRENT_FACES", 
-                    discr.plan.dofs_per_el()*flux_par.p
-                    //discr.plan.dofs_per_face()),
+                    plan.dofs_per_el()*flux_par.p
+                    //plan.dofs_per_face()),
                 Define("CONCURRENT_COALESCED_FACES", 
-                    discr.plan.dofs_per_el()*flux_par.p
+                    plan.dofs_per_el()*flux_par.p
                     //coalesced_dofs_per_face),
                 Line(),
                 ] + self.index_list_data() + [
@@ -1135,13 +1157,14 @@ class OpTemplateWithEnvironment(object):
                 "base_el += CONCURRENT_ELS", 
                 Block([
                     Initializer(POD(float_type, "result"), 0),
-                    For("unsigned facedof_nr = 0",
-                        "facedof_nr < FACES_PER_EL*DOFS_PER_FACE",
-                        "++facedof_nr",
+                    ]+[
                         S("result += "
-                            "tex2D(lift_matrix_tex, EL_DOF, facedof_nr)"
-                            "*fluxes_on_faces[facedof_nr+base_el*FACES_PER_EL*DOFS_PER_FACE]")
-                        ),
+                            "tex2D(lift_matrix_tex, EL_DOF, %(facedof_nr)d)"
+                            "*fluxes_on_faces[%(facedof_nr)d+base_el*FACES_PER_EL*DOFS_PER_FACE]"
+                            % {"facedof_nr":facedof_nr})
+                        for facedof_nr in xrange(
+                            plan.faces_per_el()*plan.dofs_per_face())
+                    ]+[
                     Assign(
                         "flux[DOFS_BLOCK_BASE+base_el*DOFS_PER_EL+EL_DOF]",
                         "data.inverse_jacobians[base_el]*result")
