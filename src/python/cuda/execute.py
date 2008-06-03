@@ -135,16 +135,16 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         localop_data = self.ex.localop_data(op, eg)
         func, texref = self.ex.get_diff_kernel(op.__class__, eg)
 
-        lop_par = discr.plan.find_localop_par()
+        lop_par = discr.flux_plan.parallelism
         
         kwargs = {
                 "texrefs": [texref], 
-                "block": (discr.plan.dofs_per_el(), lop_par.p, 1),
+                "block": (discr.flux_plan.dofs_per_el(), lop_par.p, 1),
                 "grid": (len(discr.blocks), 1)
                 }
 
         field = self.rec(field_expr)
-        assert field.dtype == discr.plan.float_type
+        assert field.dtype == discr.flux_plan.float_type
 
         xyz_diff = [discr.volume_empty() for axis in range(d)]
         elgroup, = discr.element_groups
@@ -175,11 +175,11 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         fdata = self.ex.flux_with_temp_data(op, eg)
         mod, func, texrefs = self.ex.get_flux_with_temp_kernel(op)
 
-        flux_par = discr.plan.flux_par
+        flux_par = discr.flux_plan.parallelism
         
         kwargs = {
                 "texrefs": texrefs, 
-                "block": (discr.plan.dofs_per_el(), flux_par.p, 1),
+                "block": (discr.flux_plan.dofs_per_el(), flux_par.p, 1),
                 "grid": (len(discr.blocks), 1)
                 }
 
@@ -191,8 +191,8 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             else:
                 bfield = bfield + self.rec(boundary.bfield_expr)
             
-        assert field.dtype == discr.plan.float_type
-        assert bfield.dtype == discr.plan.float_type
+        assert field.dtype == discr.flux_plan.float_type
+        assert bfield.dtype == discr.flux_plan.float_type
 
         #debugbuf = gpuarray.zeros((512,), dtype=numpy.float32)
 
@@ -272,7 +272,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
         if False:
             copied_bfield = bfield.get()
-            face_len = discr.plan.ldis.face_node_count()
+            face_len = discr.flux_plan.ldis.face_node_count()
             aligned_face_len = discr.devdata.align_dtype(face_len, 4)
             for elface in discr.mesh.tag_to_boundary.get('inflow', []):
                 face_stor = discr.face_storage_map[elface]
@@ -355,12 +355,12 @@ class OpTemplateWithEnvironment(object):
         d = discr.dimensions
         dims = range(d)
 
-        lop_par = discr.plan.find_localop_par()
+        lop_par = discr.flux_plan.parallelism
         lop_data = self.localop_data(diff_op_cls, elgroup)
         rst2xyz_coeffs_size_unaligned = d*d*lop_par.total()
         elgroup, = discr.element_groups
 
-        float_type = discr.plan.float_type
+        float_type = discr.flux_plan.float_type
 
         f_decl = CudaGlobal(FunctionDeclaration(Value("void", "apply_diff_mat"), 
             [Pointer(POD(float_type, "dxyz%d" % i)) for i in dims]
@@ -376,7 +376,7 @@ class OpTemplateWithEnvironment(object):
                 localop_header_struct(),
                 Define("EL_DOF", "threadIdx.x"),
                 Define("BLOCK_EL", "threadIdx.y"),
-                Define("DOFS_PER_EL", discr.plan.dofs_per_el()),
+                Define("DOFS_PER_EL", discr.flux_plan.dofs_per_el()),
                 Define("CONCURRENT_ELS", lop_par.p),
                 Define("THREAD_NUM", "(BLOCK_EL*DOFS_PER_EL + EL_DOF)"),
                 Define("THREAD_COUNT", "(DOFS_PER_EL*CONCURRENT_ELS)"),
@@ -385,10 +385,10 @@ class OpTemplateWithEnvironment(object):
                 Define("DATA_BLOCK_SIZE", lop_data.block_size),
                 Line(),
                 Comment("face-related stuff"),
-                Define("DOFS_PER_FACE", discr.plan.dofs_per_face()),
+                Define("DOFS_PER_FACE", discr.flux_plan.dofs_per_face()),
                 Define("CONCURRENT_FACES", 
-                    discr.plan.dofs_per_el()*lop_par.p
-                    //discr.plan.dofs_per_face()),
+                    discr.flux_plan.dofs_per_el()*lop_par.p
+                    //discr.flux_plan.dofs_per_face()),
                 Line(),
                 ] + self.index_list_data() + [
                 Line(),
@@ -454,7 +454,7 @@ class OpTemplateWithEnvironment(object):
                             % (axis, tex_channels[axis]))
                         for axis in dims
                         ]+[Line()]
-                        for j in range(discr.plan.dofs_per_el())))
+                        for j in range(discr.flux_plan.dofs_per_el())))
                     )
 
             for glob_axis in dims:
@@ -518,11 +518,11 @@ class OpTemplateWithEnvironment(object):
                 Constant, Initializer, If, For, Statement, Assign
                 
         discr = self.discr
-        plan = discr.plan
+        plan = discr.flux_plan
         d = discr.dimensions
         dims = range(d)
 
-        flux_par = plan.find_localop_par()
+        flux_par = plan.parallelism
         elgroup, = discr.element_groups
         flux_with_temp_data = self.flux_with_temp_data(wdflux, elgroup)
 
@@ -708,9 +708,9 @@ class OpTemplateWithEnvironment(object):
 
         texref = mod.get_texref("lift_matrix_tex")
         if wdflux.is_lift:
-            cuda.matrix_to_texref(discr.plan.ldis.lifting_matrix(), texref)
+            cuda.matrix_to_texref(plan.ldis.lifting_matrix(), texref)
         else:
-            cuda.matrix_to_texref(discr.plan.ldis.multi_face_mass_matrix(), texref)
+            cuda.matrix_to_texref(plan.ldis.multi_face_mass_matrix(), texref)
         texrefs = [texref]
 
         return mod, mod.get_function("apply_flux"), texrefs
@@ -732,7 +732,7 @@ class OpTemplateWithEnvironment(object):
         diffmat_shape = single_valued(dm.shape for dm in diffmats)
         while channel_count > len(diffmats):
             diffmats.append(
-                    numpy.zeros(diffmat_shape, dtype=self.discr.plan.float_type))
+                    numpy.zeros(diffmat_shape, dtype=self.discr.flux_plan.float_type))
         
         from pytools import Record
         return cuda.make_multichannel_2d_array(diffmats)
@@ -742,8 +742,10 @@ class OpTemplateWithEnvironment(object):
         discr = self.discr
         d = discr.dimensions
 
-        floats_per_block = d*d*discr.plan.find_localop_par().total()
-        bytes_per_block = floats_per_block*discr.plan.float_size
+        fplan = discr.flux_plan
+
+        floats_per_block = d*d*fplan.elements_per_block()
+        bytes_per_block = floats_per_block*fplan.float_size
 
         coeffs = diff_op.coefficients(elgroup)
 
@@ -761,12 +763,12 @@ class OpTemplateWithEnvironment(object):
                     dtype=numpy.intp)
 
             flattened = (coeffs[:,:,block_elgroup_indices]
-                .transpose(2,0,1).flatten().astype(discr.plan.float_type))
+                .transpose(2,0,1).flatten().astype(fplan.float_type))
             blocks.append(pad(str(buffer(flattened)), bytes_per_block))
                 
         from hedge.cuda.cgen import POD, ArrayOf
         return blocks, ArrayOf(
-                POD(discr.plan.float_type, "rst_to_xyz_coefficients"),
+                POD(fplan.float_type, "rst_to_xyz_coefficients"),
                 floats_per_block)
 
     @memoize_method
@@ -774,8 +776,10 @@ class OpTemplateWithEnvironment(object):
         discr = self.discr
         d = discr.dimensions
 
-        floats_per_block = discr.plan.flux_par.total()
-        bytes_per_block = floats_per_block*discr.plan.float_size
+        fplan = discr.flux_plan
+
+        floats_per_block = fplan.elements_per_block()
+        bytes_per_block = floats_per_block*fplan.float_size
 
         inv_jacs = elgroup.inverse_jacobians
 
@@ -792,12 +796,12 @@ class OpTemplateWithEnvironment(object):
                     (get_el_index_in_el_group(el) for el in block.elements),
                     dtype=numpy.intp)
 
-            block_inv_jacs = (inv_jacs[block_elgroup_indices].copy().astype(discr.plan.float_type))
+            block_inv_jacs = (inv_jacs[block_elgroup_indices].copy().astype(fplan.float_type))
             blocks.append(pad(str(buffer(block_inv_jacs)), bytes_per_block))
                 
         from hedge.cuda.cgen import POD, ArrayOf
         return blocks, ArrayOf(
-                POD(discr.plan.float_type, "inverse_jacobians"),
+                POD(fplan.float_type, "inverse_jacobians"),
                 floats_per_block)
 
     @memoize_method
@@ -830,7 +834,7 @@ class OpTemplateWithEnvironment(object):
 
         from hedge.cuda.discretization import GPUBoundaryFaceStorage
 
-        fp_struct = face_pair_struct(discr.plan.float_type, discr.dimensions)
+        fp_struct = face_pair_struct(discr.flux_plan.float_type, discr.dimensions)
 
         outf = open("el_faces.txt", "w")
         for block in discr.blocks:

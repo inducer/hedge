@@ -42,14 +42,48 @@ class Parallelism:
 
 
 
-class ExecutionPlan:
-    def __init__(self, devdata, ldis, flux_par, 
+class ExecutionPlan(object):
+    def __init__(self, devdata):
+        self.devdata = devdata
+
+    def invalid_reason(self):
+        if self.threads() >= self.devdata.max_threads:
+            return "too many threads"
+
+        if self.shared_mem_use() >= int(self.devdata.shared_memory): 
+            return "too much shared memory"
+
+        if self.threads()*self.registers() > self.devdata.registers:
+            return "too many registers"
+        return None
+
+    @memoize_method
+    def occupancy_record(self):
+        from hedge.cuda.tools import OccupancyRecord
+        return OccupancyRecord(self.devdata,
+                self.threads(), self.shared_mem_use(),
+                registers=self.registers())
+
+    def __str__(self):
+            return ("regs=%d par=%s threads=%d smem=%d occ=%f" % (
+                self.registers(),
+                self.parallelism, 
+                self.threads(), 
+                self.shared_mem_use(), 
+                self.occupancy_record().occupancy,
+                ))
+
+
+
+
+class FluxExecutionPlan(ExecutionPlan):
+    def __init__(self, devdata, ldis, parallelism, 
             max_ext_faces=None, max_faces=None, 
             float_type=numpy.float32, 
             ):
-        self.devdata = devdata
+        ExecutionPlan.__init__(self, devdata)
         self.ldis = ldis
-        self.flux_par = flux_par
+        self.parallelism = parallelism
 
         self.max_ext_faces = max_ext_faces
         self.max_faces = max_faces
@@ -60,12 +94,12 @@ class ExecutionPlan:
     def float_size(self):
         return self.float_type.itemsize
 
-    def copy(self, devdata=None, ldis=None, flux_par=None, 
+    def copy(self, devdata=None, ldis=None, parallelism=None, 
             max_ext_faces=None, max_faces=None, float_type=None):
         return self.__class__(
                 devdata or self.devdata,
                 ldis or self.ldis,
-                flux_par or self.flux_par,
+                parallelism or self.parallelism,
                 max_ext_faces or self.max_ext_faces,
                 max_faces or self.max_faces,
                 float_type or self.float_type,
@@ -81,7 +115,7 @@ class ExecutionPlan:
         return self.ldis.face_count()
 
     def elements_per_block(self):
-        return self.flux_par.total()
+        return self.parallelism.total()
 
     @memoize_method
     def estimate_extface_count(self):
@@ -130,68 +164,89 @@ class ExecutionPlan:
         return (self.face_count()+1) // 2
 
     @memoize_method
-    def flux_shared_mem_use(self):
+    def shared_mem_use(self):
         from hedge.cuda.execute import face_pair_struct
         d = self.ldis.dimensions
 
         return (128 # parameters, block header, small extra stuff
-                + self.flux_par.total()*self.faces_per_el()*self.dofs_per_face()*self.float_size
+                + self.parallelism.total()*self.faces_per_el()*self.dofs_per_face()*self.float_size
                 + len(face_pair_struct(self.float_type, d))*self.face_pair_count()
                 )
 
-    @memoize_method
-    def localop_shared_mem_use(self):
-        return (128 # parameters, block header, small extra stuff
-                + self.int_dof_smem() 
-                # rst2xyz coefficients
-                + (self.elements_per_block()
-                    * self.ldis.dimensions
-                    * self.ldis.dimensions
-                    * self.float_size)
-                )
+    def threads(self):
+        return self.parallelism.p*self.dofs_per_el()
 
-    def flux_threads(self):
-        return self.flux_par.p*self.dofs_per_el()
-
-    def flux_registers(self):
+    def registers(self):
         return 16
 
-    def invalid_reason(self):
-        if self.flux_threads() >= self.devdata.max_threads:
-            return "too many threads"
+    @memoize_method
+    def localop_plan(self):
+        def generate_valid_plans():
+            for pe in range(2,32):
+                from hedge.cuda.tools import int_ceiling
+                se = int_ceiling(self.parallelism.total()/pe)
+                localop_par = Parallelism(pe, se)
+                for chunk_size in range(1,self.dofs_per_el()):
+                    plan = LocalOpExecutionPlan(self, localop_par, chunk_size)
+                    if plan.invalid_reason() is None:
+                        yield plan
 
-        if self.flux_shared_mem_use() >= int(self.devdata.shared_memory): 
-            return "too much shared memory"
+        plans = list(generate_valid_plans())
 
-        if self.flux_threads()*self.flux_registers() > self.devdata.registers:
-            return "too many registers"
-        return None
+        if not plans:
+            raise RuntimeError, "no valid CUDA execution plans found"
+
+        desired_occup = max(plan.occupancy_record().occupancy for plan in plans)
+        if desired_occup > 0.66:
+            # see http://forums.nvidia.com/lofiversion/index.php?t67766.html
+            desired_occup = 0.66
+
+        good_plans = [p for p in plans
+                if p.occupancy_record().occupancy >= desired_occup - 1e-10
+                ]
+
+        from pytools import argmax2
+        return argmax2((p, p.chunk_size) for p in good_plans)
+
+
+
+
+class LocalOpExecutionPlan(ExecutionPlan):
+    def __init__(self, flux_plan, parallelism, chunk_size):
+        ExecutionPlan.__init__(self, flux_plan.devdata)
+        self.flux_plan = flux_plan
+        self.parallelism = parallelism
+        self.chunk_size = chunk_size
 
     @memoize_method
-    def flux_occupancy_record(self):
-        from hedge.cuda.tools import OccupancyRecord
-        return OccupancyRecord(self.devdata,
-                self.flux_threads(), self.flux_shared_mem_use(),
-                registers=self.flux_registers())
-    
-    @memoize_method
-    def find_localop_par(self):
-        return self.flux_par
+    def shared_mem_use(self):
+        fplan = self.flux_plan
+        ldis = fplan.ldis
+        return (128 # parameters, block header, small extra stuff
+                + fplan.int_dof_smem() 
+                # rst2xyz coefficients
+                + (fplan.elements_per_block()
+                    * ldis.dimensions
+                    * ldis.dimensions
+                    * fplan.float_size)
+                # chunk of the differentiation matrix
+                + self.chunk_size # this many rows
+                * fplan.dofs_per_el()
+                * fplan.ldis.dimensions # r,s,t
+                * fplan.float_size
+                )
+
+    def threads(self):
+        return self.parallelism.p*self.chunk_size
+
+    def registers(self):
+        return 16
 
     def __str__(self):
-            return (
-                    "flux: par=%s threads=%d smem=%d occ=%f\n"
-                    "localop: par=%s threads=%d smem=%d" % (
-                    self.flux_par, 
-                    self.flux_threads(), 
-                    self.flux_shared_mem_use(), 
-                    self.flux_occupancy_record().occupancy,
-
-                    self.find_localop_par(), 
-                    self.find_localop_par().p*self.dofs_per_el(), 
-                    self.localop_shared_mem_use(),
-                    ))
-
+            return ("%s chunk_size=%d" % (
+                ExecutionPlan.__str__(self),
+                self.chunk_size,
+                ))
 
 
 

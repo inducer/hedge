@@ -138,30 +138,32 @@ class GPUBoundaryFaceStorage(GPUFaceStorage):
 class Discretization(hedge.discretization.Discretization):
     def _make_plan(self, ldis, mesh, float_type):
         from hedge.cuda.plan import \
-                ExecutionPlan, \
+                FluxExecutionPlan, \
                 Parallelism
 
         def generate_valid_plans():
             for pe in range(2,32):
                 for se in range(1,256):
                     flux_par = Parallelism(pe, se)
-                    plan = ExecutionPlan(self.devdata, ldis, flux_par,
+                    flux_plan = FluxExecutionPlan(
+                            self.devdata, ldis, flux_par,
                             float_type=float_type)
-                    if plan.invalid_reason() is None:
-                        yield plan
+                    if flux_plan.invalid_reason() is None:
+                        yield flux_plan
 
         plans = list(generate_valid_plans())
 
         if not plans:
             raise RuntimeError, "no valid CUDA execution plans found"
 
-        desired_occup = max(plan.flux_occupancy_record().occupancy for plan in plans)
+        desired_occup = max(flux_plan.occupancy_record().occupancy 
+                for flux_plan in plans)
         if desired_occup > 0.66:
             # see http://forums.nvidia.com/lofiversion/index.php?t67766.html
             desired_occup = 0.66
 
         good_plans = [p for p in plans
-                if p.flux_occupancy_record().occupancy >= desired_occup - 1e-10
+                if p.occupancy_record().occupancy >= desired_occup - 1e-10
                 ]
 
         from pytools import argmax2
@@ -170,10 +172,11 @@ class Discretization(hedge.discretization.Discretization):
 
 
 
-    def _partition_mesh(self, mesh, plan):
+    def _partition_mesh(self, mesh, flux_plan):
         # search for mesh partition that matches plan
         from pymetis import part_graph
-        orig_part_count = part_count = len(mesh.elements)//plan.flux_par.total()+1
+        orig_part_count = part_count = (
+                len(mesh.elements)//flux_plan.parallelism.total()+1)
         while True:
             cuts, partition = part_graph(part_count,
                     mesh.element_adjacency_graph(),
@@ -199,21 +202,22 @@ class Discretization(hedge.discretization.Discretization):
 
             from hedge.cuda.tools import int_ceiling
             block_elements = max(len(block_els) for block_els in blocks.itervalues())
-            flux_par_s = int_ceiling(block_elements/plan.flux_par.p)
+            flux_par_s = int_ceiling(block_elements/flux_plan.parallelism.p)
 
             from hedge.cuda.plan import Parallelism
-            actual_plan = plan.copy(
+            actual_plan = flux_plan.copy(
                     max_ext_faces=max(block2extifaces.itervalues()),
                     max_faces=max(
-                        len(blocks[b])*plan.faces_per_el()
+                        len(blocks[b])*flux_plan.faces_per_el()
                         + block2extifaces[b]
                         for b in range(len(blocks))),
-                    flux_par=Parallelism(plan.flux_par.p, flux_par_s))
+                    parallelism=Parallelism(
+                        flux_plan.parallelism.p, flux_par_s))
             assert actual_plan.max_faces % 2 == 0
 
-            if (flux_par_s <= plan.flux_par.s and
-                    abs(plan.flux_occupancy_record().occupancy -
-                        actual_plan.flux_occupancy_record().occupancy) < 1e-10):
+            if (flux_par_s <= flux_plan.parallelism.s and
+                    abs(flux_plan.occupancy_record().occupancy -
+                        actual_plan.occupancy_record().occupancy) < 1e-10):
                 break
 
             part_count += 1
@@ -234,7 +238,7 @@ class Discretization(hedge.discretization.Discretization):
 
 
     def __init__(self, mesh, local_discretization=None, 
-            order=None, plan=None, init_cuda=True, debug=False, 
+            order=None, flux_plan=None, init_cuda=True, debug=False, 
             dev=None, default_scalar_type=numpy.float32):
         ldis = self.get_local_discretization(mesh, local_discretization, order)
 
@@ -254,14 +258,15 @@ class Discretization(hedge.discretization.Discretization):
         self.devdata = DeviceData(dev)
 
         # make preliminary plan
-        if plan is None:
-            plan = self._make_plan(ldis, mesh, default_scalar_type)
-        print "projected:", plan
+        if flux_plan is None:
+            flux_plan = self._make_plan(ldis, mesh, default_scalar_type)
+        print "projected flux exec plan:", flux_plan
 
         # partition mesh, obtain updated plan
-        self.plan, self.partition = self._partition_mesh(mesh, plan)
-        del plan
-        print "actual:", self.plan
+        self.flux_plan, self.partition = self._partition_mesh(mesh, flux_plan)
+        del flux_plan
+        print "actual flux exec plan:", self.flux_plan
+        print "actual local op exec plan:", self.flux_plan.localop_plan()
 
         # initialize superclass
         hedge.discretization.Discretization.__init__(self, mesh, ldis, debug=debug,
@@ -269,7 +274,7 @@ class Discretization(hedge.discretization.Discretization):
 
         # build our own data structures
         from hedge.cuda.tools import exact_div
-        self.int_dof_count = exact_div(self.plan.int_dof_smem(), self.plan.float_size)
+        self.int_dof_count = exact_div(self.flux_plan.int_dof_smem(), self.flux_plan.float_size)
 
         self.blocks = self._build_blocks()
         self.face_storage_map = self._build_face_storage_map()
@@ -400,7 +405,7 @@ class Discretization(hedge.discretization.Discretization):
         for bdry_fg in self.get_boundary(TAG_ALL).face_groups:
             assert ldis == bdry_fg.ldis_loc
             aligned_fnc = self.devdata.align_dtype(ldis.face_node_count(), 
-                    self.plan.float_size)
+                    self.flux_plan.float_size)
             for fp in bdry_fg.face_pairs:
                 assert fp.opp.element_id == hedge._internal.INVALID_ELEMENT
                 assert (tuple(bdry_fg.index_lists[fp.opp.face_index_list_number]) 
@@ -546,7 +551,7 @@ class Discretization(hedge.discretization.Discretization):
     # vector construction -----------------------------------------------------
     def volume_empty(self, shape=(), dtype=None):
         if dtype is None:
-            dtype = self.plan.float_type
+            dtype = self.flux_plan.float_type
 
         return gpuarray.empty(shape+(self.gpu_dof_count(),), dtype=dtype)
 
