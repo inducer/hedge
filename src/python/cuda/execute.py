@@ -554,7 +554,7 @@ class OpTemplateWithEnvironment(object):
 
         mod = cuda.SourceModule(cmod, 
                 keep=True, 
-                options=["--maxrregcount=16"]
+                #options=["--maxrregcount=16"]
                 )
         print "lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
 

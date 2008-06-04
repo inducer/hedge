@@ -240,7 +240,7 @@ class LocalOpExecutionPlan(ExecutionPlan):
         return self.parallelism.p*self.chunk_size
 
     def registers(self):
-        return 16
+        return 18
 
     def __str__(self):
             return ("%s chunk_size=%d" % (
