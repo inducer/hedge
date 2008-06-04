@@ -781,6 +781,7 @@ class OpTemplateWithEnvironment(object):
                     While("fpair_nr < data.header.same_facepairs_end",
                         get_flux_code(is_bdry=False, is_twosided=True)
                         ),
+                    Comment("work around nvcc assertion failure"),
                     S("fpair_nr+=1"),
                     S("fpair_nr-=1"),
                     While("fpair_nr < data.header.diff_facepairs_end",
