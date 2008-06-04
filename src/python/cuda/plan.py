@@ -186,7 +186,7 @@ class FluxExecutionPlan(ExecutionPlan):
                 from hedge.cuda.tools import int_ceiling
                 se = int_ceiling(self.parallelism.total()/pe)
                 localop_par = Parallelism(pe, se)
-                for chunk_size in range(1,self.dofs_per_el()):
+                for chunk_size in range(1,self.dofs_per_el()+1):
                     plan = LocalOpExecutionPlan(self, localop_par, chunk_size)
                     if plan.invalid_reason() is None:
                         yield plan
