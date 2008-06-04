@@ -177,7 +177,7 @@ class FluxExecutionPlan(ExecutionPlan):
         return self.parallelism.p*self.dofs_per_el()
 
     def registers(self):
-        return 16
+        return 12
 
     @memoize_method
     def localop_plan(self):

@@ -48,7 +48,9 @@ def flux_header_struct():
 
     return Struct("flux_header", [
         POD(numpy.uint16, "els_in_block"),
-        POD(numpy.uint16, "facepairs_in_block"),
+        POD(numpy.uint16, "same_facepairs_end"),
+        POD(numpy.uint16, "diff_facepairs_end"),
+        POD(numpy.uint16, "bdry_facepairs_end"),
         ])
 
 @memoize
@@ -235,7 +237,8 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
         eg, = discr.element_groups
         fdata = self.ex.flux_with_temp_data(op, eg)
-        func, texrefs, field_texref, bfield_texref = self.ex.get_flux_with_temp_kernel(op)
+        func, texrefs, field_texref, bfield_texref = \
+                self.ex.get_flux_with_temp_kernel(op)
 
         flux_par = discr.flux_plan.parallelism
         
@@ -579,7 +582,7 @@ class OpTemplateWithEnvironment(object):
                 Comment, Line, \
                 CudaShared, CudaGlobal, Static, \
                 Define, Pragma, \
-                Constant, Initializer, If, For, Statement, Assign
+                Constant, Initializer, If, For, Statement, Assign, While
                 
         discr = self.discr
         plan = discr.flux_plan
@@ -657,33 +660,115 @@ class OpTemplateWithEnvironment(object):
             descr="load face_pair data")
             +[ S("__syncthreads()"), Line() ])
 
-        def flux_coeff_getter(flux_number_expr, prefix, flip_normal):
+        def flux_coeff_getter(flux_number_expr, prefix, flip_normal, internal_only):
             from hedge.cuda.cgen import make_multiple_ifs
             from pymbolic.mapper.stringifier import PREC_NONE
-            return [
-                POD(float_type, "%sint_coeff" % prefix),
-                POD(float_type, "%sext_coeff" % prefix),
-                make_multiple_ifs(
-                    [
-                    ("(%s) == %d" % (flux_number_expr, flux_nr),
-                        Block([
-                            Assign("%sint_coeff" % prefix, 
-                                FluxToCodeMapper2(flip_normal)(int_coeff, PREC_NONE),
-                                ),
-                            Assign("%sext_coeff" % prefix, 
-                                FluxToCodeMapper2(flip_normal)(ext_coeff, PREC_NONE),
-                                ),
+            if internal_only:
+                int_coeff, ext_coeff = wdflux.fluxes[wdflux.interior_flux_number]
+                return [
+                        Initializer(
+                            POD(float_type, "%sint_coeff" % prefix),
+                            FluxToCodeMapper2(flip_normal)(int_coeff, PREC_NONE),
+                            ),
+                        Initializer(
+                            POD(float_type, "%sext_coeff" % prefix),
+                            FluxToCodeMapper2(flip_normal)(ext_coeff, PREC_NONE),
+                            )
+                        ]
+            else:
+                return [
+                    POD(float_type, "%sint_coeff" % prefix),
+                    POD(float_type, "%sext_coeff" % prefix),
+                    make_multiple_ifs(
+                        [
+                        ("(%s) == %d" % (flux_number_expr, flux_nr),
+                            Block([
+                                Assign("%sint_coeff" % prefix, 
+                                    FluxToCodeMapper2(flip_normal)(int_coeff, PREC_NONE),
+                                    ),
+                                Assign("%sext_coeff" % prefix, 
+                                    FluxToCodeMapper2(flip_normal)(ext_coeff, PREC_NONE),
+                                    ),
+                                ])
+                            )
+                        for flux_nr, (int_coeff, ext_coeff)
+                        in enumerate(wdflux.fluxes)
+                        ],
+                        base= Block([
+                            Assign("%sint_coeff" % prefix, 0),
+                            Assign("%sext_coeff" % prefix, 0),
                             ])
-                        )
-                    for flux_nr, (int_coeff, ext_coeff)
-                    in enumerate(wdflux.fluxes)
-                    ],
-                    base= Block([
-                        Assign("%sint_coeff" % prefix, 0),
-                        Assign("%sext_coeff" % prefix, 0),
-                        ])
+                        ),
+                    ]
+
+        def get_flux_code(is_bdry, is_twosided):
+            flux_code = Block([])
+
+            flux_code.extend([
+                Initializer(Pointer(
+                    Value("face_pair", "fpair")),
+                    "data.facepairs+fpair_nr"),
+                Initializer(Pointer(Value(
+                    "index_list_entry_t", "a_ilist")),
+                    "const_index_lists + fpair->a_ilist_index"
                     ),
-                ]
+                Initializer(Pointer(Value(
+                    "index_list_entry_t", "b_ilist")),
+                    "const_index_lists + fpair->b_ilist_index"
+                    ),
+                Initializer(
+                    POD(float_type, "a_value"),
+                    "tex1Dfetch(field_tex, fpair->a_base + a_ilist[facedof_nr])"
+                    ),
+                ])
+
+            if is_bdry:
+                flux_code.extend([
+                    Initializer(
+                        POD(float_type, "b_value"),
+                        "tex1Dfetch(bfield_tex, fpair->b_base + b_ilist[facedof_nr])"
+                        ),
+                    ])
+            else:
+                flux_code.extend([
+                    Initializer(
+                        POD(float_type, "b_value"),
+                        "tex1Dfetch(field_tex, fpair->b_base + b_ilist[facedof_nr])"
+                        ),
+                    ])
+
+            flux_code.extend(
+                    flux_coeff_getter("fpair->a_flux_number", "a_", 
+                        flip_normal=False, internal_only=not is_bdry))
+
+            flux_code.extend([
+                Assign(
+                    "fluxes_on_faces[fpair->a_dest+facedof_nr]",
+                    "fpair->face_jacobian*("
+                    "a_int_coeff*a_value+a_ext_coeff*b_value"
+                    ")"),
+                ])
+
+            if is_twosided:
+                flux_code.extend(
+                    flux_coeff_getter("fpair->b_flux_number_and_bdry_flag >> 1", 
+                        "b_", flip_normal=True, internal_only=not is_bdry)
+                    +[
+                    Initializer(Pointer(Value(
+                        "index_list_entry_t", "b_write_ilist")),
+                        "const_index_lists + fpair->b_write_ilist_index"
+                        ),
+                    Assign(
+                        "fluxes_on_faces[fpair->b_dest+b_write_ilist[facedof_nr]]",
+                        "fpair->face_jacobian*("
+                        "b_int_coeff*b_value+b_ext_coeff*a_value"
+                        ")"
+                        ),
+                    ])
+
+            flux_code.append(S("fpair_nr += CONCURRENT_COALESCED_FACES"))
+
+            return flux_code
 
         f_body.extend_log_block("compute the fluxes", [Block([
             Initializer(Const(POD(numpy.int16, "block_face")),
@@ -691,57 +776,20 @@ class OpTemplateWithEnvironment(object):
             Initializer(Const(POD(numpy.int16, "facedof_nr")),
                 "THREAD_NUM - COALESCED_DOFS_PER_FACE*block_face"),
             If("facedof_nr < DOFS_PER_FACE && block_face < CONCURRENT_COALESCED_FACES",
-                For("unsigned fpair_nr = block_face",
-                    "fpair_nr < data.header.facepairs_in_block",
-                    "fpair_nr += CONCURRENT_COALESCED_FACES",
-                    Block([
-                        Initializer(Pointer(
-                            Value("face_pair", "fpair")),
-                            "data.facepairs+fpair_nr"),
-                        Initializer(Pointer(Value(
-                            "index_list_entry_t", "a_ilist")),
-                            "const_index_lists + fpair->a_ilist_index"
-                            ),
-                        Initializer(Pointer(Value(
-                            "index_list_entry_t", "b_ilist")),
-                            "const_index_lists + fpair->b_ilist_index"
-                            ),
-                        Initializer(
-                            POD(float_type, "a_value"),
-                            "tex1Dfetch(field_tex, fpair->a_base + a_ilist[facedof_nr])"
-                            ),
-                        Initializer(
-                            POD(float_type, "b_value"),
-                            "((fpair->b_flux_number_and_bdry_flag & 1) ? "
-                            "tex1Dfetch(bfield_tex, fpair->b_base + b_ilist[facedof_nr])"
-                            ":" 
-                            "tex1Dfetch(field_tex, fpair->b_base + b_ilist[facedof_nr])"
-                            ")"
-                            ),
-                        ]
-                        +flux_coeff_getter("fpair->a_flux_number", "a_", False)
-                        +[
-                        Assign(
-                            "fluxes_on_faces[fpair->a_dest+facedof_nr]",
-                            "fpair->face_jacobian*("
-                            "a_int_coeff*a_value+a_ext_coeff*b_value"
-                            ")"),
-                        If("fpair->b_dest != (1<<16)-1", Block(
-                            flux_coeff_getter("fpair->b_flux_number_and_bdry_flag >> 1", "b_", True)
-                            +[
-                            Initializer(Pointer(Value(
-                                "index_list_entry_t", "b_write_ilist")),
-                                "const_index_lists + fpair->b_write_ilist_index"
-                                ),
-                            Assign(
-                                "fluxes_on_faces[fpair->b_dest+b_write_ilist[facedof_nr]]",
-                                "fpair->face_jacobian*("
-                                "b_int_coeff*b_value+b_ext_coeff*a_value"
-                                ")"
-                                ),
-                            ]))
-                        ])
-                    )
+                Block([
+                    Initializer(POD(numpy.uint16, "fpair_nr"), "block_face"),
+                    While("fpair_nr < data.header.same_facepairs_end",
+                        get_flux_code(is_bdry=False, is_twosided=True)
+                        ),
+                    S("fpair_nr+=1"),
+                    S("fpair_nr-=1"),
+                    While("fpair_nr < data.header.diff_facepairs_end",
+                        get_flux_code(is_bdry=False, is_twosided=False)
+                        ),
+                    While("fpair_nr < data.header.bdry_facepairs_end",
+                        get_flux_code(is_bdry=True, is_twosided=False)
+                        ),
+                ])
                 )
             ]),
             S("__syncthreads()")
@@ -909,7 +957,9 @@ class OpTemplateWithEnvironment(object):
             faces_todo = set((el,face_nbr)
                     for el in block.elements
                     for face_nbr in range(ldis.face_count()))
-            fp_structs = []
+            same_fp_structs = []
+            diff_fp_structs = []
+            bdry_fp_structs = []
 
             while faces_todo:
                 elface = faces_todo.pop()
@@ -932,6 +982,7 @@ class OpTemplateWithEnvironment(object):
                     b_dest = INVALID_DEST
                     print>>outf, "bdy%d" % a_flux_number
 
+                    fp_structs = bdry_fp_structs
                 else:
                     # interior face
                     b_base = (
@@ -949,6 +1000,9 @@ class OpTemplateWithEnvironment(object):
                         b_dest = (
                                 elface_dofs*b_face.native_block_el_num
                                 +b_face.el_face[1]*face_dofs)
+
+                        fp_structs = same_fp_structs
+
                         print>>outf, "same el %d (global: %d) face %d" % (
                                 b_face.native_block_el_num,
                                 b_face.el_face[0].id, b_face.el_face[1])
@@ -956,6 +1010,9 @@ class OpTemplateWithEnvironment(object):
                         # different block
                         b_write_index_list = 0 # doesn't matter
                         b_dest = INVALID_DEST
+
+                        fp_structs = diff_fp_structs
+
                         print>>outf, "diff"
 
                 fp_structs.append(
@@ -989,9 +1046,15 @@ class OpTemplateWithEnvironment(object):
 
             headers.append(flux_header_struct().make(
                     els_in_block=len(block.elements),
-                    facepairs_in_block=len(fp_structs)
+                    same_facepairs_end=\
+                            len(same_fp_structs),
+                    diff_facepairs_end=\
+                            len(same_fp_structs)+len(diff_fp_structs),
+                    bdry_facepairs_end=\
+                            len(same_fp_structs)+len(diff_fp_structs)\
+                            +len(bdry_fp_structs),
                     ))
-            fp_blocks.append(fp_structs)
+            fp_blocks.append(same_fp_structs+diff_fp_structs+bdry_fp_structs)
 
         from hedge.cuda.cgen import Value
         from hedge.cuda.tools import make_superblocks
