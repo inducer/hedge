@@ -235,7 +235,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
         eg, = discr.element_groups
         fdata = self.ex.flux_with_temp_data(op, eg)
-        mod, func, texrefs = self.ex.get_flux_with_temp_kernel(op)
+        func, texrefs, field_texref, bfield_texref = self.ex.get_flux_with_temp_kernel(op)
 
         flux_par = discr.flux_plan.parallelism
         
@@ -260,7 +260,14 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
         args = [
                 #debugbuf, 
-                flux, field, bfield, fdata.device_memory]
+                flux, 
+                #field, bfield, 
+                fdata.device_memory]
+
+        field_texref.set_address(
+                field.gpudata, field.size*field.dtype.itemsize)
+        bfield_texref.set_address(
+                bfield.gpudata, bfield.size*field.dtype.itemsize)
 
         func(*args, **kwargs)
 
@@ -589,8 +596,6 @@ class OpTemplateWithEnvironment(object):
             [
                 #Pointer(POD(float_type, "debugbuf")),
                 Pointer(POD(float_type, "flux")),
-                Pointer(POD(float_type, "field")),
-                Pointer(POD(float_type, "bfield")),
                 Pointer(POD(numpy.uint8, "gmem_data")),
                 ]
             ))
@@ -601,6 +606,10 @@ class OpTemplateWithEnvironment(object):
         cmod = Module([
                 Value("texture<float, 2, cudaReadModeElementType>", 
                     "lift_matrix_tex"),
+                Value("texture<float, 1, cudaReadModeElementType>", 
+                    "field_tex"),
+                Value("texture<float, 1, cudaReadModeElementType>", 
+                    "bfield_tex"),
                 flux_header_struct(),
                 face_pair_struct(float_type, discr.dimensions),
                 Line(),
@@ -699,11 +708,16 @@ class OpTemplateWithEnvironment(object):
                             ),
                         Initializer(
                             POD(float_type, "a_value"),
-                            "field[fpair->a_base + a_ilist[facedof_nr]]"),
+                            "tex1Dfetch(field_tex, fpair->a_base + a_ilist[facedof_nr])"
+                            ),
                         Initializer(
                             POD(float_type, "b_value"),
-                            "((fpair->b_flux_number_and_bdry_flag & 1) ? bfield : field )"
-                            "[fpair->b_base + b_ilist[facedof_nr]]"),
+                            "((fpair->b_flux_number_and_bdry_flag & 1) ? "
+                            "tex1Dfetch(bfield_tex, fpair->b_base + b_ilist[facedof_nr])"
+                            ":" 
+                            "tex1Dfetch(field_tex, fpair->b_base + b_ilist[facedof_nr])"
+                            ")"
+                            ),
                         ]
                         +flux_coeff_getter("fpair->a_flux_number", "a_", False)
                         +[
@@ -763,14 +777,16 @@ class OpTemplateWithEnvironment(object):
                 )
         print "lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
 
-        texref = mod.get_texref("lift_matrix_tex")
+        liftmat_texref = mod.get_texref("lift_matrix_tex")
         if wdflux.is_lift:
-            cuda.matrix_to_texref(plan.ldis.lifting_matrix(), texref)
+            cuda.matrix_to_texref(plan.ldis.lifting_matrix(), liftmat_texref)
         else:
-            cuda.matrix_to_texref(plan.ldis.multi_face_mass_matrix(), texref)
-        texrefs = [texref]
+            cuda.matrix_to_texref(plan.ldis.multi_face_mass_matrix(), liftmat_texref)
+        field_texref = mod.get_texref("field_tex")
+        bfield_texref = mod.get_texref("bfield_tex")
+        texrefs = [field_texref, bfield_texref, liftmat_texref]
 
-        return mod, mod.get_function("apply_flux"), texrefs
+        return mod.get_function("apply_flux"), texrefs, field_texref, bfield_texref
 
     # gpu data blocks ---------------------------------------------------------
     @memoize_method
