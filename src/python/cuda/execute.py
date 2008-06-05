@@ -201,7 +201,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         args = xyz_diff+[
                 field, 
                 localop_data.device_memory,
-                self.ex.gpu_diffmats(op.__class__, eg),
+                self.ex.gpu_diffmats(op.__class__, eg).device_memory,
                 #debugbuf,
                 ]
 
@@ -403,6 +403,7 @@ class OpTemplateWithEnvironment(object):
 
         lop_par = lplan.parallelism
         lop_data = self.localop_data(diff_op_cls, elgroup)
+        diffmat_data = self.gpu_diffmats(diff_op_cls, elgroup)
         rst2xyz_coeffs_size_unaligned = d*d*lop_par.total()
         elgroup, = discr.element_groups
 
@@ -413,8 +414,7 @@ class OpTemplateWithEnvironment(object):
             + [
                 Pointer(POD(float_type, "field")),
                 Pointer(POD(numpy.uint8, "gmem_data")),
-                Pointer(POD(float_type, "gmem_diff_rst_mat")),
-                # laid out row-major, side-by-side
+                Pointer(POD(numpy.uint8, "gmem_diff_rst_mat")),
                 #Pointer(POD(float_type, "debugbuf")),
                 ]
             ))
@@ -431,7 +431,8 @@ class OpTemplateWithEnvironment(object):
                 Define("THREAD_COUNT", "(CHUNK_SIZE*CONCURRENT_ELS)"),
                 Define("INT_DOF_COUNT", discr.int_dof_count),
                 Define("DOFS_BLOCK_BASE", "(blockIdx.x*INT_DOF_COUNT)"),
-                Define("DATA_BLOCK_SIZE", lop_data.block_size),
+                Define("DATA_BLOCK_SIZE", lop_data.block_bytes),
+                Define("DIFF_MAT_BLOCK_BYTES", diffmat_data.block_bytes),
                 Line(),
                 ] + self.index_list_data() + [
                 Line(),
@@ -522,11 +523,12 @@ class OpTemplateWithEnvironment(object):
             return code
 
         # global diff on volume -----------------------------------------------
-        chunk_start = 0
-        while chunk_start < fplan.dofs_per_el():
+        for chunk_nr, chunk_start in enumerate(
+                range(0, fplan.dofs_per_el(), lplan.chunk_size)):
             chunk_stop = min(
                     fplan.dofs_per_el(),
                     chunk_start+lplan.chunk_size)
+
             f_body.extend([
                 Line(),
                 Comment("treat target chunk %d..%d" 
@@ -534,15 +536,18 @@ class OpTemplateWithEnvironment(object):
                 Line(),
                 S("__syncthreads()"),
                 Line(),
-                ]+self.get_load_code(
+                ])
+                
+            f_body.extend(
+                self.get_load_code(
                     dest="smem_diff_rst_mat",
-                    base="gmem_diff_rst_mat" \
-                            "+ %d*DIMENSIONS*DOFS_PER_EL"
-                            % chunk_start,
+                    base=("gmem_diff_rst_mat + %d*DIFF_MAT_BLOCK_BYTES"
+                        % chunk_nr),
                     bytes="%d*DIMENSIONS*DOFS_PER_EL*%d" \
                             % (chunk_stop-chunk_start, fplan.float_size),
-                    descr="load diff mat chunk")
-                +[ 
+                    descr="load diff mat chunk"))
+
+            f_body.extend([ 
                 S("__syncthreads()"), 
                 Line(),
                 ])
@@ -567,8 +572,6 @@ class OpTemplateWithEnvironment(object):
                         ))
                     )
                 ])
-
-            chunk_start += lplan.chunk_size
 
         # finish off ----------------------------------------------------------
         cmod.append(FunctionBody(f_decl, f_body))
@@ -636,7 +639,7 @@ class OpTemplateWithEnvironment(object):
                 Define("THREAD_COUNT", "(DOFS_PER_EL*CONCURRENT_ELS)"),
                 Define("INT_DOF_COUNT", discr.int_dof_count),
                 Define("DOFS_BLOCK_BASE", "(blockIdx.x*INT_DOF_COUNT)"),
-                Define("DATA_BLOCK_SIZE", flux_with_temp_data.block_size),
+                Define("DATA_BLOCK_SIZE", flux_with_temp_data.block_bytes),
                 Line(),
                 Comment("face-related stuff"),
                 Define("DOFS_PER_FACE", plan.dofs_per_face()),
@@ -861,14 +864,37 @@ class OpTemplateWithEnvironment(object):
     # gpu data blocks ---------------------------------------------------------
     @memoize_method
     def gpu_diffmats(self, diff_op_cls, elgroup):
-        diffmats = numpy.asarray(
-                numpy.hstack(
-                    m for m in diff_op_cls.matrices(elgroup)
-                    ),
-                dtype=self.discr.flux_plan.float_type,
-                order="C")
+
+        discr = self.discr
+        fplan = discr.flux_plan
+        lplan = fplan.localop_plan()
+
+        block_bytes = self.discr.devdata.align(
+                fplan.dofs_per_el()
+                *lplan.chunk_size
+                *discr.dimensions
+                *fplan.float_size)
+                
+        chunks = []
+
+        for chunk_start in range(0, fplan.dofs_per_el(), lplan.chunk_size):
+            chunk_stop = min(
+                    fplan.dofs_per_el(),
+                    chunk_start+lplan.chunk_size)
+            diffmats = numpy.asarray(
+                    numpy.hstack(
+                        m[chunk_start:chunk_stop] for m in diff_op_cls.matrices(elgroup)
+                        ),
+                    dtype=self.discr.flux_plan.float_type,
+                    order="C")
+            chunks.append(buffer(diffmats))
         
-        return gpuarray.to_gpu(diffmats)
+        from pytools import Record
+        from hedge.cuda.tools import pad_and_join
+        return Record(
+                device_memory=cuda.to_device(
+                    pad_and_join(chunks, block_bytes)),
+                block_bytes=block_bytes)
 
     @memoize_method
     def localop_rst_to_xyz(self, diff_op, elgroup):

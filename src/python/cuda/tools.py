@@ -134,7 +134,7 @@ def make_superblocks(devdata, struct_name, single_item, multi_item):
     return Record(
             struct=Struct(struct_name, struct_members),
             device_memory=cuda.to_device(data),
-            block_size=superblock_size,
+            block_bytes=superblock_size,
             data=data,
             )
 
@@ -159,7 +159,7 @@ class DeviceData:
         return int_ceiling(elements, exact_div(self.align_bytes(), dtype_size))
 
     def align_bytes(self):
-        return 16
+        return 64
 
     def coalesce(self, thread_count):
         return int_ceiling(thread_count, 16)
