@@ -156,12 +156,12 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                             self.map_mass_base,
                             self.discr.mass_op_timer,
                             self.discr.mass_op_counter)
-            self.inner_flux = \
+            self.scalar_inner_flux = \
                     time_and_count_function(
                             self.scalar_inner_flux,
                             self.discr.inner_flux_timer,
                             self.discr.inner_flux_counter)
-            self.bdry_flux = \
+            self.scalar_bdry_flux = \
                     time_and_count_function(
                             self.scalar_bdry_flux,
                             self.discr.bdry_flux_timer,
