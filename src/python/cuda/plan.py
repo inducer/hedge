@@ -28,7 +28,7 @@ from pytools import memoize_method
 
 
 class Parallelism:
-    """Defines how much of a task is accomplished in serial vs. parallel."""
+    """Defines how much of a task is accomplished sequentially vs. in parallel."""
     def __init__(self, parallel, serial):
         self.p = parallel
         self.s = serial
