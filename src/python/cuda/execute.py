@@ -205,8 +205,6 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                 #debugbuf,
                 ]
 
-        func(*args, **kwargs)
-
         kernel_time = func(*args, **kwargs)
         if discr.instrumented:
             discr.diff_op_timer.add_time(kernel_time)
@@ -266,10 +264,10 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         assert field.dtype == discr.flux_plan.float_type
         assert bfield.dtype == discr.flux_plan.float_type
 
-        #debugbuf = gpuarray.zeros((512,), dtype=numpy.float32)
+        debugbuf = gpuarray.zeros((512,), dtype=numpy.float32)
 
         args = [
-                #debugbuf, 
+                debugbuf, 
                 flux, 
                 #field, bfield, 
                 fdata.device_memory]
@@ -375,7 +373,7 @@ class OpTemplateWithEnvironment(object):
                     ("(%s *) (%s)" % (copy_dtype_str, base))),
                 For("unsigned word_nr = THREAD_NUM", 
                     "word_nr*sizeof(int) < (%s)" % bytes, 
-                    "word_nr += THREAD_COUNT",
+                    "word_nr += COALESCING_THREAD_COUNT",
                     Statement("((%s *) (%s))[word_nr] = load_base[word_nr]"
                         % (copy_dtype_str, dest))
                     ),
@@ -429,6 +427,7 @@ class OpTemplateWithEnvironment(object):
                 Define("CHUNK_SIZE", lplan.chunk_size),
                 Define("THREAD_NUM", "(BLOCK_EL*CHUNK_SIZE + TARGET_DOF)"),
                 Define("THREAD_COUNT", "(CHUNK_SIZE*CONCURRENT_ELS)"),
+                Define("COALESCING_THREAD_COUNT", "(THREAD_COUNT & ~0xf)"),
                 Define("INT_DOF_COUNT", discr.int_dof_count),
                 Define("DOFS_BLOCK_BASE", "(blockIdx.x*INT_DOF_COUNT)"),
                 Define("DATA_BLOCK_SIZE", lop_data.block_bytes),
@@ -458,7 +457,7 @@ class OpTemplateWithEnvironment(object):
         f_body.extend_log_block("load internal dofs", [
             For("unsigned dof_nr = THREAD_NUM", 
                 "dof_nr < data.header.els_in_block*DOFS_PER_EL", 
-                "dof_nr += THREAD_COUNT",
+                "dof_nr += COALESCING_THREAD_COUNT",
                 S("int_dofs[dof_nr] = field[DOFS_BLOCK_BASE+dof_nr]"),
                 ),
             ])
@@ -611,7 +610,7 @@ class OpTemplateWithEnvironment(object):
 
         f_decl = CudaGlobal(FunctionDeclaration(Value("void", "apply_flux"), 
             [
-                #Pointer(POD(float_type, "debugbuf")),
+                Pointer(POD(float_type, "debugbuf")),
                 Pointer(POD(float_type, "flux")),
                 Pointer(POD(numpy.uint8, "gmem_data")),
                 ]
@@ -637,6 +636,7 @@ class OpTemplateWithEnvironment(object):
                 Define("CONCURRENT_ELS", flux_par.p),
                 Define("THREAD_NUM", "(BLOCK_EL*DOFS_PER_EL + EL_DOF)"),
                 Define("THREAD_COUNT", "(DOFS_PER_EL*CONCURRENT_ELS)"),
+                Define("COALESCING_THREAD_COUNT", "(THREAD_COUNT & ~0xf)"),
                 Define("INT_DOF_COUNT", discr.int_dof_count),
                 Define("DOFS_BLOCK_BASE", "(blockIdx.x*INT_DOF_COUNT)"),
                 Define("DATA_BLOCK_SIZE", flux_with_temp_data.block_bytes),
