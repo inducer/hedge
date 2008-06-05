@@ -182,11 +182,17 @@ class FluxExecutionPlan(ExecutionPlan):
     @memoize_method
     def localop_plan(self):
         def generate_valid_plans():
+            from hedge.cuda.tools import int_ceiling
+            chunk_sizes = set(
+                    int_ceiling(self.dofs_per_el()/i)
+                    for i in range(1,self.dofs_per_el()+1)
+                    )
+
             for pe in range(2,32):
                 from hedge.cuda.tools import int_ceiling
                 se = int_ceiling(self.parallelism.total()/pe)
                 localop_par = Parallelism(pe, se)
-                for chunk_size in range(1,self.dofs_per_el()+1):
+                for chunk_size in chunk_sizes:
                     plan = LocalOpExecutionPlan(self, localop_par, chunk_size)
                     if plan.invalid_reason() is None:
                         yield plan

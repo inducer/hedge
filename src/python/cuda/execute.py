@@ -518,6 +518,7 @@ class OpTemplateWithEnvironment(object):
                     fplan.dofs_per_el(),
                     chunk_start+lplan.chunk_size)
             f_body.extend([
+                Line(),
                 Comment("treat target chunk %d..%d" 
                     % (chunk_start, chunk_stop)),
                 Line(),
@@ -741,14 +742,6 @@ class OpTemplateWithEnvironment(object):
                     flux_coeff_getter("fpair->a_flux_number", "a_", 
                         flip_normal=False, internal_only=not is_bdry))
 
-            flux_code.extend([
-                Assign(
-                    "fluxes_on_faces[fpair->a_dest+facedof_nr]",
-                    "fpair->face_jacobian*("
-                    "a_int_coeff*a_value+a_ext_coeff*b_value"
-                    ")"),
-                ])
-
             if is_twosided:
                 flux_code.extend(
                     flux_coeff_getter("fpair->b_flux_number_and_bdry_flag >> 1", 
@@ -758,6 +751,18 @@ class OpTemplateWithEnvironment(object):
                         "index_list_entry_t", "b_write_ilist")),
                         "const_index_lists + fpair->b_write_ilist_index"
                         ),
+                    ])
+
+            flux_code.extend([
+                Assign(
+                    "fluxes_on_faces[fpair->a_dest+facedof_nr]",
+                    "fpair->face_jacobian*("
+                    "a_int_coeff*a_value+a_ext_coeff*b_value"
+                    ")"),
+                ])
+
+            if is_twosided:
+                flux_code.extend([
                     Assign(
                         "fluxes_on_faces[fpair->b_dest+b_write_ilist[facedof_nr]]",
                         "fpair->face_jacobian*("
@@ -778,15 +783,21 @@ class OpTemplateWithEnvironment(object):
             If("facedof_nr < DOFS_PER_FACE && block_face < CONCURRENT_COALESCED_FACES",
                 Block([
                     Initializer(POD(numpy.uint16, "fpair_nr"), "block_face"),
+                    Comment("fluxes for dual-sided (intra-block) interior face pairs"),
                     While("fpair_nr < data.header.same_facepairs_end",
                         get_flux_code(is_bdry=False, is_twosided=True)
                         ),
+                    Line(),
                     Comment("work around nvcc assertion failure"),
                     S("fpair_nr+=1"),
                     S("fpair_nr-=1"),
+                    Line(),
+                    Comment("fluxes for single-sided (inter-block) interior face pairs"),
                     While("fpair_nr < data.header.diff_facepairs_end",
                         get_flux_code(is_bdry=False, is_twosided=False)
                         ),
+                    Line(),
+                    Comment("fluxes for single-sided boundary face pairs"),
                     While("fpair_nr < data.header.bdry_facepairs_end",
                         get_flux_code(is_bdry=True, is_twosided=False)
                         ),
