@@ -554,7 +554,7 @@ class OpTemplateWithEnvironment(object):
             if chunk_stop < chunk_start+lplan.chunk_size:
                 f_body.extend([
                     Comment("terminate unneeded threads for last chunk"),
-                    If("TARGET_DOF>=%d" % (chunk_stop-lplan.chunk_size),
+                    If("TARGET_DOF>=%d" % (chunk_stop-chunk_start),
                         S("return")),
                     Line(),
                     ])

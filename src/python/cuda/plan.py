@@ -76,8 +76,26 @@ class ExecutionPlan(object):
 
 
 
+def find_microblock_size(devdata, dofs_per_el, float_size):
+    from hedge.cuda.tools import exact_div, int_ceiling
+    float_alignment = exact_div(devdata.align_bytes(float_size), float_size)
+
+    for mb_align_chunks in range(1, 256):
+        mb_aligned_floats = float_alignment * mb_align_chunks
+        mb_elements = mb_aligned_floats // dofs_per_el
+        mb_floats = dofs_per_el*mb_elements
+        overhead = (mb_aligned_floats-mb_floats)/mb_aligned_floats
+        if overhead <= 0.05:
+            return mb_elements
+
+    assert False, "a valid microblock size was not found"
+
+
+
+
 class FluxExecutionPlan(ExecutionPlan):
-    def __init__(self, devdata, ldis, parallelism, 
+    def __init__(self, devdata, ldis, 
+            parallelism, 
             max_ext_faces=None, max_faces=None, 
             float_type=numpy.float32, 
             ):
@@ -89,6 +107,11 @@ class FluxExecutionPlan(ExecutionPlan):
         self.max_faces = max_faces
 
         self.float_type = numpy.dtype(float_type)
+
+        self.mb_elements = find_microblock_size(
+                self.devdata, 
+                ldis.node_count(), 
+                self.float_size)
 
     @property
     def float_size(self):
@@ -115,7 +138,7 @@ class FluxExecutionPlan(ExecutionPlan):
         return self.ldis.face_count()
 
     def elements_per_block(self):
-        return self.parallelism.total()
+        return self.parallelism.total()*self.mb_elements
 
     @memoize_method
     def estimate_extface_count(self):
@@ -144,14 +167,6 @@ class FluxExecutionPlan(ExecutionPlan):
         else:
             return self.max_ext_faces
 
-    def int_dofs(self):
-        return self.devdata.align_dtype(
-                self.elements_per_block() * self.dofs_per_el(),
-                self.float_size)
-
-    def int_dof_smem(self):
-        return self.int_dofs() * self.float_size
-
     @memoize_method
     def face_count(self):
         if self.max_faces is not None:
@@ -169,7 +184,7 @@ class FluxExecutionPlan(ExecutionPlan):
         d = self.ldis.dimensions
 
         return (128 # parameters, block header, small extra stuff
-                + self.parallelism.total()*self.faces_per_el()*self.dofs_per_face()*self.float_size
+                + self.elements_per_block()*self.faces_per_el()*self.dofs_per_face()*self.float_size
                 + len(face_pair_struct(self.float_type, d))*self.face_pair_count()
                 )
 
@@ -183,10 +198,7 @@ class FluxExecutionPlan(ExecutionPlan):
     def localop_plan(self):
         def generate_valid_plans():
             from hedge.cuda.tools import int_ceiling
-            chunk_sizes = set(
-                    int_ceiling(self.dofs_per_el()/i)
-                    for i in range(1,self.dofs_per_el()+1)
-                    )
+            chunk_sizes = set([16])|set(xrange(16, self.dofs_per_el(), 16))
 
             for pe in range(2,32):
                 from hedge.cuda.tools import int_ceiling

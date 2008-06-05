@@ -156,10 +156,18 @@ class DeviceData:
         return int_ceiling(bytes, self.align_bytes())
 
     def align_dtype(self, elements, dtype_size):
-        return int_ceiling(elements, exact_div(self.align_bytes(), dtype_size))
+        return int_ceiling(elements, 
+                exact_div(self.align_bytes(dtype_size), dtype_size))
 
-    def align_bytes(self):
-        return 64
+    def align_bytes(self, wordsize=4):
+        if wordsize == 4:
+            return 64
+        elif wordsize == 8:
+            return 128
+        elif wordsize == 16:
+            return 128
+        else:
+            raise ValueError, "no alignment possible for fetches of size %d" % wordsize
 
     def coalesce(self, thread_count):
         return int_ceiling(thread_count, 16)
