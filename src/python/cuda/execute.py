@@ -186,7 +186,8 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         
         kwargs = {
                 "block": (lplan.chunk_size, lplan.parallelism.p, 1),
-                "grid": (len(discr.blocks), 1)
+                "grid": (len(discr.blocks), 1),
+                "time_kernel": discr.instrumented,
                 }
         #print kwargs
 
@@ -205,6 +206,11 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                 ]
 
         func(*args, **kwargs)
+
+        kernel_time = func(*args, **kwargs)
+        if discr.instrumented:
+            discr.diff_op_timer.add_time(kernel_time)
+            discr.diff_op_counter.add(discr.dimensions)
 
         if False:
             copied_debugbuf = debugbuf.get()
@@ -245,7 +251,8 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         kwargs = {
                 "texrefs": texrefs, 
                 "block": (discr.flux_plan.dofs_per_el(), flux_par.p, 1),
-                "grid": (len(discr.blocks), 1)
+                "grid": (len(discr.blocks), 1),
+                "time_kernel": discr.instrumented,
                 }
 
         flux = discr.volume_empty() 
@@ -272,7 +279,10 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         bfield_texref.set_address(
                 bfield.gpudata, bfield.size*field.dtype.itemsize)
 
-        func(*args, **kwargs)
+        kernel_time = func(*args, **kwargs)
+        if discr.instrumented:
+            discr.inner_flux_timer.add_time(kernel_time)
+            discr.inner_flux_counter.add()
 
         if False:
             copied_debugbuf = debugbuf.get()

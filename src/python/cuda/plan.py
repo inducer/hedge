@@ -211,8 +211,10 @@ class FluxExecutionPlan(ExecutionPlan):
                 if p.occupancy_record().occupancy >= desired_occup - 1e-10
                 ]
 
-        from pytools import argmax2
-        return argmax2((p, p.chunk_size) for p in good_plans)
+        # optimize for minimum waste
+        from pytools import argmin2
+        return argmin2((p, p.parallelism.total()-self.parallelism.total()) 
+                for p in good_plans)
 
 
 
