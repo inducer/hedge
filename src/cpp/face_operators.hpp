@@ -105,6 +105,7 @@ namespace hedge
 
 
 
+#ifdef USE_BLAS
   static
   void finish_flux(
       const face_group &fg,
@@ -164,6 +165,50 @@ namespace hedge
               el_length_result*(i_loc_el+1));
     }
   }
+#else
+  static
+  void finish_flux(
+      const face_group &fg,
+      const py_matrix &matrix, 
+      const py_vector &elwise_post_scaling,
+      const dyn_vector &flux_temp,
+      py_vector &result)
+  {
+    const unsigned el_length_result = matrix.size1();
+    const unsigned el_length_temp = fg.face_count*fg.face_length();
+
+    if (el_length_temp != matrix.size2())
+      throw std::runtime_error("matrix size mismatch in finish_flux");
+
+    if (elwise_post_scaling.is_valid())
+    {
+      py_vector::const_iterator el_scale_it = elwise_post_scaling.begin();
+      for (unsigned i_loc_el = 0; i_loc_el < fg.element_count(); ++i_loc_el)
+        noalias(
+            subrange(result,
+              fg.local_el_to_global_el_base[i_loc_el],
+              fg.local_el_to_global_el_base[i_loc_el]+el_length_result))
+          += *el_scale_it++ * prod(matrix,
+              subrange(flux_temp,
+                el_length_temp*i_loc_el,
+                el_length_temp*(i_loc_el+1))
+              );
+    }
+    else
+    {
+      for (unsigned i_loc_el = 0; i_loc_el < fg.element_count(); ++i_loc_el)
+        noalias(
+            subrange(result,
+              fg.local_el_to_global_el_base[i_loc_el],
+              fg.local_el_to_global_el_base[i_loc_el]+el_length_result))
+          += prod(matrix,
+              subrange(flux_temp,
+                el_length_temp*i_loc_el,
+                el_length_temp*(i_loc_el+1))
+              );
+    }
+  }
+#endif
 
 
 
