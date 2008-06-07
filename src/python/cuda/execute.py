@@ -127,7 +127,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                     relerr = la.norm(diff[s])/norm_ref
                     if relerr > 1e-4:
                         struc += "*"
-                        if True:
+                        if False:
                             print "block %d, el %d, global el #%d, rel.l2err=%g" % (
                                     block.number, i_el, el.id, relerr)
                             print computed[s]
@@ -196,7 +196,6 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                 "time_kernel": discr.instrumented,
                 "texrefs": texrefs,
                 }
-        print kwargs
 
         #debugbuf = gpuarray.zeros((512,), dtype=numpy.float32)
 
@@ -219,7 +218,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             print copied_debugbuf[:100].reshape((10,10))
             raw_input()
         
-        if True:
+        if False:
             f = discr.volume_from_gpu(field)
             dx = discr.volume_from_gpu(xyz_diff[0])
             
@@ -227,8 +226,8 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             real_dx = test_discr.nabla[0].apply(f.astype(numpy.float64))
             
             diff = dx - real_dx
-            self.print_error_structure(dx, real_dx, diff)
-            raw_input()
+            #self.print_error_structure(dx, real_dx, diff)
+            #raw_input()
 
             rel_err_norm = la.norm(diff)/la.norm(real_dx)
             print rel_err_norm
@@ -250,7 +249,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         
         kwargs = {
                 "texrefs": texrefs, 
-                "block": (discr.flux_plan.dofs_per_el(), flux_par.p, 1),
+                "block": (discr.flux_plan.mb_aligned_floats, flux_par.p, 1),
                 "grid": (len(discr.blocks), 1),
                 "time_kernel": discr.instrumented,
                 }
@@ -307,7 +306,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
             norm_true = la.norm(true_flux)
 
-            if True:
+            if False:
                 self.print_error_structure(copied_flux, true_flux, diff)
                 raw_input()
 
@@ -597,15 +596,15 @@ class OpTemplateWithEnvironment(object):
                 Constant, Initializer, If, For, Statement, Assign, While
                 
         discr = self.discr
-        plan = discr.flux_plan
+        fplan = discr.flux_plan
         d = discr.dimensions
         dims = range(d)
 
-        flux_par = plan.parallelism
+        flux_par = fplan.parallelism
         elgroup, = discr.element_groups
         flux_with_temp_data = self.flux_with_temp_data(wdflux, elgroup)
 
-        float_type = plan.float_type
+        float_type = fplan.float_type
 
         f_decl = CudaGlobal(FunctionDeclaration(Value("void", "apply_flux"), 
             [
@@ -616,7 +615,7 @@ class OpTemplateWithEnvironment(object):
             ))
 
         coalesced_dofs_per_face = discr.devdata.coalesce(
-                plan.dofs_per_face())
+                fplan.dofs_per_face())
 
         cmod = Module([
                 Value("texture<float, 2, cudaReadModeElementType>", 
@@ -628,28 +627,40 @@ class OpTemplateWithEnvironment(object):
                 flux_header_struct(),
                 face_pair_struct(float_type, discr.dimensions),
                 Line(),
-                Define("ELS_PER_BLOCK", flux_par.total()),
-                Define("EL_DOF", "threadIdx.x"),
-                Define("BLOCK_EL", "threadIdx.y"),
-                Define("DOFS_PER_EL", plan.dofs_per_el()),
-                Define("CONCURRENT_ELS", flux_par.p),
-                Define("THREAD_NUM", "(BLOCK_EL*DOFS_PER_EL + EL_DOF)"),
-                Define("THREAD_COUNT", "(DOFS_PER_EL*CONCURRENT_ELS)"),
+                Define("DIMENSIONS", discr.dimensions),
+                Define("DOFS_PER_EL", fplan.dofs_per_el()),
+                Line(),
+                Define("MB_DOF", "threadIdx.x"),
+                Define("PAR_MB_NR", "threadIdx.y"),
+                Line(),
+                Define("MB_EL_COUNT", fplan.mb_elements),
+                Define("MB_DOF_COUNT", fplan.mb_aligned_floats),
+                Define("PAR_MB_COUNT", fplan.parallelism.p),
+                Define("SER_MB_COUNT", fplan.parallelism.s),
+                Define("BLOCK_MB_COUNT", "(PAR_MB_COUNT*SER_MB_COUNT)"),
+                Line(),
+                Define("THREAD_NUM", "(PAR_MB_NR*MB_DOF_COUNT + MB_DOF)"),
+                Define("THREAD_COUNT", "(MB_DOF_COUNT*PAR_MB_COUNT)"),
                 Define("COALESCING_THREAD_COUNT", "(THREAD_COUNT & ~0xf)"),
-                Define("INT_DOF_COUNT", discr.int_dof_count),
-                Define("DOFS_BLOCK_BASE", "(blockIdx.x*INT_DOF_COUNT)"),
+                Line(),
+                #Define("EL_DOF", "threadIdx.x"),
+                #Define("BLOCK_EL", "threadIdx.y"),
+                #Define("CONCURRENT_ELS", flux_par.p),
+                #Define("INT_DOF_COUNT", discr.int_dof_count),
+                Define("DOFS_BLOCK_BASE", "(blockIdx.x*BLOCK_MB_COUNT*MB_DOF_COUNT)"),
                 Define("DATA_BLOCK_SIZE", flux_with_temp_data.block_bytes),
+                Define("BASE_EL", "(base_mb*MB_EL_COUNT+mb_el)"),
                 Line(),
                 Comment("face-related stuff"),
-                Define("DOFS_PER_FACE", plan.dofs_per_face()),
-                Define("FACES_PER_EL", plan.faces_per_el()),
+                Define("DOFS_PER_FACE", fplan.dofs_per_face()),
+                Define("FACES_PER_EL", fplan.faces_per_el()),
                 Define("COALESCED_DOFS_PER_FACE", 
                     coalesced_dofs_per_face),
                 Define("CONCURRENT_FACES", 
-                    plan.dofs_per_el()*flux_par.p
-                    //plan.dofs_per_face()),
+                    fplan.mb_aligned_floats*flux_par.p
+                    //fplan.dofs_per_face()),
                 Define("CONCURRENT_COALESCED_FACES", 
-                    plan.dofs_per_el()*flux_par.p
+                    fplan.mb_aligned_floats*flux_par.p
                     //coalesced_dofs_per_face),
                 Line(),
                 ] + self.index_list_data() + [
@@ -658,7 +669,7 @@ class OpTemplateWithEnvironment(object):
                 Line(),
                 CudaShared(Value("flux_data", "data")),
                 CudaShared(ArrayOf(POD(float_type, "fluxes_on_faces"),
-                    "ELS_PER_BLOCK*FACES_PER_EL*DOFS_PER_FACE"
+                    "MB_EL_COUNT*BLOCK_MB_COUNT*FACES_PER_EL*DOFS_PER_FACE"
                     )),
                 Line(),
                 ])
@@ -820,22 +831,26 @@ class OpTemplateWithEnvironment(object):
             ])
 
         f_body.extend_log_block("apply lifting matrix", [
-            For("unsigned base_el = BLOCK_EL",
-                "base_el < data.header.els_in_block",
-                "base_el += CONCURRENT_ELS", 
+            Initializer(Const(POD(numpy.uint16, "mb_el")),
+                "MB_DOF/DOFS_PER_EL"),
+            Initializer(Const(POD(numpy.uint16, "el_dof")),
+                "MB_DOF - mb_el*DOFS_PER_EL"),
+            For("unsigned base_mb = PAR_MB_NR",
+                "base_mb < BLOCK_MB_COUNT",
+                "base_mb += PAR_MB_COUNT", 
                 Block([
                     Initializer(POD(float_type, "result"), 0),
                     ]+[
                         S("result += "
-                            "tex2D(lift_matrix_tex, EL_DOF, %(facedof_nr)d)"
-                            "*fluxes_on_faces[%(facedof_nr)d+base_el*FACES_PER_EL*DOFS_PER_FACE]"
+                            "tex2D(lift_matrix_tex, el_dof, %(facedof_nr)d)"
+                            "*fluxes_on_faces[%(facedof_nr)d+BASE_EL*FACES_PER_EL*DOFS_PER_FACE]"
                             % {"facedof_nr":facedof_nr})
                         for facedof_nr in xrange(
-                            plan.faces_per_el()*plan.dofs_per_face())
+                            fplan.faces_per_el()*fplan.dofs_per_face())
                     ]+[
                     Assign(
-                        "flux[DOFS_BLOCK_BASE+base_el*DOFS_PER_EL+EL_DOF]",
-                        "data.inverse_jacobians[base_el]*result")
+                        "flux[DOFS_BLOCK_BASE+base_mb*MB_DOF_COUNT+MB_DOF]",
+                        "data.inverse_jacobians[BASE_EL]*result")
                     ])
                 )
             ])
@@ -851,9 +866,9 @@ class OpTemplateWithEnvironment(object):
 
         liftmat_texref = mod.get_texref("lift_matrix_tex")
         if wdflux.is_lift:
-            cuda.matrix_to_texref(plan.ldis.lifting_matrix(), liftmat_texref)
+            cuda.matrix_to_texref(fplan.ldis.lifting_matrix(), liftmat_texref)
         else:
-            cuda.matrix_to_texref(plan.ldis.multi_face_mass_matrix(), liftmat_texref)
+            cuda.matrix_to_texref(fplan.ldis.multi_face_mass_matrix(), liftmat_texref)
         field_texref = mod.get_texref("field_tex")
         bfield_texref = mod.get_texref("bfield_tex")
         texrefs = [field_texref, bfield_texref, liftmat_texref]
@@ -971,7 +986,10 @@ class OpTemplateWithEnvironment(object):
         from hedge.cuda.tools import pad
         for block in discr.blocks:
             block_elgroup_indices = numpy.fromiter(
-                    (get_el_index_in_el_group(el) for el in block.elements),
+                    (get_el_index_in_el_group(el) 
+                        for mb in block.microblocks
+                        for el in mb
+                        ),
                     dtype=numpy.intp)
 
             block_inv_jacs = (inv_jacs[block_elgroup_indices].copy().astype(fplan.float_type))
@@ -1003,7 +1021,8 @@ class OpTemplateWithEnvironment(object):
             face_dofs = ldis.face_node_count()
 
             faces_todo = set((el,face_nbr)
-                    for el in block.elements
+                    for mb in block.microblocks
+                    for el in mb
                     for face_nbr in range(ldis.face_count()))
             same_fp_structs = []
             diff_fp_structs = []
@@ -1016,7 +1035,7 @@ class OpTemplateWithEnvironment(object):
                 b_face = a_face.opposite
 
                 print>>outf, "block %d el %d (global: %d) face %d" % (
-                        block.number, a_face.native_block_el_num,
+                        block.number, discr.find_number_in_block(a_face.el_face[0]),
                         elface[0].id, elface[1]),
                         
                 if isinstance(b_face, GPUBoundaryFaceStorage):
@@ -1033,7 +1052,7 @@ class OpTemplateWithEnvironment(object):
                     fp_structs = bdry_fp_structs
                 else:
                     # interior face
-                    b_base = discr.find_el_gpu_index(b_face.el_face[0]),
+                    b_base = discr.find_el_gpu_index(b_face.el_face[0])
 
                     a_flux_number = wdflux.interior_flux_number
                     b_flux_number = wdflux.interior_flux_number
@@ -1044,13 +1063,13 @@ class OpTemplateWithEnvironment(object):
                         faces_todo.remove(b_face.el_face)
                         b_write_index_list = a_face.opp_write_index_list_id
                         b_dest = (
-                                elface_dofs*b_face.native_block_el_num
+                                elface_dofs*discr.find_number_in_block(b_face.el_face[0])
                                 +b_face.el_face[1]*face_dofs)
 
                         fp_structs = same_fp_structs
 
                         print>>outf, "same el %d (global: %d) face %d" % (
-                                b_face.native_block_el_num,
+                                discr.find_number_in_block(b_face.el_face[0]), 
                                 b_face.el_face[0].id, b_face.el_face[1])
                     else:
                         # different block
@@ -1083,13 +1102,13 @@ class OpTemplateWithEnvironment(object):
                                     b_write_index_list*face_dofs,
 
                             a_dest= \
-                                    elface_dofs*a_face.native_block_el_num
+                                    elface_dofs*discr.find_number_in_block(a_face.el_face[0])
                                     +a_face.el_face[1]*face_dofs,
                             b_dest=b_dest
                             ))
 
             headers.append(flux_header_struct().make(
-                    els_in_block=len(block.elements),
+                    els_in_block=len(block.el_number_map),
                     same_facepairs_end=\
                             len(same_fp_structs),
                     diff_facepairs_end=\

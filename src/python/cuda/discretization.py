@@ -45,21 +45,21 @@ class GPUBlock(object):
       one block.
     @ivar el_offsets_list: A lsit containing the offsets of the elements in
       this block, in order.
-    @ivar el_offsets_map: A dictionary mapping L{hedge.mesh.Element} instances
-      to their DOF offsets in this block.
+    @ivar el_number_map: A dictionary mapping L{hedge.mesh.Element} instances
+      to their number within this block.
     """
     __slots__ = ["number", "local_discretization", "cpu_slices", "microblocks", 
-            "el_offsets_list", "el_offsets_map"
+            "el_offsets_list", "el_number_map", "el_number_map"
             ]
 
     def __init__(self, number, local_discretization, cpu_slices, microblocks, 
-            el_offsets_list, el_offsets_map):
+            el_offsets_list, el_number_map):
         self.number = number
         self.local_discretization = local_discretization
         self.cpu_slices = cpu_slices
         self.microblocks = microblocks
         self.el_offsets_list = el_offsets_list
-        self.el_offsets_map = el_offsets_map
+        self.el_number_map = el_number_map
 
 
 
@@ -295,14 +295,14 @@ class Discretization(hedge.discretization.Discretization):
 
             microblocks = []
             current_microblock = []
-            el_offsets_map = {}
             el_offsets_list = []
+            el_number_map = {}
             elements = [self.mesh.elements[ben] for ben in block_el_numbers[block_num]]
-            for el in elements:
+            for block_el_nr, el in enumerate(elements):
                 el_offset = (
                         len(microblocks)*fplan.mb_aligned_floats
                         + len(current_microblock)*fplan.dofs_per_el())
-                el_offsets_map[el] = el_offset
+                el_number_map[el] = block_el_nr
                 el_offsets_list.append(el_offset)
 
                 current_microblock.append(el)
@@ -321,7 +321,7 @@ class Discretization(hedge.discretization.Discretization):
                     cpu_slices=[self.find_el_range(el.id) for el in elements], 
                     microblocks=microblocks,
                     el_offsets_list=el_offsets_list,
-                    el_offsets_map=el_offsets_map)
+                    el_number_map=el_number_map)
 
         return [make_block(block_num) for block_num in range(block_count)]
 
@@ -457,9 +457,18 @@ class Discretization(hedge.discretization.Discretization):
 
 
     def find_el_gpu_index(self, el):
+        fplan = self.flux_plan
         block = self.blocks[self.partition[el.id]]
-        return (self.block.number * self.flux_plan.dofs_per_block() 
-                + block.el_offset[el])
+
+        mb_nr, in_mb_nr = divmod(block.el_number_map[el], fplan.mb_elements)
+
+        return (block.number * self.flux_plan.dofs_per_block() 
+                + mb_nr*fplan.mb_aligned_floats
+                + in_mb_nr*fplan.dofs_per_el())
+
+    def find_number_in_block(self, el):
+        block = self.blocks[self.partition[el.id]]
+        return block.el_number_map[el]
 
     def gpu_dof_count(self):
         from hedge.cuda.tools import int_ceiling
