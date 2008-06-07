@@ -190,9 +190,15 @@ class FluxExecutionPlan(ExecutionPlan):
         from hedge.cuda.execute import face_pair_struct
         d = self.ldis.dimensions
 
+        if self.dofs_per_face() > 255:
+            index_lists_entry_size = 2
+        else:
+            index_lists_entry_size = 1
+
         return (128 # parameters, block header, small extra stuff
                 + self.elements_per_block()*self.faces_per_el()*self.dofs_per_face()*self.float_size
                 + len(face_pair_struct(self.float_type, d))*self.face_pair_count()
+                + index_lists_entry_size*20*self.dofs_per_face()
                 )
 
     def threads(self):

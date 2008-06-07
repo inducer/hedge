@@ -147,7 +147,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                         if numpy.max(numpy.abs(reference[s])) == 0:
                             struc += "0"
                         else:
-                            if False:
+                            if True:
                                 print "block %d, el %d, global el #%d, rel.l2err=%g" % (
                                         block.number, i_el, el.id, relerr)
                                 print computed[s]
@@ -218,7 +218,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             print copied_debugbuf[:100].reshape((10,10))
             raw_input()
         
-        if True:
+        if discr.debug:
             f = discr.volume_from_gpu(field)
             dx = discr.volume_from_gpu(xyz_diff[0])
             
@@ -271,7 +271,9 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                 debugbuf, 
                 flux, 
                 #field, bfield, 
-                fdata.device_memory]
+                fdata.device_memory,
+                self.ex.index_list_global_data().device_memory,
+                ]
 
         field_texref.set_address(
                 field.gpudata, field.size*field.dtype.itemsize)
@@ -290,7 +292,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             print copied_debugbuf
             raw_input()
 
-        if False:
+        if discr.debug:
             cot = discr.test_discr.compile(op.flux_optemplate)
             ctx = {field_expr.name: 
                     discr.volume_from_gpu(field).astype(numpy.float64)
@@ -611,6 +613,7 @@ class OpTemplateWithEnvironment(object):
                 Pointer(POD(float_type, "debugbuf")),
                 Pointer(POD(float_type, "flux")),
                 Pointer(POD(numpy.uint8, "gmem_data")),
+                Pointer(POD(numpy.uint8, "gmem_index_lists")),
                 ]
             ))
 
@@ -663,10 +666,13 @@ class OpTemplateWithEnvironment(object):
                     fplan.mb_aligned_floats*flux_par.p
                     //coalesced_dofs_per_face),
                 Line(),
-                ] + self.index_list_data() + [
+                ] + self.index_list_global_data().code + [
                 Line(),
                 flux_with_temp_data.struct,
                 Line(),
+                CudaShared(
+                    ArrayOf(Value("index_list_entry_t", "smem_index_lists"),
+                        "INDEX_LISTS_LENGTH")),
                 CudaShared(Value("flux_data", "data")),
                 CudaShared(ArrayOf(POD(float_type, "fluxes_on_faces"),
                     "MB_EL_COUNT*BLOCK_MB_COUNT*FACES_PER_EL*DOFS_PER_FACE"
@@ -677,6 +683,13 @@ class OpTemplateWithEnvironment(object):
         S = Statement
         f_body = Block()
             
+        f_body.extend(self.get_load_code(
+            dest="smem_index_lists",
+            base="gmem_index_lists",
+            bytes="sizeof(index_list_entry_t)*INDEX_LISTS_LENGTH",
+            descr="load index list data")
+            )
+
         f_body.extend(self.get_load_code(
             dest="&data",
             base="gmem_data + blockIdx.x*DATA_BLOCK_SIZE",
@@ -734,11 +747,11 @@ class OpTemplateWithEnvironment(object):
                     "data.facepairs+fpair_nr"),
                 Initializer(Pointer(Value(
                     "index_list_entry_t", "a_ilist")),
-                    "const_index_lists + fpair->a_ilist_index"
+                    "smem_index_lists + fpair->a_ilist_index"
                     ),
                 Initializer(Pointer(Value(
                     "index_list_entry_t", "b_ilist")),
-                    "const_index_lists + fpair->b_ilist_index"
+                    "smem_index_lists + fpair->b_ilist_index"
                     ),
                 Initializer(
                     POD(float_type, "a_value"),
@@ -772,7 +785,7 @@ class OpTemplateWithEnvironment(object):
                     +[
                     Initializer(Pointer(Value(
                         "index_list_entry_t", "b_write_ilist")),
-                        "const_index_lists + fpair->b_write_ilist_index"
+                        "smem_index_lists + fpair->b_write_ilist_index"
                         ),
                     ])
 
@@ -1131,7 +1144,7 @@ class OpTemplateWithEnvironment(object):
                 [ (fp_blocks, Value(fp_struct.tpname, "facepairs")), ])
 
     @memoize_method
-    def index_list_data(self):
+    def index_list_global_data(self):
         discr = self.discr
 
         from pytools import single_valued
@@ -1146,16 +1159,13 @@ class OpTemplateWithEnvironment(object):
                 Typedef, POD, Value, CudaConstant, Define
 
         from pytools import flatten, Record
-        flat_ilists = list(flatten(discr.index_lists))
-        return [
-                Define("INDEX_LISTS_LENGTH", len(flat_ilists)),
-                Typedef(POD(tp, "index_list_entry_t")),
-                ArrayInitializer(
-                    CudaConstant(
-                        ArrayOf(Value(
-                            "index_list_entry_t", 
-                            "const_index_lists"),
-                        "INDEX_LISTS_LENGTH")),
-                    flat_ilists
-                    )
-                ]
+        flat_ilists = numpy.array(
+                list(flatten(discr.index_lists)),
+                dtype=tp)
+        return Record(
+                code=[
+                    Define("INDEX_LISTS_LENGTH", len(flat_ilists)),
+                    Typedef(POD(tp, "index_list_entry_t")),
+                    ],
+                device_memory=cuda.to_device(flat_ilists)
+                )
