@@ -231,19 +231,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
             rel_err_norm = la.norm(diff)/la.norm(real_dx)
             print rel_err_norm
-
-            from hedge.visualization import SiloVisualizer
-            vis = SiloVisualizer(test_discr)
-            visf = vis.make_file("gpu-error")
-            vis.add_data(visf, [
-                ("dx", dx),
-                ("real_dx", real_dx),
-                ("diff", diff),
-                ])
-            visf.close()
-            vis.close()
-
-            assert rel_err_norm < 1e-5
+            assert rel_err_norm < 5e-5
 
         self.diff_xyz_cache[op.__class__, field_expr] = xyz_diff
         return xyz_diff[op.xyz_axis]
@@ -535,8 +523,7 @@ class OpTemplateWithEnvironment(object):
             for glob_axis in dims:
                 code.append(Block([
                     Initializer(Value("float%d" % rst_channels, "rst_to_xyz"),
-                        #"tex2D(rst_to_xyz_tex, %d, global_mb_nr*MB_EL_COUNT+mb_el)" % glob_axis
-                        "tex2D(rst_to_xyz_tex, global_mb_nr*MB_EL_COUNT+mb_el, %d)" % glob_axis
+                        "tex2D(rst_to_xyz_tex, %d, global_mb_nr*MB_EL_COUNT+mb_el)" % glob_axis
                         ),
                     Assign(
                         dest_pattern % glob_axis,
@@ -588,7 +575,7 @@ class OpTemplateWithEnvironment(object):
 
         rst_to_xyz_texref = mod.get_texref("rst_to_xyz_tex")
         cuda.bind_array_to_texref(
-                self.localop_rst_to_xyz_t(diff_op_cls, elgroup), 
+                self.localop_rst_to_xyz(diff_op_cls, elgroup), 
                 rst_to_xyz_texref)
 
         field_texref = mod.get_texref("field_tex")
@@ -986,57 +973,6 @@ class OpTemplateWithEnvironment(object):
                     egi = get_el_index_in_el_group(el)
                     assert egi == elgroup_indices[i]
                     assert (result_matrix[:d,:,i].T == coeffs[:,:,egi]).all()
-                    i += 1
-
-        return cuda.make_multichannel_2d_array(result_matrix)
-
-    @memoize_method
-    def localop_rst_to_xyz_t(self, diff_op, elgroup):
-        discr = self.discr
-        d = discr.dimensions
-
-        fplan = discr.flux_plan
-
-        floats_per_block = d*d*fplan.elements_per_block()
-        bytes_per_block = floats_per_block*fplan.float_size
-
-        coeffs = diff_op.coefficients(elgroup)
-
-        def get_el_index_in_el_group(el):
-            mygroup, idx = discr.group_map[el.id]
-            assert mygroup is elgroup
-            return idx
-
-        el_count = len(discr.blocks) * fplan.elements_per_block()
-        elgroup_indices = numpy.zeros((el_count,), dtype=numpy.intp)
-        for block in discr.blocks:
-            block_elgroup_indices = [ get_el_index_in_el_group(el) 
-                    for mb in block.microblocks 
-                    for el in mb]
-            offset = block.number * fplan.elements_per_block()
-            elgroup_indices[offset:offset+len(block_elgroup_indices)] = \
-                    block_elgroup_indices
-
-        # indexed local, el_number, global
-        result_matrix = (coeffs[:,:,elgroup_indices]
-                .transpose(1,2,0))
-        channels = discr.devdata.make_valid_tex_channel_count(d)
-        add_channels = channels - result_matrix.shape[0]
-        if add_channels:
-            result_matrix = numpy.vstack((
-                result_matrix,
-                numpy.zeros((add_channels,el_count,d), dtype=result_matrix.dtype)
-                ))
-
-        assert result_matrix.shape == (channels, el_count, d)
-
-        for block in discr.blocks:
-            i = block.number * fplan.elements_per_block()
-            for mb in block.microblocks:
-                for el in mb:
-                    egi = get_el_index_in_el_group(el)
-                    assert egi == elgroup_indices[i]
-                    assert (result_matrix[:d,i,:].T == coeffs[:,:,egi]).all()
                     i += 1
 
         return cuda.make_multichannel_2d_array(result_matrix)
