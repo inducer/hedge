@@ -218,7 +218,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             print copied_debugbuf[:100].reshape((10,10))
             raw_input()
         
-        if False:
+        if True:
             f = discr.volume_from_gpu(field)
             dx = discr.volume_from_gpu(xyz_diff[0])
             
@@ -521,7 +521,7 @@ class OpTemplateWithEnvironment(object):
             for glob_axis in dims:
                 code.append(Block([
                     Initializer(Value("float%d" % rst_channels, "rst_to_xyz"),
-                        "tex2D(rst_to_xyz_tex, global_mb_nr*MB_EL_COUNT+mb_el, %d)" % glob_axis
+                        "tex2D(rst_to_xyz_tex, %d, global_mb_nr*MB_EL_COUNT+mb_el)" % glob_axis
                         ),
                     Assign(
                         dest_pattern % glob_axis,
@@ -942,16 +942,16 @@ class OpTemplateWithEnvironment(object):
 
         # indexed local, el_number, global
         result_matrix = (coeffs[:,:,elgroup_indices]
-                .transpose(1,2,0))
+                .transpose(1,0,2))
         channels = discr.devdata.make_valid_tex_channel_count(d)
         add_channels = channels - result_matrix.shape[0]
         if add_channels:
             result_matrix = numpy.vstack((
                 result_matrix,
-                numpy.zeros((add_channels,el_count,d), dtype=result_matrix.dtype)
+                numpy.zeros((add_channels,d,el_count), dtype=result_matrix.dtype)
                 ))
 
-        assert result_matrix.shape == (channels, el_count, d)
+        assert result_matrix.shape == (channels, d, el_count)
 
         for block in discr.blocks:
             i = block.number * fplan.elements_per_block()
@@ -959,7 +959,7 @@ class OpTemplateWithEnvironment(object):
                 for el in mb:
                     egi = get_el_index_in_el_group(el)
                     assert egi == elgroup_indices[i]
-                    assert (result_matrix[:d,i,:].T == coeffs[:,:,egi]).all()
+                    assert (result_matrix[:d,:,i].T == coeffs[:,:,egi]).all()
                     i += 1
 
         return cuda.make_multichannel_2d_array(result_matrix)
