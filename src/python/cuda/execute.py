@@ -127,7 +127,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                     relerr = la.norm(diff[s])/norm_ref
                     if relerr > 1e-4:
                         struc += "*"
-                        if False:
+                        if True:
                             print "block %d, el %d, global el #%d, rel.l2err=%g" % (
                                     block.number, i_el, el.id, relerr)
                             print computed[s]
@@ -216,7 +216,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             copied_debugbuf = debugbuf.get()
             print "DEBUG"
             #print numpy.reshape(copied_debugbuf, (len(copied_debugbuf)//16, 16))
-            print copied_debugbuf
+            print copied_debugbuf[:100].reshape((10,10))
             raw_input()
         
         if True:
@@ -447,6 +447,7 @@ class OpTemplateWithEnvironment(object):
                 Define("GLOBAL_MB_NR_BASE", "(MACROBLOCK_NR*PAR_MB_COUNT*SEQ_MB_COUNT)"),
                 Line(),
                 Define("DIFF_MAT_BLOCK_BYTES", diffmat_data.block_bytes),
+
                 Line(),
                 CudaShared(ArrayOf(POD(float_type, "smem_diff_rst_mat"), 
                     "DIMENSIONS*DOFS_PER_EL*CHUNK_DOF_COUNT")),
@@ -465,11 +466,13 @@ class OpTemplateWithEnvironment(object):
             Initializer(POD(numpy.uint16, "chunk_start_el"),
                 "MB_DOF_BASE/DOFS_PER_EL"),
             Initializer(POD(numpy.uint16, "chunk_stop_el"),
-                "(MB_DOF_BASE+CHUNK_DOF_COUNT-1)/DOFS_PER_EL+1"),
+                "min(MB_EL_COUNT, (MB_DOF_BASE+CHUNK_DOF_COUNT-1)/DOFS_PER_EL+1)"),
             Assign("chunk_start_load_dof", "chunk_start_el*DOFS_PER_EL"),
-            Assign("chunk_load_dof_count", "chunk_stop_el*DOFS_PER_EL"),
+            Assign("chunk_load_dof_count", "(chunk_stop_el-chunk_start_el)*DOFS_PER_EL"),
             Initializer(POD(numpy.uint8, "mb_el"),
                 "MB_DOF/DOFS_PER_EL"),
+            Initializer(POD(numpy.uint8, "chunk_el"),
+                "mb_el-chunk_start_el"),
             ])
 
         f_body.extend(
@@ -504,7 +507,7 @@ class OpTemplateWithEnvironment(object):
                         ]
                     +list(flatten( [
                         Assign("field_value", 
-                            "int_dofs[PAR_MB_NR][mb_el*DOFS_PER_EL+%d]" % (j)),
+                            "int_dofs[PAR_MB_NR][chunk_el*DOFS_PER_EL+%d]" % (j)),
                         Line(),
                         ]
                         +[
@@ -879,12 +882,10 @@ class OpTemplateWithEnvironment(object):
         chunks = []
 
         for chunk_start in range(0, fplan.mb_elements*fplan.dofs_per_el(), lplan.chunk_size):
-            chunk_stop = min(
-                    fplan.dofs_per_el(),
-                    chunk_start+lplan.chunk_size)
             diffmats = numpy.asarray(
                     numpy.hstack(
-                        m[chunk_start:chunk_stop] for m in vstacked_matrices
+                        m[chunk_start:chunk_start+lplan.chunk_size] 
+                        for m in vstacked_matrices
                         ),
                     dtype=self.discr.flux_plan.float_type,
                     order="C")
