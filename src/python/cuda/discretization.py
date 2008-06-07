@@ -40,22 +40,26 @@ class GPUBlock(object):
       for elements in this block.
     @ivar cpu_slices: A list of slices describing the CPU-side
       storage locations for the block's elements.
-    @ivar elements: A list of L{hedge.mesh.Element} instances representing the
-      elements in this block.
+    @ivar microblocks: A list of lists of L{hedge.mesh.Element} instances,
+      each representing the elements in one block, and together representing
+      one block.
+    @ivar el_offsets_list: A lsit containing the offsets of the elements in
+      this block, in order.
+    @ivar el_offsets_map: A dictionary mapping L{hedge.mesh.Element} instances
+      to their DOF offsets in this block.
     """
-    __slots__ = ["number", "local_discretization", "cpu_slices", "elements", 
+    __slots__ = ["number", "local_discretization", "cpu_slices", "microblocks", 
+            "el_offsets_list", "el_offsets_map"
             ]
 
-    def __init__(self, number, local_discretization, cpu_slices, elements):
+    def __init__(self, number, local_discretization, cpu_slices, microblocks, 
+            el_offsets_list, el_offsets_map):
         self.number = number
         self.local_discretization = local_discretization
         self.cpu_slices = cpu_slices
-        self.elements = elements
-
-    def get_el_index(self, sought_el):
-        from pytools import one
-        return one(i for i, el in enumerate(self.elements)
-                if el == sought_el)
+        self.microblocks = microblocks
+        self.el_offsets_list = el_offsets_list
+        self.el_offsets_map = el_offsets_map
 
 
 
@@ -86,24 +90,22 @@ class GPUInteriorFaceStorage(GPUFaceStorage):
     @ivar native_index_list_id: 
     @ivar opp_write_index_list_id:
     @ivar native_block: block in which element is to be found.
-    @ivar native_block_el_num: number of this element in the C{native_block}.
     @ivar face_pair_side:
     """
     __slots__ = [
             "el_face", "cpu_slice", 
             "native_index_list_id", "opp_write_index_list_id",
             "global_int_flux_index_list_id", "global_ext_flux_index_list_id",
-            "native_block", "native_block_el_num",
+            "native_block", 
             "face_pair_side"]
 
     def __init__(self, el_face, cpu_slice, native_index_list_id,
-            native_block, native_block_el_num, face_pair_side):
+            native_block, face_pair_side):
         GPUFaceStorage.__init__(self)
         self.el_face = el_face
         self.cpu_slice = cpu_slice
         self.native_index_list_id = native_index_list_id
         self.native_block = native_block
-        self.native_block_el_num = native_block_el_num
         self.face_pair_side = face_pair_side
 
 class GPUBoundaryFaceStorage(GPUFaceStorage):
@@ -176,7 +178,7 @@ class Discretization(hedge.discretization.Discretization):
         # search for mesh partition that matches plan
         from pymetis import part_graph
         orig_part_count = part_count = (
-                len(mesh.elements)//flux_plan.parallelism.total()+1)
+                len(mesh.elements)//flux_plan.elements_per_block()+1)
         while True:
             cuts, partition = part_graph(part_count,
                     mesh.element_adjacency_graph(),
@@ -202,7 +204,8 @@ class Discretization(hedge.discretization.Discretization):
 
             from hedge.cuda.tools import int_ceiling
             block_elements = max(len(block_els) for block_els in blocks.itervalues())
-            flux_par_s = int_ceiling(block_elements/flux_plan.parallelism.p)
+            flux_par_s = int_ceiling(block_elements
+                    /(flux_plan.parallelism.p*flux_plan.mb_elements))
 
             from hedge.cuda.plan import Parallelism
             actual_plan = flux_plan.copy(
@@ -273,9 +276,6 @@ class Discretization(hedge.discretization.Discretization):
                 default_scalar_type=default_scalar_type)
 
         # build our own data structures
-        from hedge.cuda.tools import exact_div
-        self.int_dof_count = exact_div(self.flux_plan.int_dof_smem(), self.flux_plan.float_size)
-
         self.blocks = self._build_blocks()
         self.face_storage_map = self._build_face_storage_map()
 
@@ -291,13 +291,37 @@ class Discretization(hedge.discretization.Discretization):
         block_count = len(block_el_numbers)
 
         def make_block(block_num):
+            fplan = self.flux_plan
+
+            microblocks = []
+            current_microblock = []
+            el_offsets_map = {}
+            el_offsets_list = []
             elements = [self.mesh.elements[ben] for ben in block_el_numbers[block_num]]
+            for el in elements:
+                el_offset = (
+                        len(microblocks)*fplan.mb_aligned_floats
+                        + len(current_microblock)*fplan.dofs_per_el())
+                el_offsets_map[el] = el_offset
+                el_offsets_list.append(el_offset)
+
+                current_microblock.append(el)
+                if len(current_microblock) == fplan.mb_elements:
+                    microblocks.append(current_microblock)
+                    current_microblock = []
+
+            if current_microblock:
+                microblocks.append(current_microblock)
+
+            assert len(microblocks) <= fplan.microblocks_per_block()
 
             eg, = self.element_groups
             return GPUBlock(block_num, 
                     local_discretization=eg.local_discretization,
                     cpu_slices=[self.find_el_range(el.id) for el in elements], 
-                    elements=elements)
+                    microblocks=microblocks,
+                    el_offsets_list=el_offsets_list,
+                    el_offsets_map=el_offsets_map)
 
         return [make_block(block_num) for block_num in range(block_count)]
 
@@ -333,7 +357,6 @@ class Discretization(hedge.discretization.Discretization):
                 cpu_slice=self.find_el_range(el.id), 
                 native_index_list_id=iln,
                 native_block=block, 
-                native_block_el_num=block.get_el_index(el), 
                 face_pair_side=face_pair_side
                 )
 
@@ -350,8 +373,6 @@ class Discretization(hedge.discretization.Discretization):
                     for i, el_dof in enumerate(native_el_ilist))
             return tuple(el_dof_to_face_dof[el_dof]
                     for el_dof in in_el_ilist)
-
-        block_dofs = self.int_dof_count
 
         int_fg, = self.face_groups
         ldis = int_fg.ldis_loc
@@ -435,8 +456,18 @@ class Discretization(hedge.discretization.Discretization):
 
 
 
+    def find_el_gpu_index(self, el):
+        block = self.blocks[self.partition[el.id]]
+        return (self.block.number * self.flux_plan.dofs_per_block() 
+                + block.el_offset[el])
+
     def gpu_dof_count(self):
-        return self.int_dof_count * len(self.blocks)
+        from hedge.cuda.tools import int_ceiling
+
+        return int_ceiling(
+                    self.flux_plan.dofs_per_block() * len(self.blocks),     
+                    self.flux_plan.localop_plan().dofs_per_macroblock())
+
 
     def volume_to_gpu(self, field):
         from hedge.tools import log_shape
@@ -453,16 +484,17 @@ class Discretization(hedge.discretization.Discretization):
             copy_vec = numpy.empty((self.gpu_dof_count(),), dtype=numpy.float32)
 
             block_offset = 0
+            block_size = self.flux_plan.dofs_per_block()
             for block in self.blocks:
                 face_length = block.local_discretization.face_node_count()
                 el_length = block.local_discretization.node_count()
 
-                el_offset = block_offset
-                for cpu_slice in block.cpu_slices:
-                    copy_vec[el_offset:el_offset+el_length] = field[cpu_slice]
-                    el_offset += el_length
+                for el_offset, cpu_slice in zip(
+                        block.el_offsets_list, block.cpu_slices):
+                    copy_vec[block_offset+el_offset:block_offset+el_offset+el_length] = \
+                            field[cpu_slice]
 
-                block_offset += self.int_dof_count
+                block_offset += block_size
 
             return gpuarray.to_gpu(copy_vec)
 
@@ -482,15 +514,17 @@ class Discretization(hedge.discretization.Discretization):
             result = numpy.empty(shape=(len(self),), dtype=copied_vec.dtype)
 
             block_offset = 0
+            block_size = self.flux_plan.dofs_per_block()
             for block in self.blocks:
                 el_length = block.local_discretization.node_count()
 
-                el_offset = block_offset
-                for cpu_slice in block.cpu_slices:
-                    result[cpu_slice] = copied_vec[el_offset:el_offset+el_length]
-                    el_offset += el_length
+                for el_offset, cpu_slice in zip(
+                        block.el_offsets_list, block.cpu_slices):
+                    result[cpu_slice] = \
+                            copied_vec[block_offset+el_offset
+                                    :block_offset+el_offset+el_length]
 
-                block_offset += self.int_dof_count
+                block_offset += block_size
 
             return result
 

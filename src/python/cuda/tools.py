@@ -172,6 +172,15 @@ class DeviceData:
     def coalesce(self, thread_count):
         return int_ceiling(thread_count, 16)
 
+    @staticmethod
+    def make_valid_tex_channel_count(size):
+        valid_sizes = [1,2,4]
+        for vs in valid_sizes:
+            if size <= vs:
+                return vs
+
+        raise ValueError, "could not enlarge argument to valid channel count"
+
 
 
 

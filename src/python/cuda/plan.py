@@ -22,7 +22,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import numpy
-from pytools import memoize_method
+from pytools import memoize, memoize_method
 
 
 
@@ -76,6 +76,7 @@ class ExecutionPlan(object):
 
 
 
+@memoize
 def find_microblock_size(devdata, dofs_per_el, float_size):
     from hedge.cuda.tools import exact_div, int_ceiling
     float_alignment = exact_div(devdata.align_bytes(float_size), float_size)
@@ -85,8 +86,8 @@ def find_microblock_size(devdata, dofs_per_el, float_size):
         mb_elements = mb_aligned_floats // dofs_per_el
         mb_floats = dofs_per_el*mb_elements
         overhead = (mb_aligned_floats-mb_floats)/mb_aligned_floats
-        if overhead <= 0.05:
-            return mb_elements
+        if overhead <= 0.1:
+            return mb_elements, mb_aligned_floats, mb_align_chunks
 
     assert False, "a valid microblock size was not found"
 
@@ -108,7 +109,7 @@ class FluxExecutionPlan(ExecutionPlan):
 
         self.float_type = numpy.dtype(float_type)
 
-        self.mb_elements = find_microblock_size(
+        self.mb_elements, self.mb_aligned_floats, self.mb_chunks = find_microblock_size(
                 self.devdata, 
                 ldis.node_count(), 
                 self.float_size)
@@ -137,8 +138,14 @@ class FluxExecutionPlan(ExecutionPlan):
     def faces_per_el(self):
         return self.ldis.face_count()
 
+    def microblocks_per_block(self):
+        return self.parallelism.total()
+
     def elements_per_block(self):
-        return self.parallelism.total()*self.mb_elements
+        return self.microblocks_per_block()*self.mb_elements
+
+    def dofs_per_block(self):
+        return self.microblocks_per_block()*self.mb_aligned_floats
 
     @memoize_method
     def estimate_extface_count(self):
@@ -189,7 +196,7 @@ class FluxExecutionPlan(ExecutionPlan):
                 )
 
     def threads(self):
-        return self.parallelism.p*self.dofs_per_el()
+        return self.parallelism.p*self.mb_aligned_floats
 
     def registers(self):
         return 12
@@ -198,12 +205,15 @@ class FluxExecutionPlan(ExecutionPlan):
     def localop_plan(self):
         def generate_valid_plans():
             from hedge.cuda.tools import int_ceiling
-            chunk_sizes = set([16])|set(xrange(16, self.dofs_per_el(), 16))
 
-            for pe in range(2,32):
+            chunk_sizes = range(16, self.mb_elements*self.dofs_per_el()+1, 16)
+
+            if not chunk_sizes:
+                chunk_sizes = [16]
+
+            for pe in range(1,32):
                 from hedge.cuda.tools import int_ceiling
-                se = int_ceiling(self.parallelism.total()/pe)
-                localop_par = Parallelism(pe, se)
+                localop_par = Parallelism(pe, 8)
                 for chunk_size in chunk_sizes:
                     plan = LocalOpExecutionPlan(self, localop_par, chunk_size)
                     if plan.invalid_reason() is None:
@@ -224,9 +234,14 @@ class FluxExecutionPlan(ExecutionPlan):
                 ]
 
         # optimize for minimum waste
-        from pytools import argmin2
-        return argmin2((p, p.parallelism.total()-self.parallelism.total()) 
-                for p in good_plans)
+        from pytools import argmax2
+        return argmax2((p, p.parallelism.total()) for p in good_plans)
+
+    def __str__(self):
+            return ("%s mb_elements=%d" % (
+                ExecutionPlan.__str__(self),
+                self.mb_elements,
+                ))
 
 
 
@@ -238,23 +253,34 @@ class LocalOpExecutionPlan(ExecutionPlan):
         self.parallelism = parallelism
         self.chunk_size = chunk_size
 
+    def max_elements_touched_by_chunk(self):
+        fplan = self.flux_plan
+
+        from hedge.cuda.tools import int_ceiling
+        if fplan.dofs_per_el() > self.chunk_size:
+            return 2
+        else:
+            return int_ceiling(self.chunk_size/fplan.dofs_per_el()) + 1
+
+    def dofs_per_macroblock(self):
+        return self.parallelism.total() * self.flux_plan.mb_aligned_floats
+
     @memoize_method
     def shared_mem_use(self):
         fplan = self.flux_plan
-        ldis = fplan.ldis
-        return (128 # parameters, block header, small extra stuff
-                + fplan.int_dof_smem() 
-                # rst2xyz coefficients
-                + (fplan.elements_per_block()
-                    * ldis.dimensions
-                    * ldis.dimensions
-                    * fplan.float_size)
-                # chunk of the differentiation matrix
-                + self.chunk_size # this many rows
-                * fplan.dofs_per_el()
-                * fplan.ldis.dimensions # r,s,t
-                * fplan.float_size
-                )
+        
+        return (64 # parameters, block header, small extra stuff
+               + fplan.float_size * (
+                   # chunk of the differentiation matrix
+                   + self.chunk_size # this many rows
+                   * fplan.dofs_per_el()
+                   * fplan.ldis.dimensions # r,s,t
+
+                   + self.parallelism.p
+                   * self.max_elements_touched_by_chunk()
+                   * fplan.dofs_per_el()
+                   )
+               )
 
     def threads(self):
         return self.parallelism.p*self.chunk_size

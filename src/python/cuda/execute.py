@@ -34,15 +34,6 @@ import pymbolic.mapper.stringifier
 
 # structures ------------------------------------------------------------------
 @memoize
-def localop_header_struct():
-    from hedge.cuda.cgen import Struct, POD
-
-    return Struct("localop_header", [
-        POD(numpy.uint16, "els_in_block"),
-        POD(numpy.uint16, "reserved"),
-        ])
-
-@memoize
 def flux_header_struct():
     from hedge.cuda.cgen import Struct, POD
 
@@ -129,31 +120,13 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
         numpy.set_printoptions(precision=2, linewidth=130, suppress=True)
         for block in discr.blocks:
-            for i_el, el in enumerate(block.elements):
-                s = discr.find_el_range(el.id)
-                relerr = la.norm(diff[s])/norm_ref
-                if relerr > 1e-4:
-                    struc += "*"
-                    if True:
-                        print "block %d, el %d, global el #%d, rel.l2err=%g" % (
-                                block.number, i_el, el.id, relerr)
-                        print computed[s]
-                        print reference[s]
-                        print diff[s]
-                        raw_input()
-                elif numpy.isnan(relerr):
-                    struc += "N"
-                    if False:
-                        print "block %d, el %d, global el #%d, rel.l2err=%g" % (
-                                block.number, i_el, el.id, relerr)
-                        print computed[s]
-                        print reference[s]
-                        print diff[s]
-                        raw_input()
-                else:
-                    if numpy.max(numpy.abs(reference[s])) == 0:
-                        struc += "0"
-                    else:
+            i_el = 0
+            for mb in block.microblocks:
+                for el in mb:
+                    s = discr.find_el_range(el.id)
+                    relerr = la.norm(diff[s])/norm_ref
+                    if relerr > 1e-4:
+                        struc += "*"
                         if False:
                             print "block %d, el %d, global el #%d, rel.l2err=%g" % (
                                     block.number, i_el, el.id, relerr)
@@ -161,7 +134,29 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                             print reference[s]
                             print diff[s]
                             raw_input()
-                        struc += "."
+                    elif numpy.isnan(relerr):
+                        struc += "N"
+                        if False:
+                            print "block %d, el %d, global el #%d, rel.l2err=%g" % (
+                                    block.number, i_el, el.id, relerr)
+                            print computed[s]
+                            print reference[s]
+                            print diff[s]
+                            raw_input()
+                    else:
+                        if numpy.max(numpy.abs(reference[s])) == 0:
+                            struc += "0"
+                        else:
+                            if False:
+                                print "block %d, el %d, global el #%d, rel.l2err=%g" % (
+                                        block.number, i_el, el.id, relerr)
+                                print computed[s]
+                                print reference[s]
+                                print diff[s]
+                                raw_input()
+                            struc += "."
+                    i_el += 1
+                struc += " "
             struc += "\n"
         print
         print struc
@@ -179,28 +174,35 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         d = discr.dimensions
 
         eg, = discr.element_groups
-        localop_data = self.ex.localop_data(op, eg)
-        func = self.ex.get_diff_kernel(op.__class__, eg)
+        func, texrefs, field_texref = self.ex.get_diff_kernel(op.__class__, eg)
 
-        lplan = discr.flux_plan.localop_plan()
-        
-        kwargs = {
-                "block": (lplan.chunk_size, lplan.parallelism.p, 1),
-                "grid": (len(discr.blocks), 1),
-                "time_kernel": discr.instrumented,
-                }
-        #print kwargs
+        fplan = discr.flux_plan
+        lplan = fplan.localop_plan()
 
         field = self.rec(field_expr)
         assert field.dtype == discr.flux_plan.float_type
+
+        field_texref.set_address(
+                field.gpudata, field.size*field.dtype.itemsize)
+        
+        from hedge.cuda.tools import int_ceiling
+        kwargs = {
+                "block": (lplan.chunk_size, lplan.parallelism.p, 1),
+                "grid": (fplan.mb_chunks, 
+                    int_ceiling(
+                        fplan.dofs_per_block()*len(discr.blocks)/
+                        lplan.dofs_per_macroblock())
+                    ),
+                "time_kernel": discr.instrumented,
+                "texrefs": texrefs,
+                }
+        print kwargs
 
         #debugbuf = gpuarray.zeros((512,), dtype=numpy.float32)
 
         xyz_diff = [discr.volume_empty() for axis in range(d)]
         elgroup, = discr.element_groups
         args = xyz_diff+[
-                field, 
-                localop_data.device_memory,
                 self.ex.gpu_diffmats(op.__class__, eg).device_memory,
                 #debugbuf,
                 ]
@@ -217,7 +219,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             print copied_debugbuf
             raw_input()
         
-        if False:
+        if True:
             f = discr.volume_from_gpu(field)
             dx = discr.volume_from_gpu(xyz_diff[0])
             
@@ -400,9 +402,7 @@ class OpTemplateWithEnvironment(object):
         lplan = fplan.localop_plan()
 
         lop_par = lplan.parallelism
-        lop_data = self.localop_data(diff_op_cls, elgroup)
         diffmat_data = self.gpu_diffmats(diff_op_cls, elgroup)
-        rst2xyz_coeffs_size_unaligned = d*d*lop_par.total()
         elgroup, = discr.element_groups
 
         float_type = fplan.float_type
@@ -410,60 +410,78 @@ class OpTemplateWithEnvironment(object):
         f_decl = CudaGlobal(FunctionDeclaration(Value("void", "apply_diff_mat"), 
             [Pointer(POD(float_type, "dxyz%d" % i)) for i in dims]
             + [
-                Pointer(POD(float_type, "field")),
-                Pointer(POD(numpy.uint8, "gmem_data")),
                 Pointer(POD(numpy.uint8, "gmem_diff_rst_mat")),
                 #Pointer(POD(float_type, "debugbuf")),
                 ]
             ))
 
+        rst_channels = discr.devdata.make_valid_tex_channel_count(d)
         cmod = Module([
-                localop_header_struct(),
+                Value("texture<float%d, 2, cudaReadModeElementType>"
+                    % rst_channels, 
+                    "rst_to_xyz_tex"),
+                Value("texture<float, 1, cudaReadModeElementType>", 
+                    "field_tex"),
+                Line(),
                 Define("DIMENSIONS", discr.dimensions),
-                Define("TARGET_DOF", "threadIdx.x"),
-                Define("BLOCK_EL", "threadIdx.y"),
                 Define("DOFS_PER_EL", fplan.dofs_per_el()),
-                Define("CONCURRENT_ELS", lop_par.p),
-                Define("CHUNK_SIZE", lplan.chunk_size),
-                Define("THREAD_NUM", "(BLOCK_EL*CHUNK_SIZE + TARGET_DOF)"),
-                Define("THREAD_COUNT", "(CHUNK_SIZE*CONCURRENT_ELS)"),
-                Define("COALESCING_THREAD_COUNT", "(THREAD_COUNT & ~0xf)"),
-                Define("INT_DOF_COUNT", discr.int_dof_count),
-                Define("DOFS_BLOCK_BASE", "(blockIdx.x*INT_DOF_COUNT)"),
-                Define("DATA_BLOCK_SIZE", lop_data.block_bytes),
+                Line(),
+                Define("CHUNK_DOF", "threadIdx.x"),
+                Define("PAR_MB_NR", "threadIdx.y"),
+                Line(),
+                Define("MB_CHUNK", "blockIdx.x"),
+                Define("MACROBLOCK_NR", "blockIdx.y"),
+                Line(),
+                Define("CHUNK_DOF_COUNT", lplan.chunk_size),
+                Define("MB_CHUNK_COUNT", fplan.mb_chunks),
+                Define("MB_DOF_COUNT", "(MB_CHUNK_COUNT*CHUNK_DOF_COUNT)"),
+                Define("MB_EL_COUNT", fplan.mb_elements),
+                Define("PAR_MB_COUNT", lplan.parallelism.p),
+                Define("SEQ_MB_COUNT", lplan.parallelism.s),
+                Line(),
+                Define("THREAD_NUM", "(CHUNK_DOF+PAR_MB_NR*CHUNK_DOF_COUNT)"),
+                Define("COALESCING_THREAD_COUNT", "(PAR_MB_COUNT*CHUNK_DOF_COUNT)"),
+                Line(),
+                Define("MB_DOF_BASE", "(MB_CHUNK*CHUNK_DOF_COUNT)"),
+                Define("MB_DOF", "(MB_DOF_BASE+CHUNK_DOF)"),
+                Define("GLOBAL_MB_NR_BASE", "(MACROBLOCK_NR*PAR_MB_COUNT*SEQ_MB_COUNT)"),
+                Line(),
                 Define("DIFF_MAT_BLOCK_BYTES", diffmat_data.block_bytes),
                 Line(),
-                ] + self.index_list_data() + [
-                Line(),
-                lop_data.struct,
-                CudaShared(Value("localop_data", "data")),
-                CudaShared(ArrayOf(POD(float_type, "int_dofs"), 
-                    discr.int_dof_count)),
                 CudaShared(ArrayOf(POD(float_type, "smem_diff_rst_mat"), 
-                    "DIMENSIONS*DOFS_PER_EL*CHUNK_SIZE")),
+                    "DIMENSIONS*DOFS_PER_EL*CHUNK_DOF_COUNT")),
+                CudaShared(ArrayOf(ArrayOf(POD(float_type, "int_dofs"), 
+                    lplan.parallelism.p), 
+                    lplan.max_elements_touched_by_chunk()*fplan.dofs_per_el())),
+                CudaShared(POD(numpy.uint16, "chunk_start_load_dof")),
+                CudaShared(POD(numpy.uint16, "chunk_load_dof_count")),
                 Line(),
                 ])
 
         S = Statement
         f_body = Block()
             
-        f_body.extend(self.get_load_code(
-            dest="&data",
-            base="gmem_data + blockIdx.x*DATA_BLOCK_SIZE",
-            bytes="sizeof(localop_data)",
-            descr="load localop_data")
-            +[ S("__syncthreads()"), Line() ])
-
-        f_body.extend_log_block("load internal dofs", [
-            For("unsigned dof_nr = THREAD_NUM", 
-                "dof_nr < data.header.els_in_block*DOFS_PER_EL", 
-                "dof_nr += COALESCING_THREAD_COUNT",
-                S("int_dofs[dof_nr] = field[DOFS_BLOCK_BASE+dof_nr]"),
-                ),
+        f_body.extend_log_block("calculate responsibility data", [
+            Initializer(POD(numpy.uint16, "chunk_start_el"),
+                "MB_DOF_BASE/DOFS_PER_EL"),
+            Initializer(POD(numpy.uint16, "chunk_stop_el"),
+                "(MB_DOF_BASE+CHUNK_DOF_COUNT-1)/DOFS_PER_EL+1"),
+            Assign("chunk_start_load_dof", "chunk_start_el*DOFS_PER_EL"),
+            Assign("chunk_load_dof_count", "chunk_stop_el*DOFS_PER_EL"),
+            Initializer(POD(numpy.uint8, "mb_el"),
+                "MB_DOF/DOFS_PER_EL"),
             ])
 
+        f_body.extend(
+            self.get_load_code(
+                dest="smem_diff_rst_mat",
+                base=("gmem_diff_rst_mat + MB_CHUNK*DIFF_MAT_BLOCK_BYTES"),
+                bytes="CHUNK_DOF_COUNT*DIMENSIONS*DOFS_PER_EL*%d" % fplan.float_size,
+                descr="load diff mat chunk"))
+
+
         # ---------------------------------------------------------------------
-        def get_scalar_diff_code(el_nr, matrix_row, dest_pattern):
+        def get_scalar_diff_code(matrix_row, dest_pattern):
             code = []
             for axis in dims:
                 code.append(
@@ -477,23 +495,16 @@ class OpTemplateWithEnvironment(object):
                         "+%(col)s"
                         "]" % {"row":row, "col":col, "axis":axis}
                         )
-            #tex_channels = ["x", "y", "z", "w"]
-            from pytools import flatten
 
+            tex_channels = ["x", "y", "z", "w"]
+            from pytools import flatten
             code.extend(
                     [POD(float_type, "field_value"),
-                        #Value("float%d" % self.diffmat_channels(),
-                            #"diff_ij"),
                         Line(),
                         ]
                     +list(flatten( [
-                        #Assign(
-                            #"diff_ij", 
-                            #"tex2D(diff_rst_matrices, (%(matrix_row)s), %(j)d)" 
-                            #% {"matrix_row":matrix_row, "j":j}
-                            #"make_float4(0.1234,0.1234,0.1234,0.1234)"
-                            #),
-                        Assign("field_value", "int_dofs[(%s)*DOFS_PER_EL+%d]" % (el_nr, j)),
+                        Assign("field_value", 
+                            "int_dofs[PAR_MB_NR][mb_el*DOFS_PER_EL+%d]" % (j)),
                         Line(),
                         ]
                         +[
@@ -501,76 +512,53 @@ class OpTemplateWithEnvironment(object):
                             % (axis, get_mat_entry(matrix_row, j, axis)))
                         for axis in dims
                         ]+[Line()]
-                        for j in range(fplan.dofs_per_el())))
+                        for j in range(fplan.dofs_per_el())
+                        ))
                     )
 
             for glob_axis in dims:
-                code.append(
+                code.append(Block([
+                    Initializer(Value("float%d" % rst_channels, "rst_to_xyz"),
+                        "tex2D(rst_to_xyz_tex, global_mb_nr*MB_EL_COUNT+mb_el, %d)" % glob_axis
+                        ),
                     Assign(
                         dest_pattern % glob_axis,
                         " + ".join(
-                            "data.rst_to_xyz_coefficients[%d + %d*(%s)]"
+                            "rst_to_xyz.%s"
                             "*"
-                            "drst%d" % (
-                                d*glob_axis+loc_axis, 
-                                d*d,
-                                el_nr,
-                                loc_axis)
+                            "drst%d" % (tex_channels[loc_axis], loc_axis)
                             for loc_axis in dims
                             )
-                        ))
+                        )
+                    ]))
             return code
 
-        # global diff on volume -----------------------------------------------
-        for chunk_nr, chunk_start in enumerate(
-                range(0, fplan.dofs_per_el(), lplan.chunk_size)):
-            chunk_stop = min(
-                    fplan.dofs_per_el(),
-                    chunk_start+lplan.chunk_size)
-
-            f_body.extend([
-                Line(),
-                Comment("treat target chunk %d..%d" 
-                    % (chunk_start, chunk_stop)),
-                Line(),
-                S("__syncthreads()"),
-                Line(),
-                ])
-                
-            f_body.extend(
-                self.get_load_code(
-                    dest="smem_diff_rst_mat",
-                    base=("gmem_diff_rst_mat + %d*DIFF_MAT_BLOCK_BYTES"
-                        % chunk_nr),
-                    bytes="%d*DIMENSIONS*DOFS_PER_EL*%d" \
-                            % (chunk_stop-chunk_start, fplan.float_size),
-                    descr="load diff mat chunk"))
-
-            f_body.extend([ 
-                S("__syncthreads()"), 
-                Line(),
-                ])
-
-            if chunk_stop < chunk_start+lplan.chunk_size:
-                f_body.extend([
-                    Comment("terminate unneeded threads for last chunk"),
-                    If("TARGET_DOF>=%d" % (chunk_stop-chunk_start),
-                        S("return")),
+        f_body.extend([
+            For("unsigned short seq_mb_number = 0",
+                "seq_mb_number < SEQ_MB_COUNT",
+                "++seq_mb_number",
+                Block([
+                    Initializer(POD(numpy.uint32, "global_mb_nr"),
+                        "GLOBAL_MB_NR_BASE + seq_mb_number*PAR_MB_COUNT + PAR_MB_NR"),
+                    Initializer(POD(numpy.uint32, "global_mb_dof_base"),
+                        "global_mb_nr*MB_DOF_COUNT"),
                     Line(),
-                    ])
-
-            f_body.extend([
-                For("unsigned base_el = BLOCK_EL",
-                    "base_el < data.header.els_in_block",
-                    "base_el += CONCURRENT_ELS", 
-                    Block(get_scalar_diff_code(
-                        "base_el",
-                        "TARGET_DOF",
-                        "dxyz%d[DOFS_BLOCK_BASE+base_el*DOFS_PER_EL"
-                        +("+TARGET_DOF+%d]" % chunk_start)
-                        ))
+                    Comment("load dofs"),
+                    For("unsigned short load_dof = CHUNK_DOF",
+                        "load_dof < chunk_load_dof_count",
+                        "load_dof += CHUNK_DOF_COUNT",
+                        Assign("int_dofs[PAR_MB_NR][load_dof]",
+                            "tex1Dfetch(field_tex, global_mb_dof_base+chunk_start_load_dof+load_dof)")
+                        ),
+                    Line(),
+                    S("__syncthreads()"),
+                    Line(),]+
+                    get_scalar_diff_code(
+                        "CHUNK_DOF",
+                        "dxyz%d[global_mb_dof_base+MB_DOF]")
                     )
-                ])
+                )
+            ])
 
         # finish off ----------------------------------------------------------
         cmod.append(FunctionBody(f_decl, f_body))
@@ -581,7 +569,15 @@ class OpTemplateWithEnvironment(object):
                 )
         print "lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
 
-        return mod.get_function("apply_diff_mat")
+        rst_to_xyz_texref = mod.get_texref("rst_to_xyz_tex")
+        cuda.bind_array_to_texref(
+                self.localop_rst_to_xyz(diff_op_cls, elgroup), 
+                rst_to_xyz_texref)
+
+        field_texref = mod.get_texref("field_tex")
+        texrefs = [field_texref, rst_to_xyz_texref]
+
+        return mod.get_function("apply_diff_mat"), texrefs, field_texref
 
 
 
@@ -874,16 +870,21 @@ class OpTemplateWithEnvironment(object):
                 *lplan.chunk_size
                 *discr.dimensions
                 *fplan.float_size)
+
+        vstacked_matrices = [
+                numpy.vstack(fplan.mb_elements*(m,))
+                for m in diff_op_cls.matrices(elgroup)
+                ]
                 
         chunks = []
 
-        for chunk_start in range(0, fplan.dofs_per_el(), lplan.chunk_size):
+        for chunk_start in range(0, fplan.mb_elements*fplan.dofs_per_el(), lplan.chunk_size):
             chunk_stop = min(
                     fplan.dofs_per_el(),
                     chunk_start+lplan.chunk_size)
             diffmats = numpy.asarray(
                     numpy.hstack(
-                        m[chunk_start:chunk_stop] for m in diff_op_cls.matrices(elgroup)
+                        m[chunk_start:chunk_stop] for m in vstacked_matrices
                         ),
                     dtype=self.discr.flux_plan.float_type,
                     order="C")
@@ -908,27 +909,44 @@ class OpTemplateWithEnvironment(object):
 
         coeffs = diff_op.coefficients(elgroup)
 
-        blocks = []
-        
         def get_el_index_in_el_group(el):
             mygroup, idx = discr.group_map[el.id]
             assert mygroup is elgroup
             return idx
 
-        from hedge.cuda.tools import pad
+        el_count = len(discr.blocks) * fplan.elements_per_block()
+        elgroup_indices = numpy.zeros((el_count,), dtype=numpy.intp)
         for block in discr.blocks:
-            block_elgroup_indices = numpy.fromiter(
-                    (get_el_index_in_el_group(el) for el in block.elements),
-                    dtype=numpy.intp)
+            block_elgroup_indices = [ get_el_index_in_el_group(el) 
+                    for mb in block.microblocks 
+                    for el in mb]
+            offset = block.number * fplan.elements_per_block()
+            elgroup_indices[offset:offset+len(block_elgroup_indices)] = \
+                    block_elgroup_indices
 
-            flattened = (coeffs[:,:,block_elgroup_indices]
-                .transpose(2,0,1).flatten().astype(fplan.float_type))
-            blocks.append(pad(str(buffer(flattened)), bytes_per_block))
-                
-        from hedge.cuda.cgen import POD, ArrayOf
-        return blocks, ArrayOf(
-                POD(fplan.float_type, "rst_to_xyz_coefficients"),
-                floats_per_block)
+        # indexed local, el_number, global
+        result_matrix = (coeffs[:,:,elgroup_indices]
+                .transpose(1,2,0))
+        channels = discr.devdata.make_valid_tex_channel_count(d)
+        add_channels = channels - result_matrix.shape[0]
+        if add_channels:
+            result_matrix = numpy.vstack((
+                result_matrix,
+                numpy.zeros((add_channels,el_count,d), dtype=result_matrix.dtype)
+                ))
+
+        assert result_matrix.shape == (channels, el_count, d)
+
+        for block in discr.blocks:
+            i = block.number * fplan.elements_per_block()
+            for mb in block.microblocks:
+                for el in mb:
+                    egi = get_el_index_in_el_group(el)
+                    assert egi == elgroup_indices[i]
+                    assert (result_matrix[:d,i,:].T == coeffs[:,:,egi]).all()
+                    i += 1
+
+        return cuda.make_multichannel_2d_array(result_matrix)
 
     @memoize_method
     def flux_inverse_jacobians(self, elgroup):
@@ -962,25 +980,6 @@ class OpTemplateWithEnvironment(object):
         return blocks, ArrayOf(
                 POD(fplan.float_type, "inverse_jacobians"),
                 floats_per_block)
-
-    @memoize_method
-    def localop_data(self, op, elgroup):
-        discr = self.discr
-        headers = [localop_header_struct().make(
-            els_in_block=len(b.elements),
-            reserved=0)
-            for b in discr.blocks]
-
-        from hedge.cuda.cgen import Value
-        from hedge.cuda.tools import make_superblocks
-
-        return make_superblocks(
-                discr.devdata, "localop_data",
-                [(headers, Value(localop_header_struct().tpname, "header")),
-                    self.localop_rst_to_xyz(op, elgroup)
-                    ],
-                [],
-                )
 
     @memoize_method
     def flux_with_temp_data(self, wdflux, elgroup):
@@ -1033,9 +1032,7 @@ class OpTemplateWithEnvironment(object):
                     fp_structs = bdry_fp_structs
                 else:
                     # interior face
-                    b_base = (
-                            b_face.native_block.number*discr.int_dof_count
-                            +b_face.native_block_el_num*el_dofs)
+                    b_base = discr.find_el_gpu_index(b_face.el_face[0]),
 
                     a_flux_number = wdflux.interior_flux_number
                     b_flux_number = wdflux.interior_flux_number
@@ -1070,9 +1067,7 @@ class OpTemplateWithEnvironment(object):
                             face_jacobian=a_face.face_pair_side.face_jacobian,
                             normal=a_face.face_pair_side.normal,
 
-                            a_base=(
-                                a_face.native_block.number*discr.int_dof_count
-                                +a_face.native_block_el_num*el_dofs),
+                            a_base=discr.find_el_gpu_index(a_face.el_face[0]),
                             b_base=b_base,
 
                             a_ilist_index= \
