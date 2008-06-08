@@ -86,7 +86,7 @@ def find_microblock_size(devdata, dofs_per_el, float_size):
         mb_elements = mb_aligned_floats // dofs_per_el
         mb_floats = dofs_per_el*mb_elements
         overhead = (mb_aligned_floats-mb_floats)/mb_aligned_floats
-        if overhead <= 0.1:
+        if overhead <= 0.05:
             return mb_elements, mb_aligned_floats, mb_align_chunks
 
     assert False, "a valid microblock size was not found"
