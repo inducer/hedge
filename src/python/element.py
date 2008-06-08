@@ -1086,7 +1086,7 @@ class TetrahedralElement(SimplicialElement):
                 for j in range(0, order+1):
                     for i in range(0, order+1-j):
                         result.append(indices[idx_map[j,i]])
-                return result
+                return tuple(result)
 
             def shift_left(self, indices):
                 """Rotate all edges to the left."""
@@ -1096,7 +1096,7 @@ class TetrahedralElement(SimplicialElement):
                     for i in range(0, order+1-j):
                         result[idx_map[j, order-i-j]] = indices[idx]
                         idx += 1
-                return result
+                return tuple(result)
 
         # yay, enumerate S_3 by hand
         if f2_tuple == (a,b,c):

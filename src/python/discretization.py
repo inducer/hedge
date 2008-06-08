@@ -37,37 +37,20 @@ from pytools import memoize_method
 class _FaceGroup(hedge._internal.FaceGroup):
     def __init__(self, double_sided):
         hedge._internal.FaceGroup.__init__(self, double_sided)
-        self.face_index_lists = []
-        self.fil_id_to_number = {}
-        self.fil_to_number = {}
+        from hedge.tools import IndexListRegistry
+        self.fil_registry = IndexListRegistry()
 
     def register_face_index_list(self, identifier, generator):
-        try:
-            return self.fil_id_to_number[identifier]
-        except KeyError:
-            fil = tuple(generator())
-            try:
-                nbr = self.fil_to_number[fil]
-            except KeyError:
-                nbr = len(self.face_index_lists)
-                self.face_index_lists.append(fil)
-                self.fil_id_to_number[identifier] = nbr
-                self.fil_to_number[fil] = nbr
-            else:
-                self.fil_id_to_number[identifier] = nbr
-            return nbr
+        return self.fil_registry.register(identifier, generator)
 
     def commit(self, discr, ldis_loc, ldis_opp):
         from hedge._internal import IntVector
 
-        if self.face_index_lists:
-            face_length = len(self.face_index_lists[0])
-            self.index_lists = numpy.empty(
-                    (len(self.face_index_lists), face_length),
+        if self.fil_registry.index_lists:
+            self.index_lists = numpy.array(
+                    self.fil_registry.index_lists,
                     dtype=numpy.uint32, order="C")
-                        
-            for i, fil in enumerate(self.face_index_lists):
-                self.index_lists[i] = fil
+            del self.fil_registry
 
         if ldis_loc is None:
             self.face_count = 0
@@ -100,11 +83,6 @@ class _FaceGroup(hedge._internal.FaceGroup):
 
         self.ldis_loc = ldis_loc
         self.ldis_opp = ldis_opp
-
-        del self.face_index_lists
-        del self.fil_id_to_number
-        del self.fil_to_number
-
 
 
 

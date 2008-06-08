@@ -893,6 +893,36 @@ class BlockMatrix(object):
 
 
 
+class IndexListRegistry(object):
+    def __init__(self):
+        self.index_lists = []
+        self.il_id_to_number = {}
+        self.il_to_number = {}
+
+    def register(self, identifier, generator):
+        try:
+            return self.il_id_to_number[identifier]
+        except KeyError:
+            il = generator()
+            try:
+                nbr = self.il_to_number[il]
+            except KeyError:
+                nbr = len(self.index_lists)
+                self.index_lists.append(il)
+                self.il_id_to_number[identifier] = nbr
+                self.il_to_number[il] = nbr
+            else:
+                self.il_id_to_number[identifier] = nbr
+            return nbr
+
+    def get_list_length(self):
+        from pytools import single_valued
+        return single_valued(len(il) for il in self.index_lists)
+
+
+
+
+
 # parallel cg -----------------------------------------------------------------
 try:
     import pyublasext
