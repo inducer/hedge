@@ -894,14 +894,20 @@ class BlockMatrix(object):
 
 
 class IndexListRegistry(object):
-    def __init__(self):
+    def __init__(self, debug=False):
         self.index_lists = []
         self.il_id_to_number = {}
         self.il_to_number = {}
+        self.debug = debug
 
     def register(self, identifier, generator):
         try:
-            return self.il_id_to_number[identifier]
+            result = self.il_id_to_number[identifier]
+            if self.debug:
+                assert generator() == self.index_lists[result], (
+                        "identifier %s used for two different index lists"
+                        % str(identifier))
+            return result
         except KeyError:
             il = generator()
             try:
