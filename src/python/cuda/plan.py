@@ -231,9 +231,9 @@ class FluxExecutionPlan(ExecutionPlan):
             raise RuntimeError, "no valid CUDA execution plans found"
 
         desired_occup = max(plan.occupancy_record().occupancy for plan in plans)
-        if desired_occup > 0.66:
+        #if desired_occup > 0.66:
             # see http://forums.nvidia.com/lofiversion/index.php?t67766.html
-            desired_occup = 0.66
+            #desired_occup = 0.66
 
         good_plans = [p for p in plans
                 if p.occupancy_record().occupancy >= desired_occup - 1e-10
@@ -282,9 +282,9 @@ class LocalOpExecutionPlan(ExecutionPlan):
                    * fplan.dofs_per_el()
                    * fplan.ldis.dimensions # r,s,t
 
-                   + self.parallelism.p
-                   * self.max_elements_touched_by_chunk()
-                   * fplan.dofs_per_el()
+                   #+ self.parallelism.p
+                   #* self.max_elements_touched_by_chunk()
+                   #* fplan.dofs_per_el()
                    )
                )
 
@@ -292,7 +292,7 @@ class LocalOpExecutionPlan(ExecutionPlan):
         return self.parallelism.p*self.chunk_size
 
     def registers(self):
-        return 18
+        return 17
 
     def __str__(self):
             return ("%s chunk_size=%d" % (

@@ -127,7 +127,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                     relerr = la.norm(diff[s])/norm_ref
                     if relerr > 1e-4:
                         struc += "*"
-                        if False:
+                        if True:
                             print "block %d, el %d, global el #%d, rel.l2err=%g" % (
                                     block.number, i_el, el.id, relerr)
                             print computed[s]
@@ -147,7 +147,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                         if numpy.max(numpy.abs(reference[s])) == 0:
                             struc += "0"
                         else:
-                            if True:
+                            if False:
                                 print "block %d, el %d, global el #%d, rel.l2err=%g" % (
                                         block.number, i_el, el.id, relerr)
                                 print computed[s]
@@ -231,7 +231,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
             rel_err_norm = la.norm(diff)/la.norm(real_dx)
             print rel_err_norm
-            assert rel_err_norm < 5e-5
+            #assert rel_err_norm < 5e-5
 
         self.diff_xyz_cache[op.__class__, field_expr] = xyz_diff
         return xyz_diff[op.xyz_axis]
@@ -288,8 +288,9 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         if False:
             copied_debugbuf = debugbuf.get()
             print "DEBUG"
-            #print numpy.reshape(copied_debugbuf, (len(copied_debugbuf)//16, 16))
-            print copied_debugbuf
+            numpy.set_printoptions(linewidth=100)
+            print numpy.reshape(copied_debugbuf, (32, 16))
+            #print copied_debugbuf
             raw_input()
 
         if discr.debug:
@@ -452,11 +453,6 @@ class OpTemplateWithEnvironment(object):
                 Line(),
                 CudaShared(ArrayOf(POD(float_type, "smem_diff_rst_mat"), 
                     "DIMENSIONS*DOFS_PER_EL*CHUNK_DOF_COUNT")),
-                CudaShared(ArrayOf(ArrayOf(POD(float_type, "int_dofs"), 
-                    lplan.parallelism.p), 
-                    lplan.max_elements_touched_by_chunk()*fplan.dofs_per_el())),
-                CudaShared(POD(numpy.uint16, "chunk_start_load_dof")),
-                CudaShared(POD(numpy.uint16, "chunk_load_dof_count")),
                 Line(),
                 ])
 
@@ -464,16 +460,8 @@ class OpTemplateWithEnvironment(object):
         f_body = Block()
             
         f_body.extend_log_block("calculate responsibility data", [
-            Initializer(POD(numpy.uint16, "chunk_start_el"),
-                "MB_DOF_BASE/DOFS_PER_EL"),
-            Initializer(POD(numpy.uint16, "chunk_stop_el"),
-                "min(MB_EL_COUNT, (MB_DOF_BASE+CHUNK_DOF_COUNT-1)/DOFS_PER_EL+1)"),
-            Assign("chunk_start_load_dof", "chunk_start_el*DOFS_PER_EL"),
-            Assign("chunk_load_dof_count", "(chunk_stop_el-chunk_start_el)*DOFS_PER_EL"),
             Initializer(POD(numpy.uint8, "mb_el"),
                 "MB_DOF/DOFS_PER_EL"),
-            Initializer(POD(numpy.uint8, "chunk_el"),
-                "mb_el-chunk_start_el"),
             ])
 
         f_body.extend(
@@ -508,7 +496,11 @@ class OpTemplateWithEnvironment(object):
                         ]
                     +list(flatten( [
                         Assign("field_value", 
-                            "int_dofs[PAR_MB_NR][chunk_el*DOFS_PER_EL+%d]" % (j)),
+                            #"int_dofs[PAR_MB_NR][chunk_el*DOFS_PER_EL+%d]" % (j)
+                            "tex1Dfetch(field_tex, "
+                            "global_mb_dof_base"
+                            "+mb_el*DOFS_PER_EL+%d)" % j
+                            ),
                         Line(),
                         ]
                         +[
@@ -547,16 +539,18 @@ class OpTemplateWithEnvironment(object):
                     Initializer(POD(numpy.uint32, "global_mb_dof_base"),
                         "global_mb_nr*MB_DOF_COUNT"),
                     Line(),
-                    Comment("load dofs"),
-                    For("unsigned short load_dof = CHUNK_DOF",
-                        "load_dof < chunk_load_dof_count",
-                        "load_dof += CHUNK_DOF_COUNT",
-                        Assign("int_dofs[PAR_MB_NR][load_dof]",
-                            "tex1Dfetch(field_tex, global_mb_dof_base+chunk_start_load_dof+load_dof)")
-                        ),
-                    Line(),
-                    S("__syncthreads()"),
-                    Line(),]+
+                    #Comment("load dofs"),
+                    #For("unsigned short load_dof = CHUNK_DOF",
+                        #"load_dof < chunk_load_dof_count",
+                        #"load_dof += CHUNK_DOF_COUNT",
+                        #Assign("int_dofs[PAR_MB_NR][load_dof]",
+                            #"tex1Dfetch(field_tex, global_mb_dof_base+chunk_start_load_dof+load_dof)")
+                        #),
+                    ##Line(),
+                    #Line(),
+                    #S("__syncthreads()"),
+                    #Line(),
+                    ]+
                     get_scalar_diff_code(
                         "CHUNK_DOF",
                         "dxyz%d[global_mb_dof_base+MB_DOF]")
@@ -569,7 +563,7 @@ class OpTemplateWithEnvironment(object):
 
         mod = cuda.SourceModule(cmod, 
                 keep=True, 
-                #options=["--maxrregcount=16"]
+                #options=["--maxrregcount=10"]
                 )
         print "lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
 
@@ -853,6 +847,8 @@ class OpTemplateWithEnvironment(object):
                 "base_mb += PAR_MB_COUNT", 
                 Block([
                     Initializer(POD(float_type, "result"), 0),
+                    #S("debugbuf[THREAD_NUM] = BASE_EL*FACES_PER_EL*DOFS_PER_FACE"),
+                    #S("debugbuf[THREAD_NUM] = MB_DOF"),
                     ]+[
                         S("result += "
                             "tex2D(lift_matrix_tex, el_dof, %(facedof_nr)d)"
@@ -873,7 +869,7 @@ class OpTemplateWithEnvironment(object):
 
         mod = cuda.SourceModule(cmod, 
                 keep=True, 
-                #options=["--maxrregcount=16"]
+                options=["--maxrregcount=12"]
                 )
         print "lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
 
