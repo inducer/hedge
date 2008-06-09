@@ -231,7 +231,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
             rel_err_norm = la.norm(diff)/la.norm(real_dx)
             print rel_err_norm
-            #assert rel_err_norm < 5e-5
+            assert rel_err_norm < 5e-5
 
         self.diff_xyz_cache[op.__class__, field_expr] = xyz_diff
         return xyz_diff[op.xyz_axis]
@@ -611,9 +611,6 @@ class OpTemplateWithEnvironment(object):
                 ]
             ))
 
-        coalesced_dofs_per_face = discr.devdata.coalesce(
-                fplan.dofs_per_face())
-
         cmod = Module([
                 Value("texture<float, 2, cudaReadModeElementType>", 
                     "lift_matrix_tex"),
@@ -651,14 +648,9 @@ class OpTemplateWithEnvironment(object):
                 Comment("face-related stuff"),
                 Define("DOFS_PER_FACE", fplan.dofs_per_face()),
                 Define("FACES_PER_EL", fplan.faces_per_el()),
-                Define("COALESCED_DOFS_PER_FACE", 
-                    coalesced_dofs_per_face),
                 Define("CONCURRENT_FACES", 
                     fplan.mb_aligned_floats*flux_par.p
                     //fplan.dofs_per_face()),
-                Define("CONCURRENT_COALESCED_FACES", 
-                    fplan.mb_aligned_floats*flux_par.p
-                    //coalesced_dofs_per_face),
                 Line(),
                 ] + self.index_list_global_data().code + [
                 Line(),
@@ -801,16 +793,16 @@ class OpTemplateWithEnvironment(object):
                         ),
                     ])
 
-            flux_code.append(S("fpair_nr += CONCURRENT_COALESCED_FACES"))
+            flux_code.append(S("fpair_nr += CONCURRENT_FACES"))
 
             return flux_code
 
         f_body.extend_log_block("compute the fluxes", [Block([
             Initializer(Const(POD(numpy.int16, "block_face")),
-                "THREAD_NUM / COALESCED_DOFS_PER_FACE"),
+                "THREAD_NUM / DOFS_PER_FACE"),
             Initializer(Const(POD(numpy.int16, "facedof_nr")),
-                "THREAD_NUM - COALESCED_DOFS_PER_FACE*block_face"),
-            If("facedof_nr < DOFS_PER_FACE && block_face < CONCURRENT_COALESCED_FACES",
+                "THREAD_NUM - DOFS_PER_FACE*block_face"),
+            If("facedof_nr < DOFS_PER_FACE && block_face < CONCURRENT_FACES",
                 Block([
                     Initializer(POD(numpy.uint16, "fpair_nr"), "block_face"),
                     Comment("fluxes for dual-sided (intra-block) interior face pairs"),
