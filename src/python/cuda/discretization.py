@@ -141,7 +141,8 @@ class Discretization(hedge.discretization.Discretization):
     def _make_plan(self, ldis, mesh, float_type):
         from hedge.cuda.plan import \
                 FluxExecutionPlan, \
-                Parallelism
+                Parallelism, \
+                optimize_plan
 
         def generate_valid_plans():
             for pe in range(2,32):
@@ -153,23 +154,10 @@ class Discretization(hedge.discretization.Discretization):
                     if flux_plan.invalid_reason() is None:
                         yield flux_plan
 
-        plans = list(generate_valid_plans())
-
-        if not plans:
-            raise RuntimeError, "no valid CUDA execution plans found"
-
-        desired_occup = max(flux_plan.occupancy_record().occupancy 
-                for flux_plan in plans)
-        if desired_occup > 0.66:
-            # see http://forums.nvidia.com/lofiversion/index.php?t67766.html
-            desired_occup = 0.66
-
-        good_plans = [p for p in plans
-                if p.occupancy_record().occupancy >= desired_occup - 1e-10
-                ]
-
-        from pytools import argmax2
-        return argmax2((p, p.elements_per_block()) for p in good_plans)
+        return optimize_plan(
+                generate_valid_plans,
+                lambda plan: plan.elements_per_block()
+                )
 
 
 
@@ -270,6 +258,7 @@ class Discretization(hedge.discretization.Discretization):
         del flux_plan
         print "actual flux exec plan:", self.flux_plan
         print "actual local op exec plan:", self.flux_plan.localop_plan()
+        print "actual flux local exec plan:", self.flux_plan.flux_lifting_plan()
 
         # initialize superclass
         hedge.discretization.Discretization.__init__(self, mesh, ldis, debug=debug,

@@ -270,7 +270,6 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         args = [
                 debugbuf, 
                 flux, 
-                #field, bfield, 
                 fdata.device_memory,
                 self.ex.index_list_global_data().device_memory,
                 ]
@@ -605,7 +604,8 @@ class OpTemplateWithEnvironment(object):
         f_decl = CudaGlobal(FunctionDeclaration(Value("void", "apply_flux"), 
             [
                 Pointer(POD(float_type, "debugbuf")),
-                Pointer(POD(float_type, "flux")),
+                Pointer(POD(float_type, "gmem_fluxes_on_faces")),
+                #Pointer(POD(float_type, "flux")),
                 Pointer(POD(numpy.uint8, "gmem_data")),
                 Pointer(POD(numpy.uint8, "gmem_index_lists")),
                 ]
@@ -637,10 +637,6 @@ class OpTemplateWithEnvironment(object):
                 Define("THREAD_COUNT", "(MB_DOF_COUNT*PAR_MB_COUNT)"),
                 Define("COALESCING_THREAD_COUNT", "(THREAD_COUNT & ~0xf)"),
                 Line(),
-                #Define("EL_DOF", "threadIdx.x"),
-                #Define("BLOCK_EL", "threadIdx.y"),
-                #Define("CONCURRENT_ELS", flux_par.p),
-                #Define("INT_DOF_COUNT", discr.int_dof_count),
                 Define("DOFS_BLOCK_BASE", "(blockIdx.x*BLOCK_MB_COUNT*MB_DOF_COUNT)"),
                 Define("DATA_BLOCK_SIZE", flux_with_temp_data.block_bytes),
                 Define("BASE_EL", "(base_mb*MB_EL_COUNT+mb_el)"),
@@ -660,7 +656,7 @@ class OpTemplateWithEnvironment(object):
                     ArrayOf(Value("index_list_entry_t", "smem_index_lists"),
                         "INDEX_LISTS_LENGTH")),
                 CudaShared(Value("flux_data", "data")),
-                CudaShared(ArrayOf(POD(float_type, "fluxes_on_faces"),
+                CudaShared(ArrayOf(POD(float_type, "smem_fluxes_on_faces"),
                     "MB_EL_COUNT*BLOCK_MB_COUNT*FACES_PER_EL*DOFS_PER_FACE"
                     )),
                 Line(),
@@ -777,7 +773,7 @@ class OpTemplateWithEnvironment(object):
 
             flux_code.extend([
                 Assign(
-                    "fluxes_on_faces[fpair->a_dest+facedof_nr]",
+                    "smem_fluxes_on_faces[fpair->a_dest+facedof_nr]",
                     "fpair->face_jacobian*("
                     "a_int_coeff*a_value+a_ext_coeff*b_value"
                     ")"),
@@ -786,7 +782,7 @@ class OpTemplateWithEnvironment(object):
             if is_twosided:
                 flux_code.extend([
                     Assign(
-                        "fluxes_on_faces[fpair->b_dest+b_write_ilist[facedof_nr]]",
+                        "smem_fluxes_on_faces[fpair->b_dest+b_write_ilist[facedof_nr]]",
                         "fpair->face_jacobian*("
                         "b_int_coeff*b_value+b_ext_coeff*a_value"
                         ")"
@@ -829,32 +825,39 @@ class OpTemplateWithEnvironment(object):
             S("__syncthreads()")
             ])
 
-        f_body.extend_log_block("apply lifting matrix", [
-            Initializer(Const(POD(numpy.uint16, "mb_el")),
-                "MB_DOF/DOFS_PER_EL"),
-            Initializer(Const(POD(numpy.uint16, "el_dof")),
-                "MB_DOF - mb_el*DOFS_PER_EL"),
-            For("unsigned base_mb = PAR_MB_NR",
-                "base_mb < BLOCK_MB_COUNT",
-                "base_mb += PAR_MB_COUNT", 
-                Block([
-                    Initializer(POD(float_type, "result"), 0),
-                    #S("debugbuf[THREAD_NUM] = BASE_EL*FACES_PER_EL*DOFS_PER_FACE"),
-                    #S("debugbuf[THREAD_NUM] = MB_DOF"),
-                    ]+[
-                        S("result += "
-                            "tex2D(lift_matrix_tex, el_dof, %(facedof_nr)d)"
-                            "*fluxes_on_faces[%(facedof_nr)d+BASE_EL*FACES_PER_EL*DOFS_PER_FACE]"
-                            % {"facedof_nr":facedof_nr})
-                        for facedof_nr in xrange(
-                            fplan.faces_per_el()*fplan.dofs_per_face())
-                    ]+[
-                    Assign(
-                        "flux[DOFS_BLOCK_BASE+base_mb*MB_DOF_COUNT+MB_DOF]",
-                        "data.inverse_jacobians[BASE_EL]*result")
-                    ])
-                )
+        f_body.extend([
+            For("unsigned word_nr = THREAD_NUM", 
+                "word_nr < MB_EL_COUNT*BLOCK_MB_COUNT*FACES_PER_EL*DOFS_PER_FACE", 
+                "word_nr += COALESCING_THREAD_COUNT",
+                S("gmem_fluxes_on_faces[word_nr] = smem_fluxes_on_faces[word_nr]")
+                ),
             ])
+
+        if False:
+            f_body.extend_log_block("apply lifting matrix", [
+                Initializer(Const(POD(numpy.uint16, "mb_el")),
+                    "MB_DOF/DOFS_PER_EL"),
+                Initializer(Const(POD(numpy.uint16, "el_dof")),
+                    "MB_DOF - mb_el*DOFS_PER_EL"),
+                For("unsigned base_mb = PAR_MB_NR",
+                    "base_mb < BLOCK_MB_COUNT",
+                    "base_mb += PAR_MB_COUNT", 
+                    Block([
+                        Initializer(POD(float_type, "result"), 0),
+                        ]+[
+                            S("result += "
+                                "tex2D(lift_matrix_tex, el_dof, %(facedof_nr)d)"
+                                "*fluxes_on_faces[%(facedof_nr)d+BASE_EL*FACES_PER_EL*DOFS_PER_FACE]"
+                                % {"facedof_nr":facedof_nr})
+                            for facedof_nr in xrange(
+                                fplan.faces_per_el()*fplan.dofs_per_face())
+                        ]+[
+                        Assign(
+                            "flux[DOFS_BLOCK_BASE+base_mb*MB_DOF_COUNT+MB_DOF]",
+                            "data.inverse_jacobians[BASE_EL]*result")
+                        ])
+                    )
+                ])
 
         # finish off ----------------------------------------------------------
         cmod.append(FunctionBody(f_decl, f_body))

@@ -42,6 +42,27 @@ class Parallelism:
 
 
 
+def optimize_plan(plan_generator, max_func):
+    plans = list(p for p in plan_generator()
+            if p.invalid_reason() is None)
+
+    if not plans:
+        raise RuntimeError, "no valid CUDA execution plans found"
+
+    desired_occup = max(plan.occupancy_record().occupancy for plan in plans)
+    if desired_occup > 0.75:
+        # see http://forums.nvidia.com/lofiversion/index.php?t67766.html
+        desired_occup = 0.75
+
+    from pytools import argmax2
+    return argmax2((p, max_func(p)) 
+            for p in plans
+            if p.occupancy_record().occupancy >= desired_occup - 1e-10
+            )
+
+
+
+
 class ExecutionPlan(object):
     def __init__(self, devdata):
         self.devdata = devdata
@@ -221,27 +242,33 @@ class FluxExecutionPlan(ExecutionPlan):
                 from hedge.cuda.tools import int_ceiling
                 localop_par = Parallelism(pe, 8)
                 for chunk_size in chunk_sizes:
-                    plan = LocalOpExecutionPlan(self, localop_par, chunk_size)
-                    if plan.invalid_reason() is None:
-                        yield plan
+                    yield LocalOpExecutionPlan(self, localop_par, chunk_size)
 
-        plans = list(generate_valid_plans())
+        return optimize_plan(
+                generate_valid_plans,
+                lambda plan: plan.parallelism.total()
+                )
 
-        if not plans:
-            raise RuntimeError, "no valid CUDA execution plans found"
+    @memoize_method
+    def flux_lifting_plan(self):
+        def generate_valid_plans():
+            from hedge.cuda.tools import int_ceiling
 
-        desired_occup = max(plan.occupancy_record().occupancy for plan in plans)
-        #if desired_occup > 0.66:
-            # see http://forums.nvidia.com/lofiversion/index.php?t67766.html
-            #desired_occup = 0.66
+            chunk_sizes = range(16, self.mb_elements*self.dofs_per_el()+1, 16)
 
-        good_plans = [p for p in plans
-                if p.occupancy_record().occupancy >= desired_occup - 1e-10
-                ]
+            if not chunk_sizes:
+                chunk_sizes = [16]
 
-        # optimize for minimum waste
-        from pytools import argmax2
-        return argmax2((p, p.parallelism.total()) for p in good_plans)
+            for pe in range(1,32):
+                from hedge.cuda.tools import int_ceiling
+                localop_par = Parallelism(pe, 8)
+                for chunk_size in chunk_sizes:
+                    yield FluxLiftingExecutionPlan(self, localop_par, chunk_size)
+
+        return optimize_plan(
+                generate_valid_plans,
+                lambda plan: plan.parallelism.total()
+                )
 
     def __str__(self):
             return ("%s mb_elements=%d" % (
@@ -259,15 +286,6 @@ class LocalOpExecutionPlan(ExecutionPlan):
         self.parallelism = parallelism
         self.chunk_size = chunk_size
 
-    def max_elements_touched_by_chunk(self):
-        fplan = self.flux_plan
-
-        from hedge.cuda.tools import int_ceiling
-        if fplan.dofs_per_el() > self.chunk_size:
-            return 2
-        else:
-            return int_ceiling(self.chunk_size/fplan.dofs_per_el()) + 1
-
     def dofs_per_macroblock(self):
         return self.parallelism.total() * self.flux_plan.mb_aligned_floats
 
@@ -281,10 +299,44 @@ class LocalOpExecutionPlan(ExecutionPlan):
                    + self.chunk_size # this many rows
                    * fplan.dofs_per_el()
                    * fplan.ldis.dimensions # r,s,t
+                   )
+               )
 
-                   #+ self.parallelism.p
-                   #* self.max_elements_touched_by_chunk()
-                   #* fplan.dofs_per_el()
+    def threads(self):
+        return self.parallelism.p*self.chunk_size
+
+    def registers(self):
+        return 17
+
+    def __str__(self):
+            return ("%s chunk_size=%d" % (
+                ExecutionPlan.__str__(self),
+                self.chunk_size,
+                ))
+
+
+
+
+class FluxLiftingExecutionPlan(ExecutionPlan):
+    def __init__(self, flux_plan, parallelism, chunk_size):
+        ExecutionPlan.__init__(self, flux_plan.devdata)
+        self.flux_plan = flux_plan
+        self.parallelism = parallelism
+        self.chunk_size = chunk_size
+
+    def dofs_per_macroblock(self):
+        return self.parallelism.total() * self.flux_plan.mb_aligned_floats
+
+    @memoize_method
+    def shared_mem_use(self):
+        fplan = self.flux_plan
+        
+        return (64 # parameters, block header, small extra stuff
+               + fplan.float_size * (
+                   # chunk of the lifting matrix
+                   + self.chunk_size # this many rows
+                   * fplan.dofs_per_face()
+                   * fplan.faces_per_el()
                    )
                )
 
