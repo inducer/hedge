@@ -105,14 +105,14 @@ namespace hedge
 
 
 
-#ifdef USE_BLAS
-  static
-  void finish_flux(
+  inline
+  void lift_flux(
       const face_group &fg,
       const py_matrix &matrix, 
-      const py_vector &elwise_post_scaling,
-      const dyn_vector &flux_temp,
-      py_vector &result)
+      const pyublas::invalid_ok<py_vector> &elwise_post_scaling,
+      py_vector fluxes_on_faces,
+      py_vector result)
+#ifdef USE_BLAS
   {
     using namespace boost::numeric::bindings;
     using blas::detail::gemm;
@@ -134,16 +134,16 @@ namespace hedge
         /*alpha*/ 1,
         /*a*/ traits::matrix_storage(matrix.as_ublas()), 
         /*lda*/ matrix.size2(),
-        /*b*/ traits::vector_storage(flux_temp), 
+        /*b*/ traits::vector_storage(fluxes_on_faces), 
         /*ldb*/ el_length_temp,
         /*beta*/ 0,
         /*c*/ traits::vector_storage(result_temp), 
         /*ldc*/ el_length_result
         );
 
-    if (elwise_post_scaling.is_valid())
+    if (elwise_post_scaling->is_valid())
     {
-      py_vector::const_iterator el_scale_it = elwise_post_scaling.begin();
+      py_vector::const_iterator el_scale_it = elwise_post_scaling->begin();
       for (unsigned i_loc_el = 0; i_loc_el < fg.element_count(); ++i_loc_el)
         noalias(
             subrange(result,
@@ -166,13 +166,6 @@ namespace hedge
     }
   }
 #else
-  static
-  void finish_flux(
-      const face_group &fg,
-      const py_matrix &matrix, 
-      const py_vector &elwise_post_scaling,
-      const dyn_vector &flux_temp,
-      py_vector &result)
   {
     const unsigned el_length_result = matrix.size1();
     const unsigned el_length_temp = fg.face_count*fg.face_length();
@@ -180,7 +173,7 @@ namespace hedge
     if (el_length_temp != matrix.size2())
       throw std::runtime_error("matrix size mismatch in finish_flux");
 
-    if (elwise_post_scaling.is_valid())
+    if (elwise_post_scaling->is_valid())
     {
       py_vector::const_iterator el_scale_it = elwise_post_scaling.begin();
       for (unsigned i_loc_el = 0; i_loc_el < fg.element_count(); ++i_loc_el)
@@ -189,7 +182,7 @@ namespace hedge
               fg.local_el_to_global_el_base[i_loc_el],
               fg.local_el_to_global_el_base[i_loc_el]+el_length_result))
           += *el_scale_it++ * prod(matrix,
-              subrange(flux_temp,
+              subrange(fluxes_on_faces,
                 el_length_temp*i_loc_el,
                 el_length_temp*(i_loc_el+1))
               );
@@ -202,7 +195,7 @@ namespace hedge
               fg.local_el_to_global_el_base[i_loc_el],
               fg.local_el_to_global_el_base[i_loc_el]+el_length_result))
           += prod(matrix,
-              subrange(flux_temp,
+              subrange(fluxes_on_faces,
                 el_length_temp*i_loc_el,
                 el_length_temp*(i_loc_el+1))
               );
@@ -234,20 +227,15 @@ namespace hedge
   template <class IntFlux, class ExtFlux, class LocOperand, class OppOperand>
   inline
   void perform_single_sided_flux(const face_group &fg, 
-      const py_matrix &mat, 
-      const pyublas::invalid_ok<py_vector> &elwise_post_scaling,
       IntFlux int_flux, ExtFlux ext_flux, 
       const LocOperand loc_operand,
       const OppOperand opp_operand,
-      py_vector result
+      py_vector fluxes_on_faces
       )
   {
     const typename LocOperand::const_iterator loc_op_it = loc_operand.begin();
     const typename OppOperand::const_iterator opp_op_it = opp_operand.begin();
-
-    const unsigned el_length_temp = fg.face_count*fg.face_length();
-    dyn_vector flux_temp(el_length_temp*fg.element_count());
-    flux_temp.clear();
+    const py_vector::iterator fof_it = fluxes_on_faces.begin();
 
     BOOST_FOREACH(const face_pair &fp, fg.face_pairs)
     {
@@ -275,12 +263,10 @@ namespace hedge
       {
         const double loc_val = subscript(loc_op_it, lebi+loc_idx_list[i]);
         const double opp_val = subscript(opp_op_it, oebi+opp_idx_list[i]);
-        flux_temp[loc_tempbase+i] = 
+        fof_it[loc_tempbase+i] = 
           int_coeff_here*loc_val + ext_coeff_here*opp_val;
       }
     }
-
-    finish_flux(fg, mat, *elwise_post_scaling, flux_temp, result);
   }
 
 
@@ -289,18 +275,13 @@ namespace hedge
   template <class IntFlux, class ExtFlux>
   inline
   void perform_double_sided_flux(const face_group &fg, 
-      const py_matrix &mat, 
-      const pyublas::invalid_ok<py_vector> &elwise_post_scaling,
       IntFlux int_flux, ExtFlux ext_flux, 
       const py_vector &operand,
-      py_vector result
+      py_vector fluxes_on_faces
       )
   {
     const py_vector::const_iterator op_it = operand.begin();
-
-    const unsigned el_length_temp = fg.face_count*fg.face_length();
-    dyn_vector flux_temp(el_length_temp*fg.element_count());
-    flux_temp.clear();
+    const py_vector::iterator fof_it = fluxes_on_faces.begin();
 
     BOOST_FOREACH(const face_pair &fp, fg.face_pairs)
     {
@@ -340,14 +321,12 @@ namespace hedge
       {
         const double loc_val = op_it[lebi+loc_idx_list[i]];
         const double opp_val = op_it[oebi+opp_idx_list[i]];
-        flux_temp[loc_tempbase+i] = 
+        fof_it[loc_tempbase+i] = 
           int_coeff_here*loc_val + ext_coeff_here*opp_val;
-        flux_temp[opp_tempbase+opp_write_map[i]] = 
+        fof_it[opp_tempbase+opp_write_map[i]] = 
           int_coeff_opp*opp_val + ext_coeff_opp*loc_val;
       }
     }
-
-    finish_flux(fg, mat, *elwise_post_scaling, flux_temp, result);
   }
 }
 

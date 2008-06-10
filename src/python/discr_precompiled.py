@@ -214,21 +214,23 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         if isinstance(field, (int, float, complex)) and field == 0:
             return 0
 
-        from hedge._internal import perform_double_sided_flux, ChainedFlux
+        from hedge._internal import perform_double_sided_flux, ChainedFlux, \
+                lift_flux
 
         for fg in self.discr.face_groups:
+            fluxes_on_faces = numpy.zeros(
+                    (fg.face_count*fg.face_length()*fg.element_count(),),
+                    dtype=field.dtype)
+            
+            perform_double_sided_flux(fg, ChainedFlux(int_coeff), ChainedFlux(ext_coeff),
+                    field, fluxes_on_faces)
+
             if lift:
-                perform_double_sided_flux(
-                        fg, fg.ldis_loc.lifting_matrix(), 
-                        fg.local_el_inverse_jacobians,
-                        ChainedFlux(int_coeff), ChainedFlux(ext_coeff),
-                        field, out)
+                lift_flux(fg, fg.ldis_loc.lifting_matrix(),
+                        fg.local_el_inverse_jacobians, fluxes_on_faces, out)
             else:
-                perform_double_sided_flux(
-                        fg, fg.ldis_loc.multi_face_mass_matrix(), 
-                        None,
-                        ChainedFlux(int_coeff), ChainedFlux(ext_coeff),
-                        field, out)
+                lift_flux(fg, fg.ldis_loc.multi_face_mass_matrix(),
+                        None, fluxes_on_faces, out)
 
         return out
 
@@ -242,26 +244,35 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             return 0
 
         from hedge._internal import \
-                perform_single_sided_flux, ChainedFlux, ZeroVector
+                perform_single_sided_flux, ChainedFlux, ZeroVector, \
+                lift_flux
         if isinstance(field, (int, float, complex)) and field == 0:
             field = ZeroVector()
+            dtype = bfield.dtype
+        else:
+            dtype = field.dtype
+
         if isinstance(bfield, (int, float, complex)) and bfield == 0:
             bfield = ZeroVector()
 
         if bdry.nodes:
             for fg in bdry.face_groups:
+                fluxes_on_faces = numpy.zeros(
+                        (fg.face_count*fg.face_length()*fg.element_count(),),
+                        dtype=dtype)
+
+                perform_single_sided_flux(
+                        fg, ChainedFlux(int_coeff), ChainedFlux(ext_coeff),
+                        field, bfield, fluxes_on_faces)
+
                 if lift:
-                    perform_single_sided_flux(
-                            fg, fg.ldis_loc.lifting_matrix(), 
-                            fg.local_el_inverse_jacobians,
-                            ChainedFlux(int_coeff), ChainedFlux(ext_coeff),
-                            field, bfield, out)
+                    lift_flux(fg, fg.ldis_loc.lifting_matrix(),
+                            fg.local_el_inverse_jacobians, 
+                            fluxes_on_faces, out)
                 else:
-                    perform_single_sided_flux(
-                            fg, fg.ldis_loc.multi_face_mass_matrix(), 
-                            None,
-                            ChainedFlux(int_coeff), ChainedFlux(ext_coeff),
-                            field, bfield, out)
+                    lift_flux(fg, fg.ldis_loc.multi_face_mass_matrix(),
+                            None, 
+                            fluxes_on_faces, out)
 
         return out
 

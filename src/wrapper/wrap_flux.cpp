@@ -247,10 +247,11 @@ void hedge_expose_fluxes()
     typedef face_group cl;
     class_<cl, boost::shared_ptr<cl> >("FaceGroup", init<bool>(args("double_sided")))
       .DEF_SIMPLE_RW_MEMBER(face_pairs)
-      .DEF_BYVAL_RW_MEMBER(index_lists)
-      .DEF_SIMPLE_RW_MEMBER(element_count)
       .DEF_SIMPLE_RW_MEMBER(face_count)
       .DEF_BYVAL_RW_MEMBER(local_el_to_global_el_base)
+      .DEF_BYVAL_RW_MEMBER(index_lists)
+      .DEF_SIMPLE_METHOD(element_count)
+      .DEF_SIMPLE_METHOD(face_length)
       ;
   }
 
@@ -258,27 +259,30 @@ void hedge_expose_fluxes()
       perform_single_sided_flux<
       fluxes::chained_flux, fluxes::chained_flux, 
       py_vector, py_vector>,
-      args("fg", "mat", "elwise_post_scaling", "int_flux", "ext_flux", 
-            "loc_operand", "opp_operand", "result")
+      args("fg", "int_flux", "ext_flux", 
+            "loc_operand", "opp_operand", "fluxes_on_faces")
      );
   def("perform_single_sided_flux", 
       perform_single_sided_flux<
       fluxes::chained_flux, fluxes::chained_flux, 
       ublas::zero_vector<double>, py_vector>,
-      args("fg", "mat", "elwise_post_scaling", "int_flux", "ext_flux", 
-            "loc_operand", "opp_operand", "result")
+      args("fg", "int_flux", "ext_flux", 
+            "loc_operand", "opp_operand", "fluxes_on_faces")
       );
   def("perform_single_sided_flux", 
       perform_single_sided_flux<
       fluxes::chained_flux, fluxes::chained_flux, 
       py_vector, ublas::zero_vector<double> >,
-      args("fg", "mat", "elwise_post_scaling", "int_flux", "ext_flux", 
-            "loc_operand", "opp_operand", "result")
+      args("fg", "int_flux", "ext_flux", 
+            "loc_operand", "opp_operand", "fluxes_on_faces")
      );
   def("perform_double_sided_flux", 
       perform_double_sided_flux<fluxes::chained_flux, fluxes::chained_flux>,
-      args("fg", "mat", "elwise_post_scaling", "int_flux", "ext_flux",
-        "operand", "result")
+      args("fg", "int_flux", "ext_flux",
+        "operand", "fluxes_on_faces")
+      );
+  def("lift_flux", lift_flux,
+      args("fg", "mat", "elwise_post_scaling", "fluxes_on_faces", "result")
       );
 }
 
