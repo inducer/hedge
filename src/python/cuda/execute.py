@@ -707,10 +707,6 @@ class OpTemplateWithEnvironment(object):
         S = Statement
         f_body = Block()
             
-        f_body.extend([
-            S("debugbuf[THREAD_NUM]=tex1Dfetch(inverse_jacobians_tex, THREAD_NUM)"),
-            ])
-
         f_body.extend_log_block("calculate responsibility data", [
             Initializer(POD(numpy.uint8, "mb_el"),
                 "MB_DOF/DOFS_PER_EL"),
