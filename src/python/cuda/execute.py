@@ -284,8 +284,8 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
         gather_kwargs = {
                 "texrefs": gather_texrefs, 
-                "block": (discr.flux_plan.mb_aligned_floats, 
-                    fplan.parallelism.p, 1),
+                "block": (discr.flux_plan.dofs_per_face(), 
+                    fplan.parallel_faces, 1),
                 "grid": (len(discr.blocks), 1),
                 "time_kernel": discr.instrumented,
                 }
@@ -462,7 +462,6 @@ class OpTemplateWithEnvironment(object):
         fplan = discr.flux_plan
         lplan = fplan.localop_plan()
 
-        lop_par = lplan.parallelism
         diffmat_data = self.gpu_diffmats(diff_op_cls, elgroup)
         elgroup, = discr.element_groups
 
@@ -645,7 +644,6 @@ class OpTemplateWithEnvironment(object):
         fplan = discr.flux_plan
         lplan = fplan.flux_lifting_plan()
 
-        lop_par = lplan.parallelism
         liftmat_data = self.gpu_liftmat()
         elgroup, = discr.element_groups
 
@@ -805,7 +803,6 @@ class OpTemplateWithEnvironment(object):
         d = discr.dimensions
         dims = range(d)
 
-        flux_par = fplan.parallelism
         elgroup, = discr.element_groups
         flux_with_temp_data = self.flux_with_temp_data(wdflux, elgroup)
 
@@ -831,33 +828,23 @@ class OpTemplateWithEnvironment(object):
                 Line(),
                 Define("DIMENSIONS", discr.dimensions),
                 Define("DOFS_PER_EL", fplan.dofs_per_el()),
+                Define("DOFS_PER_FACE", fplan.dofs_per_face()),
                 Line(),
-                Define("MB_DOF", "threadIdx.x"),
-                Define("PAR_MB_NR", "threadIdx.y"),
+                Define("CONCURRENT_FACES", fplan.parallel_faces),
+                Define("BLOCK_MB_COUNT", fplan.mbs_per_block),
                 Line(),
-                Define("MB_EL_COUNT", fplan.mb_elements),
-                Define("MB_DOF_COUNT", fplan.mb_aligned_floats),
-                Define("PAR_MB_COUNT", fplan.parallelism.p),
-                Define("SER_MB_COUNT", fplan.parallelism.s),
-                Define("BLOCK_MB_COUNT", "(PAR_MB_COUNT*SER_MB_COUNT)"),
+                Define("FACEDOF_NR", "threadIdx.x"),
+                Define("BLOCK_FACE", "threadIdx.y"),
                 Line(),
-                Define("THREAD_NUM", "(PAR_MB_NR*MB_DOF_COUNT + MB_DOF)"),
-                Define("THREAD_COUNT", "(MB_DOF_COUNT*PAR_MB_COUNT)"),
+                Define("THREAD_NUM", "(FACEDOF_NR + BLOCK_FACE*DOFS_PER_FACE)"),
+                Define("THREAD_COUNT", "(DOFS_PER_FACE*CONCURRENT_FACES)"),
                 Define("COALESCING_THREAD_COUNT", "(THREAD_COUNT & ~0xf)"),
                 Line(),
-                Define("DOFS_BLOCK_BASE", "(blockIdx.x*BLOCK_MB_COUNT*MB_DOF_COUNT)"),
                 Define("DATA_BLOCK_SIZE", flux_with_temp_data.block_bytes),
                 Define("ALIGNED_FACE_DOFS_PER_MB", fplan.aligned_face_dofs_per_microblock()),
                 Define("ALIGNED_FACE_DOFS_PER_BLOCK", 
                     "(ALIGNED_FACE_DOFS_PER_MB*BLOCK_MB_COUNT)"),
-                Define("BASE_EL", "(base_mb*MB_EL_COUNT+mb_el)"),
                 Line(),
-                Comment("face-related stuff"),
-                Define("DOFS_PER_FACE", fplan.dofs_per_face()),
-                Define("FACES_PER_EL", fplan.faces_per_el()),
-                Define("CONCURRENT_FACES", 
-                    fplan.mb_aligned_floats*flux_par.p
-                    //fplan.dofs_per_face()),
                 Line(),
                 ] + self.index_list_global_data().code + [
                 Line(),
@@ -948,7 +935,7 @@ class OpTemplateWithEnvironment(object):
                     ),
                 Initializer(
                     POD(float_type, "a_value"),
-                    "tex1Dfetch(field_tex, fpair->a_base + a_ilist[facedof_nr])"
+                    "tex1Dfetch(field_tex, fpair->a_base + a_ilist[FACEDOF_NR])"
                     ),
                 ])
 
@@ -956,14 +943,14 @@ class OpTemplateWithEnvironment(object):
                 flux_code.extend([
                     Initializer(
                         POD(float_type, "b_value"),
-                        "tex1Dfetch(bfield_tex, fpair->b_base + b_ilist[facedof_nr])"
+                        "tex1Dfetch(bfield_tex, fpair->b_base + b_ilist[FACEDOF_NR])"
                         ),
                     ])
             else:
                 flux_code.extend([
                     Initializer(
                         POD(float_type, "b_value"),
-                        "tex1Dfetch(field_tex, fpair->b_base + b_ilist[facedof_nr])"
+                        "tex1Dfetch(field_tex, fpair->b_base + b_ilist[FACEDOF_NR])"
                         ),
                     ])
 
@@ -984,7 +971,7 @@ class OpTemplateWithEnvironment(object):
 
             flux_code.extend([
                 Assign(
-                    "smem_fluxes_on_faces[fpair->a_dest+facedof_nr]",
+                    "smem_fluxes_on_faces[fpair->a_dest+FACEDOF_NR]",
                     "fpair->face_jacobian*("
                     "a_int_coeff*a_value+a_ext_coeff*b_value"
                     ")"),
@@ -993,7 +980,7 @@ class OpTemplateWithEnvironment(object):
             if is_twosided:
                 flux_code.extend([
                     Assign(
-                        "smem_fluxes_on_faces[fpair->b_dest+b_write_ilist[facedof_nr]]",
+                        "smem_fluxes_on_faces[fpair->b_dest+b_write_ilist[FACEDOF_NR]]",
                         "fpair->face_jacobian*("
                         "b_int_coeff*b_value+b_ext_coeff*a_value"
                         ")"
@@ -1004,48 +991,39 @@ class OpTemplateWithEnvironment(object):
 
             return flux_code
 
-        f_body.extend_log_block("compute the fluxes", [Block([
-            Initializer(Const(POD(numpy.int16, "block_face")),
-                "THREAD_NUM / DOFS_PER_FACE"),
-            Initializer(Const(POD(numpy.int16, "facedof_nr")),
-                "THREAD_NUM - DOFS_PER_FACE*block_face"),
-            If("facedof_nr < DOFS_PER_FACE && block_face < CONCURRENT_FACES",
-                Block([
-                    Initializer(POD(numpy.uint16, "fpair_nr"), "block_face"),
-                    Comment("fluxes for dual-sided (intra-block) interior face pairs"),
-                    While("fpair_nr < data.header.same_facepairs_end",
-                        get_flux_code(is_bdry=False, is_twosided=True)
-                        ),
-                    Line(),
-                    Comment("work around nvcc assertion failure"),
-                    S("fpair_nr+=1"),
-                    S("fpair_nr-=1"),
-                    Line(),
-                    Comment("fluxes for single-sided (inter-block) interior face pairs"),
-                    While("fpair_nr < data.header.diff_facepairs_end",
-                        get_flux_code(is_bdry=False, is_twosided=False)
-                        ),
-                    Line(),
-                    Comment("fluxes for single-sided boundary face pairs"),
-                    While("fpair_nr < data.header.bdry_facepairs_end",
-                        get_flux_code(is_bdry=True, is_twosided=False)
-                        ),
-                ])
-                )
-            ]),
-            S("__syncthreads()")
+        f_body.extend_log_block("compute the fluxes", [
+            Initializer(POD(numpy.uint16, "fpair_nr"), "BLOCK_FACE"),
+            Comment("fluxes for dual-sided (intra-block) interior face pairs"),
+            While("fpair_nr < data.header.same_facepairs_end",
+                get_flux_code(is_bdry=False, is_twosided=True)
+                ),
+            Line(),
+            Comment("work around nvcc assertion failure"),
+            S("fpair_nr+=1"),
+            S("fpair_nr-=1"),
+            Line(),
+            Comment("fluxes for single-sided (inter-block) interior face pairs"),
+            While("fpair_nr < data.header.diff_facepairs_end",
+                get_flux_code(is_bdry=False, is_twosided=False)
+                ),
+            Line(),
+            Comment("fluxes for single-sided boundary face pairs"),
+            While("fpair_nr < data.header.bdry_facepairs_end",
+                get_flux_code(is_bdry=True, is_twosided=False)
+                ),
             ])
 
-        if True:
-            f_body.extend([
-                For("unsigned word_nr = THREAD_NUM", 
-                    "word_nr < ALIGNED_FACE_DOFS_PER_MB*BLOCK_MB_COUNT", 
-                    "word_nr += COALESCING_THREAD_COUNT",
-                    Assign(
-                        "gmem_fluxes_on_faces[blockIdx.x*ALIGNED_FACE_DOFS_PER_BLOCK+word_nr]",
-                        "smem_fluxes_on_faces[word_nr]")
-                    ),
-                ])
+        f_body.extend_log_block("store the fluxes", [
+            S("__syncthreads()"),
+            Line(),
+            For("unsigned word_nr = THREAD_NUM", 
+                "word_nr < ALIGNED_FACE_DOFS_PER_MB*BLOCK_MB_COUNT", 
+                "word_nr += COALESCING_THREAD_COUNT",
+                Assign(
+                    "gmem_fluxes_on_faces[blockIdx.x*ALIGNED_FACE_DOFS_PER_BLOCK+word_nr]",
+                    "smem_fluxes_on_faces[word_nr]")
+                ),
+            ])
 
         # finish off ----------------------------------------------------------
         cmod.append(FunctionBody(f_decl, f_body))

@@ -145,12 +145,11 @@ class Discretization(hedge.discretization.Discretization):
                 optimize_plan
 
         def generate_valid_plans():
-            for pe in range(2,32):
-                for se in range(1,256):
-                    flux_par = Parallelism(pe, se)
+            for parallel_faces in range(1,32):
+                for mbs_per_block in range(1,256):
                     flux_plan = FluxExecutionPlan(
-                            self.devdata, ldis, flux_par,
-                            float_type=float_type)
+                            self.devdata, ldis, parallel_faces,
+                            mbs_per_block, float_type=float_type)
                     if flux_plan.invalid_reason() is None:
                         yield flux_plan
 
@@ -190,11 +189,6 @@ class Discretization(hedge.discretization.Discretization):
             for el_id, block in enumerate(partition):
                 blocks.setdefault(block, []).append(el_id)
 
-            from hedge.cuda.tools import int_ceiling
-            block_elements = max(len(block_els) for block_els in blocks.itervalues())
-            flux_par_s = int_ceiling(block_elements
-                    /(flux_plan.parallelism.p*flux_plan.mb_elements))
-
             from hedge.cuda.plan import Parallelism
             actual_plan = flux_plan.copy(
                     max_ext_faces=max(block2extifaces.itervalues()),
@@ -202,13 +196,11 @@ class Discretization(hedge.discretization.Discretization):
                         len(blocks[b])*flux_plan.faces_per_el()
                         + block2extifaces[b]
                         for b in range(len(blocks))),
-                    parallelism=Parallelism(
-                        flux_plan.parallelism.p, flux_par_s))
+                    )
             assert actual_plan.max_faces % 2 == 0
 
-            if (flux_par_s <= flux_plan.parallelism.s and
-                    abs(flux_plan.occupancy_record().occupancy -
-                        actual_plan.occupancy_record().occupancy) < 1e-10):
+            if (abs(flux_plan.occupancy_record().occupancy -
+                actual_plan.occupancy_record().occupancy) < 1e-10):
                 break
 
             part_count += 1

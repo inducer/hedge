@@ -86,9 +86,8 @@ class ExecutionPlan(object):
                 registers=self.registers())
 
     def __str__(self):
-            return ("regs=%d par=%s threads=%d smem=%d occ=%f" % (
+            return ("regs=%d threads=%d smem=%d occ=%f" % (
                 self.registers(),
-                self.parallelism, 
                 self.threads(), 
                 self.shared_mem_use(), 
                 self.occupancy_record().occupancy,
@@ -117,13 +116,14 @@ def find_microblock_size(devdata, dofs_per_el, float_size):
 
 class FluxExecutionPlan(ExecutionPlan):
     def __init__(self, devdata, ldis, 
-            parallelism, 
+            parallel_faces, mbs_per_block,
             max_ext_faces=None, max_faces=None, 
             float_type=numpy.float32, 
             ):
         ExecutionPlan.__init__(self, devdata)
         self.ldis = ldis
-        self.parallelism = parallelism
+        self.parallel_faces = parallel_faces
+        self.mbs_per_block = mbs_per_block
 
         self.max_ext_faces = max_ext_faces
         self.max_faces = max_faces
@@ -139,12 +139,14 @@ class FluxExecutionPlan(ExecutionPlan):
     def float_size(self):
         return self.float_type.itemsize
 
-    def copy(self, devdata=None, ldis=None, parallelism=None, 
+    def copy(self, devdata=None, ldis=None, 
+            parallel_faces=None, mbs_per_block=None,
             max_ext_faces=None, max_faces=None, float_type=None):
         return self.__class__(
                 devdata or self.devdata,
                 ldis or self.ldis,
-                parallelism or self.parallelism,
+                parallel_faces or self.parallel_faces,
+                mbs_per_block or self.mbs_per_block,
                 max_ext_faces or self.max_ext_faces,
                 max_faces or self.max_faces,
                 float_type or self.float_type,
@@ -163,7 +165,7 @@ class FluxExecutionPlan(ExecutionPlan):
         return self.ldis.face_node_count()*self.faces_per_el()
 
     def microblocks_per_block(self):
-        return self.parallelism.total()
+        return self.mbs_per_block
 
     def elements_per_block(self):
         return self.microblocks_per_block()*self.mb_elements
@@ -236,7 +238,7 @@ class FluxExecutionPlan(ExecutionPlan):
                 )
 
     def threads(self):
-        return self.parallelism.p*self.mb_aligned_floats
+        return self.parallel_faces*self.dofs_per_face()
 
     def registers(self):
         return 12
@@ -285,8 +287,10 @@ class FluxExecutionPlan(ExecutionPlan):
                 )
 
     def __str__(self):
-            return ("%s mb_elements=%d" % (
+            return ("%s pfaces=%d mbs_per_block=%d mb_elements=%d" % (
                 ExecutionPlan.__str__(self),
+                self.parallel_faces,
+                self.mbs_per_block,
                 self.mb_elements,
                 ))
 
@@ -323,8 +327,9 @@ class LocalOpExecutionPlan(ExecutionPlan):
         return 17
 
     def __str__(self):
-            return ("%s chunk_size=%d" % (
+            return ("%s par=%s chunk_size=%d" % (
                 ExecutionPlan.__str__(self),
+                self.parallelism,
                 self.chunk_size,
                 ))
 
@@ -361,8 +366,9 @@ class FluxLiftingExecutionPlan(ExecutionPlan):
         return 14
 
     def __str__(self):
-            return ("%s chunk_size=%d" % (
+            return ("%s par=%s chunk_size=%d" % (
                 ExecutionPlan.__str__(self),
+                self.parallelism,
                 self.chunk_size,
                 ))
 
