@@ -157,7 +157,10 @@ class DeviceData:
 
     def align_dtype(self, elements, dtype_size):
         return int_ceiling(elements, 
-                exact_div(self.align_bytes(dtype_size), dtype_size))
+                self.align_words(dtype_size))
+
+    def align_words(self, word_size):
+        return exact_div(self.align_bytes(word_size), word_size)
 
     def align_bytes(self, wordsize=4):
         if wordsize == 4:

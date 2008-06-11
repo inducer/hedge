@@ -244,7 +244,7 @@ class FluxExecutionPlan(ExecutionPlan):
         return 12
 
     @memoize_method
-    def localop_plan(self):
+    def diff_plan(self):
         def generate_valid_plans():
             from hedge.cuda.tools import int_ceiling
 
@@ -257,7 +257,7 @@ class FluxExecutionPlan(ExecutionPlan):
                 from hedge.cuda.tools import int_ceiling
                 localop_par = Parallelism(pe, 8)
                 for chunk_size in chunk_sizes:
-                    yield LocalOpExecutionPlan(self, localop_par, chunk_size)
+                    yield DiffExecutionPlan(self, localop_par, chunk_size)
 
         return optimize_plan(
                 generate_valid_plans,
@@ -297,7 +297,7 @@ class FluxExecutionPlan(ExecutionPlan):
 
 
 
-class LocalOpExecutionPlan(ExecutionPlan):
+class ChunkedLocalOperatorExecutionPlan(ExecutionPlan):
     def __init__(self, flux_plan, parallelism, chunk_size):
         ExecutionPlan.__init__(self, flux_plan.devdata)
         self.flux_plan = flux_plan
@@ -306,6 +306,15 @@ class LocalOpExecutionPlan(ExecutionPlan):
 
     def dofs_per_macroblock(self):
         return self.parallelism.total() * self.flux_plan.mb_aligned_floats
+
+    def max_elements_touched_by_chunk(self):
+        fplan = self.flux_plan
+
+        from hedge.cuda.tools import int_ceiling
+        if fplan.dofs_per_el() > self.chunk_size:
+            return 2
+        else:
+            return int_ceiling(self.chunk_size/fplan.dofs_per_el()) + 1
 
     @memoize_method
     def shared_mem_use(self):
@@ -315,62 +324,46 @@ class LocalOpExecutionPlan(ExecutionPlan):
                + fplan.float_size * (
                    # chunk of the differentiation matrix
                    + self.chunk_size # this many rows
-                   * fplan.dofs_per_el()
-                   * fplan.ldis.dimensions # r,s,t
+                   * self.columns()
+                   # fetch buffer for each chunk
+                   + self.parallelism.p
+                   * self.chunk_size
+                   * self.max_elements_touched_by_chunk()
                    )
                )
 
     def threads(self):
         return self.parallelism.p*self.chunk_size
+
+    def __str__(self):
+            return ("%s par=%s chunk_size=%d" % (
+                ExecutionPlan.__str__(self),
+                self.parallelism,
+                self.chunk_size,
+                ))
+
+
+
+
+
+class DiffExecutionPlan(ChunkedLocalOperatorExecutionPlan):
+    def columns(self):
+        fplan = self.flux_plan
+        return fplan.dofs_per_el() * fplan.ldis.dimensions # r,s,t
 
     def registers(self):
         return 17
 
-    def __str__(self):
-            return ("%s par=%s chunk_size=%d" % (
-                ExecutionPlan.__str__(self),
-                self.parallelism,
-                self.chunk_size,
-                ))
 
 
 
 
-class FluxLiftingExecutionPlan(ExecutionPlan):
-    def __init__(self, flux_plan, parallelism, chunk_size):
-        ExecutionPlan.__init__(self, flux_plan.devdata)
-        self.flux_plan = flux_plan
-        self.parallelism = parallelism
-        self.chunk_size = chunk_size
-
-    @memoize_method
-    def shared_mem_use(self):
-        fplan = self.flux_plan
-        
-        return (64 # parameters, block header, small extra stuff
-               + fplan.float_size * (
-                   # chunk of the lifting matrix
-                   + self.chunk_size # this many rows
-                   * fplan.dofs_per_face()
-                   * fplan.faces_per_el()
-                   )
-               )
-
-    def dofs_per_macroblock(self):
-        return self.parallelism.total() * self.flux_plan.mb_aligned_floats
-
-    def threads(self):
-        return self.parallelism.p*self.chunk_size
+class FluxLiftingExecutionPlan(ChunkedLocalOperatorExecutionPlan):
+    def columns(self):
+        return self.flux_plan.face_dofs_per_el()
 
     def registers(self):
         return 14
-
-    def __str__(self):
-            return ("%s par=%s chunk_size=%d" % (
-                ExecutionPlan.__str__(self),
-                self.parallelism,
-                self.chunk_size,
-                ))
 
 
 

@@ -177,7 +177,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         func, texrefs, field_texref = self.ex.get_diff_kernel(op.__class__, eg)
 
         fplan = discr.flux_plan
-        lplan = fplan.localop_plan()
+        lplan = fplan.diff_plan()
 
         field = self.rec(field_expr)
         assert field.dtype == discr.flux_plan.float_type
@@ -460,7 +460,7 @@ class OpTemplateWithEnvironment(object):
         d = discr.dimensions
         dims = range(d)
         fplan = discr.flux_plan
-        lplan = fplan.localop_plan()
+        lplan = fplan.diff_plan()
 
         diffmat_data = self.gpu_diffmats(diff_op_cls, elgroup)
         elgroup, = discr.element_groups
@@ -685,6 +685,7 @@ class OpTemplateWithEnvironment(object):
                 Define("MB_EL_COUNT", fplan.mb_elements),
                 Define("PAR_MB_COUNT", lplan.parallelism.p),
                 Define("SEQ_MB_COUNT", lplan.parallelism.s),
+                Define("ELEMENTS_TOUCHED_BY_CHUNK", lplan.max_elements_touched_by_chunk()),
                 Line(),
                 Define("THREAD_NUM", "(CHUNK_DOF+PAR_MB_NR*CHUNK_DOF_COUNT)"),
                 Define("COALESCING_THREAD_COUNT", "(PAR_MB_COUNT*CHUNK_DOF_COUNT)"),
@@ -697,10 +698,23 @@ class OpTemplateWithEnvironment(object):
                 Define("LIFTMAT_CHUNK_FLOATS", liftmat_data.block_floats),
                 Define("LIFTMAT_CHUNK_BYTES", 
                     "(LIFTMAT_CHUNK_FLOATS*%d)" % fplan.float_size),
+                Define("DOF_LOCAL_EL", "(dof_el-chunk_start_el)"),
 
                 Line(),
                 CudaShared(ArrayOf(POD(float_type, "smem_lift_mat"), 
                     "LIFTMAT_CHUNK_FLOATS")),
+                CudaShared(
+                    ArrayOf(
+                        ArrayOf(
+                            ArrayOf(
+                                POD(float_type, "dof_buffer"), 
+                                "PAR_MB_COUNT"),
+                            "ELEMENTS_TOUCHED_BY_CHUNK"),
+                        "CHUNK_DOF_COUNT"),
+                    ),
+                CudaShared(POD(numpy.uint16, "chunk_start_el")),
+                CudaShared(POD(numpy.uint16, "chunk_stop_el")),
+                CudaShared(POD(numpy.uint16, "chunk_el_count")),
                 Line(),
                 ])
 
@@ -708,8 +722,13 @@ class OpTemplateWithEnvironment(object):
         f_body = Block()
             
         f_body.extend_log_block("calculate responsibility data", [
-            Initializer(POD(numpy.uint8, "mb_el"),
+            Initializer(POD(numpy.uint8, "dof_el"),
                 "MB_DOF/DOFS_PER_EL"),
+            Line(),
+            Assign("chunk_start_el", "MB_DOF_BASE/DOFS_PER_EL"),
+            Assign("chunk_stop_el",
+                "min(MB_EL_COUNT, (MB_DOF_BASE+CHUNK_DOF_COUNT-1)/DOFS_PER_EL+1)"),
+            Assign("chunk_el_count", "chunk_stop_el-chunk_start_el")
             ])
 
         f_body.extend(
@@ -718,50 +737,70 @@ class OpTemplateWithEnvironment(object):
                 base=("gmem_lift_mat + MB_CHUNK*LIFTMAT_CHUNK_BYTES"),
                 bytes="LIFTMAT_CHUNK_BYTES",
                 descr="load lift mat chunk")
-            +[S("__syncthreads()")])
+            )
 
         # ---------------------------------------------------------------------
-        def get_mat_entry(row, col):
-            return ("smem_lift_mat["
-                    "%(row)s*LIFTMAT_COLUMNS + %(col)s"
-                    "]" % {"row":row, "col":col}
-                    )
+        def get_mat_mul_code(fetch_count):
+            result = []
+            dofs = range(fplan.face_dofs_per_el())
+            for load_chunk_start in range(0, fplan.face_dofs_per_el(),
+                    lplan.chunk_size):
+                result.extend(
+                        Assign(
+                            "dof_buffer[PAR_MB_NR][%d][CHUNK_DOF]"
+                            % fetch_el,
+                            "tex1Dfetch(fluxes_on_faces_tex, "
+                            "global_mb_facedof_base"
+                            "+(chunk_start_el+%d)*FACE_DOFS_PER_EL+%d+CHUNK_DOF)"
+                            % (fetch_el, load_chunk_start)
+                            )
+                        for fetch_el in range(fetch_count))
+            
+                result.extend([
+                        S("__syncthreads()"),
+                        Line(),
+                        ])
 
-        f_body.extend([
-            For("unsigned short seq_mb_number = 0",
-                "seq_mb_number < SEQ_MB_COUNT",
-                "++seq_mb_number",
-                Block([
-                    Initializer(POD(numpy.uint32, "global_mb_nr"),
-                        "GLOBAL_MB_NR_BASE + seq_mb_number*PAR_MB_COUNT + PAR_MB_NR"),
-                    Initializer(POD(numpy.uint32, "global_mb_dof_base"),
-                        "global_mb_nr*MB_DOF_COUNT"),
-                    Initializer(POD(numpy.uint32, "global_mb_facedof_base"),
-                        "global_mb_nr*MB_FACEDOF_COUNT"),
-                    Line(),
-                    Initializer(POD(float_type, "result"), 0),
-                    Line(),
-                    ]
-                    +[
-                    S("result += "
-                        "tex1Dfetch(fluxes_on_faces_tex, "
-                        "global_mb_facedof_base"
-                        "+mb_el*FACE_DOFS_PER_EL+%(j)d)"
-                        "*%(matent)s" 
-                        % {"j":j, "matent": get_mat_entry("CHUNK_DOF", j)}
+                for dof in dofs[load_chunk_start:load_chunk_start+lplan.chunk_size]:
+                    result.append(
+                            S("result += "
+                                "smem_lift_mat[CHUNK_DOF*LIFTMAT_COLUMNS + %d]"
+                                "*"
+                                "dof_buffer[PAR_MB_NR][DOF_LOCAL_EL][%d]"
+                                % (dof, dof-load_chunk_start))
+                            )
+                result.append(Line())
+            return result
+
+        from hedge.cuda.cgen import make_multiple_ifs
+        f_body.append(make_multiple_ifs([
+                ("chunk_el_count == %d" % fetch_count,
+                    For("unsigned short seq_mb_number = 0",
+                        "seq_mb_number < SEQ_MB_COUNT",
+                        "++seq_mb_number",
+                        Block([
+                            Initializer(POD(numpy.uint32, "global_mb_nr"),
+                                "GLOBAL_MB_NR_BASE + seq_mb_number*PAR_MB_COUNT + PAR_MB_NR"),
+                            Initializer(POD(numpy.uint32, "global_mb_dof_base"),
+                                "global_mb_nr*MB_DOF_COUNT"),
+                            Initializer(POD(numpy.uint32, "global_mb_facedof_base"),
+                                "global_mb_nr*MB_FACEDOF_COUNT"),
+                            Line(),
+                            Initializer(POD(float_type, "result"), 0),
+                            Line(),
+                            ]
+                            +get_mat_mul_code(fetch_count)+[
+                            Assign(
+                                "flux[global_mb_dof_base+MB_DOF]",
+                                "result*tex1Dfetch(inverse_jacobians_tex,"
+                                "global_mb_nr*MB_EL_COUNT+dof_el)"
+                                )
+                            ])
                         )
-                    for j in range(
-                        fplan.dofs_per_face()*fplan.faces_per_el())
-                    ]+[
-                    Line(),
-                    Assign(
-                        "flux[global_mb_dof_base+MB_DOF]",
-                        "result*tex1Dfetch(inverse_jacobians_tex,"
-                        "global_mb_nr*MB_EL_COUNT+mb_el)"
-                        )
-                    ])
-                )
-            ])
+                    )
+                for fetch_count in 
+                range(1, lplan.max_elements_touched_by_chunk()+1)]
+                ))
 
         # finish off ----------------------------------------------------------
         cmod.append(FunctionBody(f_decl, f_body))
@@ -1044,7 +1083,7 @@ class OpTemplateWithEnvironment(object):
     def gpu_diffmats(self, diff_op_cls, elgroup):
         discr = self.discr
         fplan = discr.flux_plan
-        lplan = fplan.localop_plan()
+        lplan = fplan.diff_plan()
 
         columns = fplan.dofs_per_el()*discr.dimensions
         additional_columns = 0

@@ -251,7 +251,7 @@ class Discretization(hedge.discretization.Discretization):
         self.flux_plan, self.partition = self._partition_mesh(mesh, flux_plan)
         del flux_plan
         print "actual flux exec plan:", self.flux_plan
-        print "actual local op exec plan:", self.flux_plan.localop_plan()
+        print "actual local op exec plan:", self.flux_plan.diff_plan()
         print "actual flux local exec plan:", self.flux_plan.flux_lifting_plan()
 
         # initialize superclass
@@ -485,7 +485,7 @@ class Discretization(hedge.discretization.Discretization):
         return int_ceiling(
                 int_ceiling(
                     fplan.dofs_per_block() * len(self.blocks),     
-                    fplan.localop_plan().dofs_per_macroblock()),
+                    fplan.diff_plan().dofs_per_macroblock()),
                 fplan.flux_lifting_plan().dofs_per_macroblock())
 
     def volume_to_gpu(self, field):
