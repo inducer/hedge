@@ -506,8 +506,10 @@ class OpTemplateWithEnvironment(object):
                 Define("MB_DOF", "(MB_DOF_BASE+CHUNK_DOF)"),
                 Define("GLOBAL_MB_NR_BASE", "(MACROBLOCK_NR*PAR_MB_COUNT*SEQ_MB_COUNT)"),
                 Line(),
-                Define("DIFF_MAT_BLOCK_BYTES", diffmat_data.block_bytes),
-
+                Define("DIFFMAT_CHUNK_FLOATS", diffmat_data.block_floats),
+                Define("DIFFMAT_CHUNK_BYTES", "(DIFFMAT_CHUNK_FLOATS*%d)"
+                     % fplan.float_size),
+                Define("DIFFMAT_COLUMNS", diffmat_data.matrix_columns),
                 Line(),
                 CudaShared(ArrayOf(POD(float_type, "smem_diff_rst_mat"), 
                     "DIMENSIONS*DOFS_PER_EL*CHUNK_DOF_COUNT")),
@@ -525,8 +527,8 @@ class OpTemplateWithEnvironment(object):
         f_body.extend(
             self.get_load_code(
                 dest="smem_diff_rst_mat",
-                base=("gmem_diff_rst_mat + MB_CHUNK*DIFF_MAT_BLOCK_BYTES"),
-                bytes="CHUNK_DOF_COUNT*DIMENSIONS*DOFS_PER_EL*%d" % fplan.float_size,
+                base="gmem_diff_rst_mat + MB_CHUNK*DIFFMAT_CHUNK_BYTES",
+                bytes="DIFFMAT_CHUNK_BYTES",
                 descr="load diff mat chunk")
             +[S("__syncthreads()")])
 
@@ -541,7 +543,7 @@ class OpTemplateWithEnvironment(object):
 
             def get_mat_entry(row, col, axis):
                 return ("smem_diff_rst_mat["
-                        "(%(row)s * DIMENSIONS + %(axis)s)*DOFS_PER_EL"
+                        "%(row)s*DIFFMAT_COLUMNS + %(axis)s*DOFS_PER_EL"
                         "+%(col)s"
                         "]" % {"row":row, "col":col, "axis":axis}
                         )
@@ -691,9 +693,10 @@ class OpTemplateWithEnvironment(object):
                 Define("MB_DOF", "(MB_DOF_BASE+CHUNK_DOF)"),
                 Define("GLOBAL_MB_NR_BASE", "(MACROBLOCK_NR*PAR_MB_COUNT*SEQ_MB_COUNT)"),
                 Line(),
-                Define("LIFT_MAT_BLOCK_BYTES", liftmat_data.block_bytes),
-                Define("LIFTMAT_CHUNK_FLOATS", 
-                    "(FACE_DOFS_PER_EL*CHUNK_DOF_COUNT)"),
+                Define("LIFTMAT_COLUMNS", liftmat_data.matrix_columns),
+                Define("LIFTMAT_CHUNK_FLOATS", liftmat_data.block_floats),
+                Define("LIFTMAT_CHUNK_BYTES", 
+                    "(LIFTMAT_CHUNK_FLOATS*%d)" % fplan.float_size),
 
                 Line(),
                 CudaShared(ArrayOf(POD(float_type, "smem_lift_mat"), 
@@ -716,15 +719,15 @@ class OpTemplateWithEnvironment(object):
         f_body.extend(
             self.get_load_code(
                 dest="smem_lift_mat",
-                base=("gmem_lift_mat + MB_CHUNK*LIFT_MAT_BLOCK_BYTES"),
-                bytes="LIFTMAT_CHUNK_FLOATS*%d" % fplan.float_size,
+                base=("gmem_lift_mat + MB_CHUNK*LIFTMAT_CHUNK_BYTES"),
+                bytes="LIFTMAT_CHUNK_BYTES",
                 descr="load lift mat chunk")
             +[S("__syncthreads()")])
 
         # ---------------------------------------------------------------------
         def get_mat_entry(row, col):
             return ("smem_lift_mat["
-                    "%(row)s*FACE_DOFS_PER_EL + %(col)s"
+                    "%(row)s*LIFTMAT_COLUMNS + %(col)s"
                     "]" % {"row":row, "col":col}
                     )
 
@@ -1047,25 +1050,36 @@ class OpTemplateWithEnvironment(object):
         fplan = discr.flux_plan
         lplan = fplan.localop_plan()
 
-        block_bytes = self.discr.devdata.align(
-                fplan.dofs_per_el()
-                *lplan.chunk_size
-                *discr.dimensions
-                *fplan.float_size)
+        columns = fplan.dofs_per_el()*discr.dimensions
+        additional_columns = 0
+        # avoid smem fetch bank conflicts by ensuring odd col count
+        if columns % 2 == 0:
+            columns += 1
+            additional_columns += 1
+
+        block_floats = self.discr.devdata.align_dtype(
+                columns*lplan.chunk_size, fplan.float_size)
 
         vstacked_matrices = [
                 numpy.vstack(fplan.mb_elements*(m,))
                 for m in diff_op_cls.matrices(elgroup)
                 ]
-                
+
         chunks = []
 
+        from pytools import single_valued
         for chunk_start in range(0, fplan.mb_elements*fplan.dofs_per_el(), lplan.chunk_size):
+            matrices = [
+                m[chunk_start:chunk_start+lplan.chunk_size] 
+                for m in vstacked_matrices]
+
+            matrices.append(
+                numpy.zeros((single_valued(m.shape[0] for m in matrices), 
+                    additional_columns))
+                )
+
             diffmats = numpy.asarray(
-                    numpy.hstack(
-                        m[chunk_start:chunk_start+lplan.chunk_size] 
-                        for m in vstacked_matrices
-                        ),
+                    numpy.hstack(matrices),
                     dtype=self.discr.flux_plan.float_type,
                     order="C")
             chunks.append(buffer(diffmats))
@@ -1074,8 +1088,9 @@ class OpTemplateWithEnvironment(object):
         from hedge.cuda.tools import pad_and_join
         return Record(
                 device_memory=cuda.to_device(
-                    pad_and_join(chunks, block_bytes)),
-                block_bytes=block_bytes)
+                    pad_and_join(chunks, block_floats*fplan.float_size)),
+                block_floats=block_floats,
+                matrix_columns=columns)
 
     @memoize_method
     def gpu_liftmat(self):
@@ -1083,14 +1098,26 @@ class OpTemplateWithEnvironment(object):
         fplan = discr.flux_plan
         lplan = fplan.flux_lifting_plan()
 
-        block_bytes = self.discr.devdata.align(
-                fplan.face_dofs_per_el()
-                *lplan.chunk_size
-                *fplan.float_size)
+        columns = fplan.face_dofs_per_el()
+        # avoid smem fetch bank conflicts by ensuring odd col count
+        if columns % 2 == 0:
+            columns += 1
+
+        block_floats = self.discr.devdata.align_dtype(
+                columns*lplan.chunk_size, fplan.float_size)
 
         vstacked_matrix = numpy.vstack(
                 fplan.mb_elements*(fplan.ldis.lifting_matrix(),)
                 )
+
+        if vstacked_matrix.shape[1] < columns:
+            vstacked_matrix = numpy.hstack((
+                vstacked_matrix,
+                numpy.zeros((
+                    vstacked_matrix.shape[0],
+                    columns-vstacked_matrix.shape[1]
+                    ))
+                ))
                 
         chunks = [
                 buffer(numpy.asarray(
@@ -1107,8 +1134,10 @@ class OpTemplateWithEnvironment(object):
         from hedge.cuda.tools import pad_and_join
         return Record(
                 device_memory=cuda.to_device(
-                    pad_and_join(chunks, block_bytes)),
-                block_bytes=block_bytes)
+                    pad_and_join(chunks, block_floats*fplan.float_size)),
+                block_floats=block_floats,
+                matrix_columns=columns,
+                )
 
         
     @memoize_method

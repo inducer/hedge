@@ -188,6 +188,7 @@ class Discretization(hedge.discretization.Discretization):
             blocks = {}
             for el_id, block in enumerate(partition):
                 blocks.setdefault(block, []).append(el_id)
+            block_elements = max(len(block_els) for block_els in blocks.itervalues())
 
             from hedge.cuda.plan import Parallelism
             actual_plan = flux_plan.copy(
@@ -199,8 +200,9 @@ class Discretization(hedge.discretization.Discretization):
                     )
             assert actual_plan.max_faces % 2 == 0
 
-            if (abs(flux_plan.occupancy_record().occupancy -
-                actual_plan.occupancy_record().occupancy) < 1e-10):
+            if (block_elements <= actual_plan.elements_per_block()
+                    and (flux_plan.occupancy_record().occupancy -
+                        actual_plan.occupancy_record().occupancy) < 1e-10):
                 break
 
             part_count += 1
