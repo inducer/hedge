@@ -159,6 +159,9 @@ class FluxExecutionPlan(ExecutionPlan):
     def faces_per_el(self):
         return self.ldis.face_count()
 
+    def face_dofs_per_el(self):
+        return self.ldis.face_node_count()*self.faces_per_el()
+
     def microblocks_per_block(self):
         return self.parallelism.total()
 
@@ -206,6 +209,14 @@ class FluxExecutionPlan(ExecutionPlan):
     def face_pair_count(self):
         return (self.face_count()+1) // 2
 
+    def face_dofs_per_microblock(self):
+        return self.mb_elements*self.faces_per_el()*self.dofs_per_face()
+
+    def aligned_face_dofs_per_microblock(self):
+        return self.devdata.align_dtype(
+                self.face_dofs_per_microblock(),
+                self.float_size)
+
     @memoize_method
     def shared_mem_use(self):
         from hedge.cuda.execute import face_pair_struct
@@ -217,7 +228,9 @@ class FluxExecutionPlan(ExecutionPlan):
             index_lists_entry_size = 1
 
         return (128 # parameters, block header, small extra stuff
-                + self.elements_per_block()*self.faces_per_el()*self.dofs_per_face()*self.float_size
+                + self.aligned_face_dofs_per_microblock()
+                * self.microblocks_per_block()
+                * self.float_size
                 + len(face_pair_struct(self.float_type, d))*self.face_pair_count()
                 + index_lists_entry_size*20*self.dofs_per_face()
                 )
@@ -324,9 +337,6 @@ class FluxLiftingExecutionPlan(ExecutionPlan):
         self.parallelism = parallelism
         self.chunk_size = chunk_size
 
-    def dofs_per_macroblock(self):
-        return self.parallelism.total() * self.flux_plan.mb_aligned_floats
-
     @memoize_method
     def shared_mem_use(self):
         fplan = self.flux_plan
@@ -340,11 +350,14 @@ class FluxLiftingExecutionPlan(ExecutionPlan):
                    )
                )
 
+    def dofs_per_macroblock(self):
+        return self.parallelism.total() * self.flux_plan.mb_aligned_floats
+
     def threads(self):
         return self.parallelism.p*self.chunk_size
 
     def registers(self):
-        return 17
+        return 14
 
     def __str__(self):
             return ("%s chunk_size=%d" % (

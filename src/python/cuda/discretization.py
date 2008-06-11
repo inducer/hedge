@@ -487,10 +487,12 @@ class Discretization(hedge.discretization.Discretization):
     def gpu_dof_count(self):
         from hedge.cuda.tools import int_ceiling
 
+        fplan = self.flux_plan
         return int_ceiling(
-                    self.flux_plan.dofs_per_block() * len(self.blocks),     
-                    self.flux_plan.localop_plan().dofs_per_macroblock())
-
+                int_ceiling(
+                    fplan.dofs_per_block() * len(self.blocks),     
+                    fplan.localop_plan().dofs_per_macroblock()),
+                fplan.flux_lifting_plan().dofs_per_macroblock())
 
     def volume_to_gpu(self, field):
         from hedge.tools import log_shape
