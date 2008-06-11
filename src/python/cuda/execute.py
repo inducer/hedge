@@ -199,6 +199,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         #debugbuf = gpuarray.zeros((512,), dtype=numpy.float32)
 
         xyz_diff = [discr.volume_empty() for axis in range(d)]
+
         elgroup, = discr.element_groups
         args = xyz_diff+[
                 self.ex.gpu_diffmats(op.__class__, eg).device_memory,
@@ -227,7 +228,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             diff = dx - real_dx
 
             rel_err_norm = la.norm(diff)/la.norm(real_dx)
-            print rel_err_norm
+            print "diff", rel_err_norm
             if rel_err_norm > 5e-5:
                 self.print_error_structure(dx, real_dx, diff)
             assert rel_err_norm < 5e-5
@@ -367,7 +368,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                 self.print_error_structure(copied_flux, true_flux, diff)
                 raw_input()
 
-            print la.norm(diff)/norm_true
+            print "flux", la.norm(diff)/norm_true
             assert la.norm(diff)/norm_true < 1e-6
 
         if False:
@@ -527,8 +528,8 @@ class OpTemplateWithEnvironment(object):
                 dest="smem_diff_rst_mat",
                 base=("gmem_diff_rst_mat + MB_CHUNK*DIFF_MAT_BLOCK_BYTES"),
                 bytes="CHUNK_DOF_COUNT*DIMENSIONS*DOFS_PER_EL*%d" % fplan.float_size,
-                descr="load diff mat chunk"))
-
+                descr="load diff mat chunk")
+            +[S("__syncthreads()")])
 
         # ---------------------------------------------------------------------
         def get_scalar_diff_code(matrix_row, dest_pattern):
@@ -719,7 +720,8 @@ class OpTemplateWithEnvironment(object):
                 dest="smem_lift_mat",
                 base=("gmem_lift_mat + MB_CHUNK*LIFT_MAT_BLOCK_BYTES"),
                 bytes="LIFTMAT_CHUNK_FLOATS*%d" % fplan.float_size,
-                descr="load lift mat chunk"))
+                descr="load lift mat chunk")
+            +[S("__syncthreads()")])
 
         # ---------------------------------------------------------------------
         def get_mat_entry(row, col):

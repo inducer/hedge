@@ -267,7 +267,8 @@ class FluxExecutionPlan(ExecutionPlan):
         def generate_valid_plans():
             from hedge.cuda.tools import int_ceiling
 
-            chunk_sizes = range(16, self.mb_elements*self.dofs_per_el()+1, 16)
+            chunk_sizes = range(16, 
+                    self.mb_elements*self.dofs_per_el()+1, 16)
 
             if not chunk_sizes:
                 chunk_sizes = [16]
