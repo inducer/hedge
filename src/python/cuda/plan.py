@@ -50,9 +50,9 @@ def optimize_plan(plan_generator, max_func):
         raise RuntimeError, "no valid CUDA execution plans found"
 
     desired_occup = max(plan.occupancy_record().occupancy for plan in plans)
-    if desired_occup > 0.75:
+    #if desired_occup > 0.75:
         # see http://forums.nvidia.com/lofiversion/index.php?t67766.html
-        desired_occup = 0.75
+        #desired_occup = 0.75
 
     from pytools import argmax2
     return argmax2((p, max_func(p)) 
@@ -277,7 +277,7 @@ class FluxExecutionPlan(ExecutionPlan):
 
             for pe in range(1,32):
                 from hedge.cuda.tools import int_ceiling
-                localop_par = Parallelism(pe, 8)
+                localop_par = Parallelism(pe, 256//pe)
                 for chunk_size in chunk_sizes:
                     yield FluxLiftingExecutionPlan(self, localop_par, chunk_size)
 
@@ -363,7 +363,7 @@ class FluxLiftingExecutionPlan(ChunkedLocalOperatorExecutionPlan):
         return self.flux_plan.face_dofs_per_el()
 
     def registers(self):
-        return 14
+        return 13
 
 
 

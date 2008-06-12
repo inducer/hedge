@@ -636,9 +636,10 @@ class OpTemplateWithEnvironment(object):
                 Pointer, POD, Value, ArrayOf, Const, \
                 Module, FunctionDeclaration, FunctionBody, Block, \
                 Comment, Line, \
-                CudaShared, CudaGlobal, Static, \
+                CudaShared, CudaConstant, CudaGlobal, Static, \
                 Define, \
-                Constant, Initializer, If, For, Statement, Assign
+                Constant, Initializer, If, For, Statement, Assign, \
+                ArrayInitializer
                 
         discr = self.discr
         d = discr.dimensions
@@ -716,6 +717,24 @@ class OpTemplateWithEnvironment(object):
                 CudaShared(POD(numpy.uint16, "chunk_stop_el")),
                 CudaShared(POD(numpy.uint16, "chunk_el_count")),
                 Line(),
+                ArrayInitializer(
+                        CudaConstant(
+                            ArrayOf(
+                                POD(numpy.uint16, "chunk_start_el_lookup"),
+                            "MB_CHUNK_COUNT")),
+                        [(chk*lplan.chunk_size)//fplan.dofs_per_el()
+                            for chk in range(fplan.mb_chunks)]
+                        ),
+                ArrayInitializer(
+                        CudaConstant(
+                            ArrayOf(
+                                POD(numpy.uint16, "chunk_stop_el_lookup"),
+                            "MB_CHUNK_COUNT")),
+                        [min(fplan.mb_elements, 
+                            (chk*lplan.chunk_size+lplan.chunk_size-1)
+                                //fplan.dofs_per_el()+1)
+                            for chk in range(fplan.mb_chunks)]
+                        ),
                 ])
 
         S = Statement
@@ -725,9 +744,8 @@ class OpTemplateWithEnvironment(object):
             Initializer(POD(numpy.uint8, "dof_el"),
                 "MB_DOF/DOFS_PER_EL"),
             Line(),
-            Assign("chunk_start_el", "MB_DOF_BASE/DOFS_PER_EL"),
-            Assign("chunk_stop_el",
-                "min(MB_EL_COUNT, (MB_DOF_BASE+CHUNK_DOF_COUNT-1)/DOFS_PER_EL+1)"),
+            Assign("chunk_start_el", "chunk_start_el_lookup[MB_CHUNK]"),
+            Assign("chunk_stop_el", "chunk_stop_el_lookup[MB_CHUNK]"),
             Assign("chunk_el_count", "chunk_stop_el-chunk_start_el")
             ])
 
@@ -740,9 +758,15 @@ class OpTemplateWithEnvironment(object):
             )
 
         # ---------------------------------------------------------------------
-        def get_mat_mul_code(fetch_count):
+        def get_mat_mul_code(el_fetch_count):
             result = []
             dofs = range(fplan.face_dofs_per_el())
+
+            if el_fetch_count == 1:
+                local_el_number = "0"
+            else:
+                local_el_number = "DOF_LOCAL_EL"
+
             for load_chunk_start in range(0, fplan.face_dofs_per_el(),
                     lplan.chunk_size):
                 result.extend(
@@ -754,7 +778,7 @@ class OpTemplateWithEnvironment(object):
                             "+(chunk_start_el+%d)*FACE_DOFS_PER_EL+%d+CHUNK_DOF)"
                             % (fetch_el, load_chunk_start)
                             )
-                        for fetch_el in range(fetch_count))
+                        for fetch_el in range(el_fetch_count))
             
                 result.extend([
                         S("__syncthreads()"),
@@ -766,8 +790,8 @@ class OpTemplateWithEnvironment(object):
                             S("result += "
                                 "smem_lift_mat[CHUNK_DOF*LIFTMAT_COLUMNS + %d]"
                                 "*"
-                                "dof_buffer[PAR_MB_NR][DOF_LOCAL_EL][%d]"
-                                % (dof, dof-load_chunk_start))
+                                "dof_buffer[PAR_MB_NR][%s][%d]"
+                                % (dof, local_el_number, dof-load_chunk_start))
                             )
                 result.append(Line())
             return result
@@ -807,7 +831,7 @@ class OpTemplateWithEnvironment(object):
 
         mod = cuda.SourceModule(cmod, 
                 keep=True, 
-                #options=["--maxrregcount=10"]
+                #options=["--maxrregcount=12"]
                 )
         print "lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
 
