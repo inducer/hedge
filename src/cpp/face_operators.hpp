@@ -175,7 +175,7 @@ namespace hedge
 
     if (elwise_post_scaling->is_valid())
     {
-      py_vector::const_iterator el_scale_it = elwise_post_scaling.begin();
+      py_vector::const_iterator el_scale_it = elwise_post_scaling->begin();
       for (unsigned i_loc_el = 0; i_loc_el < fg.element_count(); ++i_loc_el)
         noalias(
             subrange(result,
