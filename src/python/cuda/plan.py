@@ -328,7 +328,6 @@ class ChunkedLocalOperatorExecutionPlan(ExecutionPlan):
                    # fetch buffer for each chunk
                    + self.parallelism.p
                    * self.chunk_size
-                   * self.max_elements_touched_by_chunk()
                    )
                )
 

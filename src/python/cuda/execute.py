@@ -686,7 +686,6 @@ class OpTemplateWithEnvironment(object):
                 Define("MB_EL_COUNT", fplan.mb_elements),
                 Define("PAR_MB_COUNT", lplan.parallelism.p),
                 Define("SEQ_MB_COUNT", lplan.parallelism.s),
-                Define("ELEMENTS_TOUCHED_BY_CHUNK", lplan.max_elements_touched_by_chunk()),
                 Line(),
                 Define("THREAD_NUM", "(CHUNK_DOF+PAR_MB_NR*CHUNK_DOF_COUNT)"),
                 Define("COALESCING_THREAD_COUNT", "(PAR_MB_COUNT*CHUNK_DOF_COUNT)"),
@@ -699,7 +698,6 @@ class OpTemplateWithEnvironment(object):
                 Define("LIFTMAT_CHUNK_FLOATS", liftmat_data.block_floats),
                 Define("LIFTMAT_CHUNK_BYTES", 
                     "(LIFTMAT_CHUNK_FLOATS*%d)" % fplan.float_size),
-                Define("DOF_LOCAL_EL", "(dof_el-chunk_start_el)"),
 
                 Line(),
                 CudaShared(ArrayOf(POD(float_type, "smem_lift_mat"), 
@@ -707,10 +705,8 @@ class OpTemplateWithEnvironment(object):
                 CudaShared(
                     ArrayOf(
                         ArrayOf(
-                            ArrayOf(
-                                POD(float_type, "dof_buffer"), 
-                                "PAR_MB_COUNT"),
-                            "ELEMENTS_TOUCHED_BY_CHUNK"),
+                            POD(float_type, "dof_buffer"), 
+                            "PAR_MB_COUNT"),
                         "CHUNK_DOF_COUNT"),
                     ),
                 CudaShared(POD(numpy.uint16, "chunk_start_el")),
@@ -744,9 +740,15 @@ class OpTemplateWithEnvironment(object):
             Initializer(POD(numpy.uint8, "dof_el"),
                 "MB_DOF/DOFS_PER_EL"),
             Line(),
-            Assign("chunk_start_el", "chunk_start_el_lookup[MB_CHUNK]"),
-            Assign("chunk_stop_el", "chunk_stop_el_lookup[MB_CHUNK]"),
-            Assign("chunk_el_count", "chunk_stop_el-chunk_start_el")
+
+            If("THREAD_NUM==0",
+                Block([
+                    Assign("chunk_start_el", "chunk_start_el_lookup[MB_CHUNK]"),
+                    Assign("chunk_stop_el", "chunk_stop_el_lookup[MB_CHUNK]"),
+                    Assign("chunk_el_count", "chunk_stop_el-chunk_start_el")
+                    ])
+                ),
+            S("__syncthreads()")
             ])
 
         f_body.extend(
@@ -758,27 +760,20 @@ class OpTemplateWithEnvironment(object):
             )
 
         # ---------------------------------------------------------------------
-        def get_mat_mul_code(el_fetch_count):
+        def get_batched_fetch_mat_mul_code(el_fetch_count):
             result = []
             dofs = range(fplan.face_dofs_per_el())
 
-            if el_fetch_count == 1:
-                local_el_number = "0"
-            else:
-                local_el_number = "DOF_LOCAL_EL"
-
             for load_chunk_start in range(0, fplan.face_dofs_per_el(),
                     lplan.chunk_size):
-                result.extend(
+                result.append(
                         Assign(
-                            "dof_buffer[PAR_MB_NR][%d][CHUNK_DOF]"
-                            % fetch_el,
+                            "dof_buffer[PAR_MB_NR][CHUNK_DOF]",
                             "tex1Dfetch(fluxes_on_faces_tex, "
                             "global_mb_facedof_base"
-                            "+(chunk_start_el+%d)*FACE_DOFS_PER_EL+%d+CHUNK_DOF)"
-                            % (fetch_el, load_chunk_start)
-                            )
-                        for fetch_el in range(el_fetch_count))
+                            "+(chunk_start_el)*FACE_DOFS_PER_EL+%d+CHUNK_DOF)"
+                            % (load_chunk_start)
+                            ))
             
                 result.extend([
                         S("__syncthreads()"),
@@ -790,11 +785,32 @@ class OpTemplateWithEnvironment(object):
                             S("result += "
                                 "smem_lift_mat[CHUNK_DOF*LIFTMAT_COLUMNS + %d]"
                                 "*"
-                                "dof_buffer[PAR_MB_NR][%s][%d]"
-                                % (dof, local_el_number, dof-load_chunk_start))
+                                "dof_buffer[PAR_MB_NR][%d]"
+                                % (dof, dof-load_chunk_start))
                             )
                 result.append(Line())
             return result
+
+        def get_direct_tex_mat_mul_code():
+            return [
+                    S("result += "
+                        "tex1Dfetch(fluxes_on_faces_tex, "
+                        "global_mb_facedof_base"
+                        "+dof_el*FACE_DOFS_PER_EL+%(j)d)"
+                        " * smem_lift_mat["
+                        "%(row)s*LIFTMAT_COLUMNS + %(j)s"
+                        "]"
+                        % {"j":j, "row": "CHUNK_DOF"}
+                        )
+                    for j in range(
+                        fplan.dofs_per_face()*fplan.faces_per_el())
+                    ]+[Line()]
+
+        def get_mat_mul_code(el_fetch_count):
+            if el_fetch_count == 1:
+                return get_batched_fetch_mat_mul_code(el_fetch_count)
+            else:
+                return get_direct_tex_mat_mul_code()
 
         from hedge.cuda.cgen import make_multiple_ifs
         f_body.append(make_multiple_ifs([
