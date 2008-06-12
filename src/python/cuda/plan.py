@@ -255,7 +255,7 @@ class FluxExecutionPlan(ExecutionPlan):
 
             for pe in range(1,32):
                 from hedge.cuda.tools import int_ceiling
-                localop_par = Parallelism(pe, 8)
+                localop_par = Parallelism(pe, 256//pe)
                 for chunk_size in chunk_sizes:
                     yield DiffExecutionPlan(self, localop_par, chunk_size)
 
@@ -328,6 +328,7 @@ class ChunkedLocalOperatorExecutionPlan(ExecutionPlan):
                    # fetch buffer for each chunk
                    + self.parallelism.p
                    * self.chunk_size
+                   * self.fetch_buffer_chunks()
                    )
                )
 
@@ -353,6 +354,9 @@ class DiffExecutionPlan(ChunkedLocalOperatorExecutionPlan):
     def registers(self):
         return 17
 
+    def fetch_buffer_chunks(self):
+        return 0
+
 
 
 
@@ -364,6 +368,8 @@ class FluxLiftingExecutionPlan(ChunkedLocalOperatorExecutionPlan):
     def registers(self):
         return 13
 
+    def fetch_buffer_chunks(self):
+        return 1
 
 
 

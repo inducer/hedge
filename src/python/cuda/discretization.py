@@ -172,22 +172,22 @@ class Discretization(hedge.discretization.Discretization):
                     vweights=[1000]*len(mesh.elements))
 
             # prepare a mapping:  block# -> # of external interfaces
-            block2extifaces = {}
+            block2extifaces = dict((i, 0) for i in range(part_count))
 
             for (e1, f1), (e2, f2) in mesh.both_interfaces():
                 b1 = partition[e1.id]
                 b2 = partition[e2.id]
 
                 if b1 != b2:
-                    block2extifaces[b1] = block2extifaces.get(b1, 0) + 1
+                    block2extifaces[b1] += 1
 
             for el, face_nbr in mesh.tag_to_boundary[hedge.mesh.TAG_ALL]:
                 b1 = partition[el.id]
-                block2extifaces[b1] = block2extifaces.get(b1, 0) + 1
+                block2extifaces[b1] += 1
 
-            blocks = {}
+            blocks = dict((i, []) for i in range(part_count))
             for el_id, block in enumerate(partition):
-                blocks.setdefault(block, []).append(el_id)
+                blocks[block].append(el_id)
             block_elements = max(len(block_els) for block_els in blocks.itervalues())
 
             from hedge.cuda.plan import Parallelism
@@ -205,7 +205,7 @@ class Discretization(hedge.discretization.Discretization):
                         actual_plan.occupancy_record().occupancy) < 1e-10):
                 break
 
-            part_count += 1
+            part_count += min(5, int(part_count*0.01))
 
         print "blocks: theoretical:%d practical:%d" % (orig_part_count, part_count)
 
