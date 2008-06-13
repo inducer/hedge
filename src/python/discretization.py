@@ -573,8 +573,10 @@ class Discretization(object):
             out[slice_pfx + (point_nr,)] = f(x, None) # FIXME
         return out
 
-    def boundary_normals(self, tag=hedge.mesh.TAG_ALL, dtype=None):
-        result = self.boundary_zeros(tag=tag, shape=(self.dimensions,), dtype=dtype)
+    def boundary_normals(self, tag=hedge.mesh.TAG_ALL,
+            tgt_factory=None, dtype=None):
+        result = (tgt_factory or self.boundary_zeros)(
+                shape=(self.dimensions,), tag=tag, dtype=dtype)
         for fg in self.get_boundary(tag).face_groups:
             for face_pair in fg.face_pairs:
                 flux_face = fg.flux_faces[face_pair.flux_face_index]

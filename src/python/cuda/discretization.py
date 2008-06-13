@@ -26,7 +26,7 @@ import numpy.linalg as la
 import hedge.discretization
 import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
-from pytools import memoize_method
+from pytools import memoize_method, memoize
 
 
 
@@ -132,6 +132,34 @@ class GPUBoundaryFaceStorage(GPUFaceStorage):
         self.cpu_bdry_index_in_floats = cpu_bdry_index_in_floats
         self.gpu_bdry_index_in_floats = gpu_bdry_index_in_floats
         self.face_pair_side = face_pair_side
+
+
+
+
+@memoize
+def _boundarize_kernel():
+    mod = cuda.SourceModule("""
+    texture<float, 1, cudaReadModeElementType> field_tex;
+    __global__ void boundarize(float *bfield, 
+      unsigned int *to_indices,
+      unsigned int *from_indices,
+      unsigned int n)
+    {
+      int tid = threadIdx.x;
+      int total_threads = gridDim.x*blockDim.x;
+      int cta_start = blockDim.x*blockIdx.x;
+      int i;
+            
+      for (i = cta_start + tid; i < n; i += total_threads) 
+      {
+        bfield[to_indices[i]] = 
+          tex1Dfetch(field_tex, from_indices[i]);
+      }
+    }
+    """)
+
+    return (mod.get_function("boundarize"), 
+            mod.get_texref("field_tex"))
 
 
 
@@ -521,12 +549,12 @@ class Discretization(hedge.discretization.Discretization):
         from hedge.tools import log_shape
         ls = log_shape(field)
         if ls != ():
-            result = numpy.array(ls, dtype=object)
+            result = numpy.zeros(ls, dtype=object)
 
             from pytools import indices_in_shape
 
             for i in indices_in_shape(ls):
-                result[i] = self.from_gpu(field[i])
+                result[i] = self.volume_from_gpu(field[i])
             return result
         else:
             copied_vec = field.get(pagelocked=True)
@@ -579,9 +607,9 @@ class Discretization(hedge.discretization.Discretization):
         ls = log_shape(field)
         if ls != ():
             from pytools import indices_in_shape
-            result = numpy.array(ls, dtype=object)
-            for i in indices_in_shape(shape):
-                result[i] = self.boundary_to_gpu(field[i], tag)
+            result = numpy.zeros(ls, dtype=object)
+            for i in indices_in_shape(ls):
+                result[i] = self.boundary_to_gpu(tag, field[i])
             return result
         else:
             result = cuda.pagelocked_empty(
@@ -627,13 +655,13 @@ class Discretization(hedge.discretization.Discretization):
             dtype = self.default_scalar_type
 
         if shape == ():
-            return create_func((self.aligned_boundary_floats), dtype=dtype)
+            return create_func((self.aligned_boundary_floats,), dtype=dtype)
 
         result = numpy.empty(shape, dtype=object)
         from pytools import indices_in_shape
         bdry = self.get_boundary(TAG_ALL)
         for i in indices_in_shape(shape):
-            result[i] = create_func((self.aligned_boundary_floats), dtype=dtype)
+            result[i] = create_func((self.aligned_boundary_floats,), dtype=dtype)
         return result
     
     def boundary_empty(self, tag=hedge.mesh.TAG_ALL, shape=(), dtype=None):
@@ -645,19 +673,83 @@ class Discretization(hedge.discretization.Discretization):
     def interpolate_boundary_function(self, f, tag=hedge.mesh.TAG_ALL):
         s = hedge.discretization.Discretization
         def tgt_factory(shape, tag, dtype):
-            return s.boundary_zeros(self, shape, tag, dtype)
+            return s.boundary_zeros(self, tag, shape, dtype)
 
         return self.boundary_to_gpu(tag,
                 s.interpolate_boundary_function(self, f, tag, tgt_factory))
 
     def boundary_normals(self, tag=hedge.mesh.TAG_ALL):
-        raise NotImplementedError
+        s = hedge.discretization.Discretization
+        def tgt_factory(shape, tag, dtype):
+            return s.boundary_zeros(self, tag, shape, dtype)
+
+        return self.boundary_to_gpu(tag,
+                s.boundary_normals(self, tag, tgt_factory))
 
     def volumize_boundary_field(self, bfield, tag=hedge.mesh.TAG_ALL):
         raise NotImplementedError
 
+    @memoize_method
+    def _boundarize_info(self, tag):
+        from_indices = []
+        to_indices = []
+
+        for elface in self.mesh.tag_to_boundary.get(tag, []):
+            vol_face = self.face_storage_map[elface]
+            bdry_face = vol_face.opposite
+            assert isinstance(bdry_face, GPUBoundaryFaceStorage)
+
+            vol_el_index = \
+                    self.find_el_gpu_index(vol_face.el_face[0])
+            native_ilist = self.index_lists[vol_face.native_index_list_id]
+            from_indices.extend(vol_el_index+i for i in native_ilist)
+            bdry_index = bdry_face.gpu_bdry_index_in_floats
+            to_indices.extend(
+                    xrange(bdry_index, bdry_index+len(native_ilist)))
+
+        return (
+                gpuarray.to_gpu(
+                    numpy.array(from_indices, dtype=numpy.uint32)),
+                gpuarray.to_gpu(
+                    numpy.array(to_indices, dtype=numpy.uint32)),
+                len(from_indices)
+                )
+
+        
     def boundarize_volume_field(self, field, tag=hedge.mesh.TAG_ALL):
-        raise NotImplementedError
+        kernel, field_texref = _boundarize_kernel()
+
+        from_indices, to_indices, idx_count = self._boundarize_info(tag)
+        block_count, threads_per_block, elems_per_block = \
+                gpuarray.splay(idx_count)
+
+        def do_scalar(subfield):
+            from hedge.mesh import TAG_ALL
+            if tag != TAG_ALL:
+                result = self.boundary_zeros(tag)
+            else:
+                result = self.boundary_empty(tag)
+
+            if idx_count:
+                subfield.bind_to_texref(field_texref)
+                kernel(result, to_indices, from_indices,
+                        numpy.uint32(idx_count),
+                        block=(threads_per_block,1,1), grid=(block_count,1),
+                        texrefs=[field_texref])
+            return result
+
+        from hedge.tools import log_shape
+        ls = log_shape(field)
+
+        if ls == ():
+            return do_scalar(field)
+        else:
+            result = numpy.empty(ls, dtype=object)
+            from pytools import indices_in_shape
+            for i in indices_in_shape(ls):
+                result[i] = do_scalar(field[i])
+
+            return result
 
     # host vector construction ------------------------------------------------
     s = hedge.discretization.Discretization

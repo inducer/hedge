@@ -328,7 +328,7 @@ class DataArray(object):
                 if typehint is not None:
                     assert typehint == self.type
         else:
-            raise ValueError, "cannot convert object of type `%s' to DataArray" % container
+            raise ValueError, "cannot convert object of type `%s' to DataArray" % type(container)
 
         self.encoded_buffer = BinaryEncodedBuffer(buffer)
 
