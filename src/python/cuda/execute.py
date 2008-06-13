@@ -187,7 +187,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         from hedge.cuda.tools import int_ceiling
         kwargs = {
                 "block": (lplan.chunk_size, lplan.parallelism.p, 1),
-                "grid": (fplan.mb_chunks, 
+                "grid": (lplan.chunks_per_microblock(), 
                     int_ceiling(
                         fplan.dofs_per_block()*len(discr.blocks)/
                         lplan.dofs_per_macroblock())
@@ -248,7 +248,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         gather, gather_texrefs, field_texref, bfield_texref = \
                 self.ex.get_flux_gather_kernel(op)
         lift, lift_texrefs, fluxes_on_faces_texref = \
-                self.ex.get_flux_local_kernel(op)
+                self.ex.get_flux_local_kernel(op.is_lift)
 
         flux = discr.volume_empty() 
         bfield = None
@@ -322,7 +322,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         lift_kwargs = {
                 "texrefs": lift_texrefs, 
                 "block": (lplan.chunk_size, lplan.parallelism.p, 1),
-                "grid": (fplan.mb_chunks, 
+                "grid": (lplan.chunks_per_microblock(), 
                     int_ceiling(
                         fplan.dofs_per_block()*len(discr.blocks)/
                         lplan.dofs_per_macroblock())
@@ -493,9 +493,9 @@ class OpTemplateWithEnvironment(object):
                 Define("MACROBLOCK_NR", "blockIdx.y"),
                 Line(),
                 Define("CHUNK_DOF_COUNT", lplan.chunk_size),
-                Define("MB_CHUNK_COUNT", fplan.mb_chunks),
-                Define("MB_DOF_COUNT", "(MB_CHUNK_COUNT*CHUNK_DOF_COUNT)"),
-                Define("MB_EL_COUNT", fplan.mb_elements),
+                Define("MB_CHUNK_COUNT", lplan.chunks_per_microblock()),
+                Define("MB_DOF_COUNT", fplan.microblock.aligned_floats),
+                Define("MB_EL_COUNT", fplan.microblock.elements),
                 Define("PAR_MB_COUNT", lplan.parallelism.p),
                 Define("SEQ_MB_COUNT", lplan.parallelism.s),
                 Line(),
@@ -556,9 +556,7 @@ class OpTemplateWithEnvironment(object):
                         ]
                     +list(flatten( [
                         Assign("field_value", 
-                            #"int_dofs[PAR_MB_NR][chunk_el*DOFS_PER_EL+%d]" % (j)
-                            "tex1Dfetch(field_tex, "
-                            "global_mb_dof_base"
+                            "tex1Dfetch(field_tex, global_mb_dof_base"
                             "+mb_el*DOFS_PER_EL+%d)" % j
                             ),
                         Line(),
@@ -572,10 +570,12 @@ class OpTemplateWithEnvironment(object):
                         ))
                     )
 
+            store_code = Block()
             for glob_axis in dims:
-                code.append(Block([
+                store_code.append(Block([
                     Initializer(Value("float%d" % rst_channels, "rst_to_xyz"),
-                        "tex2D(rst_to_xyz_tex, %d, global_mb_nr*MB_EL_COUNT+mb_el)" % glob_axis
+                        "tex2D(rst_to_xyz_tex, %d, global_mb_nr*MB_EL_COUNT+mb_el)" 
+                        % glob_axis
                         ),
                     Assign(
                         dest_pattern % glob_axis,
@@ -586,7 +586,11 @@ class OpTemplateWithEnvironment(object):
                             for loc_axis in dims
                             )
                         )
-                    ]))
+                    ])
+                        )
+
+            code.append(If("MB_DOF < DOFS_PER_EL*MB_EL_COUNT", store_code))
+
             return code
 
         f_body.extend([
@@ -631,7 +635,7 @@ class OpTemplateWithEnvironment(object):
 
     # diff kernel -------------------------------------------------------------
     @memoize_method
-    def get_flux_local_kernel(self, elgroup):
+    def get_flux_local_kernel(self, is_lift):
         from hedge.cuda.cgen import \
                 Pointer, POD, Value, ArrayOf, Const, \
                 Module, FunctionDeclaration, FunctionBody, Block, \
@@ -648,7 +652,6 @@ class OpTemplateWithEnvironment(object):
         lplan = fplan.flux_lifting_plan()
 
         liftmat_data = self.gpu_liftmat()
-        elgroup, = discr.element_groups
 
         float_type = fplan.float_type
 
@@ -662,10 +665,16 @@ class OpTemplateWithEnvironment(object):
 
         rst_channels = discr.devdata.make_valid_tex_channel_count(d)
         cmod = Module([
-                Value("texture<float, 1, cudaReadModeElementType>",
-                    "inverse_jacobians_tex"),
                 Value("texture<float, 1, cudaReadModeElementType>", 
                     "fluxes_on_faces_tex"),
+                ])
+        if is_lift:
+            cmod.append(
+                Value("texture<float, 1, cudaReadModeElementType>",
+                    "inverse_jacobians_tex"),
+                )
+
+        cmod.extend([
                 Line(),
                 Define("DIMENSIONS", discr.dimensions),
                 Define("DOFS_PER_EL", fplan.dofs_per_el()),
@@ -680,10 +689,10 @@ class OpTemplateWithEnvironment(object):
                 Define("MACROBLOCK_NR", "blockIdx.y"),
                 Line(),
                 Define("CHUNK_DOF_COUNT", lplan.chunk_size),
-                Define("MB_CHUNK_COUNT", fplan.mb_chunks),
-                Define("MB_DOF_COUNT", "(MB_CHUNK_COUNT*CHUNK_DOF_COUNT)"),
+                Define("MB_CHUNK_COUNT", lplan.chunks_per_microblock()),
+                Define("MB_DOF_COUNT", fplan.microblock.aligned_floats),
                 Define("MB_FACEDOF_COUNT", fplan.aligned_face_dofs_per_microblock()),
-                Define("MB_EL_COUNT", fplan.mb_elements),
+                Define("MB_EL_COUNT", fplan.microblock.elements),
                 Define("PAR_MB_COUNT", lplan.parallelism.p),
                 Define("SEQ_MB_COUNT", lplan.parallelism.s),
                 Line(),
@@ -719,7 +728,7 @@ class OpTemplateWithEnvironment(object):
                                 POD(numpy.uint16, "chunk_start_el_lookup"),
                             "MB_CHUNK_COUNT")),
                         [(chk*lplan.chunk_size)//fplan.dofs_per_el()
-                            for chk in range(fplan.mb_chunks)]
+                            for chk in range(lplan.chunks_per_microblock())]
                         ),
                 ArrayInitializer(
                         CudaConstant(
@@ -729,7 +738,7 @@ class OpTemplateWithEnvironment(object):
                         [min(fplan.mb_elements, 
                             (chk*lplan.chunk_size+lplan.chunk_size-1)
                                 //fplan.dofs_per_el()+1)
-                            for chk in range(fplan.mb_chunks)]
+                            for chk in range(lplan.chunks_per_microblock())]
                         ),
                 ])
 
@@ -812,6 +821,12 @@ class OpTemplateWithEnvironment(object):
             else:
                 return get_direct_tex_mat_mul_code()
 
+        if is_lift:
+            inv_jac_multiplier = ("tex1Dfetch(inverse_jacobians_tex,"
+                    "global_mb_nr*MB_EL_COUNT+dof_el)")
+        else:
+            inv_jac_multiplier = "1"
+
         from hedge.cuda.cgen import make_multiple_ifs
         f_body.append(make_multiple_ifs([
                 ("chunk_el_count == %d" % fetch_count,
@@ -830,10 +845,11 @@ class OpTemplateWithEnvironment(object):
                             Line(),
                             ]
                             +get_mat_mul_code(fetch_count)+[
-                            Assign(
-                                "flux[global_mb_dof_base+MB_DOF]",
-                                "result*tex1Dfetch(inverse_jacobians_tex,"
-                                "global_mb_nr*MB_EL_COUNT+dof_el)"
+                            If("MB_DOF < DOFS_PER_EL*MB_EL_COUNT",
+                                Assign(
+                                    "flux[global_mb_dof_base+MB_DOF]",
+                                    "result*%s" % inv_jac_multiplier
+                                    )
                                 )
                             ])
                         )
@@ -851,12 +867,14 @@ class OpTemplateWithEnvironment(object):
                 )
         print "lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
 
-        inverse_jacobians_texref = mod.get_texref("inverse_jacobians_tex")
-        self.inverse_jacobians_tex(elgroup).bind_to_texref(
-                inverse_jacobians_texref)
-
         fluxes_on_faces_texref = mod.get_texref("fluxes_on_faces_tex")
-        texrefs = [fluxes_on_faces_texref, inverse_jacobians_texref]
+        texrefs = [fluxes_on_faces_texref]
+
+        if is_lift:
+            inverse_jacobians_texref = mod.get_texref("inverse_jacobians_tex")
+            self.inverse_jacobians_tex(elgroup).bind_to_texref(
+                    inverse_jacobians_texref)
+            texrefs.append(inverse_jacobians_texref)
 
         return (mod.get_function("apply_lift_mat"), 
                 texrefs, 
@@ -1136,14 +1154,14 @@ class OpTemplateWithEnvironment(object):
                 columns*lplan.chunk_size, fplan.float_size)
 
         vstacked_matrices = [
-                numpy.vstack(fplan.mb_elements*(m,))
+                numpy.vstack(fplan.microblock.elements*(m,))
                 for m in diff_op_cls.matrices(elgroup)
                 ]
 
         chunks = []
 
         from pytools import single_valued
-        for chunk_start in range(0, fplan.mb_elements*fplan.dofs_per_el(), lplan.chunk_size):
+        for chunk_start in range(0, fplan.microblock.elements*fplan.dofs_per_el(), lplan.chunk_size):
             matrices = [
                 m[chunk_start:chunk_start+lplan.chunk_size] 
                 for m in vstacked_matrices]
@@ -1168,7 +1186,7 @@ class OpTemplateWithEnvironment(object):
                 matrix_columns=columns)
 
     @memoize_method
-    def gpu_liftmat(self):
+    def gpu_liftmat(self, is_lift):
         discr = self.discr
         fplan = discr.flux_plan
         lplan = fplan.flux_lifting_plan()
@@ -1181,8 +1199,13 @@ class OpTemplateWithEnvironment(object):
         block_floats = self.discr.devdata.align_dtype(
                 columns*lplan.chunk_size, fplan.float_size)
 
+        if is_lift:
+            mat = fplan.ldis.lifting_matrix()
+        else:
+            mat = fplan.ldis.multi_face_mass_matrix()
+
         vstacked_matrix = numpy.vstack(
-                fplan.mb_elements*(fplan.ldis.lifting_matrix(),)
+                fplan.microblock.elements*(mat,)
                 )
 
         if vstacked_matrix.shape[1] < columns:
@@ -1201,7 +1224,7 @@ class OpTemplateWithEnvironment(object):
                     dtype=self.discr.flux_plan.float_type,
                     order="C"))
                 for chunk_start in range(
-                    0, fplan.mb_elements*fplan.dofs_per_el(), 
+                    0, fplan.microblock.elements*fplan.dofs_per_el(), 
                     lplan.chunk_size)
                 ]
         
@@ -1338,7 +1361,7 @@ class OpTemplateWithEnvironment(object):
         def find_elface_dest(el_face):
             elface_dofs = face_dofs*ldis.face_count()
             num_in_block = discr.find_number_in_block(el_face[0])
-            mb_index, index_in_mb = divmod(num_in_block,  fplan.mb_elements)
+            mb_index, index_in_mb = divmod(num_in_block,  fplan.microblock.elements)
             return (mb_index * fplan.aligned_face_dofs_per_microblock()
                     + index_in_mb * elface_dofs
                     + el_face[1]*face_dofs)

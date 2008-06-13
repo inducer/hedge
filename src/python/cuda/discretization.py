@@ -311,13 +311,13 @@ class Discretization(hedge.discretization.Discretization):
             elements = [self.mesh.elements[ben] for ben in block_el_numbers[block_num]]
             for block_el_nr, el in enumerate(elements):
                 el_offset = (
-                        len(microblocks)*fplan.mb_aligned_floats
+                        len(microblocks)*fplan.microblock.aligned_floats
                         + len(current_microblock)*fplan.dofs_per_el())
                 el_number_map[el] = block_el_nr
                 el_offsets_list.append(el_offset)
 
                 current_microblock.append(el)
-                if len(current_microblock) == fplan.mb_elements:
+                if len(current_microblock) == fplan.microblock.elements:
                     microblocks.append(current_microblock)
                     current_microblock = []
 
@@ -496,10 +496,10 @@ class Discretization(hedge.discretization.Discretization):
         fplan = self.flux_plan
         block = self.blocks[self.partition[el.id]]
 
-        mb_nr, in_mb_nr = divmod(block.el_number_map[el], fplan.mb_elements)
+        mb_nr, in_mb_nr = divmod(block.el_number_map[el], fplan.microblock.elements)
 
         return (block.number * self.flux_plan.dofs_per_block() 
-                + mb_nr*fplan.mb_aligned_floats
+                + mb_nr*fplan.microblock.aligned_floats
                 + in_mb_nr*fplan.dofs_per_el())
 
     def find_number_in_block(self, el):
