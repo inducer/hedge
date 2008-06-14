@@ -21,6 +21,8 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 
+
+import pymbolic.primitives
 import hedge.optemplate
 
 
@@ -33,54 +35,62 @@ class StringifyMapper(hedge.optemplate.StringifyMapper):
         else:
             tag = "WFlux"
 
-        return "%s(int=%s, ext=%s, %s)" % (tag, 
-                expr.int_coeff,
-                expr.ext_coeff,
+        return "%s(int=%s, bdry=%s)" % (tag, 
+                expr.interiors,
                 expr.boundaries)
 
 
 
 
-class WholeDomainFluxOperator(hedge.optemplate.Operator):
-    def __init__(self, discr, is_lift, int_coeff, ext_coeff, boundaries, 
+class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
+    def __init__(self, discr, is_lift, interiors, boundaries, 
             flux_optemplate=None):
-        """@arg boundaries: A list of C{(tag, int_coeff, ext_coeff, bfield)} tuples.
-        """
-        flux_to_number = {}
-        def register_flux(int_coeff, ext_coeff):
-            try:
-                return flux_to_number[int_coeff, ext_coeff]
-            except KeyError:
-                number = len(self.fluxes)
-                flux_to_number[int_coeff, ext_coeff] = number
-                self.fluxes.append((int_coeff, ext_coeff))
-                return number
-
-        hedge.optemplate.Operator.__init__(self, discr)
-        self.fluxes = []
+        self.discr = discr
         self.is_lift = is_lift
-        self.interior_flux_number = \
-                register_flux(int_coeff, ext_coeff)
+
+        self.fluxes = []
+
         from pytools import Record
-        self.boundaries = [
-                Record(
-                    tag=tag,
-                    flux_number=register_flux(int_coeff, ext_coeff),
-                    bfield_expr=bfield_expr)
-                for tag, int_coeff, ext_coeff, bfield_expr in boundaries]
+        self.interiors = interiors
+
+        interior_deps = set(
+                iflux.field_expr for iflux in interiors)
+        boundary_deps = (
+                set(bflux.field_expr for bflux in boundaries)
+                |
+                set(bflux.bfield_expr for bflux in boundaries)
+                )
+        self.interior_deps = list(interior_deps)
+        self.boundary_deps = list(boundary_deps)
+        self.all_deps = list(interior_deps|boundary_deps)
+
+        tag_to_bdry_id = {}
+        self.bdry_id_to_fluxes = {}
+
+        for bflux in boundaries:
+            bdry_id = tag_to_bdry_id.setdefault(bflux.tag, len(tag_to_bdry_id))
+            self.bdry_id_to_fluxes.setdefault(bdry_id, []).append(bflux)
                 
         self.flux_optemplate = flux_optemplate
 
-        self.elface_to_boundary = {}
-        for b in self.boundaries:
-            for elface in discr.mesh.tag_to_boundary.get(b.tag, []):
-                if elface in self.elface_to_boundary:
+        self.elface_to_bdry_id = {}
+        for btag, bdry_id in tag_to_bdry_id.iteritems():
+            for elface in discr.mesh.tag_to_boundary.get(btag, []):
+                if elface in self.elface_to_bdry_id:
                     raise ValueError, "face contained in two boundaries of WholeDomainFlux"
-                self.elface_to_boundary[elface] = b
+                self.elface_to_bdry_id[elface] = bdry_id
 
-    def boundary_elface_to_flux_number(self, elface):
+    @staticmethod
+    def short_name(field):
+        from pymbolic.primitives import Subscript
+        if isinstance(field, Subscript):
+            return "%s%d" % (field.aggregate, field.index)
+        else:
+            return str(field)
+
+    def boundary_elface_to_bdry_id(self, elface):
         try:
-            return self.elface_to_boundary[elface].flux_number
+            return self.elface_to_bdry_id[elface]
         except KeyError:
             return len(self.fluxes)
 
@@ -104,67 +114,87 @@ class BoundaryCombiner(hedge.optemplate.IdentityMapper):
         return expr
 
     def map_sum(self, expr):
-        arg_to_flux = {}
-
         from hedge.optemplate import OperatorBinding, \
                 FluxCoefficientOperator, LiftingFluxCoefficientOperator, \
                 Field, BoundaryPair
+
         flux_op_types = (FluxCoefficientOperator, LiftingFluxCoefficientOperator)
-        valid_arg_types = (Field, BoundaryPair)
 
-        result = []
-        for ch in expr.children:
-            if (isinstance(ch, OperatorBinding) 
-                    and isinstance(ch.op, flux_op_types)
-                    and isinstance(ch.field, valid_arg_types)):
-                arg_to_flux.setdefault(ch.field, []).append(ch.op)
+        def is_valid_arg(arg):
+            from pymbolic.primitives import Subscript, Variable
+            if isinstance(arg, BoundaryPair):
+                return is_valid_arg(arg.field) and is_valid_arg(arg.bfield)
+            elif isinstance(arg, Subscript):
+                return isinstance(arg.aggregate, Variable) and isinstance(arg.index, int)
             else:
-                result.append(self.rec(ch))
+                return isinstance(arg, Variable)
 
-        for inner_var in arg_to_flux:
-            if isinstance(inner_var, BoundaryPair):
-                # not an inner-flux variable
-                continue
-
-            inner_flux_ops = arg_to_flux[inner_var]
-            try:
-                inner_flux_op = inner_flux_ops.pop()
-            except IndexError:
-                # empty already--that's ok
-                continue
-
-            flux_optemplate_summands = [OperatorBinding(inner_flux_op, inner_var)]
-
+        def gather_one_wdflux(expressions):
+            interiors = []
             boundaries = []
-            for bp in arg_to_flux:
-                if isinstance(bp, BoundaryPair) and bp.field == inner_var:
-                    bflux_ops = arg_to_flux[bp]
-                    for i in range(len(bflux_ops)):
-                        if isinstance(bflux_ops[i], type(inner_flux_op)):
-                            bflux_op = bflux_ops.pop(i)
-                            boundaries.append((
-                                bp.tag,
-                                bflux_op.int_coeff,
-                                bflux_op.ext_coeff,
-                                bp.bfield))
-                            flux_optemplate_summands.append(
-                                    OperatorBinding(bflux_op, bp))
+            is_lift = None
 
-            from pymbolic import flattened_sum
-            wflux = WholeDomainFluxOperator(
-                    self.discr,
-                    is_lift=isinstance(inner_flux_op, LiftingFluxCoefficientOperator),
-                    int_coeff=inner_flux_op.int_coeff,
-                    ext_coeff=inner_flux_op.ext_coeff,
-                    boundaries=boundaries,
-                    flux_optemplate=flattened_sum(flux_optemplate_summands))
+            rest = []
+            flux_optemplate_summands = []
 
-            from hedge.optemplate import OperatorBinding
-            result.append(OperatorBinding(wflux, inner_var))
+            from pytools import Record
+            for ch in expressions:
+                if (isinstance(ch, OperatorBinding) 
+                        and isinstance(ch.op, flux_op_types)
+                        and is_valid_arg(ch.field)):
+                    my_is_lift = isinstance(ch.op, LiftingFluxCoefficientOperator),
 
-        # make sure we got everything
-        for var, flux_ops in arg_to_flux.iteritems():
-            assert not flux_ops
+                    if is_lift is None:
+                        is_lift = my_is_lift
+                    else:
+                        if is_lift != my_is_lift:
+                            rest.append(ch)
+                            continue
 
+                    flux_optemplate_summands.append(ch)
+
+                    if isinstance(ch.field, BoundaryPair):
+                        bp = ch.field
+                        if ch.op.discr.mesh.tag_to_boundary.get(bp.tag, []):
+                            boundaries.append(Record(
+                                tag=bp.tag,
+                                int_coeff=ch.op.int_coeff,
+                                ext_coeff=ch.op.ext_coeff,
+                                field_expr=bp.field,
+                                bfield_expr=bp.bfield,
+                                field_short_name=\
+                                        WholeDomainFluxOperator.short_name(bp.field),
+                                bfield_short_name=
+                                        WholeDomainFluxOperator.short_name(bp.bfield),
+                                ))
+                    else:
+                        interiors.append(Record(
+                                int_coeff=ch.op.int_coeff,
+                                ext_coeff=ch.op.ext_coeff,
+                                field_expr=ch.field,
+                                short_name=WholeDomainFluxOperator.short_name(ch.field)))
+                else:
+                    rest.append(ch)
+
+            if interiors or boundaries:
+                from pymbolic.primitives import flattened_sum
+                wdf = WholeDomainFluxOperator(
+                        self.discr,
+                        is_lift=is_lift,
+                        interiors=interiors,
+                        boundaries=boundaries,
+                        flux_optemplate=flattened_sum(flux_optemplate_summands))
+            else:
+                wdf = None
+            return wdf, rest
+
+        result = 0
+        
         from pymbolic.primitives import flattened_sum
-        return flattened_sum(result)
+        expressions = expr.children
+        while True:
+            wdf, expressions = gather_one_wdflux(expressions)
+            if wdf is not None:
+                result += wdf
+            else:
+                return result + flattened_sum(self.rec(r_i) for r_i in expressions)

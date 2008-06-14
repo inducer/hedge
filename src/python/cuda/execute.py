@@ -59,8 +59,8 @@ def face_pair_struct(float_type, dims):
         POD(numpy.uint16, "a_ilist_index"),
         POD(numpy.uint16, "b_ilist_index"), 
         POD(numpy.uint16, "b_write_ilist_index"), 
-        POD(numpy.uint8, "a_flux_number"),
-        POD(numpy.uint8, "b_flux_number_and_bdry_flag"), 
+        POD(numpy.uint8, "boundary_id"),
+        POD(numpy.uint8, "pad"), 
         POD(numpy.uint16, "a_dest"), 
         POD(numpy.uint16, "b_dest"), 
         ])
@@ -167,7 +167,6 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         except KeyError:
             pass
         else:
-            print "HIT"
             return xyz_diff[op.xyz_axis]
 
         discr = self.ex.discr
@@ -236,30 +235,18 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         self.diff_xyz_cache[op.__class__, field_expr] = xyz_diff
         return xyz_diff[op.xyz_axis]
 
-    def map_whole_domain_flux(self, op, field_expr, out=None):
-        field = self.rec(field_expr)
+    def map_whole_domain_flux(self, wdflux, out=None):
         discr = self.ex.discr
 
         eg, = discr.element_groups
-        fdata = self.ex.flux_with_temp_data(op, eg)
+        fdata = self.ex.flux_with_temp_data(wdflux, eg)
         fplan = discr.flux_plan
         lplan = fplan.flux_lifting_plan()
 
-        gather, gather_texrefs, field_texref, bfield_texref = \
-                self.ex.get_flux_gather_kernel(op)
+        gather, gather_texrefs, texref_map = \
+                self.ex.get_flux_gather_kernel(wdflux)
         lift, lift_texrefs, fluxes_on_faces_texref = \
-                self.ex.get_flux_local_kernel(op.is_lift)
-
-        flux = discr.volume_empty() 
-        bfield = None
-        for boundary in op.boundaries:
-            if bfield is None:
-                bfield = self.rec(boundary.bfield_expr)
-            else:
-                bfield = bfield + self.rec(boundary.bfield_expr)
-            
-        assert field.dtype == fplan.float_type
-        assert bfield.dtype == fplan.float_type
+                self.ex.get_flux_local_kernel(wdflux.is_lift, eg)
 
         debugbuf = gpuarray.zeros((512,), dtype=numpy.float32)
 
@@ -275,6 +262,11 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                 dtype=fplan.float_type)
 
         # gather phase --------------------------------------------------------
+        for dep_expr in wdflux.all_deps:
+            dep_field = self.rec(dep_expr)
+            assert dep_field.dtype == fplan.float_type
+            dep_field.bind_to_texref(texref_map[dep_expr])
+
         gather_args = [
                 debugbuf, 
                 fluxes_on_faces, 
@@ -289,9 +281,6 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                 "grid": (len(discr.blocks), 1),
                 "time_kernel": discr.instrumented,
                 }
-
-        field.bind_to_texref(field_texref)
-        bfield.bind_to_texref(bfield_texref)
 
         kernel_time = gather(*gather_args, **gather_kwargs)
 
@@ -313,9 +302,11 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             raw_input()
 
         # lift phase ----------------------------------------------------------
+        flux = discr.volume_empty() 
+
         lift_args = [
                 flux, 
-                self.ex.gpu_liftmat().device_memory,
+                self.ex.gpu_liftmat(wdflux.is_lift).device_memory,
                 debugbuf,
                 ]
 
@@ -618,7 +609,7 @@ class OpTemplateWithEnvironment(object):
                 keep=True, 
                 #options=["--maxrregcount=10"]
                 )
-        print "lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
+        print "diff: lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
 
         rst_to_xyz_texref = mod.get_texref("rst_to_xyz_tex")
         cuda.bind_array_to_texref(
@@ -635,7 +626,7 @@ class OpTemplateWithEnvironment(object):
 
     # diff kernel -------------------------------------------------------------
     @memoize_method
-    def get_flux_local_kernel(self, is_lift):
+    def get_flux_local_kernel(self, is_lift, elgroup):
         from hedge.cuda.cgen import \
                 Pointer, POD, Value, ArrayOf, Const, \
                 Module, FunctionDeclaration, FunctionBody, Block, \
@@ -651,7 +642,7 @@ class OpTemplateWithEnvironment(object):
         fplan = discr.flux_plan
         lplan = fplan.flux_lifting_plan()
 
-        liftmat_data = self.gpu_liftmat()
+        liftmat_data = self.gpu_liftmat(is_lift)
 
         float_type = fplan.float_type
 
@@ -735,7 +726,7 @@ class OpTemplateWithEnvironment(object):
                             ArrayOf(
                                 POD(numpy.uint16, "chunk_stop_el_lookup"),
                             "MB_CHUNK_COUNT")),
-                        [min(fplan.mb_elements, 
+                        [min(fplan.microblock.elements, 
                             (chk*lplan.chunk_size+lplan.chunk_size-1)
                                 //fplan.dofs_per_el()+1)
                             for chk in range(lplan.chunks_per_microblock())]
@@ -865,7 +856,7 @@ class OpTemplateWithEnvironment(object):
                 keep=True, 
                 #options=["--maxrregcount=12"]
                 )
-        print "lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
+        print "lift: lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
 
         fluxes_on_faces_texref = mod.get_texref("fluxes_on_faces_tex")
         texrefs = [fluxes_on_faces_texref]
@@ -914,11 +905,14 @@ class OpTemplateWithEnvironment(object):
                 ]
             ))
 
-        cmod = Module([
+        cmod = Module()
+
+        for dep_expr in wdflux.all_deps:
+            cmod.append(
                 Value("texture<float, 1, cudaReadModeElementType>", 
-                    "field_tex"),
-                Value("texture<float, 1, cudaReadModeElementType>", 
-                    "bfield_tex"),
+                    "%s_tex" % wdflux.short_name(dep_expr)))
+
+        cmod.extend([
                 flux_header_struct(),
                 face_pair_struct(float_type, discr.dimensions),
                 Line(),
@@ -973,46 +967,71 @@ class OpTemplateWithEnvironment(object):
             descr="load face_pair data")
             +[ S("__syncthreads()"), Line() ])
 
-        def flux_coeff_getter(flux_number_expr, prefix, flip_normal, internal_only):
+        def flux_writer(dest_expr, bdry_id_expr, flipped, is_bdry):
             from hedge.cuda.cgen import make_multiple_ifs
             from pymbolic.mapper.stringifier import PREC_NONE
-            if internal_only:
-                int_coeff, ext_coeff = wdflux.fluxes[wdflux.interior_flux_number]
-                return [
-                        Initializer(
-                            POD(float_type, "%sint_coeff" % prefix),
-                            FluxToCodeMapper(flip_normal)(int_coeff, PREC_NONE),
-                            ),
-                        Initializer(
-                            POD(float_type, "%sext_coeff" % prefix),
-                            FluxToCodeMapper(flip_normal)(ext_coeff, PREC_NONE),
-                            )
-                        ]
+
+            if flipped:
+                int_prefix, ext_prefix = "b_", "a_"
             else:
-                return [
-                    POD(float_type, "%sint_coeff" % prefix),
-                    POD(float_type, "%sext_coeff" % prefix),
-                    make_multiple_ifs(
-                        [
-                        ("(%s) == %d" % (flux_number_expr, flux_nr),
-                            Block([
-                                Assign("%sint_coeff" % prefix, 
-                                    FluxToCodeMapper(flip_normal)(int_coeff, PREC_NONE),
-                                    ),
-                                Assign("%sext_coeff" % prefix, 
-                                    FluxToCodeMapper(flip_normal)(ext_coeff, PREC_NONE),
-                                    ),
-                                ])
-                            )
-                        for flux_nr, (int_coeff, ext_coeff)
-                        in enumerate(wdflux.fluxes)
-                        ],
-                        base= Block([
-                            Assign("%sint_coeff" % prefix, 0),
-                            Assign("%sext_coeff" % prefix, 0),
+                int_prefix, ext_prefix = "a_", "b_"
+
+            flux_write_code = Block([
+                    Initializer(POD(float_type, "flux"), 0)
+                    ])
+
+            if not is_bdry:
+                for int_rec in wdflux.interiors:
+                    flux_write_code.extend([
+                        S("flux += /*int*/ (%s) * %s_%svalue"
+                            % (FluxToCodeMapper(flipped)(int_rec.int_coeff, PREC_NONE),
+                                int_rec.short_name,
+                                int_prefix)),
+                        S("flux += /*ext*/ (%s) * %s_%svalue"
+                            % (FluxToCodeMapper(flipped)(int_rec.ext_coeff, PREC_NONE),
+                                int_rec.short_name,
+                                ext_prefix))
                             ])
-                        ),
-                    ]
+            else:
+                from pytools import flatten
+
+                def get_bdry_load_code(bdry_fluxes):
+
+                    return list(flatten([
+                            Initializer(
+                                POD(float_type, "%s_a_value" % flux.field_short_name),
+                                "tex1Dfetch(%s_tex, a_index)"
+                                % flux.field_short_name
+                                ),
+                            Initializer(
+                                POD(float_type, "%s_b_value" % flux.bfield_short_name),
+                                "tex1Dfetch(%s_tex, b_index)"
+                                % flux.bfield_short_name
+                                )
+                            ]
+                            for flux in bdry_fluxes))
+
+                flux_write_code.append(
+                    make_multiple_ifs([
+                        ("(%s) == %d" % (bdry_id_expr, bdry_id),
+                            Block(get_bdry_load_code(fluxes)+list(flatten([
+                                S("flux += /*int*/ (%s) * %s_%svalue"
+                                    % (FluxToCodeMapper(flipped)(flux.int_coeff, PREC_NONE),
+                                        flux.field_short_name,
+                                        int_prefix)),
+                                S("flux += /*ext*/ (%s) * %s_%svalue"
+                                    % (FluxToCodeMapper(flipped)(flux.ext_coeff, PREC_NONE),
+                                        flux.bfield_short_name,
+                                        ext_prefix)),
+                                ]
+                                for flux in fluxes
+                                ))))
+                        for bdry_id, fluxes in wdflux.bdry_id_to_fluxes.iteritems()
+                        ])
+                    )
+            flux_write_code.append(
+                    S("%s = fpair->face_jacobian*flux" % dest_expr))
+            return flux_write_code
 
         def get_flux_code(is_bdry, is_twosided):
             flux_code = Block([])
@@ -1030,57 +1049,45 @@ class OpTemplateWithEnvironment(object):
                     "smem_index_lists + fpair->b_ilist_index"
                     ),
                 Initializer(
-                    POD(float_type, "a_value"),
-                    "tex1Dfetch(field_tex, fpair->a_base + a_ilist[FACEDOF_NR])"
-                    ),
+                    POD(numpy.uint32, "a_index"),
+                    "fpair->a_base + a_ilist[FACEDOF_NR]"),
+                Initializer(
+                    POD(numpy.uint32, "b_index"),
+                    "fpair->b_base + b_ilist[FACEDOF_NR]"),
                 ])
 
-            if is_bdry:
-                flux_code.extend([
-                    Initializer(
-                        POD(float_type, "b_value"),
-                        "tex1Dfetch(bfield_tex, fpair->b_base + b_ilist[FACEDOF_NR])"
-                        ),
-                    ])
-            else:
-                flux_code.extend([
-                    Initializer(
-                        POD(float_type, "b_value"),
-                        "tex1Dfetch(field_tex, fpair->b_base + b_ilist[FACEDOF_NR])"
-                        ),
-                    ])
+            if not is_bdry:
+                for dep_expr in wdflux.interior_deps:
+                    dep_sn = wdflux.short_name(dep_expr)
+                    flux_code.append(Initializer(
+                                POD(float_type, "%s_a_value" % dep_sn),
+                                "tex1Dfetch(%s_tex, a_index)"
+                                % dep_sn
+                                ))
+                    flux_code.extend([
+                        Initializer(
+                            POD(float_type, "%s_b_value" % dep_sn),
+                            "tex1Dfetch(%s_tex, b_index)"
+                            % dep_sn
+                            ),
+                        ])
 
-            flux_code.extend(
-                    flux_coeff_getter("fpair->a_flux_number", "a_", 
-                        flip_normal=False, internal_only=not is_bdry))
+            flux_code.append(
+                    flux_writer(
+                        "smem_fluxes_on_faces[fpair->a_dest+FACEDOF_NR]",
+                        "fpair->boundary_id", 
+                        flipped=False, is_bdry=is_bdry))
 
             if is_twosided:
-                flux_code.extend(
-                    flux_coeff_getter("fpair->b_flux_number_and_bdry_flag >> 1", 
-                        "b_", flip_normal=True, internal_only=not is_bdry)
-                    +[
+                flux_code.extend([
                     Initializer(Pointer(Value(
                         "index_list_entry_t", "b_write_ilist")),
                         "smem_index_lists + fpair->b_write_ilist_index"
                         ),
-                    ])
-
-            flux_code.extend([
-                Assign(
-                    "smem_fluxes_on_faces[fpair->a_dest+FACEDOF_NR]",
-                    "fpair->face_jacobian*("
-                    "a_int_coeff*a_value+a_ext_coeff*b_value"
-                    ")"),
-                ])
-
-            if is_twosided:
-                flux_code.extend([
-                    Assign(
+                    flux_writer(
                         "smem_fluxes_on_faces[fpair->b_dest+b_write_ilist[FACEDOF_NR]]",
-                        "fpair->face_jacobian*("
-                        "b_int_coeff*b_value+b_ext_coeff*a_value"
-                        ")"
-                        ),
+                        None, 
+                        flipped=True, is_bdry=is_bdry)
                     ])
 
             flux_code.append(S("fpair_nr += CONCURRENT_FACES"))
@@ -1128,13 +1135,19 @@ class OpTemplateWithEnvironment(object):
                 keep=True, 
                 options=["--maxrregcount=12"]
                 )
-        print "lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
+        print "flux: lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
 
-        field_texref = mod.get_texref("field_tex")
-        bfield_texref = mod.get_texref("bfield_tex")
-        texrefs = [field_texref, bfield_texref]
+        expr_to_texture_map = dict(
+                (dep_expr, mod.get_texref(
+                    "%s_tex" % wdflux.short_name(dep_expr)))
+                for dep_expr in wdflux.all_deps)
 
-        return mod.get_function("apply_flux"), texrefs, field_texref, bfield_texref
+        texrefs = expr_to_texture_map.values()
+
+        return mod.get_function("apply_flux"), texrefs, expr_to_texture_map
+
+
+
 
     # gpu data blocks ---------------------------------------------------------
     @memoize_method
@@ -1393,22 +1406,17 @@ class OpTemplateWithEnvironment(object):
                 if isinstance(b_face, GPUBoundaryFaceStorage):
                     # boundary face
                     b_base = b_face.gpu_bdry_index_in_floats
-                    a_flux_number = wdflux.boundary_elface_to_flux_number(
+                    boundary_id = wdflux.boundary_elface_to_bdry_id(
                             a_face.el_face)
-                    b_flux_number = len(wdflux.fluxes) # invalid
-                    b_load_from_bdry = 1
                     b_write_index_list = 0 # doesn't matter
                     b_dest = INVALID_DEST
-                    print>>outf, "bdy%d" % a_flux_number
+                    print>>outf, "bdy%d" % boundary_id
 
                     fp_structs = bdry_fp_structs
                 else:
                     # interior face
                     b_base = discr.find_el_gpu_index(b_face.el_face[0])
-
-                    a_flux_number = wdflux.interior_flux_number
-                    b_flux_number = wdflux.interior_flux_number
-                    b_load_from_bdry = 0
+                    boundary_id = 0
 
                     if b_face.native_block == a_face.native_block:
                         # same block
@@ -1445,9 +1453,8 @@ class OpTemplateWithEnvironment(object):
                             b_ilist_index= \
                                     a_face.global_ext_flux_index_list_id*face_dofs,
 
-                            a_flux_number=a_flux_number,
-                            b_flux_number_and_bdry_flag=\
-                                    (b_flux_number << 1) + b_load_from_bdry,
+                            boundary_id=boundary_id,
+                            pad=0,
                             b_write_ilist_index= \
                                     b_write_index_list*face_dofs,
 

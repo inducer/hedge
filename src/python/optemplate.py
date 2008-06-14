@@ -71,6 +71,9 @@ class OperatorBinding(pymbolic.primitives.AlgebraicLeaf):
     def get_mapper_method(self, mapper): 
         return mapper.map_operator_binding
 
+    def __getinitargs__(self):
+        return self.op, self.field
+
 
 
 
@@ -80,6 +83,9 @@ class DiffOperatorBase(Operator):
         Operator.__init__(self, discr)
 
         self.xyz_axis = xyz_axis
+
+    def __getinitargs__(self):
+        return self.discr, self.xyz_axis
 
 class DifferentiationOperator(DiffOperatorBase):
     @staticmethod
