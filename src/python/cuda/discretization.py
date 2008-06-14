@@ -672,7 +672,7 @@ class Discretization(hedge.discretization.Discretization):
 
     def interpolate_boundary_function(self, f, tag=hedge.mesh.TAG_ALL):
         s = hedge.discretization.Discretization
-        def tgt_factory(shape, tag, dtype):
+        def tgt_factory(tag, shape, dtype):
             return s.boundary_zeros(self, tag, shape, dtype)
 
         return self.boundary_to_gpu(tag,
@@ -680,7 +680,7 @@ class Discretization(hedge.discretization.Discretization):
 
     def boundary_normals(self, tag=hedge.mesh.TAG_ALL):
         s = hedge.discretization.Discretization
-        def tgt_factory(shape, tag, dtype):
+        def tgt_factory(tag, shape, dtype):
             return s.boundary_zeros(self, tag, shape, dtype)
 
         return self.boundary_to_gpu(tag,

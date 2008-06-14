@@ -182,7 +182,6 @@ class Discretization(object):
         self._build_element_groups_and_nodes(local_discretization)
         self._calculate_local_matrices()
         self._build_interior_face_groups()
-        self.boundaries = {}
 
         self.instrumented = False
 
@@ -444,6 +443,10 @@ class Discretization(object):
         else:
             self.face_groups = []
         
+    def boundary_nonempty(self, tag):
+        return bool(self.mesh.tag_to_boundary.get(tag, []))
+
+    @memoize_method
     def get_boundary(self, tag):
         """Get a _Boundary instance for a given `tag'.
 
@@ -452,11 +455,6 @@ class Discretization(object):
         (Otherwise get_boundary would unnecessarily become non-local when run 
         in parallel.)
         """
-        try:
-            return self.boundaries[tag]
-        except KeyError:
-            pass
-
         from hedge._internal import IndexMap, FacePair
 
         nodes = []
@@ -508,7 +506,6 @@ class Discretization(object):
                 el_face_to_face_group_and_face_pair=
                 el_face_to_face_group_and_face_pair)
 
-        self.boundaries[tag] = bdry
         return bdry
 
     # vector construction -----------------------------------------------------
