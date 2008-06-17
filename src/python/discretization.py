@@ -576,11 +576,10 @@ class Discretization(object):
                 shape=(self.dimensions,), tag=tag, dtype=dtype)
         for fg in self.get_boundary(tag).face_groups:
             for face_pair in fg.face_pairs:
-                flux_face = fg.flux_faces[face_pair.flux_face_index]
-                oeb = face_pair.opp_el_base_index
-                opp_index_list = fg.index_lists[face_pair.opp_face_index_list_number]
+                oeb = face_pair.opp.el_base_index
+                opp_index_list = fg.index_lists[face_pair.opp.face_index_list_number]
                 for i in opp_index_list:
-                    result[:,oeb+i] = flux_face.normal
+                    result[:,oeb+i] = face_pair.loc.normal
 
         return result
 

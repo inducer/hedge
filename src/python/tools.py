@@ -225,17 +225,9 @@ def ptwise_mul(a, b):
 
 
 
-def ptwise_dot(a1, a2, dofs=None):
-    if a1.dtype == object:
-        a1_log_shape = a1.shape
-        a2_log_shape = log_shape(a2)
-    else:
-        a2_log_shape = log_shape(a2)
-
-        if dofs is not None and a1.shape[-1] == dofs:
-            a1_log_shape = a1.shape[:-1]
-        else:
-            a1_log_shape = a1.shape
+def ptwise_dot(logdims1, logdims2, a1, a2):
+    a1_log_shape = a1.shape[:logdims1]
+    a2_log_shape = a1.shape[:logdims2]
 
     assert a1_log_shape[-1] == a2_log_shape[0]
     len_k = a2_log_shape[0]
@@ -250,7 +242,10 @@ def ptwise_dot(a1, a2, dofs=None):
                     for k in xrange(len_k)
                     )
 
-    return result
+    if result.shape == ():
+        return result[()]
+    else: 
+        return result
 
 
 

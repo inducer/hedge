@@ -171,8 +171,8 @@ class EMFieldEnergy(LogQuantity):
 
         from hedge.tools import ptwise_dot
         energy_density = 1/2*(
-                ptwise_dot(e, d) 
-                + ptwise_dot(h, b))
+                ptwise_dot(1, 1, e, d) 
+                + ptwise_dot(1, 1, h, b))
 
         return max_op.discr.integral(energy_density)
 

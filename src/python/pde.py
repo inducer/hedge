@@ -508,7 +508,6 @@ class MaxwellOperator(TimeDependentOperator):
             rhs = self.assemble_fields(e=j_rhs)
         else:
             rhs = self.assemble_fields()
-        from hedge.tools import to_obj_array
         return self.op_template()(w=w, pec_bc=pec_bc)+rhs
 
     def assemble_fields(self, e=None, h=None):
@@ -789,7 +788,7 @@ class WeakPoissonOperator(Operator, hedge.tools.OperatorBase):
     def op(self, u, apply_minv=False):
         from hedge.tools import ptwise_dot
         return self.div(
-                ptwise_dot(self.diffusion, self.grad(u)), 
+                ptwise_dot(2, 1, self.diffusion, self.grad(u)), 
                 u, apply_minv=apply_minv)
 
     @memoize_method
@@ -838,13 +837,12 @@ class WeakPoissonOperator(Operator, hedge.tools.OperatorBase):
         vpart = self.grad_bc_op_template()(dir_bc_u=dir_bc_u)
 
         from hedge.tools import ptwise_dot
-        diff_v = ptwise_dot(self.diffusion, vpart)
+        diff_v = ptwise_dot(2, 1, self.diffusion, vpart)
 
         def neu_bc_v():
-            return ptwise_dot(self.neu_diff, 
+            return ptwise_dot(2, 1, self.neu_diff, 
                     self.neumann_normals*
-                        self.neumann_bc.boundary_interpolant(self.discr, ntag),
-                        dofs=len(self.discr))
+                        self.neumann_bc.boundary_interpolant(self.discr, ntag))
 
         w = join_fields(0, diff_v)
         dir_bc_w = join_fields(dir_bc_u, [0]*dim)
