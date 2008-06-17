@@ -754,7 +754,8 @@ class WeakPoissonOperator(Operator, hedge.tools.OperatorBase):
                 )
 
         if apply_minv:
-            return self.discr.compile(self.m_inv * result)
+            return self.discr.compile(
+                    self.discr.inverse_mass_operator * result)
         else:
             return self.discr.compile(result)
 
@@ -785,11 +786,11 @@ class WeakPoissonOperator(Operator, hedge.tools.OperatorBase):
         return self.div_op_template(apply_minv)(
                 w=w, dir_bc_w=dir_bc_w, neu_bc_w=neu_bc_w)
 
-    def op(self, u):
+    def op(self, u, apply_minv=False):
         from hedge.tools import ptwise_dot
         return self.div(
                 ptwise_dot(self.diffusion, self.grad(u)), 
-                u, apply_minv=False)
+                u, apply_minv=apply_minv)
 
     @memoize_method
     def grad_bc_op_template(self):

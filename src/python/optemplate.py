@@ -392,6 +392,16 @@ class _InnerInverseMassContractor(pymbolic.mapper.RecursiveMapper):
     def __init__(self, discr):
         self.discr = discr
 
+    def map_constant(self, expr):
+        return OperatorBinding(
+                InverseMassOperator(self.discr),
+                expr)
+
+    def map_algebraic_leaf(self, expr):
+        return OperatorBinding(
+                InverseMassOperator(self.discr),
+                expr)
+
     def map_operator_binding(self, binding):
         if isinstance(binding.op, MassOperator):
             return binding.field

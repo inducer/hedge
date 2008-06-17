@@ -641,6 +641,12 @@ class Discretization(object):
 
         ls = log_shape(volume_vector)
         if ls == ():
+            if isinstance(volume_vector, (int, float, complex)):
+                # accept scalars as volume_vector
+                empty = self.volume_empty(dtype=type(volume_vector))
+                empty.fill(volume_vector)
+                volume_vector = empty
+
             return numpy.dot(mass_ones, volume_vector)
         else:
             result = numpy.zeros(shape=ls, dtype=float)
@@ -648,7 +654,6 @@ class Discretization(object):
             from pytools import indices_in_shape
             for i in indices_in_shape(ls):
                 result[i] = numpy.dot(mass_ones, volume_vector[i])
-                #result[i] = (self.mass_operator*volume_vector[i]).sum()
 
             return result
 

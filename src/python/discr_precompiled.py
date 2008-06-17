@@ -361,7 +361,7 @@ class Discretization(hedge.discretization.Discretization):
     def compile(self, optemplate):
         from hedge.optemplate import OperatorBinder, InverseMassContractor
         from pymbolic.mapper.constant_folder import CommutativeConstantFoldingMapper
-        #print optemplate
+
         result = (
                 InverseMassContractor()(
                     CommutativeConstantFoldingMapper()(
