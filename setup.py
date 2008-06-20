@@ -147,7 +147,7 @@ def main():
                 "meshpy>=0.91",
                 ],
             extras_require = {
-                "elliptic": ["PyUblasExt>=0.92"],
+                "matrices": ["PyUblasExt>=0.92.7"],
                 "silo": ["pylo"],
                 "parallel": ["PyMetis>=0.91"],
                 },

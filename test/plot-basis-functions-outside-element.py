@@ -19,13 +19,13 @@ for bfi, bf in zip(tri.generate_mode_identifiers(), tri.basis_functions()):
         values = []
         for y in ypts:
             values.append((x, y, bf(numpy.array((x,y)))))
-        lines.append(Gnuplot.Data(values, with="lines"))
+        lines.append(Gnuplot.Data(values, with_="lines"))
 
     for y in xpts:
         values = []
         for x in ypts:
             values.append((x, y, bf(numpy.array((x,y)))))
-        lines.append(Gnuplot.Data(values, with="lines"))
+        lines.append(Gnuplot.Data(values, with_="lines"))
 
     tri = numpy.array([
         (-1,-1,0),

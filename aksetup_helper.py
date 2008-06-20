@@ -47,9 +47,9 @@ class NumpyExtension(Extension):
 
 
 class PyUblasExtension(NumpyExtension):
-    def get_pyublas_incpath(self):
+    def get_module_include_path(self, name):
         from imp import find_module
-        file, pathname, descr = find_module("pyublas")
+        file, pathname, descr = find_module(name)
         from os.path import join
         return join(pathname, "..", "include")
 
@@ -57,7 +57,19 @@ class PyUblasExtension(NumpyExtension):
     def include_dirs(self):
         return self._include_dirs + [
                 self.get_numpy_incpath(),
-                self.get_pyublas_incpath(),
+                self.get_module_include_path("pyublas"),
+                ]
+
+
+
+
+class HedgeExtension(NumpyExtension):
+    @property
+    def include_dirs(self):
+        return self._include_dirs + [
+                self.get_numpy_incpath(),
+                self.get_module_include_path("pyublas"),
+                self.get_module_include_path("hedge"),
                 ]
 
 
