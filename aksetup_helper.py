@@ -63,7 +63,7 @@ class PyUblasExtension(NumpyExtension):
 
 
 
-class HedgeExtension(NumpyExtension):
+class HedgeExtension(PyUblasExtension):
     @property
     def include_dirs(self):
         return self._include_dirs + [
