@@ -66,7 +66,7 @@ def find_mat_perm(orig, permuted, thresh=1e-13):
         try:
             p = test_permutations()
             if p:
-                print la.norm(orig[p][:,p]-permuted) 
+                #print la.norm(orig[p][:,p]-permuted) 
                 assert la.norm(orig[p][:,p]-permuted) < 1e-12
                 return p
         except CandidateRemoved:
@@ -75,11 +75,13 @@ def find_mat_perm(orig, permuted, thresh=1e-13):
     assert False, "should not get here"
 
 
+
+
 def main():
     from hedge.element import TetrahedralElement
 
-    tet = TetrahedralElement(7)
-    dr, ds, dt = tet.differentiation_matrices()
+    el = TetrahedralElement(3)
+    dr, ds, dt = el.differentiation_matrices()
     print find_mat_perm(dr, ds)
     print find_mat_perm(dr, dt)
 

@@ -225,6 +225,37 @@ class Element(object):
         return numpy.dot(self.inverse_mass_matrix(),
                 self.multi_face_mass_matrix())
 
+    def find_diff_mat_permutation(self, target_idx):
+        """Find a permuation C{p} such that::
+
+            diff_mats = self.differentiation_matrices()
+            diff_mats[0][p][:,p] == diff_mats[target_idx]
+
+        The permutation is returned as a numpy array of type intp.
+        """
+          
+        node_tups = self.node_tuples()
+        d = self.dimensions
+
+        from pytools import get_read_from_map_from_permutation
+
+        def transpose(tup, i, j):
+            l = list(tup)
+            l[i], l[j] = l[j], l[i]
+            return tuple(l)
+
+        p = numpy.array(get_read_from_map_from_permutation(
+                node_tups,
+                [transpose(nt, 0, target_idx) for nt in node_tups]),
+                dtype=numpy.intp)
+        
+        dmats = self.differentiation_matrices()
+        assert la.norm(dmats[0][p][:,p]-dmats[target_idx]) < 1e-12
+
+        return p
+    
+
+
 
 
 
