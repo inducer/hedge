@@ -1,0 +1,3 @@
+Running hedge on CUDA
+=====================
+
