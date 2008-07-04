@@ -18,8 +18,8 @@ Hedge *can* take advantage of some extra packages:
 * `MPI <http://www.mpi-forum.org>`_ (compute in parallel), 
   via Boost.MPI and its Python wrapper.
 * `CUDA <http://nvidia.com/cuda>`_ 
-  (via `PyCuda <http://mathema.tician.de/software/pycuda>`_ 
-  (compute in parallel), with Boost.MPI and its Python wrapper.
+  (compute on graphics cards).
+  via `PyCuda <http://mathema.tician.de/software/pycuda>`_.
 
 In this tutorial, we will build a basic version of hedge that does not
 need any of these.

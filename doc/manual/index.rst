@@ -13,6 +13,8 @@ Contents:
     installing
     cuda
 
+Hedge also has a `home page <http://mathema.tician.de/software/hedge>`_.
+
 Indices and tables
 ==================
 

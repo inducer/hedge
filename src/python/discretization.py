@@ -964,7 +964,7 @@ class Projector:
 class ExponentialFilterResponseFunction:
     """A typical exponential-falloff mode response filter function.
 
-    See description in Section 5.6.1 of Jacobs/Hesthaven.
+    See description in Section 5.6.1 of Hesthaven/Warburton.
     """
     def __init__(self, min_amplification=0.1, order=6):
         """Construct the filter function.
