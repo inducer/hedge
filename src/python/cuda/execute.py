@@ -127,7 +127,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                     relerr = la.norm(diff[s])/norm_ref
                     if relerr > 1e-4:
                         struc += "*"
-                        if True:
+                        if False:
                             print "block %d, el %d, global el #%d, rel.l2err=%g" % (
                                     block.number, i_el, el.id, relerr)
                             print computed[s]
@@ -161,22 +161,15 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         print
         print struc
 
-    def map_diff_base(self, op, field_expr, out=None):
-        try:
-            xyz_diff = self.diff_xyz_cache[op.__class__, field_expr]
-        except KeyError:
-            pass
-        else:
-            return xyz_diff[op.xyz_axis]
-
+    def map_chunk_diff_base(self, op, field_expr, out=None):
         discr = self.ex.discr
+        fplan = discr.flux_plan
+        lplan = fplan.diff_plan()
+
         d = discr.dimensions
 
         eg, = discr.element_groups
         func, texrefs, field_texref = self.ex.get_diff_kernel(op.__class__, eg)
-
-        fplan = discr.flux_plan
-        lplan = fplan.diff_plan()
 
         field = self.rec(field_expr)
         assert field.dtype == discr.flux_plan.float_type
@@ -216,8 +209,82 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             #print numpy.reshape(copied_debugbuf, (len(copied_debugbuf)//16, 16))
             print copied_debugbuf[:100].reshape((10,10))
             raw_input()
+
+        return xyz_diff
+
+    def map_permuting_diff_base(self, op, field_expr, out=None):
+        discr = self.ex.discr
+        fplan = discr.flux_plan
+        lplan = fplan.diff_plan()
+
+        d = discr.dimensions
+
+        eg, = discr.element_groups
+        func, texrefs, field_texref = self.ex.get_permuting_diff_kernel(op.__class__, eg)
+
+        field = self.rec(field_expr)
+        assert field.dtype == discr.flux_plan.float_type
+
+        field.bind_to_texref(field_texref)
+        
+        from hedge.cuda.tools import int_ceiling
+        kwargs = {
+                "block": (
+                    fplan.microblock.aligned_floats,
+                    lplan.parallelism.p,
+                    1),
+                "grid": (int_ceiling(
+                    fplan.microblocks_per_block()*len(discr.blocks)
+                    /(lplan.parallelism.s*lplan.parallelism.p)),
+                        1),
+                "time_kernel": discr.instrumented,
+                "texrefs": texrefs,
+                }
+
+        #debugbuf = gpuarray.zeros((512,), dtype=numpy.float32)
+
+        xyz_diff = [discr.volume_empty() for axis in range(d)]
+
+        elgroup, = discr.element_groups
+        dm_and_p = self.ex.gpu_diffmat_and_permutations(op.__class__, eg)
+        args = xyz_diff+[
+                dm_and_p.diffmat_device_memory,
+                dm_and_p.permutations_device_memory,
+                #debugbuf,
+                ]
+
+        kernel_time = func(*args, **kwargs)
+        if discr.instrumented:
+            discr.diff_op_timer.add_time(kernel_time)
+            discr.diff_op_counter.add(discr.dimensions)
+
+        if False:
+            copied_debugbuf = debugbuf.get()
+            print "DEBUG"
+            #print numpy.reshape(copied_debugbuf, (len(copied_debugbuf)//16, 16))
+            print copied_debugbuf[:100].reshape((10,10))
+            raw_input()
+
+        return xyz_diff
+
+    def map_diff_base(self, op, field_expr, out=None):
+        try:
+            return self.diff_xyz_cache[op.__class__, field_expr][op.xyz_axis]
+        except KeyError:
+            pass
+
+        discr = self.ex.discr
+        fplan = discr.flux_plan
+        lplan = fplan.diff_plan()
+
+        from hedge.cuda.plan import PermutingDiffExecutionPlan
+        if isinstance(lplan, PermutingDiffExecutionPlan):
+            xyz_diff = self.map_permuting_diff_base(op, field_expr, out)
+        else:
+            xyz_diff = self.map_chunk_diff_base(op, field_expr, out)
         
         if discr.debug:
+            field = self.rec(field_expr)
             f = discr.volume_from_gpu(field)
             dx = discr.volume_from_gpu(xyz_diff[0])
             
@@ -339,12 +406,12 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             raw_input()
 
         # verification --------------------------------------------------------
-        if discr.debug:
-            cot = discr.test_discr.compile(op.flux_optemplate)
+        if discr.debug and False:
+            cot = discr.test_discr.compile(wdflux.flux_optemplate)
             ctx = {field_expr.name: 
                     discr.volume_from_gpu(field).astype(numpy.float64)
                     }
-            for boundary in op.boundaries:
+            for boundary in wdflux.boundaries:
                 ctx[boundary.bfield_expr.name] = \
                         discr.test_discr.boundary_zeros(boundary.tag)
             true_flux = cot(**ctx)
@@ -503,7 +570,7 @@ class OpTemplateWithEnvironment(object):
                 Define("DIFFMAT_COLUMNS", diffmat_data.matrix_columns),
                 Line(),
                 CudaShared(ArrayOf(POD(float_type, "smem_diff_rst_mat"), 
-                    "DIMENSIONS*DOFS_PER_EL*CHUNK_DOF_COUNT")),
+                    "DIFFMAT_COLUMNS*CHUNK_DOF_COUNT")),
                 Line(),
                 ])
 
@@ -624,7 +691,227 @@ class OpTemplateWithEnvironment(object):
 
 
 
-    # diff kernel -------------------------------------------------------------
+    @memoize_method
+    def get_permuting_diff_kernel(self, diff_op_cls, elgroup):
+        from hedge.cuda.cgen import \
+                Pointer, POD, Value, ArrayOf, Const, \
+                Module, FunctionDeclaration, FunctionBody, Block, \
+                Comment, Line, \
+                CudaShared, CudaGlobal, Static, \
+                Define, \
+                Constant, Initializer, If, For, Statement, Assign
+                
+        discr = self.discr
+        d = discr.dimensions
+        dims = range(d)
+        fplan = discr.flux_plan
+        lplan = fplan.diff_plan()
+
+        diffmat_data = self.gpu_diffmat_and_permutations(diff_op_cls, elgroup)
+        elgroup, = discr.element_groups
+
+        float_type = fplan.float_type
+
+        f_decl = CudaGlobal(FunctionDeclaration(Value("void", "apply_diff_mat"), 
+            [Pointer(POD(float_type, "dxyz%d" % i)) for i in dims]
+            + [
+                Pointer(POD(numpy.uint8, "gmem_diff_rst_mat")),
+                Pointer(POD(numpy.uint8, "gmem_diff_rst_permut")),
+                #Pointer(POD(float_type, "debugbuf")),
+                ]
+            ))
+
+        rst_channels = discr.devdata.make_valid_tex_channel_count(d)
+        cmod = Module([
+                Value("texture<float%d, 2, cudaReadModeElementType>"
+                    % rst_channels, 
+                    "rst_to_xyz_tex"),
+                Value("texture<float, 1, cudaReadModeElementType>", 
+                    "field_tex"),
+                Line(),
+                Define("DIMENSIONS", discr.dimensions),
+                Define("DOFS_PER_EL", fplan.dofs_per_el()),
+                Line(),
+                Define("MB_DOF", "threadIdx.x"),
+                Define("PAR_MB_NR", "threadIdx.y"),
+                Line(),
+                Define("MACROBLOCK_NR", "blockIdx.x"),
+                Line(),
+                Define("MB_DOF_COUNT", fplan.microblock.aligned_floats),
+                Define("MB_EL_COUNT", fplan.microblock.elements),
+                Define("PAR_MB_COUNT", lplan.parallelism.p),
+                Define("SEQ_MB_COUNT", lplan.parallelism.s),
+                Line(),
+                Define("THREAD_NUM", "(MB_DOF+PAR_MB_NR*MB_DOF_COUNT)"),
+                Define("COALESCING_THREAD_COUNT", "(MB_DOF_COUNT*PAR_MB_COUNT)"),
+                Line(),
+                Define("GLOBAL_MB_NR_BASE", "(MACROBLOCK_NR*PAR_MB_COUNT*SEQ_MB_COUNT)"),
+                Line(),
+                Define("DIFFMAT_COLUMNS", diffmat_data.matrix_columns),
+                Line(),
+                CudaShared(
+                    ArrayOf(
+                        ArrayOf(
+                            POD(float_type, "smem_diff_rst_mat"), 
+                            "DOFS_PER_EL"),
+                        "DIFFMAT_COLUMNS")
+                    ),
+                CudaShared(
+                    ArrayOf(
+                        ArrayOf(
+                            POD(numpy.uint16, "smem_diff_rst_permut"), 
+                            "%d" % (d-1)),
+                        "DOFS_PER_EL")
+                    ),
+                CudaShared(
+                    ArrayOf(
+                        ArrayOf(
+                            POD(float_type, "smem_field"), 
+                            "PAR_MB_COUNT"),
+                        "MB_DOF_COUNT")
+                    ),
+                Line(),
+                ])
+
+        S = Statement
+        f_body = Block()
+            
+        f_body.extend_log_block("calculate responsibility data", [
+            Initializer(POD(numpy.uint8, "mb_el"),
+                "MB_DOF/DOFS_PER_EL"),
+            Initializer(POD(numpy.uint8, "el_dof"),
+                "MB_DOF-mb_el*DOFS_PER_EL"),
+            ])
+
+        f_body.extend(
+            self.get_load_code(
+                dest="smem_diff_rst_mat",
+                base="gmem_diff_rst_mat",
+                bytes="sizeof(smem_diff_rst_mat)",
+                descr="load diff mat")
+            +self.get_load_code(
+                dest="smem_diff_rst_permut",
+                base="gmem_diff_rst_permut",
+                bytes="sizeof(smem_diff_rst_permut)",
+                descr="load diff mat permutation")
+            )
+
+        # ---------------------------------------------------------------------
+        def get_scalar_diff_code(matrix_row, dest_pattern):
+            code = []
+
+            code.extend([
+                Line(),
+                S("__syncthreads()"),
+                Assign("smem_field[PAR_MB_NR][MB_DOF]",
+                    "tex1Dfetch(field_tex, global_mb_dof_base+MB_DOF)"),
+                S("__syncthreads()"),
+                Line(),
+                ])
+
+            for axis in dims:
+                code.append(
+                    Initializer(POD(float_type, "drst%d" % axis), 0))
+
+            code.append(Line())
+
+            for axis in dims[1:]:
+                code.append(
+                    Initializer(POD(numpy.uint16, 
+                        "dmat_row_%d" % axis), 
+                        "smem_diff_rst_permut[%d][el_dof]"
+                        % (axis-1)),
+                    )
+
+            code.extend([
+                Line(),
+                POD(float_type, "field_value"),
+                Line(),
+                ])
+
+            for i in range(fplan.dofs_per_el()):
+                code.append(
+                        Assign("field_value",
+                            "smem_field[PAR_MB_NR][mb_el*DOFS_PER_EL+%d]" % i))
+
+                for axis in dims:
+                    if axis == 0:
+                        code.append(
+                                S("drst%d += smem_diff_rst_mat[el_dof][%d]"
+                                    " * field_value"
+                                    % (axis, i)))
+                    else:
+                        permut = diffmat_data.permutations[axis-1]
+                        code.append(
+                            S("drst%d += smem_diff_rst_mat[dmat_row_%d][%d]"
+                                "* field_value"
+                                % (axis, axis, permut[i])))
+
+                code.append(Line())
+            
+            tex_channels = ["x", "y", "z", "w"]
+            store_code = Block()
+            for glob_axis in dims:
+                store_code.append(Block([
+                    Initializer(Value("float%d" % rst_channels, "rst_to_xyz"),
+                        "tex2D(rst_to_xyz_tex, %d, global_mb_nr*MB_EL_COUNT+mb_el)" 
+                        % glob_axis
+                        ),
+                    Assign(
+                        dest_pattern % glob_axis,
+                        " + ".join(
+                            "rst_to_xyz.%s"
+                            "*"
+                            "drst%d" % (tex_channels[loc_axis], loc_axis)
+                            for loc_axis in dims
+                            )
+                        )
+                    ])
+                    )
+
+            code.append(If("MB_DOF < DOFS_PER_EL*MB_EL_COUNT", store_code))
+
+            return code
+
+        f_body.extend([
+            For("unsigned short seq_mb_number = 0",
+                "seq_mb_number < SEQ_MB_COUNT",
+                "++seq_mb_number",
+                Block([
+                    Initializer(POD(numpy.uint32, "global_mb_nr"),
+                        "GLOBAL_MB_NR_BASE + seq_mb_number*PAR_MB_COUNT + PAR_MB_NR"),
+                    Initializer(POD(numpy.uint32, "global_mb_dof_base"),
+                        "global_mb_nr*MB_DOF_COUNT"),
+                    ]+get_scalar_diff_code(
+                        "CHUNK_DOF",
+                        "dxyz%d[global_mb_dof_base+MB_DOF]")
+                    )
+                )
+            ])
+
+        # finish off ----------------------------------------------------------
+        cmod.append(FunctionBody(f_decl, f_body))
+
+        mod = cuda.SourceModule(cmod, 
+                keep=True, 
+                options=["--maxrregcount=16"]
+                )
+        print "diff: lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
+
+        rst_to_xyz_texref = mod.get_texref("rst_to_xyz_tex")
+        cuda.bind_array_to_texref(
+                self.localop_rst_to_xyz(diff_op_cls, elgroup), 
+                rst_to_xyz_texref)
+
+        field_texref = mod.get_texref("field_tex")
+        texrefs = [field_texref, rst_to_xyz_texref]
+
+        return mod.get_function("apply_diff_mat"), texrefs, field_texref
+
+
+
+
+    # flux local kernel -------------------------------------------------------
     @memoize_method
     def get_flux_local_kernel(self, is_lift, elgroup):
         from hedge.cuda.cgen import \
@@ -1197,6 +1484,43 @@ class OpTemplateWithEnvironment(object):
                     pad_and_join(chunks, block_floats*fplan.float_size)),
                 block_floats=block_floats,
                 matrix_columns=columns)
+
+    @memoize_method
+    def gpu_diffmat_and_permutations(self, diff_op_cls, elgroup):
+        discr = self.discr
+        fplan = discr.flux_plan
+        lplan = fplan.diff_plan()
+
+        columns = fplan.dofs_per_el()
+        additional_columns = 0
+        # avoid smem fetch bank conflicts by ensuring odd col count
+        if columns % 2 == 0:
+            columns += 1
+            additional_columns += 1
+
+        dmats = diff_op_cls.matrices(elgroup)
+        permutations = numpy.array([
+                fplan.ldis.find_diff_mat_permutation(i)
+                for i in range(1, discr.dimensions)
+                ], dtype=numpy.uint16, order="C")
+
+        for i, p in zip(range(1, discr.dimensions), permutations):
+            assert la.norm(dmats[0][p][:,p]-dmats[i]) < 1e-12
+
+        extra_col_dmat = numpy.asarray(
+                numpy.hstack(
+                    (dmats[0],
+                        numpy.zeros((
+                            dmats[0].shape[0], additional_columns)))),
+                        order="C", dtype=fplan.float_type)
+        
+        from pytools import Record
+        from hedge.cuda.tools import pad_and_join
+        return Record(
+                diffmat_device_memory=cuda.to_device(extra_col_dmat),
+                permutations_device_memory=cuda.to_device(permutations),
+                matrix_columns=columns,
+                permutations=permutations)
 
     @memoize_method
     def gpu_liftmat(self, is_lift):

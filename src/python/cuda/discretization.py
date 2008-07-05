@@ -279,7 +279,7 @@ class Discretization(hedge.discretization.Discretization):
         self.flux_plan, self.partition = self._partition_mesh(mesh, flux_plan)
         del flux_plan
         print "actual flux exec plan:", self.flux_plan
-        print "actual local op exec plan:", self.flux_plan.diff_plan()
+        print "actual diff op exec plan:", self.flux_plan.diff_plan()
         print "actual flux local exec plan:", self.flux_plan.flux_lifting_plan()
 
         # initialize superclass
