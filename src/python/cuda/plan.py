@@ -252,30 +252,21 @@ class FluxExecutionPlan(ExecutionPlan):
 
     @memoize_method
     def diff_plan(self):
-        if self.diff_chunk:
-            def generate_plans():
+        def generate_plans():
+            from hedge.cuda.tools import int_ceiling
+
+            chunk_sizes = range(self.microblock.align_size, 
+                    self.microblock.elements*self.dofs_per_el()+1, 
+                    self.microblock.align_size)
+
+            for pe in range(1,32):
                 from hedge.cuda.tools import int_ceiling
-
-                chunk_sizes = range(self.microblock.align_size, 
-                        self.microblock.elements*self.dofs_per_el()+1, 
-                        self.microblock.align_size)
-
-                for pe in range(1,32):
-                    from hedge.cuda.tools import int_ceiling
-                    localop_par = Parallelism(pe, 256//pe)
-                    for chunk_size in chunk_sizes:
-                        yield ChunkedDiffExecutionPlan(self, localop_par, chunk_size)
-        else:
-            def generate_valid_plans():
-                from hedge.cuda.tools import int_ceiling
-
-                for pe in range(1,32):
-                    from hedge.cuda.tools import int_ceiling
-                    localop_par = Parallelism(pe, 256//pe)
-                    yield PermutingDiffExecutionPlan(self, localop_par)
+                localop_par = Parallelism(pe, 256//pe)
+                for chunk_size in chunk_sizes:
+                    yield ChunkedDiffExecutionPlan(self, localop_par, chunk_size)
 
         return optimize_plan(
-                generate_valid_plans,
+                generate_plans,
                 lambda plan: plan.parallelism.total()
                 )
 
@@ -374,47 +365,6 @@ class ChunkedDiffExecutionPlan(ChunkedLocalOperatorExecutionPlan):
 
     def fetch_buffer_chunks(self):
         return 0
-
-
-
-
-
-class PermutingDiffExecutionPlan(ExecutionPlan):
-    def __init__(self, flux_plan, parallelism):
-        ExecutionPlan.__init__(self, flux_plan.devdata)
-        self.flux_plan = flux_plan
-        self.parallelism = parallelism
-
-    def dofs_per_macroblock(self):
-        return self.parallelism.total() * self.flux_plan.microblock.aligned_floats
-
-    @memoize_method
-    def shared_mem_use(self):
-        fplan = self.flux_plan
-        
-        return (64 # parameters, block header, small extra stuff
-               + fplan.float_size * (
-                   # diff matrix permutations
-                   fplan.dofs_per_el()*(fplan.ldis.dimensions-1)
-                   # one differentiation matrix
-                   + fplan.dofs_per_el()**2
-                   # fetch buffer for each chunk
-                   + self.parallelism.p
-                   * fplan.microblock.aligned_floats
-                   )
-               )
-
-    def threads(self):
-        return self.parallelism.p*self.flux_plan.microblock.aligned_floats
-
-    def __str__(self):
-            return ("%s par=%s" % (
-                ExecutionPlan.__str__(self),
-                self.parallelism,
-                ))
-
-    def registers(self):
-        return 16
 
 
 
