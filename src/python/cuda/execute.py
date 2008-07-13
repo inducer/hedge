@@ -976,14 +976,10 @@ class OpTemplateWithEnvironment(object):
             descr="load face_pair data")
             +[ S("__syncthreads()"), Line() ])
 
-        def flux_writer(dest_expr, bdry_id_expr, flipped, is_bdry):
+        def flux_writer(dest_expr, bdry_id_expr, flipped, is_bdry,
+                get_field):
             from hedge.cuda.cgen import make_multiple_ifs
             from pymbolic.mapper.stringifier import PREC_NONE
-
-            if flipped:
-                int_prefix, ext_prefix = "b_", "a_"
-            else:
-                int_prefix, ext_prefix = "a_", "b_"
 
             flux_write_code = Block([
                     Initializer(POD(float_type, "flux"), 0)
@@ -992,48 +988,34 @@ class OpTemplateWithEnvironment(object):
             if not is_bdry:
                 for int_rec in wdflux.interiors:
                     flux_write_code.extend([
-                        S("flux += /*int*/ (%s) * %s_%svalue"
+                        S("flux += /*int*/ (%s) * %s"
                             % (FluxToCodeMapper(flipped)(int_rec.int_coeff, PREC_NONE),
-                                int_rec.short_name,
-                                int_prefix)),
-                        S("flux += /*ext*/ (%s) * %s_%svalue"
+                                get_field(int_rec, 
+                                    is_interior=True, flipped=flipped)
+                                )),
+                        S("flux += /*ext*/ (%s) * %s"
                             % (FluxToCodeMapper(flipped)(int_rec.ext_coeff, PREC_NONE),
-                                int_rec.short_name,
-                                ext_prefix))
+                                get_field(int_rec, 
+                                    is_interior=False, flipped=flipped)
+                                )),
                             ])
             else:
                 from pytools import flatten
 
-                def get_bdry_load_code(bdry_fluxes):
-
-                    return list(flatten([
-                            Initializer(
-                                POD(float_type, "%s_a_value" % flux.field_short_name),
-                                "tex1Dfetch(%s_tex, a_index)"
-                                % flux.field_short_name
-                                ),
-                            Initializer(
-                                POD(float_type, "%s_b_value" % flux.bfield_short_name),
-                                "tex1Dfetch(%s_tex, b_index)"
-                                % flux.bfield_short_name
-                                )
-                            ]
-                            for flux in bdry_fluxes))
-
                 flux_write_code.append(
                     make_multiple_ifs([
                         ("(%s) == %d" % (bdry_id_expr, bdry_id),
-                            Block(get_bdry_load_code(fluxes)+list(flatten([
-                                S("flux += /*int*/ (%s) * %s_%svalue"
-                                    % (FluxToCodeMapper(flipped)(flux.int_coeff, PREC_NONE),
-                                        flux.field_short_name,
-                                        int_prefix)),
-                                S("flux += /*ext*/ (%s) * %s_%svalue"
-                                    % (FluxToCodeMapper(flipped)(flux.ext_coeff, PREC_NONE),
-                                        flux.bfield_short_name,
-                                        ext_prefix)),
+                            Block(list(flatten([
+                                S("flux += /*int*/ (%s) * %s"
+                                    % (FluxToCodeMapper(flipped)(flux_rec.int_coeff, PREC_NONE),
+                                        get_field(flux_rec, 
+                                            is_interior=True, flipped=flipped))),
+                                S("flux += /*ext*/ (%s) * %s"
+                                    % (FluxToCodeMapper(flipped)(flux_rec.ext_coeff, PREC_NONE),
+                                        get_field(flux_rec, 
+                                            is_interior=False, flipped=flipped))),
                                 ]
-                                for flux in fluxes
+                                for flux_rec in fluxes
                                 ))))
                         for bdry_id, fluxes in wdflux.bdry_id_to_fluxes.iteritems()
                         ])
@@ -1066,29 +1048,38 @@ class OpTemplateWithEnvironment(object):
                 ])
 
             if not is_bdry:
-                for dep_expr in wdflux.interior_deps:
-                    dep_sn = wdflux.short_name(dep_expr)
-                    flux_code.append(Initializer(
-                                POD(float_type, "%s_a_value" % dep_sn),
-                                "tex1Dfetch(%s_tex, a_index)"
-                                % dep_sn
-                                ))
-                    flux_code.extend([
-                        Initializer(
-                            POD(float_type, "%s_b_value" % dep_sn),
-                            "tex1Dfetch(%s_tex, b_index)"
-                            % dep_sn
-                            ),
-                        ])
+                def get_flux_field_expr(flux_rec, is_interior, flipped):
+                    if is_interior ^ flipped:
+                        prefix = "a"
+                    else:
+                        prefix = "b"
 
+                    return ("tex1Dfetch(%s_tex, %s_index)"
+                            % (wdflux.short_name(flux_rec.field_expr), 
+                                prefix))
+            else:
+                def get_flux_field_expr(flux_rec, is_interior, flipped):
+                    assert not flipped
+
+                    if is_interior:
+                        return ("tex1Dfetch(%s_tex, a_index)" 
+                            % flux_rec.field_short_name)
+                    else:
+                        return ("tex1Dfetch(%s_tex, b_index)" 
+                            % flux_rec.bfield_short_name)
+                        
             flux_code.append(
                     flux_writer(
                         "smem_fluxes_on_faces[fpair->a_dest+FACEDOF_NR]",
                         "fpair->boundary_id", 
-                        flipped=False, is_bdry=is_bdry))
+                        flipped=False, is_bdry=is_bdry,
+                        get_field=get_flux_field_expr))
 
             if is_twosided:
                 flux_code.extend([
+                    Comment("prevent subexpression sharing--work around nvcc dumbitude"),
+                    S("__syncthreads()"),
+                    Line(),
                     Initializer(Pointer(Value(
                         "index_list_entry_t", "b_write_ilist")),
                         "smem_index_lists + fpair->b_write_ilist_index"
@@ -1096,7 +1087,8 @@ class OpTemplateWithEnvironment(object):
                     flux_writer(
                         "smem_fluxes_on_faces[fpair->b_dest+b_write_ilist[FACEDOF_NR]]",
                         None, 
-                        flipped=True, is_bdry=is_bdry)
+                        flipped=True, is_bdry=is_bdry, 
+                        get_field=get_flux_field_expr)
                     ])
 
             flux_code.append(S("fpair_nr += CONCURRENT_FACES"))
