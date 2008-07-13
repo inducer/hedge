@@ -86,6 +86,26 @@ class FluxToCodeMapper(pymbolic.mapper.stringifier.StringifyMapper):
             sign = ""
         return "%sfpair->normal[%d]" % (sign, expr.axis)
 
+    def map_power(self, expr, enclosing_prec):
+        from pymbolic.mapper.stringifier import PREC_NONE
+        from pymbolic.primitives import is_constant
+        if is_constant(expr.exponent):
+            if expr.exponent == 0:
+                return "1"
+            elif expr.exponent == 1:
+                return self.rec(expr.base, enclosing_prec)
+            elif expr.exponent == 2:
+                return self.rec(expr.base*expr.base, enclosing_prec)
+            else:
+                return ("pow(%s, %s)" 
+                        % (self.rec(expr.base, PREC_NONE), 
+                        self.rec(expr.exponent, PREC_NONE)))
+                return self.rec(expr.base*expr.base, enclosing_prec)
+        else:
+            return ("pow(%s, %s)" 
+                    % (self.rec(expr.base, PREC_NONE), 
+                    self.rec(expr.exponent, PREC_NONE)))
+
     def map_penalty_term(self, expr, enclosing_prec):
         return ("pow(fpair->order*fpair->order/fpair->h, %r)" 
                 % expr.power)
@@ -112,11 +132,33 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
         self.diff_xyz_cache = {}
 
+    def print_vec_structure(self, vec, point_size, chunk_size, block_size,
+            other_char=lambda snippet: "."):
+        for block in range(len(vec) // block_size):
+            struc = ""
+            for chunk in range(block_size//chunk_size):
+                for point in range(chunk_size//point_size):
+                    offset = block*block_size + chunk*chunk_size + point*point_size
+                    snippet = vec[offset:offset+point_size]
+
+                    if numpy.isnan(snippet).any():
+                        struc += "N"
+                    elif (snippet == 0).any():
+                        struc += "0"
+                    else:
+                        struc += other_char(snippet)
+
+                struc += " "
+            print struc
+            
     def print_error_structure(self, computed, reference, diff):
         discr = self.ex.discr
 
         norm_ref = la.norm(reference)
         struc = ""
+
+        if norm_ref == 0:
+            norm_ref = 1
 
         numpy.set_printoptions(precision=2, linewidth=130, suppress=True)
         for block in discr.blocks:
@@ -124,7 +166,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             for mb in block.microblocks:
                 for el in mb:
                     s = discr.find_el_range(el.id)
-                    relerr = la.norm(diff[s])/norm_ref
+                    relerr = relative_error(diff[s])/norm_ref
                     if relerr > 1e-4:
                         struc += "*"
                         if False:
@@ -222,6 +264,8 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         fplan = discr.flux_plan
         lplan = fplan.diff_plan()
 
+        print "FF", field_expr, la.norm(
+               discr.volume_from_gpu(self.rec(field_expr)))
         xyz_diff = self.map_chunk_diff_base(op, field_expr, out)
         
         if discr.debug:
@@ -234,9 +278,10 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             
             diff = dx - real_dx
 
-            rel_err_norm = la.norm(diff)/la.norm(real_dx)
+            from hedge.tools import relative_error
+            rel_err_norm = relative_error(la.norm(diff), la.norm(real_dx))
             print "diff", rel_err_norm
-            if rel_err_norm > 5e-5:
+            if not (rel_err_norm < 5e-5):
                 self.print_error_structure(dx, real_dx, diff)
             assert rel_err_norm < 5e-5
 
@@ -275,6 +320,8 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             assert dep_field.dtype == fplan.float_type
             dep_field.bind_to_texref(texref_map[dep_expr])
 
+            print dep_expr, la.norm(dep_field.get())
+
         gather_args = [
                 debugbuf, 
                 fluxes_on_faces, 
@@ -296,9 +343,15 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             discr.inner_flux_timer.add_time(kernel_time)
             discr.inner_flux_counter.add()
 
-        if False:
+        if discr.debug:
             fof = fluxes_on_faces.get()
-            print numpy.reshape(fof[:20*15], (20,15))
+            self.print_vec_structure(fof, 
+                    fplan.dofs_per_face(),
+                    fplan.dofs_per_face()*fplan.faces_per_el(),
+                    fplan.aligned_face_dofs_per_microblock())
+
+            assert not numpy.isnan(la.norm(fof))
+
             raw_input()
 
         if False:
@@ -999,6 +1052,9 @@ class OpTemplateWithEnvironment(object):
                                     is_interior=False, flipped=flipped)
                                 )),
                             ])
+                    print "-------------------------"
+                    print int_rec.int_coeff
+                    print FluxToCodeMapper(flipped)(int_rec.int_coeff, PREC_NONE)
             else:
                 from pytools import flatten
 
@@ -1077,8 +1133,6 @@ class OpTemplateWithEnvironment(object):
 
             if is_twosided:
                 flux_code.extend([
-                    Comment("prevent subexpression sharing--work around nvcc dumbitude"),
-                    S("__syncthreads()"),
                     Line(),
                     Initializer(Pointer(Value(
                         "index_list_entry_t", "b_write_ilist")),
@@ -1134,7 +1188,7 @@ class OpTemplateWithEnvironment(object):
 
         mod = cuda.SourceModule(cmod, 
                 keep=True, 
-                options=["--maxrregcount=12"]
+                options=["--maxrregcount=16"]
                 )
         print "flux: lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
 

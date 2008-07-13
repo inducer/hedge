@@ -520,7 +520,7 @@ class Discretization(hedge.discretization.Discretization):
         from hedge.tools import log_shape
         ls = log_shape(field)
         if ls != ():
-            result = numpy.array(ls, dtype=object)
+            result = numpy.empty(ls, dtype=object)
 
             from pytools import indices_in_shape
 

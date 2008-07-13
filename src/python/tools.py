@@ -38,6 +38,18 @@ cyl_neumann = hedge._internal.cyl_neumann
 
 
 
+def relative_error(norm_diff, norm_true):
+    if norm_true == 0:
+        if norm_diff == 0:
+            return 0
+        else:
+            return float("inf")
+    else:
+        return norm_diff/norm_true
+
+
+
+
 def cyl_bessel_j_prime(nu, z):
     if nu == 0:
         if z == 0:

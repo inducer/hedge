@@ -248,7 +248,7 @@ class FluxExecutionPlan(ExecutionPlan):
         return self.parallel_faces*self.dofs_per_face()
 
     def registers(self):
-        return 12
+        return 16
 
     @memoize_method
     def diff_plan(self):
