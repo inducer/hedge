@@ -132,8 +132,9 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
         self.diff_xyz_cache = {}
 
-    def print_vec_structure(self, vec, point_size, chunk_size, block_size,
+    def get_vec_structure(self, vec, point_size, chunk_size, block_size,
             other_char=lambda snippet: "."):
+        result = ""
         for block in range(len(vec) // block_size):
             struc = ""
             for chunk in range(block_size//chunk_size):
@@ -149,7 +150,8 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                         struc += other_char(snippet)
 
                 struc += " "
-            print struc
+            result += struc + "\n"
+        return result
             
     def print_error_structure(self, computed, reference, diff):
         discr = self.ex.discr
@@ -264,8 +266,6 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         fplan = discr.flux_plan
         lplan = fplan.diff_plan()
 
-        print "FF", field_expr, la.norm(
-               discr.volume_from_gpu(self.rec(field_expr)))
         xyz_diff = self.map_chunk_diff_base(op, field_expr, out)
         
         if discr.debug:
@@ -320,8 +320,6 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             assert dep_field.dtype == fplan.float_type
             dep_field.bind_to_texref(texref_map[dep_expr])
 
-            print dep_expr, la.norm(dep_field.get())
-
         gather_args = [
                 debugbuf, 
                 fluxes_on_faces, 
@@ -343,24 +341,43 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             discr.inner_flux_timer.add_time(kernel_time)
             discr.inner_flux_counter.add()
 
-        if discr.debug:
-            fof = fluxes_on_faces.get()
-            self.print_vec_structure(fof, 
-                    fplan.dofs_per_face(),
-                    fplan.dofs_per_face()*fplan.faces_per_el(),
-                    fplan.aligned_face_dofs_per_microblock())
-
-            assert not numpy.isnan(la.norm(fof))
-
-            raw_input()
-
         if False:
             copied_debugbuf = debugbuf.get()
-            print "DEBUG"
+            print "DEBUG", len(discr.blocks)
             numpy.set_printoptions(linewidth=100)
             print numpy.reshape(copied_debugbuf, (32, 16))
             #print copied_debugbuf
             raw_input()
+
+        if discr.debug:
+            useful_size = (len(discr.blocks)
+                    * fplan.aligned_face_dofs_per_microblock()
+                    * fplan.microblocks_per_block())
+            fof = fluxes_on_faces.get()
+
+            fof = fof[:useful_size]
+
+
+
+            have_used_nans = False
+            for i_b, block in enumerate(discr.blocks):
+                offset = (fplan.aligned_face_dofs_per_microblock()
+                        *fplan.microblocks_per_block())
+                size = (len(block.el_number_map)
+                        *fplan.dofs_per_face()
+                        *fplan.faces_per_el())
+                if numpy.isnan(la.norm(fof[offset:offset+size])):
+                    have_used_nans = True
+
+            if have_used_nans:
+                struc = ( fplan.dofs_per_face(),
+                        fplan.dofs_per_face()*fplan.faces_per_el(),
+                        fplan.aligned_face_dofs_per_microblock(),
+                        )
+
+                print self.get_vec_structure(fof, *struc)
+
+            assert not have_used_nans
 
         # lift phase ----------------------------------------------------------
         flux = discr.volume_empty() 
@@ -1052,9 +1069,9 @@ class OpTemplateWithEnvironment(object):
                                     is_interior=False, flipped=flipped)
                                 )),
                             ])
-                    print "-------------------------"
-                    print int_rec.int_coeff
-                    print FluxToCodeMapper(flipped)(int_rec.int_coeff, PREC_NONE)
+                    #print "-------------------------"
+                    #print int_rec.int_coeff
+                    #print FluxToCodeMapper(flipped)(int_rec.int_coeff, PREC_NONE)
             else:
                 from pytools import flatten
 
@@ -1177,10 +1194,12 @@ class OpTemplateWithEnvironment(object):
             For("unsigned word_nr = THREAD_NUM", 
                 "word_nr < ALIGNED_FACE_DOFS_PER_MB*BLOCK_MB_COUNT", 
                 "word_nr += COALESCING_THREAD_COUNT",
-                Assign(
-                    "gmem_fluxes_on_faces[blockIdx.x*ALIGNED_FACE_DOFS_PER_BLOCK+word_nr]",
-                    "smem_fluxes_on_faces[word_nr]")
-                ),
+                Block([
+                    Assign(
+                        "gmem_fluxes_on_faces[blockIdx.x*ALIGNED_FACE_DOFS_PER_BLOCK+word_nr]",
+                        "smem_fluxes_on_faces[word_nr]"),
+                    ])
+                )
             ])
 
         # finish off ----------------------------------------------------------
