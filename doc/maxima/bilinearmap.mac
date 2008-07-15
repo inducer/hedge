@@ -1,0 +1,40 @@
+kill(all);
+lflatten(l):=apply(append, l);
+dims:3;
+origpoints: [[-1],[1]];
+for i:2 thru dims do
+  origpoints:lflatten(
+    makelist(
+      makelist(
+        append(opi, [j])
+        ,j, [-1, 1]
+        ),
+      opi, origpoints));
+points : makelist(ascii(97+i), i, 0, length(origpoints)-1);
+
+vars:makelist(concat(v,ascii(97+i)), i, 0, dims-1);
+mapargs:append(
+  [1], vars,
+  lflatten(
+    makelist(
+      makelist(vars[i]*vars[j], j, i+1, length(vars)), 
+      i, 1, length(vars)
+    )
+  )
+);
+
+/* Idea: (x,y)^T = MAT*(1,u,v,uv) */
+mapmat:genmatrix(mm, dims, length(mapargs));
+
+f:mapmat.mapargs;
+
+myjacobian(f, vars):=genmatrix(
+  lambda([i,j], diff(f[i], vars[j])),
+  length(f), length(vars));
+
+fjac:myjacobian(f, vars);
+
+print("bilinear map jacobian:");
+print(fjac);
+print("bilinear map jacobian det:");
+print(expand(determinant(fjac)));
