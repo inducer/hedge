@@ -312,7 +312,8 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                     lplan.parallelism.total()
                     * fplan.aligned_face_dofs_per_microblock()
                     ),),
-                dtype=fplan.float_type)
+                dtype=fplan.float_type,
+                allocator=discr.pool.allocate)
 
         # gather phase --------------------------------------------------------
         for dep_expr in wdflux.all_deps:
