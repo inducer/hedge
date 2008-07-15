@@ -266,6 +266,9 @@ class Discretization(hedge.discretization.Discretization):
         if init_cuda:
             self.cuda_context = dev.make_context()
 
+        from pycuda.tools import DeviceMemoryPool
+        self.pool = DeviceMemoryPool()
+
         self.device = dev
         from hedge.cuda.tools import DeviceData
         self.devdata = DeviceData(dev)
@@ -543,7 +546,7 @@ class Discretization(hedge.discretization.Discretization):
 
                 block_offset += block_size
 
-            return gpuarray.to_gpu(copy_vec)
+            return gpuarray.to_gpu(copy_vec, allocator=self.pool.allocate)
 
     def volume_from_gpu(self, field):
         from hedge.tools import log_shape
@@ -627,14 +630,24 @@ class Discretization(hedge.discretization.Discretization):
 
             result.fill(17) 
             result[self.gpu_boundary_embedding(tag)] = field
-            return gpuarray.to_gpu(result)
+            return gpuarray.to_gpu(result, allocator=self.pool.allocate)
+
+    def _empty_gpuarray(self, shape, dtype):
+        return gpuarray.empty(shape, dtype=dtype,
+                allocator=self.pool.allocate)
+
+    def _zeros_gpuarray(self, shape, dtype):
+        result = gpuarray.empty(shape, dtype=dtype,
+                allocator=self.pool.allocate)
+        result.fill(0)
+        return result
 
     # vector construction -----------------------------------------------------
     def volume_empty(self, shape=(), dtype=None):
         if dtype is None:
             dtype = self.flux_plan.float_type
 
-        return gpuarray.empty(shape+(self.gpu_dof_count(),), dtype=dtype)
+        return self._empty_gpuarray(shape+(self.gpu_dof_count(),), dtype=dtype)
 
     def volume_zeros(self, shape=()):
         result = self.volume_empty(shape)
@@ -665,10 +678,10 @@ class Discretization(hedge.discretization.Discretization):
         return result
     
     def boundary_empty(self, tag=hedge.mesh.TAG_ALL, shape=(), dtype=None):
-        return self._new_bdry(tag, shape, gpuarray.empty, dtype)
+        return self._new_bdry(tag, shape, self._empty_gpuarray, dtype)
 
     def boundary_zeros(self, tag=hedge.mesh.TAG_ALL, shape=(), dtype=None):
-        return self._new_bdry(tag, shape, gpuarray.zeros, dtype)
+        return self._new_bdry(tag, shape, self._zeros_gpuarray, dtype)
 
     def interpolate_boundary_function(self, f, tag=hedge.mesh.TAG_ALL):
         s = hedge.discretization.Discretization
