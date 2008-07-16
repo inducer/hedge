@@ -69,7 +69,7 @@ def face_pair_struct(float_type, dims):
 
 # flux to code mapper ---------------------------------------------------------
 class FluxToCodeMapper(pymbolic.mapper.stringifier.StringifyMapper):
-    def __init__(self, flip_normal):
+    def __init__(self, flip_normal=False):
         def float_mapper(x):
             if isinstance(x, float):
                 return "%sf" % repr(x)
@@ -1047,10 +1047,8 @@ class OpTemplateWithEnvironment(object):
             descr="load face_pair data")
             +[ S("__syncthreads()"), Line() ])
 
-        def bdry_flux_writer(dest_expr, flipped):
-            def get_field(flux_rec, is_interior, flipped):
-                assert not flipped
-
+        def bdry_flux_writer():
+            def get_field(flux_rec, is_interior):
                 if is_interior:
                     return ("tex1Dfetch(%s_tex, a_index)" 
                         % flux_rec.field_short_name)
@@ -1072,13 +1070,11 @@ class OpTemplateWithEnvironment(object):
                     ("(fpair->boundary_id) == %d" % (bdry_id),
                         Block(list(flatten([
                             S("flux += /*int*/ (%s) * %s"
-                                % (FluxToCodeMapper(flipped)(flux_rec.int_coeff, PREC_NONE),
-                                    get_field(flux_rec, 
-                                        is_interior=True, flipped=flipped))),
+                                % (FluxToCodeMapper()(flux_rec.int_coeff, PREC_NONE),
+                                    get_field(flux_rec, is_interior=True))),
                             S("flux += /*ext*/ (%s) * %s"
-                                % (FluxToCodeMapper(flipped)(flux_rec.ext_coeff, PREC_NONE),
-                                    get_field(flux_rec, 
-                                        is_interior=False, flipped=flipped))),
+                                % (FluxToCodeMapper()(flux_rec.ext_coeff, PREC_NONE),
+                                    get_field(flux_rec, is_interior=False))),
                             ]
                             for flux_rec in fluxes
                             ))))
@@ -1087,10 +1083,13 @@ class OpTemplateWithEnvironment(object):
                 )
 
             flux_write_code.append(
-                    S("%s = fpair->face_jacobian*flux" % dest_expr))
+                    Assign(
+                        "smem_fluxes_on_faces[fpair->a_dest+FACEDOF_NR]",
+                        "fpair->face_jacobian*flux"))
+
             return flux_write_code
 
-        def int_flux_writer(dest_expr, flipped):
+        def int_flux_writer(is_twosided):
             def get_field(flux_rec, is_interior, flipped):
                 if is_interior ^ flipped:
                     prefix = "a"
@@ -1105,28 +1104,55 @@ class OpTemplateWithEnvironment(object):
             from pymbolic.mapper.stringifier import PREC_NONE
 
             flux_write_code = Block([
-                    Initializer(POD(float_type, "flux"), 0)
+                    Initializer(POD(float_type, "a_flux"), 0)
                     ])
 
+            if is_twosided:
+                flux_write_code.append(
+                        Initializer(POD(float_type, "b_flux"), 0))
+                prefixes = ["a", "b"]
+                flip_values = [False, True]
+            else:
+                prefixes = ["a"]
+                flip_values = [False]
+
+            flux_write_code.append(Line())
+
             for int_rec in wdflux.interiors:
-                flux_write_code.extend([
-                    S("flux += /*int*/ (%s) * %s"
-                        % (FluxToCodeMapper(flipped)(int_rec.int_coeff, PREC_NONE),
-                            get_field(int_rec, 
-                                is_interior=True, flipped=flipped)
-                            )),
-                    S("flux += /*ext*/ (%s) * %s"
-                        % (FluxToCodeMapper(flipped)(int_rec.ext_coeff, PREC_NONE),
-                            get_field(int_rec, 
-                                is_interior=False, flipped=flipped)
-                            )),
-                        ])
+                for prefix, is_flipped in zip(prefixes, flip_values):
+                    for label, coeff in zip(
+                            ["int", "ext"], 
+                            [int_rec.int_coeff, int_rec.ext_coeff]):
+                        flux_write_code.append(
+                            S("%s_flux += /*%s*/ (%s) * %s"
+                                % (prefix, label,
+                                    FluxToCodeMapper(is_flipped)(coeff, PREC_NONE),
+                                    get_field(int_rec, 
+                                        is_interior=label =="int", 
+                                        flipped=is_flipped)
+                                    )))
+
+            flux_write_code.append(Line())
 
             flux_write_code.append(
-                    S("%s = fpair->face_jacobian*flux" % dest_expr))
+                    Assign(
+                        "smem_fluxes_on_faces[fpair->a_dest+FACEDOF_NR]",
+                        "fpair->face_jacobian*a_flux"))
+
+            if is_twosided:
+                flux_write_code.extend([
+                    Initializer(Pointer(Value(
+                        "index_list_entry_t", "b_write_ilist")),
+                        "smem_index_lists + fpair->b_write_ilist_index"
+                        ),
+                    Assign(
+                        "smem_fluxes_on_faces[fpair->b_dest+b_write_ilist[FACEDOF_NR]]",
+                        "fpair->face_jacobian*b_flux")
+                    ])
+
             return flux_write_code
 
-        def get_flux_code(flux_writer, is_twosided):
+        def get_flux_code(flux_writer):
             flux_code = Block([])
 
             flux_code.extend([
@@ -1147,26 +1173,10 @@ class OpTemplateWithEnvironment(object):
                 Initializer(
                     POD(numpy.uint32, "b_index"),
                     "fpair->b_base + b_ilist[FACEDOF_NR]"),
+                flux_writer(),
+                Line(),
+                S("fpair_nr += CONCURRENT_FACES")
                 ])
-
-            flux_code.append(
-                    flux_writer(
-                        "smem_fluxes_on_faces[fpair->a_dest+FACEDOF_NR]",
-                        flipped=False))
-
-            if is_twosided:
-                flux_code.extend([
-                    Line(),
-                    Initializer(Pointer(Value(
-                        "index_list_entry_t", "b_write_ilist")),
-                        "smem_index_lists + fpair->b_write_ilist_index"
-                        ),
-                    flux_writer(
-                        "smem_fluxes_on_faces[fpair->b_dest+b_write_ilist[FACEDOF_NR]]",
-                        flipped=True)
-                    ])
-
-            flux_code.append(S("fpair_nr += CONCURRENT_FACES"))
 
             return flux_code
 
@@ -1174,7 +1184,7 @@ class OpTemplateWithEnvironment(object):
             Initializer(POD(numpy.uint16, "fpair_nr"), "BLOCK_FACE"),
             Comment("fluxes for dual-sided (intra-block) interior face pairs"),
             While("fpair_nr < data.header.same_facepairs_end",
-                get_flux_code(int_flux_writer, is_twosided=True)
+                get_flux_code(lambda: int_flux_writer(True))
                 ),
             Line(),
             Comment("work around nvcc assertion failure"),
@@ -1183,12 +1193,12 @@ class OpTemplateWithEnvironment(object):
             Line(),
             Comment("fluxes for single-sided (inter-block) interior face pairs"),
             While("fpair_nr < data.header.diff_facepairs_end",
-                get_flux_code(int_flux_writer, is_twosided=False)
+                get_flux_code(lambda: int_flux_writer(False))
                 ),
             Line(),
             Comment("fluxes for single-sided boundary face pairs"),
             While("fpair_nr < data.header.bdry_facepairs_end",
-                get_flux_code(bdry_flux_writer, is_twosided=False)
+                get_flux_code(bdry_flux_writer)
                 ),
             ])
 
