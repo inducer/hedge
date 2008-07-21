@@ -1063,7 +1063,8 @@ def make_cylinder_mesh(radius=0.5, height=1, radial_subdivisions=10,
 
 
 
-def make_box_mesh(dimensions=(1,1,1), max_volume=None, periodicity=None,
+def make_box_mesh(a=(0,0,0),b=(1,1,1), 
+        max_volume=None, periodicity=None,
         boundary_tagger=(lambda fvi, el, fn: [])):
     """Return a mesh for a brick from the origin to `dimensions'.
 
@@ -1085,8 +1086,6 @@ def make_box_mesh(dimensions=(1,1,1), max_volume=None, periodicity=None,
 
     from meshpy.tet import MeshInfo, build
 
-    d = dimensions
-
     #    7--------6
     #   /|       /|
     #  4--------5 |  z
@@ -1096,14 +1095,14 @@ def make_box_mesh(dimensions=(1,1,1), max_volume=None, periodicity=None,
     #  0--------1    +--->x
 
     points = [
-            (0   ,   0,   0),
-            (d[0],   0,   0),
-            (d[0],d[1],   0),
-            (0   ,d[1],   0),
-            (0   ,   0,d[2]),
-            (d[0],   0,d[2]),
-            (d[0],d[1],d[2]),
-            (0   ,d[1],d[2]),
+            (a[0],a[1],a[2]),
+            (b[0],a[1],a[2]),
+            (b[0],b[1],a[2]),
+            (a[0],b[1],a[2]),
+            (a[0],a[1],b[2]),
+            (b[0],a[1],b[2]),
+            (b[0],b[1],b[2]),
+            (a[0],b[1],b[2]),
             ]
 
     facets = [

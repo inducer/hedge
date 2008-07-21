@@ -71,6 +71,7 @@ class RK4TimeStepper(TimeStepper):
         from pytools.log import IntervalTimer
         self.timer = IntervalTimer(
                 "t_rk4", "Time spent doing algebra in RK4")
+        self.coeffs = zip(_RK4A, _RK4B, _RK4C)
 
     def add_instrumentation(self, logmgr):
         logmgr.add_quantity(self.timer)
@@ -81,7 +82,7 @@ class RK4TimeStepper(TimeStepper):
         except AttributeError:
             self.residual = 0*rhs(t, y)
 
-        for a, b, c in zip(_RK4A, _RK4B, _RK4C):
+        for a, b, c in self.coeffs:
             this_rhs = rhs(t + c*dt, y)
 
             self.timer.start()

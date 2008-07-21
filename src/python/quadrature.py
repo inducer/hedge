@@ -82,6 +82,8 @@ class JacobiGaussQuadrature(Quadrature):
     polynomials of type M{(alpha,beta) > -1} 
     
     C{alpha} and C{beta} may not be -0.5.
+
+    Integrates on the interval (-1,1).
     """
     def __init__(self, alpha, beta, N):
         x, w = self.compute_weights_and_nodes(N, alpha, beta)
