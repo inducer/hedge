@@ -47,7 +47,7 @@ namespace hedge {
   static const node_number_t INVALID_NODE = UINT_MAX;
 
   typedef pyublas::numpy_vector<double> py_vector;
-  typedef pyublas::numpy_vector<unsigned> py_uint_vector;
+  typedef pyublas::numpy_vector<npy_uint32> py_uint_vector;
   typedef pyublas::numpy_matrix<double> py_matrix;
   typedef pyublas::numpy_matrix<double, 
           boost::numeric::ublas::column_major> py_fortran_matrix;
