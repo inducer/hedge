@@ -615,6 +615,17 @@ def check_bc_coverage(mesh, bc_tags, incomplete_ok=False):
 
 
 
+class MeshPyFaceMarkerLookup:
+    def __init__(self, meshpy_output):
+        self.fvi2fm = dict((frozenset(fvi), marker) for fvi, marker in
+                zip(meshpy_output.facets, meshpy_output.facet_markers))
+
+    def __call__(self, fvi):
+        return self.fvi2fm[frozenset(fvi)]
+
+
+
+
 # mesh producers for simple geometries ----------------------------------------
 def make_1d_mesh(points, left_tag=None, right_tag=None, periodic=False, 
         boundary_tagger=None):
@@ -814,11 +825,10 @@ def finish_2d_rect_mesh(points, facets, facet_markers, marker2tag, refine_func,
             refinement_func=refine_func,
             allow_boundary_steiner=not (periodicity[0] or periodicity[1]))
 
-    fvi2fm = dict((frozenset(fvi), marker) for fvi, marker in
-        zip(generated_mesh.facets, generated_mesh.facet_markers))
+    fmlookup = MeshPyFaceMarkerLookup(generated_mesh)
 
     def wrapped_boundary_tagger(fvi, el, fn):
-        btag = marker2tag[fvi2fm[frozenset(fvi)]]
+        btag = marker2tag[fmlookup(fvi)]
         if btag in periodic_tags:
             return [btag]
         else:
@@ -1152,7 +1162,7 @@ def make_box_mesh(a=(0,0,0),b=(1,1,1),
             pbcg.facet_marker_2 = plus_marker
 
             translation = [0,0,0]
-            translation[axis] = d[axis]
+            translation[axis] = b[axis]-a[axis]
             pbcg.set_transform(translation=translation)
 
             mesh_periodicity.append((minus_tag, plus_tag))
