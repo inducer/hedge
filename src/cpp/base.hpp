@@ -32,10 +32,10 @@
 
 
 namespace hedge {
-  typedef unsigned element_number_t;
-  typedef unsigned face_number_t;
-  typedef unsigned vertex_number_t;
-  typedef unsigned node_number_t;
+  typedef npy_uint element_number_t;
+  typedef npy_uint face_number_t;
+  typedef npy_uint vertex_number_t;
+  typedef npy_uint node_number_t;
 
   typedef std::vector<element_number_t> el_id_vector;
   typedef std::vector<vertex_number_t> vtx_id_vector;

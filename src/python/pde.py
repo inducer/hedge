@@ -610,6 +610,7 @@ class WeakPoissonOperator(Operator, hedge.tools.OperatorBase):
     Local discontinuous Galerkin methods for elliptic problems", 
     Communications in Numerical Methods in Engineering 18, no. 1 (2002): 69-75.
     """
+
     def __init__(self, discr, diffusion_tensor=None, 
             dirichlet_bc=hedge.data.ConstantGivenFunction(), dirichlet_tag="dirichlet",
             neumann_bc=hedge.data.ConstantGivenFunction(), neumann_tag="neumann",
