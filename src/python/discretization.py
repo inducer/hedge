@@ -92,7 +92,7 @@ class _ElementGroup(object):
 
     @ivar members: a list of hedge.mesh.Element instances in this group.
     @ivar local_discretization: an instance of hedge.element.Element.
-    @ivar ranges: a list of C{(start, end)} tuples indicating the DOF numbers for
+    @ivar ranges: a list of C{slice} objects indicating the DOF numbers for
       each element. Note: This is actually a C++ ElementRanges object.
     @ivar mass_matrix: The element-local mass matrix M{M}.
     @ivar inverse_mass_matrix: the element-local inverese mass matrix M{M^{-1}}.
@@ -712,6 +712,31 @@ class Discretization(object):
         return 1/max_system_ev \
                 * self.dt_non_geometric_factor() \
                 * self.dt_geometric_factor()
+
+    def evaluate_at_point(self, field, point):
+        for eg in self.element_groups:
+            for el, rng in zip(eg.members, eg.ranges):
+                if el.contains_point(point):
+                    ldis = eg.local_discretization
+                    basis_values = numpy.array([
+                            phi(el.inverse_map(point)) 
+                            for phi in ldis.basis_functions()])
+                    vdm_t = ldis.vandermonde().T
+                    intp_coeff = la.solve(vdm_t, basis_values)
+
+                    from hedge.tools import log_shape
+                    ls = log_shape(field)
+                    if ls != ():
+                        result = numpy.zeros(ls, dtype=self.default_scalar_type)
+                        from pytools import indices_in_shape
+                        for i in indices_in_shape(ls):
+                            result[i] = numpy.dot(
+                                    intp_coeff, field[i][rng])
+                        return result
+                    else:
+                        return numpy.dot(intp_coeff, field[rng])
+
+        raise RuntimeError, "point %s not found" % point
 
     # operator binding functions --------------------------------------------------
     @property

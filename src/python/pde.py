@@ -78,8 +78,8 @@ class GradientOperator(Operator):
         u = Field("u")
         bc = Field("bc")
 
-        nabla = discr.nabla
-        m_inv = discr.inverse_mass_operator
+        nabla = self.discr.nabla
+        m_inv = self.discr.inverse_mass_operator
 
         return self.discr.compile(nabla*u - m_inv*(
                 self.flux * u + 
