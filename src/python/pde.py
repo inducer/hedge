@@ -401,7 +401,9 @@ class MaxwellOperator(TimeDependentOperator):
     """
 
     def __init__(self, discr, epsilon, mu, upwind_alpha=1, 
-            pec_tag=hedge.mesh.TAG_ALL, current=None):
+            pec_tag=hedge.mesh.TAG_ALL, 
+            absorb_tag=hedge.mesh.TAG_NONE,
+            current=None):
         from hedge.flux import make_normal, FluxVectorPlaceholder
         from hedge.mesh import check_bc_coverage
         from math import sqrt
@@ -422,10 +424,13 @@ class MaxwellOperator(TimeDependentOperator):
         self.c = 1/sqrt(mu*epsilon)
 
         self.pec_tag = pec_tag
+        self.absorb_tag = absorb_tag
+
+        self.absorb_normals = self.discr.boundary_normals(self.absorb_tag)
 
         self.current = current
 
-        check_bc_coverage(discr.mesh, [pec_tag])
+        check_bc_coverage(discr.mesh, [pec_tag, absorb_tag])
 
         dim = discr.dimensions
         normal = make_normal(dim)
@@ -433,8 +438,8 @@ class MaxwellOperator(TimeDependentOperator):
         w = FluxVectorPlaceholder(self.count_subset(self.get_eh_subset()))
         e, h = self.split_eh(w)
 
-        Z = sqrt(mu/epsilon)
-        Y = 1/Z
+        self.Z = Z = sqrt(mu/epsilon)
+        self.Y = Y = 1/Z
 
         # see doc/maxima/maxwell.mac
         self.flux = join_fields(
@@ -479,6 +484,7 @@ class MaxwellOperator(TimeDependentOperator):
         w = make_vector_field("w", fld_cnt)
         e,h = self.split_eh(w)
         pec_bc = make_vector_field("pec_bc", fld_cnt)
+        absorb_bc = make_vector_field("absorb_bc", fld_cnt)
 
         m_inv = self.discr.inverse_mass_operator
 
@@ -486,6 +492,7 @@ class MaxwellOperator(TimeDependentOperator):
                 + m_inv*(
                     self.flux_op * w
                     +self.flux_op * pair_with_boundary(w, pec_bc, self.pec_tag)
+                    +self.flux_op * pair_with_boundary(w, absorb_bc, self.absorb_tag)
                     ))
 
     def rhs(self, t, w):
@@ -499,6 +506,18 @@ class MaxwellOperator(TimeDependentOperator):
                 self.discr.boundarize_volume_field(h, self.pec_tag)
                 )
 
+        abs_n = self.absorb_normals
+        absorb_w = self.discr.boundarize_volume_field(w, self.absorb_tag)
+        absorb_e, absorb_h = self.split_eh(absorb_w)
+
+        from hedge.tools import to_obj_array
+        absorb_bc = to_obj_array(absorb_w) + 1/2*join_fields(
+                self.h_cross(abs_n, self.e_cross(abs_n, absorb_e)) 
+                - self.Z*self.h_cross(abs_n, absorb_h),
+                self.e_cross(abs_n, self.h_cross(abs_n, absorb_h)) 
+                + self.Y*self.e_cross(abs_n, absorb_e)
+                )
+
         if self.current is not None:
             j = self.current.volume_interpolant(t, self.discr)
             j_rhs = []
@@ -508,7 +527,9 @@ class MaxwellOperator(TimeDependentOperator):
             rhs = self.assemble_fields(e=j_rhs)
         else:
             rhs = self.assemble_fields()
-        return self.op_template()(w=w, pec_bc=pec_bc)+rhs
+        return self.op_template()(w=w, 
+                pec_bc=pec_bc,
+                absorb_bc=absorb_bc)+rhs
 
     def assemble_fields(self, e=None, h=None):
         e_components = self.count_subset(self.get_eh_subset()[0:3])
