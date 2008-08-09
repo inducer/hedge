@@ -570,6 +570,7 @@ class Discretization(object):
             out[slice_pfx + (point_nr,)] = f(x, None) # FIXME
         return out
 
+    @memoize_method
     def boundary_normals(self, tag=hedge.mesh.TAG_ALL,
             tgt_factory=None, dtype=None):
         result = (tgt_factory or self.boundary_zeros)(
