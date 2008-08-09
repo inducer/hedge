@@ -327,7 +327,8 @@ class SubsettableCrossProduct:
                         if lc != 0:
                             this_expr += lc*op1[j]*op2[k]
                             this_component.append((lc, j, k))
-                self.functions.append(pymbolic.compile(this_expr))
+                self.functions.append(pymbolic.compile(this_expr, 
+                    variables=[op1, op2]))
                 self.component_lcjk.append(this_component)
 
     def __call__(self, x, y, three_mult=None):

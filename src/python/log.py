@@ -181,11 +181,9 @@ class EMFieldEnergy(LogQuantity):
 
 class EMFieldMomentum(MultiLogQuantity):
     def __init__(self, fields, c0, names=None):
-        h_cross = fields.maxwell_op.h_cross
         if names is None:
             names = ["p%s_field" % axis_name(i) 
-                    for i, included in enumerate(h_cross.result_subset)
-                    if included]
+                    for i in range(3)]
 
         vdim = len(names)
 
@@ -196,13 +194,22 @@ class EMFieldMomentum(MultiLogQuantity):
         self.fields = fields
         self.c0 = c0
 
+        e_subset = fields.maxwell_op.get_eh_subset()[0:3]
+        h_subset = fields.maxwell_op.get_eh_subset()[3:6]
+
+        from hedge.tools import SubsettableCrossProduct
+        self.poynting_cross = SubsettableCrossProduct(
+                op1_subset=e_subset, 
+                op2_subset=h_subset, 
+                )
+
     def __call__(self):
         max_op = self.fields.maxwell_op
 
         e = self.fields.e
         h = self.fields.h
 
-        poynting_s = max_op.h_cross(e, h)
+        poynting_s = self.poynting_cross(e, h)
 
         momentum_density = poynting_s/self.c0**2
         return max_op.discr.integral(momentum_density)

@@ -186,11 +186,13 @@ class TimeHarmonicGivenFunction(ITimeDependentGivenFunction):
 
     def volume_interpolant(self, t, discr):
         from math import sin
-        return sin(omega*t+phase)*self.gf.volume_interpolant(discr)
+        return sin(self.omega*t+self.phase)\
+                *self.gf.volume_interpolant(discr)
 
     def boundary_interpolant(self, t, discr, tag=hedge.mesh.TAG_ALL):
         from math import sin
-        return sin(omega*t+phase)*self.gf.boundary_interpolant(discr, tag)
+        return sin(self.omega*t+self.phase)\
+                *self.gf.boundary_interpolant(discr, tag)
 
 
 

@@ -144,6 +144,26 @@ class OpTemplateFunction:
 
 
 
+class _PointEvaluator(object):
+    def __init__(self, discr, el_range, interp_coeff):
+        self.discr = discr
+        self.el_range = el_range
+        self.interp_coeff = interp_coeff
+
+    def __call__(self, field):
+        from hedge.tools import log_shape
+        ls = log_shape(field)
+        if ls != ():
+            result = numpy.zeros(ls, dtype=self.discr.default_scalar_type)
+            from pytools import indices_in_shape
+            for i in indices_in_shape(ls):
+                result[i] = numpy.dot(
+                        self.interp_coeff, field[i][self.el_range])
+            return result
+        else:
+            return numpy.dot(self.interp_coeff, field[self.el_range])
+
+
 class Discretization(object):
     """The global approximation space.
 
@@ -653,7 +673,11 @@ class Discretization(object):
             
             from pytools import indices_in_shape
             for i in indices_in_shape(ls):
-                result[i] = numpy.dot(mass_ones, volume_vector[i])
+                vvi = volume_vector[i]
+                if isinstance(vvi, (int, float)) and vvi == 0:
+                    result[i] = 0
+                else:
+                    result[i] = numpy.dot(mass_ones, volume_vector[i])
 
             return result
 
@@ -714,7 +738,7 @@ class Discretization(object):
                 * self.dt_non_geometric_factor() \
                 * self.dt_geometric_factor()
 
-    def evaluate_at_point(self, field, point):
+    def get_point_evaluator(self, point):
         for eg in self.element_groups:
             for el, rng in zip(eg.members, eg.ranges):
                 if el.contains_point(point):
@@ -723,19 +747,10 @@ class Discretization(object):
                             phi(el.inverse_map(point)) 
                             for phi in ldis.basis_functions()])
                     vdm_t = ldis.vandermonde().T
-                    intp_coeff = la.solve(vdm_t, basis_values)
-
-                    from hedge.tools import log_shape
-                    ls = log_shape(field)
-                    if ls != ():
-                        result = numpy.zeros(ls, dtype=self.default_scalar_type)
-                        from pytools import indices_in_shape
-                        for i in indices_in_shape(ls):
-                            result[i] = numpy.dot(
-                                    intp_coeff, field[i][rng])
-                        return result
-                    else:
-                        return numpy.dot(intp_coeff, field[rng])
+                    return _PointEvaluator(
+                            discr=self,
+                            el_range=rng,
+                            interp_coeff=la.solve(vdm_t, basis_values))
 
         raise RuntimeError, "point %s not found" % point
 
