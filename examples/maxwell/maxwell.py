@@ -38,7 +38,7 @@ def main():
             check_time_harmonic_solution, \
             RealPartAdapter, \
             SplitComplexAdapter, \
-            CartesianAdapter, \
+            CylindricalFieldAdapter, \
             CylindricalCavityMode, \
             RectangularWaveguideMode, \
             RectangularCavityMode
@@ -63,8 +63,8 @@ def main():
         mode = CylindricalCavityMode(m=1, n=1, p=1,
                 radius=R, height=d, 
                 epsilon=epsilon, mu=mu)
-        r_sol = CartesianAdapter(RealPartAdapter(mode))
-        c_sol = SplitComplexAdapter(CartesianAdapter(mode))
+        r_sol = CylindricalFieldAdapter(RealPartAdapter(mode))
+        c_sol = SplitComplexAdapter(CylindricalFieldAdapter(mode))
 
         if pcon.is_head_rank:
             mesh = make_cylinder_mesh(radius=R, height=d, max_volume=0.01)
