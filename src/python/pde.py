@@ -110,9 +110,11 @@ class DivergenceOperator(Operator):
         normal = make_normal(self.discr.dimensions)
 
         flux = 0
+        idx = 0
         for i, i_enabled in enumerate(subset):
-            if i_enabled:
-                flux += (v.int-v.avg)[i]*normal[i]
+            if i_enabled and i < discr.dimensions:
+                flux += (v.int-v.avg)[idx]*normal[i]
+                idx += 1
 
         self.flux = discr.get_flux_operator(flux)
 
@@ -128,9 +130,11 @@ class DivergenceOperator(Operator):
         bc = make_vector_field("bc", self.discr.dimensions)
 
         local_op_result = 0
+        idx = 0
         for i, i_enabled in enumerate(self.subset):
-            if i_enabled:
-                local_op_result += nabla[i]*v[i]
+            if i_enabled and i < self.discr.dimensions:
+                local_op_result += nabla[i]*v[idx]
+                idx += 1
         
         opt = local_op_result - m_inv*(
                 self.flux * v + 

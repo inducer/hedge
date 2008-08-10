@@ -52,7 +52,7 @@ class SplitComplexAdapter:
         ad_x = self.adaptee(x, el)
         return [xi.real for xi in ad_x] + [xi.imag for xi in ad_x]
 
-class CartesianAdapter:
+class CylindricalFieldAdapter:
     def __init__(self, adaptee):
         self.adaptee = adaptee
 

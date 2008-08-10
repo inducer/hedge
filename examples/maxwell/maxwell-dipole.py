@@ -42,7 +42,7 @@ def main():
     epsilon = 1*epsilon0
     mu = 1*mu0
 
-    dims = 3
+    dims = 2
 
     if pcon.is_head_rank:
         if dims == 2:
@@ -91,9 +91,13 @@ def main():
             #phase=pi/2
             )
 
-    from hedge.pde import MaxwellOperator, TMMaxwellOperator
     from hedge.mesh import TAG_ALL, TAG_NONE
-    op = TMMaxwellOperator(discr, 
+    if dims == 2:
+        from hedge.pde import TMMaxwellOperator as MaxwellOperator
+    else:
+        from hedge.pde import MaxwellOperator
+
+    op = MaxwellOperator(discr, 
             epsilon, mu, 
             upwind_alpha=1,
             pec_tag=TAG_NONE,
@@ -138,7 +142,7 @@ def main():
 
     point_timeseries = [
             (open("b-x%d-vs-time.dat" % i, "w"), 
-                discr.get_point_evaluator(numpy.array([i,0,0],
+                discr.get_point_evaluator(numpy.array([i,0,0][:dims],
                     dtype=discr.default_scalar_type)))
             for i in range(1,5)
             ]
@@ -172,6 +176,4 @@ def main():
 
 
 if __name__ == "__main__":
-    import cProfile as profile
-    #profile.run("main()", "wave2d.prof")
     main()
