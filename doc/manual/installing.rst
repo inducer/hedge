@@ -3,8 +3,8 @@
 Installing Hedge
 ================
 
-This tutorial will walk you through the process of building hedge. To
-follow, you really only need three basic things:
+This tutorial will walk you through the process of building
+:mod:`hedge`. To follow, you really only need three basic things:
 
 * A UNIX-like machine with web access.
 * A C++ compiler, preferably a Version 4.x gcc.
@@ -43,9 +43,10 @@ Then, do this::
     $ make install
 
 (Whenever you see the "`$`" dollar sign, this means you should enter
-this at your shell prompt. You don't have to be `root`. A few spots
-are marked with "sudo" to show that these *do* require root privileges
-*if* you are using a Python interpreter that is install globally.)
+the subsequent text at your shell prompt. You don't have to be `root`.
+A few spots are marked with "sudo" to show that these *do* require
+root privileges *if* you are using a Python interpreter that is
+installed globally.)
 
 You may adapt the file and directory names to suit your liking,
 however the rest of this tutorial will assume that you use these
@@ -125,6 +126,24 @@ the example, which stands for gcc Version 4.2. Yours may be different.
 Find out by looking at the directory listing of :file:`$HOME/pool/lib`, or
 wherever you installed the Boost libraries.)
 
+Optional: Tell :mod:`hedge` about BLAS
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+If you have the `Basic Linear Algebra Subroutines <http://netlib.org/blas>`_
+or a tuned implementation such as `ATLAS <http://math-atlas.sf.net>`_ available,
+you may tell hedge about their presence for a big speed boost. Simply add the 
+following three lines to the file :file:`.aksetup-defaults.py` in your home
+directory that you created just now::
+
+    HAVE_BLAS = True
+    BLAS_LIB_DIR = ['/where/ever/your/blas/is']
+    BLAS_LIB_DIR = ['your_blas_libname'] # without leading lib and trailing .a/.so
+
+If you are using ATLAS, you may need to specify a combination of
+libraries similar to these::
+
+    BLAS_LIB_DIR = ['f77blas', 'atlas', 'gfortran'] # example if using atlas
+
 Step 4: Download and Unpack hedge
 ---------------------------------
 
@@ -153,8 +172,17 @@ Actually compiling and installing hedge should now be fairly simple::
     $ cd hedge-VERSION # if you're not there already
     $ sudo python setup.py install
 
-Get some coffee while hedge (and its dependencies) are installed. If
+Get some coffee while hedge and its dependencies are installed. If
 you get no errors, congratulations! You have successfully built hedge.
+
+For your information: This step in the installation will automatically
+download and install (or update) the correct versions of the following
+packages:
+
+ * Pytools
+ * Pymbolic
+ * PyUblas
+ * MeshPy
 
 Success! So what now?
 ---------------------
