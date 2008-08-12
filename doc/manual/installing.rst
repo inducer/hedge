@@ -137,12 +137,12 @@ directory that you created just now::
 
     HAVE_BLAS = True
     BLAS_LIB_DIR = ['/where/ever/your/blas/is']
-    BLAS_LIB_DIR = ['your_blas_libname'] # without leading lib and trailing .a/.so
+    BLAS_LIBNAME = ['your_blas_libname'] # without leading lib and trailing .a/.so
 
 If you are using ATLAS, you may need to specify a combination of
 libraries similar to these::
 
-    BLAS_LIB_DIR = ['f77blas', 'atlas', 'gfortran'] # example if using atlas
+    BLAS_LIBNAME = ['f77blas', 'atlas', 'gfortran'] # example if using atlas
 
 Step 4: Download and Unpack hedge
 ---------------------------------
