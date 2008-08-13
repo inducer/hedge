@@ -21,7 +21,9 @@ from __future__ import division
 from hedge.tools import \
         cyl_bessel_j, \
         cyl_bessel_j_prime
-from math import sqrt, pi, sin, cos, atan2
+from math import sqrt, pi, sin, cos, atan2, acos
+import numpy
+import numpy.linalg as la
 import cmath
 
 
@@ -52,7 +54,13 @@ class SplitComplexAdapter:
         ad_x = self.adaptee(x, el)
         return [xi.real for xi in ad_x] + [xi.imag for xi in ad_x]
 
+
+
+
 class CylindricalFieldAdapter:
+    """Turns a field returned as (r, phi, z) components into
+    (x,y,z) components.
+    """
     def __init__(self, adaptee):
         self.adaptee = adaptee
 
@@ -62,7 +70,7 @@ class CylindricalFieldAdapter:
 
     def __call__(self, x, el):
         xy = x[:2]
-        r = sqrt(xy*xy)
+        r = la.norm(xy)
         phi = atan2(x[1], x[0])
 
         prev_result = self.adaptee(x, el)
@@ -75,6 +83,54 @@ class CylindricalFieldAdapter:
                     sin(phi)*fr + cos(phi)*fphi, # ey
                     fz,
                     ])
+            i += 3
+
+        return result
+
+
+
+
+class SphericalFieldAdapter:
+    """Turns the adaptee's field C{(Er, Etheta, Ephi)} components into
+    C{(Ex,Ey,Ez)} components.
+
+    Conventions are those of
+    http://mathworld.wolfram.com/SphericalCoordinates.html
+    """
+    def __init__(self, adaptee):
+        self.adaptee = adaptee
+
+    @property
+    def shape(self):
+        return self.adaptee.shape
+
+    @staticmethod
+    def r_theta_phi_from_xyz(x):
+        r = la.norm(x)
+        return r, atan2(x[1], x[0]), acos(x[2]/r)
+
+    def __call__(self, x, el):
+        r, theta, phi = self.r_theta_phi_from_xyz(x)
+
+        er = numpy.array([
+            cos(theta)*sin(phi),
+            sin(theta)*sin(phi),
+            cos(phi)])
+        etheta = numpy.array([
+            -sin(theta),
+            cos(theta),
+            0])
+        ephi = numpy.array([
+            cos(theta)*cos(phi),
+            sin(theta)*cos(phi),
+            -sin(phi)])
+
+        adaptee_result = self.adaptee(x, el)
+        result = numpy.empty_like(adaptee_result)
+        i = 0
+        while i < len(adaptee_result):
+            fr, ftheta, fphi = adaptee_result[i:i+3]
+            result[i:i+3] = fr*er + ftheta*etheta + fphi*ephi
             i += 3
 
         return result
@@ -127,9 +183,7 @@ class CylindricalCavityMode:
     def set_time(self, t):
         self.t = t
 
-    @property
-    def shape(self):
-        return (6,)
+    shape = (6,)
 
     def __call__(self, x, el):
         # coordinates -----------------------------------------------------
@@ -255,6 +309,72 @@ class RectangularCavityMode(RectangularWaveguideMode):
             kwargs["backward_coeff"] = 1
         RectangularWaveguideMode.__init__(self, *args, **kwargs)
 
+
+
+
+
+# dipole solution -------------------------------------------------------------
+class DipoleFarField:
+    """Dipole EM field.
+
+    See U{http://piki.tiker.net/wiki/Dipole}.
+    """
+    def __init__(self, q, d, omega, epsilon, mu):
+        self.q = q
+        self.d = d
+
+        self.epsilon = epsilon
+        self.mu = mu
+        self.c = c = 1/sqrt(mu*epsilon)
+
+        self.omega = omega
+
+        freq = omega/(2*pi)
+        self.wavelength = c/freq
+
+    def far_field_mask(self, x, el):
+        if la.norm(x) > 0.5*self.wavelength:
+            return 1
+        else:
+            return 0
+
+    def set_time(self, t):
+        self.t = t
+
+    shape = (6,)
+
+    def __call__(self, x, el):
+        # coordinates ---------------------------------------------------------
+        r, theta, phi = SphericalFieldAdapter.r_theta_phi_from_xyz(x)
+
+        # copy instance variables for easier access ---------------------------
+        q = self.q
+        d = self.d
+
+        epsilon = self.epsilon
+        mu = self.mu
+        c = self.c
+
+        omega = self.omega
+        t = self.t
+
+        # field components ----------------------------------------------------
+        tdep = omega*t-omega*r/c
+        e_r  = (2*cos(phi)*q*d) / (4*pi*epsilon) * (
+                1/r**3 * sin(tdep)
+                +omega/(c*r**2) * cos(tdep))
+        e_phi = (sin(phi)*q*d) / (4*pi*epsilon) * (
+                (1/r**3 - omega**2/(c**2*r)*sin(tdep))
+                + omega/(c*r**2)*cos(tdep))
+        h_theta = (omega*sin(phi)*q*d)/(4*pi) * (
+                - omega/(c*r)*sin(tdep)
+                + 1/r**2*cos(tdep))
+
+        return [e_r, 0, e_phi, 0, h_theta, 0]
+
+    def source_modulation(self, t):
+        j0 = -1/self.epsilon*self.q*self.d*self.omega
+        return j0*cos(self.omega*t)
 
 
 

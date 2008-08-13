@@ -126,7 +126,7 @@ def main():
         logmgr.add_quantity(vis_timer)
 
         from hedge.log import EMFieldGetter, add_em_quantities
-        field_getter = EMFieldGetter(op, locals(), "fields")
+        field_getter = EMFieldGetter(op, lambda: fields)
         add_em_quantities(logmgr, op, field_getter)
         
         logmgr.add_watches(["step.max", "t_sim.max", "W_field", "t_step.max"])

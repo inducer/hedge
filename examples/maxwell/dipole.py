@@ -25,7 +25,6 @@ import numpy.linalg as la
 
 
 def main():
-    from hedge.element import TetrahedralElement
     from hedge.timestep import RK4TimeStepper
     from hedge.mesh import make_ball_mesh, make_cylinder_mesh, make_box_mesh
     from hedge.visualization import \
@@ -42,7 +41,7 @@ def main():
     epsilon = 1*epsilon0
     mu = 1*mu0
 
-    dims = 2
+    dims = 3
 
     if pcon.is_head_rank:
         if dims == 2:
@@ -69,27 +68,35 @@ def main():
 
     vis = SiloVisualizer(discr, pcon)
 
-    class PointDipoleSource:
-        shape = (3,)
-        
-        Q = 1
-        d = 1./39
-        omega = 6.284e8
+    from analytic_solutions import DipoleFarField, SphericalFieldAdapter
+    from hedge.data import ITimeDependentGivenFunction
 
-        def __call__(self, x, el):
-            from math import exp
-            j0 = -1/op.epsilon*self.Q*self.d*self.omega
-            spacedep = exp(-la.norm(x)**2*10)
-
-            return numpy.array([0,0,j0*spacedep])
-
-    from hedge.data import TimeHarmonicGivenFunction, GivenFunction
-    tc_source = GivenFunction(PointDipoleSource())
-    current = TimeHarmonicGivenFunction(
-            tc_source,
-            omega=PointDipoleSource.omega,
-            #phase=pi/2
+    sph_dipole = DipoleFarField(
+            q=1, #C
+            d=1/39,
+            omega=2*pi*1e8,
+            epsilon=epsilon0,
+            mu=mu0,
             )
+    cart_dipole = SphericalFieldAdapter(sph_dipole)
+
+    class PointDipoleSource(ITimeDependentGivenFunction):
+        def __init__(self):
+            from pyrticle.tools import CInfinityShapeFunction
+            sf = CInfinityShapeFunction(
+                        0.2*sph_dipole.wavelength,
+                        discr.dimensions)
+            self.num_sf = discr.interpolate_volume_function(
+                    lambda x, el: sf(x))
+            self.vol_0 = discr.volume_zeros()
+
+        def volume_interpolant(self, t, discr):
+            from hedge.tools import make_obj_array
+            return make_obj_array([
+                self.vol_0,
+                self.vol_0,
+                sph_dipole.source_modulation(t)*self.num_sf
+                ])
 
     from hedge.mesh import TAG_ALL, TAG_NONE
     if dims == 2:
@@ -102,7 +109,7 @@ def main():
             upwind_alpha=1,
             pec_tag=TAG_NONE,
             absorb_tag=TAG_ALL,
-            current=current,
+            current=PointDipoleSource(),
             )
 
     fields = op.assemble_fields()
@@ -135,11 +142,9 @@ def main():
     logmgr.add_quantity(vis_timer)
 
     from hedge.log import EMFieldGetter, add_em_quantities
-    field_getter = EMFieldGetter(op, locals(), "fields")
+    field_getter = EMFieldGetter(op, lambda: fields)
     add_em_quantities(logmgr, op, field_getter)
     
-    logmgr.add_watches(["step.max", "t_sim.max", "W_field", "t_step.max"])
-
     point_timeseries = [
             (open("b-x%d-vs-time.dat" % i, "w"), 
                 discr.get_point_evaluator(numpy.array([i,0,0][:dims],
@@ -147,25 +152,79 @@ def main():
             for i in range(1,5)
             ]
 
+    from pytools.log import PushLogQuantity
+    relerr_e_q = PushLogQuantity("relerr_e", "1", "Relative error in masked E-field")
+    relerr_h_q = PushLogQuantity("relerr_h", "1", "Relative error in masked H-field")
+    logmgr.add_quantity(relerr_e_q)
+    logmgr.add_quantity(relerr_h_q)
+
+    logmgr.add_watches(["step.max", "t_sim.max", "W_field", "t_step.max",
+        "relerr_e", "relerr_h"])
+
     # timestep loop -------------------------------------------------------
+    mask = discr.interpolate_volume_function(sph_dipole.far_field_mask)
+
+    def apply_mask(field):
+        from hedge.tools import log_shape
+        ls = log_shape(field)
+        result = discr.volume_empty(ls)
+        from pytools import indices_in_shape
+        for i in indices_in_shape(ls):
+            result[i] = mask * field[i]
+
+        return result
+
     t = 0
     for step in range(nsteps):
-        logmgr.tick()
-
-        if step % 10 == 0:
+        if step % 25 == 0:
             vis_timer.start()
             e, h = op.split_eh(fields)
+            sph_dipole.set_time(t)
+            true_e, true_h = op.split_eh(
+                    discr.interpolate_volume_function(cart_dipole))
             visf = vis.make_file("dipole-%04d" % step)
+
+            mask_e = apply_mask(e)
+            mask_h = apply_mask(h)
+            mask_true_e = apply_mask(true_e)
+            mask_true_h = apply_mask(true_h)
+
+            from pylo import DB_VARTYPE_VECTOR
             vis.add_data(visf,
-                    [ ("e", e), ("h", h), ],
+                    [ 
+                        ("e", e), 
+                        ("h", h), 
+                        ("true_e", true_e), 
+                        ("true_h", true_h), 
+                        ("mask_e", mask_e), 
+                        ("mask_h", mask_h), 
+                        ("mask_true_e", mask_true_e), 
+                        ("mask_true_h", mask_true_h), 
+                        ],
+                    expressions=[
+                        ("diff_e", "mask_e-mask_true_e", DB_VARTYPE_VECTOR),
+                        ("diff_h", "mask_h-mask_true_h", DB_VARTYPE_VECTOR),
+                        ],
                     time=t, step=step
                     )
             visf.close()
             vis_timer.stop()
 
+            from hedge.tools import relative_error
+            relerr_e_q.push_value(
+                    relative_error(
+                        discr.norm(mask_e-mask_true_e),
+                        discr.norm(mask_true_e)))
+            relerr_h_q.push_value(
+                    relative_error(
+                        discr.norm(mask_h-mask_true_h),
+                        discr.norm(mask_true_h)))
+
             for outf, evaluator in point_timeseries:
                 outf.write("%g\t%g\n" % (t, op.mu*evaluator(h[1])))
                 outf.flush()
+
+        logmgr.tick()
 
         fields = stepper(fields, t, dt, op.rhs)
         t += dt

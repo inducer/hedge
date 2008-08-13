@@ -131,20 +131,19 @@ class LpNorm(LogQuantity):
 class EMFieldGetter(object):
     """Makes E and H field accessible as self.e and self.h from a variable lookup.
     To be used with the EM log quantities in this module."""
-    def __init__(self, maxwell_op, scope, varname):
+    def __init__(self, maxwell_op, fgetter):
         self.maxwell_op = maxwell_op
-        self.scope = scope
-        self.varname = varname
+        self.fgetter = fgetter
 
     @property
     def e(self):
-        fields = self.scope[self.varname]
+        fields = self.fgetter()
         e, h = self.maxwell_op.split_eh(fields)
         return e
 
     @property
     def h(self):
-        fields = self.scope[self.varname]
+        fields = self.fgetter()
         e, h = self.maxwell_op.split_eh(fields)
         return h
 
