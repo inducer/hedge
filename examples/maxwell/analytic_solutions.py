@@ -373,7 +373,7 @@ class DipoleFarField:
         return [e_r, 0, e_phi, 0, h_theta, 0]
 
     def source_modulation(self, t):
-        j0 = -1/self.epsilon*self.q*self.d*self.omega
+        j0 = self.q*self.d*self.omega/self.epsilon
         return j0*cos(self.omega*t)
 
 

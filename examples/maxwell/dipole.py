@@ -84,7 +84,7 @@ def main():
         def __init__(self):
             from pyrticle.tools import CInfinityShapeFunction
             sf = CInfinityShapeFunction(
-                        0.2*sph_dipole.wavelength,
+                        0.1*sph_dipole.wavelength,
                         discr.dimensions)
             self.num_sf = discr.interpolate_volume_function(
                     lambda x, el: sf(x))
@@ -115,7 +115,7 @@ def main():
     fields = op.assemble_fields()
 
     dt = discr.dt_factor(op.max_eigenvalue())
-    final_time = 1e-6
+    final_time = 1e-7
     nsteps = int(final_time/dt)+1
     dt = final_time/nsteps
 
@@ -145,12 +145,6 @@ def main():
     field_getter = EMFieldGetter(op, lambda: fields)
     add_em_quantities(logmgr, op, field_getter)
     
-    point_timeseries = [
-            (open("b-x%d-vs-time.dat" % i, "w"), 
-                discr.get_point_evaluator(numpy.array([i,0,0][:dims],
-                    dtype=discr.default_scalar_type)))
-            for i in range(1,5)
-            ]
 
     from pytools.log import PushLogQuantity
     relerr_e_q = PushLogQuantity("relerr_e", "1", "Relative error in masked E-field")
@@ -160,6 +154,14 @@ def main():
 
     logmgr.add_watches(["step.max", "t_sim.max", "W_field", "t_step.max",
         "relerr_e", "relerr_h"])
+
+    point_timeseries = [
+            (open("b-x%d-vs-time.dat" % i, "w"), 
+                open("b-x%d-vs-time-true.dat" % i, "w"), 
+                discr.get_point_evaluator(numpy.array([i,0,0][:dims],
+                    dtype=discr.default_scalar_type)))
+            for i in range(1,5)
+            ]
 
     # timestep loop -------------------------------------------------------
     mask = discr.interpolate_volume_function(sph_dipole.far_field_mask)
@@ -176,7 +178,7 @@ def main():
 
     t = 0
     for step in range(nsteps):
-        if step % 25 == 0:
+        if step % 10 == 0:
             vis_timer.start()
             e, h = op.split_eh(fields)
             sph_dipole.set_time(t)
@@ -220,9 +222,11 @@ def main():
                         discr.norm(mask_h-mask_true_h),
                         discr.norm(mask_true_h)))
 
-            for outf, evaluator in point_timeseries:
-                outf.write("%g\t%g\n" % (t, op.mu*evaluator(h[1])))
-                outf.flush()
+            for outf_num, outf_true, evaluator in point_timeseries:
+                for outf, ev_h in zip([outf_num, outf_true],
+                        [h, true_h]):
+                    outf.write("%g\t%g\n" % (t, op.mu*evaluator(ev_h[1])))
+                    outf.flush()
 
         logmgr.tick()
 
