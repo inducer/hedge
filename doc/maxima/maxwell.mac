@@ -1,6 +1,7 @@
 kill(all);
 
-/* Enable this for TeXmacs output:
+/* Enable this for TeXmacs output:*/
+/*
 %epsilon:epsilon;
 %mu:mu;
 */
@@ -13,8 +14,17 @@ max_radbdryspinw:makelist(
   if max_D[i,i] >= 0 then max_sminw[i,1] else 0,
 i, 1, 6)$
 
+max_wradbdry:fullhypsimp(max_V.max_radbdryspinw);
 print("Radiation boundary condition for Maxwell's:");
-print(fullhypsimp(max_V.max_radbdryspinw));
+print(max_wradbdry);
+
+max_knownwradbdry:max_wm+1/2*vstack(
+    crossprod(n, crossprod(n, max_Em)) 
+    - sqrt(%mu/%epsilon)*crossprod(n, max_Hm),
+    crossprod(n, crossprod(n, max_Hm)) 
+    + sqrt(%epsilon/%mu)*crossprod(n, max_Em)
+    );
+assert(norm_2_squared(hypsimp(max_knownwradbdry - max_wradbdry))=0);
 
 /* ------------------------------------------------------------------------- */
 max_pecbdrywpins:ev(max_pecbdrywp,[Em=max_Emins, Hm=max_Hmins]);
@@ -22,7 +32,7 @@ max_pecbdrywpins:ev(max_pecbdrywp,[Em=max_Emins, Hm=max_Hmins]);
 print("PEC bdry condition for Maxwell's in terms of characteristic variables (s)");
 max_pecbdryspinw:fullhypsimp(max_invV.max_pecbdrywpins);
 print(max_pecbdryspinw);
-
+/*
 /* ------------------------------------------------------------------------- */
 /* Simple upwinded flux */
 /* ------------------------------------------------------------------------- */
@@ -67,3 +77,4 @@ max_knownstrongwflux:ratsimp(vstack(
 assert(norm_2_squared(hypsimp(
   (max_strongwflux)
   -max_knownstrongwflux))=0);
+  */

@@ -22,6 +22,8 @@ crossprod(a,b):=makelist(
 
 subrange(v, start, stop):=makelist(v[i,1],i,start,stop);
 
+extract_diagonal(A):=makelist(A[i][i],i,1,length(A));
+
 /* ------------------------------------------------------------------------- */
 /* Simplification for expressions stemming from hyperbolic systems */
 /* ------------------------------------------------------------------------- */
