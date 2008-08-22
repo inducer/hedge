@@ -30,11 +30,14 @@ eclean_wflux:fullhypsimp(eclean_V.ev(eclean_sflux,
   [sm=eclean_sminw,sp=eclean_spinw]));
 
 /*
-print("e-clean system flux in terms of physical variables:");
+print("e-clean system weak flux in terms of physical variables:");
 print(eclean_wflux);
 */
 
 eclean_strongwflux:eclean_A.eclean_wm - eclean_wflux;
+
+print("e-clean system strong flux in terms of physical variables:");
+print(eclean_strongwflux);
 
 eclean_maxstrongdiff:fullhypsimp(
   eclean_strongwflux
@@ -87,13 +90,13 @@ eclean_betterpecsp:fullhypsimp(
   eclean_invV.ev(eclean_betterpecwp, 
     [Em=eclean_Emins, Hm=eclean_Hmins, %phi[m]=eclean_phimins]));
 
+/*
 print("Better PEC condition in characteristic variables:");
 print(eclean_betterpecsp);
+*/
 
-/*
 print("Better PEC condition in physical variables:");
 print(eclean_betterpecwp);
-*/
 
 
 eclean_flux_at_betterpec:fullhypsimp(ev(append(max_strongwflux,matrix([0]))/*eclean_strongwflux*/,
@@ -140,19 +143,16 @@ eclean_chiradwp:fullhypsimp(eclean_V.eclean_chiradbdryspinw);
 print("PEC+chirad BC for div E cleaning system");
 print(eclean_chiradwp);
 
-eclean_simple_chiradwp:append(
-  -max_Em
-  +2*n*(n.max_Em),
+eclean_simple_expr_chiradwp:append(
+  -max_Em+3/2*n*(n.max_Em) + 1/2*%phi[m]*n,
   max_Hm,
-  [%phi[m]]
+  1/2*[%phi[m]+max_Em.n]
   );
 
 eclean_diff_chiradwp:hypsimp(eclean_chiradwp
-    - subst([c=1/sqrt(%epsilon*%mu)], eclean_simple_chiradwp));
+    - subst([c=1/sqrt(%epsilon*%mu)], eclean_simple_expr_chiradwp));
     
-/*
 assert(norm_2_squared(eclean_diff_chiradwp)=0);
-*/
   
 /*
 print("Limit of PEC+chirad BC as %phi, %chi -> 0");
@@ -160,8 +160,34 @@ print(fullhypsimp(limit(limit(
   subst([%phi[m]=phi],eclean_chiradwp),phi,0),%chi,0)));
   */
 
-print("Flux at PEC+chirad:");
-print(fullhypsimp(ev(eclean_strongwflux,
+eclean_strongw_chirad_flux:fullhypsimp(ev(eclean_strongwflux,
   [Ep=subrange(eclean_chiradwp,1,3),
    Hp=subrange(eclean_chiradwp,4,6),
-   %phi[p]=eclean_chiradwp[7,1]])));
+   %phi[p]=eclean_chiradwp[7,1]]));
+print("Flux at PEC+chirad:");
+print(eclean_strongw_chirad_flux);
+
+eclean_strongw_pec_flux:fullhypsimp(ev(eclean_strongwflux,
+  [Ep=subrange(eclean_betterpecwp,1,3),
+   Hp=subrange(eclean_betterpecwp,4,6),
+   %phi[p]=eclean_betterpecwp[7,1]]));
+print("Flux at pure PEC:");
+print(eclean_strongw_pec_flux);
+
+eclean_strongw_flux_diff:fullhypsimp(
+  eclean_strongw_pec_flux-eclean_strongw_chirad_flux);
+
+print("PEC Flux - Chirad Flux");
+print(eclean_strongw_flux_diff);
+
+
+/*
+f1:subst([
+  Normal(0)=nx,Normal(1)=ny,Normal(2)=nz,
+  Int[0]=Em[1],Int[1]=Em[2],Int[2]=Em[3],
+  Ext[0]=Ep[1],Ext[1]=Ep[2],Ext[2]=Ep[3],
+  Int[3]=Hm[1],Int[4]=Hm[2],Int[5]=Hm[3],
+  Ext[3]=Hp[1],Ext[4]=Hp[2],Ext[5]=Hp[3],
+  Int[6]=%phi[m],Ext[6]=%phi[p]] 
+  ,f0)
+*/

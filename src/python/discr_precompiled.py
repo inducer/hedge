@@ -359,15 +359,20 @@ class CompiledOpTemplate:
 
 class Discretization(hedge.discretization.Discretization):
     def compile(self, optemplate):
-        from hedge.optemplate import OperatorBinder, InverseMassContractor
+        from hedge.optemplate import \
+                OperatorBinder, \
+                InverseMassContractor, \
+                BCToFluxRewriter
+
         from pymbolic.mapper.constant_folder import CommutativeConstantFoldingMapper
 
         result = (
                 InverseMassContractor()(
                     CommutativeConstantFoldingMapper()(
                         _FluxOpCompileMapper()(
-                            OperatorBinder()(
-                                optemplate)))))
+                            BCToFluxRewriter()(
+                                OperatorBinder()(
+                                    optemplate))))))
 
         return CompiledOpTemplate(self, result)
 

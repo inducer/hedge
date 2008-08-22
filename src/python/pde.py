@@ -344,10 +344,22 @@ class StrongWaveOperator:
         u = w[0]
         v = w[1:]
 
+        # boundary conditions -------------------------------------------------
         dir_bc = make_vector_field("dir_bc", d+1)
         neu_bc = make_vector_field("neu_bc", d+1)
-        rad_bc = make_vector_field("rad_bc", d+1)
+        #rad_bc = make_vector_field("rad_bc", d+1)
 
+        from hedge.flux import make_normal
+        normal = make_normal(d)
+
+        from hedge.tools import join_fields
+
+        rad_bc = join_fields(
+                0.5*(u - self.sign*numpy.dot(normal, v)),
+                0.5*normal*(numpy.dot(normal, v) - self.sign*u)
+                )
+
+        # entire operator -----------------------------------------------------
         nabla = self.discr.nabla
         m_inv = self.discr.inverse_mass_operator
 
@@ -377,15 +389,7 @@ class StrongWaveOperator:
                 self.discr.boundarize_volume_field(u, self.neumann_tag),
                 -self.discr.boundarize_volume_field(v, self.neumann_tag))
         
-        rad_u = self.discr.boundarize_volume_field(u, self.radiation_tag)
-        rad_v = self.discr.boundarize_volume_field(v, self.radiation_tag)
-        rad_n = self.radiation_normals
-        rad_bc = join_fields(
-                0.5*(rad_u - self.sign*ptwise_dot(1, 1, rad_n, rad_v)),
-                0.5*rad_n*(ptwise_dot(1, 1, rad_n, rad_v) - self.sign*rad_u)
-                )
-
-        rhs = self.op_template()(w=w, dir_bc=dir_bc, neu_bc=neu_bc, rad_bc=rad_bc)
+        rhs = self.op_template()(w=w, dir_bc=dir_bc, neu_bc=neu_bc)
 
         if self.source_f is not None:
             rhs[0] += self.source_f(t)

@@ -348,6 +348,10 @@ class BoundOpMapperMixin(object):
 
 
 class LocalOpReducerMixin(object):
+    """Reduces calls to mapper methods for all local differentiation
+    operators to a single mapper method, and likewise for mass 
+    operators.
+    """
     def map_diff(self, expr, *args, **kwargs):
         return self.map_diff_base(expr, *args, **kwargs)
 
@@ -570,6 +574,74 @@ class FluxDecomposer(IdentityMapper):
 
 
 
+# BC-to-flux rewriting --------------------------------------------------------
+class BCToFluxRewriter(IdentityMapper):
+    """Rewrites L{FluxOperator} (note: not L{FluxCoefficientOperator})
+    instances bound to L{BoundaryPair}s with (linear) boundary 
+    condition expressions in the C{bfield} parameter into 
+    L{FluxOperator}s with modified flux expressions and a 
+    zero C{bfield} parameter.
+    """
+    def map_operator_binding(self, expr):
+        if (isinstance(expr.op, FluxOperator)
+                and isinstance(expr.field, BoundaryPair)
+                and not isinstance(expr.field.bfield, Field)):
+            bpair = expr.field
+            vol_field = bpair.field
+            bdry_field = bpair.bfield
+            flux = expr.op.flux
+
+            # prepare substitutor
+            from pymbolic.mapper.substitutor import SubstitutionMapperBase
+
+            class MySubstitutionMapper(
+                    SubstitutionMapperBase,
+                    IdentityMapper):
+                def map_normal(self, expr):
+                    return expr
+
+                def map_field_component(self, expr):
+                    try:
+                        return self.assignments[expr]
+                    except KeyError:
+                        return expr
+
+            # first, subsitute int.field components into boundary field
+            def map_boundary_field_var(depdic, bfv):
+                from pymbolic.primitives import Subscript
+
+                if isinstance(bfv, Subscript) and bfv == vol_field[bfv.index]:
+                    from hedge.flux import FieldComponent
+                    assert isinstance(bfv.index, int)
+                    return FieldComponent(bfv.index, is_local=True)
+                else:
+                    raise KeyError, bfv
+
+            from pytools import DependentDictionary
+            bdry_field = MySubstitutionMapper(
+                    DependentDictionary(map_boundary_field_var))(
+                            bdry_field)
+
+            # next, substitute boundary field into flux
+            from hedge.flux import FieldComponent
+            flux = MySubstitutionMapper(dict(
+                    (FieldComponent(idx, is_local=False), bfield_i)
+                    for idx, bfield_i in enumerate(bdry_field)))(
+                            flux)
+
+            return OperatorBinding(
+                    FluxOperator(expr.op.discr, flux),
+                    BoundaryPair(vol_field, 0))
+        else:
+            return IdentityMapper.map_operator_binding(self, expr)
+
+    def handle_unsupported_expression(self, expr):
+        return expr
+
+
+
+
+# evaluation ------------------------------------------------------------------
 class Evaluator(pymbolic.mapper.evaluator.EvaluationMapper):
     def map_boundary_pair(self, bp):
         return BoundaryPair(self.rec(bp.field), self.rec(bp.bfield), bp.tag)
