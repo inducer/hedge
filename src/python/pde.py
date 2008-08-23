@@ -345,15 +345,13 @@ class StrongWaveOperator:
         v = w[1:]
 
         # boundary conditions -------------------------------------------------
-        dir_bc = make_vector_field("dir_bc", d+1)
-        neu_bc = make_vector_field("neu_bc", d+1)
-        #rad_bc = make_vector_field("rad_bc", d+1)
-
         from hedge.flux import make_normal
         normal = make_normal(d)
 
         from hedge.tools import join_fields
 
+        dir_bc = join_fields(-u, v)
+        neu_bc = join_fields(u, -v)
         rad_bc = join_fields(
                 0.5*(u - self.sign*numpy.dot(normal, v)),
                 0.5*normal*(numpy.dot(normal, v) - self.sign*u)
@@ -378,18 +376,7 @@ class StrongWaveOperator:
     def rhs(self, t, w):
         from hedge.tools import join_fields, ptwise_dot
 
-        u = w[0]
-        v = w[1:]
-
-        dir_bc = join_fields(
-                -self.discr.boundarize_volume_field(u, self.dirichlet_tag),
-                self.discr.boundarize_volume_field(v, self.dirichlet_tag))
-
-        neu_bc = join_fields(
-                self.discr.boundarize_volume_field(u, self.neumann_tag),
-                -self.discr.boundarize_volume_field(v, self.neumann_tag))
-        
-        rhs = self.op_template()(w=w, dir_bc=dir_bc, neu_bc=neu_bc)
+        rhs = self.op_template()(w=w)
 
         if self.source_f is not None:
             rhs[0] += self.source_f(t)
@@ -491,9 +478,22 @@ class MaxwellOperator(TimeDependentOperator):
         fld_cnt = self.count_subset(self.get_eh_subset())
         w = make_vector_field("w", fld_cnt)
         e,h = self.split_eh(w)
-        pec_bc = make_vector_field("pec_bc", fld_cnt)
-        absorb_bc = make_vector_field("absorb_bc", fld_cnt)
 
+        # boundary conditions -------------------------------------------------
+        from hedge.tools import join_fields
+        pec_bc = join_fields(-e, h)
+
+        from hedge.flux import make_normal
+        normal = make_normal(self.discr.dimensions)
+
+        absorb_bc = w + 1/2*join_fields(
+                self.h_cross(normal, self.e_cross(normal, e)) 
+                - self.Z*self.h_cross(normal, h),
+                self.e_cross(normal, self.h_cross(normal, h)) 
+                + self.Y*self.e_cross(normal, e)
+                )
+
+        # actual operator template --------------------------------------------
         m_inv = self.discr.inverse_mass_operator
 
         return self.discr.compile(- self.local_op(e, h) \
@@ -504,40 +504,17 @@ class MaxwellOperator(TimeDependentOperator):
                     ))
 
     def rhs(self, t, w):
-        from hedge.tools import cross
-        from hedge.tools import join_fields
-
-        e, h = self.split_eh(w)
-
-        pec_bc = join_fields(
-                -self.discr.boundarize_volume_field(e, self.pec_tag),
-                self.discr.boundarize_volume_field(h, self.pec_tag)
-                )
-
-        abs_n = self.absorb_normals
-        absorb_w = self.discr.boundarize_volume_field(w, self.absorb_tag)
-        absorb_e, absorb_h = self.split_eh(absorb_w)
-
-        from hedge.tools import to_obj_array
-        absorb_bc = to_obj_array(absorb_w) + 1/2*join_fields(
-                self.h_cross(abs_n, self.e_cross(abs_n, absorb_e)) 
-                - self.Z*self.h_cross(abs_n, absorb_h),
-                self.e_cross(abs_n, self.h_cross(abs_n, absorb_h)) 
-                + self.Y*self.e_cross(abs_n, absorb_e)
-                )
-
         if self.current is not None:
             j = self.current.volume_interpolant(t, self.discr)
-            j_rhs = []
+            j_source = []
             for j_idx, use_component in enumerate(self.get_eh_subset()[0:3]):
                 if use_component:
-                    j_rhs.append(-j[j_idx])
-            rhs = self.assemble_fields(e=j_rhs)
+                    j_source.append(-j[j_idx])
+            source = self.assemble_fields(e=j_source)
         else:
-            rhs = self.assemble_fields()
-        return self.op_template()(w=w, 
-                pec_bc=pec_bc,
-                absorb_bc=absorb_bc)+rhs
+            source = self.assemble_fields()
+
+        return self.op_template()(w=w)+source
 
     def assemble_fields(self, e=None, h=None):
         e_components = self.count_subset(self.get_eh_subset()[0:3])
@@ -943,7 +920,6 @@ class WeakPoissonOperator(Operator, hedge.tools.OperatorBase):
             return m_local_grad + minv * fast_mat(fluxes)
 
         return assemble_grad()
-
 
 
 

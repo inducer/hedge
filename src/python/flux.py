@@ -238,6 +238,30 @@ class FluxVectorPlaceholder(object):
 
 
 # internal flux wrangling -----------------------------------------------------
+class FluxIdentityMapperMixin(object):
+    def map_field_component(self, expr):
+        result = self.subst_func(expr)
+        if result is not None:
+            return result
+        else:
+            return expr
+
+    def map_normal(self, expr):
+        return expr
+
+    def map_penalty_term(self, expr):
+        return expr.__class__(self.rec(expr.power))
+
+    def map_if_positive(self, expr):
+        return expr.__class__(
+                self.rec(expr.criterion),
+                self.rec(expr.then),
+                self.rec(expr.else_),
+                )
+
+
+
+
 class FluxStringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
     def map_field_component(self, expr, enclosing_prec):
         if expr.is_local:
@@ -362,9 +386,24 @@ def analyze_flux(flux):
                     for in_field in in_fields)
 
             # check for (invalid) nonlinearity
-            for i, deriv in in_derivatives.iteritems():
+            for (idx, is_local), deriv in in_derivatives.iteritems():
                 if FluxDependencyMapper()(deriv):
-                    raise ValueError, "Flux is nonlinear in component %d" % i
+                    def is_local_to_str(is_local):
+                        if is_local:
+                            return "Int"
+                        else:
+                            return "Ext"
+
+                    raise ValueError("Flux is nonlinear in component %s[%d]:\n"
+                            "  flux: %s\n"
+                            "  coefficient: %s\n"
+                            "  derivative: %s"
+                            % (is_local_to_str(is_local), idx, 
+                                str(flux), str(deriv), 
+                                str(FluxDifferentiationMapper(
+                                    FieldComponent(idx, is_local))(flux)
+                                    ))
+                            )
 
             for in_field_idx in range(max_in_field+1):
                 int = in_derivatives.get((in_field_idx, True), 0)

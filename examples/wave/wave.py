@@ -77,7 +77,11 @@ def main() :
 
     def source_vec_getter(t):
         from math import sin
-        return source_u_vec*sin(10*t)
+        if t < 1:
+            return source_u_vec*sin(10*t)
+        else:
+            return 0*source_u_vec
+
 
     from hedge.pde import StrongWaveOperator
     from hedge.mesh import TAG_ALL, TAG_NONE
