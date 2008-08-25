@@ -70,22 +70,22 @@ def pad_and_join(blocks, block_size):
     return "".join(pad(b, block_size) for b in blocks)
 
 def make_blocks(devdata, data):
-    from pytools import Record
     from hedge.cuda.tools import pad_and_join
-    from pytools import Record
 
     blocks = ["".join(b) for b in data]
     block_size = devdata.align(max(len(b) for b in blocks))
-    return Record(
+
+    from pytools import Record
+    class BlockedDataStructure(Record): pass
+
+    return BlockedDataStructure(
             blocks=cuda.to_device(pad_and_join(blocks, block_size)),
             max_per_block=max(len(b) for b in data),
             block_size=block_size,
             )
 
 def make_superblocks(devdata, struct_name, single_item, multi_item):
-    from pytools import Record
     from hedge.cuda.tools import pad_and_join
-    from pytools import Record
 
     # single_item = [([ block1, block2, ... ], decl), ...]
     # multi_item = [([ [ item1, item2, ...], ... ], decl), ...]
@@ -131,7 +131,10 @@ def make_superblocks(devdata, struct_name, single_item, multi_item):
     data = pad_and_join(superblocks, superblock_size)
     assert len(data) == superblock_size*block_count
 
-    return Record(
+    from pytools import Record
+    class SuperblockedDataStructure(Record): pass
+
+    return SuperblockedDataStructure(
             struct=Struct(struct_name, struct_members),
             device_memory=cuda.to_device(data),
             block_bytes=superblock_size,

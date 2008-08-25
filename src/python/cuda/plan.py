@@ -108,7 +108,9 @@ def find_microblock_size(devdata, dofs_per_el, float_size):
         overhead = (mb_aligned_floats-mb_floats)/mb_aligned_floats
         if overhead <= 0.05:
             from pytools import Record
-            return Record(
+            class MicroblockInfo(Record): pass
+
+            return MicroblockInfo(
                     align_size=align_size,
                     elements=mb_elements,
                     aligned_floats=mb_aligned_floats,

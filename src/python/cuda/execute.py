@@ -462,7 +462,7 @@ class OpTemplateWithEnvironment(object):
         self.discr = discr
 
         from hedge.optemplate import OperatorBinder, InverseMassContractor, \
-                FluxDecomposer
+                FluxDecomposer, BCToFluxRewriter
         from pymbolic.mapper.constant_folder import CommutativeConstantFoldingMapper
         from hedge.cuda.optemplate import BoundaryCombiner
 
@@ -471,8 +471,9 @@ class OpTemplateWithEnvironment(object):
                     InverseMassContractor()(
                         CommutativeConstantFoldingMapper()(
                             FluxDecomposer()(
-                                OperatorBinder()(
-                                    optemplate))))))
+                                BCToFluxRewriter()(
+                                    OperatorBinder()(
+                                        optemplate)))))))
 
     def __call__(self, **vars):
         return ExecutionMapper(vars, self)(self.optemplate)
@@ -1064,17 +1065,21 @@ class OpTemplateWithEnvironment(object):
                     ])
 
             from pytools import flatten
+            from hedge.tools import is_zero
 
             flux_write_code.append(
                 make_multiple_ifs([
                     ("(fpair->boundary_id) == %d" % (bdry_id),
                         Block(list(flatten([
-                            S("flux += /*int*/ (%s) * %s"
-                                % (FluxToCodeMapper()(flux_rec.int_coeff, PREC_NONE),
-                                    get_field(flux_rec, is_interior=True))),
-                            S("flux += /*ext*/ (%s) * %s"
-                                % (FluxToCodeMapper()(flux_rec.ext_coeff, PREC_NONE),
-                                    get_field(flux_rec, is_interior=False))),
+                            S("flux += /*%s*/ (%s) * %s"
+                                % (is_interior and "int" or "ext",
+                                    FluxToCodeMapper()(coeff, PREC_NONE),
+                                    get_field(flux_rec, is_interior=is_interior)))
+                                for is_interior, coeff, field_expr in [
+                                    (True, flux_rec.int_coeff, flux_rec.field_expr),
+                                    (False, flux_rec.ext_coeff, flux_rec.bfield_expr),
+                                    ]
+                                if not is_zero(field_expr)
                             ]
                             for flux_rec in fluxes
                             ))))
@@ -1104,8 +1109,8 @@ class OpTemplateWithEnvironment(object):
             from pymbolic.mapper.stringifier import PREC_NONE
 
             flux_write_code = Block([
-                    Initializer(POD(float_type, "a_flux"), 0)
-                    ])
+                Initializer(POD(float_type, "a_flux"), 0)
+                ])
 
             if is_twosided:
                 flux_write_code.append(
@@ -1155,6 +1160,8 @@ class OpTemplateWithEnvironment(object):
         def get_flux_code(flux_writer):
             flux_code = Block([])
 
+            from hedge.cuda.cgen import MaybeUnused
+
             flux_code.extend([
                 Initializer(Pointer(
                     Value("face_pair", "fpair")),
@@ -1168,11 +1175,12 @@ class OpTemplateWithEnvironment(object):
                     "smem_index_lists + fpair->b_ilist_index"
                     ),
                 Initializer(
-                    POD(numpy.uint32, "a_index"),
+                    MaybeUnused(POD(numpy.uint32, "a_index")),
                     "fpair->a_base + a_ilist[FACEDOF_NR]"),
                 Initializer(
-                    POD(numpy.uint32, "b_index"),
+                    MaybeUnused(POD(numpy.uint32, "b_index")),
                     "fpair->b_base + b_ilist[FACEDOF_NR]"),
+                Line(),
                 flux_writer(),
                 Line(),
                 S("fpair_nr += CONCURRENT_FACES")
@@ -1278,9 +1286,12 @@ class OpTemplateWithEnvironment(object):
                     order="C")
             chunks.append(buffer(diffmats))
         
-        from pytools import Record
         from hedge.cuda.tools import pad_and_join
-        return Record(
+
+        from pytools import Record
+        class GPUDifferentiationMatrices(Record): pass
+
+        return GPUDifferentiationMatrices(
                 device_memory=cuda.to_device(
                     pad_and_join(chunks, block_floats*fplan.float_size)),
                 block_floats=block_floats,
@@ -1329,9 +1340,12 @@ class OpTemplateWithEnvironment(object):
                     lplan.chunk_size)
                 ]
         
-        from pytools import Record
         from hedge.cuda.tools import pad_and_join
-        return Record(
+
+        from pytools import Record
+        class GPULiftMatrices(Record): pass
+
+        return GPULiftMatrices(
                 device_memory=cuda.to_device(
                     pad_and_join(chunks, block_floats*fplan.float_size)),
                 block_floats=block_floats,
@@ -1587,11 +1601,15 @@ class OpTemplateWithEnvironment(object):
         from hedge.cuda.cgen import ArrayInitializer, ArrayOf, \
                 Typedef, POD, Value, CudaConstant, Define
 
-        from pytools import flatten, Record
+        from pytools import flatten
         flat_ilists = numpy.array(
                 list(flatten(discr.index_lists)),
                 dtype=tp)
-        return Record(
+
+        from pytools import Record
+        class GPUIndexLists(Record): pass
+
+        return GPUIndexLists(
                 code=[
                     Define("INDEX_LISTS_LENGTH", len(flat_ilists)),
                     Typedef(POD(tp, "index_list_entry_t")),

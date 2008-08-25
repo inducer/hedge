@@ -179,6 +179,11 @@ class Const(NestedDeclarator):
         sub_tp, sub_decl = self.subdecl.get_decl_pair()
         return sub_tp, ("const %s" % sub_decl)
 
+class MaybeUnused(NestedDeclarator):
+    def get_decl_pair(self):
+        sub_tp, sub_decl = self.subdecl.get_decl_pair()
+        return sub_tp, ("%s __attribute__ ((unused))" % sub_decl)
+
 class Pointer(NestedDeclarator):
     def __init__(self, subdecl, count=None):
         NestedDeclarator.__init__(self, subdecl)

@@ -38,6 +38,12 @@ cyl_neumann = hedge._internal.cyl_neumann
 
 
 
+def is_zero(x):
+    return isinstance(x, (int, float)) and x == 0
+
+
+
+
 def relative_error(norm_diff, norm_true):
     if norm_true == 0:
         if norm_diff == 0:

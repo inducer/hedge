@@ -35,9 +35,10 @@ class StringifyMapper(hedge.optemplate.StringifyMapper):
         else:
             tag = "WFlux"
 
-        return "%s(int=%s, bdry=%s)" % (tag, 
+        return "%s(int=%s, tag->bdry=%s, bdry->flux=%s)" % (tag, 
                 expr.interiors,
-                expr.boundaries)
+                expr.tag_to_bdry_id,
+                ["%s:%s" % item for item in expr.bdry_id_to_fluxes.iteritems()])
 
 
 
@@ -55,26 +56,32 @@ class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
 
         interior_deps = set(
                 iflux.field_expr for iflux in interiors)
+        
+        from hedge.tools import is_zero
         boundary_deps = (
-                set(bflux.field_expr for bflux in boundaries)
+                set(bflux.field_expr for bflux in boundaries
+                    if not is_zero(bflux.field_expr))
                 |
-                set(bflux.bfield_expr for bflux in boundaries)
+                set(bflux.bfield_expr for bflux in boundaries
+                    if not is_zero(bflux.bfield_expr))
                 )
         self.interior_deps = list(interior_deps)
         self.boundary_deps = list(boundary_deps)
+        print "BD", self.boundary_deps
         self.all_deps = list(interior_deps|boundary_deps)
 
-        tag_to_bdry_id = {}
+        self.tag_to_bdry_id = {}
         self.bdry_id_to_fluxes = {}
 
         for bflux in boundaries:
-            bdry_id = tag_to_bdry_id.setdefault(bflux.tag, len(tag_to_bdry_id))
+            bdry_id = self.tag_to_bdry_id.setdefault(
+                    bflux.tag, len(self.tag_to_bdry_id))
             self.bdry_id_to_fluxes.setdefault(bdry_id, []).append(bflux)
                 
         self.flux_optemplate = flux_optemplate
 
         self.elface_to_bdry_id = {}
-        for btag, bdry_id in tag_to_bdry_id.iteritems():
+        for btag, bdry_id in self.tag_to_bdry_id.iteritems():
             for elface in discr.mesh.tag_to_boundary.get(btag, []):
                 if elface in self.elface_to_bdry_id:
                     raise ValueError, "face contained in two boundaries of WholeDomainFlux"
@@ -103,9 +110,10 @@ class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
 
 
 
-class BoundaryCombiner(hedge.optemplate.IdentityMapper):
+class BoundaryCombiner(hedge.optemplate.OpTemplateIdentityMapper):
     """Combines inner fluxes and boundary fluxes on disjoint parts of the
-    boundary into a single, whole-domain operator.
+    boundary into a single, whole-domain operator of type
+    L{hedge.cuda.execute.WholeDomainFluxOperator}.
     """
     def __init__(self, discr):
         self.discr = discr
@@ -127,7 +135,8 @@ class BoundaryCombiner(hedge.optemplate.IdentityMapper):
             elif isinstance(arg, Subscript):
                 return isinstance(arg.aggregate, Variable) and isinstance(arg.index, int)
             else:
-                return isinstance(arg, Variable)
+                return isinstance(arg, Variable) or (
+                        isinstance(arg, (int, float)) and arg == 0)
 
         def gather_one_wdflux(expressions):
             interiors = []
@@ -138,6 +147,9 @@ class BoundaryCombiner(hedge.optemplate.IdentityMapper):
             flux_optemplate_summands = []
 
             from pytools import Record
+            class BoundaryInfo(Record): pass
+            class InteriorInfo(Record): pass
+
             for ch in expressions:
                 if (isinstance(ch, OperatorBinding) 
                         and isinstance(ch.op, flux_op_types)
@@ -156,7 +168,7 @@ class BoundaryCombiner(hedge.optemplate.IdentityMapper):
                     if isinstance(ch.field, BoundaryPair):
                         bp = ch.field
                         if ch.op.discr.mesh.tag_to_boundary.get(bp.tag, []):
-                            boundaries.append(Record(
+                            boundaries.append(BoundaryInfo(
                                 tag=bp.tag,
                                 int_coeff=ch.op.int_coeff,
                                 ext_coeff=ch.op.ext_coeff,
@@ -168,7 +180,7 @@ class BoundaryCombiner(hedge.optemplate.IdentityMapper):
                                         WholeDomainFluxOperator.short_name(bp.bfield),
                                 ))
                     else:
-                        interiors.append(Record(
+                        interiors.append(InteriorInfo(
                                 int_coeff=ch.op.int_coeff,
                                 ext_coeff=ch.op.ext_coeff,
                                 field_expr=ch.field,
