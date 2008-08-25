@@ -521,9 +521,9 @@ class MaxwellOperator(TimeDependentOperator):
         h_components = self.count_subset(self.get_eh_subset()[3:6])
 
         if e is None:
-            e = [self.discr.volume_zeros() for i in xrange(e_components)]
+            e = [0 for i in xrange(e_components)]
         if h is None:
-            h = [self.discr.volume_zeros() for i in xrange(h_components)]
+            h = [0 for i in xrange(h_components)]
 
         from hedge.tools import join_fields
         return join_fields(e, h)

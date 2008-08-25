@@ -67,7 +67,6 @@ class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
                 )
         self.interior_deps = list(interior_deps)
         self.boundary_deps = list(boundary_deps)
-        print "BD", self.boundary_deps
         self.all_deps = list(interior_deps|boundary_deps)
 
         self.tag_to_bdry_id = {}
