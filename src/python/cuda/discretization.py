@@ -270,7 +270,7 @@ class Discretization(hedge.discretization.Discretization):
         self.pool = DeviceMemoryPool()
 
         self.device = dev
-        from hedge.cuda.tools import DeviceData
+        from pycuda.tools import DeviceData
         self.devdata = DeviceData(dev)
 
         # make preliminary plan

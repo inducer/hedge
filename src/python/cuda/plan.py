@@ -80,7 +80,7 @@ class ExecutionPlan(object):
 
     @memoize_method
     def occupancy_record(self):
-        from hedge.cuda.tools import OccupancyRecord
+        from pycuda.tools import OccupancyRecord
         return OccupancyRecord(self.devdata,
                 self.threads(), self.shared_mem_use(),
                 registers=self.registers())
