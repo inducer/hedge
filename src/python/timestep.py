@@ -21,6 +21,10 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 
+import numpy
+
+
+
 
 _RK4A = [0.0,
         -567301805773 /1357537059087,
@@ -82,13 +86,27 @@ class RK4TimeStepper(TimeStepper):
         except AttributeError:
             self.residual = 0*rhs(t, y)
 
-        for a, b, c in self.coeffs:
-            this_rhs = rhs(t + c*dt, y)
+            from hedge.tools import is_mul_add_supported
+            self.use_mul_add = is_mul_add_supported(self.residual)
 
-            self.timer.start()
-            self.residual = a*self.residual + dt*this_rhs
-            y = y + b * self.residual
-            self.timer.stop()
+        if self.use_mul_add:
+            from hedge.tools import mul_add
+
+            for a, b, c in self.coeffs:
+                this_rhs = rhs(t + c*dt, y)
+
+                self.timer.start()
+                self.residual = mul_add(a, self.residual, dt, this_rhs)
+                y = mul_add(1, y, b, self.residual)
+                self.timer.stop()
+        else:
+            for a, b, c in self.coeffs:
+                this_rhs = rhs(t + c*dt, y)
+
+                self.timer.start()
+                self.residual = a*self.residual + dt*this_rhs
+                y = y + b * self.residual
+                self.timer.stop()
 
         return y
 
