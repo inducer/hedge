@@ -370,20 +370,7 @@ class OpTemplateWithEnvironment(object):
     def __init__(self, discr, optemplate):
         self.discr = discr
 
-        from hedge.optemplate import OperatorBinder, InverseMassContractor, \
-                FluxDecomposer, BCToFluxRewriter
-        from pymbolic.mapper.constant_folder import CommutativeConstantFoldingMapper
-        from hedge.cuda.optemplate import BoundaryCombiner
-
-        self.optemplate = (
-                BoundaryCombiner(discr)(
-                    InverseMassContractor()(
-                        CommutativeConstantFoldingMapper()(
-                            FluxDecomposer()(
-                                BCToFluxRewriter()(
-                                    OperatorBinder()(
-                                        optemplate)))))))
-
+        # instantiate kernels
         from hedge.cuda.diff import DiffKernel
         from hedge.cuda.fluxgather import FluxGatherKernel
         from hedge.cuda.fluxlocal import FluxLocalKernel
@@ -392,10 +379,43 @@ class OpTemplateWithEnvironment(object):
         self.fluxlocal_kernel = FluxLocalKernel(discr)
         self.fluxgather_kernel = FluxGatherKernel(discr)
 
+        # compile the optemplate
+        from hedge.optemplate import OperatorBinder, InverseMassContractor, \
+                FluxDecomposer, BCToFluxRewriter
+        from pymbolic.mapper.constant_folder import CommutativeConstantFoldingMapper
+        from hedge.cuda.optemplate import BoundaryCombiner
+
+        optemplate = (
+                BoundaryCombiner(discr)(
+                    InverseMassContractor()(
+                        CommutativeConstantFoldingMapper()(
+                            FluxDecomposer()(
+                                BCToFluxRewriter()(
+                                    OperatorBinder()(
+                                        optemplate)))))))
+
+        def compile_vec_expr(expr):
+            from pycuda.vector_expr import CompiledVectorExpression
+            return CompiledVectorExpression(
+                    expr, 
+                    type_getter=lambda expr: (True, self.discr.default_scalar_type),
+                    result_dtype=self.discr.default_scalar_type,
+                    allocator=self.discr.pool.allocate)
+
+        if isinstance(optemplate, numpy.ndarray):
+            assert optemplate.dtype == object
+            self.compiled_vec_expr = [compile_vec_expr(subexpr) for subexpr in optemplate]
+        else:
+            self.compiled_vec_expr = compile_vec_expr(optemplate)
+
     def __call__(self, **vars):
-        return ExecutionMapper(vars, self)(self.optemplate)
-
-
+        ex_mapper = ExecutionMapper(vars, self)
+        if isinstance(self.compiled_vec_expr, list):
+            return numpy.array([
+                ce(ex_mapper) for ce in self.compiled_vec_expr],
+                dtype=object)
+        else:
+            return ce(ex_mapper)
 
     # gpu data blocks ---------------------------------------------------------
     @memoize_method
