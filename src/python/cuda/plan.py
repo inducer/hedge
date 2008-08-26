@@ -230,7 +230,7 @@ class FluxExecutionPlan(ExecutionPlan):
 
     @memoize_method
     def shared_mem_use(self):
-        from hedge.cuda.execute import face_pair_struct
+        from hedge.cuda.fluxgather import face_pair_struct
         d = self.ldis.dimensions
 
         if self.dofs_per_face() > 255:

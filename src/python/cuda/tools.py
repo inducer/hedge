@@ -23,6 +23,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import pycuda.driver as cuda
+import numpy
 
 
 
@@ -140,3 +141,42 @@ def make_superblocks(devdata, struct_name, single_item, multi_item):
             block_bytes=superblock_size,
             data=data,
             )
+
+
+
+
+# code generation -------------------------------------------------------------
+def get_load_code(dest, base, bytes, word_type=numpy.uint32,
+        descr=None):
+    from hedge.cuda.cgen import \
+            Pointer, POD, Value, ArrayOf, Const, \
+            Comment, Block, Line, \
+            Constant, Initializer, If, For, Statement, Assign
+
+    from hedge.cuda.cgen import dtype_to_ctype
+    copy_dtype = numpy.dtype(word_type)
+    copy_dtype_str = dtype_to_ctype(copy_dtype)
+
+    code = []
+    if descr is not None:
+        code.append(Comment(descr))
+
+    code.extend([
+        Block([
+            Constant(Pointer(POD(copy_dtype, "load_base")), 
+                ("(%s *) (%s)" % (copy_dtype_str, base))),
+            For("unsigned word_nr = THREAD_NUM", 
+                "word_nr*sizeof(int) < (%s)" % bytes, 
+                "word_nr += COALESCING_THREAD_COUNT",
+                Statement("((%s *) (%s))[word_nr] = load_base[word_nr]"
+                    % (copy_dtype_str, dest))
+                ),
+            ]),
+        Line(),
+        ])
+
+    return code
+
+
+
+

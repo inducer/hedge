@@ -770,6 +770,35 @@ class Discretization(hedge.discretization.Discretization):
     host_volume_zeros = s.volume_zeros 
     del s
 
+    # numbering tools ---------------------------------------------------------
+    @memoize_method
+    def elgroup_microblock_indices(self, elgroup):
+        """For a given L{hedge.discretization.ElementGroup} instance
+        C{elgroup}, return an index array (of dtype C{numpy.intp}) that,
+        indexed by the block-microblock element number, gives the element
+        number within C{elgroup}.
+        """
+
+        def get_el_index_in_el_group(el):
+            mygroup, idx = self.group_map[el.id]
+            assert mygroup is elgroup
+            return idx
+
+        fplan = self.flux_plan
+
+        el_count = len(self.blocks) * fplan.elements_per_block()
+        elgroup_indices = numpy.zeros((el_count,), dtype=numpy.intp)
+
+        for block in self.blocks:
+            block_elgroup_indices = [ get_el_index_in_el_group(el) 
+                    for mb in block.microblocks 
+                    for el in mb]
+            offset = block.number * fplan.elements_per_block()
+            elgroup_indices[offset:offset+len(block_elgroup_indices)] = \
+                    block_elgroup_indices
+
+        return elgroup_indices
+
     # optemplate processing ---------------------------------------------------
     def compile(self, optemplate):
         from hedge.cuda.execute import OpTemplateWithEnvironment
