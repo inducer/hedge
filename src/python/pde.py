@@ -510,11 +510,9 @@ class MaxwellOperator(TimeDependentOperator):
             for j_idx, use_component in enumerate(self.get_eh_subset()[0:3]):
                 if use_component:
                     j_source.append(-j[j_idx])
-            source = self.assemble_fields(e=j_source)
+            return self.op_template()(w=w) + self.assemble_fields(e=j_source)
         else:
-            source = self.assemble_fields()
-
-        return self.op_template()(w=w)+source
+            return self.op_template()(w=w)
 
     def assemble_fields(self, e=None, h=None):
         e_components = self.count_subset(self.get_eh_subset()[0:3])
