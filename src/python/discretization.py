@@ -229,6 +229,9 @@ class Discretization(object):
         self.diff_op_timer = IntervalTimer("t_diff_op",
                 "Time spent applying applying differentiation operators")
 
+        self.flop_counter = EventCounter("n_flops",
+                "Number of floating point operations")
+
         self.interpolant_counter = EventCounter("n_interp", 
                 "Number of interpolant evaluations")
         self.interpolant_timer = IntervalTimer("t_interp", 
@@ -242,6 +245,7 @@ class Discretization(object):
         mgr.add_quantity(self.mass_op_timer)
         mgr.add_quantity(self.diff_op_counter)
         mgr.add_quantity(self.diff_op_timer)
+        mgr.add_quantity(self.flop_counter)
         mgr.add_quantity(self.interpolant_counter)
         mgr.add_quantity(self.interpolant_timer)
 

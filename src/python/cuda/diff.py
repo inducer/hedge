@@ -214,9 +214,14 @@ class DiffKernel(object):
                 rst_to_xyz_texref)
 
         field_texref = mod.get_texref("field_tex")
-        texrefs = [field_texref, rst_to_xyz_texref]
 
-        return mod.get_function("apply_diff_mat"), texrefs, field_texref
+        func = mod.get_function("apply_diff_mat")
+        func.prepare(
+                discr.dimensions*[float_type] + ["P"],
+                block=(lplan.chunk_size, lplan.parallelism.p, 1),
+                texrefs=[field_texref, rst_to_xyz_texref],
+                )
+        return func, field_texref
 
     # data blocks -------------------------------------------------------------
     @memoize_method

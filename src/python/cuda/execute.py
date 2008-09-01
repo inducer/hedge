@@ -124,39 +124,47 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         d = discr.dimensions
 
         eg, = discr.element_groups
-        func, texrefs, field_texref = self.ex.diff_kernel.get_kernel(op.__class__, eg)
+        func, field_texref = self.ex.diff_kernel.get_kernel(op.__class__, eg)
 
         field = self.rec(field_expr)
         assert field.dtype == discr.flux_plan.float_type
 
         field.bind_to_texref(field_texref)
         
-        from hedge.cuda.tools import int_ceiling
-        kwargs = {
-                "block": (lplan.chunk_size, lplan.parallelism.p, 1),
-                "grid": (lplan.chunks_per_microblock(), 
-                    int_ceiling(
-                        fplan.dofs_per_block()*len(discr.blocks)/
-                        lplan.dofs_per_macroblock())
-                    ),
-                "time_kernel": discr.instrumented,
-                "texrefs": texrefs,
-                }
-
-        #debugbuf = gpuarray.zeros((512,), dtype=numpy.float32)
 
         xyz_diff = [discr.volume_empty() for axis in range(d)]
 
+        #debugbuf = gpuarray.zeros((512,), dtype=numpy.float32)
         elgroup, = discr.element_groups
-        args = xyz_diff+[
+        args = [subarray.gpudata for subarray in xyz_diff]+[
                 self.ex.diff_kernel.gpu_diffmats(op.__class__, eg).device_memory,
                 #debugbuf,
                 ]
 
-        kernel_time = func(*args, **kwargs)
+        from hedge.cuda.tools import int_ceiling
+        grid = (lplan.chunks_per_microblock(), 
+                    int_ceiling(
+                        fplan.dofs_per_block()*len(discr.blocks)/
+                        lplan.dofs_per_macroblock()))
+
         if discr.instrumented:
+            kernel_time = func.prepared_timed_call(grid, *args)
             discr.diff_op_timer.add_time(kernel_time)
             discr.diff_op_counter.add(discr.dimensions)
+            discr.flop_counter.add(
+                    # r,s,t diff
+                    2 # mul+add
+                    * discr.dimensions
+                    * len(discr.nodes)
+                    * elgroup.local_discretization.node_count()
+
+                    # x,y,z rescale
+                    +2 # mul+add
+                    * discr.dimensions**2
+                    * len(discr.nodes)
+                    )
+        else:
+            raise NotImplementedError
 
         if False:
             copied_debugbuf = debugbuf.get()
@@ -252,6 +260,12 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         if discr.instrumented:
             discr.inner_flux_timer.add_time(kernel_time)
             discr.inner_flux_counter.add()
+            discr.flop_counter.add(
+                    2 # mul+add
+                    * fplan.dofs_per_face()
+                    * fplan.faces_per_el()
+                    * fplan.dofs_per_el()
+                    * len(discr.mesh.elements))
 
         if False:
             copied_debugbuf = debugbuf.get()
