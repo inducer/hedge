@@ -85,29 +85,9 @@ class ExecutionPlan(object):
                 self.threads(), self.shared_mem_use(),
                 registers=self.registers())
 
-    @memoize_method
-    def maximized_registers(self):
-        current_reg_count = self.registers()
-        from pycuda.tools import OccupancyRecord
-        current_occ = OccupancyRecord(self.devdata,
-                self.threads(), self.shared_mem_use(),
-                registers=current_reg_count).occupancy
-
-        while True:
-            new_reg_count = current_reg_count + 1
-            new_occ = OccupancyRecord(self.devdata,
-                    self.threads(), self.shared_mem_use(),
-                    registers=new_reg_count).occupancy
-            if new_occ > current_occ - 1e-10 or new_occ >= 0.8:
-                current_reg_count = new_reg_count
-            else:
-                break
-
-        return current_reg_count
-
     def __str__(self):
             return ("regs=%d threads=%d smem=%d occ=%f" % (
-                self.maximized_registers(),
+                self.registers(),
                 self.threads(), 
                 self.shared_mem_use(), 
                 self.occupancy_record().occupancy,
