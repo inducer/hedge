@@ -35,6 +35,15 @@ import pymbolic.mapper.stringifier
 class FluxLocalKernel(object):
     def __init__(self, discr):
         self.discr = discr
+        fplan = discr.flux_plan
+        lplan = fplan.flux_lifting_plan()
+
+        from hedge.cuda.tools import int_ceiling
+        self.grid = (lplan.chunks_per_microblock(), 
+                int_ceiling(
+                    fplan.dofs_per_block()*len(discr.blocks)/
+                    lplan.dofs_per_macroblock())
+                )
 
     @memoize_method
     def get_kernel(self, is_lift, elgroup):
@@ -279,9 +288,13 @@ class FluxLocalKernel(object):
                     inverse_jacobians_texref)
             texrefs.append(inverse_jacobians_texref)
 
-        return (mod.get_function("apply_lift_mat"), 
-                texrefs, 
-                fluxes_on_faces_texref)
+        func = mod.get_function("apply_lift_mat")
+        func.prepare(
+                "PPP", 
+                block=(lplan.chunk_size, lplan.parallelism.p, 1),
+                texrefs=texrefs)
+
+        return func, fluxes_on_faces_texref
 
     @memoize_method
     def gpu_liftmat(self, is_lift):

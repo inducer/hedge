@@ -125,6 +125,17 @@ class FluxGatherKernel:
     def __init__(self, discr):
         self.discr = discr
 
+        from hedge.cuda.tools import int_ceiling
+        fplan = discr.flux_plan
+        lplan = fplan.flux_lifting_plan()
+        self.fluxes_on_faces_shape = (int_ceiling(
+                    len(discr.blocks)
+                    * fplan.aligned_face_dofs_per_microblock()
+                    * fplan.microblocks_per_block(),
+                    lplan.parallelism.total()
+                    * fplan.aligned_face_dofs_per_microblock()
+                    ),)
+
     @memoize_method
     def get_kernel(self, wdflux):
         from hedge.cuda.cgen import \
@@ -408,9 +419,14 @@ class FluxGatherKernel:
                     "%s_tex" % wdflux.short_name(dep_expr)))
                 for dep_expr in wdflux.all_deps)
 
-        texrefs = expr_to_texture_map.values()
+        func = mod.get_function("apply_flux")
+        func.prepare(
+                "PPPP",
+                block=(discr.flux_plan.dofs_per_face(), 
+                    fplan.parallel_faces, 1),
+                texrefs=expr_to_texture_map.values())
 
-        return mod.get_function("apply_flux"), texrefs, expr_to_texture_map
+        return func, expr_to_texture_map
 
     @memoize_method
     def flux_with_temp_data(self, wdflux, elgroup):

@@ -130,7 +130,6 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         assert field.dtype == discr.flux_plan.float_type
 
         field.bind_to_texref(field_texref)
-        
 
         xyz_diff = [discr.volume_empty() for axis in range(d)]
 
@@ -141,14 +140,9 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                 #debugbuf,
                 ]
 
-        from hedge.cuda.tools import int_ceiling
-        grid = (lplan.chunks_per_microblock(), 
-                    int_ceiling(
-                        fplan.dofs_per_block()*len(discr.blocks)/
-                        lplan.dofs_per_macroblock()))
-
         if discr.instrumented:
-            kernel_time = func.prepared_timed_call(grid, *args)
+            kernel_time = func.prepared_timed_call(
+                    self.ex.diff_kernel.grid, *args)
             discr.diff_op_timer.add_time(kernel_time)
             discr.diff_op_counter.add(discr.dimensions)
             discr.flop_counter.add(
@@ -164,7 +158,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                     * len(discr.nodes)
                     )
         else:
-            raise NotImplementedError
+            func.prepared_call(self.ex.diff_kernel.grid, *args)
 
         if False:
             copied_debugbuf = debugbuf.get()
@@ -215,22 +209,14 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         fplan = discr.flux_plan
         lplan = fplan.flux_lifting_plan()
 
-        gather, gather_texrefs, texref_map = \
-                self.ex.fluxgather_kernel.get_kernel(wdflux)
-        lift, lift_texrefs, fluxes_on_faces_texref = \
+        gather, texref_map = self.ex.fluxgather_kernel.get_kernel(wdflux)
+        lift, fluxes_on_faces_texref = \
                 self.ex.fluxlocal_kernel.get_kernel(wdflux.is_lift, eg)
 
         debugbuf = gpuarray.zeros((512,), dtype=numpy.float32)
 
-        from hedge.cuda.tools import int_ceiling
         fluxes_on_faces = gpuarray.empty(
-                (int_ceiling(
-                    len(discr.blocks)
-                    * fplan.aligned_face_dofs_per_microblock()
-                    * fplan.microblocks_per_block(),
-                    lplan.parallelism.total()
-                    * fplan.aligned_face_dofs_per_microblock()
-                    ),),
+                self.ex.fluxgather_kernel.fluxes_on_faces_shape,
                 dtype=fplan.float_type,
                 allocator=discr.pool.allocate)
 
@@ -240,24 +226,15 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             assert dep_field.dtype == fplan.float_type
             dep_field.bind_to_texref(texref_map[dep_expr])
 
-        gather_args = [
-                debugbuf, 
-                fluxes_on_faces, 
-                fdata.device_memory,
-                self.ex.fluxgather_kernel.index_list_global_data().device_memory,
-                ]
-
-        gather_kwargs = {
-                "texrefs": gather_texrefs, 
-                "block": (discr.flux_plan.dofs_per_face(), 
-                    fplan.parallel_faces, 1),
-                "grid": (len(discr.blocks), 1),
-                "time_kernel": discr.instrumented,
-                }
-
-        kernel_time = gather(*gather_args, **gather_kwargs)
-
         if discr.instrumented:
+            kernel_time = gather.prepared_timed_call(
+                    (len(discr.blocks), 1),
+                    debugbuf.gpudata, 
+                    fluxes_on_faces.gpudata, 
+                    fdata.device_memory,
+                    self.ex.fluxgather_kernel.index_list_global_data().device_memory,
+                    )
+                    
             discr.inner_flux_timer.add_time(kernel_time)
             discr.inner_flux_counter.add()
             discr.flop_counter.add(
@@ -266,6 +243,14 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                     * fplan.faces_per_el()
                     * fplan.dofs_per_el()
                     * len(discr.mesh.elements))
+        else:
+            gather.prepared_call(
+                    (len(discr.blocks), 1),
+                    debugbuf.gpudata, 
+                    fluxes_on_faces.gpudata, 
+                    fdata.device_memory,
+                    self.ex.fluxgather_kernel.index_list_global_data().device_memory,
+                    )
 
         if False:
             copied_debugbuf = debugbuf.get()
@@ -305,31 +290,23 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
         # lift phase ----------------------------------------------------------
         flux = discr.volume_empty() 
-
-        lift_args = [
-                flux, 
-                self.ex.fluxlocal_kernel.gpu_liftmat(wdflux.is_lift).device_memory,
-                debugbuf,
-                ]
-
-        lift_kwargs = {
-                "texrefs": lift_texrefs, 
-                "block": (lplan.chunk_size, lplan.parallelism.p, 1),
-                "grid": (lplan.chunks_per_microblock(), 
-                    int_ceiling(
-                        fplan.dofs_per_block()*len(discr.blocks)/
-                        lplan.dofs_per_macroblock())
-                    ),
-                "time_kernel": discr.instrumented,
-                }
-
         fluxes_on_faces.bind_to_texref(fluxes_on_faces_texref)
 
-        kernel_time = lift(*lift_args, **lift_kwargs)
-
         if discr.instrumented:
+            kernel_time = lift.prepared_timed_call(
+                    self.ex.fluxlocal_kernel.grid,
+                    flux.gpudata, 
+                    self.ex.fluxlocal_kernel.gpu_liftmat(wdflux.is_lift).device_memory,
+                    debugbuf.gpudata)
+            
             discr.inner_flux_timer.add_time(kernel_time)
             discr.inner_flux_counter.add()
+        else:
+            lift.prepared_call(
+                    self.ex.fluxlocal_kernel.grid,
+                    flux.gpudata, 
+                    self.ex.fluxlocal_kernel.gpu_liftmat(wdflux.is_lift).device_memory,
+                    debugbuf.gpudata)
 
         if False:
             copied_debugbuf = debugbuf.get()

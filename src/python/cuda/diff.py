@@ -33,6 +33,15 @@ class DiffKernel(object):
     def __init__(self, discr):
         self.discr = discr
 
+        from hedge.cuda.tools import int_ceiling
+        fplan = discr.flux_plan
+        lplan = fplan.diff_plan()
+
+        self.grid = (lplan.chunks_per_microblock(), 
+                    int_ceiling(
+                        fplan.dofs_per_block()*len(discr.blocks)/
+                        lplan.dofs_per_macroblock()))
+
     @memoize_method
     def get_kernel(self, diff_op_cls, elgroup):
         from hedge.cuda.cgen import \
@@ -219,8 +228,7 @@ class DiffKernel(object):
         func.prepare(
                 discr.dimensions*[float_type] + ["P"],
                 block=(lplan.chunk_size, lplan.parallelism.p, 1),
-                texrefs=[field_texref, rst_to_xyz_texref],
-                )
+                texrefs=[field_texref, rst_to_xyz_texref])
         return func, field_texref
 
     # data blocks -------------------------------------------------------------

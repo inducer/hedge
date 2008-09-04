@@ -509,6 +509,7 @@ class Discretization(hedge.discretization.Discretization):
         block = self.blocks[self.partition[el.id]]
         return block.el_number_map[el]
 
+    @memoize_method
     def gpu_dof_count(self):
         from hedge.cuda.tools import int_ceiling
 
@@ -647,7 +648,8 @@ class Discretization(hedge.discretization.Discretization):
         if dtype is None:
             dtype = self.flux_plan.float_type
 
-        return self._empty_gpuarray(shape+(self.gpu_dof_count(),), dtype=dtype)
+        return gpuarray.empty(shape+(self.gpu_dof_count(),), dtype=dtype,
+                allocator=self.pool.allocate)
 
     def volume_zeros(self, shape=()):
         result = self.volume_empty(shape)
