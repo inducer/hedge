@@ -265,34 +265,36 @@ class RectangularWaveguideMode:
     def set_time(self, t):
         self.t = t
 
-    @property
-    def shape(self):
-        return (6,)
-
-    def __call__(self, x, el):
+    def __call__(self, discr):
         f,g,h = self.factors
         omega = self.omega
         k = self.k
 
-        sx = sin(f*x[0])
-        sy = sin(g*x[1])
-        cx = cos(f*x[0])
-        cy = cos(g*x[1])
+        x = discr.nodes[:,0]
+        y = discr.nodes[:,1]
+        z = discr.nodes[:,2]
 
-        zdep_add = cmath.exp(1j*h*x[2])+cmath.exp(-1j*h*x[2])
-        zdep_sub = cmath.exp(1j*h*x[2])-cmath.exp(-1j*h*x[2])
+        sx = numpy.sin(f*x)
+        sy = numpy.sin(g*y)
+        cx = numpy.cos(f*x)
+        cy = numpy.cos(g*y)
 
-        tdep = cmath.exp(-1j * omega * self.t)
+        zdep_add = numpy.exp(1j*h*z)+numpy.exp(-1j*h*z)
+        zdep_sub = numpy.exp(1j*h*z)-numpy.exp(-1j*h*z)
+
+        tdep = numpy.exp(-1j * omega * self.t)
 
         C = 1j/(f**2+g**2)
-        return [
-                C*f*h*cx*sy*zdep_sub*tdep,
-                C*g*h*sx*cy*zdep_sub*tdep,
-                      sx*sy*zdep_add*tdep,
-                -C*g*self.epsilon*omega*sx*cy*zdep_add*tdep,
-                 C*f*self.epsilon*omega*cx*sy*zdep_add*tdep,
-                0j
-                ]
+
+        result = numpy.zeros((6,len(x)), dtype=zdep_add.dtype)
+
+        result[0] = C*f*h*cx*sy*zdep_sub*tdep # ex
+        result[1] = C*g*h*sx*cy*zdep_sub*tdep # ey
+        result[2] = sx*sy*zdep_add*tdep # ez
+        result[3] = -C*g*self.epsilon*omega*sx*cy*zdep_add*tdep # hx
+        result[4] = C*f*self.epsilon*omega*cx*sy*zdep_add*tdep
+
+        return result
 
 
 

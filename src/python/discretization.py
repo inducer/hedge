@@ -360,7 +360,7 @@ class Discretization(object):
         f.element_id = el.id
         f.face_id = fi
         f.order = ldis.order
-        f.normal = pyublas.why_not(el.face_normals[fi])
+        f.normal = el.face_normals[fi]
 
         # This crude approximation is shamelessly stolen from sledge.
         # There's an important caveat, however (which took me the better

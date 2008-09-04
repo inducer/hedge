@@ -75,8 +75,6 @@ def main():
         else:
             periodicity = None
         mode = RectangularCavityMode(epsilon, mu, (1,2,2))
-        r_sol = RealPartAdapter(mode)
-        c_sol = SplitComplexAdapter(mode)
 
         if pcon.is_head_rank:
             mesh = make_box_mesh(max_volume=0.01, periodicity=periodicity)
@@ -92,7 +90,7 @@ def main():
         vis = VtkVisualizer(discr, pcon, "em-%d" % order)
 
         mode.set_time(0)
-        fields = to_obj_array(discr.interpolate_volume_function(r_sol))
+        fields = to_obj_array(mode(discr).real.copy())
         op = MaxwellOperator(discr, epsilon, mu, upwind_alpha=1)
 
         dt = discr.dt_factor(op.max_eigenvalue())
@@ -155,7 +153,7 @@ def main():
 
         numpy.seterr('raise')
         mode.set_time(t)
-        true_fields = to_obj_array(discr.interpolate_volume_function(r_sol))
+        true_fields = to_obj_array(mode(discr).real)
 
         eoc_rec.add_data_point(order, discr.norm(fields-true_fields))
 
