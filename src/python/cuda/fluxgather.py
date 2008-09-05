@@ -26,6 +26,7 @@ import numpy
 from pytools import memoize_method, memoize
 import pycuda.driver as cuda
 import pymbolic.mapper.stringifier
+import hedge.cuda.plan
 
 
 
@@ -120,20 +121,143 @@ class FluxToCodeMapper(pymbolic.mapper.stringifier.StringifyMapper):
 
 
 
+# plan ------------------------------------------------------------------------
+class FluxGatherPlan(hedge.cuda.plan.ExecutionPlan):
+    def __init__(self, given, 
+            parallel_faces, mbs_per_block,
+            max_ext_faces=None, max_faces=None):
+        hedge.cuda.plan.ExecutionPlan.__init__(self, given)
+        self.parallel_faces = parallel_faces
+        self.mbs_per_block = mbs_per_block
+
+        self.max_ext_faces = max_ext_faces
+        self.max_faces = max_faces
+
+    def copy(self, given=None,
+            parallel_faces=None, mbs_per_block=None,
+            max_ext_faces=None, max_faces=None, float_type=None):
+        return self.__class__(
+                given or self.given,
+                parallel_faces or self.parallel_faces,
+                mbs_per_block or self.mbs_per_block,
+                max_ext_faces or self.max_ext_faces,
+                max_faces or self.max_faces,
+                )
+
+    def microblocks_per_block(self):
+        return self.mbs_per_block
+
+    def elements_per_block(self):
+        return self.microblocks_per_block()*self.given.microblock.elements
+
+    def dofs_per_block(self):
+        return self.microblocks_per_block()*self.given.microblock.aligned_floats
+
+    @memoize_method
+    def estimate_extface_count(self):
+        d = self.given.ldis.dimensions
+
+        # How many equivalent cubes would I need to tesselate the same space
+        # as the elements in my thread block?
+        from pytools import factorial
+        equiv_cubes = self.elements_per_block() / factorial(d)
+
+        # If these cubes in turn formed a perfect macro-cube, how long would
+        # its side be?
+        macrocube_side = equiv_cubes ** (1/d)
+
+        # What total face area does the macro-cube have?
+        macrocube_face_area = 2*d * macrocube_side ** (d-1)
+
+        # How many of my faces do I need to tesselate this face area?
+        return macrocube_face_area * factorial(d-1)
+
+    def get_extface_count(self):
+        from hedge.cuda.tools import int_ceiling
+
+        if self.max_ext_faces is None:
+            return int_ceiling(self.estimate_extface_count())
+        else:
+            return self.max_ext_faces
+
+    @memoize_method
+    def face_count(self):
+        if self.max_faces is not None:
+            return self.max_faces
+        else:
+            return (self.elements_per_block() * self.given.faces_per_el() + 
+                    self.get_extface_count())
+
+    def face_pair_count(self):
+        return (self.face_count()+1) // 2
+
+    @memoize_method
+    def shared_mem_use(self):
+        from hedge.cuda.fluxgather import face_pair_struct
+        d = self.given.ldis.dimensions
+
+        if self.given.dofs_per_face() > 255:
+            index_lists_entry_size = 2
+        else:
+            index_lists_entry_size = 1
+
+        return (128 # parameters, block header, small extra stuff
+                + self.given.aligned_face_dofs_per_microblock()
+                * self.microblocks_per_block()
+                * self.given.float_size()
+                + len(face_pair_struct(self.given.float_type, d))*self.face_pair_count()
+                + index_lists_entry_size*20*self.given.dofs_per_face()
+                )
+
+    def threads(self):
+        return self.parallel_faces*self.given.dofs_per_face()
+
+    def registers(self):
+        return 16
+
+    def __str__(self):
+            return ("%s pfaces=%d mbs_per_block=%d mb_elements=%d" % (
+                hedge.cuda.plan.ExecutionPlan.__str__(self),
+                self.parallel_faces,
+                self.mbs_per_block,
+                self.given.microblock.elements,
+                ))
+
+
+
+
+def make_plan(given):
+    from hedge.cuda.plan import optimize_plan
+
+    def generate_valid_plans():
+        for parallel_faces in range(1,32):
+            for mbs_per_block in range(1,256):
+                flux_plan = FluxGatherPlan(given, parallel_faces, mbs_per_block)
+                if flux_plan.invalid_reason() is None:
+                    yield flux_plan
+
+    return optimize_plan(
+            generate_valid_plans,
+            lambda plan: plan.elements_per_block())
+
+
+
+
 # flux gather kernel ----------------------------------------------------------
 class FluxGatherKernel:
     def __init__(self, discr):
         self.discr = discr
 
         from hedge.cuda.tools import int_ceiling
+        given = discr.given
         fplan = discr.flux_plan
-        lplan = fplan.flux_lifting_plan()
+        lplan = discr.fluxlocal_plan
         self.fluxes_on_faces_shape = (int_ceiling(
                     len(discr.blocks)
-                    * fplan.aligned_face_dofs_per_microblock()
+                    * given.aligned_face_dofs_per_microblock()
                     * fplan.microblocks_per_block(),
                     lplan.parallelism.total()
-                    * fplan.aligned_face_dofs_per_microblock()
+                    * given.aligned_face_dofs_per_microblock()
                     ),)
 
     @memoize_method
@@ -147,6 +271,7 @@ class FluxGatherKernel:
                 Constant, Initializer, If, For, Statement, Assign, While
                 
         discr = self.discr
+        given = discr.given
         fplan = discr.flux_plan
         d = discr.dimensions
         dims = range(d)
@@ -154,7 +279,7 @@ class FluxGatherKernel:
         elgroup, = discr.element_groups
         flux_with_temp_data = self.flux_with_temp_data(wdflux, elgroup)
 
-        float_type = fplan.float_type
+        float_type = given.float_type
 
         f_decl = CudaGlobal(FunctionDeclaration(Value("void", "apply_flux"), 
             [
@@ -178,8 +303,8 @@ class FluxGatherKernel:
                 face_pair_struct(float_type, discr.dimensions),
                 Line(),
                 Define("DIMENSIONS", discr.dimensions),
-                Define("DOFS_PER_EL", fplan.dofs_per_el()),
-                Define("DOFS_PER_FACE", fplan.dofs_per_face()),
+                Define("DOFS_PER_EL", given.dofs_per_el()),
+                Define("DOFS_PER_FACE", given.dofs_per_face()),
                 Line(),
                 Define("CONCURRENT_FACES", fplan.parallel_faces),
                 Define("BLOCK_MB_COUNT", fplan.mbs_per_block),
@@ -192,7 +317,7 @@ class FluxGatherKernel:
                 Define("COALESCING_THREAD_COUNT", "(THREAD_COUNT & ~0xf)"),
                 Line(),
                 Define("DATA_BLOCK_SIZE", flux_with_temp_data.block_bytes),
-                Define("ALIGNED_FACE_DOFS_PER_MB", fplan.aligned_face_dofs_per_microblock()),
+                Define("ALIGNED_FACE_DOFS_PER_MB", given.aligned_face_dofs_per_microblock()),
                 Define("ALIGNED_FACE_DOFS_PER_BLOCK", 
                     "(ALIGNED_FACE_DOFS_PER_MB*BLOCK_MB_COUNT)"),
                 Line(),
@@ -422,7 +547,7 @@ class FluxGatherKernel:
         func = mod.get_function("apply_flux")
         func.prepare(
                 "PPPP",
-                block=(discr.flux_plan.dofs_per_face(), 
+                block=(given.dofs_per_face(), 
                     fplan.parallel_faces, 1),
                 texrefs=expr_to_texture_map.values())
 
@@ -431,6 +556,7 @@ class FluxGatherKernel:
     @memoize_method
     def flux_with_temp_data(self, wdflux, elgroup):
         discr = self.discr
+        given = discr.given
         fplan = discr.flux_plan
         headers = []
         fp_blocks = []
@@ -439,13 +565,13 @@ class FluxGatherKernel:
 
         from hedge.cuda.discretization import GPUBoundaryFaceStorage
 
-        fp_struct = face_pair_struct(discr.flux_plan.float_type, discr.dimensions)
+        fp_struct = face_pair_struct(given.float_type, discr.dimensions)
 
         def find_elface_dest(el_face):
             elface_dofs = face_dofs*ldis.face_count()
             num_in_block = discr.find_number_in_block(el_face[0])
-            mb_index, index_in_mb = divmod(num_in_block,  fplan.microblock.elements)
-            return (mb_index * fplan.aligned_face_dofs_per_microblock()
+            mb_index, index_in_mb = divmod(num_in_block,  given.microblock.elements)
+            return (mb_index * given.aligned_face_dofs_per_microblock()
                     + index_in_mb * elface_dofs
                     + el_face[1]*face_dofs)
 

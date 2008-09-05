@@ -25,17 +25,59 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 import numpy
 from pytools import memoize_method, memoize
 import pycuda.driver as cuda
+import hedge.cuda.plan
 
 
 
 
+# plan ------------------------------------------------------------------------
+class ChunkedDiffExecutionPlan(hedge.cuda.plan.ChunkedLocalOperatorExecutionPlan):
+    def columns(self):
+        return self.given.dofs_per_el() * self.given.ldis.dimensions # r,s,t
+
+    def registers(self):
+        return 17
+
+    def fetch_buffer_chunks(self):
+        return 0
+
+
+
+
+
+def make_plan(given):
+    def generate_plans():
+        from hedge.cuda.tools import int_ceiling
+
+        chunk_sizes = range(given.microblock.align_size, 
+                given.microblock.elements*given.dofs_per_el()+1, 
+                given.microblock.align_size)
+
+        from hedge.cuda.plan import Parallelism
+
+        for pe in range(1,32):
+            from hedge.cuda.tools import int_ceiling
+            localop_par = Parallelism(pe, 256//pe)
+            for chunk_size in chunk_sizes:
+                yield ChunkedDiffExecutionPlan(given, localop_par, chunk_size)
+
+    from hedge.cuda.plan import optimize_plan
+    return optimize_plan(
+            generate_plans,
+            lambda plan: plan.parallelism.total()
+            )
+
+
+
+
+# kernel ----------------------------------------------------------------------
 class DiffKernel(object):
     def __init__(self, discr):
         self.discr = discr
 
         from hedge.cuda.tools import int_ceiling
         fplan = discr.flux_plan
-        lplan = fplan.diff_plan()
+        lplan = discr.diff_plan
 
         self.grid = (lplan.chunks_per_microblock(), 
                     int_ceiling(
@@ -55,13 +97,14 @@ class DiffKernel(object):
         discr = self.discr
         d = discr.dimensions
         dims = range(d)
+        given = discr.given
         fplan = discr.flux_plan
-        lplan = fplan.diff_plan()
+        lplan = discr.diff_plan
 
         diffmat_data = self.gpu_diffmats(diff_op_cls, elgroup)
         elgroup, = discr.element_groups
 
-        float_type = fplan.float_type
+        float_type = given.float_type
 
         f_decl = CudaGlobal(FunctionDeclaration(Value("void", "apply_diff_mat"), 
             [Pointer(POD(float_type, "dxyz%d" % i)) for i in dims]
@@ -80,7 +123,7 @@ class DiffKernel(object):
                     "field_tex"),
                 Line(),
                 Define("DIMENSIONS", discr.dimensions),
-                Define("DOFS_PER_EL", fplan.dofs_per_el()),
+                Define("DOFS_PER_EL", given.dofs_per_el()),
                 Line(),
                 Define("CHUNK_DOF", "threadIdx.x"),
                 Define("PAR_MB_NR", "threadIdx.y"),
@@ -90,8 +133,8 @@ class DiffKernel(object):
                 Line(),
                 Define("CHUNK_DOF_COUNT", lplan.chunk_size),
                 Define("MB_CHUNK_COUNT", lplan.chunks_per_microblock()),
-                Define("MB_DOF_COUNT", fplan.microblock.aligned_floats),
-                Define("MB_EL_COUNT", fplan.microblock.elements),
+                Define("MB_DOF_COUNT", given.microblock.aligned_floats),
+                Define("MB_EL_COUNT", given.microblock.elements),
                 Define("PAR_MB_COUNT", lplan.parallelism.p),
                 Define("SEQ_MB_COUNT", lplan.parallelism.s),
                 Line(),
@@ -104,7 +147,7 @@ class DiffKernel(object):
                 Line(),
                 Define("DIFFMAT_CHUNK_FLOATS", diffmat_data.block_floats),
                 Define("DIFFMAT_CHUNK_BYTES", "(DIFFMAT_CHUNK_FLOATS*%d)"
-                     % fplan.float_size),
+                     % given.float_size()),
                 Define("DIFFMAT_COLUMNS", diffmat_data.matrix_columns),
                 Line(),
                 CudaShared(ArrayOf(POD(float_type, "smem_diff_rst_mat"), 
@@ -163,7 +206,7 @@ class DiffKernel(object):
                             % (axis, get_mat_entry(matrix_row, j, axis)))
                         for axis in dims
                         ]+[Line()]
-                        for j in range(fplan.dofs_per_el())
+                        for j in range(given.dofs_per_el())
                         ))
                     )
 
@@ -235,10 +278,10 @@ class DiffKernel(object):
     @memoize_method
     def gpu_diffmats(self, diff_op_cls, elgroup):
         discr = self.discr
-        fplan = discr.flux_plan
-        lplan = fplan.diff_plan()
+        given = discr.given
+        lplan = discr.diff_plan
 
-        columns = fplan.dofs_per_el()*discr.dimensions
+        columns = given.dofs_per_el()*discr.dimensions
         additional_columns = 0
         # avoid smem fetch bank conflicts by ensuring odd col count
         if columns % 2 == 0:
@@ -246,17 +289,17 @@ class DiffKernel(object):
             additional_columns += 1
 
         block_floats = self.discr.devdata.align_dtype(
-                columns*lplan.chunk_size, fplan.float_size)
+                columns*lplan.chunk_size, given.float_size())
 
         vstacked_matrices = [
-                numpy.vstack(fplan.microblock.elements*(m,))
+                numpy.vstack(given.microblock.elements*(m,))
                 for m in diff_op_cls.matrices(elgroup)
                 ]
 
         chunks = []
 
         from pytools import single_valued
-        for chunk_start in range(0, fplan.microblock.elements*fplan.dofs_per_el(), lplan.chunk_size):
+        for chunk_start in range(0, given.microblock.elements*given.dofs_per_el(), lplan.chunk_size):
             matrices = [
                 m[chunk_start:chunk_start+lplan.chunk_size] 
                 for m in vstacked_matrices]
@@ -268,7 +311,7 @@ class DiffKernel(object):
 
             diffmats = numpy.asarray(
                     numpy.hstack(matrices),
-                    dtype=self.discr.flux_plan.float_type,
+                    dtype=given.float_type,
                     order="C")
             chunks.append(buffer(diffmats))
         
@@ -279,7 +322,7 @@ class DiffKernel(object):
 
         return GPUDifferentiationMatrices(
                 device_memory=cuda.to_device(
-                    pad_and_join(chunks, block_floats*fplan.float_size)),
+                    pad_and_join(chunks, block_floats*given.float_size())),
                 block_floats=block_floats,
                 matrix_columns=columns)
 

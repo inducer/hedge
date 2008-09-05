@@ -118,8 +118,8 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
     def map_chunk_diff_base(self, op, field_expr, out=None):
         discr = self.ex.discr
-        fplan = discr.flux_plan
-        lplan = fplan.diff_plan()
+        given = discr.given
+        lplan = discr.diff_plan
 
         d = discr.dimensions
 
@@ -127,7 +127,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         func, field_texref = self.ex.diff_kernel.get_kernel(op.__class__, eg)
 
         field = self.rec(field_expr)
-        assert field.dtype == discr.flux_plan.float_type
+        assert field.dtype == given.float_type
 
         field.bind_to_texref(field_texref)
 
@@ -176,8 +176,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             pass
 
         discr = self.ex.discr
-        fplan = discr.flux_plan
-        lplan = fplan.diff_plan()
+        lplan = discr.diff_plan
 
         xyz_diff = self.map_chunk_diff_base(op, field_expr, out)
         
@@ -206,8 +205,9 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
         eg, = discr.element_groups
         fdata = self.ex.fluxgather_kernel.flux_with_temp_data(wdflux, eg)
+        given = discr.given
         fplan = discr.flux_plan
-        lplan = fplan.flux_lifting_plan()
+        lplan = discr.fluxlocal_plan
 
         gather, texref_map = self.ex.fluxgather_kernel.get_kernel(wdflux)
         lift, fluxes_on_faces_texref = \
@@ -217,13 +217,13 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
         fluxes_on_faces = gpuarray.empty(
                 self.ex.fluxgather_kernel.fluxes_on_faces_shape,
-                dtype=fplan.float_type,
+                dtype=given.float_type,
                 allocator=discr.pool.allocate)
 
         # gather phase --------------------------------------------------------
         for dep_expr in wdflux.all_deps:
             dep_field = self.rec(dep_expr)
-            assert dep_field.dtype == fplan.float_type
+            assert dep_field.dtype == given.float_type
             dep_field.bind_to_texref(texref_map[dep_expr])
 
         if discr.instrumented:
@@ -239,9 +239,9 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             discr.inner_flux_counter.add()
             discr.flop_counter.add(
                     2 # mul+add
-                    * fplan.dofs_per_face()
-                    * fplan.faces_per_el()
-                    * fplan.dofs_per_el()
+                    * given.dofs_per_face()
+                    * given.faces_per_el()
+                    * given.dofs_per_el()
                     * len(discr.mesh.elements))
         else:
             gather.prepared_call(
@@ -262,7 +262,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
         if discr.debug:
             useful_size = (len(discr.blocks)
-                    * fplan.aligned_face_dofs_per_microblock()
+                    * given.aligned_face_dofs_per_microblock()
                     * fplan.microblocks_per_block())
             fof = fluxes_on_faces.get()
 

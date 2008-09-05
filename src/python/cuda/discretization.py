@@ -166,29 +166,6 @@ def _boundarize_kernel():
 
 # GPU discretization ----------------------------------------------------------
 class Discretization(hedge.discretization.Discretization):
-    def _make_plan(self, ldis, mesh, float_type):
-        from hedge.cuda.plan import \
-                FluxExecutionPlan, \
-                Parallelism, \
-                optimize_plan
-
-        def generate_valid_plans():
-            for parallel_faces in range(1,32):
-                for mbs_per_block in range(1,256):
-                    flux_plan = FluxExecutionPlan(
-                            self.devdata, ldis, parallel_faces,
-                            mbs_per_block, float_type=float_type)
-                    if flux_plan.invalid_reason() is None:
-                        yield flux_plan
-
-        return optimize_plan(
-                generate_valid_plans,
-                lambda plan: plan.elements_per_block()
-                )
-
-
-
-
     def _partition_mesh(self, mesh, flux_plan):
         # search for mesh partition that matches plan
         from pymetis import part_graph
@@ -218,11 +195,10 @@ class Discretization(hedge.discretization.Discretization):
                 blocks[block].append(el_id)
             block_elements = max(len(block_els) for block_els in blocks.itervalues())
 
-            from hedge.cuda.plan import Parallelism
             actual_plan = flux_plan.copy(
                     max_ext_faces=max(block2extifaces.itervalues()),
                     max_faces=max(
-                        len(blocks[b])*flux_plan.faces_per_el()
+                        len(blocks[b])*self.given.faces_per_el()
                         + block2extifaces[b]
                         for b in range(len(blocks))),
                     )
@@ -274,16 +250,25 @@ class Discretization(hedge.discretization.Discretization):
         self.devdata = DeviceData(dev)
 
         # make preliminary plan
+        from hedge.cuda.plan import PlanGivenData
+        self.given = PlanGivenData(
+                self.devdata, ldis, 
+                default_scalar_type)
         if flux_plan is None:
-            flux_plan = self._make_plan(ldis, mesh, default_scalar_type)
+            import hedge.cuda.fluxgather as fluxgather
+            flux_plan = fluxgather.make_plan(self.given)
         print "projected flux exec plan:", flux_plan
 
         # partition mesh, obtain updated plan
         self.flux_plan, self.partition = self._partition_mesh(mesh, flux_plan)
         del flux_plan
+        import hedge.cuda.diff as diff
+        import hedge.cuda.fluxlocal as fluxlocal
+        self.diff_plan = diff.make_plan(self.given)
+        self.fluxlocal_plan = fluxlocal.make_plan(self.given)
         print "actual flux exec plan:", self.flux_plan
-        print "actual diff op exec plan:", self.flux_plan.diff_plan()
-        print "actual flux local exec plan:", self.flux_plan.flux_lifting_plan()
+        print "actual diff op exec plan:", self.diff_plan
+        print "actual flux local exec plan:", self.fluxlocal_plan
 
         # initialize superclass
         hedge.discretization.Discretization.__init__(self, mesh, ldis, debug=debug,
@@ -305,7 +290,7 @@ class Discretization(hedge.discretization.Discretization):
         block_count = len(block_el_numbers)
 
         def make_block(block_num):
-            fplan = self.flux_plan
+            given = self.given
 
             microblocks = []
             current_microblock = []
@@ -314,20 +299,20 @@ class Discretization(hedge.discretization.Discretization):
             elements = [self.mesh.elements[ben] for ben in block_el_numbers[block_num]]
             for block_el_nr, el in enumerate(elements):
                 el_offset = (
-                        len(microblocks)*fplan.microblock.aligned_floats
-                        + len(current_microblock)*fplan.dofs_per_el())
+                        len(microblocks)*given.microblock.aligned_floats
+                        + len(current_microblock)*given.dofs_per_el())
                 el_number_map[el] = block_el_nr
                 el_offsets_list.append(el_offset)
 
                 current_microblock.append(el)
-                if len(current_microblock) == fplan.microblock.elements:
+                if len(current_microblock) == given.microblock.elements:
                     microblocks.append(current_microblock)
                     current_microblock = []
 
             if current_microblock:
                 microblocks.append(current_microblock)
 
-            assert len(microblocks) <= fplan.microblocks_per_block()
+            assert len(microblocks) <= self.flux_plan.microblocks_per_block()
 
             eg, = self.element_groups
             return GPUBlock(block_num, 
@@ -462,7 +447,7 @@ class Discretization(hedge.discretization.Discretization):
         for bdry_fg in self.get_boundary(TAG_ALL).face_groups:
             assert ldis == bdry_fg.ldis_loc
             aligned_fnc = self.devdata.align_dtype(ldis.face_node_count(), 
-                    self.flux_plan.float_size)
+                    self.given.float_size())
             for fp in bdry_fg.face_pairs:
                 assert fp.opp.element_id == hedge._internal.INVALID_ELEMENT
                 #assert (tuple(bdry_fg.index_lists[fp.opp.face_index_list_number]) 
@@ -496,14 +481,14 @@ class Discretization(hedge.discretization.Discretization):
 
 
     def find_el_gpu_index(self, el):
-        fplan = self.flux_plan
+        given = self.given
         block = self.blocks[self.partition[el.id]]
 
-        mb_nr, in_mb_nr = divmod(block.el_number_map[el], fplan.microblock.elements)
+        mb_nr, in_mb_nr = divmod(block.el_number_map[el], given.microblock.elements)
 
         return (block.number * self.flux_plan.dofs_per_block() 
-                + mb_nr*fplan.microblock.aligned_floats
-                + in_mb_nr*fplan.dofs_per_el())
+                + mb_nr*given.microblock.aligned_floats
+                + in_mb_nr*given.dofs_per_el())
 
     def find_number_in_block(self, el):
         block = self.blocks[self.partition[el.id]]
@@ -517,8 +502,8 @@ class Discretization(hedge.discretization.Discretization):
         return int_ceiling(
                 int_ceiling(
                     fplan.dofs_per_block() * len(self.blocks),     
-                    fplan.diff_plan().dofs_per_macroblock()),
-                fplan.flux_lifting_plan().dofs_per_macroblock())
+                    self.diff_plan.dofs_per_macroblock()),
+                self.fluxlocal_plan.dofs_per_macroblock())
 
     def volume_to_gpu(self, field):
         from hedge.tools import log_shape
@@ -646,7 +631,7 @@ class Discretization(hedge.discretization.Discretization):
     # vector construction -----------------------------------------------------
     def volume_empty(self, shape=(), dtype=None):
         if dtype is None:
-            dtype = self.flux_plan.float_type
+            dtype = self.default_scalar_type
 
         return gpuarray.empty(shape+(self.gpu_dof_count(),), dtype=dtype,
                 allocator=self.pool.allocate)
