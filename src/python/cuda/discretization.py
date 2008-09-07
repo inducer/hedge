@@ -228,26 +228,27 @@ class Discretization(hedge.discretization.Discretization):
 
     def __init__(self, mesh, local_discretization=None, 
             order=None, flux_plan=None, init_cuda=True, debug=False, 
-            dev=None, default_scalar_type=numpy.float32):
+            device=None, default_scalar_type=numpy.float32):
         ldis = self.get_local_discretization(mesh, local_discretization, order)
 
         if init_cuda:
             cuda.init()
 
-        if dev is None:
-            assert cuda.Device.count() >= 1
-            dev = cuda.Device(0)
-        if isinstance(dev, int):
-            dev = cuda.Device(dev)
+        if device is None:
+            from pycuda.tools import get_default_device
+            device = get_default_device()
+
+        if isinstance(device, int):
+            device = cuda.Device(device)
         if init_cuda:
-            self.cuda_context = dev.make_context()
+            self.cuda_context = device.make_context()
 
         from pycuda.tools import DeviceMemoryPool
         self.pool = DeviceMemoryPool()
 
-        self.device = dev
+        self.device = device
         from pycuda.tools import DeviceData
-        self.devdata = DeviceData(dev)
+        self.devdata = DeviceData(device)
 
         # make preliminary plan
         from hedge.cuda.plan import PlanGivenData
