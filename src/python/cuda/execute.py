@@ -150,7 +150,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                     2 # mul+add
                     * discr.dimensions
                     * len(discr.nodes)
-                    * elgroup.local_discretization.node_count()
+                    * given.dofs_per_el()
 
                     # x,y,z rescale
                     +2 # mul+add
@@ -406,7 +406,7 @@ class OpTemplateWithEnvironment(object):
                 ce(ex_mapper) for ce in self.compiled_vec_expr],
                 dtype=object)
         else:
-            return ce(ex_mapper)
+            return self.compiled_vec_expr(ex_mapper)
 
     # gpu data blocks ---------------------------------------------------------
     @memoize_method
