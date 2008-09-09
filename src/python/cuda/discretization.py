@@ -227,7 +227,7 @@ class Discretization(hedge.discretization.Discretization):
 
 
     def __init__(self, mesh, local_discretization=None, 
-            order=None, flux_plan=None, init_cuda=True, debug=False, 
+            order=None, flux_plan=None, init_cuda=True, debug=set(), 
             device=None, default_scalar_type=numpy.float32):
         ldis = self.get_local_discretization(mesh, local_discretization, order)
 
@@ -335,7 +335,7 @@ class Discretization(hedge.discretization.Discretization):
         fsm = {}
 
         from hedge.tools import IndexListRegistry
-        fil_registry = IndexListRegistry(self.debug)
+        fil_registry = IndexListRegistry("cuda_ilist_generation" in self.debug)
 
         def make_int_face(face_pair_side):
             el = self.mesh.elements[face_pair_side.element_id]

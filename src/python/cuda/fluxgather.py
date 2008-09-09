@@ -251,14 +251,12 @@ class FluxGatherKernel:
         from hedge.cuda.tools import int_ceiling
         given = discr.given
         fplan = discr.flux_plan
-        lplan = discr.fluxlocal_plan
-        self.fluxes_on_faces_shape = (int_ceiling(
+        # fluxes_on_faces is accessed via texture lookup, which tolerates
+        # out-of-bounds access
+        self.fluxes_on_faces_shape = (
                     len(discr.blocks)
-                    * given.aligned_face_dofs_per_microblock()
-                    * fplan.microblocks_per_block(),
-                    lplan.parallelism.total()
-                    * given.aligned_face_dofs_per_microblock()
-                    ),)
+                    * fplan.microblocks_per_block()
+                    * given.aligned_face_dofs_per_microblock(),)
 
     @memoize_method
     def get_kernel(self, wdflux):

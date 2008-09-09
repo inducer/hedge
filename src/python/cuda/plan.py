@@ -107,9 +107,11 @@ class PlanGivenData(object):
     def float_size(self):
         return self.float_type.itemsize
 
+    @memoize_method
     def dofs_per_el(self):
         return self.ldis.node_count()
 
+    @memoize_method
     def dofs_per_face(self):
         return self.ldis.face_node_count()
 
@@ -122,6 +124,7 @@ class PlanGivenData(object):
     def face_dofs_per_microblock(self):
         return self.microblock.elements*self.faces_per_el()*self.dofs_per_face()
         
+    @memoize_method
     def aligned_face_dofs_per_microblock(self):
         return self.devdata.align_dtype(
                 self.face_dofs_per_microblock(),

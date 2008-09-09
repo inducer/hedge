@@ -73,13 +73,14 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         if norm_ref == 0:
             norm_ref = 1
 
+        from hedge.tools import relative_error
         numpy.set_printoptions(precision=2, linewidth=130, suppress=True)
         for block in discr.blocks:
             i_el = 0
             for mb in block.microblocks:
                 for el in mb:
                     s = discr.find_el_range(el.id)
-                    relerr = relative_error(diff[s])/norm_ref
+                    relerr = relative_error(la.norm(diff[s]), norm_ref)
                     if relerr > 1e-4:
                         struc += "*"
                         if False:
@@ -180,10 +181,14 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
         xyz_diff = self.map_chunk_diff_base(op, field_expr, out)
         
-        if discr.debug:
+        if "cuda_diff" in discr.debug:
             field = self.rec(field_expr)
             f = discr.volume_from_gpu(field)
-            dx = discr.volume_from_gpu(xyz_diff[0])
+            assert not numpy.isnan(f).any(), "Initial field contained NaNs."
+            cpu_xyz_diff = [discr.volume_from_gpu(xd) for xd in xyz_diff]
+            dx = cpu_xyz_diff[0]
+            for i, xd in enumerate(cpu_xyz_diff):
+                assert not numpy.isnan(xd).any(), "Resulting field %d contained NaNs." % i
             
             test_discr = discr.test_discr
             real_dx = test_discr.nabla[0].apply(f.astype(numpy.float64))
@@ -260,7 +265,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             #print copied_debugbuf
             raw_input()
 
-        if discr.debug:
+        if "cuda_flux" in discr.debug:
             useful_size = (len(discr.blocks)
                     * given.aligned_face_dofs_per_microblock()
                     * fplan.microblocks_per_block())
@@ -270,11 +275,11 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
             have_used_nans = False
             for i_b, block in enumerate(discr.blocks):
-                offset = (fplan.aligned_face_dofs_per_microblock()
+                offset = (given.aligned_face_dofs_per_microblock()
                         *fplan.microblocks_per_block())
                 size = (len(block.el_number_map)
-                        *fplan.dofs_per_face()
-                        *fplan.faces_per_el())
+                        *given.dofs_per_face()
+                        *given.faces_per_el())
                 if numpy.isnan(la.norm(fof[offset:offset+size])):
                     have_used_nans = True
 
@@ -287,10 +292,12 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                 print self.get_vec_structure(fof, *struc)
 
             assert not have_used_nans
+            print "PRE-LIFT NAN CHECK", numpy.isnan(fof).any(), fof.shape
 
         # lift phase ----------------------------------------------------------
         flux = discr.volume_empty() 
         fluxes_on_faces.bind_to_texref(fluxes_on_faces_texref)
+        debugbuf = gpuarray.zeros((512,), dtype=numpy.float32)
 
         if discr.instrumented:
             kernel_time = lift.prepared_timed_call(
@@ -308,17 +315,24 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                     self.ex.fluxlocal_kernel.gpu_liftmat(wdflux.is_lift).device_memory,
                     debugbuf.gpudata)
 
-        if False:
+        if set(["cuda_flux", "cuda_debugbuf"]) <= discr.debug:
             copied_debugbuf = debugbuf.get()
             print "DEBUG"
             numpy.set_printoptions(linewidth=100)
+            copied_debugbuf.shape = (16,32)
             print copied_debugbuf
-            print eg.inverse_jacobians[
-                    self.ex.elgroup_microblock_indices(eg)][:500]
             raw_input()
 
         # verification --------------------------------------------------------
-        if discr.debug and False:
+        if "cuda_flux" in discr.debug:
+            copied_flux = discr.volume_from_gpu(flux)
+            contains_nans = numpy.isnan(copied_flux).any()
+            if contains_nans:
+                self.print_error_structure(
+                        copied_flux, copied_flux, copied_flux-copied_flux)
+            assert not contains_nans, "Resulting flux contains NaNs."
+
+        if "cuda_flux" in discr.debug and False:
             cot = discr.test_discr.compile(wdflux.flux_optemplate)
             ctx = {field_expr.name: 
                     discr.volume_from_gpu(field).astype(numpy.float64)

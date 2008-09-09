@@ -80,8 +80,9 @@ class FluxLocalKernel(object):
         from hedge.cuda.tools import int_ceiling
         self.grid = (lplan.chunks_per_microblock(), 
                 int_ceiling(
-                    fplan.dofs_per_block()*len(discr.blocks)/
-                    lplan.dofs_per_macroblock())
+                    len(discr.blocks)
+                    * fplan.dofs_per_block()
+                    / lplan.dofs_per_macroblock())
                 )
 
     @memoize_method
@@ -239,6 +240,12 @@ class FluxLocalKernel(object):
                         S("__syncthreads()"),
                         Line(),
                         ])
+                result.append(If("isnan(dof_buffer[PAR_MB_NR][CHUNK_DOF])",
+                    Assign("debugbuf[MB_DOF]",
+                            "global_mb_facedof_base"
+                            "+(chunk_start_el)*FACE_DOFS_PER_EL+%d+CHUNK_DOF"
+                            % (load_chunk_start)
+                            )))
 
                 for dof in dofs[load_chunk_start:load_chunk_start+lplan.chunk_size]:
                     result.append(

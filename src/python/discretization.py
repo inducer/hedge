@@ -35,10 +35,10 @@ from pytools import memoize_method
 
 
 class _FaceGroup(hedge._internal.FaceGroup):
-    def __init__(self, double_sided):
+    def __init__(self, double_sided, debug):
         hedge._internal.FaceGroup.__init__(self, double_sided)
         from hedge.tools import IndexListRegistry
-        self.fil_registry = IndexListRegistry()
+        self.fil_registry = IndexListRegistry(debug)
 
     def register_face_index_list(self, identifier, generator):
         return self.fil_registry.register(identifier, generator)
@@ -190,13 +190,30 @@ class Discretization(object):
             return local_discretization
 
     def __init__(self, mesh, local_discretization=None, 
-            order=None, debug=False, default_scalar_type=numpy.float64):
+            order=None, debug=set(), default_scalar_type=numpy.float64):
+        """
+
+        @arg debug: A set of strings indicating which debug checks should
+          be activated. See validity check below for the currently defined
+          set of debug flags.
+        """
+          
         self.mesh = mesh
 
         local_discretization = self.get_local_discretization(
                 mesh, local_discretization, order)
 
         self.dimensions = local_discretization.dimensions
+
+        debug = set(debug)
+        assert not debug.difference(set([
+            "ilist_generation", 
+            "node_permutation", 
+            "cuda_ilist_generation",
+            "cuda_diff",
+            "cuda_flux",
+            "cuda_debugbuf",
+            ]))
         self.debug = debug
 
         self._build_element_groups_and_nodes(local_discretization)
@@ -374,10 +391,13 @@ class Discretization(object):
         from hedge._internal import FacePair
         from hedge.element import FaceVertexMismatch
 
-        fg = _FaceGroup(double_sided=True)
+        fg = _FaceGroup(double_sided=True,
+                debug="ilist_generation" in self.debug)
 
         all_ldis_l = []
         all_ldis_n = []
+
+        debug_node_perm = "node_permutation" in self.debug
 
         # find and match node indices along faces
         for i, (local_face, neigh_face) in enumerate(self.mesh.interfaces):
@@ -401,7 +421,7 @@ class Discretization(object):
                         ldis_l.get_face_index_shuffle_to_match(
                         vertices_l, vertices_n)
 
-                if self.debug:
+                if debug_node_perm:
                     findices_shuffled_n = findices_shuffle_op_n(findices_n)
 
                     for i, j in zip(findices_l, findices_shuffled_n):
@@ -417,7 +437,7 @@ class Discretization(object):
                 findices_shuffle_op_n = \
                         ldis_l.get_face_index_shuffle_to_match(vertices_l, vertices_n)
 
-                if self.debug:
+                if debug_node_perm:
                     findices_shuffled_n = findices_shuffle_op_n(findices_n)
 
                     for i, j in zip(findices_l, findices_shuffled_n):
@@ -484,7 +504,8 @@ class Discretization(object):
         nodes = []
         face_ranges = {}
         index_map = []
-        face_group = _FaceGroup(double_sided=False)
+        face_group = _FaceGroup(double_sided=False,
+                debug="ilist_generation" in self.debug)
         ldis = None # if this boundary is empty, we might as well have no ldis
         el_face_to_face_group_and_face_pair = {}
 
