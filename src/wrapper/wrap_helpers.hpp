@@ -50,7 +50,7 @@
   def(#NAME, &cl::NAME)
 
 #define DEF_SIMPLE_FUNCTION(NAME) \
-  def(#NAME, &NAME)
+  boost::python::def(#NAME, &NAME)
 
 #define DEF_SIMPLE_RO_MEMBER(NAME) \
   def_readonly(#NAME, &cl::NAME)
@@ -74,6 +74,21 @@ class no_compare_indexing_suite :
     { PYTHON_ERROR(NotImplementedError, "containment checking not supported on this container"); }
 };
 
+
+
+
+#define PYTHON_FOREACH(TYPE, NAME, ITERABLE) \
+  BOOST_FOREACH(TYPE NAME, \
+      std::make_pair( \
+        boost::python::stl_input_iterator<TYPE>(ITERABLE), \
+        boost::python::stl_input_iterator<TYPE>()))
+
+#define COPY_PY_LIST(TYPE, NAME) \
+  std::vector<TYPE> NAME; \
+  std::copy( \
+      boost::python::stl_input_iterator<TYPE>(NAME##_py), \
+      boost::python::stl_input_iterator<TYPE>(), \
+      std::back_inserter(NAME)); \
 
 
 

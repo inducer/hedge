@@ -57,6 +57,10 @@ namespace hedge {
   typedef boost::numeric::ublas::matrix<double, 
           boost::numeric::ublas::column_major> dyn_fortran_matrix;
 
+  static const unsigned bounded_max_dims = 3;
+  typedef boost::numeric::ublas::bounded_vector<double, bounded_max_dims> bounded_vector;
+  typedef boost::numeric::ublas::bounded_vector<npy_int32, bounded_max_dims> bounded_int_vector;
+
   class affine_map
   {
     private:
@@ -91,6 +95,48 @@ namespace hedge {
       const hedge::py_matrix &matrix() const
       { return m_matrix; }
   };
+
+
+
+
+  // cross product 
+  template <class VecType>
+  inline typename VecType::value_type entry_or_zero(const VecType &v, unsigned i)
+  {
+    if (i >= v.size())
+      return 0;
+    else
+      return v[i];
+  }
+
+
+
+
+  template <class T>
+  inline T entry_or_zero(const T *v, int i)
+  {
+    return v[i];
+  }
+
+
+
+
+  template <class VecType1, class VecType2>
+  inline
+  const VecType1 cross(
+      const VecType1 &a, 
+      const VecType2 &b)
+  {
+    VecType1 result(3);
+    result[0] = entry_or_zero(a,1)*entry_or_zero(b,2) - entry_or_zero(a,2)*entry_or_zero(b,1);
+    result[1] = entry_or_zero(a,2)*entry_or_zero(b,0) - entry_or_zero(a,0)*entry_or_zero(b,2);
+    result[2] = entry_or_zero(a,0)*entry_or_zero(b,1) - entry_or_zero(a,1)*entry_or_zero(b,0);
+    return result;
+  }
+
+
+
+
 }
 
 

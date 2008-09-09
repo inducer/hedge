@@ -214,13 +214,12 @@ class Tetrahedron(SimplicialElement):
     __slots__ = ["id", "vertex_indices", "map", "inverse_map", "face_normals",
             "face_jacobians"]
 
-    @staticmethod
-    def face_vertices(vertices):
-        return [(vertices[0],vertices[1],vertices[2]), 
-                (vertices[0],vertices[1],vertices[3]),
-                (vertices[0],vertices[2],vertices[3]),
-                (vertices[1],vertices[2],vertices[3]),
-                ]
+    face_vertex_numbers = [(0,1,2), (0,1,3), (0,2,3), (1,2,3), ]
+
+    @classmethod
+    def face_vertices(cls, vertices):
+        return [tuple(vertices[vn] for vn in face_numbers)
+                for face_numbers in cls.face_vertex_numbers]
 
     @classmethod
     def _reorder_vertices(cls, vertex_indices, vertices, map):
@@ -237,25 +236,13 @@ class Tetrahedron(SimplicialElement):
 
         Returns a pair of lists [normals], [jacobians].
         """
-        from hedge.tools import normalize, sign
+        from hedge._internal import tetrahedron_fj_and_normal
+        from hedge.tools import sign
 
-        face_orientations = [-1,1,-1,1]
-        element_orientation = sign(affine_map.jacobian)
-
-        def fj_and_normal(fo, pts):
-            normal = numpy.cross(pts[1]-pts[0], pts[2]-pts[0])
-            n_length = la.norm(normal)
-
-            # ||n_length|| is the area of the parallelogram spanned by the two
-            # vectors above. Half of that is the area of the triangle we're interested
-            # in. Next, the area of the unit triangle is two, so divide by two again.
-            return element_orientation*fo*normal/n_length, n_length/4
-
-        m = affine_map.matrix
-
-        # realize that zip(*something) is unzip(something)
-        return zip(*[fj_and_normal(fo, pts) for fo, pts in
-            zip(face_orientations, cls.face_vertices(vertices))])
+        return tetrahedron_fj_and_normal(
+                sign(affine_map.jacobian),
+                cls.face_vertex_numbers,
+                vertices)
 
 
 

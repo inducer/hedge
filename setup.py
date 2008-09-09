@@ -169,6 +169,7 @@ def main():
                 PyUblasExtension("_internal", 
                     ["src/wrapper/wrap_main.cpp", 
                         "src/wrapper/wrap_base.cpp", 
+                        "src/wrapper/wrap_mesh.cpp", 
                         "src/wrapper/wrap_special_function.cpp", 
                         "src/wrapper/wrap_flux.cpp", 
                         "src/wrapper/wrap_op_target.cpp", 
