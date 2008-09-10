@@ -89,8 +89,8 @@ class POD(Declarator):
     def get_decl_pair(self):
         return [dtype_to_ctype(self.dtype)], self.name
 
-    def struct_args(self, data):
-        return [data]
+    def struct_maker_code(self, name):
+        return name
 
     def struct_format(self):
         return self.dtype.char
@@ -103,7 +103,7 @@ class Value(Declarator):
     def get_decl_pair(self):
         return [self.typename], self.name
 
-    def struct_args(self, data):
+    def struct_maker_code(self, data):
         raise RuntimeError, "named-type values can't be put into structs"
 
     def struct_format(self):
@@ -123,8 +123,8 @@ class NestedDeclarator(Declarator):
     def struct_format(self):
         return self.subdecl.struct_format()
 
-    def struct_args(self, data):
-        return self.subdecl.struct_args(data)
+    def struct_maker_code(self, data):
+        return self.subdecl.struct_maker_code(data)
 
     def get_decl_pair(self):
         return self.subdecl.get_decl_pair()
@@ -193,8 +193,8 @@ class Pointer(NestedDeclarator):
         sub_tp, sub_decl = self.subdecl.get_decl_pair()
         return sub_tp, ("*%s" % sub_decl)
 
-    def struct_args(self, data):
-        return data
+    def struct_maker_code(self, data):
+        raise NotImplementedError
 
     def struct_format(self):
         return "P"
@@ -212,8 +212,8 @@ class ArrayOf(NestedDeclarator):
             count_str = str(self.count)
         return sub_tp, ("%s[%s]" % (sub_decl, count_str))
 
-    def struct_args(self, data):
-        return data
+    def struct_maker_code(self, name):
+        return ", ".join("%s[%d]" % (name, i) for i in range(self.count))
 
     def struct_format(self):
         if self.count is None:
@@ -236,7 +236,7 @@ class FunctionDeclaration(NestedDeclarator):
             sub_decl, 
             ", ".join(ad.inline() for ad in self.arg_decls)))
 
-    def struct_args(self, data):
+    def struct_maker_code(self, data):
         raise RuntimeError, "function pointers can't be put into structs"
 
     def struct_format(self):
@@ -266,20 +266,17 @@ class Struct(Declarator):
         return get_tp(), self.declname
         
     def make(self, **kwargs):
-        import struct
-        data = []
-        for f in self.fields:
-            data.extend(f.struct_args(kwargs[f.name]))
-        if self.debug:
-            print self
-            print data
-            print self.struct_format()
-            print kwargs
-            print [ord(i) for i in struct.pack(self.struct_format(), *data)]
-            raw_input()
-        return struct.pack(self.struct_format(), *data)
+        from struct import pack
+        return self._maker()(pack, **kwargs)
 
     @memoize_method
+    def _maker(self):
+        code = "lambda pack, %s: pack(%s, %s)" % (
+                ", ".join(f.name for f in self.fields),
+                repr(self.struct_format()),
+                ", ".join(f.struct_maker_code(f.name) for f in self.fields))
+        return eval(code)
+
     def struct_format(self):
         return "".join(decl.struct_format() for decl in self.fields)
 
