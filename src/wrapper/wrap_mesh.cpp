@@ -66,10 +66,10 @@ namespace
       // in. Next, the area of the unit triangle is two, so divide by two again.
       normals.append(
           py_vector(
-            el_orientation
+            (el_orientation
             * face_orientations[face_nr++]
-            * normal
-            / n_length));
+            / n_length)
+            * normal));
       jacobians.append(n_length/4);
     }
 

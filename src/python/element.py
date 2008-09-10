@@ -501,7 +501,7 @@ class IntervalElement(IntervalElementBase):
         return la.norm(unodes[0] - unodes[1])
 
     def dt_geometric_factor(self, vertices, el):
-        return abs(el.map.jacobian)
+        return abs(el.map.jacobian())
 
 
 
@@ -743,7 +743,7 @@ class TriangularElement(SimplicialElement):
 
     # time step scaling -------------------------------------------------------
     def dt_geometric_factor(self, vertices, el):
-        area = abs(2*el.map.jacobian)
+        area = abs(2*el.map.jacobian())
         semiperimeter = sum(la.norm(vertices[vi1]-vertices[vi2]) 
                 for vi1, vi2 in [(0,1), (1,2), (2,0)])/2
         return area/semiperimeter
@@ -1157,7 +1157,7 @@ class TetrahedralElement(SimplicialElement):
 
     # time step scaling -------------------------------------------------------
     def dt_geometric_factor(self, vertices, el):
-        return abs(el.map.jacobian)/max(abs(fj) for fj in el.face_jacobians)
+        return abs(el.map.jacobian())/max(abs(fj) for fj in el.face_jacobians)
 
 
 

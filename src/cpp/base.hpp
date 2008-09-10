@@ -25,7 +25,10 @@
 
 #include <vector>
 #include <boost/numeric/ublas/vector.hpp>
+#include <boost/numeric/ublas/vector_proxy.hpp>
 #include <boost/numeric/ublas/matrix.hpp>
+#include <boost/numeric/ublas/triangular.hpp>
+#include <boost/numeric/ublas/lu.hpp>
 #include <pyublas/numpy.hpp>
 
 
@@ -61,11 +64,115 @@ namespace hedge {
   typedef boost::numeric::ublas::bounded_vector<double, bounded_max_dims> bounded_vector;
   typedef boost::numeric::ublas::bounded_vector<npy_int32, bounded_max_dims> bounded_int_vector;
 
+
+
+
+  // basic linear algebra -----------------------------------------------------
+  /* Matrix inversion 
+   * Modified from original by Fredrik Orderud. 
+   * Retrieved from Effective Ublas Wiki 2008-09-9.
+   */
+  template<class MatrixT>
+  inline MatrixT invert_matrix(const MatrixT &input) 
+  {
+    using namespace boost::numeric::ublas;
+
+    if (input.size1() != input.size2())
+      throw std::runtime_error("det requires square matrix");
+
+    typedef permutation_matrix<std::size_t> pmatrix;
+    pmatrix pm(input.size1());
+
+    // lu_factorize is in-place
+    matrix<typename MatrixT::value_type> a(input);
+    if (lu_factorize(a, pm))
+      throw std::runtime_error("lu decomposition failed");
+
+    MatrixT inverse(identity_matrix<typename MatrixT::value_type>(a.size1()));
+    lu_substitute(a, pm, inverse);
+    return inverse;
+  }
+
+
+  /*
+  Compute sign of permutation `p` by counting the number of
+  interchanges required to change the given permutation into the
+  identity one.
+
+  Algorithm from http://people.scs.fsu.edu/~burkardt/math2071/perm_sign.m
+  */
+  template <class Container>
+  int permutation_sign(Container &p)
+  {
+    int n = p.size();
+    int s = +1;
+
+    for (int i = 0; i < n; i++)
+    {
+      // J is the current position of item I.
+      int j = i;
+
+      while (p[j] != i)
+        j++;
+
+      // Unless the item is already in the correct place, restore it.
+      if (j != i)
+      {
+        std::swap(p[i], p[j]);
+        s = -s;
+      }
+    }
+    return s;
+  }
+
+
+
+
+
+
+  template<class MatrixT>
+  inline typename MatrixT::value_type det(const MatrixT &input) 
+  {
+    using namespace boost::numeric::ublas;
+
+    if (input.size1() != input.size2())
+      throw std::runtime_error("det requires square matrix");
+
+    const std::size_t n = input.size1();
+
+    typedef permutation_matrix<std::size_t> pmatrix;
+    pmatrix pm(n);
+
+    typedef typename MatrixT::value_type value_type;
+    typedef typename MatrixT::size_type size_type;
+
+    // lu_factorize is in-place
+    matrix<value_type> a(input);
+    if (lu_factorize(a, pm))
+      throw std::runtime_error("lu decomposition failed");
+
+    vector<std::size_t> permut(n);
+    for (std::size_t i = 0; i < n; i++) 
+      permut[i] = i;
+    for (std::size_t i = 0; i < n; i++) 
+      std::swap(permut[i], permut[pm[i]]);
+          
+    value_type result = permutation_sign(permut);
+    for (size_type i = 0; i < n; ++i)
+      result *= a(i, i);
+    return result;
+  }
+
+
+
+
   class affine_map
   {
     private:
       hedge::py_matrix m_matrix;
       hedge::py_vector m_vector;
+      mutable bool m_have_jacobian;
+      mutable double m_jacobian;
 
     public:
       affine_map()
@@ -74,7 +181,7 @@ namespace hedge {
       affine_map(
           const hedge::py_matrix &mat, 
           const hedge::py_vector &vec)
-        : m_matrix(mat), m_vector(vec)
+        : m_matrix(mat), m_vector(vec), m_have_jacobian(false)
       { }
 
       template <class VecType>
@@ -94,6 +201,24 @@ namespace hedge {
 
       const hedge::py_matrix &matrix() const
       { return m_matrix; }
+
+      const affine_map inverted() const
+      {
+        py_matrix inv = invert_matrix(m_matrix);
+        return affine_map(inv, -prod(inv, m_vector));
+      }
+
+      double jacobian() const
+      {
+        if (m_have_jacobian)
+          return m_jacobian;
+        else
+        {
+          m_have_jacobian = true;
+          m_jacobian = det(m_matrix);
+          return m_jacobian;
+        }
+      }
   };
 
 

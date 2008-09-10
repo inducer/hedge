@@ -211,6 +211,8 @@ void hedge_expose_base()
       .def("__call__", 
           (const py_vector (cl::*)(const py_vector &) const) 
           &affine_map::operator())
+      .DEF_SIMPLE_METHOD(inverted)
+      .DEF_SIMPLE_METHOD(jacobian)
 
       .enable_pickling()
       ;

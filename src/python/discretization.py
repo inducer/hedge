@@ -77,7 +77,7 @@ class _FaceGroup(hedge._internal.FaceGroup):
 
         # transfer inverse jacobians
         self.local_el_inverse_jacobians = numpy.fromiter(
-                (abs(discr.mesh.elements[bae[1]].inverse_map.jacobian) 
+                (abs(discr.mesh.elements[bae[1]].inverse_map.jacobian()) 
                     for bae in used_bases_and_els),
                 dtype=float)
 
@@ -177,6 +177,7 @@ class Discretization(object):
         "ilist_generation", 
         "node_permutation", 
         "cuda_ilist_generation",
+        "cuda_compare",
         "cuda_diff",
         "cuda_flux",
         "cuda_debugbuf",
@@ -344,10 +345,10 @@ class Discretization(object):
                     [numpy.dot(numpy.dot(immat,d.T), mmat) for d in dmats])
 
             eg.jacobians = numpy.array([
-                abs(el.map.jacobian) 
+                abs(el.map.jacobian()) 
                 for el in eg.members])
             eg.inverse_jacobians = numpy.array([
-                abs(el.inverse_map.jacobian) 
+                abs(el.inverse_map.jacobian()) 
                 for el in eg.members])
 
             eg.diff_coefficients = numpy.array([
@@ -365,7 +366,7 @@ class Discretization(object):
             eg.stiffness_coefficients = numpy.array([
                     [
                         [
-                            abs(el.map.jacobian)*el.inverse_map
+                            abs(el.map.jacobian())*el.inverse_map
                             .matrix[loc_coord, glob_coord]
                             for el in eg.members
                             ]
@@ -387,7 +388,7 @@ class Discretization(object):
         # h on both sides of an interface must be the same, otherwise
         # the penalty term will behave very oddly.
         # This unification happens below.
-        f.h = abs(el.map.jacobian/f.face_jacobian)
+        f.h = abs(el.map.jacobian()/f.face_jacobian)
 
     def _build_interior_face_groups(self):
         from hedge._internal import FacePair

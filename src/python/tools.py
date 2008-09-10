@@ -89,23 +89,9 @@ def cyl_bessel_j_prime(nu, z):
 
 
 AffineMap = hedge._internal.AffineMap
-def _affine_map_jacobian(self):
-    try:
-        return self._jacobian
-    except AttributeError:
-        self._jacobian = numpy.linalg.det(self.matrix)
-        return self._jacobian
-AffineMap.jacobian = property(_affine_map_jacobian)
-
-def _affine_map_inverted(self):
-    """Return a new AffineMap that is the inverse of this one.
-    """
-    return AffineMap(numpy.asarray(numpy.linalg.inv(self.matrix), order="c"), 
-            -numpy.linalg.solve(self.matrix, self.vector))
-AffineMap.inverted = _affine_map_inverted
-
 def _affine_map___getinitargs__(self):
     return self.matrix, self.vector
+
 AffineMap.__getinitargs__ = _affine_map___getinitargs__
 
 

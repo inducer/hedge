@@ -148,7 +148,7 @@ class Interval(SimplicialElement):
 
         Returns a pair of lists [normals], [jacobians].
         """
-        if affine_map.jacobian < 0:
+        if affine_map.jacobian() < 0:
             return [
                     numpy.array([1], dtype=float), 
                     numpy.array([-1], dtype=float)
@@ -178,7 +178,7 @@ class Triangle(SimplicialElement):
     @classmethod
     def _reorder_vertices(cls, vertex_indices, vertices, map):
         vi = vertex_indices
-        if map.jacobian > 0:
+        if map.jacobian() > 0:
             return (vi[0], vi[2], vi[1])
         else:
             return None
@@ -193,7 +193,7 @@ class Triangle(SimplicialElement):
         from hedge.tools import sign
 
         m = affine_map.matrix
-        orient = sign(affine_map.jacobian)
+        orient = sign(affine_map.jacobian())
         face1 = m[:,1] - m[:,0]
         raw_normals = [
                 orient*numpy.array([m[1,0], -m[0,0]]),
@@ -214,17 +214,20 @@ class Tetrahedron(SimplicialElement):
     __slots__ = ["id", "vertex_indices", "map", "inverse_map", "face_normals",
             "face_jacobians"]
 
-    face_vertex_numbers = [(0,1,2), (0,1,3), (0,2,3), (1,2,3), ]
+    def _face_vertices(vertices):
+        return [(vertices[0],vertices[1],vertices[2]), 
+                (vertices[0],vertices[1],vertices[3]),
+                (vertices[0],vertices[2],vertices[3]),
+                (vertices[1],vertices[2],vertices[3]),
+                ]
+    face_vertices = staticmethod(_face_vertices)
 
-    @classmethod
-    def face_vertices(cls, vertices):
-        return [tuple(vertices[vn] for vn in face_numbers)
-                for face_numbers in cls.face_vertex_numbers]
+    face_vertex_numbers = _face_vertices([0,1,2,3])
 
     @classmethod
     def _reorder_vertices(cls, vertex_indices, vertices, map):
         vi = vertex_indices
-        if map.jacobian > 0:
+        if map.jacobian() > 0:
             return (vi[0], vi[1], vi[3], vi[2])
         else:
             return None
@@ -240,7 +243,7 @@ class Tetrahedron(SimplicialElement):
         from hedge.tools import sign
 
         return tetrahedron_fj_and_normal(
-                sign(affine_map.jacobian),
+                sign(affine_map.jacobian()),
                 cls.face_vertex_numbers,
                 vertices)
 

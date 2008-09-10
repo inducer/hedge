@@ -65,6 +65,26 @@ class Monomial:
 
 
 class TestHedge(unittest.TestCase):
+    def test_affine_map(self):
+        """Check that our cheapo geometry-targeted linear algebra actually works."""
+        from hedge.tools import AffineMap
+        for d in range(1, 5):
+        #for d in [3]:
+            for i in range(1000):
+                a = numpy.random.randn(d, d)
+                b = numpy.random.randn(d)
+
+                m = AffineMap(a, b)
+
+                assert abs(m.jacobian() - la.det(a)) < 1e-16
+                assert la.norm(m.inverted().matrix - la.inv(a)) < 1e-16*la.norm(a)
+
+                x = numpy.random.randn(d)
+
+                m_inv = m.inverted()
+
+                assert la.norm(x-m_inv(m(x))) < 1e-10
+    # -------------------------------------------------------------------------
     def test_timestep_accuracy(self):
         """Check that all timesteppers have the advertised accuracy"""
         from math import sqrt, log, sin, cos
@@ -404,7 +424,6 @@ class TestHedge(unittest.TestCase):
                 TriangularElement, \
                 TetrahedralElement
         from hedge.mesh import Triangle
-        from hedge.tools import AffineMap
         from numpy import dot
 
         for el in [
@@ -459,7 +478,7 @@ class TestHedge(unittest.TestCase):
                                 + [dot(mapped_face_projection, v) for v in mapped_face_basis])
                         true_jac = abs(Triangle
                                 .get_map_unit_to_global(projected_corners)
-                                .jacobian)
+                                .jacobian())
                     else:
                         assert False, "this test does not support %d dimensions yet" % el.dimensions
 
@@ -513,7 +532,7 @@ class TestHedge(unittest.TestCase):
             mat[:,0] = (vertices[1] - vertices[0])
             mat[:,1] = (vertices[2] - vertices[0])
             tri_area = abs(la.det(mat)/2)
-            tri_area_2 = abs(unit_tri_area*map.jacobian)
+            tri_area_2 = abs(unit_tri_area*map.jacobian())
             self.assert_(abs(tri_area - tri_area_2)/tri_area < 1e-15)
     # -------------------------------------------------------------------------
     def no_test_tri_mass_mat_gauss(self):
@@ -633,9 +652,7 @@ class TestHedge(unittest.TestCase):
         """Verify Gauss's theorem explicitly on a mesh"""
 
         from hedge.element import TriangularElement
-        from hedge.tools import AffineMap
         from hedge.mesh import make_disk_mesh
-        from hedge.flux import Flux
         from math import sin, cos, sqrt, exp, pi
         from numpy import dot
 
@@ -741,7 +758,6 @@ class TestHedge(unittest.TestCase):
                 IntervalElement, \
                 TriangularElement, \
                 TetrahedralElement
-        from hedge.tools import AffineMap
         from operator import add
         from math import sin, cos, sqrt, exp, pi
 
@@ -826,7 +842,7 @@ class TestHedge(unittest.TestCase):
                         for fi in f]
                 df_n = [d(imap, i, f_n[i]) for i, fi_n in enumerate(f_n)]
 
-                int_div_f = abs(map.jacobian)*sum(
+                int_div_f = abs(map.jacobian())*sum(
                         dot(ones, dot(el.mass_matrix(), dfi_n)) for dfi_n in df_n)
 
                 if False:
