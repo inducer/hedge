@@ -400,6 +400,7 @@ class SiloVisualizer(Visualizer):
                 yield (nodelist_size_estimate, generate_coarse_elements(eg),
                         eg.local_discretization)
 
+        discr = self.discr
         self.dim = discr.dimensions
         if self.dim != 1:
             self.fine_mesh = SiloMeshData(self.dim, 
