@@ -363,6 +363,14 @@ class SiloMeshData(object):
 
 class SiloVisualizer(Visualizer):
     def __init__(self, discr, pcontext=None):
+        self.discr = discr
+        self.pcontext = pcontext
+
+        self.generated = False
+
+    def _generate(self):
+        # only generate vis data when vis is really needed.
+        # saves startup time when debugging.    
         def generate_fine_elements(eg):
             ldis = eg.local_discretization
             smi = ldis.get_submesh_indices()
@@ -402,8 +410,8 @@ class SiloVisualizer(Visualizer):
                     generate_coarse_element_groups())
         else:
             self.xvals = numpy.asarray(discr.nodes.T, order="C")
-            
-        self.pcontext = pcontext
+
+        self.generated = True
 
     def close(self):
         pass
@@ -415,6 +423,9 @@ class SiloVisualizer(Visualizer):
 
         An extension of .silo is automatically appended to `pathname'.
         """
+        if not self.generated:
+            self._generate()
+
         if self.pcontext is None or len(self.pcontext.ranks) == 1:
             from pylo import SiloFile
             return SiloFile(pathname+".silo")
