@@ -280,8 +280,9 @@ class Discretization(hedge.discretization.Discretization):
         self.face_storage_map = self._build_face_storage_map()
 
         # make a reference discretization
-        from hedge.discr_precompiled import Discretization
-        self.test_discr = Discretization(mesh, ldis)
+        if "cuda_compare" in self.debug:
+            from hedge.discr_precompiled import Discretization
+            self.test_discr = Discretization(mesh, ldis)
 
     def _build_blocks(self):
         block_el_numbers = {}
