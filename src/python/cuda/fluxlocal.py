@@ -240,12 +240,16 @@ class FluxLocalKernel(object):
                         S("__syncthreads()"),
                         Line(),
                         ])
-                result.append(If("isnan(dof_buffer[PAR_MB_NR][CHUNK_DOF])",
-                    Assign("debugbuf[MB_DOF]",
-                            "global_mb_facedof_base"
-                            "+(chunk_start_el)*FACE_DOFS_PER_EL+%d+CHUNK_DOF"
-                            % (load_chunk_start)
-                            )))
+                #result.append(If("isnan("
+                            #"tex1Dfetch(fluxes_on_faces_tex, "
+                            #"global_mb_facedof_base"
+                            #"+(chunk_start_el)*FACE_DOFS_PER_EL+%d+CHUNK_DOF))"
+                            #% (load_chunk_start),
+                    #Assign("debugbuf[MB_DOF]",
+                            #"global_mb_facedof_base"
+                            #"+(chunk_start_el)*FACE_DOFS_PER_EL+%d+CHUNK_DOF"
+                            #% (load_chunk_start)
+                            #)))
 
                 for dof in dofs[load_chunk_start:load_chunk_start+lplan.chunk_size]:
                     result.append(
@@ -259,19 +263,51 @@ class FluxLocalKernel(object):
             return result
 
         def get_direct_tex_mat_mul_code():
-            return [
-                    S("result += "
-                        "tex1Dfetch(fluxes_on_faces_tex, "
-                        "global_mb_facedof_base"
-                        "+dof_el*FACE_DOFS_PER_EL+%(j)d)"
-                        " * smem_lift_mat["
-                        "%(row)s*LIFTMAT_COLUMNS + %(j)s"
-                        "]"
-                        % {"j":j, "row": "CHUNK_DOF"}
-                        )
+            from pytools import flatten
+            return [S("int nan_ind = 0"),
+                    Value("float", "fof"),
+                    Value("float", "lm"),
+                    Value("float", "prev_res"),
+                    ]+ list(flatten([
+                    [
+                        Assign("prev_res", "result"),
+                        Assign("fof",
+                            "tex1Dfetch(fluxes_on_faces_tex, "
+                            "global_mb_facedof_base"
+                            "+dof_el*FACE_DOFS_PER_EL+%(j)d)"
+                            % {"j":j, "row": "CHUNK_DOF"},),
+                        Assign("lm",
+                            "smem_lift_mat["
+                            "%(row)s*LIFTMAT_COLUMNS + %(j)s]"
+                            % {"j":j, "row": "CHUNK_DOF"},
+                            ),
+                        
+                        S("result += fof*lm"),
+                        ]+[If("isnan(result)", Block([
+                            Assign("nan_ind", "(%(j)d << 2)" % {"j":j}),
+                            Assign("debugbuf[MB_DOF*7]",
+                                "(global_mb_dof_base+MB_DOF)"),
+                            Assign("debugbuf[MB_DOF*7+1]",
+                                "fof"),
+                            Assign("debugbuf[MB_DOF*7+2]",
+                                "lm"),
+                            Assign("debugbuf[MB_DOF*7+3]",
+                                "result"),
+                            Assign("debugbuf[MB_DOF*7+4]",
+                                "prev_res"),
+                            Assign("debugbuf[MB_DOF*7+5]",
+                                "fof*lm"),
+                            Assign("debugbuf[MB_DOF*7+6]",
+                                "result+fof*lm"),
+                            S("goto done")
+                            ]))
+                        ]
                     for j in range(
                         given.dofs_per_face()*given.faces_per_el())
-                    ]+[Line()]
+                    ]))+[
+                    Line(),
+                    Line("done:"),
+                    ]
 
         def get_mat_mul_code(el_fetch_count):
             if el_fetch_count == 1:
@@ -303,6 +339,14 @@ class FluxLocalKernel(object):
                             Line(),
                             ]
                             +get_mat_mul_code(fetch_count)+[
+                            #If("isnan(result)", Block([
+                                #Assign("debugbuf[MB_DOF*3]",
+                                    #"-%d" % fetch_count),
+                                #Assign("debugbuf[MB_DOF*3+1]",
+                                    #"global_mb_dof_base"),
+                                #Assign("debugbuf[MB_DOF*3+2]",
+                                    #"MB_DOF"),
+                                #])),
                             If("MB_DOF < DOFS_PER_EL*MB_EL_COUNT",
                                 Assign(
                                     "flux[global_mb_dof_base+MB_DOF]",

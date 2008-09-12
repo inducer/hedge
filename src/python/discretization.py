@@ -180,6 +180,7 @@ class Discretization(object):
         "cuda_compare",
         "cuda_diff",
         "cuda_flux",
+        "cuda_lift",
         "cuda_debugbuf",
         ])
 

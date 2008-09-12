@@ -251,6 +251,7 @@ class FluxGatherKernel:
         from hedge.cuda.tools import int_ceiling
         given = discr.given
         fplan = discr.flux_plan
+
         # fluxes_on_faces is accessed via texture lookup, which tolerates
         # out-of-bounds access
         self.fluxes_on_faces_shape = (

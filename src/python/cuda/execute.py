@@ -23,11 +23,18 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 import numpy
 import numpy.linalg as la
-from pytools import memoize_method, memoize
+from pytools import memoize_method, memoize, Record
 import hedge.optemplate
 import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
 import pymbolic.mapper.stringifier
+
+
+
+
+class FakeGPUArray(Record):
+    def __init__(self):
+        Record.__init__(self, gpudata=0)
 
 
 
@@ -76,6 +83,8 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         from hedge.tools import relative_error
         numpy.set_printoptions(precision=2, linewidth=130, suppress=True)
         for block in discr.blocks:
+            add_lines = []
+            struc += "%7d " % (block.number * discr.flux_plan.dofs_per_block())
             i_el = 0
             for mb in block.microblocks:
                 for el in mb:
@@ -90,8 +99,10 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                             print reference[s]
                             print diff[s]
                             raw_input()
-                    elif numpy.isnan(relerr):
+                    elif numpy.isnan(diff[s]).any():
                         struc += "N"
+                        add_lines.append(str(diff[s]))
+                        
                         if False:
                             print "block %d, el %d, global el #%d, rel.l2err=%g" % (
                                     block.number, i_el, el.id, relerr)
@@ -113,7 +124,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                             struc += "."
                     i_el += 1
                 struc += " "
-            struc += "\n"
+            struc += "\n" + "".join(l+"\n" for l in add_lines)
         print
         print struc
 
@@ -218,7 +229,10 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         lift, fluxes_on_faces_texref = \
                 self.ex.fluxlocal_kernel.get_kernel(wdflux.is_lift, eg)
 
-        debugbuf = gpuarray.zeros((512,), dtype=numpy.float32)
+        if set(["cuda_flux", "cuda_debugbuf"]) <= discr.debug:
+            debugbuf = gpuarray.zeros((512,), dtype=numpy.float32)
+        else:
+            debugbuf = FakeGPUArray()
 
         fluxes_on_faces = gpuarray.empty(
                 self.ex.fluxgather_kernel.fluxes_on_faces_shape,
@@ -257,7 +271,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                     self.ex.fluxgather_kernel.index_list_global_data().device_memory,
                     )
 
-        if False:
+        if set(["cuda_flux", "cuda_debugbuf"]) <= discr.debug:
             copied_debugbuf = debugbuf.get()
             print "DEBUG", len(discr.blocks)
             numpy.set_printoptions(linewidth=100)
@@ -265,7 +279,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             #print copied_debugbuf
             raw_input()
 
-        if "cuda_flux" in discr.debug:
+        if discr.debug & set(["cuda_lift", "cuda_flux"]):
             useful_size = (len(discr.blocks)
                     * given.aligned_face_dofs_per_microblock()
                     * fplan.microblocks_per_block())
@@ -275,12 +289,12 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
             have_used_nans = False
             for i_b, block in enumerate(discr.blocks):
-                offset = (given.aligned_face_dofs_per_microblock()
+                offset = i_b*(given.aligned_face_dofs_per_microblock()
                         *fplan.microblocks_per_block())
                 size = (len(block.el_number_map)
                         *given.dofs_per_face()
                         *given.faces_per_el())
-                if numpy.isnan(la.norm(fof[offset:offset+size])):
+                if numpy.isnan(la.norm(fof[offset:offset+size])).any():
                     have_used_nans = True
 
             if have_used_nans:
@@ -297,8 +311,13 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         # lift phase ----------------------------------------------------------
         flux = discr.volume_empty() 
         fluxes_on_faces.bind_to_texref(fluxes_on_faces_texref)
-        debugbuf = gpuarray.zeros((512,), dtype=numpy.float32)
 
+        if set(["cuda_lift", "cuda_debugbuf"]) <= discr.debug:
+            debugbuf = gpuarray.zeros((1024,), dtype=numpy.float32)
+        else:
+            debugbuf = FakeGPUArray()
+
+        print "flgrid", self.ex.fluxlocal_kernel.grid
         if discr.instrumented:
             kernel_time = lift.prepared_timed_call(
                     self.ex.fluxlocal_kernel.grid,
@@ -315,16 +334,20 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                     self.ex.fluxlocal_kernel.gpu_liftmat(wdflux.is_lift).device_memory,
                     debugbuf.gpudata)
 
-        if set(["cuda_flux", "cuda_debugbuf"]) <= discr.debug:
-            copied_debugbuf = debugbuf.get()
+        if set(["cuda_lift", "cuda_debugbuf"]) <= discr.debug:
+            copied_debugbuf = debugbuf.get()[:144*7].reshape((144,7))
             print "DEBUG"
             numpy.set_printoptions(linewidth=100)
-            copied_debugbuf.shape = (16,32)
+            copied_debugbuf.shape = (144,7)
+            numpy.set_printoptions(threshold=3000)
+
             print copied_debugbuf
             raw_input()
 
         # verification --------------------------------------------------------
-        if "cuda_flux" in discr.debug:
+        if "cuda_lift" in discr.debug:
+            cuda.Context.synchronize()
+            print "NANCHECK"
             copied_flux = discr.volume_from_gpu(flux)
             contains_nans = numpy.isnan(copied_flux).any()
             if contains_nans:
