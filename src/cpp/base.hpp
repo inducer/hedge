@@ -104,13 +104,13 @@ namespace hedge {
   template <class Container>
   int permutation_sign(Container &p)
   {
-    int n = p.size();
-    int s = +1;
+    std::size_t n = p.size();
+    std::size_t s = +1;
 
-    for (int i = 0; i < n; i++)
+    for (std::size_t i = 0; i < n; i++)
     {
       // J is the current position of item I.
-      int j = i;
+      std::size_t j = i;
 
       while (p[j] != i)
         j++;
@@ -135,16 +135,16 @@ namespace hedge {
   {
     using namespace boost::numeric::ublas;
 
+    typedef typename MatrixT::value_type value_type;
+    typedef typename MatrixT::size_type size_type;
+    
     if (input.size1() != input.size2())
       throw std::runtime_error("det requires square matrix");
 
-    const std::size_t n = input.size1();
+    const size_type n = input.size1();
 
     typedef permutation_matrix<std::size_t> pmatrix;
     pmatrix pm(n);
-
-    typedef typename MatrixT::value_type value_type;
-    typedef typename MatrixT::size_type size_type;
 
     // lu_factorize is in-place
     matrix<value_type> a(input);
