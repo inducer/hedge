@@ -71,11 +71,12 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             result += struc + "\n"
         return result
             
-    def print_error_structure(self, computed, reference, diff):
+    def print_error_structure(self, computed, reference, diff,
+            eventful_only=False):
         discr = self.ex.discr
 
         norm_ref = la.norm(reference)
-        struc = ""
+        struc_lines = []
 
         if norm_ref == 0:
             norm_ref = 1
@@ -84,14 +85,16 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         numpy.set_printoptions(precision=2, linewidth=130, suppress=True)
         for block in discr.blocks:
             add_lines = []
-            struc += "%7d " % (block.number * discr.flux_plan.dofs_per_block())
+            struc_line  = "%7d " % (block.number * discr.flux_plan.dofs_per_block())
             i_el = 0
+            eventful = False
             for mb in block.microblocks:
                 for el in mb:
                     s = discr.find_el_range(el.id)
                     relerr = relative_error(la.norm(diff[s]), norm_ref)
                     if relerr > 1e-4:
-                        struc += "*"
+                        eventful = True
+                        struc_line += "*"
                         if False:
                             print "block %d, el %d, global el #%d, rel.l2err=%g" % (
                                     block.number, i_el, el.id, relerr)
@@ -100,7 +103,8 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                             print diff[s]
                             raw_input()
                     elif numpy.isnan(diff[s]).any():
-                        struc += "N"
+                        eventful = True
+                        struc_line += "N"
                         add_lines.append(str(diff[s]))
                         
                         if False:
@@ -112,7 +116,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                             raw_input()
                     else:
                         if numpy.max(numpy.abs(reference[s])) == 0:
-                            struc += "0"
+                            struc_line += "0"
                         else:
                             if False:
                                 print "block %d, el %d, global el #%d, rel.l2err=%g" % (
@@ -121,12 +125,14 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                                 print reference[s]
                                 print diff[s]
                                 raw_input()
-                            struc += "."
+                            struc_line += "."
                     i_el += 1
-                struc += " "
-            struc += "\n" + "".join(l+"\n" for l in add_lines)
+                struc_line += " "
+            if (not eventful_only) or eventful:
+                struc_lines.append(struc_line)
+                struc_lines.extend(add_lines)
         print
-        print struc
+        print "\n".join(struc_lines)
 
     def map_chunk_diff_base(self, op, field_expr, out=None):
         discr = self.ex.discr
@@ -298,12 +304,13 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                     have_used_nans = True
 
             if have_used_nans:
-                struc = ( fplan.dofs_per_face(),
-                        fplan.dofs_per_face()*fplan.faces_per_el(),
-                        fplan.aligned_face_dofs_per_microblock(),
+                struc = ( given.dofs_per_face(),
+                        given.dofs_per_face()*given.faces_per_el(),
+                        given.aligned_face_dofs_per_microblock(),
                         )
 
                 print self.get_vec_structure(fof, *struc)
+                raise RuntimeError("Detected used NaNs in flux gather output.")
 
             assert not have_used_nans
             print "PRE-LIFT NAN CHECK", numpy.isnan(fof).any(), fof.shape
@@ -351,7 +358,8 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             contains_nans = numpy.isnan(copied_flux).any()
             if contains_nans:
                 self.print_error_structure(
-                        copied_flux, copied_flux, copied_flux-copied_flux)
+                        copied_flux, copied_flux, copied_flux-copied_flux,
+                        eventful_only=True)
             assert not contains_nans, "Resulting flux contains NaNs."
 
         if "cuda_flux" in discr.debug and False:
