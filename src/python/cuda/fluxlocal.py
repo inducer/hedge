@@ -283,7 +283,10 @@ class FluxLocalKernel(object):
                             ),
                         
                         S("result += fof*lm"),
-                        ]+[If("isnan(result)", Block([
+                        ]+int(bool(
+                            set(["cuda_lift", "cuda_debugbuf"]) 
+                            <= discr.debug))*[
+                            If("isnan(result)", Block([
                             Assign("debugbuf[MB_DOF*7]",
                                 "(global_mb_dof_base+MB_DOF)"),
                             Assign("debugbuf[MB_DOF*7+1]",
