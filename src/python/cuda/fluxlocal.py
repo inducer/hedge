@@ -264,10 +264,10 @@ class FluxLocalKernel(object):
 
         def get_direct_tex_mat_mul_code():
             from pytools import flatten
-            return [S("int nan_ind = 0"),
-                    Value("float", "fof"),
-                    Value("float", "lm"),
-                    Value("float", "prev_res"),
+            return [
+                    POD(float_type, "fof"),
+                    POD(float_type, "lm"),
+                    POD(float_type, "prev_res"),
                     ]+ list(flatten([
                     [
                         Assign("prev_res", "result"),
@@ -284,7 +284,6 @@ class FluxLocalKernel(object):
                         
                         S("result += fof*lm"),
                         ]+[If("isnan(result)", Block([
-                            Assign("nan_ind", "(%(j)d << 2)" % {"j":j}),
                             Assign("debugbuf[MB_DOF*7]",
                                 "(global_mb_dof_base+MB_DOF)"),
                             Assign("debugbuf[MB_DOF*7+1]",

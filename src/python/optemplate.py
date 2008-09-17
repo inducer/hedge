@@ -47,6 +47,9 @@ class Operator(pymbolic.primitives.Leaf):
     def __init__(self, discr):
         self.discr = discr
 
+    def __getinitargs__(self):
+        return (self.discr,)
+
     def stringifier(self):
         return StringifyMapper
 
@@ -183,6 +186,9 @@ class FluxOperator(Operator):
     def __init__(self, discr, flux):
         Operator.__init__(self, discr)
         self.flux = flux
+
+    def __getinitargs__(self):
+        return (self.discr, self.flux)
 
     def __mul__(self, arg):
         from hedge.tools import is_obj_array

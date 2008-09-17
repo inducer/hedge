@@ -244,7 +244,10 @@ class Discretization(hedge.discretization.Discretization):
             self.cuda_context = device.make_context()
 
         from pycuda.tools import DeviceMemoryPool
+        from pycuda.tools import DebugMemoryPool
+
         self.pool = DeviceMemoryPool()
+        #self.pool = DebugMemoryPool()
 
         self.device = device
         from pycuda.tools import DeviceData

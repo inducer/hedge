@@ -58,7 +58,7 @@ def face_pair_struct(float_type, dims):
         POD(numpy.uint16, "a_ilist_index"),
         POD(numpy.uint16, "b_ilist_index"), 
         POD(numpy.uint16, "b_write_ilist_index"), 
-        POD(numpy.uint8, "boundary_id"),
+        POD(numpy.uint8, "boundary_bitmap"),
         POD(numpy.uint8, "pad"), 
         POD(numpy.uint16, "a_dest"), 
         POD(numpy.uint16, "b_dest"), 
@@ -245,7 +245,7 @@ def make_plan(given):
 
 # flux gather kernel ----------------------------------------------------------
 class FluxGatherKernel:
-    def __init__(self, discr):
+    def __init__(self, discr, elface_to_bdry_bitmap):
         self.discr = discr
 
         from hedge.cuda.tools import int_ceiling
@@ -258,6 +258,8 @@ class FluxGatherKernel:
                     len(discr.blocks)
                     * fplan.microblocks_per_block()
                     * given.aligned_face_dofs_per_microblock(),)
+
+        self.elface_to_bdry_bitmap = elface_to_bdry_bitmap
 
     @memoize_method
     def get_kernel(self, wdflux):
@@ -276,7 +278,7 @@ class FluxGatherKernel:
         dims = range(d)
 
         elgroup, = discr.element_groups
-        flux_with_temp_data = self.flux_with_temp_data(wdflux, elgroup)
+        flux_with_temp_data = self.flux_with_temp_data(elgroup)
 
         float_type = given.float_type
 
@@ -372,9 +374,8 @@ class FluxGatherKernel:
             from pytools import flatten
             from hedge.tools import is_zero
 
-            flux_write_code.append(
-                make_multiple_ifs([
-                    ("(fpair->boundary_id) == %d" % (bdry_id),
+            flux_write_code.extend(
+                    If("(fpair->boundary_bitmap) & (1 << %d)" % (bdry_id),
                         Block(list(flatten([
                             S("flux += /*%s*/ (%s) * %s"
                                 % (is_interior and "int" or "ext",
@@ -385,11 +386,10 @@ class FluxGatherKernel:
                                     (False, flux_rec.ext_coeff, flux_rec.bfield_expr),
                                     ]
                                 if not is_zero(field_expr)
-                            ]
-                            for flux_rec in fluxes
-                            ))))
-                    for bdry_id, fluxes in wdflux.bdry_id_to_fluxes.iteritems()
-                    ])
+                                ]
+                                for flux_rec in fluxes
+                                ))))
+                        for bdry_id, fluxes in wdflux.bdry_id_to_fluxes.iteritems()
                 )
 
             flux_write_code.append(
@@ -553,7 +553,7 @@ class FluxGatherKernel:
         return func, expr_to_texture_map
 
     @memoize_method
-    def flux_with_temp_data(self, wdflux, elgroup):
+    def flux_with_temp_data(self, elgroup):
         discr = self.discr
         given = discr.given
         fplan = discr.flux_plan
@@ -601,17 +601,16 @@ class FluxGatherKernel:
                 if isinstance(b_face, GPUBoundaryFaceStorage):
                     # boundary face
                     b_base = b_face.gpu_bdry_index_in_floats
-                    boundary_id = wdflux.boundary_elface_to_bdry_id(
-                            a_face.el_face)
+                    boundary_bitmap = self.elface_to_bdry_bitmap.get(a_face.el_face, 0)
                     b_write_index_list = 0 # doesn't matter
                     b_dest = INVALID_DEST
-                    print>>outf, "bdy%d" % boundary_id
+                    print>>outf, "bdy%d" % boundary_bitmap
 
                     fp_structs = bdry_fp_structs
                 else:
                     # interior face
                     b_base = discr.find_el_gpu_index(b_face.el_face[0])
-                    boundary_id = 0
+                    boundary_bitmap = 0
 
                     if b_face.native_block == a_face.native_block:
                         # same block
@@ -648,7 +647,7 @@ class FluxGatherKernel:
                             b_ilist_index= \
                                     a_face.global_ext_flux_index_list_id*face_dofs,
 
-                            boundary_id=boundary_id,
+                            boundary_bitmap=boundary_bitmap,
                             pad=0,
                             b_write_ilist_index= \
                                     b_write_index_list*face_dofs,

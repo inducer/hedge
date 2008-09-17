@@ -220,7 +220,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         discr = self.ex.discr
 
         eg, = discr.element_groups
-        fdata = self.ex.fluxgather_kernel.flux_with_temp_data(wdflux, eg)
+        fdata = self.ex.fluxgather_kernel.flux_with_temp_data(eg)
         given = discr.given
         fplan = discr.flux_plan
         lplan = discr.fluxlocal_plan
@@ -317,7 +317,6 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         else:
             debugbuf = FakeGPUArray()
 
-        print "flgrid", self.ex.fluxlocal_kernel.grid
         if discr.instrumented:
             kernel_time = lift.prepared_timed_call(
                     self.ex.fluxlocal_kernel.grid,
@@ -403,16 +402,31 @@ class OpTemplateWithEnvironment(object):
         from hedge.cuda.fluxgather import FluxGatherKernel
         from hedge.cuda.fluxlocal import FluxLocalKernel
 
-        self.diff_kernel = DiffKernel(discr)
-        self.fluxlocal_kernel = FluxLocalKernel(discr)
-        self.fluxgather_kernel = FluxGatherKernel(discr)
-
         # compile the optemplate
         from hedge.optemplate import OperatorBinder, InverseMassContractor, \
                 FluxDecomposer, BCToFluxRewriter
         from pymbolic.mapper.constant_folder import CommutativeConstantFoldingMapper
-        from hedge.cuda.optemplate import BoundaryCombiner
+        from hedge.cuda.optemplate import BoundaryCombiner, BoundaryTagCollector
 
+        # build a boundary tag bitmap
+        boundary_tag_to_number = {}
+        for btag in BoundaryTagCollector()(optemplate):
+            boundary_tag_to_number.setdefault(btag, 
+                    len(boundary_tag_to_number))
+
+        elface_to_bdry_bitmap = {}
+        for btag, bdry_number in boundary_tag_to_number.iteritems():
+            bdry_bit = 1 << bdry_number
+            for elface in discr.mesh.tag_to_boundary.get(btag, []):
+                elface_to_bdry_bitmap[elface] = (
+                        elface_to_bdry_bitmap.get(elface, 0) | bdry_bit)
+
+        # build the kernels 
+        self.diff_kernel = DiffKernel(discr)
+        self.fluxlocal_kernel = FluxLocalKernel(discr)
+        self.fluxgather_kernel = FluxGatherKernel(discr, elface_to_bdry_bitmap)
+
+        # compile the optemplate
         optemplate = (
                 BoundaryCombiner(discr)(
                     InverseMassContractor()(
@@ -436,6 +450,7 @@ class OpTemplateWithEnvironment(object):
         else:
             self.compiled_vec_expr = compile_vec_expr(optemplate)
 
+    # actual execution --------------------------------------------------------
     def __call__(self, **vars):
         ex_mapper = ExecutionMapper(vars, self)
         if isinstance(self.compiled_vec_expr, list):
@@ -444,42 +459,3 @@ class OpTemplateWithEnvironment(object):
                 dtype=object)
         else:
             return self.compiled_vec_expr(ex_mapper)
-
-    # gpu data blocks ---------------------------------------------------------
-    @memoize_method
-    def _unused_flux_inverse_jacobians(self, elgroup):
-        discr = self.discr
-        d = discr.dimensions
-
-        fplan = discr.flux_plan
-
-        floats_per_block = fplan.elements_per_block()
-        bytes_per_block = floats_per_block*fplan.float_size
-
-        inv_jacs = elgroup.inverse_jacobians
-
-        blocks = []
-        
-        def get_el_index_in_el_group(el):
-            mygroup, idx = discr.group_map[el.id]
-            assert mygroup is elgroup
-            return idx
-
-        from hedge.cuda.tools import pad
-        for block in discr.blocks:
-            block_elgroup_indices = numpy.fromiter(
-                    (get_el_index_in_el_group(el) 
-                        for mb in block.microblocks
-                        for el in mb
-                        ),
-                    dtype=numpy.intp)
-
-            block_inv_jacs = (inv_jacs[block_elgroup_indices].copy().astype(fplan.float_type))
-            blocks.append(pad(str(buffer(block_inv_jacs)), bytes_per_block))
-                
-        from hedge.cuda.cgen import POD, ArrayOf
-        return blocks, ArrayOf(
-                POD(fplan.float_type, "inverse_jacobians"),
-                floats_per_block)
-
-

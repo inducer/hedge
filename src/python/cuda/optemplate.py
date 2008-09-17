@@ -23,6 +23,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import pymbolic.primitives
+import pymbolic.mapper
 import hedge.optemplate
 
 
@@ -79,12 +80,6 @@ class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
                 
         self.flux_optemplate = flux_optemplate
 
-        self.elface_to_bdry_id = {}
-        for btag, bdry_id in self.tag_to_bdry_id.iteritems():
-            for elface in discr.mesh.tag_to_boundary.get(btag, []):
-                if elface in self.elface_to_bdry_id:
-                    raise ValueError, "face contained in two boundaries of WholeDomainFlux"
-                self.elface_to_bdry_id[elface] = bdry_id
 
     @staticmethod
     def short_name(field):
@@ -209,3 +204,26 @@ class BoundaryCombiner(hedge.optemplate.OpTemplateIdentityMapper):
                 result += wdf
             else:
                 return result + flattened_sum(self.rec(r_i) for r_i in expressions)
+
+
+
+
+class BoundaryTagCollector(pymbolic.mapper.CombineMapper):
+    def combine(self, values):
+        from pytools import flatten
+        return set(flatten(values))
+
+    def map_algebraic_leaf(self, expr):
+        return set()
+
+    def handle_unsupported_expression(self, expr):
+        return set()
+
+    def map_constant(self, bpair):
+        return set()
+    
+    def map_boundary_pair(self, bpair):
+        return set([bpair.tag])
+
+    def map_operator_binding(self, expr):
+        return self.rec(expr.field)
