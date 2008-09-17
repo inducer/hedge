@@ -421,8 +421,6 @@ class MaxwellOperator(TimeDependentOperator):
         self.pec_tag = pec_tag
         self.absorb_tag = absorb_tag
 
-        self.absorb_normals = self.discr.boundary_normals(self.absorb_tag)
-
         self.current = current
 
         check_bc_coverage(discr.mesh, [pec_tag, absorb_tag])
