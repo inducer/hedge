@@ -243,12 +243,6 @@ class Discretization(hedge.discretization.Discretization):
         if init_cuda:
             self.cuda_context = device.make_context()
 
-        from pycuda.tools import DeviceMemoryPool
-        from pycuda.tools import DebugMemoryPool
-
-        self.pool = DeviceMemoryPool()
-        #self.pool = DebugMemoryPool()
-
         self.device = device
         from pycuda.tools import DeviceData
         self.devdata = DeviceData(device)
@@ -277,6 +271,14 @@ class Discretization(hedge.discretization.Discretization):
         # initialize superclass
         hedge.discretization.Discretization.__init__(self, mesh, ldis, debug=debug,
                 default_scalar_type=default_scalar_type)
+
+        # initialize memory pool
+        if "cuda_memory" in self.debug:
+            from pycuda.tools import DebugMemoryPool
+            self.pool = DebugMemoryPool()
+        else:
+            from pycuda.tools import DeviceMemoryPool
+            self.pool = DeviceMemoryPool()
 
         # build our own data structures
         self.blocks = self._build_blocks()

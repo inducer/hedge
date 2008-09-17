@@ -182,6 +182,7 @@ class Discretization(object):
         "cuda_flux",
         "cuda_lift",
         "cuda_debugbuf",
+        "cuda_memory",
         ])
 
     @staticmethod
