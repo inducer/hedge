@@ -36,7 +36,7 @@ class ChunkedDiffExecutionPlan(hedge.cuda.plan.ChunkedLocalOperatorExecutionPlan
         return self.given.dofs_per_el() * self.given.ldis.dimensions # r,s,t
 
     def registers(self):
-        return 17
+        return 16
 
     def fetch_buffer_chunks(self):
         return 0
