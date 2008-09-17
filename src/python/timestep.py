@@ -97,6 +97,7 @@ class RK4TimeStepper(TimeStepper):
 
                 self.timer.start()
                 self.residual = mul_add(a, self.residual, dt, this_rhs)
+                del this_rhs
                 y = mul_add(1, y, b, self.residual)
                 self.timer.stop()
         else:
@@ -105,6 +106,7 @@ class RK4TimeStepper(TimeStepper):
 
                 self.timer.start()
                 self.residual = a*self.residual + dt*this_rhs
+                del this_rhs
                 y = y + b * self.residual
                 self.timer.stop()
 
