@@ -95,6 +95,9 @@ class POD(Declarator):
     def struct_format(self):
         return self.dtype.char
 
+    def default_value(self):
+        return 0
+
 class Value(Declarator):
     def __init__(self, typename, name):
         self.typename = typename
@@ -108,6 +111,9 @@ class Value(Declarator):
 
     def struct_format(self):
         raise RuntimeError, "named-type values have no struct format"
+
+    def default_value(self):
+        return 0
 
 
 
@@ -221,6 +227,8 @@ class ArrayOf(NestedDeclarator):
         else:
             return "%d%s" % (self.count, self.subdecl.struct_format())
 
+    def default_value(self):
+        return self.count*[self.subdecl.default_value()]
 
 
 
@@ -269,16 +277,26 @@ class Struct(Declarator):
         from struct import pack
         return self._maker()(pack, **kwargs)
 
+    def make_with_defaults(self, **kwargs):
+        from struct import pack
+        return self._maker(with_defaults=True)(pack, **kwargs)
+
     @memoize_method
-    def _maker(self):
+    def _maker(self, with_defaults=False):
+        def format_arg(f):
+            if with_defaults:
+                return "%s=%s" % (f.name, repr(f.default_value()))
+            else:
+                return f.name
+            
         code = "lambda pack, %s: pack(%s, %s)" % (
-                ", ".join(f.name for f in self.fields),
+                ", ".join(format_arg(f) for f in self.fields),
                 repr(self.struct_format()),
                 ", ".join(f.struct_maker_code(f.name) for f in self.fields))
         return eval(code)
 
     def struct_format(self):
-        return "".join(decl.struct_format() for decl in self.fields)
+        return "".join(f.struct_format() for f in self.fields)
 
     @memoize_method
     def __len__(self):
