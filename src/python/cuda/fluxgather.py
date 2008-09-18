@@ -40,7 +40,7 @@ def flux_header_struct():
         POD(numpy.uint16, "same_facepairs_end"),
         POD(numpy.uint16, "diff_facepairs_end"),
         POD(numpy.uint16, "bdry_facepairs_end"),
-        POD(numpy.uint16, "zero_facepairs_count"),
+        POD(numpy.uint16, "pad"),
         ])
 
 @memoize
@@ -513,17 +513,6 @@ class FluxGatherKernel:
             While("fpair_nr < data.header.bdry_facepairs_end",
                 get_flux_code(bdry_flux_writer)
                 ),
-            Line(),
-            S("__syncthreads()"),
-            Line(),
-            Comment("zero out unused faces to placate the GTX280's NaN finickiness"),
-            For("%s = BLOCK_FACE" % POD(numpy.uint16, "zero_face_nr").inline(with_semicolon=False),
-                "zero_face_nr < data.header.zero_facepairs_count",
-                "zero_face_nr += CONCURRENT_FACES",
-                Assign(
-                    "smem_fluxes_on_faces[data.zero_face_indices[zero_face_nr]+FACEDOF_NR]",
-                    "0"),
-                ),
             ])
 
         f_body.extend_log_block("store the fluxes", [
@@ -570,7 +559,6 @@ class FluxGatherKernel:
         fplan = discr.flux_plan
         headers = []
         fp_blocks = []
-        zero_face_ilists = []
 
         uint16 = numpy.dtype(numpy.uint16)
 
@@ -601,7 +589,6 @@ class FluxGatherKernel:
             same_fp_structs = []
             diff_fp_structs = []
             bdry_fp_structs = []
-            zero_faces = []
 
             while faces_todo:
                 elface = faces_todo.pop()
@@ -671,15 +658,6 @@ class FluxGatherKernel:
                             b_dest=b_dest
                             ))
 
-            for mb_index, mb in enumerate(block.microblocks):
-                for index_in_mb in range(len(mb), given.microblock.elements):
-                    for face_nr in range(ldis.face_count()):
-                        from struct import pack
-                        zero_faces.append(pack(uint16.char, 
-                                mb_index * given.aligned_face_dofs_per_microblock()
-                                + index_in_mb * given.face_dofs_per_el()
-                                + face_nr*face_dofs))
-
             headers.append(flux_header_struct().make(
                     same_facepairs_end=\
                             len(same_fp_structs),
@@ -688,13 +666,12 @@ class FluxGatherKernel:
                     bdry_facepairs_end=\
                             len(same_fp_structs)+len(diff_fp_structs)
                             +len(bdry_fp_structs),
-                    zero_facepairs_count=len(zero_faces),
+                    pad=0,
                     ))
             fp_blocks.append(
                     same_fp_structs
                     +diff_fp_structs
                     +bdry_fp_structs)
-            zero_face_ilists.append(zero_faces)
 
         from hedge.cuda.cgen import Value, POD
         from hedge.cuda.tools import make_superblocks
@@ -706,7 +683,6 @@ class FluxGatherKernel:
                     ],
                 [ 
                     (fp_blocks, Value(fp_struct.tpname, "facepairs")), 
-                    (zero_face_ilists, POD(uint16, "zero_face_indices")), 
                     ])
 
     @memoize_method
