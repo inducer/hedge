@@ -241,16 +241,6 @@ class FluxLocalKernel(object):
                         S("__syncthreads()"),
                         Line(),
                         ])
-                #result.append(If("isnan("
-                            #"tex1Dfetch(fluxes_on_faces_tex, "
-                            #"global_mb_facedof_base"
-                            #"+(chunk_start_el)*FACE_DOFS_PER_EL+%d+CHUNK_DOF))"
-                            #% (load_chunk_start),
-                    #Assign("debugbuf[MB_DOF]",
-                            #"global_mb_facedof_base"
-                            #"+(chunk_start_el)*FACE_DOFS_PER_EL+%d+CHUNK_DOF"
-                            #% (load_chunk_start)
-                            #)))
 
                 for dof in dofs[load_chunk_start:load_chunk_start+lplan.chunk_size]:
                     result.append(
@@ -268,10 +258,8 @@ class FluxLocalKernel(object):
             return [
                     POD(float_type, "fof"),
                     POD(float_type, "lm"),
-                    POD(float_type, "prev_res"),
                     ]+ list(flatten([
                     [
-                        Assign("prev_res", "result"),
                         Assign("fof",
                             "tex1Dfetch(fluxes_on_faces_tex, "
                             "global_mb_facedof_base"
@@ -284,32 +272,11 @@ class FluxLocalKernel(object):
                             ),
                         
                         S("result += fof*lm"),
-                        ]+int(bool(
-                            set(["cuda_lift", "cuda_debugbuf"]) 
-                            <= discr.debug))*[
-                            If("isnan(result)", Block([
-                            Assign("debugbuf[MB_DOF*7]",
-                                "(global_mb_dof_base+MB_DOF)"),
-                            Assign("debugbuf[MB_DOF*7+1]",
-                                "fof"),
-                            Assign("debugbuf[MB_DOF*7+2]",
-                                "lm"),
-                            Assign("debugbuf[MB_DOF*7+3]",
-                                "result"),
-                            Assign("debugbuf[MB_DOF*7+4]",
-                                "prev_res"),
-                            Assign("debugbuf[MB_DOF*7+5]",
-                                "fof*lm"),
-                            Assign("debugbuf[MB_DOF*7+6]",
-                                "result+fof*lm"),
-                            S("goto done")
-                            ]))
                         ]
                     for j in range(
                         given.dofs_per_face()*given.faces_per_el())
                     ]))+[
                     Line(),
-                    Line("done:"),
                     ]
 
         def get_mat_mul_code(el_fetch_count):
@@ -342,14 +309,6 @@ class FluxLocalKernel(object):
                             Line(),
                             ]
                             +get_mat_mul_code(fetch_count)+[
-                            #If("isnan(result)", Block([
-                                #Assign("debugbuf[MB_DOF*3]",
-                                    #"-%d" % fetch_count),
-                                #Assign("debugbuf[MB_DOF*3+1]",
-                                    #"global_mb_dof_base"),
-                                #Assign("debugbuf[MB_DOF*3+2]",
-                                    #"MB_DOF"),
-                                #])),
                             If("MB_DOF < DOFS_PER_EL*MB_EL_COUNT",
                                 Assign(
                                     "flux[global_mb_dof_base+MB_DOF]",
