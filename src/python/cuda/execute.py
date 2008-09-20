@@ -267,7 +267,16 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                     * given.dofs_per_face()
                     * given.faces_per_el()
                     * given.dofs_per_el()
-                    * len(discr.mesh.elements))
+                    * len(discr.mesh.elements)
+
+                    + given.dofs_per_face()
+                    * given.faces_per_el()
+                    * len(discr.mesh.elements)
+                    * (1 # facejac-mul
+                        + 2 * # int+ext
+                        3*len(wdflux.all_deps) # const-mul, normal-mul, add
+                        )
+                    )
         else:
             gather.prepared_call(
                     (len(discr.blocks), 1),

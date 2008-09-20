@@ -275,9 +275,7 @@ class FluxLocalKernel(object):
                         ]
                     for j in range(
                         given.dofs_per_face()*given.faces_per_el())
-                    ]))+[
-                    Line(),
-                    ]
+                    ]))+[ Line(), ]
 
         def get_mat_mul_code(el_fetch_count):
             if el_fetch_count == 1:
