@@ -24,6 +24,14 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 import pycuda.driver as cuda
 import numpy
+from pytools import Record
+
+
+
+
+class FakeGPUArray(Record):
+    def __init__(self):
+        Record.__init__(self, gpudata=0)
 
 
 
@@ -76,7 +84,6 @@ def make_blocks(devdata, data):
     blocks = ["".join(b) for b in data]
     block_size = devdata.align(max(len(b) for b in blocks))
 
-    from pytools import Record
     class BlockedDataStructure(Record): pass
 
     return BlockedDataStructure(
@@ -132,7 +139,6 @@ def make_superblocks(devdata, struct_name, single_item, multi_item):
     data = pad_and_join(superblocks, superblock_size)
     assert len(data) == superblock_size*block_count
 
-    from pytools import Record
     class SuperblockedDataStructure(Record): pass
 
     return SuperblockedDataStructure(

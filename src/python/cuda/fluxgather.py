@@ -25,8 +25,10 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 import numpy
 from pytools import memoize_method, memoize
 import pycuda.driver as cuda
+import pycuda.gpuarray as gpuarray
 import pymbolic.mapper.stringifier
 import hedge.cuda.plan
+from hedge.cuda.tools import FakeGPUArray
 
 
 
@@ -264,6 +266,61 @@ class FluxGatherKernel:
                     * given.aligned_face_dofs_per_microblock(),)
 
         self.elface_to_bdry_bitmap = elface_to_bdry_bitmap
+
+    def __call__(self, wdflux, eval_dependency):
+        discr = self.discr
+        given = discr.given
+        elgroup, = discr.element_groups
+
+        fluxes_on_faces = gpuarray.empty(
+                self.fluxes_on_faces_shape,
+                dtype=given.float_type,
+                allocator=discr.pool.allocate)
+
+        gather, texref_map = self.get_kernel(wdflux)
+
+        for dep_expr in wdflux.all_deps:
+            dep_field = eval_dependency(dep_expr)
+            assert dep_field.dtype == given.float_type
+            dep_field.bind_to_texref(texref_map[dep_expr])
+
+        if set(["cuda_flux", "cuda_debugbuf"]) <= discr.debug:
+            debugbuf = gpuarray.zeros((512,), dtype=numpy.float32)
+        else:
+            debugbuf = FakeGPUArray()
+
+        fdata = self.flux_with_temp_data(elgroup)
+        ilists = self.index_list_global_data()
+
+        if discr.instrumented:
+            kernel_time = gather.prepared_timed_call(
+                    (len(discr.blocks), 1),
+                    debugbuf.gpudata, 
+                    fluxes_on_faces.gpudata, 
+                    fdata.device_memory,
+                    ilists.device_memory,
+                    )
+                    
+            discr.inner_flux_timer.add_time(kernel_time)
+        else:
+            gather.prepared_call(
+                    (len(discr.blocks), 1),
+                    debugbuf.gpudata, 
+                    fluxes_on_faces.gpudata, 
+                    fdata.device_memory,
+                    ilists.device_memory,
+                    )
+
+        if set(["cuda_flux", "cuda_debugbuf"]) <= discr.debug:
+            copied_debugbuf = debugbuf.get()
+            print "DEBUG", len(discr.blocks)
+            numpy.set_printoptions(linewidth=100)
+            print numpy.reshape(copied_debugbuf, (32, 16))
+            #print copied_debugbuf
+            raw_input()
+
+        return fluxes_on_faces
+
 
     @memoize_method
     def get_kernel(self, wdflux):

@@ -32,13 +32,6 @@ import pymbolic.mapper.stringifier
 
 
 
-class FakeGPUArray(Record):
-    def __init__(self):
-        Record.__init__(self, gpudata=0)
-
-
-
-
 # exec mapper -----------------------------------------------------------------
 class ExecutionMapper(hedge.optemplate.Evaluator,
         hedge.optemplate.BoundOpMapperMixin, 
@@ -141,7 +134,22 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             pass
 
         discr = self.ex.discr
-        lplan = discr.diff_plan
+
+        if discr.instrumented:
+            given = discr.given
+            discr.diff_op_counter.add(discr.dimensions)
+            discr.flop_counter.add(
+                    # r,s,t diff
+                    2 # mul+add
+                    * discr.dimensions
+                    * len(discr.nodes)
+                    * given.dofs_per_el()
+
+                    # x,y,z rescale
+                    +2 # mul+add
+                    * discr.dimensions**2
+                    * len(discr.nodes)
+                    )
 
         field = self.rec(field_expr)
         xyz_diff = self.ex.diff_kernel(op, field)
@@ -174,39 +182,14 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         discr = self.ex.discr
         eg, = discr.element_groups
 
-        fdata = self.ex.fluxgather_kernel.flux_with_temp_data(eg)
-        given = discr.given
-        fplan = discr.flux_plan
-        lplan = discr.fluxlocal_plan
-
-        gather, texref_map = self.ex.fluxgather_kernel.get_kernel(wdflux)
-
-        if set(["cuda_flux", "cuda_debugbuf"]) <= discr.debug:
-            debugbuf = gpuarray.zeros((512,), dtype=numpy.float32)
-        else:
-            debugbuf = FakeGPUArray()
-
-        fluxes_on_faces = gpuarray.empty(
-                self.ex.fluxgather_kernel.fluxes_on_faces_shape,
-                dtype=given.float_type,
-                allocator=discr.pool.allocate)
 
         # gather phase --------------------------------------------------------
-        for dep_expr in wdflux.all_deps:
-            dep_field = self.rec(dep_expr)
-            assert dep_field.dtype == given.float_type
-            dep_field.bind_to_texref(texref_map[dep_expr])
+        fluxes_on_faces = self.ex.fluxgather_kernel(wdflux, self.rec)
 
+        # count flops
         if discr.instrumented:
-            kernel_time = gather.prepared_timed_call(
-                    (len(discr.blocks), 1),
-                    debugbuf.gpudata, 
-                    fluxes_on_faces.gpudata, 
-                    fdata.device_memory,
-                    self.ex.fluxgather_kernel.index_list_global_data().device_memory,
-                    )
-                    
-            discr.inner_flux_timer.add_time(kernel_time)
+            given = discr.given
+
             discr.inner_flux_counter.add()
             discr.flop_counter.add(
                     2 # mul+add
@@ -223,24 +206,11 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                         3*len(wdflux.all_deps) # const-mul, normal-mul, add
                         )
                     )
-        else:
-            gather.prepared_call(
-                    (len(discr.blocks), 1),
-                    debugbuf.gpudata, 
-                    fluxes_on_faces.gpudata, 
-                    fdata.device_memory,
-                    self.ex.fluxgather_kernel.index_list_global_data().device_memory,
-                    )
-
-        if set(["cuda_flux", "cuda_debugbuf"]) <= discr.debug:
-            copied_debugbuf = debugbuf.get()
-            print "DEBUG", len(discr.blocks)
-            numpy.set_printoptions(linewidth=100)
-            print numpy.reshape(copied_debugbuf, (32, 16))
-            #print copied_debugbuf
-            raw_input()
 
         if discr.debug & set(["cuda_lift", "cuda_flux"]):
+            given = discr.given
+            fplan = discr.flux_plan
+
             useful_size = (len(discr.blocks)
                     * given.aligned_face_dofs_per_microblock()
                     * fplan.microblocks_per_block())
@@ -268,7 +238,6 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                 raise RuntimeError("Detected used NaNs in flux gather output.")
 
             assert not have_used_nans
-            print "PRE-LIFT NAN CHECK", numpy.isnan(fof).any(), fof.shape
 
         # lift phase ----------------------------------------------------------
         flux = self.ex.fluxlocal_kernel(fluxes_on_faces, wdflux.is_lift)
@@ -284,40 +253,6 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                         copied_flux, copied_flux, copied_flux-copied_flux,
                         eventful_only=True)
             assert not contains_nans, "Resulting flux contains NaNs."
-
-        if "cuda_flux" in discr.debug and False:
-            cot = discr.test_discr.compile(wdflux.flux_optemplate)
-            ctx = {field_expr.name: 
-                    discr.volume_from_gpu(field).astype(numpy.float64)
-                    }
-            for boundary in wdflux.boundaries:
-                ctx[boundary.bfield_expr.name] = \
-                        discr.test_discr.boundary_zeros(boundary.tag)
-            true_flux = cot(**ctx)
-            
-            copied_flux = discr.volume_from_gpu(flux)
-
-            diff = copied_flux-true_flux
-
-            norm_true = la.norm(true_flux)
-
-            if False:
-                self.print_error_structure(copied_flux, true_flux, diff)
-                raw_input()
-
-            print "flux", la.norm(diff)/norm_true
-            assert la.norm(diff)/norm_true < 1e-6
-
-        if False:
-            copied_bfield = bfield.get()
-            face_len = discr.flux_plan.ldis.face_node_count()
-            aligned_face_len = discr.devdata.align_dtype(face_len, 4)
-            for elface in discr.mesh.tag_to_boundary.get('inflow', []):
-                face_stor = discr.face_storage_map[elface]
-                bdry_stor = face_stor.opposite
-                gpu_base = bdry_stor.gpu_bdry_index_in_floats
-                print gpu_base, copied_bfield[gpu_base:gpu_base+aligned_face_len]
-                raw_input()
 
         return flux
 

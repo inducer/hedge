@@ -113,19 +113,6 @@ class DiffKernel(object):
             kernel_time = func.prepared_timed_call(
                     self.grid, *args)
             discr.diff_op_timer.add_time(kernel_time)
-            discr.diff_op_counter.add(discr.dimensions)
-            discr.flop_counter.add(
-                    # r,s,t diff
-                    2 # mul+add
-                    * discr.dimensions
-                    * len(discr.nodes)
-                    * given.dofs_per_el()
-
-                    # x,y,z rescale
-                    +2 # mul+add
-                    * discr.dimensions**2
-                    * len(discr.nodes)
-                    )
         else:
             func.prepared_call(self.grid, *args)
 

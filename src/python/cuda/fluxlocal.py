@@ -28,6 +28,7 @@ import hedge.optemplate
 import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
 import pymbolic.mapper.stringifier
+from hedge.cuda.tools import FakeGPUArray
 
 
 
@@ -101,12 +102,6 @@ class FluxLocalKernel(object):
         if set(["cuda_lift", "cuda_debugbuf"]) <= discr.debug:
             debugbuf = gpuarray.zeros((1024,), dtype=numpy.float32)
         else:
-            from pytools import Record
-
-            class FakeGPUArray(Record):
-                def __init__(self):
-                    Record.__init__(self, gpudata=0)
-
             debugbuf = FakeGPUArray()
 
         if discr.instrumented:
