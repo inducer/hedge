@@ -218,6 +218,7 @@ class FluxLocalKernel(object):
                 base=("gmem_lift_mat + MB_CHUNK*LIFTMAT_CHUNK_BYTES"),
                 bytes="LIFTMAT_CHUNK_BYTES",
                 descr="load lift mat chunk")
+            +[S("__syncthreads()")]
             )
 
         # ---------------------------------------------------------------------
