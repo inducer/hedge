@@ -172,16 +172,14 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
     def map_whole_domain_flux(self, wdflux, out=None):
         discr = self.ex.discr
-
         eg, = discr.element_groups
+
         fdata = self.ex.fluxgather_kernel.flux_with_temp_data(eg)
         given = discr.given
         fplan = discr.flux_plan
         lplan = discr.fluxlocal_plan
 
         gather, texref_map = self.ex.fluxgather_kernel.get_kernel(wdflux)
-        lift, fluxes_on_faces_texref = \
-                self.ex.fluxlocal_kernel.get_kernel(wdflux.is_lift, eg)
 
         if set(["cuda_flux", "cuda_debugbuf"]) <= discr.debug:
             debugbuf = gpuarray.zeros((512,), dtype=numpy.float32)
@@ -273,39 +271,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             print "PRE-LIFT NAN CHECK", numpy.isnan(fof).any(), fof.shape
 
         # lift phase ----------------------------------------------------------
-        flux = discr.volume_empty() 
-        fluxes_on_faces.bind_to_texref(fluxes_on_faces_texref)
-
-        if set(["cuda_lift", "cuda_debugbuf"]) <= discr.debug:
-            debugbuf = gpuarray.zeros((1024,), dtype=numpy.float32)
-        else:
-            debugbuf = FakeGPUArray()
-
-        if discr.instrumented:
-            kernel_time = lift.prepared_timed_call(
-                    self.ex.fluxlocal_kernel.grid,
-                    flux.gpudata, 
-                    self.ex.fluxlocal_kernel.gpu_liftmat(wdflux.is_lift).device_memory,
-                    debugbuf.gpudata)
-            
-            discr.inner_flux_timer.add_time(kernel_time)
-            discr.inner_flux_counter.add()
-        else:
-            lift.prepared_call(
-                    self.ex.fluxlocal_kernel.grid,
-                    flux.gpudata, 
-                    self.ex.fluxlocal_kernel.gpu_liftmat(wdflux.is_lift).device_memory,
-                    debugbuf.gpudata)
-
-        if set(["cuda_lift", "cuda_debugbuf"]) <= discr.debug:
-            copied_debugbuf = debugbuf.get()[:144*7].reshape((144,7))
-            print "DEBUG"
-            numpy.set_printoptions(linewidth=100)
-            copied_debugbuf.shape = (144,7)
-            numpy.set_printoptions(threshold=3000)
-
-            print copied_debugbuf
-            raw_input()
+        flux = self.ex.fluxlocal_kernel(fluxes_on_faces, wdflux.is_lift)
 
         # verification --------------------------------------------------------
         if "cuda_lift" in discr.debug:

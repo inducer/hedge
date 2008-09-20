@@ -87,7 +87,7 @@ class DiffKernel(object):
                         fplan.dofs_per_block()*len(discr.blocks)/
                         lplan.dofs_per_macroblock()))
 
-    def __call__(self, field):
+    def __call__(self, op, field):
         discr = self.discr
         given = discr.given
         lplan = discr.diff_plan
@@ -105,13 +105,13 @@ class DiffKernel(object):
 
         #debugbuf = gpuarray.zeros((512,), dtype=numpy.float32)
         args = [subarray.gpudata for subarray in xyz_diff]+[
-                self.ex.diff_kernel.gpu_diffmats(op.__class__, elgroup).device_memory,
+                self.gpu_diffmats(op.__class__, elgroup).device_memory,
                 #debugbuf,
                 ]
 
         if discr.instrumented:
             kernel_time = func.prepared_timed_call(
-                    self.ex.diff_kernel.grid, *args)
+                    self.grid, *args)
             discr.diff_op_timer.add_time(kernel_time)
             discr.diff_op_counter.add(discr.dimensions)
             discr.flop_counter.add(
@@ -127,7 +127,7 @@ class DiffKernel(object):
                     * len(discr.nodes)
                     )
         else:
-            func.prepared_call(self.ex.diff_kernel.grid, *args)
+            func.prepared_call(self.grid, *args)
 
         if False:
             copied_debugbuf = debugbuf.get()

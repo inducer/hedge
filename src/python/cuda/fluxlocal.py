@@ -88,6 +88,55 @@ class FluxLocalKernel(object):
                     / lplan.dofs_per_macroblock())
                 )
 
+    def __call__(self, fluxes_on_faces, is_lift):
+        discr = self.discr
+        elgroup, = discr.element_groups
+
+        lift, fluxes_on_faces_texref = \
+                self.get_kernel(is_lift, elgroup)
+
+        flux = discr.volume_empty() 
+        fluxes_on_faces.bind_to_texref(fluxes_on_faces_texref)
+
+        if set(["cuda_lift", "cuda_debugbuf"]) <= discr.debug:
+            debugbuf = gpuarray.zeros((1024,), dtype=numpy.float32)
+        else:
+            from pytools import Record
+
+            class FakeGPUArray(Record):
+                def __init__(self):
+                    Record.__init__(self, gpudata=0)
+
+            debugbuf = FakeGPUArray()
+
+        if discr.instrumented:
+            kernel_time = lift.prepared_timed_call(
+                    self.grid,
+                    flux.gpudata, 
+                    self.gpu_liftmat(is_lift).device_memory,
+                    debugbuf.gpudata)
+            
+            discr.inner_flux_timer.add_time(kernel_time)
+            discr.inner_flux_counter.add()
+        else:
+            lift.prepared_call(
+                    self.grid,
+                    flux.gpudata, 
+                    self.gpu_liftmat(wdflux.is_lift).device_memory,
+                    debugbuf.gpudata)
+
+        if set(["cuda_lift", "cuda_debugbuf"]) <= discr.debug:
+            copied_debugbuf = debugbuf.get()[:144*7].reshape((144,7))
+            print "DEBUG"
+            numpy.set_printoptions(linewidth=100)
+            copied_debugbuf.shape = (144,7)
+            numpy.set_printoptions(threshold=3000)
+
+            print copied_debugbuf
+            raw_input()
+
+        return flux
+
     @memoize_method
     def get_kernel(self, is_lift, elgroup):
         from hedge.cuda.cgen import \
