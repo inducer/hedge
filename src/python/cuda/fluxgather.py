@@ -223,6 +223,10 @@ class FluxGatherPlan(hedge.cuda.plan.ExecutionPlan):
                 self.given.microblock.elements,
                 ))
 
+    def make_kernel(self, discr, elface_to_bdry_bitmap):
+        return FluxGatherKernel(discr, elface_to_bdry_bitmap)
+
+
 
 
 

@@ -41,6 +41,9 @@ class ChunkedDiffExecutionPlan(hedge.cuda.plan.ChunkedLocalOperatorExecutionPlan
     def fetch_buffer_chunks(self):
         return 0
 
+    def make_kernel(self, discr):
+        return DiffKernel(discr)
+
 
 
 
@@ -83,6 +86,57 @@ class DiffKernel(object):
                     int_ceiling(
                         fplan.dofs_per_block()*len(discr.blocks)/
                         lplan.dofs_per_macroblock()))
+
+    def __call__(self, field):
+        discr = self.discr
+        given = discr.given
+        lplan = discr.diff_plan
+
+        d = discr.dimensions
+        elgroup, = discr.element_groups
+
+        func, field_texref = self.get_kernel(op.__class__, elgroup)
+
+        assert field.dtype == given.float_type
+
+        field.bind_to_texref(field_texref)
+
+        xyz_diff = [discr.volume_empty() for axis in range(d)]
+
+        #debugbuf = gpuarray.zeros((512,), dtype=numpy.float32)
+        args = [subarray.gpudata for subarray in xyz_diff]+[
+                self.ex.diff_kernel.gpu_diffmats(op.__class__, elgroup).device_memory,
+                #debugbuf,
+                ]
+
+        if discr.instrumented:
+            kernel_time = func.prepared_timed_call(
+                    self.ex.diff_kernel.grid, *args)
+            discr.diff_op_timer.add_time(kernel_time)
+            discr.diff_op_counter.add(discr.dimensions)
+            discr.flop_counter.add(
+                    # r,s,t diff
+                    2 # mul+add
+                    * discr.dimensions
+                    * len(discr.nodes)
+                    * given.dofs_per_el()
+
+                    # x,y,z rescale
+                    +2 # mul+add
+                    * discr.dimensions**2
+                    * len(discr.nodes)
+                    )
+        else:
+            func.prepared_call(self.ex.diff_kernel.grid, *args)
+
+        if False:
+            copied_debugbuf = debugbuf.get()
+            print "DEBUG"
+            #print numpy.reshape(copied_debugbuf, (len(copied_debugbuf)//16, 16))
+            print copied_debugbuf[:100].reshape((10,10))
+            raw_input()
+
+        return xyz_diff
 
     @memoize_method
     def get_kernel(self, diff_op_cls, elgroup):

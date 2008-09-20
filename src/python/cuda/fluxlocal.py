@@ -43,6 +43,9 @@ class FluxLiftingExecutionPlan(hedge.cuda.plan.ChunkedLocalOperatorExecutionPlan
     def fetch_buffer_chunks(self):
         return 1
 
+    def make_kernel(self, discr):
+        return FluxLocalKernel(discr)
+
 
 
 def make_plan(given):

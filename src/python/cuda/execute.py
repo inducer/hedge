@@ -134,60 +134,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         print
         print "\n".join(struc_lines)
 
-    def map_chunk_diff_base(self, op, field_expr, out=None):
-        discr = self.ex.discr
-        given = discr.given
-        lplan = discr.diff_plan
-
-        d = discr.dimensions
-
-        eg, = discr.element_groups
-        func, field_texref = self.ex.diff_kernel.get_kernel(op.__class__, eg)
-
-        field = self.rec(field_expr)
-        assert field.dtype == given.float_type
-
-        field.bind_to_texref(field_texref)
-
-        xyz_diff = [discr.volume_empty() for axis in range(d)]
-
-        #debugbuf = gpuarray.zeros((512,), dtype=numpy.float32)
-        elgroup, = discr.element_groups
-        args = [subarray.gpudata for subarray in xyz_diff]+[
-                self.ex.diff_kernel.gpu_diffmats(op.__class__, eg).device_memory,
-                #debugbuf,
-                ]
-
-        if discr.instrumented:
-            kernel_time = func.prepared_timed_call(
-                    self.ex.diff_kernel.grid, *args)
-            discr.diff_op_timer.add_time(kernel_time)
-            discr.diff_op_counter.add(discr.dimensions)
-            discr.flop_counter.add(
-                    # r,s,t diff
-                    2 # mul+add
-                    * discr.dimensions
-                    * len(discr.nodes)
-                    * given.dofs_per_el()
-
-                    # x,y,z rescale
-                    +2 # mul+add
-                    * discr.dimensions**2
-                    * len(discr.nodes)
-                    )
-        else:
-            func.prepared_call(self.ex.diff_kernel.grid, *args)
-
-        if False:
-            copied_debugbuf = debugbuf.get()
-            print "DEBUG"
-            #print numpy.reshape(copied_debugbuf, (len(copied_debugbuf)//16, 16))
-            print copied_debugbuf[:100].reshape((10,10))
-            raw_input()
-
-        return xyz_diff
-
-    def map_diff_base(self, op, field_expr, out=None):
+    def map_diff_base(self, op, field_expr):
         try:
             return self.diff_xyz_cache[op.__class__, field_expr][op.xyz_axis]
         except KeyError:
@@ -196,7 +143,8 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         discr = self.ex.discr
         lplan = discr.diff_plan
 
-        xyz_diff = self.map_chunk_diff_base(op, field_expr, out)
+        field = self.rec(field_expr)
+        xyz_diff = self.ex.diff_kernel(op, field)
         
         if "cuda_diff" in discr.debug:
             field = self.rec(field_expr)
@@ -414,11 +362,6 @@ class OpTemplateWithEnvironment(object):
     def __init__(self, discr, optemplate):
         self.discr = discr
 
-        # instantiate kernels
-        from hedge.cuda.diff import DiffKernel
-        from hedge.cuda.fluxgather import FluxGatherKernel
-        from hedge.cuda.fluxlocal import FluxLocalKernel
-
         # compile the optemplate
         from hedge.optemplate import OperatorBinder, InverseMassContractor, \
                 FluxDecomposer, BCToFluxRewriter
@@ -439,9 +382,9 @@ class OpTemplateWithEnvironment(object):
                         elface_to_bdry_bitmap.get(elface, 0) | bdry_bit)
 
         # build the kernels 
-        self.diff_kernel = DiffKernel(discr)
-        self.fluxlocal_kernel = FluxLocalKernel(discr)
-        self.fluxgather_kernel = FluxGatherKernel(discr, elface_to_bdry_bitmap)
+        self.diff_kernel = self.discr.diff_plan.make_kernel(discr)
+        self.fluxlocal_kernel = self.discr.fluxlocal_plan.make_kernel(discr)
+        self.fluxgather_kernel = self.discr.flux_plan.make_kernel(discr, elface_to_bdry_bitmap)
 
         # compile the optemplate
         optemplate = (
