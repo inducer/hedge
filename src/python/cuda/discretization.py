@@ -260,13 +260,6 @@ class Discretization(hedge.discretization.Discretization):
         # partition mesh, obtain updated plan
         self.flux_plan, self.partition = self._partition_mesh(mesh, flux_plan)
         del flux_plan
-        import hedge.cuda.diff as diff
-        import hedge.cuda.fluxlocal as fluxlocal
-        self.diff_plan = diff.make_plan(self.given)
-        self.fluxlocal_plan = fluxlocal.make_plan(self.given)
-        print "actual flux exec plan:", self.flux_plan
-        print "actual diff op exec plan:", self.diff_plan
-        print "actual flux local exec plan:", self.fluxlocal_plan
 
         # initialize superclass
         hedge.discretization.Discretization.__init__(self, mesh, ldis, debug=debug,
@@ -283,6 +276,15 @@ class Discretization(hedge.discretization.Discretization):
         # build our own data structures
         self.blocks = self._build_blocks()
         self.face_storage_map = self._build_face_storage_map()
+
+        # plan local operations
+        import hedge.cuda.diff as diff
+        import hedge.cuda.fluxlocal as fluxlocal
+        self.diff_plan = diff.make_plan(self, self.given)
+        self.fluxlocal_plan = fluxlocal.make_plan(self.given)
+        print "actual flux exec plan:", self.flux_plan
+        print "actual diff op exec plan:", self.diff_plan
+        print "actual flux local exec plan:", self.fluxlocal_plan
 
         # make a reference discretization
         if "cuda_compare" in self.debug:

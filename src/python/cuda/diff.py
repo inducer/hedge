@@ -25,6 +25,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 import numpy
 from pytools import memoize_method, memoize
 import pycuda.driver as cuda
+import pycuda.gpuarray as gpuarray
 import hedge.cuda.plan
 
 
@@ -42,13 +43,13 @@ class ChunkedDiffExecutionPlan(hedge.cuda.plan.ChunkedLocalOperatorExecutionPlan
         return 0
 
     def make_kernel(self, discr):
-        return DiffKernel(discr)
+        return DiffKernel(discr, self)
 
 
 
 
 
-def make_plan(given):
+def make_plan(discr, given):
     def generate_plans():
         from hedge.cuda.tools import int_ceiling
 
@@ -64,10 +65,16 @@ def make_plan(given):
             for chunk_size in chunk_sizes:
                 yield ChunkedDiffExecutionPlan(given, localop_par, chunk_size)
 
+    def target_func(plan):
+        knl = plan.make_kernel(discr)
+        result = - knl.benchmark()
+        return result
+
     from hedge.cuda.plan import optimize_plan
     return optimize_plan(
             generate_plans,
-            lambda plan: plan.parallelism.total()
+            target_func
+            #lambda plan: plan.parallelism.total()
             )
 
 
@@ -75,46 +82,89 @@ def make_plan(given):
 
 # kernel ----------------------------------------------------------------------
 class DiffKernel(object):
-    def __init__(self, discr):
+    def __init__(self, discr, diff_plan):
         self.discr = discr
+        self.diff_plan = diff_plan
 
         from hedge.cuda.tools import int_ceiling
         fplan = discr.flux_plan
-        lplan = discr.diff_plan
+        lplan = diff_plan
 
         self.grid = (lplan.chunks_per_microblock(), 
                     int_ceiling(
                         fplan.dofs_per_block()*len(discr.blocks)/
                         lplan.dofs_per_macroblock()))
 
-    def __call__(self, op, field):
+    def benchmark(self):
         discr = self.discr
         given = discr.given
-        lplan = discr.diff_plan
+        lplan = self.diff_plan
+        elgroup, = discr.element_groups
+
+        from hedge.optemplate import DifferentiationOperator as op_class
+        func, field_texref = self.get_kernel(op_class, elgroup)
+
+        def vol_empty():
+            from hedge.cuda.tools import int_ceiling
+            dofs = int_ceiling(
+                    discr.flux_plan.dofs_per_block() * len(discr.blocks),     
+                    lplan.dofs_per_macroblock())
+
+            return gpuarray.empty((dofs,), dtype=given.float_type,
+                    allocator=discr.pool.allocate)
+
+        field = vol_empty()
+        field.fill(0)
+
+        field.bind_to_texref(field_texref)
+        xyz_diff = [vol_empty() for axis in range(discr.dimensions)]
+        xyz_diff_gpudata = [subarray.gpudata for subarray in xyz_diff] 
+
+        count = 20
+
+        gpu_diffmats = self.gpu_diffmats(op_class, elgroup)
+
+        start = cuda.Event()
+        start.record()
+        cuda.Context.synchronize()
+        for i in range(count):
+            func.prepared_call(self.grid, gpu_diffmats.device_memory,
+                    *xyz_diff_gpudata)
+        stop = cuda.Event()
+        stop.record()
+        stop.synchronize()
+
+        return 1e-3/count * stop.time_since(start)
+
+    def __call__(self, op_class, field):
+        discr = self.discr
+        given = discr.given
+        lplan = self.diff_plan
 
         d = discr.dimensions
         elgroup, = discr.element_groups
 
-        func, field_texref = self.get_kernel(op.__class__, elgroup)
+        func, field_texref = self.get_kernel(op_class, elgroup)
 
         assert field.dtype == given.float_type
 
         field.bind_to_texref(field_texref)
 
         xyz_diff = [discr.volume_empty() for axis in range(d)]
+        xyz_diff_gpudata = [subarray.gpudata for subarray in xyz_diff] 
 
-        #debugbuf = gpuarray.zeros((512,), dtype=numpy.float32)
-        args = [subarray.gpudata for subarray in xyz_diff]+[
-                self.gpu_diffmats(op.__class__, elgroup).device_memory,
-                #debugbuf,
-                ]
+        args = [subarray.gpudata for subarray in xyz_diff]
+
+        gpu_diffmats = self.gpu_diffmats(op_class, elgroup)
 
         if discr.instrumented:
             kernel_time = func.prepared_timed_call(
-                    self.grid, *args)
+                    self.grid, gpu_diffmats.device_memory, 
+                    *xyz_diff_gpudata)
             discr.diff_op_timer.add_time(kernel_time)
         else:
-            func.prepared_call(self.grid, *args)
+            func.prepared_call(self.grid, gpu_diffmats.device_memory, 
+                    *xyz_diff_gpudata)
 
         if False:
             copied_debugbuf = debugbuf.get()
@@ -140,7 +190,7 @@ class DiffKernel(object):
         dims = range(d)
         given = discr.given
         fplan = discr.flux_plan
-        lplan = discr.diff_plan
+        lplan = self.diff_plan
 
         diffmat_data = self.gpu_diffmats(diff_op_cls, elgroup)
         elgroup, = discr.element_groups
@@ -148,11 +198,9 @@ class DiffKernel(object):
         float_type = given.float_type
 
         f_decl = CudaGlobal(FunctionDeclaration(Value("void", "apply_diff_mat"), 
-            [Pointer(POD(float_type, "dxyz%d" % i)) for i in dims]
-            + [
-                Pointer(POD(numpy.uint8, "gmem_diff_rst_mat")),
-                #Pointer(POD(float_type, "debugbuf")),
-                ]
+            [Pointer(POD(numpy.uint8, "gmem_diff_rst_mat")),
+                #Pointer(POD(float_type, "debugbuf")), 
+                ] + [Pointer(POD(float_type, "dxyz%d" % i)) for i in dims]
             ))
 
         rst_channels = discr.devdata.make_valid_tex_channel_count(d)
@@ -320,7 +368,7 @@ class DiffKernel(object):
     def gpu_diffmats(self, diff_op_cls, elgroup):
         discr = self.discr
         given = discr.given
-        lplan = discr.diff_plan
+        lplan = self.diff_plan
 
         columns = given.dofs_per_el()*discr.dimensions
         additional_columns = 0

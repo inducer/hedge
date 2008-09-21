@@ -152,7 +152,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                     )
 
         field = self.rec(field_expr)
-        xyz_diff = self.ex.diff_kernel(op, field)
+        xyz_diff = self.ex.diff_kernel(op.__class__, field)
         
         if "cuda_diff" in discr.debug:
             field = self.rec(field_expr)
