@@ -69,7 +69,8 @@ def make_plan(discr, given):
         return - plan.make_kernel(discr).benchmark()
 
     from hedge.cuda.plan import optimize_plan
-    return optimize_plan(generate_plans, target_func)
+    return optimize_plan(generate_plans, target_func,
+            desirable_occupancy=0.8)
 
 
 

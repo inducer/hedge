@@ -35,6 +35,12 @@ from hedge.cuda.tools import FakeGPUArray
 
 # plan ------------------------------------------------------------------------
 class FluxLiftingExecutionPlan(hedge.cuda.plan.ChunkedLocalOperatorExecutionPlan):
+    def __init__(self, given, parallelism, chunk_size, use_span_branch):
+        hedge.cuda.plan.ChunkedLocalOperatorExecutionPlan.__init__(
+                self, given, parallelism, chunk_size)
+
+        self.use_span_branch = use_span_branch
+
     def columns(self):
         return self.given.face_dofs_per_el()
 
@@ -44,6 +50,11 @@ class FluxLiftingExecutionPlan(hedge.cuda.plan.ChunkedLocalOperatorExecutionPlan
     def fetch_buffer_chunks(self):
         return 1
 
+    def __str__(self):
+        return "%s span_branch=%s" % (
+                hedge.cuda.plan.ChunkedLocalOperatorExecutionPlan.__str__(self),
+                self.use_span_branch)
+
     def make_kernel(self, discr):
         return FluxLocalKernel(discr, self)
 
@@ -51,27 +62,29 @@ class FluxLiftingExecutionPlan(hedge.cuda.plan.ChunkedLocalOperatorExecutionPlan
 
 def make_plan(discr, given):
     def generate_plans():
-        from hedge.cuda.tools import int_ceiling
-
-        chunk_sizes = range(given.microblock.align_size, 
-                given.microblock.elements*given.dofs_per_el()+1, 
-                given.microblock.align_size)
-
-        from hedge.cuda.plan import Parallelism
-
-        for pe in range(1,32):
+        for use_span_branch in [True, False]:
             from hedge.cuda.tools import int_ceiling
-            localop_par = Parallelism(pe, 256//pe)
-            for chunk_size in chunk_sizes:
-                yield FluxLiftingExecutionPlan(given, localop_par, chunk_size)
+
+            chunk_sizes = range(given.microblock.align_size, 
+                    given.microblock.elements*given.dofs_per_el()+1, 
+                    given.microblock.align_size)
+
+            from hedge.cuda.plan import Parallelism
+
+            for pe in range(1,32):
+                from hedge.cuda.tools import int_ceiling
+                localop_par = Parallelism(pe, 256//pe)
+                for chunk_size in chunk_sizes:
+                    yield FluxLiftingExecutionPlan(given, 
+                            localop_par, chunk_size,
+                            use_span_branch)
 
     def target_func(plan):
-        result = - plan.make_kernel(discr).benchmark()
-        print "ZZ", plan, result
-        return result
+        return - plan.make_kernel(discr).benchmark()
 
     from hedge.cuda.plan import optimize_plan
-    return optimize_plan(generate_plans, target_func)
+    return optimize_plan(generate_plans, target_func,
+            desirable_occupancy=0.8)
 
 
 
@@ -287,20 +300,22 @@ class FluxLocalKernel(object):
         S = Statement
         f_body = Block()
             
-        f_body.extend_log_block("calculate responsibility data", [
+        f_body.extend_log_block("calculate this dof's element", [
             Initializer(POD(numpy.uint8, "dof_el"),
                 "MB_DOF/DOFS_PER_EL"),
-            Line(),
+            Line(),])
 
-            If("THREAD_NUM==0",
-                Block([
-                    Assign("chunk_start_el", "chunk_start_el_lookup[MB_CHUNK]"),
-                    Assign("chunk_stop_el", "chunk_stop_el_lookup[MB_CHUNK]"),
-                    Assign("chunk_el_count", "chunk_stop_el-chunk_start_el")
-                    ])
-                ),
-            S("__syncthreads()")
-            ])
+        if self.plan.use_span_branch:
+            f_body.extend_log_block("calculate chunk responsibility data", [
+                If("THREAD_NUM==0",
+                    Block([
+                        Assign("chunk_start_el", "chunk_start_el_lookup[MB_CHUNK]"),
+                        Assign("chunk_stop_el", "chunk_stop_el_lookup[MB_CHUNK]"),
+                        Assign("chunk_el_count", "chunk_stop_el-chunk_start_el")
+                        ])
+                    ),
+                S("__syncthreads()")
+                ])
 
         from hedge.cuda.tools import get_load_code
         f_body.extend(
@@ -374,42 +389,47 @@ class FluxLocalKernel(object):
             else:
                 return get_direct_tex_mat_mul_code()
 
+        def lift_outer_loop(fetch_count):
+            return For("unsigned short seq_mb_number = 0",
+                "seq_mb_number < SEQ_MB_COUNT",
+                "++seq_mb_number",
+                Block([
+                    Initializer(POD(numpy.uint32, "global_mb_nr"),
+                        "GLOBAL_MB_NR_BASE + seq_mb_number*PAR_MB_COUNT + PAR_MB_NR"),
+                    Initializer(POD(numpy.uint32, "global_mb_dof_base"),
+                        "global_mb_nr*MB_DOF_COUNT"),
+                    Initializer(POD(numpy.uint32, "global_mb_facedof_base"),
+                        "global_mb_nr*MB_FACEDOF_COUNT"),
+                    Line(),
+                    Initializer(POD(float_type, "result"), 0),
+                    Line(),
+                    ]
+                    +get_mat_mul_code(fetch_count)+[
+                    If("MB_DOF < DOFS_PER_EL*MB_EL_COUNT",
+                        Assign(
+                            "flux[global_mb_dof_base+MB_DOF]",
+                            "result*%s" % inv_jac_multiplier
+                            )
+                        )
+                    ])
+                )
+
         if is_lift:
             inv_jac_multiplier = ("tex1Dfetch(inverse_jacobians_tex,"
                     "global_mb_nr*MB_EL_COUNT+dof_el)")
         else:
             inv_jac_multiplier = "1"
 
-        from hedge.cuda.cgen import make_multiple_ifs
-        f_body.append(make_multiple_ifs([
-                ("chunk_el_count == %d" % fetch_count,
-                    For("unsigned short seq_mb_number = 0",
-                        "seq_mb_number < SEQ_MB_COUNT",
-                        "++seq_mb_number",
-                        Block([
-                            Initializer(POD(numpy.uint32, "global_mb_nr"),
-                                "GLOBAL_MB_NR_BASE + seq_mb_number*PAR_MB_COUNT + PAR_MB_NR"),
-                            Initializer(POD(numpy.uint32, "global_mb_dof_base"),
-                                "global_mb_nr*MB_DOF_COUNT"),
-                            Initializer(POD(numpy.uint32, "global_mb_facedof_base"),
-                                "global_mb_nr*MB_FACEDOF_COUNT"),
-                            Line(),
-                            Initializer(POD(float_type, "result"), 0),
-                            Line(),
-                            ]
-                            +get_mat_mul_code(fetch_count)+[
-                            If("MB_DOF < DOFS_PER_EL*MB_EL_COUNT",
-                                Assign(
-                                    "flux[global_mb_dof_base+MB_DOF]",
-                                    "result*%s" % inv_jac_multiplier
-                                    )
-                                )
-                            ])
-                        )
-                    )
-                for fetch_count in 
-                range(1, self.plan.max_elements_touched_by_chunk()+1)]
-                ))
+        if self.plan.use_span_branch:
+            from hedge.cuda.cgen import make_multiple_ifs
+            f_body.append(make_multiple_ifs([
+                    ("chunk_el_count == %d" % fetch_count,
+                        lift_outer_loop(fetch_count))
+                    for fetch_count in 
+                    range(1, self.plan.max_elements_touched_by_chunk()+1)]
+                    ))
+        else:
+            f_body.append(lift_outer_loop(0))
 
         # finish off ----------------------------------------------------------
         cmod.append(FunctionBody(f_decl, f_body))

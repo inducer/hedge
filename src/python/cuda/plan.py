@@ -42,7 +42,7 @@ class Parallelism:
 
 
 
-def optimize_plan(plan_generator, max_func):
+def optimize_plan(plan_generator, max_func, desirable_occupancy=1):
     plans = list(p for p in plan_generator()
             if p.invalid_reason() is None)
 
@@ -50,9 +50,8 @@ def optimize_plan(plan_generator, max_func):
         raise RuntimeError, "no valid CUDA execution plans found"
 
     desired_occup = max(plan.occupancy_record().occupancy for plan in plans)
-    #if desired_occup > 0.75:
-        # see http://forums.nvidia.com/lofiversion/index.php?t67766.html
-        #desired_occup = 0.75
+    if desired_occup > desirable_occupancy:
+        desired_occup = desirable_occupancy
 
     from pytools import argmax2
     return argmax2((p, max_func(p)) 
