@@ -35,11 +35,11 @@ from hedge.cuda.tools import FakeGPUArray
 
 # plan ------------------------------------------------------------------------
 class FluxLiftingExecutionPlan(hedge.cuda.plan.ChunkedLocalOperatorExecutionPlan):
-    def __init__(self, given, parallelism, chunk_size, use_span_branch):
+    def __init__(self, given, parallelism, chunk_size, use_prefetch_branch):
         hedge.cuda.plan.ChunkedLocalOperatorExecutionPlan.__init__(
                 self, given, parallelism, chunk_size)
 
-        self.use_span_branch = use_span_branch
+        self.use_prefetch_branch = use_prefetch_branch
 
     def columns(self):
         return self.given.face_dofs_per_el()
@@ -53,7 +53,7 @@ class FluxLiftingExecutionPlan(hedge.cuda.plan.ChunkedLocalOperatorExecutionPlan
     def __str__(self):
         return "%s span_branch=%s" % (
                 hedge.cuda.plan.ChunkedLocalOperatorExecutionPlan.__str__(self),
-                self.use_span_branch)
+                self.use_prefetch_branch)
 
     def make_kernel(self, discr):
         return FluxLocalKernel(discr, self)
@@ -62,7 +62,7 @@ class FluxLiftingExecutionPlan(hedge.cuda.plan.ChunkedLocalOperatorExecutionPlan
 
 def make_plan(discr, given):
     def generate_plans():
-        for use_span_branch in [True, False]:
+        for use_prefetch_branch in [True, False]:
             from hedge.cuda.tools import int_ceiling
 
             chunk_sizes = range(given.microblock.align_size, 
@@ -77,7 +77,7 @@ def make_plan(discr, given):
                 for chunk_size in chunk_sizes:
                     yield FluxLiftingExecutionPlan(given, 
                             localop_par, chunk_size,
-                            use_span_branch)
+                            use_prefetch_branch)
 
     def target_func(plan):
         return - plan.make_kernel(discr).benchmark()
@@ -305,7 +305,7 @@ class FluxLocalKernel(object):
                 "MB_DOF/DOFS_PER_EL"),
             Line(),])
 
-        if self.plan.use_span_branch:
+        if self.plan.use_prefetch_branch:
             f_body.extend_log_block("calculate chunk responsibility data", [
                 If("THREAD_NUM==0",
                     Block([
@@ -420,7 +420,7 @@ class FluxLocalKernel(object):
         else:
             inv_jac_multiplier = "1"
 
-        if self.plan.use_span_branch:
+        if self.plan.use_prefetch_branch:
             from hedge.cuda.cgen import make_multiple_ifs
             f_body.append(make_multiple_ifs([
                     ("chunk_el_count == %d" % fetch_count,
