@@ -316,8 +316,6 @@ class GenerableStruct(Struct):
             self.format = format
             self.bytes = bytes
 
-        print self.tpname, self.pad_bytes, self.bytes
-
     def make(self, **kwargs):
         from struct import pack
         return self._maker()(pack, **kwargs)

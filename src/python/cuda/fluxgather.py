@@ -207,7 +207,6 @@ class FluxGatherPlan(hedge.cuda.plan.ExecutionPlan):
                 * self.microblocks_per_block()
                 * self.given.float_size()
                 + len(face_pair_struct(self.given.float_type, d))*self.face_pair_count()
-                + index_lists_entry_size*20*self.given.dofs_per_face()
                 )
 
     def threads(self):
@@ -283,7 +282,6 @@ class FluxGatherKernel:
             debugbuf = FakeGPUArray()
 
         fdata = self.flux_with_temp_data(elgroup)
-        ilists = self.index_list_global_data()
 
         if discr.instrumented:
             kernel_time = gather.prepared_timed_call(
@@ -291,7 +289,6 @@ class FluxGatherKernel:
                     debugbuf.gpudata, 
                     fluxes_on_faces.gpudata, 
                     fdata.device_memory,
-                    ilists.device_memory,
                     )
                     
             discr.inner_flux_timer.add_time(kernel_time)
@@ -301,7 +298,6 @@ class FluxGatherKernel:
                     debugbuf.gpudata, 
                     fluxes_on_faces.gpudata, 
                     fdata.device_memory,
-                    ilists.device_memory,
                     )
 
         if set(["cuda_flux", "cuda_debugbuf"]) <= discr.debug:
@@ -340,9 +336,7 @@ class FluxGatherKernel:
             [
                 Pointer(POD(float_type, "debugbuf")),
                 Pointer(POD(float_type, "gmem_fluxes_on_faces")),
-                #Pointer(POD(float_type, "flux")),
                 Pointer(POD(numpy.uint8, "gmem_data")),
-                Pointer(POD(numpy.uint8, "gmem_index_lists")),
                 ]
             ))
 
@@ -379,11 +373,11 @@ class FluxGatherKernel:
                 Line(),
                 ] + self.index_list_global_data().code + [
                 Line(),
+                Value("texture<index_list_entry_t, 1, cudaReadModeElementType>", 
+                    "tex_index_lists"),
+                Line(),
                 flux_with_temp_data.struct,
                 Line(),
-                CudaShared(
-                    ArrayOf(Value("index_list_entry_t", "smem_index_lists"),
-                        "INDEX_LISTS_LENGTH")),
                 CudaShared(Value("flux_data", "data")),
                 CudaShared(ArrayOf(POD(float_type, "smem_fluxes_on_faces"),
                     "ALIGNED_FACE_DOFS_PER_MB*BLOCK_MB_COUNT"
@@ -395,12 +389,6 @@ class FluxGatherKernel:
         f_body = Block()
             
         from hedge.cuda.tools import get_load_code
-        f_body.extend(get_load_code(
-            dest="smem_index_lists",
-            base="gmem_index_lists",
-            bytes="sizeof(index_list_entry_t)*INDEX_LISTS_LENGTH",
-            descr="load index list data")
-            )
 
         f_body.extend(get_load_code(
             dest="&data",
@@ -505,12 +493,10 @@ class FluxGatherKernel:
 
             if is_twosided:
                 flux_write_code.extend([
-                    Initializer(Pointer(Value(
-                        "index_list_entry_t", "b_write_ilist")),
-                        "smem_index_lists + fpair->b_write_ilist_index"
-                        ),
                     Assign(
-                        "smem_fluxes_on_faces[fpair->b_dest+b_write_ilist[FACEDOF_NR]]",
+                        "smem_fluxes_on_faces["
+                        "fpair->b_dest+tex1Dfetch(tex_index_lists, "
+                        "fpair->b_write_ilist_index + FACEDOF_NR)]",
                         "fpair->face_jacobian*b_flux")
                     ])
 
@@ -525,20 +511,14 @@ class FluxGatherKernel:
                 Initializer(Pointer(
                     Value("face_pair", "fpair")),
                     "data.facepairs+fpair_nr"),
-                Initializer(Pointer(Value(
-                    "index_list_entry_t", "a_ilist")),
-                    "smem_index_lists + fpair->a_ilist_index"
-                    ),
-                Initializer(Pointer(Value(
-                    "index_list_entry_t", "b_ilist")),
-                    "smem_index_lists + fpair->b_ilist_index"
-                    ),
                 Initializer(
                     MaybeUnused(POD(numpy.uint32, "a_index")),
-                    "fpair->a_base + a_ilist[FACEDOF_NR]"),
+                    "fpair->a_base + tex1Dfetch(tex_index_lists, "
+                    "fpair->a_ilist_index + FACEDOF_NR)"),
                 Initializer(
                     MaybeUnused(POD(numpy.uint32, "b_index")),
-                    "fpair->b_base + b_ilist[FACEDOF_NR]"),
+                    "fpair->b_base + tex1Dfetch(tex_index_lists, "
+                    "fpair->b_ilist_index + FACEDOF_NR)"),
                 Line(),
                 flux_writer(),
                 Line(),
@@ -597,12 +577,23 @@ class FluxGatherKernel:
                     "%s_tex" % wdflux.short_name(dep_expr)))
                 for dep_expr in wdflux.all_deps)
 
+        from pycuda.tools import dtype_to_array_format
+        ilist_gdata = self.index_list_global_data()
+        index_list_texref = mod.get_texref("tex_index_lists")
+        index_list_texref.set_address(
+                ilist_gdata.device_memory,
+                ilist_gdata.bytes)
+        index_list_texref.set_format(
+                dtype_to_array_format(ilist_gdata.type), 1)
+        index_list_texref.set_flags(cuda.TRSF_READ_AS_INTEGER)
+
         func = mod.get_function("apply_flux")
         func.prepare(
-                "PPPP",
+                "PPP",
                 block=(given.dofs_per_face(), 
                     fplan.parallel_faces, 1),
-                texrefs=expr_to_texture_map.values())
+                texrefs=expr_to_texture_map.values()
+                + [index_list_texref])
 
         return func, expr_to_texture_map
 
@@ -762,9 +753,11 @@ class FluxGatherKernel:
         class GPUIndexLists(Record): pass
 
         return GPUIndexLists(
+                type=tp,
                 code=[
                     Define("INDEX_LISTS_LENGTH", len(flat_ilists)),
                     Typedef(POD(tp, "index_list_entry_t")),
                     ],
-                device_memory=cuda.to_device(flat_ilists)
+                device_memory=cuda.to_device(flat_ilists),
+                bytes=flat_ilists.size*flat_ilists.itemsize,
                 )
