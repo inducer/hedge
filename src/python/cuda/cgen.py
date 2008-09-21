@@ -254,11 +254,11 @@ class FunctionDeclaration(NestedDeclarator):
 
 
 class Struct(Declarator):
-    def __init__(self, tpname, fields, declname=None, debug=False):
+    def __init__(self, tpname, fields, declname=None, pad_bytes=0):
         self.tpname = tpname
         self.fields = fields
         self.declname = declname
-        self.debug = debug
+        self.pad_bytes = pad_bytes
 
     def get_decl_pair(self):
         def get_tp():
@@ -270,9 +270,54 @@ class Struct(Declarator):
             for f in self.fields:
                 for f_line in f.generate():
                     yield "  " + f_line
+            if self.pad_bytes:
+                yield "  unsigned char pad[%d];" % self.pad_bytes
             yield "}"
         return get_tp(), self.declname
-        
+
+
+
+
+class GenerableStruct(Struct):
+    def __init__(self, tpname, fields, declname=None,
+            align_bytes=1, aligned_prime_to=[]):
+        """Initialize a structure declarator.
+
+        @arg align_bytes: The resulting structure will be padded
+          to a multiple of C{align_bytes}.
+        @arg aligned_prime_to: If the resulting structure's size
+          is C{s}, then C{s//align_bytes} will be made prime to all
+          numbers in C{aligned_prime_to}.
+        """
+        self.tpname = tpname
+        self.fields = fields
+        self.declname = declname
+
+        format = "".join(f.struct_format() for f in self.fields)
+        from struct import calcsize
+        bytes = calcsize(format)
+        padded_bytes = ((bytes + align_bytes - 1) // align_bytes) * align_bytes
+
+        def satisfies_primality(n):
+            from pymbolic.algorithm import gcd
+            for p in aligned_prime_to:
+                if gcd(n, p) != 1:
+                    return False
+            return True
+
+        while not satisfies_primality(padded_bytes // align_bytes):
+            padded_bytes += align_bytes
+
+        Struct.__init__(self, tpname, fields, declname, padded_bytes - bytes)
+        if self.pad_bytes:
+            self.format = "%s%dx" % (format, self.pad_bytes)
+            self.bytes = padded_bytes
+        else:
+            self.format = format
+            self.bytes = bytes
+
+        print self.tpname, self.pad_bytes, self.bytes
+
     def make(self, **kwargs):
         from struct import pack
         return self._maker()(pack, **kwargs)
@@ -296,12 +341,10 @@ class Struct(Declarator):
         return eval(code)
 
     def struct_format(self):
-        return "".join(f.struct_format() for f in self.fields)
+        return self.format
 
-    @memoize_method
     def __len__(self):
-        from struct import calcsize
-        return calcsize(self.struct_format())
+        return self.bytes
 
 
 

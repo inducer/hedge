@@ -36,19 +36,18 @@ from hedge.cuda.tools import FakeGPUArray
 # structures ------------------------------------------------------------------
 @memoize
 def flux_header_struct():
-    from hedge.cuda.cgen import Struct, POD
+    from hedge.cuda.cgen import GenerableStruct, POD
 
-    return Struct("flux_header", [
+    return GenerableStruct("flux_header", [
         POD(numpy.uint16, "same_facepairs_end"),
         POD(numpy.uint16, "diff_facepairs_end"),
         POD(numpy.uint16, "bdry_facepairs_end"),
-        POD(numpy.uint16, "pad"),
-        ])
+        ], align_bytes=4)
 
 @memoize
 def face_pair_struct(float_type, dims):
-    from hedge.cuda.cgen import Struct, POD, ArrayOf
-    return Struct("face_pair", [
+    from hedge.cuda.cgen import GenerableStruct, POD, ArrayOf
+    return GenerableStruct("face_pair", [
         POD(float_type, "h", ),
         POD(float_type, "order"),
         POD(float_type, "face_jacobian"),
@@ -64,7 +63,7 @@ def face_pair_struct(float_type, dims):
         POD(numpy.uint8, "pad"), 
         POD(numpy.uint16, "a_dest"), 
         POD(numpy.uint16, "b_dest"), 
-        ])
+        ], align_bytes=4, aligned_prime_to=[2])
 
 
 
@@ -721,7 +720,6 @@ class FluxGatherKernel:
                     bdry_facepairs_end=\
                             len(same_fp_structs)+len(diff_fp_structs)
                             +len(bdry_fp_structs),
-                    pad=0,
                     ))
             fp_blocks.append(
                     same_fp_structs
