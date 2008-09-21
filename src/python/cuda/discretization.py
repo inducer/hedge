@@ -281,7 +281,7 @@ class Discretization(hedge.discretization.Discretization):
         import hedge.cuda.diff as diff
         import hedge.cuda.fluxlocal as fluxlocal
         self.diff_plan = diff.make_plan(self, self.given)
-        self.fluxlocal_plan = fluxlocal.make_plan(self.given)
+        self.fluxlocal_plan = fluxlocal.make_plan(self, self.given)
         print "actual flux exec plan:", self.flux_plan
         print "actual diff op exec plan:", self.diff_plan
         print "actual flux local exec plan:", self.fluxlocal_plan

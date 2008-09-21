@@ -225,8 +225,13 @@ class FluxGatherPlan(hedge.cuda.plan.ExecutionPlan):
                 self.given.microblock.elements,
                 ))
 
+    def fluxes_on_faces_shape(self, block_count):
+        return (block_count
+                * self.microblocks_per_block()
+                * self.given.aligned_face_dofs_per_microblock(),)
+
     def make_kernel(self, discr, elface_to_bdry_bitmap):
-        return FluxGatherKernel(discr, elface_to_bdry_bitmap)
+        return FluxGatherKernel(discr, self, elface_to_bdry_bitmap)
 
 
 
@@ -251,20 +256,9 @@ def make_plan(given):
 
 # flux gather kernel ----------------------------------------------------------
 class FluxGatherKernel:
-    def __init__(self, discr, elface_to_bdry_bitmap):
+    def __init__(self, discr, plan, elface_to_bdry_bitmap):
         self.discr = discr
-
-        from hedge.cuda.tools import int_ceiling
-        given = discr.given
-        fplan = discr.flux_plan
-
-        # fluxes_on_faces is accessed via texture lookup, which tolerates
-        # out-of-bounds access
-        self.fluxes_on_faces_shape = (
-                    len(discr.blocks)
-                    * fplan.microblocks_per_block()
-                    * given.aligned_face_dofs_per_microblock(),)
-
+        self.plan = plan
         self.elface_to_bdry_bitmap = elface_to_bdry_bitmap
 
     def __call__(self, wdflux, eval_dependency):
@@ -273,7 +267,7 @@ class FluxGatherKernel:
         elgroup, = discr.element_groups
 
         fluxes_on_faces = gpuarray.empty(
-                self.fluxes_on_faces_shape,
+                self.plan.fluxes_on_faces_shape(len(discr.blocks)),
                 dtype=given.float_type,
                 allocator=discr.pool.allocate)
 
@@ -334,7 +328,7 @@ class FluxGatherKernel:
                 
         discr = self.discr
         given = discr.given
-        fplan = discr.flux_plan
+        fplan = self.plan
         d = discr.dimensions
         dims = range(d)
 

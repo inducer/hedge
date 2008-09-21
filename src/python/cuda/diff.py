@@ -66,39 +66,31 @@ def make_plan(discr, given):
                 yield ChunkedDiffExecutionPlan(given, localop_par, chunk_size)
 
     def target_func(plan):
-        knl = plan.make_kernel(discr)
-        result = - knl.benchmark()
-        return result
+        return - plan.make_kernel(discr).benchmark()
 
     from hedge.cuda.plan import optimize_plan
-    return optimize_plan(
-            generate_plans,
-            target_func
-            #lambda plan: plan.parallelism.total()
-            )
+    return optimize_plan(generate_plans, target_func)
 
 
 
 
 # kernel ----------------------------------------------------------------------
 class DiffKernel(object):
-    def __init__(self, discr, diff_plan):
+    def __init__(self, discr, plan):
         self.discr = discr
-        self.diff_plan = diff_plan
+        self.plan = plan
 
         from hedge.cuda.tools import int_ceiling
         fplan = discr.flux_plan
-        lplan = diff_plan
 
-        self.grid = (lplan.chunks_per_microblock(), 
+        self.grid = (plan.chunks_per_microblock(), 
                     int_ceiling(
                         fplan.dofs_per_block()*len(discr.blocks)/
-                        lplan.dofs_per_macroblock()))
+                        plan.dofs_per_macroblock()))
 
     def benchmark(self):
         discr = self.discr
         given = discr.given
-        lplan = self.diff_plan
         elgroup, = discr.element_groups
 
         from hedge.optemplate import DifferentiationOperator as op_class
@@ -108,7 +100,7 @@ class DiffKernel(object):
             from hedge.cuda.tools import int_ceiling
             dofs = int_ceiling(
                     discr.flux_plan.dofs_per_block() * len(discr.blocks),     
-                    lplan.dofs_per_macroblock())
+                    self.plan.dofs_per_macroblock())
 
             return gpuarray.empty((dofs,), dtype=given.float_type,
                     allocator=discr.pool.allocate)
@@ -139,7 +131,6 @@ class DiffKernel(object):
     def __call__(self, op_class, field):
         discr = self.discr
         given = discr.given
-        lplan = self.diff_plan
 
         d = discr.dimensions
         elgroup, = discr.element_groups
@@ -190,7 +181,6 @@ class DiffKernel(object):
         dims = range(d)
         given = discr.given
         fplan = discr.flux_plan
-        lplan = self.diff_plan
 
         diffmat_data = self.gpu_diffmats(diff_op_cls, elgroup)
         elgroup, = discr.element_groups
@@ -220,12 +210,12 @@ class DiffKernel(object):
                 Define("MB_CHUNK", "blockIdx.x"),
                 Define("MACROBLOCK_NR", "blockIdx.y"),
                 Line(),
-                Define("CHUNK_DOF_COUNT", lplan.chunk_size),
-                Define("MB_CHUNK_COUNT", lplan.chunks_per_microblock()),
+                Define("CHUNK_DOF_COUNT", self.plan.chunk_size),
+                Define("MB_CHUNK_COUNT", self.plan.chunks_per_microblock()),
                 Define("MB_DOF_COUNT", given.microblock.aligned_floats),
                 Define("MB_EL_COUNT", given.microblock.elements),
-                Define("PAR_MB_COUNT", lplan.parallelism.p),
-                Define("SEQ_MB_COUNT", lplan.parallelism.s),
+                Define("PAR_MB_COUNT", self.plan.parallelism.p),
+                Define("SEQ_MB_COUNT", self.plan.parallelism.s),
                 Line(),
                 Define("THREAD_NUM", "(CHUNK_DOF+PAR_MB_NR*CHUNK_DOF_COUNT)"),
                 Define("COALESCING_THREAD_COUNT", "(PAR_MB_COUNT*CHUNK_DOF_COUNT)"),
@@ -359,7 +349,7 @@ class DiffKernel(object):
         func = mod.get_function("apply_diff_mat")
         func.prepare(
                 discr.dimensions*[float_type] + ["P"],
-                block=(lplan.chunk_size, lplan.parallelism.p, 1),
+                block=(self.plan.chunk_size, self.plan.parallelism.p, 1),
                 texrefs=[field_texref, rst_to_xyz_texref])
         return func, field_texref
 
@@ -368,7 +358,6 @@ class DiffKernel(object):
     def gpu_diffmats(self, diff_op_cls, elgroup):
         discr = self.discr
         given = discr.given
-        lplan = self.diff_plan
 
         columns = given.dofs_per_el()*discr.dimensions
         additional_columns = 0
@@ -378,7 +367,7 @@ class DiffKernel(object):
             additional_columns += 1
 
         block_floats = self.discr.devdata.align_dtype(
-                columns*lplan.chunk_size, given.float_size())
+                columns*self.plan.chunk_size, given.float_size())
 
         vstacked_matrices = [
                 numpy.vstack(given.microblock.elements*(m,))
@@ -388,9 +377,9 @@ class DiffKernel(object):
         chunks = []
 
         from pytools import single_valued
-        for chunk_start in range(0, given.microblock.elements*given.dofs_per_el(), lplan.chunk_size):
+        for chunk_start in range(0, given.microblock.elements*given.dofs_per_el(), self.plan.chunk_size):
             matrices = [
-                m[chunk_start:chunk_start+lplan.chunk_size] 
+                m[chunk_start:chunk_start+self.plan.chunk_size] 
                 for m in vstacked_matrices]
 
             matrices.append(

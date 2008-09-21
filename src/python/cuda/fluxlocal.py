@@ -45,12 +45,12 @@ class FluxLiftingExecutionPlan(hedge.cuda.plan.ChunkedLocalOperatorExecutionPlan
         return 1
 
     def make_kernel(self, discr):
-        return FluxLocalKernel(discr)
+        return FluxLocalKernel(discr, self)
 
 
 
-def make_plan(given):
-    def generate_valid_plans():
+def make_plan(discr, given):
+    def generate_plans():
         from hedge.cuda.tools import int_ceiling
 
         chunk_sizes = range(given.microblock.align_size, 
@@ -65,29 +65,74 @@ def make_plan(given):
             for chunk_size in chunk_sizes:
                 yield FluxLiftingExecutionPlan(given, localop_par, chunk_size)
 
+    def target_func(plan):
+        result = - plan.make_kernel(discr).benchmark()
+        print "ZZ", plan, result
+        return result
+
     from hedge.cuda.plan import optimize_plan
-    return optimize_plan(
-            generate_valid_plans,
-            lambda plan: plan.parallelism.total()
-            )
+    return optimize_plan(generate_plans, target_func)
 
 
 
 
 # kernel ----------------------------------------------------------------------
 class FluxLocalKernel(object):
-    def __init__(self, discr):
+    def __init__(self, discr, plan):
         self.discr = discr
-        fplan = discr.flux_plan
-        lplan = discr.fluxlocal_plan
+        self.plan = plan
 
         from hedge.cuda.tools import int_ceiling
-        self.grid = (lplan.chunks_per_microblock(), 
+        self.grid = (plan.chunks_per_microblock(), 
                 int_ceiling(
                     len(discr.blocks)
-                    * fplan.dofs_per_block()
-                    / lplan.dofs_per_macroblock())
+                    * discr.flux_plan.dofs_per_block()
+                    / plan.dofs_per_macroblock())
                 )
+
+    def benchmark(self):
+        discr = self.discr
+        given = discr.given
+        elgroup, = discr.element_groups
+
+        is_lift = True
+
+        lift, fluxes_on_faces_texref = self.get_kernel(is_lift, elgroup)
+
+        def vol_empty():
+            from hedge.cuda.tools import int_ceiling
+            dofs = int_ceiling(
+                    discr.flux_plan.dofs_per_block() * len(discr.blocks),     
+                    self.plan.dofs_per_macroblock())
+
+            return gpuarray.empty((dofs,), dtype=given.float_type,
+                    allocator=discr.pool.allocate)
+
+        flux = vol_empty()
+        fluxes_on_faces = gpuarray.empty(
+                discr.flux_plan.fluxes_on_faces_shape(len(discr.blocks)), 
+                dtype=given.float_type,
+                allocator=discr.pool.allocate)
+        fluxes_on_faces.bind_to_texref(fluxes_on_faces_texref)
+
+        debugbuf = FakeGPUArray()
+
+        count = 20
+
+        start = cuda.Event()
+        start.record()
+        cuda.Context.synchronize()
+        for i in range(count):
+            lift.prepared_call(
+                    self.grid,
+                    flux.gpudata, 
+                    self.gpu_liftmat(is_lift).device_memory,
+                    debugbuf.gpudata)
+        stop = cuda.Event()
+        stop.record()
+        stop.synchronize()
+
+        return 1e-3/count * stop.time_since(start)
 
     def __call__(self, fluxes_on_faces, is_lift):
         discr = self.discr
@@ -117,7 +162,7 @@ class FluxLocalKernel(object):
             lift.prepared_call(
                     self.grid,
                     flux.gpudata, 
-                    self.gpu_liftmat(wdflux.is_lift).device_memory,
+                    self.gpu_liftmat(is_lift).device_memory,
                     debugbuf.gpudata)
 
         if set(["cuda_lift", "cuda_debugbuf"]) <= discr.debug:
@@ -147,7 +192,6 @@ class FluxLocalKernel(object):
         d = discr.dimensions
         dims = range(d)
         given = discr.given
-        lplan = discr.fluxlocal_plan
 
         liftmat_data = self.gpu_liftmat(is_lift)
 
@@ -186,13 +230,13 @@ class FluxLocalKernel(object):
                 Define("MB_CHUNK", "blockIdx.x"),
                 Define("MACROBLOCK_NR", "blockIdx.y"),
                 Line(),
-                Define("CHUNK_DOF_COUNT", lplan.chunk_size),
-                Define("MB_CHUNK_COUNT", lplan.chunks_per_microblock()),
+                Define("CHUNK_DOF_COUNT", self.plan.chunk_size),
+                Define("MB_CHUNK_COUNT", self.plan.chunks_per_microblock()),
                 Define("MB_DOF_COUNT", given.microblock.aligned_floats),
                 Define("MB_FACEDOF_COUNT", given.aligned_face_dofs_per_microblock()),
                 Define("MB_EL_COUNT", given.microblock.elements),
-                Define("PAR_MB_COUNT", lplan.parallelism.p),
-                Define("SEQ_MB_COUNT", lplan.parallelism.s),
+                Define("PAR_MB_COUNT", self.plan.parallelism.p),
+                Define("SEQ_MB_COUNT", self.plan.parallelism.s),
                 Line(),
                 Define("THREAD_NUM", "(CHUNK_DOF+PAR_MB_NR*CHUNK_DOF_COUNT)"),
                 Define("COALESCING_THREAD_COUNT", "(PAR_MB_COUNT*CHUNK_DOF_COUNT)"),
@@ -225,8 +269,8 @@ class FluxLocalKernel(object):
                             ArrayOf(
                                 POD(numpy.uint16, "chunk_start_el_lookup"),
                             "MB_CHUNK_COUNT")),
-                        [(chk*lplan.chunk_size)//given.dofs_per_el()
-                            for chk in range(lplan.chunks_per_microblock())]
+                        [(chk*self.plan.chunk_size)//given.dofs_per_el()
+                            for chk in range(self.plan.chunks_per_microblock())]
                         ),
                 ArrayInitializer(
                         CudaConstant(
@@ -234,9 +278,9 @@ class FluxLocalKernel(object):
                                 POD(numpy.uint16, "chunk_stop_el_lookup"),
                             "MB_CHUNK_COUNT")),
                         [min(given.microblock.elements, 
-                            (chk*lplan.chunk_size+lplan.chunk_size-1)
+                            (chk*self.plan.chunk_size+self.plan.chunk_size-1)
                                 //given.dofs_per_el()+1)
-                            for chk in range(lplan.chunks_per_microblock())]
+                            for chk in range(self.plan.chunks_per_microblock())]
                         ),
                 ])
 
@@ -274,7 +318,7 @@ class FluxLocalKernel(object):
             dofs = range(given.face_dofs_per_el())
 
             for load_chunk_start in range(0, given.face_dofs_per_el(),
-                    lplan.chunk_size):
+                    self.plan.chunk_size):
                 result.append(
                         Assign(
                             "dof_buffer[PAR_MB_NR][CHUNK_DOF]",
@@ -289,7 +333,7 @@ class FluxLocalKernel(object):
                         Line(),
                         ])
 
-                for dof in dofs[load_chunk_start:load_chunk_start+lplan.chunk_size]:
+                for dof in dofs[load_chunk_start:load_chunk_start+self.plan.chunk_size]:
                     result.append(
                             S("result += "
                                 "smem_lift_mat[CHUNK_DOF*LIFTMAT_COLUMNS + %d]"
@@ -364,7 +408,7 @@ class FluxLocalKernel(object):
                         )
                     )
                 for fetch_count in 
-                range(1, lplan.max_elements_touched_by_chunk()+1)]
+                range(1, self.plan.max_elements_touched_by_chunk()+1)]
                 ))
 
         # finish off ----------------------------------------------------------
@@ -388,7 +432,7 @@ class FluxLocalKernel(object):
         func = mod.get_function("apply_lift_mat")
         func.prepare(
                 "PPP", 
-                block=(lplan.chunk_size, lplan.parallelism.p, 1),
+                block=(self.plan.chunk_size, self.plan.parallelism.p, 1),
                 texrefs=texrefs)
 
         return func, fluxes_on_faces_texref
@@ -397,7 +441,6 @@ class FluxLocalKernel(object):
     def gpu_liftmat(self, is_lift):
         discr = self.discr
         given = discr.given
-        lplan = discr.fluxlocal_plan
 
         columns = given.face_dofs_per_el()
         # avoid smem fetch bank conflicts by ensuring odd col count
@@ -405,7 +448,7 @@ class FluxLocalKernel(object):
             columns += 1
 
         block_floats = self.discr.devdata.align_dtype(
-                columns*lplan.chunk_size, given.float_size())
+                columns*self.plan.chunk_size, given.float_size())
 
         if is_lift:
             mat = given.ldis.lifting_matrix()
@@ -428,12 +471,12 @@ class FluxLocalKernel(object):
         chunks = [
                 buffer(numpy.asarray(
                     vstacked_matrix[
-                        chunk_start:chunk_start+lplan.chunk_size],
+                        chunk_start:chunk_start+self.plan.chunk_size],
                     dtype=given.float_type,
                     order="C"))
                 for chunk_start in range(
                     0, given.microblock.elements*given.dofs_per_el(), 
-                    lplan.chunk_size)
+                    self.plan.chunk_size)
                 ]
         
         from hedge.cuda.tools import pad_and_join
