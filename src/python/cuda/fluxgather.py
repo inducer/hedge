@@ -568,7 +568,7 @@ class FluxGatherKernel:
 
         mod = cuda.SourceModule(cmod, 
                 keep=True, 
-                options=["--maxrregcount=16"]
+                #options=["--maxrregcount=16"]
                 )
         print "flux: lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
 
@@ -577,14 +577,13 @@ class FluxGatherKernel:
                     "%s_tex" % wdflux.short_name(dep_expr)))
                 for dep_expr in wdflux.all_deps)
 
-        from pycuda.tools import dtype_to_array_format
         ilist_gdata = self.index_list_global_data()
         index_list_texref = mod.get_texref("tex_index_lists")
         index_list_texref.set_address(
                 ilist_gdata.device_memory,
                 ilist_gdata.bytes)
         index_list_texref.set_format(
-                dtype_to_array_format(ilist_gdata.type), 1)
+                cuda.dtype_to_array_format(ilist_gdata.type), 1)
         index_list_texref.set_flags(cuda.TRSF_READ_AS_INTEGER)
 
         func = mod.get_function("apply_flux")
