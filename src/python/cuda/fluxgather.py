@@ -67,6 +67,7 @@ def face_pair_struct(float_type, dims):
 
 
 
+
 # flux to code mapper ---------------------------------------------------------
 class FluxToCodeMapper(pymbolic.mapper.stringifier.StringifyMapper):
     def __init__(self, flip_normal=False):
@@ -209,8 +210,18 @@ class FluxGatherPlan(hedge.cuda.plan.ExecutionPlan):
                 + len(face_pair_struct(self.given.float_type, d))*self.face_pair_count()
                 )
 
+    def threads_per_face(self):
+        dpf = self.given.dofs_per_face()
+        #return dpf
+        devdata = self.given.devdata
+        if dpf % devdata.smem_granularity >= devdata.smem_granularity // 2:
+            from hedge.cuda.tools import int_ceiling
+            return int_ceiling(dpf, devdata.smem_granularity)
+        else:
+            return dpf
+
     def threads(self):
-        return self.parallel_faces*self.given.dofs_per_face()
+        return self.parallel_faces*self.threads_per_face()
 
     def registers(self):
         return 16
@@ -354,6 +365,7 @@ class FluxGatherKernel:
                 Define("DIMENSIONS", discr.dimensions),
                 Define("DOFS_PER_EL", given.dofs_per_el()),
                 Define("DOFS_PER_FACE", given.dofs_per_face()),
+                Define("THREADS_PER_FACE", fplan.threads_per_face()),
                 Line(),
                 Define("CONCURRENT_FACES", fplan.parallel_faces),
                 Define("BLOCK_MB_COUNT", fplan.mbs_per_block),
@@ -361,8 +373,8 @@ class FluxGatherKernel:
                 Define("FACEDOF_NR", "threadIdx.x"),
                 Define("BLOCK_FACE", "threadIdx.y"),
                 Line(),
-                Define("THREAD_NUM", "(FACEDOF_NR + BLOCK_FACE*DOFS_PER_FACE)"),
-                Define("THREAD_COUNT", "(DOFS_PER_FACE*CONCURRENT_FACES)"),
+                Define("THREAD_NUM", "(FACEDOF_NR + BLOCK_FACE*THREADS_PER_FACE)"),
+                Define("THREAD_COUNT", "(THREADS_PER_FACE*CONCURRENT_FACES)"),
                 Define("COALESCING_THREAD_COUNT", "(THREAD_COUNT & ~0xf)"),
                 Line(),
                 Define("DATA_BLOCK_SIZE", flux_with_temp_data.block_bytes),
@@ -527,7 +539,7 @@ class FluxGatherKernel:
 
             return flux_code
 
-        f_body.extend_log_block("compute the fluxes", [
+        flux_computation = Block([
             Initializer(POD(numpy.uint16, "fpair_nr"), "BLOCK_FACE"),
             Comment("fluxes for dual-sided (intra-block) interior face pairs"),
             While("fpair_nr < data.header.same_facepairs_end",
@@ -549,6 +561,8 @@ class FluxGatherKernel:
                 ),
             ])
 
+        f_body.extend_log_block("compute the fluxes", 
+                [If("FACEDOF_NR < DOFS_PER_FACE", flux_computation)])
         f_body.extend_log_block("store the fluxes", [
             S("__syncthreads()"),
             Line(),
@@ -589,7 +603,7 @@ class FluxGatherKernel:
         func = mod.get_function("apply_flux")
         func.prepare(
                 "PPP",
-                block=(given.dofs_per_face(), 
+                block=(fplan.threads_per_face(), 
                     fplan.parallel_faces, 1),
                 texrefs=expr_to_texture_map.values()
                 + [index_list_texref])
