@@ -183,6 +183,3 @@ def get_load_code(dest, base, bytes, word_type=numpy.uint32,
 
     return code
 
-
-
-

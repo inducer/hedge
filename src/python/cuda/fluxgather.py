@@ -328,7 +328,7 @@ class FluxGatherKernel:
                 Pointer, POD, Value, ArrayOf, Const, \
                 Module, FunctionDeclaration, FunctionBody, Block, \
                 Comment, Line, \
-                CudaShared, CudaGlobal, Static, \
+                CudaShared, CudaGlobal, Static, MaybeUnused, \
                 Define, Pragma, \
                 Constant, Initializer, If, For, Statement, Assign, While
                 
@@ -460,9 +460,8 @@ class FluxGatherKernel:
                 else:
                     prefix = "b"
 
-                return ("tex1Dfetch(%s_tex, %s_index)"
-                        % (wdflux.short_name(flux_rec.field_expr), 
-                            prefix))
+                return ("val_%s_%s" % (prefix, 
+                    wdflux.short_name(flux_rec.field_expr)))
 
             from hedge.cuda.cgen import make_multiple_ifs
             from pymbolic.mapper.stringifier import PREC_NONE
@@ -479,6 +478,17 @@ class FluxGatherKernel:
             else:
                 prefixes = ["a"]
                 flip_values = [False]
+
+            flux_write_code.append(Line())
+
+            for int_rec in wdflux.interiors:
+                for side in ["a", "b"]:
+                    flux_write_code.append(
+                            Initializer(
+                                MaybeUnused(POD(float_type, "val_%s_%s" 
+                                    % (side, wdflux.short_name(int_rec.field_expr)))),
+                                "tex1Dfetch(%s_tex, %s_index)"
+                                % (wdflux.short_name(int_rec.field_expr), side)))
 
             flux_write_code.append(Line())
 
@@ -516,8 +526,6 @@ class FluxGatherKernel:
 
         def get_flux_code(flux_writer):
             flux_code = Block([])
-
-            from hedge.cuda.cgen import MaybeUnused
 
             flux_code.extend([
                 Initializer(Pointer(
@@ -580,7 +588,10 @@ class FluxGatherKernel:
         # finish off ----------------------------------------------------------
         cmod.append(FunctionBody(f_decl, f_body))
 
-        mod = cuda.SourceModule(cmod, 
+        from pycuda.tools import allow_user_edit
+        mod = cuda.SourceModule(
+                #allow_user_edit(cmod, "kernel.cu", "the flux kernel"), 
+                cmod,
                 keep=True, 
                 #options=["--maxrregcount=16"]
                 )
