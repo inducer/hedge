@@ -34,7 +34,7 @@ import hedge.cuda.plan
 # plan ------------------------------------------------------------------------
 class SMemFieldDiffExecutionPlan(hedge.cuda.plan.SMemFieldLocalOpExecutionPlan):
     def registers(self):
-        return 17
+        return 16
 
     def make_kernel(self, discr):
         return SMemFieldDiffKernel(discr, self)
@@ -57,6 +57,9 @@ class SMemFieldDiffKernel(object):
                 1)
 
     def benchmark(self):
+        if set(["cuda_diff", "cuda_debugbuf"]) <= self.discr.debug:
+            return 0
+
         discr = self.discr
         given = discr.given
         elgroup, = discr.element_groups
@@ -176,6 +179,8 @@ class SMemFieldDiffKernel(object):
                 Define("DIMENSIONS", discr.dimensions),
                 Define("DOFS_PER_EL", given.dofs_per_el()),
                 Define("ALIGNED_DOFS_PER_MB", given.microblock.aligned_floats),
+                Define("MB_EL_COUNT", given.microblock.elements),
+                Define("DOFS_PER_MB", "(DOFS_PER_EL*MB_EL_COUNT)"),
                 Line(),
                 Define("MB_DOF", "threadIdx.x"),
                 Define("PAR_MB_NR", "threadIdx.y"),
@@ -183,8 +188,6 @@ class SMemFieldDiffKernel(object):
                 Line(),
                 Define("MACROBLOCK_NR", "blockIdx.x"),
                 Line(),
-                Define("MB_DOF_COUNT", given.microblock.aligned_floats),
-                Define("MB_EL_COUNT", given.microblock.elements),
                 Define("PAR_MB_COUNT", self.plan.parallelism.p),
                 Define("SEQ_MB_COUNT", self.plan.parallelism.s),
                 Line(),
@@ -229,14 +232,18 @@ class SMemFieldDiffKernel(object):
                     "field[GLOBAL_MB_NR*ALIGNED_DOFS_PER_MB + MB_DOF]"),
                 S("__syncthreads()"),
                 Line(),
-                Value("float%d" % rst_channels, "dmat_entries")
+                Value("float%d" % rst_channels, "dmat_entries"),
+                POD(float_type, "field_value"),
+                Line(),
                 ]+list(flatten([
                     Assign("dmat_entries",
                         "tex2D(diff_rst_mat_tex, EL_DOF, %d)" % j),
+                    Assign("field_value", 
+                        "smem_field[PAR_MB_NR][mb_el*DOFS_PER_EL+%d]" % j),
                     Line(),
                     ]+[
-                        S("drst%d += dmat_entries.%s * smem_field[PAR_MB_NR][mb_el*DOFS_PER_EL+%d]" 
-                            % (axis, tex_channels[axis], j))
+                        S("drst%d += dmat_entries.%s * field_value" 
+                            % (axis, tex_channels[axis]))
                         for axis in dims
                         ]+[Line()]
                     for j in range(given.dofs_per_el())
@@ -266,10 +273,12 @@ class SMemFieldDiffKernel(object):
             return code
 
         f_body.extend([
-            For("unsigned short seq_mb_number = 0",
-                "seq_mb_number < SEQ_MB_COUNT",
-                "++seq_mb_number",
-                Block(get_scalar_diff_code())
+            If("MB_DOF < DOFS_PER_MB",
+                For("unsigned short seq_mb_number = 0",
+                    "seq_mb_number < SEQ_MB_COUNT",
+                    "++seq_mb_number",
+                    Block(get_scalar_diff_code())
+                    )
                 )
             ])
 
@@ -278,7 +287,7 @@ class SMemFieldDiffKernel(object):
 
         mod = cuda.SourceModule(cmod, 
                 keep=True, 
-                options=["--maxrregcount=16"]
+                #options=["--maxrregcount=16"]
                 )
         print "diff: lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
 

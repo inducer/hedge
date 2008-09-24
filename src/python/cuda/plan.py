@@ -139,7 +139,7 @@ class PlanGivenData(object):
             mb_elements = mb_aligned_floats // self.dofs_per_el()
             mb_floats = self.dofs_per_el()*mb_elements
             overhead = (mb_aligned_floats-mb_floats)/mb_aligned_floats
-            if overhead <= 0.05:
+            if overhead <= 0.4:
                 from pytools import Record
                 class MicroblockInfo(Record): pass
 
