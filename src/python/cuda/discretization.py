@@ -245,12 +245,11 @@ class Discretization(hedge.discretization.Discretization):
 
         self.device = device
         from pycuda.tools import DeviceData
-        self.devdata = DeviceData(device)
 
         # make preliminary plan
         from hedge.cuda.plan import PlanGivenData
         self.given = PlanGivenData(
-                self.devdata, ldis, 
+                DeviceData(device), ldis, 
                 default_scalar_type)
         if flux_plan is None:
             import hedge.cuda.fluxgather as fluxgather
@@ -455,7 +454,7 @@ class Discretization(hedge.discretization.Discretization):
         from hedge.mesh import TAG_ALL
         for bdry_fg in self.get_boundary(TAG_ALL).face_groups:
             assert ldis == bdry_fg.ldis_loc
-            aligned_fnc = self.devdata.align_dtype(ldis.face_node_count(), 
+            aligned_fnc = self.given.devdata.align_dtype(ldis.face_node_count(), 
                     self.given.float_size())
             for fp in bdry_fg.face_pairs:
                 assert fp.opp.element_id == hedge._internal.INVALID_ELEMENT

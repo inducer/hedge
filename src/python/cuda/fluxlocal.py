@@ -218,7 +218,6 @@ class FluxLocalKernel(object):
                 ]
             ))
 
-        rst_channels = discr.devdata.make_valid_tex_channel_count(d)
         cmod = Module([
                 Value("texture<float, 1, cudaReadModeElementType>", 
                     "fluxes_on_faces_tex"),
@@ -467,7 +466,7 @@ class FluxLocalKernel(object):
         if columns % 2 == 0:
             columns += 1
 
-        block_floats = self.discr.devdata.align_dtype(
+        block_floats = given.devdata.align_dtype(
                 columns*self.plan.chunk_size, given.float_size())
 
         if is_lift:

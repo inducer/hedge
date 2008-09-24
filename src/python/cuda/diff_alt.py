@@ -164,7 +164,7 @@ class SMemFieldDiffKernel(object):
             + [Pointer(POD(float_type, "dxyz%d" % i)) for i in dims]
             ))
 
-        rst_channels = discr.devdata.make_valid_tex_channel_count(d)
+        rst_channels = given.devdata.make_valid_tex_channel_count(d)
         cmod = Module([
                 Value("texture<float%d, 2, cudaReadModeElementType>"
                     % rst_channels, 
@@ -315,6 +315,7 @@ class SMemFieldDiffKernel(object):
     @memoize_method
     def localop_rst_to_xyz(self, diff_op, elgroup):
         discr = self.discr
+        given = discr.given
         d = discr.dimensions
 
         fplan = discr.flux_plan
@@ -326,7 +327,7 @@ class SMemFieldDiffKernel(object):
         # indexed local, el_number, global
         result_matrix = (coeffs[:,:,elgroup_indices]
                 .transpose(1,0,2))
-        channels = discr.devdata.make_valid_tex_channel_count(d)
+        channels = given.devdata.make_valid_tex_channel_count(d)
         add_channels = channels - result_matrix.shape[0]
         if add_channels:
             result_matrix = numpy.vstack((

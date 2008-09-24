@@ -745,7 +745,7 @@ class FluxGatherKernel:
         from hedge.cuda.tools import make_superblocks
 
         return make_superblocks(
-                discr.devdata, "flux_data",
+                given.devdata, "flux_data",
                 [
                     (headers, Value(flux_header_struct().tpname, "header")),
                     ],
