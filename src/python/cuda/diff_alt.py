@@ -23,6 +23,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import numpy
+import hedge.cuda.plan
 from pytools import memoize_method, memoize
 import pycuda.driver as cuda
 import hedge.cuda.plan
@@ -31,59 +32,18 @@ import hedge.cuda.plan
 
 
 # plan ------------------------------------------------------------------------
-class ChunkedDiffExecutionPlan(hedge.cuda.plan.ChunkedMatrixLocalOpExecutionPlan):
-    def columns(self):
-        return self.given.dofs_per_el() * self.given.ldis.dimensions # r,s,t
-
+class SMemFieldDiffExecutionPlan(hedge.cuda.plan.SMemFieldLocalOpExecutionPlan):
     def registers(self):
-        return 16
-
-    def fetch_buffer_chunks(self):
-        return 0
+        return 17
 
     def make_kernel(self, discr):
-        return DiffKernel(discr, self)
-
-
-
-
-
-def make_plan(discr, given):
-    def generate_plans():
-        from hedge.cuda.tools import int_ceiling
-
-        chunk_sizes = range(given.microblock.align_size, 
-                given.microblock.elements*given.dofs_per_el()+1, 
-                given.microblock.align_size)
-
-        from hedge.cuda.plan import Parallelism
-
-        if False:
-            for pe in range(1,32):
-                from hedge.cuda.tools import int_ceiling
-                localop_par = Parallelism(pe, 64//pe)
-                for chunk_size in chunk_sizes:
-                    yield ChunkedDiffExecutionPlan(given, localop_par, chunk_size)
-
-        from hedge.cuda.diff_alt import SMemFieldDiffExecutionPlan
-
-        for pe in range(1,32):
-            from hedge.cuda.tools import int_ceiling
-            localop_par = Parallelism(pe, 64//pe)
-            yield SMemFieldDiffExecutionPlan(given, localop_par)
-
-    def target_func(plan):
-        return - plan.make_kernel(discr).benchmark()
-
-    from hedge.cuda.plan import optimize_plan
-    return optimize_plan(generate_plans, target_func,
-            desirable_occupancy=0.8)
+        return SMemFieldDiffKernel(discr, self)
 
 
 
 
 # kernel ----------------------------------------------------------------------
-class DiffKernel(object):
+class SMemFieldDiffKernel(object):
     def __init__(self, discr, plan):
         self.discr = discr
         self.plan = plan
@@ -91,10 +51,10 @@ class DiffKernel(object):
         from hedge.cuda.tools import int_ceiling
         fplan = discr.flux_plan
 
-        self.grid = (plan.chunks_per_microblock(), 
-                    int_ceiling(
-                        fplan.dofs_per_block()*len(discr.blocks)/
-                        plan.dofs_per_macroblock()))
+        self.grid = (int_ceiling(
+                len(discr.blocks)*fplan.dofs_per_block()
+                / self.plan.dofs_per_macroblock()),
+                1)
 
     def benchmark(self):
         discr = self.discr
@@ -102,7 +62,7 @@ class DiffKernel(object):
         elgroup, = discr.element_groups
 
         from hedge.optemplate import DifferentiationOperator as op_class
-        func, field_texref = self.get_kernel(op_class, elgroup)
+        func = self.get_kernel(op_class, elgroup)
 
         def vol_empty():
             from hedge.cuda.tools import int_ceiling
@@ -117,7 +77,6 @@ class DiffKernel(object):
         field = vol_empty()
         field.fill(0)
 
-        field.bind_to_texref(field_texref)
         xyz_diff = [vol_empty() for axis in range(discr.dimensions)]
         xyz_diff_gpudata = [subarray.gpudata for subarray in xyz_diff] 
 
@@ -129,7 +88,9 @@ class DiffKernel(object):
         start.record()
         cuda.Context.synchronize()
         for i in range(count):
-            func.prepared_call(self.grid, gpu_diffmats.device_memory,
+            func.prepared_call(self.grid, 
+                    0, # debugbuf
+                    field.gpudata,
                     *xyz_diff_gpudata)
         stop = cuda.Event()
         stop.record()
@@ -144,31 +105,35 @@ class DiffKernel(object):
         d = discr.dimensions
         elgroup, = discr.element_groups
 
-        func, field_texref = self.get_kernel(op_class, elgroup)
+        func = self.get_kernel(op_class, elgroup)
 
         assert field.dtype == given.float_type
 
-        field.bind_to_texref(field_texref)
+        use_debugbuf = set(["cuda_diff", "cuda_debugbuf"]) <= discr.debug
+        if use_debugbuf:
+            import pycuda.gpuarray as gpuarray
+            debugbuf = gpuarray.zeros((512,), dtype=numpy.float32)
+        else:
+            from hedge.cuda.tools import FakeGPUArray
+            debugbuf = FakeGPUArray()
 
         xyz_diff = [discr.volume_empty() for axis in range(d)]
         xyz_diff_gpudata = [subarray.gpudata for subarray in xyz_diff] 
 
-        gpu_diffmats = self.gpu_diffmats(op_class, elgroup)
-
         if discr.instrumented:
-            kernel_time = func.prepared_timed_call(
-                    self.grid, gpu_diffmats.device_memory, 
-                    *xyz_diff_gpudata)
+            kernel_time = func.prepared_timed_call(self.grid, 
+                    debugbuf.gpudata, field.gpudata, *xyz_diff_gpudata)
             discr.diff_op_timer.add_time(kernel_time)
         else:
-            func.prepared_call(self.grid, gpu_diffmats.device_memory, 
-                    *xyz_diff_gpudata)
+            func.prepared_call(self.grid, 
+                    debugbuf.gpudata, field.gpudata, *xyz_diff_gpudata)
 
-        if False:
+        if use_debugbuf:
             copied_debugbuf = debugbuf.get()
             print "DEBUG"
+            print field.shape
             #print numpy.reshape(copied_debugbuf, (len(copied_debugbuf)//16, 16))
-            print copied_debugbuf[:100].reshape((10,10))
+            print copied_debugbuf
             raw_input()
 
         return xyz_diff
@@ -194,10 +159,9 @@ class DiffKernel(object):
 
         float_type = given.float_type
 
-        f_decl = CudaGlobal(FunctionDeclaration(Value("void", "apply_diff_mat"), 
-            [Pointer(POD(numpy.uint8, "gmem_diff_rst_mat")),
-                #Pointer(POD(float_type, "debugbuf")), 
-                ] + [Pointer(POD(float_type, "dxyz%d" % i)) for i in dims]
+        f_decl = CudaGlobal(FunctionDeclaration(Value("void", "apply_diff_mat_smem"), 
+            [Pointer(POD(float_type, "debugbuf")), Pointer(POD(float_type, "field")), ]
+            + [Pointer(POD(float_type, "dxyz%d" % i)) for i in dims]
             ))
 
         rst_channels = discr.devdata.make_valid_tex_channel_count(d)
@@ -205,61 +169,54 @@ class DiffKernel(object):
                 Value("texture<float%d, 2, cudaReadModeElementType>"
                     % rst_channels, 
                     "rst_to_xyz_tex"),
-                Value("texture<float, 1, cudaReadModeElementType>", 
-                    "field_tex"),
+                ]+[
+                Value("texture<float, 2, cudaReadModeElementType>", 
+                    "diff_rst%d_mat_tex" % i) for i in dims
+                ]+[
                 Line(),
                 Define("DIMENSIONS", discr.dimensions),
                 Define("DOFS_PER_EL", given.dofs_per_el()),
+                Define("ALIGNED_DOFS_PER_MB", given.microblock.aligned_floats),
                 Line(),
-                Define("CHUNK_DOF", "threadIdx.x"),
+                Define("MB_DOF", "threadIdx.x"),
                 Define("PAR_MB_NR", "threadIdx.y"),
                 Line(),
-                Define("MB_CHUNK", "blockIdx.x"),
-                Define("MACROBLOCK_NR", "blockIdx.y"),
+                Define("MACROBLOCK_NR", "blockIdx.x"),
                 Line(),
-                Define("CHUNK_DOF_COUNT", self.plan.chunk_size),
-                Define("MB_CHUNK_COUNT", self.plan.chunks_per_microblock()),
                 Define("MB_DOF_COUNT", given.microblock.aligned_floats),
                 Define("MB_EL_COUNT", given.microblock.elements),
                 Define("PAR_MB_COUNT", self.plan.parallelism.p),
                 Define("SEQ_MB_COUNT", self.plan.parallelism.s),
                 Line(),
-                Define("THREAD_NUM", "(CHUNK_DOF+PAR_MB_NR*CHUNK_DOF_COUNT)"),
-                Define("COALESCING_THREAD_COUNT", "(PAR_MB_COUNT*CHUNK_DOF_COUNT)"),
+                Define("THREAD_NUM", "(MB_DOF+PAR_MB_NR*ALIGNED_DOFS_PER_MB)"),
+                Define("COALESCING_THREAD_COUNT", "(PAR_MB_COUNT*ALIGNED_DOFS_PER_MB)"),
                 Line(),
-                Define("MB_DOF_BASE", "(MB_CHUNK*CHUNK_DOF_COUNT)"),
-                Define("MB_DOF", "(MB_DOF_BASE+CHUNK_DOF)"),
-                Define("GLOBAL_MB_NR_BASE", "(MACROBLOCK_NR*PAR_MB_COUNT*SEQ_MB_COUNT)"),
+                Define("GLOBAL_MB_NR", 
+                    "(MACROBLOCK_NR*PAR_MB_COUNT*SEQ_MB_COUNT "
+                    "+ seq_mb_number*PAR_MB_COUNT "
+                    "+ PAR_MB_NR)"),
                 Line(),
-                Define("DIFFMAT_CHUNK_FLOATS", diffmat_data.block_floats),
-                Define("DIFFMAT_CHUNK_BYTES", "(DIFFMAT_CHUNK_FLOATS*%d)"
-                     % given.float_size()),
-                Define("DIFFMAT_COLUMNS", diffmat_data.matrix_columns),
-                Line(),
-                CudaShared(ArrayOf(POD(float_type, "smem_diff_rst_mat"), 
-                    "DIFFMAT_COLUMNS*CHUNK_DOF_COUNT")),
+                CudaShared(
+                    ArrayOf(
+                        ArrayOf(
+                            POD(float_type, "smem_field"), 
+                            "PAR_MB_COUNT"),
+                        "ALIGNED_DOFS_PER_MB")),
                 Line(),
                 ])
 
         S = Statement
-        f_body = Block()
-            
-        f_body.extend_log_block("calculate responsibility data", [
+        f_body = Block([
             Initializer(POD(numpy.uint16, "mb_el"),
-                "MB_DOF/DOFS_PER_EL"),
+                "MB_DOF / DOFS_PER_EL"),
+            Initializer(POD(numpy.uint16, "el_dof"),
+                "MB_DOF - mb_el*DOFS_PER_EL"),
+            Line(),
             ])
 
-        from hedge.cuda.tools import get_load_code
-        f_body.extend(
-            get_load_code(
-                dest="smem_diff_rst_mat",
-                base="gmem_diff_rst_mat + MB_CHUNK*DIFFMAT_CHUNK_BYTES",
-                bytes="DIFFMAT_CHUNK_BYTES",
-                descr="load diff mat chunk")
-            +[S("__syncthreads()")])
-
+            
         # ---------------------------------------------------------------------
-        def get_scalar_diff_code(matrix_row, dest_pattern):
+        def get_scalar_diff_code():
             code = []
             for axis in dims:
                 code.append(
@@ -268,43 +225,38 @@ class DiffKernel(object):
             code.append(Line())
 
             def get_mat_entry(row, col, axis):
-                return ("smem_diff_rst_mat["
-                        "%(row)s*DIFFMAT_COLUMNS + %(axis)s*DOFS_PER_EL"
-                        "+%(col)s"
-                        "]" % {"row":row, "col":col, "axis":axis}
-                        )
+                return ("tex2D(diff_rst%s_mat_tex, %s, %s)"
+                        % (axis, row, col))
 
             tex_channels = ["x", "y", "z", "w"]
             from pytools import flatten
-            code.extend(
-                    [POD(float_type, "field_value"),
-                        Line(),
-                        ]
-                    +list(flatten( [
-                        Assign("field_value", 
-                            "tex1Dfetch(field_tex, global_mb_dof_base"
-                            "+mb_el*DOFS_PER_EL+%d)" % j
-                            ),
-                        Line(),
-                        ]
-                        +[
-                        S("drst%d += %s * field_value" 
-                            % (axis, get_mat_entry(matrix_row, j, axis)))
+            code.extend([
+                #Assign("debugbuf[MACROBLOCK_NR]",
+                    #"GLOBAL_MB_NR*ALIGNED_DOFS_PER_MB + MB_DOF"),
+                Assign("smem_field[PAR_MB_NR][MB_DOF]",
+                    "field[GLOBAL_MB_NR*ALIGNED_DOFS_PER_MB + MB_DOF]"),
+                    #0),
+                S("__syncthreads()"),
+                Line(),
+                ]+list(flatten(
+                    [
+                        S("drst%d += %s * smem_field[PAR_MB_NR][mb_el*DOFS_PER_EL+%d]" 
+                            % (axis, get_mat_entry("el_dof", j, axis), j))
                         for axis in dims
                         ]+[Line()]
-                        for j in range(given.dofs_per_el())
-                        ))
-                    )
+                    for j in range(given.dofs_per_el())
+                    ))
+                )
 
             store_code = Block()
             for glob_axis in dims:
                 store_code.append(Block([
                     Initializer(Value("float%d" % rst_channels, "rst_to_xyz"),
-                        "tex2D(rst_to_xyz_tex, %d, global_mb_nr*MB_EL_COUNT+mb_el)" 
+                        "tex2D(rst_to_xyz_tex, %d, GLOBAL_MB_NR*MB_EL_COUNT+mb_el)" 
                         % glob_axis
                         ),
                     Assign(
-                        dest_pattern % glob_axis,
+                        "dxyz%d[GLOBAL_MB_NR*ALIGNED_DOFS_PER_MB + MB_DOF]" % glob_axis,
                         " + ".join(
                             "rst_to_xyz.%s"
                             "*"
@@ -312,8 +264,7 @@ class DiffKernel(object):
                             for loc_axis in dims
                             )
                         )
-                    ])
-                        )
+                    ]))
 
             code.append(If("MB_DOF < DOFS_PER_EL*MB_EL_COUNT", store_code))
 
@@ -323,17 +274,7 @@ class DiffKernel(object):
             For("unsigned short seq_mb_number = 0",
                 "seq_mb_number < SEQ_MB_COUNT",
                 "++seq_mb_number",
-                Block([
-                    Initializer(POD(numpy.uint32, "global_mb_nr"),
-                        "GLOBAL_MB_NR_BASE + seq_mb_number*PAR_MB_COUNT + PAR_MB_NR"),
-                    Initializer(POD(numpy.uint32, "global_mb_dof_base"),
-                        "global_mb_nr*MB_DOF_COUNT"),
-                    Line(),
-                    ]+
-                    get_scalar_diff_code(
-                        "CHUNK_DOF",
-                        "dxyz%d[global_mb_dof_base+MB_DOF]")
-                    )
+                Block(get_scalar_diff_code())
                 )
             ])
 
@@ -351,65 +292,25 @@ class DiffKernel(object):
                 self.localop_rst_to_xyz(diff_op_cls, elgroup), 
                 rst_to_xyz_texref)
 
-        field_texref = mod.get_texref("field_tex")
+        diff_rst_mat_texrefs = [
+                mod.get_texref("diff_rst%d_mat_tex" % i)
+                for i in dims]
+        for tr, diff_mat_array in zip(
+                diff_rst_mat_texrefs, self.gpu_diffmats(diff_op_cls, elgroup)):
+            tr.set_array(diff_mat_array)
 
-        func = mod.get_function("apply_diff_mat")
+        func = mod.get_function("apply_diff_mat_smem")
         func.prepare(
-                discr.dimensions*[float_type] + ["P"],
-                block=(self.plan.chunk_size, self.plan.parallelism.p, 1),
-                texrefs=[field_texref, rst_to_xyz_texref])
-        return func, field_texref
+                ["PP"] + discr.dimensions*[float_type],
+                block=(given.microblock.aligned_floats, self.plan.parallelism.p, 1),
+                texrefs=[rst_to_xyz_texref]+diff_rst_mat_texrefs)
+        return func
 
     # data blocks -------------------------------------------------------------
     @memoize_method
     def gpu_diffmats(self, diff_op_cls, elgroup):
-        discr = self.discr
-        given = discr.given
-
-        columns = given.dofs_per_el()*discr.dimensions
-        additional_columns = 0
-        # avoid smem fetch bank conflicts by ensuring odd col count
-        if columns % 2 == 0:
-            columns += 1
-            additional_columns += 1
-
-        block_floats = self.discr.devdata.align_dtype(
-                columns*self.plan.chunk_size, given.float_size())
-
-        vstacked_matrices = [
-                numpy.vstack(given.microblock.elements*(m,))
-                for m in diff_op_cls.matrices(elgroup)
-                ]
-
-        chunks = []
-
-        from pytools import single_valued
-        for chunk_start in range(0, given.microblock.elements*given.dofs_per_el(), self.plan.chunk_size):
-            matrices = [
-                m[chunk_start:chunk_start+self.plan.chunk_size] 
-                for m in vstacked_matrices]
-
-            matrices.append(
-                numpy.zeros((single_valued(m.shape[0] for m in matrices), 
-                    additional_columns))
-                )
-
-            diffmats = numpy.asarray(
-                    numpy.hstack(matrices),
-                    dtype=given.float_type,
-                    order="C")
-            chunks.append(buffer(diffmats))
-        
-        from hedge.cuda.tools import pad_and_join
-
-        from pytools import Record
-        class GPUDifferentiationMatrices(Record): pass
-
-        return GPUDifferentiationMatrices(
-                device_memory=cuda.to_device(
-                    pad_and_join(chunks, block_floats*given.float_size())),
-                block_floats=block_floats,
-                matrix_columns=columns)
+        return [cuda.matrix_to_array(m.astype(self.discr.given.float_type))
+                for m in diff_op_cls.matrices(elgroup)]
 
     @memoize_method
     def localop_rst_to_xyz(self, diff_op, elgroup):
@@ -451,3 +352,4 @@ class DiffKernel(object):
                         i += 1
 
         return cuda.make_multichannel_2d_array(result_matrix)
+

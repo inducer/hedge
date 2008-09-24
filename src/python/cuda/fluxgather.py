@@ -28,7 +28,6 @@ import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
 import pymbolic.mapper.stringifier
 import hedge.cuda.plan
-from hedge.cuda.tools import FakeGPUArray
 
 
 
@@ -290,6 +289,7 @@ class FluxGatherKernel:
         if set(["cuda_flux", "cuda_debugbuf"]) <= discr.debug:
             debugbuf = gpuarray.zeros((512,), dtype=numpy.float32)
         else:
+            from hedge.cuda.tools import FakeGPUArray
             debugbuf = FakeGPUArray()
 
         fdata = self.flux_with_temp_data(elgroup)

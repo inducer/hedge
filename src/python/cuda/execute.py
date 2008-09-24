@@ -154,7 +154,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         field = self.rec(field_expr)
         xyz_diff = self.ex.diff_kernel(op.__class__, field)
         
-        if "cuda_diff" in discr.debug:
+        if set(["cuda_diff", "cuda_compare"]) <= discr.debug:
             field = self.rec(field_expr)
             f = discr.volume_from_gpu(field)
             assert not numpy.isnan(f).any(), "Initial field contained NaNs."

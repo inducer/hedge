@@ -155,7 +155,7 @@ class PlanGivenData(object):
 
 
 
-class ChunkedLocalOperatorExecutionPlan(ExecutionPlan):
+class ChunkedMatrixLocalOpExecutionPlan(ExecutionPlan):
     def __init__(self, given, parallelism, chunk_size):
         ExecutionPlan.__init__(self, given.devdata)
         self.given = given
@@ -185,7 +185,7 @@ class ChunkedLocalOperatorExecutionPlan(ExecutionPlan):
         
         return (64 # parameters, block header, small extra stuff
                + given.float_size() * (
-                   # chunk of the differentiation matrix
+                   # chunk of the local op matrix
                    + self.chunk_size # this many rows
                    * self.columns()
                    # fetch buffer for each chunk
@@ -204,6 +204,34 @@ class ChunkedLocalOperatorExecutionPlan(ExecutionPlan):
                 self.parallelism,
                 self.chunk_size,
                 ))
+
+
+
+
+class SMemFieldLocalOpExecutionPlan(ExecutionPlan):
+    def __init__(self, given, parallelism):
+        ExecutionPlan.__init__(self, given.devdata)
+        self.given = given
+        self.parallelism = parallelism
+
+    def dofs_per_macroblock(self):
+        return self.parallelism.total() * self.given.microblock.aligned_floats
+
+    @memoize_method
+    def shared_mem_use(self):
+        given = self.given
+        
+        return (64 # parameters, block header, small extra stuff
+               + given.float_size() * (
+                   self.parallelism.p * self.given.microblock.aligned_floats))
+
+    def threads(self):
+        return self.parallelism.p * self.given.microblock.aligned_floats
+
+    def __str__(self):
+            return ("%s par=%s" % (
+                ExecutionPlan.__str__(self),
+                self.parallelism))
 
 
 

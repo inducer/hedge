@@ -34,9 +34,9 @@ from hedge.cuda.tools import FakeGPUArray
 
 
 # plan ------------------------------------------------------------------------
-class FluxLiftingExecutionPlan(hedge.cuda.plan.ChunkedLocalOperatorExecutionPlan):
+class FluxLiftingExecutionPlan(hedge.cuda.plan.ChunkedMatrixLocalOpExecutionPlan):
     def __init__(self, given, parallelism, chunk_size, use_prefetch_branch):
-        hedge.cuda.plan.ChunkedLocalOperatorExecutionPlan.__init__(
+        hedge.cuda.plan.ChunkedMatrixLocalOpExecutionPlan.__init__(
                 self, given, parallelism, chunk_size)
 
         self.use_prefetch_branch = use_prefetch_branch
@@ -52,7 +52,7 @@ class FluxLiftingExecutionPlan(hedge.cuda.plan.ChunkedLocalOperatorExecutionPlan
 
     def __str__(self):
         return "%s span_branch=%s" % (
-                hedge.cuda.plan.ChunkedLocalOperatorExecutionPlan.__str__(self),
+                hedge.cuda.plan.ChunkedMatrixLocalOpExecutionPlan.__str__(self),
                 self.use_prefetch_branch)
 
     def make_kernel(self, discr):
