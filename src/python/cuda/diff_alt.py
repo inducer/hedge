@@ -169,10 +169,9 @@ class SMemFieldDiffKernel(object):
                 Value("texture<float%d, 2, cudaReadModeElementType>"
                     % rst_channels, 
                     "rst_to_xyz_tex"),
-                ]+[
-                Value("texture<float, 2, cudaReadModeElementType>", 
-                    "diff_rst%d_mat_tex" % i) for i in dims
-                ]+[
+                Value("texture<float%d, 2, cudaReadModeElementType>"
+                    % rst_channels, 
+                    "diff_rst_mat_tex"),
                 Line(),
                 Define("DIMENSIONS", discr.dimensions),
                 Define("DOFS_PER_EL", given.dofs_per_el()),
@@ -180,6 +179,7 @@ class SMemFieldDiffKernel(object):
                 Line(),
                 Define("MB_DOF", "threadIdx.x"),
                 Define("PAR_MB_NR", "threadIdx.y"),
+                Define("EL_DOF", "(MB_DOF - mb_el*DOFS_PER_EL)"),
                 Line(),
                 Define("MACROBLOCK_NR", "blockIdx.x"),
                 Line(),
@@ -207,10 +207,8 @@ class SMemFieldDiffKernel(object):
 
         S = Statement
         f_body = Block([
-            Initializer(POD(numpy.uint16, "mb_el"),
+            Initializer(Const(POD(numpy.uint16, "mb_el")),
                 "MB_DOF / DOFS_PER_EL"),
-            Initializer(POD(numpy.uint16, "el_dof"),
-                "MB_DOF - mb_el*DOFS_PER_EL"),
             Line(),
             ])
 
@@ -224,24 +222,21 @@ class SMemFieldDiffKernel(object):
 
             code.append(Line())
 
-            def get_mat_entry(row, col, axis):
-                return ("tex2D(diff_rst%s_mat_tex, %s, %s)"
-                        % (axis, row, col))
-
             tex_channels = ["x", "y", "z", "w"]
             from pytools import flatten
             code.extend([
-                #Assign("debugbuf[MACROBLOCK_NR]",
-                    #"GLOBAL_MB_NR*ALIGNED_DOFS_PER_MB + MB_DOF"),
                 Assign("smem_field[PAR_MB_NR][MB_DOF]",
                     "field[GLOBAL_MB_NR*ALIGNED_DOFS_PER_MB + MB_DOF]"),
-                    #0),
                 S("__syncthreads()"),
                 Line(),
-                ]+list(flatten(
-                    [
-                        S("drst%d += %s * smem_field[PAR_MB_NR][mb_el*DOFS_PER_EL+%d]" 
-                            % (axis, get_mat_entry("el_dof", j, axis), j))
+                Value("float%d" % rst_channels, "dmat_entries")
+                ]+list(flatten([
+                    Assign("dmat_entries",
+                        "tex2D(diff_rst_mat_tex, EL_DOF, %d)" % j),
+                    Line(),
+                    ]+[
+                        S("drst%d += dmat_entries.%s * smem_field[PAR_MB_NR][mb_el*DOFS_PER_EL+%d]" 
+                            % (axis, tex_channels[axis], j))
                         for axis in dims
                         ]+[Line()]
                     for j in range(given.dofs_per_el())
@@ -283,7 +278,7 @@ class SMemFieldDiffKernel(object):
 
         mod = cuda.SourceModule(cmod, 
                 keep=True, 
-                #options=["--maxrregcount=10"]
+                options=["--maxrregcount=16"]
                 )
         print "diff: lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
 
@@ -292,25 +287,30 @@ class SMemFieldDiffKernel(object):
                 self.localop_rst_to_xyz(diff_op_cls, elgroup), 
                 rst_to_xyz_texref)
 
-        diff_rst_mat_texrefs = [
-                mod.get_texref("diff_rst%d_mat_tex" % i)
-                for i in dims]
-        for tr, diff_mat_array in zip(
-                diff_rst_mat_texrefs, self.gpu_diffmats(diff_op_cls, elgroup)):
-            tr.set_array(diff_mat_array)
+        diff_rst_mat_texref = mod.get_texref("diff_rst_mat_tex")
+        diff_rst_mat_texref.set_array(self.gpu_diffmats(diff_op_cls, elgroup))
 
         func = mod.get_function("apply_diff_mat_smem")
         func.prepare(
                 ["PP"] + discr.dimensions*[float_type],
                 block=(given.microblock.aligned_floats, self.plan.parallelism.p, 1),
-                texrefs=[rst_to_xyz_texref]+diff_rst_mat_texrefs)
+                texrefs=[rst_to_xyz_texref, diff_rst_mat_texref])
         return func
 
     # data blocks -------------------------------------------------------------
     @memoize_method
     def gpu_diffmats(self, diff_op_cls, elgroup):
-        return [cuda.matrix_to_array(m.astype(self.discr.given.float_type))
-                for m in diff_op_cls.matrices(elgroup)]
+        discr = self.discr
+        given = discr.given
+        d = discr.dimensions
+
+        rst_channels = given.devdata.make_valid_tex_channel_count(d)
+        result = numpy.zeros((rst_channels, given.dofs_per_el(), given.dofs_per_el()),
+                dtype=given.float_type, order="F")
+        for i, dm in enumerate(diff_op_cls.matrices(elgroup)):
+            result[i] = dm
+
+        return cuda.make_multichannel_2d_array(result)
 
     @memoize_method
     def localop_rst_to_xyz(self, diff_op, elgroup):
