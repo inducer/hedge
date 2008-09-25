@@ -228,6 +228,34 @@ class SMemFieldFluxLocalKernel(object):
             Line(),
             ])
 
+        def get_load_code():
+            mb_dofs = given.microblock.aligned_floats
+            mb_face_dofs = given.aligned_face_dofs_per_microblock()
+            face_dofs_over_dofs = (mb_face_dofs+mb_dofs-1) // mb_dofs
+
+            load_code = []
+            store_code = []
+            for load_block in range(face_dofs_over_dofs):
+                var = "tmp%d" % load_block
+                load_code.append(POD(float_type, var))
+
+                block_addr = "%d * ALIGNED_DOFS_PER_MB + MB_DOF" % load_block
+                load_instr = Assign(var, 
+                    "fluxes_on_faces[GLOBAL_MB_NR*ALIGNED_FACE_DOFS_PER_MB "
+                    "+ %s]" % block_addr)
+                store_instr = Assign(
+                        "smem_fluxes_on_faces[PAR_MB_NR][%s]" % block_addr,
+                        var
+                        )
+                if (load_block+1)*mb_dofs >= mb_face_dofs:
+                    cond = "%s < ALIGNED_FACE_DOFS_PER_MB" % block_addr
+                    load_instr = If(cond, load_instr)
+                    store_instr = If(cond, store_instr)
+
+                load_code.append(load_instr)
+                store_code.append(store_instr)
+            return load_code + [Line()] + store_code
+
         def get_lift_code():
             from pytools import flatten
 
@@ -241,12 +269,7 @@ class SMemFieldFluxLocalKernel(object):
                 Comment("everybody needs to be done with the old data"),
                 S("__syncthreads()"),
                 Line(),
-                For("unsigned i = MB_DOF",
-                    "i < ALIGNED_FACE_DOFS_PER_MB",
-                    "i += ALIGNED_DOFS_PER_MB",
-                    Assign("smem_fluxes_on_faces[PAR_MB_NR][i]",
-                        "fluxes_on_faces[GLOBAL_MB_NR*ALIGNED_FACE_DOFS_PER_MB + i]"),
-                    ),
+                ]+get_load_code()+[
                 Line(),
                 Comment("all the new data must be loaded"),
                 S("__syncthreads()"),
