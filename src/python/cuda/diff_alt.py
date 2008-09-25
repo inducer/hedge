@@ -226,31 +226,8 @@ class SMemFieldDiffKernel(object):
             code.append(Line())
 
             tex_channels = ["x", "y", "z", "w"]
-            from pytools import flatten
-            code.extend([
-                Assign("smem_field[PAR_MB_NR][MB_DOF]",
-                    "field[GLOBAL_MB_NR*ALIGNED_DOFS_PER_MB + MB_DOF]"),
-                S("__syncthreads()"),
-                Line(),
-                Value("float%d" % rst_channels, "dmat_entries"),
-                POD(float_type, "field_value"),
-                Line(),
-                ]+list(flatten([
-                    Assign("dmat_entries",
-                        "tex2D(diff_rst_mat_tex, EL_DOF, %d)" % j),
-                    Assign("field_value", 
-                        "smem_field[PAR_MB_NR][mb_el*DOFS_PER_EL+%d]" % j),
-                    Line(),
-                    ]+[
-                        S("drst%d += dmat_entries.%s * field_value" 
-                            % (axis, tex_channels[axis]))
-                        for axis in dims
-                        ]+[Line()]
-                    for j in range(given.dofs_per_el())
-                    ))
-                )
 
-            store_code = Block()
+            store_code = []
             for glob_axis in dims:
                 store_code.append(Block([
                     Initializer(Value("float%d" % rst_channels, "rst_to_xyz"),
@@ -267,18 +244,44 @@ class SMemFieldDiffKernel(object):
                             )
                         )
                     ]))
+            from pytools import flatten
+            code.extend([
+                Comment("everybody needs to be done with the old data"),
+                S("__syncthreads()"),
+                Line(),
+                Assign("smem_field[PAR_MB_NR][MB_DOF]",
+                    "field[GLOBAL_MB_NR*ALIGNED_DOFS_PER_MB + MB_DOF]"),
+                Line(),
+                Comment("all the new data must be loaded"),
+                S("__syncthreads()"),
+                Line(),
+                Value("float%d" % rst_channels, "dmat_entries"),
+                POD(float_type, "field_value"),
+                Line(),
 
-            code.append(If("MB_DOF < DOFS_PER_EL*MB_EL_COUNT", store_code))
+                If("MB_DOF < DOFS_PER_MB", Block(list(flatten([
+                    Assign("dmat_entries",
+                        "tex2D(diff_rst_mat_tex, EL_DOF, %d)" % j),
+                    Assign("field_value", 
+                        "smem_field[PAR_MB_NR][mb_el*DOFS_PER_EL+%d]" % j),
+                    Line(),
+                    ]+[
+                        S("drst%d += dmat_entries.%s * field_value" 
+                            % (axis, tex_channels[axis]))
+                        for axis in dims
+                        ]+[Line()]
+                    for j in range(given.dofs_per_el())
+                    ))+store_code))
+                ])
+
 
             return code
 
         f_body.extend([
-            If("MB_DOF < DOFS_PER_MB",
-                For("unsigned short seq_mb_number = 0",
-                    "seq_mb_number < SEQ_MB_COUNT",
-                    "++seq_mb_number",
-                    Block(get_scalar_diff_code())
-                    )
+            For("unsigned short seq_mb_number = 0",
+                "seq_mb_number < SEQ_MB_COUNT",
+                "++seq_mb_number",
+                Block(get_scalar_diff_code())
                 )
             ])
 

@@ -65,7 +65,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         return result
             
     def print_error_structure(self, computed, reference, diff,
-            eventful_only=False):
+            eventful_only=False, detail=True):
         discr = self.ex.discr
 
         norm_ref = la.norm(reference)
@@ -88,19 +88,21 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                     if relerr > 1e-4:
                         eventful = True
                         struc_line += "*"
-                        if False:
+                        if detail:
                             print "block %d, el %d, global el #%d, rel.l2err=%g" % (
                                     block.number, i_el, el.id, relerr)
                             print computed[s]
                             print reference[s]
                             print diff[s]
+                            print diff[s]/norm_ref
+                            print la.norm(diff[s]), norm_ref
                             raw_input()
                     elif numpy.isnan(diff[s]).any():
                         eventful = True
                         struc_line += "N"
                         add_lines.append(str(diff[s]))
                         
-                        if False:
+                        if detail:
                             print "block %d, el %d, global el #%d, rel.l2err=%g" % (
                                     block.number, i_el, el.id, relerr)
                             print computed[s]
@@ -172,7 +174,8 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             rel_err_norm = relative_error(la.norm(diff), la.norm(real_dx))
             print "diff", rel_err_norm
             if not (rel_err_norm < 5e-5):
-                self.print_error_structure(dx, real_dx, diff)
+                self.print_error_structure(dx, real_dx, diff,
+                        eventful_only=True)
             assert rel_err_norm < 5e-5
 
         self.diff_xyz_cache[op.__class__, field_expr] = xyz_diff
