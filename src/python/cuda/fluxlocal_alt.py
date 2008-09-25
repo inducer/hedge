@@ -65,7 +65,48 @@ class SMemFieldFluxLocalKernel(object):
                 1)
 
     def benchmark(self):
-        return 0 
+        discr = self.discr
+        given = discr.given
+        elgroup, = discr.element_groups
+
+        is_lift = True
+        lift = self.get_kernel(is_lift, elgroup)
+
+        def vol_empty():
+            from hedge.cuda.tools import int_ceiling
+            dofs = int_ceiling(
+                    discr.flux_plan.dofs_per_block() * len(discr.blocks),     
+                    self.plan.dofs_per_macroblock())
+
+            return gpuarray.empty((dofs,), dtype=given.float_type,
+                    allocator=discr.pool.allocate)
+
+        flux = vol_empty()
+        fluxes_on_faces = gpuarray.empty(
+                discr.flux_plan.fluxes_on_faces_shape(len(discr.blocks)), 
+                dtype=given.float_type,
+                allocator=discr.pool.allocate)
+
+        if set(["cuda_lift", "cuda_debugbuf"]) <= discr.debug:
+            debugbuf = gpuarray.zeros((1024,), dtype=numpy.float32)
+        else:
+            debugbuf = FakeGPUArray()
+
+        count = 20
+
+        start = cuda.Event()
+        start.record()
+        cuda.Context.synchronize()
+        for i in range(count):
+            lift.prepared_call(self.grid,
+                    flux.gpudata, 
+                    fluxes_on_faces.gpudata,
+                    0)
+        stop = cuda.Event()
+        stop.record()
+        stop.synchronize()
+
+        return 1e-3/count * stop.time_since(start)
 
     def __call__(self, fluxes_on_faces, is_lift):
         discr = self.discr
