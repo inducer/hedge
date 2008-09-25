@@ -50,8 +50,6 @@ class ChunkedDiffExecutionPlan(hedge.cuda.plan.ChunkedMatrixLocalOpExecutionPlan
 
 def make_plan(discr, given):
     def generate_plans():
-        from hedge.cuda.tools import int_ceiling
-
         chunk_sizes = range(given.microblock.align_size, 
                 given.microblock.elements*given.dofs_per_el()+1, 
                 given.microblock.align_size)
@@ -59,7 +57,6 @@ def make_plan(discr, given):
         from hedge.cuda.plan import Parallelism
 
         for pe in range(1,32):
-            from hedge.cuda.tools import int_ceiling
             localop_par = Parallelism(pe, 64//pe)
             for chunk_size in chunk_sizes:
                 yield ChunkedDiffExecutionPlan(given, localop_par, chunk_size)
@@ -67,7 +64,6 @@ def make_plan(discr, given):
         from hedge.cuda.diff_alt import SMemFieldDiffExecutionPlan
 
         for pe in range(1,32):
-            from hedge.cuda.tools import int_ceiling
             localop_par = Parallelism(pe, 64//pe)
             yield SMemFieldDiffExecutionPlan(given, localop_par)
 

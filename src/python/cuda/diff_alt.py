@@ -36,6 +36,15 @@ class SMemFieldDiffExecutionPlan(hedge.cuda.plan.SMemFieldLocalOpExecutionPlan):
     def registers(self):
         return 16
 
+    @memoize_method
+    def shared_mem_use(self):
+        given = self.given
+        
+        return (64 # parameters, block header, small extra stuff
+               + given.float_size() * (
+                   self.parallelism.p * self.given.microblock.aligned_floats))
+
+
     def make_kernel(self, discr):
         return SMemFieldDiffKernel(discr, self)
 
@@ -192,7 +201,6 @@ class SMemFieldDiffKernel(object):
                 Define("SEQ_MB_COUNT", self.plan.parallelism.s),
                 Line(),
                 Define("THREAD_NUM", "(MB_DOF+PAR_MB_NR*ALIGNED_DOFS_PER_MB)"),
-                Define("COALESCING_THREAD_COUNT", "(PAR_MB_COUNT*ALIGNED_DOFS_PER_MB)"),
                 Line(),
                 Define("GLOBAL_MB_NR", 
                     "(MACROBLOCK_NR*PAR_MB_COUNT*SEQ_MB_COUNT "
@@ -214,7 +222,6 @@ class SMemFieldDiffKernel(object):
                 "MB_DOF / DOFS_PER_EL"),
             Line(),
             ])
-
             
         # ---------------------------------------------------------------------
         def get_scalar_diff_code():
@@ -273,7 +280,6 @@ class SMemFieldDiffKernel(object):
                     for j in range(given.dofs_per_el())
                     ))+store_code))
                 ])
-
 
             return code
 

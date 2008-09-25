@@ -22,13 +22,11 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import numpy
-import numpy.linalg as la
 from pytools import memoize_method, memoize
-import hedge.optemplate
 import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
-import pymbolic.mapper.stringifier
 from hedge.cuda.tools import FakeGPUArray
+import hedge.cuda.plan 
 
 
 
@@ -62,22 +60,25 @@ class FluxLiftingExecutionPlan(hedge.cuda.plan.ChunkedMatrixLocalOpExecutionPlan
 
 def make_plan(discr, given):
     def generate_plans():
-        for use_prefetch_branch in [True, False]:
-            from hedge.cuda.tools import int_ceiling
+        from hedge.cuda.plan import Parallelism
 
+        for use_prefetch_branch in [True, False]:
             chunk_sizes = range(given.microblock.align_size, 
                     given.microblock.elements*given.dofs_per_el()+1, 
                     given.microblock.align_size)
 
-            from hedge.cuda.plan import Parallelism
-
             for pe in range(1,32):
-                from hedge.cuda.tools import int_ceiling
                 localop_par = Parallelism(pe, 256//pe)
                 for chunk_size in chunk_sizes:
                     yield FluxLiftingExecutionPlan(given, 
                             localop_par, chunk_size,
                             use_prefetch_branch)
+
+        from hedge.cuda.fluxlocal_alt import SMemFieldFluxLocalExecutionPlan
+
+        for pe in range(1,32):
+            localop_par = Parallelism(pe, 64//pe)
+            yield SMemFieldFluxLocalExecutionPlan(given, localop_par)
 
     def target_func(plan):
         return - plan.make_kernel(discr).benchmark()
@@ -109,7 +110,6 @@ class FluxLocalKernel(object):
         elgroup, = discr.element_groups
 
         is_lift = True
-
         lift, fluxes_on_faces_texref = self.get_kernel(is_lift, elgroup)
 
         def vol_empty():
@@ -128,8 +128,6 @@ class FluxLocalKernel(object):
                 allocator=discr.pool.allocate)
         fluxes_on_faces.bind_to_texref(fluxes_on_faces_texref)
 
-        debugbuf = FakeGPUArray()
-
         count = 20
 
         start = cuda.Event()
@@ -140,7 +138,7 @@ class FluxLocalKernel(object):
                     self.grid,
                     flux.gpudata, 
                     self.gpu_liftmat(is_lift).device_memory,
-                    debugbuf.gpudata)
+                    0)
         stop = cuda.Event()
         stop.record()
         stop.synchronize()

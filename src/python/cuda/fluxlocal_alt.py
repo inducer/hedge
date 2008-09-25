@@ -22,13 +22,11 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import numpy
-import numpy.linalg as la
 from pytools import memoize_method, memoize
-import hedge.optemplate
 import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
-import pymbolic.mapper.stringifier
 from hedge.cuda.tools import FakeGPUArray
+import hedge.cuda.plan 
 
 
 
@@ -36,7 +34,7 @@ from hedge.cuda.tools import FakeGPUArray
 # plan ------------------------------------------------------------------------
 class SMemFieldFluxLocalExecutionPlan(hedge.cuda.plan.SMemFieldLocalOpExecutionPlan):
     def registers(self):
-        return 13
+        return 16
 
     @memoize_method
     def shared_mem_use(self):
