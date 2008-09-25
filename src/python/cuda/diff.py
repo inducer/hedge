@@ -58,12 +58,11 @@ def make_plan(discr, given):
 
         from hedge.cuda.plan import Parallelism
 
-        if False:
-            for pe in range(1,32):
-                from hedge.cuda.tools import int_ceiling
-                localop_par = Parallelism(pe, 64//pe)
-                for chunk_size in chunk_sizes:
-                    yield ChunkedDiffExecutionPlan(given, localop_par, chunk_size)
+        for pe in range(1,32):
+            from hedge.cuda.tools import int_ceiling
+            localop_par = Parallelism(pe, 64//pe)
+            for chunk_size in chunk_sizes:
+                yield ChunkedDiffExecutionPlan(given, localop_par, chunk_size)
 
         from hedge.cuda.diff_alt import SMemFieldDiffExecutionPlan
 
@@ -200,7 +199,7 @@ class DiffKernel(object):
                 ] + [Pointer(POD(float_type, "dxyz%d" % i)) for i in dims]
             ))
 
-        rst_channels = discr.devdata.make_valid_tex_channel_count(d)
+        rst_channels = given.devdata.make_valid_tex_channel_count(d)
         cmod = Module([
                 Value("texture<float%d, 2, cudaReadModeElementType>"
                     % rst_channels, 
@@ -373,7 +372,7 @@ class DiffKernel(object):
             columns += 1
             additional_columns += 1
 
-        block_floats = self.discr.devdata.align_dtype(
+        block_floats = given.devdata.align_dtype(
                 columns*self.plan.chunk_size, given.float_size())
 
         vstacked_matrices = [
@@ -425,7 +424,7 @@ class DiffKernel(object):
         # indexed local, el_number, global
         result_matrix = (coeffs[:,:,elgroup_indices]
                 .transpose(1,0,2))
-        channels = discr.devdata.make_valid_tex_channel_count(d)
+        channels = discr.given.devdata.make_valid_tex_channel_count(d)
         add_channels = channels - result_matrix.shape[0]
         if add_channels:
             result_matrix = numpy.vstack((

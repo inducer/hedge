@@ -229,7 +229,7 @@ class SMemFieldLocalOpExecutionPlan(ExecutionPlan):
         return self.parallelism.p * self.given.microblock.aligned_floats
 
     def __str__(self):
-            return ("%s par=%s" % (
+            return ("smem_field %s par=%s" % (
                 ExecutionPlan.__str__(self),
                 self.parallelism))
 
