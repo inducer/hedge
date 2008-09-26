@@ -42,7 +42,7 @@ class SMemFieldDiffExecutionPlan(hedge.cuda.plan.SMemFieldLocalOpExecutionPlan):
         
         return (64 # parameters, block header, small extra stuff
                + given.float_size() * (
-                   self.parallelism.p * self.given.microblock.aligned_floats))
+                   self.parallelism.parallel * self.given.microblock.aligned_floats))
 
 
     def make_kernel(self, discr):
@@ -197,8 +197,8 @@ class SMemFieldDiffKernel(object):
                 Line(),
                 Define("MACROBLOCK_NR", "blockIdx.x"),
                 Line(),
-                Define("PAR_MB_COUNT", self.plan.parallelism.p),
-                Define("SEQ_MB_COUNT", self.plan.parallelism.s),
+                Define("PAR_MB_COUNT", self.plan.parallelism.parallel),
+                Define("SEQ_MB_COUNT", self.plan.parallelism.serial),
                 Line(),
                 Define("THREAD_NUM", "(MB_DOF+PAR_MB_NR*ALIGNED_DOFS_PER_MB)"),
                 Line(),
@@ -311,7 +311,7 @@ class SMemFieldDiffKernel(object):
         func = mod.get_function("apply_diff_mat_smem")
         func.prepare(
                 ["PP"] + discr.dimensions*[float_type],
-                block=(given.microblock.aligned_floats, self.plan.parallelism.p, 1),
+                block=(given.microblock.aligned_floats, self.plan.parallelism.parallel, 1),
                 texrefs=[rst_to_xyz_texref, diff_rst_mat_texref])
         return func
 

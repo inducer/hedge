@@ -57,14 +57,14 @@ def make_plan(discr, given):
         from hedge.cuda.plan import Parallelism
 
         for pe in range(1,32):
-            localop_par = Parallelism(pe, 64//pe)
+            localop_par = Parallelism(pe, 1, 64//pe)
             for chunk_size in chunk_sizes:
                 yield ChunkedDiffExecutionPlan(given, localop_par, chunk_size)
 
         from hedge.cuda.diff_alt import SMemFieldDiffExecutionPlan
 
         for pe in range(1,32):
-            localop_par = Parallelism(pe, 64//pe)
+            localop_par = Parallelism(pe, 1, 1)
             yield SMemFieldDiffExecutionPlan(given, localop_par)
 
     def target_func(plan):
@@ -216,8 +216,8 @@ class DiffKernel(object):
                 Define("MB_CHUNK_COUNT", self.plan.chunks_per_microblock()),
                 Define("MB_DOF_COUNT", given.microblock.aligned_floats),
                 Define("MB_EL_COUNT", given.microblock.elements),
-                Define("PAR_MB_COUNT", self.plan.parallelism.p),
-                Define("SEQ_MB_COUNT", self.plan.parallelism.s),
+                Define("PAR_MB_COUNT", self.plan.parallelism.parallel),
+                Define("SEQ_MB_COUNT", self.plan.parallelism.serial),
                 Line(),
                 Define("THREAD_NUM", "(CHUNK_DOF+PAR_MB_NR*CHUNK_DOF_COUNT)"),
                 Define("COALESCING_THREAD_COUNT", "(PAR_MB_COUNT*CHUNK_DOF_COUNT)"),
@@ -351,7 +351,7 @@ class DiffKernel(object):
         func = mod.get_function("apply_diff_mat")
         func.prepare(
                 discr.dimensions*[float_type] + ["P"],
-                block=(self.plan.chunk_size, self.plan.parallelism.p, 1),
+                block=(self.plan.chunk_size, self.plan.parallelism.parallel, 1),
                 texrefs=[field_texref, rst_to_xyz_texref])
         return func, field_texref
 

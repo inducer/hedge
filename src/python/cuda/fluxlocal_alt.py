@@ -42,7 +42,7 @@ class SMemFieldFluxLocalExecutionPlan(hedge.cuda.plan.SMemFieldLocalOpExecutionP
         
         return (64 # parameters, block header, small extra stuff
                + given.float_size() * (
-                   self.parallelism.p * self.given.aligned_face_dofs_per_microblock()))
+                   self.parallelism.parallel * self.given.aligned_face_dofs_per_microblock()))
 
     def make_kernel(self, discr):
         return SMemFieldFluxLocalKernel(discr, self)
@@ -202,8 +202,8 @@ class SMemFieldFluxLocalKernel(object):
                 Line(),
                 Define("MACROBLOCK_NR", "blockIdx.x"),
                 Line(),
-                Define("PAR_MB_COUNT", self.plan.parallelism.p),
-                Define("SEQ_MB_COUNT", self.plan.parallelism.s),
+                Define("PAR_MB_COUNT", self.plan.parallelism.parallel),
+                Define("SEQ_MB_COUNT", self.plan.parallelism.serial),
                 Line(),
                 Define("THREAD_NUM", "(MB_DOF+PAR_MB_NR*ALIGNED_DOFS_PER_MB)"),
                 Line(),
@@ -323,7 +323,7 @@ class SMemFieldFluxLocalKernel(object):
         func = mod.get_function("apply_lift_mat_smem")
         func.prepare(
                 "PPP", 
-                block=(given.microblock.aligned_floats, self.plan.parallelism.p, 1),
+                block=(given.microblock.aligned_floats, self.plan.parallelism.parallel, 1),
                 texrefs=texrefs)
 
         return func

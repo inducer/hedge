@@ -68,7 +68,7 @@ def make_plan(discr, given):
                     given.microblock.align_size)
 
             for pe in range(1,32):
-                localop_par = Parallelism(pe, 256//pe)
+                localop_par = Parallelism(pe, 1, 256//pe)
                 for chunk_size in chunk_sizes:
                     yield FluxLiftingExecutionPlan(given, 
                             localop_par, chunk_size,
@@ -77,7 +77,7 @@ def make_plan(discr, given):
         from hedge.cuda.fluxlocal_alt import SMemFieldFluxLocalExecutionPlan
 
         for pe in range(1,32):
-            localop_par = Parallelism(pe, 64//pe)
+            localop_par = Parallelism(pe, 1, 1)
             yield SMemFieldFluxLocalExecutionPlan(given, localop_par)
 
     def target_func(plan):
@@ -245,8 +245,8 @@ class FluxLocalKernel(object):
                 Define("MB_DOF_COUNT", given.microblock.aligned_floats),
                 Define("MB_FACEDOF_COUNT", given.aligned_face_dofs_per_microblock()),
                 Define("MB_EL_COUNT", given.microblock.elements),
-                Define("PAR_MB_COUNT", self.plan.parallelism.p),
-                Define("SEQ_MB_COUNT", self.plan.parallelism.s),
+                Define("PAR_MB_COUNT", self.plan.parallelism.parallel),
+                Define("SEQ_MB_COUNT", self.plan.parallelism.serial),
                 Line(),
                 Define("THREAD_NUM", "(CHUNK_DOF+PAR_MB_NR*CHUNK_DOF_COUNT)"),
                 Define("COALESCING_THREAD_COUNT", "(PAR_MB_COUNT*CHUNK_DOF_COUNT)"),
@@ -449,7 +449,7 @@ class FluxLocalKernel(object):
         func = mod.get_function("apply_lift_mat")
         func.prepare(
                 "PPP", 
-                block=(self.plan.chunk_size, self.plan.parallelism.p, 1),
+                block=(self.plan.chunk_size, self.plan.parallelism.parallel, 1),
                 texrefs=texrefs)
 
         return func, fluxes_on_faces_texref

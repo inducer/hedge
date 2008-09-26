@@ -28,16 +28,27 @@ from pytools import memoize, memoize_method
 
 
 class Parallelism:
-    """Defines how much of a task is accomplished sequentially vs. in parallel."""
-    def __init__(self, parallel, serial):
-        self.p = parallel
-        self.s = serial
+    """Defines how much of a task is accomplished sequentially vs. in-line parallel
+    vs. completely in parallel.
+
+    To fix terminology: 
+    
+    - "parallel" means "in separate threads".
+    - "inline" means "in the same thread, but sharing some data."
+    - "serial" means "in the same thread, but in separate, data-independent stages."
+    """
+    def __init__(self, parallel, inline, serial):
+        self.parallel = parallel
+        self.inline = inline
+        self.serial = serial
 
     def total(self):
-        return self.p*self.s
+        return self.parallel*self.inline*self.serial
 
     def __str__(self):
-        return "(p%d s%d)" % (self.p, self.s)
+        return "(%s)" % (" ".join("%s%d" % (cat, count) for cat, count in [
+            ("p", self.parallel), ("i", self.inline), ("s", self.serial)]
+            if count != 1))
 
 
 
@@ -189,14 +200,14 @@ class ChunkedMatrixLocalOpExecutionPlan(ExecutionPlan):
                    + self.chunk_size # this many rows
                    * self.columns()
                    # fetch buffer for each chunk
-                   + self.parallelism.p
+                   + self.parallelism.parallel
                    * self.chunk_size
                    * self.fetch_buffer_chunks()
                    )
                )
 
     def threads(self):
-        return self.parallelism.p*self.chunk_size
+        return self.parallelism.parallel*self.chunk_size
 
     def __str__(self):
             return ("%s par=%s chunk_size=%d" % (
@@ -214,6 +225,8 @@ class SMemFieldLocalOpExecutionPlan(ExecutionPlan):
         self.given = given
         self.parallelism = parallelism
 
+        assert parallelism.inline == 1
+
     def dofs_per_macroblock(self):
         return self.parallelism.total() * self.given.microblock.aligned_floats
 
@@ -223,10 +236,10 @@ class SMemFieldLocalOpExecutionPlan(ExecutionPlan):
         
         return (64 # parameters, block header, small extra stuff
                + given.float_size() * (
-                   self.parallelism.p * self.given.microblock.aligned_floats))
+                   self.parallelism.parallel * self.given.microblock.aligned_floats))
 
     def threads(self):
-        return self.parallelism.p * self.given.microblock.aligned_floats
+        return self.parallelism.parallel * self.given.microblock.aligned_floats
 
     def __str__(self):
             return ("smem_field %s par=%s" % (
@@ -242,7 +255,7 @@ def _test_planner():
     for order in [3]:
         for pe in range(2,16):
             for se in range(1,16):
-                flux_par = Parallelism(pe, se)
+                flux_par = Parallelism(pe, 1, se)
                 plan = ExecutionPlan(TetrahedralElement(order), flux_par)
                 inv_reas = plan.invalid_reason()
                 if inv_reas is None:
