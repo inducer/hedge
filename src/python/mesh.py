@@ -1065,7 +1065,8 @@ def make_cylinder_mesh(radius=0.5, height=1, radial_subdivisions=10,
 
 def make_box_mesh(a=(0,0,0),b=(1,1,1), 
         max_volume=None, periodicity=None,
-        boundary_tagger=(lambda fvi, el, fn: [])):
+        boundary_tagger=(lambda fvi, el, fn: []),
+        return_meshpy_mesh=False):
     """Return a mesh for a brick from the origin to `dimensions'.
 
     `max_volume' specifies the maximum volume for each tetrahedron.
@@ -1173,9 +1174,14 @@ def make_box_mesh(a=(0,0,0),b=(1,1,1),
         else:
             return [face_tag] + boundary_tagger(fvi, el, fn)
 
-    return make_conformal_mesh(
+    result = make_conformal_mesh(
             generated_mesh.points,
             generated_mesh.elements,
             wrapped_boundary_tagger,
             periodicity=mesh_periodicity)
+
+    if return_meshpy_mesh:
+        return result, generated_mesh
+    else:
+        return result
 
