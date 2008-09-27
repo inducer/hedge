@@ -36,7 +36,7 @@ class ChunkedDiffExecutionPlan(hedge.cuda.plan.ChunkedMatrixLocalOpExecutionPlan
         return self.given.dofs_per_el() * self.given.ldis.dimensions # r,s,t
 
     def registers(self):
-        return 16
+        return 16 + 4 * self.parallelism.inline
 
     def fetch_buffer_chunks(self):
         return 0
@@ -57,9 +57,12 @@ def make_plan(discr, given):
         from hedge.cuda.plan import Parallelism
 
         for pe in range(1,32):
-            localop_par = Parallelism(pe, 1, 64//pe)
-            for chunk_size in chunk_sizes:
-                yield ChunkedDiffExecutionPlan(given, localop_par, chunk_size)
+            for inline in range(1, 8):
+            #for inline in [1]:
+                for seq in range(1, 4):
+                    localop_par = Parallelism(pe, inline, seq)
+                    for chunk_size in chunk_sizes:
+                        yield ChunkedDiffExecutionPlan(given, localop_par, chunk_size)
 
         from hedge.cuda.diff_alt import SMemFieldDiffExecutionPlan
 
@@ -68,11 +71,11 @@ def make_plan(discr, given):
             yield SMemFieldDiffExecutionPlan(given, localop_par)
 
     def target_func(plan):
-        return - plan.make_kernel(discr).benchmark()
+        return plan.make_kernel(discr).benchmark()
 
     from hedge.cuda.plan import optimize_plan
-    return optimize_plan(generate_plans, target_func,
-            desirable_occupancy=0.8)
+    return optimize_plan(generate_plans, target_func, maximize=False,
+            desirable_occupancy=0.5, debug=True)
 
 
 
@@ -124,8 +127,12 @@ class DiffKernel(object):
         start.record()
         cuda.Context.synchronize()
         for i in range(count):
-            func.prepared_call(self.grid, gpu_diffmats.device_memory,
-                    *xyz_diff_gpudata)
+            try:
+                func.prepared_call(self.grid, gpu_diffmats.device_memory,
+                        *xyz_diff_gpudata)
+            except RuntimeError:
+                return None
+
         stop = cuda.Event()
         stop.record()
         stop.synchronize()
@@ -184,6 +191,8 @@ class DiffKernel(object):
         given = discr.given
         fplan = discr.flux_plan
 
+        par = self.plan.parallelism
+
         diffmat_data = self.gpu_diffmats(diff_op_cls, elgroup)
         elgroup, = discr.element_groups
 
@@ -212,19 +221,21 @@ class DiffKernel(object):
                 Define("MB_CHUNK", "blockIdx.x"),
                 Define("MACROBLOCK_NR", "blockIdx.y"),
                 Line(),
-                Define("CHUNK_DOF_COUNT", self.plan.chunk_size),
-                Define("MB_CHUNK_COUNT", self.plan.chunks_per_microblock()),
-                Define("MB_DOF_COUNT", given.microblock.aligned_floats),
-                Define("MB_EL_COUNT", given.microblock.elements),
-                Define("PAR_MB_COUNT", self.plan.parallelism.parallel),
-                Define("SEQ_MB_COUNT", self.plan.parallelism.serial),
+                Define("DOFS_PER_CHUNK", self.plan.chunk_size),
+                Define("CHUNKS_PER_MB", self.plan.chunks_per_microblock()),
+                Define("ALIGNED_DOFS_PER_MB", given.microblock.aligned_floats),
+                Define("ELS_PER_MB", given.microblock.elements),
                 Line(),
-                Define("THREAD_NUM", "(CHUNK_DOF+PAR_MB_NR*CHUNK_DOF_COUNT)"),
-                Define("COALESCING_THREAD_COUNT", "(PAR_MB_COUNT*CHUNK_DOF_COUNT)"),
+                Define("PAR_MB_COUNT", par.parallel),
+                Define("INLINE_MB_COUNT", par.inline),
+                Define("SEQ_MB_COUNT", par.serial),
                 Line(),
-                Define("MB_DOF_BASE", "(MB_CHUNK*CHUNK_DOF_COUNT)"),
+                Define("THREAD_NUM", "(CHUNK_DOF+PAR_MB_NR*DOFS_PER_CHUNK)"),
+                Define("COALESCING_THREAD_COUNT", "(PAR_MB_COUNT*DOFS_PER_CHUNK)"),
+                Line(),
+                Define("MB_DOF_BASE", "(MB_CHUNK*DOFS_PER_CHUNK)"),
                 Define("MB_DOF", "(MB_DOF_BASE+CHUNK_DOF)"),
-                Define("GLOBAL_MB_NR_BASE", "(MACROBLOCK_NR*PAR_MB_COUNT*SEQ_MB_COUNT)"),
+                Define("GLOBAL_MB_NR_BASE", "(MACROBLOCK_NR*PAR_MB_COUNT*INLINE_MB_COUNT*SEQ_MB_COUNT)"),
                 Line(),
                 Define("DIFFMAT_CHUNK_FLOATS", diffmat_data.block_floats),
                 Define("DIFFMAT_CHUNK_BYTES", "(DIFFMAT_CHUNK_FLOATS*%d)"
@@ -232,7 +243,7 @@ class DiffKernel(object):
                 Define("DIFFMAT_COLUMNS", diffmat_data.matrix_columns),
                 Line(),
                 CudaShared(ArrayOf(POD(float_type, "smem_diff_rst_mat"), 
-                    "DIFFMAT_COLUMNS*CHUNK_DOF_COUNT")),
+                    "DIFFMAT_COLUMNS*DOFS_PER_CHUNK")),
                 Line(),
                 ])
 
@@ -251,66 +262,70 @@ class DiffKernel(object):
                 base="gmem_diff_rst_mat + MB_CHUNK*DIFFMAT_CHUNK_BYTES",
                 bytes="DIFFMAT_CHUNK_BYTES",
                 descr="load diff mat chunk")
-            +[S("__syncthreads()")])
+            +[S("__syncthreads()"), Line()])
 
         # ---------------------------------------------------------------------
-        def get_scalar_diff_code(matrix_row, dest_pattern):
+        def get_scalar_diff_code():
             code = []
-            for axis in dims:
-                code.append(
-                    Initializer(POD(float_type, "drst%d" % axis), 0))
+            for inl in range(par.inline):
+                for axis in dims:
+                    code.append(
+                        Initializer(POD(float_type, "d%drst%d" % (inl, axis)), 0))
 
             code.append(Line())
 
             def get_mat_entry(row, col, axis):
                 return ("smem_diff_rst_mat["
                         "%(row)s*DIFFMAT_COLUMNS + %(axis)s*DOFS_PER_EL"
-                        "+%(col)s"
+                        " + %(col)s"
                         "]" % {"row":row, "col":col, "axis":axis}
                         )
 
             tex_channels = ["x", "y", "z", "w"]
             from pytools import flatten
             code.extend(
-                    [POD(float_type, "field_value"),
-                        Line(),
-                        ]
-                    +list(flatten( [
-                        Assign("field_value", 
-                            "tex1Dfetch(field_tex, global_mb_dof_base"
-                            "+mb_el*DOFS_PER_EL+%d)" % j
-                            ),
-                        Line(),
-                        ]
-                        +[
-                        S("drst%d += %s * field_value" 
-                            % (axis, get_mat_entry(matrix_row, j, axis)))
+                    [POD(float_type, "field_value%d" % inl)
+                        for inl in range(par.inline)]
+                    +[Line()]
+                    +list(flatten([
+                        Assign("field_value%d" % inl, 
+                            "tex1Dfetch(field_tex, global_mb_dof_base + %d*ALIGNED_DOFS_PER_MB "
+                            "+ mb_el*DOFS_PER_EL + %d)" % (inl, j)
+                            )
+                        for inl in range(par.inline)]
+                        +[Line()]
+                        +[S("d%drst%d += %s * field_value%d" 
+                            % (inl, axis, get_mat_entry("CHUNK_DOF", j, axis), inl))
                         for axis in dims
-                        ]+[Line()]
+                        for inl in range(par.inline)]
+                        +[Line()]
                         for j in range(given.dofs_per_el())
                         ))
                     )
 
             store_code = Block()
-            for glob_axis in dims:
-                store_code.append(Block([
-                    Initializer(Value("float%d" % rst_channels, "rst_to_xyz"),
-                        "tex2D(rst_to_xyz_tex, %d, global_mb_nr*MB_EL_COUNT+mb_el)" 
-                        % glob_axis
-                        ),
-                    Assign(
-                        dest_pattern % glob_axis,
-                        " + ".join(
-                            "rst_to_xyz.%s"
-                            "*"
-                            "drst%d" % (tex_channels[loc_axis], loc_axis)
-                            for loc_axis in dims
+            for inl in range(par.inline):
+                for glob_axis in dims:
+                    store_code.append(Block([
+                        Initializer(Value("float%d" % rst_channels, "rst_to_xyz"),
+                            "tex2D(rst_to_xyz_tex, %d, "
+                            "(global_mb_nr+%d)*ELS_PER_MB + mb_el)" 
+                            % (glob_axis, inl)
+                            ),
+                        Assign(
+                            "dxyz%d[global_mb_dof_base + %d*ALIGNED_DOFS_PER_MB + MB_DOF]" 
+                            % (glob_axis, inl),
+                            " + ".join(
+                                "rst_to_xyz.%s"
+                                "*"
+                                "d%drst%d" % (tex_channels[loc_axis], inl, loc_axis)
+                                for loc_axis in dims
+                                )
                             )
-                        )
-                    ])
-                        )
+                        ])
+                            )
 
-            code.append(If("MB_DOF < DOFS_PER_EL*MB_EL_COUNT", store_code))
+            code.append(If("MB_DOF < DOFS_PER_EL*ELS_PER_MB", store_code))
 
             return code
 
@@ -320,14 +335,12 @@ class DiffKernel(object):
                 "++seq_mb_number",
                 Block([
                     Initializer(POD(numpy.uint32, "global_mb_nr"),
-                        "GLOBAL_MB_NR_BASE + seq_mb_number*PAR_MB_COUNT + PAR_MB_NR"),
+                        "GLOBAL_MB_NR_BASE + (seq_mb_number*PAR_MB_COUNT + PAR_MB_NR)*INLINE_MB_COUNT"),
                     Initializer(POD(numpy.uint32, "global_mb_dof_base"),
-                        "global_mb_nr*MB_DOF_COUNT"),
+                        "global_mb_nr*ALIGNED_DOFS_PER_MB"),
                     Line(),
                     ]+
-                    get_scalar_diff_code(
-                        "CHUNK_DOF",
-                        "dxyz%d[global_mb_dof_base+MB_DOF]")
+                    get_scalar_diff_code()
                     )
                 )
             ])
@@ -351,7 +364,7 @@ class DiffKernel(object):
         func = mod.get_function("apply_diff_mat")
         func.prepare(
                 discr.dimensions*[float_type] + ["P"],
-                block=(self.plan.chunk_size, self.plan.parallelism.parallel, 1),
+                block=(self.plan.chunk_size, par.parallel, 1),
                 texrefs=[field_texref, rst_to_xyz_texref])
         return func, field_texref
 

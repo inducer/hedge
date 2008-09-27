@@ -125,7 +125,8 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                 struc_line += " "
             if (not eventful_only) or eventful:
                 struc_lines.append(struc_line)
-                struc_lines.extend(add_lines)
+                if detail:
+                    struc_lines.extend(add_lines)
         print
         print "\n".join(struc_lines)
 
@@ -162,20 +163,25 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             assert not numpy.isnan(f).any(), "Initial field contained NaNs."
             cpu_xyz_diff = [discr.volume_from_gpu(xd) for xd in xyz_diff]
             dx = cpu_xyz_diff[0]
-            for i, xd in enumerate(cpu_xyz_diff):
-                assert not numpy.isnan(xd).any(), "Resulting field %d contained NaNs." % i
-            
+
             test_discr = discr.test_discr
             real_dx = test_discr.nabla[0].apply(f.astype(numpy.float64))
             
             diff = dx - real_dx
 
+            for i, xd in enumerate(cpu_xyz_diff):
+                if numpy.isnan(xd).any():
+                    self.print_error_structure(xd, xd, xd-xd,
+                            eventful_only=False, detail=False)
+                    assert False, "Resulting field %d contained NaNs." % i
+            
             from hedge.tools import relative_error
             rel_err_norm = relative_error(la.norm(diff), la.norm(real_dx))
             print "diff", rel_err_norm
             if not (rel_err_norm < 5e-5):
                 self.print_error_structure(dx, real_dx, diff,
-                        eventful_only=True)
+                        eventful_only=False, detail=False)
+
             assert rel_err_norm < 5e-5
 
         self.diff_xyz_cache[op.__class__, field_expr] = xyz_diff

@@ -68,7 +68,7 @@ def make_plan(discr, given):
                     given.microblock.align_size)
 
             for pe in range(1,32):
-                localop_par = Parallelism(pe, 1, 256//pe)
+                localop_par = Parallelism(pe, 1, 64//pe)
                 for chunk_size in chunk_sizes:
                     yield FluxLiftingExecutionPlan(given, 
                             localop_par, chunk_size,
@@ -81,11 +81,11 @@ def make_plan(discr, given):
             yield SMemFieldFluxLocalExecutionPlan(given, localop_par)
 
     def target_func(plan):
-        return - plan.make_kernel(discr).benchmark()
+        return plan.make_kernel(discr).benchmark()
 
     from hedge.cuda.plan import optimize_plan
-    return optimize_plan(generate_plans, target_func,
-            desirable_occupancy=0.8)
+    return optimize_plan(generate_plans, target_func, maximize=False,
+            desirable_occupancy=0.5)
 
 
 

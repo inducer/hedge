@@ -53,7 +53,7 @@ class Parallelism:
 
 
 
-def optimize_plan(plan_generator, max_func, desirable_occupancy=1):
+def optimize_plan(plan_generator, max_func, maximize, debug=False, desirable_occupancy=1):
     plans = list(p for p in plan_generator()
             if p.invalid_reason() is None)
 
@@ -64,11 +64,25 @@ def optimize_plan(plan_generator, max_func, desirable_occupancy=1):
     if desired_occup > desirable_occupancy:
         desired_occup = desirable_occupancy
 
-    from pytools import argmax2
-    return argmax2((p, max_func(p)) 
-            for p in plans
-            if p.occupancy_record().occupancy >= desired_occup - 1e-10
-            )
+    plan_values = []
+    for p in plans:
+        if p.occupancy_record().occupancy >= desired_occup - 1e-10:
+            value = max_func(p)
+            if value is not None:
+                if debug:
+                    print "%s: %g" % (p, value)
+                plan_values.append((p, value))
+
+    from pytools import argmax2, argmin2
+    if maximize:
+        result = argmax2(plan_values)
+    else:
+        result = argmin2(plan_values)
+
+    if debug:
+        print "chosen: %s" % result
+
+    return result
 
 
 
@@ -200,7 +214,7 @@ class ChunkedMatrixLocalOpExecutionPlan(ExecutionPlan):
                    + self.chunk_size # this many rows
                    * self.columns()
                    # fetch buffer for each chunk
-                   + self.parallelism.parallel
+                   + self.parallelism.parallel*self.parallelism.inline
                    * self.chunk_size
                    * self.fetch_buffer_chunks()
                    )

@@ -257,7 +257,8 @@ def make_plan(given):
 
     return optimize_plan(
             generate_valid_plans,
-            lambda plan: plan.elements_per_block())
+            lambda plan: plan.elements_per_block(),
+            maximize=True)
 
 
 
