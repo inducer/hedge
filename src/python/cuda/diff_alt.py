@@ -133,9 +133,9 @@ class SMemFieldDiffKernel(object):
         xyz_diff_gpudata = [subarray.gpudata for subarray in xyz_diff] 
 
         if discr.instrumented:
-            kernel_time = func.prepared_timed_call(self.grid, 
-                    debugbuf.gpudata, field.gpudata, *xyz_diff_gpudata)
-            discr.diff_op_timer.add_time(kernel_time)
+            discr.diff_op_timer.add_timer_callable(
+                    func.prepared_timed_call(self.grid, 
+                        debugbuf.gpudata, field.gpudata, *xyz_diff_gpudata))
         else:
             func.prepared_call(self.grid, 
                     debugbuf.gpudata, field.gpudata, *xyz_diff_gpudata)

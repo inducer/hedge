@@ -58,7 +58,6 @@ def make_plan(discr, given):
 
         for pe in range(1,32):
             for inline in range(1, 8):
-            #for inline in [1]:
                 for seq in range(1, 4):
                     localop_par = Parallelism(pe, inline, seq)
                     for chunk_size in chunk_sizes:
@@ -158,10 +157,9 @@ class DiffKernel(object):
         gpu_diffmats = self.gpu_diffmats(op_class, elgroup)
 
         if discr.instrumented:
-            kernel_time = func.prepared_timed_call(
+            discr.diff_op_timer.add_timer_callable(func.prepared_timed_call(
                     self.grid, gpu_diffmats.device_memory, 
-                    *xyz_diff_gpudata)
-            discr.diff_op_timer.add_time(kernel_time)
+                    *xyz_diff_gpudata))
         else:
             func.prepared_call(self.grid, gpu_diffmats.device_memory, 
                     *xyz_diff_gpudata)

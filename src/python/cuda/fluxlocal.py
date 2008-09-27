@@ -161,14 +161,12 @@ class FluxLocalKernel(object):
             debugbuf = FakeGPUArray()
 
         if discr.instrumented:
-            kernel_time = lift.prepared_timed_call(
-                    self.grid,
-                    flux.gpudata, 
-                    self.gpu_liftmat(is_lift).device_memory,
-                    debugbuf.gpudata)
-            
-            discr.inner_flux_timer.add_time(kernel_time)
-            discr.inner_flux_counter.add()
+            discr.inner_flux_timer.add_timer_callable(
+                    lift.prepared_timed_call(
+                        self.grid,
+                        flux.gpudata, 
+                        self.gpu_liftmat(is_lift).device_memory,
+                        debugbuf.gpudata))
         else:
             lift.prepared_call(
                     self.grid,

@@ -296,14 +296,12 @@ class FluxGatherKernel:
         fdata = self.flux_with_temp_data(elgroup)
 
         if discr.instrumented:
-            kernel_time = gather.prepared_timed_call(
+            discr.inner_flux_timer.add_timer_callable(gather.prepared_timed_call(
                     (len(discr.blocks), 1),
                     debugbuf.gpudata, 
                     fluxes_on_faces.gpudata, 
                     fdata.device_memory,
-                    )
-                    
-            discr.inner_flux_timer.add_time(kernel_time)
+                    ))
         else:
             gather.prepared_call(
                     (len(discr.blocks), 1),

@@ -25,6 +25,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 import pycuda.driver as cuda
 import numpy
 from pytools import Record
+from pytools.log import LogQuantity
 
 
 
@@ -183,3 +184,21 @@ def get_load_code(dest, base, bytes, word_type=numpy.uint32,
 
     return code
 
+
+
+
+# instrumentation -------------------------------------------------------------
+class CallableCollectionTimer(LogQuantity):
+    """Records the elapsed time between L{start} and L{stop} calls."""
+    def __init__(self, name="interval", description=None):
+        LogQuantity.__init__(self, name, "s", description)
+
+        self.callables = []
+
+    def add_timer_callable(self, clbl):
+        self.callables.append(clbl)
+
+    def __call__(self):
+        result = sum(clbl() for clbl in self.callables)
+        self.callables = []
+        return result

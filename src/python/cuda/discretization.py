@@ -488,6 +488,28 @@ class Discretization(hedge.discretization.Discretization):
 
 
 
+    # instrumentation ---------------------------------------------------------
+    def create_op_timers(self):
+        from hedge.cuda.tools import CallableCollectionTimer
+
+        self.inner_flux_timer = CallableCollectionTimer("t_inner_flux", 
+                "Time spent computing inner fluxes")
+        self.bdry_flux_timer = CallableCollectionTimer("t_bdry_flux", 
+                "Time spent computing boundary fluxes")
+        self.mass_op_timer = CallableCollectionTimer("t_mass_op", 
+                "Time spent applying mass operators")
+        self.diff_op_timer = CallableCollectionTimer("t_diff_op",
+                "Time spent applying applying differentiation operators")
+
+        return [self.inner_flux_timer, 
+                self.bdry_flux_timer,
+                self.mass_op_timer,
+                self.diff_op_timer ]
+
+
+
+
+    # utilities ---------------------------------------------------------------
     def find_el_gpu_index(self, el):
         given = self.given
         block = self.blocks[self.partition[el.id]]

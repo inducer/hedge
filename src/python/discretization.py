@@ -230,43 +230,50 @@ class Discretization(object):
         self.default_scalar_type = default_scalar_type
 
     # instrumentation ---------------------------------------------------------
+    def create_op_timers(self):
+        from pytools.log import IntervalTimer
+
+        self.inner_flux_timer = IntervalTimer("t_inner_flux", 
+                "Time spent computing inner fluxes")
+        self.bdry_flux_timer = IntervalTimer("t_bdry_flux", 
+                "Time spent computing boundary fluxes")
+        self.mass_op_timer = IntervalTimer("t_mass_op", 
+                "Time spent applying mass operators")
+        self.diff_op_timer = IntervalTimer("t_diff_op",
+                "Time spent applying applying differentiation operators")
+
+        return [self.inner_flux_timer, 
+                self.bdry_flux_timer,
+                self.mass_op_timer,
+                self.diff_op_timer ]
+
     def add_instrumentation(self, mgr):
         from pytools.log import IntervalTimer, EventCounter
 
         self.inner_flux_counter = EventCounter("n_inner_flux", 
                 "Number of inner flux computations")
-        self.inner_flux_timer = IntervalTimer("t_inner_flux", 
-                "Time spent computing inner fluxes")
         self.bdry_flux_counter = EventCounter("n_bdry_flux", 
                 "Number of boundary flux computations")
-        self.bdry_flux_timer = IntervalTimer("t_bdry_flux", 
-                "Time spent computing boundary fluxes")
-
         self.mass_op_counter = EventCounter("n_mass_op", 
                 "Number of mass operator applications")
-        self.mass_op_timer = IntervalTimer("t_mass_op", 
-                "Time spent applying mass operators")
         self.diff_op_counter = EventCounter("n_diff_op",
                 "Number of differentiation operator applications")
-        self.diff_op_timer = IntervalTimer("t_diff_op",
-                "Time spent applying applying differentiation operators")
-
         self.flop_counter = EventCounter("n_flops",
                 "Number of floating point operations")
 
         self.interpolant_counter = EventCounter("n_interp", 
                 "Number of interpolant evaluations")
+
         self.interpolant_timer = IntervalTimer("t_interp", 
                 "Time spent evaluating interpolants")
 
+        for op in self.create_op_timers():
+            mgr.add_quantity(op)
+
         mgr.add_quantity(self.inner_flux_counter)
-        mgr.add_quantity(self.inner_flux_timer)
         mgr.add_quantity(self.bdry_flux_counter)
-        mgr.add_quantity(self.bdry_flux_timer)
         mgr.add_quantity(self.mass_op_counter)
-        mgr.add_quantity(self.mass_op_timer)
         mgr.add_quantity(self.diff_op_counter)
-        mgr.add_quantity(self.diff_op_timer)
         mgr.add_quantity(self.flop_counter)
         mgr.add_quantity(self.interpolant_counter)
         mgr.add_quantity(self.interpolant_timer)
