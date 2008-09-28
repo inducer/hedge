@@ -43,7 +43,7 @@ class FluxLiftingExecutionPlan(hedge.cuda.plan.ChunkedMatrixLocalOpExecutionPlan
         return self.given.face_dofs_per_el()
 
     def registers(self):
-        return 12 + par.inline
+        return 12 + self.parallelism.inline
 
     def fetch_buffer_chunks(self):
         return 1
@@ -258,8 +258,13 @@ class FluxLocalKernel(object):
                 Line(),
                 Define("MB_DOF_BASE", "(MB_CHUNK*DOFS_PER_CHUNK)"),
                 Define("MB_DOF", "(MB_DOF_BASE+CHUNK_DOF)"),
-                Define("GLOBAL_MB_NR_BASE", "(MACROBLOCK_NR*PAR_MB_COUNT*"
-                    "INLINE_MB_COUNT*SEQ_MB_COUNT)"),
+                Define("GLOBAL_MB_NR_BASE", 
+                    "(MACROBLOCK_NR*PAR_MB_COUNT*INLINE_MB_COUNT*SEQ_MB_COUNT)"),
+                Define("GLOBAL_MB_NR", 
+                    "(GLOBAL_MB_NR_BASE"
+                    "+ (seq_mb_number*PAR_MB_COUNT + PAR_MB_NR)*INLINE_MB_COUNT)"),
+                Define("GLOBAL_MB_DOF_BASE", "(GLOBAL_MB_NR*ALIGNED_DOFS_PER_MB)"),
+                Define("GLOBAL_MB_FACEDOF_BASE", "(GLOBAL_MB_NR*ALIGNED_FACE_DOFS_PER_MB)"),
                 Line(),
                 Define("LIFTMAT_COLUMNS", liftmat_data.matrix_columns),
                 Define("LIFTMAT_CHUNK_FLOATS", liftmat_data.block_floats),
@@ -343,7 +348,7 @@ class FluxLocalKernel(object):
                         Assign(
                             "dof_buffer[PAR_MB_NR][%d][CHUNK_DOF]" % inl,
                             "tex1Dfetch(fluxes_on_faces_tex, "
-                            "global_mb_facedof_base"
+                            "GLOBAL_MB_FACEDOF_BASE"
                             " + %d*ALIGNED_FACE_DOFS_PER_MB"
                             " + (chunk_start_el)*FACE_DOFS_PER_EL + %d + CHUNK_DOF)"
                             % (inl, load_chunk_start)
@@ -377,7 +382,7 @@ class FluxLocalKernel(object):
                     [
                         Assign("fof%d" % inl,
                             "tex1Dfetch(fluxes_on_faces_tex, "
-                            "global_mb_facedof_base"
+                            "GLOBAL_MB_FACEDOF_BASE"
                             " + %(inl)d * ALIGNED_FACE_DOFS_PER_MB"
                             " + dof_el*FACE_DOFS_PER_EL+%(j)d)"
                             % {"j":j, "inl":inl, "row": "CHUNK_DOF"},)
@@ -405,7 +410,7 @@ class FluxLocalKernel(object):
         def lift_outer_loop(fetch_count):
             if is_lift:
                 inv_jac_multiplier = ("tex1Dfetch(inverse_jacobians_tex,"
-                        "(global_mb_nr+%d)*MB_EL_COUNT+dof_el)")
+                        "(GLOBAL_MB_NR+%d)*MB_EL_COUNT+dof_el)")
             else:
                 inv_jac_multiplier = "1"
 
@@ -413,14 +418,6 @@ class FluxLocalKernel(object):
                 "seq_mb_number < SEQ_MB_COUNT",
                 "++seq_mb_number",
                 Block([
-                    Initializer(POD(numpy.uint32, "global_mb_nr"),
-                        "GLOBAL_MB_NR_BASE + (seq_mb_number*PAR_MB_COUNT + PAR_MB_NR)*INLINE_MB_COUNT"),
-                    Initializer(POD(numpy.uint32, "global_mb_dof_base"),
-                        "global_mb_nr*ALIGNED_DOFS_PER_MB"),
-                    Initializer(POD(numpy.uint32, "global_mb_facedof_base"),
-                        "global_mb_nr*ALIGNED_FACE_DOFS_PER_MB"),
-                    Line(),
-                    ]+[
                     Initializer(POD(float_type, "result%d" % inl), 0)
                     for inl in range(par.inline)
                     ]+[ Line() ]
@@ -429,7 +426,7 @@ class FluxLocalKernel(object):
                     If("MB_DOF < DOFS_PER_EL*MB_EL_COUNT",
                         Block([
                             Assign(
-                                "flux[global_mb_dof_base"
+                                "flux[GLOBAL_MB_DOF_BASE"
                                 " + %d*ALIGNED_DOFS_PER_MB"
                                 " + MB_DOF]" % inl,
                                 "result%d * %s" % (inl, (inv_jac_multiplier % inl))
