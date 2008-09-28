@@ -36,7 +36,7 @@ class ChunkedDiffExecutionPlan(hedge.cuda.plan.ChunkedMatrixLocalOpExecutionPlan
         return self.given.dofs_per_el() * self.given.ldis.dimensions # r,s,t
 
     def registers(self):
-        return 16 + 4 * self.parallelism.inline
+        return 16 + 4 * (self.parallelism.inline-1)
 
     def fetch_buffer_chunks(self):
         return 0
@@ -237,6 +237,10 @@ class DiffKernel(object):
                 Define("MB_DOF", "(MB_DOF_BASE+CHUNK_DOF)"),
                 Define("GLOBAL_MB_NR_BASE", 
                     "(MACROBLOCK_NR*PAR_MB_COUNT*INLINE_MB_COUNT*SEQ_MB_COUNT)"),
+                Define("GLOBAL_MB_NR", 
+                    "(GLOBAL_MB_NR_BASE"
+                    "+ (seq_mb_number*PAR_MB_COUNT + PAR_MB_NR)*INLINE_MB_COUNT)"),
+                Define("GLOBAL_MB_DOF_BASE", "(GLOBAL_MB_NR*ALIGNED_DOFS_PER_MB)"),
                 Line(),
                 Define("DIFFMAT_CHUNK_FLOATS", diffmat_data.block_floats),
                 Define("DIFFMAT_CHUNK_BYTES", "(DIFFMAT_CHUNK_FLOATS*%d)"
@@ -290,7 +294,7 @@ class DiffKernel(object):
                     +[Line()]
                     +list(flatten([
                         Assign("field_value%d" % inl, 
-                            "tex1Dfetch(field_tex, global_mb_dof_base + %d*ALIGNED_DOFS_PER_MB "
+                            "tex1Dfetch(field_tex, GLOBAL_MB_DOF_BASE + %d*ALIGNED_DOFS_PER_MB "
                             "+ mb_el*DOFS_PER_EL + %d)" % (inl, j)
                             )
                         for inl in range(par.inline)]
@@ -310,11 +314,11 @@ class DiffKernel(object):
                     store_code.append(Block([
                         Initializer(Value("float%d" % rst_channels, "rst_to_xyz"),
                             "tex2D(rst_to_xyz_tex, %d, "
-                            "(global_mb_nr+%d)*ELS_PER_MB + mb_el)" 
+                            "(GLOBAL_MB_NR+%d)*ELS_PER_MB + mb_el)" 
                             % (glob_axis, inl)
                             ),
                         Assign(
-                            "dxyz%d[global_mb_dof_base + %d*ALIGNED_DOFS_PER_MB + MB_DOF]" 
+                            "dxyz%d[GLOBAL_MB_DOF_BASE + %d*ALIGNED_DOFS_PER_MB + MB_DOF]" 
                             % (glob_axis, inl),
                             " + ".join(
                                 "rst_to_xyz.%s"
@@ -333,16 +337,7 @@ class DiffKernel(object):
             For("unsigned short seq_mb_number = 0",
                 "seq_mb_number < SEQ_MB_COUNT",
                 "++seq_mb_number",
-                Block([
-                    Initializer(POD(numpy.uint32, "global_mb_nr"),
-                        "GLOBAL_MB_NR_BASE + (seq_mb_number*PAR_MB_COUNT + PAR_MB_NR)*INLINE_MB_COUNT"),
-                    Initializer(POD(numpy.uint32, "global_mb_dof_base"),
-                        "global_mb_nr*ALIGNED_DOFS_PER_MB"),
-                    Line(),
-                    ]+
-                    get_scalar_diff_code()
-                    )
-                )
+                Block(get_scalar_diff_code()))
             ])
 
         # finish off ----------------------------------------------------------

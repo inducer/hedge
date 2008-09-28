@@ -43,7 +43,7 @@ class FluxLiftingExecutionPlan(hedge.cuda.plan.ChunkedMatrixLocalOpExecutionPlan
         return self.given.face_dofs_per_el()
 
     def registers(self):
-        return 13 
+        return 12 + par.inline
 
     def fetch_buffer_chunks(self):
         return 1
