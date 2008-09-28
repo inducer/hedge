@@ -176,6 +176,8 @@ class SMemFieldDiffKernel(object):
             + [Pointer(POD(float_type, "dxyz%d" % i)) for i in dims]
             ))
 
+        par = self.plan.parallelism
+        
         rst_channels = given.devdata.make_valid_tex_channel_count(d)
         cmod = Module([
                 Value("texture<float%d, 2, cudaReadModeElementType>"
@@ -188,8 +190,8 @@ class SMemFieldDiffKernel(object):
                 Define("DIMENSIONS", discr.dimensions),
                 Define("DOFS_PER_EL", given.dofs_per_el()),
                 Define("ALIGNED_DOFS_PER_MB", given.microblock.aligned_floats),
-                Define("MB_EL_COUNT", given.microblock.elements),
-                Define("DOFS_PER_MB", "(DOFS_PER_EL*MB_EL_COUNT)"),
+                Define("ELS_PER_MB", given.microblock.elements),
+                Define("DOFS_PER_MB", "(DOFS_PER_EL*ELS_PER_MB)"),
                 Line(),
                 Define("MB_DOF", "threadIdx.x"),
                 Define("PAR_MB_NR", "threadIdx.y"),
@@ -197,21 +199,26 @@ class SMemFieldDiffKernel(object):
                 Line(),
                 Define("MACROBLOCK_NR", "blockIdx.x"),
                 Line(),
-                Define("PAR_MB_COUNT", self.plan.parallelism.parallel),
-                Define("SEQ_MB_COUNT", self.plan.parallelism.serial),
+                Define("PAR_MB_COUNT", par.parallel),
+                Define("INLINE_MB_COUNT", par.inline),
+                Define("SEQ_MB_COUNT", par.serial),
                 Line(),
                 Define("THREAD_NUM", "(MB_DOF+PAR_MB_NR*ALIGNED_DOFS_PER_MB)"),
                 Line(),
+                Define("GLOBAL_MB_NR_BASE", 
+                    "(MACROBLOCK_NR*PAR_MB_COUNT*INLINE_MB_COUNT*SEQ_MB_COUNT)"),
                 Define("GLOBAL_MB_NR", 
-                    "(MACROBLOCK_NR*PAR_MB_COUNT*SEQ_MB_COUNT "
-                    "+ seq_mb_number*PAR_MB_COUNT "
-                    "+ PAR_MB_NR)"),
+                    "(GLOBAL_MB_NR_BASE"
+                    "+ (seq_mb_number*PAR_MB_COUNT + PAR_MB_NR)*INLINE_MB_COUNT)"),
+                Define("GLOBAL_MB_DOF_BASE", "(GLOBAL_MB_NR*ALIGNED_DOFS_PER_MB)"),
                 Line(),
                 CudaShared(
                     ArrayOf(
                         ArrayOf(
-                            POD(float_type, "smem_field"), 
-                            "PAR_MB_COUNT"),
+                            ArrayOf(
+                                POD(float_type, "smem_field"), 
+                                "PAR_MB_COUNT"),
+                            "INLINE_MB_COUNT"),
                         "ALIGNED_DOFS_PER_MB")),
                 Line(),
                 ])
@@ -226,59 +233,74 @@ class SMemFieldDiffKernel(object):
         # ---------------------------------------------------------------------
         def get_scalar_diff_code():
             code = []
-            for axis in dims:
-                code.append(
-                    Initializer(POD(float_type, "drst%d" % axis), 0))
+            for inl in range(par.inline):
+                for axis in dims:
+                    code.append(
+                        Initializer(POD(float_type, "d%drst%d" % (inl, axis)), 0))
 
             code.append(Line())
 
             tex_channels = ["x", "y", "z", "w"]
 
-            store_code = []
-            for glob_axis in dims:
-                store_code.append(Block([
-                    Initializer(Value("float%d" % rst_channels, "rst_to_xyz"),
-                        "tex2D(rst_to_xyz_tex, %d, GLOBAL_MB_NR*MB_EL_COUNT+mb_el)" 
-                        % glob_axis
-                        ),
-                    Assign(
-                        "dxyz%d[GLOBAL_MB_NR*ALIGNED_DOFS_PER_MB + MB_DOF]" % glob_axis,
-                        " + ".join(
-                            "rst_to_xyz.%s"
-                            "*"
-                            "drst%d" % (tex_channels[loc_axis], loc_axis)
-                            for loc_axis in dims
+            store_code = Block()
+            for inl in range(par.inline):
+                for glob_axis in dims:
+                    store_code.append(Block([
+                        Initializer(Value("float%d" % rst_channels, "rst_to_xyz"),
+                            "tex2D(rst_to_xyz_tex, %d, "
+                            "(GLOBAL_MB_NR+%d)*ELS_PER_MB + mb_el)" 
+                            % (glob_axis, inl)
+                            ),
+                        Assign(
+                            "dxyz%d[GLOBAL_MB_DOF_BASE + %d*ALIGNED_DOFS_PER_MB + MB_DOF]" 
+                            % (glob_axis, inl),
+                            " + ".join(
+                                "rst_to_xyz.%s"
+                                "*"
+                                "d%drst%d" % (tex_channels[loc_axis], inl, loc_axis)
+                                for loc_axis in dims
+                                )
                             )
-                        )
-                    ]))
+                        ]))
+
             from pytools import flatten
             code.extend([
                 Comment("everybody needs to be done with the old data"),
                 S("__syncthreads()"),
                 Line(),
-                Assign("smem_field[PAR_MB_NR][MB_DOF]",
-                    "field[GLOBAL_MB_NR*ALIGNED_DOFS_PER_MB + MB_DOF]"),
+                ]+[
+                Assign("smem_field[PAR_MB_NR][%d][MB_DOF]" % inl,
+                    "field[(GLOBAL_MB_NR+%d)*ALIGNED_DOFS_PER_MB + MB_DOF]" % inl)
+                for inl in range(par.inline)
+                ]+[
                 Line(),
                 Comment("all the new data must be loaded"),
                 S("__syncthreads()"),
                 Line(),
                 Value("float%d" % rst_channels, "dmat_entries"),
-                POD(float_type, "field_value"),
+                ]+[
+                POD(float_type, "field_value%d" % inl)
+                for inl in range(par.inline)
+                ]+[
                 Line(),
 
                 If("MB_DOF < DOFS_PER_MB", Block(list(flatten([
                     Assign("dmat_entries",
                         "tex2D(diff_rst_mat_tex, EL_DOF, %d)" % j),
-                    Assign("field_value", 
-                        "smem_field[PAR_MB_NR][mb_el*DOFS_PER_EL+%d]" % j),
+                    ]+[
+                    Assign("field_value%d" % inl, 
+                        "smem_field[PAR_MB_NR][%d][mb_el*DOFS_PER_EL+%d]" % (inl, j))
+                    for inl in range(par.inline)
+                    ]+[
                     Line(),
                     ]+[
-                        S("drst%d += dmat_entries.%s * field_value" 
-                            % (axis, tex_channels[axis]))
+                        S("d%drst%d += dmat_entries.%s * field_value%d" 
+                            % (inl, axis, tex_channels[axis], inl))
+                        for inl in range(par.inline)
                         for axis in dims
                         ]+[Line()]
                     for j in range(given.dofs_per_el())
-                    ))+store_code))
+                    ))+[store_code]))
                 ])
 
             return code

@@ -179,8 +179,10 @@ class Discretization(object):
         "cuda_ilist_generation",
         "cuda_compare",
         "cuda_diff",
+        "cuda_diff_plan",
         "cuda_flux",
         "cuda_lift",
+        "cuda_lift_plan",
         "cuda_debugbuf",
         "cuda_memory",
         ])

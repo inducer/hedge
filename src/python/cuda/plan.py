@@ -239,8 +239,6 @@ class SMemFieldLocalOpExecutionPlan(ExecutionPlan):
         self.given = given
         self.parallelism = parallelism
 
-        assert parallelism.inline == 1
-
     def dofs_per_macroblock(self):
         return self.parallelism.total() * self.given.microblock.aligned_floats
 
@@ -250,7 +248,9 @@ class SMemFieldLocalOpExecutionPlan(ExecutionPlan):
         
         return (64 # parameters, block header, small extra stuff
                + given.float_size() * (
-                   self.parallelism.parallel * self.given.microblock.aligned_floats))
+                   self.parallelism.parallel 
+                   * self.parallelism.inline
+                   * self.given.microblock.aligned_floats))
 
     def threads(self):
         return self.parallelism.parallel * self.given.microblock.aligned_floats

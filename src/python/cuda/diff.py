@@ -66,15 +66,17 @@ def make_plan(discr, given):
         from hedge.cuda.diff_alt import SMemFieldDiffExecutionPlan
 
         for pe in range(1,32):
-            localop_par = Parallelism(pe, 1, 1)
-            yield SMemFieldDiffExecutionPlan(given, localop_par)
+            for inline in range(1, 8):
+                localop_par = Parallelism(pe, inline, 1)
+                yield SMemFieldDiffExecutionPlan(given, localop_par)
 
     def target_func(plan):
         return plan.make_kernel(discr).benchmark()
 
     from hedge.cuda.plan import optimize_plan
     return optimize_plan(generate_plans, target_func, maximize=False,
-            desirable_occupancy=0.5)
+            desirable_occupancy=0.5, 
+            debug="cuda_diff_plan" in discr.debug)
 
 
 
@@ -233,7 +235,8 @@ class DiffKernel(object):
                 Line(),
                 Define("MB_DOF_BASE", "(MB_CHUNK*DOFS_PER_CHUNK)"),
                 Define("MB_DOF", "(MB_DOF_BASE+CHUNK_DOF)"),
-                Define("GLOBAL_MB_NR_BASE", "(MACROBLOCK_NR*PAR_MB_COUNT*INLINE_MB_COUNT*SEQ_MB_COUNT)"),
+                Define("GLOBAL_MB_NR_BASE", 
+                    "(MACROBLOCK_NR*PAR_MB_COUNT*INLINE_MB_COUNT*SEQ_MB_COUNT)"),
                 Line(),
                 Define("DIFFMAT_CHUNK_FLOATS", diffmat_data.block_floats),
                 Define("DIFFMAT_CHUNK_BYTES", "(DIFFMAT_CHUNK_FLOATS*%d)"
@@ -320,8 +323,7 @@ class DiffKernel(object):
                                 for loc_axis in dims
                                 )
                             )
-                        ])
-                            )
+                        ]))
 
             code.append(If("MB_DOF < DOFS_PER_EL*ELS_PER_MB", store_code))
 
