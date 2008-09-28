@@ -74,7 +74,7 @@ def make_plan(discr, given):
 
     from hedge.cuda.plan import optimize_plan
     return optimize_plan(generate_plans, target_func, maximize=False,
-            desirable_occupancy=0.5, debug=True)
+            desirable_occupancy=0.5)
 
 
 
