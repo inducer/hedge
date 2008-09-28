@@ -42,7 +42,9 @@ class SMemFieldFluxLocalExecutionPlan(hedge.cuda.plan.SMemFieldLocalOpExecutionP
         
         return (64 # parameters, block header, small extra stuff
                + given.float_size() * (
-                   self.parallelism.parallel * self.given.aligned_face_dofs_per_microblock()))
+                   self.parallelism.parallel 
+                   * self.parallelism.inline
+                   * self.given.aligned_face_dofs_per_microblock()))
 
     def make_kernel(self, discr):
         return SMemFieldFluxLocalKernel(discr, self)
@@ -181,6 +183,8 @@ class SMemFieldFluxLocalKernel(object):
                     "inverse_jacobians_tex"),
                 )
 
+        par = self.plan.parallelism
+
         cmod.extend([
                 Line(),
                 Define("DIMENSIONS", discr.dimensions),
@@ -200,21 +204,27 @@ class SMemFieldFluxLocalKernel(object):
                 Line(),
                 Define("MACROBLOCK_NR", "blockIdx.x"),
                 Line(),
-                Define("PAR_MB_COUNT", self.plan.parallelism.parallel),
-                Define("SEQ_MB_COUNT", self.plan.parallelism.serial),
+                Define("PAR_MB_COUNT", par.parallel),
+                Define("INLINE_MB_COUNT", par.inline),
+                Define("SEQ_MB_COUNT", par.serial),
                 Line(),
                 Define("THREAD_NUM", "(MB_DOF+PAR_MB_NR*ALIGNED_DOFS_PER_MB)"),
                 Line(),
+                Define("GLOBAL_MB_NR_BASE", 
+                    "(MACROBLOCK_NR*PAR_MB_COUNT*INLINE_MB_COUNT*SEQ_MB_COUNT)"),
                 Define("GLOBAL_MB_NR", 
-                    "(MACROBLOCK_NR*PAR_MB_COUNT*SEQ_MB_COUNT "
-                    "+ seq_mb_number*PAR_MB_COUNT "
-                    "+ PAR_MB_NR)"),
+                    "(GLOBAL_MB_NR_BASE"
+                    "+ (seq_mb_number*PAR_MB_COUNT + PAR_MB_NR)*INLINE_MB_COUNT)"),
+                Define("GLOBAL_MB_DOF_BASE", "(GLOBAL_MB_NR*ALIGNED_DOFS_PER_MB)"),
+                Define("GLOBAL_MB_FACEDOF_BASE", "(GLOBAL_MB_NR*ALIGNED_FACE_DOFS_PER_MB)"),
                 Line(),
                 CudaShared(
                     ArrayOf(
                         ArrayOf(
-                            POD(float_type, "smem_fluxes_on_faces"), 
-                            "PAR_MB_COUNT"),
+                            ArrayOf(
+                                POD(float_type, "smem_fluxes_on_faces"), 
+                                "PAR_MB_COUNT"),
+                            "INLINE_MB_COUNT"),
                         "ALIGNED_FACE_DOFS_PER_MB")),
                 Line(),
                 ])
@@ -233,25 +243,33 @@ class SMemFieldFluxLocalKernel(object):
 
             load_code = []
             store_code = []
+
+            var_num = 0
             for load_block in range(face_dofs_over_dofs):
-                var = "tmp%d" % load_block
-                load_code.append(POD(float_type, var))
+                for inl in range(par.inline):
+                    # load and store are split for better pipelining
+                    # compiler can't figure that out because of branch
 
-                block_addr = "%d * ALIGNED_DOFS_PER_MB + MB_DOF" % load_block
-                load_instr = Assign(var, 
-                    "fluxes_on_faces[GLOBAL_MB_NR*ALIGNED_FACE_DOFS_PER_MB "
-                    "+ %s]" % block_addr)
-                store_instr = Assign(
-                        "smem_fluxes_on_faces[PAR_MB_NR][%s]" % block_addr,
-                        var
-                        )
-                if (load_block+1)*mb_dofs >= mb_face_dofs:
-                    cond = "%s < ALIGNED_FACE_DOFS_PER_MB" % block_addr
-                    load_instr = If(cond, load_instr)
-                    store_instr = If(cond, store_instr)
+                    var = "tmp%d" % var_num
+                    var_num += 1
+                    load_code.append(POD(float_type, var))
 
-                load_code.append(load_instr)
-                store_code.append(store_instr)
+                    block_addr = "%d * ALIGNED_DOFS_PER_MB + MB_DOF" % load_block
+                    load_instr = Assign(var, 
+                        "fluxes_on_faces[GLOBAL_MB_FACEDOF_BASE"
+                        " + %d*ALIGNED_FACE_DOFS_PER_MB"
+                        " + %s]" % (inl, block_addr))
+                    store_instr = Assign(
+                            "smem_fluxes_on_faces[PAR_MB_NR][%d][%s]" % (inl, block_addr),
+                            var
+                            )
+                    if (load_block+1)*mb_dofs >= mb_face_dofs:
+                        cond = "%s < ALIGNED_FACE_DOFS_PER_MB" % block_addr
+                        load_instr = If(cond, load_instr)
+                        store_instr = If(cond, store_instr)
+
+                    load_code.append(load_instr)
+                    store_code.append(store_instr)
             return load_code + [Line()] + store_code
 
         def get_lift_code():
@@ -259,7 +277,7 @@ class SMemFieldFluxLocalKernel(object):
 
             if is_lift:
                 inv_jac_multiplier = ("tex1Dfetch(inverse_jacobians_tex,"
-                        "GLOBAL_MB_NR*MB_EL_COUNT+mb_el)")
+                        "(GLOBAL_MB_NR + %(inl)d)*MB_EL_COUNT + mb_el)")
             else:
                 inv_jac_multiplier = "1"
 
@@ -272,28 +290,32 @@ class SMemFieldFluxLocalKernel(object):
                 Comment("all the new data must be loaded"),
                 S("__syncthreads()"),
                 Line(),
-                Initializer(POD(float_type, "result"), 0),
+                ]+[
+                Initializer(POD(float_type, "result%d" % inl), 0)
+                for inl in range(par.inline)
+                ]+[
                 Line(),
-                If("MB_DOF < DOFS_PER_MB", Block([
-                    S("result += tex2D(lift_mat_tex, EL_DOF, %d) "
-                    "* smem_fluxes_on_faces[PAR_MB_NR][mb_el*FACE_DOFS_PER_EL+%d]" 
-                    % (j, j))
+                POD(float_type, "mat_entry"),
+                Line(),
+                If("MB_DOF < DOFS_PER_MB", Block(list(flatten(
+                    [Assign("mat_entry", "tex2D(lift_mat_tex, EL_DOF, %d)" % j)]
+                    +[
+                    S("result%d += mat_entry "
+                    "* smem_fluxes_on_faces[PAR_MB_NR][%d][mb_el*FACE_DOFS_PER_EL + %d]" 
+                    % (inl, inl, j))
+                    for inl in range(par.inline)
+                    ]
                     for j in range(
                         given.dofs_per_face()*given.faces_per_el())
-                    ]+[
+                    ))+[
                     Line(), 
+                    ]+[
                     Assign(
-                        "flux[GLOBAL_MB_NR*ALIGNED_DOFS_PER_MB + MB_DOF]",
-                        "result*%s" % inv_jac_multiplier),
-                    ])
-                    )
+                        "flux[GLOBAL_MB_DOF_BASE + %d*ALIGNED_DOFS_PER_MB + MB_DOF]" % inl,
+                        "result%d*%s" % (inl, (inv_jac_multiplier % {"inl": inl})))
+                    for inl in range(par.inline)
+                    ]))
                 ])
-
-        def get_mat_mul_code(el_fetch_count):
-            if el_fetch_count == 1:
-                return get_batched_fetch_mat_mul_code(el_fetch_count)
-            else:
-                return get_direct_tex_mat_mul_code()
 
         f_body.append(For("unsigned short seq_mb_number = 0",
             "seq_mb_number < SEQ_MB_COUNT",

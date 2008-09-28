@@ -80,8 +80,9 @@ def make_plan(discr, given):
         from hedge.cuda.fluxlocal_alt import SMemFieldFluxLocalExecutionPlan
 
         for pe in range(1,32):
-            localop_par = Parallelism(pe, 1, 1)
-            yield SMemFieldFluxLocalExecutionPlan(given, localop_par)
+            for inline in range(1, 5):
+                localop_par = Parallelism(pe, inline, 1)
+                yield SMemFieldFluxLocalExecutionPlan(given, localop_par)
 
     def target_func(plan):
         return plan.make_kernel(discr).benchmark()
@@ -311,7 +312,7 @@ class FluxLocalKernel(object):
         f_body = Block()
             
         f_body.extend_log_block("calculate this dof's element", [
-            Initializer(POD(numpy.uint8, "dof_el"),
+            Initializer(POD(numpy.uint8, "mb_el"),
                 "MB_DOF/DOFS_PER_EL"),
             Line(),])
 
@@ -384,7 +385,7 @@ class FluxLocalKernel(object):
                             "tex1Dfetch(fluxes_on_faces_tex, "
                             "GLOBAL_MB_FACEDOF_BASE"
                             " + %(inl)d * ALIGNED_FACE_DOFS_PER_MB"
-                            " + dof_el*FACE_DOFS_PER_EL+%(j)d)"
+                            " + mb_el*FACE_DOFS_PER_EL+%(j)d)"
                             % {"j":j, "inl":inl, "row": "CHUNK_DOF"},)
                         for inl in range(par.inline)
                         ]+[
@@ -410,7 +411,7 @@ class FluxLocalKernel(object):
         def lift_outer_loop(fetch_count):
             if is_lift:
                 inv_jac_multiplier = ("tex1Dfetch(inverse_jacobians_tex,"
-                        "(GLOBAL_MB_NR+%d)*MB_EL_COUNT+dof_el)")
+                        "(GLOBAL_MB_NR + %(inl)d)*MB_EL_COUNT + mb_el)")
             else:
                 inv_jac_multiplier = "1"
 
@@ -429,7 +430,7 @@ class FluxLocalKernel(object):
                                 "flux[GLOBAL_MB_DOF_BASE"
                                 " + %d*ALIGNED_DOFS_PER_MB"
                                 " + MB_DOF]" % inl,
-                                "result%d * %s" % (inl, (inv_jac_multiplier % inl))
+                                "result%d * %s" % (inl, (inv_jac_multiplier % {"inl":inl}))
                                 )
                             for inl in range(par.inline)
                             ])
