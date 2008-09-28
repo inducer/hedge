@@ -68,9 +68,9 @@ def make_plan(discr, given):
                     given.microblock.elements*given.dofs_per_el()+1, 
                     given.microblock.align_size)
 
-            for pe in range(1,32):
-                for inline in range(1, 5):
-                    for seq in range(1, 5):
+            for pe in range(1,32+1):
+                for inline in range(1, 4+1):
+                    for seq in range(1, 4+1):
                         localop_par = Parallelism(pe, inline, seq)
                         for chunk_size in chunk_sizes:
                             yield FluxLiftingExecutionPlan(given, 
@@ -79,7 +79,7 @@ def make_plan(discr, given):
 
         from hedge.cuda.fluxlocal_alt import SMemFieldFluxLocalExecutionPlan
 
-        for pe in range(1,32):
+        for pe in range(1,32+1):
             for inline in range(1, 5):
                 localop_par = Parallelism(pe, inline, 1)
                 yield SMemFieldFluxLocalExecutionPlan(given, localop_par)
@@ -89,7 +89,8 @@ def make_plan(discr, given):
 
     from hedge.cuda.plan import optimize_plan
     return optimize_plan(generate_plans, target_func, maximize=False,
-            desirable_occupancy=0.5, debug=True)
+            desirable_occupancy=0.5, 
+            debug="cuda_lift_plan" in discr.debug)
 
 
 
@@ -138,11 +139,15 @@ class FluxLocalKernel(object):
         start.record()
         cuda.Context.synchronize()
         for i in range(count):
-            lift.prepared_call(
-                    self.grid,
-                    flux.gpudata, 
-                    self.gpu_liftmat(is_lift).device_memory,
-                    0)
+            try:
+                lift.prepared_call(
+                        self.grid,
+                        flux.gpudata, 
+                        self.gpu_liftmat(is_lift).device_memory,
+                        0)
+            except cuda.LaunchError:
+                return None
+
         stop = cuda.Event()
         stop.record()
         stop.synchronize()

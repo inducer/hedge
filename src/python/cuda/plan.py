@@ -92,15 +92,27 @@ class ExecutionPlan(object):
         self.given = given
 
     def invalid_reason(self):
-        if self.threads() >= self.given.devdata.max_threads:
-            return "too many threads"
+        try:
+            self.occupancy_record()
+            return None
+        except ValueError, ve:
+            return str(ve)
 
-        if self.shared_mem_use() >= int(self.given.devdata.shared_memory): 
-            return "too much shared memory"
-
-        if self.threads()*self.registers() > self.given.devdata.registers:
-            return "too many registers"
         return None
+
+    def max_registers(self):
+        regs = self.registers()
+
+        from pycuda.tools import OccupancyRecord
+        while True:
+            try:
+                OccupancyRecord(self.given.devdata,
+                        self.threads(), self.shared_mem_use(),
+                        registers=regs+1)
+            except ValueError:
+                return regs
+
+            regs += 1
 
     @memoize_method
     def occupancy_record(self):
@@ -110,8 +122,9 @@ class ExecutionPlan(object):
                 registers=self.registers())
 
     def __str__(self):
-            return ("regs=%d threads=%d smem=%d occ=%f" % (
+            return ("regs=%d(+%d) threads=%d smem=%d occ=%f" % (
                 self.registers(),
+                self.max_registers()-self.registers(),
                 self.threads(), 
                 self.shared_mem_use(), 
                 self.occupancy_record().occupancy,

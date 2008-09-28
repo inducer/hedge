@@ -56,8 +56,8 @@ def make_plan(discr, given):
 
         from hedge.cuda.plan import Parallelism
 
-        for pe in range(1,32):
-            for inline in range(1, 8):
+        for pe in range(1,32+1):
+            for inline in range(1, 4+1):
                 for seq in range(1, 4):
                     localop_par = Parallelism(pe, inline, seq)
                     for chunk_size in chunk_sizes:
@@ -65,8 +65,8 @@ def make_plan(discr, given):
 
         from hedge.cuda.diff_alt import SMemFieldDiffExecutionPlan
 
-        for pe in range(1,32):
-            for inline in range(1, 8):
+        for pe in range(1,32+1):
+            for inline in range(1, 4+1):
                 localop_par = Parallelism(pe, inline, 1)
                 yield SMemFieldDiffExecutionPlan(given, localop_par)
 
@@ -131,7 +131,7 @@ class DiffKernel(object):
             try:
                 func.prepared_call(self.grid, gpu_diffmats.device_memory,
                         *xyz_diff_gpudata)
-            except RuntimeError:
+            except cuda.LaunchError:
                 return None
 
         stop = cuda.Event()

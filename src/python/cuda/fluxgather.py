@@ -592,7 +592,7 @@ class FluxGatherKernel:
                 #allow_user_edit(cmod, "kernel.cu", "the flux kernel"), 
                 cmod,
                 keep=True, 
-                #options=["--maxrregcount=16"]
+                options=["--maxrregcount=%d" % self.plan.max_registers()]
                 )
         print "flux: lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
 
