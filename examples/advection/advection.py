@@ -55,18 +55,11 @@ def main() :
         if pcon.is_head_rank:
             from hedge.mesh import make_uniform_1d_mesh
             mesh = make_uniform_1d_mesh(0, 2, 10, periodic=True)
-
-        from hedge.element import IntervalElement
-        el_class = IntervalElement
-
     elif dim == 2:
         v = numpy.array([2,0])
         if pcon.is_head_rank:
             from hedge.mesh import make_disk_mesh
             mesh = make_disk_mesh(boundary_tagger=boundary_tagger)
-            
-        from hedge.element import TriangularElement
-        el_class = TriangularElement
     elif dim == 3:
         v = numpy.array([0,0,1])
         if pcon.is_head_rank:
@@ -74,9 +67,6 @@ def main() :
 
             mesh = make_cylinder_mesh(max_volume=0.04, height=2, boundary_tagger=boundary_tagger,
                     periodic=False, radial_subdivisions=32)
-
-        from hedge.element import TetrahedralElement
-        el_class = TetrahedralElement
     else:
         raise RuntimeError, "bad number of dimensions"
 
@@ -90,7 +80,7 @@ def main() :
     if dim != 1:
         mesh_data = mesh_data.reordered_by("cuthill")
 
-    discr = pcon.make_discretization(mesh_data, el_class(4), debug=True)
+    discr = pcon.make_discretization(mesh_data, order=4)
     vis_discr = discr
 
     vis = VtkVisualizer(vis_discr, pcon, "fld")
@@ -102,7 +92,7 @@ def main() :
             TimeConstantGivenFunction, \
             TimeDependentGivenFunction
     from hedge.pde import StrongAdvectionOperator, WeakAdvectionOperator
-    op = WeakAdvectionOperator(discr, v, 
+    op = WeakAdvectionOperator(v, 
             inflow_u=TimeDependentGivenFunction(u_analytic),
             flux_type="upwind")
 
@@ -143,6 +133,7 @@ def main() :
     logmgr.add_watches(["step.max", "t_sim.max", "l2_u", "t_step.max"])
 
     # timestep loop -----------------------------------------------------------
+    rhs = op.bind(discr)
     for step in xrange(nsteps):
         logmgr.tick()
 
@@ -157,7 +148,7 @@ def main() :
             visf.close()
 
 
-        u = stepper(u, t, dt, op.rhs)
+        u = stepper(u, t, dt, rhs)
 
     vis.close()
 

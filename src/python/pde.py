@@ -301,13 +301,13 @@ class StrongWaveOperator:
     Note that this is not unique--we could also choose a different sign for M{v}.
     """
 
-    def __init__(self, c, discr, source_f=None, 
+    def __init__(self, c, dimensions, source_f=None, 
             flux_type="upwind",
             dirichlet_tag=hedge.mesh.TAG_ALL,
             neumann_tag=hedge.mesh.TAG_NONE,
             radiation_tag=hedge.mesh.TAG_NONE):
         self.c = c
-        self.discr = discr
+        self.dimensions = dimensions
         self.source_f = source_f
 
         if self.c > 0:
@@ -319,50 +319,47 @@ class StrongWaveOperator:
         self.neumann_tag = neumann_tag
         self.radiation_tag = radiation_tag
 
-        from hedge.mesh import check_bc_coverage
-        check_bc_coverage(discr.mesh, [
-            dirichlet_tag,
-            neumann_tag,
-            radiation_tag])
+        self.flux_type = flux_type
 
+    def flux(self):
         from hedge.flux import FluxVectorPlaceholder, make_normal
 
-        dim = discr.dimensions
+        dim = self.dimensions
         w = FluxVectorPlaceholder(1+dim)
         u = w[0]
         v = w[1:]
         normal = make_normal(dim)
 
         from hedge.tools import join_fields
-
         flux_weak = join_fields(
                 numpy.dot(v.avg, normal),
                 u.avg * normal)
-        if flux_type == "central":
+
+        if self.flux_type == "central":
             pass
-        elif flux_type == "upwind":
+        elif self.flux_type == "upwind":
             # see doc/notes/hedge-notes.tm
             flux_weak -= self.sign*join_fields(
                     0.5*(u.int-u.ext),
                     0.5*(normal * numpy.dot(normal, v.int-v.ext)))
         else:
-            raise ValueError, "invalid flux type"
+            raise ValueError, "invalid flux type '%s'" % self.flux_type
 
         flux_strong = join_fields(
                 numpy.dot(v.int, normal),
                 u.int * normal) - flux_weak
 
-        self.flux = discr.get_flux_operator(-self.c*flux_strong)
+        return -self.c*flux_strong
 
-        self.radiation_normals = discr.boundary_normals(self.radiation_tag)
-
-    @memoize_method
     def op_template(self):
         from hedge.optemplate import \
                 make_vector_field, \
-                pair_with_boundary
+                pair_with_boundary, \
+                get_flux_operator, \
+                make_nabla, \
+                InverseMassOperator
 
-        d = self.discr.dimensions
+        d = self.dimensions
 
         w = make_vector_field("w", d+1)
         u = w[0]
@@ -382,28 +379,39 @@ class StrongWaveOperator:
                 )
 
         # entire operator -----------------------------------------------------
-        nabla = self.discr.nabla
-        m_inv = self.discr.inverse_mass_operator
+        nabla = make_nabla(d)
+        flux_op = get_flux_operator(self.flux())
 
         from hedge.tools import join_fields
-        result = (-join_fields(
+        return (-join_fields(
             -self.c*numpy.dot(nabla, v), 
             -self.c*(nabla*u)
-            ) + m_inv * (
-                self.flux*w 
-                + self.flux * pair_with_boundary(w, dir_bc, self.dirichlet_tag)
-                + self.flux * pair_with_boundary(w, neu_bc, self.neumann_tag)
-                + self.flux * pair_with_boundary(w, rad_bc, self.radiation_tag)
+            ) + InverseMassOperator() * (
+                flux_op*w 
+                + flux_op * pair_with_boundary(w, dir_bc, self.dirichlet_tag)
+                + flux_op * pair_with_boundary(w, neu_bc, self.neumann_tag)
+                + flux_op * pair_with_boundary(w, rad_bc, self.radiation_tag)
                 ))
-        return self.discr.compile(result)
+
     
-    def rhs(self, t, w):
-        from hedge.tools import join_fields, ptwise_dot
+    def bind(self, discr):
+        from hedge.mesh import check_bc_coverage
+        check_bc_coverage(discr.mesh, [
+            self.dirichlet_tag,
+            self.neumann_tag,
+            self.radiation_tag])
 
-        rhs = self.op_template()(w=w)
+        compiled_op_template = discr.compile(self.op_template())
 
-        if self.source_f is not None:
-            rhs[0] += self.source_f(t)
+        def rhs(t, w):
+            from hedge.tools import join_fields, ptwise_dot
+
+            rhs = compiled_op_template(w=w)
+
+            if self.source_f is not None:
+                rhs[0] += self.source_f(t)
+
+            return rhs
 
         return rhs
 

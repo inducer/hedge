@@ -48,7 +48,7 @@ def main() :
 
     from hedge.pde import StrongWaveOperator
     from hedge.mesh import TAG_ALL, TAG_NONE
-    op = StrongWaveOperator(-1, discr, 
+    op = StrongWaveOperator(-1, discr.dimensions, 
             source_vec_getter,
             dirichlet_tag=TAG_NONE,
             neumann_tag=TAG_NONE,
@@ -66,6 +66,7 @@ def main() :
     from hedge.timestep import RK4TimeStepper
     stepper = RK4TimeStepper()
 
+    rhs = op.bind(discr)
     for step in range(nsteps):
         t = step*dt
 
@@ -78,7 +79,7 @@ def main() :
                     time=t, step=step)
             visf.close()
 
-        fields = stepper(fields, t, dt, op.rhs)
+        fields = stepper(fields, t, dt, rhs)
 
     vis.close()
 

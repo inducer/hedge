@@ -85,7 +85,7 @@ def main() :
 
     from hedge.pde import StrongWaveOperator
     from hedge.mesh import TAG_ALL, TAG_NONE
-    op = StrongWaveOperator(-1, discr, 
+    op = StrongWaveOperator(-1, discr.dimensions, 
             source_vec_getter,
             dirichlet_tag=TAG_NONE,
             neumann_tag=TAG_NONE,
@@ -128,6 +128,7 @@ def main() :
     logmgr.add_watches(["step.max", "t_sim.max", "l2_u", "t_step.max"])
 
     # timestep loop -----------------------------------------------------------
+    rhs = op.bind(discr)
     for step in range(nsteps):
         logmgr.tick()
 
@@ -145,7 +146,7 @@ def main() :
                     step=step)
             visf.close()
 
-        fields = stepper(fields, t, dt, op.rhs)
+        fields = stepper(fields, t, dt, rhs)
 
     vis.close()
 

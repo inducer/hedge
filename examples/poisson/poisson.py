@@ -64,7 +64,7 @@ def main() :
 
     discr = pcon.make_discretization(mesh_data, el_class(5))
 
-    def dirichlet_bc(x):
+    def dirichlet_bc(x, el):
         from math import sin
         return sin(10*x[0])
 
@@ -80,7 +80,7 @@ def main() :
         return result
 
     from hedge.pde import WeakPoissonOperator
-    op = WeakPoissonOperator(discr, 
+    op = WeakPoissonOperator(discr.dimensions, 
             diffusion_tensor=ConstantGivenFunction(my_diff_tensor()),
 
             dirichlet_tag="dirichlet",
@@ -89,9 +89,10 @@ def main() :
             dirichlet_bc=GivenFunction(dirichlet_bc),
             neumann_bc=ConstantGivenFunction(-10),
             )
+    bound_op = op.bind(discr)
 
     from hedge.tools import parallel_cg
-    u = -parallel_cg(pcon, -op, op.prepare_rhs(GivenFunction(rhs_c)), 
+    u = -parallel_cg(pcon, -bound_op, bound_op.prepare_rhs(GivenFunction(rhs_c)), 
             debug=True, tol=1e-10)
 
     from hedge.visualization import SiloVisualizer, VtkVisualizer
