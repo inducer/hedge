@@ -62,35 +62,41 @@ class TimeDependentOperator(Operator):
 
 # operator binding ------------------------------------------------------------
 class GradientOperator(Operator):
-    def __init__(self, discr):
-        self.discr = discr
+    def __init__(self, dimensions):
+        self.dimensions = dimensions
 
+    def flux(self):
         from hedge.flux import make_normal, FluxScalarPlaceholder
         u = FluxScalarPlaceholder()
 
-        normal = make_normal(self.discr.dimensions)
-        self.flux = discr.get_flux_operator(u.int*normal - u.avg*normal)
+        normal = make_normal(self.dimensions)
+        return u.int*normal - u.avg*normal
 
-    @memoize_method
     def op_template(self):
         from hedge.mesh import TAG_ALL
-        from hedge.optemplate import Field, pair_with_boundary
+        from hedge.optemplate import Field, pair_with_boundary, \
+                make_nabla, InverseMassOperator, get_flux_operator
 
         u = Field("u")
         bc = Field("bc")
 
-        nabla = self.discr.nabla
-        m_inv = self.discr.inverse_mass_operator
+        nabla = make_nabla(self.dimensions)
+        flux_op = get_flux_operator(self.flux())
 
-        return self.discr.compile(nabla*u - m_inv*(
-                self.flux * u + 
-                self.flux * pair_with_boundary(u, bc, TAG_ALL)))
+        return nabla*u - InverseMassOperator()*(
+                flux_op * u + 
+                flux_op * pair_with_boundary(u, bc, TAG_ALL))
 
-    def __call__(self, u):
-        from hedge.mesh import TAG_ALL
+    def bind(self, discr):
+        compiled_op_template = discr.compile(self.op_template())
 
-        return self.op_template()(u=u, 
-                bc=self.discr.boundarize_volume_field(u, TAG_ALL))
+        def op(self, u):
+            from hedge.mesh import TAG_ALL
+
+            return compiled_op_template(u=u, 
+                    bc=self.discr.boundarize_volume_field(u, TAG_ALL))
+
+        return op
 
 
 
