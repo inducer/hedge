@@ -581,8 +581,11 @@ class TestHedge(unittest.TestCase):
         ones = discr.interpolate_volume_function(
                 lambda x, el: 1)
 
-        num_integral_1 = dot(ones, discr.mass_operator.apply(f))
-        num_integral_2 = dot(f, discr.mass_operator.apply(ones))
+        from hedge.optemplate import MassOperator
+        mass_op = MassOperator()
+
+        num_integral_1 = dot(ones, mass_op.apply(discr, f))
+        num_integral_2 = dot(f, mass_op.apply(discr, ones))
         num_integral_3 = discr.integral(f)
 
         true_integral = 13*pi/2
@@ -610,8 +613,11 @@ class TestHedge(unittest.TestCase):
         ones = discr.interpolate_volume_function(
                 lambda x, el: 1)
 
-        num_integral_1 = numpy.dot(ones, discr.mass_operator.apply(f))
-        num_integral_2 = numpy.dot(f, discr.mass_operator.apply(ones))
+        from hedge.optemplate import MassOperator
+        mass_op = MassOperator()
+
+        num_integral_1 = numpy.dot(ones, mass_op.apply(discr, f))
+        num_integral_2 = numpy.dot(f, mass_op.apply(discr, ones))
         true_integral = pi**2
         err_1 = abs(num_integral_1-true_integral)
         err_2 = abs(num_integral_2-true_integral)
@@ -628,6 +634,8 @@ class TestHedge(unittest.TestCase):
         from hedge.element import TriangularElement
         from math import sin, cos, sqrt
 
+        from hedge.optemplate import make_nabla
+        nabla = make_nabla(2)
 
         for coord in [0, 1]:
             mesh = make_disk_mesh()
@@ -638,9 +646,7 @@ class TestHedge(unittest.TestCase):
             df = discr.interpolate_volume_function(
                     lambda x, el: 3*cos(3*x[coord]))
 
-            nabla = discr.nabla
-            
-            df_num = discr.nabla[coord].apply(f)
+            df_num = nabla[coord].apply(discr, f)
             #discr.visualize_vtk("diff-err.vtk",
                     #[("f", f), ("df", df), ("df_num", df_num), ("error", error)])
 
@@ -675,17 +681,19 @@ class TestHedge(unittest.TestCase):
         f1_v = discr.interpolate_volume_function(f1)
         f2_v = discr.interpolate_volume_function(f2)
 
-        from hedge.optemplate import pair_with_boundary, Field
-        diff_optp = discr.nabla[0] * Field("f1") + discr.nabla[1] * Field("f2")
+        from hedge.optemplate import pair_with_boundary, Field, make_nabla, \
+                get_flux_operator
+        nabla = make_nabla(discr.dimensions)
+        diff_optp = nabla[0] * Field("f1") + nabla[1] * Field("f2")
 
         int_div = discr.integral(
-                discr.nabla[0].apply(f1_v) 
-                + discr.nabla[1].apply(f2_v))
+                nabla[0].apply(discr, f1_v) 
+                + nabla[1].apply(discr, f2_v))
 
         flux_optp = (
-                discr.get_flux_operator(one_sided_x)
+                get_flux_operator(one_sided_x)
                 *pair_with_boundary(Field("f1"), Field("fz")) +
-                discr.get_flux_operator(one_sided_y)
+                get_flux_operator(one_sided_y)
                 *pair_with_boundary(Field("f2"), Field("fz")))
         boundary_int = dot(
                 discr.compile(flux_optp)(f1=f1_v, f2=f2_v, fz=discr.boundary_zeros()), 
@@ -1083,10 +1091,10 @@ class TestHedge(unittest.TestCase):
         #discr.visualize_vtk("dual.vtk", [("u", u)])
 
         from hedge.flux import make_normal, FluxScalarPlaceholder
-        from hedge.optemplate import Field
+        from hedge.optemplate import Field, get_flux_operator
         fluxu = FluxScalarPlaceholder()
         res = discr.compile(
-                discr.get_flux_operator(
+                get_flux_operator(
                     (fluxu.int - fluxu.ext) * make_normal(discr.dimensions)[1]) 
                 * Field("u"))(u=u)
 
@@ -1186,9 +1194,10 @@ class TestHedge(unittest.TestCase):
         # make sure the surface integral of the difference 
         # between top and bottom is zero
         from hedge.flux import make_normal, FluxScalarPlaceholder
-        from hedge.optemplate import Field
+        from hedge.optemplate import Field, get_flux_operator
+
         fluxu = FluxScalarPlaceholder()
-        res = discr.compile(discr.get_flux_operator(
+        res = discr.compile(get_flux_operator(
                 (fluxu.int - fluxu.ext)
                 *make_normal(discr.dimensions)[1]) * Field("u"))(u=u)
 
@@ -1274,14 +1283,15 @@ class TestHedge(unittest.TestCase):
 
         for flux_type in StrongAdvectionOperator.flux_types:
             stepper = RK4TimeStepper()
-            op = StrongAdvectionOperator(discr, v, 
+            op = StrongAdvectionOperator(v, 
                     inflow_u=TimeDependentGivenFunction(u_analytic),
                     flux_type=flux_type)
 
             dt = discr.dt_factor(op.max_eigenvalue())
             nsteps = int(1/dt)
+            rhs = op.bind(discr)
             for step in xrange(nsteps):
-                u = stepper(u, step*dt, dt, op.rhs)
+                u = stepper(u, step*dt, dt, rhs)
                 sym_error_u = u-sym_map(u)
                 sym_error_u_l2 = discr.norm(sym_error_u)
                 self.assert_(sym_error_u_l2 < 4e-15)
@@ -1330,7 +1340,7 @@ class TestHedge(unittest.TestCase):
                 for order in [1,2,3,4,5,6]:
                     discr = Discretization(mesh, TriangularElement(order), 
                             debug=Discretization.ALL_DEBUG_FLAGS)
-                    op = StrongAdvectionOperator(discr, v, 
+                    op = StrongAdvectionOperator(v, 
                             inflow_u=TimeDependentGivenFunction(u_analytic),
                             flux_type=flux_type)
 
@@ -1340,8 +1350,9 @@ class TestHedge(unittest.TestCase):
                     nsteps = int(1/dt)
 
                     stepper = RK4TimeStepper()
+                    rhs = op.bind(discr)
                     for step in range(nsteps):
-                        u = stepper(u, step*dt, dt, op.rhs)
+                        u = stepper(u, step*dt, dt, rhs)
 
                     u_true = discr.interpolate_volume_function(
                             lambda x, el: u_analytic(x, el, nsteps*dt))

@@ -161,35 +161,30 @@ class DivergenceOperator(Operator):
 
 
 class AdvectionOperatorBase(TimeDependentOperator):
-    def __init__(self, discr, v, 
-            inflow_tag="inflow",
-            inflow_u=hedge.data.make_tdep_constant(0),
-            outflow_tag="outflow",
-            flux_type="central"
-            ):
-        self.discr = discr
-        self.v = v
-        self.inflow_tag = inflow_tag
-        self.inflow_u = inflow_u
-        self.outflow_tag = outflow_tag
-        self.flux_type = flux_type
-
-        from hedge.mesh import check_bc_coverage
-        check_bc_coverage(discr.mesh, [inflow_tag, outflow_tag])
-
-        self.flux = discr.get_flux_operator(self.get_flux())
-
     flux_types = [
             "central",
             "upwind",
             "lf"
             ]
 
-    def get_weak_flux(self):
+    def __init__(self, v, 
+            inflow_tag="inflow",
+            inflow_u=hedge.data.make_tdep_constant(0),
+            outflow_tag="outflow",
+            flux_type="central"
+            ):
+        self.dimensions = len(v)
+        self.v = v
+        self.inflow_tag = inflow_tag
+        self.inflow_u = inflow_u
+        self.outflow_tag = outflow_tag
+        self.flux_type = flux_type
+
+    def weak_flux(self):
         from hedge.flux import make_normal, FluxScalarPlaceholder, IfPositive
 
         u = FluxScalarPlaceholder(0)
-        normal = make_normal(self.discr.dimensions)
+        normal = make_normal(self.dimensions)
 
         if self.flux_type == "central":
             return u.avg*numpy.dot(normal, self.v)
@@ -212,64 +207,84 @@ class AdvectionOperatorBase(TimeDependentOperator):
 
 
 class StrongAdvectionOperator(AdvectionOperatorBase):
-    def get_flux(self):
+    def flux(self):
         from hedge.flux import make_normal, FluxScalarPlaceholder
 
         u = FluxScalarPlaceholder(0)
-        normal = make_normal(self.discr.dimensions)
+        normal = make_normal(self.dimensions)
 
-        return u.int * numpy.dot(normal, self.v) - self.get_weak_flux()
+        return u.int * numpy.dot(normal, self.v) - self.weak_flux()
 
-    @memoize_method
     def op_template(self):
-        from hedge.optemplate import Field, pair_with_boundary
+        from hedge.optemplate import Field, pair_with_boundary, \
+                get_flux_operator, make_nabla, InverseMassOperator
+
         u = Field("u")
         bc_in = Field("bc_in")
 
-        nabla = self.discr.nabla
-        m_inv = self.discr.inverse_mass_operator
+        nabla = make_nabla(self.dimensions)
+        m_inv = InverseMassOperator()
 
-        return self.discr.compile(-numpy.dot(self.v, nabla*u) + m_inv*(
-                self.flux * u
-                + self.flux * pair_with_boundary(u, bc_in, self.inflow_tag)
-                #+ self.flux * pair_with_boundary(u, bc_out, self.outflow_tag)
-                ))
+        flux_op = get_flux_operator(self.flux())
 
-    def rhs(self, t, u):
-        bc_in = self.inflow_u.boundary_interpolant(t, self.discr, self.inflow_tag)
-        #bc_out = 0.5*self.discr.boundarize_volume_field(u, self.outflow_tag)
-        return self.op_template()(u=u, bc_in=bc_in)
+        return -numpy.dot(self.v, nabla*u) + m_inv*(
+                flux_op * u
+                + flux_op * pair_with_boundary(u, bc_in, self.inflow_tag)
+                #+ flux_op * pair_with_boundary(u, bc_out, self.outflow_tag)
+                )
+
+    def bind(self, discr):
+        compiled_op_template = discr.compile(self.op_template())
+
+        from hedge.mesh import check_bc_coverage
+        check_bc_coverage(discr.mesh, [self.inflow_tag, self.outflow_tag])
+
+        def rhs(t, u):
+            bc_in = self.inflow_u.boundary_interpolant(t, discr, self.inflow_tag)
+            #bc_out = 0.5*discr.boundarize_volume_field(u, self.outflow_tag)
+            return compiled_op_template(u=u, bc_in=bc_in)
+
+        return rhs
 
 
 
 
 class WeakAdvectionOperator(AdvectionOperatorBase):
-    def get_flux(self):
-        return self.get_weak_flux()
+    def flux(self):
+        return self.weak_flux()
 
-    @memoize_method
     def op_template(self):
-        from hedge.optemplate import Field, pair_with_boundary
+        from hedge.optemplate import Field, pair_with_boundary, \
+                get_flux_operator, make_minv_stiffness_t, InverseMassOperator
 
         u = Field("u")
         bc_in = Field("bc_in")
         bc_out = Field("bc_out")
 
-        m_inv = self.discr.inverse_mass_operator
-        minv_st = self.discr.minv_stiffness_t
+        minv_st = make_minv_stiffness_t(self.dimensions)
+        m_inv = InverseMassOperator()
 
-        return self.discr.compile(
-                numpy.dot(self.v, minv_st*u) - m_inv*(
-                    self.flux*u
-                    + self.flux * pair_with_boundary(u, bc_in, self.inflow_tag)
-                    + self.flux * pair_with_boundary(u, bc_out, self.outflow_tag)
-                    ))
+        flux_op = get_flux_operator(self.flux())
 
-    def rhs(self, t, u):
-        bc_in = self.inflow_u.boundary_interpolant(t, self.discr, self.inflow_tag)
-        bc_out = self.discr.boundarize_volume_field(u, self.outflow_tag)
+        return numpy.dot(self.v, minv_st*u) - m_inv*(
+                    flux_op*u
+                    + flux_op * pair_with_boundary(u, bc_in, self.inflow_tag)
+                    + flux_op * pair_with_boundary(u, bc_out, self.outflow_tag)
+                    )
 
-        return self.op_template()(u=u, bc_in=bc_in, bc_out=bc_out)
+    def bind(self, discr):
+        compiled_op_template = discr.compile(self.op_template())
+
+        from hedge.mesh import check_bc_coverage
+        check_bc_coverage(discr.mesh, [self.inflow_tag, self.outflow_tag])
+
+        def rhs(t, u):
+            bc_in = self.inflow_u.boundary_interpolant(t, discr, self.inflow_tag)
+            bc_out = discr.boundarize_volume_field(u, self.outflow_tag)
+
+            return compiled_op_template(u=u, bc_in=bc_in, bc_out=bc_out)
+
+        return rhs
 
 
 
