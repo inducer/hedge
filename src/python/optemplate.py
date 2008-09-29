@@ -34,22 +34,8 @@ import hedge.mesh
 class Field(pymbolic.primitives.Variable):
     pass
 
-def make_vector_field(name, components):
-    from hedge.tools import join_fields
-    vfld = pymbolic.primitives.Variable(name)
-    return join_fields(*[vfld[i] for i in range(components)])
-
-
-
-
 # operators -------------------------------------------------------------------
 class Operator(pymbolic.primitives.Leaf):
-    def __init__(self, discr):
-        self.discr = discr
-
-    def __getinitargs__(self):
-        return (self.discr,)
-
     def stringifier(self):
         return StringifyMapper
 
@@ -57,8 +43,8 @@ class Operator(pymbolic.primitives.Leaf):
         # prevent lazy-eval semantics from kicking in
         raise RuntimeError, "symbolic operators are not callable"
 
-    def apply(self, field):
-        return self.discr.compile(self * Field("f"))(f=field)
+    def apply(self, discr, field):
+        return discr.compile(self * Field("f"))(f=field)
 
 
 
@@ -82,13 +68,13 @@ class OperatorBinding(pymbolic.primitives.AlgebraicLeaf):
 
 # diff operators --------------------------------------------------------------
 class DiffOperatorBase(Operator):
-    def __init__(self, discr, xyz_axis):
-        Operator.__init__(self, discr)
+    def __init__(self, xyz_axis):
+        Operator.__init__(self)
 
         self.xyz_axis = xyz_axis
 
     def __getinitargs__(self):
-        return self.discr, self.xyz_axis
+        return (self.xyz_axis,)
 
 class DifferentiationOperator(DiffOperatorBase):
     @staticmethod
@@ -183,12 +169,12 @@ class InverseMassOperator(MassOperatorBase):
 
 # flux-like operators ---------------------------------------------------------
 class FluxOperator(Operator):
-    def __init__(self, discr, flux):
-        Operator.__init__(self, discr)
+    def __init__(self, flux):
+        Operator.__init__(self)
         self.flux = flux
 
     def __getinitargs__(self):
-        return (self.discr, self.flux)
+        return (self.flux, )
 
     def __mul__(self, arg):
         from hedge.tools import is_obj_array
@@ -207,8 +193,8 @@ class FluxCoefficientOperator(Operator):
     """Results in a volume-global vector with data along the faces,
     obtained by computing the flux and applying the face mass matrix.
     """
-    def __init__(self, discr, int_coeff, ext_coeff):
-        Operator.__init__(self, discr)
+    def __init__(self, int_coeff, ext_coeff):
+        Operator.__init__(self)
         self.int_coeff = int_coeff
         self.ext_coeff = ext_coeff
 
@@ -216,7 +202,7 @@ class FluxCoefficientOperator(Operator):
         return mapper.map_flux_coefficient
 
     def __getinitargs__(self):
-        return (self.discr, self.int_coeff, self.ext_coeff)
+        return (self.int_coeff, self.ext_coeff)
 
 
 
@@ -225,8 +211,8 @@ class LiftingFluxCoefficientOperator(Operator):
     obtained by computing the flux and applying the face mass matrix
     and the inverse volume mass matrix.
     """
-    def __init__(self, discr, int_coeff, ext_coeff):
-        Operator.__init__(self, discr)
+    def __init__(self, int_coeff, ext_coeff):
+        Operator.__init__(self)
         self.int_coeff = int_coeff
         self.ext_coeff = ext_coeff
 
@@ -234,14 +220,13 @@ class LiftingFluxCoefficientOperator(Operator):
         return mapper.map_lift_coefficient
 
     def __getinitargs__(self):
-        return (self.discr, self.int_coeff, self.ext_coeff)
+        return (self.int_coeff, self.ext_coeff)
 
 
 
 
 class VectorFluxOperator(object):
-    def __init__(self, discr, fluxes):
-        self.discr = discr
+    def __init__(self, fluxes):
         self.fluxes = fluxes
 
     def __mul__(self, arg):
@@ -249,7 +234,7 @@ class VectorFluxOperator(object):
             return 0
         from hedge.tools import make_obj_array
         return make_obj_array(
-                [OperatorBinding(FluxOperator(self.discr, f), arg)
+                [OperatorBinding(FluxOperator(f), arg)
                     for f in self.fluxes])
                 
 
@@ -288,6 +273,54 @@ def pair_with_boundary(field, bfield, tag=hedge.mesh.TAG_ALL):
         return 0
     else:
         return BoundaryPair(field, bfield, tag)
+
+
+
+
+# convenience functions -------------------------------------------------------
+def make_vector_field(name, components):
+    from hedge.tools import join_fields
+    vfld = pymbolic.primitives.Variable(name)
+    return join_fields(*[vfld[i] for i in range(components)])
+
+
+
+
+def get_flux_operator(flux):
+    """Return a flux operator that can be multiplied with
+    a volume field to obtain the lifted interior fluxes
+    or with a boundary pair to obtain the lifted boundary
+    flux.
+    """
+    from hedge.tools import is_obj_array, make_obj_array
+
+    if is_obj_array(flux):
+        return VectorFluxOperator(flux)
+    else:
+        return FluxOperator(flux)
+
+
+
+
+def make_nabla(dim):
+    from hedge.tools import make_obj_array
+    return make_obj_array(
+            [DifferentiationOperator(i) for i in range(dim)])
+
+def make_minv_stiffness_t(dim):
+    from hedge.tools import make_obj_array
+    return make_obj_array(
+        [MInvSTOperator(i) for i in range(dim)])
+
+def make_stiffness(dim):
+    from hedge.tools import make_obj_array
+    return make_obj_array(
+        [StiffnessOperator(i) for i in range(dim)])
+
+def make_stiffness_t(dim):
+    from hedge.tools import make_obj_array
+    return make_obj_array(
+        [StiffnessTOperator(i) for i in range(dim)])
 
 
 
@@ -407,17 +440,14 @@ class OperatorBinder(OpTemplateIdentityMapper):
 
 
 class _InnerInverseMassContractor(pymbolic.mapper.RecursiveMapper):
-    def __init__(self, discr):
-        self.discr = discr
-
     def map_constant(self, expr):
         return OperatorBinding(
-                InverseMassOperator(self.discr),
+                InverseMassOperator(),
                 expr)
 
     def map_algebraic_leaf(self, expr):
         return OperatorBinding(
-                InverseMassOperator(self.discr),
+                InverseMassOperator(),
                 expr)
 
     def map_operator_binding(self, binding):
@@ -425,21 +455,20 @@ class _InnerInverseMassContractor(pymbolic.mapper.RecursiveMapper):
             return binding.field
         elif isinstance(binding.op, StiffnessOperator):
             return OperatorBinding(
-                    DifferentiationOperator(self.discr, binding.op.xyz_axis),
+                    DifferentiationOperator(binding.op.xyz_axis),
                     binding.field)
         elif isinstance(binding.op, StiffnessTOperator):
             return OperatorBinding(
-                    MInvSTOperator(self.discr, binding.op.xyz_axis),
+                    MInvSTOperator(binding.op.xyz_axis),
                     binding.field)
         elif isinstance(binding.op, FluxCoefficientOperator):
             return OperatorBinding(
                     LiftingFluxCoefficientOperator(
-                        self.discr, 
                         binding.op.int_coeff, binding.op.ext_coeff),
                     binding.field)
         else:
             return OperatorBinding(
-                InverseMassOperator(self.discr),
+                InverseMassOperator(),
                 binding)
 
     def map_sum(self, expr):
@@ -481,7 +510,7 @@ class InverseMassContractor(pymbolic.mapper.IdentityMapper):
             return binding.__class__(binding.op,
                     self.rec(binding.field))
         else:
-            return  _InnerInverseMassContractor(binding.op.discr)(binding.field)
+            return  _InnerInverseMassContractor()(binding.field)
 
 
 
@@ -502,7 +531,7 @@ class FluxDecomposer(OpTemplateIdentityMapper):
         else:
             return field[idx]
 
-    def _map_inner_flux(self, discr, analyzed_flux, field):
+    def _map_inner_flux(self, analyzed_flux, field):
         from hedge.tools import log_shape
         lsf = log_shape(field)
         is_scalar = lsf == ()
@@ -512,7 +541,7 @@ class FluxDecomposer(OpTemplateIdentityMapper):
         from pymbolic import flattened_sum
         return flattened_sum(
                 OperatorBinding(
-                    FluxCoefficientOperator(discr,
+                    FluxCoefficientOperator(
                         self.compile_coefficient(int_flux),
                         self.compile_coefficient(ext_flux),
                         ),
@@ -520,7 +549,7 @@ class FluxDecomposer(OpTemplateIdentityMapper):
                     )
                     for idx, int_flux, ext_flux in analyzed_flux)
 
-    def _map_bdry_flux(self, discr, analyzed_flux, field, bfield, tag):
+    def _map_bdry_flux(self, analyzed_flux, field, bfield, tag):
         class ZeroVector:
             dtype = 0
             def __getitem__(self, idx):
@@ -544,7 +573,7 @@ class FluxDecomposer(OpTemplateIdentityMapper):
         from pymbolic import flattened_sum
         return flattened_sum(
                 OperatorBinding(
-                    FluxCoefficientOperator(discr,
+                    FluxCoefficientOperator(
                         self.compile_coefficient(int_flux),
                         self.compile_coefficient(ext_flux),
                         ),
@@ -562,20 +591,18 @@ class FluxDecomposer(OpTemplateIdentityMapper):
             from hedge.flux import analyze_flux
             if isinstance(binding.field, BoundaryPair):
                 bpair = binding.field
-                return self._map_bdry_flux(binding.op.discr,
+                return self._map_bdry_flux(
                         analyze_flux(binding.op.flux), 
                         bpair.field,
                         bpair.bfield,
                         bpair.tag)
             else:
                 return self._map_inner_flux(
-                        binding.op.discr,
                         analyze_flux(binding.op.flux), 
                         binding.field)
         elif isinstance(binding.op, (FluxCoefficientOperator, LiftingFluxCoefficientOperator)):
             return OperatorBinding(
                     binding.op.__class__(
-                        binding.op.discr,
                         self.compile_coefficient(binding.op.int_coeff),
                         self.compile_coefficient(binding.op.ext_coeff),
                         ),
@@ -677,7 +704,7 @@ class BCToFluxRewriter(OpTemplateIdentityMapper):
                     map_field_component_to_bfield)(flux)
             
             return OperatorBinding(
-                    FluxOperator(expr.op.discr, flux),
+                    FluxOperator(flux),
                     BoundaryPair(vol_field, remaining_bdry_field, bpair.tag))
         else:
             return OpTemplateIdentityMapper.map_operator_binding(self, expr)

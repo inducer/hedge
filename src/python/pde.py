@@ -60,6 +60,7 @@ class TimeDependentOperator(Operator):
 
 
 
+# operator binding ------------------------------------------------------------
 class GradientOperator(Operator):
     def __init__(self, discr):
         self.discr = discr
@@ -95,57 +96,65 @@ class GradientOperator(Operator):
 
 
 class DivergenceOperator(Operator):
-    def __init__(self, discr, subset=None):
-        self.discr = discr
+    def __init__(self, dimensions, subset=None):
+        self.dimensions = dimensions
 
         if subset is None:
-            subset = self.subset = discr.dimensions * [True,]
+            self.subset = dimensions * [True,]
         else:
             # chop off any extra dimensions
-            subset = self.subset = subset[:discr.dimensions]
+            self.subset = subset[:dimensions]
 
+    def flux(self):
         from hedge.flux import make_normal, FluxVectorPlaceholder
-        v = FluxVectorPlaceholder(discr.dimensions)
 
-        normal = make_normal(self.discr.dimensions)
+        v = FluxVectorPlaceholder(self.dimensions)
+
+        normal = make_normal(self.dimensions)
 
         flux = 0
         idx = 0
-        for i, i_enabled in enumerate(subset):
-            if i_enabled and i < discr.dimensions:
+
+        for i, i_enabled in enumerate(self.subset):
+            if i_enabled and i < self.dimensions:
                 flux += (v.int-v.avg)[idx]*normal[i]
                 idx += 1
 
-        self.flux = discr.get_flux_operator(flux)
+        return flux
 
-    @memoize_method
     def op_template(self):
         from hedge.mesh import TAG_ALL
-        from hedge.optemplate import make_vector_field, pair_with_boundary
+        from hedge.optemplate import make_vector_field, pair_with_boundary, \
+                get_flux_operator, make_nabla, InverseMassOperator
                 
-        nabla = self.discr.nabla
-        m_inv = self.discr.inverse_mass_operator
+        nabla = make_nabla(self.dimensions)
+        m_inv = InverseMassOperator()
 
-        v = make_vector_field("v", self.discr.dimensions)
-        bc = make_vector_field("bc", self.discr.dimensions)
+        v = make_vector_field("v", self.dimensions)
+        bc = make_vector_field("bc", self.dimensions)
 
         local_op_result = 0
         idx = 0
         for i, i_enabled in enumerate(self.subset):
-            if i_enabled and i < self.discr.dimensions:
+            if i_enabled and i < self.dimensions:
                 local_op_result += nabla[i]*v[idx]
                 idx += 1
-        
-        opt = local_op_result - m_inv*(
-                self.flux * v + 
-                self.flux * pair_with_boundary(v, bc, TAG_ALL))
-        return self.discr.compile(opt)
-        
-    def __call__(self, v):
-        from hedge.mesh import TAG_ALL
 
-        return self.op_template()(v=v, 
-                bc=self.discr.boundarize_volume_field(v, TAG_ALL))
+        flux_op = get_flux_operator(self.flux())
+        
+        return local_op_result - m_inv*(
+                flux_op * v + 
+                flux_op * pair_with_boundary(v, bc, TAG_ALL))
+        
+    def bind(self, discr):
+        compiled_op_template = discr.compile(self.op_template())
+
+        def op(v):
+            from hedge.mesh import TAG_ALL
+            return compiled_op_template(v=v, 
+                    bc=discr.boundarize_volume_field(v, TAG_ALL))
+
+        return op
 
 
 
@@ -395,62 +404,64 @@ class MaxwellOperator(TimeDependentOperator):
     Field order is [Ex Ey Ez Hx Hy Hz].
     """
 
-    def __init__(self, discr, epsilon, mu, upwind_alpha=1, 
+    _default_dimensions = 3
+
+    def __init__(self, epsilon, mu, upwind_alpha=1, 
             pec_tag=hedge.mesh.TAG_ALL, 
             absorb_tag=hedge.mesh.TAG_NONE,
-            current=None):
-        from hedge.flux import make_normal, FluxVectorPlaceholder
-        from hedge.mesh import check_bc_coverage
-        from math import sqrt
-        from hedge.tools import SubsettableCrossProduct, join_fields
-
+            current=None, dimensions=None):
         e_subset = self.get_eh_subset()[0:3]
         h_subset = self.get_eh_subset()[3:6]
 
+        from hedge.tools import SubsettableCrossProduct
         e_cross = self.e_cross = SubsettableCrossProduct(
                 op2_subset=e_subset, result_subset=h_subset)
         h_cross = self.h_cross = SubsettableCrossProduct(
                 op2_subset=h_subset, result_subset=e_subset)
 
-        self.discr = discr
+        from math import sqrt
 
         self.epsilon = epsilon
         self.mu = mu
         self.c = 1/sqrt(mu*epsilon)
+
+        self.Z = sqrt(mu/epsilon)
+        self.Y = 1/self.Z
+
+        self.upwind_alpha = upwind_alpha
 
         self.pec_tag = pec_tag
         self.absorb_tag = absorb_tag
 
         self.current = current
 
-        check_bc_coverage(discr.mesh, [pec_tag, absorb_tag])
+        self.dimensions = dimensions or self._default_dimensions
 
-        dim = discr.dimensions
-        normal = make_normal(dim)
+    def flux(self):
+        from math import sqrt
+        from hedge.flux import make_normal, FluxVectorPlaceholder
+        from hedge.tools import join_fields
+
+        normal = make_normal(self.dimensions)
 
         w = FluxVectorPlaceholder(self.count_subset(self.get_eh_subset()))
         e, h = self.split_eh(w)
 
-        self.Z = Z = sqrt(mu/epsilon)
-        self.Y = Y = 1/Z
-
         # see doc/maxima/maxwell.mac
-        self.flux = join_fields(
+        return join_fields(
                 # flux e, 
-                1/epsilon*(
-                    -1/2*h_cross(normal, 
+                1/self.epsilon*(
+                    -1/2*self.h_cross(normal, 
                         h.int-h.ext
-                        -upwind_alpha/Z*e_cross(normal, e.int-e.ext))
+                        -self.upwind_alpha/self.Z*self.e_cross(normal, e.int-e.ext))
                     ),
                 # flux h
-                1/mu*(
-                    1/2*e_cross(normal, 
+                1/self.mu*(
+                    1/2*self.e_cross(normal, 
                         e.int-e.ext
-                        +upwind_alpha/(Y)*h_cross(normal, h.int-h.ext))
+                        +self.upwind_alpha/(self.Y)*self.h_cross(normal, h.int-h.ext))
                     ),
                 )
-
-        self.flux_op = discr.get_flux_operator(self.flux)
 
     def local_op(self, e, h):
         # in conservation form: u_t + A u_x = 0
@@ -460,18 +471,19 @@ class MaxwellOperator(TimeDependentOperator):
         def h_curl(field):
             return self.h_cross(nabla, field)
 
+        from hedge.optemplate import make_nabla
         from hedge.tools import join_fields
 
-        nabla = self.discr.nabla
+        nabla = make_nabla(self.dimensions)
 
         return join_fields(
                 - 1/self.epsilon * h_curl(h),
                 1/self.mu * e_curl(e),
                 )
 
-    @memoize_method
     def op_template(self):
-        from hedge.optemplate import make_vector_field, pair_with_boundary
+        from hedge.optemplate import make_vector_field, pair_with_boundary, \
+                InverseMassOperator, get_flux_operator
 
         fld_cnt = self.count_subset(self.get_eh_subset())
         w = make_vector_field("w", fld_cnt)
@@ -482,7 +494,9 @@ class MaxwellOperator(TimeDependentOperator):
         pec_bc = join_fields(-e, h)
 
         from hedge.flux import make_normal
-        normal = make_normal(self.discr.dimensions)
+        normal = make_normal(self.dimensions)
+
+        flux_op = get_flux_operator(self.flux())
 
         absorb_bc = w + 1/2*join_fields(
                 self.h_cross(normal, self.e_cross(normal, e)) 
@@ -492,25 +506,34 @@ class MaxwellOperator(TimeDependentOperator):
                 )
 
         # actual operator template --------------------------------------------
-        m_inv = self.discr.inverse_mass_operator
+        m_inv = InverseMassOperator()
 
-        return self.discr.compile(- self.local_op(e, h) \
+        return - self.local_op(e, h) \
                 + m_inv*(
-                    self.flux_op * w
-                    +self.flux_op * pair_with_boundary(w, pec_bc, self.pec_tag)
-                    +self.flux_op * pair_with_boundary(w, absorb_bc, self.absorb_tag)
-                    ))
+                    flux_op * w
+                    +flux_op * pair_with_boundary(w, pec_bc, self.pec_tag)
+                    +flux_op * pair_with_boundary(w, absorb_bc, self.absorb_tag)
+                    )
 
-    def rhs(self, t, w):
-        if self.current is not None:
-            j = self.current.volume_interpolant(t, self.discr)
-            j_source = []
-            for j_idx, use_component in enumerate(self.get_eh_subset()[0:3]):
-                if use_component:
-                    j_source.append(-j[j_idx])
-            return self.op_template()(w=w) + self.assemble_fields(e=j_source)
+    def bind(self, discr):
+        from hedge.mesh import check_bc_coverage
+        check_bc_coverage(discr.mesh, [self.pec_tag, self.absorb_tag])
+
+        compiled_op_template = discr.compile(self.op_template())
+
+        if self.current is None:
+            def rhs(t, w):
+                return compiled_op_template(w=w)
         else:
-            return self.op_template()(w=w)
+            def rhs(t, w):
+                j = self.current.volume_interpolant(t, self.discr)
+                j_source = []
+                for j_idx, use_component in enumerate(self.get_eh_subset()[0:3]):
+                    if use_component:
+                        j_source.append(-j[j_idx])
+                return compiled_op_template(w=w) + self.assemble_fields(e=j_source)
+
+        return rhs
 
     def assemble_fields(self, e=None, h=None):
         e_components = self.count_subset(self.get_eh_subset()[0:3])
@@ -578,6 +601,8 @@ class TMMaxwellOperator(MaxwellOperator):
     Field order is [Ez Hx Hy].
     """
 
+    _default_dimensions = 2
+
     def get_eh_subset(self):
         return (
                 (False,False,True) # only ez
@@ -593,6 +618,8 @@ class TEMaxwellOperator(MaxwellOperator):
 
     Field order is [Ex Ey Hz].
     """
+
+    _default_dimensions = 2
 
     def get_eh_subset(self):
         return (

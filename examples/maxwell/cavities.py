@@ -91,7 +91,7 @@ def main():
 
         mode.set_time(0)
         fields = to_obj_array(mode(discr).real.copy())
-        op = MaxwellOperator(discr, epsilon, mu, upwind_alpha=1)
+        op = MaxwellOperator(epsilon, mu, upwind_alpha=1)
 
         dt = discr.dt_factor(op.max_eigenvalue())
         final_time = 1e-9
@@ -124,13 +124,15 @@ def main():
         logmgr.add_quantity(vis_timer)
 
         from hedge.log import EMFieldGetter, add_em_quantities
-        field_getter = EMFieldGetter(op, lambda: fields)
+        field_getter = EMFieldGetter(discr, op, lambda: fields)
         add_em_quantities(logmgr, op, field_getter)
         
         logmgr.add_watches(["step.max", "t_sim.max", "W_field", "t_step.max"])
 
         # timestep loop -------------------------------------------------------
         t = 0
+        rhs = op.bind(discr)
+
         for step in range(nsteps):
             logmgr.tick()
 
@@ -145,7 +147,7 @@ def main():
                 visf.close()
                 vis_timer.stop()
 
-            fields = stepper(fields, t, dt, op.rhs)
+            fields = stepper(fields, t, dt, rhs)
             t += dt
 
         logmgr.tick()

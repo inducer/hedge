@@ -691,10 +691,11 @@ class Discretization(object):
 
     # scalar reduction --------------------------------------------------------
     def integral(self, volume_vector):
+        from hedge.optemplate import MassOperator
         try:
             mass_ones = self._mass_ones
         except AttributeError:
-            self._mass_ones = mass_ones = self.mass_operator.apply(ones_on_volume(self))
+            self._mass_ones = mass_ones = MassOperator().apply(self, ones_on_volume(self))
         
         from hedge.tools import log_shape
 
@@ -729,17 +730,20 @@ class Discretization(object):
             if p != 2:
                 volume_vector = numpy.abs(volume_vector)**(p/2)
 
+            from hedge.optemplate import MassOperator
+            mass_op = MassOperator()
+
             ls = log_shape(volume_vector)
             if ls == ():
                 return float(numpy.dot(
                         volume_vector,
-                        self.mass_operator.apply(volume_vector))**(1/p))
+                        mass_op.apply(self, volume_vector))**(1/p))
             else:
                 assert len(ls) == 1
                 return float(sum(
                         numpy.dot(
                             subv,
-                            self.mass_operator.apply(subv))
+                            mass_op.apply(self, subv))
                         for subv in volume_vector)**(1/p))
 
     # element data retrieval --------------------------------------------------
@@ -792,62 +796,6 @@ class Discretization(object):
                             interp_coeff=la.solve(vdm_t, basis_values))
 
         raise RuntimeError, "point %s not found" % point
-
-    # operator binding functions --------------------------------------------------
-    @property
-    def nabla(self):
-        from hedge.tools import make_obj_array
-        from hedge.optemplate import DifferentiationOperator
-        return make_obj_array(
-                [DifferentiationOperator(self, i) 
-                    for i in range(self.dimensions)])
-
-    @property
-    def minv_stiffness_t(self):
-        from hedge.tools import make_obj_array
-        from hedge.optemplate import MInvSTOperator
-        return make_obj_array(
-            [MInvSTOperator(self, i) 
-                for i in range(self.dimensions)])
-
-    @property
-    def stiffness_operator(self):
-        from hedge.tools import make_obj_array
-        from hedge.optemplate import StiffnessOperator
-        return make_obj_array(
-            [StiffnessOperator(self, i) 
-                for i in range(self.dimensions)])
-
-    @property
-    def stiffness_t_operator(self):
-        from hedge.tools import make_obj_array
-        from hedge.optemplate import StiffnessTOperator
-        return make_obj_array(
-            [StiffnessTOperator(self, i) 
-                for i in range(self.dimensions)])
-
-    @property
-    def mass_operator(self):
-        from hedge.optemplate import MassOperator
-        return MassOperator(self)
-
-    @property
-    def inverse_mass_operator(self):
-        from hedge.optemplate import InverseMassOperator
-        return InverseMassOperator(self)
-
-    def get_flux_operator(self, flux):
-        """Return a flux operator that can be multiplied with
-        a volume field to obtain the lifted interior fluxes
-        or with a boundary pair to obtain the lifted boundary
-        flux.
-        """
-        from hedge.optemplate import FluxOperator, VectorFluxOperator
-        from hedge.tools import is_obj_array, make_obj_array
-        if is_obj_array(flux):
-            return VectorFluxOperator(self, flux)
-        else:
-            return FluxOperator(self, flux)
 
     # op template execution ---------------------------------------------------
     def compile(self, optemplate):

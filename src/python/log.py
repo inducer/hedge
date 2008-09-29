@@ -131,7 +131,8 @@ class LpNorm(LogQuantity):
 class EMFieldGetter(object):
     """Makes E and H field accessible as self.e and self.h from a variable lookup.
     To be used with the EM log quantities in this module."""
-    def __init__(self, maxwell_op, fgetter):
+    def __init__(self, discr, maxwell_op, fgetter):
+        self.discr = discr
         self.maxwell_op = maxwell_op
         self.fgetter = fgetter
 
@@ -173,7 +174,7 @@ class EMFieldEnergy(LogQuantity):
                 ptwise_dot(1, 1, e, d) 
                 + ptwise_dot(1, 1, h, b))
 
-        return max_op.discr.integral(energy_density)
+        return self.fields.discr.integral(energy_density)
 
 
 
@@ -211,7 +212,7 @@ class EMFieldMomentum(MultiLogQuantity):
         poynting_s = self.poynting_cross(e, h)
 
         momentum_density = poynting_s/self.c0**2
-        return max_op.discr.integral(momentum_density)
+        return self.fields.discr.integral(momentum_density)
 
 
 
@@ -221,18 +222,17 @@ class EMFieldDivergenceD(LogQuantity):
         LogQuantity.__init__(self, name, "C", "Integral over div D")
 
         self.fields = fields
-        self.discr = self.fields.maxwell_op.discr
 
         from hedge.pde import DivergenceOperator
-        self.div_op = DivergenceOperator(self.discr,
-                maxwell_op.get_eh_subset()[:3])
+        self.div_op = DivergenceOperator(maxwell_op.dimensions,
+                maxwell_op.get_eh_subset()[:3]).bind(self.fields.discr)
 
     def __call__(self):
         max_op = self.fields.maxwell_op
         d = max_op.epsilon * self.fields.e
         div_d = self.div_op(d)
         
-        return self.discr.integral(div_d)
+        return self.fields.discr.integral(div_d)
 
 
 
@@ -240,11 +240,10 @@ class EMFieldDivergenceD(LogQuantity):
 class EMFieldDivergenceB(MultiLogQuantity):
     def __init__(self, maxwell_op, fields, names=None):
         self.fields = fields
-        self.discr = self.fields.maxwell_op.discr
 
         from hedge.pde import DivergenceOperator
-        self.div_op = DivergenceOperator(self.discr,
-                maxwell_op.get_eh_subset()[3:])
+        self.div_op = DivergenceOperator(maxwell_op.dimensions,
+                maxwell_op.get_eh_subset()[3:]).bind(self.fields.discr)
 
         if names is None:
             names = ["divB", "err_divB_l1"]
@@ -259,8 +258,8 @@ class EMFieldDivergenceB(MultiLogQuantity):
         b = max_op.mu * self.fields.h
         div_b = self.div_op(b)
         
-        return [self.discr.integral(div_b), 
-                self.discr.integral(numpy.absolute(div_b))]
+        return [self.fields.discr.integral(div_b), 
+                self.fields.discr.integral(numpy.absolute(div_b))]
 
 
 
