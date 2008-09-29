@@ -92,7 +92,7 @@ def main() :
         return 2
 
     from hedge.pde import StrongHeatOperator
-    op = StrongHeatOperator(discr, 
+    op = StrongHeatOperator(discr.dimensions, 
             #coeff=coeff,
             dirichlet_tag="dirichlet",
             dirichlet_bc=TimeConstantGivenFunction(ConstantGivenFunction(0)),
@@ -123,6 +123,7 @@ def main() :
     logmgr.add_watches(["step.max", "t_sim.max", "l2_u", "t_step.max"])
 
     # timestep loop -----------------------------------------------------------
+    rhs = op.bind(discr)
     for step in range(nsteps):
         logmgr.tick()
         t = step*dt
@@ -132,7 +133,7 @@ def main() :
             vis.add_data(visf, [("u", u), ], time=t, step=step)
             visf.close()
 
-        u = stepper(u, t, dt, op.rhs)
+        u = stepper(u, t, dt, rhs)
 
 
 
