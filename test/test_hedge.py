@@ -70,14 +70,14 @@ class TestHedge(unittest.TestCase):
         from hedge.tools import AffineMap
         for d in range(1, 5):
         #for d in [3]:
-            for i in range(1000):
-                a = numpy.random.randn(d, d)
+            for i in range(100):
+                a = numpy.random.randn(d, d)+10*numpy.eye(d)
                 b = numpy.random.randn(d)
 
                 m = AffineMap(a, b)
 
-                assert abs(m.jacobian() - la.det(a)) < 1e-16
-                assert la.norm(m.inverted().matrix - la.inv(a)) < 1e-16*la.norm(a)
+                assert abs(m.jacobian() - la.det(a)) < 1e-10
+                assert la.norm(m.inverted().matrix - la.inv(a)) < 1e-10*la.norm(a)
 
                 x = numpy.random.randn(d)
 
@@ -1449,15 +1449,17 @@ class TestHedge(unittest.TestCase):
 
                 from hedge.data import GivenFunction
                 from hedge.pde import WeakPoissonOperator
-                op = WeakPoissonOperator(discr, 
+                op = WeakPoissonOperator(discr.dimensions, 
                         dirichlet_tag=TAG_ALL,
                         dirichlet_bc=GivenFunction(
                             lambda x, el: truesol_c(x)),
                         neumann_tag=TAG_NONE, 
                         flux=flux)
 
+                bound_op = op.bind(discr)
+
                 if order <= 3:
-                    mat = matrix_rep(op)
+                    mat = matrix_rep(bound_op)
                     sym_err = la.norm(mat-mat.T)
                     #print sym_err
                     self.assert_(sym_err<1e-12)
@@ -1467,8 +1469,8 @@ class TestHedge(unittest.TestCase):
                 truesol_v = discr.interpolate_volume_function(
                         lambda x, el: truesol_c(x))
                 sol_v = -parallel_cg(
-                        pcon, -op, 
-                        op.prepare_rhs(GivenFunction(rhs_c)),
+                        pcon, -bound_op, 
+                        bound_op.prepare_rhs(GivenFunction(rhs_c)),
                         tol=1e-10, max_iterations=40000)
 
                 eocrec.add_data_point(order, discr.norm(sol_v-truesol_v))
