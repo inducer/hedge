@@ -237,8 +237,14 @@ class Discretization(hedge.discretization.Discretization):
         @arg tune_for: An optemplate for whose application this discretization's
         flux plan will be tuned.
         """
+
+        # initialize superclass
         ldis = self.get_local_discretization(mesh, local_discretization, order)
 
+        hedge.discretization.Discretization.__init__(self, mesh, ldis, debug=debug,
+                default_scalar_type=default_scalar_type)
+
+        # cuda init
         if init_cuda:
             cuda.init()
 
@@ -254,24 +260,6 @@ class Discretization(hedge.discretization.Discretization):
         self.device = device
         from pycuda.tools import DeviceData
 
-        # make preliminary plan
-        from hedge.cuda.plan import PlanGivenData
-        self.given = PlanGivenData(
-                DeviceData(device), ldis, 
-                default_scalar_type)
-
-        import hedge.cuda.fluxgather as fluxgather
-        flux_plan = fluxgather.make_plan(mesh, self.given, tune_for)
-        print "projected flux exec plan:", flux_plan
-
-        # partition mesh, obtain updated plan
-        self.flux_plan, self.partition = self._partition_mesh(mesh, flux_plan)
-        del flux_plan
-
-        # initialize superclass
-        hedge.discretization.Discretization.__init__(self, mesh, ldis, debug=debug,
-                default_scalar_type=default_scalar_type)
-
         # initialize memory pool
         if "cuda_memory" in self.debug:
             from pycuda.tools import DebugMemoryPool
@@ -279,6 +267,20 @@ class Discretization(hedge.discretization.Discretization):
         else:
             from pycuda.tools import DeviceMemoryPool
             self.pool = DeviceMemoryPool()
+
+        # make preliminary plan
+        from hedge.cuda.plan import PlanGivenData
+        self.given = PlanGivenData(
+                DeviceData(device), ldis, 
+                default_scalar_type)
+
+        import hedge.cuda.fluxgather as fluxgather
+        flux_plan = fluxgather.make_plan(self, self.given, tune_for)
+        print "projected flux exec plan:", flux_plan
+
+        # partition mesh, obtain updated plan
+        self.flux_plan, self.partition = self._partition_mesh(mesh, flux_plan)
+        del flux_plan
 
         # build our own data structures
         self.blocks = self._build_blocks()

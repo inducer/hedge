@@ -182,6 +182,7 @@ class Discretization(object):
         "cuda_diff_plan",
         "cuda_flux",
         "cuda_lift",
+        "cuda_gather_plan",
         "cuda_lift_plan",
         "cuda_debugbuf",
         "cuda_memory",

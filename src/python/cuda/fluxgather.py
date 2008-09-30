@@ -23,11 +23,16 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import numpy
-from pytools import memoize_method, memoize
+from pytools import memoize_method, memoize, Record
 import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
 import pymbolic.mapper.stringifier
 import hedge.cuda.plan
+
+
+
+
+class GPUIndexLists(Record): pass
 
 
 
@@ -217,7 +222,7 @@ class FluxGatherPlan(hedge.cuda.plan.ExecutionPlan):
         return self.parallel_faces*self.threads_per_face()
 
     def registers(self):
-        return 56
+        return 51
 
     def __str__(self):
             return ("%s pfaces=%d mbs_per_block=%d mb_elements=%d" % (
@@ -239,12 +244,13 @@ class FluxGatherPlan(hedge.cuda.plan.ExecutionPlan):
 
 
 
-def make_plan(mesh, given, tune_for):
+def make_plan(discr, given, tune_for):
     from hedge.cuda.execute import OpTemplateWithEnvironment
     from hedge.cuda.optemplate import FluxCollector
-    flux_count = len(FluxCollector()(
+    fluxes = FluxCollector()(
             OpTemplateWithEnvironment.compile_optemplate(
-                mesh, tune_for)))
+                discr.mesh, tune_for))
+    flux_count = len(fluxes)
 
     from hedge.cuda.plan import optimize_plan
 
@@ -255,10 +261,14 @@ def make_plan(mesh, given, tune_for):
                 if flux_plan.invalid_reason() is None:
                     yield flux_plan
 
+    def target_func(plan):
+        return plan.make_kernel(discr, elface_to_bdry_bitmap=None,
+                fluxes=fluxes).benchmark()
+
     return optimize_plan(
-            generate_valid_plans,
-            lambda plan: plan.elements_per_block(),
-            maximize=True)
+            generate_valid_plans, target_func,
+            maximize=False,
+            debug="cuda_gather_plan" in discr.debug)
 
 
 
@@ -281,6 +291,54 @@ class FluxGatherKernel:
         self.boundary_deps = list(boundary_deps_set)
         self.all_deps = list(interior_deps_set|boundary_deps_set)
 
+    def benchmark(self):
+        discr = self.discr
+        given = discr.given
+
+        from hedge.cuda.tools import int_ceiling
+        block_count = int_ceiling(
+                len(discr.mesh.elements)/self.plan.elements_per_block())
+        all_fluxes_on_faces = [gpuarray.empty(
+                self.plan.fluxes_on_faces_shape(block_count),
+                dtype=given.float_type,
+                allocator=discr.pool.allocate)
+                for i in range(len(self.fluxes))]
+
+        field = gpuarray.empty(
+                (self.plan.dofs_per_block() * block_count,), 
+                dtype=given.float_type,
+                allocator=discr.pool.allocate)
+
+        fdata = self.fake_flux_face_data_block()
+        ilist_data = self.fake_index_list_data()
+
+        gather, texref_map = self.get_kernel(fdata, ilist_data)
+
+        for dep_expr in self.all_deps:
+            field.bind_to_texref(texref_map[dep_expr])
+
+        count = 20
+
+        start = cuda.Event()
+        start.record()
+        cuda.Context.synchronize()
+        for i in range(count):
+            try:
+                gather.prepared_call(
+                        (block_count, 1),
+                        0, 
+                        fdata.device_memory,
+                        *tuple(fof.gpudata for fof in all_fluxes_on_faces)
+                        )
+            except cuda.LaunchError:
+                return None
+
+        stop = cuda.Event()
+        stop.record()
+        stop.synchronize()
+
+        return 1e-3/count * stop.time_since(start)
+
     def __call__(self, eval_dependency):
         discr = self.discr
         given = discr.given
@@ -292,7 +350,10 @@ class FluxGatherKernel:
                 allocator=discr.pool.allocate)
                 for i in range(len(self.fluxes))]
 
-        gather, texref_map = self.get_kernel()
+        fdata = self.flux_face_data_block(elgroup)
+        ilist_data = self.index_list_data()
+
+        gather, texref_map = self.get_kernel(fdata, ilist_data)
 
         for dep_expr in self.all_deps:
             dep_field = eval_dependency(dep_expr)
@@ -304,8 +365,6 @@ class FluxGatherKernel:
         else:
             from hedge.cuda.tools import FakeGPUArray
             debugbuf = FakeGPUArray()
-
-        fdata = self.flux_with_temp_data(elgroup)
 
         if discr.instrumented:
             discr.inner_flux_timer.add_timer_callable(gather.prepared_timed_call(
@@ -332,9 +391,8 @@ class FluxGatherKernel:
 
         return zip(self.fluxes, all_fluxes_on_faces)
 
-
     @memoize_method
-    def get_kernel(self):
+    def get_kernel(self, fdata, ilist_data):
         from hedge.cuda.cgen import \
                 Pointer, POD, Value, ArrayOf, Const, \
                 Module, FunctionDeclaration, FunctionBody, Block, \
@@ -350,7 +408,6 @@ class FluxGatherKernel:
         dims = range(d)
 
         elgroup, = discr.element_groups
-        flux_with_temp_data = self.flux_with_temp_data(elgroup)
 
         float_type = given.float_type
 
@@ -395,18 +452,18 @@ class FluxGatherKernel:
                 Define("THREAD_COUNT", "(THREADS_PER_FACE*CONCURRENT_FACES)"),
                 Define("COALESCING_THREAD_COUNT", "(THREAD_COUNT & ~0xf)"),
                 Line(),
-                Define("DATA_BLOCK_SIZE", flux_with_temp_data.block_bytes),
+                Define("DATA_BLOCK_SIZE", fdata.block_bytes),
                 Define("ALIGNED_FACE_DOFS_PER_MB", given.aligned_face_dofs_per_microblock()),
                 Define("ALIGNED_FACE_DOFS_PER_BLOCK", 
                     "(ALIGNED_FACE_DOFS_PER_MB*BLOCK_MB_COUNT)"),
                 Line(),
                 Line(),
-                ] + self.index_list_global_data().code + [
+                ] + ilist_data.code + [
                 Line(),
                 Value("texture<index_list_entry_t, 1, cudaReadModeElementType>", 
                     "tex_index_lists"),
                 Line(),
-                flux_with_temp_data.struct,
+                fdata.struct,
                 Line(),
                 CudaShared(Value("flux_data", "data")),
                 CudaShared(
@@ -643,13 +700,12 @@ class FluxGatherKernel:
                     "%s_tex" % short_name(dep_expr)))
                 for dep_expr in self.all_deps)
 
-        ilist_gdata = self.index_list_global_data()
         index_list_texref = mod.get_texref("tex_index_lists")
         index_list_texref.set_address(
-                ilist_gdata.device_memory,
-                ilist_gdata.bytes)
+                ilist_data.device_memory,
+                ilist_data.bytes)
         index_list_texref.set_format(
-                cuda.dtype_to_array_format(ilist_gdata.type), 1)
+                cuda.dtype_to_array_format(ilist_data.type), 1)
         index_list_texref.set_flags(cuda.TRSF_READ_AS_INTEGER)
 
         func = mod.get_function("apply_flux")
@@ -662,21 +718,21 @@ class FluxGatherKernel:
 
         return func, expr_to_texture_map
 
+    # data blocks -------------------------------------------------------------
     @memoize_method
-    def flux_with_temp_data(self, elgroup):
+    def flux_face_data_block(self, elgroup):
         discr = self.discr
         given = discr.given
         fplan = discr.flux_plan
         headers = []
         fp_blocks = []
 
-        uint16 = numpy.dtype(numpy.uint16)
-
         INVALID_DEST = (1<<16)-1
 
         from hedge.cuda.discretization import GPUBoundaryFaceStorage
 
         fp_struct = face_pair_struct(given.float_type, discr.dimensions)
+        fh_struct = flux_header_struct()
 
         def find_elface_dest(el_face):
             elface_dofs = face_dofs*ldis.face_count()
@@ -686,10 +742,8 @@ class FluxGatherKernel:
                     + index_in_mb * elface_dofs
                     + el_face[1]*face_dofs)
 
-        #outf = open("el_faces.txt", "w")
         for block in discr.blocks:
             ldis = block.local_discretization
-            el_dofs = ldis.node_count()
             face_dofs = ldis.face_node_count()
 
             faces_todo = set((el,face_nbr)
@@ -706,17 +760,12 @@ class FluxGatherKernel:
                 a_face = discr.face_storage_map[elface]
                 b_face = a_face.opposite
 
-                #print>>outf, "block %d el %d (global: %d) face %d" % (
-                        #block.number, discr.find_number_in_block(a_face.el_face[0]),
-                        #elface[0].id, elface[1]),
-                        
                 if isinstance(b_face, GPUBoundaryFaceStorage):
                     # boundary face
                     b_base = b_face.gpu_bdry_index_in_floats
                     boundary_bitmap = self.elface_to_bdry_bitmap.get(a_face.el_face, 0)
                     b_write_index_list = 0 # doesn't matter
                     b_dest = INVALID_DEST
-                    #print>>outf, "bdy%d" % boundary_bitmap
 
                     fp_structs = bdry_fp_structs
                 else:
@@ -731,18 +780,12 @@ class FluxGatherKernel:
                         b_dest = find_elface_dest(b_face.el_face)
 
                         fp_structs = same_fp_structs
-
-                        #print>>outf, "same el %d (global: %d) face %d" % (
-                                #discr.find_number_in_block(b_face.el_face[0]), 
-                                #b_face.el_face[0].id, b_face.el_face[1])
                     else:
                         # different block
                         b_write_index_list = 0 # doesn't matter
                         b_dest = INVALID_DEST
 
                         fp_structs = diff_fp_structs
-
-                        #print>>outf, "diff"
 
                 fp_structs.append(
                         fp_struct.make(
@@ -768,7 +811,7 @@ class FluxGatherKernel:
                             b_dest=b_dest
                             ))
 
-            headers.append(flux_header_struct().make(
+            headers.append(fh_struct.make(
                     same_facepairs_end=\
                             len(same_fp_structs),
                     diff_facepairs_end=\
@@ -795,27 +838,96 @@ class FluxGatherKernel:
                     ])
 
     @memoize_method
-    def index_list_global_data(self):
+    def fake_flux_face_data_block(self):
         discr = self.discr
+        given = discr.given
 
+        fp_struct = face_pair_struct(given.float_type, discr.dimensions)
+
+        from hedge.cuda.tools import int_ceiling
+        block_count = int_ceiling(
+                len(discr.mesh.elements)/self.plan.elements_per_block())
+
+        from random import randrange
+
+        face_dofs = given.dofs_per_face()
+
+        fp_structs = []
+
+        for i in range(self.plan.face_pair_count()):
+            fp_structs.append(
+                    fp_struct.make(
+                        h=0.5, order=4, face_jacobian=0.5,
+                        normal=discr.dimensions*[0.1],
+
+                        a_base=0, b_base=0,
+
+                        a_ilist_index=randrange(self.FAKE_INDEX_LIST_COUNT)*face_dofs,
+                        b_ilist_index=randrange(self.FAKE_INDEX_LIST_COUNT)*face_dofs,
+
+                        boundary_bitmap=1,
+                        pad=0,
+                        b_write_ilist_index=randrange(self.FAKE_INDEX_LIST_COUNT)*face_dofs,
+
+                        a_dest=0, b_dest=0
+                        ))
+
+        total_ext_face_count = self.plan.estimate_extface_count()
+        diff_count = total_ext_face_count//2
+        bdry_count = total_ext_face_count-diff_count
+
+        headers = block_count*[flux_header_struct().make(
+                same_facepairs_end=len(fp_structs)-total_ext_face_count,
+                diff_facepairs_end=diff_count,
+                bdry_facepairs_end=bdry_count)]
+        fp_blocks = block_count*[fp_structs]
+
+        from hedge.cuda.cgen import Value
+        from hedge.cuda.tools import make_superblocks
+
+        return make_superblocks(
+                given.devdata, "flux_data",
+                [
+                    (headers, Value(flux_header_struct().tpname, "header")),
+                    ],
+                [ 
+                    (fp_blocks, Value(fp_struct.tpname, "facepairs")), 
+                    ])
+
+    # index lists -------------------------------------------------------------
+    FAKE_INDEX_LIST_COUNT = 20
+
+    @memoize_method
+    def index_list_data(self):
+        return self.index_list_backend(self.discr.index_lists)
+
+    @memoize_method
+    def fake_index_list_data(self):
+        ilists = []
+        from random import shuffle
+        for i in range(self.FAKE_INDEX_LIST_COUNT):
+            ilist = range(self.discr.given.dofs_per_face())
+            shuffle(ilist)
+            ilists.append(ilist)
+
+        return self.index_list_backend(ilists)
+
+    def index_list_backend(self, ilists):
         from pytools import single_valued
-        ilist_length = single_valued(len(il) for il in discr.index_lists)
+        ilist_length = single_valued(len(il) for il in ilists)
+        assert ilist_length == self.discr.given.dofs_per_face()
 
         if ilist_length > 256:
             tp = numpy.uint16
         else:
             tp = numpy.uint8
 
-        from hedge.cuda.cgen import ArrayInitializer, ArrayOf, \
-                Typedef, POD, Value, CudaConstant, Define
+        from hedge.cuda.cgen import Typedef, POD, Value, Define
 
         from pytools import flatten
         flat_ilists = numpy.array(
-                list(flatten(discr.index_lists)),
+                list(flatten(ilists)),
                 dtype=tp)
-
-        from pytools import Record
-        class GPUIndexLists(Record): pass
 
         return GPUIndexLists(
                 type=tp,
@@ -826,3 +938,4 @@ class FluxGatherKernel:
                 device_memory=cuda.to_device(flat_ilists),
                 bytes=flat_ilists.size*flat_ilists.itemsize,
                 )
+

@@ -53,16 +53,15 @@ class Parallelism:
 
 
 
-def optimize_plan(plan_generator, max_func, maximize, debug=False, desirable_occupancy=1):
+def optimize_plan(plan_generator, max_func, maximize, debug=False, occupancy_slack=0.5):
     plans = list(p for p in plan_generator()
             if p.invalid_reason() is None)
 
     if not plans:
         raise RuntimeError, "no valid CUDA execution plans found"
 
-    desired_occup = max(plan.occupancy_record().occupancy for plan in plans)
-    if desired_occup > desirable_occupancy:
-        desired_occup = desirable_occupancy
+    max_occup = max(plan.occupancy_record().occupancy for plan in plans)
+    desired_occup = occupancy_slack*max_occup
 
     plan_values = []
     for p in plans:
