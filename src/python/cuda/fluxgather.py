@@ -131,23 +131,32 @@ class FluxToCodeMapper(pymbolic.mapper.stringifier.StringifyMapper):
 class FluxGatherPlan(hedge.cuda.plan.ExecutionPlan):
     def __init__(self, given, 
             parallel_faces, mbs_per_block, flux_count,
-            max_face_pair_count=None):
+            direct_store=False, max_face_pair_count=None,
+            ):
         hedge.cuda.plan.ExecutionPlan.__init__(self, given)
         self.parallel_faces = parallel_faces
         self.mbs_per_block = mbs_per_block
         self.flux_count = flux_count
+        self.direct_store = direct_store
 
         self.max_face_pair_count = max_face_pair_count
 
     def copy(self, given=None,
             parallel_faces=None, mbs_per_block=None, flux_count=None,
-            max_face_pair_count=None):
+            direct_store=None, max_face_pair_count=None):
+        def default_if_none(a, default):
+            if a is None:
+                return default
+            else:
+                return a
+
         return self.__class__(
-                given or self.given,
-                parallel_faces or self.parallel_faces,
-                mbs_per_block or self.mbs_per_block,
-                flux_count or self.flux_count,
-                max_face_pair_count or self.max_face_pair_count,
+                default_if_none(given, self.given),
+                default_if_none(parallel_faces, self.parallel_faces),
+                default_if_none(mbs_per_block, self.mbs_per_block),
+                default_if_none(flux_count, self.flux_count),
+                default_if_none(direct_store, self.direct_store),
+                default_if_none(max_face_pair_count, self.max_face_pair_count),
                 )
 
     def microblocks_per_block(self):
@@ -199,14 +208,17 @@ class FluxGatherPlan(hedge.cuda.plan.ExecutionPlan):
         else:
             index_lists_entry_size = 1
 
-        return (128 # parameters, block header, small extra stuff
-                + self.given.aligned_face_dofs_per_microblock()
+        result = (128 # parameters, block header, small extra stuff
+                + len(face_pair_struct(self.given.float_type, d))
+                * self.face_pair_count())
+
+        if not self.direct_store:
+            result += (self.given.aligned_face_dofs_per_microblock()
                 * self.flux_count
                 * self.microblocks_per_block()
-                * self.given.float_size()
-                + len(face_pair_struct(self.given.float_type, d))
-                * self.face_pair_count()
-                )
+                * self.given.float_size())
+
+        return result
 
     def threads_per_face(self):
         dpf = self.given.dofs_per_face()
@@ -225,12 +237,17 @@ class FluxGatherPlan(hedge.cuda.plan.ExecutionPlan):
         return 51
 
     def __str__(self):
-            return ("%s pfaces=%d mbs_per_block=%d mb_elements=%d" % (
-                hedge.cuda.plan.ExecutionPlan.__str__(self),
-                self.parallel_faces,
-                self.mbs_per_block,
-                self.given.microblock.elements,
-                ))
+        result = ("%s pfaces=%d mbs_per_block=%d mb_elements=%d" % (
+            hedge.cuda.plan.ExecutionPlan.__str__(self),
+            self.parallel_faces,
+            self.mbs_per_block,
+            self.given.microblock.elements,
+            ))
+
+        if self.direct_store:
+            result += " direct_store"
+
+        return result
 
     def fluxes_on_faces_shape(self, block_count):
         return (block_count
@@ -255,11 +272,14 @@ def make_plan(discr, given, tune_for):
     from hedge.cuda.plan import optimize_plan
 
     def generate_valid_plans():
-        for parallel_faces in range(1,32):
-            for mbs_per_block in range(1,256):
-                flux_plan = FluxGatherPlan(given, parallel_faces, mbs_per_block, flux_count)
-                if flux_plan.invalid_reason() is None:
-                    yield flux_plan
+        for direct_store in [True, False]:
+        #for direct_store in [False]:
+            for parallel_faces in range(1,32):
+                for mbs_per_block in range(1,8):
+                    flux_plan = FluxGatherPlan(given, parallel_faces, 
+                            mbs_per_block, flux_count, direct_store=direct_store)
+                    if flux_plan.invalid_reason() is None:
+                        yield flux_plan
 
     def target_func(plan):
         return plan.make_kernel(discr, elface_to_bdry_bitmap=None,
@@ -309,7 +329,7 @@ class FluxGatherKernel:
                 dtype=given.float_type,
                 allocator=discr.pool.allocate)
 
-        fdata = self.fake_flux_face_data_block()
+        fdata = self.fake_flux_face_data_block(block_count)
         ilist_data = self.fake_index_list_data()
 
         gather, texref_map = self.get_kernel(fdata, ilist_data)
@@ -432,40 +452,45 @@ class FluxGatherKernel:
                     "%s_tex" % short_name(dep_expr)))
 
         cmod.extend([
-                flux_header_struct(),
-                face_pair_struct(float_type, discr.dimensions),
-                Line(),
-                Define("DIMENSIONS", discr.dimensions),
-                Define("DOFS_PER_EL", given.dofs_per_el()),
-                Define("DOFS_PER_FACE", given.dofs_per_face()),
-                Define("THREADS_PER_FACE", fplan.threads_per_face()),
-                Line(),
-                Define("CONCURRENT_FACES", fplan.parallel_faces),
-                Define("BLOCK_MB_COUNT", fplan.mbs_per_block),
-                Line(),
-                Define("FACEDOF_NR", "threadIdx.x"),
-                Define("BLOCK_FACE", "threadIdx.y"),
-                Line(),
-                Define("FLUX_COUNT", fplan.flux_count),
-                Line(),
-                Define("THREAD_NUM", "(FACEDOF_NR + BLOCK_FACE*THREADS_PER_FACE)"),
-                Define("THREAD_COUNT", "(THREADS_PER_FACE*CONCURRENT_FACES)"),
-                Define("COALESCING_THREAD_COUNT", "(THREAD_COUNT & ~0xf)"),
-                Line(),
-                Define("DATA_BLOCK_SIZE", fdata.block_bytes),
-                Define("ALIGNED_FACE_DOFS_PER_MB", given.aligned_face_dofs_per_microblock()),
-                Define("ALIGNED_FACE_DOFS_PER_BLOCK", 
-                    "(ALIGNED_FACE_DOFS_PER_MB*BLOCK_MB_COUNT)"),
-                Line(),
-                Line(),
-                ] + ilist_data.code + [
-                Line(),
-                Value("texture<index_list_entry_t, 1, cudaReadModeElementType>", 
-                    "tex_index_lists"),
-                Line(),
-                fdata.struct,
-                Line(),
-                CudaShared(Value("flux_data", "data")),
+            flux_header_struct(),
+            face_pair_struct(float_type, discr.dimensions),
+            Line(),
+            Define("DIMENSIONS", discr.dimensions),
+            Define("DOFS_PER_EL", given.dofs_per_el()),
+            Define("DOFS_PER_FACE", given.dofs_per_face()),
+            Define("THREADS_PER_FACE", fplan.threads_per_face()),
+            Line(),
+            Define("CONCURRENT_FACES", fplan.parallel_faces),
+            Define("BLOCK_MB_COUNT", fplan.mbs_per_block),
+            Line(),
+            Define("FACEDOF_NR", "threadIdx.x"),
+            Define("BLOCK_FACE", "threadIdx.y"),
+            Line(),
+            Define("FLUX_COUNT", fplan.flux_count),
+            Line(),
+            Define("THREAD_NUM", "(FACEDOF_NR + BLOCK_FACE*THREADS_PER_FACE)"),
+            Define("THREAD_COUNT", "(THREADS_PER_FACE*CONCURRENT_FACES)"),
+            Define("COALESCING_THREAD_COUNT", "(THREAD_COUNT & ~0xf)"),
+            Line(),
+            Define("DATA_BLOCK_SIZE", fdata.block_bytes),
+            Define("ALIGNED_FACE_DOFS_PER_MB", given.aligned_face_dofs_per_microblock()),
+            Define("ALIGNED_FACE_DOFS_PER_BLOCK", 
+                "(ALIGNED_FACE_DOFS_PER_MB*BLOCK_MB_COUNT)"),
+            Line(),
+            Define("FOF_BLOCK_BASE", "(blockIdx.x*ALIGNED_FACE_DOFS_PER_BLOCK)"),
+            Line(),
+            ] + ilist_data.code + [
+            Line(),
+            Value("texture<index_list_entry_t, 1, cudaReadModeElementType>", 
+                "tex_index_lists"),
+            Line(),
+            fdata.struct,
+            Line(),
+            CudaShared(Value("flux_data", "data")),
+            ])
+
+        if not fplan.direct_store:
+            cmod.extend([
                 CudaShared(
                     ArrayOf(
                         ArrayOf(
@@ -487,6 +512,16 @@ class FluxGatherKernel:
             bytes="sizeof(flux_data)",
             descr="load face_pair data")
             +[ S("__syncthreads()"), Line() ])
+
+        def gen_store(flux_nr, index, what):
+            if fplan.direct_store:
+                return Assign(
+                        "gmem_fluxes_on_faces%d[FOF_BLOCK_BASE + %s]" % (flux_nr, index),
+                        what)
+            else:
+                return Assign(
+                        "smem_fluxes_on_faces[%d][%s]" % (flux_nr, index),
+                        what)
 
         def bdry_flux_writer():
             from hedge.cuda.cgen import make_multiple_ifs
@@ -537,9 +572,8 @@ class FluxGatherKernel:
                     )
 
                 flux_write_code.append(
-                        Assign(
-                            "smem_fluxes_on_faces[%d][fpair->a_dest+FACEDOF_NR]" % flux_nr,
-                            "fpair->face_jacobian*flux"))
+                            gen_store(flux_nr, "fpair->a_dest+FACEDOF_NR",
+                                "fpair->face_jacobian*flux"))
 
             return flux_write_code
 
@@ -599,18 +633,15 @@ class FluxGatherKernel:
                 flux_write_code.append(Line())
 
                 flux_write_code.append(
-                        Assign(
-                            "smem_fluxes_on_faces[%d][fpair->a_dest+FACEDOF_NR]" % flux_nr,
+                        gen_store(flux_nr, "fpair->a_dest+FACEDOF_NR",
                             "fpair->face_jacobian*a_flux"))
 
                 if is_twosided:
-                    flux_write_code.extend([
-                        Assign(
-                            "smem_fluxes_on_faces[%d]["
-                            "fpair->b_dest+tex1Dfetch(tex_index_lists, "
-                            "fpair->b_write_ilist_index + FACEDOF_NR)]" % flux_nr,
-                            "fpair->face_jacobian*b_flux")
-                        ])
+                    flux_write_code.append(
+                            gen_store(flux_nr, 
+                                "fpair->b_dest+tex1Dfetch(tex_index_lists, "
+                                "fpair->b_write_ilist_index + FACEDOF_NR)",
+                                "fpair->face_jacobian*b_flux"))
 
             return flux_write_code
 
@@ -668,20 +699,21 @@ class FluxGatherKernel:
             Line()
             ])
 
-        for flux_nr in range(len(self.fluxes)):
-            f_body.extend_log_block("store flux number %d" % flux_nr, [
-                For("unsigned word_nr = THREAD_NUM", 
-                    "word_nr < ALIGNED_FACE_DOFS_PER_MB*BLOCK_MB_COUNT", 
-                    "word_nr += COALESCING_THREAD_COUNT",
-                    Block([
-                        Assign(
-                            "gmem_fluxes_on_faces%d"
-                            "[blockIdx.x*ALIGNED_FACE_DOFS_PER_BLOCK+word_nr]"
-                            % flux_nr,
-                            "smem_fluxes_on_faces[%d][word_nr]" % flux_nr),
-                        ])
-                    )
-                ])
+        if not fplan.direct_store:
+            for flux_nr in range(len(self.fluxes)):
+                f_body.extend_log_block("store flux number %d" % flux_nr, [
+                    For("unsigned word_nr = THREAD_NUM", 
+                        "word_nr < ALIGNED_FACE_DOFS_PER_MB*BLOCK_MB_COUNT", 
+                        "word_nr += COALESCING_THREAD_COUNT",
+                        Block([
+                            Assign(
+                                "gmem_fluxes_on_faces%d"
+                                "[FOF_BLOCK_BASE+word_nr]"
+                                % flux_nr,
+                                "smem_fluxes_on_faces[%d][word_nr]" % flux_nr),
+                            ])
+                        )
+                    ])
 
         # finish off ----------------------------------------------------------
         cmod.append(FunctionBody(f_decl, f_body))
@@ -838,49 +870,67 @@ class FluxGatherKernel:
                     ])
 
     @memoize_method
-    def fake_flux_face_data_block(self):
+    def fake_flux_face_data_block(self, block_count):
         discr = self.discr
         given = discr.given
 
         fp_struct = face_pair_struct(given.float_type, discr.dimensions)
 
-        from hedge.cuda.tools import int_ceiling
-        block_count = int_ceiling(
-                len(discr.mesh.elements)/self.plan.elements_per_block())
+        headers = []
+        fp_blocks = []
 
-        from random import randrange
+        from random import randrange, choice
 
         face_dofs = given.dofs_per_face()
 
-        fp_structs = []
+        for block_nr in range(block_count):
+            fp_structs = []
 
-        for i in range(self.plan.face_pair_count()):
-            fp_structs.append(
-                    fp_struct.make(
-                        h=0.5, order=4, face_jacobian=0.5,
-                        normal=discr.dimensions*[0.1],
+            faces = [(mb_nr, mb_el_nr, face_nr)
+                    for mb_nr in range(self.plan.microblocks_per_block())
+                    for mb_el_nr in range(given.microblock.elements)
+                    for face_nr in range(given.faces_per_el())]
 
-                        a_base=0, b_base=0,
+            def draw_base():
+                mb_nr, mb_el_nr, face_nr = choice(faces)
+                return (block_nr * given.microblock.aligned_floats
+                        * self.plan.microblocks_per_block()
+                        + mb_nr * given.microblock.aligned_floats
+                        + mb_el_nr * given.dofs_per_el())
 
-                        a_ilist_index=randrange(self.FAKE_INDEX_LIST_COUNT)*face_dofs,
-                        b_ilist_index=randrange(self.FAKE_INDEX_LIST_COUNT)*face_dofs,
+            def draw_dest():
+                mb_nr, mb_el_nr, face_nr = choice(faces)
+                return (mb_nr * given.aligned_face_dofs_per_microblock()
+                        + mb_el_nr * face_dofs * given.faces_per_el()
+                        + face_nr * face_dofs)
 
-                        boundary_bitmap=1,
-                        pad=0,
-                        b_write_ilist_index=randrange(self.FAKE_INDEX_LIST_COUNT)*face_dofs,
+            for i in range(self.plan.face_pair_count()):
+                fp_structs.append(
+                        fp_struct.make(
+                            h=0.5, order=4, face_jacobian=0.5,
+                            normal=discr.dimensions*[0.1],
 
-                        a_dest=0, b_dest=0
-                        ))
+                            a_base=draw_base(), b_base=draw_base(),
 
-        total_ext_face_count = self.plan.estimate_extface_count()
-        diff_count = total_ext_face_count//2
-        bdry_count = total_ext_face_count-diff_count
+                            a_ilist_index=randrange(self.FAKE_INDEX_LIST_COUNT)*face_dofs,
+                            b_ilist_index=randrange(self.FAKE_INDEX_LIST_COUNT)*face_dofs,
 
-        headers = block_count*[flux_header_struct().make(
-                same_facepairs_end=len(fp_structs)-total_ext_face_count,
-                diff_facepairs_end=diff_count,
-                bdry_facepairs_end=bdry_count)]
-        fp_blocks = block_count*[fp_structs]
+                            boundary_bitmap=1,
+                            pad=0,
+                            b_write_ilist_index=randrange(self.FAKE_INDEX_LIST_COUNT)*face_dofs,
+
+                            a_dest=draw_dest(), b_dest=draw_dest()
+                            ))
+
+            total_ext_face_count = self.plan.estimate_extface_count()
+            diff_count = total_ext_face_count//2
+            bdry_count = total_ext_face_count-diff_count
+
+            headers.append(flux_header_struct().make(
+                    same_facepairs_end=len(fp_structs)-total_ext_face_count,
+                    diff_facepairs_end=diff_count,
+                    bdry_facepairs_end=bdry_count))
+            fp_blocks.append(fp_structs)
 
         from hedge.cuda.cgen import Value
         from hedge.cuda.tools import make_superblocks
