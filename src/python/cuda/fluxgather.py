@@ -272,8 +272,8 @@ def make_plan(discr, given, tune_for):
     from hedge.cuda.plan import optimize_plan
 
     def generate_valid_plans():
-        for direct_store in [True, False]:
-        #for direct_store in [False]:
+        #for direct_store in [True, False]:
+        for direct_store in [False]:
             for parallel_faces in range(1,32):
                 for mbs_per_block in range(1,8):
                     flux_plan = FluxGatherPlan(given, parallel_faces, 

@@ -437,7 +437,7 @@ class DiffKernel(object):
 
         assert result_matrix.shape == (channels, d, el_count)
 
-        if discr.debug:
+        if "cuda_diff" in discr.debug:
             def get_el_index_in_el_group(el):
                 mygroup, idx = discr.group_map[el.id]
                 assert mygroup is elgroup
