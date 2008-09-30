@@ -195,14 +195,17 @@ class Discretization(hedge.discretization.Discretization):
                 blocks[block].append(el_id)
             block_elements = max(len(block_els) for block_els in blocks.itervalues())
 
-            actual_plan = flux_plan.copy(
-                    max_ext_faces=max(block2extifaces.itervalues()),
-                    max_faces=max(
-                        len(blocks[b])*self.given.faces_per_el()
-                        + block2extifaces[b]
-                        for b in range(len(blocks))),
-                    )
-            assert actual_plan.max_faces % 2 == 0
+            max_facepairs = 0
+            for b in range(len(blocks)):
+                b_ext_faces = block2extifaces[b]
+                b_int_faces = (len(blocks[b])*self.given.faces_per_el()
+                        - b_ext_faces)
+                assert b_int_faces % 2 == 0
+                b_facepairs = b_int_faces//2 + b_ext_faces
+                max_facepairs = max(max_facepairs, b_facepairs)
+
+
+            actual_plan = flux_plan.copy(max_face_pair_count=max_facepairs)
 
             if (block_elements <= actual_plan.elements_per_block()
                     and (flux_plan.occupancy_record().occupancy -
@@ -226,9 +229,14 @@ class Discretization(hedge.discretization.Discretization):
 
 
 
-    def __init__(self, mesh, local_discretization=None, 
-            order=None, flux_plan=None, init_cuda=True, debug=set(), 
+    def __init__(self, mesh, tune_for, local_discretization=None, 
+            order=None, init_cuda=True, debug=set(), 
             device=None, default_scalar_type=numpy.float32):
+        """
+
+        @arg tune_for: An optemplate for whose application this discretization's
+        flux plan will be tuned.
+        """
         ldis = self.get_local_discretization(mesh, local_discretization, order)
 
         if init_cuda:
@@ -251,9 +259,9 @@ class Discretization(hedge.discretization.Discretization):
         self.given = PlanGivenData(
                 DeviceData(device), ldis, 
                 default_scalar_type)
-        if flux_plan is None:
-            import hedge.cuda.fluxgather as fluxgather
-            flux_plan = fluxgather.make_plan(self.given)
+
+        import hedge.cuda.fluxgather as fluxgather
+        flux_plan = fluxgather.make_plan(mesh, self.given, tune_for)
         print "projected flux exec plan:", flux_plan
 
         # partition mesh, obtain updated plan

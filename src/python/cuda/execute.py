@@ -41,7 +41,8 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         hedge.optemplate.Evaluator.__init__(self, context)
         self.ex = executor
 
-        self.diff_xyz_cache = {}
+        self.diff_xyz_cache = {} # map field expr to its dx,dy,dz
+        self.flux_cache = {} # map WholeDomainFluxOperator instance to flux
 
     def get_vec_structure(self, vec, point_size, chunk_size, block_size,
             other_char=lambda snippet: "."):
@@ -189,35 +190,34 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
     def map_whole_domain_flux(self, wdflux, out=None):
         discr = self.ex.discr
+        given = discr.given
         eg, = discr.element_groups
 
-
         # gather phase --------------------------------------------------------
-        fluxes_on_faces = self.ex.fluxgather_kernel(wdflux, self.rec)
+        try:
+            fluxes_on_faces = self.flux_cache[wdflux]
+        except KeyError:
+            computed_fluxes = self.ex.fluxgather_kernel(self.rec)
 
-        # count flops
-        if discr.instrumented:
-            given = discr.given
+            for f_wdflux, f_fluxes_on_faces in computed_fluxes:
+                self.flux_cache[f_wdflux] = f_fluxes_on_faces
 
-            discr.inner_flux_counter.add()
-            discr.flop_counter.add(
-                    2 # mul+add
-                    * given.dofs_per_face()
-                    * given.faces_per_el()
-                    * given.dofs_per_el()
-                    * len(discr.mesh.elements)
+            fluxes_on_faces = self.flux_cache[wdflux]
 
-                    + given.dofs_per_face()
-                    * given.faces_per_el()
-                    * len(discr.mesh.elements)
-                    * (1 # facejac-mul
-                        + 2 * # int+ext
-                        3*len(wdflux.all_deps) # const-mul, normal-mul, add
+            # count flops
+            if discr.instrumented:
+                discr.flop_counter.add(
+                        len(computed_fluxes)
+                        * given.dofs_per_face()
+                        * given.faces_per_el()
+                        * len(discr.mesh.elements)
+                        * (1 # facejac-mul
+                            + 2 * # int+ext
+                            3*len(wdflux.all_deps) # const-mul, normal-mul, add
+                            )
                         )
-                    )
 
         if discr.debug & set(["cuda_lift", "cuda_flux"]):
-            given = discr.given
             fplan = discr.flux_plan
 
             useful_size = (len(discr.blocks)
@@ -251,6 +251,17 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         # lift phase ----------------------------------------------------------
         flux = self.ex.fluxlocal_kernel(fluxes_on_faces, wdflux.is_lift)
 
+        # count flops
+        if discr.instrumented:
+            discr.inner_flux_counter.add()
+            discr.flop_counter.add(
+                    2 # mul+add
+                    * given.dofs_per_face()
+                    * given.faces_per_el()
+                    * given.dofs_per_el()
+                    * len(discr.mesh.elements)
+                    )
+
         # verification --------------------------------------------------------
         if "cuda_lift" in discr.debug:
             cuda.Context.synchronize()
@@ -272,13 +283,8 @@ class OpTemplateWithEnvironment(object):
     def __init__(self, discr, optemplate):
         self.discr = discr
 
-        # compile the optemplate
-        from hedge.optemplate import OperatorBinder, InverseMassContractor, \
-                FluxDecomposer, BCToFluxRewriter
-        from pymbolic.mapper.constant_folder import CommutativeConstantFoldingMapper
-        from hedge.cuda.optemplate import BoundaryCombiner, BoundaryTagCollector
-
         # build a boundary tag bitmap
+        from hedge.cuda.optemplate import BoundaryTagCollector
         boundary_tag_to_number = {}
         for btag in BoundaryTagCollector()(optemplate):
             boundary_tag_to_number.setdefault(btag, 
@@ -291,20 +297,16 @@ class OpTemplateWithEnvironment(object):
                 elface_to_bdry_bitmap[elface] = (
                         elface_to_bdry_bitmap.get(elface, 0) | bdry_bit)
 
+        # compile the optemplate
+        from hedge.cuda.optemplate import FluxCollector
+        optemplate = self.compile_optemplate(discr.mesh, optemplate)
+        fluxes = FluxCollector()(optemplate)
+
         # build the kernels 
         self.diff_kernel = self.discr.diff_plan.make_kernel(discr)
         self.fluxlocal_kernel = self.discr.fluxlocal_plan.make_kernel(discr)
-        self.fluxgather_kernel = self.discr.flux_plan.make_kernel(discr, elface_to_bdry_bitmap)
-
-        # compile the optemplate
-        optemplate = (
-                BoundaryCombiner(discr)(
-                    InverseMassContractor()(
-                        CommutativeConstantFoldingMapper()(
-                            FluxDecomposer()(
-                                BCToFluxRewriter()(
-                                    OperatorBinder()(
-                                        optemplate)))))))
+        self.fluxgather_kernel = self.discr.flux_plan.make_kernel(discr, 
+                elface_to_bdry_bitmap, fluxes)
 
         def compile_vec_expr(expr):
             from pycuda.vector_expr import CompiledVectorExpression
@@ -319,6 +321,22 @@ class OpTemplateWithEnvironment(object):
             self.compiled_vec_expr = [compile_vec_expr(subexpr) for subexpr in optemplate]
         else:
             self.compiled_vec_expr = compile_vec_expr(optemplate)
+
+    @staticmethod
+    def compile_optemplate(mesh, optemplate):
+        from pymbolic.mapper.constant_folder import CommutativeConstantFoldingMapper
+        from hedge.optemplate import OperatorBinder, InverseMassContractor, \
+                FluxDecomposer, BCToFluxRewriter
+        from hedge.cuda.optemplate import \
+                BoundaryCombiner, BoundaryTagCollector, FluxCollector
+
+        return BoundaryCombiner(mesh)(
+                InverseMassContractor()(
+                    CommutativeConstantFoldingMapper()(
+                        FluxDecomposer()(
+                            BCToFluxRewriter()(
+                                OperatorBinder()(
+                                    optemplate))))))
 
     # actual execution --------------------------------------------------------
     def __call__(self, **vars):

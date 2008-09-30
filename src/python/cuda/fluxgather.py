@@ -125,24 +125,24 @@ class FluxToCodeMapper(pymbolic.mapper.stringifier.StringifyMapper):
 # plan ------------------------------------------------------------------------
 class FluxGatherPlan(hedge.cuda.plan.ExecutionPlan):
     def __init__(self, given, 
-            parallel_faces, mbs_per_block,
-            max_ext_faces=None, max_faces=None):
+            parallel_faces, mbs_per_block, flux_count,
+            max_face_pair_count=None):
         hedge.cuda.plan.ExecutionPlan.__init__(self, given)
         self.parallel_faces = parallel_faces
         self.mbs_per_block = mbs_per_block
+        self.flux_count = flux_count
 
-        self.max_ext_faces = max_ext_faces
-        self.max_faces = max_faces
+        self.max_face_pair_count = max_face_pair_count
 
     def copy(self, given=None,
-            parallel_faces=None, mbs_per_block=None,
-            max_ext_faces=None, max_faces=None, float_type=None):
+            parallel_faces=None, mbs_per_block=None, flux_count=None,
+            max_face_pair_count=None):
         return self.__class__(
                 given or self.given,
                 parallel_faces or self.parallel_faces,
                 mbs_per_block or self.mbs_per_block,
-                max_ext_faces or self.max_ext_faces,
-                max_faces or self.max_faces,
+                flux_count or self.flux_count,
+                max_face_pair_count or self.max_face_pair_count,
                 )
 
     def microblocks_per_block(self):
@@ -173,24 +173,16 @@ class FluxGatherPlan(hedge.cuda.plan.ExecutionPlan):
         # How many of my faces do I need to tesselate this face area?
         return macrocube_face_area * factorial(d-1)
 
-    def get_extface_count(self):
-        from hedge.cuda.tools import int_ceiling
-
-        if self.max_ext_faces is None:
-            return int_ceiling(self.estimate_extface_count())
-        else:
-            return self.max_ext_faces
-
     @memoize_method
-    def face_count(self):
-        if self.max_faces is not None:
-            return self.max_faces
-        else:
-            return (self.elements_per_block() * self.given.faces_per_el() + 
-                    self.get_extface_count())
-
     def face_pair_count(self):
-        return (self.face_count()+1) // 2
+        if self.max_face_pair_count is None:
+            from hedge.cuda.tools import int_ceiling
+            ext_face_count = int_ceiling(self.estimate_extface_count())
+            int_face_count = (self.elements_per_block() * self.given.faces_per_el() - 
+                    ext_face_count)
+            return (int_face_count+1) // 2 + ext_face_count
+        else:
+            return self.max_face_pair_count
 
     @memoize_method
     def shared_mem_use(self):
@@ -204,14 +196,16 @@ class FluxGatherPlan(hedge.cuda.plan.ExecutionPlan):
 
         return (128 # parameters, block header, small extra stuff
                 + self.given.aligned_face_dofs_per_microblock()
+                * self.flux_count
                 * self.microblocks_per_block()
                 * self.given.float_size()
-                + len(face_pair_struct(self.given.float_type, d))*self.face_pair_count()
+                + len(face_pair_struct(self.given.float_type, d))
+                * self.face_pair_count()
                 )
 
     def threads_per_face(self):
         dpf = self.given.dofs_per_face()
-        #return dpf
+
         devdata = self.given.devdata
         if dpf % devdata.smem_granularity >= devdata.smem_granularity // 2:
             from hedge.cuda.tools import int_ceiling
@@ -223,7 +217,7 @@ class FluxGatherPlan(hedge.cuda.plan.ExecutionPlan):
         return self.parallel_faces*self.threads_per_face()
 
     def registers(self):
-        return 16
+        return 56
 
     def __str__(self):
             return ("%s pfaces=%d mbs_per_block=%d mb_elements=%d" % (
@@ -238,20 +232,26 @@ class FluxGatherPlan(hedge.cuda.plan.ExecutionPlan):
                 * self.microblocks_per_block()
                 * self.given.aligned_face_dofs_per_microblock(),)
 
-    def make_kernel(self, discr, elface_to_bdry_bitmap):
-        return FluxGatherKernel(discr, self, elface_to_bdry_bitmap)
+    def make_kernel(self, discr, elface_to_bdry_bitmap, fluxes):
+        return FluxGatherKernel(discr, self, elface_to_bdry_bitmap, fluxes)
 
 
 
 
 
-def make_plan(given):
+def make_plan(mesh, given, tune_for):
+    from hedge.cuda.execute import OpTemplateWithEnvironment
+    from hedge.cuda.optemplate import FluxCollector
+    flux_count = len(FluxCollector()(
+            OpTemplateWithEnvironment.compile_optemplate(
+                mesh, tune_for)))
+
     from hedge.cuda.plan import optimize_plan
 
     def generate_valid_plans():
         for parallel_faces in range(1,32):
             for mbs_per_block in range(1,256):
-                flux_plan = FluxGatherPlan(given, parallel_faces, mbs_per_block)
+                flux_plan = FluxGatherPlan(given, parallel_faces, mbs_per_block, flux_count)
                 if flux_plan.invalid_reason() is None:
                     yield flux_plan
 
@@ -265,24 +265,36 @@ def make_plan(given):
 
 # flux gather kernel ----------------------------------------------------------
 class FluxGatherKernel:
-    def __init__(self, discr, plan, elface_to_bdry_bitmap):
+    def __init__(self, discr, plan, elface_to_bdry_bitmap, fluxes):
         self.discr = discr
         self.plan = plan
         self.elface_to_bdry_bitmap = elface_to_bdry_bitmap
+        self.fluxes = fluxes
 
-    def __call__(self, wdflux, eval_dependency):
+        interior_deps_set = set()
+        boundary_deps_set = set()
+        for f in fluxes:
+            interior_deps_set.update(set(f.interior_deps))
+            boundary_deps_set.update(set(f.boundary_deps))
+
+        self.interior_deps = list(interior_deps_set)
+        self.boundary_deps = list(boundary_deps_set)
+        self.all_deps = list(interior_deps_set|boundary_deps_set)
+
+    def __call__(self, eval_dependency):
         discr = self.discr
         given = discr.given
         elgroup, = discr.element_groups
 
-        fluxes_on_faces = gpuarray.empty(
+        all_fluxes_on_faces = [gpuarray.empty(
                 self.plan.fluxes_on_faces_shape(len(discr.blocks)),
                 dtype=given.float_type,
                 allocator=discr.pool.allocate)
+                for i in range(len(self.fluxes))]
 
-        gather, texref_map = self.get_kernel(wdflux)
+        gather, texref_map = self.get_kernel()
 
-        for dep_expr in wdflux.all_deps:
+        for dep_expr in self.all_deps:
             dep_field = eval_dependency(dep_expr)
             assert dep_field.dtype == given.float_type
             dep_field.bind_to_texref(texref_map[dep_expr])
@@ -299,15 +311,15 @@ class FluxGatherKernel:
             discr.inner_flux_timer.add_timer_callable(gather.prepared_timed_call(
                     (len(discr.blocks), 1),
                     debugbuf.gpudata, 
-                    fluxes_on_faces.gpudata, 
                     fdata.device_memory,
+                    *tuple(fof.gpudata for fof in all_fluxes_on_faces)
                     ))
         else:
             gather.prepared_call(
                     (len(discr.blocks), 1),
                     debugbuf.gpudata, 
-                    fluxes_on_faces.gpudata, 
                     fdata.device_memory,
+                    *tuple(fof.gpudata for fof in all_fluxes_on_faces)
                     )
 
         if set(["cuda_flux", "cuda_debugbuf"]) <= discr.debug:
@@ -318,11 +330,11 @@ class FluxGatherKernel:
             #print copied_debugbuf
             raw_input()
 
-        return fluxes_on_faces
+        return zip(self.fluxes, all_fluxes_on_faces)
 
 
     @memoize_method
-    def get_kernel(self, wdflux):
+    def get_kernel(self):
         from hedge.cuda.cgen import \
                 Pointer, POD, Value, ArrayOf, Const, \
                 Module, FunctionDeclaration, FunctionBody, Block, \
@@ -345,17 +357,22 @@ class FluxGatherKernel:
         f_decl = CudaGlobal(FunctionDeclaration(Value("void", "apply_flux"), 
             [
                 Pointer(POD(float_type, "debugbuf")),
-                Pointer(POD(float_type, "gmem_fluxes_on_faces")),
-                Pointer(POD(numpy.uint8, "gmem_data")),
+                Pointer(POD(numpy.uint8, "gmem_facedata")),
+                ]+[
+                Pointer(POD(float_type, "gmem_fluxes_on_faces%d" % flux_nr))
+                for flux_nr in range(len(self.fluxes))
                 ]
             ))
 
         cmod = Module()
 
-        for dep_expr in wdflux.all_deps:
+        from hedge.cuda.optemplate import WholeDomainFluxOperator as WDFlux
+        short_name = WDFlux.short_name
+
+        for dep_expr in self.all_deps:
             cmod.append(
                 Value("texture<float, 1, cudaReadModeElementType>", 
-                    "%s_tex" % wdflux.short_name(dep_expr)))
+                    "%s_tex" % short_name(dep_expr)))
 
         cmod.extend([
                 flux_header_struct(),
@@ -371,6 +388,8 @@ class FluxGatherKernel:
                 Line(),
                 Define("FACEDOF_NR", "threadIdx.x"),
                 Define("BLOCK_FACE", "threadIdx.y"),
+                Line(),
+                Define("FLUX_COUNT", fplan.flux_count),
                 Line(),
                 Define("THREAD_NUM", "(FACEDOF_NR + BLOCK_FACE*THREADS_PER_FACE)"),
                 Define("THREAD_COUNT", "(THREADS_PER_FACE*CONCURRENT_FACES)"),
@@ -390,9 +409,13 @@ class FluxGatherKernel:
                 flux_with_temp_data.struct,
                 Line(),
                 CudaShared(Value("flux_data", "data")),
-                CudaShared(ArrayOf(POD(float_type, "smem_fluxes_on_faces"),
-                    "ALIGNED_FACE_DOFS_PER_MB*BLOCK_MB_COUNT"
-                    )),
+                CudaShared(
+                    ArrayOf(
+                        ArrayOf(
+                            POD(float_type, "smem_fluxes_on_faces"),
+                            "FLUX_COUNT"),
+                        "ALIGNED_FACE_DOFS_PER_MB*BLOCK_MB_COUNT")
+                    ),
                 Line(),
                 ])
 
@@ -403,52 +426,63 @@ class FluxGatherKernel:
 
         f_body.extend(get_load_code(
             dest="&data",
-            base="gmem_data + blockIdx.x*DATA_BLOCK_SIZE",
+            base="gmem_facedata + blockIdx.x*DATA_BLOCK_SIZE",
             bytes="sizeof(flux_data)",
             descr="load face_pair data")
             +[ S("__syncthreads()"), Line() ])
 
         def bdry_flux_writer():
-            def get_field(flux_rec, is_interior):
-                if is_interior:
-                    return ("tex1Dfetch(%s_tex, a_index)" 
-                        % flux_rec.field_short_name)
-                else:
-                    return ("tex1Dfetch(%s_tex, b_index)" 
-                        % flux_rec.bfield_short_name)
-
             from hedge.cuda.cgen import make_multiple_ifs
             from pymbolic.mapper.stringifier import PREC_NONE
 
-            flux_write_code = Block([
-                    Initializer(POD(float_type, "flux"), 0)
-                    ])
+            flux_write_code = Block([POD(float_type, "flux") ])
 
             from pytools import flatten
             from hedge.tools import is_zero
 
-            flux_write_code.extend(
-                    If("(fpair->boundary_bitmap) & (1 << %d)" % (bdry_id),
-                        Block(list(flatten([
-                            S("flux += /*%s*/ (%s) * %s"
-                                % (is_interior and "int" or "ext",
-                                    FluxToCodeMapper()(coeff, PREC_NONE),
-                                    get_field(flux_rec, is_interior=is_interior)))
-                                for is_interior, coeff, field_expr in [
-                                    (True, flux_rec.int_coeff, flux_rec.field_expr),
-                                    (False, flux_rec.ext_coeff, flux_rec.bfield_expr),
-                                    ]
-                                if not is_zero(field_expr)
-                                ]
-                                for flux_rec in fluxes
-                                ))))
-                        for bdry_id, fluxes in wdflux.bdry_id_to_fluxes.iteritems()
-                )
+            for dep in self.interior_deps:
+                flux_write_code.append(
+                        Initializer(
+                            MaybeUnused(POD(float_type, "val_a_%s" 
+                                % short_name(dep))),
+                            "tex1Dfetch(%s_tex, a_index)" % short_name(dep)))
+            for dep in self.boundary_deps:
+                flux_write_code.append(
+                        Initializer(
+                            MaybeUnused(POD(float_type, "val_b_%s" 
+                                % short_name(dep))),
+                            "tex1Dfetch(%s_tex, b_index)" % short_name(dep)))
 
-            flux_write_code.append(
-                    Assign(
-                        "smem_fluxes_on_faces[fpair->a_dest+FACEDOF_NR]",
-                        "fpair->face_jacobian*flux"))
+            for flux_nr, wdflux in enumerate(self.fluxes):
+                flux_write_code.extend([
+                    Line(),
+                    Assign("flux", 0),
+                    Line(),
+                    ])
+
+                flux_write_code.extend(
+                        If("(fpair->boundary_bitmap) & (1 << %d)" % (bdry_id),
+                            Block(list(flatten([
+                                S("flux += /*%s*/ (%s) * val_%s_%s"
+                                    % (is_interior and "int" or "ext",
+                                        FluxToCodeMapper()(coeff, PREC_NONE),
+                                        is_interior and "a" or "b",
+                                        short_name(field_expr)))
+                                    for is_interior, coeff, field_expr in [
+                                        (True, flux_rec.int_coeff, flux_rec.field_expr),
+                                        (False, flux_rec.ext_coeff, flux_rec.bfield_expr),
+                                        ]
+                                    if not is_zero(field_expr)
+                                    ]
+                                    for flux_rec in fluxes
+                                    ))))
+                            for bdry_id, fluxes in wdflux.bdry_id_to_fluxes.iteritems()
+                    )
+
+                flux_write_code.append(
+                        Assign(
+                            "smem_fluxes_on_faces[%d][fpair->a_dest+FACEDOF_NR]" % flux_nr,
+                            "fpair->face_jacobian*flux"))
 
             return flux_write_code
 
@@ -459,19 +493,18 @@ class FluxGatherKernel:
                 else:
                     prefix = "b"
 
-                return ("val_%s_%s" % (prefix, 
-                    wdflux.short_name(flux_rec.field_expr)))
+                return ("val_%s_%s" % (prefix, short_name(flux_rec.field_expr)))
 
             from hedge.cuda.cgen import make_multiple_ifs
             from pymbolic.mapper.stringifier import PREC_NONE
 
-            flux_write_code = Block([
-                Initializer(POD(float_type, "a_flux"), 0)
-                ])
+            flux_write_code = Block([POD(float_type, "a_flux") ])
+            
+            zero_flux_code = [Assign("a_flux", 0)]
 
             if is_twosided:
-                flux_write_code.append(
-                        Initializer(POD(float_type, "b_flux"), 0))
+                flux_write_code.append(POD(float_type, "b_flux"))
+                zero_flux_code.append(Assign("b_flux", 0))
                 prefixes = ["a", "b"]
                 flip_values = [False, True]
             else:
@@ -480,46 +513,47 @@ class FluxGatherKernel:
 
             flux_write_code.append(Line())
 
-            for int_rec in wdflux.interiors:
+            for dep in self.interior_deps:
                 for side in ["a", "b"]:
                     flux_write_code.append(
                             Initializer(
                                 MaybeUnused(POD(float_type, "val_%s_%s" 
-                                    % (side, wdflux.short_name(int_rec.field_expr)))),
+                                    % (side, short_name(dep)))),
                                 "tex1Dfetch(%s_tex, %s_index)"
-                                % (wdflux.short_name(int_rec.field_expr), side)))
+                                % (short_name(dep), side)))
 
-            flux_write_code.append(Line())
+            for flux_nr, wdflux in enumerate(self.fluxes):
+                flux_write_code.extend([Line()]+zero_flux_code+[Line()])
 
-            for int_rec in wdflux.interiors:
-                for prefix, is_flipped in zip(prefixes, flip_values):
-                    for label, coeff in zip(
-                            ["int", "ext"], 
-                            [int_rec.int_coeff, int_rec.ext_coeff]):
-                        flux_write_code.append(
-                            S("%s_flux += /*%s*/ (%s) * %s"
-                                % (prefix, label,
-                                    FluxToCodeMapper(is_flipped)(coeff, PREC_NONE),
-                                    get_field(int_rec, 
-                                        is_interior=label =="int", 
-                                        flipped=is_flipped)
-                                    )))
+                for int_rec in wdflux.interiors:
+                    for prefix, is_flipped in zip(prefixes, flip_values):
+                        for label, coeff in zip(
+                                ["int", "ext"], 
+                                [int_rec.int_coeff, int_rec.ext_coeff]):
+                            flux_write_code.append(
+                                S("%s_flux += /*%s*/ (%s) * %s"
+                                    % (prefix, label,
+                                        FluxToCodeMapper(is_flipped)(coeff, PREC_NONE),
+                                        get_field(int_rec, 
+                                            is_interior=label =="int", 
+                                            flipped=is_flipped)
+                                        )))
 
-            flux_write_code.append(Line())
+                flux_write_code.append(Line())
 
-            flux_write_code.append(
-                    Assign(
-                        "smem_fluxes_on_faces[fpair->a_dest+FACEDOF_NR]",
-                        "fpair->face_jacobian*a_flux"))
+                flux_write_code.append(
+                        Assign(
+                            "smem_fluxes_on_faces[%d][fpair->a_dest+FACEDOF_NR]" % flux_nr,
+                            "fpair->face_jacobian*a_flux"))
 
-            if is_twosided:
-                flux_write_code.extend([
-                    Assign(
-                        "smem_fluxes_on_faces["
-                        "fpair->b_dest+tex1Dfetch(tex_index_lists, "
-                        "fpair->b_write_ilist_index + FACEDOF_NR)]",
-                        "fpair->face_jacobian*b_flux")
-                    ])
+                if is_twosided:
+                    flux_write_code.extend([
+                        Assign(
+                            "smem_fluxes_on_faces[%d]["
+                            "fpair->b_dest+tex1Dfetch(tex_index_lists, "
+                            "fpair->b_write_ilist_index + FACEDOF_NR)]" % flux_nr,
+                            "fpair->face_jacobian*b_flux")
+                        ])
 
             return flux_write_code
 
@@ -570,19 +604,27 @@ class FluxGatherKernel:
 
         f_body.extend_log_block("compute the fluxes", 
                 [If("FACEDOF_NR < DOFS_PER_FACE", flux_computation)])
-        f_body.extend_log_block("store the fluxes", [
-            S("__syncthreads()"),
+
+        f_body.extend([
             Line(),
-            For("unsigned word_nr = THREAD_NUM", 
-                "word_nr < ALIGNED_FACE_DOFS_PER_MB*BLOCK_MB_COUNT", 
-                "word_nr += COALESCING_THREAD_COUNT",
-                Block([
-                    Assign(
-                        "gmem_fluxes_on_faces[blockIdx.x*ALIGNED_FACE_DOFS_PER_BLOCK+word_nr]",
-                        "smem_fluxes_on_faces[word_nr]"),
-                    ])
-                )
+            S("__syncthreads()"),
+            Line()
             ])
+
+        for flux_nr in range(len(self.fluxes)):
+            f_body.extend_log_block("store flux number %d" % flux_nr, [
+                For("unsigned word_nr = THREAD_NUM", 
+                    "word_nr < ALIGNED_FACE_DOFS_PER_MB*BLOCK_MB_COUNT", 
+                    "word_nr += COALESCING_THREAD_COUNT",
+                    Block([
+                        Assign(
+                            "gmem_fluxes_on_faces%d"
+                            "[blockIdx.x*ALIGNED_FACE_DOFS_PER_BLOCK+word_nr]"
+                            % flux_nr,
+                            "smem_fluxes_on_faces[%d][word_nr]" % flux_nr),
+                        ])
+                    )
+                ])
 
         # finish off ----------------------------------------------------------
         cmod.append(FunctionBody(f_decl, f_body))
@@ -598,8 +640,8 @@ class FluxGatherKernel:
 
         expr_to_texture_map = dict(
                 (dep_expr, mod.get_texref(
-                    "%s_tex" % wdflux.short_name(dep_expr)))
-                for dep_expr in wdflux.all_deps)
+                    "%s_tex" % short_name(dep_expr)))
+                for dep_expr in self.all_deps)
 
         ilist_gdata = self.index_list_global_data()
         index_list_texref = mod.get_texref("tex_index_lists")
@@ -612,7 +654,7 @@ class FluxGatherKernel:
 
         func = mod.get_function("apply_flux")
         func.prepare(
-                "PPP",
+                (2+len(self.all_deps))*"P",
                 block=(fplan.threads_per_face(), 
                     fplan.parallel_faces, 1),
                 texrefs=expr_to_texture_map.values()
