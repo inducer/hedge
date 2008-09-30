@@ -857,17 +857,16 @@ class FluxGatherKernel:
                     +diff_fp_structs
                     +bdry_fp_structs)
 
+        print len(same_fp_structs), len(diff_fp_structs), len(bdry_fp_structs)
+
         from hedge.cuda.cgen import Value, POD
         from hedge.cuda.tools import make_superblocks
 
         return make_superblocks(
                 given.devdata, "flux_data",
-                [
-                    (headers, Value(flux_header_struct().tpname, "header")),
-                    ],
-                [ 
-                    (fp_blocks, Value(fp_struct.tpname, "facepairs")), 
-                    ])
+                [(headers, Value(flux_header_struct().tpname, "header"))],
+                [(fp_blocks, Value(fp_struct.tpname, "facepairs"))]
+                )
 
     @memoize_method
     def fake_flux_face_data_block(self, block_count):
@@ -876,14 +875,17 @@ class FluxGatherKernel:
 
         fp_struct = face_pair_struct(given.float_type, discr.dimensions)
 
-        headers = []
-        fp_blocks = []
+        min_headers = []
+        min_fp_blocks = []
 
         from random import randrange, choice
 
         face_dofs = given.dofs_per_face()
 
-        for block_nr in range(block_count):
+        mp_count = discr.device.get_attribute(
+                    cuda.device_attribute.MULTIPROCESSOR_COUNT)
+
+        for block_nr in range(mp_count):
             fp_structs = []
 
             faces = [(mb_nr, mb_el_nr, face_nr)
@@ -907,7 +909,7 @@ class FluxGatherKernel:
             for i in range(self.plan.face_pair_count()):
                 fp_structs.append(
                         fp_struct.make(
-                            h=0.5, order=4, face_jacobian=0.5,
+                            h=0.5, order=2, face_jacobian=0.5,
                             normal=discr.dimensions*[0.1],
 
                             a_base=draw_base(), b_base=draw_base(),
@@ -922,30 +924,32 @@ class FluxGatherKernel:
                             a_dest=draw_dest(), b_dest=draw_dest()
                             ))
 
-            total_ext_face_count = self.plan.estimate_extface_count()
-            diff_count = total_ext_face_count//2
-            bdry_count = total_ext_face_count-diff_count
+            total_ext_face_count = int(self.plan.estimate_extface_count())
+            bdry_count = min(total_ext_face_count, 
+                    randrange(1+int(total_ext_face_count/6)))
+            diff_count = total_ext_face_count-bdry_count
 
-            headers.append(flux_header_struct().make(
+            min_headers.append(flux_header_struct().make(
                     same_facepairs_end=len(fp_structs)-total_ext_face_count,
                     diff_facepairs_end=diff_count,
                     bdry_facepairs_end=bdry_count))
-            fp_blocks.append(fp_structs)
+            min_fp_blocks.append(fp_structs)
+
+        dups = block_count//mp_count + 1
+        headers = (min_headers * dups)[:block_count]
+        fp_blocks = (min_fp_blocks * dups)[:block_count]
 
         from hedge.cuda.cgen import Value
         from hedge.cuda.tools import make_superblocks
 
         return make_superblocks(
                 given.devdata, "flux_data",
-                [
-                    (headers, Value(flux_header_struct().tpname, "header")),
-                    ],
-                [ 
-                    (fp_blocks, Value(fp_struct.tpname, "facepairs")), 
-                    ])
+                [(headers, Value(flux_header_struct().tpname, "header")) ],
+                [(fp_blocks, Value(fp_struct.tpname, "facepairs"))]
+                )
 
     # index lists -------------------------------------------------------------
-    FAKE_INDEX_LIST_COUNT = 20
+    FAKE_INDEX_LIST_COUNT = 30
 
     @memoize_method
     def index_list_data(self):
