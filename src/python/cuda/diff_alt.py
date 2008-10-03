@@ -44,6 +44,36 @@ class SMemFieldDiffExecutionPlan(hedge.cuda.plan.SMemFieldLocalOpExecutionPlan):
                + given.float_size() * (
                    self.parallelism.parallel * self.given.microblock.aligned_floats))
 
+    @staticmethod
+    def plan_type():
+        return "diff"
+
+    @staticmethod
+    def feature_columns():
+        return ("type text",
+                "parallel integer", 
+                "inline integer", 
+                "serial integer", 
+                "chunk_size integer", 
+                "max_unroll integer",
+                "lmem integer",
+                "smem integer",
+                "registers integer",
+                "threads integer",
+                )
+
+    def features(self, lmem, smem, registers):
+        return ("smem_field",
+                self.parallelism.parallel,
+                self.parallelism.inline,
+                self.parallelism.serial,
+                0,
+                0,
+                lmem,
+                smem,
+                registers,
+                self.threads(),
+                )
 
     def make_kernel(self, discr):
         return SMemFieldDiffKernel(discr, self)
@@ -108,7 +138,8 @@ class SMemFieldDiffKernel(object):
         stop.record()
         stop.synchronize()
 
-        return 1e-3/count * stop.time_since(start)
+        return (1e-3/count * stop.time_since(start),
+                func.lmem, func.smem, func.registers)
 
     def __call__(self, op_class, field):
         discr = self.discr

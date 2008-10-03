@@ -41,6 +41,37 @@ class ChunkedDiffExecutionPlan(hedge.cuda.plan.ChunkedMatrixLocalOpExecutionPlan
     def fetch_buffer_chunks(self):
         return 0
 
+    @staticmethod
+    def plan_type():
+        return "diff"
+
+    @staticmethod
+    def feature_columns():
+        return ("type text",
+                "parallel integer", 
+                "inline integer", 
+                "serial integer", 
+                "chunk_size integer", 
+                "max_unroll integer",
+                "lmem integer",
+                "smem integer",
+                "registers integer",
+                "threads integer",
+                )
+
+    def features(self, lmem, smem, registers):
+        return ("smem_matrix",
+                self.parallelism.parallel,
+                self.parallelism.inline,
+                self.parallelism.serial,
+                self.chunk_size,
+                self.max_unroll,
+                lmem,
+                smem,
+                registers,
+                self.threads(),
+                )
+
     def make_kernel(self, discr):
         return DiffKernel(discr, self)
 
@@ -61,7 +92,9 @@ def make_plan(discr, given):
                 for seq in range(1, 4):
                     localop_par = Parallelism(pe, inline, seq)
                     for chunk_size in chunk_sizes:
-                        yield ChunkedDiffExecutionPlan(given, localop_par, chunk_size)
+                        yield ChunkedDiffExecutionPlan(
+                                given, localop_par, chunk_size,
+                                given.dofs_per_el())
 
         from hedge.cuda.diff_alt import SMemFieldDiffExecutionPlan
 
@@ -75,7 +108,8 @@ def make_plan(discr, given):
 
     from hedge.cuda.plan import optimize_plan
     return optimize_plan(generate_plans, target_func, maximize=False,
-            debug="cuda_diff_plan" in discr.debug)
+            debug="cuda_diff_plan" in discr.debug,
+            write_log=True)
 
 
 
@@ -137,7 +171,8 @@ class DiffKernel(object):
         stop.record()
         stop.synchronize()
 
-        return 1e-3/count * stop.time_since(start)
+        return (1e-3/count * stop.time_since(start),
+                func.lmem, func.smem, func.registers)
 
     def __call__(self, op_class, field):
         discr = self.discr
@@ -346,7 +381,6 @@ class DiffKernel(object):
                 keep=True, 
                 #options=["--maxrregcount=10"]
                 )
-        print "diff: lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
 
         rst_to_xyz_texref = mod.get_texref("rst_to_xyz_tex")
         cuda.bind_array_to_texref(
@@ -360,6 +394,9 @@ class DiffKernel(object):
                 discr.dimensions*[float_type] + ["P"],
                 block=(self.plan.chunk_size, par.parallel, 1),
                 texrefs=[field_texref, rst_to_xyz_texref])
+
+        print "diff: lmem=%d smem=%d regs=%d" % (func.lmem, func.smem, func.registers)
+
         return func, field_texref
 
     # data blocks -------------------------------------------------------------

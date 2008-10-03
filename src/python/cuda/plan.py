@@ -53,7 +53,8 @@ class Parallelism:
 
 
 
-def optimize_plan(plan_generator, max_func, maximize, debug=False, occupancy_slack=0.5):
+def optimize_plan(plan_generator, max_func, maximize, debug=False, occupancy_slack=0.5,
+        write_log=False):
     plans = list(p for p in plan_generator()
             if p.invalid_reason() is None)
 
@@ -63,14 +64,48 @@ def optimize_plan(plan_generator, max_func, maximize, debug=False, occupancy_sla
     max_occup = max(plan.occupancy_record().occupancy for plan in plans)
     desired_occup = occupancy_slack*max_occup
 
+    if write_log:
+        from pytools import single_valued
+        plan_type = single_valued(p.plan_type() for p in plans)
+        feature_columns = single_valued(p.feature_columns() for p in plans)
+        feature_names = [fc.split()[0] for fc in feature_columns]
+
+        try:
+            import sqlite3 as sqlite
+        except ImportError:
+            from pysqlite2 import dbapi2 as sqlite
+
+        db_conn = sqlite.connect("plan-%s.dat" % plan_type)
+
+        db_conn.execute("""
+              create table data (
+                id integer primary key autoincrement,
+                %s,
+                value real)""" 
+                % ", ".join(feature_columns))
+
     plan_values = []
     for p in plans:
         if p.occupancy_record().occupancy >= desired_occup - 1e-10:
             value = max_func(p)
+            if isinstance(value, tuple):
+                extra_info = value[1:]
+                value = value[0]
+
             if value is not None:
                 if debug:
                     print "%s: %g" % (p, value)
                 plan_values.append((p, value))
+
+                if write_log:
+                    db_conn.execute(
+                            "insert into data (%s,value) values (%s)"
+                            % (", ".join(feature_names), 
+                                ",".join(["?"]*(1+len(feature_names)))),
+                            p.features(*extra_info)+(value,))
+
+    if write_log:
+        db_conn.commit()
 
     from pytools import argmax2, argmin2
     if maximize:
@@ -193,11 +228,12 @@ class PlanGivenData(object):
 
 
 class ChunkedMatrixLocalOpExecutionPlan(ExecutionPlan):
-    def __init__(self, given, parallelism, chunk_size):
+    def __init__(self, given, parallelism, chunk_size, max_unroll):
         ExecutionPlan.__init__(self, given.devdata)
         self.given = given
         self.parallelism = parallelism
         self.chunk_size = chunk_size
+        self.max_unroll = max_unroll
 
     def chunks_per_microblock(self):
         from hedge.cuda.tools import int_ceiling

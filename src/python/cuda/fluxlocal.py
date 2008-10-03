@@ -33,9 +33,10 @@ import hedge.cuda.plan
 
 # plan ------------------------------------------------------------------------
 class FluxLiftingExecutionPlan(hedge.cuda.plan.ChunkedMatrixLocalOpExecutionPlan):
-    def __init__(self, given, parallelism, chunk_size, use_prefetch_branch):
+    def __init__(self, given, parallelism, chunk_size, max_unroll,
+            use_prefetch_branch):
         hedge.cuda.plan.ChunkedMatrixLocalOpExecutionPlan.__init__(
-                self, given, parallelism, chunk_size)
+                self, given, parallelism, chunk_size, max_unroll)
 
         self.use_prefetch_branch = use_prefetch_branch
 
@@ -75,7 +76,9 @@ def make_plan(discr, given):
                         for chunk_size in chunk_sizes:
                             yield FluxLiftingExecutionPlan(given, 
                                     localop_par, chunk_size,
-                                    use_prefetch_branch)
+                                    max_unroll=given.dofs_per_face(),
+                                    use_prefetch_branch=use_prefetch_branch,
+                                    )
 
         from hedge.cuda.fluxlocal_alt import SMemFieldFluxLocalExecutionPlan
 
