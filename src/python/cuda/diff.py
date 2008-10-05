@@ -87,14 +87,20 @@ def make_plan(discr, given):
 
         from hedge.cuda.plan import Parallelism
 
+        possible_unrolls = [n for n in [1,2,4,5,8,given.dofs_per_el()]
+                if n <= given.dofs_per_el()]
+
         for pe in range(1,32+1):
             for inline in range(1, 4+1):
                 for seq in range(1, 4):
-                    localop_par = Parallelism(pe, inline, seq)
-                    for chunk_size in chunk_sizes:
-                        yield ChunkedDiffExecutionPlan(
-                                given, localop_par, chunk_size,
-                                given.dofs_per_el())
+                    for unroll in possible_unrolls:
+                        localop_par = Parallelism(pe, inline, seq)
+                        for chunk_size in chunk_sizes:
+                            yield ChunkedDiffExecutionPlan(
+                                    given, localop_par, chunk_size,
+                                    max_unroll=unroll
+                                    #given.dofs_per_el()
+                                    )
 
         from hedge.cuda.diff_alt import SMemFieldDiffExecutionPlan
 
@@ -322,14 +328,15 @@ class DiffKernel(object):
 
             tex_channels = ["x", "y", "z", "w"]
             from pytools import flatten
+            from hedge.cuda.tools import unroll
             code.extend(
                     [POD(float_type, "field_value%d" % inl)
                         for inl in range(par.inline)]
                     +[Line()]
-                    +list(flatten([
+                    +unroll(lambda j: [
                         Assign("field_value%d" % inl, 
                             "tex1Dfetch(field_tex, GLOBAL_MB_DOF_BASE + %d*ALIGNED_DOFS_PER_MB "
-                            "+ mb_el*DOFS_PER_EL + %d)" % (inl, j)
+                            "+ mb_el*DOFS_PER_EL + %s)" % (inl, j)
                             )
                         for inl in range(par.inline)]
                         +[Line()]
@@ -337,9 +344,8 @@ class DiffKernel(object):
                             % (inl, axis, get_mat_entry("CHUNK_DOF", j, axis), inl))
                         for axis in dims
                         for inl in range(par.inline)]
-                        +[Line()]
-                        for j in range(given.dofs_per_el())
-                        ))
+                        +[Line()],
+                        given.dofs_per_el(), self.plan.max_unroll)
                     )
 
             store_code = Block()

@@ -187,6 +187,39 @@ def get_load_code(dest, base, bytes, word_type=numpy.uint32,
 
 
 
+def unroll(body_gen, total_number, max_unroll, start=0):
+    from hedge.cuda.cgen import For, Line, Block
+    from pytools import flatten
+            
+    result = []
+
+    if total_number > max_unroll:
+        loop_items = (total_number // max_unroll) * max_unroll
+
+        result.extend([
+                For("unsigned j = 0", 
+                    "j < %d" % loop_items,
+                    "j += %d" % max_unroll,
+                    Block(list(flatten(
+                        body_gen("(j+%d)" % i)
+                        for i in range(max_unroll))))
+                    ),
+                Line()
+                ])
+        start += loop_items
+
+    result.extend(flatten(
+        body_gen(i) for i in range(start, total_number)))
+
+    return result
+
+
+        
+
+
+
+
+
 # instrumentation -------------------------------------------------------------
 class CallableCollectionTimer(LogQuantity):
     """Records the elapsed time between L{start} and L{stop} calls."""
