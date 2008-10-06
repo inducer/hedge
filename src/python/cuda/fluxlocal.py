@@ -201,7 +201,7 @@ class FluxLocalKernel(object):
             debugbuf = FakeGPUArray()
 
         if discr.instrumented:
-            discr.inner_flux_timer.add_timer_callable(
+            discr.flux_gather_timer.add_timer_callable(
                     lift.prepared_timed_call(
                         self.grid,
                         flux.gpudata, 

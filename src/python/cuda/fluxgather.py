@@ -387,7 +387,7 @@ class FluxGatherKernel:
             debugbuf = FakeGPUArray()
 
         if discr.instrumented:
-            discr.inner_flux_timer.add_timer_callable(gather.prepared_timed_call(
+            discr.flux_gather_timer.add_timer_callable(gather.prepared_timed_call(
                     (len(discr.blocks), 1),
                     debugbuf.gpudata, 
                     fdata.device_memory,

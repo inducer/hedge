@@ -500,19 +500,19 @@ class Discretization(hedge.discretization.Discretization):
     def create_op_timers(self):
         from hedge.cuda.tools import CallableCollectionTimer
 
-        self.inner_flux_timer = CallableCollectionTimer("t_inner_flux", 
-                "Time spent computing inner fluxes")
-        self.bdry_flux_timer = CallableCollectionTimer("t_bdry_flux", 
-                "Time spent computing boundary fluxes")
-        self.mass_op_timer = CallableCollectionTimer("t_mass_op", 
+        self.flux_gather_timer = CallableCollectionTimer("t_gather", 
+                "Time spent gathering fluxes")
+        self.flux_lift_timer = CallableCollectionTimer("t_lift", 
+                "Time spent lifting fluxes")
+        self.mass_op_timer = CallableCollectionTimer("t_mass", 
                 "Time spent applying mass operators")
-        self.diff_op_timer = CallableCollectionTimer("t_diff_op",
+        self.diff_op_timer = CallableCollectionTimer("t_diff",
                 "Time spent applying applying differentiation operators")
         self.vector_math_timer = CallableCollectionTimer("t_vector_math",
                 "Time spent applying doing vector math")
 
-        return [self.inner_flux_timer, 
-                self.bdry_flux_timer,
+        return [self.flux_gather_timer, 
+                self.flux_lift_timer,
                 self.mass_op_timer,
                 self.diff_op_timer,
                 self.vector_math_timer ]

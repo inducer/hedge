@@ -142,7 +142,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         if discr.instrumented:
             given = discr.given
             discr.diff_op_counter.add(discr.dimensions)
-            discr.flop_counter.add(
+            discr.diff_flop_counter.add(
                     # r,s,t diff
                     2 # mul+add
                     * discr.dimensions
@@ -206,7 +206,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
             # count flops
             if discr.instrumented:
-                discr.flop_counter.add(
+                discr.gather_flop_counter.add(
                         len(computed_fluxes)
                         * given.dofs_per_face()
                         * given.faces_per_el()
@@ -254,10 +254,9 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         # count flops
         if discr.instrumented:
             discr.inner_flux_counter.add()
-            discr.flop_counter.add(
+            discr.lift_flop_counter.add(
                     2 # mul+add
-                    * given.dofs_per_face()
-                    * given.faces_per_el()
+                    * given.face_dofs_per_el()
                     * given.dofs_per_el()
                     * len(discr.mesh.elements)
                     )
@@ -342,7 +341,7 @@ class OpTemplateWithEnvironment(object):
     def __call__(self, **vars):
         def add_timer(flop_count, t_func):
             self.discr.vector_math_timer.add_timer_callable(t_func)
-            self.discr.flop_counter.add(flop_count)
+            self.discr.vector_math_flop_counter.add(flop_count)
 
         ex_mapper = ExecutionMapper(vars, self)
         if isinstance(self.compiled_vec_expr, list):

@@ -218,16 +218,25 @@ def unroll(body_gen, total_number, max_unroll, start=0):
         
 
 class RK4TimeStepper(hedge.timestep.TimeStepper):
-    def __init__(self, flop_counter):
-        self.timer = CallableCollectionTimer(
-                "t_rk4", "Time spent doing algebra in RK4")
-        self.flop_counter = flop_counter
-
+    def __init__(self):
         from hedge.timestep import _RK4A, _RK4B, _RK4C
         self.coeffs = zip(_RK4A, _RK4B, _RK4C)
 
+        self.instrumented = False
+
     def add_instrumentation(self, logmgr):
+        self.timer = CallableCollectionTimer(
+                "t_rk4", "Time spent doing algebra in RK4")
+
+        from pytools.log import EventCounter
+        self.flop_counter = EventCounter(
+                "n_flops_rk4",
+                "Number of floating point operations in RK4")
+
         logmgr.add_quantity(self.timer)
+        logmgr.add_quantity(self.flop_counter)
+
+        self.instrumented = True
 
     def __call__(self, y, t, dt, rhs):
         try:
@@ -235,10 +244,12 @@ class RK4TimeStepper(hedge.timestep.TimeStepper):
         except AttributeError:
             self.residual = 0*rhs(t, y)
 
-        def add_timer(t_func):
-            self.timer.add_timer_callable(t_func)
-            n = len(self.residual)
-            self.flop_counter.add(3*n)
+        if self.instrumented:
+            def add_timer(n_flops, t_func):
+                self.timer.add_timer_callable(t_func)
+                self.flop_counter.add(n_flops)
+        else:
+            add_timer = None
 
         from hedge.tools import mul_add
 

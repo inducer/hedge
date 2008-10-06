@@ -261,8 +261,17 @@ class Discretization(object):
                 "Number of mass operator applications")
         self.diff_op_counter = EventCounter("n_diff_op",
                 "Number of differentiation operator applications")
-        self.flop_counter = EventCounter("n_flops",
-                "Number of floating point operations")
+
+        self.gather_flop_counter = EventCounter("n_flops_gather",
+                "Number of floating point operations in gather")
+        self.lift_flop_counter = EventCounter("n_flops_lift",
+                "Number of floating point operations in lift")
+        self.mass_flop_counter = EventCounter("n_flops_mass",
+                "Number of floating point operations in mass operator")
+        self.diff_flop_counter = EventCounter("n_flops_diff",
+                "Number of floating point operations in diff operator")
+        self.vector_math_flop_counter = EventCounter("n_flops_vector_math",
+                "Number of floating point operations in vector math")
 
         self.interpolant_counter = EventCounter("n_interp", 
                 "Number of interpolant evaluations")
@@ -277,7 +286,13 @@ class Discretization(object):
         mgr.add_quantity(self.bdry_flux_counter)
         mgr.add_quantity(self.mass_op_counter)
         mgr.add_quantity(self.diff_op_counter)
-        mgr.add_quantity(self.flop_counter)
+
+        mgr.add_quantity(self.gather_flop_counter)
+        mgr.add_quantity(self.lift_flop_counter)
+        mgr.add_quantity(self.mass_flop_counter)
+        mgr.add_quantity(self.diff_flop_counter)
+        mgr.add_quantity(self.vector_math_flop_counter)
+
         mgr.add_quantity(self.interpolant_counter)
         mgr.add_quantity(self.interpolant_timer)
 
