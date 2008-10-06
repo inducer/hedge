@@ -64,14 +64,14 @@ def is_mul_add_supported(vec):
 
 
 
-def mul_add(afac, a, bfac, b):
+def mul_add(afac, a, bfac, b, add_timer=None):
     if isinstance(a, numpy.ndarray) and a.dtype == object:
         return numpy.array([
-            mul_add(afac, a_i, bfac, b_i)
+            mul_add(afac, a_i, bfac, b_i, add_timer=add_timer)
             for a_i, b_i in zip(a, b)],
             dtype=object)
     else:
-        return a.mul_add(afac, b, bfac)
+        return a.mul_add(afac, b, bfac, add_timer=add_timer)
 
 
 

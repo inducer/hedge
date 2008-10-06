@@ -26,6 +26,7 @@ import pycuda.driver as cuda
 import numpy
 from pytools import Record
 from pytools.log import LogQuantity
+import hedge.timestep
 
 
 
@@ -216,7 +217,41 @@ def unroll(body_gen, total_number, max_unroll, start=0):
 
         
 
+class RK4TimeStepper(hedge.timestep.TimeStepper):
+    def __init__(self, flop_counter):
+        self.timer = CallableCollectionTimer(
+                "t_rk4", "Time spent doing algebra in RK4")
+        self.flop_counter = flop_counter
 
+        from hedge.timestep import _RK4A, _RK4B, _RK4C
+        self.coeffs = zip(_RK4A, _RK4B, _RK4C)
+
+    def add_instrumentation(self, logmgr):
+        logmgr.add_quantity(self.timer)
+
+    def __call__(self, y, t, dt, rhs):
+        try:
+            self.residual
+        except AttributeError:
+            self.residual = 0*rhs(t, y)
+
+        def add_timer(t_func):
+            self.timer.add_timer_callable(t_func)
+            n = len(self.residual)
+            self.flop_counter.add(3*n)
+
+        from hedge.tools import mul_add
+
+        for a, b, c in self.coeffs:
+            this_rhs = rhs(t + c*dt, y)
+
+            self.residual = mul_add(a, self.residual, dt, this_rhs, 
+                    add_timer=add_timer)
+            del this_rhs
+            y = mul_add(1, y, b, self.residual,
+                    add_timer=add_timer)
+
+        return y
 
 
 
