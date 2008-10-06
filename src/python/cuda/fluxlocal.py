@@ -90,9 +90,6 @@ def make_plan(discr, given):
     def generate_plans():
         from hedge.cuda.plan import Parallelism
 
-        possible_unrolls = [n for n in [1,2,4,5,8,given.face_dofs_per_el()]
-                if n <= given.face_dofs_per_el()]
-
         for use_prefetch_branch in [True]:
         #for use_prefetch_branch in [True, False]:
             chunk_sizes = range(given.microblock.align_size, 
@@ -104,21 +101,18 @@ def make_plan(discr, given):
                     for seq in range(1, 4+1):
                         localop_par = Parallelism(pe, inline, seq)
                         for chunk_size in chunk_sizes:
-                            for unroll in possible_unrolls:
-                                yield FluxLiftingExecutionPlan(given, 
-                                        localop_par, chunk_size,
-                                        max_unroll=unroll,
-                                        use_prefetch_branch=use_prefetch_branch,
-                                        )
+                            yield FluxLiftingExecutionPlan(given, 
+                                    localop_par, chunk_size,
+                                    max_unroll=given.face_dofs_per_el(),
+                                    use_prefetch_branch=use_prefetch_branch)
 
         from hedge.cuda.fluxlocal_alt import SMemFieldFluxLocalExecutionPlan
 
         for pe in range(1,32+1):
             for inline in range(1, 5):
                 localop_par = Parallelism(pe, inline, 1)
-                for unroll in possible_unrolls:
-                    yield SMemFieldFluxLocalExecutionPlan(given, localop_par,
-                            max_unroll=unroll)
+                yield SMemFieldFluxLocalExecutionPlan(given, localop_par,
+                        max_unroll=given.face_dofs_per_el())
 
     def target_func(plan):
         return plan.make_kernel(discr).benchmark()

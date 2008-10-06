@@ -83,27 +83,22 @@ def make_plan(discr, given):
 
         from hedge.cuda.plan import Parallelism
 
-        possible_unrolls = [n for n in [1,2,4,5,8,given.dofs_per_el()]
-                if n <= given.dofs_per_el()]
-
         for pe in range(1,32+1):
             for inline in range(1, 4+1):
                 for seq in range(1, 4):
-                    for unroll in possible_unrolls:
-                        localop_par = Parallelism(pe, inline, seq)
-                        for chunk_size in chunk_sizes:
-                            yield ChunkedDiffExecutionPlan(
-                                    given, localop_par, chunk_size,
-                                    max_unroll=unroll)
+                    localop_par = Parallelism(pe, inline, seq)
+                    for chunk_size in chunk_sizes:
+                        yield ChunkedDiffExecutionPlan(
+                                given, localop_par, chunk_size,
+                                max_unroll=given.dofs_per_el())
 
         from hedge.cuda.diff_alt import SMemFieldDiffExecutionPlan
 
         for pe in range(1,32+1):
             for inline in range(1, 4+1):
                 localop_par = Parallelism(pe, inline, 1)
-                for unroll in possible_unrolls:
-                    yield SMemFieldDiffExecutionPlan(given, localop_par,
-                            max_unroll=unroll)
+                yield SMemFieldDiffExecutionPlan(given, localop_par,
+                        max_unroll=given.dofs_per_el())
 
     def target_func(plan):
         return plan.make_kernel(discr).benchmark()
