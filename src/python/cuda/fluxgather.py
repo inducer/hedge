@@ -857,7 +857,7 @@ class FluxGatherKernel:
                     +diff_fp_structs
                     +bdry_fp_structs)
 
-        print len(same_fp_structs), len(diff_fp_structs), len(bdry_fp_structs)
+        #print len(same_fp_structs), len(diff_fp_structs), len(bdry_fp_structs)
 
         from hedge.cuda.cgen import Value, POD
         from hedge.cuda.tools import make_superblocks

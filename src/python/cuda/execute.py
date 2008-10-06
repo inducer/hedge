@@ -340,10 +340,14 @@ class OpTemplateWithEnvironment(object):
 
     # actual execution --------------------------------------------------------
     def __call__(self, **vars):
+        def add_timer(flop_count, t_func):
+            self.discr.vector_math_timer.add_timer_callable(t_func)
+            self.discr.flop_counter.add(flop_count)
+
         ex_mapper = ExecutionMapper(vars, self)
         if isinstance(self.compiled_vec_expr, list):
             return numpy.array([
-                ce(ex_mapper) for ce in self.compiled_vec_expr],
+                ce(ex_mapper, add_timer) for ce in self.compiled_vec_expr],
                 dtype=object)
         else:
-            return self.compiled_vec_expr(ex_mapper)
+            return self.compiled_vec_expr(ex_mapper, add_timer)

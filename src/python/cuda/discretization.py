@@ -1,5 +1,3 @@
-"""Interface with Nvidia CUDA."""
-
 from __future__ import division
 
 __copyright__ = "Copyright (C) 2008 Andreas Kloeckner"
@@ -510,11 +508,14 @@ class Discretization(hedge.discretization.Discretization):
                 "Time spent applying mass operators")
         self.diff_op_timer = CallableCollectionTimer("t_diff_op",
                 "Time spent applying applying differentiation operators")
+        self.vector_math_timer = CallableCollectionTimer("t_vector_math",
+                "Time spent applying doing vector math")
 
         return [self.inner_flux_timer, 
                 self.bdry_flux_timer,
                 self.mass_op_timer,
-                self.diff_op_timer ]
+                self.diff_op_timer,
+                self.vector_math_timer ]
 
 
 
