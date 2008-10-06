@@ -54,7 +54,7 @@ class Parallelism:
 
 
 def optimize_plan(plan_generator, max_func, maximize, debug=False, occupancy_slack=0.5,
-        write_log=False):
+        log_filename=None):
     plans = list(p for p in plan_generator()
             if p.invalid_reason() is None)
 
@@ -64,9 +64,8 @@ def optimize_plan(plan_generator, max_func, maximize, debug=False, occupancy_sla
     max_occup = max(plan.occupancy_record().occupancy for plan in plans)
     desired_occup = occupancy_slack*max_occup
 
-    if write_log:
+    if log_filename is not None:
         from pytools import single_valued
-        plan_type = single_valued(p.plan_type() for p in plans)
         feature_columns = single_valued(p.feature_columns() for p in plans)
         feature_names = [fc.split()[0] for fc in feature_columns]
 
@@ -75,7 +74,7 @@ def optimize_plan(plan_generator, max_func, maximize, debug=False, occupancy_sla
         except ImportError:
             from pysqlite2 import dbapi2 as sqlite
 
-        db_conn = sqlite.connect("plan-%s.dat" % plan_type)
+        db_conn = sqlite.connect("plan-%s.dat" % log_filename)
 
         db_conn.execute("""
               create table data (
@@ -97,14 +96,14 @@ def optimize_plan(plan_generator, max_func, maximize, debug=False, occupancy_sla
                     print "%s: %g" % (p, value)
                 plan_values.append((p, value))
 
-                if write_log:
+                if log_filename is not None:
                     db_conn.execute(
                             "insert into data (%s,value) values (%s)"
                             % (", ".join(feature_names), 
                                 ",".join(["?"]*(1+len(feature_names)))),
                             p.features(*extra_info)+(value,))
 
-    if write_log:
+    if log_filename is not None:
         db_conn.commit()
 
     from pytools import argmax2, argmin2
@@ -177,6 +176,9 @@ class PlanGivenData(object):
 
     def float_size(self):
         return self.float_type.itemsize
+
+    def order(self):
+        return self.ldis.order
 
     @memoize_method
     def dofs_per_el(self):
@@ -272,20 +274,21 @@ class ChunkedMatrixLocalOpExecutionPlan(ExecutionPlan):
         return self.parallelism.parallel*self.chunk_size
 
     def __str__(self):
-            return ("%s par=%s chunk_size=%d" % (
+            return ("%s par=%s chunk_size=%d unroll=%d" % (
                 ExecutionPlan.__str__(self),
                 self.parallelism,
                 self.chunk_size,
-                ))
+                self.max_unroll))
 
 
 
 
 class SMemFieldLocalOpExecutionPlan(ExecutionPlan):
-    def __init__(self, given, parallelism):
+    def __init__(self, given, parallelism, max_unroll):
         ExecutionPlan.__init__(self, given.devdata)
         self.given = given
         self.parallelism = parallelism
+        self.max_unroll = max_unroll
 
     def dofs_per_macroblock(self):
         return self.parallelism.total() * self.given.microblock.aligned_floats
@@ -304,9 +307,10 @@ class SMemFieldLocalOpExecutionPlan(ExecutionPlan):
         return self.parallelism.parallel * self.given.microblock.aligned_floats
 
     def __str__(self):
-            return ("smem_field %s par=%s" % (
+            return "smem_field %s par=%s unroll=%d" % (
                 ExecutionPlan.__str__(self),
-                self.parallelism))
+                self.parallelism,
+                self.max_unroll)
 
 
 

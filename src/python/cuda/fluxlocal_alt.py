@@ -46,6 +46,33 @@ class SMemFieldFluxLocalExecutionPlan(hedge.cuda.plan.SMemFieldLocalOpExecutionP
                    * self.parallelism.inline
                    * self.given.aligned_face_dofs_per_microblock()))
 
+    @staticmethod
+    def feature_columns():
+        return ("type text",
+                "parallel integer", 
+                "inline integer", 
+                "serial integer", 
+                "chunk_size integer", 
+                "max_unroll integer",
+                "lmem integer",
+                "smem integer",
+                "registers integer",
+                "threads integer",
+                )
+
+    def features(self, lmem, smem, registers):
+        return ("smem_field",
+                self.parallelism.parallel,
+                self.parallelism.inline,
+                self.parallelism.serial,
+                None,
+                self.max_unroll,
+                lmem,
+                smem,
+                registers,
+                self.threads(),
+                )
+
     def make_kernel(self, discr):
         return SMemFieldFluxLocalKernel(discr, self)
 
@@ -273,7 +300,7 @@ class SMemFieldFluxLocalKernel(object):
             return load_code + [Line()] + store_code
 
         def get_lift_code():
-            from pytools import flatten
+            from hedge.cuda.tools import unroll
 
             if is_lift:
                 inv_jac_multiplier = ("tex1Dfetch(inverse_jacobians_tex,"
@@ -297,20 +324,19 @@ class SMemFieldFluxLocalKernel(object):
                 Line(),
                 POD(float_type, "mat_entry"),
                 Line(),
-                If("MB_DOF < DOFS_PER_MB", Block(list(flatten(
-                    [Assign("mat_entry", "tex2D(lift_mat_tex, EL_DOF, %d)" % j)]
+                If("MB_DOF < DOFS_PER_MB", Block(unroll(
+                    lambda j:
+                    [Assign("mat_entry", "tex2D(lift_mat_tex, EL_DOF, %s)" % j)]
                     +[
                     S("result%d += mat_entry "
-                    "* smem_fluxes_on_faces[PAR_MB_NR][%d][mb_el*FACE_DOFS_PER_EL + %d]" 
+                    "* smem_fluxes_on_faces[PAR_MB_NR][%d][mb_el*FACE_DOFS_PER_EL + %s]" 
                     % (inl, inl, j))
                     for inl in range(par.inline)
-                    ]
-                    for j in range(
-                        given.dofs_per_face()*given.faces_per_el())
-                    ))+[
-                    Line(), 
-                    ]+[
-                    Assign(
+                    ],
+                    total_number=given.dofs_per_face()*given.faces_per_el(),
+                    max_unroll=self.plan.max_unroll)
+                    +[ Line(), ]
+                    +[ Assign(
                         "flux[GLOBAL_MB_DOF_BASE + %d*ALIGNED_DOFS_PER_MB + MB_DOF]" % inl,
                         "result%d*%s" % (inl, (inv_jac_multiplier % {"inl": inl})))
                     for inl in range(par.inline)

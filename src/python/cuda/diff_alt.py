@@ -45,10 +45,6 @@ class SMemFieldDiffExecutionPlan(hedge.cuda.plan.SMemFieldLocalOpExecutionPlan):
                    self.parallelism.parallel * self.given.microblock.aligned_floats))
 
     @staticmethod
-    def plan_type():
-        return "diff"
-
-    @staticmethod
     def feature_columns():
         return ("type text",
                 "parallel integer", 
@@ -67,8 +63,8 @@ class SMemFieldDiffExecutionPlan(hedge.cuda.plan.SMemFieldLocalOpExecutionPlan):
                 self.parallelism.parallel,
                 self.parallelism.inline,
                 self.parallelism.serial,
-                0,
-                0,
+                None,
+                self.max_unroll,
                 lmem,
                 smem,
                 registers,
@@ -294,7 +290,7 @@ class SMemFieldDiffKernel(object):
                             )
                         ]))
 
-            from pytools import flatten
+            from hedge.cuda.tools import unroll
             code.extend([
                 Comment("everybody needs to be done with the old data"),
                 S("__syncthreads()"),
@@ -315,12 +311,13 @@ class SMemFieldDiffKernel(object):
                 ]+[
                 Line(),
 
-                If("MB_DOF < DOFS_PER_MB", Block(list(flatten([
+                If("MB_DOF < DOFS_PER_MB", Block(unroll(
+                    lambda j: [
                     Assign("dmat_entries",
-                        "tex2D(diff_rst_mat_tex, EL_DOF, %d)" % j),
+                        "tex2D(diff_rst_mat_tex, EL_DOF, %s)" % j),
                     ]+[
                     Assign("field_value%d" % inl, 
-                        "smem_field[PAR_MB_NR][%d][mb_el*DOFS_PER_EL+%d]" % (inl, j))
+                        "smem_field[PAR_MB_NR][%d][mb_el*DOFS_PER_EL+%s]" % (inl, j))
                     for inl in range(par.inline)
                     ]+[
                     Line(),
@@ -329,9 +326,10 @@ class SMemFieldDiffKernel(object):
                             % (inl, axis, tex_channels[axis], inl))
                         for inl in range(par.inline)
                         for axis in dims
-                        ]+[Line()]
-                    for j in range(given.dofs_per_el())
-                    ))+[store_code]))
+                        ]+[Line()],
+                    total_number=given.dofs_per_el(), 
+                    max_unroll=self.plan.max_unroll)
+                    +[store_code]))
                 ])
 
             return code
@@ -408,7 +406,7 @@ class SMemFieldDiffKernel(object):
 
         assert result_matrix.shape == (channels, d, el_count)
 
-        if discr.debug:
+        if "cuda_diff" in discr.debug:
             def get_el_index_in_el_group(el):
                 mygroup, idx = discr.group_map[el.id]
                 assert mygroup is elgroup

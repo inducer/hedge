@@ -54,6 +54,33 @@ class FluxLiftingExecutionPlan(hedge.cuda.plan.ChunkedMatrixLocalOpExecutionPlan
                 hedge.cuda.plan.ChunkedMatrixLocalOpExecutionPlan.__str__(self),
                 self.use_prefetch_branch)
 
+    @staticmethod
+    def feature_columns():
+        return ("type text",
+                "parallel integer", 
+                "inline integer", 
+                "serial integer", 
+                "chunk_size integer", 
+                "max_unroll integer",
+                "lmem integer",
+                "smem integer",
+                "registers integer",
+                "threads integer",
+                )
+
+    def features(self, lmem, smem, registers):
+        return ("smem_matrix",
+                self.parallelism.parallel,
+                self.parallelism.inline,
+                self.parallelism.serial,
+                self.chunk_size,
+                self.max_unroll,
+                lmem,
+                smem,
+                registers,
+                self.threads(),
+                )
+
     def make_kernel(self, discr):
         return FluxLocalKernel(discr, self)
 
@@ -62,6 +89,9 @@ class FluxLiftingExecutionPlan(hedge.cuda.plan.ChunkedMatrixLocalOpExecutionPlan
 def make_plan(discr, given):
     def generate_plans():
         from hedge.cuda.plan import Parallelism
+
+        possible_unrolls = [n for n in [1,2,4,5,8,given.face_dofs_per_el()]
+                if n <= given.face_dofs_per_el()]
 
         for use_prefetch_branch in [True]:
         #for use_prefetch_branch in [True, False]:
@@ -74,25 +104,29 @@ def make_plan(discr, given):
                     for seq in range(1, 4+1):
                         localop_par = Parallelism(pe, inline, seq)
                         for chunk_size in chunk_sizes:
-                            yield FluxLiftingExecutionPlan(given, 
-                                    localop_par, chunk_size,
-                                    max_unroll=given.dofs_per_face(),
-                                    use_prefetch_branch=use_prefetch_branch,
-                                    )
+                            for unroll in possible_unrolls:
+                                yield FluxLiftingExecutionPlan(given, 
+                                        localop_par, chunk_size,
+                                        max_unroll=unroll,
+                                        use_prefetch_branch=use_prefetch_branch,
+                                        )
 
         from hedge.cuda.fluxlocal_alt import SMemFieldFluxLocalExecutionPlan
 
         for pe in range(1,32+1):
             for inline in range(1, 5):
                 localop_par = Parallelism(pe, inline, 1)
-                yield SMemFieldFluxLocalExecutionPlan(given, localop_par)
+                for unroll in possible_unrolls:
+                    yield SMemFieldFluxLocalExecutionPlan(given, localop_par,
+                            max_unroll=unroll)
 
     def target_func(plan):
         return plan.make_kernel(discr).benchmark()
 
     from hedge.cuda.plan import optimize_plan
     return optimize_plan(generate_plans, target_func, maximize=False,
-            debug="cuda_lift_plan" in discr.debug)
+            debug="cuda_lift_plan" in discr.debug,
+            log_filename="lift-%d" % given.order())
 
 
 
@@ -154,7 +188,8 @@ class FluxLocalKernel(object):
         stop.record()
         stop.synchronize()
 
-        return 1e-3/count * stop.time_since(start)
+        return (1e-3/count * stop.time_since(start),
+                lift.lmem, lift.smem, lift.registers)
 
     def __call__(self, fluxes_on_faces, is_lift):
         discr = self.discr
@@ -381,18 +416,18 @@ class FluxLocalKernel(object):
                 result.append(Line())
             return result
 
+        from hedge.cuda.tools import unroll
         def get_direct_tex_mat_mul_code():
-            from pytools import flatten
             return (
                     [POD(float_type, "fof%d" % inl) for inl in range(par.inline)]
                     + [POD(float_type, "lm"), Line()]
-                    + list(flatten([
-                    [
+                    + unroll(
+                        lambda j: [
                         Assign("fof%d" % inl,
                             "tex1Dfetch(fluxes_on_faces_tex, "
                             "GLOBAL_MB_FACEDOF_BASE"
                             " + %(inl)d * ALIGNED_FACE_DOFS_PER_MB"
-                            " + mb_el*FACE_DOFS_PER_EL+%(j)d)"
+                            " + mb_el*FACE_DOFS_PER_EL+%(j)s)"
                             % {"j":j, "inl":inl, "row": "CHUNK_DOF"},)
                         for inl in range(par.inline)
                         ]+[
@@ -404,10 +439,10 @@ class FluxLocalKernel(object):
                         ]+[
                         S("result%(inl)d += fof%(inl)d*lm" % {"inl":inl})
                         for inl in range(par.inline)
-                        ]
-                    for j in range(
-                        given.dofs_per_face()*given.faces_per_el())
-                    ]))+[ Line(), ])
+                        ],
+                        total_number=given.dofs_per_face()*given.faces_per_el(),
+                        max_unroll=self.plan.max_unroll) 
+                    + [ Line(), ])
 
         def get_mat_mul_code(el_fetch_count):
             if el_fetch_count == 1:

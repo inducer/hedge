@@ -42,10 +42,6 @@ class ChunkedDiffExecutionPlan(hedge.cuda.plan.ChunkedMatrixLocalOpExecutionPlan
         return 0
 
     @staticmethod
-    def plan_type():
-        return "diff"
-
-    @staticmethod
     def feature_columns():
         return ("type text",
                 "parallel integer", 
@@ -98,16 +94,16 @@ def make_plan(discr, given):
                         for chunk_size in chunk_sizes:
                             yield ChunkedDiffExecutionPlan(
                                     given, localop_par, chunk_size,
-                                    max_unroll=unroll
-                                    #given.dofs_per_el()
-                                    )
+                                    max_unroll=unroll)
 
         from hedge.cuda.diff_alt import SMemFieldDiffExecutionPlan
 
         for pe in range(1,32+1):
             for inline in range(1, 4+1):
                 localop_par = Parallelism(pe, inline, 1)
-                yield SMemFieldDiffExecutionPlan(given, localop_par)
+                for unroll in possible_unrolls:
+                    yield SMemFieldDiffExecutionPlan(given, localop_par,
+                            max_unroll=unroll)
 
     def target_func(plan):
         return plan.make_kernel(discr).benchmark()
@@ -115,7 +111,7 @@ def make_plan(discr, given):
     from hedge.cuda.plan import optimize_plan
     return optimize_plan(generate_plans, target_func, maximize=False,
             debug="cuda_diff_plan" in discr.debug,
-            write_log=True)
+            log_filename="diff-%d" % given.order())
 
 
 
@@ -327,7 +323,6 @@ class DiffKernel(object):
                         )
 
             tex_channels = ["x", "y", "z", "w"]
-            from pytools import flatten
             from hedge.cuda.tools import unroll
             code.extend(
                     [POD(float_type, "field_value%d" % inl)
