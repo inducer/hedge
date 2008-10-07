@@ -86,6 +86,9 @@ def optimize_plan(plan_generator, max_func, maximize, debug=False, occupancy_sla
     plan_values = []
     for p in plans:
         if p.occupancy_record().occupancy >= desired_occup - 1e-10:
+            if debug:
+                print "<---- trying %s:" % p
+
             value = max_func(p)
             if isinstance(value, tuple):
                 extra_info = value[1:]
@@ -93,7 +96,7 @@ def optimize_plan(plan_generator, max_func, maximize, debug=False, occupancy_sla
 
             if value is not None:
                 if debug:
-                    print "%s: %g" % (p, value)
+                    print "----> yielded %g" % (value)
                 plan_values.append((p, value))
 
                 if log_filename is not None:
