@@ -261,7 +261,7 @@ class ChunkedMatrixLocalOpExecutionPlan(ExecutionPlan):
     def shared_mem_use(self):
         given = self.given
         
-        return (64 # parameters, block header, small extra stuff
+        return (128 # parameters, block header, small extra stuff
                + given.float_size() * (
                    # chunk of the local op matrix
                    + self.chunk_size # this many rows
