@@ -99,7 +99,10 @@ class SMemFieldFluxLocalKernel(object):
         elgroup, = discr.element_groups
 
         is_lift = True
-        lift = self.get_kernel(is_lift, elgroup)
+        try:
+            lift = self.get_kernel(is_lift, elgroup)
+        except cuda.CompileError:
+            return None
 
         def vol_empty():
             from hedge.cuda.tools import int_ceiling

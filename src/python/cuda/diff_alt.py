@@ -100,7 +100,10 @@ class SMemFieldDiffKernel(object):
         elgroup, = discr.element_groups
 
         from hedge.optemplate import DifferentiationOperator as op_class
-        func = self.get_kernel(op_class, elgroup)
+        try:
+            func = self.get_kernel(op_class, elgroup)
+        except cuda.CompileError:
+            return None
 
         def vol_empty():
             from hedge.cuda.tools import int_ceiling

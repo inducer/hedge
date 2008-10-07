@@ -145,7 +145,11 @@ class FluxLocalKernel(object):
         elgroup, = discr.element_groups
 
         is_lift = True
-        lift, fluxes_on_faces_texref = self.get_kernel(is_lift, elgroup)
+
+        try:
+            lift, fluxes_on_faces_texref = self.get_kernel(is_lift, elgroup)
+        except cuda.CompileError:
+            return None
 
         def vol_empty():
             from hedge.cuda.tools import int_ceiling
