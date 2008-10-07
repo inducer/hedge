@@ -163,8 +163,8 @@ def _boundarize_kernel():
 
 
 # GPU mesh partition ----------------------------------------------------------
-def partition(adjgraph, max_block_size):
-    avail_nodes = set(adjgraph.iteritems())
+def make_gpu_partition(adjgraph, max_block_size):
+    avail_nodes = set(adjgraph.iterkeys())
     next_node = None
 
     from collections import deque
@@ -183,20 +183,19 @@ def partition(adjgraph, max_block_size):
 
         while True:
             curr_node = queue.popleft()
-            if curr_node not in avail_nodes: 
-                continue
 
-            avail_nodes.remove(curr_node)
-            result.append(curr_node)
-            if len(result) == max_block_size:
-                return result, first(node for node in queue if node in avail_nodes)
+            if curr_node in avail_nodes: 
+                avail_nodes.remove(curr_node)
+                result.append(curr_node)
+                if len(result) == max_block_size:
+                    return result, first(node for node in queue if node in avail_nodes)
 
-            queue.extend(adjgraph[curr_node])
+                queue.extend(adjgraph[curr_node])
 
             if not queue:
                 # ran out of nodes in immediate vicinity -- add new ones from elsewhere
                 if avail_nodes:
-                    queue.append(avail_nodes.pop())
+                    queue.append(iter(avail_nodes).next())
                 else:
                     return result, None
 
@@ -205,10 +204,11 @@ def partition(adjgraph, max_block_size):
     blocks = []
     while avail_nodes:
         if next_node is None:
-            next_node = avail_nodes.pop()
+            next_node = iter(avail_nodes).next()
         block, next_node = bfs(next_node)
+
         for el in block:
-            partition[el] = lend(blocks)
+            partition[el] = len(blocks)
         blocks.append(block)
 
     return partition, blocks
@@ -223,12 +223,12 @@ def partition(adjgraph, max_block_size):
 # GPU discretization ----------------------------------------------------------
 class Discretization(hedge.discretization.Discretization):
     def _partition_mesh(self, mesh, flux_plan):
-        partition, blocks = partition(
+        partition, blocks = make_gpu_partition(
                 mesh.element_adjacency_graph(),
                 flux_plan.elements_per_block())
 
         # prepare a mapping:  block# -> # of external interfaces
-        block2extifaces = dict((i, 0) for i in range(part_count))
+        block2extifaces = dict((i, 0) for i in range(len(blocks)))
 
         for (e1, f1), (e2, f2) in mesh.both_interfaces():
             b1 = partition[e1.id]
@@ -240,10 +240,6 @@ class Discretization(hedge.discretization.Discretization):
         for el, face_nbr in mesh.tag_to_boundary[hedge.mesh.TAG_ALL]:
             b1 = partition[el.id]
             block2extifaces[b1] += 1
-
-        blocks = dict((i, []) for i in range(part_count))
-        for el_id, block in enumerate(partition):
-            blocks[block].append(el_id)
 
         max_facepairs = 0
         for b in range(len(blocks)):
