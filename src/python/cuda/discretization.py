@@ -162,57 +162,104 @@ def _boundarize_kernel():
 
 
 
+# GPU mesh partition ----------------------------------------------------------
+def partition(adjgraph, max_block_size):
+    avail_nodes = set(adjgraph.iteritems())
+    next_node = None
+
+    from collections import deque
+
+    def first(iterable):
+        it = iter(iterable)
+        try:
+            return it.next()
+        except StopIteration:
+            return None
+
+    def bfs(top_node):
+        queue = deque([top_node])
+
+        result = []
+
+        while True:
+            curr_node = queue.popleft()
+            if curr_node not in avail_nodes: 
+                continue
+
+            avail_nodes.remove(curr_node)
+            result.append(curr_node)
+            if len(result) == max_block_size:
+                return result, first(node for node in queue if node in avail_nodes)
+
+            queue.extend(adjgraph[curr_node])
+
+            if not queue:
+                # ran out of nodes in immediate vicinity -- add new ones from elsewhere
+                if avail_nodes:
+                    queue.append(avail_nodes.pop())
+                else:
+                    return result, None
+
+    partition = [0]*len(adjgraph)
+
+    blocks = []
+    while avail_nodes:
+        if next_node is None:
+            next_node = avail_nodes.pop()
+        block, next_node = bfs(next_node)
+        for el in block:
+            partition[el] = lend(blocks)
+        blocks.append(block)
+
+    return partition, blocks
+
+
+
+
+
+
+
+
 # GPU discretization ----------------------------------------------------------
 class Discretization(hedge.discretization.Discretization):
     def _partition_mesh(self, mesh, flux_plan):
-        # search for mesh partition that matches plan
-        from pymetis import part_graph
-        orig_part_count = part_count = (
-                len(mesh.elements)//flux_plan.elements_per_block()+1)
-        while True:
-            cuts, partition = part_graph(part_count,
-                    mesh.element_adjacency_graph(),
-                    vweights=[1000]*len(mesh.elements))
+        partition, blocks = partition(
+                mesh.element_adjacency_graph(),
+                flux_plan.elements_per_block())
 
-            # prepare a mapping:  block# -> # of external interfaces
-            block2extifaces = dict((i, 0) for i in range(part_count))
+        # prepare a mapping:  block# -> # of external interfaces
+        block2extifaces = dict((i, 0) for i in range(part_count))
 
-            for (e1, f1), (e2, f2) in mesh.both_interfaces():
-                b1 = partition[e1.id]
-                b2 = partition[e2.id]
+        for (e1, f1), (e2, f2) in mesh.both_interfaces():
+            b1 = partition[e1.id]
+            b2 = partition[e2.id]
 
-                if b1 != b2:
-                    block2extifaces[b1] += 1
-
-            for el, face_nbr in mesh.tag_to_boundary[hedge.mesh.TAG_ALL]:
-                b1 = partition[el.id]
+            if b1 != b2:
                 block2extifaces[b1] += 1
 
-            blocks = dict((i, []) for i in range(part_count))
-            for el_id, block in enumerate(partition):
-                blocks[block].append(el_id)
-            block_elements = max(len(block_els) for block_els in blocks.itervalues())
+        for el, face_nbr in mesh.tag_to_boundary[hedge.mesh.TAG_ALL]:
+            b1 = partition[el.id]
+            block2extifaces[b1] += 1
 
-            max_facepairs = 0
-            for b in range(len(blocks)):
-                b_ext_faces = block2extifaces[b]
-                b_int_faces = (len(blocks[b])*self.given.faces_per_el()
-                        - b_ext_faces)
-                assert b_int_faces % 2 == 0
-                b_facepairs = b_int_faces//2 + b_ext_faces
-                max_facepairs = max(max_facepairs, b_facepairs)
+        blocks = dict((i, []) for i in range(part_count))
+        for el_id, block in enumerate(partition):
+            blocks[block].append(el_id)
 
+        max_facepairs = 0
+        for b in range(len(blocks)):
+            b_ext_faces = block2extifaces[b]
+            b_int_faces = (len(blocks[b])*self.given.faces_per_el()
+                    - b_ext_faces)
+            assert b_int_faces % 2 == 0
+            b_facepairs = b_int_faces//2 + b_ext_faces
+            max_facepairs = max(max_facepairs, b_facepairs)
 
-            actual_plan = flux_plan.copy(max_face_pair_count=max_facepairs)
+        actual_plan = flux_plan.copy(max_face_pair_count=max_facepairs)
 
-            if (block_elements <= actual_plan.elements_per_block()
-                    and (flux_plan.occupancy_record().occupancy -
-                        actual_plan.occupancy_record().occupancy) < 1e-10):
-                break
-
-            part_count += min(5, int(part_count*0.01))
-
-        print "blocks: theoretical:%d practical:%d" % (orig_part_count, part_count)
+        if (flux_plan.occupancy_record().occupancy >
+                    actual_plan.occupancy_record().occupancy):
+            from warnings import warn
+            warn("Decreased occupancy from actual plan")
 
         if False:
             from matplotlib.pylab import hist, show
@@ -223,9 +270,6 @@ class Discretization(hedge.discretization.Discretization):
             show()
             
         return actual_plan, partition
-
-
-
 
     def __init__(self, mesh, tune_for, local_discretization=None, 
             order=None, init_cuda=True, debug=set(), 
@@ -312,7 +356,8 @@ class Discretization(hedge.discretization.Discretization):
             current_microblock = []
             el_offsets_list = []
             el_number_map = {}
-            elements = [self.mesh.elements[ben] for ben in block_el_numbers[block_num]]
+            elements = [self.mesh.elements[ben] 
+                    for ben in block_el_numbers.get(block_num, [])]
             for block_el_nr, el in enumerate(elements):
                 el_offset = (
                         len(microblocks)*given.microblock.aligned_floats
