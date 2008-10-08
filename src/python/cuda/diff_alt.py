@@ -26,6 +26,7 @@ import numpy
 import hedge.cuda.plan
 from pytools import memoize_method, memoize
 import pycuda.driver as cuda
+import pycuda.gpuarray as gpuarray
 import hedge.cuda.plan
 from hedge.cuda.kernelbase import DiffKernelBase
 
@@ -212,8 +213,7 @@ class SMemFieldDiffKernel(DiffKernelBase):
                 Value("texture<float%d, 2, cudaReadModeElementType>"
                     % rst_channels, 
                     "rst_to_xyz_tex"),
-                Value("texture<float%d, 2, cudaReadModeElementType>"
-                    % rst_channels, 
+                Value("texture<float, 1, cudaReadModeElementType>", 
                     "diff_rst_mat_tex"),
                 Line(),
                 Define("DIMENSIONS", discr.dimensions),
@@ -305,18 +305,19 @@ class SMemFieldDiffKernel(DiffKernelBase):
                 Line(),
                 Comment("all the new data must be loaded"),
                 S("__syncthreads()"),
-                Line(),
-                Value("float%d" % rst_channels, "dmat_entries"),
-                ]+[
-                POD(float_type, "field_value%d" % inl)
+                Line(),]
+                +[ Value("float", "dmat_entry_rst%d" % i) for i in dims ]
+                +[Line()]
+                +[POD(float_type, "field_value%d" % inl)
                 for inl in range(par.inline)
                 ]+[
                 Line(),
 
                 If("MB_DOF < DOFS_PER_MB", Block(unroll(
                     lambda j: [
-                    Assign("dmat_entries",
-                        "tex2D(diff_rst_mat_tex, EL_DOF, %s)" % j),
+                    Assign("dmat_entry_rst%d" % i,
+                        "tex1Dfetch(diff_rst_mat_tex, %d*(EL_DOF + %s*DOFS_PER_EL) + %d )" % (d, j, i))
+                    for i in dims
                     ]+[
                     Assign("field_value%d" % inl, 
                         "smem_field[PAR_MB_NR][%d][mb_el*DOFS_PER_EL+%s]" % (inl, j))
@@ -324,8 +325,8 @@ class SMemFieldDiffKernel(DiffKernelBase):
                     ]+[
                     Line(),
                     ]+[
-                        S("d%drst%d += dmat_entries.%s * field_value%d" 
-                            % (inl, axis, tex_channels[axis], inl))
+                        S("d%drst%d += dmat_entry_rst%d * field_value%d" 
+                            % (inl, axis, axis, inl))
                         for inl in range(par.inline)
                         for axis in dims
                         ]+[Line()],
@@ -362,7 +363,7 @@ class SMemFieldDiffKernel(DiffKernelBase):
         cuda.bind_array_to_texref(rst_to_xyz_array, rst_to_xyz_texref)
 
         diff_rst_mat_texref = mod.get_texref("diff_rst_mat_tex")
-        diff_rst_mat_texref.set_array(self.gpu_diffmats(diff_op_cls, elgroup))
+        self.gpu_diffmats(diff_op_cls, elgroup).bind_to_texref(diff_rst_mat_texref)
 
         func = mod.get_function("apply_diff_mat_smem")
         func.prepare(
@@ -378,11 +379,10 @@ class SMemFieldDiffKernel(DiffKernelBase):
         given = self.plan.given
         d = discr.dimensions
 
-        rst_channels = given.devdata.make_valid_tex_channel_count(d)
-        result = numpy.zeros((rst_channels, given.dofs_per_el(), given.dofs_per_el()),
+        result = numpy.zeros((d, given.dofs_per_el(), given.dofs_per_el()),
                 dtype=given.float_type, order="F")
         for i, dm in enumerate(diff_op_cls.matrices(elgroup)):
             result[i] = dm
 
-        return cuda.make_multichannel_2d_array(result)
+        return gpuarray.to_gpu(result)
 
