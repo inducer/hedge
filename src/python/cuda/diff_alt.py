@@ -363,6 +363,7 @@ class SMemFieldDiffKernel(DiffKernelBase):
         cuda.bind_array_to_texref(rst_to_xyz_array, rst_to_xyz_texref)
 
         diff_rst_mat_texref = mod.get_texref("diff_rst_mat_tex")
+        diff_rst_mat_texref.set_format(cuda.array_format.FLOAT, rst_channels)
         self.gpu_diffmats(diff_op_cls, elgroup).bind_to_texref(diff_rst_mat_texref)
 
         func = mod.get_function("apply_diff_mat_smem")
