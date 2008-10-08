@@ -167,8 +167,6 @@ def make_gpu_partition(adjgraph, max_block_size):
     avail_nodes = set(adjgraph.iterkeys())
     next_node = None
 
-    from collections import deque
-
     def first(iterable):
         it = iter(iterable)
         try:
@@ -177,16 +175,24 @@ def make_gpu_partition(adjgraph, max_block_size):
             return None
 
     def bfs(top_node):
-        queue = deque([top_node])
+        queue = [top_node]
 
-        result = []
+        result = set()
+
+        def num_connections_to_result(node):
+            return sum(1 for rn in result if node in adjgraph[rn])
+
+        from pytools import argmax2
 
         while True:
-            curr_node = queue.popleft()
+            curr_node_idx = argmax2((i, num_connections_to_result(qn))
+                    for i, qn in enumerate(queue))
+
+            curr_node = queue.pop(curr_node_idx)
 
             if curr_node in avail_nodes: 
                 avail_nodes.remove(curr_node)
-                result.append(curr_node)
+                result.add(curr_node)
                 if len(result) == max_block_size:
                     return result, first(node for node in queue if node in avail_nodes)
 
@@ -205,7 +211,7 @@ def make_gpu_partition(adjgraph, max_block_size):
     while avail_nodes:
         if next_node is None:
             next_node = iter(avail_nodes).next()
-        block, next_node = bfs(next_node)
+        block, next_node = list(bfs(next_node))
 
         for el in block:
             partition[el] = len(blocks)

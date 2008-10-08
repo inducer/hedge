@@ -312,8 +312,8 @@ class Mesh(pytools.Record):
         """
         adjacency = {}
         for (e1, f1), (e2, f2) in self.interfaces:
-            adjacency.setdefault(e1.id, []).append(e2.id)
-            adjacency.setdefault(e2.id, []).append(e1.id)
+            adjacency.setdefault(e1.id, set()).add(e2.id)
+            adjacency.setdefault(e2.id, set()).add(e1.id)
         return adjacency
 
 
