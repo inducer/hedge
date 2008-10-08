@@ -115,7 +115,7 @@ class SMemFieldFluxLocalKernel(object):
 
         flux = vol_empty()
         fluxes_on_faces = gpuarray.empty(
-                discr.flux_plan.fluxes_on_faces_shape(len(discr.blocks)), 
+                discr.flux_plan.fluxes_on_faces_shape(len(discr.blocks), self.plan), 
                 dtype=given.float_type,
                 allocator=discr.pool.allocate)
 

@@ -197,7 +197,8 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         try:
             fluxes_on_faces = self.flux_cache[wdflux]
         except KeyError:
-            computed_fluxes = self.ex.fluxgather_kernel(self.rec)
+            computed_fluxes = self.ex.fluxgather_kernel(self.rec, 
+                    discr.fluxlocal_plan)
 
             for f_wdflux, f_fluxes_on_faces in computed_fluxes:
                 self.flux_cache[f_wdflux] = f_fluxes_on_faces

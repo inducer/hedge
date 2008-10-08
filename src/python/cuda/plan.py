@@ -248,6 +248,9 @@ class ChunkedMatrixLocalOpExecutionPlan(ExecutionPlan):
     def dofs_per_macroblock(self):
         return self.parallelism.total() * self.given.microblock.aligned_floats
 
+    def face_dofs_per_macroblock(self):
+        return self.parallelism.total() * self.given.aligned_face_dofs_per_microblock()
+
     def max_elements_touched_by_chunk(self):
         given = self.given
 
@@ -295,6 +298,9 @@ class SMemFieldLocalOpExecutionPlan(ExecutionPlan):
 
     def dofs_per_macroblock(self):
         return self.parallelism.total() * self.given.microblock.aligned_floats
+
+    def face_dofs_per_macroblock(self):
+        return self.parallelism.total() * self.given.aligned_face_dofs_per_microblock()
 
     @memoize_method
     def shared_mem_use(self):

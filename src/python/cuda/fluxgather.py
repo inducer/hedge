@@ -249,10 +249,16 @@ class FluxGatherPlan(hedge.cuda.plan.ExecutionPlan):
 
         return result
 
-    def fluxes_on_faces_shape(self, block_count):
-        return (block_count
-                * self.microblocks_per_block()
-                * self.given.aligned_face_dofs_per_microblock(),)
+    def fluxes_on_faces_shape(self, block_count, lift_plan=None):
+        from hedge.cuda.tools import int_ceiling
+        fof_dofs = (
+            block_count
+            * self.microblocks_per_block()
+            * self.given.aligned_face_dofs_per_microblock())
+        if lift_plan is not None:
+            fof_dofs = int_ceiling(fof_dofs, lift_plan.face_dofs_per_macroblock())
+
+        return (fof_dofs,)
 
     def make_kernel(self, discr, elface_to_bdry_bitmap, fluxes):
         return FluxGatherKernel(discr, self, elface_to_bdry_bitmap, fluxes)
@@ -359,13 +365,13 @@ class FluxGatherKernel:
 
         return 1e-3/count * stop.time_since(start)
 
-    def __call__(self, eval_dependency):
+    def __call__(self, eval_dependency, lift_plan):
         discr = self.discr
         given = discr.given
         elgroup, = discr.element_groups
 
         all_fluxes_on_faces = [gpuarray.empty(
-                self.plan.fluxes_on_faces_shape(len(discr.blocks)),
+                self.plan.fluxes_on_faces_shape(len(discr.blocks), lift_plan),
                 dtype=given.float_type,
                 allocator=discr.pool.allocate)
                 for i in range(len(self.fluxes))]
