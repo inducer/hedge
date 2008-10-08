@@ -26,6 +26,7 @@ import numpy
 from pytools import memoize_method, memoize
 import pycuda.driver as cuda
 import hedge.cuda.plan
+from hedge.cuda.kernelbase import DiffKernelBase
 
 
 
@@ -49,6 +50,7 @@ class ChunkedDiffExecutionPlan(hedge.cuda.plan.ChunkedMatrixLocalOpExecutionPlan
                 "serial integer", 
                 "chunk_size integer", 
                 "max_unroll integer",
+                "mb_elements integer",
                 "lmem integer",
                 "smem integer",
                 "registers integer",
@@ -62,6 +64,7 @@ class ChunkedDiffExecutionPlan(hedge.cuda.plan.ChunkedMatrixLocalOpExecutionPlan
                 self.parallelism.serial,
                 self.chunk_size,
                 self.max_unroll,
+                self.given.microblock.elements,
                 lmem,
                 smem,
                 registers,
@@ -89,7 +92,7 @@ def make_plan(discr, given):
                     localop_par = Parallelism(pe, inline, seq)
                     for chunk_size in chunk_sizes:
                         yield ChunkedDiffExecutionPlan(
-                                given, localop_par, chunk_size,
+                                given, localop_par, chunk_size, 
                                 max_unroll=given.dofs_per_el())
 
         from hedge.cuda.diff_alt import SMemFieldDiffExecutionPlan
@@ -97,7 +100,7 @@ def make_plan(discr, given):
         for pe in range(1,32+1):
             for inline in range(1, 4+1):
                 localop_par = Parallelism(pe, inline, 1)
-                yield SMemFieldDiffExecutionPlan(given, localop_par,
+                yield SMemFieldDiffExecutionPlan(given, localop_par, 
                         max_unroll=given.dofs_per_el())
 
     def target_func(plan):
@@ -112,35 +115,32 @@ def make_plan(discr, given):
 
 
 # kernel ----------------------------------------------------------------------
-class DiffKernel(object):
+class DiffKernel(DiffKernelBase):
     def __init__(self, discr, plan):
         self.discr = discr
         self.plan = plan
 
         from hedge.cuda.tools import int_ceiling
-        fplan = discr.flux_plan
 
+        given = self.plan.given
         self.grid = (plan.chunks_per_microblock(), 
-                    int_ceiling(
-                        fplan.dofs_per_block()*len(discr.blocks)/
-                        plan.dofs_per_macroblock()))
+                    int_ceiling(given.total_dofs()/plan.dofs_per_macroblock()))
 
     def benchmark(self):
         discr = self.discr
-        given = discr.given
+        given = self.plan.given
         elgroup, = discr.element_groups
 
         from hedge.optemplate import DifferentiationOperator as op_class
         try:
-            func, field_texref = self.get_kernel(op_class, elgroup)
+            func, field_texref = self.get_kernel(op_class, elgroup, fake=True)
         except cuda.CompileError:
             return None
 
         def vol_empty():
             from hedge.cuda.tools import int_ceiling
             dofs = int_ceiling(
-                    discr.flux_plan.dofs_per_block() * len(discr.blocks),     
-                    self.plan.dofs_per_macroblock())
+                    given.total_dofs(), self.plan.dofs_per_macroblock())
 
             import pycuda.gpuarray as gpuarray
             return gpuarray.empty((dofs,), dtype=given.float_type,
@@ -176,7 +176,7 @@ class DiffKernel(object):
 
     def __call__(self, op_class, field):
         discr = self.discr
-        given = discr.given
+        given = self.plan.given
 
         d = discr.dimensions
         elgroup, = discr.element_groups
@@ -210,7 +210,7 @@ class DiffKernel(object):
         return xyz_diff
 
     @memoize_method
-    def get_kernel(self, diff_op_cls, elgroup):
+    def get_kernel(self, diff_op_cls, elgroup, fake=False):
         from hedge.cuda.cgen import \
                 Pointer, POD, Value, ArrayOf, Const, \
                 Module, FunctionDeclaration, FunctionBody, Block, \
@@ -222,8 +222,7 @@ class DiffKernel(object):
         discr = self.discr
         d = discr.dimensions
         dims = range(d)
-        given = discr.given
-        fplan = discr.flux_plan
+        given = self.plan.given
 
         par = self.plan.parallelism
 
@@ -381,10 +380,13 @@ class DiffKernel(object):
                 #options=["--maxrregcount=10"]
                 )
 
+        if fake:
+            rst_to_xyz_array = self.fake_localop_rst_to_xyz()
+        else:
+            rst_to_xyz_array = self.localop_rst_to_xyz(diff_op_cls, elgroup)
+
         rst_to_xyz_texref = mod.get_texref("rst_to_xyz_tex")
-        cuda.bind_array_to_texref(
-                self.localop_rst_to_xyz(diff_op_cls, elgroup), 
-                rst_to_xyz_texref)
+        cuda.bind_array_to_texref(rst_to_xyz_array, rst_to_xyz_texref)
 
         field_texref = mod.get_texref("field_tex")
 
@@ -402,7 +404,7 @@ class DiffKernel(object):
     @memoize_method
     def gpu_diffmats(self, diff_op_cls, elgroup):
         discr = self.discr
-        given = discr.given
+        given = self.plan.given
 
         columns = given.dofs_per_el()*discr.dimensions
         additional_columns = 0
@@ -448,44 +450,3 @@ class DiffKernel(object):
                     pad_and_join(chunks, block_floats*given.float_size())),
                 block_floats=block_floats,
                 matrix_columns=columns)
-
-    @memoize_method
-    def localop_rst_to_xyz(self, diff_op, elgroup):
-        discr = self.discr
-        d = discr.dimensions
-
-        fplan = discr.flux_plan
-        coeffs = diff_op.coefficients(elgroup)
-
-        elgroup_indices = self.discr.elgroup_microblock_indices(elgroup)
-        el_count = len(discr.blocks) * fplan.elements_per_block()
-
-        # indexed local, el_number, global
-        result_matrix = (coeffs[:,:,elgroup_indices]
-                .transpose(1,0,2))
-        channels = discr.given.devdata.make_valid_tex_channel_count(d)
-        add_channels = channels - result_matrix.shape[0]
-        if add_channels:
-            result_matrix = numpy.vstack((
-                result_matrix,
-                numpy.zeros((add_channels,d,el_count), dtype=result_matrix.dtype)
-                ))
-
-        assert result_matrix.shape == (channels, d, el_count)
-
-        if "cuda_diff" in discr.debug:
-            def get_el_index_in_el_group(el):
-                mygroup, idx = discr.group_map[el.id]
-                assert mygroup is elgroup
-                return idx
-
-            for block in discr.blocks:
-                i = block.number * fplan.elements_per_block()
-                for mb in block.microblocks:
-                    for el in mb:
-                        egi = get_el_index_in_el_group(el)
-                        assert egi == elgroup_indices[i]
-                        assert (result_matrix[:d,:,i].T == coeffs[:,:,egi]).all()
-                        i += 1
-
-        return cuda.make_multichannel_2d_array(result_matrix)

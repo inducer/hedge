@@ -229,6 +229,8 @@ def make_gpu_partition(adjgraph, max_block_size):
 # GPU discretization ----------------------------------------------------------
 class Discretization(hedge.discretization.Discretization):
     def _partition_mesh(self, mesh, flux_plan):
+        given = flux_plan.given
+
         partition, blocks = make_gpu_partition(
                 mesh.element_adjacency_graph(),
                 flux_plan.elements_per_block())
@@ -250,7 +252,7 @@ class Discretization(hedge.discretization.Discretization):
         max_facepairs = 0
         for b in range(len(blocks)):
             b_ext_faces = block2extifaces[b]
-            b_int_faces = (len(blocks[b])*self.given.faces_per_el()
+            b_int_faces = (len(blocks[b])*given.faces_per_el()
                     - b_ext_faces)
             assert b_int_faces % 2 == 0
             b_facepairs = b_int_faces//2 + b_ext_faces
@@ -271,7 +273,7 @@ class Discretization(hedge.discretization.Discretization):
             hist([len(block_els) for block_els in blocks.itervalues()])
             show()
             
-        return actual_plan, partition
+        return actual_plan, partition, len(blocks)
 
     def __init__(self, mesh, tune_for, local_discretization=None, 
             order=None, init_cuda=True, debug=set(), 
@@ -312,32 +314,63 @@ class Discretization(hedge.discretization.Discretization):
             from pycuda.tools import DeviceMemoryPool
             self.pool = DeviceMemoryPool()
 
-        # make preliminary plan
-        from hedge.cuda.plan import PlanGivenData
-        self.given = PlanGivenData(
-                DeviceData(device), ldis, 
-                default_scalar_type)
+        from pytools import Record
+        class OverallPlan(Record):pass
+        
+        overall_plans = []
 
-        import hedge.cuda.fluxgather as fluxgather
-        flux_plan = fluxgather.make_plan(self, self.given, tune_for)
-        print "projected flux exec plan:", flux_plan
+        for allow_mb in [True, False]:
+            from hedge.cuda.plan import PlanGivenData
+            given = PlanGivenData(
+                    DeviceData(device), ldis, allow_mb,
+                    default_scalar_type)
 
-        # partition mesh, obtain updated plan
-        self.flux_plan, self.partition = self._partition_mesh(mesh, flux_plan)
-        del flux_plan
+            import hedge.cuda.fluxgather as fluxgather
+            flux_plan, flux_time = fluxgather.make_plan(self, given, tune_for)
+            print "projected flux exec plan:", flux_plan
 
-        # build our own data structures
-        self.blocks = self._build_blocks()
-        self.face_storage_map = self._build_face_storage_map()
+            # partition mesh, obtain updated plan
+            flux_plan, partition, block_count = self._partition_mesh(mesh, flux_plan)
+            given.post_decomposition(
+                    block_count=block_count,
+                    microblocks_per_block=flux_plan.microblocks_per_block())
 
-        # plan local operations
-        import hedge.cuda.diff as diff
-        import hedge.cuda.fluxlocal as fluxlocal
-        self.diff_plan = diff.make_plan(self, self.given)
-        self.fluxlocal_plan = fluxlocal.make_plan(self, self.given)
+            # plan local operations
+            import hedge.cuda.diff as diff
+            import hedge.cuda.fluxlocal as fluxlocal
+            diff_plan, diff_time = diff.make_plan(self, given)
+            fluxlocal_plan, fluxlocal_time = fluxlocal.make_plan(self, given)
+
+            sys_size = flux_plan.flux_count
+            total_time = flux_time + sys_size*(diff_time+fluxlocal_time)
+
+            overall_plans.append((OverallPlan(
+                given=given,
+                flux_plan=flux_plan,
+                partition=partition,
+                diff_plan=diff_plan,
+                fluxlocal_plan=fluxlocal_plan), total_time))
+
+        for op, total_time in overall_plans:
+            print "microblocking=%s -> time=%g" % (
+                    op.given.microblock.elements != 1, total_time)
+
+        from pytools import argmin2
+        overall_plan = argmin2(overall_plans)
+
+        self.given = overall_plan.given
+        self.flux_plan = overall_plan.flux_plan
+        self.partition = overall_plan.partition
+        self.diff_plan = overall_plan.diff_plan
+        self.fluxlocal_plan = overall_plan.fluxlocal_plan
+
         print "actual flux exec plan:", self.flux_plan
         print "actual diff op exec plan:", self.diff_plan
         print "actual flux local exec plan:", self.fluxlocal_plan
+
+        # build data structures
+        self.blocks = self._build_blocks()
+        self.face_storage_map = self._build_face_storage_map()
 
         # make a reference discretization
         if "cuda_compare" in self.debug:
@@ -859,16 +892,16 @@ class Discretization(hedge.discretization.Discretization):
             assert mygroup is elgroup
             return idx
 
-        fplan = self.flux_plan
+        given = self.given
 
-        el_count = len(self.blocks) * fplan.elements_per_block()
+        el_count = len(self.blocks) * given.elements_per_block()
         elgroup_indices = numpy.zeros((el_count,), dtype=numpy.intp)
 
         for block in self.blocks:
             block_elgroup_indices = [ get_el_index_in_el_group(el) 
                     for mb in block.microblocks 
                     for el in mb]
-            offset = block.number * fplan.elements_per_block()
+            offset = block.number * given.elements_per_block()
             elgroup_indices[offset:offset+len(block_elgroup_indices)] = \
                     block_elgroup_indices
 

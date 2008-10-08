@@ -27,6 +27,7 @@ import hedge.cuda.plan
 from pytools import memoize_method, memoize
 import pycuda.driver as cuda
 import hedge.cuda.plan
+from hedge.cuda.kernelbase import DiffKernelBase
 
 
 
@@ -52,6 +53,7 @@ class SMemFieldDiffExecutionPlan(hedge.cuda.plan.SMemFieldLocalOpExecutionPlan):
                 "serial integer", 
                 "chunk_size integer", 
                 "max_unroll integer",
+                "mb_elements integer",
                 "lmem integer",
                 "smem integer",
                 "registers integer",
@@ -65,6 +67,7 @@ class SMemFieldDiffExecutionPlan(hedge.cuda.plan.SMemFieldLocalOpExecutionPlan):
                 self.parallelism.serial,
                 None,
                 self.max_unroll,
+                self.given.microblock.elements,
                 lmem,
                 smem,
                 registers,
@@ -78,38 +81,35 @@ class SMemFieldDiffExecutionPlan(hedge.cuda.plan.SMemFieldLocalOpExecutionPlan):
 
 
 # kernel ----------------------------------------------------------------------
-class SMemFieldDiffKernel(object):
+class SMemFieldDiffKernel(DiffKernelBase):
     def __init__(self, discr, plan):
         self.discr = discr
         self.plan = plan
 
         from hedge.cuda.tools import int_ceiling
-        fplan = discr.flux_plan
 
         self.grid = (int_ceiling(
-                len(discr.blocks)*fplan.dofs_per_block()
-                / self.plan.dofs_per_macroblock()),
-                1)
+            self.plan.given.total_dofs()
+            / self.plan.dofs_per_macroblock()), 1)
 
     def benchmark(self):
         if set(["cuda_diff", "cuda_debugbuf"]) <= self.discr.debug:
             return 0
 
         discr = self.discr
-        given = discr.given
+        given = self.plan.given
         elgroup, = discr.element_groups
 
         from hedge.optemplate import DifferentiationOperator as op_class
         try:
-            func = self.get_kernel(op_class, elgroup)
+            func = self.get_kernel(op_class, elgroup, fake=True)
         except cuda.CompileError:
             return None
 
         def vol_empty():
             from hedge.cuda.tools import int_ceiling
             dofs = int_ceiling(
-                    discr.flux_plan.dofs_per_block() * len(discr.blocks),     
-                    self.plan.dofs_per_macroblock())
+                    given.total_dofs(), self.plan.dofs_per_macroblock())
 
             import pycuda.gpuarray as gpuarray
             return gpuarray.empty((dofs,), dtype=given.float_type,
@@ -142,7 +142,7 @@ class SMemFieldDiffKernel(object):
 
     def __call__(self, op_class, field):
         discr = self.discr
-        given = discr.given
+        given = self.plan.given
 
         d = discr.dimensions
         elgroup, = discr.element_groups
@@ -181,7 +181,7 @@ class SMemFieldDiffKernel(object):
         return xyz_diff
 
     @memoize_method
-    def get_kernel(self, diff_op_cls, elgroup):
+    def get_kernel(self, diff_op_cls, elgroup, fake=False):
         from hedge.cuda.cgen import \
                 Pointer, POD, Value, ArrayOf, Const, \
                 Module, FunctionDeclaration, FunctionBody, Block, \
@@ -193,8 +193,7 @@ class SMemFieldDiffKernel(object):
         discr = self.discr
         d = discr.dimensions
         dims = range(d)
-        given = discr.given
-        fplan = discr.flux_plan
+        given = self.plan.given
 
         diffmat_data = self.gpu_diffmats(diff_op_cls, elgroup)
         elgroup, = discr.element_groups
@@ -354,10 +353,13 @@ class SMemFieldDiffKernel(object):
                 )
         print "diff: lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
 
+        if fake:
+            rst_to_xyz_array = self.fake_localop_rst_to_xyz()
+        else:
+            rst_to_xyz_array = self.localop_rst_to_xyz(diff_op_cls, elgroup)
+
         rst_to_xyz_texref = mod.get_texref("rst_to_xyz_tex")
-        cuda.bind_array_to_texref(
-                self.localop_rst_to_xyz(diff_op_cls, elgroup), 
-                rst_to_xyz_texref)
+        cuda.bind_array_to_texref(rst_to_xyz_array, rst_to_xyz_texref)
 
         diff_rst_mat_texref = mod.get_texref("diff_rst_mat_tex")
         diff_rst_mat_texref.set_array(self.gpu_diffmats(diff_op_cls, elgroup))
@@ -373,7 +375,7 @@ class SMemFieldDiffKernel(object):
     @memoize_method
     def gpu_diffmats(self, diff_op_cls, elgroup):
         discr = self.discr
-        given = discr.given
+        given = self.plan.given
         d = discr.dimensions
 
         rst_channels = given.devdata.make_valid_tex_channel_count(d)
@@ -383,46 +385,4 @@ class SMemFieldDiffKernel(object):
             result[i] = dm
 
         return cuda.make_multichannel_2d_array(result)
-
-    @memoize_method
-    def localop_rst_to_xyz(self, diff_op, elgroup):
-        discr = self.discr
-        given = discr.given
-        d = discr.dimensions
-
-        fplan = discr.flux_plan
-        coeffs = diff_op.coefficients(elgroup)
-
-        elgroup_indices = self.discr.elgroup_microblock_indices(elgroup)
-        el_count = len(discr.blocks) * fplan.elements_per_block()
-
-        # indexed local, el_number, global
-        result_matrix = (coeffs[:,:,elgroup_indices]
-                .transpose(1,0,2))
-        channels = given.devdata.make_valid_tex_channel_count(d)
-        add_channels = channels - result_matrix.shape[0]
-        if add_channels:
-            result_matrix = numpy.vstack((
-                result_matrix,
-                numpy.zeros((add_channels,d,el_count), dtype=result_matrix.dtype)
-                ))
-
-        assert result_matrix.shape == (channels, d, el_count)
-
-        if "cuda_diff" in discr.debug:
-            def get_el_index_in_el_group(el):
-                mygroup, idx = discr.group_map[el.id]
-                assert mygroup is elgroup
-                return idx
-
-            for block in discr.blocks:
-                i = block.number * fplan.elements_per_block()
-                for mb in block.microblocks:
-                    for el in mb:
-                        egi = get_el_index_in_el_group(el)
-                        assert egi == elgroup_indices[i]
-                        assert (result_matrix[:d,:,i].T == coeffs[:,:,egi]).all()
-                        i += 1
-
-        return cuda.make_multichannel_2d_array(result_matrix)
 

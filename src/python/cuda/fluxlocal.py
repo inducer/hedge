@@ -27,6 +27,7 @@ import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
 from hedge.cuda.tools import FakeGPUArray
 import hedge.cuda.plan 
+from hedge.cuda.kernelbase import FluxLocalKernelBase
 
 
 
@@ -62,6 +63,7 @@ class FluxLiftingExecutionPlan(hedge.cuda.plan.ChunkedMatrixLocalOpExecutionPlan
                 "serial integer", 
                 "chunk_size integer", 
                 "max_unroll integer",
+                "mb_elements integer",
                 "lmem integer",
                 "smem integer",
                 "registers integer",
@@ -75,6 +77,7 @@ class FluxLiftingExecutionPlan(hedge.cuda.plan.ChunkedMatrixLocalOpExecutionPlan
                 self.parallelism.serial,
                 self.chunk_size,
                 self.max_unroll,
+                self.given.microblock.elements,
                 lmem,
                 smem,
                 registers,
@@ -126,7 +129,7 @@ def make_plan(discr, given):
 
 
 # kernel ----------------------------------------------------------------------
-class FluxLocalKernel(object):
+class FluxLocalKernel(FluxLocalKernelBase):
     def __init__(self, discr, plan):
         self.discr = discr
         self.plan = plan
@@ -134,35 +137,33 @@ class FluxLocalKernel(object):
         from hedge.cuda.tools import int_ceiling
         self.grid = (plan.chunks_per_microblock(), 
                 int_ceiling(
-                    len(discr.blocks)
-                    * discr.flux_plan.dofs_per_block()
+                    self.plan.given.total_dofs()
                     / plan.dofs_per_macroblock())
                 )
 
     def benchmark(self):
         discr = self.discr
-        given = discr.given
+        given = self.plan.given
         elgroup, = discr.element_groups
 
         is_lift = True
 
         try:
-            lift, fluxes_on_faces_texref = self.get_kernel(is_lift, elgroup)
+            lift, fluxes_on_faces_texref = self.get_kernel(is_lift, elgroup, fake=True)
         except cuda.CompileError:
             return None
 
         def vol_empty():
             from hedge.cuda.tools import int_ceiling
             dofs = int_ceiling(
-                    discr.flux_plan.dofs_per_block() * len(discr.blocks),     
-                    self.plan.dofs_per_macroblock())
+                    given.total_dofs(), self.plan.dofs_per_macroblock())
 
             return gpuarray.empty((dofs,), dtype=given.float_type,
                     allocator=discr.pool.allocate)
 
         flux = vol_empty()
         fluxes_on_faces = gpuarray.empty(
-                discr.flux_plan.fluxes_on_faces_shape(len(discr.blocks), self.plan), 
+                given.fluxes_on_faces_shape(self.plan), 
                 dtype=given.float_type,
                 allocator=discr.pool.allocate)
         fluxes_on_faces.bind_to_texref(fluxes_on_faces_texref)
@@ -231,7 +232,7 @@ class FluxLocalKernel(object):
         return flux
 
     @memoize_method
-    def get_kernel(self, is_lift, elgroup):
+    def get_kernel(self, is_lift, elgroup, fake=False):
         from hedge.cuda.cgen import \
                 Pointer, POD, Value, ArrayOf, Const, \
                 Module, FunctionDeclaration, FunctionBody, Block, \
@@ -244,7 +245,7 @@ class FluxLocalKernel(object):
         discr = self.discr
         d = discr.dimensions
         dims = range(d)
-        given = discr.given
+        given = self.plan.given
 
         liftmat_data = self.gpu_liftmat(is_lift)
 
@@ -502,9 +503,13 @@ class FluxLocalKernel(object):
         texrefs = [fluxes_on_faces_texref]
 
         if is_lift:
+            if fake:
+                ij_tex = self.fake_inverse_jacobians_tex()
+            else:
+                ij_tex = self.inverse_jacobians_tex(elgroup)
+
             inverse_jacobians_texref = mod.get_texref("inverse_jacobians_tex")
-            self.inverse_jacobians_tex(elgroup).bind_to_texref(
-                    inverse_jacobians_texref)
+            ij_tex.bind_to_texref(inverse_jacobians_texref)
             texrefs.append(inverse_jacobians_texref)
 
         func = mod.get_function("apply_lift_mat")
@@ -515,10 +520,11 @@ class FluxLocalKernel(object):
 
         return func, fluxes_on_faces_texref
 
+    # data blocks -------------------------------------------------------------
     @memoize_method
     def gpu_liftmat(self, is_lift):
         discr = self.discr
-        given = discr.given
+        given = self.plan.given
 
         columns = given.face_dofs_per_el()
         # avoid smem fetch bank conflicts by ensuring odd col count
@@ -568,12 +574,3 @@ class FluxLocalKernel(object):
                 block_floats=block_floats,
                 matrix_columns=columns,
                 )
-
-    # data blocks -------------------------------------------------------------
-    @memoize_method
-    def inverse_jacobians_tex(self, elgroup):
-        ij = elgroup.inverse_jacobians[
-                    self.discr.elgroup_microblock_indices(elgroup)]
-        return gpuarray.to_gpu(
-                ij.astype(self.discr.given.float_type))
-

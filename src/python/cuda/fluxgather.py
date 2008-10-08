@@ -249,17 +249,6 @@ class FluxGatherPlan(hedge.cuda.plan.ExecutionPlan):
 
         return result
 
-    def fluxes_on_faces_shape(self, block_count, lift_plan=None):
-        from hedge.cuda.tools import int_ceiling
-        fof_dofs = (
-            block_count
-            * self.microblocks_per_block()
-            * self.given.aligned_face_dofs_per_microblock())
-        if lift_plan is not None:
-            fof_dofs = int_ceiling(fof_dofs, lift_plan.face_dofs_per_macroblock())
-
-        return (fof_dofs,)
-
     def make_kernel(self, discr, elface_to_bdry_bitmap, fluxes):
         return FluxGatherKernel(discr, self, elface_to_bdry_bitmap, fluxes)
 
@@ -319,13 +308,14 @@ class FluxGatherKernel:
 
     def benchmark(self):
         discr = self.discr
-        given = discr.given
+        given = self.plan.given
 
         from hedge.cuda.tools import int_ceiling
         block_count = int_ceiling(
                 len(discr.mesh.elements)/self.plan.elements_per_block())
         all_fluxes_on_faces = [gpuarray.empty(
-                self.plan.fluxes_on_faces_shape(block_count),
+            (block_count * self.plan.microblocks_per_block()
+                * given.aligned_face_dofs_per_microblock(),),
                 dtype=given.float_type,
                 allocator=discr.pool.allocate)
                 for i in range(len(self.fluxes))]
@@ -367,11 +357,11 @@ class FluxGatherKernel:
 
     def __call__(self, eval_dependency, lift_plan):
         discr = self.discr
-        given = discr.given
+        given = self.plan.given
         elgroup, = discr.element_groups
 
         all_fluxes_on_faces = [gpuarray.empty(
-                self.plan.fluxes_on_faces_shape(len(discr.blocks), lift_plan),
+                given.fluxes_on_faces_shape(lift_plan),
                 dtype=given.float_type,
                 allocator=discr.pool.allocate)
                 for i in range(len(self.fluxes))]
@@ -428,7 +418,7 @@ class FluxGatherKernel:
                 Constant, Initializer, If, For, Statement, Assign, While
                 
         discr = self.discr
-        given = discr.given
+        given = self.plan.given
         fplan = self.plan
         d = discr.dimensions
         dims = range(d)
@@ -760,7 +750,7 @@ class FluxGatherKernel:
     @memoize_method
     def flux_face_data_block(self, elgroup):
         discr = self.discr
-        given = discr.given
+        given = self.plan.given
         fplan = discr.flux_plan
         headers = []
         fp_blocks = []
@@ -877,7 +867,7 @@ class FluxGatherKernel:
     @memoize_method
     def fake_flux_face_data_block(self, block_count):
         discr = self.discr
-        given = discr.given
+        given = self.plan.given
 
         fp_struct = face_pair_struct(given.float_type, discr.dimensions)
 
@@ -966,7 +956,7 @@ class FluxGatherKernel:
         ilists = []
         from random import shuffle
         for i in range(self.FAKE_INDEX_LIST_COUNT):
-            ilist = range(self.discr.given.dofs_per_face())
+            ilist = range(self.plan.given.dofs_per_face())
             shuffle(ilist)
             ilists.append(ilist)
 
@@ -975,7 +965,7 @@ class FluxGatherKernel:
     def index_list_backend(self, ilists):
         from pytools import single_valued
         ilist_length = single_valued(len(il) for il in ilists)
-        assert ilist_length == self.discr.given.dofs_per_face()
+        assert ilist_length == self.plan.given.dofs_per_face()
 
         if ilist_length > 256:
             tp = numpy.uint16

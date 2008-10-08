@@ -53,7 +53,7 @@ class Parallelism:
 
 
 
-def optimize_plan(plan_generator, max_func, maximize, debug=False, occupancy_slack=0.5,
+def optimize_plan(plan_generator, target_func, maximize, debug=False, occupancy_slack=0.5,
         log_filename=None):
     plans = list(p for p in plan_generator()
             if p.invalid_reason() is None)
@@ -76,12 +76,15 @@ def optimize_plan(plan_generator, max_func, maximize, debug=False, occupancy_sla
 
         db_conn = sqlite.connect("plan-%s.dat" % log_filename)
 
-        db_conn.execute("""
-              create table data (
-                id integer primary key autoincrement,
-                %s,
-                value real)""" 
-                % ", ".join(feature_columns))
+        try:
+            db_conn.execute("""
+                  create table data (
+                    id integer primary key autoincrement,
+                    %s,
+                    value real)""" 
+                    % ", ".join(feature_columns))
+        except sqlite.OperationalError:
+            pass
 
     plan_values = []
     for p in plans:
@@ -89,7 +92,7 @@ def optimize_plan(plan_generator, max_func, maximize, debug=False, occupancy_sla
             if debug:
                 print "<---- trying %s:" % p
 
-            value = max_func(p)
+            value = target_func(p)
             if isinstance(value, tuple):
                 extra_info = value[1:]
                 value = value[0]
@@ -97,7 +100,7 @@ def optimize_plan(plan_generator, max_func, maximize, debug=False, occupancy_sla
             if value is not None:
                 if debug:
                     print "----> yielded %g" % (value)
-                plan_values.append((p, value))
+                plan_values.append(((len(plan_values), p), value))
 
                 if log_filename is not None:
                     db_conn.execute(
@@ -111,14 +114,20 @@ def optimize_plan(plan_generator, max_func, maximize, debug=False, occupancy_sla
 
     from pytools import argmax2, argmin2
     if maximize:
-        result = argmax2(plan_values)
+        num_plan, plan = argmax2(plan_values)
     else:
-        result = argmin2(plan_values)
+        num_plan, plan = argmin2(plan_values)
+
+    plan_value = plan_values[num_plan][1]
 
     if debug:
-        print "chosen: %s" % result
+        print "----------------------------------------------"
+        print "chosen: %s" % plan
+        print "value: %g" % plan_value
+        print "----------------------------------------------"
 
-    return result
+    return plan, plan_value
+
 
 
 
@@ -170,12 +179,12 @@ class ExecutionPlan(object):
 
 
 class PlanGivenData(object):
-    def __init__(self, devdata, ldis, float_type=numpy.float32):
+    def __init__(self, devdata, ldis, allow_microblocking, float_type=numpy.float32):
         self.devdata = devdata
         self.ldis = ldis
         self.float_type = numpy.dtype(float_type)
 
-        self.microblock = self._find_microblock_size()
+        self.microblock = self._find_microblock_size(allow_microblocking)
 
     def float_size(self):
         return self.float_type.itemsize
@@ -206,19 +215,20 @@ class PlanGivenData(object):
                 self.face_dofs_per_microblock(),
                 self.float_size())
 
-    def _find_microblock_size(self):
+    def _find_microblock_size(self, allow_microblocking):
         from hedge.cuda.tools import exact_div, int_ceiling
         align_size = exact_div(self.devdata.align_bytes(self.float_size()), 
                 self.float_size())
+
+        from pytools import Record
+        class MicroblockInfo(Record): pass
 
         for mb_align_chunks in range(1, 256):
             mb_aligned_floats = align_size * mb_align_chunks
             mb_elements = mb_aligned_floats // self.dofs_per_el()
             mb_floats = self.dofs_per_el()*mb_elements
             overhead = (mb_aligned_floats-mb_floats)/mb_aligned_floats
-            if overhead <= 0.2:
-                from pytools import Record
-                class MicroblockInfo(Record): pass
+            if overhead <= 0.05 or (not allow_microblocking and mb_elements == 1):
 
                 return MicroblockInfo(
                         align_size=align_size,
@@ -228,6 +238,32 @@ class PlanGivenData(object):
                         )
 
         assert False, "a valid microblock size was not found"
+
+    # available after decomposition has posted
+    def post_decomposition(self, block_count, microblocks_per_block):
+        self.block_count = block_count
+        self.microblocks_per_block = microblocks_per_block
+
+    def fluxes_on_faces_shape(self, lift_plan=None):
+        from hedge.cuda.tools import int_ceiling
+        fof_dofs = (
+            self.block_count
+            * self.microblocks_per_block
+            * self.aligned_face_dofs_per_microblock())
+        if lift_plan is not None:
+            fof_dofs = int_ceiling(fof_dofs, lift_plan.face_dofs_per_macroblock())
+
+        return (fof_dofs,)
+
+    def elements_per_block(self):
+        return self.microblocks_per_block * self.microblock.elements
+
+    def dofs_per_block(self):
+        return self.microblock.aligned_floats * self.microblocks_per_block
+
+    def total_dofs(self):
+        return self.block_count * self.dofs_per_block()
+
 
 
 
