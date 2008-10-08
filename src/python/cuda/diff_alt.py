@@ -213,7 +213,8 @@ class SMemFieldDiffKernel(DiffKernelBase):
                 Value("texture<float%d, 2, cudaReadModeElementType>"
                     % rst_channels, 
                     "rst_to_xyz_tex"),
-                Value("texture<float, 1, cudaReadModeElementType>", 
+                Value("texture<float%d, 1, cudaReadModeElementType>" 
+                    % rst_channels, 
                     "diff_rst_mat_tex"),
                 Line(),
                 Define("DIMENSIONS", discr.dimensions),
@@ -305,19 +306,18 @@ class SMemFieldDiffKernel(DiffKernelBase):
                 Line(),
                 Comment("all the new data must be loaded"),
                 S("__syncthreads()"),
-                Line(),]
-                +[ Value("float", "dmat_entry_rst%d" % i) for i in dims ]
-                +[Line()]
-                +[POD(float_type, "field_value%d" % inl)
+                Line(),
+                Value("float%d" % rst_channels, "dmat_entries"),
+                ]+[
+                POD(float_type, "field_value%d" % inl)
                 for inl in range(par.inline)
                 ]+[
                 Line(),
 
                 If("MB_DOF < DOFS_PER_MB", Block(unroll(
                     lambda j: [
-                    Assign("dmat_entry_rst%d" % i,
-                        "tex1Dfetch(diff_rst_mat_tex, %d*(EL_DOF + %s*DOFS_PER_EL) + %d )" % (d, j, i))
-                    for i in dims
+                    Assign("dmat_entries",
+                        "tex1Dfetch(diff_rst_mat_tex, EL_DOF + %s*DOFS_PER_EL)" % j)
                     ]+[
                     Assign("field_value%d" % inl, 
                         "smem_field[PAR_MB_NR][%d][mb_el*DOFS_PER_EL+%s]" % (inl, j))
@@ -325,8 +325,8 @@ class SMemFieldDiffKernel(DiffKernelBase):
                     ]+[
                     Line(),
                     ]+[
-                        S("d%drst%d += dmat_entry_rst%d * field_value%d" 
-                            % (inl, axis, axis, inl))
+                        S("d%drst%d += dmat_entries.%s * field_value%d" 
+                            % (inl, axis, tex_channels[axis], inl))
                         for inl in range(par.inline)
                         for axis in dims
                         ]+[Line()],
@@ -379,7 +379,8 @@ class SMemFieldDiffKernel(DiffKernelBase):
         given = self.plan.given
         d = discr.dimensions
 
-        result = numpy.zeros((d, given.dofs_per_el(), given.dofs_per_el()),
+        rst_channels = given.devdata.make_valid_tex_channel_count(d)
+        result = numpy.zeros((rst_channels, given.dofs_per_el(), given.dofs_per_el()),
                 dtype=given.float_type, order="F")
         for i, dm in enumerate(diff_op_cls.matrices(elgroup)):
             result[i] = dm
