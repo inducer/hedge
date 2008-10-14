@@ -85,16 +85,17 @@ class GradientOperator(Operator):
 
         return nabla*u - InverseMassOperator()*(
                 flux_op * u + 
-                flux_op * pair_with_boundary(u, bc, TAG_ALL))
+                flux_op * pair_with_boundary(u, bc, TAG_ALL)
+                )
 
     def bind(self, discr):
         compiled_op_template = discr.compile(self.op_template())
 
-        def op(self, u):
+        def op(u):
             from hedge.mesh import TAG_ALL
 
             return compiled_op_template(u=u, 
-                    bc=self.discr.boundarize_volume_field(u, TAG_ALL))
+                    bc=discr.boundarize_volume_field(u, TAG_ALL))
 
         return op
 
@@ -437,10 +438,16 @@ class MaxwellOperator(TimeDependentOperator):
 
     _default_dimensions = 3
 
-    def __init__(self, epsilon, mu, upwind_alpha=1, 
+    def __init__(self, epsilon, mu, 
+            flux_type,
+            bdry_flux_type=None,
             pec_tag=hedge.mesh.TAG_ALL, 
             absorb_tag=hedge.mesh.TAG_NONE,
             current=None, dimensions=None):
+        """
+        @arg flux_type: can be in [0,1] for anything between central and upwind, 
+          or "lf" for Lax-Friedrichs.
+        """
         e_subset = self.get_eh_subset()[0:3]
         h_subset = self.get_eh_subset()[3:6]
 
@@ -459,7 +466,11 @@ class MaxwellOperator(TimeDependentOperator):
         self.Z = sqrt(mu/epsilon)
         self.Y = 1/self.Z
 
-        self.upwind_alpha = upwind_alpha
+        self.flux_type = flux_type
+        if bdry_flux_type is None:
+            self.bdry_flux_type = flux_type
+        else:
+            self.bdry_flux_type = bdry_flux_type
 
         self.pec_tag = pec_tag
         self.absorb_tag = absorb_tag
@@ -468,7 +479,7 @@ class MaxwellOperator(TimeDependentOperator):
 
         self.dimensions = dimensions or self._default_dimensions
 
-    def flux(self):
+    def flux(self, flux_type):
         from math import sqrt
         from hedge.flux import make_normal, FluxVectorPlaceholder
         from hedge.tools import join_fields
@@ -478,21 +489,36 @@ class MaxwellOperator(TimeDependentOperator):
         w = FluxVectorPlaceholder(self.count_subset(self.get_eh_subset()))
         e, h = self.split_eh(w)
 
-        # see doc/maxima/maxwell.mac
-        return join_fields(
-                # flux e, 
-                1/self.epsilon*(
-                    -1/2*self.h_cross(normal, 
-                        h.int-h.ext
-                        -self.upwind_alpha/self.Z*self.e_cross(normal, e.int-e.ext))
+        if flux_type == "lf":
+            return join_fields(
+                    # flux e, 
+                    1/2*(
+                        -1/self.epsilon*self.h_cross(normal, h.int-h.ext)
+                        -self.c/2*(e.int-e.ext)
                     ),
-                # flux h
-                1/self.mu*(
-                    1/2*self.e_cross(normal, 
-                        e.int-e.ext
-                        +self.upwind_alpha/(self.Y)*self.h_cross(normal, h.int-h.ext))
-                    ),
-                )
+                    # flux h
+                    1/2*(
+                        1/self.mu*self.e_cross(normal, e.int-e.ext)
+                        -self.c/2*(h.int-h.ext))
+                    )
+        elif isinstance(flux_type, (int, float)):
+            # see doc/maxima/maxwell.mac
+            return join_fields(
+                    # flux e, 
+                    1/self.epsilon*(
+                        -1/2*self.h_cross(normal, 
+                            h.int-h.ext
+                            -flux_type/self.Z*self.e_cross(normal, e.int-e.ext))
+                        ),
+                    # flux h
+                    1/self.mu*(
+                        1/2*self.e_cross(normal, 
+                            e.int-e.ext
+                            +flux_type/(self.Y)*self.h_cross(normal, h.int-h.ext))
+                        ),
+                    )
+        else:
+            raise ValueError, "maxwell: invalid flux_type (%s)" % self.flux_type
 
     def local_op(self, e, h):
         # in conservation form: u_t + A u_x = 0
@@ -527,7 +553,8 @@ class MaxwellOperator(TimeDependentOperator):
         from hedge.flux import make_normal
         normal = make_normal(self.dimensions)
 
-        flux_op = get_flux_operator(self.flux())
+        flux_op = get_flux_operator(self.flux(self.flux_type))
+        bdry_flux_op = get_flux_operator(self.flux(self.bdry_flux_type))
 
         absorb_bc = w + 1/2*join_fields(
                 self.h_cross(normal, self.e_cross(normal, e)) 
@@ -542,8 +569,8 @@ class MaxwellOperator(TimeDependentOperator):
         return - self.local_op(e, h) \
                 + m_inv*(
                     flux_op * w
-                    +flux_op * pair_with_boundary(w, pec_bc, self.pec_tag)
-                    +flux_op * pair_with_boundary(w, absorb_bc, self.absorb_tag)
+                    +bdry_flux_op * pair_with_boundary(w, pec_bc, self.pec_tag)
+                    +bdry_flux_op * pair_with_boundary(w, absorb_bc, self.absorb_tag)
                     )
 
     def bind(self, discr):
@@ -566,14 +593,20 @@ class MaxwellOperator(TimeDependentOperator):
 
         return rhs
 
-    def assemble_fields(self, e=None, h=None):
+    def assemble_fields(self, e=None, h=None, discr=None):
         e_components = self.count_subset(self.get_eh_subset()[0:3])
         h_components = self.count_subset(self.get_eh_subset()[3:6])
 
-        if e is None:
-            e = [0 for i in xrange(e_components)]
-        if h is None:
-            h = [0 for i in xrange(h_components)]
+        if discr is None:
+            if e is None:
+                e = [0 for i in xrange(e_components)]
+            if h is None:
+                h = [0 for i in xrange(h_components)]
+        else:
+            if e is None:
+                e = [discr.volume_zeros() for i in xrange(e_components)]
+            if h is None:
+                h = [discr.volume_zeros() for i in xrange(h_components)]
 
         from hedge.tools import join_fields
         return join_fields(e, h)

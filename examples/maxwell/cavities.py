@@ -91,7 +91,7 @@ def main():
 
         mode.set_time(0)
         fields = to_obj_array(mode(discr).real.copy())
-        op = MaxwellOperator(epsilon, mu, upwind_alpha=1)
+        op = MaxwellOperator(epsilon, mu, flux_type="lf")
 
         dt = discr.dt_factor(op.max_eigenvalue())
         final_time = 1e-9
