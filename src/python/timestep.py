@@ -27,6 +27,7 @@ import numpy.linalg as la
 
 
 
+# coefficient generators ------------------------------------------------------
 _RK4A = [0.0,
         -567301805773 /1357537059087,
         -2404267990393/2016746695238,
@@ -51,7 +52,7 @@ _RK4C = [0.0,
 
 
 
-def make_generic_ab_coefficients(levels, tap):
+def monomial_vdm(levels):
     class Monomial:
         def __init__(self, expt):
             self.expt = expt
@@ -59,24 +60,36 @@ def make_generic_ab_coefficients(levels, tap):
             return x**self.expt
 
     from hedge.polynomial import generic_vandermonde
-    vdm = generic_vandermonde(levels, 
+    return generic_vandermonde(levels, 
             [Monomial(i) for i in range(len(levels))])
 
+
+
+
+def make_interpolation_coefficients(levels, tap):
+    point_eval_vec = numpy.array([ tap**n for n in range(len(levels))])
+    return la.solve(monomial_vdm(levels).T, point_eval_vec)
+
+
+
+
+def make_generic_ab_coefficients(levels, int_start, tap):
     point_eval_vec = numpy.array([
-        1/(n+1)*(tap**(n+1)-0**(n+1))
+        1/(n+1)*(tap**(n+1)-int_start**(n+1))
         for n in range(len(levels))])
 
-    return numpy.linalg.solve(vdm.T, point_eval_vec)
+    return la.solve(monomial_vdm(levels).T, point_eval_vec)
 
 
 
 
 def make_ab_coefficients(order):
-    return make_generic_ab_coefficients(numpy.arange(0, -order, -1), 1)
+    return make_generic_ab_coefficients(numpy.arange(0, -order, -1), 0, 1)
 
 
 
 
+# time steppers ---------------------------------------------------------------
 class TimeStepper(object):
     pass
 
@@ -176,10 +189,15 @@ class TwoRateAdamsBashforthTimeStepper(TimeStepper):
 
         self.coefficients = make_ab_coefficients(order)
         self.substep_coefficients = [
-                make_generic_ab_coefficients(numpy.arange(0, -order, -1), i/step_ratio)
+                make_generic_ab_coefficients(
+                    numpy.arange(0, -order, -1), 
+                    (i-1)/step_ratio, 
+                    i/step_ratio)
                 for i in range(1, step_ratio+1)]
 
-        self.histories = [[] for i in range(2)]
+        # rhs_histories is row major--see documentation for 
+        # rhss arg of __call__.
+        self.rhs_histories = [[] for i in range(2*2)]
 
         if startup_stepper is not None:
             self.startup_stepper = startup_stepper
@@ -191,6 +209,10 @@ class TwoRateAdamsBashforthTimeStepper(TimeStepper):
         self.startup_history = []
 
     def __call__(self, ys, t, rhss):
+        """
+        @arg rhss: Matrix of right-hand sides, stored in row-major order, i.e.
+        C{[s2s, l2s, s2l, l2l]}.
+        """
         from hedge.tools import make_obj_array
 
         if self.startup_stepper is not None:
@@ -199,22 +221,28 @@ class TwoRateAdamsBashforthTimeStepper(TimeStepper):
             def combined_rhs(t, y):
                 return make_obj_array([rhs(t, *y) for rhs in rhss])
 
+            def combined_summed_rhs(t, y):
+                return numpy.sum(combined_rhs(t, y).reshape((2,2), order="C"), axis=1)
+
             for i in range(self.step_ratio):
-                ys = self.startup_stepper(ys, t+i*self.small_dt, self.small_dt, combined_rhs)
+                ys = self.startup_stepper(ys, t+i*self.small_dt, self.small_dt, 
+                        combined_summed_rhs)
                 self.startup_history.insert(0, combined_rhs(t+(i+1)*self.small_dt, ys))
 
             if len(self.startup_history) == len(self.coefficients)*self.step_ratio:
                 # we're done starting up, pack data into split histories
-                history_small, history_large = zip(*self.startup_history)
+                hist_s2s, hist_l2s, hist_s2l, hist_l2l = zip(*self.startup_history)
 
                 n = len(self.coefficients)
-                self.histories = [
-                        list(history_small[:n]),
-                        list(history_large[::self.step_ratio]),
+                self.rhs_histories = [
+                        list(hist_s2s[:n]),
+                        list(hist_l2s[::self.step_ratio]),
+                        list(hist_s2l[::self.step_ratio]),
+                        list(hist_l2l[::self.step_ratio]),
                         ]
 
                 from pytools import single_valued
-                assert single_valued(len(h) for h in self.histories) == n
+                assert single_valued(len(h) for h in self.rhs_histories) == n
 
                 # here's some memory we won't need any more
                 self.startup_stepper = None
@@ -222,9 +250,13 @@ class TwoRateAdamsBashforthTimeStepper(TimeStepper):
 
             return ys
         else:
+            rhs_s2s, rhs_l2s, rhs_s2l, rhs_l2l = rhss
             y_small, y_large = ys
-            rhs_small, rhs_large = rhss
-            history_small, history_large = self.histories
+            hist_s2s, hist_l2s, hist_s2l, hist_l2l = self.rhs_histories
+
+            def rotate_insert(l, new_item):
+                l.pop()
+                l.insert(0, new_item)
 
             def linear_comb(coefficients, vectors):
                 from operator import add
@@ -232,33 +264,37 @@ class TwoRateAdamsBashforthTimeStepper(TimeStepper):
                         (coeff * v for coeff, v in 
                             zip(coefficients, vectors)))
 
-            # substep the 'small' part
-            for i in range(self.step_ratio):
-                y_small = y_small + self.small_dt * linear_comb(
-                        self.coefficients, history_small)
+            coeff = self.coefficients
 
-                y_large_this_substep = y_large + self.large_dt * linear_comb(
-                        self.substep_coefficients[i], history_large)
+            # substep the 'small dt' part
+            for i in range(self.step_ratio):
+                sub_coeff = self.substep_coefficients[i]
+                y_small = y_small + (
+                        self.small_dt * linear_comb(coeff, hist_s2s)
+                        + self.large_dt * linear_comb(sub_coeff, hist_l2s)
+                        )
 
                 if i == self.step_ratio-1:
                     break
 
-                history_small.pop()
-                history_small.insert(0, 
-                        rhs_small(t+(i+1)*self.small_dt, y_small, y_large_this_substep))
+                y_large_this_substep = None
+                #y_large_this_substep = y_large + (
+                        #self.large_dt * linear_comb(something, hist_l2l)
+                        #+ self.large_dt * linear_comb(something, hist_s2l))
+
+                rotate_insert(hist_s2s,
+                        rhs_s2s(t+(i+1)*self.small_dt, y_small, y_large_this_substep))
 
             # step the 'large' part
-            y_large = y_large + self.large_dt * linear_comb(
-                    self.coefficients, history_large)
+            y_large = y_large + self.large_dt * (
+                    linear_comb(coeff, hist_l2l) + linear_comb(coeff, hist_s2l))
 
-            # calculate the next 'large' rhs
-            history_large.pop()
-            history_large.insert(0, 
-                    rhs_large(t+self.large_dt, y_small, y_large))
+            # calculate all right hand sides involving the 'large dt' part
+            rotate_insert(hist_s2l, rhs_s2l(t+self.large_dt, y_small, y_large))
+            rotate_insert(hist_l2l, rhs_l2l(t+self.large_dt, y_small, y_large))
+            rotate_insert(hist_l2s, rhs_l2s(t+self.large_dt, y_small, y_large))
 
-            # calculate the next 'small' rhs using the new 'large' data
-            history_small.pop()
-            history_small.insert(0, 
-                    rhs_small(t+self.large_dt, y_small, y_large))
+            # calculate the last 'small dt' rhs using the new 'large' data
+            rotate_insert(hist_s2s, rhs_s2s(t+self.large_dt, y_small, y_large))
 
             return make_obj_array([y_small, y_large])
