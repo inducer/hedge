@@ -111,8 +111,7 @@ class TestHedge(unittest.TestCase):
         def rhs(t, y):
             u = y[0]
             v = y[1]
-            rhs = numpy.array([v, -u/t**2])
-            return rhs
+            return numpy.array([v, -u/t**2])
 
         def soln(t):
             inner = sqrt(3)/2*log(t)
@@ -155,6 +154,63 @@ class TestHedge(unittest.TestCase):
         for o in range(1,5):
             verify_timestep_order(lambda : AdamsBashforthTimeStepper(o), o)
         verify_timestep_order(RK4TimeStepper, 4)
+
+    # -------------------------------------------------------------------------
+    def test_multirate_timestep_accuracy(self):
+        """Check that the multirate timestepper has the advertised accuracy"""
+        from math import sqrt, log, sin, cos
+        from hedge.tools import EOCRecorder
+
+        def rhs_u(t, u, v):
+            return v
+
+        def rhs_v(t, u, v):
+            return -u/t**2
+
+        def soln(t):
+            inner = sqrt(3)/2*log(t)
+            return sqrt(t)*(
+                    5*sqrt(3)/3*sin(inner)
+                    + cos(inner)
+                    )
+
+        def get_error(stepper, dt):
+            t = 1
+            y = numpy.array([1, 3])
+            final_t = 10
+            nsteps = int((final_t-t)/dt)
+
+            hist = []
+            for i in range(nsteps):
+                y = stepper(y, t, (rhs_u, rhs_v))
+                t += dt
+                hist.append(y)
+
+            return abs(y[0]-soln(t))
+
+        def verify_timestep_order(order):
+            eocrec = EOCRecorder()
+            for n in range(4,8):
+                dt = 2**(-n)
+                from hedge.timestep import TwoRateAdamsBashforthTimeStepper
+                stepper = TwoRateAdamsBashforthTimeStepper(dt, 2, order)
+                error = get_error(stepper, dt)
+                eocrec.add_data_point(1/dt, error)
+
+            #print "------------------------------------------------------"
+            #print "ORDER %d" % o
+            #print "------------------------------------------------------"
+            #print eocrec.pretty_print()
+
+            orderest = eocrec.estimate_order_of_convergence()[0,1]
+            #print orderest, order
+            self.assert_(orderest > order*0.85)
+
+        from hedge.timestep import RK4TimeStepper, AdamsBashforthTimeStepper
+
+        for o in range(1, 6):
+            verify_timestep_order(o)
+
 
     # -------------------------------------------------------------------------
     def test_face_vertex_order(self):

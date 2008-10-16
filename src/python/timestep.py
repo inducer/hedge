@@ -110,7 +110,6 @@ class RK4TimeStepper(TimeStepper):
 
                 self.timer.start()
                 self.residual = mul_add(a, self.residual, dt, this_rhs)
-                del this_rhs
                 y = mul_add(1, y, b, self.residual)
                 self.timer.stop()
         else:
@@ -129,10 +128,14 @@ class RK4TimeStepper(TimeStepper):
 
 
 class AdamsBashforthTimeStepper(TimeStepper):
-    def __init__(self, order, startup_stepper=RK4TimeStepper()):
+    def __init__(self, order, startup_stepper=None):
         self.coefficients = make_ab_coefficients(order)
         self.f_history = []
-        self.startup_stepper = startup_stepper
+
+        if startup_stepper is not None:
+            self.startup_stepper = startup_stepper
+        else:
+            self.startup_stepper = RK4TimeStepper()
 
     def __call__(self, y, t, dt, rhs):
         if len(self.f_history) == 0:
@@ -158,3 +161,104 @@ class AdamsBashforthTimeStepper(TimeStepper):
 
         self.f_history.insert(0, rhs(t+dt, ynew))
         return ynew
+
+
+
+
+class TwoRateAdamsBashforthTimeStepper(TimeStepper):
+    """Simultaneously timesteps two parts of an ODE system,
+    the first with a small timestep, the second with a large timestep.
+    """
+
+    def __init__(self, large_dt, step_ratio, order, startup_stepper=None):
+        self.large_dt = large_dt
+        self.small_dt = large_dt/step_ratio
+
+        self.coefficients = make_ab_coefficients(order)
+        self.substep_coefficients = [
+                make_generic_ab_coefficients(numpy.arange(0, -order, -1), i/step_ratio)
+                for i in range(1, step_ratio+1)]
+
+        self.histories = [[] for i in range(2)]
+
+        if startup_stepper is not None:
+            self.startup_stepper = startup_stepper
+        else:
+            self.startup_stepper = RK4TimeStepper()
+
+        self.step_ratio = step_ratio
+
+        self.startup_history = []
+
+    def __call__(self, ys, t, rhss):
+        from hedge.tools import make_obj_array
+
+        if self.startup_stepper is not None:
+            ys = make_obj_array(ys)
+
+            def combined_rhs(t, y):
+                return make_obj_array([rhs(t, *y) for rhs in rhss])
+
+            for i in range(self.step_ratio):
+                ys = self.startup_stepper(ys, t+i*self.small_dt, self.small_dt, combined_rhs)
+                self.startup_history.insert(0, combined_rhs(t+(i+1)*self.small_dt, ys))
+
+            if len(self.startup_history) == len(self.coefficients)*self.step_ratio:
+                # we're done starting up, pack data into split histories
+                history_small, history_large = zip(*self.startup_history)
+
+                n = len(self.coefficients)
+                self.histories = [
+                        list(history_small[:n]),
+                        list(history_large[::self.step_ratio]),
+                        ]
+
+                from pytools import single_valued
+                assert single_valued(len(h) for h in self.histories) == n
+
+                # here's some memory we won't need any more
+                self.startup_stepper = None
+                del self.startup_history
+
+            return ys
+        else:
+            y_small, y_large = ys
+            rhs_small, rhs_large = rhss
+            history_small, history_large = self.histories
+
+            def linear_comb(coefficients, vectors):
+                from operator import add
+                return reduce(add,
+                        (coeff * v for coeff, v in 
+                            zip(coefficients, vectors)))
+
+            # substep the 'small' part
+            for i in range(self.step_ratio):
+                y_small = y_small + self.small_dt * linear_comb(
+                        self.coefficients, history_small)
+
+                y_large_this_substep = y_large + self.large_dt * linear_comb(
+                        self.substep_coefficients[i], history_large)
+
+                if i == self.step_ratio-1:
+                    break
+
+                history_small.pop()
+                history_small.insert(0, 
+                        rhs_small(t+(i+1)*self.small_dt, y_small, y_large_this_substep))
+
+            # step the 'large' part
+            y_large = y_large + self.large_dt * linear_comb(
+                    self.coefficients, history_large)
+
+            # calculate the next 'large' rhs
+            history_large.pop()
+            history_large.insert(0, 
+                    rhs_large(t+self.large_dt, y_small, y_large))
+
+            # calculate the next 'small' rhs using the new 'large' data
+            history_small.pop()
+            history_small.insert(0, 
+                    rhs_small(t+self.large_dt, y_small, y_large))
+
+            return make_obj_array([y_small, y_large])
