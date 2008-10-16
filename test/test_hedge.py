@@ -85,6 +85,24 @@ class TestHedge(unittest.TestCase):
 
                 assert la.norm(x-m_inv(m(x))) < 1e-10
     # -------------------------------------------------------------------------
+    def test_ab_coefficients(self):
+        """Check that our AB coefficient generator reproduces known values."""
+        _ABCoefficients = [
+                # from R. Verfuerth,
+                # "Skript Numerische Behandlung von Differentialgleichungen"
+                None,
+                [1],
+                [3/2, -1/2],
+                [23/12, -16/12, 5/12],
+                [55/24, -59/24, 37/24, -9/24],
+                [1901/720, -2774/720, 2616/720, -1274/720, 251/720]
+                ]
+
+        from hedge.timestep import make_ab_coefficients
+        for order in range(1,len(_ABCoefficients)):
+            assert la.norm(make_ab_coefficients(order) 
+                    - numpy.array(_ABCoefficients[order])) < 5e-14
+    # -------------------------------------------------------------------------
     def test_timestep_accuracy(self):
         """Check that all timesteppers have the advertised accuracy"""
         from math import sqrt, log, sin, cos

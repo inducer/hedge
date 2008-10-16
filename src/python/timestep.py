@@ -22,6 +22,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import numpy
+import numpy.linalg as la
 
 
 
@@ -50,16 +51,28 @@ _RK4C = [0.0,
 
 
 
-_ABCoefficients = [
-        # from R. Verfuerth,
-        # "Skript Numerische Behandlung von Differentialgleichungen"
-        None,
-        [1],
-        [3/2, -1/2],
-        [23/12, -16/12, 5/12],
-        [55/24, -59/24, 37/24, -9/24],
-        [1901/720, -2774/720, 2616/720, -1274/720, 251/720]
-        ]
+def make_generic_ab_coefficients(levels, tap):
+    class Monomial:
+        def __init__(self, expt):
+            self.expt = expt
+        def __call__(self, x):
+            return x**self.expt
+
+    from hedge.polynomial import generic_vandermonde
+    vdm = generic_vandermonde(levels, 
+            [Monomial(i) for i in range(len(levels))])
+
+    point_eval_vec = numpy.array([
+        1/(n+1)*(tap**(n+1)-0**(n+1))
+        for n in range(len(levels))])
+
+    return numpy.linalg.solve(vdm.T, point_eval_vec)
+
+
+
+
+def make_ab_coefficients(order):
+    return make_generic_ab_coefficients(numpy.arange(0, -order, -1), 1)
 
 
 
@@ -117,14 +130,7 @@ class RK4TimeStepper(TimeStepper):
 
 class AdamsBashforthTimeStepper(TimeStepper):
     def __init__(self, order, startup_stepper=RK4TimeStepper()):
-        try:
-            self.coefficients = _ABCoefficients[order]
-        except IndexError:
-            self.coefficients = None
-
-        if self.coefficients is None:
-            raise ValueError, "unsupported order in Adams-Bashforth"
-
+        self.coefficients = make_ab_coefficients(order)
         self.f_history = []
         self.startup_stepper = startup_stepper
 
@@ -152,4 +158,3 @@ class AdamsBashforthTimeStepper(TimeStepper):
 
         self.f_history.insert(0, rhs(t+dt, ynew))
         return ynew
-
