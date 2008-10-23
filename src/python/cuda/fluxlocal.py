@@ -149,7 +149,8 @@ class FluxLocalKernel(FluxLocalKernelBase):
         is_lift = True
 
         try:
-            lift, fluxes_on_faces_texref = self.get_kernel(is_lift, elgroup, fake=True)
+            lift, fluxes_on_faces_texref = self.get_kernel(is_lift, elgroup, 
+                    for_benchmark=True)
         except cuda.CompileError:
             return None
 
@@ -232,7 +233,7 @@ class FluxLocalKernel(FluxLocalKernelBase):
         return flux
 
     @memoize_method
-    def get_kernel(self, is_lift, elgroup, fake=False):
+    def get_kernel(self, is_lift, elgroup, for_benchmark=False):
         from hedge.cuda.cgen import \
                 Pointer, POD, Value, ArrayOf, Const, \
                 Module, FunctionDeclaration, FunctionBody, Block, \
@@ -493,6 +494,9 @@ class FluxLocalKernel(FluxLocalKernelBase):
         # finish off ----------------------------------------------------------
         cmod.append(FunctionBody(f_decl, f_body))
 
+        if not for_benchmark and "cuda_dumpkernels" in discr.debug:
+            open("flux_lift.cu", "w").write(str(cmod))
+
         mod = cuda.SourceModule(cmod, 
                 keep=True, 
                 #options=["--maxrregcount=12"]
@@ -503,7 +507,7 @@ class FluxLocalKernel(FluxLocalKernelBase):
         texrefs = [fluxes_on_faces_texref]
 
         if is_lift:
-            if fake:
+            if for_benchmark:
                 ij_tex = self.fake_inverse_jacobians_tex()
             else:
                 ij_tex = self.inverse_jacobians_tex(elgroup)

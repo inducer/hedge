@@ -133,7 +133,7 @@ class DiffKernel(DiffKernelBase):
 
         from hedge.optemplate import DifferentiationOperator as op_class
         try:
-            func, field_texref = self.get_kernel(op_class, elgroup, fake=True)
+            func, field_texref = self.get_kernel(op_class, elgroup, for_benchmark=True)
         except cuda.CompileError:
             return None
 
@@ -210,7 +210,7 @@ class DiffKernel(DiffKernelBase):
         return xyz_diff
 
     @memoize_method
-    def get_kernel(self, diff_op_cls, elgroup, fake=False):
+    def get_kernel(self, diff_op_cls, elgroup, for_benchmark=False):
         from hedge.cuda.cgen import \
                 Pointer, POD, Value, ArrayOf, Const, \
                 Module, FunctionDeclaration, FunctionBody, Block, \
@@ -375,12 +375,14 @@ class DiffKernel(DiffKernelBase):
         # finish off ----------------------------------------------------------
         cmod.append(FunctionBody(f_decl, f_body))
 
-        mod = cuda.SourceModule(cmod, 
-                keep=True, 
+        if not for_benchmark and "cuda_dumpkernels" in discr.debug:
+            open("diff.cu", "w").write(str(cmod))
+
+        mod = cuda.SourceModule(cmod, keep=True, 
                 #options=["--maxrregcount=10"]
                 )
 
-        if fake:
+        if for_benchmark:
             rst_to_xyz_array = self.fake_localop_rst_to_xyz()
         else:
             rst_to_xyz_array = self.localop_rst_to_xyz(diff_op_cls, elgroup)

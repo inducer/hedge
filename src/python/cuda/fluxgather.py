@@ -328,7 +328,8 @@ class FluxGatherKernel:
         fdata = self.fake_flux_face_data_block(block_count)
         ilist_data = self.fake_index_list_data()
 
-        gather, texref_map = self.get_kernel(fdata, ilist_data)
+        gather, texref_map = self.get_kernel(fdata, ilist_data,
+                for_benchmark=True)
 
         for dep_expr in self.all_deps:
             field.bind_to_texref(texref_map[dep_expr])
@@ -369,7 +370,8 @@ class FluxGatherKernel:
         fdata = self.flux_face_data_block(elgroup)
         ilist_data = self.index_list_data()
 
-        gather, texref_map = self.get_kernel(fdata, ilist_data)
+        gather, texref_map = self.get_kernel(fdata, ilist_data,
+                for_benchmark=False)
 
         for dep_expr in self.all_deps:
             dep_field = eval_dependency(dep_expr)
@@ -408,7 +410,7 @@ class FluxGatherKernel:
         return zip(self.fluxes, all_fluxes_on_faces)
 
     @memoize_method
-    def get_kernel(self, fdata, ilist_data):
+    def get_kernel(self, fdata, ilist_data, for_benchmark):
         from hedge.cuda.cgen import \
                 Pointer, POD, Value, ArrayOf, Const, \
                 Module, FunctionDeclaration, FunctionBody, Block, \
@@ -713,6 +715,9 @@ class FluxGatherKernel:
 
         # finish off ----------------------------------------------------------
         cmod.append(FunctionBody(f_decl, f_body))
+
+        if not for_benchmark and "cuda_dumpkernels" in discr.debug:
+            open("flux_gather.cu", "w").write(str(cmod))
 
         from pycuda.tools import allow_user_edit
         mod = cuda.SourceModule(

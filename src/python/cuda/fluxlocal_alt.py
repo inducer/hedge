@@ -101,7 +101,7 @@ class SMemFieldFluxLocalKernel(FluxLocalKernelBase):
 
         is_lift = True
         try:
-            lift = self.get_kernel(is_lift, elgroup, fake=True)
+            lift = self.get_kernel(is_lift, elgroup, for_benchmark=True)
         except cuda.CompileError:
             return None
 
@@ -177,7 +177,7 @@ class SMemFieldFluxLocalKernel(FluxLocalKernelBase):
         return flux
 
     @memoize_method
-    def get_kernel(self, is_lift, elgroup, fake=False):
+    def get_kernel(self, is_lift, elgroup, for_benchmark=False):
         from hedge.cuda.cgen import \
                 Pointer, POD, Value, ArrayOf, Const, \
                 Module, FunctionDeclaration, FunctionBody, Block, \
@@ -352,6 +352,9 @@ class SMemFieldFluxLocalKernel(FluxLocalKernelBase):
         # finish off ----------------------------------------------------------
         cmod.append(FunctionBody(f_decl, f_body))
 
+        if not for_benchmark and "cuda_dumpkernels" in discr.debug:
+            open("flux_lift.cu", "w").write(str(cmod))
+
         mod = cuda.SourceModule(cmod, 
                 keep=True, 
                 #options=["--maxrregcount=12"]
@@ -365,7 +368,7 @@ class SMemFieldFluxLocalKernel(FluxLocalKernelBase):
         if is_lift:
             inverse_jacobians_texref = mod.get_texref("inverse_jacobians_tex")
 
-            if fake:
+            if for_benchmark:
                 ij_tex = self.fake_inverse_jacobians_tex()
             else:
                 ij_tex = self.inverse_jacobians_tex(elgroup)

@@ -228,6 +228,22 @@ def make_gpu_partition(adjgraph, max_block_size):
 
 # GPU discretization ----------------------------------------------------------
 class Discretization(hedge.discretization.Discretization):
+    @classmethod
+    def all_debug_flags(cls):
+        return hedge.discretization.Discretization.all_debug_flags() | set([
+            "cuda_ilist_generation",
+            "cuda_compare",
+            "cuda_diff",
+            "cuda_diff_plan",
+            "cuda_flux",
+            "cuda_lift",
+            "cuda_gather_plan",
+            "cuda_lift_plan",
+            "cuda_debugbuf",
+            "cuda_memory",
+            "cuda_dumpkernels",
+            ])
+
     def _partition_mesh(self, mesh, flux_plan):
         given = flux_plan.given
 

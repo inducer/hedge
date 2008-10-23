@@ -173,20 +173,12 @@ class Discretization(object):
     flux lifting operators.
     """
 
-    ALL_DEBUG_FLAGS = set([
-        "ilist_generation", 
-        "node_permutation", 
-        "cuda_ilist_generation",
-        "cuda_compare",
-        "cuda_diff",
-        "cuda_diff_plan",
-        "cuda_flux",
-        "cuda_lift",
-        "cuda_gather_plan",
-        "cuda_lift_plan",
-        "cuda_debugbuf",
-        "cuda_memory",
-        ])
+    @classmethod
+    def all_debug_flags(cls):
+        return set([
+            "ilist_generation", 
+            "node_permutation", 
+            ])
 
     @staticmethod
     def get_local_discretization(mesh, local_discretization=None, order=None):
@@ -221,7 +213,7 @@ class Discretization(object):
         self.dimensions = local_discretization.dimensions
 
         debug = set(debug)
-        assert not debug.difference(self.ALL_DEBUG_FLAGS)
+        assert not debug.difference(self.all_debug_flags())
         self.debug = debug
 
         self._build_element_groups_and_nodes(local_discretization)
