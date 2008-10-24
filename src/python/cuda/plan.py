@@ -338,16 +338,6 @@ class SMemFieldLocalOpExecutionPlan(ExecutionPlan):
     def face_dofs_per_macroblock(self):
         return self.parallelism.total() * self.given.aligned_face_dofs_per_microblock()
 
-    @memoize_method
-    def shared_mem_use(self):
-        given = self.given
-        
-        return (64 # parameters, block header, small extra stuff
-               + given.float_size() * (
-                   self.parallelism.parallel 
-                   * self.parallelism.inline
-                   * self.given.microblock.aligned_floats))
-
     def threads(self):
         return self.parallelism.parallel * self.given.microblock.aligned_floats
 

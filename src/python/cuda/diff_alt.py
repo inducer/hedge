@@ -44,7 +44,9 @@ class SMemFieldDiffExecutionPlan(hedge.cuda.plan.SMemFieldLocalOpExecutionPlan):
         
         return (64 # parameters, block header, small extra stuff
                + given.float_size() * (
-                   self.parallelism.parallel * self.given.microblock.aligned_floats))
+                   self.parallelism.parallel 
+                   * self.parallelism.inline
+                   * self.given.microblock.aligned_floats))
 
     @staticmethod
     def feature_columns():
