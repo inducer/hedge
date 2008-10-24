@@ -123,7 +123,10 @@ class SMemFieldFluxLocalKernel(FluxLocalKernelBase):
         else:
             debugbuf = FakeGPUArray()
 
-        count = 20
+        if "cuda_fastbench" in discr.debug:
+            count = 1
+        else:
+            count = 20
 
         start = cuda.Event()
         start.record()

@@ -242,6 +242,7 @@ class Discretization(hedge.discretization.Discretization):
             "cuda_debugbuf",
             "cuda_memory",
             "cuda_dumpkernels",
+            "cuda_fastbench",
             ])
 
     def _partition_mesh(self, mesh, flux_plan):

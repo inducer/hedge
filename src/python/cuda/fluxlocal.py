@@ -169,7 +169,10 @@ class FluxLocalKernel(FluxLocalKernelBase):
                 allocator=discr.pool.allocate)
         fluxes_on_faces.bind_to_texref(fluxes_on_faces_texref)
 
-        count = 20
+        if "cuda_fastbench" in discr.debug:
+            count = 1
+        else:
+            count = 20
 
         start = cuda.Event()
         start.record()

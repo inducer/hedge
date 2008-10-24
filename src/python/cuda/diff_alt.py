@@ -122,7 +122,10 @@ class SMemFieldDiffKernel(DiffKernelBase):
         xyz_diff = [vol_empty() for axis in range(discr.dimensions)]
         xyz_diff_gpudata = [subarray.gpudata for subarray in xyz_diff] 
 
-        count = 20
+        if "cuda_fastbench" in discr.debug:
+            count = 1
+        else:
+            count = 20
 
         gpu_diffmats = self.gpu_diffmats(op_class, elgroup)
 

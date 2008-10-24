@@ -334,7 +334,10 @@ class FluxGatherKernel:
         for dep_expr in self.all_deps:
             field.bind_to_texref(texref_map[dep_expr])
 
-        count = 20
+        if "cuda_fastbench" in discr.debug:
+            count = 1
+        else:
+            count = 20
 
         start = cuda.Event()
         start.record()
