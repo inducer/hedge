@@ -135,10 +135,14 @@ class SMemFieldDiffKernel(DiffKernelBase):
         start.record()
         cuda.Context.synchronize()
         for i in range(count):
-            func.prepared_call(self.grid, 
-                    0, # debugbuf
-                    field.gpudata,
-                    *xyz_diff_gpudata)
+            try:
+                func.prepared_call(self.grid, 
+                        0, # debugbuf
+                        field.gpudata,
+                        *xyz_diff_gpudata)
+            except cuda.LaunchError:
+                return None
+
         stop = cuda.Event()
         stop.record()
         stop.synchronize()

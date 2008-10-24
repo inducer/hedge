@@ -132,10 +132,13 @@ class SMemFieldFluxLocalKernel(FluxLocalKernelBase):
         start.record()
         cuda.Context.synchronize()
         for i in range(count):
-            lift.prepared_call(self.grid,
-                    flux.gpudata, 
-                    fluxes_on_faces.gpudata,
-                    0)
+            try:
+                lift.prepared_call(self.grid,
+                        flux.gpudata, 
+                        fluxes_on_faces.gpudata,
+                        0)
+            except cuda.LaunchError:
+                return None
         stop = cuda.Event()
         stop.record()
         stop.synchronize()
