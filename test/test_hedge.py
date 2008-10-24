@@ -636,7 +636,7 @@ class TestHedge(unittest.TestCase):
 
         mesh = make_disk_mesh()
         discr = Discretization(make_disk_mesh(), TriangularElement(4), 
-                debug=Discretization.ALL_DEBUG_FLAGS)
+                debug=Discretization.all_debug_flags())
         f = discr.interpolate_volume_function(
                 lambda x, el: exp(-x*x/(2*sigma_squared)))
         ones = discr.interpolate_volume_function(
@@ -661,7 +661,7 @@ class TestHedge(unittest.TestCase):
 
         mesh = make_uniform_1d_mesh(-4*pi, 9*pi, 17, periodic=True)
         discr = Discretization(mesh, IntervalElement(8), 
-                debug=Discretization.ALL_DEBUG_FLAGS)
+                debug=Discretization.all_debug_flags())
 
         f = discr.interpolate_volume_function(
                 lambda x, el: cos(x[0])**2)
@@ -693,7 +693,7 @@ class TestHedge(unittest.TestCase):
 
         mesh = make_square_mesh(a=-pi, b=pi, max_area=(2*pi/10)**2/2)
         discr = Discretization(mesh, TriangularElement(8), 
-                debug=Discretization.ALL_DEBUG_FLAGS)
+                debug=Discretization.all_debug_flags())
 
         f = discr.interpolate_volume_function(
                 lambda x, el: cos(x[0])**2*sin(x[1])**2)
@@ -727,7 +727,7 @@ class TestHedge(unittest.TestCase):
         for coord in [0, 1]:
             mesh = make_disk_mesh()
             discr = Discretization(make_disk_mesh(), TriangularElement(4), 
-                debug=Discretization.ALL_DEBUG_FLAGS)
+                debug=Discretization.all_debug_flags())
             f = discr.interpolate_volume_function(
                     lambda x, el: sin(3*x[coord]))
             df = discr.interpolate_volume_function(
@@ -750,7 +750,7 @@ class TestHedge(unittest.TestCase):
         from numpy import dot
 
         discr = Discretization(make_disk_mesh(), order=2, 
-                debug=Discretization.ALL_DEBUG_FLAGS)
+                debug=Discretization.all_debug_flags())
 
         from hedge.flux import make_normal, FluxScalarPlaceholder, IfPositive
         normal = make_normal(discr.dimensions)
@@ -1157,7 +1157,7 @@ class TestHedge(unittest.TestCase):
         from hedge.element import TriangularElement
         from hedge.discretization import ones_on_volume
         discr = Discretization(mesh, TriangularElement(4), 
-                debug=Discretization.ALL_DEBUG_FLAGS)
+                debug=Discretization.all_debug_flags())
 
         def f_u(x, el):
             if generated_mesh.element_attributes[el.id] == 1:
@@ -1252,7 +1252,7 @@ class TestHedge(unittest.TestCase):
         from hedge.element import TetrahedralElement
         from hedge.discretization import ones_on_volume
         discr = Discretization(mesh, TetrahedralElement(4), 
-                debug=Discretization.ALL_DEBUG_FLAGS)
+                debug=Discretization.all_debug_flags())
 
         def f_u(x, el):
             if generated_mesh.element_attributes[el.id] == 1:
@@ -1352,7 +1352,7 @@ class TestHedge(unittest.TestCase):
 
         mesh = make_mesh()
         discr = Discretization(mesh, TriangularElement(4), 
-                debug=Discretization.ALL_DEBUG_FLAGS)
+                debug=Discretization.all_debug_flags())
 
         def f(x):
             if x < 0.5: return 0
@@ -1426,7 +1426,7 @@ class TestHedge(unittest.TestCase):
 
                 for order in [1,2,3,4,5,6]:
                     discr = Discretization(mesh, TriangularElement(order), 
-                            debug=Discretization.ALL_DEBUG_FLAGS)
+                            debug=Discretization.all_debug_flags())
                     op = StrongAdvectionOperator(v, 
                             inflow_u=TimeDependentGivenFunction(u_analytic),
                             flux_type=flux_type)
@@ -1532,7 +1532,7 @@ class TestHedge(unittest.TestCase):
             for flux in ["ldg", "ip"]:
                 from hedge.element import TriangularElement
                 discr = Discretization(mesh, TriangularElement(order), 
-                        debug=Discretization.ALL_DEBUG_FLAGS)
+                        debug=Discretization.all_debug_flags())
 
                 from hedge.data import GivenFunction
                 from hedge.pde import WeakPoissonOperator
@@ -1584,9 +1584,9 @@ class TestHedge(unittest.TestCase):
         mesh = make_disk_mesh(r=pi, max_area=0.5)
 
         discr2 = Discretization(mesh, TriangularElement(2), 
-                debug=Discretization.ALL_DEBUG_FLAGS)
+                debug=Discretization.all_debug_flags())
         discr5 = Discretization(mesh, TriangularElement(5), 
-                debug=Discretization.ALL_DEBUG_FLAGS)
+                debug=Discretization.all_debug_flags())
         p2to5 = Projector(discr2, discr5)
         p5to2 = Projector(discr5, discr2)
 
@@ -1603,7 +1603,7 @@ class TestHedge(unittest.TestCase):
 
         mesh = make_disk_mesh(r=3.4, max_area=0.5)
         discr = Discretization(mesh, TriangularElement(5), 
-                debug=Discretization.ALL_DEBUG_FLAGS)
+                debug=Discretization.all_debug_flags())
 
         from hedge.discretization import Filter, ExponentialFilterResponseFunction
         half_filter = Filter(discr, lambda mid, ldis: 0.5)
