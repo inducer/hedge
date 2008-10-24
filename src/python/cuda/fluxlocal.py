@@ -388,7 +388,8 @@ class FluxLocalKernel(FluxLocalKernelBase):
             for load_chunk_start in range(0, given.face_dofs_per_el(),
                     self.plan.chunk_size):
                 result.extend(
-                        Assign(
+                        [S("__syncthreads()")]
+                        +[Assign(
                             "dof_buffer[PAR_MB_NR][%d][CHUNK_DOF]" % inl,
                             "tex1Dfetch(fluxes_on_faces_tex, "
                             "GLOBAL_MB_FACEDOF_BASE"
@@ -396,11 +397,8 @@ class FluxLocalKernel(FluxLocalKernelBase):
                             " + (chunk_start_el)*FACE_DOFS_PER_EL + %d + CHUNK_DOF)"
                             % (inl, load_chunk_start)
                             )
-                        for inl in range(par.inline)
-                        )
-            
-                result.extend([
-                        S("__syncthreads()"),
+                        for inl in range(par.inline)]
+                        +[S("__syncthreads()"),
                         Line(),
                         ])
 
