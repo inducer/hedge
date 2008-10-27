@@ -143,7 +143,8 @@ class SMemFieldFluxLocalKernel(FluxLocalKernelBase):
         stop.record()
         stop.synchronize()
 
-        return 1e-3/count * stop.time_since(start)
+        return (1e-3/count * stop.time_since(start),
+                lift.lmem, lift.smem, lift.registers)
 
     def __call__(self, fluxes_on_faces, is_lift):
         discr = self.discr

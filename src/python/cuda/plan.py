@@ -96,6 +96,8 @@ def optimize_plan(plan_generator, target_func, maximize, debug=False, occupancy_
             if isinstance(value, tuple):
                 extra_info = value[1:]
                 value = value[0]
+            else:
+                extra_info = None
 
             if value is not None:
                 if debug:
