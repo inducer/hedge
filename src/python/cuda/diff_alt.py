@@ -180,6 +180,7 @@ class SMemFieldDiffKernel(DiffKernelBase):
             block_gmem_floats = (
                     # matrix fetch
                     given.microblock.aligned_floats 
+                    * discr.dimensions
                     * given.dofs_per_el()
                     * self.plan.parallelism.serial
                     * self.plan.parallelism.parallel
