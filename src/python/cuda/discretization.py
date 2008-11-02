@@ -243,6 +243,8 @@ class Discretization(hedge.discretization.Discretization):
             "cuda_memory",
             "cuda_dumpkernels",
             "cuda_fastbench",
+            "cuda_no_microblock",
+            "cuda_no_smem_matrix",
             ])
 
     def _partition_mesh(self, mesh, flux_plan):
@@ -334,13 +336,12 @@ class Discretization(hedge.discretization.Discretization):
         from pytools import Record
         class OverallPlan(Record):pass
         
-        overall_plans = []
-
-        for allow_mb in [True, False]:
+        def generate_overall_plans():
             from hedge.cuda.plan import PlanGivenData
             given = PlanGivenData(
-                    DeviceData(device), ldis, allow_mb,
-                    default_scalar_type)
+                    DeviceData(device), ldis, 
+                    allow_microblocking="cuda_no_microblock" not in self.debug,
+                    float_type=default_scalar_type)
 
             import hedge.cuda.fluxgather as fluxgather
             flux_plan, flux_time = fluxgather.make_plan(self, given, tune_for)
@@ -361,12 +362,14 @@ class Discretization(hedge.discretization.Discretization):
             sys_size = flux_plan.flux_count
             total_time = flux_time + sys_size*(diff_time+fluxlocal_time)
 
-            overall_plans.append((OverallPlan(
+            yield OverallPlan(
                 given=given,
                 flux_plan=flux_plan,
                 partition=partition,
                 diff_plan=diff_plan,
-                fluxlocal_plan=fluxlocal_plan), total_time))
+                fluxlocal_plan=fluxlocal_plan), total_time
+
+        overall_plans = list(generate_overall_plans())
 
         for op, total_time in overall_plans:
             print "microblocking=%s -> time=%g" % (
@@ -594,6 +597,32 @@ class Discretization(hedge.discretization.Discretization):
 
 
     # instrumentation ---------------------------------------------------------
+    def add_instrumentation(self, mgr):
+        mgr.set_constant("flux_plan", str(self.flux_plan))
+        mgr.set_constant("diff_plan", str(self.diff_plan))
+        mgr.set_constant("fluxlocal_plan", str(self.fluxlocal_plan))
+
+        from pytools.log import EventCounter
+
+        self.gmem_bytes_gather = EventCounter("gmem_bytes_gather", 
+                "Bytes of gmem traffic during gather")
+        self.gmem_bytes_lift = EventCounter("gmem_bytes_lift", 
+                "Bytes of gmem traffic during lift")
+        self.gmem_bytes_diff = EventCounter("gmem_bytes_diff", 
+                "Bytes of gmem traffic during lift")
+        self.gmem_bytes_vector_math = EventCounter("gmem_bytes_vector_math", 
+                "Bytes of gmem traffic during vector math")
+        self.gmem_bytes_rk4 = EventCounter("gmem_bytes_rk4", 
+                "Bytes of gmem traffic during RK4")
+
+        mgr.add_quantity(self.gmem_bytes_gather)
+        mgr.add_quantity(self.gmem_bytes_lift)
+        mgr.add_quantity(self.gmem_bytes_diff)
+        mgr.add_quantity(self.gmem_bytes_vector_math)
+        mgr.add_quantity(self.gmem_bytes_rk4)
+
+        hedge.discretization.Discretization.add_instrumentation(self, mgr)
+
     def create_op_timers(self):
         from hedge.cuda.tools import CallableCollectionTimer
 

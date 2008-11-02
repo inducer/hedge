@@ -394,6 +394,24 @@ class FluxGatherKernel:
                     fdata.device_memory,
                     *tuple(fof.gpudata for fof in all_fluxes_on_faces)
                     ))
+
+            from pytools import product
+            discr.gmem_bytes_gather.add(
+                    len(discr.blocks) * fdata.block_bytes
+                    +
+                    given.float_size()
+                    * (
+                        # fetch
+                        len(self.fluxes)
+                        * 2*fdata.fp_count
+                        * given.dofs_per_face()
+
+                        # store
+                        + len(discr.blocks) 
+                        * len(self.fluxes) 
+                        * self.plan.microblocks_per_block()
+                        * given.aligned_face_dofs_per_microblock()
+                        ))
         else:
             gather.prepared_call(
                     (len(discr.blocks), 1),
@@ -730,7 +748,8 @@ class FluxGatherKernel:
                 keep=True, 
                 options=["--maxrregcount=%d" % self.plan.max_registers()]
                 )
-        print "flux: lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
+        if "cuda_flux" in discr.debug:
+            print "flux: lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
 
         expr_to_texture_map = dict(
                 (dep_expr, mod.get_texref(
@@ -779,6 +798,8 @@ class FluxGatherKernel:
                     + index_in_mb * elface_dofs
                     + el_face[1]*face_dofs)
 
+        int_fp_count, ext_fp_count, bdry_fp_count = 0, 0, 0
+
         for block in discr.blocks:
             ldis = block.local_discretization
             face_dofs = ldis.face_node_count()
@@ -805,6 +826,7 @@ class FluxGatherKernel:
                     b_dest = INVALID_DEST
 
                     fp_structs = bdry_fp_structs
+                    bdry_fp_count += 1
                 else:
                     # interior face
                     b_base = discr.find_el_gpu_index(b_face.el_face[0])
@@ -817,12 +839,14 @@ class FluxGatherKernel:
                         b_dest = find_elface_dest(b_face.el_face)
 
                         fp_structs = same_fp_structs
+                        int_fp_count += 1
                     else:
                         # different block
                         b_write_index_list = 0 # doesn't matter
                         b_dest = INVALID_DEST
 
                         fp_structs = diff_fp_structs
+                        ext_fp_count += 1
 
                 fp_structs.append(
                         fp_struct.make(
@@ -870,7 +894,13 @@ class FluxGatherKernel:
         return make_superblocks(
                 given.devdata, "flux_data",
                 [(headers, Value(flux_header_struct().tpname, "header"))],
-                [(fp_blocks, Value(fp_struct.tpname, "facepairs"))]
+                [(fp_blocks, Value(fp_struct.tpname, "facepairs"))],
+                extra_fields={
+                    "int_fp_count": int_fp_count,
+                    "ext_fp_count": ext_fp_count,
+                    "bdry_fp_count": bdry_fp_count,
+                    "fp_count": int_fp_count+ext_fp_count+bdry_fp_count,
+                    }
                 )
 
     @memoize_method

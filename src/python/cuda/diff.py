@@ -86,14 +86,15 @@ def make_plan(discr, given):
 
         from hedge.cuda.plan import Parallelism
 
-        for pe in range(1,32+1):
-            for inline in range(1, 4+1):
-                for seq in range(1, 4):
-                    localop_par = Parallelism(pe, inline, seq)
-                    for chunk_size in chunk_sizes:
-                        yield ChunkedDiffExecutionPlan(
-                                given, localop_par, chunk_size, 
-                                max_unroll=given.dofs_per_el())
+        if "cuda_no_smem_matrix" not in discr.debug:
+            for pe in range(1,32+1):
+                for inline in range(1, 4+1):
+                    for seq in range(1, 4):
+                        localop_par = Parallelism(pe, inline, seq)
+                        for chunk_size in chunk_sizes:
+                            yield ChunkedDiffExecutionPlan(
+                                    given, localop_par, chunk_size, 
+                                    max_unroll=given.dofs_per_el())
 
         from hedge.cuda.diff_alt import SMemFieldDiffExecutionPlan
 
@@ -199,6 +200,20 @@ class DiffKernel(DiffKernelBase):
             discr.diff_op_timer.add_timer_callable(func.prepared_timed_call(
                     self.grid, gpu_diffmats.device_memory, 
                     *xyz_diff_gpudata))
+
+            from pytools import product
+            discr.gmem_bytes_diff.add(
+                    given.float_size()
+                    * (
+                        # matrix fetch
+                        gpu_diffmats.block_floats * product(self.grid)
+                        # field fetch
+                        + given.dofs_per_el()
+                        * given.dofs_per_el() * given.microblock.elements
+                        * self.grid[1] * self.plan.parallelism.total()
+                        # field store
+                        + len(discr.nodes)
+                        ))
         else:
             func.prepared_call(self.grid, gpu_diffmats.device_memory, 
                     *xyz_diff_gpudata)
@@ -401,7 +416,8 @@ class DiffKernel(DiffKernelBase):
                 block=(self.plan.chunk_size, par.parallel, 1),
                 texrefs=[field_texref, rst_to_xyz_texref])
 
-        print "diff: lmem=%d smem=%d regs=%d" % (func.lmem, func.smem, func.registers)
+        if "cuda_diff" in discr.debug:
+            print "diff: lmem=%d smem=%d regs=%d" % (func.lmem, func.smem, func.registers)
 
         return func, field_texref
 

@@ -165,6 +165,25 @@ class SMemFieldFluxLocalKernel(FluxLocalKernelBase):
                         flux.gpudata, 
                         fluxes_on_faces.gpudata,
                         debugbuf.gpudata))
+
+            given = self.discr.given
+
+            block_gmem_floats = (
+                        # matrix fetch
+                        given.microblock.aligned_floats
+                        * given.face_dofs_per_el()
+                        * self.plan.parallelism.serial
+                        * self.plan.parallelism.parallel
+                        # field fetch
+                        + given.face_dofs_per_microblock()
+                        * self.plan.parallelism.total()
+                        )
+            gmem_bytes = given.float_size() * ( 
+                    self.grid[0] * block_gmem_floats 
+                    # field store
+                    + len(discr.nodes))
+
+            discr.gmem_bytes_lift.add(gmem_bytes)
         else:
             lift.prepared_call(self.grid,
                     flux.gpudata, 
@@ -366,7 +385,9 @@ class SMemFieldFluxLocalKernel(FluxLocalKernelBase):
                 keep=True, 
                 #options=["--maxrregcount=12"]
                 )
-        print "lift: lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
+
+        if "cuda_lift" in discr.debug:
+            print "lift: lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
 
         lift_mat_texref = mod.get_texref("lift_mat_tex")
         lift_mat_texref.set_array(self.gpu_lift_mat(is_lift))

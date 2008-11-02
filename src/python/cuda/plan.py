@@ -86,11 +86,16 @@ def optimize_plan(plan_generator, target_func, maximize, debug=False, occupancy_
         except sqlite.OperationalError:
             pass
 
+    import sys
+
     plan_values = []
     for p in plans:
         if p.occupancy_record().occupancy >= desired_occup - 1e-10:
             if debug:
                 print "<---- trying %s:" % p
+            else:
+                sys.stdout.write(".")
+                sys.stdout.flush()
 
             value = target_func(p)
             if isinstance(value, tuple):
@@ -110,6 +115,9 @@ def optimize_plan(plan_generator, target_func, maximize, debug=False, occupancy_
                             % (", ".join(feature_names), 
                                 ",".join(["?"]*(1+len(feature_names)))),
                             p.features(*extra_info)+(value,))
+    if not debug:
+        sys.stdout.write("\n")
+        sys.stdout.flush()
 
     if log_filename is not None:
         db_conn.commit()
@@ -219,24 +227,28 @@ class PlanGivenData(object):
 
     def _find_microblock_size(self, allow_microblocking):
         from hedge.cuda.tools import exact_div, int_ceiling
-        align_size = exact_div(self.devdata.align_bytes(self.float_size()), 
-                self.float_size())
+        align_size = self.devdata.align_words(self.float_size())
 
         from pytools import Record
         class MicroblockInfo(Record): pass
+
+        if not allow_microblocking:
+            return MicroblockInfo(
+                    align_size=align_size,
+                    elements=1,
+                    aligned_floats=int_ceiling(self.dofs_per_el(), align_size)
+                    )
 
         for mb_align_chunks in range(1, 256):
             mb_aligned_floats = align_size * mb_align_chunks
             mb_elements = mb_aligned_floats // self.dofs_per_el()
             mb_floats = self.dofs_per_el()*mb_elements
             overhead = (mb_aligned_floats-mb_floats)/mb_aligned_floats
-            if overhead <= 0.05 or (not allow_microblocking and mb_elements == 1):
-
+            if overhead <= 0.05:
                 return MicroblockInfo(
                         align_size=align_size,
                         elements=mb_elements,
                         aligned_floats=mb_aligned_floats,
-                        accesses=mb_align_chunks
                         )
 
         assert False, "a valid microblock size was not found"

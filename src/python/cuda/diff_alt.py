@@ -176,6 +176,24 @@ class SMemFieldDiffKernel(DiffKernelBase):
             discr.diff_op_timer.add_timer_callable(
                     func.prepared_timed_call(self.grid, 
                         debugbuf.gpudata, field.gpudata, *xyz_diff_gpudata))
+
+            block_gmem_floats = (
+                    # matrix fetch
+                    given.microblock.aligned_floats 
+                    * given.dofs_per_el()
+                    * self.plan.parallelism.serial
+                    * self.plan.parallelism.parallel
+                    # field fetch
+                    + given.microblock.aligned_floats
+                    * self.plan.parallelism.total()
+                    )
+
+            gmem_bytes = given.float_size() * ( 
+                    self.grid[0] * block_gmem_floats 
+                    # field store
+                    + len(discr.nodes))
+
+            discr.gmem_bytes_diff.add(gmem_bytes)
         else:
             func.prepared_call(self.grid, 
                     debugbuf.gpudata, field.gpudata, *xyz_diff_gpudata)
@@ -363,7 +381,9 @@ class SMemFieldDiffKernel(DiffKernelBase):
         mod = cuda.SourceModule(cmod, keep=True, 
                 options=["--maxrregcount=16"]
                 )
-        print "diff: lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
+
+        if "cuda_diff" in discr.debug:
+            print "diff: lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
 
         if for_benchmark:
             rst_to_xyz_array = self.fake_localop_rst_to_xyz()

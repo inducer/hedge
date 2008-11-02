@@ -94,7 +94,7 @@ def make_blocks(devdata, data):
             block_size=block_size,
             )
 
-def make_superblocks(devdata, struct_name, single_item, multi_item):
+def make_superblocks(devdata, struct_name, single_item, multi_item, extra_fields={}):
     from hedge.cuda.tools import pad_and_join
 
     # single_item = [([ block1, block2, ... ], decl), ...]
@@ -148,6 +148,7 @@ def make_superblocks(devdata, struct_name, single_item, multi_item):
             device_memory=cuda.to_device(data),
             block_bytes=superblock_size,
             data=data,
+            **extra_fields
             )
 
 

@@ -213,7 +213,7 @@ class Discretization(object):
         self.dimensions = local_discretization.dimensions
 
         debug = set(debug)
-        assert not debug.difference(self.all_debug_flags())
+        assert not debug.difference(self.all_debug_flags()), "Invalid debug flag specified"
         self.debug = debug
 
         self._build_element_groups_and_nodes(local_discretization)
@@ -300,6 +300,21 @@ class Discretization(object):
                         self.interpolate_boundary_function,
                         self.interpolant_timer,
                         self.interpolant_counter)
+
+        from pytools import single_valued
+        try:
+            order = single_valued(eg.local_discretization.order
+                    for eg in self.element_groups)
+        except ValueError:
+            pass
+        else:
+            mgr.set_constant("dg_order", order)
+
+        mgr.set_constant("element_count", len(self.mesh.elements))
+        mgr.set_constant("node_count", len(self.nodes))
+
+        for f in self.all_debug_flags():
+            mgr.set_constant("debug_%s" % f, f in self.debug)
 
         self.instrumented = True
 

@@ -93,21 +93,22 @@ def make_plan(discr, given):
     def generate_plans():
         from hedge.cuda.plan import Parallelism
 
-        for use_prefetch_branch in [True]:
-        #for use_prefetch_branch in [True, False]:
-            chunk_sizes = range(given.microblock.align_size, 
-                    given.microblock.elements*given.dofs_per_el()+1, 
-                    given.microblock.align_size)
+        if "cuda_no_smem_matrix" not in discr.debug:
+            for use_prefetch_branch in [True]:
+            #for use_prefetch_branch in [True, False]:
+                chunk_sizes = range(given.microblock.align_size, 
+                        given.microblock.elements*given.dofs_per_el()+1, 
+                        given.microblock.align_size)
 
-            for pe in range(1,32+1):
-                for inline in range(1, 4+1):
-                    for seq in range(1, 4+1):
-                        localop_par = Parallelism(pe, inline, seq)
-                        for chunk_size in chunk_sizes:
-                            yield FluxLiftingExecutionPlan(given, 
-                                    localop_par, chunk_size,
-                                    max_unroll=given.face_dofs_per_el(),
-                                    use_prefetch_branch=use_prefetch_branch)
+                for pe in range(1,32+1):
+                    for inline in range(1, 4+1):
+                        for seq in range(1, 4+1):
+                            localop_par = Parallelism(pe, inline, seq)
+                            for chunk_size in chunk_sizes:
+                                yield FluxLiftingExecutionPlan(given, 
+                                        localop_par, chunk_size,
+                                        max_unroll=given.face_dofs_per_el(),
+                                        use_prefetch_branch=use_prefetch_branch)
 
         from hedge.cuda.fluxlocal_alt import SMemFieldFluxLocalExecutionPlan
 
@@ -209,18 +210,34 @@ class FluxLocalKernel(FluxLocalKernelBase):
         else:
             debugbuf = FakeGPUArray()
 
+        liftmat = self.gpu_liftmat(is_lift)
+
         if discr.instrumented:
             discr.flux_gather_timer.add_timer_callable(
                     lift.prepared_timed_call(
                         self.grid,
                         flux.gpudata, 
-                        self.gpu_liftmat(is_lift).device_memory,
+                        liftmat.device_memory,
                         debugbuf.gpudata))
+
+            from pytools import product
+            discr.gmem_bytes_lift.add(
+                    given.float_size()
+                    * (
+                        # matrix fetch
+                        liftmat.block_floats * product(self.grid)
+                        # field fetch
+                        + given.face_dofs_per_el()
+                        * given.dofs_per_el() * given.microblock.elements
+                        * self.grid[1] * self.plan.parallelism.total()
+                        # field store
+                        + len(discr.nodes)
+                        ))
         else:
             lift.prepared_call(
                     self.grid,
                     flux.gpudata, 
-                    self.gpu_liftmat(is_lift).device_memory,
+                    liftmat.device_memory,
                     debugbuf.gpudata)
 
         if set(["cuda_lift", "cuda_debugbuf"]) <= discr.debug:
@@ -502,7 +519,9 @@ class FluxLocalKernel(FluxLocalKernelBase):
                 keep=True, 
                 #options=["--maxrregcount=12"]
                 )
-        print "lift: lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
+
+        if "cuda_lift" in discr.debug:
+            print "lift: lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
 
         fluxes_on_faces_texref = mod.get_texref("fluxes_on_faces_tex")
         texrefs = [fluxes_on_faces_texref]
