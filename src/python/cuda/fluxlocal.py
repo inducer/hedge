@@ -220,6 +220,8 @@ class FluxLocalKernel(FluxLocalKernelBase):
                         liftmat.device_memory,
                         debugbuf.gpudata))
 
+            given = self.plan.given
+
             from pytools import product
             discr.gmem_bytes_lift.add(
                     given.float_size()
