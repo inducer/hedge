@@ -41,7 +41,8 @@ class DiffKernelBase(object):
         channels = given.devdata.make_valid_tex_channel_count(d)
 
         return cuda.make_multichannel_2d_array(numpy.ones((channels, d, el_count), 
-            dtype=given.float_type))
+            dtype=given.float_type),
+            order="F")
 
     @memoize_method
     def localop_rst_to_xyz(self, diff_op, elgroup):
@@ -56,7 +57,7 @@ class DiffKernelBase(object):
 
         # indexed local, el_number, global
         result_matrix = (coeffs[:,:,elgroup_indices]
-                .transpose(1,0,2))
+                .transpose(1,0,2)).astype(given.float_type)
         channels = given.devdata.make_valid_tex_channel_count(d)
         add_channels = channels - result_matrix.shape[0]
         if add_channels:
@@ -82,7 +83,7 @@ class DiffKernelBase(object):
                         assert (result_matrix[:d,:,i].T == coeffs[:,:,egi]).all()
                         i += 1
 
-        return cuda.make_multichannel_2d_array(result_matrix)
+        return cuda.make_multichannel_2d_array(result_matrix, order="F")
 
 
 

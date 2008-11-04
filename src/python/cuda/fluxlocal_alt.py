@@ -424,4 +424,4 @@ class SMemFieldFluxLocalKernel(FluxLocalKernelBase):
         else:
             mat = given.ldis.multi_face_mass_matrix()
 
-        return cuda.matrix_to_array(mat.astype(given.float_type))
+        return cuda.matrix_to_array(mat.astype(given.float_type), "F")
