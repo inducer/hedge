@@ -131,8 +131,8 @@ class FluxToCodeMapper(pymbolic.mapper.stringifier.StringifyMapper):
 class FluxGatherPlan(hedge.cuda.plan.ExecutionPlan):
     def __init__(self, given, 
             parallel_faces, mbs_per_block, flux_count,
-            direct_store=False, max_face_pair_count=None,
-            ):
+            direct_store, max_face_pair_count,
+            ext_face_fraction):
         hedge.cuda.plan.ExecutionPlan.__init__(self, given)
         self.parallel_faces = parallel_faces
         self.mbs_per_block = mbs_per_block
@@ -140,24 +140,7 @@ class FluxGatherPlan(hedge.cuda.plan.ExecutionPlan):
         self.direct_store = direct_store
 
         self.max_face_pair_count = max_face_pair_count
-
-    def copy(self, given=None,
-            parallel_faces=None, mbs_per_block=None, flux_count=None,
-            direct_store=None, max_face_pair_count=None):
-        def default_if_none(a, default):
-            if a is None:
-                return default
-            else:
-                return a
-
-        return self.__class__(
-                default_if_none(given, self.given),
-                default_if_none(parallel_faces, self.parallel_faces),
-                default_if_none(mbs_per_block, self.mbs_per_block),
-                default_if_none(flux_count, self.flux_count),
-                default_if_none(direct_store, self.direct_store),
-                default_if_none(max_face_pair_count, self.max_face_pair_count),
-                )
+        self.ext_face_fraction = ext_face_fraction
 
     def microblocks_per_block(self):
         return self.mbs_per_block
@@ -169,34 +152,8 @@ class FluxGatherPlan(hedge.cuda.plan.ExecutionPlan):
         return self.microblocks_per_block()*self.given.microblock.aligned_floats
 
     @memoize_method
-    def estimate_extface_count(self):
-        d = self.given.ldis.dimensions
-
-        # How many equivalent cubes would I need to tesselate the same space
-        # as the elements in my thread block?
-        from pytools import factorial
-        equiv_cubes = self.elements_per_block() / factorial(d)
-
-        # If these cubes in turn formed a perfect macro-cube, how long would
-        # its side be?
-        macrocube_side = equiv_cubes ** (1/d)
-
-        # What total face area does the macro-cube have?
-        macrocube_face_area = 2*d * macrocube_side ** (d-1)
-
-        # How many of my faces do I need to tesselate this face area?
-        return macrocube_face_area * factorial(d-1)
-
-    @memoize_method
     def face_pair_count(self):
-        if self.max_face_pair_count is None:
-            from hedge.cuda.tools import int_ceiling
-            ext_face_count = int_ceiling(self.estimate_extface_count())
-            int_face_count = (self.elements_per_block() * self.given.faces_per_el() - 
-                    ext_face_count)
-            return (int_face_count+1) // 2 + ext_face_count
-        else:
-            return self.max_face_pair_count
+        return self.max_face_pair_count
 
     @memoize_method
     def shared_mem_use(self):
@@ -271,8 +228,14 @@ def make_plan(discr, given, tune_for):
         for direct_store in [False]:
             for parallel_faces in range(1,32):
                 for mbs_per_block in range(1,8):
+                    pdata = discr._get_partition_data(
+                            mbs_per_block*given.microblock.elements)
                     flux_plan = FluxGatherPlan(given, parallel_faces, 
-                            mbs_per_block, flux_count, direct_store=direct_store)
+                            mbs_per_block, flux_count, 
+                            direct_store=direct_store,
+                            max_face_pair_count=pdata.max_face_pair_count,
+                            ext_face_fraction=pdata.ext_face_fraction,
+                            )
                     if flux_plan.invalid_reason() is None:
                         yield flux_plan
 
@@ -959,7 +922,13 @@ class FluxGatherKernel:
                             a_dest=draw_dest(), b_dest=draw_dest()
                             ))
 
-            total_ext_face_count = int(self.plan.estimate_extface_count())
+            def bound(low, x, hi):
+                return min(max(low, x), hi)
+
+            total_ext_face_count = bound(0, 
+                self.plan.ext_face_fraction + randrange(-1,2), 
+                len(fp_structs))
+
             bdry_count = min(total_ext_face_count, 
                     randrange(1+int(total_ext_face_count/6)))
             diff_count = total_ext_face_count-bdry_count

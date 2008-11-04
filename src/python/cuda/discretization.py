@@ -24,7 +24,7 @@ import numpy.linalg as la
 import hedge.discretization
 import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
-from pytools import memoize_method, memoize
+from pytools import memoize_method, memoize, Record
 
 
 
@@ -163,7 +163,9 @@ def _boundarize_kernel():
 
 
 # GPU mesh partition ----------------------------------------------------------
-def make_gpu_partition(adjgraph, max_block_size):
+def make_gpu_partition_greedy(adjgraph, max_block_size):
+    print "GREEDY", max_block_size, len(adjgraph)
+
     avail_nodes = set(adjgraph.iterkeys())
     next_node = None
 
@@ -222,6 +224,41 @@ def make_gpu_partition(adjgraph, max_block_size):
 
 
 
+def make_gpu_partition_metis(adjgraph, max_block_size):
+    print "METIS", max_block_size, len(adjgraph)
+    from pymetis import part_graph
+
+    orig_part_count = part_count = len(adjgraph)//max_block_size+1
+
+    attempt_count = 5
+    for attempt in range(attempt_count):
+        cuts, partition = part_graph(part_count,
+                adjgraph, vweights=[1000]*len(adjgraph))
+
+        blocks = dict((i, []) for i in range(part_count))
+        for el_id, block in enumerate(partition):
+            blocks[block].append(el_id)
+        block_elements = max(len(block_els) for block_els in blocks.itervalues())
+
+        if block_elements <= max_block_size:
+            return partition, blocks
+
+        part_count += min(5, int(part_count*0.01))
+
+    from warnings import warn
+
+    warn("could not achieve Metis partition after %d attempts, falling back to greedy"
+            % attempt_count)
+
+    return make_gpu_partition_greedy(adjgraph, max_block_size)
+
+
+
+
+
+
+
+
 
 
 
@@ -247,52 +284,65 @@ class Discretization(hedge.discretization.Discretization):
             "cuda_no_smem_matrix",
             ])
 
-    def _partition_mesh(self, mesh, flux_plan):
-        given = flux_plan.given
+    class PartitionData(Record):
+        pass
 
-        partition, blocks = make_gpu_partition(
-                mesh.element_adjacency_graph(),
-                flux_plan.elements_per_block())
+    def _get_partition_data(self, max_block_size):
+        try:
+            return self.partition_cache[max_block_size]
+        except KeyError:
+            pass
+
+        try:
+            import pymetis
+            metis_available = True
+        except ImportError:
+            metis_available = False
+
+        if max_block_size >= 10 and metis_available:
+            partition, blocks = make_gpu_partition_metis(
+                    self.mesh.element_adjacency_graph(),
+                    max_block_size)
+        else:
+            partition, blocks = make_gpu_partition_greedy(
+                    self.mesh.element_adjacency_graph(),
+                    max_block_size)
 
         # prepare a mapping:  block# -> # of external interfaces
         block2extifaces = dict((i, 0) for i in range(len(blocks)))
 
-        for (e1, f1), (e2, f2) in mesh.both_interfaces():
+        for (e1, f1), (e2, f2) in self.mesh.both_interfaces():
             b1 = partition[e1.id]
             b2 = partition[e2.id]
 
             if b1 != b2:
                 block2extifaces[b1] += 1
 
-        for el, face_nbr in mesh.tag_to_boundary[hedge.mesh.TAG_ALL]:
+        for el, face_nbr in self.mesh.tag_to_boundary[hedge.mesh.TAG_ALL]:
             b1 = partition[el.id]
             block2extifaces[b1] += 1
 
+        eg, = self.element_groups
         max_facepairs = 0
         for b in range(len(blocks)):
             b_ext_faces = block2extifaces[b]
-            b_int_faces = (len(blocks[b])*given.faces_per_el()
+            b_int_faces = (len(blocks[b])*eg.local_discretization.face_count()
                     - b_ext_faces)
             assert b_int_faces % 2 == 0
             b_facepairs = b_int_faces//2 + b_ext_faces
             max_facepairs = max(max_facepairs, b_facepairs)
 
-        actual_plan = flux_plan.copy(max_face_pair_count=max_facepairs)
+        from pytools import average
 
-        if (flux_plan.occupancy_record().occupancy >
-                    actual_plan.occupancy_record().occupancy):
-            from warnings import warn
-            warn("Decreased occupancy from actual plan")
+        result = self.PartitionData(
+                partition=partition,
+                blocks=blocks,
+                max_face_pair_count=max_facepairs,
+                ext_face_fraction=average(
+                    block2extifaces.itervalues()))
 
-        if False:
-            from matplotlib.pylab import hist, show
-            print plan.get_extface_count()
-            hist(block2extifaces.values())
-            show()
-            hist([len(block_els) for block_els in blocks.itervalues()])
-            show()
-            
-        return actual_plan, partition, len(blocks)
+        self.partition_cache[max_block_size] = result
+        return result
 
     def __init__(self, mesh, tune_for, local_discretization=None, 
             order=None, init_cuda=True, debug=set(), 
@@ -333,6 +383,9 @@ class Discretization(hedge.discretization.Discretization):
             from pycuda.tools import DeviceMemoryPool
             self.pool = DeviceMemoryPool()
 
+        # generate flux plan
+        self.partition_cache = {}
+
         from pytools import Record
         class OverallPlan(Record):pass
         
@@ -348,9 +401,10 @@ class Discretization(hedge.discretization.Discretization):
             print "projected flux exec plan:", flux_plan
 
             # partition mesh, obtain updated plan
-            flux_plan, partition, block_count = self._partition_mesh(mesh, flux_plan)
+            pdata = self._get_partition_data(
+                    flux_plan.elements_per_block())
             given.post_decomposition(
-                    block_count=block_count,
+                    block_count=len(pdata.blocks),
                     microblocks_per_block=flux_plan.microblocks_per_block())
 
             # plan local operations
@@ -365,7 +419,7 @@ class Discretization(hedge.discretization.Discretization):
             yield OverallPlan(
                 given=given,
                 flux_plan=flux_plan,
-                partition=partition,
+                partition=pdata.partition,
                 diff_plan=diff_plan,
                 fluxlocal_plan=fluxlocal_plan), total_time
 
