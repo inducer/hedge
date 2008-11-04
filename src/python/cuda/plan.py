@@ -282,18 +282,18 @@ class PlanGivenData(object):
 
 
 
-class ChunkedMatrixLocalOpExecutionPlan(ExecutionPlan):
-    def __init__(self, given, parallelism, chunk_size, max_unroll):
+class SegmentedMatrixLocalOpExecutionPlan(ExecutionPlan):
+    def __init__(self, given, parallelism, segment_size, max_unroll):
         ExecutionPlan.__init__(self, given.devdata)
         self.given = given
         self.parallelism = parallelism
-        self.chunk_size = chunk_size
+        self.segment_size = segment_size
         self.max_unroll = max_unroll
 
-    def chunks_per_microblock(self):
+    def segments_per_microblock(self):
         from hedge.cuda.tools import int_ceiling
         return int_ceiling(
-                self.given.microblock.aligned_floats/self.chunk_size)
+                self.given.microblock.aligned_floats/self.segment_size)
 
     def dofs_per_macroblock(self):
         return self.parallelism.total() * self.given.microblock.aligned_floats
@@ -301,14 +301,14 @@ class ChunkedMatrixLocalOpExecutionPlan(ExecutionPlan):
     def face_dofs_per_macroblock(self):
         return self.parallelism.total() * self.given.aligned_face_dofs_per_microblock()
 
-    def max_elements_touched_by_chunk(self):
+    def max_elements_touched_by_segment(self):
         given = self.given
 
         from hedge.cuda.tools import int_ceiling
-        if given.dofs_per_el() > self.chunk_size:
+        if given.dofs_per_el() > self.segment_size:
             return 2
         else:
-            return int_ceiling(self.chunk_size/given.dofs_per_el()) + 1
+            return int_ceiling(self.segment_size/given.dofs_per_el()) + 1
 
     @memoize_method
     def shared_mem_use(self):
@@ -316,24 +316,24 @@ class ChunkedMatrixLocalOpExecutionPlan(ExecutionPlan):
         
         return (128 # parameters, block header, small extra stuff
                + given.float_size() * (
-                   # chunk of the local op matrix
-                   + self.chunk_size # this many rows
+                   # segment of the local op matrix
+                   + self.segment_size # this many rows
                    * self.columns()
-                   # fetch buffer for each chunk
+                   # fetch buffer for each segment
                    + self.parallelism.parallel*self.parallelism.inline
-                   * self.chunk_size
-                   * self.fetch_buffer_chunks()
+                   * self.segment_size
+                   * self.fetch_buffer_segments()
                    )
                )
 
     def threads(self):
-        return self.parallelism.parallel*self.chunk_size
+        return self.parallelism.parallel*self.segment_size
 
     def __str__(self):
-            return ("%s par=%s chunk_size=%d unroll=%d" % (
+            return ("%s par=%s segment_size=%d unroll=%d" % (
                 ExecutionPlan.__str__(self),
                 self.parallelism,
-                self.chunk_size,
+                self.segment_size,
                 self.max_unroll))
 
 
@@ -365,33 +365,75 @@ class SMemFieldLocalOpExecutionPlan(ExecutionPlan):
 
 
 
-def _test_planner():
-    from hedge.element import TetrahedralElement
-    for order in [3]:
-        for pe in range(2,16):
-            for se in range(1,16):
-                flux_par = Parallelism(pe, 1, se)
-                plan = ExecutionPlan(TetrahedralElement(order), flux_par)
-                inv_reas = plan.invalid_reason()
-                if inv_reas is None:
-                    print "o%d %s: smem=%d extfacepairs=%d/%d occ=%f (%s) lop:%s" % (
-                            order, flux_par,
-                            plan.shared_mem_use(),
-                            plan.estimate_extface_count(),
-                            plan.face_count()//2,
-                            plan.occupancy().occupancy,
-                            plan.occupancy().limited_by,
-                            plan.find_localop_par()
-                            )
-                else:
-                    print "o%d p%d s%d: %s" % (order, pe, se, inv_reas)
+def make_diff_plan(discr, given):
+    def generate_plans():
+        segment_sizes = range(given.microblock.align_size, 
+                given.microblock.elements*given.dofs_per_el()+1, 
+                given.microblock.align_size)
+
+        from hedge.cuda.diff_shared_segmat import ExecutionPlan as SSegPlan
+        if "cuda_no_smem_matrix" not in discr.debug:
+            for pe in range(1,32+1):
+                for inline in range(1, 4+1):
+                    for seq in range(1, 4):
+                        localop_par = Parallelism(pe, inline, seq)
+                        for segment_size in segment_sizes:
+                            yield SSegPlan(
+                                    given, localop_par, segment_size, 
+                                    max_unroll=given.dofs_per_el())
+
+        from hedge.cuda.diff_shared_fld import ExecutionPlan as SFieldPlan
+
+        for pe in range(1,32+1):
+            for inline in range(1, 4+1):
+                localop_par = Parallelism(pe, inline, 1)
+                yield SFieldPlan(given, localop_par, 
+                        max_unroll=given.dofs_per_el())
+
+    def target_func(plan):
+        return plan.make_kernel(discr).benchmark()
+
+    from hedge.cuda.plan import optimize_plan
+    return optimize_plan(generate_plans, target_func, maximize=False,
+            debug="cuda_diff_plan" in discr.debug,
+            log_filename="diff-%d" % given.order())
 
 
 
 
-if __name__ == "__main__":
-    import pycuda.driver as drv
-    drv.init()
+def make_lift_plan(discr, given):
+    def generate_plans():
+        if "cuda_no_smem_matrix" not in discr.debug:
+            from hedge.cuda.lift_shared_segmat import ExecutionPlan as SSegPlan
 
-    _test_planner()
+            for use_prefetch_branch in [True]:
+            #for use_prefetch_branch in [True, False]:
+                segment_sizes = range(given.microblock.align_size, 
+                        given.microblock.elements*given.dofs_per_el()+1, 
+                        given.microblock.align_size)
 
+                for pe in range(1,32+1):
+                    for inline in range(1, 4+1):
+                        for seq in range(1, 4+1):
+                            localop_par = Parallelism(pe, inline, seq)
+                            for segment_size in segment_sizes:
+                                yield SSegPlan(given, 
+                                        localop_par, segment_size,
+                                        max_unroll=given.face_dofs_per_el(),
+                                        use_prefetch_branch=use_prefetch_branch)
+
+        from hedge.cuda.lift_shared_fld import ExecutionPlan as SFieldPlan
+
+        for pe in range(1,32+1):
+            for inline in range(1, 5):
+                localop_par = Parallelism(pe, inline, 1)
+                yield SFieldPlan(given, localop_par,
+                        max_unroll=given.face_dofs_per_el())
+
+    def target_func(plan):
+        return plan.make_kernel(discr).benchmark()
+
+    from hedge.cuda.plan import optimize_plan
+    return optimize_plan(generate_plans, target_func, maximize=False,
+            debug="cuda_lift_plan" in discr.debug,
+            log_filename="lift-%d" % given.order())

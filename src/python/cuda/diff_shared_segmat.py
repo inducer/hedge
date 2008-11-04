@@ -32,14 +32,14 @@ from hedge.cuda.kernelbase import DiffKernelBase
 
 
 # plan ------------------------------------------------------------------------
-class ChunkedDiffExecutionPlan(hedge.cuda.plan.ChunkedMatrixLocalOpExecutionPlan):
+class ExecutionPlan(hedge.cuda.plan.SegmentedMatrixLocalOpExecutionPlan):
     def columns(self):
         return self.given.dofs_per_el() * self.given.ldis.dimensions # r,s,t
 
     def registers(self):
         return 16 + 4 * (self.parallelism.inline-1)
 
-    def fetch_buffer_chunks(self):
+    def fetch_buffer_segments(self):
         return 0
 
     @staticmethod
@@ -48,7 +48,7 @@ class ChunkedDiffExecutionPlan(hedge.cuda.plan.ChunkedMatrixLocalOpExecutionPlan
                 "parallel integer", 
                 "inline integer", 
                 "serial integer", 
-                "chunk_size integer", 
+                "segment_size integer", 
                 "max_unroll integer",
                 "mb_elements integer",
                 "lmem integer",
@@ -62,7 +62,7 @@ class ChunkedDiffExecutionPlan(hedge.cuda.plan.ChunkedMatrixLocalOpExecutionPlan
                 self.parallelism.parallel,
                 self.parallelism.inline,
                 self.parallelism.serial,
-                self.chunk_size,
+                self.segment_size,
                 self.max_unroll,
                 self.given.microblock.elements,
                 lmem,
@@ -72,51 +72,14 @@ class ChunkedDiffExecutionPlan(hedge.cuda.plan.ChunkedMatrixLocalOpExecutionPlan
                 )
 
     def make_kernel(self, discr):
-        return DiffKernel(discr, self)
+        return Kernel(discr, self)
 
-
-
-
-
-def make_plan(discr, given):
-    def generate_plans():
-        chunk_sizes = range(given.microblock.align_size, 
-                given.microblock.elements*given.dofs_per_el()+1, 
-                given.microblock.align_size)
-
-        from hedge.cuda.plan import Parallelism
-
-        if "cuda_no_smem_matrix" not in discr.debug:
-            for pe in range(1,32+1):
-                for inline in range(1, 4+1):
-                    for seq in range(1, 4):
-                        localop_par = Parallelism(pe, inline, seq)
-                        for chunk_size in chunk_sizes:
-                            yield ChunkedDiffExecutionPlan(
-                                    given, localop_par, chunk_size, 
-                                    max_unroll=given.dofs_per_el())
-
-        from hedge.cuda.diff_alt import SMemFieldDiffExecutionPlan
-
-        for pe in range(1,32+1):
-            for inline in range(1, 4+1):
-                localop_par = Parallelism(pe, inline, 1)
-                yield SMemFieldDiffExecutionPlan(given, localop_par, 
-                        max_unroll=given.dofs_per_el())
-
-    def target_func(plan):
-        return plan.make_kernel(discr).benchmark()
-
-    from hedge.cuda.plan import optimize_plan
-    return optimize_plan(generate_plans, target_func, maximize=False,
-            debug="cuda_diff_plan" in discr.debug,
-            log_filename="diff-%d" % given.order())
 
 
 
 
 # kernel ----------------------------------------------------------------------
-class DiffKernel(DiffKernelBase):
+class Kernel(DiffKernelBase):
     def __init__(self, discr, plan):
         self.discr = discr
         self.plan = plan
@@ -124,7 +87,7 @@ class DiffKernel(DiffKernelBase):
         from hedge.cuda.tools import int_ceiling
 
         given = self.plan.given
-        self.grid = (plan.chunks_per_microblock(), 
+        self.grid = (plan.segments_per_microblock(), 
                     int_ceiling(given.total_dofs()/plan.dofs_per_macroblock()))
 
     def benchmark(self):
@@ -266,14 +229,14 @@ class DiffKernel(DiffKernelBase):
                 Define("DIMENSIONS", discr.dimensions),
                 Define("DOFS_PER_EL", given.dofs_per_el()),
                 Line(),
-                Define("CHUNK_DOF", "threadIdx.x"),
+                Define("SEGMENT_DOF", "threadIdx.x"),
                 Define("PAR_MB_NR", "threadIdx.y"),
                 Line(),
-                Define("MB_CHUNK", "blockIdx.x"),
+                Define("MB_SEGMENT", "blockIdx.x"),
                 Define("MACROBLOCK_NR", "blockIdx.y"),
                 Line(),
-                Define("DOFS_PER_CHUNK", self.plan.chunk_size),
-                Define("CHUNKS_PER_MB", self.plan.chunks_per_microblock()),
+                Define("DOFS_PER_SEGMENT", self.plan.segment_size),
+                Define("SEGMENTS_PER_MB", self.plan.segments_per_microblock()),
                 Define("ALIGNED_DOFS_PER_MB", given.microblock.aligned_floats),
                 Define("ELS_PER_MB", given.microblock.elements),
                 Line(),
@@ -281,11 +244,11 @@ class DiffKernel(DiffKernelBase):
                 Define("INLINE_MB_COUNT", par.inline),
                 Define("SEQ_MB_COUNT", par.serial),
                 Line(),
-                Define("THREAD_NUM", "(CHUNK_DOF+PAR_MB_NR*DOFS_PER_CHUNK)"),
-                Define("COALESCING_THREAD_COUNT", "(PAR_MB_COUNT*DOFS_PER_CHUNK)"),
+                Define("THREAD_NUM", "(SEGMENT_DOF+PAR_MB_NR*DOFS_PER_SEGMENT)"),
+                Define("COALESCING_THREAD_COUNT", "(PAR_MB_COUNT*DOFS_PER_SEGMENT)"),
                 Line(),
-                Define("MB_DOF_BASE", "(MB_CHUNK*DOFS_PER_CHUNK)"),
-                Define("MB_DOF", "(MB_DOF_BASE+CHUNK_DOF)"),
+                Define("MB_DOF_BASE", "(MB_SEGMENT*DOFS_PER_SEGMENT)"),
+                Define("MB_DOF", "(MB_DOF_BASE+SEGMENT_DOF)"),
                 Define("GLOBAL_MB_NR_BASE", 
                     "(MACROBLOCK_NR*PAR_MB_COUNT*INLINE_MB_COUNT*SEQ_MB_COUNT)"),
                 Define("GLOBAL_MB_NR", 
@@ -293,13 +256,13 @@ class DiffKernel(DiffKernelBase):
                     "+ (seq_mb_number*PAR_MB_COUNT + PAR_MB_NR)*INLINE_MB_COUNT)"),
                 Define("GLOBAL_MB_DOF_BASE", "(GLOBAL_MB_NR*ALIGNED_DOFS_PER_MB)"),
                 Line(),
-                Define("DIFFMAT_CHUNK_FLOATS", diffmat_data.block_floats),
-                Define("DIFFMAT_CHUNK_BYTES", "(DIFFMAT_CHUNK_FLOATS*%d)"
+                Define("DIFFMAT_SEGMENT_FLOATS", diffmat_data.block_floats),
+                Define("DIFFMAT_SEGMENT_BYTES", "(DIFFMAT_SEGMENT_FLOATS*%d)"
                      % given.float_size()),
                 Define("DIFFMAT_COLUMNS", diffmat_data.matrix_columns),
                 Line(),
                 CudaShared(ArrayOf(POD(float_type, "smem_diff_rst_mat"), 
-                    "DIFFMAT_COLUMNS*DOFS_PER_CHUNK")),
+                    "DIFFMAT_COLUMNS*DOFS_PER_SEGMENT")),
                 Line(),
                 ])
 
@@ -315,9 +278,9 @@ class DiffKernel(DiffKernelBase):
         f_body.extend(
             get_load_code(
                 dest="smem_diff_rst_mat",
-                base="gmem_diff_rst_mat + MB_CHUNK*DIFFMAT_CHUNK_BYTES",
-                bytes="DIFFMAT_CHUNK_BYTES",
-                descr="load diff mat chunk")
+                base="gmem_diff_rst_mat + MB_SEGMENT*DIFFMAT_SEGMENT_BYTES",
+                bytes="DIFFMAT_SEGMENT_BYTES",
+                descr="load diff mat segment")
             +[S("__syncthreads()"), Line()])
 
         # ---------------------------------------------------------------------
@@ -351,7 +314,7 @@ class DiffKernel(DiffKernelBase):
                         for inl in range(par.inline)]
                         +[Line()]
                         +[S("d%drst%d += %s * field_value%d" 
-                            % (inl, axis, get_mat_entry("CHUNK_DOF", j, axis), inl))
+                            % (inl, axis, get_mat_entry("SEGMENT_DOF", j, axis), inl))
                         for axis in dims
                         for inl in range(par.inline)]
                         +[Line()],
@@ -396,7 +359,8 @@ class DiffKernel(DiffKernelBase):
         if not for_benchmark and "cuda_dumpkernels" in discr.debug:
             open("diff.cu", "w").write(str(cmod))
 
-        mod = cuda.SourceModule(cmod, keep=True, 
+        mod = cuda.SourceModule(cmod, 
+                keep="cuda_keep_kernels" in discr.debug, 
                 #options=["--maxrregcount=10"]
                 )
 
@@ -413,7 +377,7 @@ class DiffKernel(DiffKernelBase):
         func = mod.get_function("apply_diff_mat")
         func.prepare(
                 discr.dimensions*[float_type] + ["P"],
-                block=(self.plan.chunk_size, par.parallel, 1),
+                block=(self.plan.segment_size, par.parallel, 1),
                 texrefs=[field_texref, rst_to_xyz_texref])
 
         if "cuda_diff" in discr.debug:
@@ -435,19 +399,19 @@ class DiffKernel(DiffKernelBase):
             additional_columns += 1
 
         block_floats = given.devdata.align_dtype(
-                columns*self.plan.chunk_size, given.float_size())
+                columns*self.plan.segment_size, given.float_size())
 
         vstacked_matrices = [
                 numpy.vstack(given.microblock.elements*(m,))
                 for m in diff_op_cls.matrices(elgroup)
                 ]
 
-        chunks = []
+        segments = []
 
         from pytools import single_valued
-        for chunk_start in range(0, given.microblock.elements*given.dofs_per_el(), self.plan.chunk_size):
+        for segment_start in range(0, given.microblock.elements*given.dofs_per_el(), self.plan.segment_size):
             matrices = [
-                m[chunk_start:chunk_start+self.plan.chunk_size] 
+                m[segment_start:segment_start+self.plan.segment_size] 
                 for m in vstacked_matrices]
 
             matrices.append(
@@ -459,7 +423,7 @@ class DiffKernel(DiffKernelBase):
                     numpy.hstack(matrices),
                     dtype=given.float_type,
                     order="C")
-            chunks.append(buffer(diffmats))
+            segments.append(buffer(diffmats))
         
         from hedge.cuda.tools import pad_and_join
 
@@ -468,6 +432,6 @@ class DiffKernel(DiffKernelBase):
 
         return GPUDifferentiationMatrices(
                 device_memory=cuda.to_device(
-                    pad_and_join(chunks, block_floats*given.float_size())),
+                    pad_and_join(segments, block_floats*given.float_size())),
                 block_floats=block_floats,
                 matrix_columns=columns)

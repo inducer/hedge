@@ -34,7 +34,7 @@ from hedge.cuda.kernelbase import DiffKernelBase
 
 
 # plan ------------------------------------------------------------------------
-class SMemFieldDiffExecutionPlan(hedge.cuda.plan.SMemFieldLocalOpExecutionPlan):
+class ExecutionPlan(hedge.cuda.plan.SMemFieldLocalOpExecutionPlan):
     def registers(self):
         return 16
 
@@ -54,7 +54,7 @@ class SMemFieldDiffExecutionPlan(hedge.cuda.plan.SMemFieldLocalOpExecutionPlan):
                 "parallel integer", 
                 "inline integer", 
                 "serial integer", 
-                "chunk_size integer", 
+                "segment_size integer", 
                 "max_unroll integer",
                 "mb_elements integer",
                 "lmem integer",
@@ -78,13 +78,13 @@ class SMemFieldDiffExecutionPlan(hedge.cuda.plan.SMemFieldLocalOpExecutionPlan):
                 )
 
     def make_kernel(self, discr):
-        return SMemFieldDiffKernel(discr, self)
+        return Kernel(discr, self)
 
 
 
 
 # kernel ----------------------------------------------------------------------
-class SMemFieldDiffKernel(DiffKernelBase):
+class Kernel(DiffKernelBase):
     def __init__(self, discr, plan):
         self.discr = discr
         self.plan = plan
@@ -379,8 +379,9 @@ class SMemFieldDiffKernel(DiffKernelBase):
         if not for_benchmark and "cuda_dumpkernels" in discr.debug:
             open("diff.cu", "w").write(str(cmod))
 
-        mod = cuda.SourceModule(cmod, keep=True, 
-                options=["--maxrregcount=16"]
+        mod = cuda.SourceModule(cmod, 
+                keep="cuda_keep_kernels" in discr.debug, 
+                #options=["--maxrregcount=16"]
                 )
 
         if "cuda_diff" in discr.debug:

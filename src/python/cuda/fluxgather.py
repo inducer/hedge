@@ -128,7 +128,7 @@ class FluxToCodeMapper(pymbolic.mapper.stringifier.StringifyMapper):
 
 
 # plan ------------------------------------------------------------------------
-class FluxGatherPlan(hedge.cuda.plan.ExecutionPlan):
+class ExecutionPlan(hedge.cuda.plan.ExecutionPlan):
     def __init__(self, given, 
             parallel_faces, mbs_per_block, flux_count,
             direct_store, max_face_pair_count,
@@ -207,7 +207,7 @@ class FluxGatherPlan(hedge.cuda.plan.ExecutionPlan):
         return result
 
     def make_kernel(self, discr, elface_to_bdry_bitmap, fluxes):
-        return FluxGatherKernel(discr, self, elface_to_bdry_bitmap, fluxes)
+        return Kernel(discr, self, elface_to_bdry_bitmap, fluxes)
 
 
 
@@ -230,7 +230,7 @@ def make_plan(discr, given, tune_for):
                 for mbs_per_block in range(1,8):
                     pdata = discr._get_partition_data(
                             mbs_per_block*given.microblock.elements)
-                    flux_plan = FluxGatherPlan(given, parallel_faces, 
+                    flux_plan = ExecutionPlan(given, parallel_faces, 
                             mbs_per_block, flux_count, 
                             direct_store=direct_store,
                             max_face_pair_count=pdata.max_face_pair_count,
@@ -252,7 +252,7 @@ def make_plan(discr, given, tune_for):
 
 
 # flux gather kernel ----------------------------------------------------------
-class FluxGatherKernel:
+class Kernel:
     def __init__(self, discr, plan, elface_to_bdry_bitmap, fluxes):
         self.discr = discr
         self.plan = plan
@@ -708,7 +708,7 @@ class FluxGatherKernel:
         mod = cuda.SourceModule(
                 #allow_user_edit(cmod, "kernel.cu", "the flux kernel"), 
                 cmod,
-                keep=True, 
+                keep="cuda_keep_kernels" in discr.debug, 
                 options=["--maxrregcount=%d" % self.plan.max_registers()]
                 )
         if "cuda_flux" in discr.debug:

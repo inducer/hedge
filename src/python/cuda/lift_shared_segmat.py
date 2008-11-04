@@ -33,11 +33,11 @@ from hedge.cuda.kernelbase import FluxLocalKernelBase
 
 
 # plan ------------------------------------------------------------------------
-class FluxLiftingExecutionPlan(hedge.cuda.plan.ChunkedMatrixLocalOpExecutionPlan):
-    def __init__(self, given, parallelism, chunk_size, max_unroll,
+class ExecutionPlan(hedge.cuda.plan.SegmentedMatrixLocalOpExecutionPlan):
+    def __init__(self, given, parallelism, segment_size, max_unroll,
             use_prefetch_branch):
-        hedge.cuda.plan.ChunkedMatrixLocalOpExecutionPlan.__init__(
-                self, given, parallelism, chunk_size, max_unroll)
+        hedge.cuda.plan.SegmentedMatrixLocalOpExecutionPlan.__init__(
+                self, given, parallelism, segment_size, max_unroll)
 
         self.use_prefetch_branch = use_prefetch_branch
 
@@ -47,12 +47,12 @@ class FluxLiftingExecutionPlan(hedge.cuda.plan.ChunkedMatrixLocalOpExecutionPlan
     def registers(self):
         return 12 + self.parallelism.inline
 
-    def fetch_buffer_chunks(self):
+    def fetch_buffer_segments(self):
         return 1
 
     def __str__(self):
         return "%s prefetch_branch=%s" % (
-                hedge.cuda.plan.ChunkedMatrixLocalOpExecutionPlan.__str__(self),
+                hedge.cuda.plan.SegmentedMatrixLocalOpExecutionPlan.__str__(self),
                 self.use_prefetch_branch)
 
     @staticmethod
@@ -61,7 +61,7 @@ class FluxLiftingExecutionPlan(hedge.cuda.plan.ChunkedMatrixLocalOpExecutionPlan
                 "parallel integer", 
                 "inline integer", 
                 "serial integer", 
-                "chunk_size integer", 
+                "segment_size integer", 
                 "max_unroll integer",
                 "mb_elements integer",
                 "lmem integer",
@@ -75,7 +75,7 @@ class FluxLiftingExecutionPlan(hedge.cuda.plan.ChunkedMatrixLocalOpExecutionPlan
                 self.parallelism.parallel,
                 self.parallelism.inline,
                 self.parallelism.serial,
-                self.chunk_size,
+                self.segment_size,
                 self.max_unroll,
                 self.given.microblock.elements,
                 lmem,
@@ -85,58 +85,18 @@ class FluxLiftingExecutionPlan(hedge.cuda.plan.ChunkedMatrixLocalOpExecutionPlan
                 )
 
     def make_kernel(self, discr):
-        return FluxLocalKernel(discr, self)
-
-
-
-def make_plan(discr, given):
-    def generate_plans():
-        from hedge.cuda.plan import Parallelism
-
-        if "cuda_no_smem_matrix" not in discr.debug:
-            for use_prefetch_branch in [True]:
-            #for use_prefetch_branch in [True, False]:
-                chunk_sizes = range(given.microblock.align_size, 
-                        given.microblock.elements*given.dofs_per_el()+1, 
-                        given.microblock.align_size)
-
-                for pe in range(1,32+1):
-                    for inline in range(1, 4+1):
-                        for seq in range(1, 4+1):
-                            localop_par = Parallelism(pe, inline, seq)
-                            for chunk_size in chunk_sizes:
-                                yield FluxLiftingExecutionPlan(given, 
-                                        localop_par, chunk_size,
-                                        max_unroll=given.face_dofs_per_el(),
-                                        use_prefetch_branch=use_prefetch_branch)
-
-        from hedge.cuda.fluxlocal_alt import SMemFieldFluxLocalExecutionPlan
-
-        for pe in range(1,32+1):
-            for inline in range(1, 5):
-                localop_par = Parallelism(pe, inline, 1)
-                yield SMemFieldFluxLocalExecutionPlan(given, localop_par,
-                        max_unroll=given.face_dofs_per_el())
-
-    def target_func(plan):
-        return plan.make_kernel(discr).benchmark()
-
-    from hedge.cuda.plan import optimize_plan
-    return optimize_plan(generate_plans, target_func, maximize=False,
-            debug="cuda_lift_plan" in discr.debug,
-            log_filename="lift-%d" % given.order())
-
+        return Kernel(discr, self)
 
 
 
 # kernel ----------------------------------------------------------------------
-class FluxLocalKernel(FluxLocalKernelBase):
+class Kernel(FluxLocalKernelBase):
     def __init__(self, discr, plan):
         self.discr = discr
         self.plan = plan
 
         from hedge.cuda.tools import int_ceiling
-        self.grid = (plan.chunks_per_microblock(), 
+        self.grid = (plan.segments_per_microblock(), 
                 int_ceiling(
                     self.plan.given.total_dofs()
                     / plan.dofs_per_macroblock())
@@ -302,14 +262,14 @@ class FluxLocalKernel(FluxLocalKernelBase):
                 Define("DOFS_PER_FACE", given.dofs_per_face()),
                 Define("FACE_DOFS_PER_EL", "(DOFS_PER_FACE*FACES_PER_EL)"),
                 Line(),
-                Define("CHUNK_DOF", "threadIdx.x"),
+                Define("SEGMENT_DOF", "threadIdx.x"),
                 Define("PAR_MB_NR", "threadIdx.y"),
                 Line(),
-                Define("MB_CHUNK", "blockIdx.x"),
+                Define("MB_SEGMENT", "blockIdx.x"),
                 Define("MACROBLOCK_NR", "blockIdx.y"),
                 Line(),
-                Define("DOFS_PER_CHUNK", self.plan.chunk_size),
-                Define("CHUNKS_PER_MB", self.plan.chunks_per_microblock()),
+                Define("DOFS_PER_SEGMENT", self.plan.segment_size),
+                Define("SEGMENTS_PER_MB", self.plan.segments_per_microblock()),
                 Define("ALIGNED_DOFS_PER_MB", given.microblock.aligned_floats),
                 Define("ALIGNED_FACE_DOFS_PER_MB", given.aligned_face_dofs_per_microblock()),
                 Define("MB_EL_COUNT", given.microblock.elements),
@@ -318,11 +278,11 @@ class FluxLocalKernel(FluxLocalKernelBase):
                 Define("INLINE_MB_COUNT", par.inline),
                 Define("SEQ_MB_COUNT", par.serial),
                 Line(),
-                Define("THREAD_NUM", "(CHUNK_DOF+PAR_MB_NR*DOFS_PER_CHUNK)"),
-                Define("COALESCING_THREAD_COUNT", "(PAR_MB_COUNT*DOFS_PER_CHUNK)"),
+                Define("THREAD_NUM", "(SEGMENT_DOF+PAR_MB_NR*DOFS_PER_SEGMENT)"),
+                Define("COALESCING_THREAD_COUNT", "(PAR_MB_COUNT*DOFS_PER_SEGMENT)"),
                 Line(),
-                Define("MB_DOF_BASE", "(MB_CHUNK*DOFS_PER_CHUNK)"),
-                Define("MB_DOF", "(MB_DOF_BASE+CHUNK_DOF)"),
+                Define("MB_DOF_BASE", "(MB_SEGMENT*DOFS_PER_SEGMENT)"),
+                Define("MB_DOF", "(MB_DOF_BASE+SEGMENT_DOF)"),
                 Define("GLOBAL_MB_NR_BASE", 
                     "(MACROBLOCK_NR*PAR_MB_COUNT*INLINE_MB_COUNT*SEQ_MB_COUNT)"),
                 Define("GLOBAL_MB_NR", 
@@ -332,13 +292,13 @@ class FluxLocalKernel(FluxLocalKernelBase):
                 Define("GLOBAL_MB_FACEDOF_BASE", "(GLOBAL_MB_NR*ALIGNED_FACE_DOFS_PER_MB)"),
                 Line(),
                 Define("LIFTMAT_COLUMNS", liftmat_data.matrix_columns),
-                Define("LIFTMAT_CHUNK_FLOATS", liftmat_data.block_floats),
-                Define("LIFTMAT_CHUNK_BYTES", 
-                    "(LIFTMAT_CHUNK_FLOATS*%d)" % given.float_size()),
+                Define("LIFTMAT_SEGMENT_FLOATS", liftmat_data.block_floats),
+                Define("LIFTMAT_SEGMENT_BYTES", 
+                    "(LIFTMAT_SEGMENT_FLOATS*%d)" % given.float_size()),
 
                 Line(),
                 CudaShared(ArrayOf(POD(float_type, "smem_lift_mat"), 
-                    "LIFTMAT_CHUNK_FLOATS")),
+                    "LIFTMAT_SEGMENT_FLOATS")),
                 CudaShared(
                     ArrayOf(
                         ArrayOf(
@@ -346,29 +306,29 @@ class FluxLocalKernel(FluxLocalKernelBase):
                                 POD(float_type, "dof_buffer"), 
                                 "PAR_MB_COUNT"),
                             "INLINE_MB_COUNT"),
-                        "DOFS_PER_CHUNK"),
+                        "DOFS_PER_SEGMENT"),
                     ),
-                CudaShared(POD(numpy.uint16, "chunk_start_el")),
-                CudaShared(POD(numpy.uint16, "chunk_stop_el")),
-                CudaShared(POD(numpy.uint16, "chunk_el_count")),
+                CudaShared(POD(numpy.uint16, "segment_start_el")),
+                CudaShared(POD(numpy.uint16, "segment_stop_el")),
+                CudaShared(POD(numpy.uint16, "segment_el_count")),
                 Line(),
                 ArrayInitializer(
                         CudaConstant(
                             ArrayOf(
-                                POD(numpy.uint16, "chunk_start_el_lookup"),
-                            "CHUNKS_PER_MB")),
-                        [(chk*self.plan.chunk_size)//given.dofs_per_el()
-                            for chk in range(self.plan.chunks_per_microblock())]
+                                POD(numpy.uint16, "segment_start_el_lookup"),
+                            "SEGMENTS_PER_MB")),
+                        [(chk*self.plan.segment_size)//given.dofs_per_el()
+                            for chk in range(self.plan.segments_per_microblock())]
                         ),
                 ArrayInitializer(
                         CudaConstant(
                             ArrayOf(
-                                POD(numpy.uint16, "chunk_stop_el_lookup"),
-                            "CHUNKS_PER_MB")),
+                                POD(numpy.uint16, "segment_stop_el_lookup"),
+                            "SEGMENTS_PER_MB")),
                         [min(given.microblock.elements, 
-                            (chk*self.plan.chunk_size+self.plan.chunk_size-1)
+                            (chk*self.plan.segment_size+self.plan.segment_size-1)
                                 //given.dofs_per_el()+1)
-                            for chk in range(self.plan.chunks_per_microblock())]
+                            for chk in range(self.plan.segments_per_microblock())]
                         ),
                 ])
 
@@ -381,12 +341,12 @@ class FluxLocalKernel(FluxLocalKernelBase):
             Line(),])
 
         if self.plan.use_prefetch_branch:
-            f_body.extend_log_block("calculate chunk responsibility data", [
+            f_body.extend_log_block("calculate segment responsibility data", [
                 If("THREAD_NUM==0",
                     Block([
-                        Assign("chunk_start_el", "chunk_start_el_lookup[MB_CHUNK]"),
-                        Assign("chunk_stop_el", "chunk_stop_el_lookup[MB_CHUNK]"),
-                        Assign("chunk_el_count", "chunk_stop_el-chunk_start_el")
+                        Assign("segment_start_el", "segment_start_el_lookup[MB_SEGMENT]"),
+                        Assign("segment_stop_el", "segment_stop_el_lookup[MB_SEGMENT]"),
+                        Assign("segment_el_count", "segment_stop_el-segment_start_el")
                         ])
                     ),
                 S("__syncthreads()")
@@ -396,9 +356,9 @@ class FluxLocalKernel(FluxLocalKernelBase):
         f_body.extend(
             get_load_code(
                 dest="smem_lift_mat",
-                base=("gmem_lift_mat + MB_CHUNK*LIFTMAT_CHUNK_BYTES"),
-                bytes="LIFTMAT_CHUNK_BYTES",
-                descr="load lift mat chunk")
+                base=("gmem_lift_mat + MB_SEGMENT*LIFTMAT_SEGMENT_BYTES"),
+                bytes="LIFTMAT_SEGMENT_BYTES",
+                descr="load lift mat segment")
             +[S("__syncthreads()")]
             )
 
@@ -407,31 +367,31 @@ class FluxLocalKernel(FluxLocalKernelBase):
             result = []
             dofs = range(given.face_dofs_per_el())
 
-            for load_chunk_start in range(0, given.face_dofs_per_el(),
-                    self.plan.chunk_size):
+            for load_segment_start in range(0, given.face_dofs_per_el(),
+                    self.plan.segment_size):
                 result.extend(
                         [S("__syncthreads()")]
                         +[Assign(
-                            "dof_buffer[PAR_MB_NR][%d][CHUNK_DOF]" % inl,
+                            "dof_buffer[PAR_MB_NR][%d][SEGMENT_DOF]" % inl,
                             "tex1Dfetch(fluxes_on_faces_tex, "
                             "GLOBAL_MB_FACEDOF_BASE"
                             " + %d*ALIGNED_FACE_DOFS_PER_MB"
-                            " + (chunk_start_el)*FACE_DOFS_PER_EL + %d + CHUNK_DOF)"
-                            % (inl, load_chunk_start)
+                            " + (segment_start_el)*FACE_DOFS_PER_EL + %d + SEGMENT_DOF)"
+                            % (inl, load_segment_start)
                             )
                         for inl in range(par.inline)]
                         +[S("__syncthreads()"),
                         Line(),
                         ])
 
-                for dof in dofs[load_chunk_start:load_chunk_start+self.plan.chunk_size]:
+                for dof in dofs[load_segment_start:load_segment_start+self.plan.segment_size]:
                     for inl in range(par.inline):
                         result.append(
                                 S("result%d += "
-                                    "smem_lift_mat[CHUNK_DOF*LIFTMAT_COLUMNS + %d]"
+                                    "smem_lift_mat[SEGMENT_DOF*LIFTMAT_COLUMNS + %d]"
                                     "*"
                                     "dof_buffer[PAR_MB_NR][%d][%d]"
-                                    % (inl, dof, inl, dof-load_chunk_start))
+                                    % (inl, dof, inl, dof-load_segment_start))
                                 )
                 result.append(Line())
             return result
@@ -448,13 +408,13 @@ class FluxLocalKernel(FluxLocalKernelBase):
                             "GLOBAL_MB_FACEDOF_BASE"
                             " + %(inl)d * ALIGNED_FACE_DOFS_PER_MB"
                             " + mb_el*FACE_DOFS_PER_EL+%(j)s)"
-                            % {"j":j, "inl":inl, "row": "CHUNK_DOF"},)
+                            % {"j":j, "inl":inl, "row": "SEGMENT_DOF"},)
                         for inl in range(par.inline)
                         ]+[
                         Assign("lm",
                             "smem_lift_mat["
                             "%(row)s*LIFTMAT_COLUMNS + %(j)s]"
-                            % {"j":j, "row": "CHUNK_DOF"},
+                            % {"j":j, "row": "SEGMENT_DOF"},
                             )
                         ]+[
                         S("result%(inl)d += fof%(inl)d*lm" % {"inl":inl})
@@ -503,10 +463,10 @@ class FluxLocalKernel(FluxLocalKernelBase):
         if self.plan.use_prefetch_branch:
             from hedge.cuda.cgen import make_multiple_ifs
             f_body.append(make_multiple_ifs([
-                    ("chunk_el_count == %d" % fetch_count,
+                    ("segment_el_count == %d" % fetch_count,
                         lift_outer_loop(fetch_count))
                     for fetch_count in 
-                    range(1, self.plan.max_elements_touched_by_chunk()+1)]
+                    range(1, self.plan.max_elements_touched_by_segment()+1)]
                     ))
         else:
             f_body.append(lift_outer_loop(0))
@@ -518,7 +478,7 @@ class FluxLocalKernel(FluxLocalKernelBase):
             open("flux_lift.cu", "w").write(str(cmod))
 
         mod = cuda.SourceModule(cmod, 
-                keep=True, 
+                keep="cuda_keep_kernels" in discr.debug, 
                 #options=["--maxrregcount=12"]
                 )
 
@@ -541,7 +501,7 @@ class FluxLocalKernel(FluxLocalKernelBase):
         func = mod.get_function("apply_lift_mat")
         func.prepare(
                 "PPP", 
-                block=(self.plan.chunk_size, self.plan.parallelism.parallel, 1),
+                block=(self.plan.segment_size, self.plan.parallelism.parallel, 1),
                 texrefs=texrefs)
 
         return func, fluxes_on_faces_texref
@@ -558,7 +518,7 @@ class FluxLocalKernel(FluxLocalKernelBase):
             columns += 1
 
         block_floats = given.devdata.align_dtype(
-                columns*self.plan.chunk_size, given.float_size())
+                columns*self.plan.segment_size, given.float_size())
 
         if is_lift:
             mat = given.ldis.lifting_matrix()
@@ -578,15 +538,15 @@ class FluxLocalKernel(FluxLocalKernelBase):
                     ))
                 ))
                 
-        chunks = [
+        segments = [
                 buffer(numpy.asarray(
                     vstacked_matrix[
-                        chunk_start:chunk_start+self.plan.chunk_size],
+                        segment_start:segment_start+self.plan.segment_size],
                     dtype=given.float_type,
                     order="C"))
-                for chunk_start in range(
+                for segment_start in range(
                     0, given.microblock.elements*given.dofs_per_el(), 
-                    self.plan.chunk_size)
+                    self.plan.segment_size)
                 ]
         
         from hedge.cuda.tools import pad_and_join
@@ -596,7 +556,7 @@ class FluxLocalKernel(FluxLocalKernelBase):
 
         return GPULiftMatrices(
                 device_memory=cuda.to_device(
-                    pad_and_join(chunks, block_floats*given.float_size())),
+                    pad_and_join(segments, block_floats*given.float_size())),
                 block_floats=block_floats,
                 matrix_columns=columns,
                 )

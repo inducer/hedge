@@ -282,6 +282,7 @@ class Discretization(hedge.discretization.Discretization):
             "cuda_fastbench",
             "cuda_no_microblock",
             "cuda_no_smem_matrix",
+            "cuda_keep_kernels",
             ])
 
     class PartitionData(Record):
@@ -408,10 +409,9 @@ class Discretization(hedge.discretization.Discretization):
                     microblocks_per_block=flux_plan.microblocks_per_block())
 
             # plan local operations
-            import hedge.cuda.diff as diff
-            import hedge.cuda.fluxlocal as fluxlocal
-            diff_plan, diff_time = diff.make_plan(self, given)
-            fluxlocal_plan, fluxlocal_time = fluxlocal.make_plan(self, given)
+            from hedge.cuda.plan import make_diff_plan, make_lift_plan
+            diff_plan, diff_time = make_diff_plan(self, given)
+            fluxlocal_plan, fluxlocal_time = make_lift_plan(self, given)
 
             sys_size = flux_plan.flux_count
             total_time = flux_time + sys_size*(diff_time+fluxlocal_time)

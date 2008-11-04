@@ -33,7 +33,7 @@ from hedge.cuda.kernelbase import FluxLocalKernelBase
 
 
 # plan ------------------------------------------------------------------------
-class SMemFieldFluxLocalExecutionPlan(hedge.cuda.plan.SMemFieldLocalOpExecutionPlan):
+class ExecutionPlan(hedge.cuda.plan.SMemFieldLocalOpExecutionPlan):
     def registers(self):
         return 16
 
@@ -53,7 +53,7 @@ class SMemFieldFluxLocalExecutionPlan(hedge.cuda.plan.SMemFieldLocalOpExecutionP
                 "parallel integer", 
                 "inline integer", 
                 "serial integer", 
-                "chunk_size integer", 
+                "segment_size integer", 
                 "max_unroll integer",
                 "mb_elements integer",
                 "lmem integer",
@@ -77,13 +77,13 @@ class SMemFieldFluxLocalExecutionPlan(hedge.cuda.plan.SMemFieldLocalOpExecutionP
                 )
 
     def make_kernel(self, discr):
-        return SMemFieldFluxLocalKernel(discr, self)
+        return Kernel(discr, self)
 
 
 
 
 # kernel ----------------------------------------------------------------------
-class SMemFieldFluxLocalKernel(FluxLocalKernelBase):
+class Kernel(FluxLocalKernelBase):
     def __init__(self, discr, plan):
         self.discr = discr
         self.plan = plan
@@ -382,7 +382,7 @@ class SMemFieldFluxLocalKernel(FluxLocalKernelBase):
             open("flux_lift.cu", "w").write(str(cmod))
 
         mod = cuda.SourceModule(cmod, 
-                keep=True, 
+                keep="cuda_keep_kernels" in discr.debug, 
                 #options=["--maxrregcount=12"]
                 )
 

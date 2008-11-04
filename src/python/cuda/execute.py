@@ -44,14 +44,14 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         self.diff_xyz_cache = {} # map field expr to its dx,dy,dz
         self.flux_cache = {} # map WholeDomainFluxOperator instance to flux
 
-    def get_vec_structure(self, vec, point_size, chunk_size, block_size,
+    def get_vec_structure(self, vec, point_size, segment_size, block_size,
             other_char=lambda snippet: "."):
         result = ""
         for block in range(len(vec) // block_size):
             struc = ""
-            for chunk in range(block_size//chunk_size):
-                for point in range(chunk_size//point_size):
-                    offset = block*block_size + chunk*chunk_size + point*point_size
+            for segment in range(block_size//segment_size):
+                for point in range(segment_size//point_size):
+                    offset = block*block_size + segment*segment_size + point*point_size
                     snippet = vec[offset:offset+point_size]
 
                     if numpy.isnan(snippet).any():
