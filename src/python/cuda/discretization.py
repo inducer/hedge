@@ -399,7 +399,6 @@ class Discretization(hedge.discretization.Discretization):
 
             import hedge.cuda.fluxgather as fluxgather
             flux_plan, flux_time = fluxgather.make_plan(self, given, tune_for)
-            print "projected flux exec plan:", flux_plan
 
             # partition mesh, obtain updated plan
             pdata = self._get_partition_data(
