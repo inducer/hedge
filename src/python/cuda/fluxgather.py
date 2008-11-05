@@ -131,16 +131,14 @@ class FluxToCodeMapper(pymbolic.mapper.stringifier.StringifyMapper):
 class ExecutionPlan(hedge.cuda.plan.ExecutionPlan):
     def __init__(self, given, 
             parallel_faces, mbs_per_block, flux_count,
-            direct_store, max_face_pair_count,
-            ext_face_fraction):
+            direct_store, partition_data):
         hedge.cuda.plan.ExecutionPlan.__init__(self, given)
         self.parallel_faces = parallel_faces
         self.mbs_per_block = mbs_per_block
         self.flux_count = flux_count
         self.direct_store = direct_store
 
-        self.max_face_pair_count = max_face_pair_count
-        self.ext_face_fraction = ext_face_fraction
+        self.partition_data = partition_data
 
     def microblocks_per_block(self):
         return self.mbs_per_block
@@ -153,7 +151,7 @@ class ExecutionPlan(hedge.cuda.plan.ExecutionPlan):
 
     @memoize_method
     def face_pair_count(self):
-        return self.max_face_pair_count
+        return self.partition_data.max_face_pair_count
 
     @memoize_method
     def shared_mem_use(self):
@@ -228,14 +226,11 @@ def make_plan(discr, given, tune_for):
         for direct_store in [False]:
             for parallel_faces in range(1,32):
                 for mbs_per_block in range(1,8):
-                    pdata = discr._get_partition_data(
-                            mbs_per_block*given.microblock.elements)
                     flux_plan = ExecutionPlan(given, parallel_faces, 
                             mbs_per_block, flux_count, 
                             direct_store=direct_store,
-                            max_face_pair_count=pdata.max_face_pair_count,
-                            ext_face_fraction=pdata.ext_face_fraction,
-                            )
+                            partition_data=discr._get_partition_data(
+                                mbs_per_block*given.microblock.elements))
                     if flux_plan.invalid_reason() is None:
                         yield flux_plan
 
@@ -904,7 +899,20 @@ class Kernel:
                         + mb_el_nr * face_dofs * given.faces_per_el()
                         + face_nr * face_dofs)
 
-            for i in range(self.plan.face_pair_count()):
+            def bound_int(low, x, hi):
+                return int(min(max(low, x), hi))
+
+            from random import gauss
+            pdata = self.plan.partition_data
+            fp_count = bound_int(
+                    0,
+                    gauss(
+                        pdata.face_pair_avg,
+                        (pdata.max_face_pair_count-pdata.face_pair_avg)/2),
+                    pdata.max_face_pair_count)
+
+
+            for i in range(fp_count):
                 fp_structs.append(
                         fp_struct.make(
                             h=0.5, order=2, face_jacobian=0.5,
@@ -922,15 +930,12 @@ class Kernel:
                             a_dest=draw_dest(), b_dest=draw_dest()
                             ))
 
-            def bound(low, x, hi):
-                return min(max(low, x), hi)
-
-            total_ext_face_count = bound(0, 
-                self.plan.ext_face_fraction + randrange(-1,2), 
-                len(fp_structs))
+            total_ext_face_count = bound_int(0, 
+                pdata.ext_face_avg + randrange(-1,2), 
+                fp_count)
 
             bdry_count = min(total_ext_face_count, 
-                    randrange(1+int(total_ext_face_count/6)))
+                    randrange(1+int(round(total_ext_face_count/6))))
             diff_count = total_ext_face_count-bdry_count
 
             min_headers.append(flux_header_struct().make(

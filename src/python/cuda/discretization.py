@@ -164,8 +164,6 @@ def _boundarize_kernel():
 
 # GPU mesh partition ----------------------------------------------------------
 def make_gpu_partition_greedy(adjgraph, max_block_size):
-    print "GREEDY", max_block_size, len(adjgraph)
-
     avail_nodes = set(adjgraph.iterkeys())
     next_node = None
 
@@ -225,7 +223,6 @@ def make_gpu_partition_greedy(adjgraph, max_block_size):
 
 
 def make_gpu_partition_metis(adjgraph, max_block_size):
-    print "METIS", max_block_size, len(adjgraph)
     from pymetis import part_graph
 
     orig_part_count = part_count = len(adjgraph)//max_block_size+1
@@ -324,14 +321,21 @@ class Discretization(hedge.discretization.Discretization):
             block2extifaces[b1] += 1
 
         eg, = self.element_groups
+
         max_facepairs = 0
+        int_face_pair_count = 0
+        face_pair_count = 0
+
         for b in range(len(blocks)):
             b_ext_faces = block2extifaces[b]
             b_int_faces = (len(blocks[b])*eg.local_discretization.face_count()
                     - b_ext_faces)
             assert b_int_faces % 2 == 0
             b_facepairs = b_int_faces//2 + b_ext_faces
+
+            int_face_pair_count += b_int_faces//2
             max_facepairs = max(max_facepairs, b_facepairs)
+            face_pair_count += b_facepairs
 
         from pytools import average
 
@@ -339,8 +343,11 @@ class Discretization(hedge.discretization.Discretization):
                 partition=partition,
                 blocks=blocks,
                 max_face_pair_count=max_facepairs,
-                ext_face_fraction=average(
-                    block2extifaces.itervalues()))
+                ext_face_avg=average(
+                    block2extifaces.itervalues()),
+                int_face_pair_avg=int_face_pair_count/len(blocks),
+                face_pair_avg=face_pair_count/len(blocks),
+                )
 
         self.partition_cache[max_block_size] = result
         return result
