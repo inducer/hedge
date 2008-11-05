@@ -251,8 +251,11 @@ class Kernel(DiffKernelBase):
                 Define("ELS_PER_MB", given.microblock.elements),
                 Define("DOFS_PER_MB", "(DOFS_PER_EL*ELS_PER_MB)"),
                 Line(),
-                Define("MB_DOF", "threadIdx.x"),
+                Define("CHUNK_SIZE", given.devdata.smem_granularity),
+                Define("CHUNK_DOF", "threadIdx.x"),
                 Define("PAR_MB_NR", "threadIdx.y"),
+                Define("CHUNK_NR", "threadIdx.z"),
+                Define("MB_DOF", "(CHUNK_NR*CHUNK_SIZE+CHUNK_DOF)"),
                 Define("EL_DOF", "(MB_DOF - mb_el*DOFS_PER_EL)"),
                 Line(),
                 Define("MACROBLOCK_NR", "blockIdx.x"),
@@ -260,8 +263,6 @@ class Kernel(DiffKernelBase):
                 Define("PAR_MB_COUNT", par.parallel),
                 Define("INLINE_MB_COUNT", par.inline),
                 Define("SEQ_MB_COUNT", par.serial),
-                Line(),
-                Define("THREAD_NUM", "(MB_DOF+PAR_MB_NR*ALIGNED_DOFS_PER_MB)"),
                 Line(),
                 Define("GLOBAL_MB_NR_BASE", 
                     "(MACROBLOCK_NR*PAR_MB_COUNT*INLINE_MB_COUNT*SEQ_MB_COUNT)"),
@@ -402,7 +403,10 @@ class Kernel(DiffKernelBase):
         func = mod.get_function("apply_diff_mat_smem")
         func.prepare(
                 ["PP"] + discr.dimensions*[float_type],
-                block=(given.microblock.aligned_floats, self.plan.parallelism.parallel, 1),
+                block=(
+                    given.devdata.smem_granularity, 
+                    self.plan.parallelism.parallel, 
+                    given.microblock.aligned_floats//given.devdata.smem_granularity),
                 texrefs=[rst_to_xyz_texref, diff_rst_mat_texref])
         return func
 
