@@ -189,9 +189,12 @@ def get_load_code(dest, base, bytes, word_type=numpy.uint32,
 
 
 
-def unroll(body_gen, total_number, max_unroll, start=0):
+def unroll(body_gen, total_number, max_unroll=None, start=0):
     from hedge.cuda.cgen import For, Line, Block
     from pytools import flatten
+
+    if max_unroll is None:
+        max_unroll = total_number
             
     result = []
 
