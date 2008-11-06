@@ -330,7 +330,7 @@ class SegmentedMatrixLocalOpExecutionPlan(ExecutionPlan):
         return self.parallelism.parallel*self.segment_size
 
     def __str__(self):
-            return ("%s par=%s segment_size=%d unroll=%d" % (
+            return ("seg_matrix %s par=%s segment_size=%d unroll=%d" % (
                 ExecutionPlan.__str__(self),
                 self.parallelism,
                 self.segment_size,
@@ -372,22 +372,22 @@ def make_diff_plan(discr, given):
                 given.microblock.align_size)
 
         from hedge.cuda.diff_shared_segmat import ExecutionPlan as SSegPlan
+
         if "cuda_no_smem_matrix" not in discr.debug:
             for pe in range(1,32+1):
                 for inline in range(1, 4+1):
                     for seq in range(1, 4):
-                        localop_par = Parallelism(pe, inline, seq)
                         for segment_size in segment_sizes:
                             yield SSegPlan(
-                                    given, localop_par, segment_size, 
+                                    given, Parallelism(pe, inline, seq), 
+                                    segment_size, 
                                     max_unroll=given.dofs_per_el())
 
         from hedge.cuda.diff_shared_fld import ExecutionPlan as SFieldPlan
 
         for pe in range(1,32+1):
             for inline in range(1, 4+1):
-                localop_par = Parallelism(pe, inline, 1)
-                yield SFieldPlan(given, localop_par, 
+                yield SFieldPlan(given, Parallelism(pe, inline, 1), 
                         max_unroll=given.dofs_per_el())
 
     def target_func(plan):
@@ -415,10 +415,10 @@ def make_lift_plan(discr, given):
                 for pe in range(1,32+1):
                     for inline in range(1, 4+1):
                         for seq in range(1, 4+1):
-                            localop_par = Parallelism(pe, inline, seq)
                             for segment_size in segment_sizes:
                                 yield SSegPlan(given, 
-                                        localop_par, segment_size,
+                                        Parallelism(pe, inline, seq),
+                                        segment_size,
                                         max_unroll=given.face_dofs_per_el(),
                                         use_prefetch_branch=use_prefetch_branch)
 
@@ -426,8 +426,7 @@ def make_lift_plan(discr, given):
 
         for pe in range(1,32+1):
             for inline in range(1, 5):
-                localop_par = Parallelism(pe, inline, 1)
-                yield SFieldPlan(given, localop_par,
+                yield SFieldPlan(given, Parallelism(pe, inline, 1),
                         max_unroll=given.face_dofs_per_el())
 
     def target_func(plan):
