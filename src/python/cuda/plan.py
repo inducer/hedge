@@ -365,6 +365,11 @@ class SMemFieldLocalOpExecutionPlan(ExecutionPlan):
 
 
 
+MAX_INLINE = 6
+
+
+
+
 def make_diff_plan(discr, given):
     def generate_plans():
         segment_sizes = range(given.microblock.align_size, 
@@ -375,7 +380,7 @@ def make_diff_plan(discr, given):
 
         if "cuda_no_smem_matrix" not in discr.debug:
             for pe in range(1,32+1):
-                for inline in range(1, 4+1):
+                for inline in range(1, MAX_INLINE+1):
                     for seq in range(1, 4):
                         for segment_size in segment_sizes:
                             yield SSegPlan(
@@ -386,7 +391,7 @@ def make_diff_plan(discr, given):
         from hedge.cuda.diff_shared_fld import ExecutionPlan as SFieldPlan
 
         for pe in range(1,32+1):
-            for inline in range(1, 4+1):
+            for inline in range(1, MAX_INLINE+1):
                 yield SFieldPlan(given, Parallelism(pe, inline, 1), 
                         max_unroll=given.dofs_per_el())
 
@@ -413,7 +418,7 @@ def make_lift_plan(discr, given):
                         given.microblock.align_size)
 
                 for pe in range(1,32+1):
-                    for inline in range(1, 4+1):
+                    for inline in range(1, MAX_INLINE+1):
                         for seq in range(1, 4+1):
                             for segment_size in segment_sizes:
                                 yield SSegPlan(given, 
@@ -425,7 +430,7 @@ def make_lift_plan(discr, given):
         from hedge.cuda.lift_shared_fld import ExecutionPlan as SFieldPlan
 
         for pe in range(1,32+1):
-            for inline in range(1, 5):
+            for inline in range(1, MAX_INLINE):
                 yield SFieldPlan(given, Parallelism(pe, inline, 1),
                         max_unroll=given.face_dofs_per_el())
 
