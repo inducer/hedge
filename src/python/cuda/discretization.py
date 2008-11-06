@@ -398,36 +398,42 @@ class Discretization(hedge.discretization.Discretization):
         class OverallPlan(Record):pass
         
         def generate_overall_plans():
-            from hedge.cuda.plan import PlanGivenData
-            given = PlanGivenData(
-                    DeviceData(device), ldis, 
-                    allow_microblocking="cuda_no_microblock" not in self.debug,
-                    float_type=default_scalar_type)
+            if "cuda_no_microblock" in self.debug:
+                allow_mb_values = [False]
+            else:
+                allow_mb_values = [True, False]
 
-            import hedge.cuda.fluxgather as fluxgather
-            flux_plan, flux_time = fluxgather.make_plan(self, given, tune_for)
+            for allow_mb in allow_mb_values:
+                from hedge.cuda.plan import PlanGivenData
+                given = PlanGivenData(
+                        DeviceData(device), ldis, 
+                        allow_microblocking=allow_mb,
+                        float_type=default_scalar_type)
 
-            # partition mesh, obtain updated plan
-            pdata = self._get_partition_data(
-                    flux_plan.elements_per_block())
-            given.post_decomposition(
-                    block_count=len(pdata.blocks),
-                    microblocks_per_block=flux_plan.microblocks_per_block())
+                import hedge.cuda.fluxgather as fluxgather
+                flux_plan, flux_time = fluxgather.make_plan(self, given, tune_for)
 
-            # plan local operations
-            from hedge.cuda.plan import make_diff_plan, make_lift_plan
-            diff_plan, diff_time = make_diff_plan(self, given)
-            fluxlocal_plan, fluxlocal_time = make_lift_plan(self, given)
+                # partition mesh, obtain updated plan
+                pdata = self._get_partition_data(
+                        flux_plan.elements_per_block())
+                given.post_decomposition(
+                        block_count=len(pdata.blocks),
+                        microblocks_per_block=flux_plan.microblocks_per_block())
 
-            sys_size = flux_plan.flux_count
-            total_time = flux_time + sys_size*(diff_time+fluxlocal_time)
+                # plan local operations
+                from hedge.cuda.plan import make_diff_plan, make_lift_plan
+                diff_plan, diff_time = make_diff_plan(self, given)
+                fluxlocal_plan, fluxlocal_time = make_lift_plan(self, given)
 
-            yield OverallPlan(
-                given=given,
-                flux_plan=flux_plan,
-                partition=pdata.partition,
-                diff_plan=diff_plan,
-                fluxlocal_plan=fluxlocal_plan), total_time
+                sys_size = flux_plan.flux_count
+                total_time = flux_time + sys_size*(diff_time+fluxlocal_time)
+
+                yield OverallPlan(
+                    given=given,
+                    flux_plan=flux_plan,
+                    partition=pdata.partition,
+                    diff_plan=diff_plan,
+                    fluxlocal_plan=fluxlocal_plan), total_time
 
         overall_plans = list(generate_overall_plans())
 
