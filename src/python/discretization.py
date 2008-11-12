@@ -228,30 +228,30 @@ class Discretization(object):
     def create_op_timers(self):
         from pytools.log import IntervalTimer
 
-        self.inner_flux_timer = IntervalTimer("t_inner_flux", 
-                "Time spent computing inner fluxes")
-        self.bdry_flux_timer = IntervalTimer("t_bdry_flux", 
-                "Time spent computing boundary fluxes")
-        self.mass_op_timer = IntervalTimer("t_mass_op", 
+        self.gather_timer = IntervalTimer("t_gather", 
+                "Time spent gathering fluxes")
+        self.lift_timer = IntervalTimer("t_lift", 
+                "Time spent lifting fluxes")
+        self.mass_timer = IntervalTimer("t_mass", 
                 "Time spent applying mass operators")
-        self.diff_op_timer = IntervalTimer("t_diff_op",
+        self.diff_timer = IntervalTimer("t_diff",
                 "Time spent applying applying differentiation operators")
 
-        return [self.inner_flux_timer, 
-                self.bdry_flux_timer,
-                self.mass_op_timer,
-                self.diff_op_timer ]
+        return [self.gather_timer, 
+                self.lift_timer,
+                self.mass_timer,
+                self.diff_timer ]
 
     def add_instrumentation(self, mgr):
         from pytools.log import IntervalTimer, EventCounter
 
-        self.inner_flux_counter = EventCounter("n_inner_flux", 
-                "Number of inner flux computations")
-        self.bdry_flux_counter = EventCounter("n_bdry_flux", 
-                "Number of boundary flux computations")
-        self.mass_op_counter = EventCounter("n_mass_op", 
+        self.gather_counter = EventCounter("n_gather", 
+                "Number of flux gather invocations")
+        self.lift_counter = EventCounter("n_lift", 
+                "Number of flux lift invocations")
+        self.mass_counter = EventCounter("n_mass_op", 
                 "Number of mass operator applications")
-        self.diff_op_counter = EventCounter("n_diff_op",
+        self.diff_counter = EventCounter("n_diff",
                 "Number of differentiation operator applications")
 
         self.gather_flop_counter = EventCounter("n_flops_gather",
@@ -274,10 +274,10 @@ class Discretization(object):
         for op in self.create_op_timers():
             mgr.add_quantity(op)
 
-        mgr.add_quantity(self.inner_flux_counter)
-        mgr.add_quantity(self.bdry_flux_counter)
-        mgr.add_quantity(self.mass_op_counter)
-        mgr.add_quantity(self.diff_op_counter)
+        mgr.add_quantity(self.gather_counter)
+        mgr.add_quantity(self.lift_counter)
+        mgr.add_quantity(self.mass_counter)
+        mgr.add_quantity(self.diff_counter)
 
         mgr.add_quantity(self.gather_flop_counter)
         mgr.add_quantity(self.lift_flop_counter)

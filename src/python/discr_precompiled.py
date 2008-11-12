@@ -135,6 +135,20 @@ class _FluxOpCompileMapper(hedge.optemplate.FluxDecomposer):
 
 
 
+
+# utilities -------------------------------------------------------------------
+def time_count_flop_if_instrumented(func, timer, counter, flop_counter, flops):
+    def wrapped_f(*args, **kwargs):
+        counter.add()
+        flop_counter.add(flops)
+        timer.start()
+        try:
+            return func(*args, **kwargs)
+        finally:
+            timer.stop()
+
+    return wrapped_f
+
 # exec mapper -----------------------------------------------------------------
 class ExecutionMapper(hedge.optemplate.Evaluator,
         hedge.optemplate.BoundOpMapperMixin, 
@@ -144,28 +158,55 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         self.discr = discr
         self.diff_rst_cache = {}
 
-        if self.discr.instrumented:
-            from pytools.log import time_and_count_function
+        from hedge._internal import perform_double_sided_flux, lift_flux
+        if discr.instrumented:
             self.map_diff_base = \
-                    time_and_count_function(
+                    time_count_flop_if_instrumented(
                             self.map_diff_base,
-                            self.discr.diff_op_timer,
-                            self.discr.diff_op_counter)
+                            self.discr.diff_timer,
+                            self.discr.diff_counter,
+                            self.discr.diff_flop_counter,
+                            self.diff_flops(self.discr))
             self.map_mass_base = \
-                    time_and_count_function(
+                    time_count_flop_if_instrumented(
                             self.map_mass_base,
-                            self.discr.mass_op_timer,
-                            self.discr.mass_op_counter)
-            self.scalar_inner_flux = \
-                    time_and_count_function(
-                            self.scalar_inner_flux,
-                            self.discr.inner_flux_timer,
-                            self.discr.inner_flux_counter)
-            self.scalar_bdry_flux = \
-                    time_and_count_function(
-                            self.scalar_bdry_flux,
-                            self.discr.bdry_flux_timer,
-                            self.discr.bdry_flux_counter)
+                            self.discr.mass_timer,
+                            self.discr.mass_counter,
+                            self.discr.mass_flop_counter,
+                            self.mass_flops(self.discr))
+
+            gather_flops = 0
+            for eg in self.discr.element_groups:
+                ldis = eg.local_discretization
+                gather_flops += (
+                        ldis.face_node_count()
+                        * ldis.face_count()
+                        * len(eg.members)
+                        * (1 # facejac-mul
+                            + 2 * # int+ext
+                            3 # const-mul, normal-mul, add
+                            )
+                        )
+
+            self.perform_double_sided_flux = \
+                    time_count_flop_if_instrumented(
+                            perform_double_sided_flux,
+                            self.discr.gather_timer,
+                            self.discr.gather_counter,
+                            self.discr.gather_flop_counter,
+                            gather_flops)
+
+            from hedge._internal import lift_flux
+            self.lift_flux = \
+                    time_count_flop_if_instrumented(
+                            lift_flux,
+                            self.discr.lift_timer,
+                            self.discr.lift_counter,
+                            self.discr.lift_flop_counter,
+                            self.lift_flops(self.discr))
+        else:
+            self.perform_double_sided_flux = perform_double_sided_flux
+            self.lift_flux = lift_flux
 
     # implementation stuff ----------------------------------------------------
     def diff_rst(self, op, rst_axis, field):
@@ -214,22 +255,22 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         if isinstance(field, (int, float, complex)) and field == 0:
             return 0
 
-        from hedge._internal import perform_double_sided_flux, ChainedFlux, \
-                lift_flux
+        from hedge._internal import ChainedFlux
 
         for fg in self.discr.face_groups:
             fluxes_on_faces = numpy.zeros(
                     (fg.face_count*fg.face_length()*fg.element_count(),),
                     dtype=field.dtype)
             
-            perform_double_sided_flux(fg, ChainedFlux(int_coeff), ChainedFlux(ext_coeff),
+            self.perform_double_sided_flux(fg, 
+                    ChainedFlux(int_coeff), ChainedFlux(ext_coeff),
                     field, fluxes_on_faces)
 
             if lift:
-                lift_flux(fg, fg.ldis_loc.lifting_matrix(),
+                self.lift_flux(fg, fg.ldis_loc.lifting_matrix(),
                         fg.local_el_inverse_jacobians, fluxes_on_faces, out)
             else:
-                lift_flux(fg, fg.ldis_loc.multi_face_mass_matrix(),
+                self.lift_flux(fg, fg.ldis_loc.multi_face_mass_matrix(),
                         None, fluxes_on_faces, out)
 
         return out

@@ -138,22 +138,9 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             pass
 
         discr = self.ex.discr
-
         if discr.instrumented:
-            given = discr.given
-            discr.diff_op_counter.add(discr.dimensions)
-            discr.diff_flop_counter.add(
-                    # r,s,t diff
-                    2 # mul+add
-                    * discr.dimensions
-                    * len(discr.nodes)
-                    * given.dofs_per_el()
-
-                    # x,y,z rescale
-                    +2 # mul+add
-                    * discr.dimensions**2
-                    * len(discr.nodes)
-                    )
+            discr.diff_counter.add(discr.dimensions)
+            discr.diff_flop_counter.add(self.diff_flops(discr))
 
         field = self.rec(field_expr)
         xyz_diff = self.ex.diff_kernel(op.__class__, field)
@@ -207,6 +194,8 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
             # count flops
             if discr.instrumented:
+                discr.gather_counter.add(
+                        len(computed_fluxes)*len(wdflux.all_deps))
                 discr.gather_flop_counter.add(
                         len(computed_fluxes)
                         * given.dofs_per_face()
@@ -252,15 +241,10 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         # lift phase ----------------------------------------------------------
         flux = self.ex.fluxlocal_kernel(fluxes_on_faces, wdflux.is_lift)
 
-        # count flops
         if discr.instrumented:
-            discr.inner_flux_counter.add()
+            discr.lift_counter.add()
             discr.lift_flop_counter.add(
-                    2 # mul+add
-                    * given.face_dofs_per_el()
-                    * given.dofs_per_el()
-                    * len(discr.mesh.elements)
-                    )
+                    self.lift_flops(discr))
 
         # verification --------------------------------------------------------
         if "cuda_lift" in discr.debug:
