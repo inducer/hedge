@@ -111,7 +111,7 @@ def make_superblocks(devdata, struct_name, single_item, multi_item, extra_fields
     block_count = single_valued(
             len(si_part_blocks) for si_part_blocks, si_part_decl in single_item)
 
-    from hedge.cuda.cgen import Struct, Value, ArrayOf
+    from codepy.cgen import Struct, Value, ArrayOf
 
     struct_members = []
     for part_data, part_decl in single_item:
@@ -157,12 +157,12 @@ def make_superblocks(devdata, struct_name, single_item, multi_item, extra_fields
 # code generation -------------------------------------------------------------
 def get_load_code(dest, base, bytes, word_type=numpy.uint32,
         descr=None):
-    from hedge.cuda.cgen import \
+    from codepy.cgen import \
             Pointer, POD, Value, ArrayOf, Const, \
             Comment, Block, Line, \
             Constant, Initializer, If, For, Statement, Assign
 
-    from hedge.cuda.cgen import dtype_to_ctype
+    from codepy.cgen import dtype_to_ctype
     copy_dtype = numpy.dtype(word_type)
     copy_dtype_str = dtype_to_ctype(copy_dtype)
 
@@ -190,7 +190,7 @@ def get_load_code(dest, base, bytes, word_type=numpy.uint32,
 
 
 def unroll(body_gen, total_number, max_unroll=None, start=0):
-    from hedge.cuda.cgen import For, Line, Block
+    from codepy.cgen import For, Line, Block
     from pytools import flatten
 
     if max_unroll is None:

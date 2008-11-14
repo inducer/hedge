@@ -40,7 +40,7 @@ class GPUIndexLists(Record): pass
 # structures ------------------------------------------------------------------
 @memoize
 def flux_header_struct():
-    from hedge.cuda.cgen import GenerableStruct, POD
+    from codepy.cgen import GenerableStruct, POD
 
     return GenerableStruct("flux_header", [
         POD(numpy.uint16, "same_facepairs_end"),
@@ -50,7 +50,7 @@ def flux_header_struct():
 
 @memoize
 def face_pair_struct(float_type, dims):
-    from hedge.cuda.cgen import GenerableStruct, POD, ArrayOf
+    from codepy.cgen import GenerableStruct, POD, ArrayOf
     return GenerableStruct("face_pair", [
         POD(float_type, "h", ),
         POD(float_type, "order"),
@@ -390,14 +390,16 @@ class Kernel:
 
     @memoize_method
     def get_kernel(self, fdata, ilist_data, for_benchmark):
-        from hedge.cuda.cgen import \
+        from codepy.cgen import \
                 Pointer, POD, Value, ArrayOf, Const, \
                 Module, FunctionDeclaration, FunctionBody, Block, \
                 Comment, Line, \
-                CudaShared, CudaGlobal, Static, MaybeUnused, \
+                 Static, MaybeUnused, \
                 Define, Pragma, \
                 Constant, Initializer, If, For, Statement, Assign, While
                 
+        from hedge.cuda.cgen import CudaShared, CudaGlobal
+
         discr = self.discr
         given = self.plan.given
         fplan = self.plan
@@ -502,7 +504,7 @@ class Kernel:
                         what)
 
         def bdry_flux_writer():
-            from hedge.cuda.cgen import make_multiple_ifs
+            from codepy.cgen import make_multiple_ifs
             from pymbolic.mapper.stringifier import PREC_NONE
 
             flux_write_code = Block([POD(float_type, "flux") ])
@@ -564,7 +566,7 @@ class Kernel:
 
                 return ("val_%s_%s" % (prefix, short_name(flux_rec.field_expr)))
 
-            from hedge.cuda.cgen import make_multiple_ifs
+            from codepy.cgen import make_multiple_ifs
             from pymbolic.mapper.stringifier import PREC_NONE
 
             flux_write_code = Block([POD(float_type, "a_flux") ])
@@ -846,7 +848,7 @@ class Kernel:
 
         #print len(same_fp_structs), len(diff_fp_structs), len(bdry_fp_structs)
 
-        from hedge.cuda.cgen import Value, POD
+        from codepy.cgen import Value, POD
         from hedge.cuda.tools import make_superblocks
 
         return make_superblocks(
@@ -948,7 +950,7 @@ class Kernel:
         headers = (min_headers * dups)[:block_count]
         fp_blocks = (min_fp_blocks * dups)[:block_count]
 
-        from hedge.cuda.cgen import Value
+        from codepy.cgen import Value
         from hedge.cuda.tools import make_superblocks
 
         return make_superblocks(
@@ -985,7 +987,7 @@ class Kernel:
         else:
             tp = numpy.uint8
 
-        from hedge.cuda.cgen import Typedef, POD, Value, Define
+        from codepy.cgen import Typedef, POD, Value, Define
 
         from pytools import flatten
         flat_ilists = numpy.array(

@@ -192,13 +192,13 @@ class Kernel(DiffKernelBase):
 
     @memoize_method
     def get_kernel(self, diff_op_cls, elgroup, for_benchmark=False):
-        from hedge.cuda.cgen import \
+        from codepy.cgen import \
                 Pointer, POD, Value, ArrayOf, Const, \
                 Module, FunctionDeclaration, FunctionBody, Block, \
-                Comment, Line, \
-                CudaShared, CudaGlobal, Static, \
-                Define, \
+                Comment, Line, Static, Define, \
                 Constant, Initializer, If, For, Statement, Assign
+
+        from hedge.cuda.cgen import CudaShared, CudaGlobal
                 
         discr = self.discr
         d = discr.dimensions

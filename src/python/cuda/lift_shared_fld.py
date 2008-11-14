@@ -204,15 +204,16 @@ class Kernel(FluxLocalKernelBase):
 
     @memoize_method
     def get_kernel(self, is_lift, elgroup, for_benchmark=False):
-        from hedge.cuda.cgen import \
+        from codepy.cgen import \
                 Pointer, POD, Value, ArrayOf, Const, \
                 Module, FunctionDeclaration, FunctionBody, Block, \
                 Comment, Line, \
-                CudaShared, CudaConstant, CudaGlobal, Static, \
+                Static, \
                 Define, \
                 Constant, Initializer, If, For, Statement, Assign, \
                 ArrayInitializer
-                
+
+        from hedge.cuda.cgen import CudaShared, CudaConstant, CudaGlobal
         discr = self.discr
         d = discr.dimensions
         dims = range(d)
