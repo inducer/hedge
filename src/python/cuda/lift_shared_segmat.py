@@ -463,7 +463,7 @@ class Kernel(FluxLocalKernelBase):
                 )
 
         if self.plan.use_prefetch_branch:
-            from hedge.cuda.cgen import make_multiple_ifs
+            from codepy.cgen import make_multiple_ifs
             f_body.append(make_multiple_ifs([
                     ("segment_el_count == %d" % fetch_count,
                         lift_outer_loop(fetch_count))
