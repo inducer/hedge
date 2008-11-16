@@ -310,17 +310,16 @@ class OpTemplateWithEnvironment(object):
     def compile_optemplate(mesh, optemplate):
         from pymbolic.mapper.constant_folder import CommutativeConstantFoldingMapper
         from hedge.optemplate import OperatorBinder, InverseMassContractor, \
-                FluxDecomposer, BCToFluxRewriter
+                BCToFluxRewriter
         from hedge.cuda.optemplate import \
                 BoundaryCombiner, BoundaryTagCollector, FluxCollector
 
         return BoundaryCombiner(mesh)(
                 InverseMassContractor()(
                     CommutativeConstantFoldingMapper()(
-                        FluxDecomposer()(
-                            BCToFluxRewriter()(
-                                OperatorBinder()(
-                                    optemplate))))))
+                        BCToFluxRewriter()(
+                            OperatorBinder()(
+                                optemplate)))))
 
     # actual execution --------------------------------------------------------
     def __call__(self, **vars):

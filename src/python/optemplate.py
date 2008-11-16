@@ -189,6 +189,20 @@ class FluxOperator(Operator):
 
 
 
+class LiftingFluxOperator(Operator):
+    def __init__(self, flux):
+        Operator.__init__(self)
+        self.flux = flux
+
+    def __getinitargs__(self):
+        return (self.flux, )
+
+    def get_mapper_method(self, mapper): 
+        return mapper.map_lift
+
+
+
+
 class FluxCoefficientOperator(Operator):
     """Results in a volume-global vector with data along the faces,
     obtained by computing the flux and applying the face mass matrix.
@@ -375,6 +389,9 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
     def map_flux(self, expr, enclosing_prec):
         return "Flux(%s)" % expr.flux
 
+    def map_lift(self, expr, enclosing_prec):
+        return "Lift(%s)" % expr.flux
+
     def map_flux_coefficient(self, expr, enclosing_prec):
         return "FluxCoeff(int=%s, ext=%s)" % (expr.int_coeff, expr.ext_coeff)
 
@@ -460,6 +477,10 @@ class _InnerInverseMassContractor(pymbolic.mapper.RecursiveMapper):
         elif isinstance(binding.op, StiffnessTOperator):
             return OperatorBinding(
                     MInvSTOperator(binding.op.xyz_axis),
+                    binding.field)
+        elif isinstance(binding.op, FluxOperator):
+            return OperatorBinding(
+                    LiftingFluxOperator(binding.op.flux),
                     binding.field)
         elif isinstance(binding.op, FluxCoefficientOperator):
             return OperatorBinding(

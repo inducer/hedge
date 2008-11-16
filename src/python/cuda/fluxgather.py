@@ -73,19 +73,22 @@ def face_pair_struct(float_type, dims):
 
 
 # flux to code mapper ---------------------------------------------------------
-class FluxToCodeMapper(pymbolic.mapper.stringifier.StringifyMapper):
-    def __init__(self, flip_normal=False):
+class FluxToCodeMapper(pymbolic.mapper.stringifier.SimplifyingSortingStringifyMapper):
+    def __init__(self, int_field_expr, ext_field_expr, is_flipped=False):
         def float_mapper(x):
             if isinstance(x, float):
                 return "%sf" % repr(x)
             else:
                 return repr(x)
 
-        pymbolic.mapper.stringifier.StringifyMapper.__init__(self, float_mapper)
-        self.flip_normal = flip_normal
+        pymbolic.mapper.stringifier.SimplifyingSortingStringifyMapper.__init__(self, 
+                float_mapper, reverse=False)
+        self.int_field_expr = int_field_expr
+        self.ext_field_expr = ext_field_expr
+        self.is_flipped = is_flipped
 
     def map_normal(self, expr, enclosing_prec):
-        if self.flip_normal:
+        if self.is_flipped:
             sign = "-"
         else:
             sign = ""
@@ -122,6 +125,30 @@ class FluxToCodeMapper(pymbolic.mapper.stringifier.StringifyMapper):
                 self.rec(expr.then, PREC_NONE),
                 self.rec(expr.else_, PREC_NONE),
                 )
+
+    def map_field_component(self, expr, enclosing_prec):
+
+        if expr.is_local ^ self.is_flipped:
+            prefix = "a"
+            f_expr = self.int_field_expr
+        else:
+            prefix = "b"
+            f_expr = self.ext_field_expr
+
+        from hedge.cuda.optemplate import WholeDomainFluxOperator
+        short_name = WholeDomainFluxOperator.short_name
+
+        from hedge.tools import is_obj_array, is_zero
+        if is_obj_array(f_expr):
+            f_expr = f_expr[expr.index]
+            if is_zero(f_expr):
+                return "0"
+            return "val_%s_%s" % (prefix, short_name(f_expr))
+        else:
+            assert expr.index == 0, repr(f_expr)
+            if is_zero(f_expr):
+                return "0"
+            return "val_%s_%s" % (prefix, short_name(f_expr))
 
 
 
@@ -534,22 +561,16 @@ class Kernel:
 
                 flux_write_code.extend(
                         If("(fpair->boundary_bitmap) & (1 << %d)" % (bdry_id),
-                            Block(list(flatten([
-                                S("flux += /*%s*/ (%s) * val_%s_%s"
-                                    % (is_interior and "int" or "ext",
-                                        FluxToCodeMapper()(coeff, PREC_NONE),
-                                        is_interior and "a" or "b",
-                                        short_name(field_expr)))
-                                    for is_interior, coeff, field_expr in [
-                                        (True, flux_rec.int_coeff, flux_rec.field_expr),
-                                        (False, flux_rec.ext_coeff, flux_rec.bfield_expr),
-                                        ]
-                                    if not is_zero(field_expr)
-                                    ]
-                                    for flux_rec in fluxes
-                                    ))))
-                            for bdry_id, fluxes in wdflux.bdry_id_to_fluxes.iteritems()
-                    )
+                            Block([
+                                S("flux += %s"
+                                    % FluxToCodeMapper(
+                                            flux_rec.bpair.field,
+                                            flux_rec.bpair.bfield)
+                                    (flux_rec.flux_expr, PREC_NONE))
+                                for flux_rec in fluxes])
+                            )
+                        for bdry_id, fluxes in wdflux.bdry_id_to_fluxes.iteritems()
+                        )
 
                 flux_write_code.append(
                             gen_store(flux_nr, "fpair->a_dest+FACEDOF_NR",
@@ -598,16 +619,14 @@ class Kernel:
 
                 for int_rec in wdflux.interiors:
                     for prefix, is_flipped in zip(prefixes, flip_values):
-                        for label, coeff in zip(
-                                ["int", "ext"], 
-                                [int_rec.int_coeff, int_rec.ext_coeff]):
-                            flux_write_code.append(
-                                S("%s_flux += /*%s*/ (%s) * %s"
-                                    % (prefix, label,
-                                        FluxToCodeMapper(is_flipped)(coeff, PREC_NONE),
-                                        get_field(int_rec, 
-                                            is_interior=label =="int", 
-                                            flipped=is_flipped)
+                        flux_write_code.append(
+                                S("%s_flux += %s"
+                                    % (prefix, 
+                                        FluxToCodeMapper(
+                                            int_rec.field_expr, 
+                                            int_rec.field_expr, 
+                                            is_flipped)
+                                        (int_rec.flux_expr, PREC_NONE),
                                         )))
 
                 flux_write_code.append(Line())

@@ -346,15 +346,11 @@ class FluxDifferentiationMapper(pymbolic.mapper.differentiator.DifferentiationMa
 
 
 def analyze_flux(flux):
-    """For a multi-dependency scalar or vector flux passed in,
+    """For a multi-dependency scalar flux passed in,
     return a list of tuples C{(in_field_idx, int, ext)}, where C{int}
     and C{ext} are the (expressions of the) flux coefficients for the
     dependency with number C{in_field_idx}.
     """
-
-    from hedge.tools import is_obj_array
-    if is_obj_array(flux):
-        return numpy.array([compile_flux(subflux) for subflux in flux])
 
     def compile_scalar_flux(flux):
         def in_fields_cmp(a, b):

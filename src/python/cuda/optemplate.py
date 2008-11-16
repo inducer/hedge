@@ -21,7 +21,6 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 
-
 import pymbolic.primitives
 import pymbolic.mapper
 import hedge.optemplate
@@ -44,6 +43,45 @@ class StringifyMapper(hedge.optemplate.StringifyMapper):
 
 
 
+def get_flux_dependencies(flux, field):
+    """For a multi-dependency scalar flux passed in,
+    return a list of tuples C{(in_field_idx, int, ext)}, where C{int}
+    and C{ext} are the (expressions of the) flux coefficients for the
+    dependency with number C{in_field_idx}.
+    """
+
+    def in_fields_cmp(a, b):
+        return cmp(a.index, b.index) \
+                or cmp(a.is_local, b.is_local)
+
+    from hedge.flux import FluxDependencyMapper, FieldComponent
+    in_fields = list(FluxDependencyMapper(composite_leaves=True)(flux))
+
+    # check that all in_fields are FieldComponent instances
+    for in_field in in_fields:
+        if not isinstance(in_field, FieldComponent):
+            raise ValueError, "flux depends on invalid term `%s'" % str(in_field)
+        
+    in_fields.sort(in_fields_cmp)
+
+    from hedge.tools import is_zero
+    from hedge.optemplate import BoundaryPair
+    if isinstance(field, BoundaryPair):
+        for inf in in_fields:
+            if inf.is_local:
+                if not is_zero(field.field[inf.index]):
+                    yield field.field[inf.index]
+            else:
+                if not is_zero(field.bfield[inf.index]):
+                    yield field.bfield[inf.index]
+    else:
+        for inf in in_fields:
+            if not is_zero(field[inf.index]):
+                yield field[inf.index]
+
+
+
+
 class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
     def __init__(self, is_lift, interiors, boundaries, 
             flux_optemplate=None):
@@ -54,16 +92,17 @@ class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
         from pytools import Record
         self.interiors = interiors
 
-        interior_deps = set(iflux.field_expr for iflux in interiors)
-        
-        from hedge.tools import is_zero
-        boundary_deps = (
-                set(bflux.field_expr for bflux in boundaries
-                    if not is_zero(bflux.field_expr))
-                |
-                set(bflux.bfield_expr for bflux in boundaries
-                    if not is_zero(bflux.bfield_expr))
-                )
+        def set_sum(set_iterable):
+            from operator import or_
+            return reduce(or_, set_iterable, set())
+
+        interior_deps = set_sum(
+                set(get_flux_dependencies(iflux.flux_expr, iflux.field_expr))
+                for iflux in interiors)
+        boundary_deps = set_sum(
+                set(get_flux_dependencies(bflux.flux_expr, bflux.bpair))
+                for bflux in boundaries)
+
         self.interior_deps = list(interior_deps)
         self.boundary_deps = list(boundary_deps)
         self.all_deps = list(interior_deps|boundary_deps)
@@ -73,7 +112,7 @@ class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
 
         for bflux in boundaries:
             bdry_id = self.tag_to_bdry_id.setdefault(
-                    bflux.tag, len(self.tag_to_bdry_id))
+                    bflux.bpair.tag, len(self.tag_to_bdry_id))
             self.bdry_id_to_fluxes.setdefault(bdry_id, []).append(bflux)
                 
         self.flux_optemplate = flux_optemplate
@@ -114,17 +153,23 @@ class BoundaryCombiner(hedge.optemplate.OpTemplateIdentityMapper):
 
     def map_sum(self, expr):
         from hedge.optemplate import OperatorBinding, \
-                FluxCoefficientOperator, LiftingFluxCoefficientOperator, \
+                FluxOperator, LiftingFluxOperator, \
                 Field, BoundaryPair
 
-        flux_op_types = (FluxCoefficientOperator, LiftingFluxCoefficientOperator)
+        flux_op_types = (FluxOperator, LiftingFluxOperator)
 
         def is_valid_arg(arg):
             from pymbolic.primitives import Subscript, Variable
+            from hedge.tools import is_obj_array
             if isinstance(arg, BoundaryPair):
                 return is_valid_arg(arg.field) and is_valid_arg(arg.bfield)
             elif isinstance(arg, Subscript):
                 return isinstance(arg.aggregate, Variable) and isinstance(arg.index, int)
+            elif is_obj_array(arg):
+                for entry in arg:
+                    if not is_valid_arg(entry):
+                        return False
+                return True
             else:
                 return isinstance(arg, Variable) or (
                         isinstance(arg, (int, float)) and arg == 0)
@@ -145,7 +190,7 @@ class BoundaryCombiner(hedge.optemplate.OpTemplateIdentityMapper):
                 if (isinstance(ch, OperatorBinding) 
                         and isinstance(ch.op, flux_op_types)
                         and is_valid_arg(ch.field)):
-                    my_is_lift = isinstance(ch.op, LiftingFluxCoefficientOperator),
+                    my_is_lift = isinstance(ch.op, LiftingFluxOperator),
 
                     if is_lift is None:
                         is_lift = my_is_lift
@@ -157,19 +202,15 @@ class BoundaryCombiner(hedge.optemplate.OpTemplateIdentityMapper):
                     flux_optemplate_summands.append(ch)
 
                     if isinstance(ch.field, BoundaryPair):
-                        bp = ch.field
-                        if self.mesh.tag_to_boundary.get(bp.tag, []):
+                        bpair = ch.field
+                        if self.mesh.tag_to_boundary.get(bpair.tag, []):
                             boundaries.append(BoundaryInfo(
-                                tag=bp.tag,
-                                int_coeff=ch.op.int_coeff,
-                                ext_coeff=ch.op.ext_coeff,
-                                field_expr=bp.field,
-                                bfield_expr=bp.bfield,
+                                flux_expr=ch.op.flux,
+                                bpair=bpair,
                                 ))
                     else:
                         interiors.append(InteriorInfo(
-                                int_coeff=ch.op.int_coeff,
-                                ext_coeff=ch.op.ext_coeff,
+                                flux_expr=ch.op.flux,
                                 field_expr=ch.field,
                                 short_name=WholeDomainFluxOperator.short_name(ch.field)))
                 else:
