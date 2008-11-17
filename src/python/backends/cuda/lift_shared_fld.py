@@ -25,15 +25,15 @@ import numpy
 from pytools import memoize_method, memoize
 import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
-from hedge.cuda.tools import FakeGPUArray
-import hedge.cuda.plan 
-from hedge.cuda.kernelbase import FluxLocalKernelBase
+from hedge.backends.cuda.tools import FakeGPUArray
+import hedge.backends.cuda.plan 
+from hedge.backends.cuda.kernelbase import FluxLocalKernelBase
 
 
 
 
 # plan ------------------------------------------------------------------------
-class ExecutionPlan(hedge.cuda.plan.SMemFieldLocalOpExecutionPlan):
+class ExecutionPlan(hedge.backends.cuda.plan.SMemFieldLocalOpExecutionPlan):
     def registers(self):
         return 16
 
@@ -88,7 +88,7 @@ class Kernel(FluxLocalKernelBase):
         self.discr = discr
         self.plan = plan
 
-        from hedge.cuda.tools import int_ceiling
+        from hedge.backends.cuda.tools import int_ceiling
         self.grid = (int_ceiling(
             self.plan.given.total_dofs()
             / self.plan.dofs_per_macroblock()),
@@ -106,7 +106,7 @@ class Kernel(FluxLocalKernelBase):
             return None
 
         def vol_empty():
-            from hedge.cuda.tools import int_ceiling
+            from hedge.backends.cuda.tools import int_ceiling
             dofs = int_ceiling(given.total_dofs(), self.plan.dofs_per_macroblock())
 
             return gpuarray.empty((dofs,), dtype=given.float_type,
@@ -213,7 +213,7 @@ class Kernel(FluxLocalKernelBase):
                 Constant, Initializer, If, For, Statement, Assign, \
                 ArrayInitializer
 
-        from hedge.cuda.cgen import CudaShared, CudaConstant, CudaGlobal
+        from hedge.backends.cuda.cgen import CudaShared, CudaConstant, CudaGlobal
         discr = self.discr
         d = discr.dimensions
         dims = range(d)
@@ -330,7 +330,7 @@ class Kernel(FluxLocalKernelBase):
             return load_code + [Line()] + store_code
 
         def get_lift_code():
-            from hedge.cuda.tools import unroll
+            from hedge.backends.cuda.tools import unroll
 
             if is_lift:
                 inv_jac_multiplier = ("tex1Dfetch(inverse_jacobians_tex,"

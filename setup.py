@@ -56,6 +56,7 @@ def main():
     import glob
     from aksetup_helper import hack_distutils, get_config, setup, \
             PyUblasExtension
+    from setuptools import find_packages
 
     hack_distutils()
     conf = get_config(get_config_schema())
@@ -154,15 +155,16 @@ def main():
 
             # build info
             packages=[
-                    "hedge", 
-                    "hedge.cuda"
+                    "hedge",
+                    "hedge.backends",
+                    "hedge.backends.dynamic",
+                    "hedge.backends.jit",
+                    "hedge.backends.mpi",
+                    "hedge.backends.cuda",
                     ],
             zip_safe=False,
 
-            package_dir={
-                    "hedge": "src/python",
-                    "hedge.cuda": "src/python/cuda"
-                    },
+            package_dir={ "hedge": "src/python" },
             ext_package="hedge",
 
             ext_modules=[

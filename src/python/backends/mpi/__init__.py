@@ -26,103 +26,7 @@ import numpy.linalg as la
 import hedge.discretization
 import hedge.discr_precompiled
 import hedge.mesh
-
-
-
-
-class ParallelizationContext(object):
-    @property
-    def rank(self):
-        raise NotImplementedError
-
-    @property
-    def ranks(self):
-        raise NotImplementedError
-
-    @property
-    def head_rank(self):
-        raise NotImplementedError
-
-    @property
-    def is_head_rank(self):
-        return self.rank == self.head_rank
-
-    def distribute_mesh(self, mesh, partition=None):
-        """Take the Mesh instance `mesh' and distribute it according to `partition'.
-
-        If partition is an integer, invoke PyMetis to partition the mesh into this
-        many parts, distributing over the first `partition' ranks.
-
-        If partition is None, act as if partition was the integer corresponding
-        to the current number of ranks on the job.
-
-        If partition is not an integer, it must be a mapping from element number to 
-        rank. (A list or tuple of rank numbers will do, for example, or so will
-        a full-blown dict.)
-
-        Returns a mesh chunk.
-
-        We deliberately do not define the term `mesh chunk'. The return value
-        of this function is to be treated as opaque by the user, only to be
-        used as an argument to L{make_discretization}().
-
-        This routine may only be invoked on the head rank.
-        """
-        raise NotImplementedError
-
-    def receive_mesh(self):
-        """Wait for a mesh chunk to be sent by the head rank.
-
-        We deliberately do not define the term `mesh chunk'. The return value
-        of this function is to be treated as opaque by the user, only to be
-        used as an argument to L{make_discretization}().
-
-        This routine should only be invoked on non-head ranks.
-        """
-
-        raise NotImplementedError
-
-    def make_discretization(self, mesh_data, *args, **kwargs):
-        """Construct a Discretization instance.
-
-        `mesh_data' is whatever gets returned from distribute_mesh and
-        receive_mesh(). Any extra arguments are directly forwarded to
-        the respective Discretization constructor.
-        """
-        raise NotImplementedError
-
-
-
-
-
-class SerialParallelizationContext(ParallelizationContext):
-    communicator = None
-
-    @property
-    def rank(self):
-        return 0
-
-    @property
-    def ranks(self):
-        return [0]
-
-    @property
-    def head_rank(self):
-        return 0
-
-    def distribute_mesh(self, mesh, partition=None):
-        return mesh
-
-    def make_discretization(self, mesh_data, *args, **kwargs):
-        
-        if "discr_class" in kwargs:
-            discr_class = kwargs["discr_class"]
-            del kwargs["discr_class"]
-        else:
-            from hedge.discr_precompiled import Discretization
-            discr_class = Discretization
-
-        return discr_class(mesh_data, *args, **kwargs)
+from hedge.backends import RunContext
 
 
 
@@ -149,9 +53,10 @@ class RankData(pytools.Record):
 
 
 
-class MPIParallelizationContext(ParallelizationContext):
-    def __init__(self, communicator):
+class MPIRunContext(RunContext):
+    def __init__(self, communicator, discr_class):
         self.communicator = communicator
+        self.discr_class = discr_class
 
     @property
     def rank(self):
@@ -307,7 +212,7 @@ class MPIParallelizationContext(ParallelizationContext):
         return self.communicator.recv(self.head_rank, 0)
 
     def make_discretization(self, mesh_data, *args, **kwargs):
-        return ParallelDiscretization(self, mesh_data, *args, **kwargs)
+        return ParallelDiscretization(self, self.discr_class, mesh_data, *args, **kwargs)
 
 
 
@@ -371,10 +276,10 @@ class ExecutionMapper(hedge.discr_precompiled.ExecutionMapper):
 
 
 class ParallelDiscretization(hedge.discr_precompiled.Discretization):
-    def __init__(self, pcon, rank_data, local_discretization=None, 
+    def __init__(self, rcon, rank_data, local_discretization=None, 
             order=None, debug=False):
         self.received_bdrys = {}
-        self.context = pcon
+        self.context = rcon
 
         hedge.discretization.Discretization.__init__(self,
                 rank_data.mesh, local_discretization, order, debug=debug)
@@ -610,21 +515,7 @@ class ParallelDiscretization(hedge.discr_precompiled.Discretization):
 
 
 
-def guess_parallelization_context():
-    try:
-        import boost.mpi as mpi
-
-        if mpi.size == 1:
-            return SerialParallelizationContext()
-        else:
-            return MPIParallelizationContext(mpi.world)
-    except ImportError:
-        return SerialParallelizationContext()
-
-
-
-
-def reassemble_volume_field(pcon, global_discr, local_discr, field):
+def reassemble_volume_field(rcon, global_discr, local_discr, field):
     from pytools import reverse_dictionary
     local2global_element = reverse_dictionary(
             local_discr.global2local_elements)
@@ -641,9 +532,9 @@ def reassemble_volume_field(pcon, global_discr, local_discr, field):
     import boost.mpi as mpi
 
     gfield_parts = mpi.reduce(
-            pcon.communicator, send_packet, reduction, pcon.head_rank)
+            rcon.communicator, send_packet, reduction, rcon.head_rank)
 
-    if pcon.is_head_rank:
+    if rcon.is_head_rank:
         result = global_discr.volume_zeros()
         for eg in global_discr.element_groups:
             for el, eslice in zip(eg.members, eg.ranges):

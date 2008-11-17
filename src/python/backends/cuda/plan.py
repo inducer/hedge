@@ -226,7 +226,7 @@ class PlanGivenData(object):
                 self.float_size())
 
     def _find_microblock_size(self, allow_microblocking):
-        from hedge.cuda.tools import exact_div, int_ceiling
+        from hedge.backends.cuda.tools import exact_div, int_ceiling
         align_size = self.devdata.align_words(self.float_size())
 
         from pytools import Record
@@ -259,7 +259,7 @@ class PlanGivenData(object):
         self.microblocks_per_block = microblocks_per_block
 
     def fluxes_on_faces_shape(self, lift_plan=None):
-        from hedge.cuda.tools import int_ceiling
+        from hedge.backends.cuda.tools import int_ceiling
         fof_dofs = (
             self.block_count
             * self.microblocks_per_block
@@ -291,7 +291,7 @@ class SegmentedMatrixLocalOpExecutionPlan(ExecutionPlan):
         self.max_unroll = max_unroll
 
     def segments_per_microblock(self):
-        from hedge.cuda.tools import int_ceiling
+        from hedge.backends.cuda.tools import int_ceiling
         return int_ceiling(
                 self.given.microblock.aligned_floats/self.segment_size)
 
@@ -304,7 +304,7 @@ class SegmentedMatrixLocalOpExecutionPlan(ExecutionPlan):
     def max_elements_touched_by_segment(self):
         given = self.given
 
-        from hedge.cuda.tools import int_ceiling
+        from hedge.backends.cuda.tools import int_ceiling
         if given.dofs_per_el() > self.segment_size:
             return 2
         else:
@@ -376,7 +376,7 @@ def make_diff_plan(discr, given):
                 given.microblock.elements*given.dofs_per_el()+1, 
                 given.microblock.align_size)
 
-        from hedge.cuda.diff_shared_segmat import ExecutionPlan as SSegPlan
+        from hedge.backends.cuda.diff_shared_segmat import ExecutionPlan as SSegPlan
 
         if "cuda_no_smem_matrix" not in discr.debug:
             for pe in range(1,32+1):
@@ -388,7 +388,7 @@ def make_diff_plan(discr, given):
                                     segment_size, 
                                     max_unroll=given.dofs_per_el())
 
-        from hedge.cuda.diff_shared_fld import ExecutionPlan as SFieldPlan
+        from hedge.backends.cuda.diff_shared_fld import ExecutionPlan as SFieldPlan
 
         for pe in range(1,32+1):
             for inline in range(1, MAX_INLINE+1):
@@ -398,7 +398,7 @@ def make_diff_plan(discr, given):
     def target_func(plan):
         return plan.make_kernel(discr).benchmark()
 
-    from hedge.cuda.plan import optimize_plan
+    from hedge.backends.cuda.plan import optimize_plan
     return optimize_plan(generate_plans, target_func, maximize=False,
             debug="cuda_diff_plan" in discr.debug,
             log_filename="diff-%d" % given.order())
@@ -409,7 +409,7 @@ def make_diff_plan(discr, given):
 def make_lift_plan(discr, given):
     def generate_plans():
         if "cuda_no_smem_matrix" not in discr.debug:
-            from hedge.cuda.lift_shared_segmat import ExecutionPlan as SSegPlan
+            from hedge.backends.cuda.lift_shared_segmat import ExecutionPlan as SSegPlan
 
             for use_prefetch_branch in [True]:
             #for use_prefetch_branch in [True, False]:
@@ -427,7 +427,7 @@ def make_lift_plan(discr, given):
                                         max_unroll=given.face_dofs_per_el(),
                                         use_prefetch_branch=use_prefetch_branch)
 
-        from hedge.cuda.lift_shared_fld import ExecutionPlan as SFieldPlan
+        from hedge.backends.cuda.lift_shared_fld import ExecutionPlan as SFieldPlan
 
         for pe in range(1,32+1):
             for inline in range(1, MAX_INLINE):
@@ -437,7 +437,7 @@ def make_lift_plan(discr, given):
     def target_func(plan):
         return plan.make_kernel(discr).benchmark()
 
-    from hedge.cuda.plan import optimize_plan
+    from hedge.backends.cuda.plan import optimize_plan
     return optimize_plan(generate_plans, target_func, maximize=False,
             debug="cuda_lift_plan" in discr.debug,
             log_filename="lift-%d" % given.order())

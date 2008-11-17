@@ -268,7 +268,7 @@ class OpTemplateWithEnvironment(object):
         self.discr = discr
 
         # build a boundary tag bitmap
-        from hedge.cuda.optemplate import BoundaryTagCollector
+        from hedge.backends.cuda.optemplate import BoundaryTagCollector
         boundary_tag_to_number = {}
         for btag in BoundaryTagCollector()(optemplate):
             boundary_tag_to_number.setdefault(btag, 
@@ -282,7 +282,7 @@ class OpTemplateWithEnvironment(object):
                         elface_to_bdry_bitmap.get(elface, 0) | bdry_bit)
 
         # compile the optemplate
-        from hedge.cuda.optemplate import FluxCollector
+        from hedge.backends.cuda.optemplate import FluxCollector
         optemplate = self.compile_optemplate(discr.mesh, optemplate)
         fluxes = FluxCollector()(optemplate)
 
@@ -311,7 +311,7 @@ class OpTemplateWithEnvironment(object):
         from pymbolic.mapper.constant_folder import CommutativeConstantFoldingMapper
         from hedge.optemplate import OperatorBinder, InverseMassContractor, \
                 BCToFluxRewriter
-        from hedge.cuda.optemplate import \
+        from hedge.backends.cuda.optemplate import \
                 BoundaryCombiner, BoundaryTagCollector, FluxCollector
 
         return BoundaryCombiner(mesh)(

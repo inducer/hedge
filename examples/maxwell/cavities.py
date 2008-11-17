@@ -43,9 +43,9 @@ def main():
             RectangularWaveguideMode, \
             RectangularCavityMode
     from hedge.pde import MaxwellOperator
-    from hedge.parallel import guess_parallelization_context
+    from hedge.backends import guess_run_context
 
-    pcon = guess_parallelization_context()
+    rcon = guess_run_context(disable=set(["cuda"]))
 
     epsilon0 = 8.8541878176e-12 # C**2 / (N m**2)
     mu0 = 4*pi*1e-7 # N/A**2.
@@ -66,7 +66,7 @@ def main():
         r_sol = CylindricalFieldAdapter(RealPartAdapter(mode))
         c_sol = SplitComplexAdapter(CylindricalFieldAdapter(mode))
 
-        if pcon.is_head_rank:
+        if rcon.is_head_rank:
             mesh = make_cylinder_mesh(radius=R, height=d, max_volume=0.01)
     else:
         if periodic:
@@ -76,29 +76,29 @@ def main():
             periodicity = None
         mode = RectangularCavityMode(epsilon, mu, (1,2,2))
 
-        if pcon.is_head_rank:
+        if rcon.is_head_rank:
             mesh = make_box_mesh(max_volume=0.01, periodicity=periodicity)
 
-    if pcon.is_head_rank:
-        mesh_data = pcon.distribute_mesh(mesh)
+    if rcon.is_head_rank:
+        mesh_data = rcon.distribute_mesh(mesh)
     else:
-        mesh_data = pcon.receive_mesh()
+        mesh_data = rcon.receive_mesh()
 
     for order in [2,3,4,5,6]:
-        discr = pcon.make_discretization(mesh_data, TetrahedralElement(order))
+        discr = rcon.make_discretization(mesh_data, order=order)
 
-        vis = VtkVisualizer(discr, pcon, "em-%d" % order)
+        vis = VtkVisualizer(discr, rcon, "em-%d" % order)
 
         mode.set_time(0)
         fields = to_obj_array(mode(discr).real.copy())
-        op = MaxwellOperator(epsilon, mu, flux_type="lf")
+        op = MaxwellOperator(epsilon, mu, flux_type=1)
 
         dt = discr.dt_factor(op.max_eigenvalue())
         final_time = 1e-9
         nsteps = int(final_time/dt)+1
         dt = final_time/nsteps
 
-        if pcon.is_head_rank:
+        if rcon.is_head_rank:
             print "---------------------------------------------"
             print "order %d" % order
             print "---------------------------------------------"
@@ -112,7 +112,7 @@ def main():
         from pytools.log import LogManager, add_general_quantities, \
                 add_simulation_quantities, add_run_info
 
-        logmgr = LogManager("maxwell-%d.dat" % order, "w", pcon.communicator)
+        logmgr = LogManager("maxwell-%d.dat" % order, "w", rcon.communicator)
         add_run_info(logmgr)
         add_general_quantities(logmgr)
         add_simulation_quantities(logmgr, dt)
@@ -141,7 +141,7 @@ def main():
                 e, h = op.split_eh(fields)
                 visf = vis.make_file("em-%d-%04d" % (order, step))
                 vis.add_data(visf,
-                        [ ("e", e), ("h", h), ],
+                        [("e", e), ("h", h),],
                         time=t, step=step
                         )
                 visf.close()
