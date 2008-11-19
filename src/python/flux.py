@@ -49,7 +49,7 @@ class FieldComponent(Flux):
         self.index = index
         self.is_local = is_local
 
-    def __eq__(self, other):
+    def is_equal(self, other):
         return (isinstance(other, FieldComponent) 
                 and self.index == other.index
                 and self.is_local == other.is_local
@@ -58,7 +58,7 @@ class FieldComponent(Flux):
     def __getinitargs__(self):
         return self.index, self.is_local
 
-    def __hash__(self):
+    def get_hash(self):
         return hash((
                 self.__class__,
                 self.index,
@@ -77,13 +77,10 @@ class Normal(Flux):
     def __getinitargs__(self):
         return self.axis,
 
-    def __eq__(self, other):
+    def is_equal(self, other):
         return isinstance(other, Normal) and self.axis == other.axis
 
-    def __ne__(self, other):
-        return not self.__eq__(other)
-
-    def __hash__(self):
+    def get_hash(self):
         return hash((
                 self.__class__,
                 self.axis))
@@ -101,13 +98,10 @@ class PenaltyTerm(Flux):
     def __getinitargs__(self):
         return self.power,
 
-    def __eq__(self, other):
+    def is_equal(self, other):
         return isinstance(other, PenaltyTerm) and self.power == other.power
 
-    def __ne__(self, other):
-        return not self.__eq__(other)
-
-    def __hash__(self):
+    def get_hash(self):
         return hash((
                 self.__class__,
                 self.power))
@@ -130,16 +124,13 @@ class IfPositive(Flux):
     def __getinitargs__(self):
         return self.criterion, self.then, self.else_
 
-    def __eq__(self, other):
+    def is_equal(self, other):
         return (isinstance(other, IfPositive)
                 and self.criterion == other.criterion
                 and self.then == other.then
                 and self.else_ == other.else_)
 
-    def __ne__(self, other):
-        return not self.__eq__(other)
-
-    def __hash__(self):
+    def get_hash(self):
         return hash((
                 self.__class__,
                 self.criterion,

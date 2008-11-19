@@ -275,9 +275,8 @@ class BoundaryPair(pymbolic.primitives.AlgebraicLeaf):
     def __getinitargs__(self):
         return (self.field, self.bfield, self.tag)
 
-    def __hash__(self):
-        from pytools import hash_combine
-        return hash_combine(self.__class__, self.field, self.bfield, self.tag)
+    def get_hash(self):
+        return hash((self.__class__, self.field, self.bfield, self.tag))
 
 
 
