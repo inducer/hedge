@@ -352,9 +352,10 @@ class Discretization(hedge.discretization.Discretization):
         self.partition_cache[max_block_size] = result
         return result
 
-    def __init__(self, mesh, tune_for, local_discretization=None, 
+    def __init__(self, mesh,  local_discretization=None, 
             order=None, init_cuda=True, debug=set(), 
-            device=None, default_scalar_type=numpy.float32):
+            device=None, default_scalar_type=numpy.float32,
+            tune_for=None):
         """
 
         @arg tune_for: An optemplate for whose application this discretization's
@@ -404,13 +405,13 @@ class Discretization(hedge.discretization.Discretization):
                 allow_mb_values = [True, False]
 
             for allow_mb in allow_mb_values:
-                from hedge.cuda.plan import PlanGivenData
+                from hedge.backends.cuda.plan import PlanGivenData
                 given = PlanGivenData(
                         DeviceData(device), ldis, 
                         allow_microblocking=allow_mb,
                         float_type=default_scalar_type)
 
-                import hedge.cuda.fluxgather as fluxgather
+                import hedge.backends.cuda.fluxgather as fluxgather
                 flux_plan, flux_time = fluxgather.make_plan(self, given, tune_for)
 
                 # partition mesh, obtain updated plan
@@ -421,7 +422,7 @@ class Discretization(hedge.discretization.Discretization):
                         microblocks_per_block=flux_plan.microblocks_per_block())
 
                 # plan local operations
-                from hedge.cuda.plan import make_diff_plan, make_lift_plan
+                from hedge.backends.cuda.plan import make_diff_plan, make_lift_plan
                 diff_plan, diff_time = make_diff_plan(self, given)
                 fluxlocal_plan, fluxlocal_time = make_lift_plan(self, given)
 
@@ -690,7 +691,7 @@ class Discretization(hedge.discretization.Discretization):
         hedge.discretization.Discretization.add_instrumentation(self, mgr)
 
     def create_op_timers(self):
-        from hedge.cuda.tools import CallableCollectionTimer
+        from hedge.backends.cuda.tools import CallableCollectionTimer
 
         self.flux_gather_timer = CallableCollectionTimer("t_gather", 
                 "Time spent gathering fluxes")
@@ -729,7 +730,7 @@ class Discretization(hedge.discretization.Discretization):
 
     @memoize_method
     def gpu_dof_count(self):
-        from hedge.cuda.tools import int_ceiling
+        from hedge.backends.cuda.tools import int_ceiling
 
         fplan = self.flux_plan
         return int_ceiling(
@@ -1021,5 +1022,5 @@ class Discretization(hedge.discretization.Discretization):
 
     # optemplate processing ---------------------------------------------------
     def compile(self, optemplate):
-        from hedge.cuda.execute import OpTemplateWithEnvironment
+        from hedge.backends.cuda.execute import OpTemplateWithEnvironment
         return OpTemplateWithEnvironment(self, optemplate)

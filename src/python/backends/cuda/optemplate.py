@@ -143,7 +143,7 @@ class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
 class BoundaryCombiner(hedge.optemplate.OpTemplateIdentityMapper):
     """Combines inner fluxes and boundary fluxes on disjoint parts of the
     boundary into a single, whole-domain operator of type
-    L{hedge.cuda.execute.WholeDomainFluxOperator}.
+    L{hedge.backends.cuda.execute.WholeDomainFluxOperator}.
     """
     def __init__(self, mesh):
         self.mesh = mesh

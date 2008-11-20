@@ -25,14 +25,14 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 import numpy
 from pytools import memoize_method, memoize
 import pycuda.driver as cuda
-import hedge.cuda.plan
-from hedge.cuda.kernelbase import DiffKernelBase
+import hedge.backends.cuda.plan
+from hedge.backends.cuda.kernelbase import DiffKernelBase
 
 
 
 
 # plan ------------------------------------------------------------------------
-class ExecutionPlan(hedge.cuda.plan.SegmentedMatrixLocalOpExecutionPlan):
+class ExecutionPlan(hedge.backends.cuda.plan.SegmentedMatrixLocalOpExecutionPlan):
     def columns(self):
         return self.given.dofs_per_el() * self.given.ldis.dimensions # r,s,t
 
@@ -84,7 +84,7 @@ class Kernel(DiffKernelBase):
         self.discr = discr
         self.plan = plan
 
-        from hedge.cuda.tools import int_ceiling
+        from hedge.backends.cuda.tools import int_ceiling
 
         given = self.plan.given
         self.grid = (plan.segments_per_microblock(), 
@@ -102,7 +102,7 @@ class Kernel(DiffKernelBase):
             return None
 
         def vol_empty():
-            from hedge.cuda.tools import int_ceiling
+            from hedge.backends.cuda.tools import int_ceiling
             dofs = int_ceiling(
                     given.total_dofs(), self.plan.dofs_per_macroblock())
 
@@ -198,7 +198,7 @@ class Kernel(DiffKernelBase):
                 Comment, Line, Static, Define, \
                 Constant, Initializer, If, For, Statement, Assign
 
-        from hedge.cuda.cgen import CudaShared, CudaGlobal
+        from hedge.backends.cuda.cgen import CudaShared, CudaGlobal
                 
         discr = self.discr
         d = discr.dimensions
@@ -274,7 +274,7 @@ class Kernel(DiffKernelBase):
                 "MB_DOF/DOFS_PER_EL"),
             ])
 
-        from hedge.cuda.tools import get_load_code
+        from hedge.backends.cuda.tools import get_load_code
         f_body.extend(
             get_load_code(
                 dest="smem_diff_rst_mat",
@@ -301,7 +301,7 @@ class Kernel(DiffKernelBase):
                         )
 
             tex_channels = ["x", "y", "z", "w"]
-            from hedge.cuda.tools import unroll
+            from hedge.backends.cuda.tools import unroll
             code.extend(
                     [POD(float_type, "field_value%d" % inl)
                         for inl in range(par.inline)]
@@ -425,7 +425,7 @@ class Kernel(DiffKernelBase):
                     order="C")
             segments.append(buffer(diffmats))
         
-        from hedge.cuda.tools import pad_and_join
+        from hedge.backends.cuda.tools import pad_and_join
 
         from pytools import Record
         class GPUDifferentiationMatrices(Record): pass

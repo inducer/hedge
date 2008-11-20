@@ -22,7 +22,7 @@ from __future__ import division
 import numpy
 import numpy.linalg as la
 import unittest
-from hedge.discr_precompiled import Discretization
+from hedge.backends.dynamic import Discretization
 
 
 
@@ -1523,8 +1523,8 @@ class TestHedge(unittest.TestCase):
         mesh = make_disk_mesh(r=0.5, max_area=0.1, faces=20)
         mesh = mesh.reordered_by("cuthill")
 
-        from hedge.parallel import SerialParallelizationContext
-        pcon = SerialParallelizationContext()
+        from hedge.backends import SerialRunContext
+        rcon = SerialRunContext(Discretization)
 
         from hedge.tools import EOCRecorder
         eocrec = EOCRecorder()
@@ -1556,7 +1556,7 @@ class TestHedge(unittest.TestCase):
                 truesol_v = discr.interpolate_volume_function(
                         lambda x, el: truesol_c(x))
                 sol_v = -parallel_cg(
-                        pcon, -bound_op, 
+                        rcon, -bound_op, 
                         bound_op.prepare_rhs(GivenFunction(rhs_c)),
                         tol=1e-10, max_iterations=40000)
 

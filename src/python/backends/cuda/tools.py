@@ -81,7 +81,7 @@ def pad_and_join(blocks, block_size):
     return "".join(pad(b, block_size) for b in blocks)
 
 def make_blocks(devdata, data):
-    from hedge.cuda.tools import pad_and_join
+    from hedge.backends.cuda.tools import pad_and_join
 
     blocks = ["".join(b) for b in data]
     block_size = devdata.align(max(len(b) for b in blocks))
@@ -95,7 +95,7 @@ def make_blocks(devdata, data):
             )
 
 def make_superblocks(devdata, struct_name, single_item, multi_item, extra_fields={}):
-    from hedge.cuda.tools import pad_and_join
+    from hedge.backends.cuda.tools import pad_and_join
 
     # single_item = [([ block1, block2, ... ], decl), ...]
     # multi_item = [([ [ item1, item2, ...], ... ], decl), ...]

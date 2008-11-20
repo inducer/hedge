@@ -27,7 +27,7 @@ from pytools import memoize_method, memoize, Record
 import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
 import pymbolic.mapper.stringifier
-import hedge.cuda.plan
+import hedge.backends.cuda.plan
 
 
 
@@ -135,7 +135,7 @@ class FluxToCodeMapper(pymbolic.mapper.stringifier.SimplifyingSortingStringifyMa
             prefix = "b"
             f_expr = self.ext_field_expr
 
-        from hedge.cuda.optemplate import WholeDomainFluxOperator
+        from hedge.backends.cuda.optemplate import WholeDomainFluxOperator
         short_name = WholeDomainFluxOperator.short_name
 
         from hedge.tools import is_obj_array, is_zero
@@ -155,11 +155,11 @@ class FluxToCodeMapper(pymbolic.mapper.stringifier.SimplifyingSortingStringifyMa
 
 
 # plan ------------------------------------------------------------------------
-class ExecutionPlan(hedge.cuda.plan.ExecutionPlan):
+class ExecutionPlan(hedge.backends.cuda.plan.ExecutionPlan):
     def __init__(self, given, 
             parallel_faces, mbs_per_block, flux_count,
             direct_store, partition_data):
-        hedge.cuda.plan.ExecutionPlan.__init__(self, given)
+        hedge.backends.cuda.plan.ExecutionPlan.__init__(self, given)
         self.parallel_faces = parallel_faces
         self.mbs_per_block = mbs_per_block
         self.flux_count = flux_count
@@ -182,7 +182,7 @@ class ExecutionPlan(hedge.cuda.plan.ExecutionPlan):
 
     @memoize_method
     def shared_mem_use(self):
-        from hedge.cuda.fluxgather import face_pair_struct
+        from hedge.backends.cuda.fluxgather import face_pair_struct
         d = self.given.ldis.dimensions
 
         if self.given.dofs_per_face() > 255:
@@ -207,7 +207,7 @@ class ExecutionPlan(hedge.cuda.plan.ExecutionPlan):
 
         devdata = self.given.devdata
         if dpf % devdata.smem_granularity >= devdata.smem_granularity // 2:
-            from hedge.cuda.tools import int_ceiling
+            from hedge.backends.cuda.tools import int_ceiling
             return int_ceiling(dpf, devdata.smem_granularity)
         else:
             return dpf
@@ -220,7 +220,7 @@ class ExecutionPlan(hedge.cuda.plan.ExecutionPlan):
 
     def __str__(self):
         result = ("%s pfaces=%d mbs_per_block=%d mb_elements=%d" % (
-            hedge.cuda.plan.ExecutionPlan.__str__(self),
+            hedge.backends.cuda.plan.ExecutionPlan.__str__(self),
             self.parallel_faces,
             self.mbs_per_block,
             self.given.microblock.elements,
@@ -239,14 +239,18 @@ class ExecutionPlan(hedge.cuda.plan.ExecutionPlan):
 
 
 def make_plan(discr, given, tune_for):
-    from hedge.cuda.execute import OpTemplateWithEnvironment
-    from hedge.cuda.optemplate import FluxCollector
-    fluxes = FluxCollector()(
-            OpTemplateWithEnvironment.compile_optemplate(
-                discr.mesh, tune_for))
-    flux_count = len(fluxes)
+    from hedge.backends.cuda.execute import OpTemplateWithEnvironment
+    from hedge.backends.cuda.optemplate import FluxCollector
+    if tune_for is not None:
+        fluxes = FluxCollector()(
+                OpTemplateWithEnvironment.compile_optemplate(
+                    discr.mesh, tune_for))
+        flux_count = len(fluxes)
+    else:
+        # a reasonable guess?
+        flux_count = discr.dimensions
 
-    from hedge.cuda.plan import optimize_plan
+    from hedge.backends.cuda.plan import optimize_plan
 
     def generate_valid_plans():
         #for direct_store in [True, False]:
@@ -262,8 +266,11 @@ def make_plan(discr, given, tune_for):
                         yield flux_plan
 
     def target_func(plan):
-        return plan.make_kernel(discr, elface_to_bdry_bitmap=None,
-                fluxes=fluxes).benchmark()
+        if tune_for is None:
+            return 0
+        else:
+            return plan.make_kernel(discr, elface_to_bdry_bitmap=None,
+                    fluxes=fluxes).benchmark()
 
     return optimize_plan(
             generate_valid_plans, target_func,
@@ -295,7 +302,7 @@ class Kernel:
         discr = self.discr
         given = self.plan.given
 
-        from hedge.cuda.tools import int_ceiling
+        from hedge.backends.cuda.tools import int_ceiling
         block_count = int_ceiling(
                 len(discr.mesh.elements)/self.plan.elements_per_block())
         all_fluxes_on_faces = [gpuarray.empty(
@@ -369,7 +376,7 @@ class Kernel:
         if set(["cuda_flux", "cuda_debugbuf"]) <= discr.debug:
             debugbuf = gpuarray.zeros((512,), dtype=numpy.float32)
         else:
-            from hedge.cuda.tools import FakeGPUArray
+            from hedge.backends.cuda.tools import FakeGPUArray
             debugbuf = FakeGPUArray()
 
         if discr.instrumented:
@@ -425,7 +432,7 @@ class Kernel:
                 Define, Pragma, \
                 Constant, Initializer, If, For, Statement, Assign, While
                 
-        from hedge.cuda.cgen import CudaShared, CudaGlobal
+        from hedge.backends.cuda.cgen import CudaShared, CudaGlobal
 
         discr = self.discr
         given = self.plan.given
@@ -449,7 +456,7 @@ class Kernel:
 
         cmod = Module()
 
-        from hedge.cuda.optemplate import WholeDomainFluxOperator as WDFlux
+        from hedge.backends.cuda.optemplate import WholeDomainFluxOperator as WDFlux
         short_name = WDFlux.short_name
 
         for dep_expr in self.all_deps:
@@ -511,7 +518,7 @@ class Kernel:
         S = Statement
         f_body = Block()
             
-        from hedge.cuda.tools import get_load_code
+        from hedge.backends.cuda.tools import get_load_code
 
         f_body.extend(get_load_code(
             dest="&data",
@@ -764,7 +771,7 @@ class Kernel:
 
         INVALID_DEST = (1<<16)-1
 
-        from hedge.cuda.discretization import GPUBoundaryFaceStorage
+        from hedge.backends.cuda import GPUBoundaryFaceStorage
 
         fp_struct = face_pair_struct(given.float_type, discr.dimensions)
         fh_struct = flux_header_struct()
@@ -868,7 +875,7 @@ class Kernel:
         #print len(same_fp_structs), len(diff_fp_structs), len(bdry_fp_structs)
 
         from codepy.cgen import Value, POD
-        from hedge.cuda.tools import make_superblocks
+        from hedge.backends.cuda.tools import make_superblocks
 
         return make_superblocks(
                 given.devdata, "flux_data",
@@ -970,7 +977,7 @@ class Kernel:
         fp_blocks = (min_fp_blocks * dups)[:block_count]
 
         from codepy.cgen import Value
-        from hedge.cuda.tools import make_superblocks
+        from hedge.backends.cuda.tools import make_superblocks
 
         return make_superblocks(
                 given.devdata, "flux_data",

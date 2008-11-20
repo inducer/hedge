@@ -23,18 +23,18 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import numpy
-import hedge.cuda.plan
+import hedge.backends.cuda.plan
 from pytools import memoize_method, memoize
 import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
-import hedge.cuda.plan
-from hedge.cuda.kernelbase import DiffKernelBase
+import hedge.backends.cuda.plan
+from hedge.backends.cuda.kernelbase import DiffKernelBase
 
 
 
 
 # plan ------------------------------------------------------------------------
-class ExecutionPlan(hedge.cuda.plan.SMemFieldLocalOpExecutionPlan):
+class ExecutionPlan(hedge.backends.cuda.plan.SMemFieldLocalOpExecutionPlan):
     def registers(self):
         return 16
 
@@ -89,7 +89,7 @@ class Kernel(DiffKernelBase):
         self.discr = discr
         self.plan = plan
 
-        from hedge.cuda.tools import int_ceiling
+        from hedge.backends.cuda.tools import int_ceiling
 
         self.grid = (int_ceiling(
             self.plan.given.total_dofs()
@@ -110,7 +110,7 @@ class Kernel(DiffKernelBase):
             return None
 
         def vol_empty():
-            from hedge.cuda.tools import int_ceiling
+            from hedge.backends.cuda.tools import int_ceiling
             dofs = int_ceiling(
                     given.total_dofs(), self.plan.dofs_per_macroblock())
 
@@ -166,7 +166,7 @@ class Kernel(DiffKernelBase):
             import pycuda.gpuarray as gpuarray
             debugbuf = gpuarray.zeros((512,), dtype=numpy.float32)
         else:
-            from hedge.cuda.tools import FakeGPUArray
+            from hedge.backends.cuda.tools import FakeGPUArray
             debugbuf = FakeGPUArray()
 
         xyz_diff = [discr.volume_empty() for axis in range(d)]
@@ -217,7 +217,7 @@ class Kernel(DiffKernelBase):
                 Comment, Line, Static, Define, \
                 Constant, Initializer, If, For, Statement, Assign
 
-        from hedge.cuda.cgen import CudaShared, CudaGlobal
+        from hedge.backends.cuda.cgen import CudaShared, CudaGlobal
                 
         discr = self.discr
         d = discr.dimensions
@@ -322,7 +322,7 @@ class Kernel(DiffKernelBase):
                             )
                         ]))
 
-            from hedge.cuda.tools import unroll
+            from hedge.backends.cuda.tools import unroll
             code.extend([
                 Comment("everybody needs to be done with the old data"),
                 S("__syncthreads()"),
