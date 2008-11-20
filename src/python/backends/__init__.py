@@ -149,7 +149,13 @@ def generate_features():
     except ImportError:
         have_cuda = False
     else:
-        yield FEAT_CUDA
+        import pycuda.driver
+        try:
+            if pycuda.driver.Device.count():
+                yield FEAT_CUDA
+        except pycuda.driver.LogicError:
+            # pycuda not initialized--we'll give it the benefit of the doubt.
+            yield FEAT_CUDA
 
     try:
         import codepy
@@ -172,10 +178,10 @@ def guess_run_context(disable=set()):
 
     if FEAT_CUDA in feat:
         from hedge.backends.cuda import Discretization as discr_class
-    elif FEAT_INTERNAL in feat:
-        from hedge.backends.dynamic import Discretization as discr_class
     elif FEAT_CODEPY in feat:
         from hedge.backends.jit import Discretization as discr_class
+    elif FEAT_INTERNAL in feat:
+        from hedge.backends.dynamic import Discretization as discr_class
     else:
         raise RuntimeError, "could not find usable backend"
 

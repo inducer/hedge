@@ -1123,3 +1123,23 @@ def parallel_cg(pcon, operator, b, precon=None, x=None, tol=1e-7, max_iterations
     cg = CGStateContainer(pcon, operator, precon)
     cg.reset(b, x)
     return cg.run(max_iterations, tol, debug_callback, debug)
+
+
+
+
+# diagnostics -----------------------------------------------------------------
+def time_count_flop_if_instrumented(func, timer, counter, flop_counter, flops):
+    def wrapped_f(*args, **kwargs):
+        counter.add()
+        flop_counter.add(flops)
+        timer.start()
+        try:
+            return func(*args, **kwargs)
+        finally:
+            timer.stop()
+
+    return wrapped_f
+
+
+
+
