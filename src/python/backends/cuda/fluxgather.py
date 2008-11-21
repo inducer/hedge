@@ -28,6 +28,7 @@ import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
 import pymbolic.mapper.stringifier
 import hedge.backends.cuda.plan
+from hedge.backends.codegen_base import FluxToCodeMapperBase
 
 
 
@@ -73,7 +74,7 @@ def face_pair_struct(float_type, dims):
 
 
 # flux to code mapper ---------------------------------------------------------
-class FluxToCodeMapper(pymbolic.mapper.stringifier.SimplifyingSortingStringifyMapper):
+class FluxToCodeMapper(FluxToCodeMapperBase):
     def __init__(self, int_field_expr, ext_field_expr, is_flipped=False):
         def float_mapper(x):
             if isinstance(x, float):
@@ -81,8 +82,8 @@ class FluxToCodeMapper(pymbolic.mapper.stringifier.SimplifyingSortingStringifyMa
             else:
                 return repr(x)
 
-        pymbolic.mapper.stringifier.SimplifyingSortingStringifyMapper.__init__(self, 
-                float_mapper, reverse=False)
+        FluxToCodeMapper.__init__(self, float_mapper, reverse=False)
+
         self.int_field_expr = int_field_expr
         self.ext_field_expr = ext_field_expr
         self.is_flipped = is_flipped

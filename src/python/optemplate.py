@@ -63,6 +63,13 @@ class OperatorBinding(pymbolic.primitives.AlgebraicLeaf):
     def __getinitargs__(self):
         return self.op, self.field
 
+    def get_hash(self):
+        from hedge.tools import is_obj_array
+        if is_obj_array(self.field):
+            return hash((self.__class__, self.op, tuple(self.field)))
+        else:
+            return hash((self.__class__, self.op, self.field))
+
 
 
 
@@ -75,6 +82,9 @@ class DiffOperatorBase(Operator):
 
     def __getinitargs__(self):
         return (self.xyz_axis,)
+
+    def get_hash(self):
+        return hash((self.__class__, self.xyz_axis))
 
 class DifferentiationOperator(DiffOperatorBase):
     @staticmethod
@@ -137,7 +147,8 @@ def DiffOperatorVector(els):
 
 # mass operators --------------------------------------------------------------
 class MassOperatorBase(Operator):
-    pass
+    def get_hash(self):
+        return hash(self.__class__)
 
 class MassOperator(MassOperatorBase):
     @staticmethod
@@ -186,6 +197,8 @@ class FluxOperator(Operator):
     def get_mapper_method(self, mapper): 
         return mapper.map_flux
 
+    def get_hash(self):
+        return hash((self.__class__, self.flux))
 
 
 
@@ -276,7 +289,19 @@ class BoundaryPair(pymbolic.primitives.AlgebraicLeaf):
         return (self.field, self.bfield, self.tag)
 
     def get_hash(self):
-        return hash((self.__class__, self.field, self.bfield, self.tag))
+        from hedge.tools import is_obj_array
+
+        if is_obj_array(self.field):
+            field = tuple(self.field)
+        else:
+            field = self.field
+
+        if is_obj_array(self.bfield):
+            bfield = tuple(self.bfield)
+        else:
+            bfield = self.bfield
+
+        return hash((self.__class__, field, bfield, self.tag))
 
 
 

@@ -24,17 +24,53 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 import hedge.backends.cpu_base
 import hedge.discretization
+from hedge.backends.codegen_base import FluxToCodeMapperBase
 import numpy
 
 
 
 
+# flux to code mapper ---------------------------------------------------------
+class FluxToCodeMapper(FluxToCodeMapperBase):
+    def __init__(self, is_flipped=False):
+        FluxToCodeMapperBase.__init__(self, repr, reverse=False)
+        self.is_flipped = is_flipped
+
+    def map_normal(self, expr, enclosing_prec):
+        if self.is_flipped:
+            where = "opp"
+        else:
+            where = "loc"
+        return "fp.%s.normal[%d]" % (where, expr.axis)
+
+    def map_penalty_term(self, expr, enclosing_prec):
+        if self.is_flipped:
+            where = "opp"
+        else:
+            where = "loc"
+        return ("pow(fp.%(where)s.order*fp.%(where)s.order/fp.%(where)s.h, %(pwr)r)" 
+                % {"pwr": expr.power, "where": where})
+
+    def map_field_component(self, expr, enclosing_prec):
+        if expr.is_local ^ self.is_flipped:
+            where = "loc"
+        else:
+            where = "opp"
+
+        return "op%(idx)d_it[%(where)s_idx]" % {
+                "where": where, "idx": expr.index
+                }
+
+
+
+
+# flux code generator ---------------------------------------------------------
 def make_double_sided_flux_extractor(platform, flux):
     from codepy.cgen import \
             FunctionDeclaration, FunctionBody, \
             Const, Reference, Value, \
-            Statement, Include, Line, Block, Initializer, \
-            CustomLoop
+            Statement, Include, Line, Block, Initializer, Assign, \
+            CustomLoop, For
     from codepy.bpl import BoostPythonModule
     mod = BoostPythonModule()
 
@@ -56,12 +92,16 @@ def make_double_sided_flux_extractor(platform, flux):
             Value("void", "gather_flux"), 
             [
                 Const(Reference(Value("face_group", "fg"))),
-                Reference(Value("py_vector", "fluxes_on_faces")),
+                Value("py_vector", "fluxes_on_faces"),
                 ]+[
                 Const(Reference(Value("py_vector", "field%d" % idx)))
                 for idx in dep_indices
                 ]
             )
+
+    from pytools import flatten
+
+    from pymbolic.mapper.stringifier import PREC_NONE
 
     fbody = Block([
         Initializer(
@@ -73,10 +113,44 @@ def make_double_sided_flux_extractor(platform, flux):
             "field%d.begin()" % idx)
         for idx in dep_indices
         ]+[
-        CustomLoop("BOOST_FOREACH(const face_pair &fp, fg.face_pairs)", Block([
-
-            
-            ])
+        CustomLoop("BOOST_FOREACH(const face_pair &fp, fg.face_pairs)", Block(
+            list(flatten([
+            Initializer(Value("node_number_t", "%s_ebi" % where),
+                "fp.%s.el_base_index" % where),
+            Initializer(Value("index_lists_t::const_iterator", "%s_idx_list" % where),
+                "fg.index_list(fp.%s.face_index_list_number)" % where),
+            Initializer(Value("node_number_t", "%s_fof_base" % where),
+                "fg.face_length()*(fp.%(where)s.local_el_number*fg.face_count"
+                " + fp.opp.face_id)" % {"where": where}),
+            Line(),
+            ]
+            for where in ["loc", "opp"]
+            ))+[
+            Line(),
+            Initializer(Value("index_lists_t::const_iterator", "opp_write_map"),
+                "fg.index_list(fp.opp_native_write_map)"),
+            Line(),
+            For(
+                "unsigned i = 0",
+                "i < fg.face_length()",
+                "++i",
+                Block(
+                    [
+                    Initializer(Value("node_number_t", "%s_idx" % where),
+                        "%(where)s_ebi + %(where)s_idx_list[i]" 
+                        % {"where": where})
+                    for where in ["loc", "opp"]
+                    ]+[
+                    Assign("fof_it[%s_fof_base+%s]" % (where, tgt_idx),
+                        FluxToCodeMapper(is_flipped)(flux, PREC_NONE))
+                    for where, is_flipped, tgt_idx in [
+                        ("loc", False, "i"),
+                        ("opp", True, "opp_write_map[i]")
+                        ]
+                    ]
+                    )
+                )
+            ]))
         ])
     mod.add_function(FunctionBody(fdecl, fbody))
 
@@ -96,21 +170,25 @@ class ExecutionMapper(hedge.backends.cpu_base.ExecutionMapper):
 
         kernel, dep_indices = make_double_sided_flux_extractor(self.discr.platform, op.flux)
 
-        for fg in self.discr.face_groups:
-            fluxes_on_faces = numpy.zeros(
-                    (fg.face_count*fg.face_length()*fg.element_count(),),
-                    dtype=field.dtype)
-            
-            self.perform_double_sided_flux(fg, 
-                    ChainedFlux(int_coeff), ChainedFlux(ext_coeff),
-                    field, fluxes_on_faces)
+        from hedge.tools import is_obj_array
+        if is_obj_array(field):
+            field_args = self.rec(field)
+        else:
+            field_args = [self.rec(field)]
 
-            if lift:
-                self.lift_flux(fg, fg.ldis_loc.lifting_matrix(),
-                        fg.local_el_inverse_jacobians, fluxes_on_faces, out)
-            else:
-                self.lift_flux(fg, fg.ldis_loc.multi_face_mass_matrix(),
-                        None, fluxes_on_faces, out)
+        if len(field_args):
+            for fg in self.discr.face_groups:
+                fluxes_on_faces = numpy.zeros(
+                        (fg.face_count*fg.face_length()*fg.element_count(),),
+                        dtype=field_args[0].dtype)
+                kernel(fg, fluxes_on_faces, *field_args)
+                
+                if lift:
+                    self.lift_flux(fg, fg.ldis_loc.lifting_matrix(),
+                            fg.local_el_inverse_jacobians, fluxes_on_faces, out)
+                else:
+                    self.lift_flux(fg, fg.ldis_loc.multi_face_mass_matrix(),
+                            None, fluxes_on_faces, out)
 
         return out
 
