@@ -22,7 +22,8 @@ from __future__ import division
 import numpy
 import numpy.linalg as la
 import unittest
-from hedge.backends.dynamic import Discretization
+from hedge.backends.jit import Discretization
+#from hedge.backends.dynamic import Discretization
 
 
 

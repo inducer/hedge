@@ -213,6 +213,9 @@ class LiftingFluxOperator(Operator):
     def get_mapper_method(self, mapper): 
         return mapper.map_lift
 
+    def get_hash(self):
+        return hash((self.__class__, self.flux))
+
 
 
 
@@ -231,6 +234,9 @@ class FluxCoefficientOperator(Operator):
     def __getinitargs__(self):
         return (self.int_coeff, self.ext_coeff)
 
+    def get_hash(self):
+        return hash((self.__class__, self.int_coeff, self.ext_coeff))
+
 
 
 class LiftingFluxCoefficientOperator(Operator):
@@ -248,6 +254,9 @@ class LiftingFluxCoefficientOperator(Operator):
 
     def __getinitargs__(self):
         return (self.int_coeff, self.ext_coeff)
+
+    def get_hash(self):
+        return hash((self.__class__, self.int_coeff, self.ext_coeff))
 
 
 
