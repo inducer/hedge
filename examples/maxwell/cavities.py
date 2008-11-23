@@ -46,6 +46,7 @@ def main():
     from hedge.backends import guess_run_context
 
     rcon = guess_run_context(disable=set(["cuda"]))
+    print rcon.discr_class
 
     epsilon0 = 8.8541878176e-12 # C**2 / (N m**2)
     mu0 = 4*pi*1e-7 # N/A**2.
@@ -77,14 +78,14 @@ def main():
         mode = RectangularCavityMode(epsilon, mu, (1,2,2))
 
         if rcon.is_head_rank:
-            mesh = make_box_mesh(max_volume=0.01, periodicity=periodicity)
+            mesh = make_box_mesh(max_volume=0.0001, periodicity=periodicity)
 
     if rcon.is_head_rank:
         mesh_data = rcon.distribute_mesh(mesh)
     else:
         mesh_data = rcon.receive_mesh()
 
-    for order in [2,3,4,5,6]:
+    for order in [1,2,3,4,5,6]:
         discr = rcon.make_discretization(mesh_data, order=order)
 
         vis = VtkVisualizer(discr, rcon, "em-%d" % order)

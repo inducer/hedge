@@ -25,6 +25,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 import hedge.backends.cpu_base
 import hedge.discretization
 from hedge.backends.codegen_base import FluxToCodeMapperBase
+from hedge.backends.cpu_base import ExecutorBase, ExecutionMapperBase
 import numpy
 
 
@@ -68,11 +69,7 @@ class FluxToCodeMapper(FluxToCodeMapperBase):
 
 
 
-class ExecutionMapper(hedge.backends.cpu_base.ExecutionMapper):
-    def __init__(self, context, discr, executor):
-        hedge.backends.cpu_base.ExecutionMapper.__init__(self, context, discr)
-        self.executor = executor
-
+class ExecutionMapper(ExecutionMapperBase):
     # flux implementation -----------------------------------------------------
     def _get_flux_var_info(self, flux, field_expr, bfield_expr=None):
         if bfield_expr is None:
@@ -150,10 +147,10 @@ class ExecutionMapper(hedge.backends.cpu_base.ExecutionMapper):
                 kernel(fg, fluxes_on_faces, *args)
                 
                 if is_lift:
-                    self.lift_flux(fg, fg.ldis_loc.lifting_matrix(),
+                    self.executor.lift_flux(fg, fg.ldis_loc.lifting_matrix(),
                             fg.local_el_inverse_jacobians, fluxes_on_faces, out)
                 else:
-                    self.lift_flux(fg, fg.ldis_loc.multi_face_mass_matrix(),
+                    self.executor.lift_flux(fg, fg.ldis_loc.multi_face_mass_matrix(),
                             None, fluxes_on_faces, out)
 
         return out
@@ -179,11 +176,11 @@ class ExecutionMapper(hedge.backends.cpu_base.ExecutionMapper):
                 kernel(fg, fluxes_on_faces, *args)
 
                 if is_lift:
-                    self.lift_flux(fg, fg.ldis_loc.lifting_matrix(),
+                    self.executor.lift_flux(fg, fg.ldis_loc.lifting_matrix(),
                             fg.local_el_inverse_jacobians, 
                             fluxes_on_faces, out)
                 else:
-                    self.lift_flux(fg, fg.ldis_loc.multi_face_mass_matrix(),
+                    self.executor.lift_flux(fg, fg.ldis_loc.multi_face_mass_matrix(),
                             None, 
                             fluxes_on_faces, out)
 
@@ -206,16 +203,16 @@ class ExecutionMapper(hedge.backends.cpu_base.ExecutionMapper):
 
 
 
-class OpTemplateExecutor:
-    def __init__(self, discr, pp_optemplate):
-        self.discr = discr
-        self.pp_optemplate = pp_optemplate
+class Executor(ExecutorBase):
+    def __init__(self, discr, optemplate):
+        ExecutorBase.__init__(self, discr)
+        self.optemplate = optemplate
 
         self.inner_kernel_cache = {}
         self.bdry_kernel_cache = {}
 
     def __call__(self, **vars):
-        return ExecutionMapper(vars, self.discr, self)(self.pp_optemplate)
+        return ExecutionMapper(vars, self.discr, self)(self.optemplate)
 
     # flux code generators --------------------------------------------------------
     def make_inner_flux_kernel(self, flux, fvi):
@@ -309,9 +306,20 @@ class OpTemplateExecutor:
                 ]))
             ])
         mod.add_function(FunctionBody(fdecl, fbody))
-
-        self.inner_kernel_cache[cache_key] = result = mod.compile(
+        result = mod.compile(
                 self.discr.platform, wait_on_error=True).gather_flux
+
+        if self.discr.instrumented:
+            from hedge.tools import time_count_flop, gather_flops
+            result = \
+                    time_count_flop(
+                            result,
+                            self.discr.gather_timer,
+                            self.discr.gather_counter,
+                            self.discr.gather_flop_counter,
+                            gather_flops(self.discr)*len(fvi.arg_names))
+
+        self.inner_kernel_cache[cache_key] = result
         return result
 
     def make_bdry_flux_extractor(self, flux, fvi):
@@ -401,8 +409,13 @@ class OpTemplateExecutor:
             ])
         mod.add_function(FunctionBody(fdecl, fbody))
 
-        self.bdry_kernel_cache[cache_key] = result = \
-                mod.compile(self.discr.platform, wait_on_error=True).gather_flux
+        result = mod.compile(self.discr.platform, wait_on_error=True).gather_flux
+
+        if self.discr.instrumented:
+            from pytools.log import time_and_count_function
+            result = time_and_count_function( result, self.discr.gather_timer)
+
+        self.bdry_kernel_cache[cache_key] = result
         return result
 
 
@@ -440,6 +453,6 @@ class Discretization(hedge.discretization.Discretization):
                             OperatorBinder()(
                                 optemplate)))))
 
-        return OpTemplateExecutor(self, result)
+        return Executor(self, result)
 
 
