@@ -1,0 +1,28 @@
+kill(all);
+assume(m>0);
+assume(N>0);
+assume(s>0);
+
+C : A*s;
+J : N*m;
+V : J/C;
+F : C/V;
+T : V*s/m^2;
+
+u_c0 : m/s;
+u_mu0 : N / A^2;
+u_epsilon0 : 1/(u_c0^2*u_mu0);
+
+
+c0 : 299792458 * u_c0;
+mu0 : 4*%pi * 10^(-7) * u_mu0;
+epsilon0 : 1/(c0^2*mu0);
+
+u_E : V/m;
+u_D : C/m^2;
+u_B : T;
+u_H : A/m;
+
+u_ndE : u_E;
+u_ndH : sqrt(u_mu0/u_epsilon0) * u_H;
+
