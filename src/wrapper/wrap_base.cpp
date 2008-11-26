@@ -84,6 +84,7 @@ namespace
       subrange(all_nodes, el_start+nstart, el_start+nstart+dim) = 
         map.apply<py_vector>(subrange(unit_nodes, nstart, nstart+dim));
   }
+}
 
 
 
