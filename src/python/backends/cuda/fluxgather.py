@@ -82,7 +82,7 @@ class FluxToCodeMapper(FluxToCodeMapperBase):
             else:
                 return repr(x)
 
-        FluxToCodeMapper.__init__(self, float_mapper, reverse=False)
+        FluxToCodeMapperBase.__init__(self, float_mapper, reverse=False)
 
         self.int_field_expr = int_field_expr
         self.ext_field_expr = ext_field_expr
