@@ -30,6 +30,38 @@ import hedge.mesh
 
 
 
+class CommonSubexpression(pymbolic.primitives.Expression):
+    def __init__(self, child):
+        self.child = child
+
+    def stringifier(self):
+        return StringifyMapper
+
+    def __getinitargs__(self):
+        return self.child
+
+    def get_hash(self):
+        return hash((self.__class__, self.child))
+
+    def get_mapper_method(self, mapper): 
+        return mapper.map_common_subexpression
+
+
+
+
+
+def make_common_subexpression(expr):
+    from hedge.tools import is_obj_array, make_obj_array
+    if is_obj_array(expr):
+        from hedge.tools import make_obj_array
+        return make_obj_array([
+            CommonSubexpression(e_i) for e_i in expr])
+    else:
+        return CommonSubexpression(expr)
+
+
+
+
 # -----------------------------------------------------------------------------
 class Field(pymbolic.primitives.Variable):
     pass
@@ -385,6 +417,9 @@ class OpTemplateIdentityMapperMixin(object):
                 self.rec(expr.bfield, *args, **kwargs),
                 expr.tag)
 
+    def map_common_subexpression(self, expr, *args, **kwargs):
+        return expr.__class__(self.rec(expr.child, *args, **kwargs))
+
 
 
 
@@ -434,6 +469,9 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
     def map_operator_binding(self, expr, enclosing_prec):
         return "<%s>(%s)" % (expr.op, expr.field)
 
+    def map_common_subexpression(self, expr, enclosing_prec):
+        from pymbolic.mapper.stringifier import PREC_NONE
+        return "CSE(%s)" % (self.rec(expr.child, PREC_NONE))
 
 
 
@@ -551,8 +589,9 @@ class _InnerInverseMassContractor(pymbolic.mapper.RecursiveMapper):
 
 
 
+
         
-class InverseMassContractor(pymbolic.mapper.IdentityMapper):
+class InverseMassContractor(OpTemplateIdentityMapper):
     # assumes all operators to be bound
 
     def map_boundary_pair(self, bp):
@@ -773,55 +812,3 @@ class BCToFluxRewriter(OpTemplateIdentityMapper):
 class Evaluator(pymbolic.mapper.evaluator.EvaluationMapper):
     def map_boundary_pair(self, bp):
         return BoundaryPair(self.rec(bp.field), self.rec(bp.bfield), bp.tag)
-
-    # flop counting -----------------------------------------------------------
-    def diff_flops(self, discr):
-        result = 0
-        for eg in discr.element_groups:
-            ldis = eg.local_discretization
-            result += (
-                    # r,s,t diff
-                    2 # mul+add
-                    * discr.dimensions
-                    * ldis.node_count() * len(eg.members)
-                    * ldis.node_count()
-                    )
-
-        result += (
-                # x,y,z rescale
-                +2 # mul+add
-                * discr.dimensions**2
-                * len(discr.nodes)
-                )
-
-        return result
-
-    def mass_flops(self, discr):
-        result = 0
-        for eg in discr.element_groups:
-            ldis = eg.local_discretization
-            result += (
-                    # r,s,t diff
-                    2 # mul+add
-                    * ldis.node_count() * len(eg.members)
-                    * ldis.node_count()
-                    )
-
-        result += len(discr.nodes) # jacobian rescale
-
-        return result
-
-    def lift_flops(self, discr):
-        result = 0
-
-        for eg in discr.element_groups:
-            ldis = eg.local_discretization
-            result += (
-                    2 # mul+add
-                    * ldis.face_node_count()
-                    * ldis.face_count()
-                    * ldis.node_count() 
-                    * len(eg.members)
-                    )
-
-        return result

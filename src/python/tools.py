@@ -298,6 +298,68 @@ def levi_civita(tuple):
 
 
 
+def full_to_subset_indices(subset, base=0):
+    """Takes a sequence of bools and turns it into an array of indices
+    to be used to extract the subset from the full set.
+
+    Example:
+
+    >>> full_to_subset_indices([False, True, True])
+    array([1 2])
+    """
+
+    result = []
+    for i, is_in in enumerate(subset):
+        if is_in:
+            result.append(i + base)
+
+    return numpy.array(result, dtype=numpy.intp)
+
+
+
+def full_to_all_subset_indices(subsets, base=0):
+    """Takes a sequence of bools and generates it into an array of indices
+    to be used to extract the subset from the full set.
+
+    Example:
+
+    >>> list(full_to_all_subset_indices([[False, True, True], [True,False,True]]))
+    [array([1 2]), array([3 5]
+    """
+
+    for subset in subsets:
+        result = []
+        for i, is_in in enumerate(subset):
+            if is_in:
+                result.append(i + base)
+        base += len(subset)
+
+        yield numpy.array(result, dtype=numpy.intp)
+
+
+
+def partial_to_all_subset_indices(subsets, base=0):
+    """Takes a sequence of bools and generates it into an array of indices
+    to be used to extract the subset from the full set.
+
+    Example:
+
+    >>> list(partial_to_all_subset_indices([[False, True, True], [True,False,True]]))
+    [array([0 1]), array([2 3]
+    """
+
+    idx = base
+    for subset in subsets:
+        result = []
+        for is_in in subset:
+            if is_in:
+                result.append(idx)
+                idx += 1
+
+        yield numpy.array(result, dtype=numpy.intp)
+
+
+
 class SubsettableCrossProduct:
     """A cross product that can operate on an arbitrary subsets of its
     two operands and return an arbitrary subset of its result.
@@ -1128,7 +1190,7 @@ def parallel_cg(pcon, operator, b, precon=None, x=None, tol=1e-7, max_iterations
 
 
 # diagnostics -----------------------------------------------------------------
-def time_count_flop_if_instrumented(func, timer, counter, flop_counter, flops):
+def time_count_flop(func, timer, counter, flop_counter, flops):
     def wrapped_f(*args, **kwargs):
         counter.add()
         flop_counter.add(flops)
@@ -1142,4 +1204,81 @@ def time_count_flop_if_instrumented(func, timer, counter, flop_counter, flops):
 
 
 
+
+# flop counting ---------------------------------------------------------------
+def diff_flops(discr):
+    result = 0
+    for eg in discr.element_groups:
+        ldis = eg.local_discretization
+        result += (
+                # r,s,t diff
+                2 # mul+add
+                * discr.dimensions
+                * ldis.node_count() * len(eg.members)
+                * ldis.node_count()
+                )
+
+    result += (
+            # x,y,z rescale
+            +2 # mul+add
+            * discr.dimensions**2
+            * len(discr.nodes)
+            )
+
+    return result
+
+
+
+
+def mass_flops(discr):
+    result = 0
+    for eg in discr.element_groups:
+        ldis = eg.local_discretization
+        result += (
+                # r,s,t diff
+                2 # mul+add
+                * ldis.node_count() * len(eg.members)
+                * ldis.node_count()
+                )
+
+    result += len(discr.nodes) # jacobian rescale
+
+    return result
+
+
+
+
+def lift_flops(discr):
+    result = 0
+
+    for eg in discr.element_groups:
+        ldis = eg.local_discretization
+        result += (
+                2 # mul+add
+                * ldis.face_node_count()
+                * ldis.face_count()
+                * ldis.node_count() 
+                * len(eg.members)
+                )
+
+    return result
+
+
+
+
+def gather_flops(discr):
+    result = 0
+    for eg in discr.element_groups:
+        ldis = eg.local_discretization
+        result += (
+                ldis.face_node_count()
+                * ldis.face_count()
+                * len(eg.members)
+                * (1 # facejac-mul
+                    + 2 * # int+ext
+                    3 # const-mul, normal-mul, add
+                    )
+                )
+
+    return result
 

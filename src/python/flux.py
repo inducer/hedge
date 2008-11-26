@@ -188,17 +188,18 @@ class FluxScalarPlaceholder(object):
 
 class FluxVectorPlaceholder(object):
     def __init__(self, components=None, scalars=None):
-        if not (components or scalars):
+        if not (components is not None or scalars is not None):
             raise ValueError, "either components or scalars must be specified"
-        if components and scalars:
+        if components is not None and scalars is not None:
             raise ValueError, "only one of components and scalars may be specified"
 
+        # make them arrays for the better indexing
         if components:
-            self.scalars = [
+            self.scalars = numpy.array([
                     FluxScalarPlaceholder(i) 
-                    for i in range(components)]
+                    for i in range(components)])
         else:
-            self.scalars = scalars
+            self.scalars = numpy.array(scalars)
 
     def __len__(self):
         return len(self.scalars)

@@ -29,8 +29,8 @@ import hedge.discretization
 import hedge.optemplate
 import pymbolic.mapper
 import hedge._internal as _internal
-import hedge.backends.cpu_base
 from pytools import monkeypatch_method
+from hedge.backends.cpu_base import ExecutionMapperBase, ExecutorBase
 
 
 
@@ -138,7 +138,7 @@ class _FluxOpCompileMapper(hedge.optemplate.FluxDecomposer):
 
 
 # exec mapper -----------------------------------------------------------------
-class ExecutionMapper(hedge.backends.cpu_base.ExecutionMapper):
+class ExecutionMapper(ExecutionMapperBase):
     # implementation stuff ----------------------------------------------------
     def scalar_inner_flux(self, int_coeff, ext_coeff, field, lift, out=None):
         if out is None:
@@ -154,15 +154,15 @@ class ExecutionMapper(hedge.backends.cpu_base.ExecutionMapper):
                     (fg.face_count*fg.face_length()*fg.element_count(),),
                     dtype=field.dtype)
             
-            self.perform_double_sided_flux(fg, 
+            self.executor.perform_double_sided_flux(fg, 
                     ChainedFlux(int_coeff), ChainedFlux(ext_coeff),
                     field, fluxes_on_faces)
 
             if lift:
-                self.lift_flux(fg, fg.ldis_loc.lifting_matrix(),
+                self.executor.lift_flux(fg, fg.ldis_loc.lifting_matrix(),
                         fg.local_el_inverse_jacobians, fluxes_on_faces, out)
             else:
-                self.lift_flux(fg, fg.ldis_loc.multi_face_mass_matrix(),
+                self.executor.lift_flux(fg, fg.ldis_loc.multi_face_mass_matrix(),
                         None, fluxes_on_faces, out)
 
         return out
@@ -177,8 +177,8 @@ class ExecutionMapper(hedge.backends.cpu_base.ExecutionMapper):
             return 0
 
         from hedge._internal import \
-                perform_single_sided_flux, ChainedFlux, ZeroVector, \
-                lift_flux
+                perform_single_sided_flux, ChainedFlux, ZeroVector
+
         if isinstance(field, (int, float, complex)) and field == 0:
             field = ZeroVector()
             dtype = bfield.dtype
@@ -199,11 +199,11 @@ class ExecutionMapper(hedge.backends.cpu_base.ExecutionMapper):
                         field, bfield, fluxes_on_faces)
 
                 if lift:
-                    lift_flux(fg, fg.ldis_loc.lifting_matrix(),
+                    self.executor.lift_flux(fg, fg.ldis_loc.lifting_matrix(),
                             fg.local_el_inverse_jacobians, 
                             fluxes_on_faces, out)
                 else:
-                    lift_flux(fg, fg.ldis_loc.multi_face_mass_matrix(),
+                    self.executor.lift_flux(fg, fg.ldis_loc.multi_face_mass_matrix(),
                             None, 
                             fluxes_on_faces, out)
 
@@ -235,13 +235,26 @@ class ExecutionMapper(hedge.backends.cpu_base.ExecutionMapper):
 
 
 
-class CompiledOpTemplate:
+class Executor(ExecutorBase):
     def __init__(self, discr, pp_optemplate):
-        self.discr = discr
+        ExecutorBase.__init__(self, discr)
         self.pp_optemplate = pp_optemplate
 
+        if discr.instrumented:
+            from hedge._internal import perform_double_sided_flux
+            from hedge.tools import time_count_flop, gather_flops
+            self.perform_double_sided_flux = \
+                    time_count_flop(
+                            perform_double_sided_flux,
+                            self.discr.gather_timer,
+                            self.discr.gather_counter,
+                            self.discr.gather_flop_counter,
+                            gather_flops(discr))
+        else:
+            self.perform_double_sided_flux = perform_double_sided_flux
+
     def __call__(self, **vars):
-        return ExecutionMapper(vars, self.discr)(self.pp_optemplate)
+        return ExecutionMapper(vars, self.discr, self)(self.pp_optemplate)
 
 
 
@@ -263,5 +276,5 @@ class Discretization(hedge.discretization.Discretization):
                                 OperatorBinder()(
                                     optemplate))))))
 
-        return CompiledOpTemplate(self, result)
+        return Executor(self, result)
 
