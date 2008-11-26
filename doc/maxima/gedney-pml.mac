@@ -1,0 +1,114 @@
+kill(all);
+load("maxwellbase.mac");
+
+/*
+See
+S.D. Gedney, “An anisotropic perfectly matched layer-absorbing medium for
+the truncation of FDTD lattices,” IEEE Transactions on Antennas and
+Propagation,  vol. 44, 1996, S. 1630-1639.
+*/
+
+/* -------------------------------------------------------------------------- */
+/* Variable declarations */
+/* -------------------------------------------------------------------------- */
+
+coords:[x,y,z];
+allvars:append([t],coords);
+
+max_E:makelist(concat(E,i),i,coords);
+max_H:makelist(concat(H,i),i,coords);
+max_w:append(max_E,max_H);
+
+max_D:makelist(concat(D,i),i,coords);
+max_B:makelist(concat(B,i),i,coords);
+aux_w:append(max_D, max_B);
+
+depends(max_w,allvars);
+depends(aux_w,allvars);
+
+/* -------------------------------------------------------------------------- */
+/* Utilities */
+/* -------------------------------------------------------------------------- */
+
+curl(x):=crossfunc(lambda([i,j], diff(x[j], coords[i])));
+
+make_eqns(l, r):= makelist(l[i]=r[i], i, 1, length(l));
+
+shift(l, amount):=makelist(l[mod(i-amount-1, length(l))+1], i, 1, length(l));
+
+norm(x):=sum(x[i]^2, i, 1, length(x));
+
+/* -------------------------------------------------------------------------- */
+/* Operator building */
+/* -------------------------------------------------------------------------- */
+
+sigexpr(c):=(1+sigma[c]/(%i*omega));
+
+/* 
+This here is *NOT* in conservation form
+  u_t + A u_x = 0,
+but in ODE form
+  u_t = (- A) u_x.
+        ---------- rhs
+*/
+
+max_rhs:append(curl(max_H),-curl(max_E));
+
+s:makelist(sigexpr(c), c, coords);
+sl:shift(s, -1);
+sr:shift(s, 1);
+sdiv:sr/s;
+
+max_D_values:epsilon*sdiv*max_E;
+max_B_values:mu*sdiv*max_H;
+
+main_eqns:expand(make_eqns(
+  %i*omega * vstack(
+    sl*max_D,
+    sl*max_B
+  ),
+  max_rhs));
+aux_eqns:factor(ratsimp(
+  append(
+    make_eqns(max_D, max_D_values),
+    make_eqns(max_B, max_B_values)
+  )));
+aux_eqns:makelist(
+  lhs(e)*denom(rhs(e))=num(rhs(e)), e, aux_eqns);
+
+make_time_derivatives(vars, expr):=
+  block([e],
+  e:expr,
+  for v in vars do
+    e:ratsubst(diff(v,t),%i*omega*v,e),
+  e);
+
+aux_eqns:make_time_derivatives(
+  max_w,
+  make_time_derivatives(aux_w, expand(aux_eqns)/%i));
+main_eqns:make_time_derivatives(aux_w, main_eqns);
+
+soln:solve(
+  append(main_eqns,aux_eqns), 
+  makelist(diff(v,t),v,append(max_w,aux_w)));
+print(covect(soln[1]));
+
+/* -------------------------------------------------------------------------- */
+/* Compare vs 'nice' shorter expression */
+/* -------------------------------------------------------------------------- */
+
+sig:makelist(sigma[c], c, coords);
+sigl:shift(sig, -1);
+sigr:shift(sig, 1);
+
+known:append(
+  max_D/epsilon*(sig - sigl) - max_E*sigr 
+    + curl(max_H)/epsilon,
+
+  max_B/mu*(sig - sigl) - max_H*sigr
+    -curl(max_E)/mu,
+
+  -sigl*max_D+curl(max_H),
+  -sigl*max_B-curl(max_E)
+  );
+assert(norm(ratsimp(map(rhs, soln[1])-known))=0);

@@ -1,11 +1,5 @@
 kill(all);
 
-/* Enable this for TeXmacs output:*/
-/*
-%epsilon:epsilon;
-%mu:mu;
-*/
-
 load("maxwellbase.mac");
 
 /* ------------------------------------------------------------------------- */
@@ -20,9 +14,9 @@ print(max_wradbdry);
 
 max_knownwradbdry:max_wm+1/2*vstack(
     crossprod(n, crossprod(n, max_Em)) 
-    - sqrt(%mu/%epsilon)*crossprod(n, max_Hm),
+    - sqrt(mu/epsilon)*crossprod(n, max_Hm),
     crossprod(n, crossprod(n, max_Hm)) 
-    + sqrt(%epsilon/%mu)*crossprod(n, max_Em)
+    + sqrt(epsilon/mu)*crossprod(n, max_Em)
     );
 assert(norm_2_squared(hypsimp(max_knownwradbdry - max_wradbdry))=0);
 
@@ -64,13 +58,13 @@ print(max_wflux);
 /* ------------------------------------------------------------------------- */
 /* known flux value*/
 /* ------------------------------------------------------------------------- */
-max_Z:sqrt(%mu/%epsilon)$
-max_Y:sqrt(%epsilon/%mu)$
+max_Z:sqrt(mu/epsilon)$
+max_Y:sqrt(epsilon/mu)$
 
 max_knownstrongwflux:ratsimp(vstack(
-  -1/(2*%epsilon)
+  -1/(2*epsilon)
   *(crossprod(n,(max_Hm-max_Hp)-1/max_Z*crossprod(n,max_Em-max_Ep))),
-  1/(2*%mu)
+  1/(2*mu)
   *(crossprod(n,(max_Em-max_Ep)+1/max_Y*crossprod(n,max_Hm-max_Hp)))
   ))$
 

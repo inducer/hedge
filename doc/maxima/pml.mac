@@ -1,0 +1,73 @@
+kill(all);
+load("maxwellbase.mac");
+
+/*
+See
+S.G. Johnson, “Notes on Perfectly Matched Layers,” 2008;
+http://math.mit.edu/~stevenj/18.369/pml.pdf.
+*/
+
+coords:[x,y,z];
+allvars:append([t],coords);
+
+max_E:makelist(concat(E,i),i,coords);
+max_H:makelist(concat(H,i),i,coords);
+max_w:vstack(max_E,max_H);
+
+depends(max_w,allvars);
+
+/* 
+The minus sign takes the operator from conservation form
+  u_t + A u_x = 0
+into ODE form
+  u_t = - A u_x.
+*/
+sigexpr(c):=(1+%i*sigma[c]/omega);
+
+pml_op:-subst(makelist(concat('n, i)=1/sigexpr(i)*concat(d, i), i, coords), max_A);
+orig_op:-subst(makelist(concat('n, i)=concat(d, i), i, coords), max_A);
+
+op_rhs(op_mat, state):=block([rhss],
+  rhss:op_mat.state,
+
+  for c in coords do
+    for var in state do
+      rhss:subst(diff(var, c), concat(d, c)*var, rhss),
+  rhss);
+
+pml_rhs:op_rhs(pml_op, max_w);
+orig_rhs:op_rhs(orig_op, max_w);
+
+make_ode(my_rhs, state):=
+  covect(
+    makelist(-%i*%omega*state[i]=my_rhs[i,1], i, 1, length(state)));
+
+pml_eqns:make_ode(pml_rhs, max_w);
+orig_eqns:make_ode(orig_rhs, max_w);
+
+kill_denom(eqns):=
+  covect(makelist(
+    block([eqn],
+      eqn:eqns[i,1],
+      for c in coords do
+        if not freeof(sigma[c], eqn) then
+          eqn:eqn*sigexpr(c),
+      lhs(eqn)=multthru(rhs(eqn))),
+    i,1,length(eqns)));
+
+simpler_eqns:kill_denom(pml_eqns);
+
+/*
+auxvar_coeffs:
+auxvars:makelist(concat(X,i),i,1,length(auxvar_coeffs));
+depends(auxvars,allvars);
+
+new_rhss:pml_rhs;
+for i: 1 thru length(auxvar_coeffs) do 
+  new_rhss:ratsubst(concat(X,i), %i/omega*auxvar_coeffs[i,1], new_rhss);
+
+new_nonaux_eqns:covect(makelist(
+  diff(max_w[i], t) = new_rhss[i,1], 
+  i, 1, length(max_w)));
+aux_eqns:covect(makelist(diff(concat(X,i), t)=-auxvar_coeffs[i,1], i, 1, length(auxvar_coeffs)));
+*/
