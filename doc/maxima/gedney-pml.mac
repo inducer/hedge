@@ -42,7 +42,7 @@ norm(x):=sum(x[i]^2, i, 1, length(x));
 /* Operator building */
 /* -------------------------------------------------------------------------- */
 
-sigexpr(c):=(1+sigma[c]/(%i*omega));
+sigexpr(c):=(1+sigma[c]/(%i*omega*epsilon));
 
 /* 
 This here is *NOT* in conservation form
@@ -91,7 +91,7 @@ main_eqns:make_time_derivatives(aux_w, main_eqns);
 soln:solve(
   append(main_eqns,aux_eqns), 
   makelist(diff(v,t),v,append(max_w,aux_w)));
-print(covect(soln[1]));
+print(expand(covect(soln[1])));
 
 /* -------------------------------------------------------------------------- */
 /* Compare vs 'nice' shorter expression */
@@ -102,13 +102,14 @@ sigl:shift(sig, -1);
 sigr:shift(sig, 1);
 
 known:append(
-  max_D/epsilon*(sig - sigl) - max_E*sigr 
+  max_D/epsilon*(sig - sigl)/epsilon - max_E*sigr/epsilon
     + curl(max_H)/epsilon,
 
-  max_B/mu*(sig - sigl) - max_H*sigr
+  max_B/mu*(sig - sigl)/epsilon - max_H*sigr/epsilon
     -curl(max_E)/mu,
 
-  -sigl*max_D+curl(max_H),
-  -sigl*max_B-curl(max_E)
+  -sigl/epsilon*max_D+curl(max_H),
+  -sigl/epsilon*max_B-curl(max_E)
   );
+/* print(covect(expand(ratsimp(map(rhs, soln[1])-known))));*/
 assert(norm(ratsimp(map(rhs, soln[1])-known))=0);
