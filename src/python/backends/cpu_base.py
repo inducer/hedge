@@ -174,6 +174,9 @@ class ExecutionMapperBase(hedge.optemplate.Evaluator,
     def map_product(self, expr, out=None):
         return hedge.optemplate.Evaluator.map_product(self, expr)
 
+    def map_quotient(self, expr, out=None):
+        return hedge.optemplate.Evaluator.map_quotient(self, expr)
+
     def map_variable(self, expr, out=None):
         return hedge.optemplate.Evaluator.map_variable(self, expr)
 

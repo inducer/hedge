@@ -154,8 +154,6 @@ def main():
             )
     fields = op.assemble_fields(discr=discr)
 
-    sigma = 0.5*(1/dt)*op.sigma_from_width(discr, pml_width, exponent=3)
-
     stepper = RK4TimeStepper()
 
     # diagnostics setup ---------------------------------------------------
@@ -182,34 +180,15 @@ def main():
     # timestep loop -------------------------------------------------------
 
     t = 0
-    rhs = op.bind(discr, sigma=sigma)
-    #rhs = op.bind(discr)
-    def compile_no_pml():
-        return discr.compile(op.op_template(enable_pml=False))
-
-    from hedge.tools import full_to_subset_indices
-    e_indices = full_to_subset_indices(op.get_eh_subset()[0:3])
-
-    def no_pml_rhs(t, w):
-        j = op.current.volume_interpolant(t, discr)[e_indices]
-        return no_pml_op(w=w) - op.assemble_fields(e=j)
-
-    no_pml_op = compile_no_pml()
-
-    #for i in op.op_template():
-        #print i
-        #print
+    rhs = op.bind(discr, sigma=op.sigma_from_width(discr, pml_width))
 
     vis_step = [0]
     for step in range(nsteps):
         logmgr.tick()
 
-        if step % 1 == 0:
+        if step % 5 == 0:
             e, h, d, b = op.split_ehdb(fields)
-            #from hedge.tools import relative_error
-            #print relative_error(discr.norm(h-b), discr.norm(h))
             visf = vis.make_file("em-%d-%04d" % (order, step))
-            #pml_rhs_e, pml_rhs_h, pml_rhs_d, pml_rhs_b = op.split_ehdb(rhs(t, fields))
             vis.add_data(visf, [ 
                 ("e", e), 
                 ("h", h), 
@@ -219,35 +198,8 @@ def main():
                 #("pml_rhs_h", pml_rhs_h),
                 #("pml_rhs_d", pml_rhs_d),
                 #("pml_rhs_b", pml_rhs_b),
-                ("sigma", sigma),
                 ], time=t, step=step)
             visf.close()
-
-        def vis_rhs(t, fields):
-            if step % 1 == 0:
-                e, h, d, b = op.split_ehdb(fields)
-                visf = vis.make_file("em-%d-%04d" % (order, vis_step[0]))
-                nopml_rhs_e, nopml_rhs_h, nopml_rhs_d, nopml_rhs_b = \
-                        op.split_ehdb(no_pml_op(w=fields, sigma=sigma))
-                pml_rhs_e, pml_rhs_h, pml_rhs_d, pml_rhs_b = \
-                        op.split_ehdb(rhs(t, fields))
-                vis.add_data(visf, [ 
-                    ("e", e), 
-                    ("h", h), 
-                    ("d", d), 
-                    ("b", b), 
-                    ("nopml_rhs_e", nopml_rhs_e),
-                    ("nopml_rhs_h", nopml_rhs_h),
-                    ("nopml_rhs_d", nopml_rhs_d),
-                    ("nopml_rhs_b", nopml_rhs_b),
-                    ("pml_rhs_e", pml_rhs_e),
-                    ("pml_rhs_h", pml_rhs_h),
-                    ("pml_rhs_d", pml_rhs_d),
-                    ("pml_rhs_b", pml_rhs_b),
-                    ], time=t, step=step)
-                visf.close()
-            vis_step[0] += 1
-            return rhs(t, fields)
 
         fields = stepper(fields, t, dt, rhs)
         t += dt

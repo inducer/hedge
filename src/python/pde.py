@@ -728,16 +728,18 @@ class GedneyPMLMaxwellOperator(MaxwellOperator):
         from hedge.tools import join_fields
         return join_fields(
                 # d_t E
-                d/self.epsilon*(sigma - sigma_left)[e_idx] - e*sigma_right[e_idx],
+                d/self.epsilon*(sigma - sigma_left)[e_idx]/self.epsilon
+                - e*sigma_right[e_idx]/self.epsilon,
 
                 # d_t H
-                b/self.mu*(sigma - sigma_left)[h_idx] - h*sigma_right[h_idx],
+                b/self.mu*(sigma - sigma_left)[h_idx]/self.epsilon
+                - h*sigma_right[h_idx]/self.epsilon,
 
                 # d_t D
-                -sigma_left[e_idx]*d,
+                -sigma_left[e_idx]/self.epsilon*d,
 
                 # d_t B
-                -sigma_left[h_idx]*b
+                -sigma_left[h_idx]/self.epsilon*b
                 )
 
     def op_template(self, w=None, enable_pml=True):
@@ -820,7 +822,7 @@ class GedneyPMLMaxwellOperator(MaxwellOperator):
         r_dist = (node_coord - i_max) / (o_max-i_max)
         r_dist[r_dist < 0] = 0
 
-        return (l_dist+r_dist)**exponent
+        return 0.5*(l_dist+r_dist)**exponent
 
     def sigma_from_boxes(self, discr, inner_bbox, outer_bbox=None, exponent=2):
         if outer_bbox is None:
