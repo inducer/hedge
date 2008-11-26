@@ -22,6 +22,9 @@ u_E : V/m;
 u_D : C/m^2;
 u_B : T;
 u_H : A/m;
+u_J : A/m^2;
+
+u_sigma : u_J/u_E;
 
 u_ndE : u_E;
 u_ndH : sqrt(u_mu0/u_epsilon0) * u_H;

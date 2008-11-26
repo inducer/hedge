@@ -15,10 +15,12 @@ hstack(a,b):=transpose(append(transpose(a),transpose(b)));
 
 blockmat(a11,a12,a21,a22):=vstack(hstack(a11,a12),hstack(a21,a22))$
 
-crossprod(a,b):=makelist(
+crossfunc(f):=makelist(
   sum(sum(
-      levi_civita([i,j,k])*a[j]*b[k],
+      levi_civita([i,j,k])*f(j,k),
    j,1,3),k,1,3),i,1,3)$
+
+crossprod(a,b):=crossfunc(lambda([j,k], a[j]*b[k]));
 
 subrange(v, start, stop):=makelist(v[i,1],i,start,stop);
 
@@ -41,7 +43,7 @@ fullhypsimp(x):=hypsimp(
 /* diagonalize a given hyperbolic operator A */
 /* ------------------------------------------------------------------------- */
 
-hypdiagonalize(A):=block([evA, V, invV],
+hypdiagonalize(A):=block([evA, V, invV,D],
   evA:hypsimp(eigenvectors(A)),
   V:transpose(apply(matrix, makelist(evA[i],i,2,length(evA)))),
   invV:hypsimp(invert(V)),

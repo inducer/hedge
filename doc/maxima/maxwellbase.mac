@@ -1,8 +1,8 @@
 load("myhelpers.mac");
 
 assume(c>0);
-assume(%mu>0);
-assume(%epsilon>0);
+assume(mu>0);
+assume(epsilon>0);
 assume(epsinv>0);
 assume(muinv>0);
 
@@ -21,9 +21,9 @@ max_submat(i):=blockmat(
 n:[nx,ny,nz];
 
 max_Asimp:sum(n[i]*max_submat(i),i,1,3);
-max_A:subst([epsinv=1/%epsilon,muinv=1/%mu], max_Asimp);
+max_A:subst([epsinv=1/epsilon,muinv=1/mu], max_Asimp);
 
-max_invsubst(x):=subst([epsinv=1/%epsilon, muinv=1/%mu], x);
+max_invsubst(x):=subst([epsinv=1/epsilon, muinv=1/mu], x);
 
 [max_V, max_D, max_invV]:max_invsubst(hypdiagonalize(max_Asimp));
 
@@ -55,14 +55,14 @@ max_pecbdrywp:append(-max_Em,max_Hm);
 /* Rankine-Hugoniot flux */
 /* ------------------------------------------------------------------------- */
 
-max_Dinc:subst([1/(sqrt(%epsilon)*sqrt(%mu))=c], max_D);
+max_Dinc:subst([1/(sqrt(epsilon)*sqrt(mu))=c], max_D);
 max_sflux:hyp_upwind_flux([-c,0,c], max_Dinc);
 
 /* FIXME: max_V should not depend on epsilon and mu, but it does 
    For now, make cp and cm equal. */
 
 max_sflux:subst(
-  [cp=1/(sqrt(%epsilon)*sqrt(%mu)), cm=1/(sqrt(%epsilon)*sqrt(%mu))], 
+  [cp=1/(sqrt(epsilon)*sqrt(mu)), cm=1/(sqrt(epsilon)*sqrt(mu))], 
   max_sflux);
 
 max_wflux:fullhypsimp(max_V.ev(max_sflux, [sm=max_sminw,sp=max_spinw]));
