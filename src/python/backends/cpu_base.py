@@ -121,9 +121,10 @@ class ExecutionMapperBase(hedge.optemplate.Evaluator,
         pymbolic.mapper.evaluator.EvaluationMapper.__init__(self, context)
         self.discr = discr
         self.executor = executor
-        self.diff_rst_cache = {}
 
-    # entry points ------------------------------------------------------------
+        self.diff_rst_cache = {}
+        self.common_subexp_cache = {}
+
     def diff_rst_with_cache(self, op, expr, field):
         try:
             result = self.diff_rst_cache[op.__class__, expr]
@@ -164,8 +165,21 @@ class ExecutionMapperBase(hedge.optemplate.Evaluator,
                 out += result
         return out
 
+    def map_constant(self, expr, out=None):
+        return expr
+
+    def map_subscript(self, expr, out=None):
+        return hedge.optemplate.Evaluator.map_subscript(self, expr)
+
     def map_product(self, expr, out=None):
         return hedge.optemplate.Evaluator.map_product(self, expr)
 
     def map_variable(self, expr, out=None):
         return hedge.optemplate.Evaluator.map_variable(self, expr)
+
+    def map_common_subexpression(self, expr, out=None):
+        try:
+            return self.common_subexp_cache[expr.child]
+        except KeyError:
+            self.common_subexp_cache[expr.child] = value = self.rec(expr.child)
+            return value

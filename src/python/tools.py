@@ -298,6 +298,68 @@ def levi_civita(tuple):
 
 
 
+def full_to_subset_indices(subset, base=0):
+    """Takes a sequence of bools and turns it into an array of indices
+    to be used to extract the subset from the full set.
+
+    Example:
+
+    >>> full_to_subset_indices([False, True, True])
+    array([1 2])
+    """
+
+    result = []
+    for i, is_in in enumerate(subset):
+        if is_in:
+            result.append(i + base)
+
+    return numpy.array(result, dtype=numpy.intp)
+
+
+
+def full_to_all_subset_indices(subsets, base=0):
+    """Takes a sequence of bools and generates it into an array of indices
+    to be used to extract the subset from the full set.
+
+    Example:
+
+    >>> list(full_to_all_subset_indices([[False, True, True], [True,False,True]]))
+    [array([1 2]), array([3 5]
+    """
+
+    for subset in subsets:
+        result = []
+        for i, is_in in enumerate(subset):
+            if is_in:
+                result.append(i + base)
+        base += len(subset)
+
+        yield numpy.array(result, dtype=numpy.intp)
+
+
+
+def partial_to_all_subset_indices(subsets, base=0):
+    """Takes a sequence of bools and generates it into an array of indices
+    to be used to extract the subset from the full set.
+
+    Example:
+
+    >>> list(partial_to_all_subset_indices([[False, True, True], [True,False,True]]))
+    [array([0 1]), array([2 3]
+    """
+
+    idx = base
+    for subset in subsets:
+        result = []
+        for is_in in subset:
+            if is_in:
+                result.append(idx)
+                idx += 1
+
+        yield numpy.array(result, dtype=numpy.intp)
+
+
+
 class SubsettableCrossProduct:
     """A cross product that can operate on an arbitrary subsets of its
     two operands and return an arbitrary subset of its result.

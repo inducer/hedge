@@ -878,7 +878,6 @@ def make_rect_mesh(a=(0,0), b=(1,1), max_area=None,
                     subdivisions[0], subdivisions[1]],
                 points, facets, facet_markers)
             
-    from hedge.mesh import finish_2d_rect_mesh
     return finish_2d_rect_mesh(points, facets, facet_markers, marker2tag, 
             refine_func, periodicity, boundary_tagger)
 
