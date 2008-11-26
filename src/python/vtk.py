@@ -72,6 +72,8 @@ CELL_NODE_COUNT = {
 VF_LIST_OF_COMPONENTS = 0 # [[x0,y0,z0], [x1,y1,z1]
 VF_LIST_OF_VECTORS = 1 # [[x0,x1], [y0,y1], [z0,z1]]
 
+_U32CHAR = numpy.dtype(numpy.uint32).char
+
 
 
 
@@ -183,9 +185,10 @@ class BinaryEncodedBuffer:
 
 class Base64EncodedBuffer:
     def __init__(self, buffer):
-        from hedge._internal import bufferize_int32
+        from struct import pack
         from base64 import b64encode
-        self.b64header = b64encode(bufferize_int32([len(buffer)]))
+        self.b64header = b64encode(
+                pack(_U32CHAR, len(buffer)))
         self.b64data = b64encode(buffer)
 
     def encoder(self):
@@ -212,12 +215,13 @@ class Base64EncodedBuffer:
 
 class Base64ZLibEncodedBuffer:
     def __init__(self, buffer):
-        from hedge._internal import bufferize_int32
+        from struct import pack
         from base64 import b64encode
         from zlib import compress
         comp_buffer = compress(buffer)
         comp_header = [1, len(buffer), len(buffer), len(comp_buffer)]
-        self.b64header = b64encode(bufferize_int32(comp_header))
+        self.b64header = b64encode(
+                pack(_U32CHAR*len(comp_header), *comp_header))
         self.b64data = b64encode(comp_buffer)
 
     def encoder(self):
@@ -246,7 +250,7 @@ class Base64ZLibEncodedBuffer:
 
 
 class DataArray(object):
-    def __init__(self, name, container, typehint=None, vector_padding=3, 
+    def __init__(self, name, container, vector_padding=3, 
             vector_format=VF_LIST_OF_COMPONENTS, components=None):
         self.name = name
 
@@ -256,81 +260,50 @@ class DataArray(object):
             self.encoded_buffer = container.encoded_buffer
             return
 
-        from hedge._internal import \
-                bufferize_vector, \
-                bufferize_list_of_vectors, \
-                bufferize_list_of_components, \
-                bufferize_int32, \
-                bufferize_uint8
-
         def vec_type(vec):
-            # FIXME
-            return VTK_FLOAT64
+            if vec.dtype == numpy.int8: return VTK_INT8
+            elif vec.dtype == numpy.uint8: return VTK_UINT8
+            elif vec.dtype == numpy.int16: return VTK_INT16
+            elif vec.dtype == numpy.uint16: return VTK_UINT16
+            elif vec.dtype == numpy.int32: return VTK_INT32
+            elif vec.dtype == numpy.uint32: return VTK_UINT32
+            elif vec.dtype == numpy.int64: return VTK_INT64
+            elif vec.dtype == numpy.uint64: return VTK_UINT64
+            elif vec.dtype == numpy.float32: return VTK_FLOAT32
+            elif vec.dtype == numpy.float64: return VTK_FLOAT64
+            else:
+                raise TypeError, "Unsupported vector '%s' type in VTK writer" % (vec.dtype)
 
         from hedge._internal import IntVector
 
-        if isinstance(container, numpy.ndarray):
-            if container.dtype == object:
-                if vector_format == VF_LIST_OF_COMPONENTS:
-                    ctr = list(container)
-                    if len(ctr) > 1:
-                        while len(ctr) < vector_padding:
-                            ctr.append(None)
-                        self.type = vec_type(ctr[0])
-                    else:
-                        self.type = VTK_FLOAT64
-
-                    self.components = len(ctr)
-                    buffer =  bufferize_list_of_components(ctr, len(ctr[0]))
-
-                elif vector_format == VF_LIST_OF_VECTORS:
-                    self.type = vec_type(container[0])
-                    self.components = components or len(container[0])
-                    if self.components < vector_padding:
-                        self.components = vector_padding
-                    buffer =  bufferize_list_of_vectors(container, self.components)
-
-                else:
-                    raise TypeError, "unrecognized vector format"
-            else:
-                if len(container.shape) > 1:
-                    if vector_format == VF_LIST_OF_COMPONENTS:
-                        container = container.T.copy()
-
-                    assert len(container.shape) == 2, "numpy vectors of rank >2 are not supported"
-                    assert container.strides[1] == container.itemsize, "2D numpy arrays must be row-major"
-                    if vector_padding > container.shape[1]:
-                        container = numpy.asarray(numpy.hstack((
-                                container, 
-                                numpy.zeros((
-                                    container.shape[0], 
-                                    vector_padding-container.shape[1],
-                                    ),
-                                    container.dtype))), order="C")
-                    self.components = container.shape[1]
-                else:
-                    self.components = 1
-                self.type = vec_type(container)
-                buffer = bufferize_vector(container)
-
-        elif isinstance(container, IntVector):
-            self.components = 1
-            if typehint == VTK_UINT8:
-                self.type = VTK_UINT8
-                buffer = bufferize_uint8(container)
-            elif typehint == VTK_INT32: 
-                self.type = VTK_INT32
-                buffer = bufferize_int32(container)
-            else:
-                raise ValueError, "unsupported typehint"
-
-
-                if typehint is not None:
-                    assert typehint == self.type
-        else:
+        if not isinstance(container, numpy.ndarray):
             raise ValueError, "cannot convert object of type `%s' to DataArray" % type(container)
 
-        self.encoded_buffer = BinaryEncodedBuffer(buffer)
+        if container.dtype == object:
+            container = numpy.array(list(container))
+            assert container.dtype != object
+
+        if len(container.shape) > 1:
+            if vector_format == VF_LIST_OF_COMPONENTS:
+                container = container.T.copy()
+
+            assert len(container.shape) == 2, "numpy vectors of rank >2 are not supported"
+            assert container.strides[1] == container.itemsize, "2D numpy arrays must be row-major"
+            if vector_padding > container.shape[1]:
+                container = numpy.asarray(numpy.hstack((
+                        container, 
+                        numpy.zeros((
+                            container.shape[0], 
+                            vector_padding-container.shape[1],
+                            ),
+                            container.dtype))), order="C")
+            self.components = container.shape[1]
+        else:
+            self.components = 1
+        self.type = vec_type(container)
+        buf = buffer(container)
+
+        self.encoded_buffer = BinaryEncodedBuffer(buf)
 
     def get_encoded_buffer(self, encoder, compressor):
         have_encoder = self.encoded_buffer.encoder()
@@ -383,22 +356,15 @@ class UnstructuredGrid(object):
         except:
             self.cell_count = len(cell_types)
 
-            def cumsum(container):
-                run_sum = 0
-                for i in range(len(container)):
-                    run_sum += container[i]
-                    container[i] = run_sum
-                return container
+            offsets = numpy.cumsum(numpy.fromiter(
+                        (CELL_NODE_COUNT[ct] for ct in cell_types),
+                        dtype=numpy.int,
+                        count=len(cell_types)))
 
-            from hedge._internal import IntVector
-            offsets = cumsum(
-                    IntVector(CELL_NODE_COUNT[ct] for ct in cell_types)
-                    )
+            self.cell_connectivity = DataArray("connectivity", cells)
+            self.cell_offsets = DataArray("offsets", offsets)
 
-            self.cell_connectivity = DataArray("connectivity", cells, VTK_INT32)
-            self.cell_offsets = DataArray("offsets", offsets, VTK_INT32)
-
-        self.cell_types = DataArray("types", cell_types, VTK_UINT8)
+        self.cell_types = DataArray("types", cell_types)
 
         self.pointdata = []
         self.celldata = []
@@ -556,12 +522,6 @@ class ParallelXMLGenerator(XMLGenerator):
         return el
 
     def gen_data_array(self, data):
-        from hedge._internal import bufferize_int32
         el = XMLElement("PDataArray", type=data.type, Name=data.name, 
                 NumberOfComponents=data.components)
         return el
-
-
-
-
-

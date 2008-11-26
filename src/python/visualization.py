@@ -114,6 +114,7 @@ class LegacyVtkVisualizer(Visualizer):
 # xml vtk ---------------------------------------------------------------------
 class VtkFile(hedge.tools.Closable):
     def __init__(self, pathname, grid, filenames=None, compressor=None):
+        """`compressor` may be what ever is accepted by L{hedge.vtk.make_vtkfile}."""
         hedge.tools.Closable.__init__(self)
         self.pathname = pathname
         self.grid = grid
@@ -216,7 +217,8 @@ class VtkVisualizer(Visualizer, hedge.tools.Closable):
         self.grid = UnstructuredGrid(
                 (len(discr), 
                     DataArray("points", discr.nodes, vector_format=VF_LIST_OF_VECTORS)),
-                cells, cell_types)
+                numpy.asarray(cells), 
+                cell_types=numpy.asarray(cell_types, dtype=numpy.uint8))
 
 
     def update_pvd(self):

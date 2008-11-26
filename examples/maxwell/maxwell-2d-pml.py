@@ -121,12 +121,13 @@ def main():
         shape = (3,)
 
         def __call__(self, x, el):
-            return numpy.array([1,1,1])*exp(-20*la.norm(x))
+            sc = numpy.array([1,4,3])[:discr.dimensions]
+            return numpy.array([1,1,1])*exp(-20*la.norm(sc*x))
 
     order = 3
     discr = rcon.make_discretization(mesh_data, order=order)
 
-    vis = VtkVisualizer(discr, rcon, "em-%d" % order)
+    vis = VtkVisualizer(discr, rcon, "em-%d" % order, compressor="zlib")
     #vis = SiloVisualizer(discr, rcon
 
     dt = discr.dt_factor(1/sqrt(mu*epsilon))
