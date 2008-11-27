@@ -87,8 +87,6 @@ class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
             flux_optemplate=None):
         self.is_lift = is_lift
 
-        self.fluxes = []
-
         from pytools import Record
         self.interiors = interiors
 
@@ -117,6 +115,9 @@ class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
                 
         self.flux_optemplate = flux_optemplate
 
+    def get_hash(self):
+        return hash((self.__class__, self.flux_optemplate))
+        
     @staticmethod
     def short_name(field):
         from pymbolic.primitives import Subscript
@@ -124,12 +125,6 @@ class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
             return "%s%d" % (field.aggregate, field.index)
         else:
             return str(field)
-
-    def boundary_elface_to_bdry_id(self, elface):
-        try:
-            return self.elface_to_bdry_id[elface]
-        except KeyError:
-            return len(self.fluxes)
 
     def stringifier(self):
         return StringifyMapper
