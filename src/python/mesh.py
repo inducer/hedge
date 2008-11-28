@@ -934,23 +934,13 @@ def make_disk_mesh(r=0.5, faces=50, max_area=4e-3,
 
 def make_ball_mesh(r=0.5, subdivisions=10, max_volume=None,
         boundary_tagger=(lambda fvi, el, fn: [])):
-    from math import pi, cos, sin
-    from meshpy.tet import MeshInfo, build, generate_surface_of_revolution,\
-            EXT_OPEN
+    from meshpy.tet import MeshInfo, build
+    from meshpy.geometry import make_ball_geometry
 
-    dphi = pi/subdivisions
-
-    def truncate(r):
-        if abs(r) < 1e-10:
-            return 0
-        else:
-            return r
-
-    rz = [(truncate(r*sin(i*dphi)), r*cos(i*dphi)) for i in range(subdivisions+1)]
+    points, facets, facet_holestarts, facet_markers = \
+            make_ball_geometry(r, subdivisions)
 
     mesh_info = MeshInfo()
-    points, facets, facet_holestarts, facet_markers = generate_surface_of_revolution(
-            rz, closure=EXT_OPEN, radial_subdiv=subdivisions)
 
     mesh_info.set_points(points)
     mesh_info.set_facets_ex(facets, facet_holestarts, facet_markers)
@@ -964,13 +954,6 @@ def make_ball_mesh(r=0.5, subdivisions=10, max_volume=None,
 
 
 
-MINUS_X_MARKER = 1
-PLUS_X_MARKER = 2
-MINUS_Y_MARKER = 3
-PLUS_Y_MARKER = 4
-MINUS_Z_MARKER = 5
-PLUS_Z_MARKER = 6
-SHELL_MARKER = 100
 
 
 
@@ -978,6 +961,7 @@ SHELL_MARKER = 100
 def _make_z_periodic_mesh(points, facets, facet_holestarts, facet_markers, height, 
         max_volume, boundary_tagger):
     from meshpy.tet import MeshInfo, build
+    from meshpy.geometry import Marker
 
     mesh_info = MeshInfo()
     mesh_info.set_points(points)
@@ -986,8 +970,8 @@ def _make_z_periodic_mesh(points, facets, facet_holestarts, facet_markers, heigh
     mesh_info.pbc_groups.resize(1)
     pbcg = mesh_info.pbc_groups[0]
 
-    pbcg.facet_marker_1 = MINUS_Z_MARKER
-    pbcg.facet_marker_2 = PLUS_Z_MARKER
+    pbcg.facet_marker_1 = Marker.MINUS_Z
+    pbcg.facet_marker_2 = Marker.PLUS_Z
 
     pbcg.set_transform(translation=[0,0,height])
 
@@ -998,13 +982,13 @@ def _make_z_periodic_mesh(points, facets, facet_holestarts, facet_markers, heigh
 
         face_marker = fvi2fm[frozenset(fvi)]
 
-        if face_marker == MINUS_Z_MARKER:
+        if face_marker == Marker.MINUS_Z:
             return ["minus_z"]
-        if face_marker == PLUS_Z_MARKER:
+        if face_marker == Marker.PLUS_Z:
             return ["plus_z"]
 
         result = boundary_tagger(fvi, el, fn)
-        if face_marker == SHELL_MARKER:
+        if face_marker == Marker.SHELL:
             result.append("shell")
         return result
 
@@ -1024,20 +1008,12 @@ def make_cylinder_mesh(radius=0.5, height=1, radial_subdivisions=10,
         height_subdivisions=1, max_volume=None, periodic=False,
         boundary_tagger=(lambda fvi, el, fn: [])):
     from math import pi, cos, sin
-    from meshpy.tet import MeshInfo, build, generate_surface_of_revolution, \
-            EXT_OPEN
+    from meshpy.tet import MeshInfo, build
+    from meshpy.geometry import make_cylinder
 
-    dz = height/height_subdivisions
-    rz = [(0,0)] \
-            + [(radius, i*dz) for i in range(height_subdivisions+1)] \
-            + [(0,height)]
-    ring_markers = [MINUS_Z_MARKER] \
-            + ((height_subdivisions)*[SHELL_MARKER]) \
-            + [PLUS_Z_MARKER]
-
-    points, facets, facet_holestarts, facet_markers = generate_surface_of_revolution(rz,
-            closure=EXT_OPEN, radial_subdiv=radial_subdivisions,
-            ring_markers=ring_markers)
+    points, facets, facet_holestarts, facet_markers = \
+            make_cylinder(radius, height, radial_subdivisions, 
+                    height_subdivisions)
 
     assert len(facets) == len(facet_markers)
 
@@ -1085,41 +1061,13 @@ def make_box_mesh(a=(0,0,0),b=(1,1,1),
         return result
 
     from meshpy.tet import MeshInfo, build
+    from meshpy.geometry import make_box
 
-    #    7--------6
-    #   /|       /|
-    #  4--------5 |  z
-    #  | |      | |  ^
-    #  | 3------|-2  | y
-    #  |/       |/   |/
-    #  0--------1    +--->x
-
-    points = [
-            (a[0],a[1],a[2]),
-            (b[0],a[1],a[2]),
-            (b[0],b[1],a[2]),
-            (a[0],b[1],a[2]),
-            (a[0],a[1],b[2]),
-            (b[0],a[1],b[2]),
-            (b[0],b[1],b[2]),
-            (a[0],b[1],b[2]),
-            ]
-
-    facets = [
-            (0,1,2,3),
-            (0,1,5,4),
-            (1,2,6,5),
-            (7,6,2,3),
-            (7,3,0,4),
-            (4,5,6,7)
-            ]
-
-    tags = [MINUS_Z_MARKER, MINUS_Y_MARKER, PLUS_X_MARKER, 
-            PLUS_Y_MARKER, MINUS_X_MARKER, PLUS_Z_MARKER]
+    points, facets, facet_markers = make_box(a, b)
             
     mesh_info = MeshInfo()
     mesh_info.set_points(points)
-    mesh_info.set_facets(facets, tags)
+    mesh_info.set_facets(facets, facet_markers)
 
     if periodicity is None:
         periodicity = (False, False, False)
