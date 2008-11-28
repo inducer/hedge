@@ -1022,5 +1022,5 @@ class Discretization(hedge.discretization.Discretization):
 
     # optemplate processing ---------------------------------------------------
     def compile(self, optemplate):
-        from hedge.backends.cuda.execute import OpTemplateWithEnvironment
-        return OpTemplateWithEnvironment(self, optemplate)
+        from hedge.backends.cuda.execute import Executor
+        return Executor(self, optemplate)

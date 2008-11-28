@@ -23,7 +23,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import numpy
-from pytools import memoize_method
+from pytools import memoize_method, Record
 import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
 
@@ -31,6 +31,9 @@ import pycuda.gpuarray as gpuarray
 
 
 class DiffKernelBase(object):
+    class RstToXyzInfo(Record):
+        pass
+
     @memoize_method
     def fake_localop_rst_to_xyz(self):
         discr = self.discr
@@ -40,9 +43,11 @@ class DiffKernelBase(object):
         el_count = given.block_count * given.elements_per_block()
         channels = given.devdata.make_valid_tex_channel_count(d)
 
-        return cuda.make_multichannel_2d_array(numpy.ones((channels, d, el_count), 
-            dtype=given.float_type),
-            order="F")
+        return self.RstToXyzInfo(
+                gpu_data=gpuarray.to_gpu(
+                    numpy.ones((channels, d, el_count), 
+                        dtype=given.float_type, order="F")),
+                channels=channels)
 
     @memoize_method
     def localop_rst_to_xyz(self, diff_op, elgroup):
@@ -83,7 +88,10 @@ class DiffKernelBase(object):
                         assert (result_matrix[:d,:,i].T == coeffs[:,:,egi]).all()
                         i += 1
 
-        return cuda.make_multichannel_2d_array(result_matrix, order="F")
+        return self.RstToXyzInfo(
+                gpu_data=gpuarray.to_gpu(
+                    numpy.asarray(result_matrix, order="F")),
+                channels=channels)
 
 
 

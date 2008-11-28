@@ -240,8 +240,8 @@ class Executor(ExecutorBase):
         ExecutorBase.__init__(self, discr)
         self.pp_optemplate = pp_optemplate
 
+        from hedge._internal import perform_double_sided_flux
         if discr.instrumented:
-            from hedge._internal import perform_double_sided_flux
             from hedge.tools import time_count_flop, gather_flops
             self.perform_double_sided_flux = \
                     time_count_flop(

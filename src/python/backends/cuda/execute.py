@@ -140,7 +140,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         discr = self.ex.discr
         if discr.instrumented:
             discr.diff_counter.add(discr.dimensions)
-            discr.diff_flop_counter.add(self.diff_flops(discr))
+            discr.diff_flop_counter.add(self.ex.diff_flops)
 
         field = self.rec(field_expr)
         xyz_diff = self.ex.diff_kernel(op.__class__, field)
@@ -243,8 +243,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
         if discr.instrumented:
             discr.lift_counter.add()
-            discr.lift_flop_counter.add(
-                    self.lift_flops(discr))
+            discr.lift_flop_counter.add(self.ex.lift_flops)
 
         # verification --------------------------------------------------------
         if "cuda_lift" in discr.debug:
@@ -263,9 +262,14 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
 
 
-class OpTemplateWithEnvironment(object):
+class Executor(object):
     def __init__(self, discr, optemplate):
         self.discr = discr
+
+        from hedge.tools import diff_flops, mass_flops, lift_flops
+        self.diff_flops = diff_flops(discr)
+        self.mass_flops = mass_flops(discr)
+        self.lift_flops = lift_flops(discr)
 
         # build a boundary tag bitmap
         from hedge.backends.cuda.optemplate import BoundaryTagCollector

@@ -240,11 +240,11 @@ class ExecutionPlan(hedge.backends.cuda.plan.ExecutionPlan):
 
 
 def make_plan(discr, given, tune_for):
-    from hedge.backends.cuda.execute import OpTemplateWithEnvironment
+    from hedge.backends.cuda.execute import Executor
     from hedge.backends.cuda.optemplate import FluxCollector
     if tune_for is not None:
         fluxes = FluxCollector()(
-                OpTemplateWithEnvironment.compile_optemplate(
+                Executor.compile_optemplate(
                     discr.mesh, tune_for))
         flux_count = len(fluxes)
     else:
