@@ -35,7 +35,10 @@ class StringifyMapper(hedge.optemplate.StringifyMapper):
         else:
             tag = "WFlux"
 
-        return "%s(int=%s, tag->bdry=%s, bdry->flux=%s)" % (tag, 
+        from pymbolic.mapper.stringifier import PREC_NONE
+        return "%s(%s)" % (tag, self.rec(expr.flux_optemplate, PREC_NONE))
+        return "%s(is_lift=%s, int=%s, tag->bdry=%s, bdry->flux=%s)" % (tag, 
+                expr.is_lift,
                 expr.interiors,
                 expr.tag_to_bdry_id,
                 ["%s:%s" % item for item in expr.bdry_id_to_fluxes.iteritems()])
@@ -89,6 +92,7 @@ class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
 
         from pytools import Record
         self.interiors = interiors
+        self.boundaries = boundaries
 
         def set_sum(set_iterable):
             from operator import or_
@@ -117,6 +121,13 @@ class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
 
     def get_hash(self):
         return hash((self.__class__, self.flux_optemplate))
+
+    def is_equal(self, other):
+        return (other.__class__ == WholeDomainFluxOperator
+                and self.flux_optemplate == other.flux_optemplate)
+
+    def __getinitargs__(self):
+        return self.is_lift, self.interiors, self.boundaries
         
     @staticmethod
     def short_name(field):
@@ -259,24 +270,31 @@ class BoundaryTagCollector(pymbolic.mapper.CombineMapper):
 
 
 
-class FluxCollector(pymbolic.mapper.CombineMapper):
+class FluxCollector(hedge.optemplate.LocalOpReducerMixin,
+        pymbolic.mapper.CombineMapper):
     def combine(self, values):
         from pytools import flatten
-        return list(flatten(values))
+        return set(flatten(values))
 
     def map_algebraic_leaf(self, expr):
-        return []
-
-    def handle_unsupported_expression(self, expr):
-        return []
+        return set()
 
     def map_constant(self, bpair):
-        return []
+        return set()
     
     def map_operator_binding(self, expr):
-        return self.rec(expr.op)+self.rec(expr.field)
+        return self.rec(expr.op) | self.rec(expr.field)
 
     def map_whole_domain_flux(self, wdflux):
-        return [wdflux]
+        return set([wdflux])
+
+    def map_common_subexpression(self, expr):
+        return self.rec(expr.child)
+
+    def map_mass_base(self, expr):
+        return set()
+    
+    def map_diff_base(self, expr):
+        return set()
 
 

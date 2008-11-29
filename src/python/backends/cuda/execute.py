@@ -46,6 +46,15 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
     def get_vec_structure(self, vec, point_size, segment_size, block_size,
             other_char=lambda snippet: "."):
+        """Prints a structured view of a vector--one character per `point_size` floats,
+        `segment_size` characters partitioned off by spaces, `block_size` segments
+        per line.
+
+        The caracter printed is either an 'N' if any NaNs are encountered, a zero
+        if the entire snippet is zero, or otherwise whatever `other_char` returns,
+        defaulting to a period.
+        """
+
         result = ""
         for block in range(len(vec) // block_size):
             struc = ""
@@ -288,7 +297,7 @@ class Executor(object):
         # compile the optemplate
         from hedge.backends.cuda.optemplate import FluxCollector
         optemplate = self.compile_optemplate(discr.mesh, optemplate)
-        fluxes = FluxCollector()(optemplate)
+        fluxes = list(FluxCollector()(optemplate))
 
         # build the kernels 
         self.diff_kernel = self.discr.diff_plan.make_kernel(discr)

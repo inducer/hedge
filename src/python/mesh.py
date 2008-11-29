@@ -935,10 +935,10 @@ def make_disk_mesh(r=0.5, faces=50, max_area=4e-3,
 def make_ball_mesh(r=0.5, subdivisions=10, max_volume=None,
         boundary_tagger=(lambda fvi, el, fn: [])):
     from meshpy.tet import MeshInfo, build
-    from meshpy.geometry import make_ball_geometry
+    from meshpy.geometry import make_ball
 
     points, facets, facet_holestarts, facet_markers = \
-            make_ball_geometry(r, subdivisions)
+            make_ball(r, subdivisions)
 
     mesh_info = MeshInfo()
 

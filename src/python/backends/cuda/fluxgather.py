@@ -243,9 +243,9 @@ def make_plan(discr, given, tune_for):
     from hedge.backends.cuda.execute import Executor
     from hedge.backends.cuda.optemplate import FluxCollector
     if tune_for is not None:
-        fluxes = FluxCollector()(
+        fluxes = list(FluxCollector()(
                 Executor.compile_optemplate(
-                    discr.mesh, tune_for))
+                    discr.mesh, tune_for)))
         flux_count = len(fluxes)
     else:
         # a reasonable guess?
@@ -287,6 +287,8 @@ class Kernel:
         self.discr = discr
         self.plan = plan
         self.elface_to_bdry_bitmap = elface_to_bdry_bitmap
+
+        assert isinstance(fluxes, list)
         self.fluxes = fluxes
 
         interior_deps_set = set()
@@ -753,7 +755,7 @@ class Kernel:
 
         func = mod.get_function("apply_flux")
         func.prepare(
-                (2+len(self.all_deps))*"P",
+                (2+len(self.fluxes))*"P",
                 block=(fplan.threads_per_face(), 
                     fplan.parallel_faces, 1),
                 texrefs=expr_to_texture_map.values()

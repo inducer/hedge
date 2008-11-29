@@ -38,7 +38,7 @@ class CommonSubexpression(pymbolic.primitives.Expression):
         return StringifyMapper
 
     def __getinitargs__(self):
-        return self.child
+        return (self.child,)
 
     def get_hash(self):
         return hash((self.__class__, self.child))
@@ -95,12 +95,15 @@ class OperatorBinding(pymbolic.primitives.AlgebraicLeaf):
     def __getinitargs__(self):
         return self.op, self.field
 
+    def is_equal(self, other):
+        from hedge.tools import field_equal
+        return (other.__class__ == self.__class__
+                and other.op == self.op
+                and field_equal(other.field, self.field))
+
     def get_hash(self):
-        from hedge.tools import is_obj_array
-        if is_obj_array(self.field):
-            return hash((self.__class__, self.op, tuple(self.field)))
-        else:
-            return hash((self.__class__, self.op, self.field))
+        from hedge.tools import hashable_field
+        return hash((self.__class__, self.op, hashable_field(self.field)))
 
 
 
@@ -211,13 +214,20 @@ class InverseMassOperator(MassOperatorBase):
 
 
 # flux-like operators ---------------------------------------------------------
-class FluxOperator(Operator):
+class FluxOperatorBase(Operator):
     def __init__(self, flux):
         Operator.__init__(self)
         self.flux = flux
 
     def __getinitargs__(self):
         return (self.flux, )
+
+    def get_hash(self):
+        return hash((self.__class__, self.flux))
+
+    def is_equal(self, other):
+        return (self.__class__ == other.__class__
+                and self.flux == other.flux)
 
     def __mul__(self, arg):
         from hedge.tools import is_obj_array
@@ -226,28 +236,18 @@ class FluxOperator(Operator):
         else:
             return Operator.__mul__(self, arg)
 
+
+
+
+class FluxOperator(FluxOperatorBase):
     def get_mapper_method(self, mapper): 
         return mapper.map_flux
 
-    def get_hash(self):
-        return hash((self.__class__, self.flux))
 
 
-
-class LiftingFluxOperator(Operator):
-    def __init__(self, flux):
-        Operator.__init__(self)
-        self.flux = flux
-
-    def __getinitargs__(self):
-        return (self.flux, )
-
+class LiftingFluxOperator(FluxOperatorBase):
     def get_mapper_method(self, mapper): 
         return mapper.map_lift
-
-    def get_hash(self):
-        return hash((self.__class__, self.flux))
-
 
 
 
@@ -330,19 +330,20 @@ class BoundaryPair(pymbolic.primitives.AlgebraicLeaf):
         return (self.field, self.bfield, self.tag)
 
     def get_hash(self):
-        from hedge.tools import is_obj_array
+        from hedge.tools import hashable_field
 
-        if is_obj_array(self.field):
-            field = tuple(self.field)
-        else:
-            field = self.field
+        return hash((self.__class__, 
+            hashable_field(self.field), 
+            hashable_field(self.bfield), 
+            self.tag))
 
-        if is_obj_array(self.bfield):
-            bfield = tuple(self.bfield)
-        else:
-            bfield = self.bfield
-
-        return hash((self.__class__, field, bfield, self.tag))
+    def is_equal(self, other):
+        from hedge.tools import field_equal
+        return (self.__class__ == other.__class__
+                and field_equal(other.field,  self.field)
+                and field_equal(other.bfield, self.bfield)
+                and other.tag == self.tag)
+        
 
 
 
@@ -810,5 +811,16 @@ class BCToFluxRewriter(OpTemplateIdentityMapper):
 
 # evaluation ------------------------------------------------------------------
 class Evaluator(pymbolic.mapper.evaluator.EvaluationMapper):
+    def __init__(self, context):
+        pymbolic.mapper.evaluator.EvaluationMapper.__init__(self, context)
+        self.common_subexp_cache = {}
+
     def map_boundary_pair(self, bp):
         return BoundaryPair(self.rec(bp.field), self.rec(bp.bfield), bp.tag)
+
+    def map_common_subexpression(self, expr, out=None):
+        try:
+            return self.common_subexp_cache[expr.child]
+        except KeyError:
+            self.common_subexp_cache[expr.child] = value = self.rec(expr.child)
+            return value
