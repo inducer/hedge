@@ -25,6 +25,7 @@ import numpy
 import numpy.linalg as la
 from pytools import memoize_method, memoize, Record
 import hedge.optemplate
+from hedge.backends.planner import ExecutionPlannerBase
 import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
 import pymbolic.mapper.stringifier
@@ -271,6 +272,20 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
 
 
+class Planner(ExecutionPlannerBase):
+    def get_contained_fluxes(self, expr):
+        from hedge.backends.cuda.optemplate import FluxCollector
+        return [self.FluxRecord(
+            flux_expr=wdflux, 
+            dependencies=set(wdflux.interior_deps) | set(wdflux.boundary_deps))
+            for wdflux in FluxCollector()(expr)]
+
+    def map_whole_domain_flux(self, expr):
+        return self.map_planned_flux(expr)
+
+
+
+
 class Executor(object):
     def __init__(self, discr, optemplate):
         self.discr = discr
@@ -287,23 +302,21 @@ class Executor(object):
             boundary_tag_to_number.setdefault(btag, 
                     len(boundary_tag_to_number))
 
-        elface_to_bdry_bitmap = {}
+        self.elface_to_bdry_bitmap = {}
         for btag, bdry_number in boundary_tag_to_number.iteritems():
             bdry_bit = 1 << bdry_number
             for elface in discr.mesh.tag_to_boundary.get(btag, []):
-                elface_to_bdry_bitmap[elface] = (
-                        elface_to_bdry_bitmap.get(elface, 0) | bdry_bit)
+                self.elface_to_bdry_bitmap[elface] = (
+                        self.elface_to_bdry_bitmap.get(elface, 0) | bdry_bit)
 
         # compile the optemplate
-        from hedge.backends.cuda.optemplate import FluxCollector
-        optemplate = self.compile_optemplate(discr.mesh, optemplate)
-        fluxes = list(FluxCollector()(optemplate))
+        planner = Planner()
+        self.plan, self.optemplate = planner(
+                self.prepare_optemplate(discr.mesh, optemplate))
 
         # build the kernels 
         self.diff_kernel = self.discr.diff_plan.make_kernel(discr)
         self.fluxlocal_kernel = self.discr.fluxlocal_plan.make_kernel(discr)
-        self.fluxgather_kernel = self.discr.flux_plan.make_kernel(discr, 
-                elface_to_bdry_bitmap, fluxes)
 
         def compile_vec_expr(expr):
             from pycuda.vector_expr import CompiledVectorExpression
@@ -313,14 +326,14 @@ class Executor(object):
                     result_dtype=self.discr.default_scalar_type,
                     allocator=self.discr.pool.allocate)
 
-        if isinstance(optemplate, numpy.ndarray):
-            assert optemplate.dtype == object
-            self.compiled_vec_expr = [compile_vec_expr(subexpr) for subexpr in optemplate]
-        else:
-            self.compiled_vec_expr = compile_vec_expr(optemplate)
+        #if isinstance(optemplate, numpy.ndarray):
+            #assert optemplate.dtype == object
+            #self.compiled_vec_expr = [compile_vec_expr(subexpr) for subexpr in optemplate]
+        #else:
+            #self.compiled_vec_expr = compile_vec_expr(optemplate)
 
     @staticmethod
-    def compile_optemplate(mesh, optemplate):
+    def prepare_optemplate(mesh, optemplate):
         from pymbolic.mapper.constant_folder import CommutativeConstantFoldingMapper
         from hedge.optemplate import OperatorBinder, InverseMassContractor, \
                 BCToFluxRewriter
@@ -333,6 +346,19 @@ class Executor(object):
                         BCToFluxRewriter()(
                             OperatorBinder()(
                                 optemplate)))))
+
+    @classmethod
+    def get_first_flux_batch(cls, mesh, optemplate):
+        planner = Planner()
+        p, ot = planner(cls.prepare_optemplate(mesh, optemplate))
+
+        print planner.stringify_plan(p, ot)
+        raw_input()
+
+        if planner.flux_batches:
+            return planner.flux_batches[0].fluxes
+        else:
+            return None
 
     # actual execution --------------------------------------------------------
     def __call__(self, **vars):

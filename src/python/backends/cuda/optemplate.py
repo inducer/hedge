@@ -36,7 +36,6 @@ class StringifyMapper(hedge.optemplate.StringifyMapper):
             tag = "WFlux"
 
         from pymbolic.mapper.stringifier import PREC_NONE
-        return "%s(%s)" % (tag, self.rec(expr.flux_optemplate, PREC_NONE))
         return "%s(is_lift=%s, int=%s, tag->bdry=%s, bdry->flux=%s)" % (tag, 
                 expr.is_lift,
                 expr.interiors,
@@ -107,7 +106,6 @@ class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
 
         self.interior_deps = list(interior_deps)
         self.boundary_deps = list(boundary_deps)
-        self.all_deps = list(interior_deps|boundary_deps)
 
         self.tag_to_bdry_id = {}
         self.bdry_id_to_fluxes = {}
@@ -119,6 +117,7 @@ class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
                 
         self.flux_optemplate = flux_optemplate
 
+    # infrastructure interaction 
     def get_hash(self):
         return hash((self.__class__, self.flux_optemplate))
 
@@ -129,14 +128,6 @@ class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
     def __getinitargs__(self):
         return self.is_lift, self.interiors, self.boundaries
         
-    @staticmethod
-    def short_name(field):
-        from pymbolic.primitives import Subscript
-        if isinstance(field, Subscript):
-            return "%s%d" % (field.aggregate, field.index)
-        else:
-            return str(field)
-
     def stringifier(self):
         return StringifyMapper
 
@@ -164,22 +155,6 @@ class BoundaryCombiner(hedge.optemplate.OpTemplateIdentityMapper):
 
         flux_op_types = (FluxOperator, LiftingFluxOperator)
 
-        def is_valid_arg(arg):
-            from pymbolic.primitives import Subscript, Variable
-            from hedge.tools import is_obj_array
-            if isinstance(arg, BoundaryPair):
-                return is_valid_arg(arg.field) and is_valid_arg(arg.bfield)
-            elif isinstance(arg, Subscript):
-                return isinstance(arg.aggregate, Variable) and isinstance(arg.index, int)
-            elif is_obj_array(arg):
-                for entry in arg:
-                    if not is_valid_arg(entry):
-                        return False
-                return True
-            else:
-                return isinstance(arg, Variable) or (
-                        isinstance(arg, (int, float)) and arg == 0)
-
         def gather_one_wdflux(expressions):
             interiors = []
             boundaries = []
@@ -194,8 +169,7 @@ class BoundaryCombiner(hedge.optemplate.OpTemplateIdentityMapper):
 
             for ch in expressions:
                 if (isinstance(ch, OperatorBinding) 
-                        and isinstance(ch.op, flux_op_types)
-                        and is_valid_arg(ch.field)):
+                        and isinstance(ch.op, flux_op_types)):
                     my_is_lift = isinstance(ch.op, LiftingFluxOperator),
 
                     if is_lift is None:
@@ -217,8 +191,7 @@ class BoundaryCombiner(hedge.optemplate.OpTemplateIdentityMapper):
                     else:
                         interiors.append(InteriorInfo(
                                 flux_expr=ch.op.flux,
-                                field_expr=ch.field,
-                                short_name=WholeDomainFluxOperator.short_name(ch.field)))
+                                field_expr=ch.field))
                 else:
                     rest.append(ch)
 
@@ -296,5 +269,3 @@ class FluxCollector(hedge.optemplate.LocalOpReducerMixin,
     
     def map_diff_base(self, expr):
         return set()
-
-

@@ -30,27 +30,9 @@ import hedge.mesh
 
 
 
-class CommonSubexpression(pymbolic.primitives.Expression):
-    def __init__(self, child):
-        self.child = child
-
-    def stringifier(self):
-        return StringifyMapper
-
-    def __getinitargs__(self):
-        return (self.child,)
-
-    def get_hash(self):
-        return hash((self.__class__, self.child))
-
-    def get_mapper_method(self, mapper): 
-        return mapper.map_common_subexpression
-
-
-
-
-
 def make_common_subexpression(expr):
+    from pymbolic.primitives import CommonSubexpression
+
     from hedge.tools import is_obj_array, make_obj_array
     if is_obj_array(expr):
         from hedge.tools import make_obj_array
@@ -121,6 +103,10 @@ class DiffOperatorBase(Operator):
     def get_hash(self):
         return hash((self.__class__, self.xyz_axis))
 
+    def is_equal(self, other):
+        return (other.__class__ == self.__class__
+                and other.xyz_axis == self.xyz_axis)
+
 class DifferentiationOperator(DiffOperatorBase):
     @staticmethod
     def matrices(element_group): 
@@ -184,6 +170,12 @@ def DiffOperatorVector(els):
 class MassOperatorBase(Operator):
     def get_hash(self):
         return hash(self.__class__)
+
+    def is_equal(self, other):
+        return other.__class__ == self.__class__
+
+
+
 
 class MassOperator(MassOperatorBase):
     @staticmethod
@@ -406,7 +398,33 @@ def make_stiffness_t(dim):
 
 
 # mappers ---------------------------------------------------------------------
-class OpTemplateIdentityMapperMixin(object):
+class LocalOpReducerMixin(object):
+    """Reduces calls to mapper methods for all local differentiation
+    operators to a single mapper method, and likewise for mass 
+    operators.
+    """
+    def map_diff(self, expr, *args, **kwargs):
+        return self.map_diff_base(expr, *args, **kwargs)
+
+    def map_minv_st(self, expr, *args, **kwargs):
+        return self.map_diff_base(expr, *args, **kwargs)
+
+    def map_stiffness(self, expr, *args, **kwargs):
+        return self.map_diff_base(expr, *args, **kwargs)
+
+    def map_stiffness_t(self, expr, *args, **kwargs):
+        return self.map_diff_base(expr, *args, **kwargs)
+
+    def map_mass(self, expr, *args, **kwargs):
+        return self.map_mass_base(expr, *args, **kwargs)
+
+    def map_inverse_mass(self, expr, *args, **kwargs):
+        return self.map_mass_base(expr, *args, **kwargs)
+
+
+
+
+class OpTemplateIdentityMapperMixin(LocalOpReducerMixin):
     def map_operator_binding(self, expr, *args, **kwargs):
         return expr.__class__(
                 self.rec(expr.op, *args, **kwargs),
@@ -418,8 +436,13 @@ class OpTemplateIdentityMapperMixin(object):
                 self.rec(expr.bfield, *args, **kwargs),
                 expr.tag)
 
-    def map_common_subexpression(self, expr, *args, **kwargs):
-        return expr.__class__(self.rec(expr.child, *args, **kwargs))
+    def map_mass_base(self, expr, *args, **kwargs):
+        return expr.__class__()
+
+    def map_diff_base(self, expr, *args, **kwargs):
+        return expr.__class__(expr.xyz_axis)
+
+
 
 
 
@@ -470,41 +493,12 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
     def map_operator_binding(self, expr, enclosing_prec):
         return "<%s>(%s)" % (expr.op, expr.field)
 
-    def map_common_subexpression(self, expr, enclosing_prec):
-        from pymbolic.mapper.stringifier import PREC_NONE
-        return "CSE(%s)" % (self.rec(expr.child, PREC_NONE))
 
 
 
 class BoundOpMapperMixin(object):
     def map_operator_binding(self, expr, *args, **kwargs):
         return expr.op.get_mapper_method(self)(expr.op, expr.field, *args, **kwargs)
-
-
-
-
-class LocalOpReducerMixin(object):
-    """Reduces calls to mapper methods for all local differentiation
-    operators to a single mapper method, and likewise for mass 
-    operators.
-    """
-    def map_diff(self, expr, *args, **kwargs):
-        return self.map_diff_base(expr, *args, **kwargs)
-
-    def map_minv_st(self, expr, *args, **kwargs):
-        return self.map_diff_base(expr, *args, **kwargs)
-
-    def map_stiffness(self, expr, *args, **kwargs):
-        return self.map_diff_base(expr, *args, **kwargs)
-
-    def map_stiffness_t(self, expr, *args, **kwargs):
-        return self.map_diff_base(expr, *args, **kwargs)
-
-    def map_mass(self, expr, *args, **kwargs):
-        return self.map_mass_base(expr, *args, **kwargs)
-
-    def map_inverse_mass(self, expr, *args, **kwargs):
-        return self.map_mass_base(expr, *args, **kwargs)
 
 
 
@@ -737,9 +731,6 @@ class BCToFluxRewriter(OpTemplateIdentityMapper):
                 def map_normal(self, expr):
                     return expr
 
-                def map_normal(self, expr):
-                    return expr
-
                 def map_field_component(self, expr):
                     result = self.subst_func(expr)
                     if result is not None:
@@ -811,16 +802,6 @@ class BCToFluxRewriter(OpTemplateIdentityMapper):
 
 # evaluation ------------------------------------------------------------------
 class Evaluator(pymbolic.mapper.evaluator.EvaluationMapper):
-    def __init__(self, context):
-        pymbolic.mapper.evaluator.EvaluationMapper.__init__(self, context)
-        self.common_subexp_cache = {}
-
     def map_boundary_pair(self, bp):
         return BoundaryPair(self.rec(bp.field), self.rec(bp.bfield), bp.tag)
 
-    def map_common_subexpression(self, expr, out=None):
-        try:
-            return self.common_subexp_cache[expr.child]
-        except KeyError:
-            self.common_subexp_cache[expr.child] = value = self.rec(expr.child)
-            return value

@@ -28,7 +28,7 @@ import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
 import pymbolic.mapper.stringifier
 import hedge.backends.cuda.plan
-from hedge.backends.codegen_base import FluxToCodeMapperBase
+from pymbolic.mapper.c_code import CCodeMapper
 
 
 
@@ -74,18 +74,19 @@ def face_pair_struct(float_type, dims):
 
 
 # flux to code mapper ---------------------------------------------------------
-class FluxToCodeMapper(FluxToCodeMapperBase):
-    def __init__(self, int_field_expr, ext_field_expr, is_flipped=False):
+class FluxToCodeMapper(CCodeMapper):
+    def __init__(self, int_field_expr, ext_field_expr, dep_to_index, is_flipped=False):
         def float_mapper(x):
             if isinstance(x, float):
                 return "%sf" % repr(x)
             else:
                 return repr(x)
 
-        FluxToCodeMapperBase.__init__(self, float_mapper, reverse=False)
+        CCodeMapper.__init__(self, float_mapper, reverse=False)
 
         self.int_field_expr = int_field_expr
         self.ext_field_expr = ext_field_expr
+        self.dep_to_index = dep_to_index
         self.is_flipped = is_flipped
 
     def map_normal(self, expr, enclosing_prec):
@@ -137,19 +138,18 @@ class FluxToCodeMapper(FluxToCodeMapperBase):
             f_expr = self.ext_field_expr
 
         from hedge.backends.cuda.optemplate import WholeDomainFluxOperator
-        short_name = WholeDomainFluxOperator.short_name
 
         from hedge.tools import is_obj_array, is_zero
         if is_obj_array(f_expr):
             f_expr = f_expr[expr.index]
             if is_zero(f_expr):
                 return "0"
-            return "val_%s_%s" % (prefix, short_name(f_expr))
+            return "val_%s_field%d" % (prefix, self.dep_to_index[f_expr])
         else:
             assert expr.index == 0, repr(f_expr)
             if is_zero(f_expr):
                 return "0"
-            return "val_%s_%s" % (prefix, short_name(f_expr))
+            return "val_%s_field%d" % (prefix, self.dep_to_index[f_expr])
 
 
 
@@ -243,9 +243,7 @@ def make_plan(discr, given, tune_for):
     from hedge.backends.cuda.execute import Executor
     from hedge.backends.cuda.optemplate import FluxCollector
     if tune_for is not None:
-        fluxes = list(FluxCollector()(
-                Executor.compile_optemplate(
-                    discr.mesh, tune_for)))
+        fluxes = Executor.get_first_flux_batch(discr.mesh, tune_for)
         flux_count = len(fluxes)
     else:
         # a reasonable guess?
@@ -300,6 +298,8 @@ class Kernel:
         self.interior_deps = list(interior_deps_set)
         self.boundary_deps = list(boundary_deps_set)
         self.all_deps = list(interior_deps_set|boundary_deps_set)
+
+        self.dep_to_index = dict((dep, i) for i, dep in enumerate(self.all_deps))
 
     def benchmark(self):
         discr = self.discr
@@ -460,15 +460,18 @@ class Kernel:
         cmod = Module()
 
         from hedge.backends.cuda.optemplate import WholeDomainFluxOperator as WDFlux
-        short_name = WDFlux.short_name
 
         for dep_expr in self.all_deps:
-            cmod.append(
+            cmod.extend([
+                Comment(str(dep_expr)),
                 Value("texture<float, 1, cudaReadModeElementType>", 
-                    "%s_tex" % short_name(dep_expr)))
+                    "field%d_tex" % self.dep_to_index[dep_expr])
+                ])
 
         cmod.extend([
+            Line(),
             flux_header_struct(),
+            Line(),
             face_pair_struct(float_type, discr.dimensions),
             Line(),
             Define("DIMENSIONS", discr.dimensions),
@@ -552,15 +555,15 @@ class Kernel:
             for dep in self.interior_deps:
                 flux_write_code.append(
                         Initializer(
-                            MaybeUnused(POD(float_type, "val_a_%s" 
-                                % short_name(dep))),
-                            "tex1Dfetch(%s_tex, a_index)" % short_name(dep)))
+                            MaybeUnused(POD(float_type, "val_a_field%d" 
+                                % self.dep_to_index[dep])),
+                            "tex1Dfetch(field%d_tex, a_index)" % self.dep_to_index[dep]))
             for dep in self.boundary_deps:
                 flux_write_code.append(
                         Initializer(
-                            MaybeUnused(POD(float_type, "val_b_%s" 
-                                % short_name(dep))),
-                            "tex1Dfetch(%s_tex, b_index)" % short_name(dep)))
+                            MaybeUnused(POD(float_type, "val_b_field%d" 
+                                % self.dep_to_index[dep])),
+                            "tex1Dfetch(field%s_tex, b_index)" % self.dep_to_index[dep]))
 
             for flux_nr, wdflux in enumerate(self.fluxes):
                 flux_write_code.extend([
@@ -575,7 +578,8 @@ class Kernel:
                                 S("flux += %s"
                                     % FluxToCodeMapper(
                                             flux_rec.bpair.field,
-                                            flux_rec.bpair.bfield)
+                                            flux_rec.bpair.bfield,
+                                            self.dep_to_index)
                                     (flux_rec.flux_expr, PREC_NONE))
                                 for flux_rec in fluxes])
                             )
@@ -595,7 +599,7 @@ class Kernel:
                 else:
                     prefix = "b"
 
-                return ("val_%s_%s" % (prefix, short_name(flux_rec.field_expr)))
+                return ("val_%s_field%d" % (prefix, self.dep_to_index[flux_rec.field_expr]))
 
             from codepy.cgen import make_multiple_ifs
             from pymbolic.mapper.stringifier import PREC_NONE
@@ -619,10 +623,10 @@ class Kernel:
                 for side in ["a", "b"]:
                     flux_write_code.append(
                             Initializer(
-                                MaybeUnused(POD(float_type, "val_%s_%s" 
-                                    % (side, short_name(dep)))),
-                                "tex1Dfetch(%s_tex, %s_index)"
-                                % (short_name(dep), side)))
+                                MaybeUnused(POD(float_type, "val_%s_field%d" 
+                                    % (side, self.dep_to_index[dep]))),
+                                "tex1Dfetch(field%d_tex, %s_index)"
+                                % (self.dep_to_index[dep], side)))
 
             for flux_nr, wdflux in enumerate(self.fluxes):
                 flux_write_code.extend([Line()]+zero_flux_code+[Line()])
@@ -635,6 +639,7 @@ class Kernel:
                                         FluxToCodeMapper(
                                             int_rec.field_expr, 
                                             int_rec.field_expr, 
+                                            self.dep_to_index,
                                             is_flipped)
                                         (int_rec.flux_expr, PREC_NONE),
                                         )))
@@ -742,7 +747,7 @@ class Kernel:
 
         expr_to_texture_map = dict(
                 (dep_expr, mod.get_texref(
-                    "%s_tex" % short_name(dep_expr)))
+                    "field%d_tex" % self.dep_to_index[dep_expr]))
                 for dep_expr in self.all_deps)
 
         index_list_texref = mod.get_texref("tex_index_lists")

@@ -96,10 +96,10 @@ def main():
     from pylo import DB_VARTYPE_VECTOR
     from math import sqrt, pi, exp
     from hedge.pde import TEMaxwellOperator, TMMaxwellOperator, GedneyPMLMaxwellOperator
-    from hedge.backends import guess_run_context
+    from hedge.backends import guess_run_context, FEAT_CUDA
     from hedge.data import GivenFunction, TimeIntervalGivenFunction
 
-    rcon = guess_run_context()
+    rcon = guess_run_context(disable=set([FEAT_CUDA]))
 
     epsilon0 = 8.8541878176e-12 # C**2 / (N m**2)
     mu0 = 4*pi*1e-7 # N/A**2.
@@ -153,7 +153,7 @@ def main():
             #pec_tag=TAG_NONE,
             #absorb_tag=TAG_ALL,
             )
-    fields = op.assemble_fields(discr=discr)
+    fields = op.assemble_ehdb(discr=discr)
 
     stepper = RK4TimeStepper()
 

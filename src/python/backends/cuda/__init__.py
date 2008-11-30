@@ -280,6 +280,7 @@ class Discretization(hedge.discretization.Discretization):
             "cuda_no_microblock",
             "cuda_no_smem_matrix",
             "cuda_keep_kernels",
+            "cuda_try_no_microblock",
             ])
 
     class PartitionData(Record):
@@ -401,8 +402,10 @@ class Discretization(hedge.discretization.Discretization):
         def generate_overall_plans():
             if "cuda_no_microblock" in self.debug:
                 allow_mb_values = [False]
-            else:
+            elif "cuda_try_no_microblock" in self.debug:
                 allow_mb_values = [True, False]
+            else:
+                allow_mb_values = [True]
 
             for allow_mb in allow_mb_values:
                 from hedge.backends.cuda.plan import PlanGivenData
