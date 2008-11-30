@@ -127,7 +127,7 @@ def main():
     order = 3
     discr = rcon.make_discretization(mesh_data, order=order)
 
-    vis = VtkVisualizer(discr, rcon, "em-%d" % order, compressor="zlib")
+    vis = VtkVisualizer(discr, rcon, "em-%d" % order)
     #vis = SiloVisualizer(discr, rcon
 
     dt = discr.dt_factor(1/sqrt(mu*epsilon))
