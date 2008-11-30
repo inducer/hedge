@@ -25,9 +25,112 @@ import numpy
 import numpy.linalg as la
 from pytools import memoize_method, memoize, Record
 import hedge.optemplate
+from hedge.compiler import OperatorCompilerBase, \
+        Instruction, FluxBatchAssign
 import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
 import pymbolic.mapper.stringifier
+
+
+
+
+# debug stuff -----------------------------------------------------------------
+def get_vec_structure(vec, point_size, segment_size, block_size,
+        other_char=lambda snippet: "."):
+    """Prints a structured view of a vector--one character per `point_size` floats,
+    `segment_size` characters partitioned off by spaces, `block_size` segments
+    per line.
+
+    The caracter printed is either an 'N' if any NaNs are encountered, a zero
+    if the entire snippet is zero, or otherwise whatever `other_char` returns,
+    defaulting to a period.
+    """
+
+    result = ""
+    for block in range(len(vec) // block_size):
+        struc = ""
+        for segment in range(block_size//segment_size):
+            for point in range(segment_size//point_size):
+                offset = block*block_size + segment*segment_size + point*point_size
+                snippet = vec[offset:offset+point_size]
+
+                if numpy.isnan(snippet).any():
+                    struc += "N"
+                elif (snippet == 0).any():
+                    struc += "0"
+                else:
+                    struc += other_char(snippet)
+
+            struc += " "
+        result += struc + "\n"
+    return result
+
+
+
+
+def print_error_structure(discr, computed, reference, diff,
+        eventful_only=False, detail=True):
+    norm_ref = la.norm(reference)
+    struc_lines = []
+
+    if norm_ref == 0:
+        norm_ref = 1
+
+    from hedge.tools import relative_error
+    numpy.set_printoptions(precision=2, linewidth=130, suppress=True)
+    for block in discr.blocks:
+        add_lines = []
+        struc_line  = "%7d " % (block.number * discr.flux_plan.dofs_per_block())
+        i_el = 0
+        eventful = False
+        for mb in block.microblocks:
+            for el in mb:
+                s = discr.find_el_range(el.id)
+                relerr = relative_error(la.norm(diff[s]), norm_ref)
+                if relerr > 1e-4:
+                    eventful = True
+                    struc_line += "*"
+                    if detail:
+                        print "block %d, el %d, global el #%d, rel.l2err=%g" % (
+                                block.number, i_el, el.id, relerr)
+                        print computed[s]
+                        print reference[s]
+                        print diff[s]
+                        print diff[s]/norm_ref
+                        print la.norm(diff[s]), norm_ref
+                        raw_input()
+                elif numpy.isnan(diff[s]).any():
+                    eventful = True
+                    struc_line += "N"
+                    add_lines.append(str(diff[s]))
+                    
+                    if detail:
+                        print "block %d, el %d, global el #%d, rel.l2err=%g" % (
+                                block.number, i_el, el.id, relerr)
+                        print computed[s]
+                        print reference[s]
+                        print diff[s]
+                        raw_input()
+                else:
+                    if numpy.max(numpy.abs(reference[s])) == 0:
+                        struc_line += "0"
+                    else:
+                        if False:
+                            print "block %d, el %d, global el #%d, rel.l2err=%g" % (
+                                    block.number, i_el, el.id, relerr)
+                            print computed[s]
+                            print reference[s]
+                            print diff[s]
+                            raw_input()
+                        struc_line += "."
+                i_el += 1
+            struc_line += " "
+        if (not eventful_only) or eventful:
+            struc_lines.append(struc_line)
+            if detail:
+                struc_lines.extend(add_lines)
+    print
+    print "\n".join(struc_lines)
 
 
 
@@ -41,112 +144,21 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         hedge.optemplate.Evaluator.__init__(self, context)
         self.ex = executor
 
-        self.diff_xyz_cache = {} # map field expr to its dx,dy,dz
-        self.flux_cache = {} # map WholeDomainFluxOperator instance to flux
-
-    def get_vec_structure(self, vec, point_size, segment_size, block_size,
-            other_char=lambda snippet: "."):
-        result = ""
-        for block in range(len(vec) // block_size):
-            struc = ""
-            for segment in range(block_size//segment_size):
-                for point in range(segment_size//point_size):
-                    offset = block*block_size + segment*segment_size + point*point_size
-                    snippet = vec[offset:offset+point_size]
-
-                    if numpy.isnan(snippet).any():
-                        struc += "N"
-                    elif (snippet == 0).any():
-                        struc += "0"
-                    else:
-                        struc += other_char(snippet)
-
-                struc += " "
-            result += struc + "\n"
-        return result
-            
-    def print_error_structure(self, computed, reference, diff,
-            eventful_only=False, detail=True):
-        discr = self.ex.discr
-
-        norm_ref = la.norm(reference)
-        struc_lines = []
-
-        if norm_ref == 0:
-            norm_ref = 1
-
-        from hedge.tools import relative_error
-        numpy.set_printoptions(precision=2, linewidth=130, suppress=True)
-        for block in discr.blocks:
-            add_lines = []
-            struc_line  = "%7d " % (block.number * discr.flux_plan.dofs_per_block())
-            i_el = 0
-            eventful = False
-            for mb in block.microblocks:
-                for el in mb:
-                    s = discr.find_el_range(el.id)
-                    relerr = relative_error(la.norm(diff[s]), norm_ref)
-                    if relerr > 1e-4:
-                        eventful = True
-                        struc_line += "*"
-                        if detail:
-                            print "block %d, el %d, global el #%d, rel.l2err=%g" % (
-                                    block.number, i_el, el.id, relerr)
-                            print computed[s]
-                            print reference[s]
-                            print diff[s]
-                            print diff[s]/norm_ref
-                            print la.norm(diff[s]), norm_ref
-                            raw_input()
-                    elif numpy.isnan(diff[s]).any():
-                        eventful = True
-                        struc_line += "N"
-                        add_lines.append(str(diff[s]))
-                        
-                        if detail:
-                            print "block %d, el %d, global el #%d, rel.l2err=%g" % (
-                                    block.number, i_el, el.id, relerr)
-                            print computed[s]
-                            print reference[s]
-                            print diff[s]
-                            raw_input()
-                    else:
-                        if numpy.max(numpy.abs(reference[s])) == 0:
-                            struc_line += "0"
-                        else:
-                            if False:
-                                print "block %d, el %d, global el #%d, rel.l2err=%g" % (
-                                        block.number, i_el, el.id, relerr)
-                                print computed[s]
-                                print reference[s]
-                                print diff[s]
-                                raw_input()
-                            struc_line += "."
-                    i_el += 1
-                struc_line += " "
-            if (not eventful_only) or eventful:
-                struc_lines.append(struc_line)
-                if detail:
-                    struc_lines.extend(add_lines)
-        print
-        print "\n".join(struc_lines)
-
-    def map_diff_base(self, op, field_expr):
-        try:
-            return self.diff_xyz_cache[op.__class__, field_expr][op.xyz_axis]
-        except KeyError:
-            pass
+    def execute_diff_batch(self, insn):
+        field = self.rec(insn.field)
 
         discr = self.ex.discr
         if discr.instrumented:
             discr.diff_counter.add(discr.dimensions)
-            discr.diff_flop_counter.add(self.diff_flops(discr))
+            discr.diff_flop_counter.add(self.ex.diff_flops)
 
-        field = self.rec(field_expr)
-        xyz_diff = self.ex.diff_kernel(op.__class__, field)
+        xyz_diff = self.ex.diff_kernel(insn.op_class, field)
+
+        for name, op in zip(insn.names, insn.operators):
+            self.context[name] = xyz_diff[op.xyz_axis]
         
         if set(["cuda_diff", "cuda_compare"]) <= discr.debug:
-            field = self.rec(field_expr)
+            field = self.rec(insn.field)
             f = discr.volume_from_gpu(field)
             assert not numpy.isnan(f).any(), "Initial field contained NaNs."
             cpu_xyz_diff = [discr.volume_from_gpu(xd) for xd in xyz_diff]
@@ -172,41 +184,39 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
             assert rel_err_norm < 5e-5
 
-        self.diff_xyz_cache[op.__class__, field_expr] = xyz_diff
-        return xyz_diff[op.xyz_axis]
-
-    def map_whole_domain_flux(self, wdflux, out=None):
+    def execute_flux_batch(self, insn):
         discr = self.ex.discr
-        given = discr.given
-        eg, = discr.element_groups
 
         # gather phase --------------------------------------------------------
-        try:
-            fluxes_on_faces = self.flux_cache[wdflux]
-        except KeyError:
-            computed_fluxes = self.ex.fluxgather_kernel(self.rec, 
-                    discr.fluxlocal_plan)
+        for name, wdflux, fluxes_on_faces in zip(insn.names, insn.fluxes, 
+                insn.kernel(self.rec, discr.fluxlocal_plan)):
+            self.context[name] = self.ex.fluxlocal_kernel(
+                fluxes_on_faces, wdflux.is_lift)
 
-            for f_wdflux, f_fluxes_on_faces in computed_fluxes:
-                self.flux_cache[f_wdflux] = f_fluxes_on_faces
+        if discr.instrumented:
+            given = discr.given
 
-            fluxes_on_faces = self.flux_cache[wdflux]
+            flux_count = len(insn.fluxes)
+            dep_count = len(insn.kernel.all_deps)
 
-            # count flops
-            if discr.instrumented:
-                discr.gather_counter.add(
-                        len(computed_fluxes)*len(wdflux.all_deps))
-                discr.gather_flop_counter.add(
-                        len(computed_fluxes)
-                        * given.dofs_per_face()
-                        * given.faces_per_el()
-                        * len(discr.mesh.elements)
-                        * (1 # facejac-mul
-                            + 2 * # int+ext
-                            3*len(wdflux.all_deps) # const-mul, normal-mul, add
-                            )
+            discr.gather_counter.add(
+                    flux_count*dep_count)
+            discr.gather_flop_counter.add(
+                    flux_count
+                    * given.dofs_per_face()
+                    * given.faces_per_el()
+                    * len(discr.mesh.elements)
+                    * (1 # facejac-mul
+                        + 2 * # int+ext
+                        3*dep_count # const-mul, normal-mul, add
                         )
+                    )
 
+            discr.lift_counter.add(flux_count)
+            discr.lift_flop_counter.add(flux_count*self.ex.lift_flops)
+
+        # debug ---------------------------------------------------------------
+        # FIXME: bitrot below
         if discr.debug & set(["cuda_lift", "cuda_flux"]):
             fplan = discr.flux_plan
 
@@ -238,15 +248,6 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
             assert not have_used_nans
 
-        # lift phase ----------------------------------------------------------
-        flux = self.ex.fluxlocal_kernel(fluxes_on_faces, wdflux.is_lift)
-
-        if discr.instrumented:
-            discr.lift_counter.add()
-            discr.lift_flop_counter.add(
-                    self.lift_flops(discr))
-
-        # verification --------------------------------------------------------
         if "cuda_lift" in discr.debug:
             cuda.Context.synchronize()
             print "NANCHECK"
@@ -258,61 +259,145 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                         eventful_only=True)
             assert not contains_nans, "Resulting flux contains NaNs."
 
-        return flux
+    def execute_code(self, code):
+        discr = self.ex.discr
+
+        def add_timer(n, vec_expr, t_func):
+            discr.vector_math_timer.add_timer_callable(t_func)
+            discr.vector_math_flop_counter.add(n*vec_expr.flop_count)
+            discr.gmem_bytes_vector_math.add(
+                    discr.given.float_size() * n * 
+                    (1+len(vec_expr.vector_exprs)))
+
+        from hedge.compiler import Discard, Assign, FluxBatchAssign, DiffBatchAssign
+        for insn in code:
+            if isinstance(insn, Discard):
+                del self.context[insn.name]
+            elif isinstance(insn, Assign):
+                self.context[insn.name] = ex_mapper(insn.expr)
+            elif isinstance(insn, VectorExprAssign):
+                self.context[insn.name] = insn.compiled(self, add_timer)
+            elif isinstance(insn, CompiledFluxBatchAssign):
+                self.execute_flux_batch(insn)
+            elif isinstance(insn, DiffBatchAssign):
+                self.execute_diff_batch(insn)
+            else:
+                raise ValueError, "invalid hedge microcode instruction"
 
 
 
 
-class OpTemplateWithEnvironment(object):
+# compiler stuff --------------------------------------------------------------
+class VectorExprAssign(Instruction):
+    __slots__ = ["name", "expr", "compiled"]
+
+class CompiledFluxBatchAssign(FluxBatchAssign):
+    __slots__ = ["kernel"]
+
+class OperatorCompiler(OperatorCompilerBase):
+    def get_contained_fluxes(self, expr):
+        from hedge.backends.cuda.optemplate import FluxCollector
+        return [self.FluxRecord(
+            flux_expr=wdflux, 
+            dependencies=set(wdflux.interior_deps) | set(wdflux.boundary_deps))
+            for wdflux in FluxCollector()(expr)]
+
+    def internal_map_flux(self, wdflux):
+        from hedge.backends.cuda.optemplate import WholeDomainFluxOperator
+        return WholeDomainFluxOperator(
+            wdflux.is_lift,
+            [wdflux.InteriorInfo(
+                flux_expr=ii.flux_expr, 
+                field_expr=self.rec(ii.field_expr))
+                for ii in wdflux.interiors],
+            [wdflux.BoundaryInfo(
+                flux_expr=bi.flux_expr, 
+                bpair=self.rec(bi.bpair))
+                for bi in wdflux.boundaries],
+            wdflux.flux_optemplate)
+
+    def map_whole_domain_flux(self, wdflux):
+        return self.map_planned_flux(wdflux)
+
+
+    @classmethod
+    def stringify_instruction(self, insn):
+        if isinstance(insn, VectorExprAssign):
+            yield "%s <- (compiled) %s" % (insn.name, insn.expr)
+        else:
+            for l in OperatorCompilerBase.stringify_instruction(insn):
+                yield l
+
+
+
+
+
+class Executor(object):
     def __init__(self, discr, optemplate):
         self.discr = discr
 
+        from hedge.tools import diff_flops, mass_flops, lift_flops
+        self.diff_flops = diff_flops(discr)
+        self.mass_flops = mass_flops(discr)
+        self.lift_flops = lift_flops(discr)
+
         # build a boundary tag bitmap
-        from hedge.backends.cuda.optemplate import BoundaryTagCollector
+        from hedge.optemplate import BoundaryTagCollector
         boundary_tag_to_number = {}
         for btag in BoundaryTagCollector()(optemplate):
             boundary_tag_to_number.setdefault(btag, 
                     len(boundary_tag_to_number))
 
-        elface_to_bdry_bitmap = {}
+        self.elface_to_bdry_bitmap = {}
         for btag, bdry_number in boundary_tag_to_number.iteritems():
             bdry_bit = 1 << bdry_number
             for elface in discr.mesh.tag_to_boundary.get(btag, []):
-                elface_to_bdry_bitmap[elface] = (
-                        elface_to_bdry_bitmap.get(elface, 0) | bdry_bit)
+                self.elface_to_bdry_bitmap[elface] = (
+                        self.elface_to_bdry_bitmap.get(elface, 0) | bdry_bit)
 
         # compile the optemplate
-        from hedge.backends.cuda.optemplate import FluxCollector
-        optemplate = self.compile_optemplate(discr.mesh, optemplate)
-        fluxes = FluxCollector()(optemplate)
+        compiler = OperatorCompiler()
+        code, self.optemplate = compiler(
+                self.prepare_optemplate(discr.mesh, optemplate))
 
-        # build the kernels 
+        def compile_insn(insn):
+            from hedge.compiler import Assign, FluxBatchAssign
+            if isinstance(insn, Assign):
+                from pycuda.vector_expr import CompiledVectorExpression
+                return VectorExprAssign(
+                        name=insn.name,
+                        expr=insn.expr,
+                        compiled=CompiledVectorExpression(
+                            insn.expr, 
+                            type_getter=lambda expr: (True, discr.default_scalar_type),
+                            result_dtype=discr.default_scalar_type,
+                            allocator=discr.pool.allocate))
+            elif isinstance(insn, FluxBatchAssign):
+                return CompiledFluxBatchAssign(
+                        names=insn.names,
+                        fluxes=insn.fluxes,
+                        kernel=discr.flux_plan.make_kernel(
+                            discr,
+                            self.elface_to_bdry_bitmap,
+                            insn.fluxes))
+            else:
+                return insn
+
+        self.code = [compile_insn(insn) for insn in code]
+
+        #print compiler.stringify_code(self.code, self.optemplate)
+        #raw_input()
+
+        # build the local kernels 
         self.diff_kernel = self.discr.diff_plan.make_kernel(discr)
         self.fluxlocal_kernel = self.discr.fluxlocal_plan.make_kernel(discr)
-        self.fluxgather_kernel = self.discr.flux_plan.make_kernel(discr, 
-                elface_to_bdry_bitmap, fluxes)
-
-        def compile_vec_expr(expr):
-            from pycuda.vector_expr import CompiledVectorExpression
-            return CompiledVectorExpression(
-                    expr, 
-                    type_getter=lambda expr: (True, self.discr.default_scalar_type),
-                    result_dtype=self.discr.default_scalar_type,
-                    allocator=self.discr.pool.allocate)
-
-        if isinstance(optemplate, numpy.ndarray):
-            assert optemplate.dtype == object
-            self.compiled_vec_expr = [compile_vec_expr(subexpr) for subexpr in optemplate]
-        else:
-            self.compiled_vec_expr = compile_vec_expr(optemplate)
 
     @staticmethod
-    def compile_optemplate(mesh, optemplate):
+    def prepare_optemplate(mesh, optemplate):
         from pymbolic.mapper.constant_folder import CommutativeConstantFoldingMapper
         from hedge.optemplate import OperatorBinder, InverseMassContractor, \
                 BCToFluxRewriter
-        from hedge.backends.cuda.optemplate import \
-                BoundaryCombiner, BoundaryTagCollector, FluxCollector
+        from hedge.backends.cuda.optemplate import BoundaryCombiner, FluxCollector
 
         return BoundaryCombiner(mesh)(
                 InverseMassContractor()(
@@ -321,19 +406,19 @@ class OpTemplateWithEnvironment(object):
                             OperatorBinder()(
                                 optemplate)))))
 
+    @classmethod
+    def get_first_flux_batch(cls, mesh, optemplate):
+        compiler = OperatorCompiler()
+        compiler(cls.prepare_optemplate(mesh, optemplate))
+
+        if compiler.flux_batches:
+            return compiler.flux_batches[0]
+        else:
+            return None
+
     # actual execution --------------------------------------------------------
     def __call__(self, **vars):
-        def add_timer(n, vec_expr, t_func):
-            self.discr.vector_math_timer.add_timer_callable(t_func)
-            self.discr.vector_math_flop_counter.add(n*vec_expr.flop_count)
-            self.discr.gmem_bytes_vector_math.add(
-                    self.discr.given.float_size() * n * 
-                    (1+len(vec_expr.vector_exprs)))
-
         ex_mapper = ExecutionMapper(vars, self)
-        if isinstance(self.compiled_vec_expr, list):
-            return numpy.array([
-                ce(ex_mapper, add_timer) for ce in self.compiled_vec_expr],
-                dtype=object)
-        else:
-            return self.compiled_vec_expr(ex_mapper, add_timer)
+        ex_mapper.execute_code(self.code)
+        return ex_mapper(self.optemplate)
+

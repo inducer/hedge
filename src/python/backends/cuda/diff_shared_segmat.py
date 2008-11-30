@@ -220,7 +220,7 @@ class Kernel(DiffKernelBase):
 
         rst_channels = given.devdata.make_valid_tex_channel_count(d)
         cmod = Module([
-                Value("texture<float%d, 2, cudaReadModeElementType>"
+                Value("texture<float%d, 1, cudaReadModeElementType>"
                     % rst_channels, 
                     "rst_to_xyz_tex"),
                 Value("texture<float, 1, cudaReadModeElementType>", 
@@ -326,8 +326,8 @@ class Kernel(DiffKernelBase):
                 for glob_axis in dims:
                     store_code.append(Block([
                         Initializer(Value("float%d" % rst_channels, "rst_to_xyz"),
-                            "tex2D(rst_to_xyz_tex, %d, "
-                            "(GLOBAL_MB_NR+%d)*ELS_PER_MB + mb_el)" 
+                            "tex1Dfetch(rst_to_xyz_tex, %d + "
+                            "DIMENSIONS*((GLOBAL_MB_NR+%d)*ELS_PER_MB + mb_el))" 
                             % (glob_axis, inl)
                             ),
                         Assign(
@@ -365,12 +365,15 @@ class Kernel(DiffKernelBase):
                 )
 
         if for_benchmark:
-            rst_to_xyz_array = self.fake_localop_rst_to_xyz()
+            rst_to_xyz = self.fake_localop_rst_to_xyz()
         else:
-            rst_to_xyz_array = self.localop_rst_to_xyz(diff_op_cls, elgroup)
+            rst_to_xyz = self.localop_rst_to_xyz(diff_op_cls, elgroup)
 
         rst_to_xyz_texref = mod.get_texref("rst_to_xyz_tex")
-        cuda.bind_array_to_texref(rst_to_xyz_array, rst_to_xyz_texref)
+        rst_to_xyz.gpu_data.bind_to_texref(rst_to_xyz_texref)
+        rst_to_xyz_texref.set_format(
+                cuda.dtype_to_array_format(rst_to_xyz.gpu_data.dtype),
+                rst_to_xyz.channels)
 
         field_texref = mod.get_texref("field_tex")
 

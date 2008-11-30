@@ -443,7 +443,8 @@ class MaxwellOperator(TimeDependentOperator):
             bdry_flux_type=None,
             pec_tag=hedge.mesh.TAG_ALL, 
             absorb_tag=hedge.mesh.TAG_NONE,
-            current=None, dimensions=None):
+            incident_tag=hedge.mesh.TAG_NONE,
+            incident_bc=None, current=None, dimensions=None):
         """
         @arg flux_type: can be in [0,1] for anything between central and upwind, 
           or "lf" for Lax-Friedrichs.
@@ -474,8 +475,10 @@ class MaxwellOperator(TimeDependentOperator):
 
         self.pec_tag = pec_tag
         self.absorb_tag = absorb_tag
+        self.incident_tag = incident_tag
 
         self.current = current
+        self.incident_bc = incident_bc
 
         self.dimensions = dimensions or self._default_dimensions
 
@@ -521,7 +524,6 @@ class MaxwellOperator(TimeDependentOperator):
             raise ValueError, "maxwell: invalid flux_type (%s)" % self.flux_type
 
     def local_op(self, e, h):
-        # in conservation form: u_t + A u_x = 0
         def e_curl(field):
             return self.e_cross(nabla, field)
 
@@ -533,8 +535,16 @@ class MaxwellOperator(TimeDependentOperator):
 
         nabla = make_nabla(self.dimensions)
 
+        if self.current is not None:
+            from hedge.optemplate import make_vector_field
+            j = make_vector_field("j", 
+                    self.count_subset(self.get_eh_subset()[:3]))
+        else:
+            j = 0
+
+        # in conservation form: u_t + A u_x = 0
         return join_fields(
-                - 1/self.epsilon * h_curl(h),
+                1/self.epsilon * (j - h_curl(h)),
                 1/self.mu * e_curl(e),
                 )
 
@@ -542,12 +552,11 @@ class MaxwellOperator(TimeDependentOperator):
         from hedge.optemplate import pair_with_boundary, \
                 InverseMassOperator, get_flux_operator
 
+        from hedge.optemplate import make_vector_field
+
         fld_cnt = self.count_subset(self.get_eh_subset())
         if w is None:
-            from hedge.optemplate import make_vector_field
             w = make_vector_field("w", fld_cnt)
-        else:
-            w = w[:fld_cnt]
 
         e, h = self.split_eh(w)
 
@@ -558,9 +567,6 @@ class MaxwellOperator(TimeDependentOperator):
         from hedge.flux import make_normal
         normal = make_normal(self.dimensions)
 
-        flux_op = get_flux_operator(self.flux(self.flux_type))
-        bdry_flux_op = get_flux_operator(self.flux(self.bdry_flux_type))
-
         absorb_bc = w + 1/2*join_fields(
                 self.h_cross(normal, self.e_cross(normal, e)) 
                 - self.Z*self.h_cross(normal, h),
@@ -568,37 +574,59 @@ class MaxwellOperator(TimeDependentOperator):
                 + self.Y*self.e_cross(normal, e)
                 )
 
+        if self.incident_bc is not None:
+            from hedge.optemplate import make_common_subexpression
+            incident_bc = self.assemble_eh(
+                    make_common_subexpression(
+                        -make_vector_field("incident_bc", fld_cnt)))
+
+        else:
+            from hedge.tools import make_obj_array
+            incident_bc = self.assemble_eh(
+                    make_obj_array([0]*fld_cnt))
+
         # actual operator template --------------------------------------------
         m_inv = InverseMassOperator()
+
+        flux_op = get_flux_operator(self.flux(self.flux_type))
+        bdry_flux_op = get_flux_operator(self.flux(self.bdry_flux_type))
 
         return - self.local_op(e, h) \
                 + m_inv*(
                     flux_op * w
                     +bdry_flux_op * pair_with_boundary(w, pec_bc, self.pec_tag)
                     +bdry_flux_op * pair_with_boundary(w, absorb_bc, self.absorb_tag)
-                    )
+                    +bdry_flux_op * pair_with_boundary(w, incident_bc, self.incident_tag))
 
     def bind(self, discr, **extra_context):
         from hedge.mesh import check_bc_coverage
-        check_bc_coverage(discr.mesh, [self.pec_tag, self.absorb_tag])
+        check_bc_coverage(discr.mesh, [
+            self.pec_tag, self.absorb_tag, self.incident_tag])
 
         compiled_op_template = discr.compile(self.op_template())
 
-        if self.current is None:
-            def rhs(t, w):
-                return compiled_op_template(w=w, **extra_context)
-        else:
-            from hedge.tools import full_to_subset_indices
-            e_indices = full_to_subset_indices(self.get_eh_subset()[0:3])
+        from hedge.tools import full_to_subset_indices
+        e_indices = full_to_subset_indices(self.get_eh_subset()[0:3])
+        all_indices = full_to_subset_indices(self.get_eh_subset())
 
-            def rhs(t, w):
+        def rhs(t, w):
+            if self.current is not None:
                 j = self.current.volume_interpolant(t, discr)[e_indices]
-                return compiled_op_template(w=w, **extra_context) \
-                        - self.assemble_fields(e=j)
+            else:
+                j = 0
+
+            if self.incident_bc is not None:
+                incident_bc = self.incident_bc.boundary_interpolant(
+                        t, discr, self.incident_tag)[all_indices]
+            else:
+                incident_bc = 0
+
+            return compiled_op_template(
+                    w=w, j=j, incident_bc=incident_bc, **extra_context)
 
         return rhs
 
-    def assemble_fields(self, e=None, h=None, discr=None):
+    def assemble_eh(self, e=None, h=None, discr=None):
         if discr is None:
             def zero(): return 0
         else:
@@ -743,14 +771,14 @@ class GedneyPMLMaxwellOperator(MaxwellOperator):
                 )
 
     def op_template(self, w=None, enable_pml=True):
+        fld_cnt = self.count_subset(self.get_eh_subset())
         if w is None:
             from hedge.optemplate import make_vector_field
-            fld_cnt = self.count_subset(self.get_eh_subset())
             w = make_vector_field("w", 2*fld_cnt)
 
         from hedge.optemplate import make_common_subexpression
         max_op = make_common_subexpression(
-                MaxwellOperator.op_template(self, w))
+                MaxwellOperator.op_template(self, w[:fld_cnt]))
         dt_e, dt_h = self.split_eh(max_op)
 
         from hedge.tools import join_fields
@@ -766,7 +794,7 @@ class GedneyPMLMaxwellOperator(MaxwellOperator):
     def bind(self, discr, sigma):
         return MaxwellOperator.bind(self, discr, sigma=sigma)
 
-    def assemble_fields(self, e=None, h=None, d=None, b=None, discr=None):
+    def assemble_ehdb(self, e=None, h=None, d=None, b=None, discr=None):
         if discr is None:
             def zero(): return 0
         else:

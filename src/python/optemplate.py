@@ -30,27 +30,9 @@ import hedge.mesh
 
 
 
-class CommonSubexpression(pymbolic.primitives.Expression):
-    def __init__(self, child):
-        self.child = child
-
-    def stringifier(self):
-        return StringifyMapper
-
-    def __getinitargs__(self):
-        return self.child
-
-    def get_hash(self):
-        return hash((self.__class__, self.child))
-
-    def get_mapper_method(self, mapper): 
-        return mapper.map_common_subexpression
-
-
-
-
-
 def make_common_subexpression(expr):
+    from pymbolic.primitives import CommonSubexpression
+
     from hedge.tools import is_obj_array, make_obj_array
     if is_obj_array(expr):
         from hedge.tools import make_obj_array
@@ -95,12 +77,15 @@ class OperatorBinding(pymbolic.primitives.AlgebraicLeaf):
     def __getinitargs__(self):
         return self.op, self.field
 
+    def is_equal(self, other):
+        from hedge.tools import field_equal
+        return (other.__class__ == self.__class__
+                and other.op == self.op
+                and field_equal(other.field, self.field))
+
     def get_hash(self):
-        from hedge.tools import is_obj_array
-        if is_obj_array(self.field):
-            return hash((self.__class__, self.op, tuple(self.field)))
-        else:
-            return hash((self.__class__, self.op, self.field))
+        from hedge.tools import hashable_field
+        return hash((self.__class__, self.op, hashable_field(self.field)))
 
 
 
@@ -117,6 +102,10 @@ class DiffOperatorBase(Operator):
 
     def get_hash(self):
         return hash((self.__class__, self.xyz_axis))
+
+    def is_equal(self, other):
+        return (other.__class__ == self.__class__
+                and other.xyz_axis == self.xyz_axis)
 
 class DifferentiationOperator(DiffOperatorBase):
     @staticmethod
@@ -182,6 +171,12 @@ class MassOperatorBase(Operator):
     def get_hash(self):
         return hash(self.__class__)
 
+    def is_equal(self, other):
+        return other.__class__ == self.__class__
+
+
+
+
 class MassOperator(MassOperatorBase):
     @staticmethod
     def matrix(element_group): 
@@ -211,13 +206,20 @@ class InverseMassOperator(MassOperatorBase):
 
 
 # flux-like operators ---------------------------------------------------------
-class FluxOperator(Operator):
+class FluxOperatorBase(Operator):
     def __init__(self, flux):
         Operator.__init__(self)
         self.flux = flux
 
     def __getinitargs__(self):
         return (self.flux, )
+
+    def get_hash(self):
+        return hash((self.__class__, self.flux))
+
+    def is_equal(self, other):
+        return (self.__class__ == other.__class__
+                and self.flux == other.flux)
 
     def __mul__(self, arg):
         from hedge.tools import is_obj_array
@@ -226,28 +228,18 @@ class FluxOperator(Operator):
         else:
             return Operator.__mul__(self, arg)
 
+
+
+
+class FluxOperator(FluxOperatorBase):
     def get_mapper_method(self, mapper): 
         return mapper.map_flux
 
-    def get_hash(self):
-        return hash((self.__class__, self.flux))
 
 
-
-class LiftingFluxOperator(Operator):
-    def __init__(self, flux):
-        Operator.__init__(self)
-        self.flux = flux
-
-    def __getinitargs__(self):
-        return (self.flux, )
-
+class LiftingFluxOperator(FluxOperatorBase):
     def get_mapper_method(self, mapper): 
         return mapper.map_lift
-
-    def get_hash(self):
-        return hash((self.__class__, self.flux))
-
 
 
 
@@ -330,19 +322,20 @@ class BoundaryPair(pymbolic.primitives.AlgebraicLeaf):
         return (self.field, self.bfield, self.tag)
 
     def get_hash(self):
-        from hedge.tools import is_obj_array
+        from hedge.tools import hashable_field
 
-        if is_obj_array(self.field):
-            field = tuple(self.field)
-        else:
-            field = self.field
+        return hash((self.__class__, 
+            hashable_field(self.field), 
+            hashable_field(self.bfield), 
+            self.tag))
 
-        if is_obj_array(self.bfield):
-            bfield = tuple(self.bfield)
-        else:
-            bfield = self.bfield
-
-        return hash((self.__class__, field, bfield, self.tag))
+    def is_equal(self, other):
+        from hedge.tools import field_equal
+        return (self.__class__ == other.__class__
+                and field_equal(other.field,  self.field)
+                and field_equal(other.bfield, self.bfield)
+                and other.tag == self.tag)
+        
 
 
 
@@ -405,7 +398,33 @@ def make_stiffness_t(dim):
 
 
 # mappers ---------------------------------------------------------------------
-class OpTemplateIdentityMapperMixin(object):
+class LocalOpReducerMixin(object):
+    """Reduces calls to mapper methods for all local differentiation
+    operators to a single mapper method, and likewise for mass 
+    operators.
+    """
+    def map_diff(self, expr, *args, **kwargs):
+        return self.map_diff_base(expr, *args, **kwargs)
+
+    def map_minv_st(self, expr, *args, **kwargs):
+        return self.map_diff_base(expr, *args, **kwargs)
+
+    def map_stiffness(self, expr, *args, **kwargs):
+        return self.map_diff_base(expr, *args, **kwargs)
+
+    def map_stiffness_t(self, expr, *args, **kwargs):
+        return self.map_diff_base(expr, *args, **kwargs)
+
+    def map_mass(self, expr, *args, **kwargs):
+        return self.map_mass_base(expr, *args, **kwargs)
+
+    def map_inverse_mass(self, expr, *args, **kwargs):
+        return self.map_mass_base(expr, *args, **kwargs)
+
+
+
+
+class OpTemplateIdentityMapperMixin(LocalOpReducerMixin):
     def map_operator_binding(self, expr, *args, **kwargs):
         return expr.__class__(
                 self.rec(expr.op, *args, **kwargs),
@@ -417,8 +436,13 @@ class OpTemplateIdentityMapperMixin(object):
                 self.rec(expr.bfield, *args, **kwargs),
                 expr.tag)
 
-    def map_common_subexpression(self, expr, *args, **kwargs):
-        return expr.__class__(self.rec(expr.child, *args, **kwargs))
+    def map_mass_base(self, expr, *args, **kwargs):
+        return expr.__class__()
+
+    def map_diff_base(self, expr, *args, **kwargs):
+        return expr.__class__(expr.xyz_axis)
+
+
 
 
 
@@ -469,41 +493,12 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
     def map_operator_binding(self, expr, enclosing_prec):
         return "<%s>(%s)" % (expr.op, expr.field)
 
-    def map_common_subexpression(self, expr, enclosing_prec):
-        from pymbolic.mapper.stringifier import PREC_NONE
-        return "CSE(%s)" % (self.rec(expr.child, PREC_NONE))
 
 
 
 class BoundOpMapperMixin(object):
     def map_operator_binding(self, expr, *args, **kwargs):
         return expr.op.get_mapper_method(self)(expr.op, expr.field, *args, **kwargs)
-
-
-
-
-class LocalOpReducerMixin(object):
-    """Reduces calls to mapper methods for all local differentiation
-    operators to a single mapper method, and likewise for mass 
-    operators.
-    """
-    def map_diff(self, expr, *args, **kwargs):
-        return self.map_diff_base(expr, *args, **kwargs)
-
-    def map_minv_st(self, expr, *args, **kwargs):
-        return self.map_diff_base(expr, *args, **kwargs)
-
-    def map_stiffness(self, expr, *args, **kwargs):
-        return self.map_diff_base(expr, *args, **kwargs)
-
-    def map_stiffness_t(self, expr, *args, **kwargs):
-        return self.map_diff_base(expr, *args, **kwargs)
-
-    def map_mass(self, expr, *args, **kwargs):
-        return self.map_mass_base(expr, *args, **kwargs)
-
-    def map_inverse_mass(self, expr, *args, **kwargs):
-        return self.map_mass_base(expr, *args, **kwargs)
 
 
 
@@ -736,9 +731,6 @@ class BCToFluxRewriter(OpTemplateIdentityMapper):
                 def map_normal(self, expr):
                     return expr
 
-                def map_normal(self, expr):
-                    return expr
-
                 def map_field_component(self, expr):
                     result = self.subst_func(expr)
                     if result is not None:
@@ -808,7 +800,58 @@ class BCToFluxRewriter(OpTemplateIdentityMapper):
 
 
 
+# collecting ------------------------------------------------------------------
+class CollectorBase(LocalOpReducerMixin, pymbolic.mapper.CombineMapper):
+    def combine(self, values):
+        from pytools import flatten
+        return set(flatten(values))
+
+    def map_algebraic_leaf(self, expr):
+        return set()
+
+    def handle_unsupported_expression(self, expr):
+        return set()
+
+    def map_constant(self, bpair):
+        return set()
+
+    def map_operator_binding(self, expr):
+        return self.combine([self.rec(expr.op), self.rec(expr.field)])
+
+    def map_mass_base(self, expr):
+        return set()
+    
+    def map_diff_base(self, expr):
+        return set()
+
+    def map_boundary_pair(self, expr):
+        return self.combine([self.rec(expr.field), self.rec(expr.bfield)])
+
+    def map_common_subexpression(self, expr):
+        return self.rec(expr.child)
+    
+
+
+
+class BoundaryTagCollector(CollectorBase):
+    def map_boundary_pair(self, bpair):
+        return set([bpair.tag])
+
+
+
+
+class DiffOpCollector(CollectorBase):
+    def map_operator_binding(self, expr):
+        if isinstance(expr.op, DiffOperatorBase):
+            return set([expr])
+        else:
+            return set()
+
+
+
+
 # evaluation ------------------------------------------------------------------
 class Evaluator(pymbolic.mapper.evaluator.EvaluationMapper):
     def map_boundary_pair(self, bp):
         return BoundaryPair(self.rec(bp.field), self.rec(bp.bfield), bp.tag)
+

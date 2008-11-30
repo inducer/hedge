@@ -118,12 +118,11 @@ class ExecutionMapperBase(hedge.optemplate.Evaluator,
         hedge.optemplate.LocalOpReducerMixin):
 
     def __init__(self, context, discr, executor):
-        pymbolic.mapper.evaluator.EvaluationMapper.__init__(self, context)
+        hedge.optemplate.Evaluator.__init__(self, context)
         self.discr = discr
         self.executor = executor
 
         self.diff_rst_cache = {}
-        self.common_subexp_cache = {}
 
     def diff_rst_with_cache(self, op, expr, field):
         try:
@@ -180,9 +179,3 @@ class ExecutionMapperBase(hedge.optemplate.Evaluator,
     def map_variable(self, expr, out=None):
         return hedge.optemplate.Evaluator.map_variable(self, expr)
 
-    def map_common_subexpression(self, expr, out=None):
-        try:
-            return self.common_subexp_cache[expr.child]
-        except KeyError:
-            self.common_subexp_cache[expr.child] = value = self.rec(expr.child)
-            return value

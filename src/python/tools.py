@@ -192,6 +192,27 @@ def make_obj_array(res_list):
 
 
 
+def hashable_field(f):
+    if is_obj_array(f):
+        return tuple(f)
+    else:
+        return f
+
+
+
+
+def field_equal(a, b):
+    a_is_oa = is_obj_array(a)
+    assert a_is_oa == is_obj_array(b)
+
+    if a_is_oa:
+        return (a == b).all()
+    else:
+        return a == b
+
+
+
+
 def join_fields(*args):
     res_list = []
     for arg in args:
