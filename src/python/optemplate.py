@@ -800,6 +800,56 @@ class BCToFluxRewriter(OpTemplateIdentityMapper):
 
 
 
+# collecting ------------------------------------------------------------------
+class CollectorBase(LocalOpReducerMixin, pymbolic.mapper.CombineMapper):
+    def combine(self, values):
+        from pytools import flatten
+        return set(flatten(values))
+
+    def map_algebraic_leaf(self, expr):
+        return set()
+
+    def handle_unsupported_expression(self, expr):
+        return set()
+
+    def map_constant(self, bpair):
+        return set()
+
+    def map_operator_binding(self, expr):
+        return self.combine([self.rec(expr.op), self.rec(expr.field)])
+
+    def map_mass_base(self, expr):
+        return set()
+    
+    def map_diff_base(self, expr):
+        return set()
+
+    def map_boundary_pair(self, expr):
+        return self.combine([self.rec(expr.field), self.rec(expr.bfield)])
+
+    def map_common_subexpression(self, expr):
+        return self.rec(expr.child)
+    
+
+
+
+class BoundaryTagCollector(CollectorBase):
+    def map_boundary_pair(self, bpair):
+        return set([bpair.tag])
+
+
+
+
+class DiffOpCollector(CollectorBase):
+    def map_operator_binding(self, expr):
+        if isinstance(expr.op, DiffOperatorBase):
+            return set([expr])
+        else:
+            return set()
+
+
+
+
 # evaluation ------------------------------------------------------------------
 class Evaluator(pymbolic.mapper.evaluator.EvaluationMapper):
     def map_boundary_pair(self, bp):

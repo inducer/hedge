@@ -21,6 +21,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 
+from pytools import Record
 import pymbolic.primitives
 import pymbolic.mapper
 import hedge.optemplate
@@ -36,11 +37,11 @@ class StringifyMapper(hedge.optemplate.StringifyMapper):
             tag = "WFlux"
 
         from pymbolic.mapper.stringifier import PREC_NONE
-        return "%s(is_lift=%s, int=%s, tag->bdry=%s, bdry->flux=%s)" % (tag, 
+        return "%s(is_lift=%s,\n  int=%s,\n  tag->bdry=%s,\n  bdry->flux=%s)" % (tag, 
                 expr.is_lift,
                 expr.interiors,
                 expr.tag_to_bdry_id,
-                ["%s:%s" % item for item in expr.bdry_id_to_fluxes.iteritems()])
+                expr.bdry_id_to_fluxes)
 
 
 
@@ -85,11 +86,15 @@ def get_flux_dependencies(flux, field):
 
 
 class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
+    class InteriorInfo(Record):
+        __slots__ = ["flux_expr", "field_expr"]
+    class BoundaryInfo(Record):
+        __slots__ = ["flux_expr", "bpair"]
+
     def __init__(self, is_lift, interiors, boundaries, 
             flux_optemplate=None):
         self.is_lift = is_lift
 
-        from pytools import Record
         self.interiors = interiors
         self.boundaries = boundaries
 
@@ -163,10 +168,6 @@ class BoundaryCombiner(hedge.optemplate.OpTemplateIdentityMapper):
             rest = []
             flux_optemplate_summands = []
 
-            from pytools import Record
-            class BoundaryInfo(Record): pass
-            class InteriorInfo(Record): pass
-
             for ch in expressions:
                 if (isinstance(ch, OperatorBinding) 
                         and isinstance(ch.op, flux_op_types)):
@@ -184,12 +185,12 @@ class BoundaryCombiner(hedge.optemplate.OpTemplateIdentityMapper):
                     if isinstance(ch.field, BoundaryPair):
                         bpair = ch.field
                         if self.mesh.tag_to_boundary.get(bpair.tag, []):
-                            boundaries.append(BoundaryInfo(
+                            boundaries.append(WholeDomainFluxOperator.BoundaryInfo(
                                 flux_expr=ch.op.flux,
                                 bpair=bpair,
                                 ))
                     else:
-                        interiors.append(InteriorInfo(
+                        interiors.append(WholeDomainFluxOperator.InteriorInfo(
                                 flux_expr=ch.op.flux,
                                 field_expr=ch.field))
                 else:
@@ -220,52 +221,12 @@ class BoundaryCombiner(hedge.optemplate.OpTemplateIdentityMapper):
 
 
 
-class BoundaryTagCollector(pymbolic.mapper.CombineMapper):
-    def combine(self, values):
-        from pytools import flatten
-        return set(flatten(values))
-
-    def map_algebraic_leaf(self, expr):
-        return set()
-
-    def handle_unsupported_expression(self, expr):
-        return set()
-
-    def map_constant(self, bpair):
-        return set()
-    
-    def map_boundary_pair(self, bpair):
-        return set([bpair.tag])
-
-    def map_operator_binding(self, expr):
-        return self.rec(expr.field)
-
-
-
-
-class FluxCollector(hedge.optemplate.LocalOpReducerMixin,
-        pymbolic.mapper.CombineMapper):
-    def combine(self, values):
-        from pytools import flatten
-        return set(flatten(values))
-
-    def map_algebraic_leaf(self, expr):
-        return set()
-
-    def map_constant(self, bpair):
-        return set()
-    
-    def map_operator_binding(self, expr):
-        return self.rec(expr.op) | self.rec(expr.field)
-
+# collectors ------------------------------------------------------------------
+class FluxCollector(hedge.optemplate.CollectorBase):
     def map_whole_domain_flux(self, wdflux):
         return set([wdflux])
 
-    def map_common_subexpression(self, expr):
-        return self.rec(expr.child)
 
-    def map_mass_base(self, expr):
-        return set()
-    
-    def map_diff_base(self, expr):
-        return set()
+
+
+

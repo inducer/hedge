@@ -574,17 +574,16 @@ class MaxwellOperator(TimeDependentOperator):
                 + self.Y*self.e_cross(normal, e)
                 )
 
-        e_count = self.count_subset(self.get_eh_subset()[:3])
         if self.incident_bc is not None:
             from hedge.optemplate import make_common_subexpression
             incident_bc = self.assemble_eh(
                     make_common_subexpression(
-                        -make_vector_field("e_incident_bc", e_count)))
+                        -make_vector_field("incident_bc", fld_cnt)))
 
         else:
             from hedge.tools import make_obj_array
             incident_bc = self.assemble_eh(
-                    make_obj_array([0]*e_count))
+                    make_obj_array([0]*fld_cnt))
 
         # actual operator template --------------------------------------------
         m_inv = InverseMassOperator()
@@ -608,6 +607,7 @@ class MaxwellOperator(TimeDependentOperator):
 
         from hedge.tools import full_to_subset_indices
         e_indices = full_to_subset_indices(self.get_eh_subset()[0:3])
+        all_indices = full_to_subset_indices(self.get_eh_subset())
 
         def rhs(t, w):
             if self.current is not None:
@@ -615,7 +615,14 @@ class MaxwellOperator(TimeDependentOperator):
             else:
                 j = 0
 
-            return compiled_op_template(w=w, j=j, **extra_context)
+            if self.incident_bc is not None:
+                incident_bc = self.incident_bc.boundary_interpolant(
+                        t, discr, self.incident_tag)[all_indices]
+            else:
+                incident_bc = 0
+
+            return compiled_op_template(
+                    w=w, j=j, incident_bc=incident_bc, **extra_context)
 
         return rhs
 
