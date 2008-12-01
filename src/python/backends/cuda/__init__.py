@@ -832,15 +832,7 @@ class Discretization(hedge.discretization.Discretization):
         return result
 
     def boundary_to_gpu(self, tag, field):
-        from hedge.tools import log_shape
-        ls = log_shape(field)
-        if ls != ():
-            from pytools import indices_in_shape
-            result = numpy.zeros(ls, dtype=object)
-            for i in indices_in_shape(ls):
-                result[i] = self.boundary_to_gpu(tag, field[i])
-            return result
-        else:
+        def f(field):
             result = cuda.pagelocked_empty(
                     (self.aligned_boundary_floats,),
                     dtype=field.dtype)
@@ -857,6 +849,16 @@ class Discretization(hedge.discretization.Discretization):
             result.fill(17) 
             result[self.gpu_boundary_embedding(tag)] = field
             return gpuarray.to_gpu(result, allocator=self.pool.allocate)
+
+        from hedge.tools import with_object_array_or_scalar
+        return with_object_array_or_scalar(f, field)
+
+    def boundary_from_gpu(self, tag, field):
+        def f(field):
+            return field.get()[self.gpu_boundary_embedding(tag)]
+
+        from hedge.tools import with_object_array_or_scalar
+        return with_object_array_or_scalar(f, field)
 
     def _empty_gpuarray(self, shape, dtype):
         return gpuarray.empty(shape, dtype=dtype,
