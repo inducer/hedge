@@ -581,7 +581,7 @@ class Discretization(object):
         face_group.commit(self, ldis, ldis)
 
         bdry = _Boundary(
-                nodes=nodes,
+                nodes=numpy.array(nodes),
                 ranges=face_ranges,
                 index_map=IndexMap(len(self.nodes), len(index_map), index_map),
                 face_groups=[face_group],
