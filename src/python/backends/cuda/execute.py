@@ -367,7 +367,7 @@ class Executor(object):
         def compile_insn(insn):
             from hedge.compiler import Assign, FluxBatchAssign
             if isinstance(insn, Assign):
-                from pycuda.vector_expr import CompiledVectorExpression
+                from hedge.backends.cuda.vector_expr import CompiledVectorExpression
                 return VectorExprAssign(
                         name=insn.name,
                         expr=insn.expr,
