@@ -317,7 +317,7 @@ class Kernel(FluxLocalKernelBase):
                 ArrayInitializer(
                         CudaConstant(
                             ArrayOf(
-                                POD(numpy.uint16, "segment_start_el_lookup"),
+                                POD(numpy.uint32, "segment_start_el_lookup"),
                             "SEGMENTS_PER_MB")),
                         [(chk*self.plan.segment_size)//given.dofs_per_el()
                             for chk in range(self.plan.segments_per_microblock())]
@@ -325,7 +325,7 @@ class Kernel(FluxLocalKernelBase):
                 ArrayInitializer(
                         CudaConstant(
                             ArrayOf(
-                                POD(numpy.uint16, "segment_stop_el_lookup"),
+                                POD(numpy.uint32, "segment_stop_el_lookup"),
                             "SEGMENTS_PER_MB")),
                         [min(given.microblock.elements, 
                             (chk*self.plan.segment_size+self.plan.segment_size-1)
@@ -339,8 +339,7 @@ class Kernel(FluxLocalKernelBase):
             
         f_body.extend_log_block("calculate this dof's element", [
             Initializer(POD(numpy.uint8, "mb_el"),
-                "MB_DOF/DOFS_PER_EL"),
-            Line(),])
+                "MB_DOF/DOFS_PER_EL") ])
 
         if self.plan.use_prefetch_branch:
             f_body.extend_log_block("calculate segment responsibility data", [
@@ -348,7 +347,7 @@ class Kernel(FluxLocalKernelBase):
                     Block([
                         Assign("segment_start_el", "segment_start_el_lookup[MB_SEGMENT]"),
                         Assign("segment_stop_el", "segment_stop_el_lookup[MB_SEGMENT]"),
-                        Assign("segment_el_count", "segment_stop_el-segment_start_el")
+                        Assign("segment_el_count", "segment_stop_el-segment_start_el"),
                         ])
                     ),
                 S("__syncthreads()")
