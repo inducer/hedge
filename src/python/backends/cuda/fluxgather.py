@@ -249,8 +249,6 @@ def make_plan(discr, given, tune_for):
         # a reasonable guess?
         flux_count = discr.dimensions
 
-    from hedge.backends.cuda.plan import optimize_plan
-
     def generate_valid_plans():
         #for direct_store in [True, False]:
         for direct_store in [False]:
@@ -271,10 +269,13 @@ def make_plan(discr, given, tune_for):
             return plan.make_kernel(discr, elface_to_bdry_bitmap=None,
                     fluxes=fluxes).benchmark()
 
+    from hedge.backends.cuda.plan import optimize_plan
+
     return optimize_plan(
+            "gather",
             generate_valid_plans, target_func,
             maximize=False,
-            debug="cuda_gather_plan" in discr.debug)
+            debug_flags=discr.debug)
 
 
 
