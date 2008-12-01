@@ -164,8 +164,6 @@ def _boundarize_kernel():
 
 # GPU mesh partition ----------------------------------------------------------
 def make_gpu_partition_greedy(adjgraph, max_block_size):
-    avail_nodes = set(adjgraph.iterkeys())
-    next_node = None
 
     def first(iterable):
         it = iter(iterable)
@@ -205,12 +203,17 @@ def make_gpu_partition_greedy(adjgraph, max_block_size):
                 else:
                     return result, None
 
+    avail_nodes = set(adjgraph.iterkeys())
+    next_node = None
+
     partition = [0]*len(adjgraph)
 
     blocks = []
     while avail_nodes:
         if next_node is None:
-            next_node = iter(avail_nodes).next()
+            from pytools import argmax2
+            next_node = argmax2((node, len(adjgraph[node])) for node in avail_nodes)
+
         block, next_node = list(bfs(next_node))
 
         for el in block:
