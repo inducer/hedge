@@ -188,8 +188,8 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         discr = self.ex.discr
 
         # gather phase --------------------------------------------------------
-        for name, wdflux, fluxes_on_faces in zip(insn.names, insn.fluxes, 
-                insn.kernel(self.rec, discr.fluxlocal_plan)):
+        all_fofs = insn.kernel(self.rec, discr.fluxlocal_plan)
+        for name, wdflux, fluxes_on_faces in zip(insn.names, insn.fluxes, all_fofs):
             self.context[name] = self.ex.fluxlocal_kernel(
                 fluxes_on_faces, wdflux.is_lift)
 
@@ -216,48 +216,52 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             discr.lift_flop_counter.add(flux_count*self.ex.lift_flops)
 
         # debug ---------------------------------------------------------------
-        # FIXME: bitrot below
         if discr.debug & set(["cuda_lift", "cuda_flux"]):
             fplan = discr.flux_plan
 
-            useful_size = (len(discr.blocks)
-                    * given.aligned_face_dofs_per_microblock()
-                    * fplan.microblocks_per_block())
-            fof = fluxes_on_faces.get()
+            for fluxes_on_faces in all_fofs:
+                useful_size = (len(discr.blocks)
+                        * given.aligned_face_dofs_per_microblock()
+                        * fplan.microblocks_per_block())
+                fof = fluxes_on_faces.get()
 
-            fof = fof[:useful_size]
+                fof = fof[:useful_size]
 
-            have_used_nans = False
-            for i_b, block in enumerate(discr.blocks):
-                offset = i_b*(given.aligned_face_dofs_per_microblock()
-                        *fplan.microblocks_per_block())
-                size = (len(block.el_number_map)
-                        *given.dofs_per_face()
-                        *given.faces_per_el())
-                if numpy.isnan(la.norm(fof[offset:offset+size])).any():
-                    have_used_nans = True
+                have_used_nans = False
+                for i_b, block in enumerate(discr.blocks):
+                    offset = i_b*(given.aligned_face_dofs_per_microblock()
+                            *fplan.microblocks_per_block())
+                    size = (len(block.el_number_map)
+                            *given.dofs_per_face()
+                            *given.faces_per_el())
+                    if numpy.isnan(la.norm(fof[offset:offset+size])).any():
+                        have_used_nans = True
 
-            if have_used_nans:
-                struc = ( given.dofs_per_face(),
-                        given.dofs_per_face()*given.faces_per_el(),
-                        given.aligned_face_dofs_per_microblock(),
-                        )
+                if have_used_nans:
+                    struc = ( given.dofs_per_face(),
+                            given.dofs_per_face()*given.faces_per_el(),
+                            given.aligned_face_dofs_per_microblock(),
+                            )
 
-                print self.get_vec_structure(fof, *struc)
-                raise RuntimeError("Detected used NaNs in flux gather output.")
+                    print self.get_vec_structure(fof, *struc)
+                    raise RuntimeError("Detected used NaNs in flux gather output.")
 
-            assert not have_used_nans
+                assert not have_used_nans
 
         if "cuda_lift" in discr.debug:
             cuda.Context.synchronize()
             print "NANCHECK"
-            copied_flux = discr.volume_from_gpu(flux)
-            contains_nans = numpy.isnan(copied_flux).any()
-            if contains_nans:
-                self.print_error_structure(
-                        copied_flux, copied_flux, copied_flux-copied_flux,
-                        eventful_only=True)
-            assert not contains_nans, "Resulting flux contains NaNs."
+            
+            for name in insn.names:
+                flux = self.context[name]
+                copied_flux = discr.volume_from_gpu(flux)
+                contains_nans = numpy.isnan(copied_flux).any()
+                if contains_nans:
+                    print "examining", name
+                    print_error_structure(discr,
+                            copied_flux, copied_flux, copied_flux-copied_flux,
+                            eventful_only=True)
+                assert not contains_nans, "Resulting flux contains NaNs."
 
     def execute_code(self, code):
         discr = self.ex.discr
@@ -363,7 +367,7 @@ class Executor(object):
         def compile_insn(insn):
             from hedge.compiler import Assign, FluxBatchAssign
             if isinstance(insn, Assign):
-                from pycuda.vector_expr import CompiledVectorExpression
+                from hedge.backends.cuda.vector_expr import CompiledVectorExpression
                 return VectorExprAssign(
                         name=insn.name,
                         expr=insn.expr,

@@ -53,10 +53,15 @@ class Parallelism:
 
 
 
-def optimize_plan(plan_generator, target_func, maximize, debug=False, occupancy_slack=0.5,
+def optimize_plan(opt_name, plan_generator, target_func, maximize, debug_flags=set(), occupancy_slack=0.5,
         log_filename=None):
     plans = list(p for p in plan_generator()
             if p.invalid_reason() is None)
+
+    debug = "cuds_%s_plan" % opt_name in debug_flags
+
+    if "cuda_no_plan" in debug_flags:
+        return plans[0], 0
 
     if not plans:
         raise RuntimeError, "no valid CUDA execution plans found"
@@ -399,8 +404,8 @@ def make_diff_plan(discr, given):
         return plan.make_kernel(discr).benchmark()
 
     from hedge.backends.cuda.plan import optimize_plan
-    return optimize_plan(generate_plans, target_func, maximize=False,
-            debug="cuda_diff_plan" in discr.debug,
+    return optimize_plan("diff", generate_plans, target_func, maximize=False,
+            debug_flags=discr.debug,
             log_filename="diff-%d" % given.order())
 
 
@@ -438,6 +443,7 @@ def make_lift_plan(discr, given):
         return plan.make_kernel(discr).benchmark()
 
     from hedge.backends.cuda.plan import optimize_plan
-    return optimize_plan(generate_plans, target_func, maximize=False,
-            debug="cuda_lift_plan" in discr.debug,
+    return optimize_plan(
+            "lift", generate_plans, target_func, maximize=False,
+            debug_flags=discr.debug,
             log_filename="lift-%d" % given.order())

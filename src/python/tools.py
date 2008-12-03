@@ -248,6 +248,20 @@ def log_shape(array):
 
 
 
+def with_object_array_or_scalar(f, field):
+    ls = log_shape(field)
+    if ls != ():
+        from pytools import indices_in_shape
+        result = numpy.zeros(ls, dtype=object)
+        for i in indices_in_shape(ls):
+            result[i] = f(field[i])
+        return result
+    else:
+        return f(field)
+
+
+
+
 def ptwise_mul(a, b):
     a_log_shape = log_shape(a)
     b_log_shape = log_shape(b)

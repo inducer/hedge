@@ -36,7 +36,6 @@ from hedge.optemplate import OpTemplateIdentityMapper
 
 class Instruction(Record):
     __slots__ = []
-    pass
 
 class Discard(Instruction): 
     __slots__ = ["name"]
@@ -79,7 +78,6 @@ class OperatorCompilerBase(OpTemplateIdentityMapper):
         # that we can evaluate together.
 
         # For each FluxRecord, find the other fluxes its flux depends on.
-        flux_batches = []
         flux_queue = self.get_contained_fluxes(expr)
         for fr in flux_queue:
             fr.dependencies = set()
