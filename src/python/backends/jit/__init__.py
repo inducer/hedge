@@ -160,7 +160,7 @@ class ExecutionMapper(ExecutionMapperBase):
             out = self.discr.volume_zeros()
 
         bdry = self.discr.get_boundary(bpair.tag)
-        if not bdry.nodes:
+        if not len(bdry.nodes):
             return 0
 
         args, fvi = self._get_flux_var_info(op.flux, bpair.field, bpair.bfield)
@@ -305,7 +305,8 @@ class Executor(ExecutorBase):
                     )
                 ]))
             ])
-        mod.add_function(FunctionBody(fdecl, fbody))
+        mod.add_function(FunctionBody(fdecl, fbody)) 
+
         result = mod.compile(
                 self.discr.platform, wait_on_error=True).gather_flux
 
