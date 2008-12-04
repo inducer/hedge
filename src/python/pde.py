@@ -729,9 +729,6 @@ class GedneyPMLMaxwellOperator(MaxwellOperator):
     D. Gedney, "An anisotropic perfectly matched layer-absorbing medium for the
     truncation of FDTD lattices," IEEE Transactions on Antennas and
     Propagation,  vol. 44, 1996, S. 1630-1639.
-
-    2D PML operators can be created by multiple inheritance from the 
-    corresponding 2D operator class and this class.
     """
 
     def pml_local_op(self, w):
@@ -873,6 +870,17 @@ class GedneyPMLMaxwellOperator(MaxwellOperator):
                 (o_min+width, o_max-width), 
                 (o_min, o_max),
                 exponent)
+
+
+
+
+class GedneyPMLTEMaxwellOperator(TEMaxwellOperator, GedneyPMLMaxwellOperator):
+    # not unimplemented--this IS the implementation.
+    pass
+
+class GedneyPMLTMMaxwellOperator(TMMaxwellOperator, GedneyPMLMaxwellOperator):
+    # not unimplemented--this IS the implementation.
+    pass
 
 
 
