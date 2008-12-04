@@ -168,10 +168,6 @@ def main():
         #logmgr.add_quantity(
                 #LpNorm(FieldIdxGetter(lambda: rhs(t, fields), i), discr, name="rhs_f%d" % i))
 
-    for i, fi in enumerate(op.op_template()):
-        print i, fi
-        print 
-
     # timestep loop -------------------------------------------------------
 
     t = 0
@@ -182,7 +178,7 @@ def main():
         logmgr.tick()
         logmgr.save()
 
-        if step % 1 == 0:
+        if step % 25 == 0:
             e, h, d, b = op.split_ehdb(fields)
             visf = vis.make_file("em-%d-%04d" % (order, step))
             #pml_rhs_e, pml_rhs_h, pml_rhs_d, pml_rhs_b = \
