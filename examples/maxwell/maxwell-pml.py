@@ -24,64 +24,32 @@ import numpy.linalg as la
 
 
 
-def make_pml_mesh(a=(0,0), b=(1,1), max_area=None, 
-        boundary_tagger=(lambda fvi, el, fn: []),
-        pml_width=0.1,
-        periodicity=None, subdivisions=None,
-        refine_func=None):
-    """Create an unstructured rectangular mesh.
+def make_mesh(a, b, pml_width=0.25, **kwargs):
+    from meshpy.geometry import GeometryBuilder, make_box
+    geob = GeometryBuilder()
+    
+    box_points, box_facets, _ = make_box(a, b)
+    geob.add_geometry(box_points, box_facets)
+    geob.wrap_in_box(pml_width)
 
-    @arg a: the lower left hand point of the rectangle
-    @arg b: the upper right hand point of the rectangle
-    @arg max_area: maximum area of each triangle.
-    @arg periodicity: either None, or a tuple of bools specifying whether
-      the mesh is to be periodic in x and y.
-    @arg subdivisions: If not C{None}, this is a 2-tuple specifying
-      the number of facet subdivisions in X and Y.
-    @arg refine_func: A refinement function as taken by C{meshpy.triangle.build}.
-    """
-    a = numpy.array(a)
-    b = numpy.array(b)
+    mesh_mod = geob.mesher_module()
+    mi = mesh_mod.MeshInfo()
+    geob.set(mi)
 
-    pml_a = a + pml_width
-    pml_b = b - pml_width
+    built_mi = mesh_mod.build(mi, **kwargs)
+
+    print "%d elements" % len(built_mi.elements)
+
+    def boundary_tagger(fvi, el, fn):
+        return []
 
 
-    def round_trip_connect(start, end):
-        for i in range(start, end):
-            yield i, i+1
-        yield end, start
+    from hedge.mesh import make_conformal_mesh
+    return make_conformal_mesh(
+            built_mi.points,
+            built_mi.elements, 
+            boundary_tagger)
 
-    if max_area is not None:
-        if refine_func is not None:
-            raise ValueError, "cannot specify both refine_func and max_area"
-        def refine_func(vertices, area):
-            return area > max_area
-
-    marker2tag = {
-            1: "minus_x", 
-            2: "minus_y", 
-            3: "plus_x", 
-            4: "plus_y", 
-            }
-
-    points = [
-            a, (b[0],a[1]), b, (a[0],b[1]),
-            pml_a, (pml_b[0],pml_a[1]), pml_b, (pml_a[0],pml_b[1]),
-            ]
-    facets = list(round_trip_connect(0, 3)) + list(round_trip_connect(4, 7))
-    facet_markers = [2,3,4,1]
-
-    if subdivisions is not None:
-        from meshpy.triangle import subdivide_facets
-        points, facets, facet_markers = subdivide_facets(
-                [subdivisions[0], subdivisions[1], 
-                    subdivisions[0], subdivisions[1]],
-                points, facets, facet_markers)
-            
-    from hedge.mesh import finish_2d_rect_mesh
-    return finish_2d_rect_mesh(points, facets, facet_markers, marker2tag, 
-            refine_func, periodicity, boundary_tagger)
 
 
 
@@ -89,28 +57,34 @@ def main():
     from hedge.element import TriangularElement
     from hedge.timestep import RK4TimeStepper
     from hedge.mesh import make_disk_mesh
-    from hedge.visualization import \
-            VtkVisualizer, \
-            SiloVisualizer, \
-            get_rank_partition
     from pylo import DB_VARTYPE_VECTOR
     from math import sqrt, pi, exp
-    from hedge.pde import TEMaxwellOperator, TMMaxwellOperator, GedneyPMLMaxwellOperator
+    from hedge.pde import \
+            MaxwellOperator, \
+            GedneyPMLTEMaxwellOperator, \
+            GedneyPMLTMMaxwellOperator, \
+            GedneyPMLMaxwellOperator, \
+            TEMaxwellOperator
     from hedge.backends import guess_run_context, FEAT_CUDA
-    from hedge.data import GivenFunction, TimeIntervalGivenFunction
 
     rcon = guess_run_context(disable=set([FEAT_CUDA]))
 
-    epsilon0 = 8.8541878176e-12 # C**2 / (N m**2)
-    mu0 = 4*pi*1e-7 # N/A**2.
+    #epsilon0 = 8.8541878176e-12 # C**2 / (N m**2)
+    #mu0 = 4*pi*1e-7 # N/A**2.
+    epsilon0 = 1 
+    mu0 = 1 
     epsilon = 1*epsilon0
     mu = 1*mu0
+
+    c = 1/sqrt(mu*epsilon)
 
     cylindrical = False
     periodic = False
 
-    pml_width = 0.2
-    mesh = make_pml_mesh(a=(-1,-1), b=(1,1), pml_width=pml_width, max_area=0.003)
+    pml_width = 0.5
+    mesh = make_mesh(a=numpy.array((-1,-1,-1)), b=numpy.array((1,1,1)), 
+    #mesh = make_mesh(a=numpy.array((-1,-1)), b=numpy.array((1,1)), 
+            pml_width=pml_width, max_volume=0.03)
 
     if rcon.is_head_rank:
         mesh_data = rcon.distribute_mesh(mesh)
@@ -121,17 +95,33 @@ def main():
         shape = (3,)
 
         def __call__(self, x, el):
-            sc = numpy.array([1,4,3])[:discr.dimensions]
-            return numpy.array([1,1,1])*exp(-20*la.norm(sc*x))
+            #sc = numpy.array([1,4,3])[:discr.dimensions]
+            return numpy.array([1,1,1])*exp(-20*la.norm(x))
 
+    final_time = 20/c
     order = 3
     discr = rcon.make_discretization(mesh_data, order=order)
 
-    vis = VtkVisualizer(discr, rcon, "em-%d" % order)
-    #vis = SiloVisualizer(discr, rcon
+    from hedge.visualization import VtkVisualizer, SiloVisualizer
+    #vis = VtkVisualizer(discr, rcon, "em-%d" % order)
+    vis = SiloVisualizer(discr, rcon)
 
-    dt = discr.dt_factor(1/sqrt(mu*epsilon))
-    final_time = 12e-9
+    from hedge.mesh import TAG_ALL, TAG_NONE
+    from hedge.data import GivenFunction, TimeHarmonicGivenFunction
+    op = GedneyPMLMaxwellOperator(epsilon, mu, flux_type=1,
+            current=TimeHarmonicGivenFunction(
+                GivenFunction(CurrentSource()),
+                omega=2*pi*0.3*sqrt(mu*epsilon)),
+            pec_tag=TAG_NONE,
+            absorb_tag=TAG_ALL,
+            )
+
+    #fields = max_op.assemble_eh(discr=discr)
+    fields = op.assemble_ehdb(discr=discr)
+
+    stepper = RK4TimeStepper()
+
+    dt = discr.dt_factor(op.max_eigenvalue())
     nsteps = int(final_time/dt)+1
     dt = final_time/nsteps
 
@@ -140,22 +130,6 @@ def main():
         print "dt", dt
         print "nsteps", nsteps
         print "#elements=", len(mesh.elements)
-
-    class PMLTMMaxwellOperator(TMMaxwellOperator, GedneyPMLMaxwellOperator):
-        pass
-    class PMLTEMaxwellOperator(TEMaxwellOperator, GedneyPMLMaxwellOperator):
-        pass
-
-    from hedge.mesh import TAG_ALL, TAG_NONE
-    op = PMLTMMaxwellOperator(epsilon, mu, flux_type=1,
-            current=TimeIntervalGivenFunction(
-                GivenFunction(CurrentSource()), off_time=final_time/10),
-            #pec_tag=TAG_NONE,
-            #absorb_tag=TAG_ALL,
-            )
-    fields = op.assemble_ehdb(discr=discr)
-
-    stepper = RK4TimeStepper()
 
     # diagnostics setup ---------------------------------------------------
     from pytools.log import LogManager, add_general_quantities, \
@@ -178,6 +152,26 @@ def main():
     
     logmgr.add_watches(["step.max", "t_sim.max", "W_field", "t_step.max"])
 
+    from hedge.log import LpNorm
+    class FieldIdxGetter:
+        def __init__(self, whole_getter, idx):
+            self.whole_getter = whole_getter
+            self.idx = idx
+
+        def __call__(self):
+            return self.whole_getter()[self.idx]
+
+    #for i in range(len(fields)):
+        #logmgr.add_quantity(
+                #LpNorm(FieldIdxGetter(lambda: fields, i), discr, name="norm_f%d" % i))
+    #for i in range(len(fields)):
+        #logmgr.add_quantity(
+                #LpNorm(FieldIdxGetter(lambda: rhs(t, fields), i), discr, name="rhs_f%d" % i))
+
+    for i, fi in enumerate(op.op_template()):
+        print i, fi
+        print 
+
     # timestep loop -------------------------------------------------------
 
     t = 0
@@ -186,10 +180,13 @@ def main():
     vis_step = [0]
     for step in range(nsteps):
         logmgr.tick()
+        logmgr.save()
 
-        if step % 5 == 0:
+        if step % 1 == 0:
             e, h, d, b = op.split_ehdb(fields)
             visf = vis.make_file("em-%d-%04d" % (order, step))
+            #pml_rhs_e, pml_rhs_h, pml_rhs_d, pml_rhs_b = \
+                    #op.split_ehdb(rhs(t, fields))
             vis.add_data(visf, [ 
                 ("e", e), 
                 ("h", h), 
@@ -199,6 +196,9 @@ def main():
                 #("pml_rhs_h", pml_rhs_h),
                 #("pml_rhs_d", pml_rhs_d),
                 #("pml_rhs_b", pml_rhs_b),
+                #("max_rhs_e", max_rhs_e),
+                #("max_rhs_h", max_rhs_h),
+                #("sigma", sigma),
                 ], time=t, step=step)
             visf.close()
 
