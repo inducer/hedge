@@ -72,7 +72,7 @@ class _FluxCoefficientCompiler(pymbolic.mapper.RecursiveMapper):
         if isinstance(expr, _internal.Flux):
             return expr
         else:
-            pymbolic.mapper.RecursiveMapper.\
+            return pymbolic.mapper.RecursiveMapper.\
                     handle_unsupported_expression(self, expr)
 
     def map_constant(self, expr):

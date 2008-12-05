@@ -24,17 +24,17 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 import hedge.backends.cpu_base
 import hedge.discretization
-from hedge.backends.codegen_base import FluxToCodeMapperBase
 from hedge.backends.cpu_base import ExecutorBase, ExecutionMapperBase
+from pymbolic.mapper.c_code import CCodeMapper
 import numpy
 
 
 
 
 # flux to code mapper ---------------------------------------------------------
-class FluxToCodeMapper(FluxToCodeMapperBase):
+class FluxToCodeMapper(CCodeMapper):
     def __init__(self, fvi, is_flipped=False):
-        FluxToCodeMapperBase.__init__(self, repr, reverse=False)
+        CCodeMapper.__init__(self, repr, reverse=False)
         self.flux_var_info = fvi
         self.is_flipped = is_flipped
 
@@ -212,6 +212,10 @@ class Executor(ExecutorBase):
         self.bdry_kernel_cache = {}
 
     def __call__(self, **vars):
+        from pdb import set_trace
+        #if "w" in vars:
+            #if numpy.linalg.norm(vars["w"][5]) > 1e-6:
+                #set_trace()
         return ExecutionMapper(vars, self.discr, self)(self.optemplate)
 
     # flux code generators --------------------------------------------------------
@@ -410,6 +414,10 @@ class Executor(ExecutorBase):
             ])
         mod.add_function(FunctionBody(fdecl, fbody))
 
+        #print "----------------------------------------------------------------"
+        #print flux
+        #print FunctionBody(fdecl, fbody)
+
         result = mod.compile(self.discr.platform, wait_on_error=True).gather_flux
 
         if self.discr.instrumented:
@@ -445,7 +453,7 @@ class Discretization(hedge.discretization.Discretization):
                 InverseMassContractor, \
                 BCToFluxRewriter
 
-        from pymbolic.mapper.constant_folder import CommutativeConstantFoldingMapper
+        from hedge.optemplate import CommutativeConstantFoldingMapper
 
         result = (
                 InverseMassContractor()(
@@ -453,6 +461,14 @@ class Discretization(hedge.discretization.Discretization):
                         BCToFluxRewriter()(
                             OperatorBinder()(
                                 optemplate)))))
+
+        from hedge.tools import is_obj_array
+        if is_obj_array(result):
+            for i, x_i in enumerate(result):
+                print "XX", i, x_i
+                print
+        else:
+            print "XX", result
 
         return Executor(self, result)
 

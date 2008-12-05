@@ -25,6 +25,8 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 import pymbolic.primitives
 import pymbolic.mapper.stringifier
 import pymbolic.mapper.evaluator
+import pymbolic.mapper.dependency
+import pymbolic.mapper.constant_folder
 import hedge.mesh
 
 
@@ -424,7 +426,60 @@ class LocalOpReducerMixin(object):
 
 
 
-class OpTemplateIdentityMapperMixin(LocalOpReducerMixin):
+class FluxOpReducerMixin(object):
+    """Reduces calls to mapper methods for all flux 
+    operators to a smaller number of mapper methods.
+    """
+    def map_flux(self, expr, *args, **kwargs):
+        return self.map_flux_base(expr, *args, **kwargs)
+
+    def map_lift(self, expr, *args, **kwargs):
+        return self.map_flux_base(expr, *args, **kwargs)
+
+    def map_flux_coefficient(self, expr, *args, **kwargs):
+        return self.map_flux_coeff_base(expr, *args, **kwargs)
+
+    def map_lift_coefficient(self, expr, *args, **kwargs):
+        return self.map_flux_coeff_base(expr, *args, **kwargs)
+
+
+
+
+class OperatorReducerMixin(LocalOpReducerMixin, FluxOpReducerMixin):
+    """Reduces calls to *any* operator mapping function to just one."""
+    def map_diff_base(self, expr, *args, **kwargs):
+        return self.map_operator(expr, *args, **kwargs)
+
+    def map_mass_base(self, expr, *args, **kwargs):
+        return self.map_operator(expr, *args, **kwargs)
+
+    def map_flux_base(self, expr, *args, **kwargs):
+        return self.map_operator(expr, *args, **kwargs)
+
+    def map_flux_coeff_base(self, expr, *args, **kwargs):
+        return self.map_operator(expr, *args, **kwargs)
+
+
+
+
+
+class CombineMapperMixin(object):
+    def map_operator_binding(self, expr):
+        return self.combine([self.rec(expr.op), self.rec(expr.field)])
+
+    def map_boundary_pair(self, expr):
+        return self.combine([self.rec(expr.field), self.rec(expr.bfield)])
+
+
+
+
+class CombineMapper(CombineMapperMixin, pymbolic.mapper.CombineMapper):
+    pass
+
+
+
+
+class IdentityMapperMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     def map_operator_binding(self, expr, *args, **kwargs):
         return expr.__class__(
                 self.rec(expr.op, *args, **kwargs),
@@ -437,18 +492,47 @@ class OpTemplateIdentityMapperMixin(LocalOpReducerMixin):
                 expr.tag)
 
     def map_mass_base(self, expr, *args, **kwargs):
-        return expr.__class__()
+        # it's a leaf--no changing children
+        return expr
 
     def map_diff_base(self, expr, *args, **kwargs):
-        return expr.__class__(expr.xyz_axis)
+        # it's a leaf--no changing children
+        return expr
+
+    def map_diff_base(self, expr, *args, **kwargs):
+        # it's a leaf--no changing children
+        return expr
+
+    def map_flux_base(self, expr, *args, **kwargs):
+        # it's a leaf--no changing children
+        return expr
+
+    def map_flux_coeff_base(self, expr, *args, **kwargs):
+        # it's a leaf--no changing children
+        return expr
 
 
 
 
+class DependencyMapper(
+        CombineMapperMixin, 
+        pymbolic.mapper.dependency.DependencyMapper, 
+        OperatorReducerMixin):
+    def map_operator(self, expr):
+        return set()
 
 
-class OpTemplateIdentityMapper(
-        OpTemplateIdentityMapperMixin, 
+
+
+class CommutativeConstantFoldingMapper(pymbolic.mapper.constant_folder.CommutativeConstantFoldingMapper,
+        IdentityMapperMixin):
+    def is_constant(self, expr):
+        return not bool(DependencyMapper()(expr))
+
+
+
+class IdentityMapper(
+        IdentityMapperMixin, 
         pymbolic.mapper.IdentityMapper):
     pass
 
@@ -503,10 +587,7 @@ class BoundOpMapperMixin(object):
 
 
 
-class OperatorBinder(OpTemplateIdentityMapper):
-    def handle_unsupported_expression(self, expr):
-        return expr
-
+class OperatorBinder(IdentityMapper):
     def map_product(self, expr):
         if len(expr.children) == 0:
             return expr
@@ -586,7 +667,7 @@ class _InnerInverseMassContractor(pymbolic.mapper.RecursiveMapper):
 
 
         
-class InverseMassContractor(OpTemplateIdentityMapper):
+class InverseMassContractor(IdentityMapper):
     # assumes all operators to be bound
 
     def map_boundary_pair(self, bp):
@@ -603,7 +684,7 @@ class InverseMassContractor(OpTemplateIdentityMapper):
 
 
 
-class FluxDecomposer(OpTemplateIdentityMapper):
+class FluxDecomposer(IdentityMapper):
     """Replaces each L{FluxOperator} in an operator template
     with a sum of L{FluxCoefficientOperator}s.
     """
@@ -704,7 +785,7 @@ class FluxDecomposer(OpTemplateIdentityMapper):
 
 
 # BC-to-flux rewriting --------------------------------------------------------
-class BCToFluxRewriter(OpTemplateIdentityMapper):
+class BCToFluxRewriter(IdentityMapper):
     """Rewrites L{FluxOperator} (note: not L{FluxCoefficientOperator})
     instances bound to L{BoundaryPair}s with (linear) boundary 
     condition expressions in the C{bfield} parameter into 
@@ -725,7 +806,7 @@ class BCToFluxRewriter(OpTemplateIdentityMapper):
             from hedge.flux import FluxIdentityMapperMixin
             class MySubstitutionMapper(
                     SubstitutionMapper,
-                    OpTemplateIdentityMapperMixin,
+                    IdentityMapperMixin,
                     FluxIdentityMapperMixin,
                     ):
                 def map_normal(self, expr):
@@ -792,31 +873,20 @@ class BCToFluxRewriter(OpTemplateIdentityMapper):
                     FluxOperator(flux),
                     BoundaryPair(vol_field, remaining_bdry_field, bpair.tag))
         else:
-            return OpTemplateIdentityMapper.map_operator_binding(self, expr)
+            return IdentityMapper.map_operator_binding(self, expr)
 
-    def handle_unsupported_expression(self, expr):
-        return expr
 
 
 
 
 # collecting ------------------------------------------------------------------
-class CollectorBase(LocalOpReducerMixin, pymbolic.mapper.CombineMapper):
+class CollectorMixin(LocalOpReducerMixin):
     def combine(self, values):
         from pytools import flatten
         return set(flatten(values))
 
-    def map_algebraic_leaf(self, expr):
-        return set()
-
-    def handle_unsupported_expression(self, expr):
-        return set()
-
     def map_constant(self, bpair):
         return set()
-
-    def map_operator_binding(self, expr):
-        return self.combine([self.rec(expr.op), self.rec(expr.field)])
 
     def map_mass_base(self, expr):
         return set()
@@ -824,23 +894,18 @@ class CollectorBase(LocalOpReducerMixin, pymbolic.mapper.CombineMapper):
     def map_diff_base(self, expr):
         return set()
 
-    def map_boundary_pair(self, expr):
-        return self.combine([self.rec(expr.field), self.rec(expr.bfield)])
-
-    def map_common_subexpression(self, expr):
-        return self.rec(expr.child)
     
 
 
 
-class BoundaryTagCollector(CollectorBase):
+class BoundaryTagCollector(CollectorMixin, CombineMapper):
     def map_boundary_pair(self, bpair):
         return set([bpair.tag])
 
 
 
 
-class DiffOpCollector(CollectorBase):
+class DiffOpCollector(CollectorMixin, CombineMapper):
     def map_operator_binding(self, expr):
         if isinstance(expr.op, DiffOperatorBase):
             return set([expr])

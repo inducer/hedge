@@ -155,7 +155,7 @@ class ExecutionMapperBase(hedge.optemplate.Evaluator,
 
         return out
 
-    def map_sum(self, expr, out=None):
+    def map_sumadfasdf(self, expr, out=None):
         if out is None:
             out = self.discr.volume_zeros()
         for child in expr.children:

@@ -71,8 +71,8 @@ def main():
 
     #epsilon0 = 8.8541878176e-12 # C**2 / (N m**2)
     #mu0 = 4*pi*1e-7 # N/A**2.
-    epsilon0 = 1 
-    mu0 = 1 
+    epsilon0 = 1
+    mu0 = 1
     epsilon = 1*epsilon0
     mu = 1*mu0
 
@@ -82,8 +82,9 @@ def main():
     periodic = False
 
     pml_width = 0.5
-    mesh = make_mesh(a=numpy.array((-1,-1,-1)), b=numpy.array((1,1,1)), 
-    #mesh = make_mesh(a=numpy.array((-1,-1)), b=numpy.array((1,1)), 
+    #mesh = make_mesh(a=numpy.array((-1,-1,-1)), b=numpy.array((1,1,1)), 
+    #mesh = make_mesh(a=numpy.array((-3,-3)), b=numpy.array((3,3)), 
+    mesh = make_mesh(a=numpy.array((-1,-1)), b=numpy.array((1,1)), 
             pml_width=pml_width, max_volume=0.03)
 
     if rcon.is_head_rank:
@@ -91,12 +92,23 @@ def main():
     else:
         mesh_data = rcon.receive_mesh()
 
-    class CurrentSource:
-        shape = (3,)
+    class Current:
+        def volume_interpolant(self, t, discr):
+            result = discr.volume_zeros()
+            
+            if t > final_time/10:
+                return result
 
-        def __call__(self, x, el):
-            #sc = numpy.array([1,4,3])[:discr.dimensions]
-            return numpy.array([1,1,1])*exp(-20*la.norm(x))
+            from hedge.tools import make_obj_array
+            x = make_obj_array(discr.nodes.T)
+            r = numpy.sqrt(numpy.dot(x, x))
+
+            idx = r<0.3
+            omega = 6*c
+            result[idx] = (1+numpy.cos(pi*r/0.3))[idx]
+                    # *numpy.sin(omega*t)
+            
+            return make_obj_array([result, result, result])
 
     final_time = 20/c
     order = 3
@@ -107,16 +119,13 @@ def main():
     vis = SiloVisualizer(discr, rcon)
 
     from hedge.mesh import TAG_ALL, TAG_NONE
-    from hedge.data import GivenFunction, TimeHarmonicGivenFunction
-    op = GedneyPMLMaxwellOperator(epsilon, mu, flux_type=1,
-            current=TimeHarmonicGivenFunction(
-                GivenFunction(CurrentSource()),
-                omega=2*pi*0.3*sqrt(mu*epsilon)),
-            pec_tag=TAG_NONE,
-            absorb_tag=TAG_ALL,
+    from hedge.data import GivenFunction, TimeHarmonicGivenFunction, TimeIntervalGivenFunction
+    op = GedneyPMLTEMaxwellOperator(epsilon, mu, flux_type=1,
+            current=Current(),
+            pec_tag=TAG_ALL,
+            absorb_tag=TAG_NONE,
             )
 
-    #fields = max_op.assemble_eh(discr=discr)
     fields = op.assemble_ehdb(discr=discr)
 
     stepper = RK4TimeStepper()
@@ -161,48 +170,54 @@ def main():
         def __call__(self):
             return self.whole_getter()[self.idx]
 
-    #for i in range(len(fields)):
-        #logmgr.add_quantity(
-                #LpNorm(FieldIdxGetter(lambda: fields, i), discr, name="norm_f%d" % i))
-    #for i in range(len(fields)):
-        #logmgr.add_quantity(
-                #LpNorm(FieldIdxGetter(lambda: rhs(t, fields), i), discr, name="rhs_f%d" % i))
-
     # timestep loop -------------------------------------------------------
 
     t = 0
-    rhs = op.bind(discr, sigma=op.sigma_from_width(discr, pml_width))
+    sigma, pmlflag = op.sigma_and_flag_from_width(discr, pml_width)
+    rhs = op.bind(discr, sigma_and_flag=(60*sigma, pmlflag))
+    max_rhs = op.bind(discr, sigma_and_flag=(
+        discr.volume_zeros((3,)), discr.volume_zeros()))
 
-    vis_step = [0]
     for step in range(nsteps):
         logmgr.tick()
         logmgr.save()
 
-        if step % 25 == 0:
+        if step % 1 == 0:
             e, h, d, b = op.split_ehdb(fields)
             visf = vis.make_file("em-%d-%04d" % (order, step))
-            #pml_rhs_e, pml_rhs_h, pml_rhs_d, pml_rhs_b = \
-                    #op.split_ehdb(rhs(t, fields))
+            pml_rhs_e, pml_rhs_h, pml_rhs_d, pml_rhs_b = \
+                    op.split_ehdb(rhs(t, fields))
+            max_rhs_e, max_rhs_h, max_rhs_d, max_rhs_b = \
+                    op.split_ehdb(max_rhs(t, fields))
+
+            from pylo import DB_VARTYPE_VECTOR, DB_VARTYPE_SCALAR
             vis.add_data(visf, [ 
                 ("e", e), 
                 ("h", h), 
                 ("d", d), 
                 ("b", b), 
-                #("pml_rhs_e", pml_rhs_e),
-                #("pml_rhs_h", pml_rhs_h),
-                #("pml_rhs_d", pml_rhs_d),
-                #("pml_rhs_b", pml_rhs_b),
-                #("max_rhs_e", max_rhs_e),
-                #("max_rhs_h", max_rhs_h),
-                #("sigma", sigma),
-                ], time=t, step=step)
+                ("j", Current().volume_interpolant(t, discr)), 
+                ("pml_rhs_e", pml_rhs_e),
+                ("pml_rhs_h", pml_rhs_h),
+                ("pml_rhs_d", pml_rhs_d),
+                ("pml_rhs_b", pml_rhs_b),
+                ("max_rhs_e", max_rhs_e),
+                ("max_rhs_h", max_rhs_h),
+                ("max_rhs_d", max_rhs_d),
+                ("max_rhs_b", max_rhs_b),
+                ("sigma", sigma),
+                ("pmlflag", pmlflag),
+                ], 
+                expressions=[
+                    ("rhsdiff_" + v, "pml_rhs_%(v)s-max_rhs_%(v)s" % {"v": v}, 
+                        DB_VARTYPE_VECTOR if v in ["e", "d"] else DB_VARTYPE_SCALAR)
+                    for v in "e h d b".split()],
+                time=t, step=step)
             visf.close()
 
         fields = stepper(fields, t, dt, rhs)
         t += dt
 
 if __name__ == "__main__":
-    import cProfile as profile
-    #profile.run("main()", "wave2d.prof")
     main()
 

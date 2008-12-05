@@ -29,7 +29,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 
 from pytools import Record
-from hedge.optemplate import OpTemplateIdentityMapper
+from hedge.optemplate import IdentityMapper
 
 
 
@@ -53,12 +53,12 @@ class DiffBatchAssign(Instruction):
 
 
 
-class OperatorCompilerBase(OpTemplateIdentityMapper):
+class OperatorCompilerBase(IdentityMapper):
     class FluxRecord(Record):
         __slots__ = ["flux_expr", "dependencies"]
 
     def __init__(self, prefix="_expr"):
-        OpTemplateIdentityMapper.__init__(self)
+        IdentityMapper.__init__(self)
         self.prefix = prefix
         self.code = []
         self.assigned_var_count = 0
@@ -117,7 +117,7 @@ class OperatorCompilerBase(OpTemplateIdentityMapper):
         self.diff_ops = DiffOpCollector()(expr)
 
         # Then walk the expression to build up the code
-        result = OpTemplateIdentityMapper.__call__(self, expr)
+        result = IdentityMapper.__call__(self, expr)
 
         # Then, put the toplevel expressions into variables as well.
         from hedge.tools import is_obj_array, make_obj_array
@@ -155,7 +155,7 @@ class OperatorCompilerBase(OpTemplateIdentityMapper):
     def map_operator_binding(self, expr):
         from hedge.optemplate import DiffOperatorBase
         if not isinstance(expr.op, DiffOperatorBase):
-            return OpTemplateIdentityMapper.map_operator_binding(self, expr)
+            return IdentityMapper.map_operator_binding(self, expr)
 
         try:
             return self.expr_to_var[expr]

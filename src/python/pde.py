@@ -767,11 +767,14 @@ class GedneyPMLMaxwellOperator(MaxwellOperator):
                 -sigma_left[h_idx]/self.epsilon*b
                 )
 
-    def op_template(self, w=None, enable_pml=True):
+    def op_template(self, w=None):
         fld_cnt = self.count_subset(self.get_eh_subset())
         if w is None:
             from hedge.optemplate import make_vector_field
             w = make_vector_field("w", 2*fld_cnt)
+
+        from hedge.optemplate import Field
+        pmlflag = Field("pmlflag")
 
         from hedge.optemplate import make_common_subexpression
         max_op = make_common_subexpression(
@@ -779,17 +782,15 @@ class GedneyPMLMaxwellOperator(MaxwellOperator):
         dt_e, dt_h = self.split_eh(max_op)
 
         from hedge.tools import join_fields
-        if enable_pml:
-            return join_fields(
-                    max_op, 
-                    self.epsilon*dt_e,
-                    self.mu*dt_h
-                    ) + self.pml_local_op(w)
-        else:
-            return join_fields(max_op, max_op)
+        return join_fields(
+                max_op, 
+                pmlflag*self.epsilon*dt_e,
+                pmlflag*self.mu*dt_h
+                ) + self.pml_local_op(w)
 
-    def bind(self, discr, sigma):
-        return MaxwellOperator.bind(self, discr, sigma=sigma)
+    def bind(self, discr, sigma_and_flag):
+        sigma, pmlflag = sigma_and_flag
+        return MaxwellOperator.bind(self, discr, sigma=sigma, pmlflag=pmlflag)
 
     def assemble_ehdb(self, e=None, h=None, d=None, b=None, discr=None):
         if discr is None:
@@ -837,36 +838,50 @@ class GedneyPMLMaxwellOperator(MaxwellOperator):
     # sigma business ----------------------------------------------------------
     def _construct_scalar_sigma(self, node_coord, 
             i_min, i_max, o_min, o_max, exponent):
-        if o_min == i_min or i_max == o_max:
-            return numpy.zeros_like(node_coord)
-
         assert o_min < i_min <= i_max < o_max 
-        l_dist = (i_min - node_coord) / (i_min-o_min)
-        l_dist[l_dist < 0] = 0
 
-        r_dist = (node_coord - i_max) / (o_max-i_max)
-        r_dist[r_dist < 0] = 0
+        if o_min != i_min: 
+            l_dist = (i_min - node_coord) / (i_min-o_min)
+            l_dist[l_dist < 0] = 0
+        else:
+            l_dist = numpy.zeros_like(node_coord)
 
-        return 0.5*(l_dist+r_dist)**exponent
+        if i_max != o_max:
+            r_dist = (node_coord - i_max) / (o_max-i_max)
+            r_dist[r_dist < 0] = 0
+        else:
+            r_dist = numpy.zeros_like(node_coord)
 
-    def sigma_from_boxes(self, discr, inner_bbox, outer_bbox=None, exponent=2):
+        return (l_dist+r_dist)**exponent
+
+    def sigma_and_flag_from_boxes(self, discr, inner_bbox, outer_bbox=None, exponent=1):
         if outer_bbox is None:
             outer_bbox = discr.mesh.bounding_box()
 
         i_min, i_max = inner_bbox
         o_min, o_max = outer_bbox
 
-        from hedge.tools import make_obj_array
-        return make_obj_array([self._construct_scalar_sigma(
-                    discr.nodes[:,i], 
-                    i_min[i], i_max[i], o_min[i], o_max[i],
-                    exponent)
-                    for i in range(discr.dimensions)
-                    ])
+        sigmas = [self._construct_scalar_sigma(
+            discr.nodes[:,i], 
+            i_min[i], i_max[i], o_min[i], o_max[i],
+            exponent)
+            for i in range(discr.dimensions)]
 
-    def sigma_from_width(self, discr, width, exponent=2):
+        from hedge.tools import make_obj_array
+        from hedge.discretization import Discretization
+
+        pmlflag = Discretization.volume_zeros(discr)
+        for eg in discr.element_groups:
+            for el, slc in zip(eg.members, eg.ranges):
+                ctr = el.centroid(discr.mesh.points)
+                if not ((i_min <= ctr) & (ctr <= i_max)).all():
+                    pmlflag[slc] = 1
+        
+        return make_obj_array(sigmas), pmlflag
+
+    def sigma_and_flag_from_width(self, discr, width, exponent=2):
         o_min, o_max = discr.mesh.bounding_box()
-        return self.sigma_from_boxes(discr,
+        return self.sigma_and_flag_from_boxes(discr,
                 (o_min+width, o_max-width), 
                 (o_min, o_max),
                 exponent)
