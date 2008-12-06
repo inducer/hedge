@@ -779,7 +779,7 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
             rhs[mx] += -sig[my]/self.epsilon*(2*e[mx]+p[mx])
             rhs[my] += -sig[mx]/self.epsilon*(2*e[my]+p[my])
             rhs[3+mz] += 1/(self.epsilon*self.mu) * (
-              sig_prime[mx] * q[mx] + sig_prime[my] * q[my])
+              sig_prime[mx] * q[mx] - sig_prime[my] * q[my])
 
             rhs[6+mx] += sig[my]/self.epsilon*e[mx]
             rhs[6+my] += sig[mx]/self.epsilon*e[my]

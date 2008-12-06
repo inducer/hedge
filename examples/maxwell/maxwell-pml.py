@@ -175,7 +175,7 @@ def main():
     # timestep loop -------------------------------------------------------
 
     t = 0
-    sigma, sigma_prime, pmlflag = op.sigma_from_width(discr, pml_width, exponent=4)
+    sigma, sigma_prime, pmlflag = op.sigma_from_width(discr, pml_width, exponent=2)
     rhs = op.bind(discr, sigma=20*sigma, sigma_prime=20*sigma_prime, pmlflag=pmlflag)
     max_rhs = op.bind(discr, 
             sigma=discr.volume_zeros((3,)),
