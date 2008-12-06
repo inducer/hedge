@@ -59,12 +59,6 @@ def main():
     from hedge.mesh import make_disk_mesh
     from pylo import DB_VARTYPE_VECTOR
     from math import sqrt, pi, exp
-    from hedge.pde import \
-            MaxwellOperator, \
-            GedneyPMLTEMaxwellOperator, \
-            GedneyPMLTMMaxwellOperator, \
-            GedneyPMLMaxwellOperator, \
-            TEMaxwellOperator
     from hedge.backends import guess_run_context, FEAT_CUDA
 
     rcon = guess_run_context(disable=set([FEAT_CUDA]))
@@ -84,7 +78,8 @@ def main():
     pml_width = 0.5
     #mesh = make_mesh(a=numpy.array((-1,-1,-1)), b=numpy.array((1,1,1)), 
     #mesh = make_mesh(a=numpy.array((-3,-3)), b=numpy.array((3,3)), 
-    mesh = make_mesh(a=numpy.array((-1,-1)), b=numpy.array((1,1)), 
+    #mesh = make_mesh(a=numpy.array((-1,-1)), b=numpy.array((1,1)), 
+    mesh = make_mesh(a=numpy.array((-2,-2)), b=numpy.array((2,2)), 
             pml_width=pml_width, max_volume=0.03)
 
     if rcon.is_head_rank:
@@ -96,7 +91,8 @@ def main():
         def volume_interpolant(self, t, discr):
             result = discr.volume_zeros()
             
-            if t > final_time/10:
+            omega = 6*c
+            if omega*t > 2*pi:
                 return result
 
             from hedge.tools import make_obj_array
@@ -104,11 +100,10 @@ def main():
             r = numpy.sqrt(numpy.dot(x, x))
 
             idx = r<0.3
-            omega = 6*c
-            result[idx] = (1+numpy.cos(pi*r/0.3))[idx]
-                    # *numpy.sin(omega*t)
+            result[idx] = (1+numpy.cos(pi*r/0.3))[idx] \
+                    *numpy.sin(omega*t)**3
             
-            return make_obj_array([result, result, result])
+            return make_obj_array([-result, result, result])
 
     final_time = 20/c
     order = 3
@@ -120,13 +115,20 @@ def main():
 
     from hedge.mesh import TAG_ALL, TAG_NONE
     from hedge.data import GivenFunction, TimeHarmonicGivenFunction, TimeIntervalGivenFunction
-    op = GedneyPMLTEMaxwellOperator(epsilon, mu, flux_type=1,
+    from hedge.pde import \
+            MaxwellOperator, \
+            AbarbanelGottliebPMLMaxwellOperator, \
+            AbarbanelGottliebPMLTMMaxwellOperator, \
+            AbarbanelGottliebPMLTEMaxwellOperator, \
+            AbarbanelGottliebPMLMaxwellOperator, \
+            TEMaxwellOperator
+    op = AbarbanelGottliebPMLTEMaxwellOperator(epsilon, mu, flux_type=1,
             current=Current(),
             pec_tag=TAG_ALL,
             absorb_tag=TAG_NONE,
             )
 
-    fields = op.assemble_ehdb(discr=discr)
+    fields = op.assemble_ehpq(discr=discr)
 
     stepper = RK4TimeStepper()
 
@@ -173,45 +175,49 @@ def main():
     # timestep loop -------------------------------------------------------
 
     t = 0
-    sigma, pmlflag = op.sigma_and_flag_from_width(discr, pml_width)
-    rhs = op.bind(discr, sigma_and_flag=(60*sigma, pmlflag))
-    max_rhs = op.bind(discr, sigma_and_flag=(
-        discr.volume_zeros((3,)), discr.volume_zeros()))
+    sigma, sigma_prime, pmlflag = op.sigma_from_width(discr, pml_width, exponent=4)
+    rhs = op.bind(discr, sigma=20*sigma, sigma_prime=20*sigma_prime, pmlflag=pmlflag)
+    max_rhs = op.bind(discr, 
+            sigma=discr.volume_zeros((3,)),
+            sigma_prime=discr.volume_zeros((3,)),
+            pmlflag=discr.volume_zeros(),
+            )
 
     for step in range(nsteps):
         logmgr.tick()
         logmgr.save()
 
-        if step % 1 == 0:
-            e, h, d, b = op.split_ehdb(fields)
+        if step % 10 == 0:
+            e, h, p, q = op.split_ehpq(fields)
             visf = vis.make_file("em-%d-%04d" % (order, step))
-            pml_rhs_e, pml_rhs_h, pml_rhs_d, pml_rhs_b = \
-                    op.split_ehdb(rhs(t, fields))
-            max_rhs_e, max_rhs_h, max_rhs_d, max_rhs_b = \
-                    op.split_ehdb(max_rhs(t, fields))
+            pml_rhs_e, pml_rhs_h, pml_rhs_p, pml_rhs_q = \
+                    op.split_ehpq(rhs(t, fields))
+            max_rhs_e, max_rhs_h, max_rhs_p, max_rhs_q = \
+                    op.split_ehpq(max_rhs(t, fields))
 
             from pylo import DB_VARTYPE_VECTOR, DB_VARTYPE_SCALAR
             vis.add_data(visf, [ 
                 ("e", e), 
                 ("h", h), 
-                ("d", d), 
-                ("b", b), 
+                ("p", p), 
+                ("q", q), 
                 ("j", Current().volume_interpolant(t, discr)), 
                 ("pml_rhs_e", pml_rhs_e),
                 ("pml_rhs_h", pml_rhs_h),
-                ("pml_rhs_d", pml_rhs_d),
-                ("pml_rhs_b", pml_rhs_b),
+                ("pml_rhs_p", pml_rhs_p),
+                ("pml_rhs_q", pml_rhs_q),
                 ("max_rhs_e", max_rhs_e),
                 ("max_rhs_h", max_rhs_h),
-                ("max_rhs_d", max_rhs_d),
-                ("max_rhs_b", max_rhs_b),
+                ("max_rhs_p", max_rhs_p),
+                ("max_rhs_q", max_rhs_q),
                 ("sigma", sigma),
+                ("sigma_prime", sigma_prime),
                 ("pmlflag", pmlflag),
                 ], 
-                expressions=[
-                    ("rhsdiff_" + v, "pml_rhs_%(v)s-max_rhs_%(v)s" % {"v": v}, 
-                        DB_VARTYPE_VECTOR if v in ["e", "d"] else DB_VARTYPE_SCALAR)
-                    for v in "e h d b".split()],
+                #expressions=[
+                    #("rhsdiff_" + v, "pml_rhs_%(v)s-max_rhs_%(v)s" % {"v": v}, 
+                        #DB_VARTYPE_VECTOR if v in ["e", "d"] else DB_VARTYPE_SCALAR)
+                    #for v in "e h d b".split()],
                 time=t, step=step)
             visf.close()
 

@@ -375,7 +375,7 @@ def full_to_all_subset_indices(subsets, base=0):
 
 def partial_to_all_subset_indices(subsets, base=0):
     """Takes a sequence of bools and generates it into an array of indices
-    to be used to extract the subset from the full set.
+    to be used to insert the subset into the full set.
 
     Example:
 
