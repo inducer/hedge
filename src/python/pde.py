@@ -29,7 +29,7 @@ import pyublas
 import hedge.tools
 import hedge.mesh
 import hedge.data
-from pytools import memoize_method
+from pytools import memoize_method, Record
 
 
 
@@ -726,18 +726,26 @@ class TEMaxwellOperator(MaxwellOperator):
 class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
     """Implements a PML as in 
 
-    S. Abarbanel und D. Gottlieb, “On the construction and analysis of absorbing
+    [1] S. Abarbanel and D. Gottlieb, “On the construction and analysis of absorbing
     layers in CEM,” Applied Numerical Mathematics,  vol. 27, 1998, S. 331-340.
     (eq 3.7-3.11)
 
-    E. Turkel und A. Yefet, “Absorbing PML
+    [2] E. Turkel and A. Yefet, “Absorbing PML
     boundary layers for wave-like equations,”
     Applied Numerical Mathematics,  vol. 27,
     1998, S. 533-557.
     (eq. 4.10) 
 
+    [3] Abarbanel, D. Gottlieb, and J.S. Hesthaven, “Long Time Behavior of the
+    Perfectly Matched Layer Equations in Computational Electromagnetics,”
+    Journal of Scientific Computing,  vol. 17, Dez. 2002, S. 405-422.
+
     Generalized to 3D in doc/maxima/abarbanel-pml.mac.
     """
+
+    class PMLCoefficients(Record):
+        __slots__ = ["sigma", "sigma_prime", "eta"] 
+        # (eta=mu in [3] , to avoid confusion with permeability)
 
     def pml_local_op(self, w):
         sub_e, sub_h, sub_p, sub_q = self.split_ehpq(w)
@@ -759,8 +767,9 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
         sig_prime = pad_vec(
                 make_vector_field("sigma_prime", self.dimensions), 
                 dim_subset)
-
-        pmlflag = Field("pmlflag")
+        eta = pad_vec(
+                make_vector_field("eta", self.dimensions), 
+                dim_subset)
 
         e = pad_vec(sub_e, e_subset)
         h = pad_vec(sub_h, h_subset)
@@ -776,23 +785,17 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
             from hedge.tools import levi_civita
             assert levi_civita((mx,my,mz)) == 1
 
-            rhs[mx] += -sig[my]/self.epsilon*(2*e[mx]+p[mx])
-            rhs[my] += -sig[mx]/self.epsilon*(2*e[my]+p[my])
+            rhs[mx] += -sig[my]/self.epsilon*(2*e[mx]+p[mx]) - 2*eta[my]*e[mx]
+            rhs[my] += -sig[mx]/self.epsilon*(2*e[my]+p[my]) - 2*eta[mx]*e[my]
             rhs[3+mz] += 1/(self.epsilon*self.mu) * (
               sig_prime[mx] * q[mx] - sig_prime[my] * q[my])
 
             rhs[6+mx] += sig[my]/self.epsilon*e[mx]
             rhs[6+my] += sig[mx]/self.epsilon*e[my]
-            rhs[9+mx] += -sig[mx]/self.epsilon*q[mx] - pmlflag*(e[my] + e[mz])
-
-        print rhs
+            rhs[9+mx] += -sig[mx]/self.epsilon*q[mx] - (e[my] + e[mz])
 
         from hedge.tools import full_to_subset_indices
         sub_idx = full_to_subset_indices(e_subset+h_subset+dim_subset+dim_subset)
-        print e_subset+h_subset+dim_subset+dim_subset
-        print sub_idx
-        for i, ex in enumerate(rhs[sub_idx]):
-            print "JJ", i, ex
 
         return rhs[sub_idx]
 
@@ -808,11 +811,11 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
                 numpy.zeros((2*self.dimensions,), dtype=object)
                 ) + self.pml_local_op(w)
 
-    def bind(self, discr, sigma, sigma_prime, pmlflag):
+    def bind(self, discr, coefficients):
         return MaxwellOperator.bind(self, discr, 
-                sigma=sigma, 
-                sigma_prime=sigma_prime,
-                pmlflag=pmlflag)
+                sigma=coefficients.sigma, 
+                sigma_prime=coefficients.sigma_prime,
+                eta=coefficients.eta)
 
     def assemble_ehpq(self, e=None, h=None, p=None, q=None, discr=None):
         if discr is None:
@@ -860,7 +863,7 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
             return moa(e), moa(h), moa(p), moa(q)
 
     # sigma business ----------------------------------------------------------
-    def _construct_scalar_sigma(self, discr, node_coord, 
+    def _construct_scalar_coefficients(self, discr, node_coord, 
             i_min, i_max, o_min, o_max, exponent):
         assert o_min < i_min <= i_max < o_max 
 
@@ -882,9 +885,11 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
 
         l_plus_r = l_dist+r_dist
         return l_plus_r**exponent, \
-                (l_dist_prime+r_dist_prime)*exponent*l_plus_r**(exponent-1)
+                (l_dist_prime+r_dist_prime)*exponent*l_plus_r**(exponent-1), \
+                0.4*l_plus_r
 
-    def sigma_from_boxes(self, discr, inner_bbox, outer_bbox=None, exponent=2):
+    def coefficients_from_boxes(self, discr, magnitude, 
+            inner_bbox, outer_bbox=None, exponent=2):
         if outer_bbox is None:
             outer_bbox = discr.mesh.bounding_box()
 
@@ -894,7 +899,7 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
         from hedge.tools import make_obj_array
         from hedge.discretization import Discretization
 
-        sigmas, sigma_primes = zip(*[self._construct_scalar_sigma(
+        sigma, sigma_prime, eta = zip(*[self._construct_scalar_coefficients(
             discr,
             discr.nodes[:,i], 
             i_min[i], i_max[i], o_min[i], o_max[i],
@@ -903,18 +908,14 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
 
         from hedge.discretization import Discretization
 
-        pmlflag = Discretization.volume_zeros(discr)
-        for eg in discr.element_groups:
-            for el, slc in zip(eg.members, eg.ranges):
-                ctr = el.centroid(discr.mesh.points)
-                if not ((i_min <= ctr) & (ctr <= i_max)).all():
-                    pmlflag[slc] = 1
+        return self.PMLCoefficients(
+                sigma=magnitude*make_obj_array(sigma),
+                sigma_prime=magnitude*make_obj_array(sigma_prime),
+                eta=magnitude*make_obj_array(eta))
 
-        return make_obj_array(sigmas), make_obj_array(sigma_primes), pmlflag
-
-    def sigma_from_width(self, discr, width, exponent=2):
+    def coefficients_from_width(self, discr, magnitude, width, exponent=2):
         o_min, o_max = discr.mesh.bounding_box()
-        return self.sigma_from_boxes(discr,
+        return self.coefficients_from_boxes(discr, magnitude,
                 (o_min+width, o_max-width), 
                 (o_min, o_max),
                 exponent)
@@ -984,9 +985,6 @@ class GedneyPMLMaxwellOperator(MaxwellOperator):
         if w is None:
             from hedge.optemplate import make_vector_field
             w = make_vector_field("w", 2*fld_cnt)
-
-        #from hedge.optemplate import Field
-        #pmlflag = Field("pmlflag")
 
         from hedge.optemplate import make_common_subexpression
         max_op = make_common_subexpression(

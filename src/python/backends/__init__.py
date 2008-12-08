@@ -186,7 +186,7 @@ def guess_run_context(disable=set()):
         raise RuntimeError, "could not find usable backend"
 
     if FEAT_MPI in feat:
-        from hedge.backend.mpi import MPIRunContext as rcon_class
+        from hedge.backends.mpi import MPIRunContext as rcon_class
     else:
         rcon_class = SerialRunContext
 

@@ -76,11 +76,11 @@ def main():
     periodic = False
 
     pml_width = 0.5
-    #mesh = make_mesh(a=numpy.array((-1,-1,-1)), b=numpy.array((1,1,1)), 
+    mesh = make_mesh(a=numpy.array((-1,-1,-1)), b=numpy.array((1,1,1)), 
     #mesh = make_mesh(a=numpy.array((-3,-3)), b=numpy.array((3,3)), 
     #mesh = make_mesh(a=numpy.array((-1,-1)), b=numpy.array((1,1)), 
-    mesh = make_mesh(a=numpy.array((-2,-2)), b=numpy.array((2,2)), 
-            pml_width=pml_width, max_volume=0.03)
+    #mesh = make_mesh(a=numpy.array((-2,-2)), b=numpy.array((2,2)), 
+            pml_width=pml_width, max_volume=0.01)
 
     if rcon.is_head_rank:
         mesh_data = rcon.distribute_mesh(mesh)
@@ -122,7 +122,7 @@ def main():
             AbarbanelGottliebPMLTEMaxwellOperator, \
             AbarbanelGottliebPMLMaxwellOperator, \
             TEMaxwellOperator
-    op = AbarbanelGottliebPMLTEMaxwellOperator(epsilon, mu, flux_type=1,
+    op = AbarbanelGottliebPMLMaxwellOperator(epsilon, mu, flux_type=1,
             current=Current(),
             pec_tag=TAG_ALL,
             absorb_tag=TAG_NONE,
@@ -175,13 +175,11 @@ def main():
     # timestep loop -------------------------------------------------------
 
     t = 0
-    sigma, sigma_prime, pmlflag = op.sigma_from_width(discr, pml_width, exponent=2)
-    rhs = op.bind(discr, sigma=20*sigma, sigma_prime=20*sigma_prime, pmlflag=pmlflag)
-    max_rhs = op.bind(discr, 
-            sigma=discr.volume_zeros((3,)),
-            sigma_prime=discr.volume_zeros((3,)),
-            pmlflag=discr.volume_zeros(),
-            )
+    pml_coeff = op.coefficients_from_width(discr, magnitude=1, width=pml_width, exponent=2)
+    rhs = op.bind(discr, pml_coeff)
+
+    zero_coeff = op.coefficients_from_width(discr, magnitude=0, width=pml_width, exponent=2)
+    max_rhs = op.bind(discr, zero_coeff)
 
     for step in range(nsteps):
         logmgr.tick()
@@ -210,9 +208,6 @@ def main():
                 ("max_rhs_h", max_rhs_h),
                 ("max_rhs_p", max_rhs_p),
                 ("max_rhs_q", max_rhs_q),
-                ("sigma", sigma),
-                ("sigma_prime", sigma_prime),
-                ("pmlflag", pmlflag),
                 ], 
                 #expressions=[
                     #("rhsdiff_" + v, "pml_rhs_%(v)s-max_rhs_%(v)s" % {"v": v}, 
