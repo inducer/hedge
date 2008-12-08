@@ -76,9 +76,9 @@ def main():
     periodic = False
 
     pml_width = 0.5
-    mesh = make_mesh(a=numpy.array((-1,-1,-1)), b=numpy.array((1,1,1)), 
+    #mesh = make_mesh(a=numpy.array((-1,-1,-1)), b=numpy.array((1,1,1)), 
     #mesh = make_mesh(a=numpy.array((-3,-3)), b=numpy.array((3,3)), 
-    #mesh = make_mesh(a=numpy.array((-1,-1)), b=numpy.array((1,1)), 
+    mesh = make_mesh(a=numpy.array((-1,-1)), b=numpy.array((1,1)), 
     #mesh = make_mesh(a=numpy.array((-2,-2)), b=numpy.array((2,2)), 
             pml_width=pml_width, max_volume=0.01)
 
@@ -122,10 +122,11 @@ def main():
             AbarbanelGottliebPMLTEMaxwellOperator, \
             AbarbanelGottliebPMLMaxwellOperator, \
             TEMaxwellOperator
-    op = AbarbanelGottliebPMLMaxwellOperator(epsilon, mu, flux_type=1,
+    op = AbarbanelGottliebPMLTMMaxwellOperator(epsilon, mu, flux_type=1,
             current=Current(),
             pec_tag=TAG_ALL,
             absorb_tag=TAG_NONE,
+            use_damping=False
             )
 
     fields = op.assemble_ehpq(discr=discr)
@@ -175,11 +176,8 @@ def main():
     # timestep loop -------------------------------------------------------
 
     t = 0
-    pml_coeff = op.coefficients_from_width(discr, magnitude=1, width=pml_width, exponent=2)
+    pml_coeff = op.coefficients_from_width(discr, width=pml_width)
     rhs = op.bind(discr, pml_coeff)
-
-    zero_coeff = op.coefficients_from_width(discr, magnitude=0, width=pml_width, exponent=2)
-    max_rhs = op.bind(discr, zero_coeff)
 
     for step in range(nsteps):
         logmgr.tick()
@@ -188,11 +186,8 @@ def main():
         if step % 10 == 0:
             e, h, p, q = op.split_ehpq(fields)
             visf = vis.make_file("em-%d-%04d" % (order, step))
-            pml_rhs_e, pml_rhs_h, pml_rhs_p, pml_rhs_q = \
-                    op.split_ehpq(rhs(t, fields))
-            max_rhs_e, max_rhs_h, max_rhs_p, max_rhs_q = \
-                    op.split_ehpq(max_rhs(t, fields))
-
+            #pml_rhs_e, pml_rhs_h, pml_rhs_p, pml_rhs_q = \
+                    #op.split_ehpq(rhs(t, fields))
             from pylo import DB_VARTYPE_VECTOR, DB_VARTYPE_SCALAR
             vis.add_data(visf, [ 
                 ("e", e), 
@@ -200,19 +195,15 @@ def main():
                 ("p", p), 
                 ("q", q), 
                 ("j", Current().volume_interpolant(t, discr)), 
-                ("pml_rhs_e", pml_rhs_e),
-                ("pml_rhs_h", pml_rhs_h),
-                ("pml_rhs_p", pml_rhs_p),
-                ("pml_rhs_q", pml_rhs_q),
-                ("max_rhs_e", max_rhs_e),
-                ("max_rhs_h", max_rhs_h),
-                ("max_rhs_p", max_rhs_p),
-                ("max_rhs_q", max_rhs_q),
+                #("pml_rhs_e", pml_rhs_e),
+                #("pml_rhs_h", pml_rhs_h),
+                #("pml_rhs_p", pml_rhs_p),
+                #("pml_rhs_q", pml_rhs_q),
+                #("max_rhs_e", max_rhs_e),
+                #("max_rhs_h", max_rhs_h),
+                #("max_rhs_p", max_rhs_p),
+                #("max_rhs_q", max_rhs_q),
                 ], 
-                #expressions=[
-                    #("rhsdiff_" + v, "pml_rhs_%(v)s-max_rhs_%(v)s" % {"v": v}, 
-                        #DB_VARTYPE_VECTOR if v in ["e", "d"] else DB_VARTYPE_SCALAR)
-                    #for v in "e h d b".split()],
                 time=t, step=step)
             visf.close()
 

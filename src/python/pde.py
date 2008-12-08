@@ -726,26 +726,30 @@ class TEMaxwellOperator(MaxwellOperator):
 class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
     """Implements a PML as in 
 
-    [1] S. Abarbanel and D. Gottlieb, “On the construction and analysis of absorbing
-    layers in CEM,” Applied Numerical Mathematics,  vol. 27, 1998, S. 331-340.
+    [1] S. Abarbanel and D. Gottlieb, "On the construction and analysis of absorbing
+    layers in CEM," Applied Numerical Mathematics,  vol. 27, 1998, S. 331-340.
     (eq 3.7-3.11)
 
-    [2] E. Turkel and A. Yefet, “Absorbing PML
-    boundary layers for wave-like equations,”
+    [2] E. Turkel and A. Yefet, "Absorbing PML
+    boundary layers for wave-like equations,"
     Applied Numerical Mathematics,  vol. 27,
     1998, S. 533-557.
     (eq. 4.10) 
 
-    [3] Abarbanel, D. Gottlieb, and J.S. Hesthaven, “Long Time Behavior of the
-    Perfectly Matched Layer Equations in Computational Electromagnetics,”
+    [3] Abarbanel, D. Gottlieb, and J.S. Hesthaven, "Long Time Behavior of the
+    Perfectly Matched Layer Equations in Computational Electromagnetics,"
     Journal of Scientific Computing,  vol. 17, Dez. 2002, S. 405-422.
 
     Generalized to 3D in doc/maxima/abarbanel-pml.mac.
     """
 
     class PMLCoefficients(Record):
-        __slots__ = ["sigma", "sigma_prime", "eta"] 
-        # (eta=mu in [3] , to avoid confusion with permeability)
+        __slots__ = ["sigma", "sigma_prime", "tau"] 
+        # (tau=mu in [3] , to avoid confusion with permeability)
+
+    def __init__(self, *args, **kwargs):
+        self.use_damping = kwargs.pop("use_damping", True)
+        MaxwellOperator.__init__(self, *args, **kwargs)
 
     def pml_local_op(self, w):
         sub_e, sub_h, sub_p, sub_q = self.split_ehpq(w)
@@ -767,9 +771,12 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
         sig_prime = pad_vec(
                 make_vector_field("sigma_prime", self.dimensions), 
                 dim_subset)
-        eta = pad_vec(
-                make_vector_field("eta", self.dimensions), 
-                dim_subset)
+        if self.use_damping:
+            tau = pad_vec(
+                    make_vector_field("tau", self.dimensions), 
+                    dim_subset)
+        else:
+            tau = numpy.zeros((3,))
 
         e = pad_vec(sub_e, e_subset)
         h = pad_vec(sub_h, h_subset)
@@ -785,8 +792,8 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
             from hedge.tools import levi_civita
             assert levi_civita((mx,my,mz)) == 1
 
-            rhs[mx] += -sig[my]/self.epsilon*(2*e[mx]+p[mx]) - 2*eta[my]*e[mx]
-            rhs[my] += -sig[mx]/self.epsilon*(2*e[my]+p[my]) - 2*eta[mx]*e[my]
+            rhs[mx] += -sig[my]/self.epsilon*(2*e[mx]+p[mx]) - 2*tau[my]/self.epsilon*e[mx]
+            rhs[my] += -sig[mx]/self.epsilon*(2*e[my]+p[my]) - 2*tau[mx]/self.epsilon*e[my]
             rhs[3+mz] += 1/(self.epsilon*self.mu) * (
               sig_prime[mx] * q[mx] - sig_prime[my] * q[my])
 
@@ -815,7 +822,7 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
         return MaxwellOperator.bind(self, discr, 
                 sigma=coefficients.sigma, 
                 sigma_prime=coefficients.sigma_prime,
-                eta=coefficients.eta)
+                tau=coefficients.tau)
 
     def assemble_ehpq(self, e=None, h=None, p=None, q=None, discr=None):
         if discr is None:
@@ -886,12 +893,28 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
         l_plus_r = l_dist+r_dist
         return l_plus_r**exponent, \
                 (l_dist_prime+r_dist_prime)*exponent*l_plus_r**(exponent-1), \
-                0.4*l_plus_r
+                l_plus_r
 
-    def coefficients_from_boxes(self, discr, magnitude, 
-            inner_bbox, outer_bbox=None, exponent=2):
+    def coefficients_from_boxes(self, discr, 
+            inner_bbox, outer_bbox=None, 
+            magnitude=None, tau_magnitude=None,
+            exponent=None):
         if outer_bbox is None:
             outer_bbox = discr.mesh.bounding_box()
+
+        if exponent is None:
+            exponent = 2
+
+        if magnitude is None:
+            magnitude = 20
+
+        if tau_magnitude is None:
+            tau_magnitude = 0.4
+
+        # scale by free space conductivity
+        from math import sqrt
+        magnitude = magnitude*sqrt(self.epsilon/self.mu)
+        tau_magnitude = tau_magnitude*sqrt(self.epsilon/self.mu)
 
         i_min, i_max = inner_bbox
         o_min, o_max = outer_bbox
@@ -899,7 +922,7 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
         from hedge.tools import make_obj_array
         from hedge.discretization import Discretization
 
-        sigma, sigma_prime, eta = zip(*[self._construct_scalar_coefficients(
+        sigma, sigma_prime, tau = zip(*[self._construct_scalar_coefficients(
             discr,
             discr.nodes[:,i], 
             i_min[i], i_max[i], o_min[i], o_max[i],
@@ -911,14 +934,15 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
         return self.PMLCoefficients(
                 sigma=magnitude*make_obj_array(sigma),
                 sigma_prime=magnitude*make_obj_array(sigma_prime),
-                eta=magnitude*make_obj_array(eta))
+                tau=tau_magnitude*make_obj_array(tau))
 
-    def coefficients_from_width(self, discr, magnitude, width, exponent=2):
+    def coefficients_from_width(self, discr, width, 
+            magnitude=None, tau_magnitude=None, exponent=None):
         o_min, o_max = discr.mesh.bounding_box()
-        return self.coefficients_from_boxes(discr, magnitude,
+        return self.coefficients_from_boxes(discr, 
                 (o_min+width, o_max-width), 
                 (o_min, o_max),
-                exponent)
+                magnitude, tau_magnitude, exponent)
 
 
 
@@ -930,179 +954,6 @@ class AbarbanelGottliebPMLTEMaxwellOperator(
 
 class AbarbanelGottliebPMLTMMaxwellOperator(
         TMMaxwellOperator, AbarbanelGottliebPMLMaxwellOperator):
-    # not unimplemented--this IS the implementation.
-    pass
-
-
-
-
-class GedneyPMLMaxwellOperator(MaxwellOperator):
-    """Implements a PML as in 
-
-    D. Gedney, "An anisotropic perfectly matched layer-absorbing medium for the
-    truncation of FDTD lattices," IEEE Transactions on Antennas and
-    Propagation,  vol. 44, 1996, S. 1630-1639.
-    """
-
-    def pml_local_op(self, w):
-        e, h, d, b = self.split_ehdb(w)
-
-        e_subset = self.get_eh_subset()[0:3]
-        h_subset = self.get_eh_subset()[3:6]
-
-        from hedge.tools import full_to_subset_indices
-        e_idx = full_to_subset_indices(e_subset)
-        h_idx = full_to_subset_indices(h_subset)
-
-        # see doc/maxima/gedney-pml.mac
-        from hedge.tools import join_fields
-        from hedge.optemplate import make_vector_field
-        sigma = join_fields(
-                make_vector_field("sigma", self.dimensions),
-                (3-self.dimensions)*[0])
-        sigma_left = numpy.roll(sigma, -1)
-        sigma_right = numpy.roll(sigma, 1)
-
-        from hedge.tools import join_fields
-        return join_fields(
-                # d_t E
-                d/self.epsilon*(sigma - sigma_left)[e_idx]/self.epsilon
-                - e*sigma_right[e_idx]/self.epsilon,
-
-                # d_t H
-                b/self.mu*(sigma - sigma_left)[h_idx]/self.epsilon
-                - h*sigma_right[h_idx]/self.epsilon,
-
-                # d_t D
-                -sigma_left[e_idx]/self.epsilon*d,
-
-                # d_t B
-                -sigma_left[h_idx]/self.epsilon*b
-                )
-
-    def op_template(self, w=None):
-        fld_cnt = self.count_subset(self.get_eh_subset())
-        if w is None:
-            from hedge.optemplate import make_vector_field
-            w = make_vector_field("w", 2*fld_cnt)
-
-        from hedge.optemplate import make_common_subexpression
-        max_op = make_common_subexpression(
-                MaxwellOperator.op_template(self, w[:fld_cnt]))
-        dt_e, dt_h = self.split_eh(max_op)
-
-        from hedge.tools import join_fields
-        return join_fields(
-                max_op, 
-                self.epsilon*dt_e,
-                self.mu*dt_h
-                ) + self.pml_local_op(w)
-
-    def bind(self, discr, sigma):
-        return MaxwellOperator.bind(self, discr, sigma=sigma)
-
-    def assemble_ehdb(self, e=None, h=None, d=None, b=None, discr=None):
-        if discr is None:
-            def zero(): return 0
-        else:
-            def zero(): return discr.volume_zeros()
-
-        e_components = self.count_subset(self.get_eh_subset()[0:3])
-        h_components = self.count_subset(self.get_eh_subset()[3:6])
-
-        def default_fld(fld, comp):
-            if fld is None:
-                return [zero() for i in xrange(comp)]
-            else:
-                return fld
-
-        e = default_fld(e, e_components)
-        h = default_fld(h, h_components)
-        d = default_fld(d, e_components)
-        b = default_fld(b, h_components)
-
-        from hedge.tools import join_fields
-        return join_fields(e, h, d, b)
-
-    @memoize_method
-    def partial_to_ehdb_subsets(self):
-        e_subset = self.get_eh_subset()[0:3]
-        h_subset = self.get_eh_subset()[3:6]
-
-        from hedge.tools import partial_to_all_subset_indices
-        return tuple(partial_to_all_subset_indices(
-            [e_subset, h_subset, e_subset, h_subset]))
-
-    def split_ehdb(self, w):
-        e_idx, h_idx, d_idx, b_idx = self.partial_to_ehdb_subsets()
-        e, h, d, b = w[e_idx], w[h_idx], w[d_idx], w[b_idx]
-
-        from hedge.flux import FluxVectorPlaceholder as FVP
-        if isinstance(w, FVP):
-            return FVP(scalars=e), FVP(scalars=h)
-        else:
-            from hedge.tools import make_obj_array as moa
-            return moa(e), moa(h), moa(d), moa(b)
-
-    # sigma business ----------------------------------------------------------
-    def _construct_scalar_sigma(self, node_coord, 
-            i_min, i_max, o_min, o_max, exponent):
-        assert o_min < i_min <= i_max < o_max 
-
-        if o_min != i_min: 
-            l_dist = (i_min - node_coord) / (i_min-o_min)
-            l_dist[l_dist < 0] = 0
-        else:
-            l_dist = numpy.zeros_like(node_coord)
-
-        if i_max != o_max:
-            r_dist = (node_coord - i_max) / (o_max-i_max)
-            r_dist[r_dist < 0] = 0
-        else:
-            r_dist = numpy.zeros_like(node_coord)
-
-        return (l_dist+r_dist)**exponent
-
-    def sigma_from_boxes(self, discr, inner_bbox, outer_bbox=None, exponent=2):
-        if outer_bbox is None:
-            outer_bbox = discr.mesh.bounding_box()
-
-        i_min, i_max = inner_bbox
-        o_min, o_max = outer_bbox
-
-        sigmas = [self._construct_scalar_sigma(
-            discr.nodes[:,i], 
-            i_min[i], i_max[i], o_min[i], o_max[i],
-            exponent)
-            for i in range(discr.dimensions)]
-
-        from hedge.tools import make_obj_array
-        from hedge.discretization import Discretization
-
-        pmlflag = Discretization.volume_zeros(discr)
-        for eg in discr.element_groups:
-            for el, slc in zip(eg.members, eg.ranges):
-                ctr = el.centroid(discr.mesh.points)
-                if not ((i_min <= ctr) & (ctr <= i_max)).all():
-                    pmlflag[slc] = 1
-        
-        return make_obj_array(sigmas)#, pmlflag
-
-    def sigma_from_width(self, discr, width, exponent=2):
-        o_min, o_max = discr.mesh.bounding_box()
-        return self.sigma_from_boxes(discr,
-                (o_min+width, o_max-width), 
-                (o_min, o_max),
-                exponent)
-
-
-
-
-class GedneyPMLTEMaxwellOperator(TEMaxwellOperator, GedneyPMLMaxwellOperator):
-    # not unimplemented--this IS the implementation.
-    pass
-
-class GedneyPMLTMMaxwellOperator(TMMaxwellOperator, GedneyPMLMaxwellOperator):
     # not unimplemented--this IS the implementation.
     pass
 
