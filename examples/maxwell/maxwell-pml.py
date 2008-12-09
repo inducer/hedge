@@ -59,20 +59,14 @@ def main():
     from hedge.mesh import make_disk_mesh
     from pylo import DB_VARTYPE_VECTOR
     from math import sqrt, pi, exp
-    from hedge.pde import \
-            MaxwellOperator, \
-            GedneyPMLTEMaxwellOperator, \
-            GedneyPMLTMMaxwellOperator, \
-            GedneyPMLMaxwellOperator, \
-            TEMaxwellOperator
     from hedge.backends import guess_run_context, FEAT_CUDA
 
     rcon = guess_run_context(disable=set([FEAT_CUDA]))
 
     #epsilon0 = 8.8541878176e-12 # C**2 / (N m**2)
     #mu0 = 4*pi*1e-7 # N/A**2.
-    epsilon0 = 1 
-    mu0 = 1 
+    epsilon0 = 1
+    mu0 = 1
     epsilon = 1*epsilon0
     mu = 1*mu0
 
@@ -82,21 +76,34 @@ def main():
     periodic = False
 
     pml_width = 0.5
-    mesh = make_mesh(a=numpy.array((-1,-1,-1)), b=numpy.array((1,1,1)), 
-    #mesh = make_mesh(a=numpy.array((-1,-1)), b=numpy.array((1,1)), 
-            pml_width=pml_width, max_volume=0.03)
+    #mesh = make_mesh(a=numpy.array((-1,-1,-1)), b=numpy.array((1,1,1)), 
+    #mesh = make_mesh(a=numpy.array((-3,-3)), b=numpy.array((3,3)), 
+    mesh = make_mesh(a=numpy.array((-1,-1)), b=numpy.array((1,1)), 
+    #mesh = make_mesh(a=numpy.array((-2,-2)), b=numpy.array((2,2)), 
+            pml_width=pml_width, max_volume=0.01)
 
     if rcon.is_head_rank:
         mesh_data = rcon.distribute_mesh(mesh)
     else:
         mesh_data = rcon.receive_mesh()
 
-    class CurrentSource:
-        shape = (3,)
+    class Current:
+        def volume_interpolant(self, t, discr):
+            result = discr.volume_zeros()
+            
+            omega = 6*c
+            if omega*t > 2*pi:
+                return result
 
-        def __call__(self, x, el):
-            #sc = numpy.array([1,4,3])[:discr.dimensions]
-            return numpy.array([1,1,1])*exp(-20*la.norm(x))
+            from hedge.tools import make_obj_array
+            x = make_obj_array(discr.nodes.T)
+            r = numpy.sqrt(numpy.dot(x, x))
+
+            idx = r<0.3
+            result[idx] = (1+numpy.cos(pi*r/0.3))[idx] \
+                    *numpy.sin(omega*t)**3
+            
+            return make_obj_array([-result, result, result])
 
     final_time = 20/c
     order = 3
@@ -107,17 +114,22 @@ def main():
     vis = SiloVisualizer(discr, rcon)
 
     from hedge.mesh import TAG_ALL, TAG_NONE
-    from hedge.data import GivenFunction, TimeHarmonicGivenFunction
-    op = GedneyPMLMaxwellOperator(epsilon, mu, flux_type=1,
-            current=TimeHarmonicGivenFunction(
-                GivenFunction(CurrentSource()),
-                omega=2*pi*0.3*sqrt(mu*epsilon)),
-            pec_tag=TAG_NONE,
-            absorb_tag=TAG_ALL,
+    from hedge.data import GivenFunction, TimeHarmonicGivenFunction, TimeIntervalGivenFunction
+    from hedge.pde import \
+            MaxwellOperator, \
+            AbarbanelGottliebPMLMaxwellOperator, \
+            AbarbanelGottliebPMLTMMaxwellOperator, \
+            AbarbanelGottliebPMLTEMaxwellOperator, \
+            AbarbanelGottliebPMLMaxwellOperator, \
+            TEMaxwellOperator
+    op = AbarbanelGottliebPMLTMMaxwellOperator(epsilon, mu, flux_type=1,
+            current=Current(),
+            pec_tag=TAG_ALL,
+            absorb_tag=TAG_NONE,
+            add_decay=True
             )
 
-    #fields = max_op.assemble_eh(discr=discr)
-    fields = op.assemble_ehdb(discr=discr)
+    fields = op.assemble_ehpq(discr=discr)
 
     stepper = RK4TimeStepper()
 
@@ -161,52 +173,43 @@ def main():
         def __call__(self):
             return self.whole_getter()[self.idx]
 
-    #for i in range(len(fields)):
-        #logmgr.add_quantity(
-                #LpNorm(FieldIdxGetter(lambda: fields, i), discr, name="norm_f%d" % i))
-    #for i in range(len(fields)):
-        #logmgr.add_quantity(
-                #LpNorm(FieldIdxGetter(lambda: rhs(t, fields), i), discr, name="rhs_f%d" % i))
-
-    for i, fi in enumerate(op.op_template()):
-        print i, fi
-        print 
-
     # timestep loop -------------------------------------------------------
 
     t = 0
-    rhs = op.bind(discr, sigma=op.sigma_from_width(discr, pml_width))
+    pml_coeff = op.coefficients_from_width(discr, width=pml_width)
+    rhs = op.bind(discr, pml_coeff)
 
-    vis_step = [0]
     for step in range(nsteps):
         logmgr.tick()
         logmgr.save()
 
-        if step % 1 == 0:
-            e, h, d, b = op.split_ehdb(fields)
+        if step % 10 == 0:
+            e, h, p, q = op.split_ehpq(fields)
             visf = vis.make_file("em-%d-%04d" % (order, step))
-            #pml_rhs_e, pml_rhs_h, pml_rhs_d, pml_rhs_b = \
-                    #op.split_ehdb(rhs(t, fields))
+            #pml_rhs_e, pml_rhs_h, pml_rhs_p, pml_rhs_q = \
+                    #op.split_ehpq(rhs(t, fields))
+            from pylo import DB_VARTYPE_VECTOR, DB_VARTYPE_SCALAR
             vis.add_data(visf, [ 
                 ("e", e), 
                 ("h", h), 
-                ("d", d), 
-                ("b", b), 
+                ("p", p), 
+                ("q", q), 
+                ("j", Current().volume_interpolant(t, discr)), 
                 #("pml_rhs_e", pml_rhs_e),
                 #("pml_rhs_h", pml_rhs_h),
-                #("pml_rhs_d", pml_rhs_d),
-                #("pml_rhs_b", pml_rhs_b),
+                #("pml_rhs_p", pml_rhs_p),
+                #("pml_rhs_q", pml_rhs_q),
                 #("max_rhs_e", max_rhs_e),
                 #("max_rhs_h", max_rhs_h),
-                #("sigma", sigma),
-                ], time=t, step=step)
+                #("max_rhs_p", max_rhs_p),
+                #("max_rhs_q", max_rhs_q),
+                ], 
+                time=t, step=step)
             visf.close()
 
         fields = stepper(fields, t, dt, rhs)
         t += dt
 
 if __name__ == "__main__":
-    import cProfile as profile
-    #profile.run("main()", "wave2d.prof")
     main()
 

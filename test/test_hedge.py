@@ -22,8 +22,11 @@ from __future__ import division
 import numpy
 import numpy.linalg as la
 import unittest
-from hedge.backends.jit import Discretization
-#from hedge.backends.dynamic import Discretization
+from hedge.backends.jit import Discretization as JITDiscretization
+from hedge.backends.dynamic import Discretization as DynamicDiscretization
+
+Discretization = JITDiscretization
+#Discretization = DynamicDiscretization
 
 
 
@@ -750,8 +753,12 @@ class TestHedge(unittest.TestCase):
         from math import sin, cos, sqrt, exp, pi
         from numpy import dot
 
-        discr = Discretization(make_disk_mesh(), order=2, 
+        mesh = make_disk_mesh()
+        order = 2
+
+        discr = Discretization(mesh, order=order, 
                 debug=Discretization.all_debug_flags())
+        ref_discr = DynamicDiscretization(mesh, order=order)
 
         from hedge.flux import make_normal, FluxScalarPlaceholder, IfPositive
         normal = make_normal(discr.dimensions)
@@ -774,20 +781,37 @@ class TestHedge(unittest.TestCase):
         nabla = make_nabla(discr.dimensions)
         diff_optp = nabla[0] * Field("f1") + nabla[1] * Field("f2")
 
-        int_div = discr.integral(
-                nabla[0].apply(discr, f1_v) 
-                + nabla[1].apply(discr, f2_v))
+        divergence = nabla[0].apply(discr, f1_v) + nabla[1].apply(discr, f2_v)
+        int_div = discr.integral(divergence)
 
         flux_optp = (
                 get_flux_operator(one_sided_x)
                 *pair_with_boundary(Field("f1"), Field("fz")) +
                 get_flux_operator(one_sided_y)
                 *pair_with_boundary(Field("f2"), Field("fz")))
-        boundary_int = dot(
-                discr.compile(flux_optp)(f1=f1_v, f2=f2_v, fz=discr.boundary_zeros()), 
-                ones)
+        bdry_val = discr.compile(flux_optp)(f1=f1_v, f2=f2_v, fz=discr.boundary_zeros())
+        ref_bdry_val = ref_discr.compile(flux_optp)(f1=f1_v, f2=f2_v, fz=discr.boundary_zeros())
+        boundary_int = dot(bdry_val, ones)
 
-        #print abs(boundary_int-int_div)
+        if False:
+            from hedge.visualization import SiloVisualizer
+            vis = SiloVisualizer(discr)
+            visf = vis.make_file("test")
+
+            from hedge.tools import make_obj_array
+            from hedge.mesh import TAG_ALL
+            vis.add_data(visf, [
+                ("bdry", bdry_val), 
+                ("ref_bdry", ref_bdry_val), 
+                ("div", divergence), 
+                ("f", make_obj_array([f1_v, f2_v])),
+                ("n", discr.volumize_boundary_field(
+                    discr.boundary_normals(TAG_ALL), TAG_ALL)),
+                ],
+                expressions=[("bdiff", "bdry-ref_bdry")])
+            
+            #print abs(boundary_int-int_div)
+
         self.assert_(abs(boundary_int-int_div) < 5e-15)
     # -------------------------------------------------------------------------
     def test_simp_cubature(self):
@@ -1345,19 +1369,23 @@ class TestHedge(unittest.TestCase):
         from hedge.discretization import SymmetryMap
         from hedge.element import TriangularElement
         from hedge.timestep import RK4TimeStepper
-        from math import sqrt
+        from math import sqrt, sin
         from hedge.pde import StrongAdvectionOperator
         from hedge.data import TimeDependentGivenFunction
 
         v = numpy.array([-1,0])
 
         mesh = make_mesh()
-        discr = Discretization(mesh, TriangularElement(4), 
+        discr = Discretization(mesh, order=4, 
                 debug=Discretization.all_debug_flags())
+        #ref_discr = DynamicDiscretization(mesh, order=4)
 
         def f(x):
             if x < 0.5: return 0
             else: return (x-0.5)
+
+        #def f(x):
+            #return sin(5*x)
 
         def u_analytic(x, el, t):
             return f(-dot(v, x)+t)
@@ -1378,10 +1406,29 @@ class TestHedge(unittest.TestCase):
             dt = discr.dt_factor(op.max_eigenvalue())
             nsteps = int(1/dt)
             rhs = op.bind(discr)
+            #test_comp = [ "bflux"]
+            #test_rhs = op.bind(discr, test_comp)
+            #ref_rhs = op.bind(ref_discr, test_comp)
             for step in xrange(nsteps):
                 u = stepper(u, step*dt, dt, rhs)
                 sym_error_u = u-sym_map(u)
                 sym_error_u_l2 = discr.norm(sym_error_u)
+
+                if False:
+                    from hedge.visualization import SiloVisualizer
+                    vis = SiloVisualizer(discr)
+                    visf = vis.make_file("test-%s-%04d" % (flux_type, step))
+                    vis.add_data(visf,[
+                        ("u", u),
+                        ("sym_u", sym_map(u)),
+                        ("sym_diff", u-sym_map(u)),
+                        ("rhs", rhs(step*dt, u)),
+                        ("rhs_test", test_rhs(step*dt, u)),
+                        ("rhs_ref", ref_rhs(step*dt, u)),
+                        ("rhs_diff", test_rhs(step*dt, u)-ref_rhs(step*dt, u)),
+                        ])
+
+                    print sym_error_u_l2
                 self.assert_(sym_error_u_l2 < 4e-15)
     # -------------------------------------------------------------------------
     def test_convergence_advec_2d(self):

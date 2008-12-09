@@ -27,7 +27,6 @@ import numpy
 import numpy.linalg as la
 import pyublas
 import hedge._internal
-from pytools.arithmetic_container import work_with_arithmetic_containers
 
 
 
@@ -375,7 +374,7 @@ def full_to_all_subset_indices(subsets, base=0):
 
 def partial_to_all_subset_indices(subsets, base=0):
     """Takes a sequence of bools and generates it into an array of indices
-    to be used to extract the subset from the full set.
+    to be used to insert the subset into the full set.
 
     Example:
 
@@ -1241,24 +1240,31 @@ def time_count_flop(func, timer, counter, flop_counter, flops):
 
 
 # flop counting ---------------------------------------------------------------
-def diff_flops(discr):
+def diff_rst_flops(discr):
     result = 0
     for eg in discr.element_groups:
         ldis = eg.local_discretization
         result += (
-                # r,s,t diff
                 2 # mul+add
-                * discr.dimensions
                 * ldis.node_count() * len(eg.members)
                 * ldis.node_count()
                 )
 
-    result += (
-            # x,y,z rescale
-            +2 # mul+add
-            * discr.dimensions**2
-            * len(discr.nodes)
-            )
+    return result
+
+
+
+
+def diff_rescale_one_flops(discr):
+    result = 0
+    for eg in discr.element_groups:
+        ldis = eg.local_discretization
+        result += (
+                # x,y,z rescale
+                2 # mul+add
+                * discr.dimensions
+                * len(discr.nodes)
+                )
 
     return result
 
@@ -1270,7 +1276,6 @@ def mass_flops(discr):
     for eg in discr.element_groups:
         ldis = eg.local_discretization
         result += (
-                # r,s,t diff
                 2 # mul+add
                 * ldis.node_count() * len(eg.members)
                 * ldis.node_count()

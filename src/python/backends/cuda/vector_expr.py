@@ -61,7 +61,8 @@ class DefaultingSubstitutionMapper(
         if result is not None:
             return result
         else:
-            return expr
+            pymbolic.mapper.substitutor.SubstitutionMapper.handle_unsupported_expression(
+                    self.expr)
 
 class CompiledVectorExpression(object):
     def __init__(self, vec_expr, type_getter, result_dtype, 

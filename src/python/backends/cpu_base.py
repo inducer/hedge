@@ -38,15 +38,26 @@ class ExecutorBase(object):
 
         from hedge._internal import lift_flux
         if discr.instrumented:
-            from hedge.tools import diff_flops, mass_flops, lift_flops
+            from hedge.tools import \
+                    diff_rst_flops, diff_rescale_one_flops, lift_flops, \
+                    mass_flops
 
-            self.diff_xyz = \
+            self.diff_rst = \
                     time_count_flop(
-                            self.diff_xyz,
+                            self.diff_rst,
                             self.discr.diff_timer,
                             self.discr.diff_counter,
                             self.discr.diff_flop_counter,
-                            diff_flops(discr))
+                            diff_rst_flops(discr))
+
+            self.diff_rst_to_xyz = \
+                    time_count_flop(
+                            self.diff_rst_to_xyz,
+                            self.discr.diff_timer,
+                            self.discr.diff_counter,
+                            self.discr.diff_flop_counter,
+                            diff_rescale_one_flops(discr))
+
             self.do_mass = \
                     time_count_flop(
                             self.do_mass,
@@ -82,6 +93,25 @@ class ExecutorBase(object):
 
         return result
 
+    def diff_rst_to_xyz(self, op, rst, result=None):
+        from hedge.tools import make_vector_target
+        from hedge._internal import perform_elwise_scale
+
+        if result is None:
+            result = self.discr.volume_zeros()
+
+        for rst_axis in range(self.discr.dimensions):
+            target = make_vector_target(rst[rst_axis], result)
+
+            target.begin(len(self.discr), len(self.discr))
+            for eg in self.discr.element_groups:
+                perform_elwise_scale(eg.ranges,
+                        op.coefficients(eg)[op.xyz_axis][rst_axis],
+                        target)
+            target.finalize()
+
+        return result
+
     def diff_xyz(self, mapper, op, expr, field, result):
         rst_derivatives = mapper.diff_rst_with_cache(op, expr, field)
 
@@ -97,6 +127,7 @@ class ExecutorBase(object):
                         op.coefficients(eg)[op.xyz_axis][rst_axis],
                         target)
             target.finalize()
+
         return result
 
     def do_mass(self, op, field, out):
@@ -155,7 +186,7 @@ class ExecutionMapperBase(hedge.optemplate.Evaluator,
 
         return out
 
-    def map_sum(self, expr, out=None):
+    def map_sumadfasdf(self, expr, out=None):
         if out is None:
             out = self.discr.volume_zeros()
         for child in expr.children:
