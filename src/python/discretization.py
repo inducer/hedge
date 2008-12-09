@@ -110,11 +110,11 @@ class _ElementGroup(object):
 
 
 class _Boundary(object):
-    def __init__(self, nodes, ranges, index_map, face_groups,
+    def __init__(self, nodes, ranges, vol_indices, face_groups,
             el_face_to_face_group_and_face_pair={}):
         self.nodes = nodes
         self.ranges = ranges
-        self.index_map = index_map
+        self.vol_indices = vol_indices
         self.face_groups = face_groups
         self.el_face_to_face_group_and_face_pair = \
                 el_face_to_face_group_and_face_pair
@@ -540,7 +540,7 @@ class Discretization(object):
 
         nodes = []
         face_ranges = {}
-        index_map = []
+        vol_indices = []
         face_group = _FaceGroup(double_sided=False,
                 debug="ilist_generation" in self.debug)
         ldis = None # if this boundary is empty, we might as well have no ldis
@@ -555,7 +555,7 @@ class Discretization(object):
             f_start = len(nodes)
             nodes += [self.nodes[el_slice.start+i] for i in face_indices]
             face_ranges[ef] = (f_start, len(nodes))
-            index_map.extend(el_slice.start+i for i in face_indices)
+            vol_indices.extend(el_slice.start+i for i in face_indices)
 
             # create the face pair
             fp = FacePair()
@@ -583,7 +583,7 @@ class Discretization(object):
         bdry = _Boundary(
                 nodes=numpy.array(nodes),
                 ranges=face_ranges,
-                index_map=IndexMap(len(self.nodes), len(index_map), index_map),
+                vol_indices=numpy.asarray(vol_indices, dtype=numpy.intp),
                 face_groups=[face_group],
                 el_face_to_face_group_and_face_pair=
                 el_face_to_face_group_and_face_pair)
@@ -598,17 +598,47 @@ class Discretization(object):
     def len_boundary(self, tag):
         return len(self.get_boundary(tag).nodes)
 
-    def volume_empty(self, shape=(), dtype=None):
+    def get_kind(self, field):
+        return "numpy"
+
+    compute_kind = "numpy"
+
+    def convert_volume(self, field, kind):
+        orig_kind = self.get_kind(field)
+        if orig_kind != "numpy":
+            raise ValueError, "unable to perform kind conversion: %s -> %s" % (
+                    orig_kind, kind)
+
+        return field
+
+    def convert_boundary(self, field, tag, kind):
+        orig_kind = self.get_kind(field)
+        if orig_kind != "numpy":
+            raise ValueError, "unable to perform kind conversion: %s -> %s" % (
+                    orig_kind, kind)
+
+        return field
+
+    def volume_empty(self, shape=(), dtype=None, kind="numpy"):
+        if kind != "numpy":
+            raise ValueError, "invalid vector kind requested"
+
         if dtype is None:
             dtype = self.default_scalar_type
         return numpy.empty(shape+(len(self.nodes),), dtype)
 
-    def volume_zeros(self, shape=(), dtype=None):
+    def volume_zeros(self, shape=(), dtype=None, kind="numpy"):
+        if kind != "numpy":
+            raise ValueError, "invalid vector kind requested"
+
         if dtype is None:
             dtype = self.default_scalar_type
         return numpy.zeros(shape+(len(self.nodes),), dtype)
 
-    def interpolate_volume_function(self, f, tgt_factory=None, dtype=None):
+    def interpolate_volume_function(self, f, dtype=None, kind=None):
+        if kind is None:
+            kind = self.compute_kind
+
         try:
             # are we interpolating many fields at once?
             shape = f.shape
@@ -617,27 +647,34 @@ class Discretization(object):
             shape = ()
 
         slice_pfx = (slice(None),)*len(shape)
-        out = (tgt_factory or self.volume_empty)(shape, dtype)
+        out = self.volume_empty(shape, dtype, kind="numpy")
         for eg in self.element_groups:
             for el, el_slice in zip(eg.members, eg.ranges):
                 for point_nr in xrange(el_slice.start, el_slice.stop):
                     out[slice_pfx + (point_nr,)] = \
                                 f(self.nodes[point_nr], el)
-        return out
+        return self.convert_volume(out, kind=kind)
 
-    def boundary_empty(self, tag=hedge.mesh.TAG_ALL, shape=(), dtype=None):
+    def boundary_empty(self, tag=hedge.mesh.TAG_ALL, shape=(), dtype=None, kind="numpy"):
+        if kind != "numpy":
+            raise ValueError, "invalid vector kind requested"
+
         if dtype is None:
             dtype = self.default_scalar_type
         return numpy.empty(shape+(len(self.get_boundary(tag).nodes),), dtype)
 
-    def boundary_zeros(self, tag=hedge.mesh.TAG_ALL, shape=(), dtype=None):
+    def boundary_zeros(self, tag=hedge.mesh.TAG_ALL, shape=(), dtype=None, kind="numpy"):
+        if kind != "numpy":
+            raise ValueError, "invalid vector kind requested"
         if dtype is None:
             dtype = self.default_scalar_type
 
         return numpy.zeros(shape+(len(self.get_boundary(tag).nodes),), dtype)
 
-    def interpolate_boundary_function(self, f, tag=hedge.mesh.TAG_ALL, 
-            tgt_factory=None, dtype=None):
+    def interpolate_boundary_function(self, f, tag=hedge.mesh.TAG_ALL, dtype=None, kind=None):
+        if kind is None:
+            kind = self.compute_kind
+
         try:
             # are we interpolating many fields at once?
             shape = f.shape
@@ -646,17 +683,19 @@ class Discretization(object):
             # no, just one
             shape = ()
 
-        out = (tgt_factory or self.boundary_zeros)(tag, shape, dtype)
+        out = self.boundary_zeros(tag, shape, dtype, kind="numpy")
         slice_pfx = (slice(None),)*len(shape)
         for point_nr, x in enumerate(self.get_boundary(tag).nodes):
             out[slice_pfx + (point_nr,)] = f(x, None) # FIXME
-        return out
+        return self.convert_boundary(out, tag, kind)
 
     @memoize_method
-    def boundary_normals(self, tag=hedge.mesh.TAG_ALL,
-            tgt_factory=None, dtype=None):
-        result = (tgt_factory or self.boundary_zeros)(
-                shape=(self.dimensions,), tag=tag, dtype=dtype)
+    def boundary_normals(self, tag=hedge.mesh.TAG_ALL, dtype=None, kind=None):
+        if kind is None:
+            kind = self.compute_kind
+
+        result = self.boundary_zeros(shape=(self.dimensions,), tag=tag, dtype=dtype,
+                kind="numpy")
         for fg in self.get_boundary(tag).face_groups:
             for face_pair in fg.face_pairs:
                 oeb = face_pair.opp.el_base_index
@@ -664,53 +703,27 @@ class Discretization(object):
                 for i in opp_index_list:
                     result[:,oeb+i] = face_pair.loc.normal
 
-        return result
+        return self.convert_boundary(result, tag, kind)
 
     def volumize_boundary_field(self, bfield, tag=hedge.mesh.TAG_ALL):
-        from hedge._internal import perform_inverse_index_map
-        from hedge.tools import make_vector_target, log_shape
-
-        ls = log_shape(bfield)
-        result = self.volume_zeros(ls)
         bdry = self.get_boundary(tag)
 
-        if ls != ():
-            from pytools import indices_in_shape
-            for i in indices_in_shape(ls):
-                target = make_vector_target(bfield[i], result[i])
-                target.begin(len(self.nodes), len(bdry.nodes))
-                perform_inverse_index_map(bdry.index_map, target)
-                target.finalize()
-        else:
-            target = make_vector_target(bfield, result)
-            target.begin(len(self.nodes), len(bdry.nodes))
-            perform_inverse_index_map(bdry.index_map, target)
-            target.finalize()
+        def f(subfld):
+            result = self.volume_zeros(dtype=bfield.dtype, kind="numpy")
+            result[bdry.vol_indices] = subfld
+            return result
 
-        return result
+        from hedge.tools import with_object_array_or_scalar
+        return with_object_array_or_scalar(f, bfield)
 
     def boundarize_volume_field(self, field, tag=hedge.mesh.TAG_ALL):
-        from hedge._internal import perform_index_map
-        from hedge.tools import make_vector_target, log_shape
-
-        ls = log_shape(field)
-        result = self.boundary_zeros(tag, ls)
         bdry = self.get_boundary(tag)
 
-        if ls != ():
-            from pytools import indices_in_shape
-            for i in indices_in_shape(ls):
-                target = make_vector_target(field[i], result[i])
-                target.begin(len(bdry.nodes), len(self.nodes))
-                perform_index_map(bdry.index_map, target)
-                target.finalize()
-        else:
-            target = make_vector_target(field, result)
-            target.begin(len(bdry.nodes), len(self.nodes))
-            perform_index_map(bdry.index_map, target)
-            target.finalize()
+        def f(subfld):
+            return subfld[bdry.vol_indices]
 
-        return result
+        from hedge.tools import with_object_array_or_scalar
+        return with_object_array_or_scalar(f, bfield)
 
     # scalar reduction --------------------------------------------------------
     def integral(self, volume_vector):

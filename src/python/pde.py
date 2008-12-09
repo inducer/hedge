@@ -747,6 +747,11 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
         __slots__ = ["sigma", "sigma_prime", "tau"] 
         # (tau=mu in [3] , to avoid confusion with permeability)
 
+        def map(self, f):
+            return PMLCoefficients(
+                    **dict((name, f(getattr(self, name)))
+                        for name in self.fields))
+
     def __init__(self, *args, **kwargs):
         self.add_decay = kwargs.pop("add_decay", True)
         MaxwellOperator.__init__(self, *args, **kwargs)

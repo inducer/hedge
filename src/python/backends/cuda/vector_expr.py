@@ -77,11 +77,11 @@ class CompiledVectorExpression(object):
         self.stream = stream
         self.allocator = allocator
 
-        from pymbolic import get_dependencies
-        deps = get_dependencies(vec_expr, 
+        from hedge.optemplate import DependencyMapper
+        deps = DependencyMapper(
                 include_subscripts=True,
                 include_lookups=True,
-                include_calls="descend_args")
+                include_calls="descend_args")(vec_expr)
 
         self.vector_exprs = [dep for dep in deps if type_getter(dep)[0]]
         self.scalar_exprs = [dep for dep in deps if not type_getter(dep)[0]]

@@ -37,7 +37,7 @@ class StringifyMapper(hedge.optemplate.StringifyMapper):
             tag = "WFlux"
 
         from pymbolic.mapper.stringifier import PREC_NONE
-        return "%s(is_lift=%s,\n  int=%s,\n  tag->bdry=%s,\n  bdry->flux=%s)" % (tag, 
+        return "%s(is_lift=%s,\n    int=%s,\n    tag->bdry=%s,\n    bdry->flux=%s)" % (tag, 
                 expr.is_lift,
                 expr.interiors,
                 expr.tag_to_bdry_id,
@@ -219,11 +219,13 @@ class BoundaryCombiner(hedge.optemplate.IdentityMapper):
 
 
 # collectors ------------------------------------------------------------------
-class FluxCollector(hedge.optemplate.CollectorBase):
+class FluxCollector(hedge.optemplate.CollectorMixin, hedge.optemplate.CombineMapper):
     def map_whole_domain_flux(self, wdflux):
         return set([wdflux])
 
-
+class DiffOpCollector(hedge.optemplate.DiffOpCollector):
+    def map_whole_domain_flux(self, expr):
+        return set()
 
 
 

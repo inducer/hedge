@@ -26,7 +26,7 @@ import numpy.linalg as la
 from pytools import memoize_method, memoize, Record
 import hedge.optemplate
 from hedge.compiler import OperatorCompilerBase, \
-        Instruction, FluxBatchAssign
+        Assign, FluxBatchAssign
 import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
 import pymbolic.mapper.stringifier
@@ -152,21 +152,22 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
     def exec_vector_expr_assign(self, insn):
         def add_timer(n, vec_expr, t_func):
-            discr.vector_math_timer.add_timer_callable(t_func)
-            discr.vector_math_flop_counter.add(n*vec_expr.flop_count)
-            discr.gmem_bytes_vector_math.add(
-                    discr.given.float_size() * n *
+            self.ex.discr.vector_math_timer.add_timer_callable(t_func)
+            self.ex.discr.vector_math_flop_counter.add(n*vec_expr.flop_count)
+            self.ex.discr.gmem_bytes_vector_math.add(
+                    self.ex.discr.given.float_size() * n *
                     (1+len(vec_expr.vector_exprs)))
 
         self.context[insn.name] = insn.compiled(self, add_timer)
 
-    def execute_diff_batch_assign(self, insn):
+    def exec_diff_batch_assign(self, insn):
         field = self.rec(insn.field)
 
         discr = self.ex.discr
         if discr.instrumented:
             discr.diff_counter.add(discr.dimensions)
-            discr.diff_flop_counter.add(self.ex.diff_flops)
+            discr.diff_flop_counter.add(discr.dimensions*(
+                self.ex.diff_rst_flops + self.ex.diff_rescale_one_flops))
 
         xyz_diff = self.ex.diff_kernel(insn.op_class, field)
 
@@ -283,11 +284,14 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
 
 # compiler stuff --------------------------------------------------------------
-class VectorExprAssign(Instruction):
-    __slots__ = ["name", "expr", "compiled"]
+class VectorExprAssign(Assign):
+    __slots__ = ["compiled"]
 
-    def get_executor_method(self):
+    def get_executor_method(self, executor):
         return executor.exec_vector_expr_assign
+
+    def __str__(self):
+        return "%s <- (compiled) %s" % (self.name, self.expr)
 
 class CompiledFluxBatchAssign(FluxBatchAssign):
     __slots__ = ["kernel"]
@@ -297,7 +301,8 @@ class OperatorCompiler(OperatorCompilerBase):
         from hedge.backends.cuda.optemplate import FluxCollector
         return [self.FluxRecord(
             flux_expr=wdflux, 
-            dependencies=set(wdflux.interior_deps) | set(wdflux.boundary_deps))
+            dependencies=set(wdflux.interior_deps) | set(wdflux.boundary_deps),
+            kind="whole-domain")
             for wdflux in FluxCollector()(expr)]
 
     def internal_map_flux(self, wdflux):
@@ -316,6 +321,11 @@ class OperatorCompiler(OperatorCompilerBase):
 
     def map_whole_domain_flux(self, wdflux):
         return self.map_planned_flux(wdflux)
+
+    def collect_diff_ops(self, expr):
+        from hedge.backends.cuda.optemplate import DiffOpCollector
+        return DiffOpCollector()(expr)
+
 
 
 
@@ -336,12 +346,13 @@ class OperatorCompilerWithExecutor(OperatorCompiler):
                     result_dtype=self.executor.discr.default_scalar_type,
                     allocator=self.executor.discr.pool.allocate))
 
-    def make_flux_batch_assign(self, names, fluxes):
+    def make_flux_batch_assign(self, names, fluxes, kind):
         return CompiledFluxBatchAssign(
                 names=names,
                 fluxes=fluxes,
-                kernel=discr.flux_plan.make_kernel(
-                    self.exectuor.discr,
+                kind=kind,
+                kernel=self.executor.discr.flux_plan.make_kernel(
+                    self.executor.discr,
                     self.executor.elface_to_bdry_bitmap,
                     fluxes))
 
@@ -355,8 +366,10 @@ class Executor(object):
     def __init__(self, discr, optemplate):
         self.discr = discr
 
-        from hedge.tools import diff_flops, mass_flops, lift_flops
-        self.diff_flops = diff_flops(discr)
+        from hedge.tools import diff_rst_flops, diff_rescale_one_flops, \
+                mass_flops, lift_flops
+        self.diff_rst_flops = diff_rst_flops(discr)
+        self.diff_rescale_one_flops = diff_rescale_one_flops(discr)
         self.mass_flops = mass_flops(discr)
         self.lift_flops = lift_flops(discr)
 
@@ -388,9 +401,8 @@ class Executor(object):
 
     @staticmethod
     def prepare_optemplate(mesh, optemplate):
-        from pymbolic.mapper.constant_folder import CommutativeConstantFoldingMapper
         from hedge.optemplate import OperatorBinder, InverseMassContractor, \
-                BCToFluxRewriter
+                BCToFluxRewriter, CommutativeConstantFoldingMapper
         from hedge.backends.cuda.optemplate import BoundaryCombiner, FluxCollector
 
         return BoundaryCombiner(mesh)(

@@ -243,7 +243,7 @@ def make_plan(discr, given, tune_for):
     from hedge.backends.cuda.execute import Executor
     from hedge.backends.cuda.optemplate import FluxCollector
     if tune_for is not None:
-        fluxes = list(Executor.get_first_flux_batch(discr.mesh, tune_for))
+        fluxes = list(Executor.get_first_flux_batch(discr.mesh, tune_for).flux_exprs)
         flux_count = len(fluxes)
     else:
         # a reasonable guess?

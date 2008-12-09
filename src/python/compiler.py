@@ -177,6 +177,10 @@ class OperatorCompilerBase(IdentityMapper):
         # overridden by subclasses
         raise NotImplementedError
 
+    def collect_diff_ops(self, expr):
+        from hedge.optemplate import DiffOpCollector
+        return DiffOpCollector()(expr)
+
     def __call__(self, expr):
         # Fluxes can be evaluated faster in batches. Here, we find flux batches
         # that we can evaluate together.
@@ -225,8 +229,7 @@ class OperatorCompilerBase(IdentityMapper):
         # we can avoid computing (or storing) some of the xyz ones.
         # So figure out which XYZ derivatives of what are needed.
 
-        from hedge.optemplate import DiffOpCollector
-        self.diff_ops = DiffOpCollector()(expr)
+        self.diff_ops = self.collect_diff_ops(expr)
 
         # Then walk the expression to build up the code
         result = IdentityMapper.__call__(self, expr)

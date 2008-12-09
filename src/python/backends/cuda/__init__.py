@@ -746,67 +746,45 @@ class Discretization(hedge.discretization.Discretization):
                     self.diff_plan.dofs_per_macroblock()),
                 self.fluxlocal_plan.dofs_per_macroblock())
 
-    def volume_to_gpu(self, field):
-        from hedge.tools import log_shape
-        ls = log_shape(field)
-        if ls != ():
-            result = numpy.empty(ls, dtype=object)
+    @memoize_method
+    def _gpu_volume_embedding(self):
+        result = numpy.zeros((len(self.nodes),), dtype=numpy.intp)
+        block_offset = 0
+        block_size = self.flux_plan.dofs_per_block()
+        for block in self.blocks:
+            el_length = block.local_discretization.node_count()
 
-            from pytools import indices_in_shape
+            for el_offset, cpu_slice in zip(
+                    block.el_offsets_list, block.cpu_slices):
+                result[cpu_slice] = \
+                        block_offset+el_offset+numpy.arange(el_length)
 
-            for i in indices_in_shape(ls):
-                result[i] = self.volume_to_gpu(field[i])
-            return result
-        else:
-            copy_vec = numpy.empty((self.gpu_dof_count(),), dtype=numpy.float32)
+            block_offset += block_size
 
-            block_offset = 0
-            block_size = self.flux_plan.dofs_per_block()
-            for block in self.blocks:
-                face_length = block.local_discretization.face_node_count()
-                el_length = block.local_discretization.node_count()
+        assert (result <= self.gpu_dof_count()).all()
 
-                for el_offset, cpu_slice in zip(
-                        block.el_offsets_list, block.cpu_slices):
-                    copy_vec[block_offset+el_offset:block_offset+el_offset+el_length] = \
-                            field[cpu_slice]
+        return result
 
-                block_offset += block_size
+    def _volume_to_gpu(self, field):
+        def f(subfld):
+            cpu_transfer = cuda.pagelocked_empty(
+                    (self.gpu_dof_count(),), dtype=subfld.dtype)
 
-            return gpuarray.to_gpu(copy_vec, allocator=self.pool.allocate)
+            cpu_transfer[self._gpu_volume_embedding()] = subfld
+            return gpuarray.to_gpu(cpu_transfer, allocator=self.pool.allocate)
 
-    def volume_from_gpu(self, field):
-        from hedge.tools import log_shape
-        ls = log_shape(field)
-        if ls != ():
-            result = numpy.zeros(ls, dtype=object)
+        from hedge.tools import with_object_array_or_scalar
+        return with_object_array_or_scalar(f, field)
 
-            from pytools import indices_in_shape
+    def _volume_from_gpu(self, field):
+        def f(subfld):
+            return subfld.get(pagelocked=True)[self._gpu_volume_embedding()]
 
-            for i in indices_in_shape(ls):
-                result[i] = self.volume_from_gpu(field[i])
-            return result
-        else:
-            copied_vec = field.get(pagelocked=True)
-            result = numpy.empty(shape=(len(self),), dtype=copied_vec.dtype)
-
-            block_offset = 0
-            block_size = self.flux_plan.dofs_per_block()
-            for block in self.blocks:
-                el_length = block.local_discretization.node_count()
-
-                for el_offset, cpu_slice in zip(
-                        block.el_offsets_list, block.cpu_slices):
-                    result[cpu_slice] = \
-                            copied_vec[block_offset+el_offset
-                                    :block_offset+el_offset+el_length]
-
-                block_offset += block_size
-
-            return result
+        from hedge.tools import with_object_array_or_scalar
+        return with_object_array_or_scalar(f, field)
 
     @memoize_method
-    def gpu_boundary_embedding(self, tag):
+    def _gpu_boundary_embedding(self, tag):
         """Return an array of indices embedding a CPU boundary
         field for C{tag} into the GPU boundary field."""
 
@@ -832,7 +810,7 @@ class Discretization(hedge.discretization.Discretization):
         assert (result>=0).all()
         return result
 
-    def boundary_to_gpu(self, tag, field):
+    def _boundary_to_gpu(self, field, tag):
         def f(field):
             result = cuda.pagelocked_empty(
                     (self.aligned_boundary_floats,),
@@ -848,19 +826,46 @@ class Discretization(hedge.discretization.Discretization):
             # enters the computation.
 
             result.fill(17) 
-            result[self.gpu_boundary_embedding(tag)] = field
+            result[self._gpu_boundary_embedding(tag)] = field
             return gpuarray.to_gpu(result, allocator=self.pool.allocate)
 
         from hedge.tools import with_object_array_or_scalar
         return with_object_array_or_scalar(f, field)
 
-    def boundary_from_gpu(self, tag, field):
+    def _boundary_from_gpu(self, field, tag):
         def f(field):
-            return field.get()[self.gpu_boundary_embedding(tag)]
+            return field.get()[self._gpu_boundary_embedding(tag)]
 
         from hedge.tools import with_object_array_or_scalar
         return with_object_array_or_scalar(f, field)
 
+    def convert_volume(self, field, kind):
+        orig_kind = self.get_kind(field)
+        if kind == orig_kind:
+            return field
+
+        if kind == "numpy" and orig_kind == "gpu":
+            return self._volume_from_gpu(field)
+        elif kind == "gpu" and orig_kind == "numpy":
+            return self._volume_to_gpu(field)
+        else:
+            raise ValueError, "unable to perform kind conversion: %s -> %s" % (
+                    orig_kind, kind)
+
+    def convert_boundary(self, field, tag, kind):
+        orig_kind = self.get_kind(field)
+        if kind == orig_kind:
+            return field
+
+        if kind == "numpy" and orig_kind == "gpu":
+            return self._boundary_from_gpu(field, tag)
+        elif kind == "gpu" and orig_kind == "numpy":
+            return self._boundary_to_gpu(field, tag)
+        else:
+            raise ValueError, "unable to perform kind conversion: %s -> %s" % (
+                    orig_kind, kind)
+
+    # vector construction tools -----------------------------------------------
     def _empty_gpuarray(self, shape, dtype):
         return gpuarray.empty(shape, dtype=dtype,
                 allocator=self.pool.allocate)
@@ -871,65 +876,77 @@ class Discretization(hedge.discretization.Discretization):
         result.fill(0)
         return result
 
-    # vector construction -----------------------------------------------------
-    def volume_empty(self, shape=(), dtype=None):
-        if dtype is None:
-            dtype = self.default_scalar_type
-
-        return gpuarray.empty(shape+(self.gpu_dof_count(),), dtype=dtype,
-                allocator=self.pool.allocate)
-
-    def volume_zeros(self, shape=()):
-        result = self.volume_empty(shape)
-        result.fill(0)
-        return result
-
-    def interpolate_volume_function(self, f, dtype=None):
-        s = hedge.discretization.Discretization
-
-        def tgt_factory(shape, dtype):
-            return s.volume_empty(self, shape, dtype)
-
-        return self.volume_to_gpu(
-                s.interpolate_volume_function(self, f, tgt_factory))
-
-    def _new_bdry(self, tag, shape, create_func, dtype):
+    def _new_vec(self, shape, create_func, dtype, base_size):
         if dtype is None:
             dtype = self.default_scalar_type
 
         if shape == ():
-            return create_func((self.aligned_boundary_floats,), dtype=dtype)
+            return create_func((base_size,), dtype=dtype)
 
         result = numpy.empty(shape, dtype=object)
         from pytools import indices_in_shape
-        bdry = self.get_boundary(TAG_ALL)
         for i in indices_in_shape(shape):
-            result[i] = create_func((self.aligned_boundary_floats,), dtype=dtype)
+            result[i] = create_func((self.base_size,), dtype=dtype)
         return result
     
-    def boundary_empty(self, tag=hedge.mesh.TAG_ALL, shape=(), dtype=None):
-        return self._new_bdry(tag, shape, self._empty_gpuarray, dtype)
 
-    def boundary_zeros(self, tag=hedge.mesh.TAG_ALL, shape=(), dtype=None):
-        return self._new_bdry(tag, shape, self._zeros_gpuarray, dtype)
+    # vector construction -----------------------------------------------------
+    compute_kind = "gpu"
 
-    def interpolate_boundary_function(self, f, tag=hedge.mesh.TAG_ALL):
-        s = hedge.discretization.Discretization
-        def tgt_factory(tag, shape, dtype):
-            return s.boundary_zeros(self, tag, shape, dtype)
+    def get_kind(self, field):
+        if isinstance(field, numpy.ndarray):
+            return "numpy"
+        elif isinstance(field, gpuarray.GPUArray):
+            return "gpu"
 
-        return self.boundary_to_gpu(tag,
-                s.interpolate_boundary_function(self, f, tag, tgt_factory))
+        from hedge.tools import log_shape
+        from pytools import indices_in_shape
+        
+        first_field = field[iter(indices_in_shape(log_shape(field))).next()]
+        if isinstance(first_field, numpy.ndarray):
+            return "numpy"
+        elif isinstance(first_field, gpuarray.GPUArray):
+            return "gpu"
+        else:
+            raise TypeError, "invalid field kind"
 
-    def boundary_normals(self, tag=hedge.mesh.TAG_ALL):
-        s = hedge.discretization.Discretization
-        def tgt_factory(tag, shape, dtype):
-            return s.boundary_zeros(self, tag, shape, dtype)
+    def volume_empty(self, shape=(), dtype=None, kind="gpu"):
+        if kind != "gpu":
+            return hedge.discretization.Discretization.volume_empty(
+                    self, shape, dtype, kind)
 
-        return self.boundary_to_gpu(tag,
-                s.boundary_normals(self, tag, tgt_factory))
+        return self._new_vec(shape, self._empty_gpuarray, dtype,
+                self.gpu_dof_count())
+
+    def volume_zeros(self, shape=(), dtype=None, kind="gpu"):
+        if kind != "gpu":
+            return hedge.discretization.Discretization.volume_zeros(
+                    self, shape, dtype, kind)
+
+        return self._new_vec(shape, self._zeros_gpuarray, dtype,
+                self.gpu_dof_count())
+
+    def boundary_empty(self, tag=hedge.mesh.TAG_ALL, shape=(), dtype=None, kind="gpu"):
+        if kind != "gpu":
+            return hedge.discretization.Discretization.boundary_empty(
+                    self, tag, shape, dtype, kind)
+
+        return self._new_vec(shape, self._empty_gpuarray, dtype,
+                self.aligned_boundary_floats)
+
+    def boundary_zeros(self, tag=hedge.mesh.TAG_ALL, shape=(), dtype=None, kind="gpu"):
+        if kind != "gpu":
+            return hedge.discretization.Discretization.boundary_zeros(
+                    self, tag, shape, dtype, kind)
+
+        return self._new_vec(shape, self._zeros_gpuarray, dtype,
+                self.aligned_boundary_floats)
 
     def volumize_boundary_field(self, bfield, tag=hedge.mesh.TAG_ALL):
+        if self.get_kind(field) != "gpu":
+            return hedge.discretization.Discretization.volumize_boundary_field(
+                    self, bfield, tag)
+
         raise NotImplementedError
 
     @memoize_method
@@ -957,9 +974,12 @@ class Discretization(hedge.discretization.Discretization):
                     numpy.array(to_indices, dtype=numpy.uint32)),
                 len(from_indices)
                 )
-
         
     def boundarize_volume_field(self, field, tag=hedge.mesh.TAG_ALL):
+        if self.get_kind(field) != "gpu":
+            return hedge.discretization.Discretization.boundarize_volume_field(
+                    self, field, tag)
+
         kernel, field_texref = _boundarize_kernel()
 
         from_indices, to_indices, idx_count = self._boundarize_info(tag)
@@ -981,24 +1001,8 @@ class Discretization(hedge.discretization.Discretization):
                         texrefs=[field_texref])
             return result
 
-        from hedge.tools import log_shape
-        ls = log_shape(field)
-
-        if ls == ():
-            return do_scalar(field)
-        else:
-            result = numpy.empty(ls, dtype=object)
-            from pytools import indices_in_shape
-            for i in indices_in_shape(ls):
-                result[i] = do_scalar(field[i])
-
-            return result
-
-    # host vector construction ------------------------------------------------
-    s = hedge.discretization.Discretization
-    host_volume_empty = s.volume_empty
-    host_volume_zeros = s.volume_zeros 
-    del s
+        from hedge.tools import with_object_array_or_scalar
+        return with_object_array_or_scalar(do_scalar, field)
 
     # numbering tools ---------------------------------------------------------
     @memoize_method
