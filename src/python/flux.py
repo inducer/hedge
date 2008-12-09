@@ -272,45 +272,10 @@ class FluxStringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
 
 
 
-class FluxNormalizationMapper(pymbolic.mapper.collector.TermCollector,
-        FluxIdentityMapperMixin):
-    def map_constant_flux(self, expr):
-        if expr.local_c == expr.neighbor_c:
-            return expr.local_c
-        else:
-            return expr
-
-    def map_if_positive(self, expr):
-        return IfPositive(
-                self.rec(expr.criterion),
-                self.rec(expr.then),
-                self.rec(expr.else_),
-                )
-
-
-
-
-class FluxExpandMapper(pymbolic.mapper.expander.ExpandMapper,
-        FluxIdentityMapperMixin):
-    pass
-        
 class FluxFlattenMapper(pymbolic.mapper.flattener.FlattenMapper,
         FluxIdentityMapperMixin):
     pass
         
-class FluxCCFMapper(pymbolic.mapper.constant_folder.CommutativeConstantFoldingMapper,
-        FluxIdentityMapperMixin):
-    pass
-
-
-
-def normalize_flux(flux):
-    return FluxCCFMapper()(FluxNormalizationMapper()(
-        FluxFlattenMapper()(FluxExpandMapper()(flux))))
-
-
-
-
 class FluxDependencyMapper(pymbolic.mapper.dependency.DependencyMapper):
     def map_field_component(self, expr):
         return set([expr])
@@ -323,6 +288,51 @@ class FluxDependencyMapper(pymbolic.mapper.dependency.DependencyMapper):
 
     def map_if_positive(self, expr):
         return self.rec(expr.criterion) | self.rec(expr.then) | self.rec(expr.else_)
+
+class FluxTermCollector(pymbolic.mapper.collector.TermCollector,
+        FluxIdentityMapperMixin):
+    pass
+
+class FluxAllDependencyMapper(FluxDependencyMapper):
+    def map_normal(self, expr):
+        return set([expr])
+
+    def map_penalty_term(self, expr):
+        return set([expr])
+
+class FluxNormalizationMapper(pymbolic.mapper.collector.TermCollector,
+        FluxIdentityMapperMixin):
+    def get_dependencies(self, expr):
+        return FluxAllDependencyMapper()(expr)
+
+    def map_constant_flux(self, expr):
+        if expr.local_c == expr.neighbor_c:
+            return expr.local_c
+        else:
+            return expr
+
+class FluxCCFMapper(pymbolic.mapper.constant_folder.CommutativeConstantFoldingMapper,
+        FluxIdentityMapperMixin):
+    def is_constant(self, expr):
+        return not bool(FluxAllDependencyMapper()(expr))
+
+class FluxExpandMapper(pymbolic.mapper.expander.ExpandMapper,
+        FluxIdentityMapperMixin):
+    def __init__(self):
+        pymbolic.mapper.expander.ExpandMapper.__init__(self,
+                FluxNormalizationMapper())
+
+        
+
+
+
+def normalize_flux(flux):
+    return FluxCCFMapper()(FluxNormalizationMapper()(
+        FluxFlattenMapper()(FluxExpandMapper()(flux))))
+
+
+
+
 
 
 
