@@ -278,7 +278,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             if isinstance(insn, Discard):
                 del self.context[insn.name]
             elif isinstance(insn, Assign):
-                self.context[insn.name] = ex_mapper(insn.expr)
+                self.context[insn.name] = self(insn.expr)
             elif isinstance(insn, VectorExprAssign):
                 self.context[insn.name] = insn.compiled(self, add_timer)
             elif isinstance(insn, CompiledFluxBatchAssign):
