@@ -173,7 +173,7 @@ class ExecutionMapper(ExecutionMapperBase):
             out = self.discr.volume_zeros()
 
         bdry = self.discr.get_boundary(tag)
-        if not bdry.nodes:
+        if len(bdry.nodes) == 0:
             return 0
 
         from hedge._internal import \
@@ -188,24 +188,23 @@ class ExecutionMapper(ExecutionMapperBase):
         if isinstance(bfield, (int, float, complex)) and bfield == 0:
             bfield = ZeroVector()
 
-        if bdry.nodes:
-            for fg in bdry.face_groups:
-                fluxes_on_faces = numpy.zeros(
-                        (fg.face_count*fg.face_length()*fg.element_count(),),
-                        dtype=dtype)
+        for fg in bdry.face_groups:
+            fluxes_on_faces = numpy.zeros(
+                    (fg.face_count*fg.face_length()*fg.element_count(),),
+                    dtype=dtype)
 
-                perform_single_sided_flux(
-                        fg, ChainedFlux(int_coeff), ChainedFlux(ext_coeff),
-                        field, bfield, fluxes_on_faces)
+            perform_single_sided_flux(
+                    fg, ChainedFlux(int_coeff), ChainedFlux(ext_coeff),
+                    field, bfield, fluxes_on_faces)
 
-                if lift:
-                    self.executor.lift_flux(fg, fg.ldis_loc.lifting_matrix(),
-                            fg.local_el_inverse_jacobians, 
-                            fluxes_on_faces, out)
-                else:
-                    self.executor.lift_flux(fg, fg.ldis_loc.multi_face_mass_matrix(),
-                            None, 
-                            fluxes_on_faces, out)
+            if lift:
+                self.executor.lift_flux(fg, fg.ldis_loc.lifting_matrix(),
+                        fg.local_el_inverse_jacobians, 
+                        fluxes_on_faces, out)
+            else:
+                self.executor.lift_flux(fg, fg.ldis_loc.multi_face_mass_matrix(),
+                        None, 
+                        fluxes_on_faces, out)
 
         return out
 
@@ -264,9 +263,8 @@ class Discretization(hedge.discretization.Discretization):
         from hedge.optemplate import \
                 OperatorBinder, \
                 InverseMassContractor, \
-                BCToFluxRewriter
-
-        from pymbolic.mapper.constant_folder import CommutativeConstantFoldingMapper
+                BCToFluxRewriter, \
+                CommutativeConstantFoldingMapper
 
         result = (
                 InverseMassContractor()(
