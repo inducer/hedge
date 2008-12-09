@@ -24,9 +24,11 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 import hedge.backends.cpu_base
 import hedge.discretization
+import hedge.optemplate
 from hedge.backends.cpu_base import ExecutorBase, ExecutionMapperBase
 from pymbolic.mapper.c_code import CCodeMapper
 import numpy
+from hedge.compiler import OperatorCompilerBase, FluxBatchAssign
 
 
 
@@ -69,12 +71,157 @@ class FluxToCodeMapper(CCodeMapper):
 
 
 
-class ExecutionMapper(ExecutionMapperBase):
-    # flux implementation -----------------------------------------------------
-    def _get_flux_var_info(self, flux, field_expr, bfield_expr=None):
-        if bfield_expr is None:
-            bfield_expr = field_expr
+# flux kinds ------------------------------------------------------------------
+class InteriorFluxKind(object):
+    def __hash__(self):
+        return hash(self.__class__)
 
+    def __eq__(self, other):
+        return (other.__class__ == self.__class__)
+
+class BoundaryFluxKind(object):
+    def __init__(self, tag):
+        self.tag = tag
+
+    def __hash__(self):
+        return hash((self.__class__, self.tag))
+
+    def __eq__(self, other):
+        return (other.__class__ == self.__class__
+                and other.tag == self.tag)
+
+
+
+        
+# exec mapper -----------------------------------------------------------------
+class ExecutionMapper(hedge.optemplate.Evaluator,
+        hedge.optemplate.BoundOpMapperMixin, 
+        hedge.optemplate.LocalOpReducerMixin):
+    def __init__(self, context, discr, executor):
+        hedge.optemplate.Evaluator.__init__(self, context.copy())
+        self.discr = discr
+        self.executor = executor
+
+    # code execution functions ------------------------------------------------
+    def exec_discard(self, insn):
+        del self.context[insn.name]
+
+    def exec_assign(self, insn):
+        self.context[insn.name] = self(insn.expr)
+
+    def exec_flux_batch_assign(self, insn):
+        is_bdry = isinstance(insn.kind, BoundaryFluxKind)
+        args = [self.rec(arg_expr) for arg_expr in insn.arg_exprs]
+
+        if is_bdry:
+            bdry = self.discr.get_boundary(insn.kind.tag)
+            face_groups = bdry.face_groups
+        else:
+            face_groups = self.discr.face_groups
+
+        for fg in face_groups:
+            fof_shape = (fg.face_count*fg.face_length()*fg.element_count(),)
+            all_fluxes_on_faces = [
+                    numpy.zeros(fof_shape, dtype=self.discr.default_scalar_type)
+                    for f in insn.fluxes]
+            insn.compiled_func(fg, *(all_fluxes_on_faces+args))
+            
+            for name, flux, fluxes_on_faces in zip(insn.names, insn.fluxes, 
+                    all_fluxes_on_faces):
+                from hedge.optemplate import LiftingFluxOperator
+
+                out = self.discr.volume_zeros()
+                if isinstance(flux, LiftingFluxOperator):
+                    self.executor.lift_flux(fg, fg.ldis_loc.lifting_matrix(),
+                            fg.local_el_inverse_jacobians, fluxes_on_faces, out)
+                else:
+                    self.executor.lift_flux(fg, fg.ldis_loc.multi_face_mass_matrix(),
+                            None, fluxes_on_faces, out)
+
+                self.context[name] = out
+
+    def exec_diff_batch_assign(self, insn):
+        rst_derivatives = [
+                self.executor.diff_rst(insn.op_class, i, 
+                    self.rec(insn.field)) 
+                for i in range(self.discr.dimensions)]
+
+        for name, op in zip(insn.names, insn.operators):
+            self.context[name] = self.executor.diff_rst_to_xyz(op, rst_derivatives)
+
+    # mapper functions --------------------------------------------------------
+    def map_mass_base(self, op, field_expr):
+        field = self.rec(field_expr)
+
+        if isinstance(field, (float, int)) and field == 0:
+            return 0
+
+        out = self.discr.volume_zeros()
+        self.executor.do_mass(op, field, out)
+        return out
+
+
+
+
+# compiler stuff --------------------------------------------------------------
+class CompiledFluxBatchAssign(FluxBatchAssign):
+    __slots__ = ["compiled_func", "arg_exprs"]
+
+class OperatorCompiler(OperatorCompilerBase):
+    def __init__(self, discr):
+        OperatorCompilerBase.__init__(self)
+        self.discr = discr
+
+    def get_contained_fluxes(self, expr):
+        from hedge.optemplate import FluxCollector, BoundaryPair
+        from hedge.tools import is_obj_array
+
+        def get_deps(field):
+            if is_obj_array(field):
+                return set(field)
+            else:
+                return set([field])
+
+        def get_flux_deps(op_binding):
+            if isinstance(op_binding.field, BoundaryPair):
+                bpair = op_binding.field
+                return get_deps(bpair.field) | get_deps(bpair.bfield)
+            else:
+                return get_deps(op_binding.field)
+
+        def get_flux_kind(op_binding):
+            if isinstance(op_binding.field, BoundaryPair):
+                return BoundaryFluxKind(op_binding.field.tag)
+            else:
+                return InteriorFluxKind()
+
+        return [self.FluxRecord(
+            flux_expr=flux_binding, 
+            kind=get_flux_kind(flux_binding),
+            dependencies=get_flux_deps(flux_binding))
+            for flux_binding in FluxCollector()(expr)]
+
+    def internal_map_flux(self, flux_bind):
+        from hedge.optemplate import IdentityMapper, BoundaryPair
+        return IdentityMapper.map_operator_binding(self, flux_bind)
+
+    def map_operator_binding(self, expr):
+        from hedge.optemplate import FluxOperatorBase
+        if isinstance(expr.op, FluxOperatorBase):
+            return self.map_planned_flux(expr)
+        else:
+            return OperatorCompilerBase.map_operator_binding(self, expr)
+
+    # flux compilation --------------------------------------------------------
+    def make_flux_batch_assign(self, names, fluxes, kind):
+        if isinstance(kind, BoundaryFluxKind):
+            return self.make_boundary_flux_batch_assign(names, fluxes, kind)
+        elif isinstance(kind, InteriorFluxKind):
+            return self.make_interior_flux_batch_assign(names, fluxes, kind)
+        else:
+            raise ValueError("invalid flux batch type: %s" % kind)
+
+    def _get_flux_var_info(self, fluxes):
         from pytools import Record
         class FluxVariableInfo(Record):
             pass
@@ -87,39 +234,37 @@ class ExecutionMapper(ExecutionMapperBase):
 
         args = []
         field_expr_to_arg_name = {}
+
         from hedge.flux import FieldComponent, FluxDependencyMapper
-        for fc in FluxDependencyMapper(composite_leaves=True)(flux):
-            assert isinstance(fc, FieldComponent)
-            if fc.is_local:
-                this_field_expr = field_expr
-            else:
-                this_field_expr = bfield_expr
+        from hedge.optemplate import BoundaryPair
 
-            from hedge.tools import is_obj_array
-            if is_obj_array(this_field_expr):
-                fc_field_expr = this_field_expr[fc.index]
-            else:
-                assert fc.index == 0
-                fc_field_expr = this_field_expr
+        for flux_binding in fluxes:
+            for fc in FluxDependencyMapper(composite_leaves=True)(flux_binding.op.flux):
+                assert isinstance(fc, FieldComponent)
+                if isinstance(flux_binding.field, BoundaryPair):
+                    if fc.is_local:
+                        this_field_expr = flux_binding.field.field
+                    else:
+                        this_field_expr = flux_binding.field.bfield
+                else:
+                    this_field_expr = flux_binding.field
 
-            if not fc.is_local and field_expr is not bfield_expr:
-                prefix = "b"
-            else:
-                prefix = ""
+                from hedge.tools import is_obj_array
+                if is_obj_array(this_field_expr):
+                    fc_field_expr = this_field_expr[fc.index]
+                else:
+                    assert fc.index == 0
+                    fc_field_expr = this_field_expr
 
-            from pymbolic.primitives import is_zero
-            if is_zero(fc_field_expr):
-                fvi.flux_dep_to_arg_name[fc] = 0
-            else:
-                value = self.rec(fc_field_expr)
-                if is_zero(value):
+                from pymbolic.primitives import is_zero
+                if is_zero(fc_field_expr):
                     fvi.flux_dep_to_arg_name[fc] = 0
                 else:
                     if fc_field_expr not in field_expr_to_arg_name:
-                        arg_name = prefix+"field%d" % fc.index
+                        arg_name = "arg%d" % len(args)
                         field_expr_to_arg_name[fc_field_expr] = arg_name
 
-                        args.append(value)
+                        args.append(fc_field_expr)
                         fvi.arg_names.append(arg_name)
                         fvi.arg_exprs.append(fc_field_expr)
                     else:
@@ -129,102 +274,8 @@ class ExecutionMapper(ExecutionMapperBase):
 
         return args, fvi
 
-    def scalar_inner_flux(self, op, field_expr, is_lift, out=None):
-        if out is None:
-            out = self.discr.volume_zeros()
-
-        if isinstance(field_expr, (int, float, complex)) and field_expr == 0:
-            return 0
-
-        args, fvi = self._get_flux_var_info(op.flux, field_expr)
-        kernel = self.executor.make_inner_flux_kernel(op.flux, fvi)
-
-        if len(args):
-            for fg in self.discr.face_groups:
-                fluxes_on_faces = numpy.zeros(
-                        (fg.face_count*fg.face_length()*fg.element_count(),),
-                        dtype=args[0].dtype)
-                kernel(fg, fluxes_on_faces, *args)
-                
-                if is_lift:
-                    self.executor.lift_flux(fg, fg.ldis_loc.lifting_matrix(),
-                            fg.local_el_inverse_jacobians, fluxes_on_faces, out)
-                else:
-                    self.executor.lift_flux(fg, fg.ldis_loc.multi_face_mass_matrix(),
-                            None, fluxes_on_faces, out)
-
-        return out
-
-    def scalar_bdry_flux(self, op, bpair, is_lift, out=None):
-        if out is None:
-            out = self.discr.volume_zeros()
-
-        bdry = self.discr.get_boundary(bpair.tag)
-        if not len(bdry.nodes):
-            return 0
-
-        args, fvi = self._get_flux_var_info(op.flux, bpair.field, bpair.bfield)
-        kernel = self.executor.make_bdry_flux_extractor(op.flux, fvi)
-
-        if args:
-            for fg in bdry.face_groups:
-                fluxes_on_faces = numpy.zeros(
-                        (fg.face_count*fg.face_length()*fg.element_count(),),
-                        dtype=self.discr.default_scalar_type)
-
-                from pytools import typedump
-                kernel(fg, fluxes_on_faces, *args)
-
-                if is_lift:
-                    self.executor.lift_flux(fg, fg.ldis_loc.lifting_matrix(),
-                            fg.local_el_inverse_jacobians, 
-                            fluxes_on_faces, out)
-                else:
-                    self.executor.lift_flux(fg, fg.ldis_loc.multi_face_mass_matrix(),
-                            None, 
-                            fluxes_on_faces, out)
-
-        return out
-
-    # entry points ------------------------------------------------------------
-    def map_flux(self, op, field_expr, out=None, is_lift=False):
-        from hedge.optemplate import BoundaryPair
-
-        if isinstance(field_expr, BoundaryPair):
-            bpair = field_expr
-            return self.scalar_bdry_flux(op, bpair, is_lift, out)
-        else:
-            return self.scalar_inner_flux(op, field_expr, is_lift, out)
-
-    def map_lift(self, op, field_expr, out=None):
-        return self.map_flux(op, field_expr, out, is_lift=True)
-
-
-
-
-
-class Executor(ExecutorBase):
-    def __init__(self, discr, optemplate):
-        ExecutorBase.__init__(self, discr)
-        self.optemplate = optemplate
-
-        self.inner_kernel_cache = {}
-        self.bdry_kernel_cache = {}
-
-    def __call__(self, **vars):
-        from pdb import set_trace
-        #if "w" in vars:
-            #if numpy.linalg.norm(vars["w"][5]) > 1e-6:
-                #set_trace()
-        return ExecutionMapper(vars, self.discr, self)(self.optemplate)
-
-    # flux code generators --------------------------------------------------------
-    def make_inner_flux_kernel(self, flux, fvi):
-        cache_key = (flux, frozenset(fvi.flux_dep_to_arg_name.iteritems()))
-        try:
-            return self.inner_kernel_cache[cache_key]
-        except KeyError:
-            pass 
+    def make_interior_flux_batch_assign(self, names, fluxes, kind):
+        args, fvi = self._get_flux_var_info(fluxes)
 
         from codepy.cgen import \
                 FunctionDeclaration, FunctionBody, \
@@ -248,7 +299,9 @@ class Executor(ExecutorBase):
                 Value("void", "gather_flux"), 
                 [
                     Const(Reference(Value("face_group", "fg"))),
-                    Value("py_vector", "fluxes_on_faces"),
+                    ]+[
+                    Value("py_vector", "flux%d_on_faces" % i)
+                    for i in range(len(fluxes))
                     ]+[
                     Const(Reference(Value("py_vector", arg_name)))
                     for arg_name in fvi.arg_names
@@ -261,8 +314,9 @@ class Executor(ExecutorBase):
 
         fbody = Block([
             Initializer(
-                Const(Value("py_vector::iterator", "fof_it")),
-                "fluxes_on_faces.begin()"),
+                Const(Value("py_vector::iterator", "fof%d_it" % i)),
+                "flux%d_on_faces.begin()" % i)
+            for i in range(len(fluxes))
             ]+[
             Initializer(
                 Const(Value("py_vector::const_iterator", "%s_it" % arg_name)),
@@ -297,9 +351,10 @@ class Executor(ExecutorBase):
                             % {"where": where})
                         for where in ["loc", "opp"]
                         ]+[
-                        Assign("fof_it[%s_fof_base+%s]" % (where, tgt_idx),
+                        Assign("fof%d_it[%s_fof_base+%s]" % (flux_idx, where, tgt_idx),
                             "fp.loc.face_jacobian * " +
-                            FluxToCodeMapper(fvi, is_flipped=is_flipped)(flux, PREC_PRODUCT))
+                            FluxToCodeMapper(fvi, is_flipped=is_flipped)(flux.op.flux, PREC_PRODUCT))
+                        for flux_idx, flux in enumerate(fluxes)
                         for where, is_flipped, tgt_idx in [
                             ("loc", False, "i"),
                             ("opp", True, "opp_write_map[i]")
@@ -311,28 +366,28 @@ class Executor(ExecutorBase):
             ])
         mod.add_function(FunctionBody(fdecl, fbody)) 
 
-        result = mod.compile(
+        compiled_func = mod.compile(
                 self.discr.platform, wait_on_error=True).gather_flux
+
+        #print "----------------------------------------------------------------"
+        #print FunctionBody(fdecl, fbody)
 
         if self.discr.instrumented:
             from hedge.tools import time_count_flop, gather_flops
-            result = \
+            compiled_func = \
                     time_count_flop(
-                            result,
+                            compiled_func,
                             self.discr.gather_timer,
                             self.discr.gather_counter,
                             self.discr.gather_flop_counter,
                             gather_flops(self.discr)*len(fvi.arg_names))
 
-        self.inner_kernel_cache[cache_key] = result
-        return result
+        return CompiledFluxBatchAssign(
+                names=names, fluxes=fluxes, kind=kind,
+                arg_exprs=args, compiled_func=compiled_func)
 
-    def make_bdry_flux_extractor(self, flux, fvi):
-        cache_key = (flux, frozenset(fvi.flux_dep_to_arg_name.iteritems()))
-        try:
-            return self.bdry_kernel_cache[cache_key]
-        except KeyError:
-            pass 
+    def make_boundary_flux_batch_assign(self, names, fluxes, kind):
+        args, fvi = self._get_flux_var_info(fluxes)
 
         from codepy.cgen import \
                 FunctionDeclaration, FunctionBody, Template, \
@@ -356,7 +411,9 @@ class Executor(ExecutorBase):
                     Value("void", "gather_flux"), 
                     [
                     Const(Reference(Value("face_group", "fg"))),
-                    Value("py_vector", "fluxes_on_faces"),
+                    ]+[
+                    Value("py_vector", "flux%d_on_faces" % i)
+                    for i in range(len(fluxes))
                     ]+[
                     Const(Reference(Value("py_vector", arg_name)))
                     for arg_name in fvi.arg_names])
@@ -367,8 +424,9 @@ class Executor(ExecutorBase):
 
         fbody = Block([
             Initializer(
-                Const(Value("py_vector::iterator", "fof_it")),
-                "fluxes_on_faces.begin()"),
+                Const(Value("py_vector::iterator", "fof%d_it" % i)),
+                "flux%d_on_faces.begin()" % i)
+            for i in range(len(fluxes))
             ]+[
             Initializer(
                 Const(Value("py_vector::const_iterator", 
@@ -404,9 +462,10 @@ class Executor(ExecutorBase):
                             % {"where": where})
                         for where in ["loc", "opp"]
                         ]+[
-                        Assign("fof_it[loc_fof_base+i]",
+                        Assign("fof%d_it[loc_fof_base+i]" % flux_idx,
                             "fp.loc.face_jacobian * " +
-                            FluxToCodeMapper(fvi)(flux, PREC_PRODUCT))
+                            FluxToCodeMapper(fvi)(flux.op.flux, PREC_PRODUCT))
+                        for flux_idx, flux in enumerate(fluxes)
                         ]
                         )
                     )
@@ -415,21 +474,33 @@ class Executor(ExecutorBase):
         mod.add_function(FunctionBody(fdecl, fbody))
 
         #print "----------------------------------------------------------------"
-        #print flux
         #print FunctionBody(fdecl, fbody)
 
-        result = mod.compile(self.discr.platform, wait_on_error=True).gather_flux
+        compiled_func = mod.compile(self.discr.platform, wait_on_error=True).gather_flux
 
         if self.discr.instrumented:
             from pytools.log import time_and_count_function
-            result = time_and_count_function( result, self.discr.gather_timer)
+            compiled_func = time_and_count_function(compiled_func, self.discr.gather_timer)
 
-        self.bdry_kernel_cache[cache_key] = result
-        return result
+        return CompiledFluxBatchAssign(
+                names=names, fluxes=fluxes, kind=kind,
+                arg_exprs=args, compiled_func=compiled_func)
 
 
 
 
+class Executor(ExecutorBase):
+    def __init__(self, discr, code):
+        ExecutorBase.__init__(self, discr)
+        self.code = code
+
+    def __call__(self, **vars):
+        return self.code.execute(ExecutionMapper(vars, self.discr, self))
+
+
+
+
+# discretization --------------------------------------------------------------
 class Discretization(hedge.discretization.Discretization):
     def __init__(self, *args, **kwargs):
         hedge.discretization.Discretization.__init__(self, *args, **kwargs)
@@ -451,25 +522,20 @@ class Discretization(hedge.discretization.Discretization):
         from hedge.optemplate import \
                 OperatorBinder, \
                 InverseMassContractor, \
-                BCToFluxRewriter
+                BCToFluxRewriter, \
+                EmptyFluxKiller
 
         from hedge.optemplate import CommutativeConstantFoldingMapper
 
-        result = (
+        prepared_optemplate = (
                 InverseMassContractor()(
-                    CommutativeConstantFoldingMapper()(
-                        BCToFluxRewriter()(
-                            OperatorBinder()(
-                                optemplate)))))
+                    EmptyFluxKiller(self)(
+                        CommutativeConstantFoldingMapper()(
+                            BCToFluxRewriter()(
+                                OperatorBinder()(
+                                    optemplate))))))
 
-        from hedge.tools import is_obj_array
-        if is_obj_array(result):
-            for i, x_i in enumerate(result):
-                print "XX", i, x_i
-                print
-        else:
-            print "XX", result
-
-        return Executor(self, result)
+        code = OperatorCompiler(self)(prepared_optemplate)
+        return Executor(self, code)
 
 

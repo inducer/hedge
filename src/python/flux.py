@@ -24,6 +24,9 @@ import numpy
 import hedge._internal as _internal
 import pymbolic
 import pymbolic.mapper.collector
+import pymbolic.mapper.expander
+import pymbolic.mapper.flattener
+import pymbolic.mapper.constant_folder
 
 
 
@@ -269,7 +272,8 @@ class FluxStringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
 
 
 
-class FluxNormalizationMapper(pymbolic.mapper.collector.TermCollector):
+class FluxNormalizationMapper(pymbolic.mapper.collector.TermCollector,
+        FluxIdentityMapperMixin):
     def map_constant_flux(self, expr):
         if expr.local_c == expr.neighbor_c:
             return expr.local_c
@@ -285,12 +289,24 @@ class FluxNormalizationMapper(pymbolic.mapper.collector.TermCollector):
 
 
 
+
+class FluxExpandMapper(pymbolic.mapper.expander.ExpandMapper,
+        FluxIdentityMapperMixin):
+    pass
         
+class FluxFlattenMapper(pymbolic.mapper.flattener.FlattenMapper,
+        FluxIdentityMapperMixin):
+    pass
+        
+class FluxCCFMapper(pymbolic.mapper.constant_folder.CommutativeConstantFoldingMapper,
+        FluxIdentityMapperMixin):
+    pass
+
+
+
 def normalize_flux(flux):
-    from pymbolic import expand, flatten
-    from pymbolic.mapper.constant_folder import CommutativeConstantFoldingMapper
-    return CommutativeConstantFoldingMapper()(FluxNormalizationMapper()(
-        flatten(expand(flux))))
+    return FluxCCFMapper()(FluxNormalizationMapper()(
+        FluxFlattenMapper()(FluxExpandMapper()(flux))))
 
 
 

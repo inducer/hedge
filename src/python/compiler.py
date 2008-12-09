@@ -34,28 +34,132 @@ from hedge.optemplate import IdentityMapper
 
 
 
+# instructions ----------------------------------------------------------------
 class Instruction(Record):
     __slots__ = []
+
+    def get_assignees(self):
+        raise NotImplementedError
+
+    def get_dependencies(self):
+        raise NotImplementedError
+
+    def __str__(self):
+        raise NotImplementedError
+
+    def get_executor_method(self, executor):
+        raise NotImplementedError
 
 class Discard(Instruction): 
     __slots__ = ["name"]
 
+    def get_assignees(self):
+        return set([self.name])
+
+    def get_dependencies(self):
+        return set()
+
+    def __str__(self):
+        return "discard %s" % self.name
+
+    def get_executor_method(self, executor):
+        return executor.exec_discard
+
 class Assign(Instruction): 
-    __slots__ = ["name", "expr"]
+    __slots__ = ["name", "expr", "dep_mapper_class"]
+
+    def get_assignees(self):
+        return set([self.name])
+
+    def get_dependencies(self):
+        return self.dep_mapper_class()(self.expr)
+
+    def __str__(self):
+        return "%s <- %s" % (self.name, self.expr)
+
+    def get_executor_method(self, executor):
+        return executor.exec_assign
 
 class FluxBatchAssign(Instruction):
-    __slots__ = ["names", "fluxes"]
+    __slots__ = ["names", "fluxes", "kind"]
+
+    def get_assignees(self):
+        return set(self.names)
+
+    def __str__(self):
+        lines = []
+        lines.append("{ /* %s */" % self.kind)
+        for n, f in zip(self.names, self.fluxes):
+            lines.append("  %s <- %s" % (n, f))
+        lines.append("}")
+        return "\n".join(lines)
+
+    def get_executor_method(self, executor):
+        return executor.exec_flux_batch_assign
 
 class DiffBatchAssign(Instruction):
     __slots__ = ["names", "op_class", "operators", "field"]
 
+    def get_assignees(self):
+        return set(self.names)
+
+    def get_dependencies(self):
+        return set([self.field])
+
+    def __str__(self):
+        lines = []
+
+        if len(self.names) > 1:
+            lines.append("{")
+            for n, d in zip(self.names, self.operators):
+                lines.append("  %s <- %s * %s" % (n, d, self.field))
+            lines.append("}")
+        else:
+            for n, d in zip(self.names, self.operators):
+                lines.append("%s <- %s * %s" % (n, d, self.field))
+
+        return "\n".join(lines)
+
+    def get_executor_method(self, executor):
+        return executor.exec_diff_batch_assign
 
 
 
 
+
+# code ------------------------------------------------------------------------
+class Code(object):
+    def __init__(self, code, result):
+        self.code = code
+        self.result = result
+
+    def __str__(self):
+        lines = []
+        for insn in self.code:
+            lines.extend(str(insn).split("\n"))
+        lines.append(str(self.result))
+
+        return "\n".join(lines)
+
+    def execute(self, exec_mapper):
+        for insn in self.code:
+            insn.get_executor_method(exec_mapper)(insn)
+
+        from hedge.tools import with_object_array_or_scalar
+        return with_object_array_or_scalar(exec_mapper, self.result)
+
+
+
+
+# compiler --------------------------------------------------------------------
 class OperatorCompilerBase(IdentityMapper):
+    from hedge.optemplate import DependencyMapper as dep_mapper_class
+
     class FluxRecord(Record):
-        __slots__ = ["flux_expr", "dependencies"]
+        __slots__ = ["flux_expr", "dependencies", "kind"]
+
+    class FluxBatch(Record):
+        __slots__ = ["flux_exprs", "kind"]
 
     def __init__(self, prefix="_expr"):
         IdentityMapper.__init__(self)
@@ -94,13 +198,21 @@ class OperatorCompilerBase(IdentityMapper):
             while i < len(flux_queue):
                 fr = flux_queue[i]
                 if fr.dependencies <= admissible_deps:
-                    present_batch.add(fr.flux_expr)
+                    present_batch.add(fr)
                     flux_queue.pop(0)
                 else:
                     i += 1
 
             if present_batch:
-                self.flux_batches.append(present_batch)
+
+                batches_by_kind = {}
+                for fr in present_batch:
+                    batches_by_kind[fr.kind] = \
+                            batches_by_kind.get(fr.kind, set()) | set([fr.flux_expr])
+
+                for kind, batch in batches_by_kind.iteritems():
+                    self.flux_batches.append(
+                            self.FluxBatch(kind=kind, flux_exprs=batch))
 
                 admissible_deps |= present_batch
             else:
@@ -120,35 +232,21 @@ class OperatorCompilerBase(IdentityMapper):
         result = IdentityMapper.__call__(self, expr)
 
         # Then, put the toplevel expressions into variables as well.
-        from hedge.tools import is_obj_array, make_obj_array
-        if is_obj_array(result):
-            result = make_obj_array([self.make_assign(i) for i in result])
-        else:
-            result = self.make_assign(result)
-
-        return self.code, result
+        from hedge.tools import with_object_array_or_scalar
+        return Code(self.code, 
+                with_object_array_or_scalar(
+                    self.assign_to_new_var, result))
 
     def get_var_name(self):
         new_name = self.prefix+str(self.assigned_var_count)
         self.assigned_var_count += 1
         return new_name
 
-    def make_assign(self, expr):
-        from pymbolic.primitives import Variable
-        if isinstance(expr, Variable):
-            return expr
-            
-        new_name = self.get_var_name()
-        self.code.append(Assign(
-            name=new_name, expr=expr))
-
-        return Variable(new_name)
-
     def map_common_subexpression(self, expr):
         try:
             return self.expr_to_var[expr.child]
         except KeyError:
-            cse_var = self.make_assign(self.rec(expr.child))
+            cse_var = self.assign_to_new_var(self.rec(expr.child))
             self.expr_to_var[expr.child] = cse_var
             return cse_var
 
@@ -186,14 +284,12 @@ class OperatorCompilerBase(IdentityMapper):
             return self.expr_to_var[expr]
         except KeyError:
             for fb in self.flux_batches:
-                if expr in fb:
-                    fluxes = [self.internal_map_flux(f) for f in fb]
+                if expr in fb.flux_exprs:
+                    fluxes = [self.internal_map_flux(f) for f in fb.flux_exprs]
 
                     names = [self.get_var_name() for f in fluxes]
                     self.code.append(
-                            FluxBatchAssign(
-                                names=names,
-                                fluxes=fluxes))
+                            self.make_flux_batch_assign(names, fluxes, fb.kind))
 
                     from pymbolic import var
                     for n, f in zip(names, fluxes):
@@ -203,25 +299,19 @@ class OperatorCompilerBase(IdentityMapper):
 
             raise RuntimeError("flux '%s' not in any flux batch" % expr)
 
-    @classmethod
-    def stringify_instruction(self, insn):
-        if isinstance(insn, Assign):
-            yield "%s <- %s" % (insn.name, insn.expr)
-        elif isinstance(insn, FluxBatchAssign):
-            for n, f in zip(insn.names, insn.fluxes):
-                yield "%s <- %s" % (n, f)
-        elif isinstance(insn, DiffBatchAssign):
-            for n, d in zip(insn.names, insn.operators):
-                yield "%s <- %s * %s" % (n, d, insn.field)
-        else:
-            raise TypeError, "invalid plan statement"
+    def assign_to_new_var(self, expr):
+        from pymbolic.primitives import Variable
+        if isinstance(expr, Variable):
+            return expr
+            
+        new_name = self.get_var_name()
+        self.code.append(self.make_assign(new_name, expr))
 
-    @classmethod
-    def stringify_code(cls, code, result):
-        lines = []
-        for insn in code:
-            lines.extend(cls.stringify_instruction(insn))
-        lines.append(str(result))
+        return Variable(new_name)
 
-        return "\n".join(lines)
-                
+    # instruction producers ---------------------------------------------------
+    def make_assign(self, name, expr):
+        return Assign(name=name, expr=expr, dep_mapper_class=self.dep_mapper_class)
+
+    def make_flux_batch_assign(self, names, fluxes, kind):
+        return FluxBatchAssign(names=names, fluxes=fluxes, kind=kind)

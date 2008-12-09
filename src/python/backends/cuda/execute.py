@@ -144,7 +144,23 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         hedge.optemplate.Evaluator.__init__(self, context)
         self.ex = executor
 
-    def execute_diff_batch(self, insn):
+    def exec_discard(self, insn):
+        del self.context[insn.name]
+
+    def exec_assign(self, insn):
+        self.context[insn.name] = self(insn.expr)
+
+    def exec_vector_expr_assign(self, insn):
+        def add_timer(n, vec_expr, t_func):
+            discr.vector_math_timer.add_timer_callable(t_func)
+            discr.vector_math_flop_counter.add(n*vec_expr.flop_count)
+            discr.gmem_bytes_vector_math.add(
+                    discr.given.float_size() * n *
+                    (1+len(vec_expr.vector_exprs)))
+
+        self.context[insn.name] = insn.compiled(self, add_timer)
+
+    def execute_diff_batch_assign(self, insn):
         field = self.rec(insn.field)
 
         discr = self.ex.discr
@@ -184,7 +200,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
             assert rel_err_norm < 5e-5
 
-    def execute_flux_batch(self, insn):
+    def exec_flux_batch_assign(self, insn):
         discr = self.ex.discr
 
         # gather phase --------------------------------------------------------
@@ -263,37 +279,15 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                             eventful_only=True)
                 assert not contains_nans, "Resulting flux contains NaNs."
 
-    def execute_code(self, code):
-        discr = self.ex.discr
-
-        def add_timer(n, vec_expr, t_func):
-            discr.vector_math_timer.add_timer_callable(t_func)
-            discr.vector_math_flop_counter.add(n*vec_expr.flop_count)
-            discr.gmem_bytes_vector_math.add(
-                    discr.given.float_size() * n * 
-                    (1+len(vec_expr.vector_exprs)))
-
-        from hedge.compiler import Discard, Assign, FluxBatchAssign, DiffBatchAssign
-        for insn in code:
-            if isinstance(insn, Discard):
-                del self.context[insn.name]
-            elif isinstance(insn, Assign):
-                self.context[insn.name] = ex_mapper(insn.expr)
-            elif isinstance(insn, VectorExprAssign):
-                self.context[insn.name] = insn.compiled(self, add_timer)
-            elif isinstance(insn, CompiledFluxBatchAssign):
-                self.execute_flux_batch(insn)
-            elif isinstance(insn, DiffBatchAssign):
-                self.execute_diff_batch(insn)
-            else:
-                raise ValueError, "invalid hedge microcode instruction"
-
 
 
 
 # compiler stuff --------------------------------------------------------------
 class VectorExprAssign(Instruction):
     __slots__ = ["name", "expr", "compiled"]
+
+    def get_executor_method(self):
+        return executor.exec_vector_expr_assign
 
 class CompiledFluxBatchAssign(FluxBatchAssign):
     __slots__ = ["kernel"]
@@ -324,13 +318,34 @@ class OperatorCompiler(OperatorCompilerBase):
         return self.map_planned_flux(wdflux)
 
 
-    @classmethod
-    def stringify_instruction(self, insn):
-        if isinstance(insn, VectorExprAssign):
-            yield "%s <- (compiled) %s" % (insn.name, insn.expr)
-        else:
-            for l in OperatorCompilerBase.stringify_instruction(insn):
-                yield l
+
+
+class OperatorCompilerWithExecutor(OperatorCompiler):
+    def __init__(self, executor):
+        OperatorCompiler.__init__(self)
+        self.executor = executor
+
+    def make_assign(self, name, expr):
+        from hedge.backends.cuda.vector_expr import CompiledVectorExpression
+        return VectorExprAssign(
+                name=name,
+                expr=expr,
+                compiled=CompiledVectorExpression(
+                    expr, 
+                    type_getter=lambda expr: (True, self.executor.discr.default_scalar_type),
+                    result_dtype=self.executor.discr.default_scalar_type,
+                    allocator=self.executor.discr.pool.allocate))
+
+    def make_flux_batch_assign(self, names, fluxes):
+        return CompiledFluxBatchAssign(
+                names=names,
+                fluxes=fluxes,
+                kernel=discr.flux_plan.make_kernel(
+                    self.exectuor.discr,
+                    self.executor.elface_to_bdry_bitmap,
+                    fluxes))
+
+
 
 
 
@@ -360,35 +375,10 @@ class Executor(object):
                         self.elface_to_bdry_bitmap.get(elface, 0) | bdry_bit)
 
         # compile the optemplate
-        compiler = OperatorCompiler()
-        code, self.optemplate = compiler(
+        self.code = OperatorCompilerWithExecutor(self)(
                 self.prepare_optemplate(discr.mesh, optemplate))
 
-        def compile_insn(insn):
-            from hedge.compiler import Assign, FluxBatchAssign
-            if isinstance(insn, Assign):
-                from hedge.backends.cuda.vector_expr import CompiledVectorExpression
-                return VectorExprAssign(
-                        name=insn.name,
-                        expr=insn.expr,
-                        compiled=CompiledVectorExpression(
-                            insn.expr, 
-                            type_getter=lambda expr: (True, discr.default_scalar_type),
-                            result_dtype=discr.default_scalar_type,
-                            allocator=discr.pool.allocate))
-            elif isinstance(insn, FluxBatchAssign):
-                return CompiledFluxBatchAssign(
-                        names=insn.names,
-                        fluxes=insn.fluxes,
-                        kernel=discr.flux_plan.make_kernel(
-                            discr,
-                            self.elface_to_bdry_bitmap,
-                            insn.fluxes))
-            else:
-                return insn
-
-        self.code = [compile_insn(insn) for insn in code]
-
+        print self.code
         #print compiler.stringify_code(self.code, self.optemplate)
         #raw_input()
 
@@ -422,7 +412,5 @@ class Executor(object):
 
     # actual execution --------------------------------------------------------
     def __call__(self, **vars):
-        ex_mapper = ExecutionMapper(vars, self)
-        ex_mapper.execute_code(self.code)
-        return ex_mapper(self.optemplate)
+        return self.code.execute(ExecutionMapper(vars, self))
 

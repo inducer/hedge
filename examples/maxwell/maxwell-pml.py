@@ -126,7 +126,7 @@ def main():
             current=Current(),
             pec_tag=TAG_ALL,
             absorb_tag=TAG_NONE,
-            use_damping=False
+            add_decay=True
             )
 
     fields = op.assemble_ehpq(discr=discr)

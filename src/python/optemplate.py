@@ -587,6 +587,28 @@ class BoundOpMapperMixin(object):
 
 
 
+class EmptyFluxKiller(IdentityMapper):
+    def __init__(self, discr):
+        IdentityMapper.__init__(self)
+        self.discr = discr
+
+    def map_operator_binding(self, expr):
+        if (isinstance(expr.op, (
+            FluxOperatorBase,
+            LiftingFluxOperator,
+            FluxCoefficientOperator,
+            LiftingFluxCoefficientOperator)) 
+            and 
+            isinstance(expr.field, BoundaryPair)
+            and
+            len(self.discr.get_boundary(expr.field.tag).nodes) == 0):
+            return 0
+        else:
+            return IdentityMapper.map_operator_binding(self, expr)
+
+
+
+        
 class OperatorBinder(IdentityMapper):
     def map_product(self, expr):
         if len(expr.children) == 0:
@@ -880,7 +902,7 @@ class BCToFluxRewriter(IdentityMapper):
 
 
 # collecting ------------------------------------------------------------------
-class CollectorMixin(LocalOpReducerMixin):
+class CollectorMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     def combine(self, values):
         from pytools import flatten
         return set(flatten(values))
@@ -894,7 +916,26 @@ class CollectorMixin(LocalOpReducerMixin):
     def map_diff_base(self, expr):
         return set()
 
+    def map_flux_base(self, expr):
+        return set()
+
+    def map_variable(self, expr):
+        return set()
+
     
+
+
+
+class FluxCollector(CollectorMixin, CombineMapper):
+    def map_operator_binding(self, expr):
+        if isinstance(expr.op, (
+            FluxOperatorBase, 
+            FluxCoefficientOperator,
+            LiftingFluxCoefficientOperator)):
+            return set([expr])
+        else:
+            return set()
+
 
 
 

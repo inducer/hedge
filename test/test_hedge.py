@@ -22,8 +22,11 @@ from __future__ import division
 import numpy
 import numpy.linalg as la
 import unittest
-from hedge.backends.jit import Discretization
-#from hedge.backends.dynamic import Discretization
+from hedge.backends.jit import Discretization as JITDiscretization
+from hedge.backends.dynamic import Discretization as DynamicDiscretization
+
+Discretization = JITDiscretization
+#Discretization = DynamicDiscretization
 
 
 
@@ -750,7 +753,7 @@ class TestHedge(unittest.TestCase):
         from math import sin, cos, sqrt, exp, pi
         from numpy import dot
 
-        discr = Discretization(make_disk_mesh(), order=2, 
+        discr = DynamicDiscretization(make_disk_mesh(), order=2, 
                 debug=Discretization.all_debug_flags())
 
         from hedge.flux import make_normal, FluxScalarPlaceholder, IfPositive
@@ -783,11 +786,26 @@ class TestHedge(unittest.TestCase):
                 *pair_with_boundary(Field("f1"), Field("fz")) +
                 get_flux_operator(one_sided_y)
                 *pair_with_boundary(Field("f2"), Field("fz")))
-        boundary_int = dot(
-                discr.compile(flux_optp)(f1=f1_v, f2=f2_v, fz=discr.boundary_zeros()), 
-                ones)
+        bdry_val = discr.compile(flux_optp)(f1=f1_v, f2=f2_v, fz=discr.boundary_zeros())
+        boundary_int = dot(bdry_val, ones)
 
-        #print abs(boundary_int-int_div)
+        if False:
+            from hedge.visualization import SiloVisualizer
+            vis = SiloVisualizer(discr)
+            visf = vis.make_file("test")
+
+            from hedge.tools import make_obj_array
+            from hedge.mesh import TAG_ALL
+            vis.add_data(visf, [
+                ("bdry", bdry_val), 
+                ("f", make_obj_array([f1_v, f2_v])),
+                ("n", discr.boundary_normals(TAG_ALL)),
+                ])
+            
+            #print abs(boundary_int-int_div)
+            print boundary_int
+            print int_div
+
         self.assert_(abs(boundary_int-int_div) < 5e-15)
     # -------------------------------------------------------------------------
     def test_simp_cubature(self):

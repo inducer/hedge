@@ -748,7 +748,7 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
         # (tau=mu in [3] , to avoid confusion with permeability)
 
     def __init__(self, *args, **kwargs):
-        self.use_damping = kwargs.pop("use_damping", True)
+        self.add_decay = kwargs.pop("add_decay", True)
         MaxwellOperator.__init__(self, *args, **kwargs)
 
     def pml_local_op(self, w):
@@ -771,7 +771,7 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
         sig_prime = pad_vec(
                 make_vector_field("sigma_prime", self.dimensions), 
                 dim_subset)
-        if self.use_damping:
+        if self.add_decay:
             tau = pad_vec(
                     make_vector_field("tau", self.dimensions), 
                     dim_subset)
