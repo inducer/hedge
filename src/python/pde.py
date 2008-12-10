@@ -748,7 +748,7 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
         # (tau=mu in [3] , to avoid confusion with permeability)
 
         def map(self, f):
-            return PMLCoefficients(
+            return self.__class__(
                     **dict((name, f(getattr(self, name)))
                         for name in self.fields))
 
@@ -881,7 +881,7 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
 
         if o_min != i_min: 
             l_dist = (i_min - node_coord) / (i_min-o_min)
-            l_dist_prime = discr.volume_zeros()
+            l_dist_prime = discr.volume_zeros(kind="numpy", dtype=node_coord.dtype)
             l_dist_prime[l_dist >= 0] = -1 / (i_min-o_min)
             l_dist[l_dist < 0] = 0
         else:
@@ -889,7 +889,7 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
 
         if i_max != o_max:
             r_dist = (node_coord - i_max) / (o_max-i_max)
-            r_dist_prime = discr.volume_zeros()
+            r_dist_prime = discr.volume_zeros(kind="numpy", dtype=node_coord.dtype)
             r_dist_prime[r_dist >= 0] = 1 / (o_max-i_max)
             r_dist[r_dist < 0] = 0
         else:
@@ -903,7 +903,7 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
     def coefficients_from_boxes(self, discr, 
             inner_bbox, outer_bbox=None, 
             magnitude=None, tau_magnitude=None,
-            exponent=None):
+            exponent=None, dtype=None):
         if outer_bbox is None:
             outer_bbox = discr.mesh.bounding_box()
 
@@ -927,9 +927,12 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
         from hedge.tools import make_obj_array
         from hedge.discretization import Discretization
 
+        nodes = discr.nodes
+        if dtype is not None:
+            nodes = nodes.astype(dtype)
+
         sigma, sigma_prime, tau = zip(*[self._construct_scalar_coefficients(
-            discr,
-            discr.nodes[:,i], 
+            discr, nodes[:,i], 
             i_min[i], i_max[i], o_min[i], o_max[i],
             exponent)
             for i in range(discr.dimensions)])
@@ -942,12 +945,13 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
                 tau=tau_magnitude*make_obj_array(tau))
 
     def coefficients_from_width(self, discr, width, 
-            magnitude=None, tau_magnitude=None, exponent=None):
+            magnitude=None, tau_magnitude=None, exponent=None,
+            dtype=None):
         o_min, o_max = discr.mesh.bounding_box()
         return self.coefficients_from_boxes(discr, 
                 (o_min+width, o_max-width), 
                 (o_min, o_max),
-                magnitude, tau_magnitude, exponent)
+                magnitude, tau_magnitude, exponent, dtype)
 
 
 

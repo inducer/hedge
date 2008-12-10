@@ -400,7 +400,7 @@ class OperatorCompiler(OperatorCompilerBase):
                             self.discr.gather_timer,
                             self.discr.gather_counter,
                             self.discr.gather_flop_counter,
-                            gather_flops(self.discr)*len(fvi.arg_names))
+                            len(fluxes)*gather_flops(self.discr)*len(fvi.arg_names))
 
         return CompiledFluxBatchAssign(
                 names=names, fluxes=fluxes, kind=kind,

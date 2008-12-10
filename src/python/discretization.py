@@ -603,8 +603,16 @@ class Discretization(object):
 
     compute_kind = "numpy"
 
+    def convert_dtype(self, field, dtype):
+        from hedge.tools import with_object_array_or_scalar
+        if dtype is not None:
+            return with_object_array_or_scalar(lambda f: f.astype(dtype), field)
+        else:
+            return field
+
     def convert_volume(self, field, kind):
         orig_kind = self.get_kind(field)
+
         if orig_kind != "numpy":
             raise ValueError, "unable to perform kind conversion: %s -> %s" % (
                     orig_kind, kind)
@@ -613,6 +621,7 @@ class Discretization(object):
 
     def convert_boundary(self, field, tag, kind):
         orig_kind = self.get_kind(field)
+
         if orig_kind != "numpy":
             raise ValueError, "unable to perform kind conversion: %s -> %s" % (
                     orig_kind, kind)

@@ -162,6 +162,7 @@ class CompiledVectorExpression(object):
 
         from pytools import single_valued
         shape = single_valued(vec.shape for vec in vectors)
+        single_valued(vec.dtype for vec in vectors)
 
         assert self.result_count > 0
         from hedge.tools import make_obj_array

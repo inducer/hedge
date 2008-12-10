@@ -391,9 +391,7 @@ class Executor(object):
         self.code = OperatorCompilerWithExecutor(self)(
                 self.prepare_optemplate(discr.mesh, optemplate))
 
-        print self.code
-        #print compiler.stringify_code(self.code, self.optemplate)
-        #raw_input()
+        #print self.code
 
         # build the local kernels 
         self.diff_kernel = self.discr.diff_plan.make_kernel(discr)

@@ -841,29 +841,25 @@ class Discretization(hedge.discretization.Discretization):
 
     def convert_volume(self, field, kind):
         orig_kind = self.get_kind(field)
-        if kind == orig_kind:
-            return field
 
         if kind == "numpy" and orig_kind == "gpu":
             return self._volume_from_gpu(field)
         elif kind == "gpu" and orig_kind == "numpy":
             return self._volume_to_gpu(field)
         else:
-            raise ValueError, "unable to perform kind conversion: %s -> %s" % (
-                    orig_kind, kind)
+            return hedge.discretization.Discretization.convert_volume(
+                    self, field, kind)
 
     def convert_boundary(self, field, tag, kind):
         orig_kind = self.get_kind(field)
-        if kind == orig_kind:
-            return field
 
         if kind == "numpy" and orig_kind == "gpu":
             return self._boundary_from_gpu(field, tag)
         elif kind == "gpu" and orig_kind == "numpy":
             return self._boundary_to_gpu(field, tag)
         else:
-            raise ValueError, "unable to perform kind conversion: %s -> %s" % (
-                    orig_kind, kind)
+            return hedge.discretization.Discretization.convert_boundary(
+                    self, field, tag, kind)
 
     # vector construction tools -----------------------------------------------
     def _empty_gpuarray(self, shape, dtype):
@@ -894,9 +890,7 @@ class Discretization(hedge.discretization.Discretization):
     compute_kind = "gpu"
 
     def get_kind(self, field):
-        if isinstance(field, numpy.ndarray):
-            return "numpy"
-        elif isinstance(field, gpuarray.GPUArray):
+        if isinstance(field, gpuarray.GPUArray):
             return "gpu"
 
         from hedge.tools import log_shape
