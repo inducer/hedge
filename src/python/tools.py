@@ -1224,7 +1224,7 @@ def parallel_cg(pcon, operator, b, precon=None, x=None, tol=1e-7, max_iterations
 
 
 # diagnostics -----------------------------------------------------------------
-def time_count_flop(func, timer, counter, flop_counter, flops):
+def time_count_flop(func, timer, counter, flop_counter, flops, increment=1):
     def wrapped_f(*args, **kwargs):
         counter.add()
         flop_counter.add(flops)
@@ -1263,7 +1263,7 @@ def diff_rescale_one_flops(discr):
                 # x,y,z rescale
                 2 # mul+add
                 * discr.dimensions
-                * len(discr.nodes)
+                * len(eg.members) * ldis.node_count()
                 )
 
     return result

@@ -937,7 +937,7 @@ class Discretization(hedge.discretization.Discretization):
                 self.aligned_boundary_floats)
 
     def volumize_boundary_field(self, bfield, tag=hedge.mesh.TAG_ALL):
-        if self.get_kind(field) != "gpu":
+        if self.get_kind(bfield) != "gpu":
             return hedge.discretization.Discretization.volumize_boundary_field(
                     self, bfield, tag)
 

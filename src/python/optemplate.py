@@ -759,6 +759,9 @@ class FluxDecomposer(IdentityMapper):
             elif isinstance(field, int) and field == 0:
                 field = ZeroVector()
             else:
+                print analyzed_flux
+                print field, bfield
+                print lsf, blsf
                 assert lsf == blsf
 
         from pymbolic import flattened_sum

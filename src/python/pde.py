@@ -576,14 +576,12 @@ class MaxwellOperator(TimeDependentOperator):
 
         if self.incident_bc is not None:
             from hedge.optemplate import make_common_subexpression
-            incident_bc = self.assemble_eh(
-                    make_common_subexpression(
-                        -make_vector_field("incident_bc", fld_cnt)))
+            incident_bc = make_common_subexpression(
+                        -make_vector_field("incident_bc", fld_cnt))
 
         else:
             from hedge.tools import make_obj_array
-            incident_bc = self.assemble_eh(
-                    make_obj_array([0]*fld_cnt))
+            incident_bc = make_obj_array([0]*fld_cnt)
 
         # actual operator template --------------------------------------------
         m_inv = InverseMassOperator()
