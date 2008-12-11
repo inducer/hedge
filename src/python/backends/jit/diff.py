@@ -178,7 +178,7 @@ class JitDifferentiator:
 
         return compiled_func
 
-    def __call__(self, op_class, field):
+    def __call__(self, op_class, field, xyz_needed):
         result = [self.discr.volume_zeros() for i in range(self.discr.dimensions)]
         for eg in self.discr.element_groups:
             coeffs = op_class.coefficients(eg)
@@ -189,5 +189,5 @@ class JitDifferentiator:
 
             self.eg_to_diff[eg](*args)
 
-        return result
+        return [result[i] for i in xyz_needed]
 

@@ -95,18 +95,11 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                 self.context[name] = out
 
     def exec_diff_batch_assign(self, insn):
-        #rst_derivatives = [
-                #self.executor.diff_rst(insn.op_class, i, 
-                    #self.rec(insn.field)) 
-                #for i in range(self.discr.dimensions)]
+        xyz_diff = self.executor.diff(insn.op_class, self.rec(insn.field),
+                xyz_needed=[op.xyz_axis for op in insn.operators])
 
-        xyz_diff = self.executor.jit_diff(insn.op_class, self.rec(insn.field))
-
-        for name, op in zip(insn.names, insn.operators):
-            self.context[name] = xyz_diff[op.xyz_axis]
-
-        #for name, op in zip(insn.names, insn.operators):
-            #self.context[name] = self.executor.diff_rst_to_xyz(op, rst_derivatives)
+        for name, op, diff in zip(insn.names, insn.operators, xyz_diff):
+            self.context[name] = diff
 
     # mapper functions --------------------------------------------------------
     def map_mass_base(self, op, field_expr):
@@ -128,7 +121,37 @@ class Executor(ExecutorBase):
         self.code = code
 
         from hedge.backends.jit.diff import JitDifferentiator
-        self.jit_diff = JitDifferentiator(discr)
+        self.diff_jit = JitDifferentiator(discr)
+
+        # benchmark diff implementations
+
+        def bench_diff(f):
+            test_field = discr.volume_zeros()
+            from hedge.optemplate import DifferentiationOperator
+            from time import time
+
+            xyz_needed = range(self.discr.dimensions)
+
+            start = time()
+            f(DifferentiationOperator, test_field, xyz_needed)
+            return time() - start
+        
+        attempts = 3
+        t_builtin = min(bench_diff(self.diff_builtin) for i in range(attempts))
+        t_jit = min(bench_diff(self.diff_jit)for i in range(attempts))
+
+        if t_builtin < t_jit:
+            self.diff = self.diff_builtin
+        else:
+            self.diff = self.diff_jit
+
+    def diff_builtin(self, op_class, field, xyz_needed):
+        rst_derivatives = [
+                self.diff_rst(op_class, i, field) 
+                for i in range(self.discr.dimensions)]
+
+        return [self.diff_rst_to_xyz(op_class(i), rst_derivatives)
+                for i in xyz_needed]
 
     def __call__(self, **vars):
         return self.code.execute(ExecutionMapper(vars, self.discr, self))
