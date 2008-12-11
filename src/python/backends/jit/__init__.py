@@ -118,32 +118,47 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 class Executor(ExecutorBase):
     def __init__(self, discr, code):
         ExecutorBase.__init__(self, discr)
+
         self.code = code
-
-        from hedge.backends.jit.diff import JitDifferentiator
-        self.diff_jit = JitDifferentiator(discr)
-
-        # benchmark diff implementations
 
         def bench_diff(f):
             test_field = discr.volume_zeros()
             from hedge.optemplate import DifferentiationOperator
             from time import time
 
-            xyz_needed = range(self.discr.dimensions)
+            xyz_needed = range(discr.dimensions)
 
             start = time()
             f(DifferentiationOperator, test_field, xyz_needed)
             return time() - start
-        
-        attempts = 3
-        t_builtin = min(bench_diff(self.diff_builtin) for i in range(attempts))
-        t_jit = min(bench_diff(self.diff_jit)for i in range(attempts))
 
-        if t_builtin < t_jit:
-            self.diff = self.diff_builtin
-        else:
-            self.diff = self.diff_jit
+        def bench_lift(f):
+            fg = discr.face_groups[0]
+            out = discr.volume_zeros()
+            from hedge.optemplate import DifferentiationOperator
+            from time import time
+
+            xyz_needed = range(discr.dimensions)
+
+            fof_shape = (fg.face_count*fg.face_length()*fg.element_count(),)
+            fof = numpy.zeros(fof_shape, dtype=self.discr.default_scalar_type)
+
+            start = time()
+            f(fg, fg.ldis_loc.lifting_matrix(), fg.local_el_inverse_jacobians, fof, out)
+            return time() - start
+
+        def pick_faster_func(benchmark, choices, attempts=3):
+            from pytools import argmin2
+            return argmin2(
+                    (f, min(benchmark(f) for i in range(attempts)))
+                    for f in choices)
+        
+        from hedge.backends.jit.diff import JitDifferentiator
+        self.diff = pick_faster_func(bench_diff, 
+                [self.diff_builtin, JitDifferentiator(discr)])
+        from hedge.backends.jit.lift import JitLifter
+        self.lift_flux = pick_faster_func(bench_lift, 
+                [self.lift_flux, JitLifter(discr)])
 
     def diff_builtin(self, op_class, field, xyz_needed):
         rst_derivatives = [
@@ -197,4 +212,6 @@ class Discretization(hedge.discretization.Discretization):
         from hedge.backends.jit.compiler import OperatorCompiler
         code = OperatorCompiler(self)(prepared_optemplate)
         #print code
-        return Executor(self, code)
+        ex = Executor(self, code)
+        ex.instrument()
+        return ex

@@ -22,6 +22,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import numpy
+from pytools import memoize_method
 
 
 
@@ -30,10 +31,7 @@ class JitDifferentiator:
     def __init__(self, discr):
         self.discr = discr
 
-        self.eg_to_diff = dict(
-                (eg, self.make_diff_for_elgroup(eg))
-                for eg in discr.element_groups)
-
+    @memoize_method
     def make_diff_for_elgroup(self, elgroup):
         from hedge._internal import UniformElementRanges
         assert isinstance(elgroup.ranges, UniformElementRanges)
@@ -83,35 +81,37 @@ class JitDifferentiator:
                     ]
                     )
 
+        def make_it(name, is_const=True, tpname="value_type"):
+            if is_const:
+                const = "const_"
+            else:
+                const = ""
+
+            return Initializer(
+                Value("numpy_array<%s>::%siterator" % (tpname, const), name+"_it"),
+                "%s.begin()" % name)
+
         fbody = Block([
             S("assert(DOFS_PER_EL == ers.el_size())"),
             Line(),
-            Initializer(
-                Value("numpy_array<value_type>::const_iterator", "field_it"),
-                "field.begin()"),
+            make_it("field"),
             ]+[
-            Initializer(
-                Value("numpy_array<value_type>::iterator", "result%d_it" % i),
-                "result%d.begin()" % i)
+            make_it("result%d" % i, is_const=False)
             for i in range(discr.dimensions)
             ]+[
             Line(),
-            Initializer(
-                Value("numpy_array<value_type>::const_iterator", "coeffs_it"),
-                "coeffs.begin()"),
-            Initializer(
-                Value("numpy_array<npy_uint32>::const_iterator", "el_nrs_it"),
-                "el_nrs.begin()"),
+            make_it("coeffs"),
+            make_it("el_nrs", tpname="npy_uint32"),
             Line(),
-            For("unsigned eg_el_nr = ers.start()",
+            For("element_number_t eg_el_nr = 0",
                 "eg_el_nr < ers.size()",
                 "++eg_el_nr", 
                 Block([
                     Initializer(
-                        POD(numpy.uint32, "el_base"),
+                        Value("node_number_t", "el_base"),
                         "ers.start() + eg_el_nr*DOFS_PER_EL"),
                     Initializer(
-                        POD(numpy.uint32, "el_nr"),
+                        Value("element_number_t", "el_nr"),
                         "el_nrs_it[eg_el_nr]"),
                     Line(),
                     For("unsigned i = 0",
@@ -187,7 +187,7 @@ class JitDifferentiator:
             args += result
             args += [coeffs, eg.member_nrs, coeffs.shape[2]]
 
-            self.eg_to_diff[eg](*args)
+            self.make_diff_for_elgroup(eg)(*args)
 
         return [result[i] for i in xyz_needed]
 
