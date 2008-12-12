@@ -35,6 +35,8 @@ class ExecutorBase(object):
 
     def instrument(self):
         discr = self.discr
+        if not discr.instrumented:
+            return
 
         from hedge.tools import time_count_flop
 
