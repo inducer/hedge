@@ -75,7 +75,7 @@ class JitDifferentiator:
                     Value("numpy_array<value_type>", "result%d" % i)
                     for i in range(discr.dimensions)
                     ]+[
-                    Value("numpy_array<value_type>", "coeffs"),
+                    Value("numpy_array<double>", "coeffs"),
                     Value("numpy_array<npy_uint32>", "el_nrs"),
                     POD(numpy.uint32, "total_el_count"),
                     ]
@@ -100,7 +100,7 @@ class JitDifferentiator:
             for i in range(discr.dimensions)
             ]+[
             Line(),
-            make_it("coeffs"),
+            make_it("coeffs", tpname="double"),
             make_it("el_nrs", tpname="npy_uint32"),
             Line(),
             For("element_number_t eg_el_nr = 0",
@@ -136,8 +136,8 @@ class JitDifferentiator:
                             ]+[
                             Assign("result%d_it[el_base+i]" % xyz,
                                 " + ".join(
-                                    "coeffs_it[total_el_count*("
-                                    "DIMENSIONS*%(xyz)d + %(rst)d) + el_nr]"
+                                    "value_type(coeffs_it[total_el_count*("
+                                    "DIMENSIONS*%(xyz)d + %(rst)d) + el_nr])"
                                     " * drst_%(rst)d"
                                     % {"xyz":xyz, "rst":rst}
                                     for rst in range(discr.dimensions)
@@ -183,9 +183,10 @@ class JitDifferentiator:
         for eg in self.discr.element_groups:
             coeffs = op_class.coefficients(eg)
             
-            args = [eg.ranges, field] + op_class.matrices(eg) 
-            args += result
-            args += [coeffs, eg.member_nrs, coeffs.shape[2]]
+            args = ([eg.ranges, field] 
+                    + [m.astype(field.dtype) for m in op_class.matrices(eg)]
+                    + result
+                    + [coeffs, eg.member_nrs, coeffs.shape[2]])
 
             self.make_diff_for_elgroup(eg)(*args)
 

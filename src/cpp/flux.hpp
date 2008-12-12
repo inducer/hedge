@@ -39,7 +39,7 @@ namespace hedge { namespace fluxes {
     element_number_t element_id;
     face_number_t face_id;
     unsigned order;
-    hedge::bounded_vector normal;
+    bounded_vector<double, max_dims> normal;
 
     face()
       : h(0), face_jacobian(0), 

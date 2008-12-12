@@ -538,7 +538,7 @@ class Discretization(object):
         (Otherwise get_boundary would unnecessarily become non-local when run 
         in parallel.)
         """
-        from hedge._internal import IndexMap, FacePair
+        from hedge._internal import FacePair
 
         nodes = []
         face_ranges = {}

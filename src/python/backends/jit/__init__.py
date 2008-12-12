@@ -108,7 +108,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         if isinstance(field, (float, int)) and field == 0:
             return 0
 
-        out = self.discr.volume_zeros()
+        out = self.discr.volume_zeros(dtype=field.dtype)
         self.executor.do_mass(op, field, out)
         return out
 

@@ -42,11 +42,12 @@ namespace
       .def("finalize", &cl::finalize)
       .def("add_coefficient", &cl::add_coefficient)
       .def("add_coefficients", 
-          (void (cl::*)(unsigned, unsigned, const py_matrix &))
+          (void (cl::*)(unsigned, unsigned, const numpy_matrix<typename cl::scalar_type> &))
           &cl::add_coefficients,
           (arg("i_start"), arg("j_start"), arg("submat")))
       .def("add_scaled_coefficients", 
-          (void (cl::*)(unsigned, unsigned, typename cl::scalar_type, const py_matrix &))
+          (void (cl::*)(unsigned, unsigned, typename cl::scalar_type, 
+                        const numpy_matrix<typename cl::scalar_type> &))
           &cl::add_scaled_coefficients,
           (arg("i_start"), arg("j_start"), arg("factor"), arg("submat")))
       ;
@@ -54,15 +55,43 @@ namespace
 
   
 
-  vector_target *make_vector_target(const hedge::py_vector argument, hedge::py_vector result)
+  template <class Vector>
+  vector_target<Vector> *make_vector_target(const Vector argument, Vector result)
   {
-    return new vector_target(argument, result);
+    return new vector_target<Vector>(argument, result);
   }
 
-  null_target *make_null_target(int, hedge::py_vector result)
+  template <class Vector>
+  null_target<Vector> *make_null_target(int, Vector result)
   {
-    return new null_target;
+    return new null_target<Vector>;
   }
+
+
+  template <class ValueType>
+  void hedge_expose_op_target_for_type()
+  {
+    typedef numpy_vector<ValueType> vector_t;
+
+    {
+      typedef null_target<vector_t> cl;
+      class_<cl> wrapper("NullTarget");
+      expose_op_target(wrapper);
+    }
+
+    {
+      typedef vector_target<vector_t> cl;
+      class_<cl> wrapper("VectorTarget", init<const vector_t, vector_t>());
+      expose_op_target(wrapper);
+    }
+
+    def("make_vector_target", make_vector_target<vector_t>, 
+        return_value_policy<manage_new_object>());
+    def("make_vector_target", make_null_target<vector_t>,
+        return_value_policy<manage_new_object>());
+
+  }
+
 }
 
 
@@ -70,22 +99,8 @@ namespace
 
 void hedge_expose_op_target()
 {
-  {
-    typedef null_target cl;
-    class_<cl> wrapper("NullTarget");
-    expose_op_target(wrapper);
-  }
-
-  {
-    typedef vector_target cl;
-    class_<cl> wrapper("VectorTarget", init<const py_vector, py_vector>());
-    expose_op_target(wrapper);
-  }
-
-  def("make_vector_target", make_vector_target, 
-      return_value_policy<manage_new_object>());
-  def("make_vector_target", make_null_target,
-      return_value_policy<manage_new_object>());
+  hedge_expose_op_target_for_type<float>();
+  hedge_expose_op_target_for_type<double>();
 
   {
     typedef coord_matrix_target cl;

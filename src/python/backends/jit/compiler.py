@@ -46,14 +46,14 @@ class FluxToCodeMapper(CCodeMapper):
             where = "opp"
         else:
             where = "loc"
-        return "fp.%s.normal[%d]" % (where, expr.axis)
+        return "value_type(fp.%s.normal[%d])" % (where, expr.axis)
 
     def map_penalty_term(self, expr, enclosing_prec):
         if self.is_flipped:
             where = "opp"
         else:
             where = "loc"
-        return ("pow(fp.%(where)s.order*fp.%(where)s.order/fp.%(where)s.h, %(pwr)r)" 
+        return ("value_type(pow(fp.%(where)s.order*fp.%(where)s.order/fp.%(where)s.h, %(pwr)r))" 
                 % {"pwr": expr.power, "where": where})
 
     def map_field_component(self, expr, enclosing_prec):

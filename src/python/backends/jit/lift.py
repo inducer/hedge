@@ -80,7 +80,7 @@ class JitLifter:
                     Value("numpy_array<value_type>", "field"),
                     Value("numpy_array<value_type>", "result")
                     ]+if_(with_scale,
-                        Const(Reference(Value("numpy_array<value_type>",
+                        Const(Reference(Value("numpy_array<double>",
                             "elwise_post_scaling"))))
                     )
 
@@ -97,7 +97,7 @@ class JitLifter:
         fbody = Block([
             make_it("field"),
             make_it("result", is_const=False),
-            ]+if_(with_scale, make_it("elwise_post_scaling"))+[
+            ]+if_(with_scale, make_it("elwise_post_scaling", tpname="double"))+[
             Line(),
             For("unsigned fg_el_nr = 0",
                 "fg_el_nr < fg.element_count()",
@@ -124,7 +124,7 @@ class JitLifter:
                             Line(),
                             ]+if_(with_scale,
                                 Assign("result_it[dest_el_base+i]",
-                                    "tmp * (*elwise_post_scaling_it)"),
+                                    "tmp * value_type(*elwise_post_scaling_it)"),
                                 Assign("result_it[dest_el_base+i]", "tmp"))
                             )
                         ),
@@ -142,9 +142,9 @@ class JitLifter:
         return mod.compile(self.discr.platform, wait_on_error=True).lift
 
     def __call__(self, fgroup, matrix, scaling, field, out):
-        result = self.discr.volume_zeros()
+        result = self.discr.volume_zeros(dtype=field.dtype)
 
-        args = [fgroup, matrix, field, out]
+        args = [fgroup, matrix.astype(field.dtype), field, out]
 
         if scaling is not None:
             args.append(scaling)

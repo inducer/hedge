@@ -57,32 +57,36 @@ namespace
 
 
   // affine map ---------------------------------------------------------------
-  affine_map *get_simplex_map_unit_to_global(const int dimensions, object vertices)
+  template <class Scalar>
+  affine_map<Scalar> *get_simplex_map_unit_to_global(const int dimensions, object vertices)
   {
-    py_matrix mat(dimensions, dimensions);
+    typedef numpy_vector<Scalar> vec_t;
+    numpy_matrix<Scalar> mat(dimensions, dimensions);
 
-    const py_vector &vertex0 = extract<py_vector>(vertices[0]);
-    py_vector vsum = ublas::zero_vector<py_vector::value_type>(dimensions);
+    const vec_t &vertex0 = extract<vec_t >(vertices[0]);
+    vec_t vsum = ublas::zero_vector<typename vec_t::value_type>(dimensions);
     for (int i = 0; i < dimensions; i++)
     {
-      const py_vector &vertex = extract<py_vector>(vertices[i+1]);
+      const vec_t &vertex = extract<vec_t>(vertices[i+1]);
       vsum += vertex;
       column(mat, i) = 0.5*(vertex-vertex0);
     }
 
-    return new affine_map(mat, 0.5*vsum - 0.5*(dimensions-2)*vertex0);
+    return new affine_map<double>(mat, 0.5*vsum - 0.5*(dimensions-2)*vertex0);
   }
 
 
 
 
-  void map_element_nodes(py_vector all_nodes, const unsigned el_start, 
-      const affine_map &map, const py_vector &unit_nodes, const unsigned dim)
+  template <class Scalar>
+  void map_element_nodes(numpy_vector<Scalar> all_nodes, const unsigned el_start, 
+      const affine_map<Scalar> &map, const numpy_vector<Scalar> &unit_nodes, const unsigned dim)
   {
     // vectors, even if they're copied, have reference semantics
     for (unsigned nstart = 0; nstart < unit_nodes.size(); nstart += dim)
       subrange(all_nodes, el_start+nstart, el_start+nstart+dim) = 
-        map.apply<py_vector>(subrange(unit_nodes, nstart, nstart+dim));
+        map.template apply<numpy_vector<Scalar> >(
+            subrange(unit_nodes, nstart, nstart+dim));
   }
 }
 
@@ -105,28 +109,27 @@ void hedge_expose_base()
   }
 
   {
-    typedef affine_map cl;
-    class_<cl>("AffineMap", init<const py_matrix &, const py_vector &>())
+    typedef affine_map<double> cl;
+    class_<cl>("AffineMap", init<const cl::matrix_t &, const cl::vector_t &>())
       .add_property("matrix", 
           make_function(&cl::matrix, return_value_policy<return_by_value>()))
       .add_property("vector", 
           make_function(&cl::vector, return_value_policy<return_by_value>()))
       .def("__call__", 
-          (const py_vector (cl::*)(const py_vector &) const) 
-          &affine_map::operator())
+          &cl::apply<cl::vector_t, cl::vector_t>)
       .DEF_SIMPLE_METHOD(inverted)
       .DEF_SIMPLE_METHOD(jacobian)
 
       .enable_pickling()
       ;
-
-    def("map_element_nodes", map_element_nodes,
-        (arg("all_nodes"), arg("el_start"), arg("map"), arg("unit_nodes"), arg("dim")));
-    def("get_simplex_map_unit_to_global",
-        get_simplex_map_unit_to_global,
-        (arg("dimensions"), arg("vertices")),
-        return_value_policy<manage_new_object>());
   }
+
+  def("map_element_nodes", map_element_nodes<double>,
+      (arg("all_nodes"), arg("el_start"), arg("map"), arg("unit_nodes"), arg("dim")));
+  def("get_simplex_map_unit_to_global",
+      get_simplex_map_unit_to_global<double>,
+      (arg("dimensions"), arg("vertices")),
+      return_value_policy<manage_new_object>());
 
   {
     typedef ublas::zero_vector<double> cl;

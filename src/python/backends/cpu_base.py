@@ -74,9 +74,9 @@ class ExecutorBase(object):
                         discr.lift_flop_counter,
                         lift_flops(discr))
 
-    def lift_flux(self, *args):
+    def lift_flux(self, fgroup, matrix, scaling, field, out):
         from hedge._internal import lift_flux
-        lift_flux(*args)
+        lift_flux(fgroup, matrix.astype(field.dtype), scaling, field, out)
 
     def diff_rst(self, op, rst_axis, field):
         result = self.discr.volume_zeros()
@@ -89,7 +89,7 @@ class ExecutorBase(object):
         from hedge._internal import perform_elwise_operator
         for eg in self.discr.element_groups:
             perform_elwise_operator(eg.ranges, eg.ranges, 
-                    op.matrices(eg)[rst_axis], target)
+                    op.matrices(eg)[rst_axis].astype(field.dtype), target)
 
         target.finalize()
 
