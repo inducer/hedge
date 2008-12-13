@@ -732,7 +732,7 @@ class Discretization(object):
             return subfld[bdry.vol_indices]
 
         from hedge.tools import with_object_array_or_scalar
-        return with_object_array_or_scalar(f, bfield)
+        return with_object_array_or_scalar(f, field)
 
     # scalar reduction --------------------------------------------------------
     def integral(self, volume_vector):

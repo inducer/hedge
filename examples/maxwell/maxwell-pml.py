@@ -63,10 +63,8 @@ def main():
 
     rcon = guess_run_context(disable=set([FEAT_CUDA]))
 
-    #epsilon0 = 8.8541878176e-12 # C**2 / (N m**2)
-    #mu0 = 4*pi*1e-7 # N/A**2.
-    epsilon0 = 1
-    mu0 = 1
+    epsilon0 = 8.8541878176e-12 # C**2 / (N m**2)
+    mu0 = 4*pi*1e-7 # N/A**2.
     epsilon = 1*epsilon0
     mu = 1*mu0
 
@@ -76,9 +74,9 @@ def main():
     periodic = False
 
     pml_width = 0.5
-    #mesh = make_mesh(a=numpy.array((-1,-1,-1)), b=numpy.array((1,1,1)), 
+    mesh = make_mesh(a=numpy.array((-1,-1,-1)), b=numpy.array((1,1,1)), 
     #mesh = make_mesh(a=numpy.array((-3,-3)), b=numpy.array((3,3)), 
-    mesh = make_mesh(a=numpy.array((-1,-1)), b=numpy.array((1,1)), 
+    #mesh = make_mesh(a=numpy.array((-1,-1)), b=numpy.array((1,1)), 
     #mesh = make_mesh(a=numpy.array((-2,-2)), b=numpy.array((2,2)), 
             pml_width=pml_width, max_volume=0.01)
 
@@ -122,7 +120,7 @@ def main():
             AbarbanelGottliebPMLTEMaxwellOperator, \
             AbarbanelGottliebPMLMaxwellOperator, \
             TEMaxwellOperator
-    op = AbarbanelGottliebPMLTMMaxwellOperator(epsilon, mu, flux_type=1,
+    op = AbarbanelGottliebPMLMaxwellOperator(epsilon, mu, flux_type=1,
             current=Current(),
             pec_tag=TAG_ALL,
             absorb_tag=TAG_NONE,
