@@ -17,18 +17,8 @@
 
 
 
-#include "base.hpp"
 #include "wrap_helpers.hpp"
 #include <boost/python.hpp>
-#include <boost/numeric/bindings/traits/traits.hpp>
-#include <boost/numeric/bindings/traits/ublas_vector.hpp>
-
-
-
-
-using namespace hedge;
-using namespace boost::python;
-using namespace boost::numeric::bindings;
 
 
 
@@ -37,29 +27,36 @@ using namespace boost::numeric::bindings;
 
 #include <boost/mpi.hpp>
 namespace mpi = boost::mpi;
+namespace py = boost::python;
 
 
 
 
 namespace
 {
-  mpi::request isend_vector(
+  mpi::request isend_buffer(
       mpi::communicator &comm,
       int dest, int tag,
-      const py_vector &v)
+      const py::object obj)
   {
-    return comm.isend(dest, tag, traits::vector_storage(v), traits::vector_size(v));
+    const void *buf;
+    Py_ssize_t len;
+    PyObject_AsReadBuffer(obj.ptr(), &buf, &len);
+    return comm.isend(dest, tag, reinterpret_cast<const char *>(buf), len);
   }
 
 
 
 
-  mpi::request irecv_vector(
+  mpi::request irecv_buffer(
       mpi::communicator &comm,
       int dest, int tag,
-      py_vector v)
+      const py::object obj)
   {
-    return comm.irecv(dest, tag, traits::vector_storage(v), traits::vector_size(v));
+    void *buf;
+    Py_ssize_t len;
+    PyObject_AsWriteBuffer(obj.ptr(), &buf, &len);
+    return comm.irecv(dest, tag, reinterpret_cast<char *>(buf), len);
   }
 }
 
@@ -90,12 +87,14 @@ void hedge_expose_mpi()
 {
   DEF_SIMPLE_FUNCTION(have_mpi);
 
+  using py::args;
+
 #ifdef USE_MPI
-  def("isend_vector", isend_vector, 
-      (arg("comm"), arg("dest"), arg("tag"), arg("vector")),
-      with_custodian_and_ward_postcall<0,4>());
-  def("irecv_vector", irecv_vector, 
-      (arg("comm"), arg("source"), arg("tag"), arg("vector")),
-      with_custodian_and_ward_postcall<0,4>());
+  py::def("isend_buffer", isend_buffer, 
+      args("comm", "dest", "tag", "vector"),
+      py::with_custodian_and_ward_postcall<0,4>());
+  py::def("irecv_buffer", irecv_buffer, 
+      args("comm", "source", "tag", "vector"),
+      py::with_custodian_and_ward_postcall<0,4>());
 #endif
 }

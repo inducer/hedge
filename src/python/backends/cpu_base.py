@@ -33,48 +33,52 @@ class ExecutorBase(object):
     def __init__(self, discr):
         self.discr = discr
 
-        from hedge._internal import lift_flux
+    def instrument(self):
+        discr = self.discr
+        if not discr.instrumented:
+            return
+
         from hedge.tools import time_count_flop
 
+        from hedge.tools import \
+                diff_rst_flops, diff_rescale_one_flops, lift_flops, \
+                mass_flops
+
+        self.diff_rst = \
+                time_count_flop(
+                        self.diff_rst,
+                        discr.diff_timer,
+                        discr.diff_counter,
+                        discr.diff_flop_counter,
+                        diff_rst_flops(discr))
+
+        self.diff_rst_to_xyz = \
+                time_count_flop(
+                        self.diff_rst_to_xyz,
+                        discr.diff_timer,
+                        discr.diff_counter,
+                        discr.diff_flop_counter,
+                        diff_rescale_one_flops(discr))
+
+        self.do_mass = \
+                time_count_flop(
+                        self.do_mass,
+                        discr.mass_timer,
+                        discr.mass_counter,
+                        discr.mass_flop_counter,
+                        mass_flops(discr))
+
+        self.lift_flux = \
+                time_count_flop(
+                        self.lift_flux,
+                        discr.lift_timer,
+                        discr.lift_counter,
+                        discr.lift_flop_counter,
+                        lift_flops(discr))
+
+    def lift_flux(self, fgroup, matrix, scaling, field, out):
         from hedge._internal import lift_flux
-        if discr.instrumented:
-            from hedge.tools import \
-                    diff_rst_flops, diff_rescale_one_flops, lift_flops, \
-                    mass_flops
-
-            self.diff_rst = \
-                    time_count_flop(
-                            self.diff_rst,
-                            self.discr.diff_timer,
-                            self.discr.diff_counter,
-                            self.discr.diff_flop_counter,
-                            diff_rst_flops(discr))
-
-            self.diff_rst_to_xyz = \
-                    time_count_flop(
-                            self.diff_rst_to_xyz,
-                            self.discr.diff_timer,
-                            self.discr.diff_counter,
-                            self.discr.diff_flop_counter,
-                            diff_rescale_one_flops(discr))
-
-            self.do_mass = \
-                    time_count_flop(
-                            self.do_mass,
-                            self.discr.mass_timer,
-                            self.discr.mass_counter,
-                            self.discr.mass_flop_counter,
-                            mass_flops(discr))
-
-            self.lift_flux = \
-                    time_count_flop(
-                            lift_flux,
-                            self.discr.lift_timer,
-                            self.discr.lift_counter,
-                            self.discr.lift_flop_counter,
-                            lift_flops(discr))
-        else:
-            self.lift_flux = lift_flux
+        lift_flux(fgroup, matrix.astype(field.dtype), scaling, field, out)
 
     def diff_rst(self, op, rst_axis, field):
         result = self.discr.volume_zeros()
@@ -87,7 +91,7 @@ class ExecutorBase(object):
         from hedge._internal import perform_elwise_operator
         for eg in self.discr.element_groups:
             perform_elwise_operator(eg.ranges, eg.ranges, 
-                    op.matrices(eg)[rst_axis], target)
+                    op.matrices(eg)[rst_axis].astype(field.dtype), target)
 
         target.finalize()
 

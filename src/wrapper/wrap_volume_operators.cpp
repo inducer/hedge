@@ -47,6 +47,32 @@ namespace
     const element_range erng = er[i];
     return slice(erng.first, erng.second);
   }
+
+
+
+
+  template <class Scalar>
+  void expose_for_type()
+  {
+#define ARG_TYPES \
+    const uniform_element_ranges &, \
+    const uniform_element_ranges &, \
+    const numpy_matrix<Scalar> &,
+    DEF_FOR_EACH_OP_TARGET(perform_elwise_operator, Scalar, ARG_TYPES);
+#undef ARG_TYPES
+#define ARG_TYPES \
+    const uniform_element_ranges &, \
+    const uniform_element_ranges &, \
+    const numpy_vector<double> &, \
+    const numpy_matrix<Scalar> &,
+    DEF_FOR_EACH_OP_TARGET(perform_elwise_scaled_operator, Scalar, ARG_TYPES);
+#undef ARG_TYPES
+
+    def("perform_elwise_scale", 
+        perform_elwise_scale<uniform_element_ranges, 
+          vector_target<numpy_vector<Scalar> > >,
+        (arg("ers"), arg("scale_factors"), arg("target")));
+  }
 }
 
 
@@ -74,21 +100,6 @@ void hedge_expose_volume_operators()
       ;
   }
 
-#define ARG_TYPES \
-  const uniform_element_ranges &, \
-  const uniform_element_ranges &, \
-  const py_matrix &,
-  DEF_FOR_EACH_OP_TARGET(perform_elwise_operator, ARG_TYPES);
-#undef ARG_TYPES
-#define ARG_TYPES \
-  const uniform_element_ranges &, \
-  const uniform_element_ranges &, \
-  const py_vector &, \
-  const py_matrix &,
-  DEF_FOR_EACH_OP_TARGET(perform_elwise_scaled_operator, ARG_TYPES);
-#undef ARG_TYPES
-
-  def("perform_elwise_scale", 
-      perform_elwise_scale<uniform_element_ranges>,
-      (arg("ers"), arg("scale_factors"), arg("target")));
+  expose_for_type<float>();
+  expose_for_type<double>();
 }

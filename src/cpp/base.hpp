@@ -49,20 +49,17 @@ namespace hedge {
   static const vertex_number_t INVALID_VERTEX = UINT_MAX;
   static const node_number_t INVALID_NODE = UINT_MAX;
 
-  typedef pyublas::numpy_vector<double> py_vector;
-  typedef pyublas::numpy_vector<npy_uint32> py_uint_vector;
-  typedef pyublas::numpy_matrix<double> py_matrix;
-  typedef pyublas::numpy_matrix<double, 
-          boost::numeric::ublas::column_major> py_fortran_matrix;
+  using pyublas::numpy_vector;
+  using pyublas::numpy_matrix;
 
-  typedef boost::numeric::ublas::vector<double> dyn_vector;
-  typedef boost::numeric::ublas::matrix<double> dyn_matrix;
-  typedef boost::numeric::ublas::matrix<double, 
-          boost::numeric::ublas::column_major> dyn_fortran_matrix;
+  using boost::numeric::ublas::vector;
+  using boost::numeric::ublas::zero_vector;
+  using boost::numeric::ublas::bounded_vector;
+  using boost::numeric::ublas::matrix;
+  using boost::numeric::ublas::coordinate_matrix;
+  using boost::numeric::ublas::column_major;
 
-  static const unsigned bounded_max_dims = 3;
-  typedef boost::numeric::ublas::bounded_vector<double, bounded_max_dims> bounded_vector;
-  typedef boost::numeric::ublas::bounded_vector<npy_int32, bounded_max_dims> bounded_int_vector;
+  static const unsigned max_dims = 3;
 
 
 
@@ -166,11 +163,15 @@ namespace hedge {
 
 
 
+  template <class ValueType>
   class affine_map
   {
+    public:
+      typedef numpy_matrix<ValueType> matrix_t;
+      typedef numpy_vector<ValueType> vector_t;
     private:
-      hedge::py_matrix m_matrix;
-      hedge::py_vector m_vector;
+      matrix_t m_matrix;
+      vector_t m_vector;
       mutable bool m_have_jacobian;
       mutable double m_jacobian;
 
@@ -179,8 +180,8 @@ namespace hedge {
       { }
 
       affine_map(
-          const hedge::py_matrix &mat, 
-          const hedge::py_vector &vec)
+          const matrix_t &mat, 
+          const vector_t &vec)
         : m_matrix(mat), m_vector(vec), m_have_jacobian(false)
       { }
 
@@ -196,19 +197,19 @@ namespace hedge {
         return prod(m_matrix, op) + m_vector;
       }
 
-      const hedge::py_vector &vector() const
+      const numpy_vector<ValueType> &vector() const
       { return m_vector; }
 
-      const hedge::py_matrix &matrix() const
+      const numpy_matrix<ValueType> &matrix() const
       { return m_matrix; }
 
       const affine_map inverted() const
       {
-        py_matrix inv = invert_matrix(m_matrix);
+        matrix_t inv = invert_matrix(m_matrix);
         return affine_map(inv, -prod(inv, m_vector));
       }
 
-      double jacobian() const
+      ValueType jacobian() const
       {
         if (m_have_jacobian)
           return m_jacobian;

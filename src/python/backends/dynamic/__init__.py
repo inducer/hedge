@@ -274,5 +274,7 @@ class Discretization(hedge.discretization.Discretization):
                                 OperatorBinder()(
                                     optemplate))))))
 
-        return Executor(self, result)
+        ex = Executor(self, result)
+        ex.instrument()
+        return ex
 

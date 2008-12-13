@@ -176,7 +176,6 @@ def main():
                         "src/wrapper/wrap_flux.cpp", 
                         "src/wrapper/wrap_op_target.cpp", 
                         "src/wrapper/wrap_volume_operators.cpp", 
-                        "src/wrapper/wrap_index_map.cpp", 
                         "src/wrapper/wrap_mpi.cpp", 
                         ],
                     include_dirs=INCLUDE_DIRS + EXTRA_INCLUDE_DIRS,

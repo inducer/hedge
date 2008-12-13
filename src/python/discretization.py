@@ -91,6 +91,7 @@ class _ElementGroup(object):
     """Once fully filled, this structure has the following data members:
 
     @ivar members: a list of hedge.mesh.Element instances in this group.
+    @ivar member_nrs: a list of the element ID numbers in this group.
     @ivar local_discretization: an instance of hedge.element.Element.
     @ivar ranges: a list of C{slice} objects indicating the DOF numbers for
       each element. Note: This is actually a C++ ElementRanges object.
@@ -324,6 +325,7 @@ class Discretization(object):
 
         eg = _ElementGroup()
         eg.members = self.mesh.elements
+        eg.member_nrs = numpy.fromiter((el.id for el in eg.members), dtype=numpy.uint32)
         eg.local_discretization = ldis = local_discretization
         eg.ranges = UniformElementRanges(
                 0, 
@@ -371,12 +373,12 @@ class Discretization(object):
             immat = eg.inverse_mass_matrix = ldis.inverse_mass_matrix()
             dmats = eg.differentiation_matrices = \
                     ldis.differentiation_matrices()
-            smats = eg.stiffness_matrices = numpy.array(
-                    [numpy.dot(mmat, d) for d in dmats])
-            smats = eg.stiffness_t_matrices = numpy.array(
-                    [numpy.dot(d.T, mmat.T) for d in dmats])
-            eg.minv_st = numpy.array(
-                    [numpy.dot(numpy.dot(immat,d.T), mmat) for d in dmats])
+            smats = eg.stiffness_matrices = \
+                    [numpy.dot(mmat, d) for d in dmats]
+            smats = eg.stiffness_t_matrices = \
+                    [numpy.dot(d.T, mmat.T) for d in dmats]
+            eg.minv_st = \
+                    [numpy.dot(numpy.dot(immat,d.T), mmat) for d in dmats]
 
             eg.jacobians = numpy.array([
                 abs(el.map.jacobian()) 
@@ -536,7 +538,7 @@ class Discretization(object):
         (Otherwise get_boundary would unnecessarily become non-local when run 
         in parallel.)
         """
-        from hedge._internal import IndexMap, FacePair
+        from hedge._internal import FacePair
 
         nodes = []
         face_ranges = {}

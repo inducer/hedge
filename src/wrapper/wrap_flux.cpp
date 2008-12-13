@@ -113,6 +113,43 @@ namespace {
           make_function(&cl::operand2, return_internal_reference<>()))
       ;
   }
+
+
+
+
+  template <class Scalar>
+  void expose_operators_for_type()
+  {
+    def("perform_single_sided_flux", 
+        perform_single_sided_flux<
+        fluxes::chained_flux, fluxes::chained_flux, 
+        numpy_vector<Scalar>, numpy_vector<Scalar> >,
+        args("fg", "int_flux", "ext_flux", 
+          "loc_operand", "opp_operand", "fluxes_on_faces")
+       );
+    def("perform_single_sided_flux", 
+        perform_single_sided_flux<
+        fluxes::chained_flux, fluxes::chained_flux, 
+        ublas::zero_vector<Scalar>, numpy_vector<Scalar> >,
+        args("fg", "int_flux", "ext_flux", 
+          "loc_operand", "opp_operand", "fluxes_on_faces")
+       );
+    def("perform_single_sided_flux", 
+        perform_single_sided_flux<
+        fluxes::chained_flux, fluxes::chained_flux, 
+        numpy_vector<Scalar>, ublas::zero_vector<Scalar> >,
+        args("fg", "int_flux", "ext_flux", 
+          "loc_operand", "opp_operand", "fluxes_on_faces")
+       );
+    def("perform_double_sided_flux", 
+        perform_double_sided_flux<fluxes::chained_flux, fluxes::chained_flux, Scalar>,
+        args("fg", "int_flux", "ext_flux",
+          "operand", "fluxes_on_faces")
+       );
+    def("lift_flux", lift_flux<Scalar>,
+        args("fg", "mat", "elwise_post_scaling", "fluxes_on_faces", "result")
+       );
+  }
 }
 
 
@@ -255,34 +292,7 @@ void hedge_expose_fluxes()
       ;
   }
 
-  def("perform_single_sided_flux", 
-      perform_single_sided_flux<
-      fluxes::chained_flux, fluxes::chained_flux, 
-      py_vector, py_vector>,
-      args("fg", "int_flux", "ext_flux", 
-            "loc_operand", "opp_operand", "fluxes_on_faces")
-     );
-  def("perform_single_sided_flux", 
-      perform_single_sided_flux<
-      fluxes::chained_flux, fluxes::chained_flux, 
-      ublas::zero_vector<double>, py_vector>,
-      args("fg", "int_flux", "ext_flux", 
-            "loc_operand", "opp_operand", "fluxes_on_faces")
-      );
-  def("perform_single_sided_flux", 
-      perform_single_sided_flux<
-      fluxes::chained_flux, fluxes::chained_flux, 
-      py_vector, ublas::zero_vector<double> >,
-      args("fg", "int_flux", "ext_flux", 
-            "loc_operand", "opp_operand", "fluxes_on_faces")
-     );
-  def("perform_double_sided_flux", 
-      perform_double_sided_flux<fluxes::chained_flux, fluxes::chained_flux>,
-      args("fg", "int_flux", "ext_flux",
-        "operand", "fluxes_on_faces")
-      );
-  def("lift_flux", lift_flux,
-      args("fg", "mat", "elwise_post_scaling", "fluxes_on_faces", "result")
-      );
+  expose_operators_for_type<float>();
+  expose_operators_for_type<double>();
 }
 

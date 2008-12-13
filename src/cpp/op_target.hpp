@@ -110,9 +110,10 @@ namespace hedge {
 
 
 
+  template <class Vector>
   class null_target {
     public:
-      typedef py_vector::value_type scalar_type;
+      typedef typename Vector::value_type scalar_type;
 
       void begin(unsigned height, unsigned width) const
       { }
@@ -137,11 +138,12 @@ namespace hedge {
 
 
 
+  template <class Vector>
   class vector_target {
     public:
-      typedef py_vector::value_type scalar_type;
+      typedef typename Vector::value_type scalar_type;
 
-      vector_target(const py_vector operand, py_vector result)
+      vector_target(const Vector operand, Vector result)
         : m_operand(operand), m_result(result)
       { }
       void begin(unsigned height, unsigned width) const
@@ -181,8 +183,8 @@ namespace hedge {
           factor * prod(submat, subrange(m_operand, j_start, j_start+submat.size2()));
       }
 
-      const py_vector m_operand;
-      py_vector m_result;
+      const Vector m_operand;
+      Vector m_result;
   };
 
 
@@ -291,8 +293,7 @@ namespace hedge {
 
 
 
-  typedef matrix_target<boost::numeric::ublas::coordinate_matrix<double, 
-          boost::numeric::ublas::column_major> > 
+  typedef matrix_target<coordinate_matrix<double, column_major> > 
     coord_matrix_target;
 }
 

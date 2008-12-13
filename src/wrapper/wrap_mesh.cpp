@@ -34,16 +34,19 @@ using namespace hedge;
 
 namespace 
 {
+  template <class Scalar>
   py::tuple tetrahedron_fj_and_normal(
       double el_orientation,
       py::list face_vertex_numbers, 
       py::list vertices_py)
   {
+    typedef numpy_vector<Scalar> vec_t;
+
     static const int face_orientations[] = { -1,1,-1,1 };
 
     py::list normals, jacobians;
 
-    COPY_PY_LIST(py_vector, vertices);
+    COPY_PY_LIST(vec_t, vertices);
 
     unsigned face_nr = 0;
 
@@ -55,7 +58,7 @@ namespace
         py::extract<unsigned>(single_face_vertex_numbers[2])
       };
 
-      py_vector normal = cross<bounded_vector, bounded_vector>(
+      vec_t normal = cross<bounded_vector<Scalar, 3>, bounded_vector<Scalar, 3> >(
           vertices[sfvn[1]]-vertices[sfvn[0]],
           vertices[sfvn[2]]-vertices[sfvn[0]]);
 
@@ -65,7 +68,7 @@ namespace
       // vectors above. Half of that is the area of the triangle we're interested
       // in. Next, the area of the unit triangle is two, so divide by two again.
       normals.append(
-          py_vector(
+          vec_t(
             (el_orientation
             * face_orientations[face_nr++]
             / n_length)
@@ -82,5 +85,5 @@ namespace
 
 void hedge_expose_mesh()
 {
-  DEF_SIMPLE_FUNCTION(tetrahedron_fj_and_normal);
+  py::def("tetrahedron_fj_and_normal", tetrahedron_fj_and_normal<double>);
 }

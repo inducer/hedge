@@ -37,7 +37,7 @@
 
 namespace hedge 
 {
-  typedef py_uint_vector index_lists_t;
+  typedef numpy_vector<npy_uint> index_lists_t;
   typedef unsigned index_list_number_t;
 
   struct face_pair
@@ -83,7 +83,7 @@ namespace hedge
        * Used for sizing a temporary.
        */
       unsigned face_count;
-      py_uint_vector local_el_to_global_el_base;
+      numpy_vector<npy_uint> local_el_to_global_el_base;
 
       face_group(bool d_sided)
         : double_sided(d_sided), 
@@ -105,13 +105,14 @@ namespace hedge
 
 
 
+  template <class Scalar>
   inline
   void lift_flux(
       const face_group &fg,
-      const py_matrix &matrix, 
-      const pyublas::invalid_ok<py_vector> &elwise_post_scaling,
-      py_vector fluxes_on_faces,
-      py_vector result)
+      const numpy_matrix<Scalar> &matrix, 
+      const pyublas::invalid_ok<numpy_vector<double> > &elwise_post_scaling,
+      numpy_vector<Scalar> fluxes_on_faces,
+      numpy_vector<Scalar> result)
 #ifdef USE_BLAS
   {
     using namespace boost::numeric::bindings;
@@ -123,7 +124,7 @@ namespace hedge
     if (el_length_temp != matrix.size2())
       throw std::runtime_error("matrix size mismatch in finish_flux");
 
-    dyn_vector result_temp(el_length_result*fg.element_count());
+    vector<Scalar> result_temp(el_length_result*fg.element_count());
     result_temp.clear();
     gemm(
         'T', // "matrix" is row-major
@@ -143,13 +144,13 @@ namespace hedge
 
     if (elwise_post_scaling->is_valid())
     {
-      py_vector::const_iterator el_scale_it = elwise_post_scaling->begin();
+      numpy_vector<double>::const_iterator el_scale_it = elwise_post_scaling->begin();
       for (unsigned i_loc_el = 0; i_loc_el < fg.element_count(); ++i_loc_el)
         noalias(
             subrange(result,
               fg.local_el_to_global_el_base[i_loc_el],
               fg.local_el_to_global_el_base[i_loc_el]+el_length_result))
-          += *el_scale_it++ * subrange(result_temp,
+          += Scalar(*el_scale_it++) * subrange(result_temp,
               el_length_result*i_loc_el,
               el_length_result*(i_loc_el+1));
     }
@@ -175,13 +176,13 @@ namespace hedge
 
     if (elwise_post_scaling->is_valid())
     {
-      py_vector::const_iterator el_scale_it = elwise_post_scaling->begin();
+      numpy_vector<double>::const_iterator el_scale_it = elwise_post_scaling->begin();
       for (unsigned i_loc_el = 0; i_loc_el < fg.element_count(); ++i_loc_el)
         noalias(
             subrange(result,
               fg.local_el_to_global_el_base[i_loc_el],
               fg.local_el_to_global_el_base[i_loc_el]+el_length_result))
-          += *el_scale_it++ * prod(matrix,
+          += Scalar(*el_scale_it++) * prod(matrix,
               subrange(fluxes_on_faces,
                 el_length_temp*i_loc_el,
                 el_length_temp*(i_loc_el+1))
@@ -206,20 +207,29 @@ namespace hedge
 
 
 
-  inline 
-  py_vector::value_type subscript(
-      const py_vector::const_iterator it, unsigned index)
+  template <class Vector>
+  struct subscript
   {
-    return it[index];
-  }
+    static
+    typename Vector::value_type apply(
+        const typename Vector::const_iterator it, unsigned index)
+    {
+      return it[index];
+    }
+  };
 
-  inline 
-  double subscript(
-      boost::numeric::ublas::zero_vector<double>::const_iterator it,
-      unsigned)
+  template <class Scalar>
+  struct subscript<zero_vector<Scalar> >
   {
-    return 0;
-  }
+    typedef zero_vector<Scalar> vector_t;
+
+    static
+    typename vector_t::value_type apply(
+        const typename vector_t::const_iterator it, unsigned index)
+    {
+      return 0;
+    }
+  };
 
 
 
@@ -230,19 +240,21 @@ namespace hedge
       IntFlux int_flux, ExtFlux ext_flux, 
       const LocOperand loc_operand,
       const OppOperand opp_operand,
-      py_vector fluxes_on_faces
+      numpy_vector<typename LocOperand::value_type> fluxes_on_faces
       )
   {
+    typedef typename LocOperand::value_type scalar_t;
+
     const typename LocOperand::const_iterator loc_op_it = loc_operand.begin();
     const typename OppOperand::const_iterator opp_op_it = opp_operand.begin();
-    const py_vector::iterator fof_it = fluxes_on_faces.begin();
+    const typename numpy_vector<scalar_t>::iterator fof_it = fluxes_on_faces.begin();
 
     BOOST_FOREACH(const face_pair &fp, fg.face_pairs)
     {
-      const double int_coeff_here = 
+      const scalar_t int_coeff_here = 
         fp.loc.face_jacobian*int_flux(
             fp.loc, &fp.opp);
-      const double ext_coeff_here = 
+      const scalar_t ext_coeff_here = 
         fp.loc.face_jacobian*ext_flux(
             fp.loc, &fp.opp);
 
@@ -261,8 +273,8 @@ namespace hedge
 
       for (unsigned i = 0; i < fg.face_length(); i++)
       {
-        const double loc_val = subscript(loc_op_it, lebi+loc_idx_list[i]);
-        const double opp_val = subscript(opp_op_it, oebi+opp_idx_list[i]);
+        const scalar_t loc_val = subscript<LocOperand>::apply(loc_op_it, lebi+loc_idx_list[i]);
+        const scalar_t opp_val = subscript<OppOperand>::apply(opp_op_it, oebi+opp_idx_list[i]);
         fof_it[loc_tempbase+i] = 
           int_coeff_here*loc_val + ext_coeff_here*opp_val;
       }
@@ -272,29 +284,29 @@ namespace hedge
 
 
 
-  template <class IntFlux, class ExtFlux>
+  template <class IntFlux, class ExtFlux, class Scalar>
   inline
   void perform_double_sided_flux(const face_group &fg, 
       IntFlux int_flux, ExtFlux ext_flux, 
-      const py_vector &operand,
-      py_vector fluxes_on_faces
+      const numpy_vector<Scalar> &operand,
+      numpy_vector<Scalar> fluxes_on_faces
       )
   {
-    const py_vector::const_iterator op_it = operand.begin();
-    const py_vector::iterator fof_it = fluxes_on_faces.begin();
+    const typename numpy_vector<Scalar>::const_iterator op_it = operand.begin();
+    const typename numpy_vector<Scalar>::iterator fof_it = fluxes_on_faces.begin();
 
     BOOST_FOREACH(const face_pair &fp, fg.face_pairs)
     {
-      const double int_coeff_here = 
+      const Scalar int_coeff_here = 
         fp.loc.face_jacobian*int_flux(
             fp.loc, &fp.opp);
-      const double ext_coeff_here = 
+      const Scalar ext_coeff_here = 
         fp.loc.face_jacobian*ext_flux(
             fp.loc, &fp.opp);
-      const double int_coeff_opp = 
+      const Scalar int_coeff_opp = 
         fp.loc.face_jacobian*int_flux(
             fp.opp, &fp.loc);
-      const double ext_coeff_opp = 
+      const Scalar ext_coeff_opp = 
         fp.loc.face_jacobian*ext_flux(
             fp.opp, &fp.loc);
 
@@ -319,8 +331,8 @@ namespace hedge
 
       for (unsigned i = 0; i < fg.face_length(); i++)
       {
-        const double loc_val = op_it[lebi+loc_idx_list[i]];
-        const double opp_val = op_it[oebi+opp_idx_list[i]];
+        const Scalar loc_val = op_it[lebi+loc_idx_list[i]];
+        const Scalar opp_val = op_it[oebi+opp_idx_list[i]];
         fof_it[loc_tempbase+i] = 
           int_coeff_here*loc_val + ext_coeff_here*opp_val;
         fof_it[opp_tempbase+opp_write_map[i]] = 
