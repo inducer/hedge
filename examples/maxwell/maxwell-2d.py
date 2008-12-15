@@ -78,11 +78,12 @@ def main():
         print "nsteps", nsteps
         print "#elements=", len(mesh.elements)
 
+    from hedge.mesh import TAG_ALL, TAG_NONE
     op = TMMaxwellOperator(epsilon, mu, flux_type=1,
             current=TimeIntervalGivenFunction(
-                GivenFunction(CurrentSource()), off_time=final_time/10)
-            )
-    fields = op.assemble_fields(discr=discr)
+                GivenFunction(CurrentSource()), off_time=final_time/10),
+            absorb_tag=TAG_ALL, pec_tag=TAG_NONE)
+    fields = op.assemble_eh(discr=discr)
 
     stepper = RK4TimeStepper()
     from time import time
