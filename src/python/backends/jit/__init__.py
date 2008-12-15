@@ -112,6 +112,12 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         self.executor.do_mass(op, field, out)
         return out
 
+    def map_call(self, expr):
+        from pymbolic.primitives import Variable
+        assert isinstance(expr.function, Variable)
+        func = getattr(numpy, expr.function.name)
+        return func(*[self.rec(p) for p in expr.parameters])
+
 
 
 
@@ -211,7 +217,6 @@ class Discretization(hedge.discretization.Discretization):
 
         from hedge.backends.jit.compiler import OperatorCompiler
         code = OperatorCompiler(self)(prepared_optemplate)
-        #print code
         ex = Executor(self, code)
         ex.instrument()
         return ex

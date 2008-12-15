@@ -1339,3 +1339,41 @@ def gather_flops(discr):
 
     return result
 
+
+
+
+# flux creation ---------------------------------------------------------------
+def make_lax_friedrichs_flux(wave_speed, state, flux_func, bdry_tags_and_states, strong):
+    from hedge.flux import make_normal, FluxVectorPlaceholder
+    
+    fluxes = flux_func(state)
+
+    n = len(state)
+    d = len(fluxes)
+    normal = make_normal(d)
+    fvph = FluxVectorPlaceholder(len(state)*(1+d)+1)
+
+    wave_speed_ph = fvph[0]
+    state_ph = fvph[1:1+n]
+    fluxes_ph = [fvph[1+i*n:1+(i+1)*n] for i in range(1, d+1)]
+
+    penalty = wave_speed_ph.int*(state_ph.ext-state_ph.int) 
+
+    if not strong:
+        flux = 0.5*(sum(n_i*(f_i.int+f_i.ext) for n_i, f_i in zip(normal, fluxes_ph))
+                + penalty)
+    else:
+        flux = 0.5*(sum(n_i*(f_i.int-f_i.ext) for n_i, f_i in zip(normal, fluxes_ph))
+                - penalty)
+
+    from hedge.optemplate import get_flux_operator
+    flux_op = get_flux_operator(flux)
+    int_operand = join_fields(wave_speed, state, *fluxes)
+
+    from hedge.optemplate import pair_with_boundary
+    return (flux_op*int_operand
+            + sum(
+                flux_op*pair_with_boundary(int_operand,
+                    join_fields(0, ext_state, *flux_func(ext_state)), tag)
+                for tag, ext_state in bdry_tags_and_states))
+
