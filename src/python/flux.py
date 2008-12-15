@@ -26,6 +26,7 @@ import pymbolic
 import pymbolic.mapper.collector
 import pymbolic.mapper.expander
 import pymbolic.mapper.flattener
+import pymbolic.mapper.substitutor
 import pymbolic.mapper.constant_folder
 
 
@@ -231,11 +232,7 @@ class FluxVectorPlaceholder(object):
 # internal flux wrangling -----------------------------------------------------
 class FluxIdentityMapperMixin(object):
     def map_field_component(self, expr):
-        result = self.subst_func(expr)
-        if result is not None:
-            return result
-        else:
-            return expr
+        return expr
 
     def map_normal(self, expr):
         return expr
@@ -249,6 +246,20 @@ class FluxIdentityMapperMixin(object):
                 self.rec(expr.then),
                 self.rec(expr.else_),
                 )
+
+
+
+
+class FluxSubstitutionMapper(pymbolic.mapper.substitutor.SubstitutionMapper,
+        FluxIdentityMapperMixin):
+    def map_field_component(self, expr):
+        result = self.subst_func(expr)
+        if result is not None:
+            return result
+        else:
+            return expr
+
+    map_normal = map_field_component
 
 
 
@@ -430,3 +441,7 @@ def analyze_flux(flux):
         return flux._compiled
     except AttributeError:
         return compile_scalar_flux(flux)
+
+
+
+

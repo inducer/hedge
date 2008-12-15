@@ -880,12 +880,7 @@ class BCToFluxRewriter(IdentityMapper):
                 sub_field_into_bdry)(bdry_field)
 
         # Step II: Substitute the new_bdry_field into the flux.
-        from hedge.flux import FluxIdentityMapperMixin
-
-        class BdryIntoFluxSubstitutionMapper(
-                SubstitutionMapper,
-                FluxIdentityMapperMixin):
-            pass
+        from hedge.flux import FluxSubstitutionMapper
 
         def sub_bdry_into_flux(expr):
             if isinstance(expr, FieldComponent) and not expr.is_local:
@@ -896,7 +891,7 @@ class BCToFluxRewriter(IdentityMapper):
             else:
                 return None
 
-        new_flux = BdryIntoFluxSubstitutionMapper(
+        new_flux = FluxSubstitutionMapper(
                 sub_bdry_into_flux)(flux)
         
         result = OperatorBinding(
