@@ -489,7 +489,8 @@ class MaxwellOperator(TimeDependentOperator):
 
         normal = make_normal(self.dimensions)
 
-        w = FluxVectorPlaceholder(self.count_subset(self.get_eh_subset()))
+        from hedge.tools import count_subset
+        w = FluxVectorPlaceholder(count_subset(self.get_eh_subset()))
         e, h = self.split_eh(w)
 
         if flux_type == "lf":
@@ -531,14 +532,14 @@ class MaxwellOperator(TimeDependentOperator):
             return self.h_cross(nabla, field)
 
         from hedge.optemplate import make_nabla
-        from hedge.tools import join_fields
+        from hedge.tools import join_fields, count_subset
 
         nabla = make_nabla(self.dimensions)
 
         if self.current is not None:
             from hedge.optemplate import make_vector_field
             j = make_vector_field("j", 
-                    self.count_subset(self.get_eh_subset()[:3]))
+                    count_subset(self.get_eh_subset()[:3]))
         else:
             j = 0
 
@@ -554,7 +555,8 @@ class MaxwellOperator(TimeDependentOperator):
 
         from hedge.optemplate import make_vector_field
 
-        fld_cnt = self.count_subset(self.get_eh_subset())
+        from hedge.tools import count_subset
+        fld_cnt = count_subset(self.get_eh_subset())
         if w is None:
             w = make_vector_field("w", fld_cnt)
 
@@ -630,8 +632,9 @@ class MaxwellOperator(TimeDependentOperator):
         else:
             def zero(): return discr.volume_zeros()
 
-        e_components = self.count_subset(self.get_eh_subset()[0:3])
-        h_components = self.count_subset(self.get_eh_subset()[3:6])
+        from hedge.tools import count_subset
+        e_components = count_subset(self.get_eh_subset()[0:3])
+        h_components = count_subset(self.get_eh_subset()[3:6])
 
         def default_fld(fld, comp):
             if fld is None:
@@ -664,11 +667,6 @@ class MaxwellOperator(TimeDependentOperator):
         else:
             from hedge.tools import make_obj_array as moa
             return moa(e), moa(h)
-
-    @staticmethod
-    def count_subset(subset):
-        from pytools import len_iterable
-        return len_iterable(uc for uc in subset if uc)
 
     def get_eh_subset(self):
         """Return a 6-tuple of C{bool}s indicating whether field components 
@@ -810,7 +808,8 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
         return rhs[sub_idx]
 
     def op_template(self, w=None):
-        fld_cnt = self.count_subset(self.get_eh_subset())
+        from hedge.tools import count_subset
+        fld_cnt = count_subset(self.get_eh_subset())
         if w is None:
             from hedge.optemplate import make_vector_field
             w = make_vector_field("w", fld_cnt+2*self.dimensions)
@@ -833,8 +832,9 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
         else:
             def zero(): return discr.volume_zeros()
 
-        e_components = self.count_subset(self.get_eh_subset()[0:3])
-        h_components = self.count_subset(self.get_eh_subset()[3:6])
+        from hedge.tools import count_subset
+        e_components = count_subset(self.get_eh_subset()[0:3])
+        h_components = count_subset(self.get_eh_subset()[3:6])
 
         def default_fld(fld, comp):
             if fld is None:

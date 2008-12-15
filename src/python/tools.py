@@ -332,6 +332,13 @@ def levi_civita(tuple):
 
 
 
+def count_subset(subset):
+    from pytools import len_iterable
+    return len_iterable(uc for uc in subset if uc)
+
+
+
+
 def full_to_subset_indices(subset, base=0):
     """Takes a sequence of bools and turns it into an array of indices
     to be used to extract the subset from the full set.
