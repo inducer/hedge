@@ -220,7 +220,7 @@ class OperatorCompiler(OperatorCompilerBase):
                 CustomLoop, For
 
         from codepy.bpl import BoostPythonModule
-        mod = BoostPythonModule()
+        mod = BoostPythonModule(max_arity=len(fluxes)+len(fvi.arg_names)+1)
 
         S = Statement
         mod.add_to_module([
@@ -335,7 +335,7 @@ class OperatorCompiler(OperatorCompilerBase):
                 CustomLoop, For
 
         from codepy.bpl import BoostPythonModule
-        mod = BoostPythonModule()
+        mod = BoostPythonModule(max_arity=len(fluxes)+len(fvi.arg_names)+1)
 
         S = Statement
         mod.add_to_module([
