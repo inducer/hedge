@@ -128,8 +128,8 @@ class JitLifter:
                                 Assign("result_it[dest_el_base+i]", "tmp"))
                             )
                         ),
-                    S("elwise_post_scaling_it++"),
-                    ])
+                    ]+if_(with_scale, S("elwise_post_scaling_it++"))
+                    )
                 )
             ])
 
