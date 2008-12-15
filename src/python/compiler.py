@@ -181,6 +181,32 @@ class OperatorCompilerBase(IdentityMapper):
         from hedge.optemplate import DiffOpCollector
         return DiffOpCollector()(expr)
 
+    def insert_discards(self, code, result_expr):
+        rev_code_and_used_vars = []
+        from hedge.tools import setify_field as setify
+        used_vars = set(v.name for v in setify(result_expr))
+
+        from pymbolic.primitives import Variable
+
+        for line in code[::-1]:
+            used_vars.update(
+                v.name for v in line.get_dependencies()
+                if isinstance(v, Variable) and v.name.startswith(self.prefix))
+            rev_code_and_used_vars.append((line, used_vars.copy()))
+            used_vars = used_vars - line.get_assignees()
+
+        result = []
+        last_used_vars = set()
+        for line, used_vars in rev_code_and_used_vars[::-1]:
+            for var_name in last_used_vars - used_vars:
+                result.append(Discard(name=var_name))
+
+            result.append(line)
+
+            last_used_vars = used_vars
+
+        return result
+
     def __call__(self, expr):
         # Fluxes can be evaluated faster in batches. Here, we find flux batches
         # that we can evaluate together.
@@ -236,9 +262,8 @@ class OperatorCompilerBase(IdentityMapper):
 
         # Then, put the toplevel expressions into variables as well.
         from hedge.tools import with_object_array_or_scalar
-        return Code(self.code, 
-                with_object_array_or_scalar(
-                    self.assign_to_new_var, result))
+        result = with_object_array_or_scalar(self.assign_to_new_var, result)
+        return Code(self.insert_discards(self.code, result), result)
 
     def get_var_name(self):
         new_name = self.prefix+str(self.assigned_var_count)

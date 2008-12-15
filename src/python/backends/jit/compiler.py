@@ -105,6 +105,20 @@ class BoundaryFluxKind(object):
 class CompiledFluxBatchAssign(FluxBatchAssign):
     __slots__ = ["compiled_func", "arg_specs"]
 
+    def get_dependencies(self):
+        result = set()
+
+        from hedge.tools import setify_field as setify
+        from hedge.optemplate import OperatorBinding, BoundaryPair
+        for f in self.fluxes:
+            assert isinstance(f, OperatorBinding)
+            if isinstance(f.field, BoundaryPair):
+                result |= setify(f.field.field) |  setify(f.field.bfield)
+            else:
+                result |= setify(f.field)
+
+        return result
+
 class OperatorCompiler(OperatorCompilerBase):
     def __init__(self, discr):
         OperatorCompilerBase.__init__(self)
