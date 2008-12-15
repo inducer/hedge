@@ -191,6 +191,16 @@ def make_obj_array(res_list):
 
 
 
+def setify_field(f):
+    from hedge.tools import is_obj_array
+    if is_obj_array(f):
+        return set(f)
+    else:
+        return set([f])
+
+
+
+
 def hashable_field(f):
     if is_obj_array(f):
         return tuple(f)
