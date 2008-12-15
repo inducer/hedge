@@ -39,10 +39,10 @@ class Instruction(Record):
     __slots__ = []
 
     def get_assignees(self):
-        raise NotImplementedError
+        raise NotImplementedError("no get_assignees in %s" % self.__class__)
 
     def get_dependencies(self):
-        raise NotImplementedError
+        raise NotImplementedError("no get_dependencies in %s" % self.__class__)
 
     def __str__(self):
         raise NotImplementedError
@@ -72,7 +72,7 @@ class Assign(Instruction):
         return set([self.name])
 
     def get_dependencies(self):
-        return self.dep_mapper_class()(self.expr)
+        return self.dep_mapper_class(include_calls="descend_args")(self.expr)
 
     def __str__(self):
         return "%s <- %s" % (self.name, self.expr)
@@ -203,7 +203,7 @@ class OperatorCompilerBase(IdentityMapper):
                 fr = flux_queue[i]
                 if fr.dependencies <= admissible_deps:
                     present_batch.add(fr)
-                    flux_queue.pop(0)
+                    flux_queue.pop(i)
                 else:
                     i += 1
 
@@ -216,7 +216,7 @@ class OperatorCompilerBase(IdentityMapper):
 
                 for kind, batch in batches_by_kind.iteritems():
                     self.flux_batches.append(
-                            self.FluxBatch(kind=kind, flux_exprs=batch))
+                            self.FluxBatch(kind=kind, flux_exprs=list(batch)))
 
                 admissible_deps |= present_batch
             else:
@@ -274,7 +274,7 @@ class OperatorCompilerBase(IdentityMapper):
                         op_class=single_valued(
                             d.op.__class__ for d in all_diffs),
                         operators=[d.op for d in all_diffs],
-                        field=single_valued(d.field for d in all_diffs)))
+                        field=self.rec(single_valued(d.field for d in all_diffs))))
 
             from pymbolic import var
             for n, d in zip(names, all_diffs):
@@ -287,18 +287,23 @@ class OperatorCompilerBase(IdentityMapper):
             return self.expr_to_var[expr]
         except KeyError:
             for fb in self.flux_batches:
-                if expr in fb.flux_exprs:
-                    fluxes = [self.internal_map_flux(f) for f in fb.flux_exprs]
+                try:
+                    idx = fb.flux_exprs.index(expr)
+                except ValueError:
+                    pass
+                else:
+                    # found at idx
+                    mapped_fluxes = [self.internal_map_flux(f) for f in fb.flux_exprs]
 
-                    names = [self.get_var_name() for f in fluxes]
+                    names = [self.get_var_name() for f in mapped_fluxes]
                     self.code.append(
-                            self.make_flux_batch_assign(names, fluxes, fb.kind))
+                            self.make_flux_batch_assign(names, mapped_fluxes, fb.kind))
 
                     from pymbolic import var
-                    for n, f in zip(names, fluxes):
+                    for n, f in zip(names, fb.flux_exprs):
                         self.expr_to_var[f] = var(n)
 
-                    return self.expr_to_var[expr]
+                    return var(names[idx])
 
             raise RuntimeError("flux '%s' not in any flux batch" % expr)
 
