@@ -22,6 +22,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 
+import numpy
 import pymbolic.mapper
 import hedge.optemplate
 from pytools import memoize_method
@@ -30,8 +31,15 @@ from pytools import memoize_method
 
 
 class ExecutorBase(object):
-    def __init__(self, discr):
+    def __init__(self, discr, op_data, wrapper_func):
         self.discr = discr
+        self.op_data = op_data
+        self.wrapper_func = wrapper_func
+
+        self.functions = {}
+
+    def add_function(self, name, func):
+        self.functions[name] = func
 
     def instrument(self):
         discr = self.discr
@@ -116,24 +124,6 @@ class ExecutorBase(object):
 
         return result
 
-    def diff_xyz(self, mapper, op, expr, field, result):
-        rst_derivatives = mapper.diff_rst_with_cache(op, expr, field)
-
-        from hedge.tools import make_vector_target
-        from hedge._internal import perform_elwise_scale
-
-        for rst_axis in range(self.discr.dimensions):
-            target = make_vector_target(rst_derivatives[rst_axis], result)
-
-            target.begin(len(self.discr), len(self.discr))
-            for eg in self.discr.element_groups:
-                perform_elwise_scale(eg.ranges,
-                        op.coefficients(eg)[op.xyz_axis][rst_axis],
-                        target)
-            target.finalize()
-
-        return result
-
     def do_mass(self, op, field, out):
         from hedge.tools import make_vector_target
         target = make_vector_target(field, out)
@@ -146,71 +136,59 @@ class ExecutorBase(object):
                    target)
         target.finalize()
 
+    def __call__(self, *args, **kwargs):
+        if self.wrapper_func is not None:
+            return self.wrapper_func(self, *args, **kwargs)
+        else:
+            assert not args
+            return self.execute(**kwargs)
+
+
 
 
 class ExecutionMapperBase(hedge.optemplate.Evaluator,
         hedge.optemplate.BoundOpMapperMixin, 
         hedge.optemplate.LocalOpReducerMixin):
-
     def __init__(self, context, discr, executor):
         hedge.optemplate.Evaluator.__init__(self, context)
         self.discr = discr
         self.executor = executor
 
-        self.diff_rst_cache = {}
-
-    def diff_rst_with_cache(self, op, expr, field):
-        try:
-            result = self.diff_rst_cache[op.__class__, expr]
-        except KeyError:
-            result = self.diff_rst_cache[op.__class__, expr] = \
-                    [self.executor.diff_rst(op, i, field) 
-                            for i in range(self.discr.dimensions)]
-
-        return result
-
-    def map_diff_base(self, op, field_expr, out=None):
+    def map_diff_base(self, op, field_expr):
         field = self.rec(field_expr)
 
-        if out is None:
-            out = self.discr.volume_zeros()
+        out = self.discr.volume_zeros()
         self.executor.diff_xyz(self, op, field_expr, field, out)
         return out
 
-    def map_mass_base(self, op, field_expr, out=None):
+    def map_mass_base(self, op, field_expr):
         field = self.rec(field_expr)
 
         if isinstance(field, (float, int)) and field == 0:
             return 0
 
-        if out is None:
-            out = self.discr.volume_zeros()
-
+        out = self.discr.volume_zeros()
         self.executor.do_mass(op, field, out)
+        return out
+
+    def map_elementwise_max(self, op, field_expr):
+        from hedge._internal import perform_elwise_max
+        field = self.rec(field_expr)
+
+        out = self.discr.volume_zeros()
+        for eg in self.discr.element_groups:
+            perform_elwise_max(eg.ranges, field, out)
 
         return out
 
-    def map_sumadfasdf(self, expr, out=None):
-        if out is None:
-            out = self.discr.volume_zeros()
-        for child in expr.children:
-            result = self.rec(child, out)
-            if result is not out:
-                out += result
-        return out
+    def map_call(self, expr):
+        from pymbolic.primitives import Variable
+        assert isinstance(expr.function, Variable)
+        func_name = expr.function.name
 
-    def map_constant(self, expr, out=None):
-        return expr
+        try:
+            func = self.executor.functions[func_name]
+        except KeyError:
+            func = getattr(numpy, expr.function.name)
 
-    def map_subscript(self, expr, out=None):
-        return hedge.optemplate.Evaluator.map_subscript(self, expr)
-
-    def map_product(self, expr, out=None):
-        return hedge.optemplate.Evaluator.map_product(self, expr)
-
-    def map_quotient(self, expr, out=None):
-        return hedge.optemplate.Evaluator.map_quotient(self, expr)
-
-    def map_variable(self, expr, out=None):
-        return hedge.optemplate.Evaluator.map_variable(self, expr)
-
+        return func(*[self.rec(p) for p in expr.parameters])

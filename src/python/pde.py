@@ -1579,8 +1579,8 @@ class EulerOperator(TimeDependentOperator):
                         ))
                     for i in range(self.dimensions)]
 
-        from hedge.optemplate import make_nabla, InverseMassOperator#, \
-                #ElementWiseMaxOperator
+        from hedge.optemplate import make_nabla, InverseMassOperator, \
+                ElementwiseMaxOperator
 
         from pymbolic import var
         sqrt = var("sqrt")
@@ -1597,8 +1597,7 @@ class EulerOperator(TimeDependentOperator):
         return join_fields(
                 (- numpy.dot(make_nabla(self.dimensions), flux(state))
                     + InverseMassOperator()*make_lax_friedrichs_flux(
-                        #wave_speed=userplot(ElementWiseMaxOperator()*c),
-                        wave_speed=speed,
+                        wave_speed=ElementwiseMaxOperator()*c,
                         state=state, flux_func=flux,
                         bdry_tags_and_states=[
                             (TAG_ALL, bc_state)

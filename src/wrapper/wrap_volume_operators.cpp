@@ -72,6 +72,10 @@ namespace
         perform_elwise_scale<uniform_element_ranges, 
           vector_target<numpy_vector<Scalar> > >,
         (arg("ers"), arg("scale_factors"), arg("target")));
+
+    def("perform_elwise_max", 
+        perform_elwise_max<uniform_element_ranges, numpy_vector<Scalar> >,
+        (arg("ers"), arg("in"), arg("out")));
   }
 }
 

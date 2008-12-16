@@ -33,14 +33,7 @@ import numpy
 
 
 # exec mapper -----------------------------------------------------------------
-class ExecutionMapper(hedge.optemplate.Evaluator,
-        hedge.optemplate.BoundOpMapperMixin, 
-        hedge.optemplate.LocalOpReducerMixin):
-    def __init__(self, context, discr, executor):
-        hedge.optemplate.Evaluator.__init__(self, context.copy())
-        self.discr = discr
-        self.executor = executor
-
+class ExecutionMapper(ExecutionMapperBase):
     # code execution functions ------------------------------------------------
     def exec_discard(self, insn):
         del self.context[insn.name]
@@ -112,28 +105,12 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         self.executor.do_mass(op, field, out)
         return out
 
-    def map_call(self, expr):
-        from pymbolic.primitives import Variable
-        assert isinstance(expr.function, Variable)
-        func_name = expr.function.name
-
-        try:
-            func = self.executor.functions[func_name]
-        except KeyError:
-            func = getattr(numpy, expr.function.name)
-
-        return func(*[self.rec(p) for p in expr.parameters])
-
 
 
 
 class Executor(ExecutorBase):
-    def __init__(self, discr, code, wrapper_func=None):
-        ExecutorBase.__init__(self, discr)
-
-        self.code = code
-        self.functions = {}
-        self.wrapper_func = wrapper_func
+    def __init__(self, discr, op_data, wrapper_func):
+        ExecutorBase.__init__(self, discr, op_data, wrapper_func)
 
         def bench_diff(f):
             test_field = discr.volume_zeros()
@@ -174,9 +151,6 @@ class Executor(ExecutorBase):
         self.lift_flux = pick_faster_func(bench_lift, 
                 [self.lift_flux, JitLifter(discr)])
 
-    def add_function(self, name, func):
-        self.functions[name] = func
-
     def diff_builtin(self, op_class, field, xyz_needed):
         rst_derivatives = [
                 self.diff_rst(op_class, i, field) 
@@ -186,14 +160,7 @@ class Executor(ExecutorBase):
                 for i in xyz_needed]
 
     def execute(self, **context):
-        return self.code.execute(ExecutionMapper(context, self.discr, self))
-
-    def __call__(self, *args, **kwargs):
-        if self.wrapper_func is not None:
-            return self.wrapper_func(self, *args, **kwargs)
-        else:
-            assert not args
-            return self.execute(**kwargs)
+        return self.op_data.execute(ExecutionMapper(context, self.discr, self))
 
 
 

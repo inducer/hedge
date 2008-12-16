@@ -65,6 +65,16 @@ class Operator(pymbolic.primitives.Leaf):
 
 
 
+class StatelessOperator(Operator):
+    def get_hash(self):
+        return hash(self.__class__)
+
+    def is_equal(self, other):
+        return other.__class__ == self.__class__
+
+
+
+
 class OperatorBinding(pymbolic.primitives.AlgebraicLeaf):
     def __init__(self, op, field):
         self.op = op
@@ -169,12 +179,8 @@ def DiffOperatorVector(els):
     
 
 # mass operators --------------------------------------------------------------
-class MassOperatorBase(Operator):
-    def get_hash(self):
-        return hash(self.__class__)
-
-    def is_equal(self, other):
-        return other.__class__ == self.__class__
+class MassOperatorBase(StatelessOperator):
+    pass
 
 
 
@@ -203,6 +209,14 @@ class InverseMassOperator(MassOperatorBase):
     def get_mapper_method(self, mapper): 
         return mapper.map_inverse_mass
 
+
+
+
+
+# misc operators --------------------------------------------------------------
+class ElementwiseMaxOperator(StatelessOperator):
+    def get_mapper_method(self, mapper): 
+        return mapper.map_elementwise_max
 
 
 
@@ -459,6 +473,8 @@ class OperatorReducerMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     def map_flux_coeff_base(self, expr, *args, **kwargs):
         return self.map_operator(expr, *args, **kwargs)
 
+    def map_elementwise_max(self, expr, *args, **kwargs):
+        return self.map_operator(expr, *args, **kwargs)
 
 
 
@@ -508,6 +524,10 @@ class IdentityMapperMixin(LocalOpReducerMixin, FluxOpReducerMixin):
         return expr
 
     def map_flux_coeff_base(self, expr, *args, **kwargs):
+        # it's a leaf--no changing children
+        return expr
+
+    def map_elementwise_max(self, expr, *args, **kwargs):
         # it's a leaf--no changing children
         return expr
 
@@ -763,9 +783,6 @@ class FluxDecomposer(IdentityMapper):
             elif isinstance(field, int) and field == 0:
                 field = ZeroVector()
             else:
-                print analyzed_flux
-                print field, bfield
-                print lsf, blsf
                 assert lsf == blsf
 
         from pymbolic import flattened_sum

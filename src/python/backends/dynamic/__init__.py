@@ -139,7 +139,21 @@ class _FluxOpCompileMapper(hedge.optemplate.FluxDecomposer):
 
 # exec mapper -----------------------------------------------------------------
 class ExecutionMapper(ExecutionMapperBase):
-    # implementation stuff ----------------------------------------------------
+    def __init__(self, context, discr, executor):
+        ExecutionMapperBase.__init__(self, context, discr, executor)
+
+        self.diff_rst_cache = {}
+
+    def diff_rst_with_cache(self, op, expr, field):
+        try:
+            result = self.diff_rst_cache[op.__class__, expr]
+        except KeyError:
+            result = self.diff_rst_cache[op.__class__, expr] = \
+                    [self.executor.diff_rst(op, i, field) 
+                            for i in range(self.discr.dimensions)]
+
+        return result
+
     def scalar_inner_flux(self, int_coeff, ext_coeff, field, lift, out=None):
         if out is None:
             out = self.discr.volume_zeros()
@@ -235,31 +249,50 @@ class ExecutionMapper(ExecutionMapperBase):
 
 
 class Executor(ExecutorBase):
-    def __init__(self, discr, pp_optemplate):
-        ExecutorBase.__init__(self, discr)
-        self.pp_optemplate = pp_optemplate
+    def instrument(self):
+        ExecutorBase.instrument(self)
 
+        discr = self.discr
         from hedge._internal import perform_double_sided_flux
         if discr.instrumented:
             from hedge.tools import time_count_flop, gather_flops
             self.perform_double_sided_flux = \
                     time_count_flop(
                             perform_double_sided_flux,
-                            self.discr.gather_timer,
-                            self.discr.gather_counter,
-                            self.discr.gather_flop_counter,
+                            discr.gather_timer,
+                            discr.gather_counter,
+                            discr.gather_flop_counter,
                             gather_flops(discr))
         else:
             self.perform_double_sided_flux = perform_double_sided_flux
 
-    def __call__(self, **vars):
-        return ExecutionMapper(vars, self.discr, self)(self.pp_optemplate)
+    def diff_xyz(self, mapper, op, expr, field, result):
+        rst_derivatives = mapper.diff_rst_with_cache(op, expr, field)
+
+        from hedge.tools import make_vector_target
+        from hedge._internal import perform_elwise_scale
+
+        for rst_axis in range(self.discr.dimensions):
+            target = make_vector_target(rst_derivatives[rst_axis], result)
+
+            target.begin(len(self.discr), len(self.discr))
+            for eg in self.discr.element_groups:
+                perform_elwise_scale(eg.ranges,
+                        op.coefficients(eg)[op.xyz_axis][rst_axis],
+                        target)
+            target.finalize()
+
+        return result
+
+    def execute(self, **context):
+        return ExecutionMapper(context, self.discr, self)(self.op_data)
+
 
 
 
 
 class Discretization(hedge.discretization.Discretization):
-    def compile(self, optemplate):
+    def compile(self, optemplate, wrapper_func=None):
         from hedge.optemplate import \
                 OperatorBinder, \
                 InverseMassContractor, \
@@ -274,7 +307,7 @@ class Discretization(hedge.discretization.Discretization):
                                 OperatorBinder()(
                                     optemplate))))))
 
-        ex = Executor(self, result)
+        ex = Executor(self, result, wrapper_func)
         ex.instrument()
         return ex
 
