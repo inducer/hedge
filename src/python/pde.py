@@ -1583,22 +1583,14 @@ class EulerOperator(TimeDependentOperator):
                 #ElementWiseMaxOperator
 
         from pymbolic import var
-        userplot = var("userplot")
         sqrt = var("sqrt")
 
         state = make_vector_field("q", self.dimensions+2)
         bc_state = make_vector_field("bc_q", self.dimensions+2)
 
-        from hedge.optemplate import NoCSEStringifyMapper
-        from pymbolic.mapper.stringifier import PREC_NONE
-        for i, f in enumerate(flux(state)):
-            print "axis", i
-            for j, f_i in enumerate(f):
-                print j, NoCSEStringifyMapper()(f_i, PREC_NONE)
+        c = cse(sqrt(self.gamma*p(state)/self.rho(state)))
 
-        c = cse(sqrt(userplot(1, self.gamma*userplot(3,p(state))/self.rho(state))))
-
-        speed = sqrt(userplot(2, numpy.dot(u(state), u(state)))) + c
+        speed = sqrt(numpy.dot(u(state), u(state))) + c
 
         from hedge.tools import make_lax_friedrichs_flux, join_fields
         from hedge.mesh import TAG_ALL

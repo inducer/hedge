@@ -79,7 +79,7 @@ def main():
     else:
         mesh_data = rcon.receive_mesh()
 
-    for order in [3]:
+    for order in [3, 4, 5]:
     #for order in [1,2,3,4,5,6]:
         discr = rcon.make_discretization(mesh_data, order=order)
 
@@ -99,12 +99,6 @@ def main():
 
         euler_ex = op.bind(discr)
 
-        user_visdata = {}
-        def add_userplot(num, data):
-            user_visdata["userplot%d" % num] = data
-            return data
-        euler_ex.add_function("userplot", add_userplot)
-
         max_eigval = [0]
         def rhs(t, q):
             ode_rhs, speed = euler_ex(t, q)
@@ -113,7 +107,7 @@ def main():
         rhs(0, fields)
 
         dt = discr.dt_factor(max_eigval[0])
-        final_time = 10
+        final_time = 0.2
         nsteps = int(final_time/dt)+1
         dt = final_time/nsteps
 
@@ -144,54 +138,15 @@ def main():
         # timestep loop -------------------------------------------------------
         t = 0
 
-        vis_step = [0]
-
-        def vis_rhs(t, fields):
-            from pylo import DB_VARTYPE_VECTOR
-            visf = vis.make_file("vortex-%d-%04d" % (order, vis_step[0]))
-            rhs_fields = rhs(t, fields)
-            true_fields = vortex.volume_interpolant(t, discr)
-            vis.add_data(visf,
-                    [
-                        ("rho", op.rho(fields)),
-                        ("e", op.e(fields)),
-                        ("rho_u", op.rho_u(fields)),
-                        ("u", op.u(fields)),
-
-                        ("true_rho", op.rho(true_fields)),
-                        ("true_e", op.e(true_fields)),
-                        ("true_rho_u", op.rho_u(true_fields)),
-                        ("true_u", op.u(true_fields)),
-
-                        ("rhs_rho", op.rho(rhs_fields)),
-                        ("rhs_e", op.e(rhs_fields)),
-                        ("rhs_rho_u", op.rho_u(rhs_fields)),
-                        ]+user_visdata.items(),
-                    expressions=[
-                        ("diff_rho", "rho-true_rho"),
-                        ("diff_e", "e-true_e"),
-                        ("diff_rho_u", "rho_u-true_rho_u", DB_VARTYPE_VECTOR),
-
-                        ("p", "0.4*(e- 0.5*(rho_u*u))"),
-                        ("p2", "rho^1.4"),
-                        ],
-                    time=t, step=step
-                    )
-            vis_step[0] += 1
-            visf.close()
-
-            user_visdata.clear()
-
-            return rhs_fields
-
         for step in range(nsteps):
             logmgr.tick()
 
             if step % 1 == 0:
             #if False:
                 visf = vis.make_file("vortex-%d-%04d" % (order, step))
-                rhs_fields = rhs(t, fields)
-                true_fields = vortex.volume_interpolant(t, discr)
+
+                #true_fields = vortex.volume_interpolant(t, discr)
+
                 from pylo import DB_VARTYPE_VECTOR
                 vis.add_data(visf,
                         [
@@ -200,23 +155,22 @@ def main():
                             ("rho_u", op.rho_u(fields)),
                             ("u", op.u(fields)),
 
-                            ("true_rho", op.rho(true_fields)),
-                            ("true_e", op.e(true_fields)),
-                            ("true_rho_u", op.rho_u(true_fields)),
-                            ("true_u", op.u(true_fields)),
+                            #("true_rho", op.rho(true_fields)),
+                            #("true_e", op.e(true_fields)),
+                            #("true_rho_u", op.rho_u(true_fields)),
+                            #("true_u", op.u(true_fields)),
 
-                            ("rhs_rho", op.rho(rhs_fields)),
-                            ("rhs_e", op.e(rhs_fields)),
-                            ("rhs_rho_u", op.rho_u(rhs_fields)),
+                            #("rhs_rho", op.rho(rhs_fields)),
+                            #("rhs_e", op.e(rhs_fields)),
+                            #("rhs_rho_u", op.rho_u(rhs_fields)),
                             ],
-                        expressions=[
-                            ("diff_rho", "rho-true_rho"),
-                            ("diff_e", "e-true_e"),
-                            ("diff_rho_u", "rho_u-true_rho_u", DB_VARTYPE_VECTOR),
+                        #expressions=[
+                            #("diff_rho", "rho-true_rho"),
+                            #("diff_e", "e-true_e"),
+                            #("diff_rho_u", "rho_u-true_rho_u", DB_VARTYPE_VECTOR),
 
-                            ("p", "0.4*(e- 0.5*(rho_u*u))"),
-                            ("p2", "rho^1.4"),
-                            ],
+                            #("p", "0.4*(e- 0.5*(rho_u*u))"),
+                            #],
                         time=t, step=step
                         )
                 visf.close()
@@ -229,15 +183,10 @@ def main():
         logmgr.tick()
         logmgr.save()
 
-        if False:
-            numpy.seterr('raise')
-            mode.set_time(t)
-            true_fields = to_obj_array(mode(discr).real)
-
-            eoc_rec.add_data_point(order, discr.norm(fields-true_fields))
-
-            print
-            print eoc_rec.pretty_print("P.Deg.", "L2 Error")
+        true_fields = vortex.volume_interpolant(t, discr)
+        eoc_rec.add_data_point(order, discr.norm(fields-true_fields))
+        print
+        print eoc_rec.pretty_print("P.Deg.", "L2 Error")
 
 if __name__ == "__main__":
     main()
