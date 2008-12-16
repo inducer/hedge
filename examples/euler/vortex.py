@@ -25,20 +25,27 @@ import numpy.linalg as la
 
 
 class Vortex:
-    def __init__(self, beta, gamma, center):
+    def __init__(self, beta, gamma, center, velocity):
         self.beta = beta
         self.gamma = gamma
-        self.center = center
+        self.center = numpy.asarray(center)
+        self.velocity = numpy.asarray(velocity)
 
     def __call__(self, t, x_vec):
-        x = x_vec[0]
-        y = x_vec[1]
+        vortex_loc = self.center + t*self.velocity
+
+        # coordinates relative to vortex center
+        x_rel = x_vec[0] - vortex_loc[0]
+        y_rel = x_vec[1] - vortex_loc[1]
+
+        # Y.C. Zhou, G.W. Wei / Journal of Computational Physics 189 (2003) 159
+        # also JSH/TW Nodal DG Methods, p. 209
 
         from math import pi
-        r = numpy.sqrt((x-t-self.center[0])**2+(y-self.center[1])**2)
+        r = numpy.sqrt(x_rel**2+y_rel**2)
         expterm = self.beta*numpy.exp(1-r**2)
-        u = 1-expterm*(y-self.center[1])/pi
-        v = expterm*(x-self.center[0])/pi
+        u = self.velocity[0] - expterm*y_rel/(2*pi)
+        v = self.velocity[1] + expterm*x_rel/(2*pi)
         rho = (1-(self.gamma-1)/(16*self.gamma*pi**2)*expterm**2)**(1/(self.gamma-1))
         p = rho**self.gamma
 
@@ -76,10 +83,13 @@ def main():
     #for order in [1,2,3,4,5,6]:
         discr = rcon.make_discretization(mesh_data, order=order)
 
-        from hedge.visualization import VtkVisualizer
-        vis = VtkVisualizer(discr, rcon, "vortex-%d" % order)
+        from hedge.visualization import SiloVisualizer
+        #vis = VtkVisualizer(discr, rcon, "vortex-%d" % order)
+        vis = SiloVisualizer(discr, rcon)
 
-        vortex = Vortex(beta=5, gamma=5, center=[5,0])
+        vortex = Vortex(beta=5, gamma=gamma, 
+                center=[5,0], 
+                velocity=[1,0])
         fields = vortex.volume_interpolant(0, discr)
 
         from hedge.pde import EulerOperator
@@ -87,11 +97,17 @@ def main():
         #for i, oi in enumerate(op.op_template()):
             #print i, oi
 
-        euler_rhs = op.bind(discr)
+        euler_ex = op.bind(discr)
+
+        user_visdata = {}
+        def add_userplot(num, data):
+            user_visdata["userplot%d" % num] = data
+            return data
+        euler_ex.add_function("userplot", add_userplot)
 
         max_eigval = [0]
         def rhs(t, q):
-            ode_rhs, speed = euler_rhs(t, q)
+            ode_rhs, speed = euler_ex(t, q)
             max_eigval[0] = speed
             return ode_rhs
         rhs(0, fields)
@@ -128,18 +144,78 @@ def main():
         # timestep loop -------------------------------------------------------
         t = 0
 
+        vis_step = [0]
+
+        def vis_rhs(t, fields):
+            from pylo import DB_VARTYPE_VECTOR
+            visf = vis.make_file("vortex-%d-%04d" % (order, vis_step[0]))
+            rhs_fields = rhs(t, fields)
+            true_fields = vortex.volume_interpolant(t, discr)
+            vis.add_data(visf,
+                    [
+                        ("rho", op.rho(fields)),
+                        ("e", op.e(fields)),
+                        ("rho_u", op.rho_u(fields)),
+                        ("u", op.u(fields)),
+
+                        ("true_rho", op.rho(true_fields)),
+                        ("true_e", op.e(true_fields)),
+                        ("true_rho_u", op.rho_u(true_fields)),
+                        ("true_u", op.u(true_fields)),
+
+                        ("rhs_rho", op.rho(rhs_fields)),
+                        ("rhs_e", op.e(rhs_fields)),
+                        ("rhs_rho_u", op.rho_u(rhs_fields)),
+                        ]+user_visdata.items(),
+                    expressions=[
+                        ("diff_rho", "rho-true_rho"),
+                        ("diff_e", "e-true_e"),
+                        ("diff_rho_u", "rho_u-true_rho_u", DB_VARTYPE_VECTOR),
+
+                        ("p", "0.4*(e- 0.5*(rho_u*u))"),
+                        ("p2", "rho^1.4"),
+                        ],
+                    time=t, step=step
+                    )
+            vis_step[0] += 1
+            visf.close()
+
+            user_visdata.clear()
+
+            return rhs_fields
 
         for step in range(nsteps):
             logmgr.tick()
 
-            if True:
+            if step % 1 == 0:
+            #if False:
                 visf = vis.make_file("vortex-%d-%04d" % (order, step))
+                rhs_fields = rhs(t, fields)
+                true_fields = vortex.volume_interpolant(t, discr)
+                from pylo import DB_VARTYPE_VECTOR
                 vis.add_data(visf,
                         [
                             ("rho", op.rho(fields)),
                             ("e", op.e(fields)),
                             ("rho_u", op.rho_u(fields)),
                             ("u", op.u(fields)),
+
+                            ("true_rho", op.rho(true_fields)),
+                            ("true_e", op.e(true_fields)),
+                            ("true_rho_u", op.rho_u(true_fields)),
+                            ("true_u", op.u(true_fields)),
+
+                            ("rhs_rho", op.rho(rhs_fields)),
+                            ("rhs_e", op.e(rhs_fields)),
+                            ("rhs_rho_u", op.rho_u(rhs_fields)),
+                            ],
+                        expressions=[
+                            ("diff_rho", "rho-true_rho"),
+                            ("diff_e", "e-true_e"),
+                            ("diff_rho_u", "rho_u-true_rho_u", DB_VARTYPE_VECTOR),
+
+                            ("p", "0.4*(e- 0.5*(rho_u*u))"),
+                            ("p2", "rho^1.4"),
                             ],
                         time=t, step=step
                         )

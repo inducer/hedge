@@ -115,17 +115,25 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
     def map_call(self, expr):
         from pymbolic.primitives import Variable
         assert isinstance(expr.function, Variable)
-        func = getattr(numpy, expr.function.name)
+        func_name = expr.function.name
+
+        try:
+            func = self.executor.functions[func_name]
+        except KeyError:
+            func = getattr(numpy, expr.function.name)
+
         return func(*[self.rec(p) for p in expr.parameters])
 
 
 
 
 class Executor(ExecutorBase):
-    def __init__(self, discr, code):
+    def __init__(self, discr, code, wrapper_func=None):
         ExecutorBase.__init__(self, discr)
 
         self.code = code
+        self.functions = {}
+        self.wrapper_func = wrapper_func
 
         def bench_diff(f):
             test_field = discr.volume_zeros()
@@ -166,6 +174,9 @@ class Executor(ExecutorBase):
         self.lift_flux = pick_faster_func(bench_lift, 
                 [self.lift_flux, JitLifter(discr)])
 
+    def add_function(self, name, func):
+        self.functions[name] = func
+
     def diff_builtin(self, op_class, field, xyz_needed):
         rst_derivatives = [
                 self.diff_rst(op_class, i, field) 
@@ -174,8 +185,16 @@ class Executor(ExecutorBase):
         return [self.diff_rst_to_xyz(op_class(i), rst_derivatives)
                 for i in xyz_needed]
 
-    def __call__(self, **vars):
-        return self.code.execute(ExecutionMapper(vars, self.discr, self))
+    def execute(self, **context):
+        return self.code.execute(ExecutionMapper(context, self.discr, self))
+
+    def __call__(self, *args, **kwargs):
+        if self.wrapper_func is not None:
+            return self.wrapper_func(self, *args, **kwargs)
+        else:
+            assert not args
+            return self.execute(**kwargs)
+
 
 
 
@@ -198,7 +217,7 @@ class Discretization(hedge.discretization.Discretization):
 
         self.platform = plat
 
-    def compile(self, optemplate):
+    def compile(self, optemplate, wrapper_func=None):
         from hedge.optemplate import \
                 OperatorBinder, \
                 InverseMassContractor, \
@@ -216,7 +235,8 @@ class Discretization(hedge.discretization.Discretization):
                                     optemplate))))))
 
         from hedge.backends.jit.compiler import OperatorCompiler
-        code = OperatorCompiler(self)(prepared_optemplate)
-        ex = Executor(self, code)
+        ex = Executor(self, 
+                OperatorCompiler(self)(prepared_optemplate), 
+                wrapper_func)
         ex.instrument()
         return ex

@@ -1572,8 +1572,8 @@ class EulerOperator(TimeDependentOperator):
                         cse(self.e(q)+p(q))*u(q)[i],
 
                         # flux rho_u
-                        numpy.dot(self.rho_u(q), u(q)) + make_obj_array([
-                            delta(i,j) * p(q)
+                        make_obj_array([
+                            self.rho_u(q)[i]*self.u(q)[j] + delta(i,j) * p(q)
                             for j in range(self.dimensions)
                             ])
                         ))
@@ -1581,21 +1581,32 @@ class EulerOperator(TimeDependentOperator):
 
         from hedge.optemplate import make_nabla, InverseMassOperator#, \
                 #ElementWiseMaxOperator
+
+        from pymbolic import var
+        userplot = var("userplot")
+        sqrt = var("sqrt")
+
         state = make_vector_field("q", self.dimensions+2)
         bc_state = make_vector_field("bc_q", self.dimensions+2)
 
-        from pymbolic import var
-        c = cse(var("sqrt")(self.gamma*p(state)/self.rho(state)))
+        from hedge.optemplate import NoCSEStringifyMapper
+        from pymbolic.mapper.stringifier import PREC_NONE
+        for i, f in enumerate(flux(state)):
+            print "axis", i
+            for j, f_i in enumerate(f):
+                print j, NoCSEStringifyMapper()(f_i, PREC_NONE)
 
-        speed = var("sqrt")(numpy.dot(u(state), u(state))) + c
+        c = cse(sqrt(userplot(1, self.gamma*userplot(3,p(state))/self.rho(state))))
+
+        speed = sqrt(userplot(2, numpy.dot(u(state), u(state)))) + c
 
         from hedge.tools import make_lax_friedrichs_flux, join_fields
         from hedge.mesh import TAG_ALL
         return join_fields(
                 (- numpy.dot(make_nabla(self.dimensions), flux(state))
                     + InverseMassOperator()*make_lax_friedrichs_flux(
-                        #wave_speed=ElementWiseMaxOperator()*c,
-                        wave_speed=c,
+                        #wave_speed=userplot(ElementWiseMaxOperator()*c),
+                        wave_speed=speed,
                         state=state, flux_func=flux,
                         bdry_tags_and_states=[
                             (TAG_ALL, bc_state)
@@ -1605,15 +1616,14 @@ class EulerOperator(TimeDependentOperator):
                     speed)
 
     def bind(self, discr):
-        compiled_op_template = discr.compile(self.op_template())
-
-        def rhs(t, q):
-            opt_result = compiled_op_template(
+        from hedge.mesh import TAG_ALL
+        def wrap(executor, t, q):
+            opt_result = executor.execute(
                     q=q, 
-                    bc_q=self.bc.volume_interpolant(t, discr))
+                    bc_q=self.bc.boundary_interpolant(t, discr, TAG_ALL))
             max_speed = opt_result[-1]
             ode_rhs = opt_result[:-1]
             return ode_rhs, numpy.max(max_speed)
 
-        return rhs
+        return discr.compile(self.op_template(), wrapper_func=wrap)
 

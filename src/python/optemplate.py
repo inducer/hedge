@@ -577,6 +577,10 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
     def map_operator_binding(self, expr, enclosing_prec):
         return "<%s>(%s)" % (expr.op, expr.field)
 
+class NoCSEStringifyMapper(StringifyMapper):
+    def map_common_subexpression(self, expr, enclosing_prec):
+        return self.rec(expr.child, enclosing_prec)
+
 
 
 

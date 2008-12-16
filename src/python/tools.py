@@ -1361,10 +1361,10 @@ def make_lax_friedrichs_flux(wave_speed, state, flux_func, bdry_tags_and_states,
 
     if not strong:
         flux = 0.5*(sum(n_i*(f_i.int+f_i.ext) for n_i, f_i in zip(normal, fluxes_ph))
-                + penalty)
+                - penalty)
     else:
         flux = 0.5*(sum(n_i*(f_i.int-f_i.ext) for n_i, f_i in zip(normal, fluxes_ph))
-                - penalty)
+                + penalty)
 
     from hedge.optemplate import get_flux_operator
     flux_op = get_flux_operator(flux)
