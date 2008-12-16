@@ -25,9 +25,6 @@ import unittest
 from hedge.backends.jit import Discretization as JITDiscretization
 from hedge.backends.dynamic import Discretization as DynamicDiscretization
 
-Discretization = JITDiscretization
-#Discretization = DynamicDiscretization
-
 
 
 
@@ -68,27 +65,7 @@ class Monomial:
 
 
 
-class TestHedge(unittest.TestCase):
-    def test_affine_map(self):
-        """Check that our cheapo geometry-targeted linear algebra actually works."""
-        from hedge.tools import AffineMap
-        for d in range(1, 5):
-        #for d in [3]:
-            for i in range(100):
-                a = numpy.random.randn(d, d)+10*numpy.eye(d)
-                b = numpy.random.randn(d)
-
-                m = AffineMap(a, b)
-
-                assert abs(m.jacobian() - la.det(a)) < 1e-10
-                assert la.norm(m.inverted().matrix - la.inv(a)) < 1e-10*la.norm(a)
-
-                x = numpy.random.randn(d)
-
-                m_inv = m.inverted()
-
-                assert la.norm(x-m_inv(m(x))) < 1e-10
-    # -------------------------------------------------------------------------
+class TestHedgeBasics(object):
     def test_ab_coefficients(self):
         """Check that our AB coefficient generator reproduces known values."""
         _ABCoefficients = [
@@ -639,8 +616,8 @@ class TestHedge(unittest.TestCase):
         sigma_squared = 1/219.3
 
         mesh = make_disk_mesh()
-        discr = Discretization(make_disk_mesh(), TriangularElement(4), 
-                debug=Discretization.all_debug_flags())
+        discr = self.discr_class(make_disk_mesh(), TriangularElement(4), 
+                debug=self.discr_class.all_debug_flags())
         f = discr.interpolate_volume_function(
                 lambda x, el: exp(-x*x/(2*sigma_squared)))
         ones = discr.interpolate_volume_function(
@@ -664,8 +641,8 @@ class TestHedge(unittest.TestCase):
         from numpy import dot
 
         mesh = make_uniform_1d_mesh(-4*pi, 9*pi, 17, periodic=True)
-        discr = Discretization(mesh, IntervalElement(8), 
-                debug=Discretization.all_debug_flags())
+        discr = self.discr_class(mesh, IntervalElement(8), 
+                debug=self.discr_class.all_debug_flags())
 
         f = discr.interpolate_volume_function(
                 lambda x, el: cos(x[0])**2)
@@ -696,8 +673,8 @@ class TestHedge(unittest.TestCase):
         from math import sqrt, pi, cos, sin
 
         mesh = make_square_mesh(a=-pi, b=pi, max_area=(2*pi/10)**2/2)
-        discr = Discretization(mesh, TriangularElement(8), 
-                debug=Discretization.all_debug_flags())
+        discr = self.discr_class(mesh, TriangularElement(8), 
+                debug=self.discr_class.all_debug_flags())
 
         f = discr.interpolate_volume_function(
                 lambda x, el: cos(x[0])**2*sin(x[1])**2)
@@ -730,8 +707,8 @@ class TestHedge(unittest.TestCase):
 
         for coord in [0, 1]:
             mesh = make_disk_mesh()
-            discr = Discretization(make_disk_mesh(), TriangularElement(4), 
-                debug=Discretization.all_debug_flags())
+            discr = self.discr_class(make_disk_mesh(), TriangularElement(4), 
+                debug=self.discr_class.all_debug_flags())
             f = discr.interpolate_volume_function(
                     lambda x, el: sin(3*x[coord]))
             df = discr.interpolate_volume_function(
@@ -745,6 +722,45 @@ class TestHedge(unittest.TestCase):
             #print linf_error
             self.assert_(linf_error < 3e-5)
     # -------------------------------------------------------------------------
+    def test_affine_map(self):
+        """Check that our cheapo geometry-targeted linear algebra actually works."""
+        from hedge.tools import AffineMap
+        for d in range(1, 5):
+        #for d in [3]:
+            for i in range(100):
+                a = numpy.random.randn(d, d)+10*numpy.eye(d)
+                b = numpy.random.randn(d)
+
+                m = AffineMap(a, b)
+
+                assert abs(m.jacobian() - la.det(a)) < 1e-10
+                assert la.norm(m.inverted().matrix - la.inv(a)) < 1e-10*la.norm(a)
+
+                x = numpy.random.randn(d)
+
+                m_inv = m.inverted()
+
+                assert la.norm(x-m_inv(m(x))) < 1e-10
+    # -------------------------------------------------------------------------
+    def test_all_periodic_no_boundary(self):
+        """Test that an all-periodic brick has no boundary."""
+        from hedge.mesh import make_box_mesh, TAG_ALL
+
+        mesh = make_box_mesh(periodicity=(True,True,True))
+
+        def count(iterable):
+            result = 0
+            for i in iterable:
+                result += 1
+            return result
+
+        self.assert_(count(mesh.tag_to_boundary[TAG_ALL]) == 0)
+
+
+
+
+
+class TestHedgeDiscretizationBase(object):
     def test_2d_gauss_theorem(self):
         """Verify Gauss's theorem explicitly on a mesh"""
 
@@ -756,8 +772,8 @@ class TestHedge(unittest.TestCase):
         mesh = make_disk_mesh()
         order = 2
 
-        discr = Discretization(mesh, order=order, 
-                debug=Discretization.all_debug_flags())
+        discr = self.discr_class(mesh, order=order, 
+                debug=self.discr_class.all_debug_flags())
         ref_discr = DynamicDiscretization(mesh, order=order)
 
         from hedge.flux import make_normal, FluxScalarPlaceholder, IfPositive
@@ -1181,8 +1197,8 @@ class TestHedge(unittest.TestCase):
 
         from hedge.element import TriangularElement
         from hedge.discretization import ones_on_volume
-        discr = Discretization(mesh, TriangularElement(4), 
-                debug=Discretization.all_debug_flags())
+        discr = self.discr_class(mesh, TriangularElement(4), 
+                debug=self.discr_class.all_debug_flags())
 
         def f_u(x, el):
             if generated_mesh.element_attributes[el.id] == 1:
@@ -1276,8 +1292,8 @@ class TestHedge(unittest.TestCase):
 
         from hedge.element import TetrahedralElement
         from hedge.discretization import ones_on_volume
-        discr = Discretization(mesh, TetrahedralElement(4), 
-                debug=Discretization.all_debug_flags())
+        discr = self.discr_class(mesh, TetrahedralElement(4), 
+                debug=self.discr_class.all_debug_flags())
 
         def f_u(x, el):
             if generated_mesh.element_attributes[el.id] == 1:
@@ -1376,8 +1392,8 @@ class TestHedge(unittest.TestCase):
         v = numpy.array([-1,0])
 
         mesh = make_mesh()
-        discr = Discretization(mesh, order=4, 
-                debug=Discretization.all_debug_flags())
+        discr = self.discr_class(mesh, order=4, 
+                debug=self.discr_class.all_debug_flags())
         #ref_discr = DynamicDiscretization(mesh, order=4)
 
         def f(x):
@@ -1473,8 +1489,8 @@ class TestHedge(unittest.TestCase):
                 eoc_rec = EOCRecorder()
 
                 for order in [1,2,3,4,5,6]:
-                    discr = Discretization(mesh, TriangularElement(order), 
-                            debug=Discretization.all_debug_flags())
+                    discr = self.discr_class(mesh, TriangularElement(order), 
+                            debug=self.discr_class.all_debug_flags())
                     op = StrongAdvectionOperator(v, 
                             inflow_u=TimeDependentGivenFunction(u_analytic),
                             flux_type=flux_type)
@@ -1502,20 +1518,6 @@ class TestHedge(unittest.TestCase):
 
                 self.assert_(eoc_rec.estimate_order_of_convergence()[0,1] > 4)
                 self.assert_(eoc_rec.estimate_order_of_convergence(2)[-1,1] > 10)
-    # -------------------------------------------------------------------------
-    def test_all_periodic_no_boundary(self):
-        """Test that an all-periodic brick has no boundary."""
-        from hedge.mesh import make_box_mesh, TAG_ALL
-
-        mesh = make_box_mesh(periodicity=(True,True,True))
-
-        def count(iterable):
-            result = 0
-            for i in iterable:
-                result += 1
-            return result
-
-        self.assert_(count(mesh.tag_to_boundary[TAG_ALL]) == 0)
     # -------------------------------------------------------------------------
     def test_elliptic(self):
         """Test various properties of elliptic operators."""
@@ -1572,15 +1574,15 @@ class TestHedge(unittest.TestCase):
         mesh = mesh.reordered_by("cuthill")
 
         from hedge.backends import SerialRunContext
-        rcon = SerialRunContext(Discretization)
+        rcon = SerialRunContext(self.discr_class)
 
         from hedge.tools import EOCRecorder
         eocrec = EOCRecorder()
         for order in [1,2,3,4,5]:
             for flux in ["ldg", "ip"]:
                 from hedge.element import TriangularElement
-                discr = Discretization(mesh, TriangularElement(order), 
-                        debug=Discretization.all_debug_flags())
+                discr = self.discr_class(mesh, TriangularElement(order), 
+                        debug=self.discr_class.all_debug_flags())
 
                 from hedge.data import GivenFunction
                 from hedge.pde import WeakPoissonOperator
@@ -1631,10 +1633,10 @@ class TestHedge(unittest.TestCase):
 
         mesh = make_disk_mesh(r=pi, max_area=0.5)
 
-        discr2 = Discretization(mesh, TriangularElement(2), 
-                debug=Discretization.all_debug_flags())
-        discr5 = Discretization(mesh, TriangularElement(5), 
-                debug=Discretization.all_debug_flags())
+        discr2 = self.discr_class(mesh, TriangularElement(2), 
+                debug=self.discr_class.all_debug_flags())
+        discr5 = self.discr_class(mesh, TriangularElement(5), 
+                debug=self.discr_class.all_debug_flags())
         p2to5 = Projector(discr2, discr5)
         p5to2 = Projector(discr5, discr2)
 
@@ -1650,8 +1652,8 @@ class TestHedge(unittest.TestCase):
         from math import sin
 
         mesh = make_disk_mesh(r=3.4, max_area=0.5)
-        discr = Discretization(mesh, TriangularElement(5), 
-                debug=Discretization.all_debug_flags())
+        discr = self.discr_class(mesh, TriangularElement(5), 
+                debug=self.discr_class.all_debug_flags())
 
         from hedge.discretization import Filter, ExponentialFilterResponseFunction
         half_filter = Filter(discr, lambda mid, ldis: 0.5)
@@ -1683,6 +1685,18 @@ class TestHedge(unittest.TestCase):
         test_freq(9)
         test_freq(17)
 
+
+
+
+class TestHedgeDynamicDiscretization(
+        unittest.TestCase, 
+        TestHedgeDiscretizationBase):
+    discr_class = DynamicDiscretization
+
+class TestHedgeJITDiscretization(
+        unittest.TestCase, 
+        TestHedgeDiscretizationBase):
+    discr_class = JITDiscretization
 
 
 
