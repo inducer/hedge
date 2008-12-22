@@ -284,7 +284,7 @@ class OperatorCompiler(OperatorCompilerBase):
                         ]]
 
             return [
-                Initializer(Value("value_type", f2c.cse_prefix+str(i)), cse)
+                Initializer(Value("value_type", f2cm.cse_prefix+str(i)), cse)
                 for i, cse in f2cm.cses] + result
 
         fbody = Block([
@@ -401,7 +401,7 @@ class OperatorCompiler(OperatorCompilerBase):
                     ]
             
             return [
-                Initializer(Value("value_type", f2c.cse_prefix+str(i)), cse)
+                Initializer(Value("value_type", f2cm.cse_prefix+str(i)), cse)
                 for i, cse in f2cm.cses] + result
 
         fbody = Block([

@@ -293,8 +293,20 @@ class VectorExprAssign(Assign):
     def __str__(self):
         return "%s <- (compiled) %s" % (self.name, self.expr)
 
-class CompiledFluxBatchAssign(FluxBatchAssign):
+class CUDAFluxBatchAssign(FluxBatchAssign):
+    def get_dependencies(self):
+        result = set()
+        for wdflux in self.fluxes:
+            result = result \
+                    | set(wdflux.interior_deps) \
+                    | set(wdflux.boundary_deps)
+        return result
+
+class CompiledCUDAFluxBatchAssign(CUDAFluxBatchAssign):
     __slots__ = ["kernel"]
+
+
+
 
 class OperatorCompiler(OperatorCompilerBase):
     def get_contained_fluxes(self, expr):
@@ -326,6 +338,8 @@ class OperatorCompiler(OperatorCompilerBase):
         from hedge.backends.cuda.optemplate import DiffOpCollector
         return DiffOpCollector()(expr)
 
+    def make_flux_batch_assign(self, names, fluxes, kind):
+        return CUDAFluxBatchAssign(names=names, fluxes=fluxes, kind=kind)
 
 
 
@@ -340,6 +354,7 @@ class OperatorCompilerWithExecutor(OperatorCompiler):
         return VectorExprAssign(
                 name=name,
                 expr=expr,
+                dep_mapper_class=self.dep_mapper_class,
                 compiled=CompiledVectorExpression(
                     expr, 
                     type_getter=lambda expr: (True, self.executor.discr.default_scalar_type),
@@ -347,7 +362,7 @@ class OperatorCompilerWithExecutor(OperatorCompiler):
                     allocator=self.executor.discr.pool.allocate))
 
     def make_flux_batch_assign(self, names, fluxes, kind):
-        return CompiledFluxBatchAssign(
+        return CompiledCUDAFluxBatchAssign(
                 names=names,
                 fluxes=fluxes,
                 kind=kind,
@@ -355,8 +370,6 @@ class OperatorCompilerWithExecutor(OperatorCompiler):
                     self.executor.discr,
                     self.executor.elface_to_bdry_bitmap,
                     fluxes))
-
-
 
 
 
