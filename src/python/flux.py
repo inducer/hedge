@@ -250,6 +250,12 @@ class FluxIdentityMapperMixin(object):
 
 
 
+
+class FluxIdentityMapper(
+        pymbolic.mapper.IdentityMapper, 
+        FluxIdentityMapperMixin):
+    pass
+
 class FluxSubstitutionMapper(pymbolic.mapper.substitutor.SubstitutionMapper,
         FluxIdentityMapperMixin):
     def map_field_component(self, expr):
@@ -279,9 +285,6 @@ class FluxStringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
 
     def map_if_positive(self, expr, enclosing_prec):
         return "IfPositive(%s, %s, %s)" % (expr.criterion, expr.then, expr.else_)
-
-
-
 
 class FluxFlattenMapper(pymbolic.mapper.flattener.FlattenMapper,
         FluxIdentityMapperMixin):
@@ -332,6 +335,13 @@ class FluxExpandMapper(pymbolic.mapper.expander.ExpandMapper,
     def __init__(self):
         pymbolic.mapper.expander.ExpandMapper.__init__(self,
                 FluxNormalizationMapper())
+
+class FluxFlipper(FluxIdentityMapper):
+    def map_normal(self, expr):
+        return -expr
+
+    def map_field_component(self, expr):
+        return expr.__class__(expr.index, not expr.is_local)
 
         
 

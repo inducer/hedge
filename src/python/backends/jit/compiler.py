@@ -29,35 +29,19 @@ from hedge.backends.cpu_base import ExecutorBase, ExecutionMapperBase
 from pymbolic.mapper.c_code import CCodeMapper
 import numpy
 from hedge.compiler import OperatorCompilerBase, FluxBatchAssign
+from hedge.flux import FluxIdentityMapper
 
 
 
 
 # flux to code mapper ---------------------------------------------------------
-class FluxToCodeMapper(CCodeMapper):
-    def __init__(self, flux_idx, fvi, is_flipped=False):
-        CCodeMapper.__init__(self, repr, reverse=False)
+class FluxConcretizer(FluxIdentityMapper):
+    def __init__(self, flux_idx, fvi):
         self.flux_idx = flux_idx
         self.flux_var_info = fvi
-        self.is_flipped = is_flipped
 
-    def map_normal(self, expr, enclosing_prec):
-        if self.is_flipped:
-            where = "opp"
-        else:
-            where = "loc"
-        return "value_type(fp.%s.normal[%d])" % (where, expr.axis)
-
-    def map_penalty_term(self, expr, enclosing_prec):
-        if self.is_flipped:
-            where = "opp"
-        else:
-            where = "loc"
-        return ("value_type(pow(fp.%(where)s.order*fp.%(where)s.order/fp.%(where)s.h, %(pwr)r))" 
-                % {"pwr": expr.power, "where": where})
-
-    def map_field_component(self, expr, enclosing_prec):
-        if expr.is_local ^ self.is_flipped:
+    def map_field_component(self, expr):
+        if expr.is_local:
             where = "loc"
         else:
             where = "opp"
@@ -66,9 +50,30 @@ class FluxToCodeMapper(CCodeMapper):
                 self.flux_idx, expr]
         
         if not arg_name:
-            return "0"
+            return 0
         else:
-            return "%s_it[%s_idx]" % (arg_name, where)
+            from pymbolic import var
+            return var(arg_name+"_it")[var(where+"_idx")]
+
+
+
+
+class FluxToCodeMapper(CCodeMapper):
+    def map_normal(self, expr, enclosing_prec):
+        return "value_type(fp.loc.normal[%d])" % (expr.axis)
+
+    def map_penalty_term(self, expr, enclosing_prec):
+        return ("value_type(pow(fp.loc.order*fp.%(where)s.order/fp.%(where)s.h, %(pwr)r))" 
+                % {"pwr": expr.power})
+
+
+
+def flux_to_code(f2c, is_flipped, flux_idx, fvi, flux, prec):
+    if is_flipped:
+        from hedge.flux import FluxFlipper
+        flux = FluxFlipper()(flux)
+
+    return f2c(FluxConcretizer(flux_idx, fvi)(flux), prec)
 
 
 
@@ -265,6 +270,23 @@ class OperatorCompiler(OperatorCompilerBase):
 
         from pymbolic.mapper.stringifier import PREC_PRODUCT
 
+        def gen_flux_code():
+            f2cm = FluxToCodeMapper(repr, reverse=False)
+
+            result = [
+                    Assign("fof%d_it[%s_fof_base+%s]" % (flux_idx, where, tgt_idx),
+                        "fp.loc.face_jacobian * " +
+                        flux_to_code(f2cm, is_flipped, flux_idx, fvi, flux.op.flux, PREC_PRODUCT))
+                    for flux_idx, flux in enumerate(fluxes)
+                    for where, is_flipped, tgt_idx in [
+                        ("loc", False, "i"),
+                        ("opp", True, "opp_write_map[i]")
+                        ]]
+
+            return [
+                Initializer(Value("value_type", f2c.cse_prefix+str(i)), cse)
+                for i, cse in f2cm.cses] + result
+
         fbody = Block([
             Initializer(
                 Const(Value("numpy_array<value_type>::iterator", "fof%d_it" % i)),
@@ -303,16 +325,7 @@ class OperatorCompiler(OperatorCompilerBase):
                             "%(where)s_ebi + %(where)s_idx_list[i]" 
                             % {"where": where})
                         for where in ["loc", "opp"]
-                        ]+[
-                        Assign("fof%d_it[%s_fof_base+%s]" % (flux_idx, where, tgt_idx),
-                            "fp.loc.face_jacobian * " +
-                            FluxToCodeMapper(flux_idx, fvi, is_flipped=is_flipped)(flux.op.flux, PREC_PRODUCT))
-                        for flux_idx, flux in enumerate(fluxes)
-                        for where, is_flipped, tgt_idx in [
-                            ("loc", False, "i"),
-                            ("opp", True, "opp_write_map[i]")
-                            ]
-                        ]
+                        ]+gen_flux_code()
                         )
                     )
                 ]))
@@ -377,6 +390,20 @@ class OperatorCompiler(OperatorCompilerBase):
 
         from pymbolic.mapper.stringifier import PREC_PRODUCT
 
+        def gen_flux_code():
+            f2cm = FluxToCodeMapper(repr, reverse=False)
+
+            result = [
+                    Assign("fof%d_it[loc_fof_base+i]" % flux_idx,
+                        "fp.loc.face_jacobian * " +
+                        flux_to_code(f2cm, False, flux_idx, fvi, flux.op.flux, PREC_PRODUCT))
+                    for flux_idx, flux in enumerate(fluxes)
+                    ]
+            
+            return [
+                Initializer(Value("value_type", f2c.cse_prefix+str(i)), cse)
+                for i, cse in f2cm.cses] + result
+
         fbody = Block([
             Initializer(
                 Const(Value("numpy_array<value_type>::iterator", "fof%d_it" % i)),
@@ -416,16 +443,12 @@ class OperatorCompiler(OperatorCompilerBase):
                             "%(where)s_ebi + %(where)s_idx_list[i]" 
                             % {"where": where})
                         for where in ["loc", "opp"]
-                        ]+[
-                        Assign("fof%d_it[loc_fof_base+i]" % flux_idx,
-                            "fp.loc.face_jacobian * " +
-                            FluxToCodeMapper(flux_idx, fvi)(flux.op.flux, PREC_PRODUCT))
-                        for flux_idx, flux in enumerate(fluxes)
-                        ]
+                        ]+gen_flux_code()
                         )
                     )
                 ]))
             ])
+
         mod.add_function(FunctionBody(fdecl, fbody))
 
         #print "----------------------------------------------------------------"
