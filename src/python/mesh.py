@@ -46,6 +46,9 @@ class TAG_RANK_BOUNDARY(object):
     def __init__(self, rank):
         self.rank = rank
 
+    def __str__(self):
+        return "TAG_RANK_BOUNDARY(%d)" % self.rank
+
     def __eq__(self, other):
         return isinstance(other, TAG_RANK_BOUNDARY) and self.rank == other.rank
 
