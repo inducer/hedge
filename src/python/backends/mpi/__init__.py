@@ -24,8 +24,10 @@ import pytools
 import numpy
 import numpy.linalg as la
 import hedge.discretization
-import hedge.discr_precompiled
 import hedge.mesh
+from hedge.optemplate import \
+        IdentityMapper, \
+        FluxOpReducerMixin
 from hedge.backends import RunContext
 
 
@@ -78,11 +80,8 @@ class MPIRunContext(RunContext):
 
         # compute partition using Metis, if necessary
         if isinstance(partition, int):
-            if partition == 1:
-                return mesh
-
             from pymetis import part_graph
-            cuts, partition = part_graph(partition, 
+            dummy, partition = part_graph(partition, 
                     mesh.element_adjacency_graph())
 
         # find ranks to which we need to distribute
@@ -198,7 +197,7 @@ class MPIRunContext(RunContext):
                     rank_mesh, 
                     rank_global2local_elements,
                     rank_global2local_vertex_indices,
-                    neighboring_ranks[rank],
+                    neighboring_ranks.get(rank, []),
                     mesh.periodic_opposite_faces)
 
             if rank == self.head_rank:
@@ -217,7 +216,7 @@ class MPIRunContext(RunContext):
 
 
 
-class ExecutionMapper(hedge.discr_precompiled.ExecutionMapper):
+class ExecutionMapper:
     def scalar_inner_flux(self, int_coeff, ext_coeff, field, lift, out=None):
         import boost.mpi as mpi
         from hedge._internal import irecv_vector, isend_vector
@@ -252,15 +251,12 @@ class ExecutionMapper(hedge.discr_precompiled.ExecutionMapper):
                 .scalar_inner_flux(self, int_coeff, ext_coeff, field, lift, out)]
 
         def receive(_, status):
-            from hedge.tools import apply_index_map
-
             tag = hedge.mesh.TAG_RANK_BOUNDARY(status.source)
 
             foreign_order_bfield = neigh_recv_vecs[status.source]
 
-            bfield = apply_index_map(
-                    self.discr.from_neighbor_maps[status.source],
-                    foreign_order_bfield)
+            bfield = foreign_order_bfield[
+                self.discr.from_neighbor_maps[status.source]]
 
             self.scalar_bdry_flux(
                     int_coeff, ext_coeff, field, bfield, tag, lift, out=result[0])
@@ -275,14 +271,98 @@ class ExecutionMapper(hedge.discr_precompiled.ExecutionMapper):
 
 
 
-class ParallelDiscretization(hedge.discr_precompiled.Discretization):
-    def __init__(self, rcon, rank_data, local_discretization=None, 
-            order=None, debug=False):
+class FluxCommunicationInserter(
+        IdentityMapper, 
+        FluxOpReducerMixin):
+    def __init__(self, interacting_ranks):
+        self.interacting_ranks = interacting_ranks
+
+    def map_operator_binding(self, expr):
+        from hedge.optemplate import \
+                FluxOperatorBase, \
+                FluxCoefficientOperatorBase, \
+                BoundaryPair, OperatorBinding, \
+                FluxSendOperator, FluxReceiveOperator
+
+        if isinstance(expr, OperatorBinding):
+            if isinstance(expr.op, FluxCoefficientOperatorBase):
+                raise ValueError("flux coefficient operators not supported for MPI")
+
+            if isinstance(expr.op, FluxOperatorBase):
+                if isinstance(expr.field, BoundaryPair):
+                    # we're only worried about interanl fluxes
+                    return IdentityMapper.map_operator_binding(self, expr)
+
+                # by now we've narrowed it down to a bound interior flux
+                from pymbolic.primitives import \
+                        flattened_sum, \
+                        CommonSubexpression
+
+                def func_and_cse(func, formal_fields, arg_fields):
+                    from hedge.tools import is_obj_array, make_obj_array
+                    if is_obj_array(arg_fields):
+                        return make_obj_array([
+                            CommonSubexpression(
+                                OperatorBinding(
+                                    func(i),
+                                    formal_fields))
+                                for i in range(len(arg_fields))])
+                    else:
+                        return CommonSubexpression(
+                                OperatorBinding(
+                                    func(()),
+                                    formal_fields))
+                    
+                from hedge.tools import with_object_array_or_scalar
+                from hedge.mesh import TAG_RANK_BOUNDARY
+
+                formal_sent_fields = CommonSubexpression(
+                        OperatorBinding(
+                            FluxSendOperator(), 
+                            expr.field))
+
+                def receive_and_cse(rank):
+                    return func_and_cse(
+                            lambda i: FluxReceiveOperator(i, rank),
+                            formal_sent_fields,
+                            expr.field)
+
+                return flattened_sum([expr]
+                    + [OperatorBinding(expr.op, BoundaryPair(
+                        expr.field, 
+                        # This boundary field has no true data dependency--
+                        # it is received from a different rank.
+                        # We still formally depend on the sent_fields to enforce
+                        # send-before-receive ordering.
+                        receive_and_cse(rank),
+                        TAG_RANK_BOUNDARY(rank)))
+                        for rank in self.interacting_ranks])
+            else:
+                return IdentityMapper.map_operator_binding(self, expr)
+
+
+
+
+class ParallelDiscretization(object):
+    @classmethod
+    def my_debug_flags(cls):
+        return set([
+            "parallel_setup", 
+            ])
+
+    @classmethod
+    def all_debug_flags(cls, subcls):
+        return cls.my_debug_flags() | subcls.all_debug_flags()
+
+    def __init__(self, rcon, subdiscr_class, rank_data, *args, **kwargs):
+        debug = kwargs.pop("debug", set())
+        self.debug = self.my_debug_flags() & debug
+        kwargs["debug"] = debug - self.debug
+
+        self.subdiscr = subdiscr_class(rank_data.mesh, *args, **kwargs)
+
         self.received_bdrys = {}
         self.context = rcon
-
-        hedge.discretization.Discretization.__init__(self,
-                rank_data.mesh, local_discretization, order, debug=debug)
 
         self.global2local_vertex_indices = rank_data.global2local_vertex_indices 
         self.neighbor_ranks = rank_data.neighbor_ranks
@@ -299,20 +379,29 @@ class ParallelDiscretization(hedge.discr_precompiled.Discretization):
 
         self._setup_neighbor_connections()
 
-        # instrumentation -----------------------------------------------------
-        from pytools.log import IntervalTimer, EventCounter
+    def add_instrumentation(self, mgr):
+        self.subdiscr.add_instrumentation(mgr)
 
+        from pytools.log import IntervalTimer, EventCounter
         self.comm_flux_counter = EventCounter("n_comm_flux", 
                 "Number of inner flux communication runs")
         self.comm_flux_timer = IntervalTimer("t_comm_flux", 
                 "Time spent communicating to compute inner fluxes")
 
-    def add_instrumentation(self, mgr):
         mgr.add_quantity(self.comm_flux_counter)
         mgr.add_quantity(self.comm_flux_timer)
 
-        hedge.discretization.Discretization.add_instrumentation(self, mgr)
+    # property forwards -------------------------------------------------------
+    def __len__(self):
+        return len(self.subdiscr)
 
+    def __getattr__(self, name):
+        if not name.startswith("_"):
+            return getattr(self.subdiscr, name)
+        else:
+            raise AttributeError(name)
+
+    # neighbor connectivity ---------------------------------------------------
     def _setup_neighbor_connections(self):
         import boost.mpi as mpi
 
@@ -328,8 +417,8 @@ class ParallelDiscretization(hedge.discr_precompiled.Discretization):
 
             for rank in self.neighbor_ranks:
                 bdry_tag = hedge.mesh.TAG_RANK_BOUNDARY(rank)
-                rank_bdry = self.mesh.tag_to_boundary[bdry_tag]
-                rank_discr_boundary = self.get_boundary(bdry_tag)
+                rank_bdry = self.subdiscr.mesh.tag_to_boundary[bdry_tag]
+                rank_discr_boundary = self.subdiscr.get_boundary(bdry_tag)
 
                 # a list of global vertex numbers for each face
                 my_vertices_global = [
@@ -343,7 +432,7 @@ class ParallelDiscretization(hedge.discr_precompiled.Discretization):
 
                 my_node_coords = []
                 for el, face_nr in rank_bdry:
-                    eslice, ldis = self.find_el_data(el.id)
+                    eslice, ldis = self.subdiscr.find_el_data(el.id)
                     findices = ldis.face_indices()[face_nr]
 
                     my_node_coords.append(
@@ -376,8 +465,8 @@ class ParallelDiscretization(hedge.discr_precompiled.Discretization):
             for rank, (nb_all_facevertices_global, nb_node_coords, nb_h_values) in \
                     received_packets.iteritems():
                 bdry_tag = hedge.mesh.TAG_RANK_BOUNDARY(rank)
-                rank_bdry = self.mesh.tag_to_boundary[bdry_tag]
-                rank_discr_boundary = self.get_boundary(bdry_tag)
+                rank_bdry = self.subdiscr.mesh.tag_to_boundary[bdry_tag]
+                rank_discr_boundary = self.subdiscr.get_boundary(bdry_tag)
 
                 flat_nb_node_coords = list(flatten(nb_node_coords))
 
@@ -410,7 +499,7 @@ class ParallelDiscretization(hedge.discr_precompiled.Discretization):
                         return result
 
                 for el, face_nr in rank_bdry:
-                    eslice, ldis = self.find_el_data(el.id)
+                    eslice, ldis = self.subdiscr.find_el_data(el.id)
 
                     my_vertices = el.faces[face_nr]
                     my_global_vertices = tuple(local2global_vertex_indices[vi]
@@ -445,7 +534,7 @@ class ParallelDiscretization(hedge.discr_precompiled.Discretization):
                         from_indices.extend(shuffled_other_node_indices)
 
                         # check if the nodes really match up
-                        if self.debug:
+                        if self.subdiscr.debug:
                             my_node_indices = [eslice.start+i for i in ldis.face_indices()[face_nr]]
 
                             for my_i, other_i in zip(my_node_indices, shuffled_other_node_indices):
@@ -470,7 +559,7 @@ class ParallelDiscretization(hedge.discr_precompiled.Discretization):
                         from_indices.extend(shuffled_other_node_indices)
 
                         # check if the nodes really match up
-                        if self.debug:
+                        if "parallel_setup" in self.debug:
                             my_node_indices = [eslice.start+i 
                                     for i in ldis.face_indices()[face_nr]]
 
@@ -483,34 +572,55 @@ class ParallelDiscretization(hedge.discr_precompiled.Discretization):
                     flux_face = rank_discr_boundary.find_flux_face((el, face_nr))
                     flux_face.h = max(nb_h, flux_face.h)
 
-                if self.debug:
+                if "parallel_setup" in self.debug:
                     assert len(from_indices) == len(flat_nb_node_coords)
 
                 # turn from_indices into an IndexMap
+                self.from_neighbor_maps[rank] = numpy.asarray(
+                        from_indices, dtype=numpy.intp)
 
-                from hedge._internal import IndexMap
-                self.from_neighbor_maps[rank] = IndexMap(
-                        len(from_indices), len(from_indices), from_indices)
+    # norm and integral -------------------------------------------------------
+    def norm(self, volume_vector, p=2):
+        import boost.mpi as mpi
 
+        def f(x, y):
+            return (x**p + y**p)**1/p
 
+        return mpi.all_reduce(self.context.communicator, 
+                self.subdiscr.norm(volume_vector, p),
+                f)
 
+    def integral(self, volume_vector):
+        import boost.mpi as mpi
+        from operator import add
+        return mpi.all_reduce(self.context.communicator, 
+                self.subdiscr.integral(volume_vector),
+                add)
 
+    # dt estimation -----------------------------------------------------------
     def dt_non_geometric_factor(self):
         import boost.mpi as mpi
-        from hedge.discretization import Discretization
         return mpi.all_reduce(self.context.communicator, 
-                Discretization.dt_non_geometric_factor(self),
+                self.subdiscr.dt_non_geometric_factor(),
                 min)
 
     def dt_geometric_factor(self):
         import boost.mpi as mpi
-        from hedge.discretization import Discretization
         return mpi.all_reduce(self.context.communicator, 
-                Discretization.dt_geometric_factor(self),
+                self.subdiscr.dt_geometric_factor(),
                 min)
 
-    def run_preprocessed_optemplate(self, pp_optemplate, vars):
-        return ExecutionMapper(vars, self)(pp_optemplate)
+    def dt_factor(self, max_system_ev):
+        return 1/max_system_ev \
+                * self.dt_non_geometric_factor() \
+                * self.dt_geometric_factor()
+
+    # compilation -------------------------------------------------------------
+    def compile(self, optemplate):
+        return self.subdiscr.compile(
+                optemplate,
+                post_bind_mapper=FluxCommunicationInserter(
+                    self.neighbor_ranks))
 
 
 

@@ -123,6 +123,28 @@ class DiffBatchAssign(Instruction):
     def get_executor_method(self, executor):
         return executor.exec_diff_batch_assign
 
+class FluxReceiveBatchAssign(Instruction):
+    __slots__ = ["names", "indices_and_ranks", "field"]
+
+    def get_assignees(self):
+        return set(self.names)
+
+    def get_dependencies(self):
+        return set([self.field])
+
+    def __str__(self):
+        lines = []
+
+        lines.append("{")
+        for n, (index, rank) in zip(self.names, self.indices_and_ranks):
+            lines.append("  %s <- receive index %d from rank %d [%s]" % (
+                n, index, rank, self.field))
+        lines.append("}")
+
+        return "\n".join(lines)
+
+    def get_executor_method(self, executor):
+        return executor.exec_flux_receive_batch_assign
 
 
 
@@ -178,8 +200,16 @@ class OperatorCompilerBase(IdentityMapper):
         raise NotImplementedError
 
     def collect_diff_ops(self, expr):
-        from hedge.optemplate import DiffOpCollector
-        return DiffOpCollector()(expr)
+        from hedge.optemplate import \
+                BoundOperatorCollector, \
+                DiffOperatorBase
+        return BoundOperatorCollector(DiffOperatorBase)(expr)
+
+    def collect_flux_receive_ops(self, expr):
+        from hedge.optemplate import \
+                BoundOperatorCollector, \
+                FluxReceiveOperator
+        return BoundOperatorCollector(FluxReceiveOperator)(expr)
 
     def insert_discards(self, code, result_expr):
         rev_code_and_used_vars = []
@@ -257,7 +287,10 @@ class OperatorCompilerBase(IdentityMapper):
 
         self.diff_ops = self.collect_diff_ops(expr)
 
-        # Then walk the expression to build up the code
+        # Flux receiving also works better when batched.
+        self.flux_receive_ops = self.collect_flux_receive_ops(expr)
+
+        # Finally, walk the expression and build the code.
         result = IdentityMapper.__call__(self, expr)
 
         # Then, put the toplevel expressions into variables as well.
@@ -279,10 +312,15 @@ class OperatorCompilerBase(IdentityMapper):
             return cse_var
 
     def map_operator_binding(self, expr):
-        from hedge.optemplate import DiffOperatorBase
-        if not isinstance(expr.op, DiffOperatorBase):
+        from hedge.optemplate import DiffOperatorBase, FluxReceiveOperator
+        if isinstance(expr.op, DiffOperatorBase):
+            return self.map_diff_op_binding(expr)
+        elif isinstance(expr.op, FluxReceiveOperator):
+            return self.map_flux_receive_op_binding(expr)
+        else:
             return IdentityMapper.map_operator_binding(self, expr)
 
+    def map_diff_op_binding(self, expr):
         try:
             return self.expr_to_var[expr]
         except KeyError:
@@ -303,6 +341,31 @@ class OperatorCompilerBase(IdentityMapper):
 
             from pymbolic import var
             for n, d in zip(names, all_diffs):
+                self.expr_to_var[d] = var(n)
+
+            return self.expr_to_var[expr]
+
+    def map_flux_receive_op_binding(self, expr):
+        try:
+            return self.expr_to_var[expr]
+        except KeyError:
+            all_frs = [fr
+                    for fr in self.flux_receive_ops
+                    if fr.field == expr.field]
+
+            assert len(all_frs) > 0
+
+            from pytools import single_valued
+            names = [self.get_var_name() for d in all_frs]
+            self.code.append(
+                    FluxReceiveBatchAssign(
+                        names=names,
+                        indices_and_ranks=[
+                            (fr.op.index, fr.op.rank) for fr in all_frs],
+                        field=self.rec(single_valued(fr.field for fr in all_frs))))
+
+            from pymbolic import var
+            for n, d in zip(names, all_frs):
                 self.expr_to_var[d] = var(n)
 
             return self.expr_to_var[expr]

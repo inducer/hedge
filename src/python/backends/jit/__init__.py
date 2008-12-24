@@ -112,6 +112,8 @@ class Executor(ExecutorBase):
     def __init__(self, discr, op_data, wrapper_func):
         ExecutorBase.__init__(self, discr, op_data, wrapper_func)
 
+        print op_data
+
         def bench_diff(f):
             test_field = discr.volume_zeros()
             from hedge.optemplate import DifferentiationOperator
@@ -182,9 +184,9 @@ class Discretization(hedge.discretization.Discretization):
         from codepy.libraries import add_hedge
         add_hedge(plat)
 
-        self.platform = plat
+        self._platform = plat
 
-    def compile(self, optemplate, wrapper_func=None):
+    def compile(self, optemplate, wrapper_func=None, post_bind_mapper=lambda x: x):
         from hedge.optemplate import \
                 OperatorBinder, \
                 InverseMassContractor, \
@@ -197,9 +199,10 @@ class Discretization(hedge.discretization.Discretization):
                 InverseMassContractor()(
                     EmptyFluxKiller(self)(
                         CommutativeConstantFoldingMapper()(
-                            BCToFluxRewriter()(
-                                OperatorBinder()(
-                                    optemplate))))))
+                            post_bind_mapper(
+                                BCToFluxRewriter()(
+                                    OperatorBinder()(
+                                        optemplate)))))))
 
         from hedge.backends.jit.compiler import OperatorCompiler
         ex = Executor(self, 

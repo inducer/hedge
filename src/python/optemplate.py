@@ -32,16 +32,11 @@ import hedge.mesh
 
 
 
-def make_common_subexpression(expr):
-    from pymbolic.primitives import CommonSubexpression
 
-    from hedge.tools import is_obj_array, make_obj_array
-    if is_obj_array(expr):
-        from hedge.tools import make_obj_array
-        return make_obj_array([
-            CommonSubexpression(e_i) for e_i in expr])
-    else:
-        return CommonSubexpression(expr)
+def make_common_subexpression(fields): 
+    from hedge.tools import with_object_array_or_scalar
+    from pymbolic.primitives import CommonSubexpression
+    return with_object_array_or_scalar(CommonSubexpression)
 
 
 
@@ -66,6 +61,9 @@ class Operator(pymbolic.primitives.Leaf):
 
 
 class StatelessOperator(Operator):
+    def __getinitargs__(self):
+        return ()
+
     def get_hash(self):
         return hash(self.__class__)
 
@@ -221,6 +219,35 @@ class ElementwiseMaxOperator(StatelessOperator):
 
 
 
+class FluxSendOperator(StatelessOperator):
+    """An identity operator that initiates the sending of the boundary information
+    for its argument fields.
+    """
+    def get_mapper_method(self, mapper): 
+        return mapper.map_flux_send
+
+class FluxReceiveOperator(StatelessOperator):
+    def __init__(self, idx, rank):
+        self.index = idx
+        self.rank = rank
+
+    def __getinitargs__(self):
+        return (self.index, self.rank)
+
+    def get_hash(self):
+        return hash((self.__class__, self.index, self.rank))
+
+    def is_equal(self, other):
+        return (other.__class__ == self.__class__
+                and other.index == self.index
+                and other.rank == self.rank)
+
+    def get_mapper_method(self, mapper): 
+        return mapper.map_flux_receive
+
+
+
+
 # flux-like operators ---------------------------------------------------------
 class FluxOperatorBase(Operator):
     def __init__(self, flux):
@@ -259,17 +286,11 @@ class LiftingFluxOperator(FluxOperatorBase):
 
 
 
-class FluxCoefficientOperator(Operator):
-    """Results in a volume-global vector with data along the faces,
-    obtained by computing the flux and applying the face mass matrix.
-    """
+class FluxCoefficientOperatorBase(Operator):
     def __init__(self, int_coeff, ext_coeff):
         Operator.__init__(self)
         self.int_coeff = int_coeff
         self.ext_coeff = ext_coeff
-
-    def get_mapper_method(self, mapper): 
-        return mapper.map_flux_coefficient
 
     def __getinitargs__(self):
         return (self.int_coeff, self.ext_coeff)
@@ -277,26 +298,22 @@ class FluxCoefficientOperator(Operator):
     def get_hash(self):
         return hash((self.__class__, self.int_coeff, self.ext_coeff))
 
+class FluxCoefficientOperator(FluxCoefficientOperatorBase):
+    """Results in a volume-global vector with data along the faces,
+    obtained by computing the flux and applying the face mass matrix.
+    """
+    def get_mapper_method(self, mapper): 
+        return mapper.map_flux_coefficient
 
 
-class LiftingFluxCoefficientOperator(Operator):
+
+class LiftingFluxCoefficientOperator(FluxCoefficientOperatorBase):
     """Results in a volume-global vector with data along the faces,
     obtained by computing the flux and applying the face mass matrix
     and the inverse volume mass matrix.
     """
-    def __init__(self, int_coeff, ext_coeff):
-        Operator.__init__(self)
-        self.int_coeff = int_coeff
-        self.ext_coeff = ext_coeff
-
     def get_mapper_method(self, mapper): 
         return mapper.map_lift_coefficient
-
-    def __getinitargs__(self):
-        return (self.int_coeff, self.ext_coeff)
-
-    def get_hash(self):
-        return hash((self.__class__, self.int_coeff, self.ext_coeff))
 
 
 
@@ -476,6 +493,11 @@ class OperatorReducerMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     def map_elementwise_max(self, expr, *args, **kwargs):
         return self.map_operator(expr, *args, **kwargs)
 
+    def map_flux_send(self, expr, *args, **kwargs):
+        return self.map_operator(expr, *args, **kwargs)
+
+    def map_flux_receive(self, expr, *args, **kwargs):
+        return self.map_operator(expr, *args, **kwargs)
 
 
 
@@ -511,25 +533,12 @@ class IdentityMapperMixin(LocalOpReducerMixin, FluxOpReducerMixin):
         # it's a leaf--no changing children
         return expr
 
-    def map_diff_base(self, expr, *args, **kwargs):
-        # it's a leaf--no changing children
-        return expr
-
-    def map_diff_base(self, expr, *args, **kwargs):
-        # it's a leaf--no changing children
-        return expr
-
-    def map_flux_base(self, expr, *args, **kwargs):
-        # it's a leaf--no changing children
-        return expr
-
-    def map_flux_coeff_base(self, expr, *args, **kwargs):
-        # it's a leaf--no changing children
-        return expr
-
-    def map_elementwise_max(self, expr, *args, **kwargs):
-        # it's a leaf--no changing children
-        return expr
+    map_diff_base = map_mass_base
+    map_flux_base = map_mass_base
+    map_flux_coeff_base = map_mass_base
+    map_elementwise_max_base = map_mass_base
+    map_flux_send = map_mass_base
+    map_flux_receive = map_mass_base
 
 
 
@@ -544,7 +553,8 @@ class DependencyMapper(
 
 
 
-class CommutativeConstantFoldingMapper(pymbolic.mapper.constant_folder.CommutativeConstantFoldingMapper,
+class CommutativeConstantFoldingMapper(
+        pymbolic.mapper.constant_folder.CommutativeConstantFoldingMapper,
         IdentityMapperMixin):
     def is_constant(self, expr):
         return not bool(DependencyMapper()(expr))
@@ -594,8 +604,21 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
     def map_lift_coefficient(self, expr, enclosing_prec):
         return "LiftFluxCoeff(int=%s, ext=%s)" % (expr.int_coeff, expr.ext_coeff)
 
+    def map_elementwise_max(self, expr, enclosing_prec):
+        return "ElWMax"
+
+    def map_flux_send(self, expr, enclosing_prec):
+        return "FSend"
+
+    def map_flux_receive(self, expr, enclosing_prec):
+        return "FRecv<idx=%d,rank=%d>" % (expr.index, expr.rank)
+
     def map_operator_binding(self, expr, enclosing_prec):
         return "<%s>(%s)" % (expr.op, expr.field)
+
+
+
+
 
 class NoCSEStringifyMapper(StringifyMapper):
     def map_common_subexpression(self, expr, enclosing_prec):
@@ -954,9 +977,11 @@ class FluxCollector(CollectorMixin, CombineMapper):
             FluxOperatorBase, 
             FluxCoefficientOperator,
             LiftingFluxCoefficientOperator)):
-            return set([expr])
+            result = set([expr])
         else:
-            return set()
+            result = set()
+
+        return result | self.rec(expr.field)
 
 
 
@@ -968,13 +993,17 @@ class BoundaryTagCollector(CollectorMixin, CombineMapper):
 
 
 
-class DiffOpCollector(CollectorMixin, CombineMapper):
-    def map_operator_binding(self, expr):
-        if isinstance(expr.op, DiffOperatorBase):
-            return set([expr])
-        else:
-            return set()
+class BoundOperatorCollector(CollectorMixin, CombineMapper):
+    def __init__(self, op_class):
+        self.op_class = op_class
 
+    def map_operator_binding(self, expr):
+        if isinstance(expr.op, self.op_class):
+            result = set([expr])
+        else:
+            result = set()
+
+        return result | self.rec(expr.field)
 
 
 

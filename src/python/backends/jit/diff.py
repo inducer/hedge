@@ -157,7 +157,7 @@ class JitDifferentiator:
         #print FunctionBody(fdecl, fbody)
         #raw_input()
 
-        compiled_func = mod.compile(self.discr.platform, wait_on_error=True).diff
+        compiled_func = mod.compile(self.discr._platform, wait_on_error=True).diff
 
         if self.discr.instrumented:
             from hedge.tools import \
