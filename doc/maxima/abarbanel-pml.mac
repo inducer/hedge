@@ -1,0 +1,128 @@
+kill(all);
+load("eigen");
+load("itensor");
+load("diag");
+
+/*
+See
+
+S. Abarbanel und D. Gottlieb, “On the construction and analysis of absorbing
+layers in CEM,” Applied Numerical Mathematics,  vol. 27, 1998, S. 331-340.
+(eq 3.7-3.11)
+
+E. Turkel und A. Yefet, “Absorbing PML
+boundary layers for wave-like equations,”
+Applied Numerical Mathematics,  vol. 27,
+1998, S. 533-557.
+(eq. 4.10) 
+
+*/
+
+/* -------------------------------------------------------------------------- */
+/* Variable declarations */
+/* -------------------------------------------------------------------------- */
+
+coords:[x,y,z];
+allvars:append([t],coords);
+
+max_E:makelist(concat(E,i),i,coords);
+max_H:makelist(concat(H,i),i,coords);
+max_w:append(max_E,max_H);
+
+max_P:makelist(concat(P,i),i,coords);
+max_Q:makelist(concat(Q,i),i,coords);
+aux_w:append(max_P, max_Q);
+
+depends(max_w,allvars);
+depends(aux_w,allvars);
+
+sig:makelist(concat(s,i),i,coords);
+
+depends(sig, coords);
+
+/* -------------------------------------------------------------------------- */
+/* Utilities */
+/* -------------------------------------------------------------------------- */
+
+crossfunc(f):=makelist(
+  sum(sum(
+      levi_civita([i,j,k])*f(j,k),
+   j,1,3),k,1,3),i,1,3)$
+
+curl(x):=crossfunc(lambda([i,j], diff(x[j], coords[i])));
+
+shift(l, amount):=makelist(l[mod(i-amount-1, length(l))+1], i, 1, length(l));
+
+norm(x):=sum(x[i]^2, i, 1, length(x));
+
+
+/* -------------------------------------------------------------------------- */
+/* Operator building */
+/* -------------------------------------------------------------------------- */
+
+/* 
+This here is *NOT* in conservation form
+  u_t + A u_x = 0,
+but in ODE form
+  u_t = (- A) u_x.
+        ---------- rhs
+*/
+
+max_rhs:append(1/epsilon*curl(max_H),-1/mu*curl(max_E));
+
+
+pml_rhs:makelist(0,i,1,6);
+aux_eqn:makelist(0,i,1,6);
+
+for mx:1 thru 3 do
+  block([my,mz,sgn],
+    my:mod(mx-1+1,3)+1,
+    mz:mod(mx-1+2,3)+1,
+    assert(levi_civita([mx,my,mz])=1),
+    pml_rhs[mx]:pml_rhs[mx]
+      +1/epsilon*diff(max_H[mz],coords[my])
+      -sig[my]/epsilon*(2*max_E[mx]+max_P[mx])
+      ,
+    pml_rhs[my]:pml_rhs[my]
+      -1/epsilon*diff(max_H[mz],coords[mx])
+      -sig[mx]/epsilon*(2*max_E[my]+max_P[my])
+      ,
+    pml_rhs[3+mz]:pml_rhs[3+mz]
+      +1/mu*diff(max_E[mx],coords[my])
+      -1/mu*diff(max_E[my],coords[mx])
+      +1/mu*diff(sig[mx]/epsilon,coords[mx])*max_Q[mx]
+      +1/mu*diff(sig[my]/epsilon,coords[my])*max_Q[my]
+      ,
+    aux_eqn[mx]:aux_eqn[mx]
+      -diff(max_P[mx],t)
+      +sig[my]/epsilon*max_E[mx]
+      ,
+    aux_eqn[my]:aux_eqn[my]
+      +sig[mx]/epsilon*max_E[my]
+      ,
+    aux_eqn[3+mx]:aux_eqn[3+mx]
+      -diff(max_Q[mx],t)-sig[mx]/epsilon*max_Q[mx]
+      -max_E[my] -max_E[mz]
+    );
+
+pml_eqn:makelist(diff(max_w[i],t)=pml_rhs[i], i, 1, 6);
+aux_eqn:makelist(aux_eqn[i]=0, i, 1, 6);
+print(expand(covect(pml_eqn)));
+print(expand(covect(aux_eqn)));
+slist:[
+  /*Qx=-Q[y],Qy=Q[x],*/Qz=0,
+  /*Px=P[y],Py=-P[x],*/Pz=0,
+  sz=0,
+  Hx=0,Hy=0,Ez=0,
+  epsilon=1,mu=1];
+
+print(expand(covect(subst(slist,pml_eqn))));
+print(expand(covect(subst(slist,aux_eqn))));
+
+load("em_units.mac");
+u_P:u_sigma*u_E/u_epsilon0*u_t;
+u_Q:u_E*u_t;
+
+assert(u_E/u_t - u_sigma/u_epsilon0*u_P=0);
+assert(u_H/u_t - (1/u_mu0)*(u_sigma/u_epsilon0)/u_x*u_Q=0);
+
