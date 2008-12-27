@@ -225,6 +225,8 @@ class Discretization(object):
 
         self.default_scalar_type = default_scalar_type
 
+        self.exec_functions = {}
+
     # instrumentation ---------------------------------------------------------
     def create_op_timers(self):
         from pytools.log import IntervalTimer
@@ -847,6 +849,9 @@ class Discretization(object):
     # op template execution ---------------------------------------------------
     def compile(self, optemplate):
         raise NotImplementedError
+
+    def add_function(self, name, func):
+        self.exec_functions[name] = func
 
 
 

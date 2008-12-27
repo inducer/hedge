@@ -1,4 +1,5 @@
 kill(all);
+load("myhelpers.mac");
 assume(m>0);
 assume(N>0);
 assume(s>0);
@@ -23,6 +24,8 @@ u_D : C/m^2;
 u_B : T;
 u_H : A/m;
 u_J : A/m^2;
+u_t : s;
+u_x : m;
 
 u_sigma : u_J/u_E;
 

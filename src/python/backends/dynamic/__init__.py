@@ -292,6 +292,8 @@ class Executor(ExecutorBase):
 
 
 class Discretization(hedge.discretization.Discretization):
+    exec_mapper_class = ExecutionMapper
+
     def compile(self, optemplate, wrapper_func=None):
         from hedge.optemplate import \
                 OperatorBinder, \

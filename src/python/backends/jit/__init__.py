@@ -109,10 +109,8 @@ class ExecutionMapper(ExecutionMapperBase):
 
 
 class Executor(ExecutorBase):
-    def __init__(self, discr, op_data, wrapper_func):
-        ExecutorBase.__init__(self, discr, op_data, wrapper_func)
-
-        print op_data
+    def __init__(self, discr, op_data):
+        ExecutorBase.__init__(self, discr, op_data)
 
         def bench_diff(f):
             test_field = discr.volume_zeros()
@@ -161,8 +159,6 @@ class Executor(ExecutorBase):
         return [self.diff_rst_to_xyz(op_class(i), rst_derivatives)
                 for i in xyz_needed]
 
-    def execute(self, **context):
-        return self.op_data.execute(ExecutionMapper(context, self.discr, self))
 
 
 
@@ -170,6 +166,8 @@ class Executor(ExecutorBase):
 
 # discretization --------------------------------------------------------------
 class Discretization(hedge.discretization.Discretization):
+    exec_mapper_class = ExecutionMapper
+
     def __init__(self, *args, **kwargs):
         hedge.discretization.Discretization.__init__(self, *args, **kwargs)
 
@@ -186,7 +184,7 @@ class Discretization(hedge.discretization.Discretization):
 
         self._platform = plat
 
-    def compile(self, optemplate, wrapper_func=None, post_bind_mapper=lambda x: x):
+    def compile(self, optemplate, post_bind_mapper=lambda x: x):
         from hedge.optemplate import \
                 OperatorBinder, \
                 InverseMassContractor, \
@@ -206,7 +204,6 @@ class Discretization(hedge.discretization.Discretization):
 
         from hedge.backends.jit.compiler import OperatorCompiler
         ex = Executor(self, 
-                OperatorCompiler(self)(prepared_optemplate), 
-                wrapper_func)
+                OperatorCompiler(self)(prepared_optemplate))
         ex.instrument()
         return ex

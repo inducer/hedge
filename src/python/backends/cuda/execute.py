@@ -376,6 +376,8 @@ class OperatorCompilerWithExecutor(OperatorCompiler):
 
 
 class Executor(object):
+    exec_mapper_class = ExecutionMapper
+
     def __init__(self, discr, optemplate):
         self.discr = discr
 
@@ -435,5 +437,6 @@ class Executor(object):
 
     # actual execution --------------------------------------------------------
     def __call__(self, **vars):
-        return self.code.execute(ExecutionMapper(vars, self))
+        return self.code.execute(
+                self.discr.exec_mapper_class(vars, self))
 

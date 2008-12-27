@@ -1608,7 +1608,9 @@ class EulerOperator(TimeDependentOperator):
 
     def bind(self, discr):
         from hedge.mesh import TAG_ALL
-        def wrap(executor, t, q):
+        executor = discr.compile(self.op_template())
+
+        def wrap(t, q):
             opt_result = executor.execute(
                     q=q, 
                     bc_q=self.bc.boundary_interpolant(t, discr, TAG_ALL))
@@ -1616,5 +1618,7 @@ class EulerOperator(TimeDependentOperator):
             ode_rhs = opt_result[:-1]
             return ode_rhs, numpy.max(max_speed)
 
-        return discr.compile(self.op_template(), wrapper_func=wrap)
+        return wrap
+
+
 

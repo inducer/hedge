@@ -31,15 +31,9 @@ from pytools import memoize_method
 
 
 class ExecutorBase(object):
-    def __init__(self, discr, op_data, wrapper_func):
+    def __init__(self, discr, op_data):
         self.discr = discr
         self.op_data = op_data
-        self.wrapper_func = wrapper_func
-
-        self.functions = {}
-
-    def add_function(self, name, func):
-        self.functions[name] = func
 
     def instrument(self):
         discr = self.discr
@@ -136,12 +130,9 @@ class ExecutorBase(object):
                    target)
         target.finalize()
 
-    def __call__(self, *args, **kwargs):
-        if self.wrapper_func is not None:
-            return self.wrapper_func(self, *args, **kwargs)
-        else:
-            assert not args
-            return self.execute(**kwargs)
+    def __call__(self, **context):
+        return self.op_data.execute(
+                self.discr.exec_mapper_class(context, self))
 
 
 
@@ -149,9 +140,9 @@ class ExecutorBase(object):
 class ExecutionMapperBase(hedge.optemplate.Evaluator,
         hedge.optemplate.BoundOpMapperMixin, 
         hedge.optemplate.LocalOpReducerMixin):
-    def __init__(self, context, discr, executor):
+    def __init__(self, context, executor):
         hedge.optemplate.Evaluator.__init__(self, context)
-        self.discr = discr
+        self.discr = executor.discr
         self.executor = executor
 
     def map_diff_base(self, op, field_expr):
@@ -187,7 +178,7 @@ class ExecutionMapperBase(hedge.optemplate.Evaluator,
         func_name = expr.function.name
 
         try:
-            func = self.executor.functions[func_name]
+            func = self.discr.exec_functions[func_name]
         except KeyError:
             func = getattr(numpy, expr.function.name)
 
