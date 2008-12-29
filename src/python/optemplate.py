@@ -561,6 +561,7 @@ class CommutativeConstantFoldingMapper(
 
 
 
+
 class IdentityMapper(
         IdentityMapperMixin, 
         pymbolic.mapper.IdentityMapper):

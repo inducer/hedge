@@ -63,6 +63,25 @@ class ExecutionMapper(ExecutionMapperBase):
         if is_bdry:
             bdry = self.discr.get_boundary(insn.kind.tag)
             face_groups = bdry.face_groups
+            
+            from hedge.mesh import TAG_RANK_BOUNDARY
+            if False and isinstance(insn.kind.tag, TAG_RANK_BOUNDARY) \
+                    and self.discr.parallel_discr.context.communicator.rank == 0:
+                try:
+                    print "----------------------------"
+                    for f in insn.fluxes:
+                        print f
+                    print insn.arg_specs
+                    zza = self.discr.boundarize_volume_field(
+                            args[int(raw_input("arg a"))],
+                            insn.kind.tag)
+                    zzb = args[int(raw_input("arg b"))]
+
+                    for i, (zza_i, zzb_i) in enumerate(zip(zza,zzb)):
+                        print i, zza_i, zzb_i
+                    raw_input()
+                except ValueError:
+                    pass
         else:
             face_groups = self.discr.face_groups
 
@@ -167,6 +186,7 @@ class Executor(ExecutorBase):
 # discretization --------------------------------------------------------------
 class Discretization(hedge.discretization.Discretization):
     exec_mapper_class = ExecutionMapper
+    executor_class = Executor
 
     def __init__(self, *args, **kwargs):
         hedge.discretization.Discretization.__init__(self, *args, **kwargs)
@@ -184,7 +204,7 @@ class Discretization(hedge.discretization.Discretization):
 
         self._platform = plat
 
-    def compile(self, optemplate, post_bind_mapper=lambda x: x):
+    def generate_op_data(self, optemplate, post_bind_mapper=lambda x: x):
         from hedge.optemplate import \
                 OperatorBinder, \
                 InverseMassContractor, \
@@ -201,9 +221,5 @@ class Discretization(hedge.discretization.Discretization):
                                 BCToFluxRewriter()(
                                     OperatorBinder()(
                                         optemplate)))))))
-
         from hedge.backends.jit.compiler import OperatorCompiler
-        ex = Executor(self, 
-                OperatorCompiler(self)(prepared_optemplate))
-        ex.instrument()
-        return ex
+        return OperatorCompiler(self)(prepared_optemplate)

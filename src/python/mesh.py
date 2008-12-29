@@ -46,7 +46,7 @@ class TAG_RANK_BOUNDARY(object):
     def __init__(self, rank):
         self.rank = rank
 
-    def __str__(self):
+    def __repr__(self):
         return "TAG_RANK_BOUNDARY(%d)" % self.rank
 
     def __eq__(self, other):

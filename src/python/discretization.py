@@ -847,8 +847,11 @@ class Discretization(object):
         raise RuntimeError, "point %s not found" % point
 
     # op template execution ---------------------------------------------------
-    def compile(self, optemplate):
-        raise NotImplementedError
+    def compile(self, optemplate, post_bind_mapper=lambda x: x):
+        ex = self.executor_class(self, self.generate_op_data(optemplate, post_bind_mapper))
+        if self.instrumented:
+            ex.instrument()
+        return ex
 
     def add_function(self, name, func):
         self.exec_functions[name] = func
