@@ -272,7 +272,10 @@ class RectangularWaveguideMode:
 
         x = discr.nodes[:,0]
         y = discr.nodes[:,1]
-        z = discr.nodes[:,2]
+        if discr.dimensions > 2:
+            z = discr.nodes[:,2]
+        else:
+            z = discr.volume_zeros()
 
         sx = numpy.sin(f*x)
         sy = numpy.sin(g*y)
