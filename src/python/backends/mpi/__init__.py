@@ -236,14 +236,15 @@ def make_custom_exec_mapper_class(superclass):
                         self.discr.parallel_discr.flux_recv_timer)
 
         # actual functionality ----------------------------------------------------
-        def map_flux_send(self, op, field):
+        def map_flux_send(self, op, field_expr):
             import boost.mpi as mpi
-            from hedge.tools import log_shape
-
-            shp = log_shape(field)
+            from hedge.tools import log_shape, is_obj_array
 
             pdiscr = self.discr.parallel_discr
             comm = pdiscr.context.communicator
+
+            field = self.rec(field_expr)
+            shp = log_shape(field)
 
             # Subtlety here: The vectors for isend and irecv need to stay allocated
             # for as long as the request is not completed. The wrapper aids this
@@ -263,21 +264,35 @@ def make_custom_exec_mapper_class(superclass):
                     irecv_buffer(comm, rank, 1, neigh_recv_vecs[rank])
                     for rank in pdiscr.neighbor_ranks)
 
+            def flatten_and_convert_array(ary):
+                if is_obj_array(ary):
+                    return numpy.asarray(list(ary), 
+                            dtype=self.discr.default_scalar_type)
+                else:
+                    return numpy.asarray(ary, 
+                            dtype=self.discr.default_scalar_type)
+
             from hedge.mesh import TAG_RANK_BOUNDARY
-            send_requests = [isend_buffer(comm, rank, 1,
-                numpy.asarray(pdiscr.convert_boundary(
-                    pdiscr.boundarize_volume_field(
-                        field, 
-                        TAG_RANK_BOUNDARY(rank)),
-                    TAG_RANK_BOUNDARY(rank),
-                    kind="numpy")))
-                for rank in pdiscr.neighbor_ranks]
+            neigh_send_vecs = [
+                    flatten_and_convert_array(pdiscr.convert_boundary(
+                        pdiscr.boundarize_volume_field(
+                            field, 
+                            TAG_RANK_BOUNDARY(rank)),
+                        TAG_RANK_BOUNDARY(rank),
+                        kind="numpy"))
+                    for rank in pdiscr.neighbor_ranks]
+
+            send_requests = [isend_buffer(comm, rank, 1, nsv)
+                for rank, nsv in zip(
+                    pdiscr.neighbor_ranks,
+                    neigh_send_vecs)]
 
             class CommunicationRecord(pytools.Record):
                 pass
 
             return CommunicationRecord(
                     neigh_recv_vecs=neigh_recv_vecs,
+                    neigh_send_vecs=neigh_send_vecs,
                     recv_requests=recv_requests,
                     send_requests=send_requests,
                     shape=shp,
@@ -668,11 +683,12 @@ class ParallelDiscretization(object):
                 * self.dt_geometric_factor()
 
     # compilation -------------------------------------------------------------
-    def compile(self, optemplate):
+    def compile(self, optemplate, post_bind_mapper=lambda x:x ):
+        fci = FluxCommunicationInserter(self.neighbor_ranks)
         return self.subdiscr.compile(
                 optemplate,
-                post_bind_mapper=FluxCommunicationInserter(
-                    self.neighbor_ranks))
+                post_bind_mapper=lambda x: fci(post_bind_mapper(x)))
+        
 
 
 
