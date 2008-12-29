@@ -171,7 +171,7 @@ class MPIRunContext(RunContext):
                     result.append(hedge.mesh.TAG_RANK_BOUNDARY(opp_rank))
 
                     # keeps this part of the boundary from falling
-                    # under the "None" tag.
+                    # under TAG_ALL.
                     result.append(TAG_NO_BOUNDARY)
                 except KeyError:
                     pass
@@ -334,7 +334,7 @@ class FluxCommunicationInserter(
 
             if isinstance(expr.op, FluxOperatorBase):
                 if isinstance(expr.field, BoundaryPair):
-                    # we're only worried about interanl fluxes
+                    # we're only worried about internal fluxes
                     return IdentityMapper.map_operator_binding(self, expr)
 
                 # by now we've narrowed it down to a bound interior flux
@@ -376,8 +376,8 @@ class FluxCommunicationInserter(
                         expr.field, 
                         # This boundary field has no true data dependency--
                         # it is received from a different rank.
-                        # We still formally depend on the sent_fields to enforce
-                        # send-before-receive ordering.
+                        # Instead of field data, the "formal sent fields" 
+                        # contain communication handles.
                         receive_and_cse(rank),
                         TAG_RANK_BOUNDARY(rank)))
                         for rank in self.interacting_ranks])
@@ -625,7 +625,7 @@ class ParallelDiscretization(object):
                 if "parallel_setup" in self.debug:
                     assert len(from_indices) == len(flat_nb_node_coords)
 
-                # turn from_indices into an IndexMap
+                # construct from_neighbor_map
                 self.from_neighbor_maps[rank] = numpy.asarray(
                         from_indices, dtype=numpy.intp)
 
