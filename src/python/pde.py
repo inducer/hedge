@@ -112,10 +112,13 @@ class DivergenceOperator(Operator):
             # chop off any extra dimensions
             self.subset = subset[:dimensions]
 
+        from hedge.tools import count_subset
+        self.arg_count = count_subset(self.subset)
+
     def flux(self):
         from hedge.flux import make_normal, FluxVectorPlaceholder
 
-        v = FluxVectorPlaceholder(self.dimensions)
+        v = FluxVectorPlaceholder(self.arg_count)
 
         normal = make_normal(self.dimensions)
 
@@ -137,8 +140,8 @@ class DivergenceOperator(Operator):
         nabla = make_nabla(self.dimensions)
         m_inv = InverseMassOperator()
 
-        v = make_vector_field("v", self.dimensions)
-        bc = make_vector_field("bc", self.dimensions)
+        v = make_vector_field("v", self.arg_count)
+        bc = make_vector_field("bc", self.arg_count)
 
         local_op_result = 0
         idx = 0
