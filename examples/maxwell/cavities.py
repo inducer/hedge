@@ -28,10 +28,6 @@ def main():
     from hedge.element import TetrahedralElement
     from hedge.timestep import RK4TimeStepper
     from hedge.mesh import make_ball_mesh, make_cylinder_mesh, make_box_mesh
-    from hedge.visualization import \
-            VtkVisualizer, \
-            SiloVisualizer, \
-            get_rank_partition
     from hedge.tools import EOCRecorder, to_obj_array
     from math import sqrt, pi
     from analytic_solutions import \
@@ -87,6 +83,7 @@ def main():
     for order in [1,2,3,4,5,6]:
         discr = rcon.make_discretization(mesh_data, order=order)
 
+        from hedge.visualization import VtkVisualizer
         vis = VtkVisualizer(discr, rcon, "em-%d" % order)
 
         mode.set_time(0)
@@ -159,8 +156,9 @@ def main():
 
         eoc_rec.add_data_point(order, discr.norm(fields-true_fields))
 
-        print
-        print eoc_rec.pretty_print("P.Deg.", "L2 Error")
+        if rcon.is_head_rank:
+            print
+            print eoc_rec.pretty_print("P.Deg.", "L2 Error")
 
 if __name__ == "__main__":
     main()
