@@ -224,13 +224,14 @@ class EMFieldDivergenceD(LogQuantity):
         self.fields = fields
 
         from hedge.pde import DivergenceOperator
-        self.div_op = DivergenceOperator(maxwell_op.dimensions,
-                maxwell_op.get_eh_subset()[:3]).bind(self.fields.discr)
+        div_op = DivergenceOperator(maxwell_op.dimensions,
+                maxwell_op.get_eh_subset()[:3])
+        self.bound_div_op = div_op.bind(self.fields.discr)
 
     def __call__(self):
         max_op = self.fields.maxwell_op
         d = max_op.epsilon * self.fields.e
-        div_d = self.div_op(d)
+        div_d = self.bound_div_op(d)
         
         return self.fields.discr.integral(div_d)
 
