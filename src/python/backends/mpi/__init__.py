@@ -1,5 +1,7 @@
 """Parallelism support"""
 
+from __future__ import division
+
 __copyright__ = "Copyright (C) 2007 Andreas Kloeckner"
 
 __license__ = """
@@ -633,12 +635,12 @@ class ParallelDiscretization(object):
     def norm(self, volume_vector, p=2):
         import boost.mpi as mpi
 
-        def f(x, y):
-            return (x**p + y**p)**1/p
+        def add_norms(x, y):
+            return (x**p + y**p)**(1/p)
 
         return mpi.all_reduce(self.context.communicator, 
                 self.subdiscr.norm(volume_vector, p),
-                f)
+                add_norms)
 
     def integral(self, volume_vector):
         import boost.mpi as mpi
