@@ -159,6 +159,10 @@ class Executor(ExecutorBase):
         return [self.diff_rst_to_xyz(op_class(i), rst_derivatives)
                 for i in xyz_needed]
 
+    def __call__(self, **context):
+        return self.op_data.execute(
+                self.discr.exec_mapper_class(context, self))
+
 
 
 

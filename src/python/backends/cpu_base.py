@@ -129,10 +129,6 @@ class ExecutorBase(object):
                    target)
         target.finalize()
 
-    def __call__(self, **context):
-        return self.op_data.execute(
-                self.discr.exec_mapper_class(context, self))
-
 
 
 

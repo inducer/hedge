@@ -63,7 +63,7 @@ class FluxToCodeMapper(CCodeMapper):
         return "value_type(fp.loc.normal[%d])" % (expr.axis)
 
     def map_penalty_term(self, expr, enclosing_prec):
-        return ("value_type(pow(fp.loc.order*fp.%(where)s.order/fp.%(where)s.h, %(pwr)r))" 
+        return ("value_type(pow(fp.loc.order*fp.loc.order/fp.loc.h, %(pwr)r))" 
                 % {"pwr": expr.power})
 
 

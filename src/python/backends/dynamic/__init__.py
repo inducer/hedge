@@ -139,8 +139,8 @@ class _FluxOpCompileMapper(hedge.optemplate.FluxDecomposer):
 
 # exec mapper -----------------------------------------------------------------
 class ExecutionMapper(ExecutionMapperBase):
-    def __init__(self, context, discr, executor):
-        ExecutionMapperBase.__init__(self, context, discr, executor)
+    def __init__(self, context, executor):
+        ExecutionMapperBase.__init__(self, context, executor)
 
         self.diff_rst_cache = {}
 
@@ -249,22 +249,24 @@ class ExecutionMapper(ExecutionMapperBase):
 
 
 class Executor(ExecutorBase):
+    def __init__(self, discr, op_data):
+        ExecutorBase.__init__(self, discr, op_data)
+
+        from hedge._internal import perform_double_sided_flux
+        self.perform_double_sided_flux = perform_double_sided_flux
+
     def instrument(self):
         ExecutorBase.instrument(self)
 
         discr = self.discr
-        from hedge._internal import perform_double_sided_flux
-        if discr.instrumented:
-            from hedge.tools import time_count_flop, gather_flops
-            self.perform_double_sided_flux = \
-                    time_count_flop(
-                            perform_double_sided_flux,
-                            discr.gather_timer,
-                            discr.gather_counter,
-                            discr.gather_flop_counter,
-                            gather_flops(discr))
-        else:
-            self.perform_double_sided_flux = perform_double_sided_flux
+        from hedge.tools import time_count_flop, gather_flops
+        self.perform_double_sided_flux = \
+                time_count_flop(
+                        self.perform_double_sided_flux,
+                        discr.gather_timer,
+                        discr.gather_counter,
+                        discr.gather_flop_counter,
+                        gather_flops(discr))
 
     def diff_xyz(self, mapper, op, expr, field, result):
         rst_derivatives = mapper.diff_rst_with_cache(op, expr, field)
@@ -284,8 +286,8 @@ class Executor(ExecutorBase):
 
         return result
 
-    def execute(self, **context):
-        return ExecutionMapper(context, self.discr, self)(self.op_data)
+    def __call__(self, **context):
+        return ExecutionMapper(context, self)(self.op_data)
 
 
 
@@ -293,23 +295,20 @@ class Executor(ExecutorBase):
 
 class Discretization(hedge.discretization.Discretization):
     exec_mapper_class = ExecutionMapper
+    executor_class = Executor
 
-    def compile(self, optemplate, wrapper_func=None):
+    def generate_op_data(self, optemplate, post_bind_mapper):
         from hedge.optemplate import \
                 OperatorBinder, \
                 InverseMassContractor, \
                 BCToFluxRewriter, \
                 CommutativeConstantFoldingMapper
 
-        result = (
-                InverseMassContractor()(
-                    CommutativeConstantFoldingMapper()(
-                        _FluxOpCompileMapper()(
-                            BCToFluxRewriter()(
+        return InverseMassContractor()(
+                CommutativeConstantFoldingMapper()(
+                    _FluxOpCompileMapper()(
+                        BCToFluxRewriter()(
+                            post_bind_mapper(
                                 OperatorBinder()(
                                     optemplate))))))
-
-        ex = Executor(self, result, wrapper_func)
-        ex.instrument()
-        return ex
 
