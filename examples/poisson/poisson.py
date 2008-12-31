@@ -27,10 +27,10 @@ from hedge.tools import Reflection, Rotation
 
 def main() :
     from hedge.element import TriangularElement, TetrahedralElement
-    from hedge.parallel import guess_parallelization_context
     from hedge.data import GivenFunction, ConstantGivenFunction
 
-    pcon = guess_parallelization_context()
+    from hedge.backends import guess_run_context
+    rcon = guess_run_context(disable=set(["cuda"]))
 
     dim = 2
 
@@ -43,26 +43,26 @@ def main() :
             return ["dirichlet"]
 
     if dim == 2:
-        if pcon.is_head_rank:
+        if rcon.is_head_rank:
             from hedge.mesh import make_disk_mesh
             mesh = make_disk_mesh(r=0.5, boundary_tagger=boundary_tagger,
                     max_area=1e-2)
         el_class = TriangularElement
     elif dim == 3:
-        if pcon.is_head_rank:
+        if rcon.is_head_rank:
             from hedge.mesh import make_ball_mesh
             mesh = make_ball_mesh(max_volume=0.0001)
         el_class = TetrahedralElement
     else:
         raise RuntimeError, "bad number of dimensions"
 
-    if pcon.is_head_rank:
+    if rcon.is_head_rank:
         print "%d elements" % len(mesh.elements)
-        mesh_data = pcon.distribute_mesh(mesh)
+        mesh_data = rcon.distribute_mesh(mesh)
     else:
-        mesh_data = pcon.receive_mesh()
+        mesh_data = rcon.receive_mesh()
 
-    discr = pcon.make_discretization(mesh_data, el_class(5))
+    discr = rcon.make_discretization(mesh_data, el_class(5))
 
     def dirichlet_bc(x, el):
         from math import sin
@@ -92,11 +92,11 @@ def main() :
     bound_op = op.bind(discr)
 
     from hedge.tools import parallel_cg
-    u = -parallel_cg(pcon, -bound_op, bound_op.prepare_rhs(GivenFunction(rhs_c)), 
+    u = -parallel_cg(rcon, -bound_op, bound_op.prepare_rhs(GivenFunction(rhs_c)), 
             debug=True, tol=1e-10)
 
     from hedge.visualization import SiloVisualizer, VtkVisualizer
-    vis = VtkVisualizer(discr, pcon)
+    vis = VtkVisualizer(discr, rcon)
     visf = vis.make_file("fld")
     vis.add_data(visf, [ ("sol", u), ])
     visf.close()

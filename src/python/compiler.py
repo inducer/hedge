@@ -176,6 +176,8 @@ class Code(object):
 # compiler --------------------------------------------------------------------
 class OperatorCompilerBase(IdentityMapper):
     from hedge.optemplate import DependencyMapper as dep_mapper_class
+    from hedge.optemplate import BoundOperatorCollector \
+            as bound_op_collector_class
 
     class FluxRecord(Record):
         __slots__ = ["flux_expr", "dependencies", "kind"]
@@ -200,16 +202,12 @@ class OperatorCompilerBase(IdentityMapper):
         raise NotImplementedError
 
     def collect_diff_ops(self, expr):
-        from hedge.optemplate import \
-                BoundOperatorCollector, \
-                DiffOperatorBase
-        return BoundOperatorCollector(DiffOperatorBase)(expr)
+        from hedge.optemplate import DiffOperatorBase
+        return self.bound_op_collector_class(DiffOperatorBase)(expr)
 
     def collect_flux_receive_ops(self, expr):
-        from hedge.optemplate import \
-                BoundOperatorCollector, \
-                FluxReceiveOperator
-        return BoundOperatorCollector(FluxReceiveOperator)(expr)
+        from hedge.optemplate import FluxReceiveOperator
+        return self.bound_op_collector_class(FluxReceiveOperator)(expr)
 
     def insert_discards(self, code, result_expr):
         rev_code_and_used_vars = []

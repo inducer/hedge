@@ -39,8 +39,8 @@ def main():
             RectangularWaveguideMode, \
             RectangularCavityMode
     from hedge.pde import MaxwellOperator
-    from hedge.backends import guess_run_context
 
+    from hedge.backends import guess_run_context
     rcon = guess_run_context(disable=set(["cuda"]))
 
     epsilon0 = 8.8541878176e-12 # C**2 / (N m**2)

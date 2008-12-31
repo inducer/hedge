@@ -700,6 +700,7 @@ class Discretization(object):
         slice_pfx = (slice(None),)*len(shape)
         for point_nr, x in enumerate(self.get_boundary(tag).nodes):
             out[slice_pfx + (point_nr,)] = f(x, None) # FIXME
+
         return self.convert_boundary(out, tag, kind)
 
     @memoize_method
@@ -848,7 +849,7 @@ class Discretization(object):
 
     # op template execution ---------------------------------------------------
     def compile(self, optemplate, post_bind_mapper=lambda x: x):
-        ex = self.executor_class(self, self.generate_op_data(optemplate, post_bind_mapper))
+        ex = self.executor_class(self, optemplate, post_bind_mapper)
         if self.instrumented:
             ex.instrument()
         return ex

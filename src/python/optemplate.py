@@ -36,7 +36,7 @@ import hedge.mesh
 def make_common_subexpression(fields): 
     from hedge.tools import with_object_array_or_scalar
     from pymbolic.primitives import CommonSubexpression
-    return with_object_array_or_scalar(CommonSubexpression)
+    return with_object_array_or_scalar(CommonSubexpression, fields)
 
 
 
@@ -536,7 +536,7 @@ class IdentityMapperMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     map_diff_base = map_mass_base
     map_flux_base = map_mass_base
     map_flux_coeff_base = map_mass_base
-    map_elementwise_max_base = map_mass_base
+    map_elementwise_max = map_mass_base
     map_flux_send = map_mass_base
     map_flux_receive = map_mass_base
 

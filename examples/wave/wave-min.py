@@ -30,9 +30,9 @@ def main() :
     from hedge.mesh import make_rect_mesh
     mesh = make_rect_mesh(a=(-0.5,-0.5),b=(0.5,0.5),max_area=0.008)
 
-    from hedge.discr_precompiled import Discretization
-    from hedge.element import TriangularElement
-    discr = Discretization(mesh, TriangularElement(4))
+    from hedge.backends.jit import Discretization
+
+    discr = Discretization(mesh, order=4)
 
     from hedge.visualization import VtkVisualizer
     vis = VtkVisualizer(discr, None, "fld")

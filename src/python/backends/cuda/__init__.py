@@ -24,7 +24,6 @@ import numpy.linalg as la
 import hedge.discretization
 import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
-from hedge.backends.cuda.execute import ExecutionMapper
 from pytools import memoize_method, memoize, Record
 
 
@@ -266,7 +265,10 @@ def make_gpu_partition_metis(adjgraph, max_block_size):
 
 # GPU discretization ----------------------------------------------------------
 class Discretization(hedge.discretization.Discretization):
-    exec_mapper_class = ExecutionMapper
+    from hedge.backends.cuda.execute import ExecutionMapper \
+            as exec_mapper_class
+    from hedge.backends.cuda.execute import Executor \
+            as executor_class
 
     @classmethod
     def all_debug_flags(cls):
@@ -1029,8 +1031,3 @@ class Discretization(hedge.discretization.Discretization):
                     block_elgroup_indices
 
         return elgroup_indices
-
-    # optemplate processing ---------------------------------------------------
-    def compile(self, optemplate):
-        from hedge.backends.cuda.execute import Executor
-        return Executor(self, optemplate)

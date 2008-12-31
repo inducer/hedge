@@ -249,8 +249,22 @@ class ExecutionMapper(ExecutionMapperBase):
 
 
 class Executor(ExecutorBase):
-    def __init__(self, discr, op_data):
-        ExecutorBase.__init__(self, discr, op_data)
+    def __init__(self, discr, optemplate, post_bind_mapper):
+        from hedge.optemplate import \
+                OperatorBinder, \
+                InverseMassContractor, \
+                BCToFluxRewriter, \
+                CommutativeConstantFoldingMapper
+
+        prepared_optemplate = InverseMassContractor()(
+                CommutativeConstantFoldingMapper()(
+                    _FluxOpCompileMapper()(
+                        BCToFluxRewriter()(
+                            post_bind_mapper(
+                                OperatorBinder()(
+                                    optemplate))))))
+
+        ExecutorBase.__init__(self, discr, prepared_optemplate)
 
         from hedge._internal import perform_double_sided_flux
         self.perform_double_sided_flux = perform_double_sided_flux
@@ -296,19 +310,3 @@ class Executor(ExecutorBase):
 class Discretization(hedge.discretization.Discretization):
     exec_mapper_class = ExecutionMapper
     executor_class = Executor
-
-    def generate_op_data(self, optemplate, post_bind_mapper):
-        from hedge.optemplate import \
-                OperatorBinder, \
-                InverseMassContractor, \
-                BCToFluxRewriter, \
-                CommutativeConstantFoldingMapper
-
-        return InverseMassContractor()(
-                CommutativeConstantFoldingMapper()(
-                    _FluxOpCompileMapper()(
-                        BCToFluxRewriter()(
-                            post_bind_mapper(
-                                OperatorBinder()(
-                                    optemplate))))))
-

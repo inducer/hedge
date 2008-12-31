@@ -223,7 +223,7 @@ class FluxCollector(hedge.optemplate.CollectorMixin, hedge.optemplate.CombineMap
     def map_whole_domain_flux(self, wdflux):
         return set([wdflux])
 
-class DiffOpCollector(hedge.optemplate.DiffOpCollector):
+class BoundOperatorCollector(hedge.optemplate.BoundOperatorCollector):
     def map_whole_domain_flux(self, expr):
         return set()
 

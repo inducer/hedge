@@ -309,6 +309,10 @@ class CompiledCUDAFluxBatchAssign(CUDAFluxBatchAssign):
 
 
 class OperatorCompiler(OperatorCompilerBase):
+    from hedge.backends.cuda.optemplate import \
+            BoundOperatorCollector \
+            as bound_op_collector_class
+
     def get_contained_fluxes(self, expr):
         from hedge.backends.cuda.optemplate import FluxCollector
         return [self.FluxRecord(
@@ -333,10 +337,6 @@ class OperatorCompiler(OperatorCompilerBase):
 
     def map_whole_domain_flux(self, wdflux):
         return self.map_planned_flux(wdflux)
-
-    def collect_diff_ops(self, expr):
-        from hedge.backends.cuda.optemplate import DiffOpCollector
-        return DiffOpCollector()(expr)
 
     def make_flux_batch_assign(self, names, fluxes, kind):
         return CUDAFluxBatchAssign(names=names, fluxes=fluxes, kind=kind)
@@ -378,7 +378,7 @@ class OperatorCompilerWithExecutor(OperatorCompiler):
 class Executor(object):
     exec_mapper_class = ExecutionMapper
 
-    def __init__(self, discr, optemplate):
+    def __init__(self, discr, optemplate, post_bind_mapper):
         self.discr = discr
 
         from hedge.tools import diff_rst_flops, diff_rescale_one_flops, \
@@ -404,7 +404,7 @@ class Executor(object):
 
         # compile the optemplate
         self.code = OperatorCompilerWithExecutor(self)(
-                self.prepare_optemplate(discr.mesh, optemplate))
+                self.prepare_optemplate(discr.mesh, optemplate, post_bind_mapper))
 
         #print self.code
 
@@ -413,7 +413,7 @@ class Executor(object):
         self.fluxlocal_kernel = self.discr.fluxlocal_plan.make_kernel(discr)
 
     @staticmethod
-    def prepare_optemplate(mesh, optemplate):
+    def prepare_optemplate(mesh, optemplate, post_bind_mapper=lambda x: x):
         from hedge.optemplate import OperatorBinder, InverseMassContractor, \
                 BCToFluxRewriter, CommutativeConstantFoldingMapper
         from hedge.backends.cuda.optemplate import BoundaryCombiner, FluxCollector
@@ -422,8 +422,9 @@ class Executor(object):
                 InverseMassContractor()(
                     CommutativeConstantFoldingMapper()(
                         BCToFluxRewriter()(
-                            OperatorBinder()(
-                                optemplate)))))
+                            post_bind_mapper(
+                                OperatorBinder()(
+                                    optemplate))))))
 
     @classmethod
     def get_first_flux_batch(cls, mesh, optemplate):
@@ -434,6 +435,9 @@ class Executor(object):
             return compiler.flux_batches[0]
         else:
             return None
+
+    def instrument(self):
+        pass
 
     # actual execution --------------------------------------------------------
     def __call__(self, **vars):
