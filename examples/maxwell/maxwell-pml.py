@@ -43,7 +43,6 @@ def make_mesh(a, b, pml_width=0.25, **kwargs):
     def boundary_tagger(fvi, el, fn):
         return []
 
-
     from hedge.mesh import make_conformal_mesh
     return make_conformal_mesh(
             built_mi.points,

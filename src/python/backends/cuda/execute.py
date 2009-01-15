@@ -350,16 +350,23 @@ class OperatorCompilerWithExecutor(OperatorCompiler):
         self.executor = executor
 
     def make_assign(self, name, expr):
-        from hedge.backends.cuda.vector_expr import CompiledVectorExpression
-        return VectorExprAssign(
-                name=name,
-                expr=expr,
-                dep_mapper_class=self.dep_mapper_class,
-                compiled=CompiledVectorExpression(
-                    expr, 
-                    type_getter=lambda expr: (True, self.executor.discr.default_scalar_type),
-                    result_dtype=self.executor.discr.default_scalar_type,
-                    allocator=self.executor.discr.pool.allocate))
+        from hedge.optemplate import FluxSendOperator, OperatorBinding
+        if (isinstance(expr, OperatorBinding) 
+                and isinstance(expr.op, FluxSendOperator)):
+            # FluxSend does not result in a vector, so don't try to generate
+            # a compiled vector expression.
+            return OperatorCompiler.make_assign(self, name, expr)
+        else:
+            from hedge.backends.cuda.vector_expr import CompiledVectorExpression
+            return VectorExprAssign(
+                    name=name,
+                    expr=expr,
+                    dep_mapper_class=self.dep_mapper_class,
+                    compiled=CompiledVectorExpression(
+                        expr, 
+                        type_getter=lambda expr: (True, self.executor.discr.default_scalar_type),
+                        result_dtype=self.executor.discr.default_scalar_type,
+                        allocator=self.executor.discr.pool.allocate))
 
     def make_flux_batch_assign(self, names, fluxes, kind):
         return CompiledCUDAFluxBatchAssign(

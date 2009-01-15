@@ -877,6 +877,9 @@ class BCToFluxRewriter(IdentityMapper):
             def map_normal(self, expr):
                 return set([expr])
 
+            def map_operator_binding(self, epxr):
+                return set([expr])
+
         from hedge.flux import Normal
         bdry_dependencies = NormalToleratingDependencyMapper(
                     include_calls="descend_args")(bdry_field)

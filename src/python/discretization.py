@@ -198,7 +198,8 @@ class Discretization(object):
             return local_discretization
 
     def __init__(self, mesh, local_discretization=None, 
-            order=None, debug=set(), default_scalar_type=numpy.float64):
+            order=None, debug=set(), default_scalar_type=numpy.float64,
+            run_context=None):
         """
 
         @arg debug: A set of strings indicating which debug checks should

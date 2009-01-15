@@ -225,7 +225,13 @@ class FluxCollector(hedge.optemplate.CollectorMixin, hedge.optemplate.CombineMap
 
 class BoundOperatorCollector(hedge.optemplate.BoundOperatorCollector):
     def map_whole_domain_flux(self, expr):
-        return set()
+        result = set()
 
+        for ii in expr.interiors:
+            result.update(self.rec(ii.field_expr))
 
+        for bi in expr.boundaries:
+            result.update(self.rec(bi.bpair.field))
+            result.update(self.rec(bi.bpair.bfield))
 
+        return result

@@ -24,6 +24,7 @@ import numpy
 import pycuda.driver as drv
 import pycuda.gpuarray as gpuarray
 import pymbolic.mapper.substitutor
+import hedge.optemplate
 
 
 
@@ -55,14 +56,15 @@ def dtype_to_ctype(dtype):
 
 
 class DefaultingSubstitutionMapper(
-        pymbolic.mapper.substitutor.SubstitutionMapper):
+        pymbolic.mapper.substitutor.SubstitutionMapper,
+        hedge.optemplate.IdentityMapperMixin):
     def handle_unsupported_expression(self, expr):
         result = self.subst_func(expr)
         if result is not None:
             return result
         else:
             pymbolic.mapper.substitutor.SubstitutionMapper.handle_unsupported_expression(
-                    self.expr)
+                    self, expr)
 
 class CompiledVectorExpression(object):
     def __init__(self, vec_expr, type_getter, result_dtype, 

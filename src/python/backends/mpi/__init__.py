@@ -175,6 +175,7 @@ class MPIRunContext(RunContext):
                     # keeps this part of the boundary from falling
                     # under TAG_ALL.
                     result.append(TAG_NO_BOUNDARY)
+
                 except KeyError:
                     pass
 
@@ -256,7 +257,8 @@ def make_custom_exec_mapper_class(superclass):
             neigh_recv_vecs = dict(
                     (rank, pdiscr.boundary_zeros(
                         hedge.mesh.TAG_RANK_BOUNDARY(rank),
-                        shape=shp))
+                        shape=shp,
+                        kind="numpy"))
                     for rank in pdiscr.neighbor_ranks)
 
             from hedge._internal import irecv_buffer, isend_buffer
@@ -416,9 +418,10 @@ class ParallelDiscretization(object):
         return cls.my_debug_flags() | subcls.all_debug_flags()
 
     def __init__(self, rcon, subdiscr_class, rank_data, *args, **kwargs):
-        debug = kwargs.pop("debug", set())
+        debug = set(kwargs.pop("debug", set()))
         self.debug = self.my_debug_flags() & debug
         kwargs["debug"] = debug - self.debug
+        kwargs["run_context"] = rcon
 
         self.subdiscr = subdiscr_class(rank_data.mesh, *args, **kwargs)
         self.subdiscr.exec_mapper_class = make_custom_exec_mapper_class(

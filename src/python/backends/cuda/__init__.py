@@ -232,8 +232,13 @@ def make_gpu_partition_metis(adjgraph, max_block_size):
 
     attempt_count = 5
     for attempt in range(attempt_count):
-        cuts, partition = part_graph(part_count,
-                adjgraph, vweights=[1000]*len(adjgraph))
+        if part_count > 1:
+            cuts, partition = part_graph(part_count,
+                    adjgraph, vweights=[1000]*len(adjgraph))
+        else:
+            # metis bug workaround:
+            # metis returns ones (instead of zeros) if part_count == 1
+            partition = [0]*len(adjgraph)
 
         blocks = dict((i, []) for i in range(part_count))
         for el_id, block in enumerate(partition):
@@ -326,7 +331,7 @@ class Discretization(hedge.discretization.Discretization):
             if b1 != b2:
                 block2extifaces[b1] += 1
 
-        for el, face_nbr in self.mesh.tag_to_boundary[hedge.mesh.TAG_ALL]:
+        for el, face_nbr in self.mesh.tag_to_boundary[hedge.mesh.TAG_REALLY_ALL]:
             b1 = partition[el.id]
             block2extifaces[b1] += 1
 
@@ -362,10 +367,10 @@ class Discretization(hedge.discretization.Discretization):
         self.partition_cache[max_block_size] = result
         return result
 
-    def __init__(self, mesh,  local_discretization=None, 
+    def __init__(self, mesh, local_discretization=None, 
             order=None, init_cuda=True, debug=set(), 
             device=None, default_scalar_type=numpy.float32,
-            tune_for=None):
+            tune_for=None, run_context=None):
         """
 
         @arg tune_for: An optemplate for whose application this discretization's
@@ -383,8 +388,12 @@ class Discretization(hedge.discretization.Discretization):
             cuda.init()
 
         if device is None:
-            from pycuda.tools import get_default_device
-            device = get_default_device()
+            if run_context is None:
+                from pycuda.tools import get_default_device
+                device = get_default_device()
+            else:
+                from hedge.backends.cuda.tools import mpi_get_default_device
+                device = mpi_get_default_device(run_context.communicator)
 
         if isinstance(device, int):
             device = cuda.Device(device)
@@ -638,8 +647,8 @@ class Discretization(hedge.discretization.Discretization):
                     )
 
         self.aligned_boundary_floats = 0
-        from hedge.mesh import TAG_ALL
-        for bdry_fg in self.get_boundary(TAG_ALL).face_groups:
+        from hedge.mesh import TAG_REALLY_ALL
+        for bdry_fg in self.get_boundary(TAG_REALLY_ALL).face_groups:
             assert ldis == bdry_fg.ldis_loc
             aligned_fnc = self.given.devdata.align_dtype(ldis.face_node_count(), 
                     self.given.float_size())
@@ -887,7 +896,7 @@ class Discretization(hedge.discretization.Discretization):
         result = numpy.empty(shape, dtype=object)
         from pytools import indices_in_shape
         for i in indices_in_shape(shape):
-            result[i] = create_func((self.base_size,), dtype=dtype)
+            result[i] = create_func((base_size,), dtype=dtype)
         return result
     
 
@@ -982,8 +991,7 @@ class Discretization(hedge.discretization.Discretization):
         kernel, field_texref = _boundarize_kernel()
 
         from_indices, to_indices, idx_count = self._boundarize_info(tag)
-        block_count, threads_per_block, elems_per_block = \
-                gpuarray.splay(idx_count)
+        grid_dim, block_dim = gpuarray.splay(idx_count)
 
         def do_scalar(subfield):
             from hedge.mesh import TAG_ALL
@@ -996,7 +1004,7 @@ class Discretization(hedge.discretization.Discretization):
                 subfield.bind_to_texref(field_texref)
                 kernel(result, to_indices, from_indices,
                         numpy.uint32(idx_count),
-                        block=(threads_per_block,1,1), grid=(block_count,1),
+                        block=block_dim, grid=grid_dim,
                         texrefs=[field_texref])
             return result
 
