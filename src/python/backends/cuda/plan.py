@@ -91,38 +91,40 @@ def optimize_plan(opt_name, plan_generator, target_func, maximize, debug_flags=s
         except sqlite.OperationalError:
             pass
 
-    import sys
-
-    plan_values = []
-    for p in plans:
-        if p.occupancy_record().occupancy >= desired_occup - 1e-10:
-            if debug:
-                print "<---- trying %s:" % p
-            else:
-                sys.stdout.write(".")
-                sys.stdout.flush()
-
-            value = target_func(p)
-            if isinstance(value, tuple):
-                extra_info = value[1:]
-                value = value[0]
-            else:
-                extra_info = None
-
-            if value is not None:
-                if debug:
-                    print "----> yielded %g" % (value)
-                plan_values.append(((len(plan_values), p), value))
-
-                if log_filename is not None:
-                    db_conn.execute(
-                            "insert into data (%s,value) values (%s)"
-                            % (", ".join(feature_names), 
-                                ",".join(["?"]*(1+len(feature_names)))),
-                            p.features(*extra_info)+(value,))
     if not debug:
-        sys.stdout.write("\n")
-        sys.stdout.flush()
+        from pytools import ProgressBar
+        pbar = ProgressBar("plan "+opt_name, len(plans))
+    try:
+        plan_values = []
+        for p in plans:
+            if not debug:
+                pbar.progress()
+
+            if p.occupancy_record().occupancy >= desired_occup - 1e-10:
+                if debug:
+                    print "<---- trying %s:" % p
+
+                value = target_func(p)
+                if isinstance(value, tuple):
+                    extra_info = value[1:]
+                    value = value[0]
+                else:
+                    extra_info = None
+
+                if value is not None:
+                    if debug:
+                        print "----> yielded %g" % (value)
+                    plan_values.append(((len(plan_values), p), value))
+
+                    if log_filename is not None:
+                        db_conn.execute(
+                                "insert into data (%s,value) values (%s)"
+                                % (", ".join(feature_names), 
+                                    ",".join(["?"]*(1+len(feature_names)))),
+                                p.features(*extra_info)+(value,))
+    finally:
+        if not debug:
+            pbar.finished()
 
     if log_filename is not None:
         db_conn.commit()
