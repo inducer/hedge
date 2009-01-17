@@ -734,20 +734,20 @@ class Kernel:
             ])
 
         if not fplan.direct_store:
-            for flux_nr in range(len(self.fluxes)):
-                f_body.extend_log_block("store flux number %d" % flux_nr, [
-                    For("unsigned word_nr = THREAD_NUM", 
-                        "word_nr < ALIGNED_FACE_DOFS_PER_MB*BLOCK_MB_COUNT", 
-                        "word_nr += COALESCING_THREAD_COUNT",
-                        Block([
-                            Assign(
-                                "gmem_fluxes_on_faces%d"
-                                "[FOF_BLOCK_BASE+word_nr]"
-                                % flux_nr,
-                                "smem_fluxes_on_faces[%d][word_nr]" % flux_nr),
-                            ])
-                        )
-                    ])
+            f_body.extend_log_block("store fluxes", [
+                For("unsigned word_nr = THREAD_NUM", 
+                    "word_nr < ALIGNED_FACE_DOFS_PER_MB*BLOCK_MB_COUNT", 
+                    "word_nr += COALESCING_THREAD_COUNT",
+                    Block([
+                        Assign(
+                            "gmem_fluxes_on_faces%d"
+                            "[FOF_BLOCK_BASE+word_nr]"
+                            % flux_nr,
+                            "smem_fluxes_on_faces[%d][word_nr]" % flux_nr)
+                        for flux_nr in range(len(self.fluxes))
+                        ])
+                    )
+                ])
 
         # finish off ----------------------------------------------------------
         cmod.append(FunctionBody(f_decl, f_body))
