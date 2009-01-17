@@ -461,6 +461,12 @@ class Kernel:
                     "field%d_tex" % self.dep_to_index[dep_expr])
                 ])
 
+        if fplan.flux_count != len(self.fluxes):
+            from warnings import warn
+            warn("Flux count in flux execution plan different from actual flux count.\n"
+                    "You may want to specify the tune_for= kwarg in the Discretization\n"
+                    "constructor.")
+
         cmod.extend([
             Line(),
             Typedef(POD(float_type, "value_type")),
@@ -480,7 +486,7 @@ class Kernel:
             Define("FACEDOF_NR", "threadIdx.x"),
             Define("BLOCK_FACE", "threadIdx.y"),
             Line(),
-            Define("FLUX_COUNT", fplan.flux_count),
+            Define("FLUX_COUNT", len(self.fluxes)),
             Line(),
             Define("THREAD_NUM", "(FACEDOF_NR + BLOCK_FACE*THREADS_PER_FACE)"),
             Define("THREAD_COUNT", "(THREADS_PER_FACE*CONCURRENT_FACES)"),
