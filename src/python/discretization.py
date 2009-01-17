@@ -228,6 +228,9 @@ class Discretization(object):
 
         self.exec_functions = {}
 
+    def close(self):
+        pass
+
     # instrumentation ---------------------------------------------------------
     def create_op_timers(self):
         from pytools.log import IntervalTimer

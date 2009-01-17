@@ -399,6 +399,8 @@ class Discretization(hedge.discretization.Discretization):
             device = cuda.Device(device)
         if init_cuda:
             self.cuda_context = device.make_context()
+        else:
+            self.cuda_context = None
 
         self.device = device
         from pycuda.tools import DeviceData
@@ -484,6 +486,10 @@ class Discretization(hedge.discretization.Discretization):
         if "cuda_compare" in self.debug:
             from hedge.discr_precompiled import Discretization
             self.test_discr = Discretization(mesh, ldis)
+
+    def close(self):
+        if self.cuda_context is not None:
+            self.cuda_context.pop()
 
     def _build_blocks(self):
         block_el_numbers = {}
