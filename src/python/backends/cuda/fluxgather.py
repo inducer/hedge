@@ -616,13 +616,12 @@ class Kernel:
             from codepy.cgen import make_multiple_ifs
             from pymbolic.mapper.stringifier import PREC_NONE
 
-            flux_write_code = Block([POD(float_type, "a_flux") ])
+            flux_write_code = Block([])
             
-            zero_flux_code = [Assign("a_flux", 0)]
+            flux_var_decl = [Initializer( POD(float_type, "a_flux"), 0)]
 
             if is_twosided:
-                flux_write_code.append(POD(float_type, "b_flux"))
-                zero_flux_code.append(Assign("b_flux", 0))
+                flux_var_decl.append(Initializer(POD(float_type, "b_flux"), 0))
                 prefixes = ["a", "b"]
                 flip_values = [False, True]
             else:
@@ -644,11 +643,11 @@ class Kernel:
 
             flux_sub_codes = []
             for flux_nr, wdflux in enumerate(self.fluxes):
-                flux_sub_codes.extend([Line()]+zero_flux_code+[Line()])
+                my_flux_block = Block(flux_var_decl)
 
                 for int_rec in wdflux.interiors:
                     for prefix, is_flipped in zip(prefixes, flip_values):
-                        flux_sub_codes.append(
+                        my_flux_block.append(
                                 S("%s_flux += %s"
                                     % (prefix, 
                                         flux_to_code(f2cm, is_flipped,
@@ -658,18 +657,19 @@ class Kernel:
                                             int_rec.flux_expr, PREC_NONE),
                                         )))
 
-                flux_sub_codes.append(Line())
+                my_flux_block.append(Line())
 
-                flux_sub_codes.append(
+                my_flux_block.append(
                         gen_store(flux_nr, "fpair->a_dest+FACEDOF_NR",
                             "fpair->face_jacobian*a_flux"))
 
                 if is_twosided:
-                    flux_sub_codes.append(
+                    my_flux_block.append(
                             gen_store(flux_nr, 
                                 "fpair->b_dest+tex1Dfetch(tex_index_lists, "
                                 "fpair->b_write_ilist_index + FACEDOF_NR)",
                                 "fpair->face_jacobian*b_flux"))
+                flux_sub_codes.append(my_flux_block)
 
             flux_write_code.extend(
                     Initializer(
