@@ -548,7 +548,7 @@ class Kernel:
             from codepy.cgen import make_multiple_ifs
             from pymbolic.mapper.stringifier import PREC_NONE
 
-            flux_write_code = Block([POD(float_type, "flux") ])
+            flux_write_code = Block([MaybeUnused(POD(float_type, "flux"))])
 
             from pytools import flatten
             from hedge.tools import is_zero
