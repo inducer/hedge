@@ -654,8 +654,14 @@ class Discretization(hedge.discretization.Discretization):
 
         self.aligned_boundary_floats = 0
         from hedge.mesh import TAG_REALLY_ALL
+
         for bdry_fg in self.get_boundary(TAG_REALLY_ALL).face_groups:
+            if bdry_fg.ldis_loc is None:
+                assert len(bdry_fg.face_pairs) == 0
+                continue
+
             assert ldis == bdry_fg.ldis_loc
+
             aligned_fnc = self.given.devdata.align_dtype(ldis.face_node_count(), 
                     self.given.float_size())
             for fp in bdry_fg.face_pairs:
