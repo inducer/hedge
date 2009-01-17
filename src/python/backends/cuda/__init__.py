@@ -1051,3 +1051,14 @@ class Discretization(hedge.discretization.Discretization):
                     block_elgroup_indices
 
         return elgroup_indices
+
+
+
+
+def make_block_visualization(discr):
+    result = discr.volume_zeros(kind="numpy")
+    for block in discr.blocks:
+        for cpu_slice in block.cpu_slices:
+            result[cpu_slice] = block.number
+
+    return result
