@@ -377,6 +377,11 @@ class Discretization(hedge.discretization.Discretization):
         flux plan will be tuned.
         """
 
+        if tune_for is None:
+            from warnings import warn
+            warn("You can achieve better performance if you pass an optemplate "
+                    "in the tune_for= kwarg.")
+
         # initialize superclass
         ldis = self.get_local_discretization(mesh, local_discretization, order)
 
