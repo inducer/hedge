@@ -23,6 +23,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import numpy
+import numpy.linalg as la
 from pytools import memoize_method, memoize, Record
 import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
@@ -69,7 +70,13 @@ def face_pair_struct(float_type, dims):
         POD(numpy.uint8, "pad"), 
         POD(numpy.uint16, "a_dest"), 
         POD(numpy.uint16, "b_dest"), 
-        ], align_bytes=4, aligned_prime_to=[2])
+        ], 
+        align_bytes=4, 
+
+        # ensure that adjacent face_pair instances# ensure that adjacent face_pair 
+        # instances can be accessed without bank conflicts.
+        aligned_prime_to=[2], 
+        )
 
 
 
