@@ -168,7 +168,7 @@ class BoundaryCombiner(hedge.optemplate.IdentityMapper):
             for ch in expressions:
                 if (isinstance(ch, OperatorBinding) 
                         and isinstance(ch.op, flux_op_types)):
-                    my_is_lift = isinstance(ch.op, LiftingFluxOperator),
+                    my_is_lift = isinstance(ch.op, LiftingFluxOperator)
 
                     if is_lift is None:
                         is_lift = my_is_lift
