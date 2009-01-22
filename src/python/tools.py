@@ -1377,3 +1377,39 @@ def make_lax_friedrichs_flux(wave_speed, state, flux_func, bdry_tags_and_states,
                     join_fields(0, ext_state, *flux_func(ext_state)), tag)
                 for tag, ext_state in bdry_tags_and_states))
 
+
+
+
+# debug tools -----------------------------------------------------------------
+def wait_for_keypress(discr):
+    """MPI-aware keypress wait"""
+    try:
+        comm = discr.parallel_discr.context.communicator
+    except AttributeError:
+        raw_input("[Enter]")
+    else:
+        if comm.rank == 0:
+            # OpenMPI connects mpirun's stdin to rank 0's stdin.
+            print "[Enter]"
+            raw_input()
+
+        from boost.mpi import broadcast
+        broadcast(comm, value=0, root=0)
+
+def get_rank(discr):
+    """Rank query that works with and without MPI active."""
+    try:
+        comm = discr.parallel_discr.context.communicator
+    except AttributeError:
+        return 0
+    else:
+        return comm.rank
+
+
+
+
+def typedump(value, max_seq=5, special_handlers={}):
+    from pytools import typedump
+    return typedump(value, max_seq, special_handlers.copy().update({
+        numpy.ndarray: lambda x: "array(%s, %s)" % (len(x.shape), x.dtype)
+        }))
