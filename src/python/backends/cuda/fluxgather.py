@@ -409,12 +409,25 @@ class Kernel:
                     )
 
         if set(["cuda_flux", "cuda_debugbuf"]) <= discr.debug:
-            copied_debugbuf = debugbuf.get()
-            print "DEBUG", len(discr.blocks)
-            numpy.set_printoptions(linewidth=100)
-            print numpy.reshape(copied_debugbuf, (32, 16))
-            #print copied_debugbuf
-            raw_input()
+            from hedge.tools import get_rank, wait_for_keypress
+            if get_rank(discr) == 0:
+                copied_debugbuf = debugbuf.get()
+                print "DEBUG", len(discr.blocks)
+                numpy.set_printoptions(linewidth=130)
+                print numpy.reshape(copied_debugbuf, (32, 16))
+                #print copied_debugbuf
+
+                wait_for_keypress(discr)
+
+        if "cuda_flux" in discr.debug and False:
+            from hedge.tools import get_rank, wait_for_keypress
+            if get_rank(discr) == 0:
+                for fof in all_fluxes_on_faces:
+                    numpy.set_printoptions(linewidth=130, precision=2, threshold=10**6)
+                    print fof.get()
+                    wait_for_keypress(discr)
+                #print "B", [la.norm(fof.get()) for fof in all_fluxes_on_faces]
+            
 
         return all_fluxes_on_faces
 
