@@ -255,15 +255,16 @@ def make_custom_exec_mapper_class(superclass):
             # RequestList, so we need to provide our own life support for these vectors.
 
             neigh_recv_vecs = dict(
-                    (rank, pdiscr.boundary_zeros(
+                    (rank, pdiscr.boundary_empty(
                         hedge.mesh.TAG_RANK_BOUNDARY(rank),
                         shape=shp,
-                        kind="numpy"))
+                        kind="numpy",
+                        dtype=self.discr.default_scalar_type))
                     for rank in pdiscr.neighbor_ranks)
 
             from hedge._internal import irecv_buffer, isend_buffer
             recv_requests = mpi.RequestList(
-                    irecv_buffer(comm, rank, 1, neigh_recv_vecs[rank])
+                    irecv_buffer(comm, rank, tag=1, vector=neigh_recv_vecs[rank])
                     for rank in pdiscr.neighbor_ranks)
 
             def flatten_and_convert_array(ary):
@@ -284,7 +285,7 @@ def make_custom_exec_mapper_class(superclass):
                         kind="numpy"))
                     for rank in pdiscr.neighbor_ranks]
 
-            send_requests = [isend_buffer(comm, rank, 1, nsv)
+            send_requests = [isend_buffer(comm, rank, tag=1, vector=nsv)
                 for rank, nsv in zip(
                     pdiscr.neighbor_ranks,
                     neigh_send_vecs)]
@@ -319,11 +320,12 @@ def make_custom_exec_mapper_class(superclass):
                 value, status, index = mpi.wait_any(recv_req)
                 del recv_req[index]
 
+                received_vec = comm_record.neigh_recv_vecs[status.source]
+
                 fnm = pdiscr.from_neighbor_maps[status.source]
                 for idx, name in rank_to_index_and_name[status.source]:
                     self.context[name] = self.discr.convert_boundary(
-                            comm_record.neigh_recv_vecs \
-                                    [status.source][idx, fnm],
+                            received_vec[idx, fnm],
                             TAG_RANK_BOUNDARY(status.source),
                             kind=self.discr.compute_kind)
 
