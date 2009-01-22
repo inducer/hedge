@@ -413,7 +413,15 @@ class Discretization(hedge.discretization.Discretization):
         # initialize memory pool
         if "cuda_memory" in self.debug:
             from pycuda.tools import DebugMemoryPool
-            self.pool = DebugMemoryPool()
+            if run_context is not None and run_context.ranks > 1:
+                self.pool = DebugMemoryPool(
+                        interactive=False,
+                        logfile=open("rank-%d-mem.log" % run_context.rank, "w")
+                        )
+            else:
+                self.pool = DebugMemoryPool(
+                        interactive=False,
+                        logfile=open("mem.log", "w"))
         else:
             from pycuda.tools import DeviceMemoryPool
             self.pool = DeviceMemoryPool()
