@@ -86,9 +86,20 @@ def get_flux_dependencies(flux, field):
 
 
 class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
-    class InteriorInfo(Record):
+    class FluxInfo(Record):
+        __slots__ = []
+
+        def __repr__(self):
+            # override because we want flux_expr in infix
+            return "%s(%s)" % (
+                    self.__class__.__name__,
+                    ", ".join("%s=%s" % (fld, getattr(self, fld))
+                        for fld in self.__class__.fields))
+
+    class InteriorInfo(FluxInfo):
         __slots__ = ["flux_expr", "field_expr"]
-    class BoundaryInfo(Record):
+
+    class BoundaryInfo(FluxInfo):
         __slots__ = ["flux_expr", "bpair"]
 
     def __init__(self, is_lift, interiors, boundaries, 
