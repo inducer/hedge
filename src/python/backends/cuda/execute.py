@@ -375,7 +375,7 @@ class OperatorCompilerWithExecutor(OperatorCompiler):
                 kind=kind,
                 kernel=self.executor.discr.flux_plan.make_kernel(
                     self.executor.discr,
-                    self.executor.elface_to_bdry_bitmap,
+                    self.executor,
                     fluxes))
 
 

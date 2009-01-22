@@ -37,45 +37,32 @@ class StringifyMapper(hedge.optemplate.StringifyMapper):
             tag = "WFlux"
 
         from pymbolic.mapper.stringifier import PREC_NONE
-        return "%s(is_lift=%s,\n    int=%s,\n    tag->bdry=%s,\n    bdry->flux=%s)" % (tag, 
+        return "%s(is_lift=%s,\n    int=%s,\n    tag->flux=%s)" % (tag, 
                 expr.is_lift,
                 expr.interiors,
-                expr.tag_to_bdry_id,
-                expr.bdry_id_to_fluxes)
+                expr.tag_to_fluxes)
 
 
 
 
-def get_flux_dependencies(flux, field):
-    """For a multi-dependency scalar flux passed in,
-    return a list of tuples C{(in_field_idx, int, ext)}, where C{int}
-    and C{ext} are the (expressions of the) flux coefficients for the
-    dependency with number C{in_field_idx}.
-    """
-
-    def in_fields_cmp(a, b):
-        return cmp(a.index, b.index) \
-                or cmp(a.is_local, b.is_local)
-
+def get_flux_dependencies(flux, field, bdry="all"):
     from hedge.flux import FluxDependencyMapper, FieldComponent
     in_fields = list(FluxDependencyMapper(composite_leaves=True)(flux))
 
     # check that all in_fields are FieldComponent instances
-    for in_field in in_fields:
-        if not isinstance(in_field, FieldComponent):
-            raise ValueError, "flux depends on invalid term `%s'" % str(in_field)
+    assert not [in_field
+        for in_field in in_fields
+        if not isinstance(in_field, FieldComponent)]
         
-    in_fields.sort(in_fields_cmp)
-
     from hedge.tools import is_zero
     from hedge.optemplate import BoundaryPair
     if isinstance(field, BoundaryPair):
         for inf in in_fields:
             if inf.is_local:
-                if not is_zero(field.field[inf.index]):
+                if not is_zero(field.field[inf.index]) and bdry in ["all", "int"]:
                     yield field.field[inf.index]
             else:
-                if not is_zero(field.bfield[inf.index]):
+                if not is_zero(field.bfield[inf.index]) and bdry in ["all", "ext"]:
                     yield field.bfield[inf.index]
     else:
         for inf in in_fields:
@@ -116,21 +103,23 @@ class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
         interior_deps = set_sum(
                 set(get_flux_dependencies(iflux.flux_expr, iflux.field_expr))
                 for iflux in interiors)
-        boundary_deps = set_sum(
-                set(get_flux_dependencies(bflux.flux_expr, bflux.bpair))
+        boundary_int_deps = set_sum(
+                set(get_flux_dependencies(bflux.flux_expr, bflux.bpair, bdry="int"))
+                for bflux in boundaries)
+        boundary_ext_deps = set_sum(
+                set(get_flux_dependencies(bflux.flux_expr, bflux.bpair, bdry="ext"))
                 for bflux in boundaries)
 
         self.interior_deps = list(interior_deps)
-        self.boundary_deps = list(boundary_deps)
+        self.boundary_int_deps = list(boundary_int_deps)
+        self.boundary_ext_deps = list(boundary_ext_deps)
+        self.boundary_deps = list(boundary_int_deps | boundary_ext_deps)
 
-        self.tag_to_bdry_id = {}
-        self.bdry_id_to_fluxes = {}
+        self.tag_to_fluxes = {}
 
         for bflux in boundaries:
-            bdry_id = self.tag_to_bdry_id.setdefault(
-                    bflux.bpair.tag, len(self.tag_to_bdry_id))
-            self.bdry_id_to_fluxes.setdefault(bdry_id, []).append(bflux)
-                
+            self.tag_to_fluxes.setdefault(bflux.bpair.tag, []).append(bflux)
+
         self.flux_optemplate = flux_optemplate
 
     # infrastructure interaction 
@@ -161,66 +150,76 @@ class BoundaryCombiner(hedge.optemplate.IdentityMapper):
     def __init__(self, mesh):
         self.mesh = mesh
 
-    def map_sum(self, expr):
+    flux_op_types = (hedge.optemplate.FluxOperator, 
+            hedge.optemplate.LiftingFluxOperator)
+
+    def gather_one_wdflux(self, expressions):
         from hedge.optemplate import OperatorBinding, \
                 FluxOperator, LiftingFluxOperator, \
                 Field, BoundaryPair
+        
+        interiors = []
+        boundaries = []
+        is_lift = None
 
-        flux_op_types = (FluxOperator, LiftingFluxOperator)
+        rest = []
+        flux_optemplate_summands = []
 
-        def gather_one_wdflux(expressions):
-            interiors = []
-            boundaries = []
-            is_lift = None
+        for ch in expressions:
+            if (isinstance(ch, OperatorBinding) 
+                    and isinstance(ch.op, self.flux_op_types)):
+                my_is_lift = isinstance(ch.op, LiftingFluxOperator)
 
-            rest = []
-            flux_optemplate_summands = []
-
-            for ch in expressions:
-                if (isinstance(ch, OperatorBinding) 
-                        and isinstance(ch.op, flux_op_types)):
-                    my_is_lift = isinstance(ch.op, LiftingFluxOperator)
-
-                    if is_lift is None:
-                        is_lift = my_is_lift
-                    else:
-                        if is_lift != my_is_lift:
-                            rest.append(ch)
-                            continue
-
-                    flux_optemplate_summands.append(ch)
-
-                    if isinstance(ch.field, BoundaryPair):
-                        bpair = ch.field
-                        if self.mesh.tag_to_boundary.get(bpair.tag, []):
-                            boundaries.append(WholeDomainFluxOperator.BoundaryInfo(
-                                flux_expr=ch.op.flux,
-                                bpair=bpair,
-                                ))
-                    else:
-                        interiors.append(WholeDomainFluxOperator.InteriorInfo(
-                                flux_expr=ch.op.flux,
-                                field_expr=ch.field))
+                if is_lift is None:
+                    is_lift = my_is_lift
                 else:
-                    rest.append(ch)
+                    if is_lift != my_is_lift:
+                        rest.append(ch)
+                        continue
 
-            if interiors or boundaries:
-                from pymbolic.primitives import flattened_sum
-                wdf = WholeDomainFluxOperator(
-                        is_lift=is_lift,
-                        interiors=interiors,
-                        boundaries=boundaries,
-                        flux_optemplate=flattened_sum(flux_optemplate_summands))
+                flux_optemplate_summands.append(ch)
+
+                if isinstance(ch.field, BoundaryPair):
+                    bpair = ch.field
+                    if self.mesh.tag_to_boundary.get(bpair.tag, []):
+                        boundaries.append(WholeDomainFluxOperator.BoundaryInfo(
+                            flux_expr=ch.op.flux,
+                            bpair=bpair,
+                            ))
+                else:
+                    interiors.append(WholeDomainFluxOperator.InteriorInfo(
+                            flux_expr=ch.op.flux,
+                            field_expr=ch.field))
             else:
-                wdf = None
-            return wdf, rest
+                rest.append(ch)
+
+        if interiors or boundaries:
+            from pymbolic.primitives import flattened_sum
+            wdf = WholeDomainFluxOperator(
+                    is_lift=is_lift,
+                    interiors=interiors,
+                    boundaries=boundaries,
+                    flux_optemplate=flattened_sum(flux_optemplate_summands))
+        else:
+            wdf = None
+        return wdf, rest
+
+    def map_operator_binding(self, expr):
+        if isinstance(expr.op, self.flux_op_types):
+            wdf, rest = self.gather_one_wdflux([expr])
+            assert not rest
+            return wdf
+        else:
+            return hedge.optemplate.IdentityMapper \
+                    .map_operator_binding(self, expr)
+
+    def map_sum(self, expr):
+        from pymbolic.primitives import flattened_sum
 
         result = 0
-        
-        from pymbolic.primitives import flattened_sum
         expressions = expr.children
         while True:
-            wdf, expressions = gather_one_wdflux(expressions)
+            wdf, expressions = self.gather_one_wdflux(expressions)
             if wdf is not None:
                 result += wdf
             else:

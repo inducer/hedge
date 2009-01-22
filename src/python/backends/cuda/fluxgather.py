@@ -224,8 +224,8 @@ class ExecutionPlan(hedge.backends.cuda.plan.ExecutionPlan):
 
         return result
 
-    def make_kernel(self, discr, elface_to_bdry_bitmap, fluxes):
-        return Kernel(discr, self, elface_to_bdry_bitmap, fluxes)
+    def make_kernel(self, discr, executor, fluxes):
+        return Kernel(discr, self, executor, fluxes)
 
 
 
@@ -265,7 +265,7 @@ def make_plan(discr, given, tune_for):
         if tune_for is None:
             return 0
         else:
-            return plan.make_kernel(discr, elface_to_bdry_bitmap=None,
+            return plan.make_kernel(discr, executor=None,
                     fluxes=fluxes).benchmark()
 
     from hedge.backends.cuda.plan import optimize_plan
@@ -281,23 +281,30 @@ def make_plan(discr, given, tune_for):
 
 # flux gather kernel ----------------------------------------------------------
 class Kernel:
-    def __init__(self, discr, plan, elface_to_bdry_bitmap, fluxes):
+    def __init__(self, discr, plan, executor, fluxes):
         self.discr = discr
         self.plan = plan
-        self.elface_to_bdry_bitmap = elface_to_bdry_bitmap
+        self.executor = executor
 
         assert isinstance(fluxes, list)
         self.fluxes = fluxes
 
         interior_deps_set = set()
-        boundary_deps_set = set()
+        boundary_int_deps_set = set()
+        boundary_ext_deps_set = set()
         for f in fluxes:
             interior_deps_set.update(set(f.interior_deps))
-            boundary_deps_set.update(set(f.boundary_deps))
+            boundary_int_deps_set.update(set(f.boundary_int_deps))
+            boundary_ext_deps_set.update(set(f.boundary_ext_deps))
 
         self.interior_deps = list(interior_deps_set)
-        self.boundary_deps = list(boundary_deps_set)
-        self.all_deps = list(interior_deps_set|boundary_deps_set)
+        self.boundary_int_deps = list(boundary_int_deps_set)
+        self.boundary_ext_deps = list(boundary_ext_deps_set)
+        self.all_deps = list(
+                interior_deps_set
+                | boundary_int_deps_set
+                | boundary_ext_deps_set
+                )
 
         self.dep_to_index = dict((dep, i) for i, dep in enumerate(self.all_deps))
 
@@ -573,13 +580,13 @@ class Kernel:
             from pytools import flatten
             from hedge.tools import is_zero
 
-            for dep in self.interior_deps:
+            for dep in self.boundary_int_deps:
                 flux_write_code.append(
                         Initializer(
                             MaybeUnused(POD(float_type, "val_a_field%d" 
                                 % self.dep_to_index[dep])),
                             "tex1Dfetch(field%d_tex, a_index)" % self.dep_to_index[dep]))
-            for dep in self.boundary_deps:
+            for dep in self.boundary_ext_deps:
                 flux_write_code.append(
                         Initializer(
                             MaybeUnused(POD(float_type, "val_b_field%d" 
@@ -588,16 +595,28 @@ class Kernel:
 
             f2cm = FluxToCodeMapper()
 
-            fluxes_by_bdry_id = {}
+            fluxes_by_bdry_number = {}
             for flux_nr, wdflux in enumerate(self.fluxes):
-                for bdry_id, fluxes in wdflux.bdry_id_to_fluxes.iteritems():
-                    fluxes_by_bdry_id.setdefault(bdry_id, [])\
+                for tag, fluxes in wdflux.tag_to_fluxes.iteritems():
+                    if for_benchmark:
+                        bdry_number = 0
+                    else:
+                        bdry_number = self.executor.boundary_tag_to_number[tag]
+
+                    fluxes_by_bdry_number.setdefault(bdry_number, [])\
                             .append((flux_nr, fluxes))
 
+            # FIXME
+            # This generates incorrect code for overlapping tags. While the
+            # data structure supports tag overlapping by allocating one bit
+            # per tag, this code only evaluates the last flux in an overlap
+            # correctly.
+
             flux_sub_codes = []
-            for bdry_id, nrs_and_fluxes in fluxes_by_bdry_id.iteritems():
+            for bdry_number, nrs_and_fluxes in fluxes_by_bdry_number.iteritems():
                 bblock = []
                 for flux_nr, fluxes in nrs_and_fluxes:
+                    from hedge.mesh import TAG_ALL
                     bblock.extend(
                             [Assign("flux", 0),]
                             + [S("flux += "+
@@ -612,9 +631,12 @@ class Kernel:
                                 "fpair->face_jacobian * flux"),]
                             )
 
-                flux_sub_codes.append(
-                        If("(fpair->boundary_bitmap) & (1 << %d)" % (bdry_id),
-                            Block(bblock)))
+                flux_sub_codes.extend([
+                    Line(),
+                    Comment(nrs_and_fluxes[0][1][0].bpair.tag),
+                    If("(fpair->boundary_bitmap) & (1 << %d)" % (bdry_number),
+                        Block(bblock)),
+                    ])
 
             flux_write_code.extend(
                     Initializer(
@@ -855,7 +877,8 @@ class Kernel:
                 if isinstance(b_face, GPUBoundaryFaceStorage):
                     # boundary face
                     b_base = b_face.gpu_bdry_index_in_floats
-                    boundary_bitmap = self.elface_to_bdry_bitmap.get(a_face.el_face, 0)
+                    boundary_bitmap = self.executor.elface_to_bdry_bitmap.get(
+                            a_face.el_face, 0)
                     b_write_index_list = 0 # doesn't matter
                     b_dest = INVALID_DEST
 
