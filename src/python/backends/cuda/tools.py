@@ -328,8 +328,8 @@ def mpi_get_default_device(comm, dev_filter=lambda dev: True):
 
         rank_to_device = [grab_device(rank) for rank in range(len(all_devprops))]
         for rank, dev_info in enumerate(rank_to_device):
-            print "rank %d is using %s (idx: %d)" % (
-                    rank, dev_info.name, dev_info.index)
+            print "rank %d (%s) is using %s (idx: %d)" % (
+                    rank, rank_to_host[rank], dev_info.name, dev_info.index)
 
     else:
         rank_to_device = None
