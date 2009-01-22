@@ -370,7 +370,8 @@ class Discretization(hedge.discretization.Discretization):
     def __init__(self, mesh, local_discretization=None, 
             order=None, init_cuda=True, debug=set(), 
             device=None, default_scalar_type=numpy.float32,
-            tune_for=None, run_context=None):
+            tune_for=None, run_context=None,
+            mpi_cuda_dev_filter=lambda dev: True):
         """
 
         @arg tune_for: An optemplate for whose application this discretization's
@@ -398,7 +399,8 @@ class Discretization(hedge.discretization.Discretization):
                 device = get_default_device()
             else:
                 from hedge.backends.cuda.tools import mpi_get_default_device
-                device = mpi_get_default_device(run_context.communicator)
+                device = mpi_get_default_device(run_context.communicator,
+                        dev_filter=mpi_cuda_dev_filter)
 
         if isinstance(device, int):
             device = cuda.Device(device)
