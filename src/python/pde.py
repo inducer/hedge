@@ -395,15 +395,18 @@ class StrongWaveOperator:
         flux_op = get_flux_operator(self.flux())
 
         from hedge.tools import join_fields
-        return (-join_fields(
-            -self.c*numpy.dot(nabla, v), 
-            -self.c*(nabla*u)
-            ) + InverseMassOperator() * (
-                flux_op*w 
-                + flux_op * pair_with_boundary(w, dir_bc, self.dirichlet_tag)
-                + flux_op * pair_with_boundary(w, neu_bc, self.neumann_tag)
-                + flux_op * pair_with_boundary(w, rad_bc, self.radiation_tag)
-                ))
+        return (
+                - join_fields(
+                    -self.c*numpy.dot(nabla, v), 
+                    -self.c*(nabla*u)
+                    ) 
+                + 
+                InverseMassOperator() * (
+                    flux_op*w 
+                    + flux_op * pair_with_boundary(w, dir_bc, self.dirichlet_tag)
+                    + flux_op * pair_with_boundary(w, neu_bc, self.neumann_tag)
+                    + flux_op * pair_with_boundary(w, rad_bc, self.radiation_tag)
+                    ))
 
     
     def bind(self, discr):
@@ -1255,7 +1258,7 @@ class WeakPoissonOperator(Operator, ):
 
     # matrix creation ---------------------------------------------------------
     def grad_matrix(self):
-        # broken
+        assert False, "this is broken"
         discr = self.discr
         dim = discr.dimensions
 
