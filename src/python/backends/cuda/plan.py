@@ -60,11 +60,13 @@ def optimize_plan(opt_name, plan_generator, target_func, maximize, debug_flags=s
 
     debug = "cuds_%s_plan" % opt_name in debug_flags
 
-    if "cuda_no_plan" in debug_flags:
-        return plans[0], 0
-
     if not plans:
         raise RuntimeError, "no valid CUDA execution plans found"
+
+    if "cuda_no_plan" in debug_flags:
+        from pytools import argmax2
+        return argmax2((plan, plan.occupancy_record().occupancy)
+                for plan in plans), 0
 
     max_occup = max(plan.occupancy_record().occupancy for plan in plans)
     desired_occup = occupancy_slack*max_occup
