@@ -428,6 +428,9 @@ class Discretization(hedge.discretization.Discretization):
             from pycuda.tools import DeviceMemoryPool
             self.pool = DeviceMemoryPool()
 
+        from pycuda.tools import PageLockedMemoryPool
+        self.pagelocked_pool = PageLockedMemoryPool()
+
         # generate flux plan
         self.partition_cache = {}
 
@@ -503,6 +506,8 @@ class Discretization(hedge.discretization.Discretization):
             self.test_discr = Discretization(mesh, ldis)
 
     def close(self):
+        self.pool.stop_holding()
+        self.pagelocked_pool.stop_holding()
         if self.cuda_context is not None:
             self.cuda_context.pop()
 
@@ -808,7 +813,7 @@ class Discretization(hedge.discretization.Discretization):
 
     def _volume_to_gpu(self, field):
         def f(subfld):
-            cpu_transfer = cuda.pagelocked_empty(
+            cpu_transfer = self.pagelocked_pool.allocate(
                     (self.gpu_dof_count(),), dtype=subfld.dtype)
 
             cpu_transfer[self._gpu_volume_embedding()] = subfld
@@ -853,20 +858,10 @@ class Discretization(hedge.discretization.Discretization):
 
     def _boundary_to_gpu(self, field, tag):
         def f(field):
-            result = cuda.pagelocked_empty(
+            result = self.pagelocked_pool.allocate(
                     (self.aligned_boundary_floats,),
                     dtype=field.dtype)
 
-            # The boundary cannot be completely uninitialized,
-            # because it might contain NaNs. If a certain part of the
-            # boundary is to be ignored, it is simply multiplied by
-            # zero in the kernel, which won't make the NaNs disappear.
-
-            # Therefore, as a second best solution, fill the boundary
-            # with a bogus value so that we can tell if it actually
-            # enters the computation.
-
-            result.fill(17) 
             result[self._gpu_boundary_embedding(tag)] = field
             return gpuarray.to_gpu(result, allocator=self.pool.allocate)
 
