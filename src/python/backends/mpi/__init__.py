@@ -263,8 +263,11 @@ def make_custom_exec_mapper_class(superclass):
 
             def flatten_and_convert_array(ary):
                 if is_obj_array(ary):
-                    return numpy.asarray(list(ary), 
+                    result = numpy.empty(shp+ary[0].shape,
                             dtype=self.discr.default_scalar_type)
+                    for i in range(shp[0]):
+                        result[i,:] = ary[i]
+                    return result
                 else:
                     return numpy.asarray(ary, 
                             dtype=self.discr.default_scalar_type)
