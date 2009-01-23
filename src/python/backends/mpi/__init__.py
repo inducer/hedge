@@ -225,17 +225,6 @@ def make_custom_exec_mapper_class(superclass):
             superclass.__init__(self, context, executor)
             self.discr = executor.discr
 
-            if self.discr.instrumented:
-                from pytools.log import time_and_count_function
-                self.map_flux_send = time_and_count_function(
-                        self.map_flux_send, 
-                        self.discr.parallel_discr.flux_send_timer,
-                        self.discr.parallel_discr.comm_flux_counter)
-
-                self.exec_flux_receive_batch_assign = time_and_count_function(
-                        self.exec_flux_receive_batch_assign, 
-                        self.discr.parallel_discr.flux_recv_timer)
-
         # actual functionality ----------------------------------------------------
         def map_flux_send(self, op, field_expr):
             import boost.mpi as mpi
@@ -243,6 +232,11 @@ def make_custom_exec_mapper_class(superclass):
 
             pdiscr = self.discr.parallel_discr
             comm = pdiscr.context.communicator
+
+            if self.discr.instrumented:
+                self.discr.parallel_discr.flux_send_timer.start()
+                self.discr.parallel_discr.comm_flux_counter.add(
+                        len(pdiscr.neighbor_ranks))
 
             field = self.rec(field_expr)
             shp = log_shape(field)
@@ -301,7 +295,13 @@ def make_custom_exec_mapper_class(superclass):
                     shape=shp,
                     )
 
+            if self.discr.instrumented:
+                self.discr.parallel_discr.flux_send_timer.stop()
+
         def exec_flux_receive_batch_assign(self, efrba):
+            if self.discr.instrumented:
+                self.discr.parallel_discr.flux_recv_timer.start()
+
             import boost.mpi as mpi
 
             pdiscr = self.discr.parallel_discr
@@ -330,6 +330,9 @@ def make_custom_exec_mapper_class(superclass):
                             kind=self.discr.compute_kind)
 
             mpi.wait_all(mpi.RequestList(comm_record.send_requests))
+
+            if self.discr.instrumented:
+                self.discr.parallel_discr.flux_recv_timer.stop()
 
     return ExecutionMapper
 
