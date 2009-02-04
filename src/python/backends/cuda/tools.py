@@ -304,7 +304,7 @@ def mpi_get_default_device(comm, dev_filter=lambda dev: True):
         for i, d in enumerate(cuda_devices)
         if dev_filter(d)]
 
-    from boost.mpi import gather, scatter
+    from boostmpi import gather, scatter
     all_devprops = gather(comm, (gethostname(), cuda_devprops), 0)
 
     if comm.rank == 0:
@@ -324,7 +324,7 @@ def mpi_get_default_device(comm, dev_filter=lambda dev: True):
             if not devs:
                 return None
             else:
-                return devs.pop()
+                return devs.pop(0)
 
         rank_to_device = [grab_device(rank) for rank in range(len(all_devprops))]
         for rank, dev_info in enumerate(rank_to_device):

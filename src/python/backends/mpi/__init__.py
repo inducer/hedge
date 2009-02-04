@@ -131,7 +131,7 @@ class MPIRunContext(RunContext):
                 elface2rank[elface2] = r1
 
         # prepare a new mesh for each rank and send it
-        import boost.mpi as mpi
+        import boostmpi as mpi
         from hedge.mesh import TAG_NO_BOUNDARY
 
         for rank in target_ranks:
@@ -206,12 +206,15 @@ class MPIRunContext(RunContext):
             if rank == self.head_rank:
                 result = rank_data
             else:
+                print "send rank", rank
                 self.communicator.send(rank, 0, rank_data)
+                print "end send", rank
 
         return result
 
     def receive_mesh(self):
         return self.communicator.recv(self.head_rank, 0)
+        print "receive end rank", self.rank
 
     def make_discretization(self, mesh_data, *args, **kwargs):
         return ParallelDiscretization(self, self.discr_class, mesh_data, *args, **kwargs)
@@ -227,7 +230,7 @@ def make_custom_exec_mapper_class(superclass):
 
         # actual functionality ----------------------------------------------------
         def map_flux_send(self, op, field_expr):
-            import boost.mpi as mpi
+            import boostmpi as mpi
             from hedge.tools import log_shape, is_obj_array
 
             pdiscr = self.discr.parallel_discr
@@ -305,7 +308,7 @@ def make_custom_exec_mapper_class(superclass):
             if self.discr.instrumented:
                 self.discr.parallel_discr.flux_recv_timer.start()
 
-            import boost.mpi as mpi
+            import boostmpi as mpi
 
             pdiscr = self.discr.parallel_discr
             comm_record = self.rec(efrba.field)
@@ -481,7 +484,7 @@ class ParallelDiscretization(object):
 
     # neighbor connectivity ---------------------------------------------------
     def _setup_neighbor_connections(self):
-        import boost.mpi as mpi
+        import boostmpi as mpi
 
         comm = self.context.communicator
 
@@ -659,7 +662,7 @@ class ParallelDiscretization(object):
 
     # norm and integral -------------------------------------------------------
     def norm(self, volume_vector, p=2):
-        import boost.mpi as mpi
+        import boostmpi as mpi
 
         def add_norms(x, y):
             return (x**p + y**p)**(1/p)
@@ -669,7 +672,7 @@ class ParallelDiscretization(object):
                 add_norms)
 
     def integral(self, volume_vector):
-        import boost.mpi as mpi
+        import boostmpi as mpi
         from operator import add
         return mpi.all_reduce(self.context.communicator, 
                 self.subdiscr.integral(volume_vector),
@@ -677,13 +680,13 @@ class ParallelDiscretization(object):
 
     # dt estimation -----------------------------------------------------------
     def dt_non_geometric_factor(self):
-        import boost.mpi as mpi
+        import boostmpi as mpi
         return mpi.all_reduce(self.context.communicator, 
                 self.subdiscr.dt_non_geometric_factor(),
                 min)
 
     def dt_geometric_factor(self):
-        import boost.mpi as mpi
+        import boostmpi as mpi
         return mpi.all_reduce(self.context.communicator, 
                 self.subdiscr.dt_geometric_factor(),
                 min)
@@ -718,7 +721,7 @@ def reassemble_volume_field(rcon, global_discr, local_discr, field):
         a.update(b)
         return a
 
-    import boost.mpi as mpi
+    import boostmpi as mpi
 
     gfield_parts = mpi.reduce(
             rcon.communicator, send_packet, reduction, rcon.head_rank)

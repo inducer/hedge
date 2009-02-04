@@ -128,7 +128,7 @@ class TestParallel(unittest.TestCase):
                         u_true = discr.interpolate_volume_function(
                                 lambda x, el: u_analytic(x, el, nsteps*dt))
                         error = u-u_true
-                        my_l2_error = discr.norm(error)
+                        l2_error = discr.norm(error)
 
                         if debug_output:
                             visf = vis.make_file(test_name+"-final")
@@ -137,10 +137,6 @@ class TestParallel(unittest.TestCase):
                                 ("u_true", u_true),
                                 ("ic", ic)])
                             visf.close()
-
-                        from operator import add
-                        from boost.mpi import all_reduce
-                        l2_error = all_reduce(pcon.communicator, my_l2_error, add)
 
                         eoc_rec.add_data_point(order, l2_error)
 

@@ -416,8 +416,10 @@ class Executor(object):
         self.code = OperatorCompilerWithExecutor(self)(
                 self.prepare_optemplate_stage2(discr.mesh, optemplate_stage1))
 
-        #if self.discr.parallel_discr.context.communicator.rank == 0:
+        #from hedge.tools import get_rank
+        #if get_rank(discr) == 0:
             #print self.code
+            #raw_input()
 
         # build the local kernels 
         self.diff_kernel = self.discr.diff_plan.make_kernel(discr)
