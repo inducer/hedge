@@ -455,7 +455,7 @@ class Kernel:
                 Define, Pragma, \
                 Constant, Initializer, If, For, Statement, Assign, While
                 
-        from hedge.backends.cuda.cgen import CudaShared, CudaGlobal
+        from codepy.cgen.cuda import CudaShared, CudaGlobal
 
         discr = self.discr
         given = self.plan.given

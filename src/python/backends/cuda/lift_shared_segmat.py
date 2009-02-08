@@ -225,7 +225,7 @@ class Kernel(FluxLocalKernelBase):
                 Constant, Initializer, If, For, Statement, Assign, \
                 ArrayInitializer
 
-        from hedge.backends.cuda.cgen import CudaShared, CudaConstant, CudaGlobal
+        from codepy.cgen.cuda import CudaShared, CudaConstant, CudaGlobal
 
         discr = self.discr
         d = discr.dimensions
