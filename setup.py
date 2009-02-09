@@ -143,7 +143,8 @@ def main():
                 ],
             install_requires=[
                 "PyUblas>=0.92.2",
-                "pytools>=3",
+                "pytools>=7",
+                "codepy>=0.90",
                 "pymbolic>=0.90",
                 "meshpy>=0.91",
                 ],
