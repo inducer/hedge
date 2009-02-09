@@ -162,10 +162,10 @@ def generate_features():
     except ImportError:
         pass
     else:
-        from codepy.jit import guess_platform, PlatformGuessError
+        from codepy.jit import guess_toolchain, ToolchainGuessError
         try:
-            plat = guess_platform()
-        except PlatformGuessError:
+            plat = guess_toolchain()
+        except ToolchainGuessError:
             pass
         else:
             yield FEAT_CODEPY
