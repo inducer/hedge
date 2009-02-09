@@ -24,7 +24,6 @@ import numpy.linalg as la
 import hedge.discretization
 import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
-from hedge.backends.cuda.execute import ExecutionMapper
 from pytools import memoize_method, memoize, Record
 
 
@@ -233,8 +232,13 @@ def make_gpu_partition_metis(adjgraph, max_block_size):
 
     attempt_count = 5
     for attempt in range(attempt_count):
-        cuts, partition = part_graph(part_count,
-                adjgraph, vweights=[1000]*len(adjgraph))
+        if part_count > 1:
+            cuts, partition = part_graph(part_count,
+                    adjgraph, vweights=[1000]*len(adjgraph))
+        else:
+            # metis bug workaround:
+            # metis returns ones (instead of zeros) if part_count == 1
+            partition = [0]*len(adjgraph)
 
         blocks = dict((i, []) for i in range(part_count))
         for el_id, block in enumerate(partition):
@@ -266,7 +270,10 @@ def make_gpu_partition_metis(adjgraph, max_block_size):
 
 # GPU discretization ----------------------------------------------------------
 class Discretization(hedge.discretization.Discretization):
-    exec_mapper_class = ExecutionMapper
+    from hedge.backends.cuda.execute import ExecutionMapper \
+            as exec_mapper_class
+    from hedge.backends.cuda.execute import Executor \
+            as executor_class
 
     @classmethod
     def all_debug_flags(cls):
@@ -324,7 +331,7 @@ class Discretization(hedge.discretization.Discretization):
             if b1 != b2:
                 block2extifaces[b1] += 1
 
-        for el, face_nbr in self.mesh.tag_to_boundary[hedge.mesh.TAG_ALL]:
+        for el, face_nbr in self.mesh.tag_to_boundary[hedge.mesh.TAG_REALLY_ALL]:
             b1 = partition[el.id]
             block2extifaces[b1] += 1
 
@@ -360,15 +367,21 @@ class Discretization(hedge.discretization.Discretization):
         self.partition_cache[max_block_size] = result
         return result
 
-    def __init__(self, mesh,  local_discretization=None, 
+    def __init__(self, mesh, local_discretization=None, 
             order=None, init_cuda=True, debug=set(), 
             device=None, default_scalar_type=numpy.float32,
-            tune_for=None):
+            tune_for=None, run_context=None,
+            mpi_cuda_dev_filter=lambda dev: True):
         """
 
         @arg tune_for: An optemplate for whose application this discretization's
         flux plan will be tuned.
         """
+
+        if tune_for is None:
+            from warnings import warn
+            warn("You can achieve better performance if you pass an optemplate "
+                    "in the tune_for= kwarg.")
 
         # initialize superclass
         ldis = self.get_local_discretization(mesh, local_discretization, order)
@@ -381,13 +394,20 @@ class Discretization(hedge.discretization.Discretization):
             cuda.init()
 
         if device is None:
-            from pycuda.tools import get_default_device
-            device = get_default_device()
+            if run_context is None:
+                from pycuda.tools import get_default_device
+                device = get_default_device()
+            else:
+                from hedge.backends.cuda.tools import mpi_get_default_device
+                device = mpi_get_default_device(run_context.communicator,
+                        dev_filter=mpi_cuda_dev_filter)
 
         if isinstance(device, int):
             device = cuda.Device(device)
         if init_cuda:
             self.cuda_context = device.make_context()
+        else:
+            self.cuda_context = None
 
         self.device = device
         from pycuda.tools import DeviceData
@@ -395,10 +415,21 @@ class Discretization(hedge.discretization.Discretization):
         # initialize memory pool
         if "cuda_memory" in self.debug:
             from pycuda.tools import DebugMemoryPool
-            self.pool = DebugMemoryPool()
+            if run_context is not None and run_context.ranks > 1:
+                self.pool = DebugMemoryPool(
+                        interactive=False,
+                        logfile=open("rank-%d-mem.log" % run_context.rank, "w")
+                        )
+            else:
+                self.pool = DebugMemoryPool(
+                        interactive=False,
+                        logfile=open("mem.log", "w"))
         else:
             from pycuda.tools import DeviceMemoryPool
             self.pool = DeviceMemoryPool()
+
+        from pycuda.tools import PageLockedMemoryPool
+        self.pagelocked_pool = PageLockedMemoryPool()
 
         # generate flux plan
         self.partition_cache = {}
@@ -473,6 +504,12 @@ class Discretization(hedge.discretization.Discretization):
         if "cuda_compare" in self.debug:
             from hedge.discr_precompiled import Discretization
             self.test_discr = Discretization(mesh, ldis)
+
+    def close(self):
+        self.pool.stop_holding()
+        self.pagelocked_pool.stop_holding()
+        if self.cuda_context is not None:
+            self.cuda_context.pop()
 
     def _build_blocks(self):
         block_el_numbers = {}
@@ -636,9 +673,15 @@ class Discretization(hedge.discretization.Discretization):
                     )
 
         self.aligned_boundary_floats = 0
-        from hedge.mesh import TAG_ALL
-        for bdry_fg in self.get_boundary(TAG_ALL).face_groups:
+        from hedge.mesh import TAG_REALLY_ALL
+
+        for bdry_fg in self.get_boundary(TAG_REALLY_ALL).face_groups:
+            if bdry_fg.ldis_loc is None:
+                assert len(bdry_fg.face_pairs) == 0
+                continue
+
             assert ldis == bdry_fg.ldis_loc
+
             aligned_fnc = self.given.devdata.align_dtype(ldis.face_node_count(), 
                     self.given.float_size())
             for fp in bdry_fg.face_pairs:
@@ -770,7 +813,7 @@ class Discretization(hedge.discretization.Discretization):
 
     def _volume_to_gpu(self, field):
         def f(subfld):
-            cpu_transfer = cuda.pagelocked_empty(
+            cpu_transfer = self.pagelocked_pool.allocate(
                     (self.gpu_dof_count(),), dtype=subfld.dtype)
 
             cpu_transfer[self._gpu_volume_embedding()] = subfld
@@ -815,20 +858,10 @@ class Discretization(hedge.discretization.Discretization):
 
     def _boundary_to_gpu(self, field, tag):
         def f(field):
-            result = cuda.pagelocked_empty(
+            result = self.pagelocked_pool.allocate(
                     (self.aligned_boundary_floats,),
                     dtype=field.dtype)
 
-            # The boundary cannot be completely uninitialized,
-            # because it might contain NaNs. If a certain part of the
-            # boundary is to be ignored, it is simply multiplied by
-            # zero in the kernel, which won't make the NaNs disappear.
-
-            # Therefore, as a second best solution, fill the boundary
-            # with a bogus value so that we can tell if it actually
-            # enters the computation.
-
-            result.fill(17) 
             result[self._gpu_boundary_embedding(tag)] = field
             return gpuarray.to_gpu(result, allocator=self.pool.allocate)
 
@@ -885,7 +918,7 @@ class Discretization(hedge.discretization.Discretization):
         result = numpy.empty(shape, dtype=object)
         from pytools import indices_in_shape
         for i in indices_in_shape(shape):
-            result[i] = create_func((self.base_size,), dtype=dtype)
+            result[i] = create_func((base_size,), dtype=dtype)
         return result
     
 
@@ -980,8 +1013,7 @@ class Discretization(hedge.discretization.Discretization):
         kernel, field_texref = _boundarize_kernel()
 
         from_indices, to_indices, idx_count = self._boundarize_info(tag)
-        block_count, threads_per_block, elems_per_block = \
-                gpuarray.splay(idx_count)
+        grid_dim, block_dim = gpuarray.splay(idx_count)
 
         def do_scalar(subfield):
             from hedge.mesh import TAG_ALL
@@ -994,7 +1026,7 @@ class Discretization(hedge.discretization.Discretization):
                 subfield.bind_to_texref(field_texref)
                 kernel(result, to_indices, from_indices,
                         numpy.uint32(idx_count),
-                        block=(threads_per_block,1,1), grid=(block_count,1),
+                        block=block_dim, grid=grid_dim,
                         texrefs=[field_texref])
             return result
 
@@ -1030,7 +1062,13 @@ class Discretization(hedge.discretization.Discretization):
 
         return elgroup_indices
 
-    # optemplate processing ---------------------------------------------------
-    def compile(self, optemplate):
-        from hedge.backends.cuda.execute import Executor
-        return Executor(self, optemplate)
+
+
+
+def make_block_visualization(discr):
+    result = discr.volume_zeros(kind="numpy")
+    for block in discr.blocks:
+        for cpu_slice in block.cpu_slices:
+            result[cpu_slice] = block.number
+
+    return result

@@ -131,7 +131,7 @@ class MPIRunContext(RunContext):
                 elface2rank[elface2] = r1
 
         # prepare a new mesh for each rank and send it
-        import boost.mpi as mpi
+        import boostmpi as mpi
         from hedge.mesh import TAG_NO_BOUNDARY
 
         for rank in target_ranks:
@@ -175,6 +175,7 @@ class MPIRunContext(RunContext):
                     # keeps this part of the boundary from falling
                     # under TAG_ALL.
                     result.append(TAG_NO_BOUNDARY)
+
                 except KeyError:
                     pass
 
@@ -205,12 +206,15 @@ class MPIRunContext(RunContext):
             if rank == self.head_rank:
                 result = rank_data
             else:
+                print "send rank", rank
                 self.communicator.send(rank, 0, rank_data)
+                print "end send", rank
 
         return result
 
     def receive_mesh(self):
         return self.communicator.recv(self.head_rank, 0)
+        print "receive end rank", self.rank
 
     def make_discretization(self, mesh_data, *args, **kwargs):
         return ParallelDiscretization(self, self.discr_class, mesh_data, *args, **kwargs)
@@ -224,24 +228,18 @@ def make_custom_exec_mapper_class(superclass):
             superclass.__init__(self, context, executor)
             self.discr = executor.discr
 
-            if self.discr.instrumented:
-                from pytools.log import time_and_count_function
-                self.map_flux_send = time_and_count_function(
-                        self.map_flux_send, 
-                        self.discr.parallel_discr.flux_send_timer,
-                        self.discr.parallel_discr.comm_flux_counter)
-
-                self.exec_flux_receive_batch_assign = time_and_count_function(
-                        self.exec_flux_receive_batch_assign, 
-                        self.discr.parallel_discr.flux_recv_timer)
-
         # actual functionality ----------------------------------------------------
         def map_flux_send(self, op, field_expr):
-            import boost.mpi as mpi
+            import boostmpi as mpi
             from hedge.tools import log_shape, is_obj_array
 
             pdiscr = self.discr.parallel_discr
             comm = pdiscr.context.communicator
+
+            if self.discr.instrumented:
+                self.discr.parallel_discr.flux_send_timer.start()
+                self.discr.parallel_discr.comm_flux_counter.add(
+                        len(pdiscr.neighbor_ranks))
 
             field = self.rec(field_expr)
             shp = log_shape(field)
@@ -254,20 +252,25 @@ def make_custom_exec_mapper_class(superclass):
             # RequestList, so we need to provide our own life support for these vectors.
 
             neigh_recv_vecs = dict(
-                    (rank, pdiscr.boundary_zeros(
+                    (rank, pdiscr.boundary_empty(
                         hedge.mesh.TAG_RANK_BOUNDARY(rank),
-                        shape=shp))
+                        shape=shp,
+                        kind="numpy",
+                        dtype=self.discr.default_scalar_type))
                     for rank in pdiscr.neighbor_ranks)
 
             from hedge._internal import irecv_buffer, isend_buffer
             recv_requests = mpi.RequestList(
-                    irecv_buffer(comm, rank, 1, neigh_recv_vecs[rank])
+                    irecv_buffer(comm, rank, tag=1, vector=neigh_recv_vecs[rank])
                     for rank in pdiscr.neighbor_ranks)
 
             def flatten_and_convert_array(ary):
                 if is_obj_array(ary):
-                    return numpy.asarray(list(ary), 
+                    result = numpy.empty(shp+ary[0].shape,
                             dtype=self.discr.default_scalar_type)
+                    for i in range(shp[0]):
+                        result[i,:] = ary[i]
+                    return result
                 else:
                     return numpy.asarray(ary, 
                             dtype=self.discr.default_scalar_type)
@@ -282,7 +285,7 @@ def make_custom_exec_mapper_class(superclass):
                         kind="numpy"))
                     for rank in pdiscr.neighbor_ranks]
 
-            send_requests = [isend_buffer(comm, rank, 1, nsv)
+            send_requests = [isend_buffer(comm, rank, tag=1, vector=nsv)
                 for rank, nsv in zip(
                     pdiscr.neighbor_ranks,
                     neigh_send_vecs)]
@@ -298,8 +301,14 @@ def make_custom_exec_mapper_class(superclass):
                     shape=shp,
                     )
 
+            if self.discr.instrumented:
+                self.discr.parallel_discr.flux_send_timer.stop()
+
         def exec_flux_receive_batch_assign(self, efrba):
-            import boost.mpi as mpi
+            if self.discr.instrumented:
+                self.discr.parallel_discr.flux_recv_timer.start()
+
+            import boostmpi as mpi
 
             pdiscr = self.discr.parallel_discr
             comm_record = self.rec(efrba.field)
@@ -317,15 +326,19 @@ def make_custom_exec_mapper_class(superclass):
                 value, status, index = mpi.wait_any(recv_req)
                 del recv_req[index]
 
+                received_vec = comm_record.neigh_recv_vecs[status.source]
+
                 fnm = pdiscr.from_neighbor_maps[status.source]
                 for idx, name in rank_to_index_and_name[status.source]:
                     self.context[name] = self.discr.convert_boundary(
-                            comm_record.neigh_recv_vecs \
-                                    [status.source][idx, fnm],
+                            received_vec[idx, fnm],
                             TAG_RANK_BOUNDARY(status.source),
                             kind=self.discr.compute_kind)
 
             mpi.wait_all(mpi.RequestList(comm_record.send_requests))
+
+            if self.discr.instrumented:
+                self.discr.parallel_discr.flux_recv_timer.stop()
 
     return ExecutionMapper
 
@@ -416,9 +429,10 @@ class ParallelDiscretization(object):
         return cls.my_debug_flags() | subcls.all_debug_flags()
 
     def __init__(self, rcon, subdiscr_class, rank_data, *args, **kwargs):
-        debug = kwargs.pop("debug", set())
+        debug = set(kwargs.pop("debug", set()))
         self.debug = self.my_debug_flags() & debug
         kwargs["debug"] = debug - self.debug
+        kwargs["run_context"] = rcon
 
         self.subdiscr = subdiscr_class(rank_data.mesh, *args, **kwargs)
         self.subdiscr.exec_mapper_class = make_custom_exec_mapper_class(
@@ -470,7 +484,7 @@ class ParallelDiscretization(object):
 
     # neighbor connectivity ---------------------------------------------------
     def _setup_neighbor_connections(self):
-        import boost.mpi as mpi
+        import boostmpi as mpi
 
         comm = self.context.communicator
 
@@ -648,7 +662,7 @@ class ParallelDiscretization(object):
 
     # norm and integral -------------------------------------------------------
     def norm(self, volume_vector, p=2):
-        import boost.mpi as mpi
+        import boostmpi as mpi
 
         def add_norms(x, y):
             return (x**p + y**p)**(1/p)
@@ -658,7 +672,7 @@ class ParallelDiscretization(object):
                 add_norms)
 
     def integral(self, volume_vector):
-        import boost.mpi as mpi
+        import boostmpi as mpi
         from operator import add
         return mpi.all_reduce(self.context.communicator, 
                 self.subdiscr.integral(volume_vector),
@@ -666,13 +680,13 @@ class ParallelDiscretization(object):
 
     # dt estimation -----------------------------------------------------------
     def dt_non_geometric_factor(self):
-        import boost.mpi as mpi
+        import boostmpi as mpi
         return mpi.all_reduce(self.context.communicator, 
                 self.subdiscr.dt_non_geometric_factor(),
                 min)
 
     def dt_geometric_factor(self):
-        import boost.mpi as mpi
+        import boostmpi as mpi
         return mpi.all_reduce(self.context.communicator, 
                 self.subdiscr.dt_geometric_factor(),
                 min)
@@ -707,7 +721,7 @@ def reassemble_volume_field(rcon, global_discr, local_discr, field):
         a.update(b)
         return a
 
-    import boost.mpi as mpi
+    import boostmpi as mpi
 
     gfield_parts = mpi.reduce(
             rcon.communicator, send_packet, reduction, rcon.head_rank)

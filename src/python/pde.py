@@ -395,15 +395,18 @@ class StrongWaveOperator:
         flux_op = get_flux_operator(self.flux())
 
         from hedge.tools import join_fields
-        return (-join_fields(
-            -self.c*numpy.dot(nabla, v), 
-            -self.c*(nabla*u)
-            ) + InverseMassOperator() * (
-                flux_op*w 
-                + flux_op * pair_with_boundary(w, dir_bc, self.dirichlet_tag)
-                + flux_op * pair_with_boundary(w, neu_bc, self.neumann_tag)
-                + flux_op * pair_with_boundary(w, rad_bc, self.radiation_tag)
-                ))
+        return (
+                - join_fields(
+                    -self.c*numpy.dot(nabla, v), 
+                    -self.c*(nabla*u)
+                    ) 
+                + 
+                InverseMassOperator() * (
+                    flux_op*w 
+                    + flux_op * pair_with_boundary(w, dir_bc, self.dirichlet_tag)
+                    + flux_op * pair_with_boundary(w, neu_bc, self.neumann_tag)
+                    + flux_op * pair_with_boundary(w, rad_bc, self.radiation_tag)
+                    ))
 
     
     def bind(self, discr):
@@ -1255,7 +1258,7 @@ class WeakPoissonOperator(Operator, ):
 
     # matrix creation ---------------------------------------------------------
     def grad_matrix(self):
-        # broken
+        assert False, "this is broken"
         discr = self.discr
         dim = discr.dimensions
 
@@ -1488,11 +1491,13 @@ class StrongHeatOperator(TimeDependentOperator):
         def neumann_bc_v(self, t, sqrt_coeff_v):
             hop = self.heat_op
 
+            from hedge.tools import to_obj_array
             return (
                     -self.discr.boundarize_volume_field(sqrt_coeff_v, hop.neumann_tag)
                     +
-                    2*self.neumann_normals*
-                    hop.neumann_bc.boundary_interpolant(t, self.discr, hop.neumann_tag)
+                    to_obj_array(
+                        2*self.neumann_normals*
+                        hop.neumann_bc.boundary_interpolant(t, self.discr, hop.neumann_tag))
                     )
 
         def __call__(self, t, u):
@@ -1611,10 +1616,10 @@ class EulerOperator(TimeDependentOperator):
 
     def bind(self, discr):
         from hedge.mesh import TAG_ALL
-        executor = discr.compile(self.op_template())
+        bound_op = discr.compile(self.op_template())
 
         def wrap(t, q):
-            opt_result = executor.execute(
+            opt_result = bound_op(
                     q=q, 
                     bc_q=self.bc.boundary_interpolant(t, discr, TAG_ALL))
             max_speed = opt_result[-1]

@@ -23,6 +23,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import numpy
+import numpy.linalg as la
 from pytools import memoize_method, memoize, Record
 import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
@@ -69,7 +70,13 @@ def face_pair_struct(float_type, dims):
         POD(numpy.uint8, "pad"), 
         POD(numpy.uint16, "a_dest"), 
         POD(numpy.uint16, "b_dest"), 
-        ], align_bytes=4, aligned_prime_to=[2])
+        ], 
+        align_bytes=4, 
+
+        # ensure that adjacent face_pair instances# ensure that adjacent face_pair 
+        # instances can be accessed without bank conflicts.
+        aligned_prime_to=[2], 
+        )
 
 
 
@@ -217,8 +224,8 @@ class ExecutionPlan(hedge.backends.cuda.plan.ExecutionPlan):
 
         return result
 
-    def make_kernel(self, discr, elface_to_bdry_bitmap, fluxes):
-        return Kernel(discr, self, elface_to_bdry_bitmap, fluxes)
+    def make_kernel(self, discr, executor, fluxes):
+        return Kernel(discr, self, executor, fluxes)
 
 
 
@@ -228,9 +235,16 @@ def make_plan(discr, given, tune_for):
     from hedge.backends.cuda.execute import Executor
     from hedge.backends.cuda.optemplate import FluxCollector
     if tune_for is not None:
-        fluxes = list(Executor.get_first_flux_batch(discr.mesh, tune_for).flux_exprs)
-        flux_count = len(fluxes)
+        fbatch1 = Executor.get_first_flux_batch(discr.mesh, tune_for)
+        if fbatch1 is not None:
+            fluxes = list(fbatch1.flux_exprs)
+            flux_count = len(fluxes)
+        else:
+            fluxes = None
     else:
+        fluxes = None
+
+    if fluxes is None:
         # a reasonable guess?
         flux_count = discr.dimensions
 
@@ -251,7 +265,7 @@ def make_plan(discr, given, tune_for):
         if tune_for is None:
             return 0
         else:
-            return plan.make_kernel(discr, elface_to_bdry_bitmap=None,
+            return plan.make_kernel(discr, executor=None,
                     fluxes=fluxes).benchmark()
 
     from hedge.backends.cuda.plan import optimize_plan
@@ -267,23 +281,30 @@ def make_plan(discr, given, tune_for):
 
 # flux gather kernel ----------------------------------------------------------
 class Kernel:
-    def __init__(self, discr, plan, elface_to_bdry_bitmap, fluxes):
+    def __init__(self, discr, plan, executor, fluxes):
         self.discr = discr
         self.plan = plan
-        self.elface_to_bdry_bitmap = elface_to_bdry_bitmap
+        self.executor = executor
 
         assert isinstance(fluxes, list)
         self.fluxes = fluxes
 
         interior_deps_set = set()
-        boundary_deps_set = set()
+        boundary_int_deps_set = set()
+        boundary_ext_deps_set = set()
         for f in fluxes:
             interior_deps_set.update(set(f.interior_deps))
-            boundary_deps_set.update(set(f.boundary_deps))
+            boundary_int_deps_set.update(set(f.boundary_int_deps))
+            boundary_ext_deps_set.update(set(f.boundary_ext_deps))
 
         self.interior_deps = list(interior_deps_set)
-        self.boundary_deps = list(boundary_deps_set)
-        self.all_deps = list(interior_deps_set|boundary_deps_set)
+        self.boundary_int_deps = list(boundary_int_deps_set)
+        self.boundary_ext_deps = list(boundary_ext_deps_set)
+        self.all_deps = list(
+                interior_deps_set
+                | boundary_int_deps_set
+                | boundary_ext_deps_set
+                )
 
         self.dep_to_index = dict((dep, i) for i, dep in enumerate(self.all_deps))
 
@@ -402,12 +423,25 @@ class Kernel:
                     )
 
         if set(["cuda_flux", "cuda_debugbuf"]) <= discr.debug:
-            copied_debugbuf = debugbuf.get()
-            print "DEBUG", len(discr.blocks)
-            numpy.set_printoptions(linewidth=100)
-            print numpy.reshape(copied_debugbuf, (32, 16))
-            #print copied_debugbuf
-            raw_input()
+            from hedge.tools import get_rank, wait_for_keypress
+            if get_rank(discr) == 0:
+                copied_debugbuf = debugbuf.get()
+                print "DEBUG", len(discr.blocks)
+                numpy.set_printoptions(linewidth=130)
+                print numpy.reshape(copied_debugbuf, (32, 16))
+                #print copied_debugbuf
+
+                wait_for_keypress(discr)
+
+        if "cuda_flux" in discr.debug and False:
+            from hedge.tools import get_rank, wait_for_keypress
+            if get_rank(discr) == 0:
+                for fof in all_fluxes_on_faces:
+                    numpy.set_printoptions(linewidth=130, precision=2, threshold=10**6)
+                    print fof.get()
+                    wait_for_keypress(discr)
+                #print "B", [la.norm(fof.get()) for fof in all_fluxes_on_faces]
+            
 
         return all_fluxes_on_faces
 
@@ -421,7 +455,7 @@ class Kernel:
                 Define, Pragma, \
                 Constant, Initializer, If, For, Statement, Assign, While
                 
-        from hedge.backends.cuda.cgen import CudaShared, CudaGlobal
+        from codepy.cgen.cuda import CudaShared, CudaGlobal
 
         discr = self.discr
         given = self.plan.given
@@ -454,6 +488,12 @@ class Kernel:
                     "field%d_tex" % self.dep_to_index[dep_expr])
                 ])
 
+        if fplan.flux_count != len(self.fluxes):
+            from warnings import warn
+            warn("Flux count in flux execution plan different from actual flux count.\n"
+                    "You may want to specify the tune_for= kwarg in the Discretization\n"
+                    "constructor.")
+
         cmod.extend([
             Line(),
             Typedef(POD(float_type, "value_type")),
@@ -473,7 +513,7 @@ class Kernel:
             Define("FACEDOF_NR", "threadIdx.x"),
             Define("BLOCK_FACE", "threadIdx.y"),
             Line(),
-            Define("FLUX_COUNT", fplan.flux_count),
+            Define("FLUX_COUNT", len(self.fluxes)),
             Line(),
             Define("THREAD_NUM", "(FACEDOF_NR + BLOCK_FACE*THREADS_PER_FACE)"),
             Define("THREAD_COUNT", "(THREADS_PER_FACE*CONCURRENT_FACES)"),
@@ -535,18 +575,18 @@ class Kernel:
             from codepy.cgen import make_multiple_ifs
             from pymbolic.mapper.stringifier import PREC_NONE
 
-            flux_write_code = Block([POD(float_type, "flux") ])
+            flux_write_code = Block([MaybeUnused(POD(float_type, "flux"))])
 
             from pytools import flatten
             from hedge.tools import is_zero
 
-            for dep in self.interior_deps:
+            for dep in self.boundary_int_deps:
                 flux_write_code.append(
                         Initializer(
                             MaybeUnused(POD(float_type, "val_a_field%d" 
                                 % self.dep_to_index[dep])),
                             "tex1Dfetch(field%d_tex, a_index)" % self.dep_to_index[dep]))
-            for dep in self.boundary_deps:
+            for dep in self.boundary_ext_deps:
                 flux_write_code.append(
                         Initializer(
                             MaybeUnused(POD(float_type, "val_b_field%d" 
@@ -555,16 +595,28 @@ class Kernel:
 
             f2cm = FluxToCodeMapper()
 
-            fluxes_by_bdry_id = {}
+            fluxes_by_bdry_number = {}
             for flux_nr, wdflux in enumerate(self.fluxes):
-                for bdry_id, fluxes in wdflux.bdry_id_to_fluxes.iteritems():
-                    fluxes_by_bdry_id.setdefault(bdry_id, [])\
+                for tag, fluxes in wdflux.tag_to_fluxes.iteritems():
+                    if for_benchmark:
+                        bdry_number = 0
+                    else:
+                        bdry_number = self.executor.boundary_tag_to_number[tag]
+
+                    fluxes_by_bdry_number.setdefault(bdry_number, [])\
                             .append((flux_nr, fluxes))
 
+            # FIXME
+            # This generates incorrect code for overlapping tags. While the
+            # data structure supports tag overlapping by allocating one bit
+            # per tag, this code only evaluates the last flux in an overlap
+            # correctly.
+
             flux_sub_codes = []
-            for bdry_id, nrs_and_fluxes in fluxes_by_bdry_id.iteritems():
+            for bdry_number, nrs_and_fluxes in fluxes_by_bdry_number.iteritems():
                 bblock = []
                 for flux_nr, fluxes in nrs_and_fluxes:
+                    from hedge.mesh import TAG_ALL
                     bblock.extend(
                             [Assign("flux", 0),]
                             + [S("flux += "+
@@ -579,9 +631,12 @@ class Kernel:
                                 "fpair->face_jacobian * flux"),]
                             )
 
-                flux_sub_codes.append(
-                        If("(fpair->boundary_bitmap) & (1 << %d)" % (bdry_id),
-                            Block(bblock)))
+                flux_sub_codes.extend([
+                    Line(),
+                    Comment(nrs_and_fluxes[0][1][0].bpair.tag),
+                    If("(fpair->boundary_bitmap) & (1 << %d)" % (bdry_number),
+                        Block(bblock)),
+                    ])
 
             flux_write_code.extend(
                     Initializer(
@@ -603,13 +658,12 @@ class Kernel:
             from codepy.cgen import make_multiple_ifs
             from pymbolic.mapper.stringifier import PREC_NONE
 
-            flux_write_code = Block([POD(float_type, "a_flux") ])
+            flux_write_code = Block([])
             
-            zero_flux_code = [Assign("a_flux", 0)]
+            flux_var_decl = [Initializer( POD(float_type, "a_flux"), 0)]
 
             if is_twosided:
-                flux_write_code.append(POD(float_type, "b_flux"))
-                zero_flux_code.append(Assign("b_flux", 0))
+                flux_var_decl.append(Initializer(POD(float_type, "b_flux"), 0))
                 prefixes = ["a", "b"]
                 flip_values = [False, True]
             else:
@@ -631,11 +685,11 @@ class Kernel:
 
             flux_sub_codes = []
             for flux_nr, wdflux in enumerate(self.fluxes):
-                flux_sub_codes.extend([Line()]+zero_flux_code+[Line()])
+                my_flux_block = Block(flux_var_decl)
 
                 for int_rec in wdflux.interiors:
                     for prefix, is_flipped in zip(prefixes, flip_values):
-                        flux_sub_codes.append(
+                        my_flux_block.append(
                                 S("%s_flux += %s"
                                     % (prefix, 
                                         flux_to_code(f2cm, is_flipped,
@@ -645,18 +699,19 @@ class Kernel:
                                             int_rec.flux_expr, PREC_NONE),
                                         )))
 
-                flux_sub_codes.append(Line())
+                my_flux_block.append(Line())
 
-                flux_sub_codes.append(
+                my_flux_block.append(
                         gen_store(flux_nr, "fpair->a_dest+FACEDOF_NR",
                             "fpair->face_jacobian*a_flux"))
 
                 if is_twosided:
-                    flux_sub_codes.append(
+                    my_flux_block.append(
                             gen_store(flux_nr, 
                                 "fpair->b_dest+tex1Dfetch(tex_index_lists, "
                                 "fpair->b_write_ilist_index + FACEDOF_NR)",
                                 "fpair->face_jacobian*b_flux"))
+                flux_sub_codes.append(my_flux_block)
 
             flux_write_code.extend(
                     Initializer(
@@ -721,20 +776,20 @@ class Kernel:
             ])
 
         if not fplan.direct_store:
-            for flux_nr in range(len(self.fluxes)):
-                f_body.extend_log_block("store flux number %d" % flux_nr, [
-                    For("unsigned word_nr = THREAD_NUM", 
-                        "word_nr < ALIGNED_FACE_DOFS_PER_MB*BLOCK_MB_COUNT", 
-                        "word_nr += COALESCING_THREAD_COUNT",
-                        Block([
-                            Assign(
-                                "gmem_fluxes_on_faces%d"
-                                "[FOF_BLOCK_BASE+word_nr]"
-                                % flux_nr,
-                                "smem_fluxes_on_faces[%d][word_nr]" % flux_nr),
-                            ])
-                        )
-                    ])
+            f_body.extend_log_block("store fluxes", [
+                For("unsigned word_nr = THREAD_NUM", 
+                    "word_nr < ALIGNED_FACE_DOFS_PER_MB*BLOCK_MB_COUNT", 
+                    "word_nr += COALESCING_THREAD_COUNT",
+                    Block([
+                        Assign(
+                            "gmem_fluxes_on_faces%d"
+                            "[FOF_BLOCK_BASE+word_nr]"
+                            % flux_nr,
+                            "smem_fluxes_on_faces[%d][word_nr]" % flux_nr)
+                        for flux_nr in range(len(self.fluxes))
+                        ])
+                    )
+                ])
 
         # finish off ----------------------------------------------------------
         cmod.append(FunctionBody(f_decl, f_body))
@@ -822,7 +877,8 @@ class Kernel:
                 if isinstance(b_face, GPUBoundaryFaceStorage):
                     # boundary face
                     b_base = b_face.gpu_bdry_index_in_floats
-                    boundary_bitmap = self.elface_to_bdry_bitmap.get(a_face.el_face, 0)
+                    boundary_bitmap = self.executor.elface_to_bdry_bitmap.get(
+                            a_face.el_face, 0)
                     b_write_index_list = 0 # doesn't matter
                     b_dest = INVALID_DEST
 

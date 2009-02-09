@@ -109,8 +109,9 @@ class ExecutionMapper(ExecutionMapperBase):
 
 
 class Executor(ExecutorBase):
-    def __init__(self, discr, op_data):
-        ExecutorBase.__init__(self, discr, op_data)
+    def __init__(self, discr, optemplate, post_bind_mapper):
+        ExecutorBase.__init__(self, discr, 
+                self.compile_optemplate(discr, optemplate, post_bind_mapper))
 
         def bench_diff(f):
             test_field = discr.volume_zeros()
@@ -151,6 +152,26 @@ class Executor(ExecutorBase):
         self.lift_flux = pick_faster_func(bench_lift, 
                 [self.lift_flux, JitLifter(discr)])
 
+    def compile_optemplate(self, discr, optemplate, post_bind_mapper):
+        from hedge.optemplate import \
+                OperatorBinder, \
+                InverseMassContractor, \
+                BCToFluxRewriter, \
+                EmptyFluxKiller
+
+        from hedge.optemplate import CommutativeConstantFoldingMapper
+
+        prepared_optemplate = (
+                InverseMassContractor()(
+                    EmptyFluxKiller(discr)(
+                        CommutativeConstantFoldingMapper()(
+                            post_bind_mapper(
+                                BCToFluxRewriter()(
+                                    OperatorBinder()(
+                                        optemplate)))))))
+        from hedge.backends.jit.compiler import OperatorCompiler
+        return OperatorCompiler(discr)(prepared_optemplate)
+
     def diff_builtin(self, op_class, field, xyz_needed):
         rst_derivatives = [
                 self.diff_rst(op_class, i, field) 
@@ -158,6 +179,10 @@ class Executor(ExecutorBase):
 
         return [self.diff_rst_to_xyz(op_class(i), rst_derivatives)
                 for i in xyz_needed]
+
+    def __call__(self, **context):
+        return self.op_data.execute(
+                self.discr.exec_mapper_class(context, self))
 
 
 
@@ -184,23 +209,3 @@ class Discretization(hedge.discretization.Discretization):
         add_hedge(plat)
 
         self._platform = plat
-
-    def generate_op_data(self, optemplate, post_bind_mapper=lambda x: x):
-        from hedge.optemplate import \
-                OperatorBinder, \
-                InverseMassContractor, \
-                BCToFluxRewriter, \
-                EmptyFluxKiller
-
-        from hedge.optemplate import CommutativeConstantFoldingMapper
-
-        prepared_optemplate = (
-                InverseMassContractor()(
-                    EmptyFluxKiller(self)(
-                        CommutativeConstantFoldingMapper()(
-                            post_bind_mapper(
-                                BCToFluxRewriter()(
-                                    OperatorBinder()(
-                                        optemplate)))))))
-        from hedge.backends.jit.compiler import OperatorCompiler
-        return OperatorCompiler(self)(prepared_optemplate)

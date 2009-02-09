@@ -29,10 +29,10 @@ def main() :
     from hedge.visualization import VtkVisualizer, SiloVisualizer
     from hedge.tools import mem_checkpoint
     from math import sin, cos, pi, sqrt
-    from hedge.parallel import \
-            guess_parallelization_context, \
-            reassemble_volume_field
     from math import floor
+
+    from hedge.backends import guess_run_context
+    rcon = guess_run_context(disable=set(["cuda"]))
 
     def f(x):
         return sin(pi*x)
@@ -46,23 +46,21 @@ def main() :
         else:
             return ["outflow"]
 
-    pcon = guess_parallelization_context()
-
     dim = 2
 
     if dim == 1:
         v = numpy.array([1])
-        if pcon.is_head_rank:
+        if rcon.is_head_rank:
             from hedge.mesh import make_uniform_1d_mesh
             mesh = make_uniform_1d_mesh(0, 2, 10, periodic=True)
     elif dim == 2:
         v = numpy.array([2,0])
-        if pcon.is_head_rank:
+        if rcon.is_head_rank:
             from hedge.mesh import make_disk_mesh
             mesh = make_disk_mesh(boundary_tagger=boundary_tagger)
     elif dim == 3:
         v = numpy.array([0,0,1])
-        if pcon.is_head_rank:
+        if rcon.is_head_rank:
             from hedge.mesh import make_cylinder_mesh, make_ball_mesh, make_box_mesh
 
             mesh = make_cylinder_mesh(max_volume=0.04, height=2, boundary_tagger=boundary_tagger,
@@ -72,19 +70,19 @@ def main() :
 
     norm_v = la.norm(v)
 
-    if pcon.is_head_rank:
-        mesh_data = pcon.distribute_mesh(mesh)
+    if rcon.is_head_rank:
+        mesh_data = rcon.distribute_mesh(mesh)
     else:
-        mesh_data = pcon.receive_mesh()
+        mesh_data = rcon.receive_mesh()
 
     if dim != 1:
         mesh_data = mesh_data.reordered_by("cuthill")
 
-    discr = pcon.make_discretization(mesh_data, order=4)
+    discr = rcon.make_discretization(mesh_data, order=4)
     vis_discr = discr
 
-    vis = VtkVisualizer(vis_discr, pcon, "fld")
-    #vis = SiloVisualizer(vis_discr, pcon)
+    vis = VtkVisualizer(vis_discr, rcon, "fld")
+    #vis = SiloVisualizer(vis_discr, rcon)
 
     # operator setup ----------------------------------------------------------
     from hedge.data import \
@@ -104,7 +102,7 @@ def main() :
     dt = discr.dt_factor(op.max_eigenvalue())
     nsteps = int(700/dt)
 
-    if pcon.is_head_rank:
+    if rcon.is_head_rank:
         print "%d elements, dt=%g, nsteps=%d" % (
                 len(discr.mesh.elements),
                 dt,
@@ -116,7 +114,7 @@ def main() :
             add_simulation_quantities, \
             add_run_info
 
-    logmgr = LogManager("advection.dat", "w", pcon.communicator)
+    logmgr = LogManager("advection.dat", "w", rcon.communicator)
     add_run_info(logmgr)
     add_general_quantities(logmgr)
     add_simulation_quantities(logmgr, dt)

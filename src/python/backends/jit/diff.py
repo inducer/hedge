@@ -188,7 +188,9 @@ class JitDifferentiator:
                     + result
                     + [coeffs, eg.member_nrs, coeffs.shape[2]])
 
-            self.make_diff_for_elgroup(eg)(*args)
+
+            diff_routine = self.make_diff_for_elgroup(eg)
+            diff_routine(*args)
 
         return [result[i] for i in xyz_needed]
 

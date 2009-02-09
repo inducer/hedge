@@ -137,11 +137,11 @@ def generate_features():
         yield FEAT_INTERNAL
 
     try:
-        import boost.mpi
+        import boostmpi
     except ImportError:
         pass
     else:
-        if boost.mpi.size > 1:
+        if boostmpi.size > 1:
             yield FEAT_MPI
 
     try:
@@ -187,8 +187,8 @@ def guess_run_context(disable=set()):
 
     if FEAT_MPI in feat:
         from hedge.backends.mpi import MPIRunContext
-        import boost.mpi
-        return MPIRunContext(boost.mpi.world, discr_class)
+        import boostmpi
+        return MPIRunContext(boostmpi.world, discr_class)
     else:
         return SerialRunContext(discr_class)
 

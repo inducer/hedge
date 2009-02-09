@@ -285,3 +285,54 @@ class CallableCollectionTimer(LogQuantity):
         result = sum(clbl() for clbl in self.callables)
         self.callables = []
         return result
+
+
+
+
+# MPI interaction -------------------------------------------------------------
+class CudaDevInfo(Record):
+    pass
+
+def mpi_get_default_device(comm, dev_filter=lambda dev: True):
+    from socket import gethostname
+    cuda_devices = [cuda.Device(i) for i in range(cuda.Device.count())]
+    cuda_devprops = [CudaDevInfo(
+        index=i,
+        name=d.name(),
+        memory=d.total_memory(),
+        multiprocessors=d.get_attribute(cuda.device_attribute.MULTIPROCESSOR_COUNT))
+        for i, d in enumerate(cuda_devices)
+        if dev_filter(d)]
+
+    from boostmpi import gather, scatter
+    all_devprops = gather(comm, (gethostname(), cuda_devprops), 0)
+
+    if comm.rank == 0:
+        host_to_devs = {}
+        rank_to_host = {}
+        for rank, (hostname, cuda_devprops) in enumerate(all_devprops):
+            for dev in cuda_devprops:
+                if hostname in host_to_devs:
+                    assert cuda_devprops == host_to_devs[hostname]
+                else:
+                    host_to_devs[hostname] = cuda_devprops
+
+                rank_to_host[rank] = hostname
+
+        def grab_device(rank):
+            devs = host_to_devs[rank_to_host[rank]]
+            if not devs:
+                return None
+            else:
+                return devs.pop(0)
+
+        rank_to_device = [grab_device(rank) for rank in range(len(all_devprops))]
+        for rank, dev_info in enumerate(rank_to_device):
+            print "rank %d (%s) is using %s (idx: %d)" % (
+                    rank, rank_to_host[rank], dev_info.name, dev_info.index)
+
+    else:
+        rank_to_device = None
+
+    return cuda.Device(scatter(comm, rank_to_device, 0).index)
+

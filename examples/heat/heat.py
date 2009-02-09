@@ -29,11 +29,11 @@ def main() :
     from hedge.timestep import RK4TimeStepper
     from hedge.visualization import SiloVisualizer, VtkVisualizer
     from math import sin, cos, pi, exp, sqrt
-    from hedge.parallel import guess_parallelization_context
     from hedge.data import TimeConstantGivenFunction, \
             GivenFunction, ConstantGivenFunction
 
-    pcon = guess_parallelization_context()
+    from hedge.backends import guess_run_context
+    rcon = guess_run_context(disable=set(["cuda"]))
 
     dim = 2
 
@@ -44,32 +44,32 @@ def main() :
             return ["neumann"]
 
     if dim == 2:
-        if pcon.is_head_rank:
+        if rcon.is_head_rank:
             from hedge.mesh import make_disk_mesh
             mesh = make_disk_mesh(r=0.5, boundary_tagger=boundary_tagger)
         el_class = TriangularElement
     elif dim == 3:
-        if pcon.is_head_rank:
+        if rcon.is_head_rank:
             from hedge.mesh import make_ball_mesh
             mesh = make_ball_mesh(max_volume=0.001)
         el_class = TetrahedralElement
     else:
         raise RuntimeError, "bad number of dimensions"
 
-    if pcon.is_head_rank:
+    if rcon.is_head_rank:
         print "%d elements" % len(mesh.elements)
-        mesh_data = pcon.distribute_mesh(mesh)
+        mesh_data = rcon.distribute_mesh(mesh)
     else:
-        mesh_data = pcon.receive_mesh()
+        mesh_data = rcon.receive_mesh()
 
-    discr = pcon.make_discretization(mesh_data, el_class(3))
+    discr = rcon.make_discretization(mesh_data, el_class(3))
     stepper = RK4TimeStepper()
-    vis = VtkVisualizer(discr, pcon, "fld")
+    vis = VtkVisualizer(discr, rcon, "fld")
 
     dt = discr.dt_factor(1)**2 / 5
     nsteps = int(1/dt)
 
-    if pcon.is_head_rank:
+    if rcon.is_head_rank:
         print "dt", dt
         print "nsteps", nsteps
 
@@ -107,7 +107,7 @@ def main() :
             add_simulation_quantities, \
             add_run_info
 
-    logmgr = LogManager("heat.dat", "w", pcon.communicator)
+    logmgr = LogManager("heat.dat", "w", rcon.communicator)
     add_run_info(logmgr)
     add_general_quantities(logmgr)
     add_simulation_quantities(logmgr, dt)

@@ -25,50 +25,42 @@ import numpy.linalg as la
 
 
 def main() :
-    from hedge.element import \
-            IntervalElement, \
-            TriangularElement, \
-            TetrahedralElement
-    from hedge.timestep import RK4TimeStepper, AdamsBashforthTimeStepper
-    from hedge.visualization import SiloVisualizer, VtkVisualizer
+    from hedge.timestep import RK4TimeStepper
     from pytools.stopwatch import Job
     from math import sin, cos, pi, exp, sqrt
-    from hedge.parallel import guess_parallelization_context
 
-    pcon = guess_parallelization_context()
+    from hedge.backends import guess_run_context
+    rcon = guess_run_context(disable=set(["cuda"]))
 
     dim = 2
 
     if dim == 1:
-        if pcon.is_head_rank:
+        if rcon.is_head_rank:
             from hedge.mesh import make_uniform_1d_mesh
             mesh = make_uniform_1d_mesh(-10, 10, 500)
-
-        el_class = IntervalElement
     elif dim == 2:
         from hedge.mesh import make_rect_mesh
-        if pcon.is_head_rank:
+        if rcon.is_head_rank:
             mesh = make_rect_mesh(a=(-0.5,-0.5),b=(0.5,0.5),max_area=0.008)
-        el_class = TriangularElement
     elif dim == 3:
-        if pcon.is_head_rank:
+        if rcon.is_head_rank:
             from hedge.mesh import make_ball_mesh
             mesh = make_ball_mesh(max_volume=0.0005)
-        el_class = TetrahedralElement
     else:
         raise RuntimeError, "bad number of dimensions"
 
-    if pcon.is_head_rank:
+    if rcon.is_head_rank:
         print "%d elements" % len(mesh.elements)
-        mesh_data = pcon.distribute_mesh(mesh)
+        mesh_data = rcon.distribute_mesh(mesh)
     else:
-        mesh_data = pcon.receive_mesh()
+        mesh_data = rcon.receive_mesh()
 
-    discr = pcon.make_discretization(mesh_data, el_class(4))
+    discr = rcon.make_discretization(mesh_data, order=4)
     stepper = RK4TimeStepper()
 
-    vis = VtkVisualizer(discr, pcon, "fld")
-    #vis = SiloVisualizer(discr, pcon)
+    from hedge.visualization import SiloVisualizer, VtkVisualizer
+    vis = VtkVisualizer(discr, rcon, "fld")
+    #vis = SiloVisualizer(discr, rcon)
 
     def source_u(x, el):
         return exp(-numpy.dot(x, x)*128)
@@ -99,7 +91,7 @@ def main() :
 
     dt = discr.dt_factor(op.max_eigenvalue())
     nsteps = int(10/dt)
-    if pcon.is_head_rank:
+    if rcon.is_head_rank:
         print "dt", dt
         print "nsteps", nsteps
 
@@ -109,7 +101,7 @@ def main() :
             add_simulation_quantities, \
             add_run_info
 
-    logmgr = LogManager("wave.dat", "w", pcon.communicator)
+    logmgr = LogManager("wave.dat", "w", rcon.communicator)
     add_run_info(logmgr)
     add_general_quantities(logmgr)
     add_simulation_quantities(logmgr, dt)

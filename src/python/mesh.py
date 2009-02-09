@@ -36,7 +36,16 @@ class TAG_NONE(object):
     """A boundary or volume tag representing an empty boundary or volume."""
     pass
 class TAG_ALL(object): 
-    """A boundary or volume tag representing the entire boundary or volume."""
+    """A boundary or volume tag representing the entire boundary or volume.
+    
+    In the case of the boundary, TAG_ALL does not include rank boundaries,
+    or, more generally, anything tagged with TAG_NO_BOUNDARY."""
+    pass
+class TAG_REALLY_ALL(object): 
+    """A boundary tag representing the entire boundary.
+    
+    Unlike L{TAG_ALL}, this includes rank boundaries,
+    or, more generally, everything tagged with TAG_NO_BOUNDARY."""
     pass
 class TAG_NO_BOUNDARY(object): 
     """A boundary tag indicating that this edge should not fall under TAG_ALL."""
@@ -331,13 +340,20 @@ def _build_mesh_data_dict(points, elements, boundary_tagger, periodicity, is_ran
 
     # build non-periodic connectivity structures
     interfaces = []
-    tag_to_boundary = {TAG_NONE: [], TAG_ALL: []}
+    tag_to_boundary = {
+            TAG_NONE: [], 
+            TAG_ALL: [],
+            TAG_REALLY_ALL: [],
+            }
+
+    all_tags = set([TAG_ALL, TAG_REALLY_ALL])
+
     for face_vertices, els_faces in face_map.iteritems():
         if len(els_faces) == 2:
             interfaces.append(els_faces)
         elif len(els_faces) == 1:
-            el, face = els_faces[0]
-            tags = boundary_tagger(face_vertices, el, face)
+            el_face = el, face = els_faces[0]
+            tags = set(boundary_tagger(face_vertices, el, face)) - all_tags
 
             if isinstance(tags, str):
                 from warnings import warn
@@ -345,11 +361,14 @@ def _build_mesh_data_dict(points, elements, boundary_tagger, periodicity, is_ran
 
             for btag in tags:
                 tag_to_boundary.setdefault(btag, []) \
-                        .append(els_faces[0])
+                        .append(el_face)
+
             if TAG_NO_BOUNDARY not in tags:
-                # this is used to mark rank interfaces as not being part of the
-                # boundary
-                tag_to_boundary[TAG_ALL].append(els_faces[0])
+                # TAG_NO_BOUNDARY is used to mark rank interfaces 
+                # as not being part of the boundary
+                tag_to_boundary[TAG_ALL].append(el_face)
+
+            tag_to_boundary[TAG_REALLY_ALL].append(el_face)
         else:
             raise RuntimeError, "face can at most border two elements"
 
@@ -358,6 +377,9 @@ def _build_mesh_data_dict(points, elements, boundary_tagger, periodicity, is_ran
 
     periodic_opposite_faces = {}
     periodic_opposite_vertices = {}
+
+    for tag_bdries in tag_to_boundary.itervalues():
+        assert len(set(tag_bdries)) == len(tag_bdries)
 
     for axis, axis_periodicity in enumerate(periodicity):
         if axis_periodicity is not None:
@@ -422,6 +444,10 @@ def _build_mesh_data_dict(points, elements, boundary_tagger, periodicity, is_ran
 
                 tag_to_boundary[TAG_ALL].remove(plus_face)
                 tag_to_boundary[TAG_ALL].remove(minus_face)
+
+                tag_to_boundary[TAG_REALLY_ALL].remove(plus_face)
+                tag_to_boundary[TAG_REALLY_ALL].remove(minus_face)
+
     return {
             "interfaces": interfaces,
             "tag_to_boundary": tag_to_boundary,

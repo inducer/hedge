@@ -309,6 +309,10 @@ class CompiledCUDAFluxBatchAssign(CUDAFluxBatchAssign):
 
 
 class OperatorCompiler(OperatorCompilerBase):
+    from hedge.backends.cuda.optemplate import \
+            BoundOperatorCollector \
+            as bound_op_collector_class
+
     def get_contained_fluxes(self, expr):
         from hedge.backends.cuda.optemplate import FluxCollector
         return [self.FluxRecord(
@@ -334,10 +338,6 @@ class OperatorCompiler(OperatorCompilerBase):
     def map_whole_domain_flux(self, wdflux):
         return self.map_planned_flux(wdflux)
 
-    def collect_diff_ops(self, expr):
-        from hedge.backends.cuda.optemplate import DiffOpCollector
-        return DiffOpCollector()(expr)
-
     def make_flux_batch_assign(self, names, fluxes, kind):
         return CUDAFluxBatchAssign(names=names, fluxes=fluxes, kind=kind)
 
@@ -350,16 +350,23 @@ class OperatorCompilerWithExecutor(OperatorCompiler):
         self.executor = executor
 
     def make_assign(self, name, expr):
-        from hedge.backends.cuda.vector_expr import CompiledVectorExpression
-        return VectorExprAssign(
-                name=name,
-                expr=expr,
-                dep_mapper_class=self.dep_mapper_class,
-                compiled=CompiledVectorExpression(
-                    expr, 
-                    type_getter=lambda expr: (True, self.executor.discr.default_scalar_type),
-                    result_dtype=self.executor.discr.default_scalar_type,
-                    allocator=self.executor.discr.pool.allocate))
+        from hedge.optemplate import FluxSendOperator, OperatorBinding
+        if (isinstance(expr, OperatorBinding) 
+                and isinstance(expr.op, FluxSendOperator)):
+            # FluxSend does not result in a vector, so don't try to generate
+            # a compiled vector expression.
+            return OperatorCompiler.make_assign(self, name, expr)
+        else:
+            from hedge.backends.cuda.vector_expr import CompiledVectorExpression
+            return VectorExprAssign(
+                    name=name,
+                    expr=expr,
+                    dep_mapper_class=self.dep_mapper_class,
+                    compiled=CompiledVectorExpression(
+                        expr, 
+                        type_getter=lambda expr: (True, self.executor.discr.default_scalar_type),
+                        result_dtype=self.executor.discr.default_scalar_type,
+                        allocator=self.executor.discr.pool.allocate))
 
     def make_flux_batch_assign(self, names, fluxes, kind):
         return CompiledCUDAFluxBatchAssign(
@@ -368,7 +375,7 @@ class OperatorCompilerWithExecutor(OperatorCompiler):
                 kind=kind,
                 kernel=self.executor.discr.flux_plan.make_kernel(
                     self.executor.discr,
-                    self.executor.elface_to_bdry_bitmap,
+                    self.executor,
                     fluxes))
 
 
@@ -378,7 +385,7 @@ class OperatorCompilerWithExecutor(OperatorCompiler):
 class Executor(object):
     exec_mapper_class = ExecutionMapper
 
-    def __init__(self, discr, optemplate):
+    def __init__(self, discr, optemplate, post_bind_mapper):
         self.discr = discr
 
         from hedge.tools import diff_rst_flops, diff_rescale_one_flops, \
@@ -388,42 +395,56 @@ class Executor(object):
         self.mass_flops = mass_flops(discr)
         self.lift_flops = lift_flops(discr)
 
+        optemplate_stage1 = self.prepare_optemplate_stage1(
+                optemplate, post_bind_mapper)
+
         # build a boundary tag bitmap
         from hedge.optemplate import BoundaryTagCollector
-        boundary_tag_to_number = {}
-        for btag in BoundaryTagCollector()(optemplate):
-            boundary_tag_to_number.setdefault(btag, 
-                    len(boundary_tag_to_number))
+        self.boundary_tag_to_number = {}
+        for btag in BoundaryTagCollector()(optemplate_stage1):
+            self.boundary_tag_to_number.setdefault(btag, 
+                    len(self.boundary_tag_to_number))
 
-        self.elface_to_bdry_bitmap = {}
-        for btag, bdry_number in boundary_tag_to_number.iteritems():
+        e2bb = self.elface_to_bdry_bitmap = {}
+        
+        for btag, bdry_number in self.boundary_tag_to_number.iteritems():
             bdry_bit = 1 << bdry_number
             for elface in discr.mesh.tag_to_boundary.get(btag, []):
-                self.elface_to_bdry_bitmap[elface] = (
-                        self.elface_to_bdry_bitmap.get(elface, 0) | bdry_bit)
+                e2bb[elface] = (e2bb.get(elface, 0) | bdry_bit)
 
         # compile the optemplate
         self.code = OperatorCompilerWithExecutor(self)(
-                self.prepare_optemplate(discr.mesh, optemplate))
+                self.prepare_optemplate_stage2(discr.mesh, optemplate_stage1))
 
-        #print self.code
+        #from hedge.tools import get_rank
+        #if get_rank(discr) == 0:
+            #print self.code
+            #raw_input()
 
         # build the local kernels 
         self.diff_kernel = self.discr.diff_plan.make_kernel(discr)
         self.fluxlocal_kernel = self.discr.fluxlocal_plan.make_kernel(discr)
 
     @staticmethod
-    def prepare_optemplate(mesh, optemplate):
-        from hedge.optemplate import OperatorBinder, InverseMassContractor, \
+    def prepare_optemplate_stage2(mesh, optemplate):
+        from hedge.optemplate import InverseMassContractor, \
                 BCToFluxRewriter, CommutativeConstantFoldingMapper
-        from hedge.backends.cuda.optemplate import BoundaryCombiner, FluxCollector
+        from hedge.backends.cuda.optemplate import BoundaryCombiner
 
         return BoundaryCombiner(mesh)(
                 InverseMassContractor()(
                     CommutativeConstantFoldingMapper()(
                         BCToFluxRewriter()(
-                            OperatorBinder()(
-                                optemplate)))))
+                            optemplate))))
+    @staticmethod
+    def prepare_optemplate_stage1(optemplate, post_bind_mapper=lambda x: x):
+        from hedge.optemplate import OperatorBinder
+        return post_bind_mapper(OperatorBinder()(optemplate))
+
+    @classmethod
+    def prepare_optemplate(cls, mesh, optemplate, post_bind_mapper=lambda x: x):
+        return cls.prepare_optemplate_stage2(mesh,
+                cls.prepare_optemplate_stage1(optemplate, post_bind_mapper))
 
     @classmethod
     def get_first_flux_batch(cls, mesh, optemplate):
@@ -434,6 +455,9 @@ class Executor(object):
             return compiler.flux_batches[0]
         else:
             return None
+
+    def instrument(self):
+        pass
 
     # actual execution --------------------------------------------------------
     def __call__(self, **vars):

@@ -63,8 +63,9 @@ class FluxToCodeMapper(CCodeMapper):
         return "value_type(fp.loc.normal[%d])" % (expr.axis)
 
     def map_penalty_term(self, expr, enclosing_prec):
-        return ("value_type(pow(fp.loc.order*fp.%(where)s.order/fp.%(where)s.h, %(pwr)r))" 
+        return ("value_type(pow(fp.loc.order*fp.loc.order/fp.loc.h, %(pwr)r))" 
                 % {"pwr": expr.power})
+
 
 
 
@@ -197,7 +198,8 @@ class OperatorCompiler(OperatorCompilerBase):
         for flux_idx, flux_binding in enumerate(fluxes):
             for fc in FluxDependencyMapper(composite_leaves=True)(flux_binding.op.flux):
                 assert isinstance(fc, FieldComponent)
-                if isinstance(flux_binding.field, BoundaryPair):
+                is_bdry = isinstance(flux_binding.field, BoundaryPair)
+                if is_bdry:
                     if fc.is_local:
                         this_field_expr = flux_binding.field.field
                     else:
@@ -212,6 +214,14 @@ class OperatorCompiler(OperatorCompilerBase):
                     assert fc.index == 0
                     fc_field_expr = this_field_expr
 
+                def set_or_check(dict_instance, key, value):
+                    try:
+                        existing_value = dict_instance[key]
+                    except KeyError:
+                        dict_instance[key] = value
+                    else:
+                        assert existing_value == value
+
                 from pymbolic.primitives import is_zero
                 if is_zero(fc_field_expr):
                     fvi.flux_idx_and_dep_to_arg_name[flux_idx, fc] = 0
@@ -225,7 +235,20 @@ class OperatorCompiler(OperatorCompilerBase):
                     else:
                         arg_name = field_expr_to_arg_name[fc_field_expr]
 
-                    fvi.flux_idx_and_dep_to_arg_name[flux_idx, fc] = arg_name
+                    set_or_check(
+                            fvi.flux_idx_and_dep_to_arg_name,
+                            (flux_idx, fc), 
+                            arg_name)
+
+                    if not is_bdry:
+                        # Interior fluxes are used flipped as well.
+                        # Make sure we have assigned arg names for the
+                        # flipped case as well.
+                        set_or_check(
+                                fvi.flux_idx_and_dep_to_arg_name,
+                                (flux_idx, 
+                                    FieldComponent(fc.index, not fc.is_local)),
+                                arg_name)
 
         return fvi
 

@@ -217,7 +217,7 @@ class Kernel(DiffKernelBase):
                 Comment, Line, Static, Define, \
                 Constant, Initializer, If, For, Statement, Assign
 
-        from hedge.backends.cuda.cgen import CudaShared, CudaGlobal
+        from codepy.cgen.cuda import CudaShared, CudaGlobal
                 
         discr = self.discr
         d = discr.dimensions
