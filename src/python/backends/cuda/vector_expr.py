@@ -149,8 +149,8 @@ class CompiledVectorExpression(object):
         #print ",".join(args)
         #print "\n".join(code_lines)
 
-        from pycuda.elementwise import get_scalar_kernel
-        self.kernel = get_scalar_kernel(", ".join(args),
+        from pycuda.elementwise import get_elwise_kernel
+        self.kernel = get_elwise_kernel(", ".join(args),
                 "\n".join(code_lines),
                 name="vector_expression",
                 keep=True)
