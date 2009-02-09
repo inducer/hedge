@@ -197,15 +197,15 @@ class Discretization(hedge.discretization.Discretization):
     def __init__(self, *args, **kwargs):
         hedge.discretization.Discretization.__init__(self, *args, **kwargs)
 
-        plat = kwargs.pop("platform", None)
+        toolchain = kwargs.pop("toolchain", None)
 
-        if plat is None:
-            from codepy.jit import guess_platform
-            plat = guess_platform()
+        if toolchain is None:
+            from codepy.jit import guess_toolchain
+            toolchain = guess_toolchain()
 
-        plat = plat.with_max_optimization()
+        toolchain = toolchain.with_max_optimization()
         
         from codepy.libraries import add_hedge
-        add_hedge(plat)
+        add_hedge(toolchain)
 
-        self._platform = plat
+        self._toolchain = toolchain

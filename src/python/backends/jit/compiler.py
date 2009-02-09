@@ -356,7 +356,7 @@ class OperatorCompiler(OperatorCompilerBase):
         mod.add_function(FunctionBody(fdecl, fbody)) 
 
         compiled_func = mod.compile(
-                self.discr._platform, wait_on_error=True).gather_flux
+                self.discr._toolchain, wait_on_error=True).gather_flux
 
         #print "----------------------------------------------------------------"
         #print FunctionBody(fdecl, fbody)
@@ -477,7 +477,7 @@ class OperatorCompiler(OperatorCompilerBase):
         #print "----------------------------------------------------------------"
         #print FunctionBody(fdecl, fbody)
 
-        compiled_func = mod.compile(self.discr._platform, wait_on_error=True).gather_flux
+        compiled_func = mod.compile(self.discr._toolchain, wait_on_error=True).gather_flux
 
         if self.discr.instrumented:
             from pytools.log import time_and_count_function
