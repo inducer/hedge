@@ -133,7 +133,7 @@ def main():
         for step in range(nsteps):
             logmgr.tick()
 
-            if True:
+            if step % 10 == 0:
                 vis_timer.start()
                 e, h = op.split_eh(fields)
                 visf = vis.make_file("em-%d-%04d" % (order, step))
