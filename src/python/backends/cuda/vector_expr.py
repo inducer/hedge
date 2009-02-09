@@ -149,7 +149,7 @@ class CompiledVectorExpression(object):
         #print ",".join(args)
         #print "\n".join(code_lines)
 
-        from pycuda._kernel import get_scalar_kernel
+        from pycuda.elementwise import get_scalar_kernel
         self.kernel = get_scalar_kernel(", ".join(args),
                 "\n".join(code_lines),
                 name="vector_expression",
