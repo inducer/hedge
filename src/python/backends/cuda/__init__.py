@@ -240,10 +240,10 @@ def make_gpu_partition_metis(adjgraph, max_block_size):
             # metis returns ones (instead of zeros) if part_count == 1
             partition = [0]*len(adjgraph)
 
-        blocks = dict((i, []) for i in range(part_count))
+        blocks = [[] for i in range(part_count)]
         for el_id, block in enumerate(partition):
             blocks[block].append(el_id)
-        block_elements = max(len(block_els) for block_els in blocks.itervalues())
+        block_elements = max(len(block_els) for block_els in blocks)
 
         if block_elements <= max_block_size:
             return partition, blocks
