@@ -23,11 +23,15 @@
 
 
 
+namespace py = boost::python;
+
+
+
+
 #ifdef USE_MPI
 
 #include <boost/mpi.hpp>
 namespace mpi = boost::mpi;
-namespace py = boost::python;
 
 
 
