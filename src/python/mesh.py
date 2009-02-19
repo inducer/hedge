@@ -353,7 +353,7 @@ def _build_mesh_data_dict(points, elements, boundary_tagger, periodicity, is_ran
             interfaces.append(els_faces)
         elif len(els_faces) == 1:
             el_face = el, face = els_faces[0]
-            tags = set(boundary_tagger(face_vertices, el, face)) - all_tags
+            tags = set(boundary_tagger(face_vertices, el, face, points)) - all_tags
 
             if isinstance(tags, str):
                 from warnings import warn
@@ -460,8 +460,8 @@ def _build_mesh_data_dict(points, elements, boundary_tagger, periodicity, is_ran
 
 
 def make_conformal_mesh(points, elements, 
-        boundary_tagger=(lambda fvi, el, fn: []), 
-        element_tagger=(lambda el: []),
+        boundary_tagger=(lambda fvi, el, fn, all_v: []), 
+        element_tagger=(lambda el, all_v: []),
         periodicity=None,
         _is_rankbdry_face=(lambda (el, face): False),
         ):
@@ -474,10 +474,10 @@ def make_conformal_mesh(points, elements,
     @param elements: an iterable of tuples of indices into points,
       giving element endpoints.
     @param boundary_tagger: a function that takes the arguments
-      C{(set_of_face_vertex_indices, element, face_number)}
+      C{(set_of_face_vertex_indices, element, face_number, all_vertices)}
       It returns a list of tags that apply to this surface.
     @param element_tagger: a function that takes the arguments
-      (element) and returns the a list of tags that apply
+      (element, all_vertices) and returns the a list of tags that apply
       to that element.
     @param periodicity: either None or is a list of tuples
       just like the one documented for the C{periodicity}
@@ -510,7 +510,7 @@ def make_conformal_mesh(points, elements,
     # tag elements
     tag_to_elements = {TAG_NONE: [], TAG_ALL: []}
     for el in element_objs:
-        for el_tag in element_tagger(el):
+        for el_tag in element_tagger(el, new_points):
             tag_to_elements.setdefault(el_tag, []).append(el)
         tag_to_elements[TAG_ALL].append(el)
     
@@ -644,18 +644,22 @@ class MeshPyFaceMarkerLookup:
 
 # mesh producers for simple geometries ----------------------------------------
 def make_1d_mesh(points, left_tag=None, right_tag=None, periodic=False, 
-        boundary_tagger=None):
+        boundary_tagger=None, element_tagger=None):
     def force_array(pt):
         if not isinstance(pt, numpy.ndarray):
             return numpy.array([pt])
         else:
             return pt
 
-    def my_boundary_tagger(fvi, el, fn):
+    def my_boundary_tagger(fvi, el, fn, all_v):
         if el.face_normals[fn][0] < 0:
             return [left_tag]
         else:
             return [right_tag]
+
+    kwargs = {}
+    if element_tagger is not None:
+        kwargs["element_tagger"] = element_tagger
 
     if periodic:
         left_tag = "x_minus"
@@ -664,12 +668,14 @@ def make_1d_mesh(points, left_tag=None, right_tag=None, periodic=False,
                 [force_array(pt) for pt in points],
                 [(i,i+1) for i in range(len(points)-1)],
                 periodicity=[("x_minus", "x_plus")],
-                boundary_tagger=my_boundary_tagger)
+                boundary_tagger=my_boundary_tagger,
+                **kwargs)
     else:
         return make_conformal_mesh(
                 [force_array(pt) for pt in points],
                 [(i,i+1) for i in range(len(points)-1)],
-                boundary_tagger=boundary_tagger or my_boundary_tagger)
+                boundary_tagger=boundary_tagger or my_boundary_tagger,
+                **kwargs)
 
 
 
@@ -721,7 +727,7 @@ def make_single_element_mesh(a=-0.5, b=0.5,
 
 
 def make_regular_rect_mesh(a=(0,0), b=(1,1), n=(5,5), periodicity=None,
-        boundary_tagger=(lambda fvi, el, fn: [])):
+        boundary_tagger=(lambda fvi, el, fn, all_v: [])):
     """Create a semi-structured rectangular mesh.
 
     @arg a: the lower left hand point of the rectangle
@@ -795,7 +801,7 @@ def make_regular_rect_mesh(a=(0,0), b=(1,1), n=(5,5), periodicity=None,
 
 
 def make_regular_square_mesh(a=-0.5, b=0.5, n=5, periodicity=None,
-        boundary_tagger=(lambda fvi, el, fn: [])):
+        boundary_tagger=(lambda fvi, el, fn, all_v: [])):
     """Create a semi-structured square mesh.
 
     @arg a: the lower x and y coordinate of the square
@@ -843,12 +849,12 @@ def finish_2d_rect_mesh(points, facets, facet_markers, marker2tag, refine_func,
 
     fmlookup = MeshPyFaceMarkerLookup(generated_mesh)
 
-    def wrapped_boundary_tagger(fvi, el, fn):
+    def wrapped_boundary_tagger(fvi, el, fn, all_v):
         btag = marker2tag[fmlookup(fvi)]
         if btag in periodic_tags:
             return [btag]
         else:
-            return [btag] + boundary_tagger(fvi, el, fn)
+            return [btag] + boundary_tagger(fvi, el, fn, all_v)
 
     return make_conformal_mesh(
             generated_mesh.points,
@@ -860,7 +866,7 @@ def finish_2d_rect_mesh(points, facets, facet_markers, marker2tag, refine_func,
 
 
 def make_rect_mesh(a=(0,0), b=(1,1), max_area=None, 
-        boundary_tagger=(lambda fvi, el, fn: []),
+        boundary_tagger=(lambda fvi, el, fn, all_v: []),
         periodicity=None, subdivisions=None,
         refine_func=None):
     """Create an unstructured rectangular mesh.
@@ -912,7 +918,7 @@ def make_rect_mesh(a=(0,0), b=(1,1), max_area=None,
 
 
 def make_square_mesh(a=-0.5, b=0.5, max_area=4e-3, 
-        boundary_tagger=(lambda fvi, el, fn: [])):
+        boundary_tagger=(lambda fvi, el, fn, all_v: [])):
     """Create an unstructured square mesh.
 
     @arg a: the lower x and y coordinate of the square
@@ -925,7 +931,7 @@ def make_square_mesh(a=-0.5, b=0.5, max_area=4e-3,
 
 
 def make_disk_mesh(r=0.5, faces=50, max_area=4e-3, 
-        boundary_tagger=(lambda fvi, el, fn: [])):
+        boundary_tagger=(lambda fvi, el, fn, all_v: [])):
     from math import cos, sin, pi
 
     def round_trip_connect(start, end):
@@ -959,7 +965,7 @@ def make_disk_mesh(r=0.5, faces=50, max_area=4e-3,
 
 
 def make_ball_mesh(r=0.5, subdivisions=10, max_volume=None,
-        boundary_tagger=(lambda fvi, el, fn: [])):
+        boundary_tagger=(lambda fvi, el, fn, all_v: [])):
     from meshpy.tet import MeshInfo, build
     from meshpy.geometry import make_ball
 
@@ -1001,7 +1007,7 @@ def _make_z_periodic_mesh(points, facets, facet_holestarts, facet_markers, heigh
 
     pbcg.set_transform(translation=[0,0,height])
 
-    def zper_boundary_tagger(fvi, el, fn):
+    def zper_boundary_tagger(fvi, el, fn, all_v):
         # we only ask about *boundaries*
         # we should not try to have the user tag
         # the (periodicity-induced) interior faces
@@ -1013,7 +1019,7 @@ def _make_z_periodic_mesh(points, facets, facet_holestarts, facet_markers, heigh
         if face_marker == Marker.PLUS_Z:
             return ["plus_z"]
 
-        result = boundary_tagger(fvi, el, fn)
+        result = boundary_tagger(fvi, el, fn, all_v)
         if face_marker == Marker.SHELL:
             result.append("shell")
         return result
@@ -1032,7 +1038,7 @@ def _make_z_periodic_mesh(points, facets, facet_holestarts, facet_markers, heigh
 
 def make_cylinder_mesh(radius=0.5, height=1, radial_subdivisions=10, 
         height_subdivisions=1, max_volume=None, periodic=False,
-        boundary_tagger=(lambda fvi, el, fn: [])):
+        boundary_tagger=(lambda fvi, el, fn, all_v: [])):
     from math import pi, cos, sin
     from meshpy.tet import MeshInfo, build
     from meshpy.geometry import make_cylinder
@@ -1066,7 +1072,7 @@ def make_cylinder_mesh(radius=0.5, height=1, radial_subdivisions=10,
 
 def make_box_mesh(a=(0,0,0),b=(1,1,1), 
         max_volume=None, periodicity=None,
-        boundary_tagger=(lambda fvi, el, fn: []),
+        boundary_tagger=(lambda fvi, el, fn, all_v: []),
         return_meshpy_mesh=False):
     """Return a mesh for a brick from the origin to `dimensions'.
 
@@ -1139,13 +1145,13 @@ def make_box_mesh(a=(0,0,0),b=(1,1,1),
 
     fvi2fm = generated_mesh.face_vertex_indices_to_face_marker
 
-    def wrapped_boundary_tagger(fvi, el, fn):
+    def wrapped_boundary_tagger(fvi, el, fn, all_v):
         face_tag = marker_to_tag[fvi2fm[frozenset(fvi)]]
 
         if face_tag in periodic_tags:
             return [face_tag]
         else:
-            return [face_tag] + boundary_tagger(fvi, el, fn)
+            return [face_tag] + boundary_tagger(fvi, el, fn, all_v)
 
     result = make_conformal_mesh(
             generated_mesh.points,

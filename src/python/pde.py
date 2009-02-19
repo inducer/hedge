@@ -213,6 +213,43 @@ class AdvectionOperatorBase(TimeDependentOperator):
     def max_eigenvalue(self):
         return la.norm(self.v)
 
+    def bind(self, discr):
+        compiled_op_template = discr.compile(self.op_template())
+
+        from hedge.mesh import check_bc_coverage
+        check_bc_coverage(discr.mesh, [self.inflow_tag, self.outflow_tag])
+
+        def rhs(t, u):
+            bc_in = self.inflow_u.boundary_interpolant(t, discr, self.inflow_tag)
+            bc_out = discr.boundarize_volume_field(u, self.outflow_tag)
+
+            return compiled_op_template(u=u, bc_in=bc_in, bc_out=bc_out)
+
+        return rhs
+
+    def bind_interdomain(self, 
+            my_discr, my_part_data,
+            nb_discr, nb_part_data):
+        from hedge.partition import compile_interdomain_flux
+        compiled_op_template, from_nb_permutation = compile_interdomain_flux(
+                self.op_template(), "u", "nb_bdry_u",
+                my_discr, my_part_data, nb_discr, nb_part_data,
+                use_stupid_substitution=True)
+
+        from hedge.tools import with_object_array_or_scalar
+
+        def nb_bdry_permute(fld):
+            return fld[from_nb_permutation]
+
+        def rhs(t, u, u_neighbor):
+            return compiled_op_template(u=u, 
+                    nb_bdry_u=with_object_array_or_scalar(nb_bdry_permute, u_neighbor))
+
+        print compiled_op_template.op_data
+        print from_nb_permutation
+
+        return rhs
+
 
 
 
@@ -243,19 +280,6 @@ class StrongAdvectionOperator(AdvectionOperatorBase):
                 #+ flux_op * pair_with_boundary(u, bc_out, self.outflow_tag)
                 )
 
-    def bind(self, discr):
-        compiled_op_template = discr.compile(self.op_template())
-
-        from hedge.mesh import check_bc_coverage
-        check_bc_coverage(discr.mesh, [self.inflow_tag, self.outflow_tag])
-
-        def rhs(t, u):
-            bc_in = self.inflow_u.boundary_interpolant(t, discr, self.inflow_tag)
-            #bc_out = 0.5*discr.boundarize_volume_field(u, self.outflow_tag)
-            return compiled_op_template(u=u, bc_in=bc_in)
-
-        return rhs
-
 
 
 
@@ -282,19 +306,6 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
                     + flux_op * pair_with_boundary(u, bc_out, self.outflow_tag)
                     )
 
-    def bind(self, discr):
-        compiled_op_template = discr.compile(self.op_template())
-
-        from hedge.mesh import check_bc_coverage
-        check_bc_coverage(discr.mesh, [self.inflow_tag, self.outflow_tag])
-
-        def rhs(t, u):
-            bc_in = self.inflow_u.boundary_interpolant(t, discr, self.inflow_tag)
-            bc_out = discr.boundarize_volume_field(u, self.outflow_tag)
-
-            return compiled_op_template(u=u, bc_in=bc_in, bc_out=bc_out)
-
-        return rhs
 
 
 

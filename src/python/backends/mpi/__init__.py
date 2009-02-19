@@ -31,6 +31,7 @@ from hedge.optemplate import \
         IdentityMapper, \
         FluxOpReducerMixin
 from hedge.backends import RunContext
+from hedge.partition import PartitionData
 
 
 
@@ -86,122 +87,19 @@ class MPIRunContext(RunContext):
             dummy, partition = part_graph(partition, 
                     mesh.element_adjacency_graph())
 
-        # find ranks to which we need to distribute
-        target_ranks = set()
-        for el in mesh.elements:
-            target_ranks.add(partition[el.id])
-        target_ranks = list(target_ranks)
+        from hedge.partition import partition_mesh
+        from hedge.mesh import TAG_RANK_BOUNDARY
+        for part_data in partition_mesh(
+                mesh, partition, part_bdry_tag_factory=TAG_RANK_BOUNDARY):
 
-        # prepare a mapping of elements to tags to speed up
-        # copy_el_tagger, below
-        el2tags = {}
-        for tag, elements in mesh.tag_to_elements.iteritems():
-            if tag == hedge.mesh.TAG_ALL:
-                continue
-            for el in elements:
-                el2tags.setdefault(el, []).append(tag)
-
-        # prepare a mapping of (el, face_nr) to boundary_tags
-        # to speed up parallelizer_bdry_tagger, below
-        elface2tags = {}
-        for tag, elfaces in mesh.tag_to_boundary.iteritems():
-            if tag == hedge.mesh.TAG_ALL:
-                continue
-            for el, fn in elfaces:
-                elface2tags.setdefault((el, fn), []).append(tag)
-
-        # prepare a mapping from (el, face_nr) to the rank
-        # at the other end of the interface, if different from
-        # current. concurrently, prepare a mapping 
-        #  rank -> set([ranks that border me])
-        elface2rank = {}
-        neighboring_ranks = {}
-
-        for elface1, elface2 in mesh.interfaces:
-            e1, f1 = elface1
-            e2, f2 = elface2
-            r1 = partition[e1.id]
-            r2 = partition[e2.id]
-
-            if r1 != r2:
-                neighboring_ranks.setdefault(r1, set()).add(r2)
-                neighboring_ranks.setdefault(r2, set()).add(r1)
-
-                elface2rank[elface1] = r2
-                elface2rank[elface2] = r1
-
-        # prepare a new mesh for each rank and send it
-        import boostmpi as mpi
-        from hedge.mesh import TAG_NO_BOUNDARY
-
-        for rank in target_ranks:
-            rank_global_elements = [el 
-                    for el in mesh.elements
-                    if partition [el.id] == rank]
-
-            # pick out this rank's vertices
-            from pytools import flatten
-            rank_global_vertex_indices = set(flatten(
-                    el.vertex_indices for el in rank_global_elements))
-
-            rank_local_vertices = [mesh.points[vi] 
-                    for vi in rank_global_vertex_indices]
-
-            # find global-to-local maps
-            rank_global2local_vertex_indices = dict(
-                    (gvi, lvi) for lvi, gvi in 
-                    enumerate(rank_global_vertex_indices))
-
-            rank_global2local_elements = dict(
-                    (el.id, i) for i, el in 
-                    enumerate(rank_global_elements))
-
-            # find elements in local numbering
-            rank_local_elements = [
-                    [rank_global2local_vertex_indices[vi] 
-                        for vi in el.vertex_indices]
-                    for el in rank_global_elements]
-
-            # make new local Mesh object, including 
-            # boundary and element tagging
-            def parallelizer_bdry_tagger(fvi, local_el, fn):
-                el = rank_global_elements[local_el.id]
-
-                result = elface2tags.get((el, fn), [])
-                try:
-                    opp_rank = elface2rank[el, fn]
-                    result.append(hedge.mesh.TAG_RANK_BOUNDARY(opp_rank))
-
-                    # keeps this part of the boundary from falling
-                    # under TAG_ALL.
-                    result.append(TAG_NO_BOUNDARY)
-
-                except KeyError:
-                    pass
-
-                return result
-
-            def copy_el_tagger(local_el):
-                return el2tags.get(rank_global_elements[local_el.id], [])
-
-            def is_rankbdry_face((local_el, face_nr)):
-                return (rank_global_elements[local_el.id], face_nr) in elface2rank
-
-            from hedge.mesh import make_conformal_mesh
-            rank_mesh = make_conformal_mesh(
-                    rank_local_vertices,
-                    rank_local_elements,
-                    parallelizer_bdry_tagger, copy_el_tagger,
-                    mesh.periodicity,
-                    is_rankbdry_face)
-
-            # assemble per-rank data
             rank_data = RankData(
-                    rank_mesh, 
-                    rank_global2local_elements,
-                    rank_global2local_vertex_indices,
-                    neighboring_ranks.get(rank, []),
-                    mesh.periodic_opposite_faces)
+                    mesh=part_data.mesh,
+                    global2local_elements=part_data.global2local_elements,
+                    global2local_vertex_indices=part_data.global2local_vertex_indices,
+                    neighbor_ranks=part_data.neighbor_parts,
+                    global_periodic_opposite_faces=part_data.global_periodic_opposite_faces)
+            
+            rank = part_data.part_nr
 
             if rank == self.head_rank:
                 result = rank_data
@@ -522,7 +420,7 @@ class ParallelDiscretization(object):
                 # compile a list of FluxFace.h values for unification
                 # across the rank boundary
 
-                my_h_values = [rank_discr_boundary.find_flux_face(el_face).h 
+                my_h_values = [rank_discr_boundary.find_facepair_side(el_face).h 
                         for el_face in rank_bdry]
                 
                 packet = (my_vertices_global, my_node_coords, my_h_values)
@@ -591,7 +489,9 @@ class ParallelDiscretization(object):
                         nb_face_idx = nb_face_order[frozenset(my_global_vertices)]
                         # continue below in else part
                     except KeyError:
-                        # ok, our face must be part of a periodic pair
+                        # this happens if my_global_vertices is not a permutation 
+                        # of the neighbor's face vertices. Periodicity is the only 
+                        # reason why that would be so.
                         my_vertices_there, axis = self.global_periodic_opposite_faces[
                                 my_global_vertices]
                         nb_face_idx = nb_face_order[frozenset(my_vertices_there)]
@@ -615,7 +515,7 @@ class ParallelDiscretization(object):
                         from_indices.extend(shuffled_other_node_indices)
 
                         # check if the nodes really match up
-                        if self.subdiscr.debug:
+                        if "parallel_setup" in self.debug:
                             my_node_indices = [eslice.start+i for i in ldis.face_indices()[face_nr]]
 
                             for my_i, other_i in zip(my_node_indices, shuffled_other_node_indices):
@@ -624,14 +524,14 @@ class ParallelDiscretization(object):
                                 assert la.norm(dist) < 1e-14
                     else:
                         # continue handling of nonperiodic case
-                        nb_vertices = nb_all_facevertices_global[nb_face_idx]
+                        nb_global_vertices = nb_all_facevertices_global[nb_face_idx]
 
                         nb_face_start = nb_face_starts[nb_face_idx]
 
                         shuffle_op = \
                                 ldis.get_face_index_shuffle_to_match(
                                         my_global_vertices,
-                                        nb_vertices)
+                                        nb_global_vertices)
 
                         shuffled_other_node_indices = [nb_face_start+i 
                                 for i in get_shuffled_indices(
@@ -650,7 +550,7 @@ class ParallelDiscretization(object):
 
                     # finally, unify FluxFace.h values across boundary
                     nb_h = nb_h_values[nb_face_idx]
-                    flux_face = rank_discr_boundary.find_flux_face((el, face_nr))
+                    flux_face = rank_discr_boundary.find_facepair_side((el, face_nr))
                     flux_face.h = max(nb_h, flux_face.h)
 
                 if "parallel_setup" in self.debug:
