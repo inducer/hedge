@@ -1410,6 +1410,8 @@ def get_rank(discr):
 
 def typedump(value, max_seq=5, special_handlers={}):
     from pytools import typedump
-    return typedump(value, max_seq, special_handlers.copy().update({
+    special_handlers = special_handlers.copy()
+    special_handlers.update({
         numpy.ndarray: lambda x: "array(%s, %s)" % (len(x.shape), x.dtype)
-        }))
+        })
+    return typedump(value, max_seq, special_handlers)
