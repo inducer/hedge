@@ -120,11 +120,14 @@ class _Boundary(object):
         self.el_face_to_face_group_and_face_pair = \
                 el_face_to_face_group_and_face_pair
 
-    def find_flux_face(self, el_face):
+    def find_facepair(self, el_face):
         fg, fp_idx = self.el_face_to_face_group_and_face_pair[el_face]
-        el, face_nbr = el_face
 
-        fp = fg.face_pairs[fp_idx]
+        return fg.face_pairs[fp_idx]
+
+    def find_facepair_side(self, el_face):
+        fp = self.find_facepair(el_face)
+        el, face_nbr = el_face
 
         for flux_face in [fp.loc, fp.opp]:
             if flux_face.element_id == el.id and flux_face.face_id == face_nbr:
