@@ -195,7 +195,7 @@ def partition_mesh(mesh, partition, part_bdry_tag_factory):
 
 
 
-def find_neighbor_permutation(
+def find_neighbor_vol_indices(
         my_discr, my_part_data, 
         nb_discr, nb_part_data, 
         debug=False):
@@ -405,9 +405,9 @@ def compile_interdomain_flux(optemplate, vol_var, bdry_var,
     `StupidInterdomainFluxMapper` to see what exactly is done.
     """
 
-    from pymbolic.primitives import make_variable
+    from hedge.optemplate import make_field
 
-    from_neighbor_permutation = find_neighbor_permutation(
+    neighbor_indices = find_neighbor_vol_indices(
             my_discr, my_part_data,
             nb_discr, nb_part_data,
             debug="node_permutation" in my_discr.debug | nb_discr.debug)
@@ -417,9 +417,9 @@ def compile_interdomain_flux(optemplate, vol_var, bdry_var,
     kwargs = {}
     if use_stupid_substitution:
         kwargs = {"post_bind_mapper": StupidInterdomainFluxMapper(
-                my_bdry_tag, make_variable(vol_var), make_variable(bdry_var))}
+                my_bdry_tag, make_field(vol_var), make_field(bdry_var))}
 
-    return my_discr.compile(optemplate, **kwargs), from_neighbor_permutation
+    return my_discr.compile(optemplate, **kwargs), neighbor_indices
 
 
 
