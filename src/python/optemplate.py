@@ -41,9 +41,20 @@ def make_common_subexpression(fields):
 
 
 
-# -----------------------------------------------------------------------------
 class Field(pymbolic.primitives.Variable):
     pass
+
+
+
+
+def make_field(var_or_string):
+    if not isinstance(var_or_string, pymbolic.primitives.Expression):
+        return Field(var_or_string)
+    else:
+        return var_or_string
+
+
+
 
 # operators -------------------------------------------------------------------
 class Operator(pymbolic.primitives.Leaf):

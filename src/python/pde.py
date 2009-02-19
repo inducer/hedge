@@ -231,7 +231,7 @@ class AdvectionOperatorBase(TimeDependentOperator):
             my_discr, my_part_data,
             nb_discr, nb_part_data):
         from hedge.partition import compile_interdomain_flux
-        compiled_op_template, from_nb_permutation = compile_interdomain_flux(
+        compiled_op_template, from_nb_indices = compile_interdomain_flux(
                 self.op_template(), "u", "nb_bdry_u",
                 my_discr, my_part_data, nb_discr, nb_part_data,
                 use_stupid_substitution=True)
@@ -239,14 +239,11 @@ class AdvectionOperatorBase(TimeDependentOperator):
         from hedge.tools import with_object_array_or_scalar
 
         def nb_bdry_permute(fld):
-            return fld[from_nb_permutation]
+            return fld[from_nb_indices]
 
         def rhs(t, u, u_neighbor):
             return compiled_op_template(u=u, 
                     nb_bdry_u=with_object_array_or_scalar(nb_bdry_permute, u_neighbor))
-
-        print compiled_op_template.op_data
-        print from_nb_permutation
 
         return rhs
 
