@@ -23,6 +23,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 import numpy
 import numpy.linalg as la
+from pytools import memoize
 
 
 
@@ -83,6 +84,7 @@ def make_generic_ab_coefficients(levels, int_start, tap):
 
 
 
+@memoize
 def make_ab_coefficients(order):
     return make_generic_ab_coefficients(numpy.arange(0, -order, -1), 0, 1)
 
