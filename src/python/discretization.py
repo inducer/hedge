@@ -521,13 +521,13 @@ class Discretization(object):
 
             fg.face_pairs.append(fp)
 
-        from pytools import single_valued
-        ldis_l = single_valued(all_ldis_l)
-        ldis_n = single_valued(all_ldis_n)
-
-        fg.commit(self, ldis_l, ldis_n)
-
         if len(fg.face_pairs):
+            from pytools import single_valued
+            ldis_l = single_valued(all_ldis_l)
+            ldis_n = single_valued(all_ldis_n)
+
+            fg.commit(self, ldis_l, ldis_n)
+
             self.face_groups = [fg]
         else:
             self.face_groups = []

@@ -87,6 +87,11 @@ class ExecutionMapper(ExecutionMapperBase):
 
                 self.context[name] = out
 
+        if not face_groups:
+            # No face groups? Still assign context variables.
+            for name, flux in zip(insn.names, insn.fluxes):
+                self.context[name] = self.discr.volume_zeros()
+
     def exec_diff_batch_assign(self, insn):
         xyz_diff = self.executor.diff(insn.op_class, self.rec(insn.field),
                 xyz_needed=[op.xyz_axis for op in insn.operators])
@@ -125,6 +130,9 @@ class Executor(ExecutorBase):
             return time() - start
 
         def bench_lift(f):
+            if len(discr.face_groups) == 0:
+                return 0
+
             fg = discr.face_groups[0]
             out = discr.volume_zeros()
             from hedge.optemplate import DifferentiationOperator
