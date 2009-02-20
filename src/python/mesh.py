@@ -787,12 +787,12 @@ def make_regular_rect_mesh(a=(0,0), b=(1,1), n=(5,5), periodicity=None,
             if j == 0: fvi2fm[frozenset((a,b))] = "minus_y"
             if j == n[1]-2: fvi2fm[frozenset((c,d))] = "plus_y"
 
-    def wrapped_boundary_tagger(fvi, el, fn):
+    def wrapped_boundary_tagger(fvi, el, fn, all_v):
         btag = fvi2fm[frozenset(fvi)]
         if btag in periodic_tags:
             return [btag]
         else:
-            return [btag] + boundary_tagger(fvi, el, fn)
+            return [btag] + boundary_tagger(fvi, el, fn, all_v)
 
     return make_conformal_mesh(points, elements, wrapped_boundary_tagger,
             periodicity=mesh_periodicity)
