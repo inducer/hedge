@@ -65,7 +65,7 @@ class Monomial:
 
 
 
-class TestHedgeBasics(object):
+class TestHedgeBasics(unittest.TestCase):
     def test_ab_coefficients(self):
         """Check that our AB coefficient generator reproduces known values."""
         _ABCoefficients = [
@@ -633,6 +633,45 @@ class TestHedgeBasics(object):
         self.assert_(err_1 < 1e-11)
         self.assert_(err_2 < 1e-11)
     # -------------------------------------------------------------------------
+    def test_affine_map(self):
+        """Check that our cheapo geometry-targeted linear algebra actually works."""
+        from hedge.tools import AffineMap
+        for d in range(1, 5):
+        #for d in [3]:
+            for i in range(100):
+                a = numpy.random.randn(d, d)+10*numpy.eye(d)
+                b = numpy.random.randn(d)
+
+                m = AffineMap(a, b)
+
+                assert abs(m.jacobian() - la.det(a)) < 1e-10
+                assert la.norm(m.inverted().matrix - la.inv(a)) < 1e-10*la.norm(a)
+
+                x = numpy.random.randn(d)
+
+                m_inv = m.inverted()
+
+                assert la.norm(x-m_inv(m(x))) < 1e-10
+    # -------------------------------------------------------------------------
+    def test_all_periodic_no_boundary(self):
+        """Test that an all-periodic brick has no boundary."""
+        from hedge.mesh import make_box_mesh, TAG_ALL
+
+        mesh = make_box_mesh(periodicity=(True,True,True))
+
+        def count(iterable):
+            result = 0
+            for i in iterable:
+                result += 1
+            return result
+
+        self.assert_(count(mesh.tag_to_boundary[TAG_ALL]) == 0)
+
+
+
+
+
+class TestHedgeDiscretizationBase(object):
     def test_1d_mass_mat_trig(self):
         """Check the integral of some trig functions on an interval using the mass matrix"""
         from hedge.mesh import make_uniform_1d_mesh
@@ -722,45 +761,6 @@ class TestHedgeBasics(object):
             #print linf_error
             self.assert_(linf_error < 3e-5)
     # -------------------------------------------------------------------------
-    def test_affine_map(self):
-        """Check that our cheapo geometry-targeted linear algebra actually works."""
-        from hedge.tools import AffineMap
-        for d in range(1, 5):
-        #for d in [3]:
-            for i in range(100):
-                a = numpy.random.randn(d, d)+10*numpy.eye(d)
-                b = numpy.random.randn(d)
-
-                m = AffineMap(a, b)
-
-                assert abs(m.jacobian() - la.det(a)) < 1e-10
-                assert la.norm(m.inverted().matrix - la.inv(a)) < 1e-10*la.norm(a)
-
-                x = numpy.random.randn(d)
-
-                m_inv = m.inverted()
-
-                assert la.norm(x-m_inv(m(x))) < 1e-10
-    # -------------------------------------------------------------------------
-    def test_all_periodic_no_boundary(self):
-        """Test that an all-periodic brick has no boundary."""
-        from hedge.mesh import make_box_mesh, TAG_ALL
-
-        mesh = make_box_mesh(periodicity=(True,True,True))
-
-        def count(iterable):
-            result = 0
-            for i in iterable:
-                result += 1
-            return result
-
-        self.assert_(count(mesh.tag_to_boundary[TAG_ALL]) == 0)
-
-
-
-
-
-class TestHedgeDiscretizationBase(object):
     def test_2d_gauss_theorem(self):
         """Verify Gauss's theorem explicitly on a mesh"""
 
@@ -1373,7 +1373,7 @@ class TestHedgeDiscretizationBase(object):
                     [1,5,8],
                     ]
 
-            def boundary_tagger(vertices, el, face_nr):
+            def boundary_tagger(vertices, el, face_nr, all_v):
                 if dot(el.face_normals[face_nr], v) < 0:
                     return ["inflow"]
                 else:
@@ -1470,7 +1470,7 @@ class TestHedgeDiscretizationBase(object):
         def u_analytic(x, el, t):
             return f((-dot(v, x)/norm_a+t*norm_a))
 
-        def boundary_tagger(vertices, el, face_nr):
+        def boundary_tagger(vertices, el, face_nr, all_v):
             if dot(el.face_normals[face_nr], v) < 0:
                 return ["inflow"]
             else:
