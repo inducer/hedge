@@ -217,41 +217,32 @@ class TwoRateAdamsBashforthTimeStepper(TimeStepper):
         """
         from hedge.tools import make_obj_array
 
-        if self.startup_stepper is not None:
-            ys = make_obj_array(ys)
+        def finish_startup():
+            # we're done starting up, pack data into split histories
+            hist_s2s, hist_l2s, hist_s2l, hist_l2l = zip(*self.startup_history)
 
-            def combined_rhs(t, y):
-                return make_obj_array([rhs(t, *y) for rhs in rhss])
+            n = len(self.coefficients)
+            self.rhs_histories = [
+                    list(hist_s2s[:n]),
+                    list(hist_l2s[::self.step_ratio]),
+                    list(hist_s2l[::self.step_ratio]),
+                    list(hist_l2l[::self.step_ratio]),
+                    ]
 
-            def combined_summed_rhs(t, y):
-                return numpy.sum(combined_rhs(t, y).reshape((2,2), order="C"), axis=1)
+            from pytools import single_valued
+            assert single_valued(len(h) for h in self.rhs_histories) == n
 
-            for i in range(self.step_ratio):
-                ys = self.startup_stepper(ys, t+i*self.small_dt, self.small_dt, 
-                        combined_summed_rhs)
-                self.startup_history.insert(0, combined_rhs(t+(i+1)*self.small_dt, ys))
+            # here's some memory we won't need any more
+            self.startup_stepper = None
+            del self.startup_history
 
-            if len(self.startup_history) == len(self.coefficients)*self.step_ratio:
-                # we're done starting up, pack data into split histories
-                hist_s2s, hist_l2s, hist_s2l, hist_l2l = zip(*self.startup_history)
+        def combined_rhs(t, y):
+            return make_obj_array([rhs(t, *y) for rhs in rhss])
 
-                n = len(self.coefficients)
-                self.rhs_histories = [
-                        list(hist_s2s[:n]),
-                        list(hist_l2s[::self.step_ratio]),
-                        list(hist_s2l[::self.step_ratio]),
-                        list(hist_l2l[::self.step_ratio]),
-                        ]
+        def combined_summed_rhs(t, y):
+            return numpy.sum(combined_rhs(t, y).reshape((2,2), order="C"), axis=1)
 
-                from pytools import single_valued
-                assert single_valued(len(h) for h in self.rhs_histories) == n
-
-                # here's some memory we won't need any more
-                self.startup_stepper = None
-                del self.startup_history
-
-            return ys
-        else:
+        def run_ab():
             rhs_s2s, rhs_l2s, rhs_s2l, rhs_l2l = rhss
             y_small, y_large = ys
             hist_s2s, hist_l2s, hist_s2l, hist_l2l = self.rhs_histories
@@ -280,10 +271,6 @@ class TwoRateAdamsBashforthTimeStepper(TimeStepper):
                     break
 
                 y_large_this_substep = None
-                #y_large_this_substep = y_large + (
-                        #self.large_dt * linear_comb(something, hist_l2l)
-                        #+ self.large_dt * linear_comb(something, hist_s2l))
-
                 rotate_insert(hist_s2s,
                         rhs_s2s(t+(i+1)*self.small_dt, y_small, y_large_this_substep))
 
@@ -300,3 +287,26 @@ class TwoRateAdamsBashforthTimeStepper(TimeStepper):
             rotate_insert(hist_s2s, rhs_s2s(t+self.large_dt, y_small, y_large))
 
             return make_obj_array([y_small, y_large])
+
+        if self.startup_stepper is not None:
+            ys = make_obj_array(ys)
+
+            if len(self.coefficients) == 1:
+                # we're running forward Euler, no need for the startup stepper
+
+                assert not self.startup_history
+                self.startup_history.append(combined_rhs(t, ys))
+                finish_startup()
+                return run_ab()
+
+            for i in range(self.step_ratio):
+                ys = self.startup_stepper(ys, t+i*self.small_dt, self.small_dt, 
+                        combined_summed_rhs)
+                self.startup_history.insert(0, combined_rhs(t+(i+1)*self.small_dt, ys))
+
+            if len(self.startup_history) == len(self.coefficients)*self.step_ratio:
+                finish_startup()
+
+            return ys
+        else:
+            return run_ab()
