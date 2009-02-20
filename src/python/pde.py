@@ -236,10 +236,13 @@ class AdvectionOperatorBase(TimeDependentOperator):
                 my_discr, my_part_data, nb_discr, nb_part_data,
                 use_stupid_substitution=True)
 
-        from hedge.tools import with_object_array_or_scalar
+        from hedge.tools import with_object_array_or_scalar, is_zero
 
         def nb_bdry_permute(fld):
-            return fld[from_nb_indices]
+            if is_zero(fld):
+                return 0
+            else:
+                return fld[from_nb_indices]
 
         def rhs(t, u, u_neighbor):
             return compiled_op_template(u=u, 
