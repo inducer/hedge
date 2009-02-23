@@ -28,6 +28,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 import numpy
 import numpy.linalg as la
 import pytools
+from pytools import memoize_method
 import hedge.mesh
 import hedge.optemplate
 
@@ -424,25 +425,59 @@ def compile_interdomain_flux(optemplate, vol_var, bdry_var,
 
 
 
-def reassemble_parts(whole_discr, parts_data, parts_discr, parts_vol_vectors):
-    from pytools import single_valued, indices_in_shape
-    from hedge.tools import log_shape
-    ls = single_valued(log_shape(pvv) for pvv in parts_vol_vectors)
+class Transformer:
+    def __init__(self, whole_discr, parts_data, parts_discr):
+        self.whole_discr = whole_discr
+        self.parts_data = parts_data
+        self.parts_discr = parts_discr
 
-    def remap_scalar_field(idx):
-        result = whole_discr.volume_zeros()
-        for part_data, part_discr, part_vol_vector in zip(
-                parts_data, parts_discr, parts_vol_vectors):
+    @memoize_method
+    def _embeddings(self):
+        result = []
+        for part_data, part_discr in zip(self.parts_data, self.parts_discr):
+            part_emb = numpy.zeros((len(part_discr),), dtype=numpy.intp)
+            result.append(part_emb)
+
             for g_el, l_el in part_data.global2local_elements.iteritems():
-                result[whole_discr.find_el_range(g_el)] = part_vol_vector[idx][
-                        part_discr.find_el_range(l_el)]
+                g_slice = self.whole_discr.find_el_range(g_el)
+                part_emb[part_discr.find_el_range(l_el)] = \
+                        numpy.arange(g_slice.start, g_slice.stop)
         return result
 
-    if ls != ():
-        result = numpy.zeros(ls, dtype=object)
-        for i in indices_in_shape(ls):
-            result[i] = remap_scalar_field(i)
-        return result
-    else:
-        return remap_scalar_field(())
+    def reassemble(self, parts_vol_vectors):
+        from pytools import single_valued, indices_in_shape
+        from hedge.tools import log_shape
+        ls = single_valued(log_shape(pvv) for pvv in parts_vol_vectors)
 
+        def remap_scalar_field(idx):
+            result = self.whole_discr.volume_zeros()
+            for part_emb, part_vol_vector in zip(
+                    self._embeddings(), parts_vol_vectors):
+                result[part_emb] = part_vol_vector[idx]
+
+            return result
+
+        if ls != ():
+            result = numpy.zeros(ls, dtype=object)
+            for i in indices_in_shape(ls):
+                result[i] = remap_scalar_field(i)
+            return result
+        else:
+            return remap_scalar_field(())
+
+    def split(self, whole_vol_vector):
+        from pytools import indices_in_shape
+        from hedge.tools import log_shape
+
+        ls = log_shape(whole_vol_vector)
+
+        if ls != ():
+            result = [numpy.zeros(ls, dtype=object)
+                    for part_emb in self._embeddings()]
+            for p, part_emb in enumerate(self._embeddings()):
+                for i in indices_in_shape(ls):
+                    result[p][i] = whole_vol_vector[part_emb]
+            return result
+        else:
+            return [whole_vol_vector[part_emb]
+                    for part_emb in self._embeddings()]
