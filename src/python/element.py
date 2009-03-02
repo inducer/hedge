@@ -260,6 +260,11 @@ class Element(object):
 
 
 class SimplicialElement(Element):
+    # queries -----------------------------------------------------------------
+    @property
+    def has_facial_nodes(self):
+        return self.order > 0
+
     # numbering ---------------------------------------------------------------
     @memoize_method
     def node_count(self):
@@ -396,7 +401,10 @@ class IntervalElementBase(SimplicialElement):
         """
 
         if node_idx == (0,):
-            return [0]
+            if self.order == 0:
+                return [0, 1]
+            else:
+                return [0]
         elif node_idx == (self.order,):
             return [1]
         else:
@@ -455,8 +463,11 @@ class IntervalElement(IntervalElementBase):
     def nodes(self):
         """Generate warped nodes in unit coordinates (r,)."""
 
-        from hedge.quadrature import legendre_gauss_lobatto_points
-        return [numpy.array([x]) for x in legendre_gauss_lobatto_points(self.order)]
+        if self.order == 0:
+            return [ numpy.array([0.5]) ]
+        else:
+            from hedge.quadrature import legendre_gauss_lobatto_points
+            return [numpy.array([x]) for x in legendre_gauss_lobatto_points(self.order)]
 
     equilateral_nodes = nodes
     unit_nodes = nodes
@@ -497,8 +508,11 @@ class IntervalElement(IntervalElementBase):
 
     # time step scaling -------------------------------------------------------
     def dt_non_geometric_factor(self):
-        unodes = self.unit_nodes()
-        return la.norm(unodes[0] - unodes[1])
+        if self.order == 0:
+            return 1
+        else:
+            unodes = self.unit_nodes()
+            return la.norm(unodes[0] - unodes[1])
 
     def dt_geometric_factor(self, vertices, el):
         return abs(el.map.jacobian())

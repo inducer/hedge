@@ -185,9 +185,11 @@ class TwoRateAdamsBashforthTimeStepper(TimeStepper):
     the first with a small timestep, the second with a large timestep.
     """
 
-    def __init__(self, large_dt, step_ratio, order, startup_stepper=None):
+    def __init__(self, large_dt, step_ratio, slowest_first, order, startup_stepper=None):
         self.large_dt = large_dt
         self.small_dt = large_dt/step_ratio
+        self.step_ratio = step_ratio
+        self.slowest_first = slowest_first
 
         self.coefficients = make_ab_coefficients(order)
         self.substep_coefficients = [
@@ -206,7 +208,6 @@ class TwoRateAdamsBashforthTimeStepper(TimeStepper):
         else:
             self.startup_stepper = RK4TimeStepper()
 
-        self.step_ratio = step_ratio
 
         self.startup_history = []
 
@@ -242,20 +243,20 @@ class TwoRateAdamsBashforthTimeStepper(TimeStepper):
         def combined_summed_rhs(t, y):
             return numpy.sum(combined_rhs(t, y).reshape((2,2), order="C"), axis=1)
 
+        def rotate_insert(l, new_item):
+            l.pop()
+            l.insert(0, new_item)
+
+        def linear_comb(coefficients, vectors):
+            from operator import add
+            return reduce(add,
+                    (coeff * v for coeff, v in 
+                        zip(coefficients, vectors)))
+
         def run_ab():
             rhs_s2s, rhs_l2s, rhs_s2l, rhs_l2l = rhss
             y_small, y_large = ys
             hist_s2s, hist_l2s, hist_s2l, hist_l2l = self.rhs_histories
-
-            def rotate_insert(l, new_item):
-                l.pop()
-                l.insert(0, new_item)
-
-            def linear_comb(coefficients, vectors):
-                from operator import add
-                return reduce(add,
-                        (coeff * v for coeff, v in 
-                            zip(coefficients, vectors)))
 
             coeff = self.coefficients
 

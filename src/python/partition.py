@@ -283,7 +283,7 @@ def find_neighbor_vol_indices(
             from_indices.extend(shuffled_nb_node_indices)
 
             # check if the nodes really match up
-            if debug:
+            if debug and ldis.has_facial_nodes:
                 my_node_indices = [eslice.start+i for i in ldis.face_indices()[my_face_nr]]
 
                 for my_i, nb_i in zip(my_node_indices, shuffled_nb_node_indices):
@@ -312,7 +312,7 @@ def find_neighbor_vol_indices(
             from_indices.extend(shuffled_nb_node_indices)
 
             # Check if the nodes really match up
-            if debug:
+            if debug and ldis.has_facial_nodes:
                 my_node_indices = [eslice.start+i 
                         for i in ldis.face_indices()[my_face_nr]]
 

@@ -469,7 +469,7 @@ class Discretization(object):
                         ldis_l.get_face_index_shuffle_to_match(
                         vertices_l, vertices_n)
 
-                if debug_node_perm:
+                if debug_node_perm and ldis_l.has_facial_nodes and ldis_n.has_facial_nodes:
                     findices_shuffled_n = findices_shuffle_op_n(findices_n)
 
                     for i, j in zip(findices_l, findices_shuffled_n):
@@ -485,7 +485,7 @@ class Discretization(object):
                 findices_shuffle_op_n = \
                         ldis_l.get_face_index_shuffle_to_match(vertices_l, vertices_n)
 
-                if debug_node_perm:
+                if debug_node_perm and ldis_l.has_facial_nodes and ldis_n.has_facial_nodes:
                     findices_shuffled_n = findices_shuffle_op_n(findices_n)
 
                     for i, j in zip(findices_l, findices_shuffled_n):
