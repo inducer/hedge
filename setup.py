@@ -22,13 +22,11 @@
 
 def get_config_schema():
     from aksetup_helper import ConfigSchema, Option, \
-            IncludeDir, LibraryDir, Libraries, \
-            Switch, StringListOption
+            IncludeDir, LibraryDir, Libraries, BoostLibraries, \
+            Switch, StringListOption, make_boost_base_options
 
-    return ConfigSchema([
-        IncludeDir("BOOST", []),
-        LibraryDir("BOOST", []),
-        Libraries("BOOST_PYTHON", ["boost_python-gcc42-mt"]),
+    return ConfigSchema(make_boost_base_options() + [
+        BoostLibraries("python"),
 
         IncludeDir("BOOST_BINDINGS", []),
 
@@ -41,7 +39,7 @@ def get_config_schema():
             "Path to MPI C compiler"),
         Option("MPICXX", 
             help="Path to MPI C++ compiler (defaults to same as MPICC)"),
-        Libraries("BOOST_MPI", ["boost_mpi-gcc42-mt"]),
+        BoostLibraries("mpi"),
 
         StringListOption("CXXFLAGS", [], 
             help="Any extra C++ compiler options to include"),
