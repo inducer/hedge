@@ -25,6 +25,7 @@ import numpy
 from pytools import memoize_method, memoize
 import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
+from pycuda.compiler import SourceModule
 from hedge.backends.cuda.tools import FakeGPUArray
 import hedge.backends.cuda.plan 
 from hedge.backends.cuda.kernelbase import FluxLocalKernelBase
@@ -478,7 +479,7 @@ class Kernel(FluxLocalKernelBase):
         if not for_benchmark and "cuda_dumpkernels" in discr.debug:
             open("flux_lift.cu", "w").write(str(cmod))
 
-        mod = cuda.SourceModule(cmod, 
+        mod = SourceModule(cmod, 
                 keep="cuda_keep_kernels" in discr.debug, 
                 #options=["--maxrregcount=12"]
                 )

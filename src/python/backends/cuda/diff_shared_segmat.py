@@ -25,6 +25,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 import numpy
 from pytools import memoize_method, memoize
 import pycuda.driver as cuda
+from pycuda.compiler import SourceModule
 import hedge.backends.cuda.plan
 from hedge.backends.cuda.kernelbase import DiffKernelBase
 
@@ -359,7 +360,7 @@ class Kernel(DiffKernelBase):
         if not for_benchmark and "cuda_dumpkernels" in discr.debug:
             open("diff.cu", "w").write(str(cmod))
 
-        mod = cuda.SourceModule(cmod, 
+        mod = SourceModule(cmod, 
                 keep="cuda_keep_kernels" in discr.debug, 
                 #options=["--maxrregcount=10"]
                 )

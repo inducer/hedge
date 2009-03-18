@@ -24,6 +24,7 @@ import numpy.linalg as la
 import hedge.discretization
 import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
+from pycuda.compiler import SourceModule
 from pytools import memoize_method, memoize, Record
 
 
@@ -136,7 +137,7 @@ class GPUBoundaryFaceStorage(GPUFaceStorage):
 
 @memoize
 def _boundarize_kernel():
-    mod = cuda.SourceModule("""
+    mod = SourceModule("""
     texture<float, 1, cudaReadModeElementType> field_tex;
     __global__ void boundarize(float *bfield, 
       unsigned int *to_indices,

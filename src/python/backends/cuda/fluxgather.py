@@ -27,6 +27,7 @@ import numpy.linalg as la
 from pytools import memoize_method, memoize, Record
 import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
+from pycuda.compiler import SourceModule
 import pymbolic.mapper.stringifier
 import hedge.backends.cuda.plan
 from pymbolic.mapper.c_code import CCodeMapper
@@ -798,7 +799,7 @@ class Kernel:
             open("flux_gather.cu", "w").write(str(cmod))
 
         from pycuda.tools import allow_user_edit
-        mod = cuda.SourceModule(
+        mod = SourceModule(
                 #allow_user_edit(cmod, "kernel.cu", "the flux kernel"), 
                 cmod,
                 keep="cuda_keep_kernels" in discr.debug, 
