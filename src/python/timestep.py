@@ -183,13 +183,32 @@ class AdamsBashforthTimeStepper(TimeStepper):
 class TwoRateAdamsBashforthTimeStepper(TimeStepper):
     """Simultaneously timesteps two parts of an ODE system,
     the first with a small timestep, the second with a large timestep.
+
+    [1] C.W. Gear and D.R. Wells, "Multirate linear multistep methods," BIT
+    Numerical Mathematics,  vol. 24, Dec. 1984, pg. 484-502.
     """
 
-    def __init__(self, large_dt, step_ratio, slowest_first, order, startup_stepper=None):
+    def __init__(self, large_dt, step_ratio, order, 
+            largest_first, update_large_for_small=False,
+            startup_stepper=None):
+        """
+
+        If `update_large_for_small` is set to True, then an 
+        exptrapolation of the state of the large-dt part of the
+        system is computed for each small-dt timestep. If set to 
+        False, None will instead be passed to right-hand sides
+        that would otherwise receive it.
+
+        If `largest_first` is set to True, then the time-stepper uses the
+        "slowest-first" strategy from [1].
+        """
+        
         self.large_dt = large_dt
         self.small_dt = large_dt/step_ratio
         self.step_ratio = step_ratio
-        self.slowest_first = slowest_first
+
+        self.largest_first = largest_first
+        self.update_large_for_small = update_large_for_small
 
         self.coefficients = make_ab_coefficients(order)
         self.substep_coefficients = [
@@ -222,11 +241,20 @@ class TwoRateAdamsBashforthTimeStepper(TimeStepper):
             # we're done starting up, pack data into split histories
             hist_s2s, hist_l2s, hist_s2l, hist_l2l = zip(*self.startup_history)
 
+            # For largetst-first, hist_s2l is updated at the rate of the slow
+            # component. For fastest-first, hist_s2l runs at the speed of the
+            # fast component.
+
+            if self.largest_first:
+                hist_s2l = list(hist_s2l[::self.step_ratio])
+            else:
+                hist_s2l = list(hist_s2l[:n])
+
             n = len(self.coefficients)
             self.rhs_histories = [
                     list(hist_s2s[:n]),
                     list(hist_l2s[::self.step_ratio]),
-                    list(hist_s2l[::self.step_ratio]),
+                    hist_s2l,
                     list(hist_l2l[::self.step_ratio]),
                     ]
 
@@ -271,7 +299,17 @@ class TwoRateAdamsBashforthTimeStepper(TimeStepper):
                 if i == self.step_ratio-1:
                     break
 
-                y_large_this_substep = None
+                if self.update_large_for_small:
+                    y_large_this_substep = y_large + (
+                            self.large_dt * linear_comb(something, hist_l2l)
+                            + self.large_dt * linear_comb(something, hist_s2l))
+                else:
+                    y_large_this_substep = None
+
+                if not self.largest_first:
+                    rotate_insert(hist_s2l,
+                            rhs_s2l(t+(i+1)*self.small_dt, y_small, y_large_this_substep))
+
                 rotate_insert(hist_s2s,
                         rhs_s2s(t+(i+1)*self.small_dt, y_small, y_large_this_substep))
 
@@ -286,6 +324,9 @@ class TwoRateAdamsBashforthTimeStepper(TimeStepper):
 
             # calculate the last 'small dt' rhs using the new 'large' data
             rotate_insert(hist_s2s, rhs_s2s(t+self.large_dt, y_small, y_large))
+            if not self.largest_first:
+                rotate_insert(hist_s2l,
+                        rhs_s2l(t+self.large_dt, y_small, y_large))
 
             return make_obj_array([y_small, y_large])
 
