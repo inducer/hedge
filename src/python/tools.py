@@ -1133,7 +1133,7 @@ class CGStateContainer:
             def inner(a, b):
                 return numpy.dot(a, b.conj())
         else:
-            from boostmpi import all_reduce
+            from hedge.mpi import all_reduce
             from operator import add
 
             def inner(a, b):
@@ -1393,7 +1393,7 @@ def wait_for_keypress(discr):
             print "[Enter]"
             raw_input()
 
-        from boostmpi import broadcast
+        from hedge.mpi import broadcast
         broadcast(comm, value=0, root=0)
 
 def get_rank(discr):

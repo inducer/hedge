@@ -60,6 +60,9 @@ def optimize_plan(opt_name, plan_generator, target_func, maximize, debug_flags=s
 
     debug = "cuds_%s_plan" % opt_name in debug_flags
 
+    if "cuda_plan_log" not in debug_flags:
+        log_filename = None
+
     if not plans:
         raise RuntimeError, "no valid CUDA execution plans found"
 

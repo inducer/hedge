@@ -113,7 +113,6 @@ def partition_mesh(mesh, partition, part_bdry_tag_factory):
             elface2part[elface2] = r1
 
     # prepare a new mesh for each part and send it
-    import boostmpi as mpi
     from hedge.mesh import TAG_NO_BOUNDARY
 
     for part in all_parts:
