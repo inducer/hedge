@@ -128,7 +128,7 @@ def make_custom_exec_mapper_class(superclass):
 
         # actual functionality ----------------------------------------------------
         def map_flux_send(self, op, field_expr):
-            import boostmpi as mpi
+            import hedge.mpi as mpi
             from hedge.tools import log_shape, is_obj_array
 
             pdiscr = self.discr.parallel_discr
@@ -206,7 +206,7 @@ def make_custom_exec_mapper_class(superclass):
             if self.discr.instrumented:
                 self.discr.parallel_discr.flux_recv_timer.start()
 
-            import boostmpi as mpi
+            import hedge.mpi as mpi
 
             pdiscr = self.discr.parallel_discr
             comm_record = self.rec(efrba.field)
@@ -382,7 +382,7 @@ class ParallelDiscretization(object):
 
     # neighbor connectivity ---------------------------------------------------
     def _setup_neighbor_connections(self):
-        import boostmpi as mpi
+        import hedge.mpi as mpi
 
         comm = self.context.communicator
 
@@ -562,7 +562,7 @@ class ParallelDiscretization(object):
 
     # norm and integral -------------------------------------------------------
     def norm(self, volume_vector, p=2):
-        import boostmpi as mpi
+        import hedge.mpi as mpi
 
         def add_norms(x, y):
             return (x**p + y**p)**(1/p)
@@ -572,7 +572,7 @@ class ParallelDiscretization(object):
                 add_norms)
 
     def integral(self, volume_vector):
-        import boostmpi as mpi
+        import hedge.mpi as mpi
         from operator import add
         return mpi.all_reduce(self.context.communicator, 
                 self.subdiscr.integral(volume_vector),
@@ -580,13 +580,13 @@ class ParallelDiscretization(object):
 
     # dt estimation -----------------------------------------------------------
     def dt_non_geometric_factor(self):
-        import boostmpi as mpi
+        import hedge.mpi as mpi
         return mpi.all_reduce(self.context.communicator, 
                 self.subdiscr.dt_non_geometric_factor(),
                 min)
 
     def dt_geometric_factor(self):
-        import boostmpi as mpi
+        import hedge.mpi as mpi
         return mpi.all_reduce(self.context.communicator, 
                 self.subdiscr.dt_geometric_factor(),
                 min)
@@ -621,7 +621,7 @@ def reassemble_volume_field(rcon, global_discr, local_discr, field):
         a.update(b)
         return a
 
-    import boostmpi as mpi
+    import hedge.mpi as mpi
 
     gfield_parts = mpi.reduce(
             rcon.communicator, send_packet, reduction, rcon.head_rank)
