@@ -241,16 +241,17 @@ class TwoRateAdamsBashforthTimeStepper(TimeStepper):
             # we're done starting up, pack data into split histories
             hist_s2s, hist_l2s, hist_s2l, hist_l2l = zip(*self.startup_history)
 
-            # For largetst-first, hist_s2l is updated at the rate of the slow
+            # For largest-first, hist_s2l is updated at the rate of the slow
             # component. For fastest-first, hist_s2l runs at the speed of the
             # fast component.
+
+            n = len(self.coefficients)
 
             if self.largest_first:
                 hist_s2l = list(hist_s2l[::self.step_ratio])
             else:
                 hist_s2l = list(hist_s2l[:n])
 
-            n = len(self.coefficients)
             self.rhs_histories = [
                     list(hist_s2s[:n]),
                     list(hist_l2s[::self.step_ratio]),
