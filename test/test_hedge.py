@@ -182,12 +182,12 @@ class TestHedgeBasics(unittest.TestCase):
 
             return abs(y[0]-soln(t))
 
-        def verify_timestep_order(order):
+        def verify_timestep_order(order, largest_first):
             eocrec = EOCRecorder()
             for n in range(4,9):
                 dt = 2**(-n)
                 from hedge.timestep import TwoRateAdamsBashforthTimeStepper
-                stepper = TwoRateAdamsBashforthTimeStepper(dt, 3, order)
+                stepper = TwoRateAdamsBashforthTimeStepper(dt, 3, order, largest_first)
                 error = get_error(stepper, dt, "mrab-%d.dat" % order)
                 eocrec.add_data_point(1/dt, error)
 
@@ -202,8 +202,9 @@ class TestHedgeBasics(unittest.TestCase):
 
         from hedge.timestep import RK4TimeStepper, AdamsBashforthTimeStepper
 
-        for o in range(1, 6):
-            verify_timestep_order(o)
+        for lf in [True, False]:
+            for o in range(1, 6):
+                verify_timestep_order(o, lf)
 
 
     # -------------------------------------------------------------------------
