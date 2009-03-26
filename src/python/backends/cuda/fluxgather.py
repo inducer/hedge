@@ -67,8 +67,7 @@ def face_pair_struct(float_type, dims):
         POD(numpy.uint16, "a_ilist_index"),
         POD(numpy.uint16, "b_ilist_index"), 
         POD(numpy.uint16, "b_write_ilist_index"), 
-        POD(numpy.uint8, "boundary_bitmap"),
-        POD(numpy.uint8, "pad"), 
+        POD(numpy.uint16, "boundary_bitmap"),
         POD(numpy.uint16, "a_dest"), 
         POD(numpy.uint16, "b_dest"), 
         ], 
@@ -922,7 +921,6 @@ class Kernel:
                                     a_face.global_ext_flux_index_list_id*face_dofs,
 
                             boundary_bitmap=boundary_bitmap,
-                            pad=0,
                             b_write_ilist_index= \
                                     b_write_index_list*face_dofs,
 
@@ -1024,7 +1022,6 @@ class Kernel:
                             b_ilist_index=randrange(self.FAKE_INDEX_LIST_COUNT)*face_dofs,
 
                             boundary_bitmap=1,
-                            pad=0,
                             b_write_ilist_index=randrange(self.FAKE_INDEX_LIST_COUNT)*face_dofs,
 
                             a_dest=draw_dest(), b_dest=draw_dest()
