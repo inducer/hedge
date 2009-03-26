@@ -297,6 +297,7 @@ class Discretization(hedge.discretization.Discretization):
             "cuda_keep_kernels",
             "cuda_try_no_microblock",
             "cuda_plan_log",
+            "cuda_plan_no_progress",
             ])
 
     class PartitionData(Record):

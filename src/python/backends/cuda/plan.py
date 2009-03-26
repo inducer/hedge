@@ -58,7 +58,8 @@ def optimize_plan(opt_name, plan_generator, target_func, maximize, debug_flags=s
     plans = list(p for p in plan_generator()
             if p.invalid_reason() is None)
 
-    debug = "cuds_%s_plan" % opt_name in debug_flags
+    debug = "cuda_%s_plan" % opt_name in debug_flags
+    show_progress = ("cuda_plan_no_progress" not in debug_flags) and not debug
 
     if "cuda_plan_log" not in debug_flags:
         log_filename = None
@@ -96,13 +97,13 @@ def optimize_plan(opt_name, plan_generator, target_func, maximize, debug_flags=s
         except sqlite.OperationalError:
             pass
 
-    if not debug:
+    if show_progress:
         from pytools import ProgressBar
         pbar = ProgressBar("plan "+opt_name, len(plans))
     try:
         plan_values = []
         for p in plans:
-            if not debug:
+            if show_progress:
                 pbar.progress()
 
             if p.occupancy_record().occupancy >= desired_occup - 1e-10:
@@ -128,7 +129,7 @@ def optimize_plan(opt_name, plan_generator, target_func, maximize, debug_flags=s
                                     ",".join(["?"]*(1+len(feature_names)))),
                                 p.features(*extra_info)+(value,))
     finally:
-        if not debug:
+        if show_progress:
             pbar.finished()
 
     if log_filename is not None:
