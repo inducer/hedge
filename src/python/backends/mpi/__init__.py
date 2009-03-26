@@ -386,6 +386,18 @@ class ParallelDiscretization(object):
 
         comm = self.context.communicator
 
+        # Why is this barrier needed? Some of our ranks may arrive at this 
+        # point early and start sending packets to ranks that are still stuck
+        # in previous wildcard-recv loops. These receivers will then be very
+        # confused by packets they didn't expect, and, once they reach their 
+        # recv bit in *this* subroutine, will wait for packets that will never
+        # arrive. This same argument does not apply to other recv()s in this 
+        # file because they are targeted and thus benefit from MPI's 
+        # non-overtaking rule.
+        #
+        # Parallel programming is fun.
+        comm.barrier()
+        
         if self.neighbor_ranks:
             # send interface information to neighboring ranks -----------------
             from pytools import reverse_dictionary
