@@ -747,6 +747,9 @@ class Discretization(object):
         return with_object_array_or_scalar(f, field)
 
     # scalar reduction --------------------------------------------------------
+    def nodewise_dot_product(self, a, b):
+        return numpy.dot(a, b)
+
     def integral(self, volume_vector):
         from hedge.optemplate import MassOperator
         try:

@@ -1111,7 +1111,7 @@ class IdentityOperator(OperatorBase):
 
 
 class CGStateContainer:
-    def __init__(self, pcon, operator, precon=None, inner=None):
+    def __init__(self, pcon, operator, precon=None, dot=None):
         if precon is None:
             precon = IdentityOperator(operator.dtype, operator.shape[0])
 
@@ -1119,17 +1119,11 @@ class CGStateContainer:
         self.operator = operator
         self.precon = precon
 
-        if inner is None:
-            if len(pcon.ranks) == 1:
-                def inner(a, b):
-                    return numpy.dot(a, b.conj())
-            else:
-                from hedge.mpi import all_reduce
-                from operator import add
+        if dot is None:
+            dot = numpy.dot
 
-                def inner(a, b):
-                    local = numpy.dot(a, b.conj())
-                    return all_reduce(pcon.communicator, local, add)
+        def inner(a, b):
+            return dot(a, b.conj())
 
         self.inner = inner
 
@@ -1205,11 +1199,11 @@ class CGStateContainer:
 
 
 def parallel_cg(pcon, operator, b, precon=None, x=None, tol=1e-7, max_iterations=None, 
-        debug=False, debug_callback=None, inner=None):
+        debug=False, debug_callback=None, dot=None):
     if x is None:
         x = numpy.zeros((operator.size1(),))
 
-    cg = CGStateContainer(pcon, operator, precon, inner=inner)
+    cg = CGStateContainer(pcon, operator, precon, dot=dot)
     cg.reset(b, x)
     return cg.run(max_iterations, tol, debug_callback, debug)
 

@@ -814,6 +814,14 @@ class Discretization(hedge.discretization.Discretization):
 
         return result
 
+    @memoize_method
+    def _meaningful_volume_indices(self):
+        return gpuarray.to_gpu(
+                numpy.asarray(
+                    numpy.sort(self._gpu_volume_embedding()),
+                    dtype=numpy.uint32),
+                allocator=self.pool.allocate)
+
     def _volume_to_gpu(self, field):
         def f(subfld):
             cpu_transfer = self.pagelocked_pool.allocate(
@@ -1035,6 +1043,10 @@ class Discretization(hedge.discretization.Discretization):
 
         from hedge.tools import with_object_array_or_scalar
         return with_object_array_or_scalar(do_scalar, field)
+
+    # scalar reduction --------------------------------------------------------
+    def nodewise_dot_product(self, a, b):
+        return gpuarray.subset_dot(self._meaningful_volume_indices(), a, b).get()
 
     # numbering tools ---------------------------------------------------------
     @memoize_method

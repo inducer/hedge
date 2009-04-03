@@ -573,6 +573,14 @@ class ParallelDiscretization(object):
                         from_indices, dtype=numpy.intp)
 
     # norm and integral -------------------------------------------------------
+    def nodewise_dot_product(self, a, b):
+        from hedge.mpi import all_reduce
+        from operator import add
+
+        return all_reduce(pcon.communicator, 
+                self.subdiscr.nodewise_inner_product(a, b), 
+                add)
+
     def norm(self, volume_vector, p=2):
         import hedge.mpi as mpi
 
