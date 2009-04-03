@@ -151,12 +151,15 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         self.context[insn.name] = self(insn.expr)
 
     def exec_vector_expr_assign(self, insn):
-        def add_timer(n, vec_expr, t_func):
-            self.ex.discr.vector_math_timer.add_timer_callable(t_func)
-            self.ex.discr.vector_math_flop_counter.add(n*vec_expr.flop_count)
-            self.ex.discr.gmem_bytes_vector_math.add(
-                    self.ex.discr.given.float_size() * n *
-                    (1+len(vec_expr.vector_exprs)))
+        if self.ex.discr.instrumented:
+            def add_timer(n, vec_expr, t_func):
+                self.ex.discr.vector_math_timer.add_timer_callable(t_func)
+                self.ex.discr.vector_math_flop_counter.add(n*vec_expr.flop_count)
+                self.ex.discr.gmem_bytes_vector_math.add(
+                        self.ex.discr.given.float_size() * n *
+                        (1+len(vec_expr.vector_exprs)))
+        else:
+            add_timer = None
 
         self.context[insn.name] = insn.compiled(self, add_timer)
 
@@ -436,6 +439,7 @@ class Executor(object):
                     CommutativeConstantFoldingMapper()(
                         BCToFluxRewriter()(
                             optemplate))))
+
     @staticmethod
     def prepare_optemplate_stage1(optemplate, post_bind_mapper=lambda x: x):
         from hedge.optemplate import OperatorBinder
