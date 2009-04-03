@@ -1064,81 +1064,72 @@ class IndexListRegistry(object):
 
 
 # parallel cg -----------------------------------------------------------------
-try:
-    import pyublasext
-    OperatorBase = pyublasext.Operator(float)
-except ImportError:
-    # just enough stopgaps to solve elliptic problems
+class OperatorBase(object):
+    @property
+    def dtype(self):
+        raise NotImplementedError
 
-    class OperatorBase(object):
-        @property
-        def dtype(self):
-            return float
+    @property
+    def shape(self):
+        raise NotImplementedError
 
-        @property
-        def shape(self):
-            return (self.size1(), self.size2())
+    def __neg__(self):
+        return NegOperator(self)
 
-        def __call__(self, op2):
-            temp = numpy.zeros((self.shape[0],), op2.dtype)
-            self.apply(op2, temp)
-            return temp
+class NegOperator(OperatorBase):
+    def __init__(self, sub_op):
+        self.sub_op = sub_op
 
-        def __neg__(self):
-            return NegOperator(self)
+    @property
+    def dtype(self):
+        return self.sub_op.dtype
 
-    class NegOperator(OperatorBase):
-        def __init__(self, op):
-            self.op = op
+    @property
+    def shape(self):
+        return self.sub_op.shape
 
-        def size1(self): return self.op.size1()
-        def size2(self): return self.op.size2()
+    def __call__(self, operand):
+        return -self.sub_op(operand)
 
-        @property
-        def shape(self):
-            return (self.size1(), self.size2())
+class IdentityOperator(OperatorBase):
+    def __init__(self, dtype, n):
+        self.my_dtype = dtype
+        self.n = n
 
-        def apply(self, op1, op2):
-            self.op.apply(op1, op2)
-            op2 *= -1
+    @property
+    def dtype(self):
+        return self.my_dtype
 
-    class IdentityOperator(OperatorBase):
-        def __init__(self, dtype, n):
-            assert dtype == float
-            self.n = n
+    @property
+    def shape(self):
+        return self.n, self.n
 
-        def size1(self): return self.n
-        def size2(self): return self.n
-
-        def apply(self, op1, op2):
-            op2[:] = op1[:]
+    def __call__(self, operand):
+        return operand
 
 
 
 
 class CGStateContainer:
-    def __init__(self, pcon, operator, precon=None):
+    def __init__(self, pcon, operator, precon=None, inner=None):
         if precon is None:
-            try:
-                import pyublasext
-                precon = pyublasext.IdentityOperator.make(operator.dtype, operator.size1())
-            except ImportError:
-                precon = IdentityOperator(operator.dtype, operator.size1())
+            precon = IdentityOperator(operator.dtype, operator.shape[0])
 
         self.pcon = pcon
         self.operator = operator
         self.precon = precon
 
-        if len(pcon.ranks) == 1:
-            def inner(a, b):
-                return numpy.dot(a, b.conj())
-        else:
-            from hedge.mpi import all_reduce
-            from operator import add
+        if inner is None:
+            if len(pcon.ranks) == 1:
+                def inner(a, b):
+                    return numpy.dot(a, b.conj())
+            else:
+                from hedge.mpi import all_reduce
+                from operator import add
 
-            def inner(a, b):
-                local = numpy.dot(a, b.conj())
-                return all_reduce(pcon.communicator, local, add)
+                def inner(a, b):
+                    local = numpy.dot(a, b.conj())
+                    return all_reduce(pcon.communicator, local, add)
 
         self.inner = inner
 
@@ -1163,7 +1154,8 @@ class CGStateContainer:
         # Appendix B3
 
         q = self.operator(self.d)
-        alpha = self.delta / self.inner(self.d, q)
+        myip = self.inner(self.d, q)
+        alpha = self.delta / myip
 
         self.x += alpha * self.d
 
@@ -1183,9 +1175,9 @@ class CGStateContainer:
 
     def run(self, max_iterations=None, tol=1e-7, debug_callback=None, debug=0):
         if max_iterations is None:
-            max_iterations = 10 * self.operator.size1()
+            max_iterations = 10 * self.operator.shape[0]
 
-        if la.norm(self.rhs) == 0:
+        if self.inner(self.rhs, self.rhs) == 0:
             return self.rhs
 
         iterations = 0
@@ -1213,27 +1205,11 @@ class CGStateContainer:
 
 
 def parallel_cg(pcon, operator, b, precon=None, x=None, tol=1e-7, max_iterations=None, 
-        debug=False, debug_callback=None):
+        debug=False, debug_callback=None, inner=None):
     if x is None:
         x = numpy.zeros((operator.size1(),))
 
-    try:
-        import pyublasext
-        have_pyublasext = True
-    except ImportError:
-        have_pyublasext = False
-
-    if have_pyublasext and len(pcon.ranks) == 1 and debug_callback is None:
-        # use canned single-processor cg if possible
-        import pyublasext
-        a_inv = pyublasext.CGOperator.make(operator, max_it=max_iterations, 
-                tolerance=tol, precon_op=precon)
-        if debug:
-            a_inv.debug_level = 1
-        a_inv.apply(b, x)
-        return x
-
-    cg = CGStateContainer(pcon, operator, precon)
+    cg = CGStateContainer(pcon, operator, precon, inner=inner)
     cg.reset(b, x)
     return cg.run(max_iterations, tol, debug_callback, debug)
 
