@@ -1257,7 +1257,9 @@ class WeakPoissonOperator(Operator, ):
             neu_bc_w = join_fields(0, neu_bc_v())
 
             from hedge.optemplate import MassOperator
-            return (MassOperator().apply(self.discr, rhs.volume_interpolant(self.discr))
+
+            return (MassOperator().apply(
+                self.discr, rhs.volume_interpolant(self.discr))
                 - self.div_c(w=w, dir_bc_w=dir_bc_w, neu_bc_w=neu_bc_w))
 
     def bind(self, discr):

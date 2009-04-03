@@ -123,6 +123,22 @@ class DiffBatchAssign(Instruction):
     def get_executor_method(self, executor):
         return executor.exec_diff_batch_assign
 
+class MassAssign(Instruction):
+    __slots__ = ["name", "op_class", "field"]
+
+    def get_assignees(self):
+        return set([self.name])
+
+    def get_dependencies(self):
+        return set([self.field])
+
+    def __str__(self):
+        return "%s <- Mass * %s" % (self.name, self.field)
+
+    def get_executor_method(self, executor):
+        return executor.exec_mass_assign
+
+
 class FluxReceiveBatchAssign(Instruction):
     __slots__ = ["names", "indices_and_ranks", "field"]
 
@@ -310,9 +326,14 @@ class OperatorCompilerBase(IdentityMapper):
             return cse_var
 
     def map_operator_binding(self, expr):
-        from hedge.optemplate import DiffOperatorBase, FluxReceiveOperator
+        from hedge.optemplate import \
+                DiffOperatorBase, \
+                MassOperatorBase, \
+                FluxReceiveOperator
         if isinstance(expr.op, DiffOperatorBase):
             return self.map_diff_op_binding(expr)
+        elif isinstance(expr.op, MassOperatorBase):
+            return self.map_mass_op_binding(expr)
         elif isinstance(expr.op, FluxReceiveOperator):
             return self.map_flux_receive_op_binding(expr)
         else:
@@ -342,6 +363,21 @@ class OperatorCompilerBase(IdentityMapper):
                 self.expr_to_var[d] = var(n)
 
             return self.expr_to_var[expr]
+
+    def map_mass_op_binding(self, expr):
+        try:
+            return self.expr_to_var[expr]
+        except KeyError:
+            ma = MassAssign(
+                    name=self.get_var_name,
+                    op_class=expr.op.__class__,
+                    field=self.rec(expr.field))
+            self.code.append(ma)
+
+            from pymbolic import var
+            v = var(ma.name)
+            self.expr_to_var[expr] = v
+            return v
 
     def map_flux_receive_op_binding(self, expr):
         try:

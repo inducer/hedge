@@ -99,16 +99,15 @@ class ExecutionMapper(ExecutionMapperBase):
         for name, op, diff in zip(insn.names, insn.operators, xyz_diff):
             self.context[name] = diff
 
-    # mapper functions --------------------------------------------------------
-    def map_mass_base(self, op, field_expr):
-        field = self.rec(field_expr)
+    def exec_mass_assign(self, insn):
+        field = self.rec(insn.field)
 
         if isinstance(field, (float, int)) and field == 0:
             return 0
 
         out = self.discr.volume_zeros(dtype=field.dtype)
-        self.executor.do_mass(op, field, out)
-        return out
+        self.executor.do_mass(insn.op_class, field, out)
+        self.context[insn.name] = out
 
 
 

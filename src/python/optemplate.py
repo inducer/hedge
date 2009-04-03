@@ -558,6 +558,26 @@ class DependencyMapper(
         CombineMapperMixin, 
         pymbolic.mapper.dependency.DependencyMapper, 
         OperatorReducerMixin):
+    def __init__(self, 
+            include_operator_bindings=True,
+            composite_leaves=None,
+            **kwargs):
+        if composite_leaves == False:
+            include_operator_bindings = False
+        if composite_leaves == True:
+            include_operator_bindings = True
+
+        pymbolic.mapper.dependency.DependencyMapper.__init__(self,
+                composite_leaves=composite_leaves, **kwargs)
+
+        self.include_operator_bindings = include_operator_bindings
+
+    def map_operator_binding(self, expr):
+        if self.include_operator_bindings:
+            return set([expr])
+        else:
+            return CombineMapperMixin.map_operator_binding(self, expr)
+
     def map_operator(self, expr):
         return set()
 
