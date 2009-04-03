@@ -292,10 +292,12 @@ class Kernel:
         interior_deps_set = set()
         boundary_int_deps_set = set()
         boundary_ext_deps_set = set()
+        self.dep_to_tag = {}
         for f in fluxes:
             interior_deps_set.update(set(f.interior_deps))
             boundary_int_deps_set.update(set(f.boundary_int_deps))
             boundary_ext_deps_set.update(set(f.boundary_ext_deps))
+            self.dep_to_tag.update(f.dep_to_tag)
 
         self.interior_deps = list(interior_deps_set)
         self.boundary_int_deps = list(boundary_int_deps_set)
@@ -380,6 +382,14 @@ class Kernel:
 
         for dep_expr in self.all_deps:
             dep_field = eval_dependency(dep_expr)
+
+            from hedge.tools import is_zero
+            if is_zero(dep_field):
+                if dep_expr in self.dep_to_tag:
+                    dep_field = discr.boundary_zeros(self.dep_to_tag[dep_expr])
+                else:
+                    dep_field = discr.volume_zeros()
+
             assert dep_field.dtype == given.float_type
             dep_field.bind_to_texref(texref_map[dep_expr])
 

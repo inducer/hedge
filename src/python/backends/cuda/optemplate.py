@@ -54,20 +54,34 @@ def get_flux_dependencies(flux, field, bdry="all"):
         for in_field in in_fields
         if not isinstance(in_field, FieldComponent)]
         
+    def maybe_index(fld, index):
+        from hedge.tools import is_obj_array
+        if is_obj_array(fld):
+            return fld[inf.index]
+        else:
+            return fld
+
     from hedge.tools import is_zero
     from hedge.optemplate import BoundaryPair
     if isinstance(field, BoundaryPair):
         for inf in in_fields:
             if inf.is_local:
-                if not is_zero(field.field[inf.index]) and bdry in ["all", "int"]:
-                    yield field.field[inf.index]
+                if bdry in ["all", "int"]:
+                    value = maybe_index(field.field, inf.index)
+
+                    if not is_zero(value):
+                        yield value
             else:
-                if not is_zero(field.bfield[inf.index]) and bdry in ["all", "ext"]:
-                    yield field.bfield[inf.index]
+                if bdry in ["all", "ext"]:
+                    value = maybe_index(field.bfield, inf.index)
+
+                    if not is_zero(value):
+                        yield value
     else:
         for inf in in_fields:
-            if not is_zero(field[inf.index]):
-                yield field[inf.index]
+            value = maybe_index(field, inf.index)
+            if not is_zero(value):
+                yield value
 
 
 
@@ -114,6 +128,13 @@ class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
         self.boundary_int_deps = list(boundary_int_deps)
         self.boundary_ext_deps = list(boundary_ext_deps)
         self.boundary_deps = list(boundary_int_deps | boundary_ext_deps)
+
+        from pytools import flatten
+        self.dep_to_tag = {}
+        for bflux in boundaries:
+            for dep in get_flux_dependencies(
+                    bflux.flux_expr, bflux.bpair, bdry="ext"):
+                self.dep_to_tag[dep] = bflux.bpair.tag
 
         self.tag_to_fluxes = {}
 
