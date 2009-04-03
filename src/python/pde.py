@@ -1155,15 +1155,14 @@ class WeakPoissonOperator(Operator, ):
                 self.diffusion = pop.diffusion_tensor.volume_interpolant(discr)
                 self.neu_diff = pop.diffusion_tensor.boundary_interpolant(discr, neumann_tag)
 
-        # pyublasext operator compatibility
-        def size1(self):
-            return len(self.discr)
+        @property
+        def dtype(self):
+            return self.discr.default_scalar_type
 
-        def size2(self):
-            return len(self.discr)
-
-        def apply(self, before, after):
-            after[:] = self.op(before)
+        @property
+        def shape(self):
+            nodes = len(self.discr)
+            return nodes, nodes
 
         # actual functionality
         def grad(self, u):
@@ -1206,6 +1205,8 @@ class WeakPoissonOperator(Operator, ):
             return self.div(
                     ptwise_dot(2, 1, self.diffusion, self.grad(u)), 
                     u, apply_minv=apply_minv)
+
+        __call__ = op
 
         def prepare_rhs(self, rhs):
             """Perform the rhs(*) function in the class description, i.e.
