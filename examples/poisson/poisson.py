@@ -32,9 +32,9 @@ def main() :
     from hedge.backends import guess_run_context
     rcon = guess_run_context(disable=set(["cuda"]))
 
-    dim = 2
+    dim = 3
 
-    def boundary_tagger(fvi, el, fn):
+    def boundary_tagger(fvi, el, fn, points):
         from math import atan2, pi
         normal = el.face_normals[fn]
         if -10/180*pi < atan2(normal[1], normal[0]) < 10/180*pi:
@@ -51,7 +51,9 @@ def main() :
     elif dim == 3:
         if rcon.is_head_rank:
             from hedge.mesh import make_ball_mesh
-            mesh = make_ball_mesh(max_volume=0.0001)
+            mesh = make_ball_mesh(max_volume=0.0001,
+                    boundary_tagger=lambda fvi, el, fn, points:
+                    ["dirichlet"])
         el_class = TetrahedralElement
     else:
         raise RuntimeError, "bad number of dimensions"
