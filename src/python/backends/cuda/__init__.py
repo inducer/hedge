@@ -1046,7 +1046,10 @@ class Discretization(hedge.discretization.Discretization):
 
     # scalar reduction --------------------------------------------------------
     def nodewise_dot_product(self, a, b):
-        return gpuarray.subset_dot(self._meaningful_volume_indices(), a, b).get()
+        return gpuarray.subset_dot_twosided(
+                self._meaningful_volume_indices(), 
+                a, b, dtype=numpy.float64).get()
+
 
     # numbering tools ---------------------------------------------------------
     @memoize_method

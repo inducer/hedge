@@ -1056,7 +1056,7 @@ class WeakPoissonOperator(Operator, ):
             fs.flux_v = fs.flux_v + dot((v.int-v.ext)*0.5, ldg_beta)
 
         # penalty term
-        stab_term = PenaltyTerm() * (u.int - u.ext)
+        stab_term = 10 * PenaltyTerm() * (u.int - u.ext)
         fs.flux_v -= stab_term
 
         # boundary fluxes
@@ -1258,8 +1258,8 @@ class WeakPoissonOperator(Operator, ):
 
             from hedge.optemplate import MassOperator
 
-            return (MassOperator().apply(
-                self.discr, rhs.volume_interpolant(self.discr))
+            return (MassOperator().apply(self.discr, 
+                rhs.volume_interpolant(self.discr))
                 - self.div_c(w=w, dir_bc_w=dir_bc_w, neu_bc_w=neu_bc_w))
 
     def bind(self, discr):
