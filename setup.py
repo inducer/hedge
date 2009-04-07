@@ -54,7 +54,6 @@ def main():
     import glob
     from aksetup_helper import hack_distutils, get_config, setup, \
             PyUblasExtension
-    from setuptools import find_packages
 
     hack_distutils()
     conf = get_config(get_config_schema())
@@ -134,23 +133,6 @@ def main():
               'Topic :: Scientific/Engineering :: Physics',
               'Topic :: Scientific/Engineering :: Visualization',
               ],
-
-            # dependencies
-            setup_requires=[
-                "PyUblas>=0.92.2",
-                ],
-            install_requires=[
-                "PyUblas>=0.92.2",
-                "pytools>=8",
-                "codepy>=0.90",
-                "pymbolic>=0.90",
-                "meshpy>=0.91",
-                ],
-            extras_require = {
-                "matrices": ["PyUblasExt>=0.92.7"],
-                "silo": ["pylo"],
-                "parallel": ["PyMetis>=0.91"],
-                },
 
             # build info
             packages=[
