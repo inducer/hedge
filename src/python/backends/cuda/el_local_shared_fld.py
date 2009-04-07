@@ -28,7 +28,6 @@ import pycuda.gpuarray as gpuarray
 from pycuda.compiler import SourceModule
 from hedge.backends.cuda.tools import FakeGPUArray
 import hedge.backends.cuda.plan 
-from hedge.backends.cuda.kernelbase import FluxLocalKernelBase
 
 
 
@@ -441,10 +440,7 @@ class Kernel:
     def prepare_matrix(self, matrix):
         given = self.plan.given
 
-        #if is_lift:
-            #mat = given.ldis.lifting_matrix()
-        #else:
-            #mat = given.ldis.multi_face_mass_matrix()
+        assert matrix.shape == (given.dofs_per_el(), self.plan.preimage_dofs_per_el)
 
         return cuda.matrix_to_array(matrix.astype(given.float_type), "F")
 
