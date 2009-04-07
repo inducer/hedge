@@ -207,11 +207,13 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
     def exec_flux_batch_assign(self, insn):
         discr = self.ex.discr
 
-        # gather phase --------------------------------------------------------
         all_fofs = insn.kernel(self.rec, discr.fluxlocal_plan)
         for name, wdflux, fluxes_on_faces in zip(insn.names, insn.fluxes, all_fofs):
+            elgroup, = discr.element_groups
             self.context[name] = self.ex.fluxlocal_kernel(
-                fluxes_on_faces, wdflux.is_lift)
+                fluxes_on_faces, 
+                *self.ex.flux_local_data(
+                    self.ex.fluxlocal_kernel, elgroup, wdflux.is_lift))
 
         if discr.instrumented:
             given = discr.given
@@ -467,4 +469,18 @@ class Executor(object):
     def __call__(self, **vars):
         return self.code.execute(
                 self.discr.exec_mapper_class(vars, self))
+
+    # data caches for execution -----------------------------------------------
+    @memoize_method
+    def flux_local_data(self, kernel, elgroup, is_lift):
+        if is_lift:
+            mat = elgroup.local_discretization.lifting_matrix()
+            prep_scaling = kernel.prepare_scaling(elgroup, elgroup.inverse_jacobians)
+        else:
+            mat = given.ldis.multi_face_mass_matrix()
+            prep_scaling = None
+
+        prep_mat = kernel.prepare_matrix(mat)
+
+        return prep_mat, prep_scaling
 

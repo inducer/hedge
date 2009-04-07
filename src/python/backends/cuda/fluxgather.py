@@ -369,7 +369,7 @@ class Kernel:
         elgroup, = discr.element_groups
 
         all_fluxes_on_faces = [gpuarray.empty(
-                given.fluxes_on_faces_shape(lift_plan),
+                given.matmul_preimage_shape(lift_plan),
                 dtype=given.float_type,
                 allocator=discr.pool.allocate)
                 for i in range(len(self.fluxes))]

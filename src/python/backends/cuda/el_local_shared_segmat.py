@@ -36,11 +36,17 @@ from hedge.backends.cuda.kernelbase import FluxLocalKernelBase
 # plan ------------------------------------------------------------------------
 class ExecutionPlan(hedge.backends.cuda.plan.SegmentedMatrixLocalOpExecutionPlan):
     def __init__(self, given, parallelism, segment_size, max_unroll,
-            use_prefetch_branch):
+            use_prefetch_branch, debug_name,
+           aligned_preimage_dofs_per_microblock, preimage_dofs_per_el):
         hedge.backends.cuda.plan.SegmentedMatrixLocalOpExecutionPlan.__init__(
                 self, given, parallelism, segment_size, max_unroll)
 
         self.use_prefetch_branch = use_prefetch_branch
+
+        self.debug_name = debug_name
+        self.aligned_preimage_dofs_per_microblock = \
+                aligned_preimage_dofs_per_microblock
+        self.preimage_dofs_per_el = preimage_dofs_per_el
 
     def columns(self):
         return self.given.face_dofs_per_el()
@@ -126,7 +132,7 @@ class Kernel(FluxLocalKernelBase):
 
         flux = vol_empty()
         fluxes_on_faces = gpuarray.empty(
-                given.fluxes_on_faces_shape(self.plan), 
+                given.matmul_preimage_shape(self.plan), 
                 dtype=given.float_type,
                 allocator=discr.pool.allocate)
         fluxes_on_faces.bind_to_texref(fluxes_on_faces_texref)

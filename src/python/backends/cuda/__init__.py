@@ -729,8 +729,8 @@ class Discretization(hedge.discretization.Discretization):
 
         self.gmem_bytes_gather = EventCounter("gmem_bytes_gather", 
                 "Bytes of gmem traffic during gather")
-        self.gmem_bytes_lift = EventCounter("gmem_bytes_lift", 
-                "Bytes of gmem traffic during lift")
+        self.gmem_bytes_el_local = EventCounter("gmem_bytes_el_local", 
+                "Bytes of gmem traffic during element-local matrix application")
         self.gmem_bytes_diff = EventCounter("gmem_bytes_diff", 
                 "Bytes of gmem traffic during lift")
         self.gmem_bytes_vector_math = EventCounter("gmem_bytes_vector_math", 
@@ -739,7 +739,7 @@ class Discretization(hedge.discretization.Discretization):
                 "Bytes of gmem traffic during RK4")
 
         mgr.add_quantity(self.gmem_bytes_gather)
-        mgr.add_quantity(self.gmem_bytes_lift)
+        mgr.add_quantity(self.gmem_bytes_el_local)
         mgr.add_quantity(self.gmem_bytes_diff)
         mgr.add_quantity(self.gmem_bytes_vector_math)
         mgr.add_quantity(self.gmem_bytes_rk4)
@@ -751,18 +751,15 @@ class Discretization(hedge.discretization.Discretization):
 
         self.flux_gather_timer = CallableCollectionTimer("t_gather", 
                 "Time spent gathering fluxes")
-        self.flux_lift_timer = CallableCollectionTimer("t_lift", 
-                "Time spent lifting fluxes")
-        self.mass_op_timer = CallableCollectionTimer("t_mass", 
-                "Time spent applying mass operators")
+        self.el_local_timer = CallableCollectionTimer("t_el_local", 
+                "Time spent applying element-local matrices (lift, mass)")
         self.diff_op_timer = CallableCollectionTimer("t_diff",
                 "Time spent applying applying differentiation operators")
         self.vector_math_timer = CallableCollectionTimer("t_vector_math",
                 "Time spent applying doing vector math")
 
         return [self.flux_gather_timer, 
-                self.flux_lift_timer,
-                self.mass_op_timer,
+                self.el_local_timer,
                 self.diff_op_timer,
                 self.vector_math_timer ]
 
@@ -1049,7 +1046,6 @@ class Discretization(hedge.discretization.Discretization):
         return gpuarray.subset_dot_twosided(
                 self._meaningful_volume_indices(), 
                 a, b, dtype=numpy.float64).get()
-
 
     # numbering tools ---------------------------------------------------------
     @memoize_method

@@ -35,6 +35,16 @@ from hedge.backends.cuda.kernelbase import FluxLocalKernelBase
 
 # plan ------------------------------------------------------------------------
 class ExecutionPlan(hedge.backends.cuda.plan.SMemFieldLocalOpExecutionPlan):
+    def __init__(self, given, parallelism, max_unroll, debug_name,
+           aligned_preimage_dofs_per_microblock, preimage_dofs_per_el):
+        hedge.backends.cuda.plan.SMemFieldLocalOpExecutionPlan.__init__(
+                self, given, parallelism, max_unroll)
+
+        self.debug_name = debug_name
+        self.aligned_preimage_dofs_per_microblock = \
+                aligned_preimage_dofs_per_microblock
+        self.preimage_dofs_per_el = preimage_dofs_per_el
+
     def registers(self):
         return 16
 
@@ -46,7 +56,7 @@ class ExecutionPlan(hedge.backends.cuda.plan.SMemFieldLocalOpExecutionPlan):
                + given.float_size() * (
                    self.parallelism.parallel 
                    * self.parallelism.inline
-                   * self.given.aligned_face_dofs_per_microblock()))
+                   * self.aligned_preimage_dofs_per_microblock))
 
     @staticmethod
     def feature_columns():
@@ -84,7 +94,7 @@ class ExecutionPlan(hedge.backends.cuda.plan.SMemFieldLocalOpExecutionPlan):
 
 
 # kernel ----------------------------------------------------------------------
-class Kernel(FluxLocalKernelBase):
+class Kernel:
     def __init__(self, discr, plan):
         self.discr = discr
         self.plan = plan
@@ -100,11 +110,21 @@ class Kernel(FluxLocalKernelBase):
         given = self.plan.given
         elgroup, = discr.element_groups
 
-        is_lift = True
         try:
-            lift = self.get_kernel(is_lift, elgroup, for_benchmark=True)
+            kernel, mat_texref, scaling_texref = \
+                    self.get_kernel(with_scaling=True, for_benchmark=True)
         except cuda.CompileError:
             return None
+
+        fake_matrix = self.prepare_matrix(
+                numpy.ones(
+                    (given.dofs_per_el(), self.plan.preimage_dofs_per_el),
+                    dtype=given.float_type))
+        mat_texref.set_array(fake_matrix)
+
+        from hedge.backends.cuda.kernelbase import fake_elwise_scaling
+        fake_scaling = fake_elwise_scaling(self.plan.given)
+        fake_scaling.bind_to_texref(scaling_texref)
 
         def vol_empty():
             from hedge.backends.cuda.tools import int_ceiling
@@ -113,13 +133,13 @@ class Kernel(FluxLocalKernelBase):
             return gpuarray.empty((dofs,), dtype=given.float_type,
                     allocator=discr.pool.allocate)
 
-        flux = vol_empty()
-        fluxes_on_faces = gpuarray.empty(
-                given.fluxes_on_faces_shape(self.plan), 
+        out_vector = vol_empty()
+        in_vector = gpuarray.empty(
+                given.matmul_preimage_shape(self.plan), 
                 dtype=given.float_type,
                 allocator=discr.pool.allocate)
 
-        if set(["cuda_lift", "cuda_debugbuf"]) <= discr.debug:
+        if set([self.plan.debug_name, "cuda_debugbuf"]) <= discr.debug:
             debugbuf = gpuarray.zeros((1024,), dtype=numpy.float32)
         else:
             debugbuf = FakeGPUArray()
@@ -134,9 +154,9 @@ class Kernel(FluxLocalKernelBase):
         cuda.Context.synchronize()
         for i in range(count):
             try:
-                lift.prepared_call(self.grid,
-                        flux.gpudata, 
-                        fluxes_on_faces.gpudata,
+                kernel.prepared_call(self.grid,
+                        out_vector.gpudata, 
+                        in_vector.gpudata,
                         0)
             except cuda.LaunchError:
                 return None
@@ -145,26 +165,30 @@ class Kernel(FluxLocalKernelBase):
         stop.synchronize()
 
         return (1e-3/count * stop.time_since(start),
-                lift.lmem, lift.smem, lift.registers)
+                kernel.lmem, kernel.smem, kernel.registers)
 
-    def __call__(self, fluxes_on_faces, is_lift):
+    def __call__(self, in_vector, prepped_mat, prepped_scaling):
         discr = self.discr
         elgroup, = discr.element_groups
 
-        lift = self.get_kernel(is_lift, elgroup)
+        kernel, mat_texref, scaling_texref = \
+                self.get_kernel(with_scaling=prepped_scaling is not None)
 
-        flux = discr.volume_empty() 
+        mat_texref.set_array(prepped_mat)
+        prepped_scaling.bind_to_texref(scaling_texref)
 
-        if set(["cuda_lift", "cuda_debugbuf"]) <= discr.debug:
+        out_vector = discr.volume_empty() 
+
+        if set([self.plan.debug_name, "cuda_debugbuf"]) <= discr.debug:
             debugbuf = gpuarray.zeros((1024,), dtype=numpy.float32)
         else:
             debugbuf = FakeGPUArray()
 
         if discr.instrumented:
-            discr.flux_lift_timer.add_timer_callable(
-                    lift.prepared_timed_call(self.grid, 
-                        flux.gpudata, 
-                        fluxes_on_faces.gpudata,
+            discr.el_local_timer.add_timer_callable(
+                    kernel.prepared_timed_call(self.grid, 
+                        out_vector.gpudata, 
+                        in_vector.gpudata,
                         debugbuf.gpudata))
 
             given = self.discr.given
@@ -172,11 +196,12 @@ class Kernel(FluxLocalKernelBase):
             block_gmem_floats = (
                         # matrix fetch
                         given.microblock.aligned_floats
-                        * given.face_dofs_per_el()
+                        * self.plan.preimage_dofs_per_el
                         * self.plan.parallelism.serial
                         * self.plan.parallelism.parallel
                         # field fetch
-                        + given.face_dofs_per_microblock()
+                        + self.plan.preimage_dofs_per_el
+                        * given.microblock.elements
                         * self.plan.parallelism.total()
                         )
             gmem_bytes = given.float_size() * ( 
@@ -184,14 +209,14 @@ class Kernel(FluxLocalKernelBase):
                     # field store
                     + len(discr.nodes))
 
-            discr.gmem_bytes_lift.add(gmem_bytes)
+            discr.gmem_bytes_el_local.add(gmem_bytes)
         else:
-            lift.prepared_call(self.grid,
-                    flux.gpudata, 
-                    fluxes_on_faces.gpudata,
+            kernel.prepared_call(self.grid,
+                    out_vector.gpudata, 
+                    in_vector.gpudata,
                     debugbuf.gpudata)
 
-        if set(["cuda_lift", "cuda_debugbuf"]) <= discr.debug:
+        if set([self.plan.debug_name, "cuda_debugbuf"]) <= discr.debug:
             copied_debugbuf = debugbuf.get()[:144*7].reshape((144,7))
             print "DEBUG"
             numpy.set_printoptions(linewidth=100)
@@ -201,10 +226,10 @@ class Kernel(FluxLocalKernelBase):
             print copied_debugbuf
             raw_input()
 
-        return flux
+        return out_vector
 
     @memoize_method
-    def get_kernel(self, is_lift, elgroup, for_benchmark=False):
+    def get_kernel(self, with_scaling, for_benchmark=False):
         from codepy.cgen import \
                 Pointer, POD, Value, ArrayOf, Const, \
                 Module, FunctionDeclaration, FunctionBody, Block, \
@@ -222,22 +247,22 @@ class Kernel(FluxLocalKernelBase):
 
         float_type = given.float_type
 
-        f_decl = CudaGlobal(FunctionDeclaration(Value("void", "apply_lift_mat_smem"), 
+        f_decl = CudaGlobal(FunctionDeclaration(Value("void", "apply_el_local_mat_smem_field"), 
             [
-                Pointer(POD(float_type, "flux")),
-                Pointer(POD(float_type, "fluxes_on_faces")),
+                Pointer(POD(float_type, "out_vector")),
+                Pointer(POD(float_type, "in_vector")),
                 Pointer(POD(float_type, "debugbuf")),
                 ]
             ))
 
         cmod = Module([
                 Value("texture<float, 2, cudaReadModeElementType>", 
-                    "lift_mat_tex"),
+                    "mat_tex"),
                 ])
-        if is_lift:
+        if with_scaling:
             cmod.append(
                 Value("texture<float, 1, cudaReadModeElementType>",
-                    "inverse_jacobians_tex"),
+                    "scaling_tex"),
                 )
 
         par = self.plan.parallelism
@@ -246,14 +271,13 @@ class Kernel(FluxLocalKernelBase):
                 Line(),
                 Define("DIMENSIONS", discr.dimensions),
                 Define("DOFS_PER_EL", given.dofs_per_el()),
-                Define("FACES_PER_EL", given.faces_per_el()),
-                Define("DOFS_PER_FACE", given.dofs_per_face()),
-                Define("FACE_DOFS_PER_EL", "(DOFS_PER_FACE*FACES_PER_EL)"),
                 Define("MB_EL_COUNT", given.microblock.elements),
+                Define("PREIMAGE_DOFS_PER_EL", self.plan.preimage_dofs_per_el),
                 Line(),
                 Define("DOFS_PER_MB", "(DOFS_PER_EL*MB_EL_COUNT)"),
                 Define("ALIGNED_DOFS_PER_MB", given.microblock.aligned_floats),
-                Define("ALIGNED_FACE_DOFS_PER_MB", given.aligned_face_dofs_per_microblock()),
+                Define("ALIGNED_PREIMAGE_DOFS_PER_MB", 
+                    self.plan.aligned_preimage_dofs_per_microblock),
                 Line(),
                 Define("CHUNK_SIZE", given.devdata.smem_granularity),
                 Define("CHUNK_DOF", "threadIdx.x"),
@@ -274,16 +298,16 @@ class Kernel(FluxLocalKernelBase):
                     "(GLOBAL_MB_NR_BASE"
                     "+ (seq_mb_number*PAR_MB_COUNT + PAR_MB_NR)*INLINE_MB_COUNT)"),
                 Define("GLOBAL_MB_DOF_BASE", "(GLOBAL_MB_NR*ALIGNED_DOFS_PER_MB)"),
-                Define("GLOBAL_MB_FACEDOF_BASE", "(GLOBAL_MB_NR*ALIGNED_FACE_DOFS_PER_MB)"),
+                Define("GLOBAL_MB_PREIMAGE_BASE", "(GLOBAL_MB_NR*ALIGNED_PREIMAGE_DOFS_PER_MB)"),
                 Line(),
                 CudaShared(
                     ArrayOf(
                         ArrayOf(
                             ArrayOf(
-                                POD(float_type, "smem_fluxes_on_faces"), 
+                                POD(float_type, "smem_in_vector"), 
                                 "PAR_MB_COUNT"),
                             "INLINE_MB_COUNT"),
-                        "ALIGNED_FACE_DOFS_PER_MB")),
+                        "ALIGNED_PREIMAGE_DOFS_PER_MB")),
                 Line(),
                 ])
 
@@ -296,14 +320,14 @@ class Kernel(FluxLocalKernelBase):
 
         def get_load_code():
             mb_dofs = given.microblock.aligned_floats
-            mb_face_dofs = given.aligned_face_dofs_per_microblock()
-            face_dofs_over_dofs = (mb_face_dofs+mb_dofs-1) // mb_dofs
+            mb_preimg_dofs = self.plan.aligned_preimage_dofs_per_microblock
+            preimg_dofs_over_dofs = (mb_preimg_dofs+mb_dofs-1) // mb_dofs
 
             load_code = []
             store_code = []
 
             var_num = 0
-            for load_block in range(face_dofs_over_dofs):
+            for load_block in range(preimg_dofs_over_dofs):
                 for inl in range(par.inline):
                     # load and store are split for better pipelining
                     # compiler can't figure that out because of branch
@@ -314,15 +338,15 @@ class Kernel(FluxLocalKernelBase):
 
                     block_addr = "%d * ALIGNED_DOFS_PER_MB + MB_DOF" % load_block
                     load_instr = Assign(var, 
-                        "fluxes_on_faces[GLOBAL_MB_FACEDOF_BASE"
-                        " + %d*ALIGNED_FACE_DOFS_PER_MB"
+                        "in_vector[GLOBAL_MB_PREIMAGE_BASE"
+                        " + %d*ALIGNED_PREIMAGE_DOFS_PER_MB"
                         " + %s]" % (inl, block_addr))
                     store_instr = Assign(
-                            "smem_fluxes_on_faces[PAR_MB_NR][%d][%s]" % (inl, block_addr),
+                            "smem_in_vector[PAR_MB_NR][%d][%s]" % (inl, block_addr),
                             var
                             )
-                    if (load_block+1)*mb_dofs >= mb_face_dofs:
-                        cond = "%s < ALIGNED_FACE_DOFS_PER_MB" % block_addr
+                    if (load_block+1)*mb_dofs >= mb_preimg_dofs:
+                        cond = "%s < ALIGNED_PREIMAGE_DOFS_PER_MB" % block_addr
                         load_instr = If(cond, load_instr)
                         store_instr = If(cond, store_instr)
 
@@ -330,11 +354,11 @@ class Kernel(FluxLocalKernelBase):
                     store_code.append(store_instr)
             return load_code + [Line()] + store_code
 
-        def get_lift_code():
+        def get_matmul_code():
             from hedge.backends.cuda.tools import unroll
 
-            if is_lift:
-                inv_jac_multiplier = ("tex1Dfetch(inverse_jacobians_tex,"
+            if with_scaling:
+                inv_jac_multiplier = ("tex1Dfetch(scaling_tex,"
                         "(GLOBAL_MB_NR + %(inl)d)*MB_EL_COUNT + mb_el)")
             else:
                 inv_jac_multiplier = "1"
@@ -357,18 +381,18 @@ class Kernel(FluxLocalKernelBase):
                 Line(),
                 If("MB_DOF < DOFS_PER_MB", Block(unroll(
                     lambda j:
-                    [Assign("mat_entry", "tex2D(lift_mat_tex, EL_DOF, %s)" % j)]
+                    [Assign("mat_entry", "tex2D(mat_tex, EL_DOF, %s)" % j)]
                     +[
                     S("result%d += mat_entry "
-                    "* smem_fluxes_on_faces[PAR_MB_NR][%d][mb_el*FACE_DOFS_PER_EL + %s]" 
+                    "* smem_in_vector[PAR_MB_NR][%d][mb_el*PREIMAGE_DOFS_PER_EL + %s]" 
                     % (inl, inl, j))
                     for inl in range(par.inline)
                     ],
-                    total_number=given.dofs_per_face()*given.faces_per_el(),
+                    total_number=self.plan.preimage_dofs_per_el,
                     max_unroll=self.plan.max_unroll)
                     +[ Line(), ]
                     +[ Assign(
-                        "flux[GLOBAL_MB_DOF_BASE + %d*ALIGNED_DOFS_PER_MB + MB_DOF]" % inl,
+                        "out_vector[GLOBAL_MB_DOF_BASE + %d*ALIGNED_DOFS_PER_MB + MB_DOF]" % inl,
                         "result%d*%s" % (inl, (inv_jac_multiplier % {"inl": inl})))
                     for inl in range(par.inline)
                     ]))
@@ -376,39 +400,33 @@ class Kernel(FluxLocalKernelBase):
 
         f_body.append(For("unsigned short seq_mb_number = 0",
             "seq_mb_number < SEQ_MB_COUNT",
-            "++seq_mb_number", get_lift_code()))
+            "++seq_mb_number", get_matmul_code()))
 
         # finish off ----------------------------------------------------------
         cmod.append(FunctionBody(f_decl, f_body))
 
         if not for_benchmark and "cuda_dumpkernels" in discr.debug:
-            open("flux_lift.cu", "w").write(str(cmod))
+            open("%s.cu" % self.plan.debug_name, "w").write(str(cmod))
 
         mod = SourceModule(cmod, 
                 keep="cuda_keep_kernels" in discr.debug, 
                 #options=["--maxrregcount=12"]
                 )
 
-        if "cuda_lift" in discr.debug:
-            print "lift: lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
+        if self.plan.debug_name in discr.debug:
+            print "%s: lmem=%d smem=%d regs=%d" % (
+                    self.plan.debug_name, mod.lmem, mod.smem, mod.registers)
 
-        lift_mat_texref = mod.get_texref("lift_mat_tex")
-        lift_mat_texref.set_array(self.gpu_lift_mat(is_lift))
-        texrefs = [lift_mat_texref]
+        mat_texref = mod.get_texref("mat_tex")
+        texrefs = [mat_texref]
 
-        if is_lift:
-            inverse_jacobians_texref = mod.get_texref("inverse_jacobians_tex")
+        if with_scaling:
+            scaling_texref = mod.get_texref("scaling_tex")
+            texrefs.append(scaling_texref)
+        else:
+            scaling_texref = None
 
-            if for_benchmark:
-                ij_tex = self.fake_inverse_jacobians_tex()
-            else:
-                ij_tex = self.inverse_jacobians_tex(elgroup)
-
-            ij_tex.bind_to_texref(
-                    inverse_jacobians_texref)
-            texrefs.append(inverse_jacobians_texref)
-
-        func = mod.get_function("apply_lift_mat_smem")
+        func = mod.get_function("apply_el_local_mat_smem_field")
         func.prepare(
                 "PPP", 
                 block=(
@@ -417,17 +435,21 @@ class Kernel(FluxLocalKernelBase):
                     given.microblock.aligned_floats//given.devdata.smem_granularity),
                 texrefs=texrefs)
 
-        return func
+        return func, mat_texref, scaling_texref
 
     # data blocks -------------------------------------------------------------
-    @memoize_method
-    def gpu_lift_mat(self, is_lift):
-        discr = self.discr
+    def prepare_matrix(self, matrix):
         given = self.plan.given
 
-        if is_lift:
-            mat = given.ldis.lifting_matrix()
-        else:
-            mat = given.ldis.multi_face_mass_matrix()
+        #if is_lift:
+            #mat = given.ldis.lifting_matrix()
+        #else:
+            #mat = given.ldis.multi_face_mass_matrix()
 
-        return cuda.matrix_to_array(mat.astype(given.float_type), "F")
+        return cuda.matrix_to_array(matrix.astype(given.float_type), "F")
+
+    def prepare_scaling(self, elgroup, scaling):
+        ij = scaling[self.discr.elgroup_microblock_indices(elgroup)]
+        return gpuarray.to_gpu(
+                ij.astype(self.plan.given.float_type))
+

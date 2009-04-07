@@ -96,6 +96,15 @@ class DiffKernelBase(object):
 
 
 
+def fake_elwise_scaling(given):
+    el_count = given.block_count * given.elements_per_block()
+    ij = numpy.ones((el_count,), dtype=given.float_type)
+    return gpuarray.to_gpu(ij)
+
+
+
+
+# FIXME remove me
 class FluxLocalKernelBase(object):
     @memoize_method
     def fake_inverse_jacobians_tex(self):
@@ -110,5 +119,6 @@ class FluxLocalKernelBase(object):
                     self.discr.elgroup_microblock_indices(elgroup)]
         return gpuarray.to_gpu(
                 ij.astype(self.plan.given.float_type))
+
 
 

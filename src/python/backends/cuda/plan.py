@@ -266,19 +266,18 @@ class PlanGivenData(object):
 
         assert False, "a valid microblock size was not found"
 
-    # available after decomposition has posted
     def post_decomposition(self, block_count, microblocks_per_block):
         self.block_count = block_count
         self.microblocks_per_block = microblocks_per_block
 
-    def fluxes_on_faces_shape(self, lift_plan=None):
+    # below methods are available after decomposition has posted
+    def matmul_preimage_shape(self, matmul_plan):
         from hedge.backends.cuda.tools import int_ceiling
         fof_dofs = (
             self.block_count
             * self.microblocks_per_block
-            * self.aligned_face_dofs_per_microblock())
-        if lift_plan is not None:
-            fof_dofs = int_ceiling(fof_dofs, lift_plan.face_dofs_per_macroblock())
+            * matmul_plan.aligned_preimage_dofs_per_microblock)
+        fof_dofs = int_ceiling(fof_dofs, matmul_plan.preimage_dofs_per_macroblock())
 
         return (fof_dofs,)
 
@@ -311,8 +310,8 @@ class SegmentedMatrixLocalOpExecutionPlan(ExecutionPlan):
     def dofs_per_macroblock(self):
         return self.parallelism.total() * self.given.microblock.aligned_floats
 
-    def face_dofs_per_macroblock(self):
-        return self.parallelism.total() * self.given.aligned_face_dofs_per_microblock()
+    def preimage_dofs_per_macroblock(self):
+        return self.parallelism.total() * self.aligned_preimage_dofs_per_microblock
 
     def max_elements_touched_by_segment(self):
         given = self.given
@@ -362,8 +361,9 @@ class SMemFieldLocalOpExecutionPlan(ExecutionPlan):
     def dofs_per_macroblock(self):
         return self.parallelism.total() * self.given.microblock.aligned_floats
 
-    def face_dofs_per_macroblock(self):
-        return self.parallelism.total() * self.given.aligned_face_dofs_per_microblock()
+    def preimage_dofs_per_macroblock(self):
+        return (self.parallelism.total() 
+                * self.aligned_preimage_dofs_per_microblock)
 
     def threads(self):
         return self.parallelism.parallel * self.given.microblock.aligned_floats
@@ -422,7 +422,7 @@ def make_diff_plan(discr, given):
 def make_lift_plan(discr, given):
     def generate_plans():
         if "cuda_no_smem_matrix" not in discr.debug:
-            from hedge.backends.cuda.lift_shared_segmat import ExecutionPlan as SSegPlan
+            from hedge.backends.cuda.el_local_shared_segmat import ExecutionPlan as SSegPlan
 
             for use_prefetch_branch in [True]:
             #for use_prefetch_branch in [True, False]:
@@ -438,14 +438,24 @@ def make_lift_plan(discr, given):
                                         Parallelism(pe, inline, seq),
                                         segment_size,
                                         max_unroll=given.face_dofs_per_el(),
-                                        use_prefetch_branch=use_prefetch_branch)
+                                        use_prefetch_branch=use_prefetch_branch,
 
-        from hedge.backends.cuda.lift_shared_fld import ExecutionPlan as SFieldPlan
+                                        debug_name="cuda_lift",
+                                        aligned_preimage_dofs_per_microblock=
+                                            given.aligned_face_dofs_per_microblock(),
+                                        preimage_dofs_per_el=given.face_dofs_per_el())
+
+        from hedge.backends.cuda.el_local_shared_fld import ExecutionPlan as SFieldPlan
 
         for pe in range(1,32+1):
             for inline in range(1, MAX_INLINE):
-                yield SFieldPlan(given, Parallelism(pe, inline, 1),
-                        max_unroll=given.face_dofs_per_el())
+                yield SFieldPlan(given, Parallelism(pe, inline, 1), 
+                        max_unroll=given.face_dofs_per_el(),
+
+                        debug_name="cuda_lift",
+                        aligned_preimage_dofs_per_microblock=
+                            given.aligned_face_dofs_per_microblock(),
+                        preimage_dofs_per_el=given.face_dofs_per_el())
 
     def target_func(plan):
         return plan.make_kernel(discr).benchmark()
