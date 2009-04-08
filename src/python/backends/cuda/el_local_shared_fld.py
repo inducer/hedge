@@ -174,7 +174,8 @@ class Kernel:
                 self.get_kernel(with_scaling=prepped_scaling is not None)
 
         mat_texref.set_array(prepped_mat)
-        prepped_scaling.bind_to_texref(scaling_texref)
+        if prepped_scaling is not None:
+            prepped_scaling.bind_to_texref(scaling_texref)
 
         out_vector = discr.volume_empty() 
 

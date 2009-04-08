@@ -419,7 +419,9 @@ def make_diff_plan(discr, given):
 
 
 
-def make_lift_plan(discr, given):
+def make_element_local_plan(discr, given, 
+        op_name, aligned_preimage_dofs_per_microblock,
+        preimage_dofs_per_el):
     def generate_plans():
         if "cuda_no_smem_matrix" not in discr.debug:
             from hedge.backends.cuda.el_local_shared_segmat import ExecutionPlan as SSegPlan
@@ -437,31 +439,31 @@ def make_lift_plan(discr, given):
                                 yield SSegPlan(given, 
                                         Parallelism(pe, inline, seq),
                                         segment_size,
-                                        max_unroll=given.face_dofs_per_el(),
+                                        max_unroll=preimage_dofs_per_el,
                                         use_prefetch_branch=use_prefetch_branch,
 
-                                        debug_name="cuda_lift",
+                                        debug_name="cuda_%s" % op_name,
                                         aligned_preimage_dofs_per_microblock=
-                                            given.aligned_face_dofs_per_microblock(),
-                                        preimage_dofs_per_el=given.face_dofs_per_el())
+                                            aligned_preimage_dofs_per_microblock,
+                                        preimage_dofs_per_el=preimage_dofs_per_el)
 
         from hedge.backends.cuda.el_local_shared_fld import ExecutionPlan as SFieldPlan
 
         for pe in range(1,32+1):
             for inline in range(1, MAX_INLINE):
                 yield SFieldPlan(given, Parallelism(pe, inline, 1), 
-                        max_unroll=given.face_dofs_per_el(),
+                        max_unroll=preimage_dofs_per_el,
 
-                        debug_name="cuda_lift",
+                        debug_name="cuda_%s" % op_name,
                         aligned_preimage_dofs_per_microblock=
-                            given.aligned_face_dofs_per_microblock(),
-                        preimage_dofs_per_el=given.face_dofs_per_el())
+                            aligned_preimage_dofs_per_microblock,
+                        preimage_dofs_per_el=preimage_dofs_per_el)
 
     def target_func(plan):
         return plan.make_kernel(discr).benchmark()
 
     from hedge.backends.cuda.plan import optimize_plan
     return optimize_plan(
-            "lift", generate_plans, target_func, maximize=False,
+            op_name, generate_plans, target_func, maximize=False,
             debug_flags=discr.debug,
-            log_filename="lift-%d" % given.order())
+            log_filename="%s-%d" % (op_name, given.order()))

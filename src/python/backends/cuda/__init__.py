@@ -466,9 +466,17 @@ class Discretization(hedge.discretization.Discretization):
                         microblocks_per_block=flux_plan.microblocks_per_block())
 
                 # plan local operations
-                from hedge.backends.cuda.plan import make_diff_plan, make_lift_plan
+                from hedge.backends.cuda.plan import \
+                        make_diff_plan, \
+                        make_element_local_plan
+
                 diff_plan, diff_time = make_diff_plan(self, given)
-                fluxlocal_plan, fluxlocal_time = make_lift_plan(self, given)
+                fluxlocal_plan, fluxlocal_time = make_element_local_plan(
+                        self, given,
+                        op_name="lift",
+                        aligned_preimage_dofs_per_microblock=
+                            given.aligned_face_dofs_per_microblock(),
+                        preimage_dofs_per_el=given.face_dofs_per_el())
 
                 sys_size = flux_plan.flux_count
                 total_time = flux_time + sys_size*(diff_time+fluxlocal_time)
@@ -1041,9 +1049,21 @@ class Discretization(hedge.discretization.Discretization):
         from hedge.tools import with_object_array_or_scalar
         return with_object_array_or_scalar(do_scalar, field)
 
+    # ancillary kernel planning/construction ----------------------------------
+    @memoize_method
+    def element_local_kernel(self):
+        from hedge.backends.cuda.plan import make_element_local_plan
+        el_local_plan, _ = make_element_local_plan(
+                self, self.given,
+                op_name="el_local",
+                aligned_preimage_dofs_per_microblock=
+                    self.given.microblock.aligned_floats,
+                preimage_dofs_per_el=self.given.dofs_per_el())
+        return el_local_plan.make_kernel(self)
+
     # scalar reduction --------------------------------------------------------
     def nodewise_dot_product(self, a, b):
-        return gpuarray.subset_dot_twosided(
+        return gpuarray.subset_dot(
                 self._meaningful_volume_indices(), 
                 a, b, dtype=numpy.float64).get()
 

@@ -192,7 +192,8 @@ class Kernel:
 
         out_vector = discr.volume_empty() 
         in_vector.bind_to_texref(in_vector_texref)
-        prepped_scaling.bind_to_texref(scaling_texref)
+        if prepped_scaling is not None:
+            prepped_scaling.bind_to_texref(scaling_texref)
 
         if set([self.plan.debug_name, "cuda_debugbuf"]) <= discr.debug:
             debugbuf = gpuarray.zeros((1024,), dtype=numpy.float32)

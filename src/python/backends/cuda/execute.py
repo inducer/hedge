@@ -285,6 +285,13 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                             eventful_only=True)
                 assert not contains_nans, "Resulting flux contains NaNs."
 
+    def exec_mass_assign(self, insn):
+        elgroup, = self.ex.discr.element_groups
+        kernel = self.ex.discr.element_local_kernel()
+        self.context[insn.name] = kernel(
+                self.rec(insn.field),
+                *self.ex.mass_data(kernel, elgroup))
+
 
 
 
@@ -477,10 +484,14 @@ class Executor(object):
             mat = elgroup.local_discretization.lifting_matrix()
             prep_scaling = kernel.prepare_scaling(elgroup, elgroup.inverse_jacobians)
         else:
-            mat = given.ldis.multi_face_mass_matrix()
+            mat = elgroup.local_discretization.multi_face_mass_matrix()
             prep_scaling = None
 
         prep_mat = kernel.prepare_matrix(mat)
 
         return prep_mat, prep_scaling
 
+    @memoize_method
+    def mass_data(self, kernel, elgroup):
+        return (kernel.prepare_matrix(elgroup.local_discretization.mass_matrix()),
+                kernel.prepare_scaling(elgroup, elgroup.inverse_jacobians))

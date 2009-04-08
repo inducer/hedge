@@ -767,7 +767,7 @@ class Discretization(object):
                 empty.fill(volume_vector)
                 volume_vector = empty
 
-            return numpy.dot(mass_ones, volume_vector)
+            return self.nodewise_dot_product(mass_ones, volume_vector)
         else:
             result = numpy.zeros(shape=ls, dtype=float)
             
@@ -777,7 +777,7 @@ class Discretization(object):
                 if isinstance(vvi, (int, float)) and vvi == 0:
                     result[i] = 0
                 else:
-                    result[i] = numpy.dot(mass_ones, volume_vector[i])
+                    result[i] = self.nodewise_dot_product(mass_ones, volume_vector[i])
 
             return result
 
@@ -795,13 +795,13 @@ class Discretization(object):
 
             ls = log_shape(volume_vector)
             if ls == ():
-                return float(numpy.dot(
+                return float(self.nodewise_dot_product(
                         volume_vector,
                         mass_op.apply(self, volume_vector))**(1/p))
             else:
                 assert len(ls) == 1
                 return float(sum(
-                        numpy.dot(
+                        self.nodewise_dot_product(
                             subv,
                             mass_op.apply(self, subv))
                         for subv in volume_vector)**(1/p))
