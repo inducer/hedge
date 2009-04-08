@@ -239,8 +239,7 @@ class Kernel(DiffKernelBase):
         
         rst_channels = given.devdata.make_valid_tex_channel_count(d)
         cmod = Module([
-                Value("texture<float%d, 1, cudaReadModeElementType>"
-                    % rst_channels, 
+                Value("texture<float, 1, cudaReadModeElementType>" , 
                     "rst_to_xyz_tex"),
                 Value("texture<float%d, 1, cudaReadModeElementType>" 
                     % rst_channels, 
@@ -305,23 +304,21 @@ class Kernel(DiffKernelBase):
             store_code = Block()
             for inl in range(par.inline):
                 for glob_axis in dims:
-                    store_code.append(Block([
-                        Initializer(Value("float%d" % rst_channels, "rst_to_xyz"),
-                            "tex1Dfetch(rst_to_xyz_tex, %d + "
-                            "DIMENSIONS*((GLOBAL_MB_NR+%d)*ELS_PER_MB + mb_el))" 
-                            % (glob_axis, inl)
-                            ),
-                        Assign(
-                            "dxyz%d[GLOBAL_MB_DOF_BASE + %d*ALIGNED_DOFS_PER_MB + MB_DOF]" 
-                            % (glob_axis, inl),
-                            " + ".join(
-                                "rst_to_xyz.%s"
-                                "*"
-                                "d%drst%d" % (tex_channels[loc_axis], inl, loc_axis)
-                                for loc_axis in dims
-                                )
+                    store_code.append(Assign(
+                        "dxyz%d[GLOBAL_MB_DOF_BASE + %d*ALIGNED_DOFS_PER_MB + MB_DOF]" 
+                        % (glob_axis, inl),
+                        " + ".join(
+                            "tex1Dfetch(rst_to_xyz_tex, %(loc_axis)d + "
+                            "DIMENSIONS*(%(glob_axis)d + DIMENSIONS*("
+                            "(GLOBAL_MB_NR+%(inl)d)*ELS_PER_MB + mb_el)))" 
+                            "* d%(inl)drst%(loc_axis)d" % {
+                                "loc_axis": loc_axis, 
+                                "glob_axis": glob_axis,
+                                "inl": inl
+                            }
+                            for loc_axis in dims
                             )
-                        ]))
+                        ))
 
             from hedge.backends.cuda.tools import unroll
             code.extend([
@@ -395,10 +392,7 @@ class Kernel(DiffKernelBase):
             rst_to_xyz = self.localop_rst_to_xyz(diff_op_cls, elgroup)
 
         rst_to_xyz_texref = mod.get_texref("rst_to_xyz_tex")
-        rst_to_xyz.gpu_data.bind_to_texref(rst_to_xyz_texref)
-        rst_to_xyz_texref.set_format(
-                cuda.dtype_to_array_format(rst_to_xyz.gpu_data.dtype),
-                rst_to_xyz.channels)
+        rst_to_xyz.gpu_data.bind_to_texref_ext(rst_to_xyz_texref)
 
         diff_rst_mat_texref = mod.get_texref("diff_rst_mat_tex")
         diff_rst_mat_texref.set_format(cuda.array_format.FLOAT, rst_channels)

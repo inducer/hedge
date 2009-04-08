@@ -63,15 +63,8 @@ class DiffKernelBase(object):
         # indexed local, el_number, global
         result_matrix = (coeffs[:,:,elgroup_indices]
                 .transpose(1,0,2)).astype(given.float_type)
-        channels = given.devdata.make_valid_tex_channel_count(d)
-        add_channels = channels - result_matrix.shape[0]
-        if add_channels:
-            result_matrix = numpy.vstack((
-                result_matrix,
-                numpy.zeros((add_channels,d,el_count), dtype=result_matrix.dtype)
-                ))
 
-        assert result_matrix.shape == (channels, d, el_count)
+        assert result_matrix.shape == (d, d, el_count)
 
         if "cuda_diff" in discr.debug:
             def get_el_index_in_el_group(el):
@@ -90,8 +83,7 @@ class DiffKernelBase(object):
 
         return self.RstToXyzInfo(
                 gpu_data=gpuarray.to_gpu(
-                    numpy.asarray(result_matrix, order="F")),
-                channels=channels)
+                    numpy.asarray(result_matrix, order="F")))
 
 
 
