@@ -165,7 +165,7 @@ class Kernel(DiffKernelBase):
         use_debugbuf = set(["cuda_diff", "cuda_debugbuf"]) <= discr.debug
         if use_debugbuf:
             import pycuda.gpuarray as gpuarray
-            debugbuf = gpuarray.zeros((512,), dtype=numpy.float32)
+            debugbuf = gpuarray.zeros((512,), dtype=given.float_type)
         else:
             from hedge.backends.cuda.tools import FakeGPUArray
             debugbuf = FakeGPUArray()
@@ -215,9 +215,10 @@ class Kernel(DiffKernelBase):
         from codepy.cgen import \
                 Pointer, POD, Value, ArrayOf, Const, \
                 Module, FunctionDeclaration, FunctionBody, Block, \
-                Comment, Line, Static, Define, \
+                Comment, Line, Static, Define, Include, \
                 Constant, Initializer, If, For, Statement, Assign
 
+        from codepy.cgen import dtype_to_ctype
         from codepy.cgen.cuda import CudaShared, CudaGlobal
                 
         discr = self.discr
@@ -229,6 +230,7 @@ class Kernel(DiffKernelBase):
         elgroup, = discr.element_groups
 
         float_type = given.float_type
+        assert float_type == numpy.float32
 
         f_decl = CudaGlobal(FunctionDeclaration(Value("void", "apply_diff_mat_smem"), 
             [Pointer(POD(float_type, "debugbuf")), Pointer(POD(float_type, "field")), ]
@@ -239,7 +241,10 @@ class Kernel(DiffKernelBase):
         
         rst_channels = given.devdata.make_valid_tex_channel_count(d)
         cmod = Module([
-                Value("texture<float, 1, cudaReadModeElementType>" , 
+                Include("pycuda-helpers.hpp"),
+                Line(),
+                Value("texture<fp_tex_%s, 1, cudaReadModeElementType>"
+                    % dtype_to_ctype(float_type), 
                     "rst_to_xyz_tex"),
                 Value("texture<float%d, 1, cudaReadModeElementType>" 
                     % rst_channels, 

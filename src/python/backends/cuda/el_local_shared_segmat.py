@@ -196,7 +196,7 @@ class Kernel:
             prepped_scaling.bind_to_texref(scaling_texref)
 
         if set([self.plan.debug_name, "cuda_debugbuf"]) <= discr.debug:
-            debugbuf = gpuarray.zeros((1024,), dtype=numpy.float32)
+            debugbuf = gpuarray.zeros((1024,), dtype=self.plan.given.float_type)
         else:
             debugbuf = FakeGPUArray()
 
@@ -247,12 +247,12 @@ class Kernel:
         from codepy.cgen import \
                 Pointer, POD, Value, ArrayOf, Const, \
                 Module, FunctionDeclaration, FunctionBody, Block, \
-                Comment, Line, \
+                Comment, Line, Define, Include, \
                 Static, \
-                Define, \
                 Constant, Initializer, If, For, Statement, Assign, \
                 ArrayInitializer
 
+        from codepy.cgen import dtype_to_ctype
         from codepy.cgen.cuda import CudaShared, CudaConstant, CudaGlobal
 
         discr = self.discr
@@ -271,12 +271,16 @@ class Kernel:
             ))
 
         cmod = Module([
-                Value("texture<float, 1, cudaReadModeElementType>", 
+                Include("pycuda-helpers.hpp"),
+                Line(),
+                Value("texture<fp_tex_%s, 1, cudaReadModeElementType>"
+                    % dtype_to_ctype(float_type), 
                     "in_vector_tex"),
                 ])
         if with_scaling:
             cmod.append(
-                Value("texture<float, 1, cudaReadModeElementType>",
+                Value("texture<fp_tex_%s, 1, cudaReadModeElementType>"
+                    % dtype_to_ctype(float_type), 
                     "scaling_tex"),
                 )
 

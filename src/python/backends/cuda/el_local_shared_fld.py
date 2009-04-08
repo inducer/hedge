@@ -123,7 +123,7 @@ class Kernel:
 
         from hedge.backends.cuda.kernelbase import fake_elwise_scaling
         fake_scaling = fake_elwise_scaling(self.plan.given)
-        fake_scaling.bind_to_texref(scaling_texref)
+        fake_scaling.bind_to_texref_ext(scaling_texref)
 
         def vol_empty():
             from hedge.backends.cuda.tools import int_ceiling
@@ -139,7 +139,7 @@ class Kernel:
                 allocator=discr.pool.allocate)
 
         if set([self.plan.debug_name, "cuda_debugbuf"]) <= discr.debug:
-            debugbuf = gpuarray.zeros((1024,), dtype=numpy.float32)
+            debugbuf = gpuarray.zeros((1024,), dtype=given.float_type)
         else:
             debugbuf = FakeGPUArray()
 
@@ -175,12 +175,12 @@ class Kernel:
 
         mat_texref.set_array(prepped_mat)
         if prepped_scaling is not None:
-            prepped_scaling.bind_to_texref(scaling_texref)
+            prepped_scaling.bind_to_texref_ext(scaling_texref)
 
         out_vector = discr.volume_empty() 
 
         if set([self.plan.debug_name, "cuda_debugbuf"]) <= discr.debug:
-            debugbuf = gpuarray.zeros((1024,), dtype=numpy.float32)
+            debugbuf = gpuarray.zeros((1024,), dtype=self.plan.given.float_type)
         else:
             debugbuf = FakeGPUArray()
 
@@ -233,13 +233,15 @@ class Kernel:
         from codepy.cgen import \
                 Pointer, POD, Value, ArrayOf, Const, \
                 Module, FunctionDeclaration, FunctionBody, Block, \
-                Comment, Line, \
+                Comment, Line, Include, \
                 Static, \
                 Define, \
                 Constant, Initializer, If, For, Statement, Assign, \
                 ArrayInitializer
 
+        from codepy.cgen import dtype_to_ctype
         from codepy.cgen.cuda import CudaShared, CudaConstant, CudaGlobal
+
         discr = self.discr
         d = discr.dimensions
         dims = range(d)
@@ -256,12 +258,17 @@ class Kernel:
             ))
 
         cmod = Module([
-                Value("texture<float, 2, cudaReadModeElementType>", 
+                Include("pycuda-helpers.hpp"),
+                Line(),
+                Value("texture<fp_tex_%s, 2, cudaReadModeElementType>"
+                    % dtype_to_ctype(float_type), 
                     "mat_tex"),
                 ])
+
         if with_scaling:
             cmod.append(
-                Value("texture<float, 1, cudaReadModeElementType>",
+                Value("texture<fp_tex_%s, 1, cudaReadModeElementType>"
+                    % dtype_to_ctype(float_type), 
                     "scaling_tex"),
                 )
 

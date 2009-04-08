@@ -167,7 +167,9 @@ def main():
                     extra_link_args=conf["LDFLAGS"],
                     ),
                 ],
-            data_files=[("include/hedge", glob.glob("src/cpp/*.hpp"))],
+            data_files=[
+            ("include/hedge", glob.glob("src/cpp/*.hpp")),
+            ],
             )
 
 

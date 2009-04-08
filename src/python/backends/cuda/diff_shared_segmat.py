@@ -196,9 +196,10 @@ class Kernel(DiffKernelBase):
         from codepy.cgen import \
                 Pointer, POD, Value, ArrayOf, Const, \
                 Module, FunctionDeclaration, FunctionBody, Block, \
-                Comment, Line, Static, Define, \
+                Comment, Line, Static, Define, Include, \
                 Constant, Initializer, If, For, Statement, Assign
 
+        from codepy.cgen import dtype_to_ctype
         from codepy.cgen.cuda import CudaShared, CudaGlobal
                 
         discr = self.discr
@@ -221,9 +222,13 @@ class Kernel(DiffKernelBase):
 
         rst_channels = given.devdata.make_valid_tex_channel_count(d)
         cmod = Module([
-                Value("texture<float, 1, cudaReadModeElementType>",
+                Include("pycuda-helpers.hpp"),
+                Line(),
+                Value("texture<fp_tex_%s, 1, cudaReadModeElementType>"
+                    % dtype_to_ctype(float_type), 
                     "rst_to_xyz_tex"),
-                Value("texture<float, 1, cudaReadModeElementType>", 
+                Value("texture<fp_tex_%s, 1, cudaReadModeElementType>"
+                    % dtype_to_ctype(float_type), 
                     "field_tex"),
                 Line(),
                 Define("DIMENSIONS", discr.dimensions),

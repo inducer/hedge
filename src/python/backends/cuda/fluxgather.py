@@ -336,7 +336,7 @@ class Kernel:
                 for_benchmark=True)
 
         for dep_expr in self.all_deps:
-            field.bind_to_texref(texref_map[dep_expr])
+            field.bind_to_texref_ext(texref_map[dep_expr])
 
         if "cuda_fastbench" in discr.debug:
             count = 1
@@ -391,10 +391,10 @@ class Kernel:
                     dep_field = discr.volume_zeros()
 
             assert dep_field.dtype == given.float_type
-            dep_field.bind_to_texref(texref_map[dep_expr])
+            dep_field.bind_to_texref_ext(texref_map[dep_expr])
 
         if set(["cuda_flux", "cuda_debugbuf"]) <= discr.debug:
-            debugbuf = gpuarray.zeros((512,), dtype=numpy.float32)
+            debugbuf = gpuarray.zeros((512,), dtype=given.float_type)
         else:
             from hedge.backends.cuda.tools import FakeGPUArray
             debugbuf = FakeGPUArray()
@@ -460,12 +460,13 @@ class Kernel:
         from codepy.cgen import \
                 Pointer, POD, Value, ArrayOf, Const, Typedef, \
                 Module, FunctionDeclaration, FunctionBody, Block, \
-                Comment, Line, \
+                Comment, Line, Include, \
                 Static, MaybeUnused, \
                 Define, Pragma, \
                 Constant, Initializer, If, For, Statement, Assign, While
                 
         from codepy.cgen.cuda import CudaShared, CudaGlobal
+        from codepy.cgen import dtype_to_ctype
 
         discr = self.discr
         given = self.plan.given
@@ -488,13 +489,15 @@ class Kernel:
             ))
 
         cmod = Module()
+        cmod.append(Include("pycuda-helpers.hpp"))
 
         from hedge.backends.cuda.optemplate import WholeDomainFluxOperator as WDFlux
 
         for dep_expr in self.all_deps:
             cmod.extend([
                 Comment(str(dep_expr)),
-                Value("texture<float, 1, cudaReadModeElementType>", 
+                Value("texture<fp_tex_%s, 1, cudaReadModeElementType>"
+                    % dtype_to_ctype(float_type), 
                     "field%d_tex" % self.dep_to_index[dep_expr])
                 ])
 

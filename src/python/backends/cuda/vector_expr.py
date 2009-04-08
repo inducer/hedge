@@ -29,32 +29,6 @@ import hedge.optemplate
 
 
 
-def dtype_to_ctype(dtype):
-    dtype = numpy.dtype(dtype)
-    if dtype == numpy.int32:
-        return "int"
-    elif dtype == numpy.uint32:
-        return "unsigned int"
-    elif dtype == numpy.int16:
-        return "short int"
-    elif dtype == numpy.uint16:
-        return "short unsigned int"
-    elif dtype == numpy.int8:
-        return "signed char"
-    elif dtype == numpy.uint8:
-        return "unsigned char"
-    elif dtype == numpy.intp or dtype == numpy.uintp:
-        return "void *"
-    elif dtype == numpy.float32:
-        return "float"
-    elif dtype == numpy.float64:
-        return "double"
-    else:
-        raise ValueError, "unable to map dtype '%s'" % dtype
-
-
-
-
 class DefaultingSubstitutionMapper(
         pymbolic.mapper.substitutor.SubstitutionMapper,
         hedge.optemplate.IdentityMapperMixin):
@@ -110,6 +84,7 @@ class CompiledVectorExpression(object):
         from pymbolic.mapper.c_code import CCodeMapper
 
         def get_c_declarator(name, is_vector, dtype):
+            from pycuda.tools import dtype_to_ctype
             if is_vector:
                 return "%s *%s" % (dtype_to_ctype(dtype), name)
             else:
@@ -194,17 +169,19 @@ class CompiledVectorExpression(object):
 
 
 if __name__ == "__main__":
+    test_dtype = numpy.float32
+
     import pycuda.autoinit
     from pymbolic import parse
     expr = parse("2*x+3*y+4*z")
     print expr
     cexpr = CompiledVectorExpression(expr, 
-            lambda expr: (True, numpy.float32),
-            numpy.float32)
+            lambda expr: (True, test_dtype),
+            test_dtype)
     from pymbolic import var
     print cexpr({
-        var("x"): gpuarray.arange(5),
-        var("y"): gpuarray.arange(5),
-        var("z"): gpuarray.arange(5),
+        var("x"): gpuarray.arange(5, dtype=test_dtype),
+        var("y"): gpuarray.arange(5, dtype=test_dtype),
+        var("z"): gpuarray.arange(5, dtype=test_dtype),
         })
 
