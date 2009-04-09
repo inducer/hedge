@@ -123,7 +123,7 @@ class Kernel:
 
         from hedge.backends.cuda.kernelbase import fake_elwise_scaling
         fake_scaling = fake_elwise_scaling(self.plan.given)
-        fake_scaling.bind_to_texref(scaling_texref)
+        fake_scaling.bind_to_texref_ext(scaling_texref, allow_double_hack=True)
 
         def vol_empty():
             from hedge.backends.cuda.tools import int_ceiling
@@ -139,7 +139,7 @@ class Kernel:
                 allocator=discr.pool.allocate)
 
         if set([self.plan.debug_name, "cuda_debugbuf"]) <= discr.debug:
-            debugbuf = gpuarray.zeros((1024,), dtype=numpy.float32)
+            debugbuf = gpuarray.zeros((1024,), dtype=given.float_type)
         else:
             debugbuf = FakeGPUArray()
 
@@ -175,12 +175,13 @@ class Kernel:
 
         mat_texref.set_array(prepped_mat)
         if prepped_scaling is not None:
-            prepped_scaling.bind_to_texref(scaling_texref)
+            prepped_scaling.bind_to_texref_ext(scaling_texref,
+                    allow_double_hack=True)
 
         out_vector = discr.volume_empty() 
 
         if set([self.plan.debug_name, "cuda_debugbuf"]) <= discr.debug:
-            debugbuf = gpuarray.zeros((1024,), dtype=numpy.float32)
+            debugbuf = gpuarray.zeros((1024,), dtype=self.plan.given.float_type)
         else:
             debugbuf = FakeGPUArray()
 
@@ -233,13 +234,15 @@ class Kernel:
         from codepy.cgen import \
                 Pointer, POD, Value, ArrayOf, Const, \
                 Module, FunctionDeclaration, FunctionBody, Block, \
-                Comment, Line, \
+                Comment, Line, Include, \
                 Static, \
                 Define, \
                 Constant, Initializer, If, For, Statement, Assign, \
                 ArrayInitializer
 
+        from codepy.cgen import dtype_to_ctype
         from codepy.cgen.cuda import CudaShared, CudaConstant, CudaGlobal
+
         discr = self.discr
         d = discr.dimensions
         dims = range(d)
@@ -256,12 +259,17 @@ class Kernel:
             ))
 
         cmod = Module([
-                Value("texture<float, 2, cudaReadModeElementType>", 
+                Include("pycuda-helpers.hpp"),
+                Line(),
+                Value("texture<fp_tex_%s, 2, cudaReadModeElementType>"
+                    % dtype_to_ctype(float_type), 
                     "mat_tex"),
                 ])
+
         if with_scaling:
             cmod.append(
-                Value("texture<float, 1, cudaReadModeElementType>",
+                Value("texture<fp_tex_%s, 1, cudaReadModeElementType>"
+                    % dtype_to_ctype(float_type), 
                     "scaling_tex"),
                 )
 
@@ -358,7 +366,7 @@ class Kernel:
             from hedge.backends.cuda.tools import unroll
 
             if with_scaling:
-                inv_jac_multiplier = ("tex1Dfetch(scaling_tex,"
+                inv_jac_multiplier = ("fp_tex1Dfetch(scaling_tex,"
                         "(GLOBAL_MB_NR + %(inl)d)*MB_EL_COUNT + mb_el)")
             else:
                 inv_jac_multiplier = "1"
@@ -381,7 +389,7 @@ class Kernel:
                 Line(),
                 If("MB_DOF < DOFS_PER_MB", Block(unroll(
                     lambda j:
-                    [Assign("mat_entry", "tex2D(mat_tex, EL_DOF, %s)" % j)]
+                    [Assign("mat_entry", "fp_tex2D(mat_tex, EL_DOF, %s)" % j)]
                     +[
                     S("result%d += mat_entry "
                     "* smem_in_vector[PAR_MB_NR][%d][mb_el*PREIMAGE_DOFS_PER_EL + %s]" 
@@ -443,7 +451,8 @@ class Kernel:
 
         assert matrix.shape == (given.dofs_per_el(), self.plan.preimage_dofs_per_el)
 
-        return cuda.matrix_to_array(matrix.astype(given.float_type), "F")
+        return cuda.matrix_to_array(matrix.astype(given.float_type), "F",
+                allow_double_hack=True)
 
     def prepare_scaling(self, elgroup, scaling):
         ij = scaling[self.discr.elgroup_microblock_indices(elgroup)]

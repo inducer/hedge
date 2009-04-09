@@ -202,7 +202,7 @@ class ExecutionPlan(object):
 
 
 class PlanGivenData(object):
-    def __init__(self, devdata, ldis, allow_microblocking, float_type=numpy.float32):
+    def __init__(self, devdata, ldis, allow_microblocking, float_type):
         self.devdata = devdata
         self.ldis = ldis
         self.float_type = numpy.dtype(float_type)

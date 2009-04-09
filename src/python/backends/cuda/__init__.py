@@ -1039,7 +1039,8 @@ class Discretization(hedge.discretization.Discretization):
                 result = self.boundary_empty(tag)
 
             if idx_count:
-                subfield.bind_to_texref(field_texref)
+                subfield.bind_to_texref_ext(field_texref,
+                        allow_double_hack=True)
                 kernel(result, to_indices, from_indices,
                         numpy.uint32(idx_count),
                         block=block_dim, grid=grid_dim,
