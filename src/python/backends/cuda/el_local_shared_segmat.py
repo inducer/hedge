@@ -147,7 +147,7 @@ class Kernel:
                 given.matmul_preimage_shape(self.plan), 
                 dtype=given.float_type,
                 allocator=discr.pool.allocate)
-        in_vector.bind_to_texref(in_vector_texref)
+        in_vector.bind_to_texref_ext(in_vector_texref, allow_double_hack=True)
 
         fake_matrix = self.prepare_matrix(
                 numpy.ones(
@@ -156,7 +156,7 @@ class Kernel:
 
         from hedge.backends.cuda.kernelbase import fake_elwise_scaling
         fake_scaling = fake_elwise_scaling(self.plan.given)
-        fake_scaling.bind_to_texref(scaling_texref)
+        fake_scaling.bind_to_texref_ext(scaling_texref, allow_double_hack=True)
 
         if "cuda_fastbench" in discr.debug:
             count = 1
@@ -191,9 +191,10 @@ class Kernel:
                 self.get_kernel(prepped_scaling is not None)
 
         out_vector = discr.volume_empty() 
-        in_vector.bind_to_texref(in_vector_texref)
+        in_vector.bind_to_texref_ext(in_vector_texref, allow_double_hack=True)
         if prepped_scaling is not None:
-            prepped_scaling.bind_to_texref(scaling_texref)
+            prepped_scaling.bind_to_texref_ext(scaling_texref,
+                    allow_double_hack=True)
 
         if set([self.plan.debug_name, "cuda_debugbuf"]) <= discr.debug:
             debugbuf = gpuarray.zeros((1024,), dtype=self.plan.given.float_type)
@@ -403,7 +404,7 @@ class Kernel:
                         [S("__syncthreads()")]
                         +[Assign(
                             "dof_buffer[PAR_MB_NR][%d][SEGMENT_DOF]" % inl,
-                            "tex1Dfetch(in_vector_tex, "
+                            "fp_tex1Dfetch(in_vector_tex, "
                             "GLOBAL_MB_PREIMG_DOF_BASE"
                             " + %d*ALIGNED_PREIMAGE_DOFS_PER_MB"
                             " + (segment_start_el)*PREIMAGE_DOFS_PER_EL + %d + SEGMENT_DOF)"
@@ -434,7 +435,7 @@ class Kernel:
                     + unroll(
                         lambda j: [
                         Assign("fof%d" % inl,
-                            "tex1Dfetch(in_vector_tex, "
+                            "fp_tex1Dfetch(in_vector_tex, "
                             "GLOBAL_MB_PREIMG_DOF_BASE"
                             " + %(inl)d * ALIGNED_PREIMAGE_DOFS_PER_MB"
                             " + mb_el*PREIMAGE_DOFS_PER_EL+%(j)s)"
@@ -462,7 +463,7 @@ class Kernel:
 
         def mat_mul_outer_loop(fetch_count):
             if with_scaling:
-                inv_jac_multiplier = ("tex1Dfetch(scaling_tex,"
+                inv_jac_multiplier = ("fp_tex1Dfetch(scaling_tex,"
                         "(GLOBAL_MB_NR + %(inl)d)*MB_EL_COUNT + mb_el)")
             else:
                 inv_jac_multiplier = "1"

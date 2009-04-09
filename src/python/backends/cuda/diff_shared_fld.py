@@ -130,8 +130,6 @@ class Kernel(DiffKernelBase):
         else:
             count = 20
 
-        gpu_diffmats = self.gpu_diffmats(op_class, elgroup)
-
         start = cuda.Event()
         start.record()
         cuda.Context.synchronize()
@@ -226,11 +224,8 @@ class Kernel(DiffKernelBase):
         dims = range(d)
         given = self.plan.given
 
-        diffmat_data = self.gpu_diffmats(diff_op_cls, elgroup)
         elgroup, = discr.element_groups
-
         float_type = given.float_type
-        assert float_type == numpy.float32
 
         f_decl = CudaGlobal(FunctionDeclaration(Value("void", "apply_diff_mat_smem"), 
             [Pointer(POD(float_type, "debugbuf")), Pointer(POD(float_type, "field")), ]
@@ -239,16 +234,25 @@ class Kernel(DiffKernelBase):
 
         par = self.plan.parallelism
         
-        rst_channels = given.devdata.make_valid_tex_channel_count(d)
         cmod = Module([
                 Include("pycuda-helpers.hpp"),
                 Line(),
                 Value("texture<fp_tex_%s, 1, cudaReadModeElementType>"
                     % dtype_to_ctype(float_type), 
                     "rst_to_xyz_tex"),
-                Value("texture<float%d, 1, cudaReadModeElementType>" 
-                    % rst_channels, 
-                    "diff_rst_mat_tex"),
+                ])
+
+        if float_type == numpy.float64:
+            cmod.append(Value("texture<fp_tex_double, 1, cudaReadModeElementType>", 
+                    "diff_rst_mat_tex"))
+        elif float_type == numpy.float32:
+            rst_channels = given.devdata.make_valid_tex_channel_count(d)
+            cmod.append(Value("texture<float%d, 1, cudaReadModeElementType>" 
+                    % rst_channels, "diff_rst_mat_tex"))
+        else:
+            raise ValueError("unsupported float type: %s" % float_type)
+
+        cmod.extend([
                 Line(),
                 Define("DIMENSIONS", discr.dimensions),
                 Define("DOFS_PER_EL", given.dofs_per_el()),
@@ -313,7 +317,7 @@ class Kernel(DiffKernelBase):
                         "dxyz%d[GLOBAL_MB_DOF_BASE + %d*ALIGNED_DOFS_PER_MB + MB_DOF]" 
                         % (glob_axis, inl),
                         " + ".join(
-                            "tex1Dfetch(rst_to_xyz_tex, %(loc_axis)d + "
+                            "fp_tex1Dfetch(rst_to_xyz_tex, %(loc_axis)d + "
                             "DIMENSIONS*(%(glob_axis)d + DIMENSIONS*("
                             "(GLOBAL_MB_NR+%(inl)d)*ELS_PER_MB + mb_el)))" 
                             "* d%(inl)drst%(loc_axis)d" % {
@@ -339,33 +343,51 @@ class Kernel(DiffKernelBase):
                 Comment("all the new data must be loaded"),
                 S("__syncthreads()"),
                 Line(),
-                Value("float%d" % rst_channels, "dmat_entries"),
-                ]+[
+                ])
+
+            if float_type == numpy.float32:
+                code.append(Value("float%d" % rst_channels, "dmat_entries"))
+
+            code.extend([
                 POD(float_type, "field_value%d" % inl)
                 for inl in range(par.inline)
-                ]+[
-                Line(),
+                ]+[Line()])
 
-                If("MB_DOF < DOFS_PER_MB", Block(unroll(
-                    lambda j: [
-                    Assign("dmat_entries",
-                        "tex1Dfetch(diff_rst_mat_tex, EL_DOF + %s*DOFS_PER_EL)" % j)
-                    ]+[
+            def unroll_body(j):
+                result = [
                     Assign("field_value%d" % inl, 
                         "smem_field[PAR_MB_NR][%d][mb_el*DOFS_PER_EL+%s]" % (inl, j))
                     for inl in range(par.inline)
-                    ]+[
-                    Line(),
-                    ]+[
+                    ]
+
+                if float_type == numpy.float32:
+                    result.append(Assign("dmat_entries",
+                        "tex1Dfetch(diff_rst_mat_tex, EL_DOF + %s*DOFS_PER_EL)" % j))
+                    result.extend(
                         S("d%drst%d += dmat_entries.%s * field_value%d" 
                             % (inl, axis, tex_channels[axis], inl))
                         for inl in range(par.inline)
-                        for axis in dims
-                        ]+[Line()],
+                        for axis in dims)
+                elif float_type == numpy.float64:
+                    result.extend(
+                        S("d%(inl)drst%(axis)d += "
+                            "fp_tex1Dfetch(diff_rst_mat_tex, EL_DOF + %(j)d*DOFS_PER_EL)"
+                            "* field_value%(inl)d" % {
+                            "inl": inl,
+                            "axis": axis,
+                            "j": j
+                            })
+                        for inl in range(par.inline)
+                        for axis in dims)
+                else:
+                    assert False
+
+                return result
+
+            code.append(If("MB_DOF < DOFS_PER_MB", Block(unroll(unroll_body,
                     total_number=given.dofs_per_el(), 
                     max_unroll=self.plan.max_unroll)
-                    +[store_code]))
-                ])
+                    +[store_code])))
 
             return code
 
@@ -397,11 +419,19 @@ class Kernel(DiffKernelBase):
             rst_to_xyz = self.localop_rst_to_xyz(diff_op_cls, elgroup)
 
         rst_to_xyz_texref = mod.get_texref("rst_to_xyz_tex")
-        rst_to_xyz.gpu_data.bind_to_texref_ext(rst_to_xyz_texref)
+        rst_to_xyz.gpu_data.bind_to_texref_ext(rst_to_xyz_texref,
+                allow_double_hack=True)
 
         diff_rst_mat_texref = mod.get_texref("diff_rst_mat_tex")
-        diff_rst_mat_texref.set_format(cuda.array_format.FLOAT, rst_channels)
-        self.gpu_diffmats(diff_op_cls, elgroup).bind_to_texref(diff_rst_mat_texref)
+        gpu_diffmats = self.gpu_diffmats(diff_op_cls, elgroup)
+        
+        if given.float_type == numpy.float32:
+            gpu_diffmats.bind_to_texref_ext(diff_rst_mat_texref, rst_channels)
+        elif given.float_type == numpy.float64:
+            gpu_diffmats.bind_to_texref_ext(diff_rst_mat_texref,
+                    allow_double_hack=True)
+        else:
+            assert False
 
         func = mod.get_function("apply_diff_mat_smem")
         func.prepare(
@@ -420,8 +450,14 @@ class Kernel(DiffKernelBase):
         given = self.plan.given
         d = discr.dimensions
 
-        rst_channels = given.devdata.make_valid_tex_channel_count(d)
-        result = numpy.zeros((rst_channels, given.dofs_per_el(), given.dofs_per_el()),
+        if given.float_type == numpy.float32:
+            first_dim = given.devdata.make_valid_tex_channel_count(d)
+        elif given.float_type == numpy.float64:
+            first_dim = d
+        else:
+            assert False
+
+        result = numpy.zeros((first_dim, given.dofs_per_el(), given.dofs_per_el()),
                 dtype=given.float_type, order="F")
         for i, dm in enumerate(diff_op_cls.matrices(elgroup)):
             result[i] = dm

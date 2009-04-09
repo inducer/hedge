@@ -123,7 +123,7 @@ class Kernel:
 
         from hedge.backends.cuda.kernelbase import fake_elwise_scaling
         fake_scaling = fake_elwise_scaling(self.plan.given)
-        fake_scaling.bind_to_texref_ext(scaling_texref)
+        fake_scaling.bind_to_texref_ext(scaling_texref, allow_double_hack=True)
 
         def vol_empty():
             from hedge.backends.cuda.tools import int_ceiling
@@ -175,7 +175,8 @@ class Kernel:
 
         mat_texref.set_array(prepped_mat)
         if prepped_scaling is not None:
-            prepped_scaling.bind_to_texref_ext(scaling_texref)
+            prepped_scaling.bind_to_texref_ext(scaling_texref,
+                    allow_double_hack=True)
 
         out_vector = discr.volume_empty() 
 
@@ -365,7 +366,7 @@ class Kernel:
             from hedge.backends.cuda.tools import unroll
 
             if with_scaling:
-                inv_jac_multiplier = ("tex1Dfetch(scaling_tex,"
+                inv_jac_multiplier = ("fp_tex1Dfetch(scaling_tex,"
                         "(GLOBAL_MB_NR + %(inl)d)*MB_EL_COUNT + mb_el)")
             else:
                 inv_jac_multiplier = "1"
@@ -388,7 +389,7 @@ class Kernel:
                 Line(),
                 If("MB_DOF < DOFS_PER_MB", Block(unroll(
                     lambda j:
-                    [Assign("mat_entry", "tex2D(mat_tex, EL_DOF, %s)" % j)]
+                    [Assign("mat_entry", "fp_tex2D(mat_tex, EL_DOF, %s)" % j)]
                     +[
                     S("result%d += mat_entry "
                     "* smem_in_vector[PAR_MB_NR][%d][mb_el*PREIMAGE_DOFS_PER_EL + %s]" 
@@ -450,7 +451,8 @@ class Kernel:
 
         assert matrix.shape == (given.dofs_per_el(), self.plan.preimage_dofs_per_el)
 
-        return cuda.matrix_to_array(matrix.astype(given.float_type), "F")
+        return cuda.matrix_to_array(matrix.astype(given.float_type), "F",
+                allow_double_hack=True)
 
     def prepare_scaling(self, elgroup, scaling):
         ij = scaling[self.discr.elgroup_microblock_indices(elgroup)]

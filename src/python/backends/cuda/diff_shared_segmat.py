@@ -114,7 +114,7 @@ class Kernel(DiffKernelBase):
         field = vol_empty()
         field.fill(0)
 
-        field.bind_to_texref(field_texref)
+        field.bind_to_texref_ext(field_texref, allow_double_hack=True)
         xyz_diff = [vol_empty() for axis in range(discr.dimensions)]
         xyz_diff_gpudata = [subarray.gpudata for subarray in xyz_diff] 
 
@@ -153,7 +153,7 @@ class Kernel(DiffKernelBase):
 
         assert field.dtype == given.float_type
 
-        field.bind_to_texref(field_texref)
+        field.bind_to_texref_ext(field_texref, allow_double_hack=True)
 
         xyz_diff = [discr.volume_empty() for axis in range(d)]
         xyz_diff_gpudata = [subarray.gpudata for subarray in xyz_diff] 
@@ -313,7 +313,7 @@ class Kernel(DiffKernelBase):
                     +[Line()]
                     +unroll(lambda j: [
                         Assign("field_value%d" % inl, 
-                            "tex1Dfetch(field_tex, GLOBAL_MB_DOF_BASE + %d*ALIGNED_DOFS_PER_MB "
+                            "fp_tex1Dfetch(field_tex, GLOBAL_MB_DOF_BASE + %d*ALIGNED_DOFS_PER_MB "
                             "+ mb_el*DOFS_PER_EL + %s)" % (inl, j)
                             )
                         for inl in range(par.inline)]
@@ -333,7 +333,7 @@ class Kernel(DiffKernelBase):
                         "dxyz%d[GLOBAL_MB_DOF_BASE + %d*ALIGNED_DOFS_PER_MB + MB_DOF]" 
                         % (glob_axis, inl),
                         " + ".join(
-                            "tex1Dfetch(rst_to_xyz_tex, %(loc_axis)d + "
+                            "fp_tex1Dfetch(rst_to_xyz_tex, %(loc_axis)d + "
                             "DIMENSIONS*(%(glob_axis)d + DIMENSIONS*("
                             "(GLOBAL_MB_NR+%(inl)d)*ELS_PER_MB + mb_el)))" 
                             "* d%(inl)drst%(loc_axis)d" % {
@@ -373,7 +373,8 @@ class Kernel(DiffKernelBase):
             rst_to_xyz = self.localop_rst_to_xyz(diff_op_cls, elgroup)
 
         rst_to_xyz_texref = mod.get_texref("rst_to_xyz_tex")
-        rst_to_xyz.gpu_data.bind_to_texref_ext(rst_to_xyz_texref)
+        rst_to_xyz.gpu_data.bind_to_texref_ext(rst_to_xyz_texref,
+                allow_double_hack=True)
 
         field_texref = mod.get_texref("field_tex")
 
