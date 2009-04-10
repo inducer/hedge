@@ -276,7 +276,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             
             for name in insn.names:
                 flux = self.context[name]
-                copied_flux = discr.volume_from_gpu(flux)
+                copied_flux = discr.convert_volume(flux, kind="numpy")
                 contains_nans = numpy.isnan(copied_flux).any()
                 if contains_nans:
                     print "examining", name
