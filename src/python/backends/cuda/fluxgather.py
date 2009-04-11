@@ -1090,17 +1090,18 @@ class Kernel:
         ilist_length = single_valued(len(il) for il in ilists)
         assert ilist_length == self.plan.given.dofs_per_face()
 
-        if ilist_length > 256:
+        from codepy.cgen import Typedef, POD, Value, Define
+
+        from pytools import flatten
+        flat_ilists_uncast = numpy.array(list(flatten(ilists)))
+
+        if numpy.max(flat_ilists_uncast) >= 256:
             tp = numpy.uint16
         else:
             tp = numpy.uint8
 
-        from codepy.cgen import Typedef, POD, Value, Define
-
-        from pytools import flatten
-        flat_ilists = numpy.array(
-                list(flatten(ilists)),
-                dtype=tp)
+        flat_ilists = numpy.asarray(flat_ilists_uncast, dtype=tp)
+        assert (flat_ilists == flat_ilists_uncast).all()
 
         return GPUIndexLists(
                 type=tp,
