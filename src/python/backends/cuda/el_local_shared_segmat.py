@@ -169,13 +169,13 @@ class Kernel:
         cuda.Context.synchronize()
         for i in range(count):
             try:
+                estimated_mb_count = given.block_count*given.microblocks_per_block
                 kernel.prepared_call(
                         self.grid,
                         out_vector.gpudata, 
                         fake_matrix,
                         0,
-                        len(discr.blocks)*given.microblocks_per_block,
-                        )
+                        estimated_mb_count)
             except cuda.LaunchError:
                 return None
 

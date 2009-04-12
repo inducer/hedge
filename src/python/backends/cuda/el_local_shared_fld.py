@@ -154,11 +154,12 @@ class Kernel:
         cuda.Context.synchronize()
         for i in range(count):
             try:
+                estimated_mb_count = given.block_count*given.microblocks_per_block
                 kernel.prepared_call(self.grid,
                         out_vector.gpudata, 
                         in_vector.gpudata,
                         0,
-                        len(discr.blocks)*given.microblocks_per_block,
+                        estimated_mb_count,
                         )
             except cuda.LaunchError:
                 return None
@@ -172,6 +173,7 @@ class Kernel:
     def __call__(self, in_vector, prepped_mat, prepped_scaling):
         discr = self.discr
         elgroup, = discr.element_groups
+        given = self.discr.given
 
         kernel, mat_texref, scaling_texref = \
                 self.get_kernel(with_scaling=prepped_scaling is not None)
@@ -196,8 +198,6 @@ class Kernel:
                         debugbuf.gpudata,
                         len(discr.blocks)*given.microblocks_per_block,
                         ))
-
-            given = self.discr.given
 
             block_gmem_floats = (
                         # matrix fetch
@@ -425,6 +425,8 @@ class Kernel:
                         "result%d*%s" % (inl, (inv_jac_multiplier % {"inl": inl})))
                     for inl in range(par.inline)]
                     )))
+
+            return result
 
         f_body.append(For("unsigned short seq_mb_number = 0",
             "seq_mb_number < SEQ_MB_COUNT",

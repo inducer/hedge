@@ -421,7 +421,7 @@ def make_diff_plan(discr, given):
 
 def make_element_local_plan(discr, given, 
         op_name, aligned_preimage_dofs_per_microblock,
-        preimage_dofs_per_el):
+        preimage_dofs_per_el, with_index_check):
     def generate_plans():
         if "cuda_no_smem_matrix" not in discr.debug:
             from hedge.backends.cuda.el_local_shared_segmat import ExecutionPlan as SSegPlan
@@ -460,7 +460,9 @@ def make_element_local_plan(discr, given,
                         preimage_dofs_per_el=preimage_dofs_per_el)
 
     def target_func(plan):
-        return plan.make_kernel(discr).benchmark()
+        return (plan
+                .make_kernel(discr, with_index_check=with_index_check)
+                .benchmark())
 
     from hedge.backends.cuda.plan import optimize_plan
     return optimize_plan(
