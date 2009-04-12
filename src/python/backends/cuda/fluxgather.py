@@ -443,13 +443,53 @@ class Kernel:
 
                 wait_for_keypress(discr)
 
-        if "cuda_flux" in discr.debug and False:
+        if "cuda_flux" in discr.debug:
             from hedge.tools import get_rank, wait_for_keypress
             if get_rank(discr) == 0:
-                for fof in all_fluxes_on_faces:
-                    numpy.set_printoptions(linewidth=130, precision=2, threshold=10**6)
-                    print fof.get()
-                    wait_for_keypress(discr)
+                numpy.set_printoptions(linewidth=130, precision=2, threshold=10**6)
+                if True:
+
+                    cols = []
+                    for k in range(len(all_fluxes_on_faces)):
+                        my_fof = all_fluxes_on_faces[k].get()
+                        def sstruc(a):
+                            result = ""
+                            for i in a:
+                                if i == 0:
+                                    result += "0"
+                                elif abs(i) < 1e-10:
+                                    result += "-"
+                                else:
+                                    result += "#"
+
+                            return result
+
+                        useful_sz = given.block_count \
+                                * given.microblocks_per_block \
+                                * lift_plan.aligned_preimage_dofs_per_microblock
+
+                        my_col = []
+                        i = 0
+                        while i < useful_sz:
+                            my_col.append(sstruc(my_fof[i:i+16]))
+                            i += 16
+
+                        cols.append(my_col)
+
+                    from pytools import Table
+                    tbl = Table()
+                    tbl.add_row(["num"]+range(len(cols)))
+                    i = 0
+                    for row in zip(*cols):
+                        tbl.add_row((i,)+row)
+                        i += 1
+                    print tbl
+                else:
+                    for i in range(len(all_fluxes_on_faces)):
+                        print i
+                        print all_fluxes_on_faces[i].get()
+
+                wait_for_keypress(discr)
                 #print "B", [la.norm(fof.get()) for fof in all_fluxes_on_faces]
             
 
