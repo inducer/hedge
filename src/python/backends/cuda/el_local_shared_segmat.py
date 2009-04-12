@@ -105,16 +105,17 @@ class ExecutionPlan(hedge.backends.cuda.plan.SegmentedMatrixLocalOpExecutionPlan
                 self.threads(),
                 )
 
-    def make_kernel(self, discr):
-        return Kernel(discr, self)
+    def make_kernel(self, discr, with_index_check):
+        return Kernel(discr, self, with_index_check)
 
 
 
 # kernel ----------------------------------------------------------------------
 class Kernel:
-    def __init__(self, discr, plan):
+    def __init__(self, discr, plan, with_index_check):
         self.discr = discr
         self.plan = plan
+        self.with_index_check = with_index_check
 
         from hedge.backends.cuda.tools import int_ceiling
         self.grid = (plan.segments_per_microblock(), 
@@ -172,7 +173,9 @@ class Kernel:
                         self.grid,
                         out_vector.gpudata, 
                         fake_matrix,
-                        0)
+                        0,
+                        len(discr.blocks)*given.microblocks_per_block,
+                        )
             except cuda.LaunchError:
                 return None
 
@@ -186,6 +189,7 @@ class Kernel:
     def __call__(self, in_vector, prepped_mat, prepped_scaling):
         discr = self.discr
         elgroup, = discr.element_groups
+        given = self.plan.given
 
         kernel, in_vector_texref, scaling_texref = \
                 self.get_kernel(prepped_scaling is not None)
@@ -197,7 +201,7 @@ class Kernel:
                     allow_double_hack=True)
 
         if set([self.plan.debug_name, "cuda_debugbuf"]) <= discr.debug:
-            debugbuf = gpuarray.zeros((1024,), dtype=self.plan.given.float_type)
+            debugbuf = gpuarray.zeros((1024,), dtype=given.float_type)
         else:
             debugbuf = FakeGPUArray()
 
@@ -207,9 +211,9 @@ class Kernel:
                         self.grid,
                         out_vector.gpudata, 
                         prepped_mat,
-                        debugbuf.gpudata))
-
-            given = self.plan.given
+                        debugbuf.gpudata,
+                        len(discr.blocks)*given.microblocks_per_block,
+                        ))
 
             from pytools import product
             discr.gmem_bytes_el_local.add(
@@ -229,7 +233,9 @@ class Kernel:
                     self.grid,
                     out_vector.gpudata, 
                     prepped_mat,
-                    debugbuf.gpudata)
+                    debugbuf.gpudata,
+                    len(discr.blocks)*given.microblocks_per_block,
+                    )
 
         if set([self.plan.debug_name, "cuda_debugbuf"]) <= discr.debug:
             copied_debugbuf = debugbuf.get()[:144*7].reshape((144,7))
@@ -268,6 +274,7 @@ class Kernel:
                 Pointer(POD(float_type, "out_vector")),
                 Pointer(POD(numpy.uint8, "gmem_matrix")),
                 Pointer(POD(float_type, "debugbuf")),
+                POD(numpy.uint32, "microblock_count"),
                 ]
             ))
 
@@ -468,6 +475,9 @@ class Kernel:
             else:
                 inv_jac_multiplier = "1"
 
+            write_condition = "MB_DOF < DOFS_PER_EL*MB_EL_COUNT"
+            if self.with_index_check:
+                write_condition += " && GLOBAL_MB_NR < microblock_count"
             return For("unsigned short seq_mb_number = 0",
                 "seq_mb_number < SEQ_MB_COUNT",
                 "++seq_mb_number",
@@ -477,7 +487,7 @@ class Kernel:
                     ]+[ Line() ]
                     +get_mat_mul_code(fetch_count)
                     +[
-                    If("MB_DOF < DOFS_PER_EL*MB_EL_COUNT",
+                    If(write_condition,
                         Block([
                             Assign(
                                 "out_vector[GLOBAL_MB_DOF_BASE"
@@ -528,7 +538,7 @@ class Kernel:
 
         func = mod.get_function("apply_el_local_mat_smem_mat")
         func.prepare(
-                "PPP", 
+                "PPPI", 
                 block=(self.plan.segment_size, self.plan.parallelism.parallel, 1),
                 texrefs=texrefs)
 

@@ -1060,7 +1060,7 @@ class Discretization(hedge.discretization.Discretization):
                 aligned_preimage_dofs_per_microblock=
                     self.given.microblock.aligned_floats,
                 preimage_dofs_per_el=self.given.dofs_per_el())
-        return el_local_plan.make_kernel(self)
+        return el_local_plan.make_kernel(self, with_index_check=True)
 
     # scalar reduction --------------------------------------------------------
     def nodewise_dot_product(self, a, b):

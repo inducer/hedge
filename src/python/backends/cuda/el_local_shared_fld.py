@@ -86,17 +86,18 @@ class ExecutionPlan(hedge.backends.cuda.plan.SMemFieldLocalOpExecutionPlan):
                 self.threads(),
                 )
 
-    def make_kernel(self, discr):
-        return Kernel(discr, self)
+    def make_kernel(self, discr, with_index_check):
+        return Kernel(discr, self, with_index_check)
 
 
 
 
 # kernel ----------------------------------------------------------------------
 class Kernel:
-    def __init__(self, discr, plan):
+    def __init__(self, discr, plan, with_index_check):
         self.discr = discr
         self.plan = plan
+        self.with_index_check = with_index_check
 
         from hedge.backends.cuda.tools import int_ceiling
         self.grid = (int_ceiling(
@@ -156,7 +157,9 @@ class Kernel:
                 kernel.prepared_call(self.grid,
                         out_vector.gpudata, 
                         in_vector.gpudata,
-                        0)
+                        0,
+                        len(discr.blocks)*given.microblocks_per_block,
+                        )
             except cuda.LaunchError:
                 return None
         stop = cuda.Event()
@@ -190,7 +193,9 @@ class Kernel:
                     kernel.prepared_timed_call(self.grid, 
                         out_vector.gpudata, 
                         in_vector.gpudata,
-                        debugbuf.gpudata))
+                        debugbuf.gpudata,
+                        len(discr.blocks)*given.microblocks_per_block,
+                        ))
 
             given = self.discr.given
 
@@ -215,7 +220,9 @@ class Kernel:
             kernel.prepared_call(self.grid,
                     out_vector.gpudata, 
                     in_vector.gpudata,
-                    debugbuf.gpudata)
+                    debugbuf.gpudata,
+                    len(discr.blocks)*given.microblocks_per_block,
+                    )
 
         if set([self.plan.debug_name, "cuda_debugbuf"]) <= discr.debug:
             copied_debugbuf = debugbuf.get()[:144*7].reshape((144,7))
@@ -255,6 +262,7 @@ class Kernel:
                 Pointer(POD(float_type, "out_vector")),
                 Pointer(POD(float_type, "in_vector")),
                 Pointer(POD(float_type, "debugbuf")),
+                POD(numpy.uint32, "microblock_count"),
                 ]
             ))
 
@@ -365,17 +373,28 @@ class Kernel:
         def get_matmul_code():
             from hedge.backends.cuda.tools import unroll
 
+            if self.with_index_check:
+                index_check_condition = "GLOBAL_MB_NR < microblock_count"
+            else:
+                index_check_condition = ""
+
+            def if_(conditions, then):
+                final_cond = " && ".join(cond for cond in conditions if cond)
+                if final_cond:
+                    return If(final_cond, then)
+                else:
+                    return then
+
             if with_scaling:
                 inv_jac_multiplier = ("fp_tex1Dfetch(scaling_tex,"
                         "(GLOBAL_MB_NR + %(inl)d)*MB_EL_COUNT + mb_el)")
             else:
                 inv_jac_multiplier = "1"
 
-            return Block([
+            result = Block([
                 Comment("everybody needs to be done with the old data"),
-                S("__syncthreads()"),
-                Line(),
-                ]+get_load_code()+[
+                S("__syncthreads()"), Line(),
+                ]+if_([index_check_condition], get_load_code())+[
                 Line(),
                 Comment("all the new data must be loaded"),
                 S("__syncthreads()"),
@@ -387,8 +406,10 @@ class Kernel:
                 Line(),
                 POD(float_type, "mat_entry"),
                 Line(),
-                If("MB_DOF < DOFS_PER_MB", Block(unroll(
-                    lambda j:
+                ])
+
+            result.append(if_(["MB_DOF < DOFS_PER_MB", index_check_condition], 
+                Block(unroll(lambda j:
                     [Assign("mat_entry", "fp_tex2D(mat_tex, EL_DOF, %s)" % j)]
                     +[
                     S("result%d += mat_entry "
@@ -402,9 +423,8 @@ class Kernel:
                     +[ Assign(
                         "out_vector[GLOBAL_MB_DOF_BASE + %d*ALIGNED_DOFS_PER_MB + MB_DOF]" % inl,
                         "result%d*%s" % (inl, (inv_jac_multiplier % {"inl": inl})))
-                    for inl in range(par.inline)
-                    ]))
-                ])
+                    for inl in range(par.inline)]
+                    )))
 
         f_body.append(For("unsigned short seq_mb_number = 0",
             "seq_mb_number < SEQ_MB_COUNT",
@@ -436,7 +456,7 @@ class Kernel:
 
         func = mod.get_function("apply_el_local_mat_smem_field")
         func.prepare(
-                "PPP", 
+                "PPPI", 
                 block=(
                     given.devdata.smem_granularity, 
                     self.plan.parallelism.parallel, 

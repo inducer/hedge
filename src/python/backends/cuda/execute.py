@@ -435,7 +435,8 @@ class Executor(object):
 
         # build the local kernels 
         self.diff_kernel = self.discr.diff_plan.make_kernel(discr)
-        self.fluxlocal_kernel = self.discr.fluxlocal_plan.make_kernel(discr)
+        self.fluxlocal_kernel = self.discr.fluxlocal_plan.make_kernel(discr,
+                with_index_check=False)
 
     @staticmethod
     def prepare_optemplate_stage2(mesh, optemplate):
