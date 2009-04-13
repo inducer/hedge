@@ -368,7 +368,7 @@ class Kernel:
 
                     load_code.append(load_instr)
                     store_code.append(store_instr)
-            return load_code + [Line()] + store_code
+            return Block(load_code + [Line()] + store_code)
 
         def get_matmul_code():
             from hedge.backends.cuda.tools import unroll
@@ -394,7 +394,7 @@ class Kernel:
             result = Block([
                 Comment("everybody needs to be done with the old data"),
                 S("__syncthreads()"), Line(),
-                ]+if_([index_check_condition], get_load_code())+[
+                ]+[if_([index_check_condition], get_load_code())]+[
                 Line(),
                 Comment("all the new data must be loaded"),
                 S("__syncthreads()"),
