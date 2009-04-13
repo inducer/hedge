@@ -439,11 +439,15 @@ class Kernel:
                 print "DEBUG", len(discr.blocks)
                 numpy.set_printoptions(linewidth=130)
                 #print numpy.reshape(copied_debugbuf, (32, 16))
-                print copied_debugbuf
+                #print copied_debugbuf[:50]
+
+                for i in range(len(discr.blocks)*6):
+                    print i, copied_debugbuf[i*16:(i+1)*16]
+                    #print i, [x-10000 for x in sorted(copied_debugbuf[i*16:(i+1)*16]) if x != 0]
 
                 wait_for_keypress(discr)
 
-        if "cuda_flux" in discr.debug:
+        if "cuda_flux" in discr.debug and False:
             from hedge.tools import get_rank, wait_for_keypress
             if get_rank(discr) == 0:
                 numpy.set_printoptions(linewidth=130, precision=2, threshold=10**6)
@@ -459,6 +463,10 @@ class Kernel:
                                     result += "0"
                                 elif abs(i) < 1e-10:
                                     result += "-"
+                                elif numpy.isnan(i):
+                                    result += "N"
+                                elif i == 17:
+                                    result += "*"
                                 else:
                                     result += "#"
 
@@ -491,7 +499,6 @@ class Kernel:
 
                 wait_for_keypress(discr)
                 #print "B", [la.norm(fof.get()) for fof in all_fluxes_on_faces]
-            
 
         return all_fluxes_on_faces
 
@@ -659,30 +666,17 @@ class Kernel:
                     fluxes_by_bdry_number.setdefault(bdry_number, [])\
                             .append((flux_nr, fluxes))
 
-            # FIXME
-            # This generates incorrect code for overlapping tags. While the
-            # data structure supports tag overlapping by allocating one bit
-            # per tag, this code only evaluates the last flux in an overlap
-            # correctly.
-
-            flux_sub_codes = []
+            flux_sub_codes = [Assign("flux", 0)]
             for bdry_number, nrs_and_fluxes in fluxes_by_bdry_number.iteritems():
                 bblock = []
                 for flux_nr, fluxes in nrs_and_fluxes:
-                    from hedge.mesh import TAG_ALL
-                    bblock.extend(
-                            [Assign("flux", 0),]
-                            + [S("flux += "+
+                    bblock.extend([S("flux += "+
                                 flux_to_code(f2cm, is_flipped=False,
                                     int_field_expr=flux_rec.bpair.field,
                                     ext_field_expr=flux_rec.bpair.bfield,
                                     dep_to_index=self.dep_to_index, 
                                     flux=flux_rec.flux_expr, prec=PREC_NONE))
-                                for flux_rec in fluxes]
-                            + [
-                            gen_store(flux_nr, "fpair->a_dest+FACEDOF_NR",
-                                "fpair->face_jacobian * flux"),]
-                            )
+                                for flux_rec in fluxes])
 
                 flux_sub_codes.extend([
                     Line(),
@@ -690,6 +684,12 @@ class Kernel:
                     If("(fpair->boundary_bitmap) & (1 << %d)" % (bdry_number),
                         Block(bblock)),
                     ])
+            flux_sub_codes.extend([
+                Line(),
+                gen_store(flux_nr, "fpair->a_dest+FACEDOF_NR",
+                    "fpair->face_jacobian * flux"),
+                #Assign("debugbuf[blockIdx.x*96+fpair_nr]", "10000+fpair->a_dest"),
+                ])
 
             flux_write_code.extend(
                     Initializer(
@@ -758,12 +758,21 @@ class Kernel:
                         gen_store(flux_nr, "fpair->a_dest+FACEDOF_NR",
                             "fpair->face_jacobian*a_flux"))
 
+                #my_flux_block.append(
+                        #Assign("debugbuf[blockIdx.x*96+fpair_nr]", "10000+fpair->a_dest"),
+                        #)
+
                 if is_twosided:
                     my_flux_block.append(
                             gen_store(flux_nr, 
                                 "fpair->b_dest+tex1Dfetch(tex_index_lists, "
                                 "fpair->b_write_ilist_index + FACEDOF_NR)",
                                 "fpair->face_jacobian*b_flux"))
+
+                    #my_flux_block.append(
+                            #Assign("debugbuf[blockIdx.x*96+fpair_nr+8]", "10000+fpair->b_dest"),
+                            #)
+
                 flux_sub_codes.append(my_flux_block)
 
             flux_write_code.extend(
@@ -798,7 +807,6 @@ class Kernel:
             return flux_code
 
         flux_computation = Block([
-            Initializer(POD(numpy.uint16, "fpair_nr"), "BLOCK_FACE"),
             Comment("fluxes for dual-sided (intra-block) interior face pairs"),
             While("fpair_nr < data.header.same_facepairs_end",
                 get_flux_code(lambda: int_flux_writer(True))
@@ -819,8 +827,10 @@ class Kernel:
                 ),
             ])
 
-        f_body.extend_log_block("compute the fluxes", 
-                [If("FACEDOF_NR < DOFS_PER_FACE", flux_computation)])
+        f_body.extend_log_block("compute the fluxes", [
+            Initializer(POD(numpy.uint32, "fpair_nr"), "BLOCK_FACE"),
+            If("FACEDOF_NR < DOFS_PER_FACE", flux_computation)
+            ])
 
         f_body.extend([
             Line(),
@@ -839,9 +849,24 @@ class Kernel:
                         Block([Assign(
                             "gmem_fluxes_on_faces%d[FOF_BLOCK_BASE+word_nr]" % flux_nr,
                             "smem_fluxes_on_faces[%d][word_nr]" % flux_nr)
-                            for flux_nr in range(len(self.fluxes))])
+                            for flux_nr in range(len(self.fluxes))]
+                           #+[If("isnan(smem_fluxes_on_faces[%d][word_nr])" % flux_nr,
+                               #Block([
+                                   #Assign("debugbuf[blockIdx.x]", "word_nr"),
+                                   #])
+                               #)
+                            #for flux_nr in range(len(self.fluxes))]
                         )
+                    )
                     ])
+        if False:
+            f_body.extend([
+                    Assign("debugbuf[blockIdx.x*96+32+BLOCK_FACE*32+threadIdx.x]", "fpair_nr"),
+                    Assign("debugbuf[blockIdx.x*96+16]", "data.header.same_facepairs_end"),
+                    Assign("debugbuf[blockIdx.x*96+17]", "data.header.diff_facepairs_end"),
+                    Assign("debugbuf[blockIdx.x*96+18]", "data.header.bdry_facepairs_end"),
+                    ]
+                    )
 
         # finish off ----------------------------------------------------------
         cmod.append(FunctionBody(f_decl, f_body))
@@ -907,6 +932,7 @@ class Kernel:
                     + el_face[1]*face_dofs)
 
         int_fp_count, ext_fp_count, bdry_fp_count = 0, 0, 0
+
 
         for block in discr.blocks:
             ldis = block.local_discretization
