@@ -447,7 +447,7 @@ class Kernel:
 
                 wait_for_keypress(discr)
 
-        if "cuda_flux" in discr.debug and False:
+        if "cuda_flux" in discr.debug:
             from hedge.tools import get_rank, wait_for_keypress
             if get_rank(discr) == 0:
                 numpy.set_printoptions(linewidth=130, precision=2, threshold=10**6)
@@ -635,7 +635,7 @@ class Kernel:
             from codepy.cgen import make_multiple_ifs
             from pymbolic.mapper.stringifier import PREC_NONE
 
-            flux_write_code = Block([MaybeUnused(POD(float_type, "flux"))])
+            flux_write_code = Block()
 
             from pytools import flatten
             from hedge.tools import is_zero
@@ -666,11 +666,17 @@ class Kernel:
                     fluxes_by_bdry_number.setdefault(bdry_number, [])\
                             .append((flux_nr, fluxes))
 
-            flux_sub_codes = [Assign("flux", 0)]
+            flux_write_code.extend([
+                Initializer(
+                    MaybeUnused(POD(float_type, "flux%d" % flux_nr)),
+                    0)
+                for flux_nr in range(len(self.fluxes))])
+
+            flux_sub_codes = []
             for bdry_number, nrs_and_fluxes in fluxes_by_bdry_number.iteritems():
                 bblock = []
                 for flux_nr, fluxes in nrs_and_fluxes:
-                    bblock.extend([S("flux += "+
+                    bblock.extend([S(("flux%d += " % flux_nr) +
                                 flux_to_code(f2cm, is_flipped=False,
                                     int_field_expr=flux_rec.bpair.field,
                                     ext_field_expr=flux_rec.bpair.bfield,
@@ -684,12 +690,15 @@ class Kernel:
                     If("(fpair->boundary_bitmap) & (1 << %d)" % (bdry_number),
                         Block(bblock)),
                     ])
-            flux_sub_codes.extend([
-                Line(),
+
+            flux_sub_codes.extend([Line(),]
+                +[
                 gen_store(flux_nr, "fpair->a_dest+FACEDOF_NR",
-                    "fpair->face_jacobian * flux"),
+                    "fpair->face_jacobian * flux%d" % flux_nr)
+                for flux_nr in range(len(self.fluxes))
+                ]
                 #Assign("debugbuf[blockIdx.x*96+fpair_nr]", "10000+fpair->a_dest"),
-                ])
+                )
 
             flux_write_code.extend(
                     Initializer(
