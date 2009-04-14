@@ -371,7 +371,7 @@ class Kernel(DiffKernelBase):
                 elif float_type == numpy.float64:
                     result.extend(
                         S("d%(inl)drst%(axis)d += "
-                            "fp_tex1Dfetch(diff_rst_mat_tex, EL_DOF + %(j)d*DOFS_PER_EL)"
+                            "fp_tex1Dfetch(diff_rst_mat_tex, %(axis)d + DIMENSIONS*(EL_DOF + %(j)d*DOFS_PER_EL))"
                             "* field_value%(inl)d" % {
                             "inl": inl,
                             "axis": axis,
