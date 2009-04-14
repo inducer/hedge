@@ -476,7 +476,8 @@ class Discretization(hedge.discretization.Discretization):
                         op_name="lift",
                         aligned_preimage_dofs_per_microblock=
                             given.aligned_face_dofs_per_microblock(),
-                        preimage_dofs_per_el=given.face_dofs_per_el())
+                        preimage_dofs_per_el=given.face_dofs_per_el(),
+                        with_index_check=False)
 
                 sys_size = flux_plan.flux_count
                 total_time = flux_time + sys_size*(diff_time+fluxlocal_time)
@@ -1059,8 +1060,9 @@ class Discretization(hedge.discretization.Discretization):
                 op_name="el_local",
                 aligned_preimage_dofs_per_microblock=
                     self.given.microblock.aligned_floats,
-                preimage_dofs_per_el=self.given.dofs_per_el())
-        return el_local_plan.make_kernel(self)
+                preimage_dofs_per_el=self.given.dofs_per_el(),
+                with_index_check=True)
+        return el_local_plan.make_kernel(self, with_index_check=True)
 
     # scalar reduction --------------------------------------------------------
     def nodewise_dot_product(self, a, b):

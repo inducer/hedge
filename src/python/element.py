@@ -1172,9 +1172,9 @@ class TetrahedralElement(SimplicialElement):
     # time step scaling -------------------------------------------------------
     def dt_geometric_factor(self, vertices, el):
         result = abs(el.map.jacobian())/max(abs(fj) for fj in el.face_jacobians)
-        if self.order == 1:
+        if self.order in [1, 2]:
             from warnings import warn
-            warn("cowardly halving timestep for order 1 tets to avoid CFL issues")
+            warn("cowardly halving timestep for order 1 and 2 tets to avoid CFL issues")
             result /= 2
 
         return result
