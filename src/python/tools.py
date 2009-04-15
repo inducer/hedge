@@ -1201,7 +1201,7 @@ class CGStateContainer:
 def parallel_cg(pcon, operator, b, precon=None, x=None, tol=1e-7, max_iterations=None, 
         debug=False, debug_callback=None, dot=None):
     if x is None:
-        x = numpy.zeros((operator.size1(),))
+        x = numpy.zeros((operator.shape[1],))
 
     cg = CGStateContainer(pcon, operator, precon, dot=dot)
     cg.reset(b, x)
