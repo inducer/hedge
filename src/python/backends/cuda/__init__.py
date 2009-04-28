@@ -999,20 +999,25 @@ class Discretization(hedge.discretization.Discretization):
             from_indices, to_indices, idx_count = self._boundarize_info(tag)
             grid_dim, block_dim = gpuarray.splay(idx_count)
 
-            def do_scalar(subfield):
-                from hedge.mesh import TAG_ALL
-                if tag != TAG_ALL:
-                    result = self.boundary_zeros(tag)
-                else:
-                    result = self.boundary_empty(tag)
+            from hedge.mesh import TAG_ALL
+            if tag != TAG_ALL:
+                make_new = self.boundary_zeros
+            else:
+                result = self.boundary_empty
 
-                if idx_count:
-                    gpuarray.multi_take_put([subfield], 
-                            to_indices, from_indices, out=[result])
-                return result
+            from hedge.tools import log_shape, make_obj_array
 
-            from hedge.tools import with_object_array_or_scalar
-            result = with_object_array_or_scalar(do_scalar, field)
+            ls = log_shape(field)
+            if ls != ():
+                out = result = make_new(tag, shape=ls)
+                src = field
+            else:
+                result = make_new(tag)
+                out = [result]
+                src = [field]
+
+            gpuarray.multi_take_put(src, 
+                    to_indices, from_indices, out=out)
         else:
             result = hedge.discretization.Discretization.boundarize_volume_field(
                     self, field, tag)
