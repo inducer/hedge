@@ -135,34 +135,6 @@ class GPUBoundaryFaceStorage(GPUFaceStorage):
 
 
 
-@memoize
-def _boundarize_kernel():
-    mod = SourceModule("""
-    texture<float, 1, cudaReadModeElementType> field_tex;
-    __global__ void boundarize(float *bfield, 
-      unsigned int *to_indices,
-      unsigned int *from_indices,
-      unsigned int n)
-    {
-      int tid = threadIdx.x;
-      int total_threads = gridDim.x*blockDim.x;
-      int cta_start = blockDim.x*blockIdx.x;
-      int i;
-            
-      for (i = cta_start + tid; i < n; i += total_threads) 
-      {
-        bfield[to_indices[i]] = 
-          tex1Dfetch(field_tex, from_indices[i]);
-      }
-    }
-    """)
-
-    return (mod.get_function("boundarize"), 
-            mod.get_texref("field_tex"))
-
-
-
-
 # GPU mesh partition ----------------------------------------------------------
 def make_gpu_partition_greedy(adjgraph, max_block_size):
 
@@ -1022,34 +994,33 @@ class Discretization(hedge.discretization.Discretization):
                 len(from_indices)
                 )
         
-    def boundarize_volume_field(self, field, tag=hedge.mesh.TAG_ALL):
-        if self.get_kind(field) != "gpu":
-            return hedge.discretization.Discretization.boundarize_volume_field(
+    def boundarize_volume_field(self, field, tag, kind=None):
+        if self.get_kind(field) == self.compute_kind:
+            from_indices, to_indices, idx_count = self._boundarize_info(tag)
+            grid_dim, block_dim = gpuarray.splay(idx_count)
+
+            def do_scalar(subfield):
+                from hedge.mesh import TAG_ALL
+                if tag != TAG_ALL:
+                    result = self.boundary_zeros(tag)
+                else:
+                    result = self.boundary_empty(tag)
+
+                if idx_count:
+                    gpuarray.multi_take_put([subfield], 
+                            to_indices, from_indices, out=[result])
+                return result
+
+            from hedge.tools import with_object_array_or_scalar
+            result = with_object_array_or_scalar(do_scalar, field)
+        else:
+            result = hedge.discretization.Discretization.boundarize_volume_field(
                     self, field, tag)
 
-        kernel, field_texref = _boundarize_kernel()
-
-        from_indices, to_indices, idx_count = self._boundarize_info(tag)
-        grid_dim, block_dim = gpuarray.splay(idx_count)
-
-        def do_scalar(subfield):
-            from hedge.mesh import TAG_ALL
-            if tag != TAG_ALL:
-                result = self.boundary_zeros(tag)
-            else:
-                result = self.boundary_empty(tag)
-
-            if idx_count:
-                subfield.bind_to_texref_ext(field_texref,
-                        allow_double_hack=True)
-                kernel(result, to_indices, from_indices,
-                        numpy.uint32(idx_count),
-                        block=block_dim, grid=grid_dim,
-                        texrefs=[field_texref])
+        if kind is not None:
+            return self.convert_boundary(result, tag, kind)
+        else:
             return result
-
-        from hedge.tools import with_object_array_or_scalar
-        return with_object_array_or_scalar(do_scalar, field)
 
     # ancillary kernel planning/construction ----------------------------------
     @memoize_method

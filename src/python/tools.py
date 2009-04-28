@@ -1187,6 +1187,8 @@ class CGStateContainer:
                     compute_real_residual=compute_real_residual)
 
             if compute_real_residual and abs(delta) < tol*tol * abs(delta_0):
+                if debug:
+                    print "%d iterations" % iterations
                 return self.x
 
             if debug and iterations % debug == 0 and self.pcon.is_head_rank:

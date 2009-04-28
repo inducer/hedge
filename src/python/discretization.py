@@ -726,7 +726,13 @@ class Discretization(object):
 
         return self.convert_boundary(result, tag, kind)
 
-    def volumize_boundary_field(self, bfield, tag=hedge.mesh.TAG_ALL):
+    def volumize_boundary_field(self, bfield, tag, kind=None):
+        if kind is None:
+            kind = self.compute_kind
+
+        if kind != "numpy":
+            raise ValueError("invalid target vector kind in volumize_boundary_field")
+
         bdry = self.get_boundary(tag)
 
         def f(subfld):
@@ -737,7 +743,13 @@ class Discretization(object):
         from hedge.tools import with_object_array_or_scalar
         return with_object_array_or_scalar(f, bfield)
 
-    def boundarize_volume_field(self, field, tag=hedge.mesh.TAG_ALL):
+    def boundarize_volume_field(self, field, tag, kind=None):
+        if kind is None:
+            kind = self.compute_kind
+
+        if kind != "numpy":
+            raise ValueError("invalid target vector kind in boundarize_volume_field")
+
         bdry = self.get_boundary(tag)
 
         def f(subfld):

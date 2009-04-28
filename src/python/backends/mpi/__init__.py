@@ -175,12 +175,11 @@ def make_custom_exec_mapper_class(superclass):
 
             from hedge.mesh import TAG_RANK_BOUNDARY
             neigh_send_vecs = [
-                    flatten_and_convert_array(pdiscr.convert_boundary(
+                    flatten_and_convert_array(
                         pdiscr.boundarize_volume_field(
                             field, 
-                            TAG_RANK_BOUNDARY(rank)),
-                        TAG_RANK_BOUNDARY(rank),
-                        kind="numpy"))
+                            TAG_RANK_BOUNDARY(rank),
+                            kind="numpy"))
                     for rank in pdiscr.neighbor_ranks]
 
             send_requests = [isend_buffer(comm, rank, tag=1, vector=nsv)
