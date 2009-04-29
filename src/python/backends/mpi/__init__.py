@@ -206,6 +206,7 @@ def make_custom_exec_mapper_class(superclass):
 
             recv_req = comm_record.recv_requests
 
+            all_recved = numpy.zeros((len(efrba.names),), dtype=object)
             from hedge.mesh import TAG_RANK_BOUNDARY
             while len(recv_req):
                 value, status, index = mpi.wait_any(recv_req)
@@ -214,11 +215,13 @@ def make_custom_exec_mapper_class(superclass):
                 received_vec = comm_record.neigh_recv_vecs[status.source]
 
                 fnm = pdiscr.from_neighbor_maps[status.source]
+                converted_vec = self.discr.convert_boundary(
+                        received_vec[:, fnm],
+                        TAG_RANK_BOUNDARY(status.source),
+                        kind=self.discr.compute_kind)
+
                 for idx, name in rank_to_index_and_name[status.source]:
-                    self.context[name] = self.discr.convert_boundary(
-                            received_vec[idx, fnm],
-                            TAG_RANK_BOUNDARY(status.source),
-                            kind=self.discr.compute_kind)
+                    self.context[name] = converted_vec[idx]
 
             mpi.wait_all(mpi.RequestList(comm_record.send_requests))
 

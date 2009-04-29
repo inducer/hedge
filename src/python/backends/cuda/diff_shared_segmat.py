@@ -106,6 +106,7 @@ class Kernel(DiffKernelBase):
             from hedge.backends.cuda.tools import int_ceiling
             dofs = int_ceiling(
                     given.total_dofs(), self.plan.dofs_per_macroblock())
+            assert dofs == self.grid[1] * self.plan.dofs_per_macroblock()
 
             import pycuda.gpuarray as gpuarray
             return gpuarray.empty((dofs,), dtype=given.float_type,
