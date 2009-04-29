@@ -1042,8 +1042,11 @@ class Discretization(hedge.discretization.Discretization):
                         allocator=self.pool.allocate)
                 base_size = result.shape[1]
 
+                if ls == ():
+                    field = [field]
+
                 gpuarray.multi_take(field, self._numpy_boundarize_info(tag),
-                        [result_gpu[i*base_size:(i+1)*base_size] for i in range(ls[0])])
+                        [result_gpu[i*base_size:(i+1)*base_size] for i in range(len(field))])
                 cuda.memcpy_dtoh(result, result_gpu.gpudata)
 
                 return result
