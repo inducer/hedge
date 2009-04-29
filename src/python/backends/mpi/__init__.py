@@ -162,24 +162,12 @@ def make_custom_exec_mapper_class(superclass):
                     irecv_buffer(comm, rank, tag=1, vector=neigh_recv_vecs[rank])
                     for rank in pdiscr.neighbor_ranks)
 
-            def flatten_and_convert_array(ary):
-                if is_obj_array(ary):
-                    result = numpy.empty(shp+ary[0].shape,
-                            dtype=self.discr.default_scalar_type)
-                    for i in range(shp[0]):
-                        result[i,:] = ary[i]
-                    return result
-                else:
-                    return numpy.asarray(ary, 
-                            dtype=self.discr.default_scalar_type)
-
             from hedge.mesh import TAG_RANK_BOUNDARY
             neigh_send_vecs = [
-                    flatten_and_convert_array(
-                        pdiscr.boundarize_volume_field(
-                            field, 
-                            TAG_RANK_BOUNDARY(rank),
-                            kind="numpy"))
+                    pdiscr.boundarize_volume_field(
+                        field, 
+                        TAG_RANK_BOUNDARY(rank),
+                        kind="numpy")
                     for rank in pdiscr.neighbor_ranks]
 
             send_requests = [isend_buffer(comm, rank, tag=1, vector=nsv)

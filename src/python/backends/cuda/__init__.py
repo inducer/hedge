@@ -986,46 +986,73 @@ class Discretization(hedge.discretization.Discretization):
             to_indices.extend(
                     xrange(bdry_index, bdry_index+len(native_ilist)))
 
-        return (
-                gpuarray.to_gpu(
-                    numpy.array(from_indices, dtype=numpy.uint32)),
-                gpuarray.to_gpu(
-                    numpy.array(to_indices, dtype=numpy.uint32)),
-                len(from_indices)
-                )
+        return from_indices, to_indices
+
+    @memoize_method
+    def _numpy_boundarize_info(self, tag):
+        from_indices, to_indices = self._boundarize_info(tag)
+
+        temp_tgt = numpy.zeros((self.aligned_boundary_floats,), dtype=numpy.int32)
+        temp_tgt[to_indices] = from_indices
+
+        result = temp_tgt[self._gpu_boundary_embedding(tag)]
+
+        return gpuarray.to_gpu(result)
         
     def boundarize_volume_field(self, field, tag, kind=None):
         if self.get_kind(field) == self.compute_kind:
-            from_indices, to_indices, idx_count = self._boundarize_info(tag)
-            grid_dim, block_dim = gpuarray.splay(idx_count)
-
-            from hedge.mesh import TAG_ALL
-            if tag != TAG_ALL:
-                make_new = self.boundary_zeros
-            else:
-                result = self.boundary_empty
-
-            from hedge.tools import log_shape, make_obj_array
-
+            from hedge.tools import log_shape
             ls = log_shape(field)
-            if ls != ():
-                out = result = make_new(tag, shape=ls)
-                src = field
+
+            if kind is None or kind == self.compute_kind:
+                # GPU -> GPU boundarize
+
+                from_indices, to_indices, idx_count = \
+                        self._gpu_boundarize_info(tag)
+                kind = None
+
+                from hedge.mesh import TAG_ALL
+                if tag != TAG_ALL:
+                    make_new = self.boundary_zeros
+                else:
+                    make_new = self.boundary_empty
+
+                if ls != ():
+                    out = result = make_new(tag, shape=ls)
+                    src = field
+                else:
+                    result = make_new(tag)
+                    out = [result]
+                    src = [field]
+
+                gpuarray.multi_take_put(src, 
+                        to_indices, from_indices, out=out)
+                if kind is None:
+                    return result
+                else:
+                    return self.convert_boundary(result, tag, kind)
+
+            elif kind == "numpy":
+                # GPU -> CPU boundarize, for MPI
+
+                result = self.pagelocked_pool.allocate(
+                        ls+(len(self.get_boundary(tag).nodes),), 
+                        dtype=self.default_scalar_type)
+                result_gpu = gpuarray.empty((result.size,), result.dtype,
+                        allocator=self.pool.allocate)
+                base_size = result.shape[1]
+
+                gpuarray.multi_take(field, self._numpy_boundarize_info(tag),
+                        [result_gpu[i*base_size:(i+1)*base_size] for i in range(ls[0])])
+                cuda.memcpy_dtoh(result, result_gpu.gpudata)
+
+                return result
             else:
-                result = make_new(tag)
-                out = [result]
-                src = [field]
-
-            gpuarray.multi_take_put(src, 
-                    to_indices, from_indices, out=out)
+                raise ValueError("invalid target boundary kind: %s" % kind)
         else:
-            result = hedge.discretization.Discretization.boundarize_volume_field(
-                    self, field, tag)
+            return hedge.discretization.Discretization.boundarize_volume_field(
+                    self, field, tag, kind)
 
-        if kind is not None:
-            return self.convert_boundary(result, tag, kind)
-        else:
-            return result
 
     # ancillary kernel planning/construction ----------------------------------
     @memoize_method
