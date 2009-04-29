@@ -845,17 +845,52 @@ class Discretization(hedge.discretization.Discretization):
         assert (result>=0).all()
         return result
 
+    @memoize_method
+    def _gpu_boundary_embedding_on_gpu(self, tag):
+        return gpuarray.to_gpu(
+                numpy.asarray(
+                    self._gpu_boundary_embedding(tag),
+                    dtype=numpy.uint32))
+
     def _boundary_to_gpu(self, field, tag):
-        def f(field):
-            result = self.pagelocked_pool.allocate(
-                    (self.aligned_boundary_floats,),
-                    dtype=field.dtype)
+        from hedge.tools import log_shape
 
-            result[self._gpu_boundary_embedding(tag)] = field
-            return gpuarray.to_gpu(result, allocator=self.pool.allocate)
+        ls = log_shape(field)
+        if ls == ():
+            field_list = [field]
+            n = 1
+        else:
+            field_list = field
+            n = len(field)
 
-        from hedge.tools import with_object_array_or_scalar
-        return with_object_array_or_scalar(f, field)
+        one_field = field_list[0]
+        one_field_size = len(one_field)
+
+        if field.dtype == object:
+            buf = self.pagelocked_pool.allocate(
+                    ls+one_field.shape, dtype=self.default_scalar_type)
+            for i, subf in enumerate(field):
+                buf[i, :] = subf
+        else:
+            buf = numpy.asarray(field, order="C")
+
+        buf.shape = buf.size,
+        buf_gpu = gpuarray.to_gpu(buf)
+        
+        from hedge.tools import make_obj_array
+        out = make_obj_array([
+                self.boundary_empty(tag) for i in range(n)])
+
+        gpuarray.multi_put(
+                [buf_gpu[i*one_field_size:(i+1)*one_field_size] 
+                    for i in range(n)],
+                self._gpu_boundary_embedding_on_gpu(tag),
+                out=out)
+
+        if ls == ():
+            return out[0]
+        else:
+            return out
 
     def _boundary_from_gpu(self, field, tag):
         def f(field):
