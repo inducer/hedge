@@ -793,6 +793,12 @@ class Discretization(object):
 
             return result
 
+    @memoize_method
+    def _compiled_mass_operator(self):
+        from hedge.optemplate import MassOperator, Field
+        mass_op_func = self.compile(MassOperator() * Field("f"))
+        return lambda f: mass_op_func(f=f)
+
     def norm(self, volume_vector, p=2):
         if p == numpy.Inf:
             return numpy.abs(volume_vector).max()
@@ -802,20 +808,18 @@ class Discretization(object):
             if p != 2:
                 volume_vector = numpy.abs(volume_vector)**(p/2)
 
-            from hedge.optemplate import MassOperator
-            mass_op = MassOperator()
+            mass_op = self._compiled_mass_operator()
 
             ls = log_shape(volume_vector)
             if ls == ():
                 return float(self.nodewise_dot_product(
                         volume_vector,
-                        mass_op.apply(self, volume_vector))**(1/p))
+                        mass_op(volume_vector))**(1/p))
             else:
                 assert len(ls) == 1
                 return float(sum(
                         self.nodewise_dot_product(
-                            subv,
-                            mass_op.apply(self, subv))
+                            subv, mass_op(subv))
                         for subv in volume_vector)**(1/p))
 
     # element data retrieval --------------------------------------------------
