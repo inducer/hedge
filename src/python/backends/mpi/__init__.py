@@ -170,6 +170,9 @@ def make_custom_exec_mapper_class(superclass):
                         kind="numpy")
                     for rank in pdiscr.neighbor_ranks]
 
+            for nsv in neigh_send_vecs:
+                assert nsv.dtype != object
+
             send_requests = [isend_buffer(comm, rank, tag=1, vector=nsv)
                 for rank, nsv in zip(
                     pdiscr.neighbor_ranks,
@@ -216,7 +219,7 @@ def make_custom_exec_mapper_class(superclass):
 
                 fnm = pdiscr.from_neighbor_maps[status.source]
                 converted_vec = self.discr.convert_boundary(
-                        received_vec[:, fnm],
+                        numpy.asarray(received_vec[:, fnm], order="C"),
                         TAG_RANK_BOUNDARY(status.source),
                         kind=self.discr.compute_kind)
 
