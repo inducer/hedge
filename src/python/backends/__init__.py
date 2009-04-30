@@ -128,7 +128,7 @@ FEAT_CODEPY = "codepy"
 
 
 
-def generate_features():
+def generate_features(disabled_features):
     try:
         import hedge._internal
     except ImportError:
@@ -136,26 +136,28 @@ def generate_features():
     else:
         yield FEAT_INTERNAL
 
-    try:
-        import hedge.mpi as mpi
-    except ImportError:
-        pass
-    else:
-        if mpi.size > 1:
-            yield FEAT_MPI
-
-    try:
-        import pycuda
-    except ImportError:
-        have_cuda = False
-    else:
-        import pycuda.driver
+    if FEAT_MPI not in disabled_features:
         try:
-            if pycuda.driver.Device.count():
+            import hedge.mpi as mpi
+        except ImportError:
+            pass
+        else:
+            if mpi.size > 1:
+                yield FEAT_MPI
+
+    if FEAT_CUDA not in disabled_features:
+        try:
+            import pycuda
+        except ImportError:
+            have_cuda = False
+        else:
+            import pycuda.driver
+            try:
+                if pycuda.driver.Device.count():
+                    yield FEAT_CUDA
+            except pycuda.driver.LogicError:
+                # pycuda not initialized--we'll give it the benefit of the doubt.
                 yield FEAT_CUDA
-        except pycuda.driver.LogicError:
-            # pycuda not initialized--we'll give it the benefit of the doubt.
-            yield FEAT_CUDA
 
     try:
         import codepy
@@ -174,7 +176,7 @@ def generate_features():
 
 
 def guess_run_context(disable=set()):
-    feat = set(generate_features()) - disable
+    feat = set(generate_features(disable)) - disable
 
     if FEAT_CUDA in feat:
         from hedge.backends.cuda import Discretization as discr_class
