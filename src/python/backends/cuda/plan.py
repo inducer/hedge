@@ -55,8 +55,7 @@ class Parallelism:
 
 def optimize_plan(opt_name, plan_generator, target_func, maximize, debug_flags=set(), occupancy_slack=0.5,
         log_filename=None):
-    plans = list(p for p in plan_generator()
-            if p.invalid_reason() is None)
+    plans = [p for p in plan_generator() if p.invalid_reason() is None]
 
     debug = "cuda_%s_plan" % opt_name in debug_flags
     show_progress = ("cuda_plan_no_progress" not in debug_flags) and not debug

@@ -248,8 +248,8 @@ def make_plan(discr, given, tune_for):
         flux_count = discr.dimensions
 
     def generate_valid_plans():
-        #for direct_store in [True, False]:
-        for direct_store in [False]:
+        valid_plan_count = 0
+        for direct_store in [False, True]:
             for parallel_faces in range(1,32):
                 for mbs_per_block in range(1,8):
                     flux_plan = ExecutionPlan(given, parallel_faces, 
@@ -258,7 +258,14 @@ def make_plan(discr, given, tune_for):
                             partition_data=discr._get_partition_data(
                                 mbs_per_block*given.microblock.elements))
                     if flux_plan.invalid_reason() is None:
+                        valid_plan_count += 1
                         yield flux_plan
+
+            # if there are valid plans *without* direct_store *and* we're using
+            # single precision, then bail now: It's unlikely that direct-store
+            # offers any benefit.
+            if valid_plan_count and given.float_type == numpy.float32:
+                return
 
     def target_func(plan):
         if tune_for is None:
