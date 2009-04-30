@@ -752,11 +752,21 @@ class Discretization(object):
 
         bdry = self.get_boundary(tag)
 
-        def f(subfld):
-            return subfld[bdry.vol_indices]
+        from hedge.tools import log_shape, is_obj_array
+        ls = log_shape(field)
 
-        from hedge.tools import with_object_array_or_scalar
-        return with_object_array_or_scalar(f, field)
+        if is_obj_array(field):
+            if len(field) == 0:
+                return numpy.zeros(())
+
+            result = self.boundary_empty(tag, shape=ls, dtype=field[0].dtype)
+            from pytools import indices_in_shape
+            for i in indices_in_shape(ls):
+                result[i] = field[i][bdry.vol_indices]
+
+            return result
+        else:
+            return field[tuple(slice(None) for i in range(len(ls))) + (bdry.vol_indices,)]
 
     # scalar reduction --------------------------------------------------------
     def nodewise_dot_product(self, a, b):
