@@ -129,7 +129,7 @@ class MassAssign(Instruction):
 
 class FluxReceiveBatchAssign(Instruction):
     __slots__ = ["names", "indices_and_ranks", "field"]
-    priority = -1
+    priority = 1
 
     def get_assignees(self):
         return set(self.names)
@@ -208,27 +208,24 @@ class Code(object):
         self.instructions = instructions
         self.result = result
 
-        self.insns_depending_on = {}
-        self.initial_exec_front = set()
+        self.need_nondet_scheduling_pass = True
 
-        insn_generated_vars = set()
+    class NoInstructionAvailable(Exception):
+        pass
 
-        from pymbolic.primitives import make_variable, Variable
-        for insn in self.instructions:
-            for dep in insn.get_dependencies():
-                assert isinstance(dep, Variable)
-                dep = dep.name
+    @memoize_method
+    def get_instruction(self, available_names, done_insns):
+        from pytools import all, argmax2
+        available_insns = [
+                (insn, insn.priority) for insn in self.instructions
+                if insn not in done_insns 
+                and all(dep.name in available_names 
+                    for dep in insn.get_dependencies())]
 
-                self.insns_depending_on.setdefault(dep,
-                        set()).add(insn)
+        if not available_insns:
+            raise self.NoInstructionAvailable
 
-            insn_generated_vars.update(
-                    make_variable(tgt)
-                    for tgt in insn.get_assignees())
-
-        for insn in self.instructions:
-            if not (insn.get_dependencies() & insn_generated_vars):
-                self.initial_exec_front.add(insn)
+        return argmax2(available_insns)
 
     def __str__(self):
         lines = []
@@ -239,56 +236,66 @@ class Code(object):
         return "\n".join(lines)
 
     def execute(self, exec_mapper):
-        exec_front = self.initial_exec_front.copy()
+        if self.need_nondet_scheduling_pass:
+            self.need_nondet_scheduling_pass = False
+            return self.execute_nondet(exec_mapper, [], [])
+
+        # default to the faster, deterministic execution
         futures = []
 
-        def make_available(name, value):
-            exec_mapper.context[target] = value
+        from hedge.tools import Future
+        for i, insn in enumerate(self.instructions):
+            for target, value in insn.get_executor_method(exec_mapper)(insn):
+                if isinstance(value, Future):
+                    futures.append((target, value))
+                else:
+                    exec_mapper.context[target] = value
 
-            from pymbolic.primitives import Variable
-            from pytools import all
+                if futures:
+                    # punt to nondterminism if needed
+                    return self.execute_nondet(
+                            exec_mapper, futures, 
+                            self.instructions[:i+1])
 
-            for cand_insn in self.insns_depending_on.get(target, []):
-                if cand_insn in exec_front:
-                    continue
+        from hedge.tools import with_object_array_or_scalar
+        return with_object_array_or_scalar(exec_mapper, self.result)
 
-                # insns that have already been completed won't be re-added
-                # here: We've already satisfied all their dependencies and
-                # they therefore can't show up here.
-
-                if all(dep.name in exec_mapper.context
-                        for dep in cand_insn.get_dependencies()):
-                    exec_front.add(cand_insn)
-
-        from pytools import argmin2
+    def execute_nondet(self, exec_mapper, futures, done_insns):
         from hedge.tools import Future
 
-        while exec_front or futures:
+        quit_flag = False
+        while not quit_flag:
             # check futures for completion
             i = 0
             while i < len(futures):
                 target, future = futures[i]
                 if future.is_ready():
-                    make_available(target, future())
+                    exec_mapper.context[target] = future()
                     futures.pop(i)
                 else:
                     i += 1
 
-            # pick the next insn from the exec_front_heap
-            if exec_front:
-                insn = argmin2((insn, insn.priority) for insn in exec_front)
-                exec_front.remove(insn)
-
+            # pick the next insn 
+            try:
+                insn = self.get_instruction(
+                        frozenset(exec_mapper.context.keys()),
+                        frozenset(done_insns))
+            except self.NoInstructionAvailable:
+                # no insn ready: we need a future to complete to continue
+                if futures:
+                    target, future = futures.pop()
+                    exec_mapper.context[target] = future()
+                else:
+                    quit_flag = True
+            else:
+                done_insns.append(insn)
                 for target, value in insn.get_executor_method(exec_mapper)(insn):
                     if isinstance(value, Future):
                         futures.append((target, value))
                     else:
-                        make_available(target, value)
-            else:
-                # empty exec_front: we need a future to complete to continue
-                if futures:
-                    target, future = futures.pop()
-                    make_available(target, future())
+                        exec_mapper.context[target] = value
+
+        self.instructions = done_insns
 
         from hedge.tools import with_object_array_or_scalar
         return with_object_array_or_scalar(exec_mapper, self.result)

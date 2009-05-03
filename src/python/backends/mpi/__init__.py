@@ -286,7 +286,7 @@ class FluxCommunicationInserter(
                         OperatorBinding(
                             FluxSendOperator(), 
                             expr.field),
-                        priority=-2)
+                        priority=2)
 
                 def receive_and_cse(rank):
                     return func_and_cse(
