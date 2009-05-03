@@ -144,11 +144,8 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         hedge.optemplate.Evaluator.__init__(self, context)
         self.ex = executor
 
-    def exec_discard(self, insn):
-        del self.context[insn.name]
-
     def exec_assign(self, insn):
-        self.context[insn.name] = self(insn.expr)
+        return [(insn.name, self(insn.expr))]
 
     def exec_vector_expr_assign(self, insn):
         if self.ex.discr.instrumented:
@@ -161,7 +158,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         else:
             add_timer = None
 
-        self.context[insn.name] = insn.compiled(self, add_timer)
+        return [(insn.name, insn.compiled(self, add_timer))]
 
     def exec_diff_batch_assign(self, insn):
         field = self.rec(insn.field)
@@ -174,9 +171,6 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
         xyz_diff = self.ex.diff_kernel(insn.op_class, field)
 
-        for name, op in zip(insn.names, insn.operators):
-            self.context[name] = xyz_diff[op.xyz_axis]
-        
         if set(["cuda_diff", "cuda_compare"]) <= discr.debug:
             field = self.rec(insn.field)
             f = discr.volume_from_gpu(field)
@@ -204,16 +198,23 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
             assert rel_err_norm < 5e-5
 
+        return [(name, xyz_diff[op.xyz_axis])
+                for name, op in zip(insn.names, insn.operators)]
+        
+
     def exec_flux_batch_assign(self, insn):
         discr = self.ex.discr
 
         all_fofs = insn.kernel(self.rec, discr.fluxlocal_plan)
-        for name, wdflux, fluxes_on_faces in zip(insn.names, insn.fluxes, all_fofs):
-            elgroup, = discr.element_groups
-            self.context[name] = self.ex.fluxlocal_kernel(
+        elgroup, = discr.element_groups
+
+        result = [
+            (name, self.ex.fluxlocal_kernel(
                 fluxes_on_faces, 
                 *self.ex.flux_local_data(
-                    self.ex.fluxlocal_kernel, elgroup, wdflux.is_lift))
+                    self.ex.fluxlocal_kernel, elgroup, wdflux.is_lift)))
+            for name, wdflux, fluxes_on_faces in zip(
+                insn.names, insn.fluxes, all_fofs)]
 
         if discr.instrumented:
             given = discr.given
@@ -285,12 +286,14 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                             eventful_only=True)
                 assert not contains_nans, "Resulting flux contains NaNs."
 
+        return result
+
     def exec_mass_assign(self, insn):
         elgroup, = self.ex.discr.element_groups
         kernel = self.ex.discr.element_local_kernel()
-        self.context[insn.name] = kernel(
+        return [(insn.name, kernel(
                 self.rec(insn.field),
-                *self.ex.mass_data(kernel, elgroup))
+                *self.ex.mass_data(kernel, elgroup)))]
 
 
 
@@ -306,13 +309,17 @@ class VectorExprAssign(Assign):
         return "%s <- (compiled) %s" % (self.name, self.expr)
 
 class CUDAFluxBatchAssign(FluxBatchAssign):
+    @memoize_method
     def get_dependencies(self):
-        result = set()
+        deps = set()
         for wdflux in self.fluxes:
-            result = result \
-                    | set(wdflux.interior_deps) \
-                    | set(wdflux.boundary_deps)
-        return result
+            deps |= set(wdflux.interior_deps)
+            deps |= set(wdflux.boundary_deps)
+
+        dep_mapper = self.dep_mapper_factory()
+
+        from pytools import flatten
+        return set(flatten(dep_mapper(dep) for dep in deps))
 
 class CompiledCUDAFluxBatchAssign(CUDAFluxBatchAssign):
     __slots__ = ["kernel"]
@@ -351,7 +358,8 @@ class OperatorCompiler(OperatorCompilerBase):
         return self.map_planned_flux(wdflux)
 
     def make_flux_batch_assign(self, names, fluxes, kind):
-        return CUDAFluxBatchAssign(names=names, fluxes=fluxes, kind=kind)
+        return CUDAFluxBatchAssign(names=names, fluxes=fluxes, kind=kind,
+                dep_mapper_factory=self.dep_mapper_factory)
 
 
 
@@ -361,24 +369,25 @@ class OperatorCompilerWithExecutor(OperatorCompiler):
         OperatorCompiler.__init__(self)
         self.executor = executor
 
-    def make_assign(self, name, expr):
+    def make_assign(self, name, expr, priority):
         from hedge.optemplate import FluxSendOperator, OperatorBinding
         if (isinstance(expr, OperatorBinding) 
                 and isinstance(expr.op, FluxSendOperator)):
             # FluxSend does not result in a vector, so don't try to generate
             # a compiled vector expression.
-            return OperatorCompiler.make_assign(self, name, expr)
+            return OperatorCompiler.make_assign(self, name, expr, priority)
         else:
             from hedge.backends.cuda.vector_expr import CompiledVectorExpression
             return VectorExprAssign(
                     name=name,
                     expr=expr,
-                    dep_mapper_class=self.dep_mapper_class,
+                    dep_mapper_factory=self.dep_mapper_factory,
                     compiled=CompiledVectorExpression(
                         expr, 
                         type_getter=lambda expr: (True, self.executor.discr.default_scalar_type),
                         result_dtype=self.executor.discr.default_scalar_type,
-                        allocator=self.executor.discr.pool.allocate))
+                        allocator=self.executor.discr.pool.allocate),
+                    priority=priority)
 
     def make_flux_batch_assign(self, names, fluxes, kind):
         return CompiledCUDAFluxBatchAssign(
@@ -388,7 +397,8 @@ class OperatorCompilerWithExecutor(OperatorCompiler):
                 kernel=self.executor.discr.flux_plan.make_kernel(
                     self.executor.discr,
                     self.executor,
-                    fluxes))
+                    fluxes),
+                dep_mapper_factory=self.dep_mapper_factory)
 
 
 
@@ -432,6 +442,19 @@ class Executor(object):
         #if get_rank(discr) == 0:
             #print self.code
             #raw_input()
+
+        from hedge.tools import get_rank
+        from hedge.compiler import dot_dataflow_graph
+        i = 0
+        while True:
+            dot_name = "rank-%d-dataflow-%d.dot" % (get_rank(discr), i)
+            from os.path import exists
+            if exists(dot_name):
+                i += 1
+                continue
+
+            open(dot_name, "w").write(dot_dataflow_graph(self.code))
+            break
 
         # build the local kernels 
         self.diff_kernel = self.discr.diff_plan.make_kernel(discr)

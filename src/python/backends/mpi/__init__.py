@@ -281,10 +281,12 @@ class FluxCommunicationInserter(
                 from hedge.tools import with_object_array_or_scalar
                 from hedge.mesh import TAG_RANK_BOUNDARY
 
-                formal_sent_fields = CommonSubexpression(
+                from hedge.optemplate import PrioritizedSubexpression
+                formal_sent_fields = PrioritizedSubexpression(
                         OperatorBinding(
                             FluxSendOperator(), 
-                            expr.field))
+                            expr.field),
+                        priority=-2)
 
                 def receive_and_cse(rank):
                     return func_and_cse(

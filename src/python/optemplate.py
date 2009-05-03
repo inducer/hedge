@@ -56,6 +56,28 @@ def make_field(var_or_string):
 
 
 
+class PrioritizedSubexpression(pymbolic.primitives.CommonSubexpression):
+    """When the optemplate-to-code transformation is performed,
+    prioritized subexpressions  work like common subexpression in 
+    that they are assigned their own separate identifier/register
+    location. In addition to this behavior, prioritized subexpressions
+    are evaluated with a settable priority, allowing the user to 
+    expedite or delay the evaluation of the subexpression.
+    """
+
+    def __init__(self, child, priority=0):
+        pymbolic.primitives.CommonSubexpression.__init__(self, child)
+        self.priority = priority
+
+    def __getinitargs__(self):
+        return (self.child, self.priority)
+
+    def get_extra_properties(self):
+        return {"priority": self.priority}
+
+
+
+
 # operators -------------------------------------------------------------------
 class Operator(pymbolic.primitives.Leaf):
     def stringifier(self):

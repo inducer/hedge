@@ -25,6 +25,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 import hedge.backends.cpu_base
 import hedge.discretization
 import hedge.optemplate
+from pytools import memoize_method
 from hedge.backends.cpu_base import ExecutorBase, ExecutionMapperBase
 from pymbolic.mapper.c_code import CCodeMapper
 import numpy
@@ -109,21 +110,25 @@ class BoundaryFluxKind(object):
         
 # compiler stuff --------------------------------------------------------------
 class CompiledFluxBatchAssign(FluxBatchAssign):
-    __slots__ = ["compiled_func", "arg_specs"]
+    # members: compiled_func, arg_specs
 
+    @memoize_method
     def get_dependencies(self):
-        result = set()
+        deps = set()
 
         from hedge.tools import setify_field as setify
         from hedge.optemplate import OperatorBinding, BoundaryPair
         for f in self.fluxes:
             assert isinstance(f, OperatorBinding)
             if isinstance(f.field, BoundaryPair):
-                result |= setify(f.field.field) |  setify(f.field.bfield)
+                deps |= setify(f.field.field) |  setify(f.field.bfield)
             else:
-                result |= setify(f.field)
+                deps |= setify(f.field)
 
-        return result
+        dep_mapper = self.dep_mapper_factory()
+
+        from pytools import flatten
+        return set(flatten(dep_mapper(dep) for dep in deps))
 
 class OperatorCompiler(OperatorCompilerBase):
     def __init__(self, discr):

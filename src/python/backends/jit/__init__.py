@@ -35,11 +35,8 @@ import numpy
 # exec mapper -----------------------------------------------------------------
 class ExecutionMapper(ExecutionMapperBase):
     # code execution functions ------------------------------------------------
-    def exec_discard(self, insn):
-        del self.context[insn.name]
-
     def exec_assign(self, insn):
-        self.context[insn.name] = self(insn.expr)
+        return [(insn.name, self(insn.expr))]
 
     def exec_flux_batch_assign(self, insn):
         from hedge.backends.jit.compiler import BoundaryFluxKind
@@ -66,6 +63,8 @@ class ExecutionMapper(ExecutionMapperBase):
         else:
             face_groups = self.discr.face_groups
 
+        result = []
+
         for fg in face_groups:
             fof_shape = (fg.face_count*fg.face_length()*fg.element_count(),)
             all_fluxes_on_faces = [
@@ -85,19 +84,22 @@ class ExecutionMapper(ExecutionMapperBase):
                     self.executor.lift_flux(fg, fg.ldis_loc.multi_face_mass_matrix(),
                             None, fluxes_on_faces, out)
 
-                self.context[name] = out
+                result.append((name, out))
 
         if not face_groups:
             # No face groups? Still assign context variables.
             for name, flux in zip(insn.names, insn.fluxes):
-                self.context[name] = self.discr.volume_zeros()
+                result.append((name, self.discr.volume_zeros()))
+
+        return result
 
     def exec_diff_batch_assign(self, insn):
         xyz_diff = self.executor.diff(insn.op_class, self.rec(insn.field),
                 xyz_needed=[op.xyz_axis for op in insn.operators])
 
-        for name, op, diff in zip(insn.names, insn.operators, xyz_diff):
-            self.context[name] = diff
+        return [(name, diff)
+                for name, op, diff in zip(
+                    insn.names, insn.operators, xyz_diff)]
 
     def exec_mass_assign(self, insn):
         field = self.rec(insn.field)
@@ -107,7 +109,8 @@ class ExecutionMapper(ExecutionMapperBase):
 
         out = self.discr.volume_zeros(dtype=field.dtype)
         self.executor.do_mass(insn.op_class, field, out)
-        self.context[insn.name] = out
+
+        return [(insn.name, out)]
 
 
 

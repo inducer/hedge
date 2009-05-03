@@ -1387,3 +1387,56 @@ def typedump(value, max_seq=5, special_handlers={}):
         numpy.ndarray: lambda x: "array(%s, %s)" % (len(x.shape), x.dtype)
         })
     return typedump(value, max_seq, special_handlers)
+
+
+
+
+# futures ---------------------------------------------------------------------
+class Future(object):
+    """An abstract interface definition for futures.
+
+    See http://en.wikipedia.org/wiki/Future_(programming)
+    """
+    def is_ready(self):
+        raise NotImplementedError
+
+    def __call__(self):
+        raise NotImplementedError
+
+
+
+
+class ImmediateFuture(Future):
+    """A non-future that immediately has a value available."""
+    def __init__(self, value):
+        self.value = value
+
+    def is_ready(self):
+        return True
+
+    def __call__(self):
+        return self.value
+
+
+
+
+class NestedFuture(Future):
+    """A future that combines two sub-futures into one."""
+    def __init__(self, outer_future_factory, inner_future):
+        self.outer_future_factory = outer_future_factory
+        self.inner_future = inner_future
+        self.outer_future = None
+
+    def is_ready(self):
+        if self.inner_future.is_ready():
+            self.outer_future = self.outer_future_factory(self.inner_future())
+            self.is_ready = self.outer_future.is_ready()
+            return self.is_ready()
+        else:
+            return False
+
+    def __call__(self):
+        if self.outer_future is None:
+            return self.outer_future_factory(self.inner_future())()
+        else:
+            return self.outer_future()

@@ -28,7 +28,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 
 
-from pytools import Record
+from pytools import Record, memoize_method
 from hedge.optemplate import IdentityMapper
 
 
@@ -36,7 +36,8 @@ from hedge.optemplate import IdentityMapper
 
 # instructions ----------------------------------------------------------------
 class Instruction(Record):
-    __slots__ = []
+    __slots__ = ["dep_mapper_factory"]
+    priority = 0
 
     def get_assignees(self):
         raise NotImplementedError("no get_assignees in %s" % self.__class__)
@@ -50,29 +51,15 @@ class Instruction(Record):
     def get_executor_method(self, executor):
         raise NotImplementedError
 
-class Discard(Instruction): 
-    __slots__ = ["name"]
-
-    def get_assignees(self):
-        return set([self.name])
-
-    def get_dependencies(self):
-        return set()
-
-    def __str__(self):
-        return "discard %s" % self.name
-
-    def get_executor_method(self, executor):
-        return executor.exec_discard
-
 class Assign(Instruction): 
-    __slots__ = ["name", "expr", "dep_mapper_class"]
+    # attributes: name, expr, priority
 
     def get_assignees(self):
         return set([self.name])
 
+    @memoize_method
     def get_dependencies(self):
-        return self.dep_mapper_class(include_calls="descend_args")(self.expr)
+        return self.dep_mapper_factory()(self.expr)
 
     def __str__(self):
         return "%s <- %s" % (self.name, self.expr)
@@ -98,13 +85,14 @@ class FluxBatchAssign(Instruction):
         return executor.exec_flux_batch_assign
 
 class DiffBatchAssign(Instruction):
-    __slots__ = ["names", "op_class", "operators", "field"]
+    # attributes: names, op_class, operators, field
 
     def get_assignees(self):
         return set(self.names)
 
+    @memoize_method
     def get_dependencies(self):
-        return set([self.field])
+        return self.dep_mapper_factory()(self.field)
 
     def __str__(self):
         lines = []
@@ -141,6 +129,7 @@ class MassAssign(Instruction):
 
 class FluxReceiveBatchAssign(Instruction):
     __slots__ = ["names", "indices_and_ranks", "field"]
+    priority = -1
 
     def get_assignees(self):
         return set(self.names)
@@ -165,23 +154,141 @@ class FluxReceiveBatchAssign(Instruction):
 
 
 
+def dot_dataflow_graph(code, max_node_label_length=30):
+    origins = {}
+    node_names = {}
+
+    result = [
+            "initial [label=\"initial\"]"
+            "result [label=\"result\"]"
+            ]
+
+    for num, insn in enumerate(code.instructions):
+        node_name = "node%d" % num
+        node_names[insn] = node_name
+        node_label = repr(str(insn))[1:-1][:max_node_label_length]
+        result.append("%s [ label=\"p%d: %s\" shape=box ];" % (
+            node_name, insn.priority, node_label))
+
+        for assignee in insn.get_assignees():
+            origins[assignee] = node_name
+
+    def get_orig_node(expr):
+        from pymbolic.primitives import Variable
+        if isinstance(expr, Variable):
+            return origins.get(expr.name, "initial")
+        else:
+            return "initial"
+
+    def gen_expr_arrow(expr, target_node):
+        result.append("%s -> %s [label=\"%s\"];"
+                % (get_orig_node(expr), target_node, expr))
+
+    for insn in code.instructions:
+        for dep in insn.get_dependencies():
+            gen_expr_arrow(dep, node_names[insn])
+
+    from hedge.tools import is_obj_array
+    
+    if is_obj_array(code.result):
+        for subexp in code.result:
+            gen_expr_arrow(subexp, "result")
+    else:
+        gen_expr_arrow(code.result, "result")
+
+    return "digraph dataflow {\n%s\n}\n" % "\n".join(result)
+
+
+            
+
+
 # code ------------------------------------------------------------------------
 class Code(object):
-    def __init__(self, code, result):
-        self.code = code
+    def __init__(self, instructions, result):
+        self.instructions = instructions
         self.result = result
+
+        self.insns_depending_on = {}
+        self.initial_exec_front = set()
+
+        insn_generated_vars = set()
+
+        from pymbolic.primitives import make_variable, Variable
+        for insn in self.instructions:
+            for dep in insn.get_dependencies():
+                assert isinstance(dep, Variable)
+                dep = dep.name
+
+                self.insns_depending_on.setdefault(dep,
+                        set()).add(insn)
+
+            insn_generated_vars.update(
+                    make_variable(tgt)
+                    for tgt in insn.get_assignees())
+
+        for insn in self.instructions:
+            if not (insn.get_dependencies() & insn_generated_vars):
+                self.initial_exec_front.add(insn)
 
     def __str__(self):
         lines = []
-        for insn in self.code:
+        for insn in self.instructions:
             lines.extend(str(insn).split("\n"))
         lines.append(str(self.result))
 
         return "\n".join(lines)
 
     def execute(self, exec_mapper):
-        for insn in self.code:
-            insn.get_executor_method(exec_mapper)(insn)
+        exec_front = self.initial_exec_front.copy()
+        futures = []
+
+        def make_available(name, value):
+            exec_mapper.context[target] = value
+
+            from pymbolic.primitives import Variable
+            from pytools import all
+
+            for cand_insn in self.insns_depending_on.get(target, []):
+                if cand_insn in exec_front:
+                    continue
+
+                # insns that have already been completed won't be re-added
+                # here: We've already satisfied all their dependencies and
+                # they therefore can't show up here.
+
+                if all(dep.name in exec_mapper.context
+                        for dep in cand_insn.get_dependencies()):
+                    exec_front.add(cand_insn)
+
+        from pytools import argmin2
+        from hedge.tools import Future
+
+        while exec_front or futures:
+            # check futures for completion
+            i = 0
+            while i < len(futures):
+                target, future = futures[i]
+                if future.is_ready():
+                    make_available(target, future())
+                    futures.pop(i)
+                else:
+                    i += 1
+
+            # pick the next insn from the exec_front_heap
+            if exec_front:
+                insn = argmin2((insn, insn.priority) for insn in exec_front)
+                exec_front.remove(insn)
+
+                for target, value in insn.get_executor_method(exec_mapper)(insn):
+                    if isinstance(value, Future):
+                        futures.append((target, value))
+                    else:
+                        make_available(target, value)
+            else:
+                # empty exec_front: we need a future to complete to continue
+                if futures:
+                    target, future = futures.pop()
+                    make_available(target, future())
 
         from hedge.tools import with_object_array_or_scalar
         return with_object_array_or_scalar(exec_mapper, self.result)
@@ -191,7 +298,6 @@ class Code(object):
 
 # compiler --------------------------------------------------------------------
 class OperatorCompilerBase(IdentityMapper):
-    from hedge.optemplate import DependencyMapper as dep_mapper_class
     from hedge.optemplate import BoundOperatorCollector \
             as bound_op_collector_class
 
@@ -207,6 +313,13 @@ class OperatorCompilerBase(IdentityMapper):
         self.code = []
         self.assigned_var_count = 0
         self.expr_to_var = {}
+
+    def dep_mapper_factory(self):
+        from hedge.optemplate import DependencyMapper
+        return DependencyMapper(
+                include_operator_bindings=False,
+                include_subscripts=False,
+                include_calls="descend_args")
 
     def get_contained_fluxes(self, expr):
         """Recursively enumerate all flux expressions in the expression tree
@@ -224,32 +337,6 @@ class OperatorCompilerBase(IdentityMapper):
     def collect_flux_receive_ops(self, expr):
         from hedge.optemplate import FluxReceiveOperator
         return self.bound_op_collector_class(FluxReceiveOperator)(expr)
-
-    def insert_discards(self, code, result_expr):
-        rev_code_and_used_vars = []
-        from hedge.tools import setify_field as setify
-        used_vars = set(v.name for v in setify(result_expr))
-
-        from pymbolic.primitives import Variable
-
-        for line in code[::-1]:
-            used_vars.update(
-                v.name for v in line.get_dependencies()
-                if isinstance(v, Variable) and v.name.startswith(self.prefix))
-            rev_code_and_used_vars.append((line, used_vars.copy()))
-            used_vars = used_vars - line.get_assignees()
-
-        result = []
-        last_used_vars = set()
-        for line, used_vars in rev_code_and_used_vars[::-1]:
-            for var_name in last_used_vars - used_vars:
-                result.append(Discard(name=var_name))
-
-            result.append(line)
-
-            last_used_vars = used_vars
-
-        return result
 
     def __call__(self, expr):
         # Fluxes can be evaluated faster in batches. Here, we find flux batches
@@ -310,7 +397,7 @@ class OperatorCompilerBase(IdentityMapper):
         # Then, put the toplevel expressions into variables as well.
         from hedge.tools import with_object_array_or_scalar
         result = with_object_array_or_scalar(self.assign_to_new_var, result)
-        return Code(self.insert_discards(self.code, result), result)
+        return Code(self.code, result)
 
     def get_var_name(self):
         new_name = self.prefix+str(self.assigned_var_count)
@@ -321,7 +408,9 @@ class OperatorCompilerBase(IdentityMapper):
         try:
             return self.expr_to_var[expr.child]
         except KeyError:
-            cse_var = self.assign_to_new_var(self.rec(expr.child))
+            priority = getattr(expr, "priority", 0)
+            cse_var = self.assign_to_new_var(self.rec(expr.child),
+                    priority=priority)
             self.expr_to_var[expr.child] = cse_var
             return cse_var
 
@@ -356,7 +445,8 @@ class OperatorCompilerBase(IdentityMapper):
                         op_class=single_valued(
                             d.op.__class__ for d in all_diffs),
                         operators=[d.op for d in all_diffs],
-                        field=self.rec(single_valued(d.field for d in all_diffs))))
+                        field=self.rec(single_valued(d.field for d in all_diffs)),
+                        dep_mapper_factory=self.dep_mapper_factory))
 
             from pymbolic import var
             for n, d in zip(names, all_diffs):
@@ -369,7 +459,7 @@ class OperatorCompilerBase(IdentityMapper):
             return self.expr_to_var[expr]
         except KeyError:
             ma = MassAssign(
-                    name=self.get_var_name,
+                    name=self.get_var_name(),
                     op_class=expr.op.__class__,
                     field=self.rec(expr.field))
             self.code.append(ma)
@@ -429,19 +519,20 @@ class OperatorCompilerBase(IdentityMapper):
 
             raise RuntimeError("flux '%s' not in any flux batch" % expr)
 
-    def assign_to_new_var(self, expr):
+    def assign_to_new_var(self, expr, priority=0):
         from pymbolic.primitives import Variable
         if isinstance(expr, Variable):
             return expr
             
         new_name = self.get_var_name()
-        self.code.append(self.make_assign(new_name, expr))
+        self.code.append(self.make_assign(new_name, expr, priority))
 
         return Variable(new_name)
 
     # instruction producers ---------------------------------------------------
-    def make_assign(self, name, expr):
-        return Assign(name=name, expr=expr, dep_mapper_class=self.dep_mapper_class)
+    def make_assign(self, name, expr, priority):
+        return Assign(name=name, expr=expr, dep_mapper_factory=self.dep_mapper_factory,
+                priority=priority)
 
     def make_flux_batch_assign(self, names, fluxes, kind):
         return FluxBatchAssign(names=names, fluxes=fluxes, kind=kind)
