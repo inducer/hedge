@@ -208,8 +208,6 @@ class Code(object):
         self.instructions = instructions
         self.result = result
 
-        self.need_nondet_scheduling_pass = True
-
     class NoInstructionAvailable(Exception):
         pass
 
@@ -236,31 +234,9 @@ class Code(object):
         return "\n".join(lines)
 
     def execute(self, exec_mapper):
-        if self.need_nondet_scheduling_pass:
-            self.need_nondet_scheduling_pass = False
-            return self.execute_nondet(exec_mapper, [], [])
-
-        # default to the faster, deterministic execution
         futures = []
+        done_insns = set()
 
-        from hedge.tools import Future
-        for i, insn in enumerate(self.instructions):
-            for target, value in insn.get_executor_method(exec_mapper)(insn):
-                if isinstance(value, Future):
-                    futures.append((target, value))
-                else:
-                    exec_mapper.context[target] = value
-
-                if futures:
-                    # punt to nondterminism if needed
-                    return self.execute_nondet(
-                            exec_mapper, futures, 
-                            self.instructions[:i+1])
-
-        from hedge.tools import with_object_array_or_scalar
-        return with_object_array_or_scalar(exec_mapper, self.result)
-
-    def execute_nondet(self, exec_mapper, futures, done_insns):
         from hedge.tools import Future
 
         quit_flag = False
@@ -288,14 +264,12 @@ class Code(object):
                 else:
                     quit_flag = True
             else:
-                done_insns.append(insn)
+                done_insns.add(insn)
                 for target, value in insn.get_executor_method(exec_mapper)(insn):
                     if isinstance(value, Future):
                         futures.append((target, value))
                     else:
                         exec_mapper.context[target] = value
-
-        self.instructions = done_insns
 
         from hedge.tools import with_object_array_or_scalar
         return with_object_array_or_scalar(exec_mapper, self.result)
