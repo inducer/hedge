@@ -18,7 +18,7 @@
 
 
 #include <boost/python.hpp>
-#include "special_function.hpp"
+#include <hedge/special_function.hpp>
 #include <boost/math/special_functions/bessel.hpp>
 
 

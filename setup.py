@@ -167,7 +167,7 @@ def main():
                     ),
                 ],
             data_files=[
-            ("include/hedge", glob.glob("src/cpp/*.hpp")),
+            ("include/hedge", glob.glob("src/cpp/hedge/*.hpp")),
             ],
             )
 
