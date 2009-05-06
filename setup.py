@@ -145,7 +145,6 @@ def main():
                     ],
             zip_safe=False,
 
-            package_dir={ "hedge": "src/python" },
             ext_package="hedge",
 
             ext_modules=[
