@@ -144,7 +144,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         self.ex = executor
 
     def exec_assign(self, insn):
-        return [(insn.name, self(insn.expr))]
+        return [(insn.name, self(insn.expr))], []
 
     def exec_vector_expr_assign(self, insn):
         if self.ex.discr.instrumented:
@@ -157,7 +157,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         else:
             add_timer = None
 
-        return [(insn.name, insn.compiled(self, add_timer))]
+        return [(insn.name, insn.compiled(self, add_timer))], []
 
     def exec_diff_batch_assign(self, insn):
         field = self.rec(insn.field)
@@ -198,7 +198,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
             assert rel_err_norm < 5e-5
 
         return [(name, xyz_diff[op.xyz_axis])
-                for name, op in zip(insn.names, insn.operators)]
+                for name, op in zip(insn.names, insn.operators)], []
         
 
     def exec_flux_batch_assign(self, insn):
@@ -285,14 +285,14 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                             eventful_only=True)
                 assert not contains_nans, "Resulting flux contains NaNs."
 
-        return result
+        return result, []
 
     def exec_mass_assign(self, insn):
         elgroup, = self.ex.discr.element_groups
         kernel = self.ex.discr.element_local_kernel()
         return [(insn.name, kernel(
                 self.rec(insn.field),
-                *self.ex.mass_data(kernel, elgroup)))]
+                *self.ex.mass_data(kernel, elgroup)))], []
 
 
 
@@ -369,24 +369,17 @@ class OperatorCompilerWithExecutor(OperatorCompiler):
         self.executor = executor
 
     def make_assign(self, name, expr, priority):
-        from hedge.optemplate import FluxSendOperator, OperatorBinding
-        if (isinstance(expr, OperatorBinding) 
-                and isinstance(expr.op, FluxSendOperator)):
-            # FluxSend does not result in a vector, so don't try to generate
-            # a compiled vector expression.
-            return OperatorCompiler.make_assign(self, name, expr, priority)
-        else:
-            from hedge.backends.cuda.vector_expr import CompiledVectorExpression
-            return VectorExprAssign(
-                    name=name,
-                    expr=expr,
-                    dep_mapper_factory=self.dep_mapper_factory,
-                    compiled=CompiledVectorExpression(
-                        expr, 
-                        type_getter=lambda expr: (True, self.executor.discr.default_scalar_type),
-                        result_dtype=self.executor.discr.default_scalar_type,
-                        allocator=self.executor.discr.pool.allocate),
-                    priority=priority)
+        from hedge.backends.cuda.vector_expr import CompiledVectorExpression
+        return VectorExprAssign(
+                name=name,
+                expr=expr,
+                dep_mapper_factory=self.dep_mapper_factory,
+                compiled=CompiledVectorExpression(
+                    expr, 
+                    type_getter=lambda expr: (True, self.executor.discr.default_scalar_type),
+                    result_dtype=self.executor.discr.default_scalar_type,
+                    allocator=self.executor.discr.pool.allocate),
+                priority=priority)
 
     def make_flux_batch_assign(self, names, fluxes, kind):
         return CompiledCUDAFluxBatchAssign(

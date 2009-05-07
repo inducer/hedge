@@ -490,4 +490,5 @@ class OperatorCompiler(OperatorCompilerBase):
         return CompiledFluxBatchAssign(
                 names=names, fluxes=fluxes, kind=kind,
                 arg_specs=fvi.arg_specs, 
-                compiled_func=compiled_func)
+                compiled_func=compiled_func,
+                dep_mapper_factory=self.dep_mapper_factory)

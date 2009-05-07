@@ -252,14 +252,11 @@ class ElementwiseMaxOperator(StatelessOperator):
 
 
 
-class FluxSendOperator(StatelessOperator):
-    """An identity operator that initiates the sending of the boundary information
-    for its argument fields.
+class FluxExchangeOperator(Operator):
+    """An operator that results in the sending and receiving of 
+    boundary information for its argument fields.
     """
-    def get_mapper_method(self, mapper): 
-        return mapper.map_flux_send
 
-class FluxReceiveOperator(StatelessOperator):
     def __init__(self, idx, rank):
         self.index = idx
         self.rank = rank
@@ -276,7 +273,7 @@ class FluxReceiveOperator(StatelessOperator):
                 and other.rank == self.rank)
 
     def get_mapper_method(self, mapper): 
-        return mapper.map_flux_receive
+        return mapper.map_flux_exchange
 
 
 
@@ -526,10 +523,7 @@ class OperatorReducerMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     def map_elementwise_max(self, expr, *args, **kwargs):
         return self.map_operator(expr, *args, **kwargs)
 
-    def map_flux_send(self, expr, *args, **kwargs):
-        return self.map_operator(expr, *args, **kwargs)
-
-    def map_flux_receive(self, expr, *args, **kwargs):
+    def map_flux_exchange(self, expr, *args, **kwargs):
         return self.map_operator(expr, *args, **kwargs)
 
 
@@ -570,8 +564,7 @@ class IdentityMapperMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     map_flux_base = map_mass_base
     map_flux_coeff_base = map_mass_base
     map_elementwise_max = map_mass_base
-    map_flux_send = map_mass_base
-    map_flux_receive = map_mass_base
+    map_flux_exchange = map_mass_base
 
 
 
@@ -661,11 +654,8 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
     def map_elementwise_max(self, expr, enclosing_prec):
         return "ElWMax"
 
-    def map_flux_send(self, expr, enclosing_prec):
-        return "FSend"
-
-    def map_flux_receive(self, expr, enclosing_prec):
-        return "FRecv<idx=%d,rank=%d>" % (expr.index, expr.rank)
+    def map_flux_exchange(self, expr, enclosing_prec):
+        return "FExch<idx=%d,rank=%d>" % (expr.index, expr.rank)
 
     def map_operator_binding(self, expr, enclosing_prec):
         return "<%s>(%s)" % (expr.op, expr.field)

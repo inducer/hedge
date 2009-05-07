@@ -181,6 +181,15 @@ def to_obj_array(ary):
 
 
 
+def is_field_equal(a, b):
+    if is_obj_array(a):
+        return is_obj_array(b) and (a == b).all()
+    else:
+        return not is_obj_array(b) and a == b
+
+
+
+
 def make_obj_array(res_list):
     result = numpy.empty((len(res_list),), dtype=object)
     for i, v in enumerate(res_list):
@@ -1308,10 +1317,10 @@ class Future(object):
     See http://en.wikipedia.org/wiki/Future_(programming)
     """
     def is_ready(self):
-        raise NotImplementedError
+        raise NotImplementedError(self.__class__)
 
     def __call__(self):
-        raise NotImplementedError
+        raise NotImplementedError(self.__class__)
 
 
 

@@ -30,8 +30,9 @@ import hedge.mesh
 from hedge.optemplate import \
         IdentityMapper, \
         FluxOpReducerMixin
+from hedge.tools import Future
 from hedge.backends import RunContext
-from hedge.partition import PartitionData
+import hedge.mpi as mpi
 
 
 
@@ -120,116 +121,147 @@ class MPIRunContext(RunContext):
 
 
 
+# Subtlety here: The vectors for isend and irecv need to stay allocated
+# for as long as the request is not completed. The wrapper aids this
+# by making sure the vector outlives the request by using Boost.Python's
+# with_custodian_and_ward mechanism. However, this "life support" gets
+# eliminated if the only reference to the request is from inside a 
+# RequestList, so we need to provide our own life support for these vectors.
+
+
+
+
+class BoundarizeSendFuture(Future):
+    def __init__(self, pdiscr, rank, field):
+        self.pdiscr = pdiscr
+        self.rank = rank
+
+        from hedge.mesh import TAG_RANK_BOUNDARY
+        self.bdry_future = pdiscr.boundarize_volume_field_async(
+                    field, TAG_RANK_BOUNDARY(rank), kind="numpy")
+
+        self.is_ready = self.bdry_future.is_ready
+
+    def __call__(self):
+        return [], [SendCompletionFuture(
+            self.pdiscr.context.communicator, self.rank, self.bdry_future())]
+
+
+
+
+class MPICompletionFuture(Future):
+    def __init__(self, request):
+        self.request = request
+        self.result = None
+
+    def is_ready(self):
+        if self.request is not None:
+            status = self.request.test()
+            if status is not None:
+                self.result = self.finish(status)
+                self.request = None
+                return True
+
+        return False
+
+    def __call__(self):
+        if self.request is not None:
+            status = self.request.wait()
+            return self.finish(status)
+        else:
+            return self.result
+
+
+
+
+class SendCompletionFuture(MPICompletionFuture):
+    def __init__(self, comm, rank, send_vec):
+        assert send_vec.dtype != object
+        self.send_vec = send_vec
+
+        from hedge._internal import isend_buffer
+        MPICompletionFuture.__init__(self,
+                isend_buffer(comm, rank, tag=1, 
+                    vector=send_vec))
+
+    def finish(self, status):
+        return [], []
+
+
+
+
+class ReceiveCompletionFuture(MPICompletionFuture):
+    def __init__(self, pdiscr, shape, rank, indices_and_names):
+        self.pdiscr = pdiscr
+        self.rank = rank
+        self.indices_and_names = indices_and_names
+
+        self.recv_vec = pdiscr.boundary_empty(
+                    hedge.mesh.TAG_RANK_BOUNDARY(rank),
+                    shape=shape,
+                    kind="numpy",
+                    dtype=self.pdiscr.default_scalar_type)
+        from hedge._internal import irecv_buffer
+        MPICompletionFuture.__init__(self,
+                irecv_buffer(pdiscr.context.communicator, 
+                    rank, tag=1, vector=self.recv_vec))
+
+    def finish(self, status):
+        return [], [BoundaryConvertFuture(
+            self.pdiscr, self.rank, self.indices_and_names,
+            self.recv_vec)]
+
+
+
+
+class BoundaryConvertFuture(Future):
+    def __init__(self, pdiscr, rank, indices_and_names, recv_vec):
+        self.pdiscr = pdiscr
+        self.rank = rank
+        self.indices_and_names = indices_and_names
+        self.recv_vec = recv_vec
+
+        fnm = pdiscr.from_neighbor_maps[rank]
+        
+        from hedge.mesh import TAG_RANK_BOUNDARY
+        self.convert_future = self.pdiscr.convert_boundary_async(
+                numpy.asarray(self.recv_vec[:, fnm], order="C"),
+                TAG_RANK_BOUNDARY(rank),
+                kind=self.pdiscr.compute_kind)
+
+        self.is_ready = self.convert_future.is_ready
+
+    def __call__(self):
+        converted_vec = self.convert_future()
+        return [(name, converted_vec[idx]) 
+                for idx, name in self.indices_and_names], []
+
+
+
+
 def make_custom_exec_mapper_class(superclass):
     class ExecutionMapper(superclass):
         def __init__(self, context, executor):
             superclass.__init__(self, context, executor)
             self.discr = executor.discr
 
-        # actual functionality ----------------------------------------------------
-        def map_flux_send(self, op, field_expr):
-            import hedge.mpi as mpi
-            from hedge.tools import log_shape, is_obj_array
-
+        def exec_flux_exchange_batch_assign(self, insn):
             pdiscr = self.discr.parallel_discr
-            comm = pdiscr.context.communicator
+
+            from hedge.tools import log_shape
+
+            field = self.rec(insn.field)
+            shape = log_shape(field)
 
             if self.discr.instrumented:
-                self.discr.parallel_discr.flux_send_timer.start()
-                self.discr.parallel_discr.comm_flux_counter.add(
-                        len(pdiscr.neighbor_ranks))
+                pdiscr.comm_flux_counter.add(len(pdiscr.neighbor_ranks)*shape[0])
 
-            field = self.rec(field_expr)
-            shp = log_shape(field)
-
-            # Subtlety here: The vectors for isend and irecv need to stay allocated
-            # for as long as the request is not completed. The wrapper aids this
-            # by making sure the vector outlives the request by using Boost.Python's
-            # with_custodian_and_ward mechanism. However, this "life support" gets
-            # eliminated if the only reference to the request is from inside a 
-            # RequestList, so we need to provide our own life support for these vectors.
-
-            neigh_recv_vecs = dict(
-                    (rank, pdiscr.boundary_empty(
-                        hedge.mesh.TAG_RANK_BOUNDARY(rank),
-                        shape=shp,
-                        kind="numpy",
-                        dtype=self.discr.default_scalar_type))
-                    for rank in pdiscr.neighbor_ranks)
-
-            from hedge._internal import irecv_buffer, isend_buffer
-            recv_requests = mpi.RequestList(
-                    irecv_buffer(comm, rank, tag=1, vector=neigh_recv_vecs[rank])
-                    for rank in pdiscr.neighbor_ranks)
-
-            from hedge.mesh import TAG_RANK_BOUNDARY
-            neigh_send_vecs = [
-                    pdiscr.boundarize_volume_field(
-                        field, 
-                        TAG_RANK_BOUNDARY(rank),
-                        kind="numpy")
-                    for rank in pdiscr.neighbor_ranks]
-
-            for nsv in neigh_send_vecs:
-                assert nsv.dtype != object
-
-            send_requests = [isend_buffer(comm, rank, tag=1, vector=nsv)
-                for rank, nsv in zip(
-                    pdiscr.neighbor_ranks,
-                    neigh_send_vecs)]
-
-            class CommunicationRecord(pytools.Record):
-                pass
-
-            return CommunicationRecord(
-                    neigh_recv_vecs=neigh_recv_vecs,
-                    neigh_send_vecs=neigh_send_vecs,
-                    recv_requests=recv_requests,
-                    send_requests=send_requests,
-                    shape=shp,
-                    )
-
-            if self.discr.instrumented:
-                self.discr.parallel_discr.flux_send_timer.stop()
-
-        def exec_flux_receive_batch_assign(self, efrba):
-            if self.discr.instrumented:
-                self.discr.parallel_discr.flux_recv_timer.start()
-
-            import hedge.mpi as mpi
-
-            pdiscr = self.discr.parallel_discr
-            comm_record = self.rec(efrba.field)
-
-            rank_to_index_and_name = {}
-            for name, (index, rank) in zip(
-                    efrba.names, efrba.indices_and_ranks):
-                rank_to_index_and_name.setdefault(rank, []).append(
-                    (index, name))
-
-            recv_req = comm_record.recv_requests
-
-            all_recved = numpy.zeros((len(efrba.names),), dtype=object)
-            from hedge.mesh import TAG_RANK_BOUNDARY
-            while len(recv_req):
-                value, status, index = mpi.wait_any(recv_req)
-                del recv_req[index]
-
-                received_vec = comm_record.neigh_recv_vecs[status.source]
-
-                fnm = pdiscr.from_neighbor_maps[status.source]
-                converted_vec = self.discr.convert_boundary(
-                        numpy.asarray(received_vec[:, fnm], order="C"),
-                        TAG_RANK_BOUNDARY(status.source),
-                        kind=self.discr.compute_kind)
-
-                for idx, name in rank_to_index_and_name[status.source]:
-                    self.context[name] = converted_vec[idx]
-
-            mpi.wait_all(mpi.RequestList(comm_record.send_requests))
-
-            if self.discr.instrumented:
-                self.discr.parallel_discr.flux_recv_timer.stop()
+            return ([], 
+                    [BoundarizeSendFuture(pdiscr, rank, field)
+                        for rank in pdiscr.neighbor_ranks]
+                    + [ReceiveCompletionFuture(pdiscr, shape, rank, 
+                        insn.rank_to_index_and_name[rank])
+                        for rank in pdiscr.neighbor_ranks])
 
     return ExecutionMapper
 
@@ -247,13 +279,12 @@ class FluxCommunicationInserter(
                 FluxOperatorBase, \
                 FluxCoefficientOperatorBase, \
                 BoundaryPair, OperatorBinding, \
-                FluxSendOperator, FluxReceiveOperator
+                FluxExchangeOperator
 
         if isinstance(expr, OperatorBinding):
             if isinstance(expr.op, FluxCoefficientOperatorBase):
-                raise ValueError("flux coefficient operators not supported for MPI")
-
-            if isinstance(expr.op, FluxOperatorBase):
+                raise ValueError("flux coefficient operators are obsolete and not supported for MPI")
+            elif isinstance(expr.op, FluxOperatorBase):
                 if isinstance(expr.field, BoundaryPair):
                     # we're only worried about internal fluxes
                     return IdentityMapper.map_operator_binding(self, expr)
@@ -263,45 +294,32 @@ class FluxCommunicationInserter(
                         flattened_sum, \
                         CommonSubexpression
 
-                def func_and_cse(func, formal_fields, arg_fields):
+                def func_and_cse(func, arg_fields):
                     from hedge.tools import is_obj_array, make_obj_array
                     if is_obj_array(arg_fields):
                         return make_obj_array([
                             CommonSubexpression(
                                 OperatorBinding(
                                     func(i),
-                                    formal_fields))
+                                    arg_fields))
                                 for i in range(len(arg_fields))])
                     else:
                         return CommonSubexpression(
                                 OperatorBinding(
                                     func(()),
-                                    formal_fields))
+                                    arg_fields))
                     
-                from hedge.tools import with_object_array_or_scalar
                 from hedge.mesh import TAG_RANK_BOUNDARY
 
-                from hedge.optemplate import PrioritizedSubexpression
-                formal_sent_fields = PrioritizedSubexpression(
-                        OperatorBinding(
-                            FluxSendOperator(), 
-                            expr.field),
-                        priority=2)
-
-                def receive_and_cse(rank):
+                def exchange_and_cse(rank):
                     return func_and_cse(
-                            lambda i: FluxReceiveOperator(i, rank),
-                            formal_sent_fields,
+                            lambda i: FluxExchangeOperator(i, rank),
                             expr.field)
 
                 return flattened_sum([expr]
                     + [OperatorBinding(expr.op, BoundaryPair(
                         expr.field, 
-                        # This boundary field has no true data dependency--
-                        # it is received from a different rank.
-                        # Instead of field data, the "formal sent fields" 
-                        # contain communication handles.
-                        receive_and_cse(rank),
+                        exchange_and_cse(rank),
                         TAG_RANK_BOUNDARY(rank)))
                         for rank in self.interacting_ranks])
             else:
@@ -353,17 +371,11 @@ class ParallelDiscretization(object):
     def add_instrumentation(self, mgr):
         self.subdiscr.add_instrumentation(mgr)
 
-        from pytools.log import IntervalTimer, EventCounter
+        from pytools.log import EventCounter
         self.comm_flux_counter = EventCounter("n_comm_flux", 
                 "Number of inner flux communication runs")
-        self.flux_send_timer = IntervalTimer("t_flux_send", 
-                "Time spent sending flux data")
-        self.flux_recv_timer = IntervalTimer("t_flux_recv", 
-                "Time spent waiting for and receiving flux data")
 
         mgr.add_quantity(self.comm_flux_counter)
-        mgr.add_quantity(self.flux_send_timer)
-        mgr.add_quantity(self.flux_recv_timer)
 
     # property forwards -------------------------------------------------------
     def __len__(self):
@@ -570,13 +582,11 @@ class ParallelDiscretization(object):
         from hedge.mpi import all_reduce
         from operator import add
 
-        return all_reduce(pcon.communicator, 
+        return all_reduce(self.context.communicator, 
                 self.subdiscr.nodewise_inner_product(a, b), 
                 add)
 
     def norm(self, volume_vector, p=2):
-        import hedge.mpi as mpi
-
         def add_norms(x, y):
             return (x**p + y**p)**(1/p)
 

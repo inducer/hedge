@@ -636,6 +636,11 @@ class Discretization(object):
 
         return field
 
+    def convert_boundary_async(self, field, tag, kind):
+        from hedge.tools import ImmediateFuture
+        return ImmediateFuture(
+                self.convert_boundary(field, tag, kind))
+
     def volume_empty(self, shape=(), dtype=None, kind="numpy"):
         if kind != "numpy":
             raise ValueError, "invalid vector kind requested"
@@ -764,6 +769,11 @@ class Discretization(object):
             return result
         else:
             return field[tuple(slice(None) for i in range(len(ls))) + (bdry.vol_indices,)]
+
+    def boundarize_volume_field_async(self, field, tag, kind=None):
+        from hedge.tools import ImmediateFuture
+        return ImmediateFuture(
+                self.boundarize_volume_field(field, tag, kind))
 
     # scalar reduction --------------------------------------------------------
     def nodewise_dot_product(self, a, b):

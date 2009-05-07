@@ -35,7 +35,7 @@ import numpy
 class ExecutionMapper(ExecutionMapperBase):
     # code execution functions ------------------------------------------------
     def exec_assign(self, insn):
-        return [(insn.name, self(insn.expr))]
+        return [(insn.name, self(insn.expr))], []
 
     def exec_flux_batch_assign(self, insn):
         from hedge.backends.jit.compiler import BoundaryFluxKind
@@ -90,7 +90,7 @@ class ExecutionMapper(ExecutionMapperBase):
             for name, flux in zip(insn.names, insn.fluxes):
                 result.append((name, self.discr.volume_zeros()))
 
-        return result
+        return result, []
 
     def exec_diff_batch_assign(self, insn):
         xyz_diff = self.executor.diff(insn.op_class, self.rec(insn.field),
@@ -98,7 +98,7 @@ class ExecutionMapper(ExecutionMapperBase):
 
         return [(name, diff)
                 for name, op, diff in zip(
-                    insn.names, insn.operators, xyz_diff)]
+                    insn.names, insn.operators, xyz_diff)], []
 
     def exec_mass_assign(self, insn):
         field = self.rec(insn.field)
@@ -109,7 +109,7 @@ class ExecutionMapper(ExecutionMapperBase):
         out = self.discr.volume_zeros(dtype=field.dtype)
         self.executor.do_mass(insn.op_class, field, out)
 
-        return [(insn.name, out)]
+        return [(insn.name, out)], []
 
 
 
