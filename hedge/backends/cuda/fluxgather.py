@@ -23,12 +23,10 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import numpy
-import numpy.linalg as la
 from pytools import memoize_method, memoize, Record
 import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
 from pycuda.compiler import SourceModule
-import pymbolic.mapper.stringifier
 import hedge.backends.cuda.plan
 from pymbolic.mapper.c_code import CCodeMapper
 from hedge.flux import FluxIdentityMapper
@@ -94,8 +92,6 @@ class FluxConcretizer(FluxIdentityMapper):
         else:
             prefix = "b"
             f_expr = self.ext_field_expr
-
-        from hedge.backends.cuda.optemplate import WholeDomainFluxOperator
 
         from hedge.tools import is_obj_array, is_zero
         from pymbolic import var
@@ -232,7 +228,6 @@ class ExecutionPlan(hedge.backends.cuda.plan.ExecutionPlan):
 
 def make_plan(discr, given, tune_for):
     from hedge.backends.cuda.execute import Executor
-    from hedge.backends.cuda.optemplate import FluxCollector
     if tune_for is not None:
         fbatch1 = Executor.get_first_flux_batch(discr.mesh, tune_for)
         if fbatch1 is not None:
@@ -414,7 +409,6 @@ class Kernel:
                     *tuple(fof.gpudata for fof in all_fluxes_on_faces)
                     ))
 
-            from pytools import product
             discr.gmem_bytes_gather.add(
                     len(discr.blocks) * fdata.block_bytes
                     +
@@ -512,12 +506,12 @@ class Kernel:
     @memoize_method
     def get_kernel(self, fdata, ilist_data, for_benchmark):
         from codepy.cgen import \
-                Pointer, POD, Value, ArrayOf, Const, Typedef, \
+                Pointer, POD, Value, ArrayOf, Typedef, \
                 Module, FunctionDeclaration, FunctionBody, Block, \
                 Comment, Line, Include, \
-                Static, MaybeUnused, \
-                Define, Pragma, \
-                Constant, Initializer, If, For, Statement, Assign, While
+                MaybeUnused, \
+                Define, \
+                Initializer, If, For, Statement, Assign, While
                 
         from codepy.cgen.cuda import CudaShared, CudaGlobal
         from codepy.cgen import dtype_to_ctype
@@ -544,8 +538,6 @@ class Kernel:
 
         cmod = Module()
         cmod.append(Include("pycuda-helpers.hpp"))
-
-        from hedge.backends.cuda.optemplate import WholeDomainFluxOperator as WDFlux
 
         for dep_expr in self.all_deps:
             cmod.extend([
@@ -639,13 +631,9 @@ class Kernel:
                         what)
 
         def bdry_flux_writer():
-            from codepy.cgen import make_multiple_ifs
             from pymbolic.mapper.stringifier import PREC_NONE
 
             flux_write_code = Block()
-
-            from pytools import flatten
-            from hedge.tools import is_zero
 
             for dep in self.boundary_int_deps:
                 flux_write_code.append(
@@ -724,7 +712,6 @@ class Kernel:
 
                 return ("val_%s_field%d" % (prefix, self.dep_to_index[flux_rec.field_expr]))
 
-            from codepy.cgen import make_multiple_ifs
             from pymbolic.mapper.stringifier import PREC_NONE
 
             flux_write_code = Block([])
@@ -1038,7 +1025,7 @@ class Kernel:
 
         #print len(same_fp_structs), len(diff_fp_structs), len(bdry_fp_structs)
 
-        from codepy.cgen import Value, POD
+        from codepy.cgen import Value
         from hedge.backends.cuda.tools import make_superblocks
 
         return make_superblocks(
@@ -1172,7 +1159,7 @@ class Kernel:
         ilist_length = single_valued(len(il) for il in ilists)
         assert ilist_length == self.plan.given.dofs_per_face()
 
-        from codepy.cgen import Typedef, POD, Value, Define
+        from codepy.cgen import Typedef, POD
 
         from pytools import flatten
         flat_ilists_uncast = numpy.array(list(flatten(ilists)))

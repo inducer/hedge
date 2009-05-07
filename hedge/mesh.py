@@ -24,7 +24,6 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 import pytools
 import numpy
-import numpy.linalg as la
 
 # make sure AffineMap monkeypatch happens
 import hedge.tools
@@ -699,11 +698,11 @@ def make_single_element_mesh(a=-0.5, b=0.5,
     n = 2
     node_dict = {}
     points = []
-    points_1d = num.linspace(a, b, n)
+    points_1d = numpy.linspace(a, b, n)
     for j in range(n):
         for i in range(n):
             node_dict[i,j] = len(points)
-            points.append(num.array([points_1d[i], points_1d[j]]))
+            points.append(numpy.array([points_1d[i], points_1d[j]]))
 
     elements = [(
                 node_dict[1,1],
@@ -1039,7 +1038,6 @@ def _make_z_periodic_mesh(points, facets, facet_holestarts, facet_markers, heigh
 def make_cylinder_mesh(radius=0.5, height=1, radial_subdivisions=10, 
         height_subdivisions=1, max_volume=None, periodic=False,
         boundary_tagger=(lambda fvi, el, fn, all_v: [])):
-    from math import pi, cos, sin
     from meshpy.tet import MeshInfo, build
     from meshpy.geometry import make_cylinder
 

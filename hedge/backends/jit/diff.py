@@ -39,10 +39,10 @@ class JitDifferentiator:
         ldis = elgroup.local_discretization
         discr = self.discr
         from codepy.cgen import \
-                FunctionDeclaration, FunctionBody, Template, Typedef, \
-                Const, Reference, Value, POD, MaybeUnused, \
+                FunctionDeclaration, FunctionBody, Typedef, \
+                Const, Reference, Value, POD, \
                 Statement, Include, Line, Block, Initializer, Assign, \
-                CustomLoop, For, \
+                For, \
                 Define
 
         from codepy.bpl import BoostPythonModule
@@ -160,10 +160,8 @@ class JitDifferentiator:
         compiled_func = mod.compile(self.discr._toolchain, wait_on_error=True).diff
 
         if self.discr.instrumented:
-            from hedge.tools import \
-                    time_count_flop, \
-                    diff_rst_flops, \
-                    diff_rescale_one_flops
+            from hedge.tools import time_count_flop
+
             compiled_func = time_count_flop(compiled_func, 
                     discr.diff_timer, discr.diff_counter, 
                     discr.diff_flop_counter,

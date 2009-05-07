@@ -21,7 +21,6 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 
-import numpy
 from pytools import memoize_method
 
 
@@ -35,10 +34,10 @@ class JitLifter:
     def make_lift_for_facegroup(self, fgroup, with_scale):
         discr = self.discr
         from codepy.cgen import \
-                FunctionDeclaration, FunctionBody, Template, Typedef, \
-                Const, Reference, Value, POD, MaybeUnused, \
+                FunctionDeclaration, FunctionBody, Typedef, \
+                Const, Reference, Value, POD, \
                 Statement, Include, Line, Block, Initializer, Assign, \
-                CustomLoop, For, \
+                For, \
                 Define
 
         from codepy.bpl import BoostPythonModule

@@ -64,7 +64,7 @@ class CompiledVectorExpression(object):
         vector_names = ["v%d" % i for i in range(len(self.vector_exprs))]
         scalar_names = ["s%d" % i for i in range(len(self.scalar_exprs))]
 
-        from pymbolic import substitute, var
+        from pymbolic import var
         var_i = var("i")
         subst_map = dict(
                 list(zip(self.vector_exprs, [var(vecname)[var_i]
@@ -80,7 +80,7 @@ class CompiledVectorExpression(object):
 
         subst_expr = DefaultingSubstitutionMapper(subst_func)(vec_expr)
 
-        from pymbolic.mapper.stringifier import PREC_NONE, PREC_SUM
+        from pymbolic.mapper.stringifier import PREC_NONE
         from pymbolic.mapper.c_code import CCodeMapper
 
         def get_c_declarator(name, is_vector, dtype):
@@ -159,7 +159,7 @@ class CompiledVectorExpression(object):
         else:
             self.kernel.prepared_async_call(vectors[0]._grid, self.stream, *args)
 
-        from hedge.tools import is_obj_array, make_obj_array
+        from hedge.tools import is_obj_array
         if is_obj_array(self.subst_expr):
             return make_obj_array(results)
         else:

@@ -274,8 +274,6 @@ class DataArray(object):
             else:
                 raise TypeError, "Unsupported vector '%s' type in VTK writer" % (vec.dtype)
 
-        from hedge._internal import IntVector
-
         if not isinstance(container, numpy.ndarray):
             raise ValueError, "cannot convert object of type `%s' to DataArray" % type(container)
 

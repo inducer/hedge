@@ -97,7 +97,6 @@ class LegacyVtkVisualizer(Visualizer):
 
     def add_data(self, vtkfile, scalars=[], vectors=[], scale_factor=1):
         from pyvtk import Scalars, Vectors
-        import numpy
 
         vtkfile.pointdata.extend(
                 Scalars(numpy.array(scale_factor*field), 
@@ -127,11 +126,15 @@ class VtkFile(hedge.tools.Closable):
         from pytools import assert_not_a_file
         assert_not_a_file(self.pathname)
 
-        from hedge.vtk import InlineXMLGenerator, AppendedDataXMLGenerator
 
         outf = file(self.pathname, "w")
+
+        from hedge.vtk import AppendedDataXMLGenerator
         AppendedDataXMLGenerator(self.compressor)(self.grid).write(outf)
+
+        #from hedge.vtk import InlineXMLGenerator
         #InlineXMLGenerator(self.compressor)(self.grid).write(outf)
+
         outf.close()
 
 

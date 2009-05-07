@@ -23,7 +23,6 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 from pytools.log import LogQuantity, MultiLogQuantity
 import numpy
-import numpy.linalg as la
 
 
 
@@ -120,8 +119,6 @@ class LpNorm(LogQuantity):
 
     def __call__(self):
         var = self.getter()
-
-        from hedge.tools import log_shape
         return self.discr.norm(var, self.p)
 
 

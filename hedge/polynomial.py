@@ -24,7 +24,6 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import numpy
-from pytools import memoize
 import hedge._internal
 
 

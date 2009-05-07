@@ -26,7 +26,6 @@ import hedge.backends.cpu_base
 import hedge.discretization
 import hedge.optemplate
 from hedge.backends.cpu_base import ExecutorBase, ExecutionMapperBase
-from pymbolic.mapper.c_code import CCodeMapper
 import numpy
 
 
@@ -137,7 +136,6 @@ class Executor(ExecutorBase):
 
             fg = discr.face_groups[0]
             out = discr.volume_zeros()
-            from hedge.optemplate import DifferentiationOperator
             from time import time
 
             xyz_needed = range(discr.dimensions)

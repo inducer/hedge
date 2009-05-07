@@ -27,12 +27,6 @@ import numpy
 
 
 
-def legendre_gauss_quadrature(N):
-    return jacobi_quadrature(0, 0, N)
-
-
-
-
 def jacobi_gauss_lobatto_points(alpha, beta, N):
     """Compute the M{N}th order Gauss-Lobatto quadrature
     points, x, associated with the Jacobi polynomial,

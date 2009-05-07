@@ -22,7 +22,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import numpy
-from pytools import memoize_method, memoize
+from pytools import memoize_method
 import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
 from pycuda.compiler import SourceModule
@@ -242,13 +242,11 @@ class Kernel:
                 Pointer, POD, Value, ArrayOf, Const, \
                 Module, FunctionDeclaration, FunctionBody, Block, \
                 Comment, Line, Include, \
-                Static, \
                 Define, \
-                Constant, Initializer, If, For, Statement, Assign, \
-                ArrayInitializer
+                Initializer, If, For, Statement, Assign
 
         from codepy.cgen import dtype_to_ctype
-        from codepy.cgen.cuda import CudaShared, CudaConstant, CudaGlobal
+        from codepy.cgen.cuda import CudaShared, CudaGlobal
 
         discr = self.discr
         d = discr.dimensions

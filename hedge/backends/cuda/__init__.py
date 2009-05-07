@@ -20,12 +20,10 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import numpy
-import numpy.linalg as la
 import hedge.discretization
 import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
-from pycuda.compiler import SourceModule
-from pytools import memoize_method, memoize, Record
+from pytools import memoize_method, Record
 
 
 
@@ -571,16 +569,6 @@ class Discretization(hedge.discretization.Discretization):
             fsm[elface] = result
             return result
 
-
-        def narrow_ilist(in_el_ilist, native_el_ilist):
-            return get_read_from_map_from_permutation
-
-            el_dof_to_face_dof = dict(
-                    (el_dof, i)
-                    for i, el_dof in enumerate(native_el_ilist))
-            return tuple(el_dof_to_face_dof[el_dof]
-                    for el_dof in in_el_ilist)
-
         int_fg, = self.face_groups
         ldis = int_fg.ldis_loc
         assert ldis == int_fg.ldis_opp
@@ -591,7 +579,6 @@ class Discretization(hedge.discretization.Discretization):
                 )
         assert id_face_index_list_number == 0
 
-        from pytools import single_valued
         for fp in int_fg.face_pairs:
             face1 = make_int_face(fp.loc)
             face2 = make_int_face(fp.opp)

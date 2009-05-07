@@ -22,7 +22,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import numpy
-from pytools import memoize, memoize_method
+from pytools import memoize_method
 
 
 
@@ -238,7 +238,7 @@ class PlanGivenData(object):
                 self.float_size())
 
     def _find_microblock_size(self, allow_microblocking):
-        from hedge.backends.cuda.tools import exact_div, int_ceiling
+        from hedge.backends.cuda.tools import int_ceiling
         align_size = self.devdata.align_words(self.float_size())
 
         from pytools import Record

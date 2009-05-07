@@ -23,12 +23,11 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 import numpy
 import numpy.linalg as la
-from pytools import memoize_method, memoize, Record
+from pytools import memoize_method
 import hedge.optemplate
 from hedge.compiler import OperatorCompilerBase, \
         Assign, FluxBatchAssign
 import pycuda.driver as cuda
-import pycuda.gpuarray as gpuarray
 import pymbolic.mapper.stringifier
 
 

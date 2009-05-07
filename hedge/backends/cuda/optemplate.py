@@ -36,7 +36,6 @@ class StringifyMapper(hedge.optemplate.StringifyMapper):
         else:
             tag = "WFlux"
 
-        from pymbolic.mapper.stringifier import PREC_NONE
         return "%s(is_lift=%s,\n    int=%s,\n    tag->flux=%s)" % (tag, 
                 expr.is_lift,
                 expr.interiors,
@@ -129,7 +128,6 @@ class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
         self.boundary_ext_deps = list(boundary_ext_deps)
         self.boundary_deps = list(boundary_int_deps | boundary_ext_deps)
 
-        from pytools import flatten
         self.dep_to_tag = {}
         for bflux in boundaries:
             for dep in get_flux_dependencies(
@@ -176,8 +174,7 @@ class BoundaryCombiner(hedge.optemplate.IdentityMapper):
 
     def gather_one_wdflux(self, expressions):
         from hedge.optemplate import OperatorBinding, \
-                FluxOperator, LiftingFluxOperator, \
-                Field, BoundaryPair
+                LiftingFluxOperator, BoundaryPair
         
         interiors = []
         boundaries = []

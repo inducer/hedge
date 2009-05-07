@@ -377,8 +377,6 @@ class ParallelDiscretization(object):
 
     # neighbor connectivity ---------------------------------------------------
     def _setup_neighbor_connections(self):
-        import hedge.mpi as mpi
-
         comm = self.context.communicator
 
         # Why is this barrier needed? Some of our ranks may arrive at this 
@@ -587,7 +585,6 @@ class ParallelDiscretization(object):
                 add_norms)
 
     def integral(self, volume_vector):
-        import hedge.mpi as mpi
         from operator import add
         return mpi.all_reduce(self.context.communicator, 
                 self.subdiscr.integral(volume_vector),
@@ -595,13 +592,11 @@ class ParallelDiscretization(object):
 
     # dt estimation -----------------------------------------------------------
     def dt_non_geometric_factor(self):
-        import hedge.mpi as mpi
         return mpi.all_reduce(self.context.communicator, 
                 self.subdiscr.dt_non_geometric_factor(),
                 min)
 
     def dt_geometric_factor(self):
-        import hedge.mpi as mpi
         return mpi.all_reduce(self.context.communicator, 
                 self.subdiscr.dt_geometric_factor(),
                 min)
@@ -635,8 +630,6 @@ def reassemble_volume_field(rcon, global_discr, local_discr, field):
     def reduction(a, b):
         a.update(b)
         return a
-
-    import hedge.mpi as mpi
 
     gfield_parts = mpi.reduce(
             rcon.communicator, send_packet, reduction, rcon.head_rank)

@@ -101,19 +101,19 @@ class Rotation(AffineMap):
         # FIXME: Add axis, make multidimensional
         from math import sin, cos
         AffineMap.__init__(self,
-                num.array([
+                numpy.array([
                     [cos(angle), sin(angle)],
                     [-sin(angle), cos(angle)]]),
-                num.zeros((2,)))
+                numpy.zeros((2,)))
 
 
 
 
 class Reflection(AffineMap):
     def __init__(self, axis, dim):
-        mat = num.identity(dim)
+        mat = numpy.identity(dim)
         mat[axis,axis] = -1
-        AffineMap.__init__(self, mat, num.zeros((dim,)))
+        AffineMap.__init__(self, mat, numpy.zeros((dim,)))
 
 
 
@@ -744,96 +744,6 @@ def mem_checkpoint(name=None):
         raw_input("%s -- hit Enter:" % name)
     else:
         raw_input("Enter:")
-
-
-
-
-
-class DisabledFixedSizeSliceAdapter(object):
-    """Adapts an indexable object C{idxable} so that C{idxable[i]}
-    refers to the slice C{adaptee[i*unit:(i+1)*unit]}. This effectively
-    turns one long vector into storage space of lots of identically-sized
-    smaller ones.
-
-    Slice operations on the adapter cause new list objects (shallow copies) to 
-    be created.
-
-    If A, B, and C are different vectors stored in this adapter, then their
-    ordering in the adaptee will be C{A0A1A2B0B1B2}, i.e. each vector is contiguous.
-    We refer to this as 'vector-major' order.
-    """
-
-    __slots__ = ["adaptee", "unit", "length"]
-
-    def __init__(self, adaptee, unit, length=None):
-        self.adaptee = adaptee
-        self.unit = unit
-        self.length = length
-
-        technical_len, remainder = divmod(len(self.adaptee), self.unit)
-        assert remainder == 0
-
-        if self.length is not None:
-            assert self.length <= technical_len
-
-    def __len__(self):
-        if self.length is not None:
-            return self.length
-        else:
-            technical_len, remainder = divmod(len(self.adaptee), self.unit)
-            assert remainder == 0
-            return technical_len
-
-    def __iter__(parent):
-        class FSSAIterator:
-            def __init__(self):
-                self.idx = 0
-    
-            def next(self):
-                if self.idx >= len(parent):
-                    raise StopIteration
-                result = parent[self.idx]
-                self.idx += 1
-                return result
-    
-        return FSSAIterator()
-
-    def __getitem__(self, idx):
-        if isinstance(idx, int):
-            if idx >= len(self):
-                raise IndexError, idx
-            return self.adaptee[self.unit*idx:self.unit*(idx+1)]
-        elif isinstance(idx, slice):
-            range_args= idx.indices(self.__len__())
-            return [self.adaptee[self.unit*i:self.unit*(i+1)]
-                    for i in xrange(*range_args)]
-        else:
-            raise TypeError, "invalid index type"
-
-    def __setitem__(self, idx, value):
-        if isinstance(idx, int):
-            self.adaptee[self.unit*idx:self.unit*(idx+1)] = value
-        elif isinstance(idx, slice):
-            range_args= idx.indices(self.__len__())
-            for i, subval in zip(xrange(*range_args), values):
-                self.adaptee[self.unit*i:self.unit*(i+1)] = subval
-        else:
-            raise TypeError, "invalid index type"
-
-    def get_alist_of_components(self):
-        """Return the adaptee's data as an ArithmeticList of
-        each vectors for each component.
-        """
-        from pytools.arithmetic_container import ArithmeticList
-        return ArithmeticList(
-                self.adaptee[i:len(self)*self.unit:self.unit] for i in range(self.unit))
-
-    def get_component_major_vector(self):
-        """Return the adaptee's data in component-major order.
-        
-        This gives a vector of order C{A0B0C0A1B1C1...}
-        """
-        return num.hstack(self.get_alist_of_components())
 
 
 

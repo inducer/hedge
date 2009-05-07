@@ -27,7 +27,7 @@ import numpy.linalg as la
 import pyublas
 from hedge.tools import AffineMap
 import hedge._internal
-from math import sqrt, sin, cos, exp, pi
+from math import sqrt
 from pytools import memoize_method
 import hedge.mesh
 

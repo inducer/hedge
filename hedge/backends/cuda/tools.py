@@ -58,20 +58,6 @@ def int_floor(value, multiple_of=1):
     from math import floor
     return int(floor(value/multiple_of))*multiple_of
 
-def vec_to_gpu(field):
-    from hedge.tools import log_shape
-    ls = log_shape(field)
-    if ls != ():
-        result = numpy.array(ls, dtype=object)
-
-        from pytools import indices_in_shape
-
-        for i in indices_in_shape(ls):
-            result[i] = gpuarray.to_gpu(field[i])
-        return result
-    else:
-        return gpuarray.to_gpu(field)
-
 def pad(s, block_size):
     missing_bytes = block_size - len(s)
     assert missing_bytes >= 0
@@ -111,7 +97,7 @@ def make_superblocks(devdata, struct_name, single_item, multi_item, extra_fields
     block_count = single_valued(
             len(si_part_blocks) for si_part_blocks, si_part_decl in single_item)
 
-    from codepy.cgen import Struct, Value, ArrayOf
+    from codepy.cgen import Struct, ArrayOf
 
     struct_members = []
     for part_data, part_decl in single_item:
@@ -158,9 +144,9 @@ def make_superblocks(devdata, struct_name, single_item, multi_item, extra_fields
 def get_load_code(dest, base, bytes, word_type=numpy.uint32,
         descr=None):
     from codepy.cgen import \
-            Pointer, POD, Value, ArrayOf, Const, \
+            Pointer, POD, Value, \
             Comment, Block, Line, \
-            Constant, Initializer, If, For, Statement, Assign
+            Constant, For, Statement
 
     from codepy.cgen import dtype_to_ctype
     copy_dtype = numpy.dtype(word_type)

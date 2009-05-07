@@ -23,9 +23,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import numpy
-import pymbolic.mapper
 import hedge.optemplate
-from pytools import memoize_method
 
 
 

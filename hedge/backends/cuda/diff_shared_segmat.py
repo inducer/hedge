@@ -23,7 +23,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import numpy
-from pytools import memoize_method, memoize
+from pytools import memoize_method
 import pycuda.driver as cuda
 from pycuda.compiler import SourceModule
 import hedge.backends.cuda.plan
@@ -195,10 +195,10 @@ class Kernel(DiffKernelBase):
     @memoize_method
     def get_kernel(self, diff_op_cls, elgroup, for_benchmark=False):
         from codepy.cgen import \
-                Pointer, POD, Value, ArrayOf, Const, \
+                Pointer, POD, Value, ArrayOf, \
                 Module, FunctionDeclaration, FunctionBody, Block, \
-                Comment, Line, Static, Define, Include, \
-                Constant, Initializer, If, For, Statement, Assign
+                Line, Define, Include, \
+                Initializer, If, For, Statement, Assign
 
         from codepy.cgen import dtype_to_ctype
         from codepy.cgen.cuda import CudaShared, CudaGlobal

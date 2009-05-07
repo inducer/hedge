@@ -433,8 +433,6 @@ class StrongWaveOperator:
         compiled_op_template = discr.compile(self.op_template())
 
         def rhs(t, w):
-            from hedge.tools import join_fields, ptwise_dot
-
             rhs = compiled_op_template(w=w)
 
             if self.source_f is not None:
@@ -503,7 +501,6 @@ class MaxwellOperator(TimeDependentOperator):
         self.dimensions = dimensions or self._default_dimensions
 
     def flux(self, flux_type):
-        from math import sqrt
         from hedge.flux import make_normal, FluxVectorPlaceholder
         from hedge.tools import join_fields
 
@@ -784,8 +781,7 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
             result[numpy.array(subset, dtype=bool)] = v
             return result
 
-        from hedge.tools import join_fields
-        from hedge.optemplate import Field, make_vector_field
+        from hedge.optemplate import make_vector_field
         sig = pad_vec(
                 make_vector_field("sigma", self.dimensions), 
                 dim_subset)
@@ -943,7 +939,6 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
         o_min, o_max = outer_bbox
 
         from hedge.tools import make_obj_array
-        from hedge.discretization import Discretization
 
         nodes = discr.nodes
         if dtype is not None:
@@ -954,8 +949,6 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
             i_min[i], i_max[i], o_min[i], o_max[i],
             exponent)
             for i in range(discr.dimensions)])
-
-        from hedge.discretization import Discretization
 
         return self.PMLCoefficients(
                 sigma=magnitude*make_obj_array(sigma),
@@ -1010,8 +1003,6 @@ class WeakPoissonOperator(Operator, ):
 
         self.flux_type = flux
 
-        from math import sqrt
-
         # treat diffusion tensor
         if diffusion_tensor is None:
             diffusion_tensor = hedge.data.ConstantGivenFunction(
@@ -1036,8 +1027,7 @@ class WeakPoissonOperator(Operator, ):
         else:
             raise "Invalid flux type '%s'" % flux
 
-        from hedge.flux import \
-                FluxVectorPlaceholder, FluxScalarPlaceholder, \
+        from hedge.flux import FluxVectorPlaceholder, \
                 make_normal, PenaltyTerm
         from numpy import dot
 
@@ -1156,7 +1146,8 @@ class WeakPoissonOperator(Operator, ):
                 self.diffusion = self.neu_diff = pop.diffusion_tensor.value
             else:
                 self.diffusion = pop.diffusion_tensor.volume_interpolant(discr)
-                self.neu_diff = pop.diffusion_tensor.boundary_interpolant(discr, neumann_tag)
+                self.neu_diff = pop.diffusion_tensor.boundary_interpolant(discr, 
+                        poiss_op.neumann_tag)
 
         @property
         def dtype(self):
@@ -1361,7 +1352,7 @@ class StrongHeatOperator(TimeDependentOperator):
         class FluxSet: pass
         fs = FluxSet()
 
-        from hedge.flux import FluxVectorPlaceholder, FluxScalarPlaceholder, make_normal
+        from hedge.flux import FluxVectorPlaceholder, make_normal
 
         # note here:
 
@@ -1518,7 +1509,6 @@ class StrongHeatOperator(TimeDependentOperator):
                     )
 
         def __call__(self, t, u):
-            from math import sqrt
             from hedge.tools import join_fields
 
             hop = self.heat_op

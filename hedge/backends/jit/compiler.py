@@ -26,9 +26,7 @@ import hedge.backends.cpu_base
 import hedge.discretization
 import hedge.optemplate
 from pytools import memoize_method
-from hedge.backends.cpu_base import ExecutorBase, ExecutionMapperBase
 from pymbolic.mapper.c_code import CCodeMapper
-import numpy
 from hedge.compiler import OperatorCompilerBase, FluxBatchAssign
 from hedge.flux import FluxIdentityMapper
 
@@ -165,7 +163,7 @@ class OperatorCompiler(OperatorCompilerBase):
             for flux_binding in FluxCollector()(expr)]
 
     def internal_map_flux(self, flux_bind):
-        from hedge.optemplate import IdentityMapper, BoundaryPair
+        from hedge.optemplate import IdentityMapper
         return IdentityMapper.map_operator_binding(self, flux_bind)
 
     def map_operator_binding(self, expr):
@@ -378,13 +376,14 @@ class OperatorCompiler(OperatorCompilerBase):
 
         return CompiledFluxBatchAssign(
                 names=names, fluxes=fluxes, kind=kind,
-                arg_specs=fvi.arg_specs, compiled_func=compiled_func)
+                arg_specs=fvi.arg_specs, compiled_func=compiled_func,
+                dep_mapper_factory=self.dep_mapper_factory)
 
     def make_boundary_flux_batch_assign(self, names, fluxes, kind):
         fvi = self._get_flux_var_info(fluxes)
 
         from codepy.cgen import \
-                FunctionDeclaration, FunctionBody, Template, Typedef, \
+                FunctionDeclaration, FunctionBody, Typedef, \
                 Const, Reference, Value, POD, MaybeUnused, \
                 Statement, Include, Line, Block, Initializer, Assign, \
                 CustomLoop, For

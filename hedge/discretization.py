@@ -24,7 +24,6 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 import numpy
 import numpy.linalg as la
-import pyublas
 import hedge.tools
 import hedge.mesh
 import hedge.optemplate
@@ -44,8 +43,6 @@ class _FaceGroup(hedge._internal.FaceGroup):
         return self.fil_registry.register(identifier, generator)
 
     def commit(self, discr, ldis_loc, ldis_opp):
-        from hedge._internal import IntVector
-
         if self.fil_registry.index_lists:
             self.index_lists = numpy.array(
                     self.fil_registry.index_lists,
@@ -929,7 +926,7 @@ class SymmetryMap(object):
 
                     if i_pt not in self.map:
                         for m_i_pt in range(mapped_slice.start, mapped_slice.stop):
-                            print comp.norm_2(discr.nodes[m_i_pt] - mapped_pt)
+                            print la.norm_2(discr.nodes[m_i_pt] - mapped_pt)
                         raise RuntimeError, "no symmetry match found"
 
     def __call__(self, vec):
@@ -952,7 +949,7 @@ def generate_random_constant_on_elements(discr):
 
 
 
-def ones_on_boundary(discr):
+def ones_on_boundary(discr, tag):
     result = discr.volume_zeros()
 
     try:

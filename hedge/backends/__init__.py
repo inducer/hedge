@@ -20,9 +20,6 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 
-import pytools
-import numpy
-import numpy.linalg as la
 import hedge.discretization
 import hedge.mesh
 

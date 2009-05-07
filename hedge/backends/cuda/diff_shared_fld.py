@@ -24,7 +24,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 import numpy
 import hedge.backends.cuda.plan
-from pytools import memoize_method, memoize
+from pytools import memoize_method
 import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
 import hedge.backends.cuda.plan
@@ -162,7 +162,6 @@ class Kernel(DiffKernelBase):
 
         use_debugbuf = set(["cuda_diff", "cuda_debugbuf"]) <= discr.debug
         if use_debugbuf:
-            import pycuda.gpuarray as gpuarray
             debugbuf = gpuarray.zeros((512,), dtype=given.float_type)
         else:
             from hedge.backends.cuda.tools import FakeGPUArray
@@ -213,8 +212,8 @@ class Kernel(DiffKernelBase):
         from codepy.cgen import \
                 Pointer, POD, Value, ArrayOf, Const, \
                 Module, FunctionDeclaration, FunctionBody, Block, \
-                Comment, Line, Static, Define, Include, \
-                Constant, Initializer, If, For, Statement, Assign
+                Comment, Line, Define, Include, \
+                Initializer, If, For, Statement, Assign
 
         from codepy.cgen import dtype_to_ctype
         from codepy.cgen.cuda import CudaShared, CudaGlobal
