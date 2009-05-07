@@ -874,10 +874,10 @@ class Kernel:
         # finish off ----------------------------------------------------------
         cmod.append(FunctionBody(f_decl, f_body))
 
-        if not for_benchmark and "cuda_dumpkernels" in discr.debug:
+        if not for_benchmark and "cuda_dump_kernels" in discr.debug:
             open("flux_gather.cu", "w").write(str(cmod))
 
-        from pycuda.tools import allow_user_edit
+        #from pycuda.tools import allow_user_edit
         mod = SourceModule(
                 #allow_user_edit(cmod, "kernel.cu", "the flux kernel"), 
                 cmod,

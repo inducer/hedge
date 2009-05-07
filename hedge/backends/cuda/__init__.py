@@ -259,7 +259,7 @@ class Discretization(hedge.discretization.Discretization):
             "cuda_lift_plan",
             "cuda_debugbuf",
             "cuda_memory",
-            "cuda_dumpkernels",
+            "cuda_dump_kernels",
             "cuda_fastbench",
             "cuda_no_microblock",
             "cuda_no_smem_matrix",

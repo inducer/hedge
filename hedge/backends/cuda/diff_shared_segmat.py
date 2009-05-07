@@ -360,7 +360,7 @@ class Kernel(DiffKernelBase):
         # finish off ----------------------------------------------------------
         cmod.append(FunctionBody(f_decl, f_body))
 
-        if not for_benchmark and "cuda_dumpkernels" in discr.debug:
+        if not for_benchmark and "cuda_dump_kernels" in discr.debug:
             open("diff.cu", "w").write(str(cmod))
 
         mod = SourceModule(cmod, 
