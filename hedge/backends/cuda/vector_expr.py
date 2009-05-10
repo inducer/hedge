@@ -143,7 +143,7 @@ class CompiledVectorExpression(object):
 
         assert self.result_count > 0
         from hedge.tools import make_obj_array
-        results = [gpuarray.empty(shape, self.result_dtype, self.stream, self.allocator)
+        results = [gpuarray.empty(shape, self.result_dtype, self.allocator)
                 for i in range(self.result_count)]
 
         size = results[0].size
