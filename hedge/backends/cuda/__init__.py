@@ -24,6 +24,7 @@ import hedge.discretization
 import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
 from pytools import memoize_method, Record
+from hedge.tools import Future
 
 
 
@@ -839,45 +840,71 @@ class Discretization(hedge.discretization.Discretization):
                     self._gpu_boundary_embedding(tag),
                     dtype=numpy.uint32))
 
-    def _boundary_to_gpu(self, field, tag):
-        from hedge.tools import log_shape
+    class _BoundaryToGPUFuture(Future):
+        def __init__(self, discr, field, tag, read_map=None):
+            from hedge.tools import log_shape
 
-        ls = log_shape(field)
-        if ls == ():
-            field_list = [field]
-            n = 1
-        else:
-            field_list = field
-            n = len(field)
+            ls = log_shape(field)
+            if ls == ():
+                field_list = [field]
+                n = 1
+            else:
+                field_list = field
+                n, = ls
 
-        one_field = field_list[0]
-        one_field_size = len(one_field)
+            one_field = field_list[0]
+            one_field_size = len(one_field)
 
-        if field.dtype == object:
-            buf = self.pagelocked_pool.allocate(
-                    ls+one_field.shape, dtype=self.default_scalar_type)
-            for i, subf in enumerate(field):
-                buf[i, :] = subf
-        else:
-            buf = numpy.asarray(field, order="C")
+            if field.dtype == object:
+                self.buf = buf = discr.pagelocked_pool.allocate(
+                        ls+one_field.shape, dtype=self.default_scalar_type)
+                for i, subf in enumerate(field):
+                    buf[i, :] = subf
+            else:
+                assert field.flags.c_contiguous
+                buf = field
 
-        buf.shape = buf.size,
-        buf_gpu = gpuarray.to_gpu(buf)
-        
-        from hedge.tools import make_obj_array
-        out = make_obj_array([
-                self.boundary_empty(tag) for i in range(n)])
+            self.stream = cuda.Stream()
 
-        gpuarray.multi_put(
-                [buf_gpu[i*one_field_size:(i+1)*one_field_size] 
-                    for i in range(n)],
-                self._gpu_boundary_embedding_on_gpu(tag),
-                out=out)
+            buf.shape = buf.size,
+            try:
+                self.buf_gpu = buf_gpu = gpuarray.to_gpu_async(
+                        buf, discr.pool.allocate, self.stream)
+            except cuda.LogicError:
+                # buf is not pagelocked
+                self.buf_gpu = buf_gpu = gpuarray.to_gpu(buf, discr.pool.allocate)
+            
+            from hedge.tools import make_obj_array
+            out = make_obj_array([
+                    discr.boundary_empty(tag) for i in range(n)])
 
-        if ls == ():
-            return out[0]
-        else:
-            return out
+            if one_field_size:
+                if read_map is None:
+                    gpuarray.multi_put(
+                            arrays=[
+                                buf_gpu[i*one_field_size:(i+1)*one_field_size] 
+                                for i in range(n)],
+                            dest_indices=discr._gpu_boundary_embedding_on_gpu(tag),
+                            out=out, stream=self.stream)
+                else:
+                    gpuarray.multi_take_put(
+                            arrays=[buf_gpu for i in range(n)],
+                            dest_indices=discr._gpu_boundary_embedding_on_gpu(tag),
+                            src_indices=read_map, 
+                            src_offsets=[i*one_field_size for i in range(n)],
+                            out=out, stream=self.stream)
+
+            if ls == ():
+                self.result = out[0]
+            else:
+                self.result = out
+
+        def is_ready(self):
+            return self.stream.is_done()
+
+        def __call__(self):
+            self.stream.synchronize()
+            return self.result
 
     def _boundary_from_gpu(self, field, tag):
         def f(field):
@@ -903,10 +930,19 @@ class Discretization(hedge.discretization.Discretization):
         if kind == "numpy" and orig_kind == "gpu":
             return self._boundary_from_gpu(field, tag)
         elif kind == "gpu" and orig_kind == "numpy":
-            return self._boundary_to_gpu(field, tag)
+            return self._BoundaryToGPUFuture(self, field, tag)()
         else:
             return hedge.discretization.Discretization.convert_boundary(
                     self, field, tag, kind)
+
+    def convert_boundary_async(self, field, tag, kind, read_map=None):
+        orig_kind = self.get_kind(field)
+
+        if kind == "gpu" and orig_kind == "numpy":
+            return self._BoundaryToGPUFuture(self, field, tag, read_map)
+        else:
+            return hedge.discretization.Discretization.convert_boundary_async(
+                    self, field, tag, kind, read_map)
 
     # vector construction tools -----------------------------------------------
     def _empty_gpuarray(self, shape, dtype):
@@ -968,20 +1004,31 @@ class Discretization(hedge.discretization.Discretization):
                 self.gpu_dof_count())
 
     def boundary_empty(self, tag=hedge.mesh.TAG_ALL, shape=(), dtype=None, kind="gpu"):
-        if kind != "gpu":
+        if kind == "gpu":
+            return self._new_vec(shape, self._empty_gpuarray, dtype,
+                    self.aligned_boundary_floats)
+        elif kind == "numpy-mpi-recv":
+            return self.pagelocked_pool.allocate(
+                    shape+(len(self.get_boundary(tag).nodes),), 
+                    dtype)
+        else:
             return hedge.discretization.Discretization.boundary_empty(
                     self, tag, shape, dtype, kind)
 
-        return self._new_vec(shape, self._empty_gpuarray, dtype,
-                self.aligned_boundary_floats)
 
     def boundary_zeros(self, tag=hedge.mesh.TAG_ALL, shape=(), dtype=None, kind="gpu"):
-        if kind != "gpu":
+        if kind == "gpu":
+            return self._new_vec(shape, self._zeros_gpuarray, dtype,
+                    self.aligned_boundary_floats)
+        elif kind == "numpy-mpi-recv":
+            result = self.pagelocked_pool.allocate(
+                    shape+(len(self.get_boundary(tag).nodes),), 
+                    dtype)
+            result.fill(0)
+            return result
+        else:
             return hedge.discretization.Discretization.boundary_zeros(
                     self, tag, shape, dtype, kind)
-
-        return self._new_vec(shape, self._zeros_gpuarray, dtype,
-                self.aligned_boundary_floats)
 
     def volumize_boundary_field(self, bfield, tag=hedge.mesh.TAG_ALL):
         if self.get_kind(bfield) != "gpu":
@@ -1011,6 +1058,16 @@ class Discretization(hedge.discretization.Discretization):
         return from_indices, to_indices
 
     @memoize_method
+    def _gpu_boundarize_info(self, tag):
+        from_indices, to_indices = self._boundarize_info(tag)
+        return (
+                gpuarray.to_gpu(
+                    numpy.array(from_indices, dtype=numpy.uint32)),
+                gpuarray.to_gpu(
+                    numpy.array(to_indices, dtype=numpy.uint32)),
+                )
+
+    @memoize_method
     def _numpy_boundarize_info(self, tag):
         from_indices, to_indices = self._boundarize_info(tag)
 
@@ -1021,6 +1078,28 @@ class Discretization(hedge.discretization.Discretization):
 
         return gpuarray.to_gpu(result)
         
+    class _BoundarizeGPUToNumpyFuture(Future):
+        def __init__(self, discr, field, log_shape, tag):
+            base_size = len(discr.get_boundary(tag).nodes)
+            self.result = result =  discr.pagelocked_pool.allocate(
+                    log_shape+(base_size,), 
+                    dtype=discr.default_scalar_type)
+            self.result_gpu = gpuarray.empty((result.size,), result.dtype,
+                    allocator=discr.pool.allocate)
+
+            self.stream = cuda.Stream()
+            gpuarray.multi_take(field, discr._numpy_boundarize_info(tag),
+                    [self.result_gpu[i*base_size:(i+1)*base_size] for i in range(len(field))],
+                    stream=self.stream)
+            self.result_gpu.get_async(self.stream, result)
+
+        def is_ready(self):
+            return self.stream.is_done()
+
+        def __call__(self):
+            self.stream.synchronize()
+            return self.result
+
     def boundarize_volume_field(self, field, tag, kind=None):
         if self.get_kind(field) == self.compute_kind:
             from hedge.tools import log_shape
@@ -1029,7 +1108,7 @@ class Discretization(hedge.discretization.Discretization):
             if kind is None or kind == self.compute_kind:
                 # GPU -> GPU boundarize
 
-                from_indices, to_indices, idx_count = \
+                from_indices, to_indices = \
                         self._gpu_boundarize_info(tag)
                 kind = None
 
@@ -1057,27 +1136,30 @@ class Discretization(hedge.discretization.Discretization):
             elif kind == "numpy":
                 # GPU -> CPU boundarize, for MPI
 
-                result = self.pagelocked_pool.allocate(
-                        ls+(len(self.get_boundary(tag).nodes),), 
-                        dtype=self.default_scalar_type)
-                result_gpu = gpuarray.empty((result.size,), result.dtype,
-                        allocator=self.pool.allocate)
-                base_size = result.shape[1]
-
                 if ls == ():
                     field = [field]
 
-                gpuarray.multi_take(field, self._numpy_boundarize_info(tag),
-                        [result_gpu[i*base_size:(i+1)*base_size] for i in range(len(field))])
-                cuda.memcpy_dtoh(result, result_gpu.gpudata)
-
-                return result
+                return self._BoundarizeGPUToNumpyFuture(self, field, ls, tag)()
             else:
                 raise ValueError("invalid target boundary kind: %s" % kind)
         else:
             return hedge.discretization.Discretization.boundarize_volume_field(
                     self, field, tag, kind)
 
+    def boundarize_volume_field_async(self, field, tag, kind=None):
+        if self.get_kind(field) == self.compute_kind and kind == "numpy":
+            from hedge.tools import log_shape
+            ls = log_shape(field)
+            if ls == ():
+                field = [field]
+
+            return self._BoundarizeGPUToNumpyFuture(self, field, ls, tag)
+        else:
+            return hedge.discretization.Discretization\
+                    .boundarize_volume_field_async(self, field, tag, kind)
+
+    def prepare_from_neighbor_map(self, indices):
+        return gpuarray.to_gpu(numpy.asarray(indices, dtype=numpy.uint32))
 
     # ancillary kernel planning/construction ----------------------------------
     @memoize_method

@@ -199,7 +199,7 @@ class ReceiveCompletionFuture(MPICompletionFuture):
         self.recv_vec = pdiscr.boundary_empty(
                     hedge.mesh.TAG_RANK_BOUNDARY(rank),
                     shape=shape,
-                    kind="numpy",
+                    kind="numpy-mpi-recv",
                     dtype=self.pdiscr.default_scalar_type)
         from hedge._internal import irecv_buffer
         MPICompletionFuture.__init__(self,
@@ -225,9 +225,9 @@ class BoundaryConvertFuture(Future):
         
         from hedge.mesh import TAG_RANK_BOUNDARY
         self.convert_future = self.pdiscr.convert_boundary_async(
-                numpy.asarray(self.recv_vec[:, fnm], order="C"),
-                TAG_RANK_BOUNDARY(rank),
-                kind=self.pdiscr.compute_kind)
+                self.recv_vec, TAG_RANK_BOUNDARY(rank),
+                kind=self.pdiscr.compute_kind,
+                read_map=fnm)
 
         self.is_ready = self.convert_future.is_ready
 
@@ -254,7 +254,10 @@ def make_custom_exec_mapper_class(superclass):
             shape = log_shape(field)
 
             if self.discr.instrumented:
-                pdiscr.comm_flux_counter.add(len(pdiscr.neighbor_ranks)*shape[0])
+                if len(shape):
+                    pdiscr.comm_flux_counter.add(len(pdiscr.neighbor_ranks)*shape[0])
+                else:
+                    pdiscr.comm_flux_counter.add(len(pdiscr.neighbor_ranks))
 
             return ([], 
                     [BoundarizeSendFuture(pdiscr, rank, field)
@@ -574,8 +577,8 @@ class ParallelDiscretization(object):
                     assert len(from_indices) == len(flat_nb_node_coords)
 
                 # construct from_neighbor_map
-                self.from_neighbor_maps[rank] = numpy.asarray(
-                        from_indices, dtype=numpy.intp)
+                self.from_neighbor_maps[rank] = \
+                        self.subdiscr.prepare_from_neighbor_map(from_indices)
 
     # norm and integral -------------------------------------------------------
     def nodewise_dot_product(self, a, b):

@@ -156,7 +156,7 @@ class FluxExchangeBatchAssign(Instruction):
 
         lines.append("{")
         for n, (index, rank) in zip(self.names, self.indices_and_ranks):
-            lines.append("  %s <- receive index %d from rank %d [%s]" % (
+            lines.append("  %s <- receive index %s from rank %d [%s]" % (
                 n, index, rank, self.field))
         lines.append("}")
 
@@ -271,7 +271,7 @@ class Code(object):
             i = 0
             while i < len(futures):
                 future = futures[i]
-                if future.is_ready() or force_future:
+                if force_future or future.is_ready():
                     assignments, new_futures = future()
                     for target, value in assignments:
                         context[target] = value

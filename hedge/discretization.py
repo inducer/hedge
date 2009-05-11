@@ -636,8 +636,20 @@ class Discretization(object):
 
         return field
 
-    def convert_boundary_async(self, field, tag, kind):
+    def convert_boundary_async(self, field, tag, kind, read_map=None):
         from hedge.tools import ImmediateFuture
+
+        if read_map is not None:
+            from hedge.tools import log_shape
+            ls = log_shape(field)
+            if field.dtype == object or ls == ():
+                from hedge.tools import with_object_array_or_scalar
+                field = with_object_array_or_scalar(lambda f: f[read_map])
+            else:
+                field = numpy.asarray(
+                        numpy.take(field, read_map, axis=len(ls)),
+                        order="C")
+
         return ImmediateFuture(
                 self.convert_boundary(field, tag, kind))
 
@@ -678,7 +690,7 @@ class Discretization(object):
         return self.convert_volume(out, kind=kind)
 
     def boundary_empty(self, tag=hedge.mesh.TAG_ALL, shape=(), dtype=None, kind="numpy"):
-        if kind != "numpy":
+        if kind not in ["numpy", "numpy-mpi-recv"]:
             raise ValueError, "invalid vector kind requested"
 
         if dtype is None:
@@ -686,7 +698,7 @@ class Discretization(object):
         return numpy.empty(shape+(len(self.get_boundary(tag).nodes),), dtype)
 
     def boundary_zeros(self, tag=hedge.mesh.TAG_ALL, shape=(), dtype=None, kind="numpy"):
-        if kind != "numpy":
+        if kind not in ["numpy", "numpy-mpi-recv"]:
             raise ValueError, "invalid vector kind requested"
         if dtype is None:
             dtype = self.default_scalar_type
@@ -774,6 +786,9 @@ class Discretization(object):
         from hedge.tools import ImmediateFuture
         return ImmediateFuture(
                 self.boundarize_volume_field(field, tag, kind))
+
+    def prepare_from_neighbor_map(self, indices):
+        return numpy.array(indices, dtype=numpy.intp)
 
     # scalar reduction --------------------------------------------------------
     def nodewise_dot_product(self, a, b):

@@ -1147,7 +1147,7 @@ class WeakPoissonOperator(Operator, ):
             else:
                 self.diffusion = pop.diffusion_tensor.volume_interpolant(discr)
                 self.neu_diff = pop.diffusion_tensor.boundary_interpolant(discr, 
-                        poiss_op.neumann_tag)
+                        poisson_op.neumann_tag)
 
         @property
         def dtype(self):
