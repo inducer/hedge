@@ -488,6 +488,8 @@ class Discretization(hedge.discretization.Discretization):
             from hedge.discr_precompiled import Discretization
             self.test_discr = Discretization(mesh, ldis)
 
+        self.stream_pool = []
+
     def close(self):
         self.pool.stop_holding()
         self.pagelocked_pool.stop_holding()
@@ -688,6 +690,21 @@ class Discretization(hedge.discretization.Discretization):
 
 
 
+    # stream pooling ----------------------------------------------------------
+    # (stupid CUDA isn't smart enough to allocate streams without synchronizing.
+    # sigh.)
+    def _get_stream(self):
+        if not self.stream_pool:
+            return cuda.Stream()
+        else:
+            return self.stream_pool.pop()
+
+    def _release_stream(self, s):
+        self.stream_pool.append(s)
+
+
+
+
     # instrumentation ---------------------------------------------------------
     def add_instrumentation(self, mgr):
         mgr.set_constant("flux_plan", str(self.flux_plan))
@@ -842,6 +859,8 @@ class Discretization(hedge.discretization.Discretization):
 
     class _BoundaryToGPUFuture(Future):
         def __init__(self, discr, field, tag, read_map=None):
+            self.discr = discr
+
             from hedge.tools import log_shape
 
             ls = log_shape(field)
@@ -864,7 +883,7 @@ class Discretization(hedge.discretization.Discretization):
                 assert field.flags.c_contiguous
                 buf = field
 
-            self.stream = cuda.Stream()
+            self.stream = discr._get_stream()
 
             buf.shape = buf.size,
             try:
@@ -904,6 +923,7 @@ class Discretization(hedge.discretization.Discretization):
 
         def __call__(self):
             self.stream.synchronize()
+            self.discr._release_stream(self.stream)
             return self.result
 
     def _boundary_from_gpu(self, field, tag):
@@ -1080,6 +1100,8 @@ class Discretization(hedge.discretization.Discretization):
         
     class _BoundarizeGPUToNumpyFuture(Future):
         def __init__(self, discr, field, log_shape, tag):
+            self.discr = discr
+
             base_size = len(discr.get_boundary(tag).nodes)
             self.result = result =  discr.pagelocked_pool.allocate(
                     log_shape+(base_size,), 
@@ -1087,7 +1109,16 @@ class Discretization(hedge.discretization.Discretization):
             self.result_gpu = gpuarray.empty((result.size,), result.dtype,
                     allocator=discr.pool.allocate)
 
-            self.stream = cuda.Stream()
+            # FIXME Technically, we're missing a sync primitive here.
+            # We would need to make sure that 'field' is completely 
+            # written, but CUDA doesn't quite allow that without a
+            # full cuda.Context.synchronize() as of version 2.2.
+            # For now we're ok omitting the sync primitive since in a
+            # typical DG operator, what we're using here is not 
+            # computed just before--it's data from the last 
+            # timestep, and that's guaranteed to be there.
+
+            self.stream = discr._get_stream()
             gpuarray.multi_take(field, discr._numpy_boundarize_info(tag),
                     [self.result_gpu[i*base_size:(i+1)*base_size] for i in range(len(field))],
                     stream=self.stream)
@@ -1098,6 +1129,7 @@ class Discretization(hedge.discretization.Discretization):
 
         def __call__(self):
             self.stream.synchronize()
+            self.discr._release_stream(self.stream)
             return self.result
 
     def boundarize_volume_field(self, field, tag, kind=None):

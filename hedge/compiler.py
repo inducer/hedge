@@ -281,6 +281,8 @@ class Code(object):
                 else:
                     i += 1
 
+                del future
+
             # pick the next insn 
             try:
                 insn, discardable_vars = self.get_next_step(
