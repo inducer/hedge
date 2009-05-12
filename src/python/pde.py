@@ -197,7 +197,7 @@ class AdvectionOperatorBase(TimeDependentOperator):
         normal = make_normal(self.dimensions)
 
         if self.flux_type == "central":
-            return u.avg*numpy.dot(normal, self.v)
+  	    return u.avg*numpy.dot(normal, self.v)
         elif self.flux_type == "lf":
             return u.avg*numpy.dot(normal, self.v) \
                     + 0.5*la.norm(self.v)*(u.int - u.ext)
@@ -221,7 +221,7 @@ class AdvectionOperatorBase(TimeDependentOperator):
 
         def rhs(t, u):
             bc_in = self.inflow_u.boundary_interpolant(t, discr, self.inflow_tag)
-            bc_out = discr.boundarize_volume_field(u, self.outflow_tag)
+            bc_out = discr.boundarize_volume_field(u, self.outflow_tag) 
 
             return compiled_op_template(u=u, bc_in=bc_in, bc_out=bc_out)
 
@@ -249,9 +249,6 @@ class AdvectionOperatorBase(TimeDependentOperator):
                     nb_bdry_u=with_object_array_or_scalar(nb_bdry_permute, u_neighbor))
 
         return rhs
-
-
-
 
 class StrongAdvectionOperator(AdvectionOperatorBase):
     def flux(self):
@@ -283,9 +280,6 @@ class StrongAdvectionOperator(AdvectionOperatorBase):
                 )
                 )
 
-
-
-
 class WeakAdvectionOperator(AdvectionOperatorBase):
     def flux(self):
         return self.weak_flux()
@@ -295,6 +289,7 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
                 get_flux_operator, make_minv_stiffness_t, InverseMassOperator
 
         u = Field("u")
+
         bc_in = Field("bc_in")
         bc_out = Field("bc_out")
 
@@ -310,9 +305,145 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
                     )
 
 
+class SpaceDependentAdvectionOperatorBase:
+    flux_types = [
+            "central",
+            "upwind",
+            "lf"
+            ]
+
+    def __init__(self, 
+            dimensions, 
+	    advec_v, 
+	    flux_type="central"
+	    ):
+        self.dimensions = dimensions
+        self.advec_v = advec_v
+        self.flux_type = flux_type
+
+    def weak_flux(self):
+        from hedge.flux import \
+	                make_normal, \
+			FluxScalarPlaceholder, \
+			FluxVectorPlaceholder, \
+			IfPositive
+
+	w = FluxVectorPlaceholder(1+self.dimensions)
+	u = w[0]
+	v = w[1:]
+
+        normal = make_normal(self.dimensions)
+
+        if self.flux_type == "central":
+	    return (u.int*numpy.dot(v.int, normal)+
+	            u.ext*numpy.dot(v.ext, normal))*0.5
+        elif self.flux_type == "lf_old":
+            return u.avg*numpy.dot(normal, self.v) \
+                    + 0.5*la.norm(v)*(u.int - u.ext)
+        elif self.flux_type == "lf":
+            return u.avg*numpy.dot(normal, v.avg) \
+                    + 0.5*(v.avg[0]**2+v.avg[1]**2)**0.5*(u.int - u.ext)
+        elif self.flux_type == "upwind_old":
+            return (numpy.dot(normal, self.v)*
+                    IfPositive(numpy.dot(normal, self.v),
+                        u.int, # outflow
+                        u.ext, # inflow
+                        ))
+        elif self.flux_type == "upwind": 
+            return (
+                    IfPositive(numpy.dot(normal, v.avg),
+                        numpy.dot(normal, v.int)*u.int, # outflow
+                        numpy.dot(normal, v.ext)*u.ext, # inflow
+                        ))
+
+            if False:
+                f = min(numpy.dot(normal, v.int), 0) * u.avg + \
+                    max(numpy.dot(normal, v.ext), 0) * u.avg
+                print f
+            return f
+        else:
+            raise ValueError, "invalid flux type"
+
+    def max_eigenvalue(self):
+        max_ev = la.norm(self.advec_v)
+	return max_ev.max()
+
+    def bind(self, discr):
+        compiled_op_template = discr.compile(self.op_template())
+        
+        from hedge.mesh import check_bc_coverage, TAG_ALL
+        check_bc_coverage(discr.mesh, [TAG_ALL])
+
+        def rhs(t, u):
+	    from hedge.tools import join_fields
+	    bc_u = discr.boundarize_volume_field(u*0, tag=TAG_ALL) 
+            bc_v = join_fields(discr.boundarize_volume_field(-self.advec_v[0]*0, tag=TAG_ALL),
+			      discr.boundarize_volume_field(-self.advec_v[1]*0, tag=TAG_ALL))
 
 
+            return compiled_op_template(u=u, v=self.advec_v,
+	                                bc_u=bc_u, bc_v=bc_v)
 
+
+        return rhs
+
+    def bind_interdomain(self, 
+            my_discr, my_part_data,
+            nb_discr, nb_part_data):
+        from hedge.partition import compile_interdomain_flux
+        compiled_op_template, from_nb_indices = compile_interdomain_flux(
+                self.op_template(), "u", "nb_bdry_u",
+                my_discr, my_part_data, nb_discr, nb_part_data,
+                use_stupid_substitution=True)
+
+        from hedge.tools import with_object_array_or_scalar, is_zero
+
+        def nb_bdry_permute(fld):
+            if is_zero(fld):
+                return 0
+            else:
+                return fld[from_nb_indices]
+
+        def rhs(t, u, u_neighbor):
+            return compiled_op_template(u=u, 
+                    nb_bdry_u=with_object_array_or_scalar(nb_bdry_permute, u_neighbor))
+
+        return rhs
+
+
+class SpaceDependentWeakAdvectionOperator(SpaceDependentAdvectionOperatorBase):
+    def flux(self):
+        return self.weak_flux()
+
+    def op_template(self):
+        from hedge.optemplate import \
+	        Field, \
+		pair_with_boundary, \
+                get_flux_operator, \
+		make_minv_stiffness_t, \
+		InverseMassOperator,\
+		make_vector_field
+
+        from hedge.tools import join_fields
+
+        u = Field("u")
+	v = make_vector_field("v", self.dimensions)
+	w = join_fields(u, v)
+
+        bc_u = Field("bc_u")
+        bc_v = make_vector_field("bc_v", self.dimensions)
+	bc_w = join_fields(bc_u, bc_v)
+
+        minv_st = make_minv_stiffness_t(self.dimensions)
+        m_inv = InverseMassOperator()
+
+        flux_op = get_flux_operator(self.flux())
+
+        from hedge.mesh import TAG_ALL
+        return numpy.dot(minv_st, v*u) - m_inv*(
+                    flux_op*w
+                    + flux_op * pair_with_boundary(w, bc_w, TAG_ALL)
+                    )
 
 class StrongWaveOperator:
     """This operator discretizes the Wave equation S{part}tt u = c^2 S{Delta} u.
@@ -327,7 +458,8 @@ class StrongWaveOperator:
 
     def __init__(self, c, dimensions, source_f=None, 
             flux_type="upwind",
-            dirichlet_tag=hedge.mesh.TAG_ALL,
+            dirichlet_tag=hedge.mesh.TAG_ALL, 
+	    dirichlet_bc_f=None,
             neumann_tag=hedge.mesh.TAG_NONE,
             radiation_tag=hedge.mesh.TAG_NONE):
         assert isinstance(dimensions, int)
@@ -344,6 +476,8 @@ class StrongWaveOperator:
         self.dirichlet_tag = dirichlet_tag
         self.neumann_tag = neumann_tag
         self.radiation_tag = radiation_tag
+
+	self.dirichlet_bc_f = dirichlet_bc_f
 
         self.flux_type = flux_type
 
@@ -379,6 +513,7 @@ class StrongWaveOperator:
 
     def op_template(self):
         from hedge.optemplate import \
+		Field, \
                 make_vector_field, \
                 pair_with_boundary, \
                 get_flux_operator, \
