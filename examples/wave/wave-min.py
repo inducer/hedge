@@ -38,7 +38,7 @@ def main() :
     vis = VtkVisualizer(discr, None, "fld")
 
     def source_u(x, el):
-        x = x - numpy.array([0.1,0.2])
+        x = x - numpy.array([0.1,0.22])
         return exp(-numpy.dot(x, x)*128)
 
     source_u_vec = discr.interpolate_volume_function(source_u)
