@@ -131,11 +131,11 @@ class RK4TimeStepper(TimeStepper):
             for a, b, c in self.coeffs:
                 this_rhs = rhs(t + c*dt, y)
 
-                self.timer.start()
+                sub_timer = self.timer.start_sub_timer()
                 self.residual = a*self.residual + dt*this_rhs
                 del this_rhs
                 y = y + b * self.residual
-                self.timer.stop()
+                sub_timer.stop().submit()
 
         return y
 
