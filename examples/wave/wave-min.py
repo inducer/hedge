@@ -38,6 +38,7 @@ def main() :
     vis = VtkVisualizer(discr, None, "fld")
 
     def source_u(x, el):
+        x = x - numpy.array([0.1,0.2])
         return exp(-numpy.dot(x, x)*128)
 
     source_u_vec = discr.interpolate_volume_function(source_u)
@@ -50,9 +51,9 @@ def main() :
     from hedge.mesh import TAG_ALL, TAG_NONE
     op = StrongWaveOperator(-1, discr.dimensions, 
             source_vec_getter,
-            dirichlet_tag=TAG_NONE,
+            dirichlet_tag=TAG_ALL,
             neumann_tag=TAG_NONE,
-            radiation_tag=TAG_ALL,
+            radiation_tag=TAG_NONE,
             flux_type="upwind")
 
     from hedge.tools import join_fields
@@ -60,7 +61,7 @@ def main() :
             [discr.volume_zeros() for i in range(discr.dimensions)])
 
     dt = discr.dt_factor(op.max_eigenvalue())
-    nsteps = int(1/dt)
+    nsteps = int(3/dt)
 
     # timestep loop -----------------------------------------------------------
     from hedge.timestep import RK4TimeStepper
