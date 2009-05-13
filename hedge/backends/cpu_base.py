@@ -123,7 +123,7 @@ class ExecutorBase(object):
         for eg in self.discr.element_groups:
             from hedge._internal import perform_elwise_scaled_operator
             perform_elwise_scaled_operator(eg.ranges, eg.ranges,
-                   op.coefficients(eg), op.matrix(eg), 
+                   op.coefficients(eg), numpy.asarray(op.matrix(eg), dtype=field.dtype),
                    target)
         target.finalize()
 
