@@ -1136,11 +1136,11 @@ def time_count_flop(func, timer, counter, flop_counter, flops, increment=1):
     def wrapped_f(*args, **kwargs):
         counter.add()
         flop_counter.add(flops)
-        timer.start()
+        sub_timer = timer.start_sub_timer()
         try:
             return func(*args, **kwargs)
         finally:
-            timer.stop()
+            sub_timer.stop().submit()
 
     return wrapped_f
 
