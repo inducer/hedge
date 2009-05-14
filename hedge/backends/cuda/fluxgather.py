@@ -514,7 +514,7 @@ class Kernel:
                 Initializer, If, For, Statement, Assign, While
                 
         from codepy.cgen.cuda import CudaShared, CudaGlobal
-        from codepy.cgen import dtype_to_ctype
+        from pycuda.tools import dtype_to_ctype
 
         discr = self.discr
         given = self.plan.given
@@ -542,8 +542,8 @@ class Kernel:
         for dep_expr in self.all_deps:
             cmod.extend([
                 Comment(str(dep_expr)),
-                Value("texture<fp_tex_%s, 1, cudaReadModeElementType>"
-                    % dtype_to_ctype(float_type), 
+                Value("texture<%s, 1, cudaReadModeElementType>"
+                    % dtype_to_ctype(float_type, with_fp_tex_hack=True), 
                     "field%d_tex" % self.dep_to_index[dep_expr])
                 ])
 

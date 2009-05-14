@@ -215,7 +215,7 @@ class Kernel(DiffKernelBase):
                 Comment, Line, Define, Include, \
                 Initializer, If, For, Statement, Assign
 
-        from codepy.cgen import dtype_to_ctype
+        from pycuda.tools import dtype_to_ctype
         from codepy.cgen.cuda import CudaShared, CudaGlobal
                 
         discr = self.discr
@@ -236,8 +236,8 @@ class Kernel(DiffKernelBase):
         cmod = Module([
                 Include("pycuda-helpers.hpp"),
                 Line(),
-                Value("texture<fp_tex_%s, 1, cudaReadModeElementType>"
-                    % dtype_to_ctype(float_type), 
+                Value("texture<%s, 1, cudaReadModeElementType>"
+                    % dtype_to_ctype(float_type, with_fp_tex_hack=True), 
                     "rst_to_xyz_tex"),
                 ])
 
