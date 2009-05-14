@@ -435,18 +435,19 @@ class Executor(object):
             #print self.code
             #raw_input()
 
-        from hedge.tools import get_rank
-        from hedge.compiler import dot_dataflow_graph
-        i = 0
-        while True:
-            dot_name = "rank-%d-dataflow-%d.dot" % (get_rank(discr), i)
-            from os.path import exists
-            if exists(dot_name):
-                i += 1
-                continue
+        if False:
+            from hedge.tools import get_rank
+            from hedge.compiler import dot_dataflow_graph
+            i = 0
+            while True:
+                dot_name = "rank-%d-dataflow-%d.dot" % (get_rank(discr), i)
+                from os.path import exists
+                if exists(dot_name):
+                    i += 1
+                    continue
 
-            open(dot_name, "w").write(dot_dataflow_graph(self.code))
-            break
+                open(dot_name, "w").write(dot_dataflow_graph(self.code))
+                break
 
         # build the local kernels 
         self.diff_kernel = self.discr.diff_plan.make_kernel(discr)
