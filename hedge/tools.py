@@ -1097,7 +1097,7 @@ class CGStateContainer:
         delta_0 = delta = self.delta
         while iterations < max_iterations:
             if debug_callback is not None:
-                debug_callback(self.x, self.residual, self.d)
+                debug_callback("it", iterations, self.x, self.residual, self.d, delta)
 
             compute_real_residual = \
                     iterations % 50 == 0 or \
@@ -1106,6 +1106,8 @@ class CGStateContainer:
                     compute_real_residual=compute_real_residual)
 
             if compute_real_residual and abs(delta) < tol*tol * abs(delta_0):
+                if debug_callback is not None:
+                    debug_callback("end", iterations, self.x, self.residual, self.d, delta)
                 if debug:
                     print "%d iterations" % iterations
                 return self.x
