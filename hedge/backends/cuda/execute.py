@@ -292,7 +292,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         kernel = self.ex.discr.element_local_kernel()
         return [(insn.name, kernel(
                 self.rec(insn.field),
-                *self.ex.mass_data(kernel, elgroup)))], []
+                *self.ex.mass_data(kernel, elgroup, insn.op_class)))], []
 
 
 
@@ -509,6 +509,6 @@ class Executor(object):
         return prep_mat, prep_scaling
 
     @memoize_method
-    def mass_data(self, kernel, elgroup):
-        return (kernel.prepare_matrix(elgroup.local_discretization.mass_matrix()),
-                kernel.prepare_scaling(elgroup, elgroup.inverse_jacobians))
+    def mass_data(self, kernel, elgroup, op_class):
+        return (kernel.prepare_matrix(op_class.matrix(elgroup)),
+                kernel.prepare_scaling(elgroup, op_class.coefficients(elgroup)))
