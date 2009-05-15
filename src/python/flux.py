@@ -122,9 +122,6 @@ class IfPositive(Flux):
         self.then = then
         self.else_ = else_
 
-        if FluxDependencyMapper(composite_leaves=True)(criterion):
-            raise ValueError("criterion part of IfPositive may not depend on field values")
-
     def __getinitargs__(self):
         return self.criterion, self.then, self.else_
 
