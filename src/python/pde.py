@@ -464,8 +464,7 @@ class StrongWaveOperator:
 
     def __init__(self, c, dimensions, source_f=None, 
             flux_type="upwind",
-            dirichlet_tag=hedge.mesh.TAG_ALL, 
-	    dirichlet_bc_f=None,
+            dirichlet_tag=hedge.mesh.TAG_ALL,
             neumann_tag=hedge.mesh.TAG_NONE,
             radiation_tag=hedge.mesh.TAG_NONE):
         assert isinstance(dimensions, int)
@@ -482,8 +481,6 @@ class StrongWaveOperator:
         self.dirichlet_tag = dirichlet_tag
         self.neumann_tag = neumann_tag
         self.radiation_tag = radiation_tag
-
-	self.dirichlet_bc_f = dirichlet_bc_f
 
         self.flux_type = flux_type
 
@@ -519,7 +516,6 @@ class StrongWaveOperator:
 
     def op_template(self):
         from hedge.optemplate import \
-		Field, \
                 make_vector_field, \
                 pair_with_boundary, \
                 get_flux_operator, \
