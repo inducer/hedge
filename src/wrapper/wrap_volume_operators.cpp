@@ -20,8 +20,8 @@
 #include <boost/python.hpp>
 #include <boost/python/slice.hpp>
 #include <boost/numeric/ublas/io.hpp>
-#include "op_target.hpp"
-#include "volume_operators.hpp"
+#include <hedge/op_target.hpp>
+#include <hedge/volume_operators.hpp>
 #include "wrap_helpers.hpp"
 
 

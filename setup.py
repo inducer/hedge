@@ -145,7 +145,6 @@ def main():
                     ],
             zip_safe=False,
 
-            package_dir={ "hedge": "src/python" },
             ext_package="hedge",
 
             ext_modules=[
@@ -168,7 +167,7 @@ def main():
                     ),
                 ],
             data_files=[
-            ("include/hedge", glob.glob("src/cpp/*.hpp")),
+            ("include/hedge", glob.glob("src/cpp/hedge/*.hpp")),
             ],
             )
 

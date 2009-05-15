@@ -1,3 +1,4 @@
 #! /bin/bash
 
 rm -f *.{vtk,vtu,pvtu,pvd,silo,eps,dat,dat-journal,visit,png}
+rm -f *.dat-rank*

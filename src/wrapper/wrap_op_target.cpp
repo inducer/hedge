@@ -19,7 +19,7 @@
 
 #include <boost/python.hpp>
 #include <pyublas/python_helpers.hpp>
-#include "op_target.hpp"
+#include <hedge/op_target.hpp>
 #include "wrap_helpers.hpp"
 
 
