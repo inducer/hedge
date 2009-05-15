@@ -197,7 +197,7 @@ class AdvectionOperatorBase(TimeDependentOperator):
         normal = make_normal(self.dimensions)
 
         if self.flux_type == "central":
-  	    return u.avg*numpy.dot(normal, self.v)
+            return u.avg*numpy.dot(normal, self.v)
         elif self.flux_type == "lf":
             return u.avg*numpy.dot(normal, self.v) \
                     + 0.5*la.norm(self.v)*(u.int - u.ext)
@@ -221,7 +221,7 @@ class AdvectionOperatorBase(TimeDependentOperator):
 
         def rhs(t, u):
             bc_in = self.inflow_u.boundary_interpolant(t, discr, self.inflow_tag)
-            bc_out = discr.boundarize_volume_field(u, self.outflow_tag) 
+            bc_out = discr.boundarize_volume_field(u, self.outflow_tag)
 
             return compiled_op_template(u=u, bc_in=bc_in, bc_out=bc_out)
 
@@ -249,6 +249,9 @@ class AdvectionOperatorBase(TimeDependentOperator):
                     nb_bdry_u=with_object_array_or_scalar(nb_bdry_permute, u_neighbor))
 
         return rhs
+
+
+
 
 class StrongAdvectionOperator(AdvectionOperatorBase):
     def flux(self):
@@ -279,6 +282,9 @@ class StrongAdvectionOperator(AdvectionOperatorBase):
                 #+ flux_op * pair_with_boundary(u, bc_out, self.outflow_tag)
                 )
                 )
+
+
+
 
 class WeakAdvectionOperator(AdvectionOperatorBase):
     def flux(self):
