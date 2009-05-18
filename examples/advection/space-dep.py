@@ -74,7 +74,7 @@ def main():
             TimeConstantGivenFunction, \
             TimeDependentGivenFunction
     from hedge.pde import SpaceDependentWeakAdvectionOperator
-    op = SpaceDependentWeakAdvectionOperator(dim, v, flux_type="upwind")
+    op = SpaceDependentWeakAdvectionOperator(dim, v, flux_type="lf")
 
     # initial condition -------------------------------------------------------
     if False:
@@ -95,7 +95,7 @@ def main():
     # timestep setup ----------------------------------------------------------
     stepper = RK4TimeStepper()
 
-    dt = discr.dt_factor(op.max_eigenvalue()) * 50
+    dt = discr.dt_factor(op.max_eigenvalue())
     nsteps = int(700/dt)
 
     if rcon.is_head_rank:
@@ -105,6 +105,7 @@ def main():
                 nsteps)
 
     # filter setup-------------------------------------------------------------
+    from hedge.discretization import Filter, ExponentialFilterResponseFunction
     antialiasing = Filter(discr,ExponentialFilterResponseFunction(min_amplification=0.9, order=4))
 
     # diagnostics setup -------------------------------------------------------

@@ -324,6 +324,7 @@ class SpaceDependentAdvectionOperatorBase:
 	    flux_type="central"
 	    ):
         self.dimensions = dimensions
+        # advec_v is a space-dependent function which generates a velocity-field:
         self.advec_v = advec_v
         self.flux_type = flux_type
 
@@ -341,38 +342,34 @@ class SpaceDependentAdvectionOperatorBase:
         normal = make_normal(self.dimensions)
 
         if self.flux_type == "central":
-	    return (u.int*numpy.dot(v.int, normal)+
-	            u.ext*numpy.dot(v.ext, normal))*0.5
-        elif self.flux_type == "lf_old":
-            return u.avg*numpy.dot(normal, self.v) \
-                    + 0.5*la.norm(v)*(u.int - u.ext)
+	    return (u.int*numpy.dot(v.int, normal )
+	            + u.ext*numpy.dot(v.ext, normal)) * 0.5
         elif self.flux_type == "lf":
-            return u.avg*numpy.dot(normal, v.avg) \
-                    + 0.5*(v.avg[0]**2+v.avg[1]**2)**0.5*(u.int - u.ext)
-        elif self.flux_type == "upwind_old":
-            return (numpy.dot(normal, self.v)*
-                    IfPositive(numpy.dot(normal, self.v),
-                        u.int, # outflow
-                        u.ext, # inflow
-                        ))
+            n_vint = numpy.dot(normal, v.int)
+            n_vext = numpy.dot(normal, v.ext)
+            if (n_vint**2)**0.5  >= (n_vext**2)**0.5:
+                return 0.5 * (u.int - u.ext) * numpy.dot(v.int, v.int)**0.5   \
+                     + 0.5 * (n_vint * u.int + n_vext * u.ext)    
+            else:
+                return 0.5 * (u.int - u.ext) * numpy.dot(v.ext, v.ext)**0.5   \
+                     + 0.5 * (n_vint * u.int + n_vext * u.ext)                         
         elif self.flux_type == "upwind": 
             return (
                     IfPositive(numpy.dot(normal, v.avg),
-                        numpy.dot(normal, v.int)*u.int, # outflow
-                        numpy.dot(normal, v.ext)*u.ext, # inflow
+                        numpy.dot(normal, v.int) * u.int, # outflow
+                        numpy.dot(normal, v.ext) * u.ext, # inflow
                         ))
-
-            if False:
-                f = min(numpy.dot(normal, v.int), 0) * u.avg + \
-                    max(numpy.dot(normal, v.ext), 0) * u.avg
-                print f
             return f
         else:
             raise ValueError, "invalid flux type"
 
     def max_eigenvalue(self):
-        max_ev = la.norm(self.advec_v)
-	return max_ev.max()
+        # give the max eigenvalue of a vector of eigenvalues. As the velocities of each node
+        # is stored in the velocity-vector-field a pointwise dot product of this vector has 
+        # to be taken to get the magnitude of the velocity at each node. From this vector 
+        # the maximum values limits the timestep.
+        from hedge.tools import ptwise_dot
+        return (ptwise_dot(1, 1, self.advec_v, self.advec_v)**0.5).max()
 
     def bind(self, discr):
         compiled_op_template = discr.compile(self.op_template())
@@ -382,39 +379,15 @@ class SpaceDependentAdvectionOperatorBase:
 
         def rhs(t, u):
 	    from hedge.tools import join_fields
-	    bc_u = discr.boundarize_volume_field(u*0, tag=TAG_ALL) 
-            bc_v = join_fields(discr.boundarize_volume_field(-self.advec_v[0]*0, tag=TAG_ALL),
-			      discr.boundarize_volume_field(-self.advec_v[1]*0, tag=TAG_ALL))
-
+	    bc_u = discr.boundarize_volume_field(u * 0, tag=TAG_ALL) 
+            bc_v = discr.boundarize_volume_field(-self.advec_v * 0, tag=TAG_ALL)
 
             return compiled_op_template(u=u, v=self.advec_v,
 	                                bc_u=bc_u, bc_v=bc_v)
 
-
         return rhs
 
-    def bind_interdomain(self, 
-            my_discr, my_part_data,
-            nb_discr, nb_part_data):
-        from hedge.partition import compile_interdomain_flux
-        compiled_op_template, from_nb_indices = compile_interdomain_flux(
-                self.op_template(), "u", "nb_bdry_u",
-                my_discr, my_part_data, nb_discr, nb_part_data,
-                use_stupid_substitution=True)
 
-        from hedge.tools import with_object_array_or_scalar, is_zero
-
-        def nb_bdry_permute(fld):
-            if is_zero(fld):
-                return 0
-            else:
-                return fld[from_nb_indices]
-
-        def rhs(t, u, u_neighbor):
-            return compiled_op_template(u=u, 
-                    nb_bdry_u=with_object_array_or_scalar(nb_bdry_permute, u_neighbor))
-
-        return rhs
 
 
 class SpaceDependentWeakAdvectionOperator(SpaceDependentAdvectionOperatorBase):
@@ -447,7 +420,7 @@ class SpaceDependentWeakAdvectionOperator(SpaceDependentAdvectionOperatorBase):
 
         from hedge.mesh import TAG_ALL
         return numpy.dot(minv_st, v*u) - m_inv*(
-                    flux_op*w
+                    flux_op * w
                     + flux_op * pair_with_boundary(w, bc_w, TAG_ALL)
                     )
 
