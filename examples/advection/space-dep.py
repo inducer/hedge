@@ -22,8 +22,7 @@ import numpy
 import numpy.linalg as la
 
 
-def main():
-    from hedge.timestep import RK4TimeStepper
+def main(): 
     from hedge.tools import mem_checkpoint
     from math import sin, cos, pi, sqrt, tanh
     from math import floor
@@ -32,9 +31,6 @@ def main():
     rcon = guess_run_context(disable=set(["cuda"]))
 
     # mesh setup --------------------------------------------------------------
-
-    dim = 2
-
     if rcon.is_head_rank:
         #from hedge.mesh import make_disk_mesh
         #mesh = make_disk_mesh()
@@ -61,6 +57,41 @@ def main():
             #fac = (1-x**2)*(1-y**2) 
             fac = 1
             return (-y*fac, x*fac)
+    
+    class VField_bc:
+        shape = (2,)
+        
+        def __call__(self, pt, el, t):
+            x, y = pt
+            # Correction-Factor to make the speed zero on the on the boundary
+            #fac = (1-x**2)*(1-y**2) 
+            fac = 1.
+            return numpy.array([-y*fac, x*fac]) * sin(pi*t)
+            
+    def VField_bc_2(pt, el, t):
+        x, y = pt
+            # Correction-Factor to make the speed zero on the on the boundary
+            #fac = (1-x**2)*(1-y**2) 
+        fac = 1.
+            #print sin(pi*t) 
+        return (-y*fac, x*fac) #* sin(pi*t) 
+    
+    zwisch_f = VField_bc()
+    #print zwisch_f((2,4),1,0.5)
+    #raw_input()
+    #t = 0.5
+    #from hedge.mesh import check_bc_coverage, TAG_ALL
+    #from hedge.data import TimeDependentGivenFunction
+    #advec_v_bc=TimeDependentGivenFunction(VField_bc())
+    #bc_v = advec_v_bc.boundary_interpolant(t, discr, tag=TAG_ALL)
+    #bc_test = discr.interpolate_boundary_function(VField())
+    #def V_bc_zwisch(x, el):
+    #    t = 0.5
+    #    return VField_bc_2(x, el, t)
+
+    #bc_alt = discr.interpolate_boundary_function(V_bc_zwisch, tag=TAG_ALL)
+    #print bc_alt
+    #raw_input()
 
     v = discr.interpolate_volume_function(VField())
 
@@ -73,8 +104,11 @@ def main():
             ConstantGivenFunction, \
             TimeConstantGivenFunction, \
             TimeDependentGivenFunction
-    from hedge.pde import SpaceDependentWeakAdvectionOperator
-    op = SpaceDependentWeakAdvectionOperator(dim, v, flux_type="lf")
+    from hedge.pde import SpaceDependentAdvectionOperator
+    op = SpaceDependentAdvectionOperator(discr.dimensions, \
+                                         advec_v=v, \
+                                         advec_v_bc=TimeDependentGivenFunction(VField_bc()),                \
+                                         flux_type="lf")
 
     # initial condition -------------------------------------------------------
     if False:
@@ -93,6 +127,7 @@ def main():
     u = discr.interpolate_volume_function(initial)
     
     # timestep setup ----------------------------------------------------------
+    from hedge.timestep import RK4TimeStepper
     stepper = RK4TimeStepper()
 
     dt = discr.dt_factor(op.max_eigenvalue())
