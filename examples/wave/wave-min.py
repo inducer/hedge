@@ -60,12 +60,16 @@ def main() :
     fields = join_fields(discr.volume_zeros(),
             [discr.volume_zeros() for i in range(discr.dimensions)])
 
-    dt = discr.dt_factor(op.max_eigenvalue())
-    nsteps = int(3/dt)
-
     # timestep loop -----------------------------------------------------------
     from hedge.timestep import RK4TimeStepper
+    from hedge.timestep import AdamsBashforthTimeStepper
+    #stepper = AdamsBashforthTimeStepper(3)
     stepper = RK4TimeStepper()
+
+    dt = discr.dt_factor(op.max_eigenvalue(), stepper)
+    nsteps = int(3/dt)
+
+
 
     rhs = op.bind(discr)
     for step in range(nsteps):

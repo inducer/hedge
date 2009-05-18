@@ -884,10 +884,11 @@ class Discretization(object):
             for el in eg.members)
             for eg in self.element_groups)
 
-    def dt_factor(self, max_system_ev):
+    def dt_factor(self, max_system_ev, stepper):
         return 1/max_system_ev \
                 * self.dt_non_geometric_factor() \
-                * self.dt_geometric_factor()
+                * self.dt_geometric_factor() \
+                * stepper.get_stp_sz_const()
 
     def get_point_evaluator(self, point):
         for eg in self.element_groups:

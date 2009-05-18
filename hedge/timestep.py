@@ -108,6 +108,9 @@ class RK4TimeStepper(TimeStepper):
     def add_instrumentation(self, logmgr):
         logmgr.add_quantity(self.timer)
 
+    def get_stp_sz_const(self):
+        return 1
+
     def __call__(self, y, t, dt, rhs):
         try:
             self.residual
@@ -142,6 +145,8 @@ class RK4TimeStepper(TimeStepper):
 
 
 
+
+
 class AdamsBashforthTimeStepper(TimeStepper):
     def __init__(self, order, startup_stepper=None):
         self.coefficients = make_ab_coefficients(order)
@@ -151,6 +156,9 @@ class AdamsBashforthTimeStepper(TimeStepper):
             self.startup_stepper = startup_stepper
         else:
             self.startup_stepper = RK4TimeStepper()
+
+    def get_stp_sz_const(self):
+        return 1/10
 
     def __call__(self, y, t, dt, rhs):
         if len(self.f_history) == 0:
