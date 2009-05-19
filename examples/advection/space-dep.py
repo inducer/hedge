@@ -46,19 +46,9 @@ def main():
     discr = rcon.make_discretization(mesh_data, order=4)
     vis_discr = discr
   
-    # space-dependent-velocity-field ------------------------------------------
+    # space-time-dependent-velocity-field -------------------------------------
     # simple vortex 
     class VField:
-        shape = (2,)
-        
-        def __call__(self, pt, el):
-            x, y = pt
-            # Correction-Factor to make the speed zero on the on the boundary
-            #fac = (1-x**2)*(1-y**2) 
-            fac = 1
-            return (-y*fac, x*fac)
-    
-    class VField_bc:
         shape = (2,)
         
         def __call__(self, pt, el, t):
@@ -66,35 +56,9 @@ def main():
             # Correction-Factor to make the speed zero on the on the boundary
             #fac = (1-x**2)*(1-y**2) 
             fac = 1.
-            return numpy.array([-y*fac, x*fac]) * sin(pi*t)
-            
-    def VField_bc_2(pt, el, t):
-        x, y = pt
-            # Correction-Factor to make the speed zero on the on the boundary
-            #fac = (1-x**2)*(1-y**2) 
-        fac = 1.
-            #print sin(pi*t) 
-        return (-y*fac, x*fac) #* sin(pi*t) 
+            return numpy.array([-y*fac, x*fac]) * cos(pi*t)
     
-    zwisch_f = VField_bc()
-    #print zwisch_f((2,4),1,0.5)
-    #raw_input()
-    #t = 0.5
-    #from hedge.mesh import check_bc_coverage, TAG_ALL
-    #from hedge.data import TimeDependentGivenFunction
-    #advec_v_bc=TimeDependentGivenFunction(VField_bc())
-    #bc_v = advec_v_bc.boundary_interpolant(t, discr, tag=TAG_ALL)
-    #bc_test = discr.interpolate_boundary_function(VField())
-    #def V_bc_zwisch(x, el):
-    #    t = 0.5
-    #    return VField_bc_2(x, el, t)
-
-    #bc_alt = discr.interpolate_boundary_function(V_bc_zwisch, tag=TAG_ALL)
-    #print bc_alt
-    #raw_input()
-
-    v = discr.interpolate_volume_function(VField())
-
+    
     # visualization setup -----------------------------------------------------
     from hedge.visualization import VtkVisualizer, SiloVisualizer
     vis = VtkVisualizer(vis_discr, rcon, "fld")
@@ -104,18 +68,19 @@ def main():
             ConstantGivenFunction, \
             TimeConstantGivenFunction, \
             TimeDependentGivenFunction
-    from hedge.pde import SpaceDependentAdvectionOperator
-    op = SpaceDependentAdvectionOperator(discr.dimensions, \
-                                         advec_v=v, \
-                                         advec_v_bc=TimeDependentGivenFunction(VField_bc()),                \
+    from hedge.pde import SpaceTimeDependentAdvectionOperator
+    op = SpaceTimeDependentAdvectionOperator(discr.dimensions, \
+                                         advec_v = TimeDependentGivenFunction(VField()),
                                          flux_type="lf")
 
     # initial condition -------------------------------------------------------
+    # Gauss-Pulse
     if False:
         def initial(pt, el):
             from math import exp
             x = (pt-numpy.array([0.3, 0.7]))*8
             return exp(-numpy.dot(x, x))
+    # Rectangel
     if True:
         def initial(pt, el):
             x, y = pt
@@ -129,8 +94,8 @@ def main():
     # timestep setup ----------------------------------------------------------
     from hedge.timestep import RK4TimeStepper
     stepper = RK4TimeStepper()
-
-    dt = discr.dt_factor(op.max_eigenvalue())
+    t = 0
+    dt = discr.dt_factor(op.max_eigenvalue(t, discr))
     nsteps = int(700/dt)
 
     if rcon.is_head_rank:
@@ -164,7 +129,9 @@ def main():
     logmgr.add_quantity(LpNorm(u_getter, discr, name="l2_u"))
 
     logmgr.add_watches(["step.max", "t_sim.max", "l2_u", "t_step.max"])
-
+    
+    advec_v = TimeDependentGivenFunction(VField())
+    v = advec_v.volume_interpolant(t, discr)
     # timestep loop -----------------------------------------------------------
     rhs = op.bind(discr)
     for step in xrange(nsteps):

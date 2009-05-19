@@ -311,7 +311,7 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
                     )
 
 
-class SpaceDependentAdvectionOperator:
+class SpaceTimeDependentAdvectionOperator:
     """A class for space- and time-dependent DG-advection operators.
 
     `advec_v` is a callable expecting two arguments `(x, t)` representing space and time, 
@@ -328,12 +328,10 @@ class SpaceDependentAdvectionOperator:
     def __init__(self, 
             dimensions, 
 	    advec_v, 
-            advec_v_bc,
 	    flux_type="central"
 	    ):
         self.dimensions = dimensions
         self.advec_v = advec_v
-        self.advec_v_bc = advec_v_bc
         self.flux_type = flux_type
 
     def flux(self):
@@ -407,23 +405,24 @@ class SpaceDependentAdvectionOperator:
         check_bc_coverage(discr.mesh, [TAG_ALL])
 
         def rhs(t, u):
-	    bc_u = discr.boundarize_volume_field(u * 0, tag=TAG_ALL) 
-            bc_v = discr.boundarize_volume_field(-self.advec_v * 0, tag=TAG_ALL)
-            #bc_v = self.advec_v_bc.boundary_interpolant(t, discr, tag=TAG_ALL)
-            #print bc_in
-            #raw_input()
-            return compiled_op_template(u=u, v=self.advec_v,
+	    v = self.advec_v.volume_interpolant(t, discr)
+
+            bc_u = discr.boundarize_volume_field(u * 0, tag=TAG_ALL) 
+            bc_v = self.advec_v.boundary_interpolant(t, discr, tag=TAG_ALL)
+            
+            return compiled_op_template(u=u, v=v,
 	                                bc_u=bc_u, bc_v=bc_v)
 
         return rhs
 
-    def max_eigenvalue(self):
+    def max_eigenvalue(self, t, discr):
         """give the max eigenvalue of a vector of eigenvalues. As the velocities of each 
         node is stored in the velocity-vector-field a pointwise dot product of this 
         vector has to be taken to get the magnitude of the velocity at each node. 
         From this vector the maximum values limits the timestep."""
         from hedge.tools import ptwise_dot
-        return (ptwise_dot(1, 1, self.advec_v, self.advec_v)**0.5).max()
+        v = self.advec_v.volume_interpolant(t, discr)
+        return (ptwise_dot(1, 1, v, v)**0.5).max()
 
 
 
