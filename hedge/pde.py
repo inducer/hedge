@@ -314,9 +314,11 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
 class SpaceDependentAdvectionOperator:
     """A class for space- and time-dependent DG-advection operators.
 
-    As input for the advection velocity 'advec_v' you can give a 
-    space and time dependent function to the operator. 
+    `advec_v` is a callable expecting two arguments `(x, t)` representing space and time, 
+    and returning an n-dimensional vector representing the velocity at x. 
+    `advec_v` complies with the `hedge.data.ITimeDependentGivenFunctionInterface`.
     """
+
     flux_types = [
             "central",
             "upwind",
