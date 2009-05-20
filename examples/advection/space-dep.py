@@ -48,7 +48,10 @@ def main():
   
     # space-time-dependent-velocity-field -------------------------------------
     # simple vortex 
-    class VField:
+    class TimeDependentVField:
+        """ `TimeDependentVField` is a callable expecting `(x, t)` representing space and time
+        
+        `x` is of the length of the spatial dimension and `t` is the time."""
         shape = (2,)
         
         def __call__(self, pt, el, t):
@@ -58,30 +61,84 @@ def main():
             fac = 1.
             return numpy.array([-y*fac, x*fac]) * cos(pi*t)
     
-    
+    class VField:
+        """ `VField` is a callable expecting `(x)` representing space 
+        
+        `x` is of the length of the spatial dimension."""
+        shape = (2,)
+        
+        def __call__(self, pt, el):
+            x, y = pt
+            # Correction-Factor to make the speed zero on the on the boundary
+            #fac = (1-x**2)*(1-y**2) 
+            fac = 1.
+            return numpy.array([-y*fac, x*fac])
+
+    # space-time-dependent State BC (optional)-----------------------------------
+    class TimeDependentBc_u:
+        """ space and time dependent BC for state u"""
+        shape = (2,)
+
+        def __call__(self, pt, el, t):
+            x, y = pt
+            if t <= 0.5:
+                if x > 0:
+                    return 1
+                else:
+                    return 0
+            else:
+                return 0
+        
+    class Bc_u:
+        """ Only space dependent BC for state u"""
+        shape = (2,)
+
+        def __call__(seld, pt, el):
+            x, y = pt
+            if x > 0:
+                return 1
+            else:
+                return 0
+
+
     # visualization setup -----------------------------------------------------
     from hedge.visualization import VtkVisualizer, SiloVisualizer
     vis = VtkVisualizer(vis_discr, rcon, "fld")
 
     # operator setup ----------------------------------------------------------
+    """In the operator setup it is possible to switch between a only space 
+    dependent velocity field `VField` or a time and space dependent 
+    `TimeDependentVField`. 
+    For `TimeDependentVField`: advec_v=TimeDependentGivenFunction(VField())
+    For `VField`: advec_v=TimeConstantGivenFunction(GivenFunction(VField()))
+    Same for the Bc_u Function! If you don't define Bc_u then the BC for u = 0.
+    """
     from hedge.data import \
             ConstantGivenFunction, \
             TimeConstantGivenFunction, \
-            TimeDependentGivenFunction
+            TimeDependentGivenFunction, \
+            GivenFunction
     from hedge.pde import SpaceTimeDependentAdvectionOperator
     op = SpaceTimeDependentAdvectionOperator(discr.dimensions, \
-                                         advec_v = TimeDependentGivenFunction(VField()),
+                                         #advec_v=TimeDependentGivenFunction(
+                                         #    TimeDependentVField()),
+                                         advec_v=TimeConstantGivenFunction(
+                                             GivenFunction(VField())),
+                                         #bc_u_f=TimeDependentGivenFunction(
+                                         #    TimeDependentBc_u()),
+                                         bc_u_f=TimeConstantGivenFunction(
+                                             GivenFunction(Bc_u())),
                                          flux_type="lf")
 
     # initial condition -------------------------------------------------------
     # Gauss-Pulse
-    if False:
+    if True:
         def initial(pt, el):
             from math import exp
             x = (pt-numpy.array([0.3, 0.7]))*8
             return exp(-numpy.dot(x, x))
     # Rectangel
-    if True:
+    if False:
         def initial(pt, el):
             x, y = pt
             if abs(x) < 0.5 and abs(y) < 0.2:
@@ -130,8 +187,8 @@ def main():
 
     logmgr.add_watches(["step.max", "t_sim.max", "l2_u", "t_step.max"])
     
-    advec_v = TimeDependentGivenFunction(VField())
-    v = advec_v.volume_interpolant(t, discr)
+    # Initialize v for data output:
+    v = op.advec_v.volume_interpolant(t, discr)
     # timestep loop -----------------------------------------------------------
     rhs = op.bind(discr)
     for step in xrange(nsteps):

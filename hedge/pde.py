@@ -316,7 +316,9 @@ class SpaceTimeDependentAdvectionOperator:
 
     `advec_v` is a callable expecting two arguments `(x, t)` representing space and time, 
     and returning an n-dimensional vector representing the velocity at x. 
-    `advec_v` complies with the `hedge.data.ITimeDependentGivenFunctionInterface`.
+    `bc_u_f` is a callable expecting `(x, t)` representing space and time, 
+    and returning an 1-dimensional vector representing the state on the boundary.
+    `advec_v` and `bc_u_f` complies with the `hedge.data.ITimeDependentGivenFunctionInterface`.
     """
 
     flux_types = [
@@ -327,11 +329,13 @@ class SpaceTimeDependentAdvectionOperator:
 
     def __init__(self, 
             dimensions, 
-	    advec_v, 
+	    advec_v,
+            bc_u_f="None",
 	    flux_type="central"
 	    ):
         self.dimensions = dimensions
         self.advec_v = advec_v
+        self.bc_u_f = bc_u_f
         self.flux_type = flux_type
 
     def flux(self):
@@ -385,7 +389,10 @@ class SpaceTimeDependentAdvectionOperator:
 
         bc_u = Field("bc_u")
         bc_v = make_vector_field("bc_v", self.dimensions)
-	bc_w = join_fields(bc_u, bc_v)
+        if self.bc_u_f is "None":
+            bc_w = join_fields(0, bc_v)
+        else:
+            bc_w = join_fields(bc_u, bc_v)
 
         minv_st = make_minv_stiffness_t(self.dimensions)
         m_inv = InverseMassOperator()
@@ -407,11 +414,14 @@ class SpaceTimeDependentAdvectionOperator:
         def rhs(t, u):
 	    v = self.advec_v.volume_interpolant(t, discr)
 
-            bc_u = discr.boundarize_volume_field(u * 0, tag=TAG_ALL) 
             bc_v = self.advec_v.boundary_interpolant(t, discr, tag=TAG_ALL)
             
-            return compiled_op_template(u=u, v=v,
-	                                bc_u=bc_u, bc_v=bc_v)
+            if self.bc_u_f is not "None":
+                bc_u = self.bc_u_f.boundary_interpolant(t, discr, tag=TAG_ALL)
+                return compiled_op_template(u=u, v=v,
+                                            bc_u=bc_u, bc_v=bc_v)
+            else:
+                return compiled_op_template(u=u, v=v, bc_v=bc_v)
 
         return rhs
 
