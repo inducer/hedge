@@ -239,6 +239,9 @@ class TimeDependentGivenFunction(ITimeDependentGivenFunction):
     
     class ConstantWrapper:
         def __init__(self, f, t):
+            """Adapt a function `f(x, el, t) in such a way that it can be fed to 
+            `interpolate_*_function()`. In particular, preserve the `shape` attribute.
+            """
             self.f = f
             self.t = t
         
