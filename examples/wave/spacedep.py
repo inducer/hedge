@@ -1,5 +1,5 @@
 # Hedge - the Hybrid'n'Easy DG Environment
-# Copyright (C) 2007 Andreas Kloeckner
+# Copyright (C) 2009 Andreas Kloeckner
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -32,7 +32,7 @@ def main() :
     from hedge.backends import guess_run_context
     rcon = guess_run_context(disable=set(["cuda"]))
 
-    dim = 3
+    dim = 2
 
     if dim == 1:
         if rcon.is_head_rank:
@@ -41,7 +41,7 @@ def main() :
     elif dim == 2:
         from hedge.mesh import make_rect_mesh
         if rcon.is_head_rank:
-            mesh = make_rect_mesh(a=(-0.5,-0.5),b=(0.5,0.5),max_area=0.008)
+            mesh = make_rect_mesh(a=(-1,-1),b=(1,1),max_area=0.003)
     elif dim == 3:
         if rcon.is_head_rank:
             from hedge.mesh import make_ball_mesh
@@ -63,7 +63,14 @@ def main() :
     #vis = SiloVisualizer(discr, rcon)
 
     def source_u(x, el):
-        return exp(-numpy.dot(x, x)*128)
+        x = x - numpy.array([0.7, 0.4])
+        return exp(-numpy.dot(x, x)*256)
+
+    def c_speed(x, el):
+        if la.norm(x) < 0.4:
+            return 1
+        else:
+            return 0.5
 
     source_u_vec = discr.interpolate_volume_function(source_u)
 
@@ -75,10 +82,19 @@ def main() :
             return 0*source_u_vec
 
 
-    from hedge.pde import StrongWaveOperator
+    from hedge.pde import SpaceDependentStrongWaveOperator
+    from hedge.data import \
+            TimeIntervalGivenFunction, \
+            TimeConstantGivenFunction, \
+            GivenFunction
     from hedge.mesh import TAG_ALL, TAG_NONE
-    op = StrongWaveOperator(-1, discr.dimensions, 
-            source_vec_getter,
+    op = SpaceDependentStrongWaveOperator(
+            TimeConstantGivenFunction(
+                GivenFunction(c_speed)), 
+            discr.dimensions, 
+            source=TimeIntervalGivenFunction(
+                GivenFunction(source_u),
+                0, 0.1),
             dirichlet_tag=TAG_NONE,
             neumann_tag=TAG_NONE,
             radiation_tag=TAG_ALL,
@@ -89,7 +105,7 @@ def main() :
     fields = join_fields(discr.volume_zeros(),
             [discr.volume_zeros() for i in range(discr.dimensions)])
 
-    dt = discr.dt_factor(op.max_eigenvalue())
+    dt = discr.dt_factor(1)
     nsteps = int(10/dt)
     if rcon.is_head_rank:
         print "dt", dt
@@ -133,6 +149,7 @@ def main() :
                     [
                         ("u", fields[0]),
                         ("v", fields[1:]), 
+                        ("c", op.c.volume_interpolant(0, discr)), 
                     ],
                     time=t,
                     step=step)

@@ -1,4 +1,4 @@
-<TeXmacs|1.0.6.12>
+<TeXmacs|1.0.7>
 
 <style|<tuple|article|maxima|axiom|mystyle>>
 
@@ -1326,6 +1326,24 @@
     (outflow)>,>>|<row|<cell|\<b-n\>\<cdot\>\<b-v\>u<rsup|+>>|<cell|<with|mode|text|if
     <math|\<b-n\>\<cdot\>\<b-v\>\<less\>0> (inflow)>.>>>>>
   </equation*>
+
+  <section|Tim's funky curvilinear element stuff>
+
+  We're discretizing <with|mode|math|u<rsub|t>+v\<cdot\>\<nabla\>u=0>. Recall
+
+  <\eqnarray*>
+    <tformat|<table|<row|<cell|\<nabla\>\<cdot\>(v*u*\<varphi\>)>|<cell|=>|<cell|\<nabla\>\<cdot\>(v*u)\<varphi\>+v*u\<cdot\>\<nabla\>\<varphi\>=(v\<cdot\>\<nabla\>*u)\<varphi\>+v*u\<cdot\>\<nabla\>\<varphi\>.>>>>
+  </eqnarray*>
+
+  Using the summation convention, we find
+
+  <\eqnarray*>
+    <tformat|<table|<row|<cell|0>|<cell|=>|<cell|<big|int><rsub|T<rsub|k>>u<rsub|t>\<varphi\>+<big|int><rsub|T<rsub|k>>(v\<cdot\>\<nabla\>u)\<varphi\>>>|<row|<cell|>|<cell|=>|<cell|<big|int><rsub|T<rsub|k>>u<rsub|t>\<varphi\>-<big|int><rsub|D<rsub|k>>v*u\<cdot\>\<nabla\>\<varphi\>+<big|int><rsub|T<rsub|k>>\<nabla\>\<cdot\>(v*u*\<varphi\>)>>|<row|<cell|>|<cell|=>|<cell|<big|int><rsub|T<rsub|k>>u<rsub|t>\<varphi\>-<big|int><rsub|D<rsub|k>>v*u\<cdot\>\<nabla\>\<varphi\>+<big|int><rsub|\<partial\>T<rsub|k>>v*u\<varphi\>\<cdot\>n>>|<row|<cell|>|<cell|\<approx\>>|<cell|<big|int><rsub|T<rsub|k>>u<rsub|t>\<varphi\>-<big|int><rsub|D<rsub|k>>v*u\<cdot\>\<nabla\>\<varphi\>+<big|int><rsub|\<partial\>T<rsub|k>>(v*u)<rsup|\<ast\>>\<varphi\>\<cdot\>n>>|<row|<cell|>|<cell|\<approx\>>|<cell|<big|int><rsub|T<rsub|k>>\<partial\><rsub|t>u<rsub|i>l<rsub|i>l<rsub|j>-<big|int><rsub|T<rsub|k>><matrix|<tformat|<table|<row|<cell|a<rsub|1>u<rsub|i>l<rsub|i>>>|<row|<cell|a<rsub|2>u<rsub|i>l<rsub|i>>>>>>\<cdot\><matrix|<tformat|<table|<row|<cell|\<partial\><rsub|x<rsub|2>>l<rsub|j>>>|<row|<cell|\<partial\><rsub|x<rsub|2>>l<rsub|j>>>>>>+<big|sum><rsub|F\<subset\>\<partial\>T<rsub|k>><big|int><rsub|F><matrix|<tformat|<table|<row|<cell|(v<rsub|1>u<rsub|i>)<rsup|\<ast\>>l<rsub|i><rsup|F>l<rsub|j><rsup|F>>>|<row|<cell|(v<rsub|2>u<rsub|i>)<rsup|\<ast\>>l<rsub|i><rsup|F>l<rsub|j><rsup|F>>>>>>\<cdot\>n>>|<row|<cell|>|<cell|=>|<cell|>>|<row|<cell|>|<cell|=>|<cell|>>>>
+  </eqnarray*>
+
+  <\eqnarray*>
+    <tformat|<table|<row|<cell|0>|<cell|=>|<cell|<big|int><rsub|T<rsub|k>>u<rsub|t>\<varphi\>-<big|int><rsub|D<rsub|k>>a*u\<cdot\>\<nabla\>\<varphi\>+<big|int><rsub|\<partial\>T<rsub|k>>(v*u)<rsup|\<ast\>>\<varphi\>\<cdot\>n>>|<row|<cell|>|<cell|=>|<cell|<big|int><rsub|T<rsub|k>>u<rsub|t>\<varphi\>+<big|int><rsub|D<rsub|k>>(v\<cdot\>\<nabla\>u)\<varphi\>-<big|int><rsub|\<partial\>T<rsub|k>>(v*u-{v*u})\<varphi\>\<cdot\>n>>|<row|<cell|>|<cell|=>|<cell|<big|int><rsub|T<rsub|k>>u<rsub|t>\<varphi\>+<big|int><rsub|D<rsub|k>>(v\<cdot\>\<nabla\>u)\<varphi\>-<big|int><rsub|\<partial\>T<rsub|k>>v<matrix|<tformat|<table|<row|<cell|<frac|1|2>>>|<row|<cell|-<frac|1|2>>>>>>\<cdot\><matrix|<tformat|<table|<row|<cell|u<rsup|->>>|<row|<cell|u<rsup|+>>>>>>\<varphi\>\<cdot\>n>>>>
+  </eqnarray*>
 </body>
 
 <\initial>
@@ -1358,7 +1376,7 @@
     <associate|auto-24|<tuple|7.4|?>>
     <associate|auto-25|<tuple|7.5|?>>
     <associate|auto-26|<tuple|8|?>>
-    <associate|auto-27|<tuple|8|?>>
+    <associate|auto-27|<tuple|8.0.1|?>>
     <associate|auto-28|<tuple|8|?>>
     <associate|auto-29|<tuple|8|?>>
     <associate|auto-3|<tuple|3|3>>
@@ -1501,25 +1519,12 @@
       <no-break><pageref|auto-23>>
 
       <with|par-left|<quote|1.5fn>|7.4<space|2spc>Deriving an Upwind Flux for
-      the 1D Wave Equation <datoms|<macro|x|<repeat|<arg|x>|<with|font-series|medium|<with|font-size|1|<space|0.2fn>.<space|0.2fn>>>>>|<htab|5mm>>
+      the Wave Equation <datoms|<macro|x|<repeat|<arg|x>|<with|font-series|medium|<with|font-size|1|<space|0.2fn>.<space|0.2fn>>>>>|<htab|5mm>>
       <no-break><pageref|auto-24>>
 
       <with|par-left|<quote|1.5fn>|7.5<space|2spc>Deriving an Upwind Flux for
       the 2D Advection Equation <datoms|<macro|x|<repeat|<arg|x>|<with|font-series|medium|<with|font-size|1|<space|0.2fn>.<space|0.2fn>>>>>|<htab|5mm>>
       <no-break><pageref|auto-25>>
-
-      <with|par-left|<quote|1.5fn>|7.6<space|2spc>Deriving an Upwind Flux for
-      the 2D Wave Equation <datoms|<macro|x|<repeat|<arg|x>|<with|font-series|medium|<with|font-size|1|<space|0.2fn>.<space|0.2fn>>>>>|<htab|5mm>>
-      <no-break><pageref|auto-26>>
-
-      <with|par-left|<quote|1.5fn>|7.7<space|2spc>Upwind Flux for the Wave
-      Equation in 3D <datoms|<macro|x|<repeat|<arg|x>|<with|font-series|medium|<with|font-size|1|<space|0.2fn>.<space|0.2fn>>>>>|<htab|5mm>>
-      <no-break><pageref|auto-27>>
-
-      <vspace*|1fn><with|font-series|<quote|bold>|math-font-series|<quote|bold>|8<space|2spc>Sommerfeld
-      Boundary Conditions for the Wave Equation>
-      <datoms|<macro|x|<repeat|<arg|x>|<with|font-series|medium|<with|font-size|1|<space|0.2fn>.<space|0.2fn>>>>>|<htab|5mm>>
-      <no-break><pageref|auto-28><vspace|0.5fn>
     </associate>
   </collection>
 </auxiliary>
