@@ -134,8 +134,10 @@ class CompiledVectorExpression(object):
         self.flop_count = FlopCounter()(subst_expr)
 
     def __call__(self, evaluate_subexpr, add_timer=None):
-        vectors = [evaluate_subexpr(vec_expr) for vec_expr in self.vector_exprs]
+	vectors = [gpuarray.to_gpu(evaluate_subexpr(vec_expr)) for vec_expr in self.vector_exprs]
         scalars = [evaluate_subexpr(scal_expr) for scal_expr in self.scalar_exprs]
+
+        #import rpdb2; rpdb2.start_embedded_debugger_interactive_password()
 
         from pytools import single_valued
         shape = single_valued(vec.shape for vec in vectors)
