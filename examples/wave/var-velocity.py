@@ -25,8 +25,6 @@ import numpy.linalg as la
 
 
 def main() :
-    from hedge.timestep import RK4TimeStepper
-    from pytools.stopwatch import Job
     from math import sin, cos, pi, exp, sqrt
 
     from hedge.backends import guess_run_context
@@ -56,6 +54,8 @@ def main() :
         mesh_data = rcon.receive_mesh()
 
     discr = rcon.make_discretization(mesh_data, order=4)
+
+    from hedge.timestep import RK4TimeStepper
     stepper = RK4TimeStepper()
 
     from hedge.visualization import SiloVisualizer, VtkVisualizer

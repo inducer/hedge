@@ -864,6 +864,14 @@ def finish_2d_rect_mesh(points, facets, facet_markers, marker2tag, refine_func,
 
 
 
+def _round_trip_connect(start, end):
+    for i in range(start, end):
+        yield i, i+1
+    yield end, start
+
+
+
+
 def make_rect_mesh(a=(0,0), b=(1,1), max_area=None, 
         boundary_tagger=(lambda fvi, el, fn, all_v: []),
         periodicity=None, subdivisions=None,
@@ -881,11 +889,6 @@ def make_rect_mesh(a=(0,0), b=(1,1), max_area=None,
     """
     import meshpy.triangle as triangle
 
-    def round_trip_connect(start, end):
-        for i in range(start, end):
-            yield i, i+1
-        yield end, start
-
     if max_area is not None:
         if refine_func is not None:
             raise ValueError, "cannot specify both refine_func and max_area"
@@ -900,7 +903,7 @@ def make_rect_mesh(a=(0,0), b=(1,1), max_area=None,
             }
 
     points = [a, (b[0],a[1]), b, (a[0],b[1])]
-    facets = list(round_trip_connect(0, 3))
+    facets = list(_round_trip_connect(0, 3))
     facet_markers = [2,3,4,1]
 
     if subdivisions is not None:
@@ -911,6 +914,76 @@ def make_rect_mesh(a=(0,0), b=(1,1), max_area=None,
             
     return finish_2d_rect_mesh(points, facets, facet_markers, marker2tag, 
             refine_func, periodicity, boundary_tagger)
+
+
+
+
+
+def make_rect_mesh_with_corner(a=(0,0), b=(1,1), max_area=None, 
+        boundary_tagger=(lambda fvi, el, fn, all_v: []),
+        corner_fraction=(0.3, 0.3),
+        refine_func=None):
+    """Create an unstructured rectangular mesh with a reentrant
+    corner at (-x, -y).
+
+    @arg a: the lower left hand point of the rectangle
+    @arg b: the upper right hand point of the rectangle
+    @arg max_area: maximum area of each triangle.
+    @arg periodicity: either None, or a tuple of bools specifying whether
+      the mesh is to be periodic in x and y.
+    @arg subdivisions: If not C{None}, this is a 2-tuple specifying
+      the number of facet subdivisions in X and Y.
+    @arg refine_func: A refinement function as taken by C{meshpy.triangle.build}.
+    @arg corner_fraction: Tuple of fraction of the width taken up by 
+      the rentrant corner.
+    """
+    import meshpy.triangle as triangle
+
+    if max_area is not None:
+        if refine_func is not None:
+            raise ValueError, "cannot specify both refine_func and max_area"
+        def refine_func(vertices, area):
+            return area > max_area
+
+    marker2tag = {
+            1: "minus_x", 
+            2: "minus_y", 
+            3: "plus_x", 
+            4: "plus_y", 
+            4: "plus_y", 
+            5: "corner_plus_y", 
+            6: "corner_plus_x", 
+            }
+
+    a = numpy.asarray(a)
+    b = numpy.asarray(b)
+    diag =  b-a
+    w = diag.copy(); w[1] = 0
+    h = diag.copy(); h[0] = 0
+
+    points = [
+            a+h*corner_fraction[1], 
+            a+h*corner_fraction[1]+w*corner_fraction[0], 
+            a+w*corner_fraction[0], 
+            a+w,
+            a+w+h,
+            a+h,
+            ]
+    facets = list(_round_trip_connect(0, 5))
+    facet_markers = [5,6,2,3,4,1]
+
+    import meshpy.triangle as triangle
+    mesh_info = triangle.MeshInfo()
+    mesh_info.set_points(points)
+    mesh_info.set_facets(facets, facet_markers)
+
+    generated_mesh = triangle.build(mesh_info, 
+            refinement_func=refine_func)
+
+    return make_conformal_mesh(
+            generated_mesh.points,
+            generated_mesh.elements,
+            boundary_tagger)
 
 
 
@@ -933,11 +1006,6 @@ def make_disk_mesh(r=0.5, faces=50, max_area=4e-3,
         boundary_tagger=(lambda fvi, el, fn, all_v: [])):
     from math import cos, sin, pi
 
-    def round_trip_connect(start, end):
-        for i in range(start, end):
-            yield i, i+1
-        yield end, start
-
     def needs_refinement(vertices, area):
         return area > max_area
 
@@ -949,7 +1017,7 @@ def make_disk_mesh(r=0.5, faces=50, max_area=4e-3,
     mesh_info = triangle.MeshInfo()
     mesh_info.set_points(points)
     mesh_info.set_facets(
-            list(round_trip_connect(0, faces-1)),
+            list(_round_trip_connect(0, faces-1)),
             faces*[1]
             )
 

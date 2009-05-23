@@ -322,7 +322,8 @@ class StrongWaveOperator:
       * S{part}t u - c div v = 0
       * S{part}t v - c grad u = 0
 
-    Note that this is not unique--we could also choose a different sign for M{v}.
+    The sign of M{v} determines whether we discretize the forward or the
+    backward wave equation.
     
     c is assumed to be constant across all space.
     """
@@ -450,23 +451,21 @@ class StrongWaveOperator:
 
 
 
-class SpaceDependentStrongWaveOperator:
+class VariableVelocityStrongWaveOperator:
     """This operator discretizes the Wave equation S{part}tt u = c^2 S{Delta} u.
 
     To be precise, we discretize the hyperbolic system
 
       * S{part}t u - c div v = 0
       * S{part}t v - c grad u = 0
-
-    Note that this is not unique--we could also choose a different sign for M{v}.
-    This operator admits a spatially varying wave speed c.
     """
 
     def __init__(self, c, dimensions, source=None, 
             flux_type="upwind",
             dirichlet_tag=hedge.mesh.TAG_ALL,
             neumann_tag=hedge.mesh.TAG_NONE,
-            radiation_tag=hedge.mesh.TAG_NONE):
+            radiation_tag=hedge.mesh.TAG_NONE,
+            time_sign=1):
         """`c` is assumed to be positive and conforms to the
         `hedge.data.ITimeDependentGivenFunction` interface.
 
@@ -476,6 +475,7 @@ class SpaceDependentStrongWaveOperator:
         assert isinstance(dimensions, int)
 
         self.c = c
+        self.time_sign = time_sign
         self.dimensions = dimensions
         self.source = source
 
@@ -496,16 +496,15 @@ class SpaceDependentStrongWaveOperator:
         normal = make_normal(dim)
 
         from hedge.tools import join_fields
-        flux = 1/2*join_fields(
+        flux = self.time_sign*1/2*join_fields(
                 c.ext * numpy.dot(v.ext, normal)
                 - c.int * numpy.dot(v.int, normal),
-
                 normal*(c.ext*u.ext - c.int*u.int))
 
         if self.flux_type == "central":
             pass
         elif self.flux_type == "upwind":
-            flux += 1/2*join_fields(
+            flux += join_fields(
                     c.ext*u.ext - c.int*u.int,
                     c.ext*normal*numpy.dot(normal, v.ext)
                     - c.int*normal*numpy.dot(normal, v.int)
@@ -544,8 +543,8 @@ class SpaceDependentStrongWaveOperator:
         neu_bc = join_fields(c, u, -v)
         rad_bc = join_fields(
                 c,
-                0.5*(u - numpy.dot(normal, v)),
-                0.5*normal*(numpy.dot(normal, v) - u)
+                0.5*(u - self.time_sign*numpy.dot(normal, v)),
+                0.5*normal*(numpy.dot(normal, v) - self.time_sign*u)
                 )
 
         # entire operator -----------------------------------------------------
@@ -554,8 +553,8 @@ class SpaceDependentStrongWaveOperator:
 
         return (
                 - join_fields(
-                    -numpy.dot(nabla, c*v), 
-                    -(nabla*c*u)
+                    -numpy.dot(nabla, self.time_sign*c*v), 
+                    -(nabla*(self.time_sign*c*u))
                     ) 
                 + 
                 InverseMassOperator() * (
