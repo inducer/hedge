@@ -1080,7 +1080,7 @@ class Projector:
         from hedge.tools import log_shape
 
         ls = log_shape(from_vec)
-        result = self.to_discr.volume_zeros(ls)
+        result = self.to_discr.volume_zeros(ls, kind="numpy")
 
         from pytools import indices_in_shape
         for i in indices_in_shape(ls):
