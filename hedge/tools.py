@@ -55,6 +55,18 @@ def relative_error(norm_diff, norm_true):
 
 
 
+def mul_add(afac, a, bfac, b, add_timer=None):
+    if isinstance(a, numpy.ndarray) and a.dtype == object:
+        return numpy.array([
+            mul_add(afac, a_i, bfac, b_i, add_timer=add_timer)
+            for a_i, b_i in zip(a, b)],
+            dtype=object)
+    else:
+        return a.mul_add(afac, b, bfac, add_timer=add_timer)
+
+
+
+
 def cyl_bessel_j_prime(nu, z):
     if nu == 0:
         if z == 0:
