@@ -55,26 +55,6 @@ def relative_error(norm_diff, norm_true):
 
 
 
-def is_mul_add_supported(vec):
-    while isinstance(vec, numpy.ndarray) and vec.dtype == object:
-        vec = vec[0]
-    return hasattr(vec, "mul_add")
-
-
-
-
-def mul_add(afac, a, bfac, b, add_timer=None):
-    if isinstance(a, numpy.ndarray) and a.dtype == object:
-        return numpy.array([
-            mul_add(afac, a_i, bfac, b_i, add_timer=add_timer)
-            for a_i, b_i in zip(a, b)],
-            dtype=object)
-    else:
-        return a.mul_add(afac, b, bfac, add_timer=add_timer)
-
-
-
-
 def cyl_bessel_j_prime(nu, z):
     if nu == 0:
         if z == 0:
