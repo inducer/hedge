@@ -243,11 +243,14 @@ class Discretization(object):
                 "Time spent applying mass operators")
         self.diff_timer = IntervalTimer("t_diff",
                 "Time spent applying applying differentiation operators")
+        self.vector_math_timer = IntervalTimer("t_vector_math",
+                "Time spent applying doing vector math")
 
         return [self.gather_timer, 
                 self.lift_timer,
                 self.mass_timer,
-                self.diff_timer ]
+                self.diff_timer,
+                self.vector_math_timer]
 
     def add_instrumentation(self, mgr):
         from pytools.log import IntervalTimer, EventCounter

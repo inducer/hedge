@@ -35,7 +35,17 @@ import numpy
 class ExecutionMapper(ExecutionMapperBase):
     # code execution functions ------------------------------------------------
     def exec_assign(self, insn):
-        return [(insn.name, self(insn.expr))], []
+        if self.discr.instrumented:
+            sub_timer = self.discr.vector_math_timer.start_sub_timer()
+            result = self(insn.expr)
+            sub_timer.stop().submit()
+
+            from hedge.tools import count_dofs
+            self.discr.vector_math_flop_counter.add(count_dofs(result)*insn.flop_count)
+        else:
+            result = self(insn.expr)
+
+        return [(insn.name, result)], []
 
     def exec_flux_batch_assign(self, insn):
         from hedge.backends.jit.compiler import BoundaryFluxKind
