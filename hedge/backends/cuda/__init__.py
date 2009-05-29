@@ -265,6 +265,7 @@ class Discretization(hedge.discretization.Discretization):
             "cuda_no_microblock",
             "cuda_no_smem_matrix",
             "cuda_no_plan",
+            "cuda_no_plan_el_local",
             "cuda_keep_kernels",
             "cuda_try_no_microblock",
             "cuda_plan_log",
