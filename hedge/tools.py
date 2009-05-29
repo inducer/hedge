@@ -1029,6 +1029,12 @@ class IdentityOperator(OperatorBase):
 
 
 
+class ConvergenceError(RuntimeError):
+    pass
+
+
+
+
 class CGStateContainer:
     def __init__(self, pcon, operator, precon=None, dot=None):
         if precon is None:
@@ -1116,7 +1122,7 @@ class CGStateContainer:
                 print "debug: delta=%g" % delta
             iterations += 1
 
-        raise RuntimeError("cg failed to converge")
+        raise ConvergenceError("cg failed to converge")
             
 
 
