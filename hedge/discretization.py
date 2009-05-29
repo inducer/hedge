@@ -317,6 +317,7 @@ class Discretization(object):
         else:
             mgr.set_constant("dg_order", order)
 
+        mgr.set_constant("default_type", self.default_scalar_type.__name__)
         mgr.set_constant("element_count", len(self.mesh.elements))
         mgr.set_constant("node_count", len(self.nodes))
 
