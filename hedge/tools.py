@@ -1235,6 +1235,20 @@ def gather_flops(discr):
 
 
 
+def count_dofs(vec):
+    if isinstance(vec, numpy.ndarray):
+        if vec.dtype == object:
+            from pytools import indices_in_shape
+            return sum(count_dofs(vec[i])
+                    for i in indices_in_shape(vec.shape))
+        else:
+            return vec.size
+    else:
+        return 0
+
+
+
+
 # flux creation ---------------------------------------------------------------
 def make_lax_friedrichs_flux(wave_speed, state, flux_func, bdry_tags_and_states, strong):
     from hedge.flux import make_normal, FluxVectorPlaceholder
