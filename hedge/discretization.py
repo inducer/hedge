@@ -844,19 +844,25 @@ class Discretization(object):
             if p != 2:
                 volume_vector = numpy.abs(volume_vector)**(p/2)
 
-            mass_op = self._compiled_mass_operator()
+            return self.inner_product(
+                    volume_vector,
+                    volume_vector)**(1/p)
 
-            ls = log_shape(volume_vector)
-            if ls == ():
-                return float(self.nodewise_dot_product(
-                        volume_vector,
-                        mass_op(volume_vector))**(1/p))
-            else:
-                assert len(ls) == 1
-                return float(sum(
-                        self.nodewise_dot_product(
-                            subv, mass_op(subv))
-                        for subv in volume_vector)**(1/p))
+    def inner_product(self, a, b):
+        mass_op = self._compiled_mass_operator()
+
+        from hedge.tools import log_shape
+        ls = log_shape(a)
+        assert log_shape(b) == ls
+        if ls == ():
+            return float(self.nodewise_dot_product(
+                    a, mass_op(b)))
+        else:
+            assert len(ls) == 1
+            return float(sum(
+                    self.nodewise_dot_product(
+                        sub_a, mass_op(sub_b))
+                    for sub_a, sub_b in zip(a,b)))
 
     # element data retrieval --------------------------------------------------
     def find_el_range(self, el_id):
