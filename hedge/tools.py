@@ -1029,6 +1029,12 @@ class IdentityOperator(OperatorBase):
 
 
 
+class ConvergenceError(RuntimeError):
+    pass
+
+
+
+
 class CGStateContainer:
     def __init__(self, pcon, operator, precon=None, dot=None):
         if precon is None:
@@ -1116,7 +1122,7 @@ class CGStateContainer:
                 print "debug: delta=%g" % delta
             iterations += 1
 
-        raise RuntimeError("cg failed to converge")
+        raise ConvergenceError("cg failed to converge")
             
 
 
@@ -1231,6 +1237,20 @@ def gather_flops(discr):
                 )
 
     return result
+
+
+
+
+def count_dofs(vec):
+    if isinstance(vec, numpy.ndarray):
+        if vec.dtype == object:
+            from pytools import indices_in_shape
+            return sum(count_dofs(vec[i])
+                    for i in indices_in_shape(vec.shape))
+        else:
+            return vec.size
+    else:
+        return 0
 
 
 
