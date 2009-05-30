@@ -128,7 +128,7 @@ class RK4TimeStepper(TimeStepper):
             y = y + b * self.residual
             sub_timer.stop().submit()
 
-        self.flop_counter.add(len(self.coeffs)*self.dof_count)
+        self.flop_counter.add(len(self.coeffs)*self.dof_count*5)
 
         return y
 
