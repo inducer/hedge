@@ -27,7 +27,8 @@ import hedge.discretization
 import hedge.optemplate
 from pytools import memoize_method
 from pymbolic.mapper.c_code import CCodeMapper
-from hedge.compiler import OperatorCompilerBase, FluxBatchAssign
+from hedge.compiler import OperatorCompilerBase, FluxBatchAssign, \
+        Assign
 from hedge.flux import FluxIdentityMapper
 
 
@@ -107,6 +108,18 @@ class BoundaryFluxKind(object):
 
         
 # compiler stuff --------------------------------------------------------------
+class VectorExprAssign(Assign):
+    __slots__ = ["compiled"]
+
+    def get_executor_method(self, executor):
+        return executor.exec_vector_expr_assign
+
+    def __str__(self):
+        return "%s <- (compiled) %s" % (self.name, self.expr)
+
+
+
+
 class CompiledFluxBatchAssign(FluxBatchAssign):
     # members: compiled_func, arg_specs
 
@@ -359,7 +372,7 @@ class OperatorCompiler(OperatorCompilerBase):
         mod.add_function(FunctionBody(fdecl, fbody)) 
 
         compiled_func = mod.compile(
-                self.discr._toolchain, wait_on_error=True).gather_flux
+                self.discr.toolchain, wait_on_error=True).gather_flux
 
         #print "----------------------------------------------------------------"
         #print FunctionBody(fdecl, fbody)
@@ -481,7 +494,7 @@ class OperatorCompiler(OperatorCompilerBase):
         #print "----------------------------------------------------------------"
         #print FunctionBody(fdecl, fbody)
 
-        compiled_func = mod.compile(self.discr._toolchain, wait_on_error=True).gather_flux
+        compiled_func = mod.compile(self.discr.toolchain, wait_on_error=True).gather_flux
 
         if self.discr.instrumented:
             from pytools.log import time_and_count_function
@@ -492,3 +505,16 @@ class OperatorCompiler(OperatorCompilerBase):
                 arg_specs=fvi.arg_specs, 
                 compiled_func=compiled_func,
                 dep_mapper_factory=self.dep_mapper_factory)
+
+    def make_assign(self, name, expr, priority):
+        from hedge.backends.jit.vector_expr import CompiledVectorExpression
+        return VectorExprAssign(
+                name=name,
+                expr=expr,
+                dep_mapper_factory=self.dep_mapper_factory,
+                compiled=CompiledVectorExpression(
+                    expr, 
+                    type_getter=lambda expr: (True, self.discr.default_scalar_type),
+                    result_dtype=self.discr.default_scalar_type,
+                    toolchain=self.discr.toolchain),
+                priority=priority)

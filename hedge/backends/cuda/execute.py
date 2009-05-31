@@ -148,16 +148,16 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
     def exec_vector_expr_assign(self, insn):
         if self.ex.discr.instrumented:
-            def add_timer(n, vec_expr, t_func):
+            def stats_callback(n, vec_expr, t_func):
                 self.ex.discr.vector_math_timer.add_timer_callable(t_func)
                 self.ex.discr.vector_math_flop_counter.add(n*vec_expr.flop_count)
                 self.ex.discr.gmem_bytes_vector_math.add(
                         self.ex.discr.given.float_size() * n *
                         (1+len(vec_expr.vector_exprs)))
         else:
-            add_timer = None
+            stats_callback = None
 
-        return [(insn.name, insn.compiled(self, add_timer))], []
+        return [(insn.name, insn.compiled(self, stats_callback))], []
 
     def exec_diff_batch_assign(self, insn):
         field = self.rec(insn.field)
