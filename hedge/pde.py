@@ -1610,8 +1610,6 @@ class EulerOperator(TimeDependentOperator):
         from hedge.tools import make_lax_friedrichs_flux, join_fields
         from hedge.mesh import TAG_ALL
 
-        #import rpdb2; rpdb2.start_embedded_debugger_interactive_password()
-
         return join_fields(
                 (- numpy.dot(make_nabla(self.dimensions), flux(state))
                     + InverseMassOperator()*make_lax_friedrichs_flux(

@@ -876,7 +876,7 @@ class Discretization(hedge.discretization.Discretization):
 
             if field.dtype == object:
                 self.buf = buf = discr.pagelocked_pool.allocate(
-                        ls+one_field.shape, dtype=self.default_scalar_type)
+                        ls+one_field.shape, dtype=self.discr.default_scalar_type)
                 for i, subf in enumerate(field):
                     buf[i, :] = subf
             else:

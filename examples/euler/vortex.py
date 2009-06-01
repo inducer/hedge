@@ -55,10 +55,14 @@ class Vortex:
         return join_fields(rho, e, rho*u, rho*v)
 
     def volume_interpolant(self, t, discr):
-        return self(t, discr.nodes.T)
+        return discr.convert_volume(
+			self(t, discr.nodes.T),
+			kind=discr.compute_kind)
 
     def boundary_interpolant(self, t, discr, tag):
-        return self(t, discr.get_boundary(tag).nodes.T)
+        return discr.convert_boundary(
+			self(t, discr.get_boundary(tag).nodes.T),
+			 tag=tag, kind=discr.compute_kind)
 
 
 
@@ -84,7 +88,11 @@ def main():
     for order in [3]:
     #for order in [3, 4, 5]:
     #for order in [1,2,3,4,5,6]:
-        discr = rcon.make_discretization(mesh_data, order=order)
+        discr = rcon.make_discretization(mesh_data, order=order,
+			debug=["cuda_no_plan", 
+			#"print_op_code"
+			],
+			default_scalar_type=numpy.float64)
 
         from hedge.visualization import SiloVisualizer
         #vis = VtkVisualizer(discr, rcon, "vortex-%d" % order)
@@ -98,7 +106,7 @@ def main():
         from hedge.pde import EulerOperator
         op = EulerOperator(dimensions=2, gamma=1.4, bc=vortex)
         #for i, oi in enumerate(op.op_template()):
-            #print i, oi
+           #print i, oi
 
         euler_ex = op.bind(discr)
 

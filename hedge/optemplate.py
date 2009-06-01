@@ -246,7 +246,7 @@ class InverseMassOperator(MassOperatorBase):
 
 # misc operators --------------------------------------------------------------
 class ElementwiseMaxOperator(StatelessOperator):
-    def get_mapper_method(self, mapper): 
+    def get_mapper_method(self, mapper):
         return mapper.map_elementwise_max
 
 
@@ -1012,6 +1012,9 @@ class CollectorMixin(LocalOpReducerMixin, FluxOpReducerMixin):
         return set()
 
     def map_variable(self, expr):
+        return set()
+
+    def map_elementwise_max(self, expr, *args, **kwargs):
         return set()
 
     
