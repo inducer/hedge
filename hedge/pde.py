@@ -358,7 +358,7 @@ class VariableCoefficientAdvectionOperator:
             n_vint = numpy.dot(normal, v.int)
             n_vext = numpy.dot(normal, v.ext)
             return 0.5 * (n_vint * u.int + n_vext * u.ext) \
-                   + 0.5 * (u.int - u.ext) \
+                   - 0.5 * (u.ext - u.int) \
                    * IfPositive(((n_vint**2)**0.5 - (n_vext**2)**0.5),               
                       numpy.dot(v.int, v.int)**0.5,   
                       numpy.dot(v.ext, v.ext)**0.5)   

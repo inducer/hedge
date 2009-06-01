@@ -719,7 +719,6 @@ class Discretization(object):
         out = self.boundary_zeros(tag, shape, dtype, kind="numpy")
         slice_pfx = (slice(None),)*len(shape)
         for point_nr, x in enumerate(self.get_boundary(tag).nodes):
-
             out[slice_pfx + (point_nr,)] = f(x, None) # FIXME
 
         return self.convert_boundary(out, tag, kind)
