@@ -178,7 +178,8 @@ class Discretization(object):
     def all_debug_flags(cls):
         return set([
             "ilist_generation", 
-            "node_permutation", 
+            "node_permutation",
+	    "print_op_code",
             ])
 
     @staticmethod
