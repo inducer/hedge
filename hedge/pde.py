@@ -311,7 +311,7 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
                     )
 
 
-class SpaceTimeDependentAdvectionOperator:
+class VariableCoefficientAdvectionOperator:
     """A class for space- and time-dependent DG-advection operators.
 
     `advec_v` is a callable expecting two arguments `(x, t)` representing space and time, 
@@ -426,7 +426,9 @@ class SpaceTimeDependentAdvectionOperator:
         return rhs
 
     def max_eigenvalue(self, t, discr):
-        """give the max eigenvalue of a vector of eigenvalues. As the velocities of each 
+        """Gives the max eigenvalue of a vector of eigenvalues. 
+        
+        As the velocities of each 
         node is stored in the velocity-vector-field a pointwise dot product of this 
         vector has to be taken to get the magnitude of the velocity at each node. 
         From this vector the maximum values limits the timestep."""

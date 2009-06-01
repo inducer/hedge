@@ -118,8 +118,8 @@ def main():
             TimeConstantGivenFunction, \
             TimeDependentGivenFunction, \
             GivenFunction
-    from hedge.pde import SpaceTimeDependentAdvectionOperator
-    op = SpaceTimeDependentAdvectionOperator(discr.dimensions, \
+    from hedge.pde import VariableCoefficientAdvectionOperator
+    op = VariableCoefficientAdvectionOperator(discr.dimensions, \
                                          #advec_v=TimeDependentGivenFunction(
                                          #    TimeDependentVField()),
                                          advec_v=TimeConstantGivenFunction(
@@ -137,7 +137,7 @@ def main():
             from math import exp
             x = (pt-numpy.array([0.3, 0.7]))*8
             return exp(-numpy.dot(x, x))
-    # Rectangel
+    # Rectangle
     if False:
         def initial(pt, el):
             x, y = pt
