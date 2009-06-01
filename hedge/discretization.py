@@ -179,6 +179,7 @@ class Discretization(object):
         return set([
             "ilist_generation", 
             "node_permutation", 
+	    "print_op_code",
             ])
 
     @staticmethod

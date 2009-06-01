@@ -119,6 +119,12 @@ class Executor(ExecutorBase):
         ExecutorBase.__init__(self, discr, 
                 self.compile_optemplate(discr, optemplate, post_bind_mapper))
 
+	if "print_op_code" in discr.debug:
+	    from hedge.tools import get_rank
+	    if get_rank(discr) == 0:
+		print self.code
+		raw_input()
+
         def bench_diff(f):
             test_field = discr.volume_zeros()
             from hedge.optemplate import DifferentiationOperator
