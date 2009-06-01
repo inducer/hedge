@@ -55,8 +55,48 @@ def relative_error(norm_diff, norm_true):
 
 
 
+def has_data_in_numpy_arrays(a):
+    if is_obj_array(a):
+        from pytools import indices_in_shape, all
+        return all(isinstance(a[i], numpy.ndarray)
+                for i in indices_in_shape(a.shape))
+    else:
+        return isinstance(a, numpy.ndarray)
+
+
+
+
+def numpy_linear_comb(lin_comb):
+    assert lin_comb
+
+    from pytools import single_valued, indices_in_shape, flatten
+    if single_valued(is_obj_array(ary) for fac, ary in lin_comb):
+        oa_shape = single_valued(ary.shape for fac, ary in lin_comb)
+        result = numpy.zeros(oa_shape, dtype=object)
+        for i in indices_in_shape(oa_shape):
+            dtype = single_valued(ary[i].dtype for fac, ary in lin_comb)
+            el_shape = single_valued(ary[i].shape for fac, ary in lin_comb)
+
+            from codepy.elementwise import make_linear_comb_kernel
+            kernel = make_linear_comb_kernel(dtype, len(lin_comb))
+
+            result[i] = numpy.zeros(el_shape, dtype)
+            kernel(result[i], *tuple(flatten((fac, ary[i]) for fac, ary in lin_comb)))
+
+        return result
+    else:
+        dtype = single_valued(ary.dtype for fac, ary in lin_comb)
+        shape = single_valued(ary.shape for fac, ary in lin_comb)
+        kernel = make_linear_comb_kernel(dtype, len(lin_comb))
+        result = numpy.zeros(shape, dtype)
+        kernel(result, *tuple(flatten(lin_comb)))
+        return result
+
+
+            
+
 def mul_add(afac, a, bfac, b, add_timer=None):
-    if isinstance(a, numpy.ndarray) and a.dtype == object:
+    if is_obj_array(a):
         return numpy.array([
             mul_add(afac, a_i, bfac, b_i, add_timer=add_timer)
             for a_i, b_i in zip(a, b)],
