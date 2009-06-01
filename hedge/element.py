@@ -365,8 +365,7 @@ class SimplicialElement(Element):
         unodes = self.unit_nodes()
         vertex_indices = self.vertex_indices()
 
-        return 2/3*\
-                min(min(min(
+        return min(min(min(
                     la.norm(unodes[face_node_index]-unodes[vertex_index])
                     for vertex_index in vertex_indices
                     if vertex_index != face_node_index)
