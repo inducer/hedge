@@ -245,8 +245,8 @@ def make_plan(discr, given, tune_for):
     def generate_valid_plans():
         valid_plan_count = 0
         for direct_store in [False, True]:
-            for parallel_faces in range(1,32):
-                for mbs_per_block in range(1,8):
+            for parallel_faces in range(1, 32):
+                for mbs_per_block in range(1, 8):
                     flux_plan = ExecutionPlan(given, parallel_faces, 
                             mbs_per_block, flux_count, 
                             direct_store=direct_store,

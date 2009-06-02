@@ -265,6 +265,7 @@ class Discretization(hedge.discretization.Discretization):
             "cuda_no_microblock",
             "cuda_no_smem_matrix",
             "cuda_no_plan",
+            "cuda_no_plan_el_local",
             "cuda_keep_kernels",
             "cuda_try_no_microblock",
             "cuda_plan_log",
@@ -425,6 +426,7 @@ class Discretization(hedge.discretization.Discretization):
                         DeviceData(device), ldis, 
                         allow_microblocking=allow_mb,
                         float_type=default_scalar_type)
+                print allow_mb, given.microblock
 
                 import hedge.backends.cuda.fluxgather as fluxgather
                 flux_plan, flux_time = fluxgather.make_plan(self, given, tune_for)
@@ -483,9 +485,9 @@ class Discretization(hedge.discretization.Discretization):
         self.blocks = self._build_blocks()
         self.face_storage_map = self._build_face_storage_map()
 
-        # make a reference discretization
+        # make a CPU reference discretization
         if "cuda_compare" in self.debug:
-            from hedge.discr_precompiled import Discretization
+            from hedge.backends.jit import Discretization
             self.test_discr = Discretization(mesh, ldis)
 
         self.stream_pool = []

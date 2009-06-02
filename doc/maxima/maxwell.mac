@@ -28,7 +28,7 @@ max_pecbdryspinw:fullhypsimp(max_invV.max_pecbdrywpins);
 print(max_pecbdryspinw);
 /*
 /* ------------------------------------------------------------------------- */
-/* Simple upwinded flux */
+/* Simple ("stoopid") upwinded flux */
 /* ------------------------------------------------------------------------- */
 
 max_sfluxstoopid:max_D . makelist(

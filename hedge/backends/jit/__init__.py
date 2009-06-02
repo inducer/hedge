@@ -35,7 +35,27 @@ import numpy
 class ExecutionMapper(ExecutionMapperBase):
     # code execution functions ------------------------------------------------
     def exec_assign(self, insn):
-        return [(insn.name, self(insn.expr))], []
+        if self.discr.instrumented:
+            sub_timer = self.discr.vector_math_timer.start_sub_timer()
+            result = self(insn.expr)
+            sub_timer.stop().submit()
+
+            from hedge.tools import count_dofs
+            self.discr.vector_math_flop_counter.add(count_dofs(result)*insn.flop_count)
+        else:
+            result = self(insn.expr)
+
+        return [(insn.name, result)], []
+
+    def exec_vector_expr_assign(self, insn):
+        if self.discr.instrumented:
+            def stats_callback(n, vec_expr):
+                self.discr.vector_math_flop_counter.add(n*vec_expr.flop_count)
+                return self.discr.vector_math_timer
+        else:
+            stats_callback = None
+
+        return [(insn.name, insn.compiled(self, stats_callback))], []
 
     def exec_flux_batch_assign(self, insn):
         from hedge.backends.jit.compiler import BoundaryFluxKind
@@ -118,6 +138,13 @@ class Executor(ExecutorBase):
     def __init__(self, discr, optemplate, post_bind_mapper):
         ExecutorBase.__init__(self, discr, 
                 self.compile_optemplate(discr, optemplate, post_bind_mapper))
+
+        if "print_op_code" in discr.debug:
+	    from hedge.tools import get_rank
+	    if get_rank(discr) == 0:
+	        print self.code
+	        raw_input()
+
 
         def bench_diff(f):
             test_field = discr.volume_zeros()
@@ -216,4 +243,4 @@ class Discretization(hedge.discretization.Discretization):
         from codepy.libraries import add_hedge
         add_hedge(toolchain)
 
-        self._toolchain = toolchain
+        self.toolchain = toolchain

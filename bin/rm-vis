@@ -1,4 +1,16 @@
 #! /bin/bash
 
-rm -f *.{vtk,vtu,pvtu,pvd,silo,eps,dat,dat-journal,visit,png}
-rm -f *.dat-rank*
+find . \
+  \( -name '*.vtk' \
+  -o -name '*.vtu' \
+  -o -name '*.pvtu' \
+  -o -name '*.pvd' \
+  -o -name '*.silo' \
+  -o -name '*.eps' \
+  -o -name '*.dat' \
+  -o -name '*.dat-rank*' \
+  -o -name '*completed' \
+  -o -name '*.dat-journal' \
+  -o -name '*.visit' \
+  -o -name '*.png' \)\
+  -print0 | xargs -0 --no-run-if-empty rm
