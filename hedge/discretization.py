@@ -178,7 +178,8 @@ class Discretization(object):
     def all_debug_flags(cls):
         return set([
             "ilist_generation", 
-            "node_permutation", 
+            "node_permutation",
+	    "print_op_code",
             ])
 
     @staticmethod
@@ -243,11 +244,14 @@ class Discretization(object):
                 "Time spent applying mass operators")
         self.diff_timer = IntervalTimer("t_diff",
                 "Time spent applying applying differentiation operators")
+        self.vector_math_timer = IntervalTimer("t_vector_math",
+                "Time spent applying doing vector math")
 
         return [self.gather_timer, 
                 self.lift_timer,
                 self.mass_timer,
-                self.diff_timer ]
+                self.diff_timer,
+                self.vector_math_timer]
 
     def add_instrumentation(self, mgr):
         from pytools.log import IntervalTimer, EventCounter
@@ -317,6 +321,7 @@ class Discretization(object):
         else:
             mgr.set_constant("dg_order", order)
 
+        mgr.set_constant("default_type", self.default_scalar_type.__name__)
         mgr.set_constant("element_count", len(self.mesh.elements))
         mgr.set_constant("node_count", len(self.nodes))
 
@@ -840,19 +845,25 @@ class Discretization(object):
             if p != 2:
                 volume_vector = numpy.abs(volume_vector)**(p/2)
 
-            mass_op = self._compiled_mass_operator()
+            return self.inner_product(
+                    volume_vector,
+                    volume_vector)**(1/p)
 
-            ls = log_shape(volume_vector)
-            if ls == ():
-                return float(self.nodewise_dot_product(
-                        volume_vector,
-                        mass_op(volume_vector))**(1/p))
-            else:
-                assert len(ls) == 1
-                return float(sum(
-                        self.nodewise_dot_product(
-                            subv, mass_op(subv))
-                        for subv in volume_vector)**(1/p))
+    def inner_product(self, a, b):
+        mass_op = self._compiled_mass_operator()
+
+        from hedge.tools import log_shape
+        ls = log_shape(a)
+        assert log_shape(b) == ls
+        if ls == ():
+            return float(self.nodewise_dot_product(
+                    a, mass_op(b)))
+        else:
+            assert len(ls) == 1
+            return float(sum(
+                    self.nodewise_dot_product(
+                        sub_a, mass_op(sub_b))
+                    for sub_a, sub_b in zip(a,b)))
 
     # element data retrieval --------------------------------------------------
     def find_el_range(self, el_id):
@@ -1088,7 +1099,7 @@ class Projector:
         from hedge.tools import log_shape
 
         ls = log_shape(from_vec)
-        result = self.to_discr.volume_zeros(ls)
+        result = self.to_discr.volume_zeros(ls, kind="numpy")
 
         from pytools import indices_in_shape
         for i in indices_in_shape(ls):

@@ -16,8 +16,10 @@ wave_A:sum(n[i]*esymmatrix(dims+1, -c, 1+i,1),i,1,dims);
 
 [wave_V, wave_D, wave_invV]:hypdiagonalize(wave_A);
 
-wave_wm:append([um],makelist(concat(vm,i),i,1,dims));
-wave_wp:append([up],makelist(concat(vp,i),i,1,dims));
+wave_vm:makelist(concat(vm,i),i,1,dims);
+wave_vp:makelist(concat(vp,i),i,1,dims);
+wave_wm:append([um],wave_vm);
+wave_wp:append([up],wave_vp);
 
 wave_sm:makelist(concat(sm,i),i,1,length(wave_D));
 wave_sp:makelist(concat(sp,i),i,1,length(wave_D));
@@ -44,6 +46,7 @@ else
 wave_wflux:ratsimp(wave_V.ev(wave_sflux, [sm=wave_sminw,sp=wave_spinw]));
 wave_strongwflux:fullhypsimp(subst([c=cm], wave_A).wave_wm - wave_wflux);
 
+/*
 print("Wave equation flux in terms of characteristic variables:");
 print(wave_sflux);
 
@@ -52,8 +55,17 @@ print("Wave equation flux in terms of physical variables:");
 print(wave_wflux);
 print("Weak flux divided by (-c), as implemented in StrongWaveOperator:");
 print(hypsimp(ev(wave_wflux, cp=c, cm=c)/(-c)));
-/*
-print("Strong-form wave equation flux in terms of physical variables:");
-print(wave_strongwflux);
-print(fullhypsimp(ev(wave_strongwflux, cp=c, cm=c)));
 */
+
+print("Strong-form wave equation flux in terms of physical variables:");
+/*print(wave_strongwflux);*/
+
+print(fullhypsimp(ev(wave_strongwflux)));
+
+/* Closed-form expression for upwind flux */
+wave_knownstrongwflux:vstack(
+  [(cp*n.wave_vp - cm*n.wave_vm + cp*up-cm*um)/2],
+  (cp*n*(n.wave_vp)-cm*n*(n.wave_vm) + cp*n*up - cm*n*um)/2
+  );
+
+assert(norm_2_squared(fullhypsimp(wave_knownstrongwflux - wave_strongwflux))=0);

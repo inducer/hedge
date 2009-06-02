@@ -99,14 +99,19 @@ class TimeStepper(object):
 
 
 class RK4TimeStepper(TimeStepper):
-    def __init__(self):
-        from pytools.log import IntervalTimer
+    def __init__(self, allow_jit=True):
+        from pytools.log import IntervalTimer, EventCounter
         self.timer = IntervalTimer(
                 "t_rk4", "Time spent doing algebra in RK4")
+        self.flop_counter = EventCounter(
+                "n_flops_rk4", "Floating point operations performed in RK4")
         self.coeffs = zip(_RK4A, _RK4B, _RK4C)
+
+        self.allow_jit = allow_jit
 
     def add_instrumentation(self, logmgr):
         logmgr.add_quantity(self.timer)
+        logmgr.add_quantity(self.flop_counter)
 
     def get_stp_sz_const(self):
         return 1
@@ -116,20 +121,22 @@ class RK4TimeStepper(TimeStepper):
             self.residual
         except AttributeError:
             self.residual = 0*rhs(t, y)
+            from hedge.tools import count_dofs, has_data_in_numpy_arrays
+            self.dof_count = count_dofs(self.residual)
 
-            from hedge.tools import is_mul_add_supported
-            self.use_mul_add = is_mul_add_supported(self.residual)
+            self.use_jit = self.allow_jit and has_data_in_numpy_arrays(self.residual)
 
-        if self.use_mul_add:
-            from hedge.tools import mul_add
+        if self.use_jit:
+            from hedge.tools import numpy_linear_comb
 
             for a, b, c in self.coeffs:
                 this_rhs = rhs(t + c*dt, y)
 
-                self.timer.start()
-                self.residual = mul_add(a, self.residual, dt, this_rhs)
-                y = mul_add(1, y, b, self.residual)
-                self.timer.stop()
+                sub_timer = self.timer.start_sub_timer()
+                self.residual = numpy_linear_comb([(a, self.residual), (dt, this_rhs)])
+                del this_rhs
+                y = numpy_linear_comb([(1, y), (b, self.residual)])
+                sub_timer.stop().submit()
         else:
             for a, b, c in self.coeffs:
                 this_rhs = rhs(t + c*dt, y)
@@ -139,6 +146,8 @@ class RK4TimeStepper(TimeStepper):
                 del this_rhs
                 y = y + b * self.residual
                 sub_timer.stop().submit()
+
+        self.flop_counter.add(len(self.coeffs)*self.dof_count*5)
 
         return y
 
