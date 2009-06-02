@@ -430,10 +430,12 @@ class Executor(object):
         self.code = OperatorCompilerWithExecutor(self)(
                 self.prepare_optemplate_stage2(discr.mesh, optemplate_stage1))
 
-        #from hedge.tools import get_rank
-        #if get_rank(discr) == 0:
-            #print self.code
-            #raw_input()
+
+        if "print_op_code" in discr.debug:
+            from hedge.tools import get_rank
+            if get_rank(discr) == 0:
+                print self.code
+                raw_input()
 
         if False:
             from hedge.tools import get_rank
