@@ -23,7 +23,6 @@ import numpy
 import numpy.linalg as la
 import unittest
 from hedge.backends.jit import Discretization as JITDiscretization
-from hedge.backends.dynamic import Discretization as DynamicDiscretization
 
 
 
@@ -1688,11 +1687,6 @@ class TestHedgeDiscretizationBase(object):
 
 
 
-
-class TestHedgeDynamicDiscretization(
-        unittest.TestCase, 
-        TestHedgeDiscretizationBase):
-    discr_class = DynamicDiscretization
 
 class TestHedgeJITDiscretization(
         unittest.TestCase, 

@@ -38,7 +38,7 @@ FluxFace = _internal.FluxFace
 
 
 # python fluxes ---------------------------------------------------------------
-class Flux(pymbolic.primitives.AlgebraicLeaf, _internal.Flux):
+class Flux(pymbolic.primitives.AlgebraicLeaf):
     def stringifier(self):
         return FluxStringifyMapper
 

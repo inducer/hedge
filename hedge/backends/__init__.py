@@ -179,8 +179,6 @@ def guess_run_context(disable=set()):
         from hedge.backends.cuda import Discretization as discr_class
     elif FEAT_CODEPY in feat:
         from hedge.backends.jit import Discretization as discr_class
-    elif FEAT_INTERNAL in feat:
-        from hedge.backends.dynamic import Discretization as discr_class
     else:
         raise RuntimeError, "could not find usable backend"
 
