@@ -355,13 +355,16 @@ class VariableCoefficientAdvectionOperator:
 	    return (u.int*numpy.dot(v.int, normal )
 	            + u.ext*numpy.dot(v.ext, normal)) * 0.5
         elif self.flux_type == "lf":
+            from hedge.optemplate import ElementwiseMaxOperator
             n_vint = numpy.dot(normal, v.int)
             n_vext = numpy.dot(normal, v.ext)
             return 0.5 * (n_vint * u.int + n_vext * u.ext) \
                    - 0.5 * (u.ext - u.int) \
-                   * IfPositive(((n_vint**2)**0.5 - (n_vext**2)**0.5),               
-                      numpy.dot(v.int, v.int)**0.5,   
-                      numpy.dot(v.ext, v.ext)**0.5)   
+                   * ElementwiseMaxOperator()
+                   #* IfPositive(((n_vint**2)**0.5 - (n_vext**2)**0.5),               
+                   #   numpy.dot(v.int, v.int)**0.5,   
+                   #   numpy.dot(v.ext, v.ext)**0.5)   
+                    
         elif self.flux_type == "upwind": 
             return (
                     IfPositive(numpy.dot(normal, v.avg),
@@ -426,12 +429,12 @@ class VariableCoefficientAdvectionOperator:
         return rhs
 
     def max_eigenvalue(self, t, discr):
-        """Gives the max eigenvalue of a vector of eigenvalues. 
+        # Gives the max eigenvalue of a vector of eigenvalues.
+        # As the velocities of each node is stored in the velocity-vector-field 
+        # a pointwise dot product of this vector has to be taken to get the 
+        # magnitude of the velocity at each node. From this vector the maximum 
+        # values limits the timestep.
         
-        As the velocities of each 
-        node is stored in the velocity-vector-field a pointwise dot product of this 
-        vector has to be taken to get the magnitude of the velocity at each node. 
-        From this vector the maximum values limits the timestep."""
         from hedge.tools import ptwise_dot
         v = self.advec_v.volume_interpolant(t, discr)
         return (ptwise_dot(1, 1, v, v)**0.5).max()
