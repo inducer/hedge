@@ -91,7 +91,7 @@ class TestHedgeBasics(unittest.TestCase):
         def rhs(t, y):
             u = y[0]
             v = y[1]
-            return numpy.array([v, -u/t**2])
+            return numpy.array([v, -u/t**2], dtype=numpy.float64)
 
         def soln(t):
             inner = sqrt(3)/2*log(t)
@@ -102,7 +102,7 @@ class TestHedgeBasics(unittest.TestCase):
 
         def get_error(stepper, dt):
             t = 1
-            y = numpy.array([1, 3])
+            y = numpy.array([1, 3], dtype=numpy.float64)
             final_t = 10
             nsteps = int((final_t-t)/dt)
 
