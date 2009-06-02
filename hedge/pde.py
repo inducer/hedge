@@ -343,7 +343,7 @@ class VariableCoefficientAdvectionOperator:
 	                make_normal, \
 			FluxScalarPlaceholder, \
 			FluxVectorPlaceholder, \
-			IfPositive
+			IfPositive, flux_max, norm
 
 	w = FluxVectorPlaceholder(1+self.dimensions)
 	u = w[0]
@@ -360,10 +360,9 @@ class VariableCoefficientAdvectionOperator:
             n_vext = numpy.dot(normal, v.ext)
             return 0.5 * (n_vint * u.int + n_vext * u.ext) \
                    - 0.5 * (u.ext - u.int) \
-                   * ElementwiseMaxOperator()
-                   #* IfPositive(((n_vint**2)**0.5 - (n_vext**2)**0.5),               
-                   #   numpy.dot(v.int, v.int)**0.5,   
-                   #   numpy.dot(v.ext, v.ext)**0.5)   
+                   * flux_max(norm(v.int), norm(v.ext))
+
+                   #* ElementwiseMaxOperator()
                     
         elif self.flux_type == "upwind": 
             return (

@@ -144,6 +144,31 @@ class IfPositive(Flux):
 
 
 
+class FluxFunctionSymbol(pymbolic.primitives.FunctionSymbol):
+    pass
+
+class Abs(FluxFunctionSymbol):
+    arg_count = 1
+
+class Max(FluxFunctionSymbol):
+    arg_count = 2
+
+class Min(FluxFunctionSymbol):
+    arg_count = 2
+
+flux_abs = Abs()
+flux_max = Max()
+flux_min = Min()
+
+
+
+def norm(v):
+    return numpy.dot(v, v)**0.5
+
+
+
+
+
 def make_normal(dimensions):
     from hedge.tools import amap
     return amap(Normal,  range(dimensions))
