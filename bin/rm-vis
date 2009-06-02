@@ -8,8 +8,9 @@ find . \
   -o -name '*.silo' \
   -o -name '*.eps' \
   -o -name '*.dat' \
+  -o -name '*.dat-rank*' \
+  -o -name '*completed' \
   -o -name '*.dat-journal' \
   -o -name '*.visit' \
   -o -name '*.png' \)\
   -print0 | xargs -0 --no-run-if-empty rm
-rm -f *.dat-rank*
