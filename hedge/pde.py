@@ -1646,10 +1646,9 @@ class StrongHeatOperator(TimeDependentOperator):
             return (
                     -self.discr.boundarize_volume_field(sqrt_coeff_v, hop.neumann_tag)
                     +
-                    to_obj_array(
-                        2*self.neumann_normals*
-                        hop.neumann_bc.boundary_interpolant(t, self.discr, hop.neumann_tag))
-                    )
+                    2*self.neumann_normals*
+                        hop.neumann_bc.boundary_interpolant(
+                            t, self.discr, hop.neumann_tag))
 
         def __call__(self, t, u):
             from hedge.tools import join_fields
