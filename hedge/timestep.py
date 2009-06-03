@@ -121,7 +121,7 @@ class RK4TimeStepper(TimeStepper):
             from hedge.tools import count_dofs, has_data_in_numpy_arrays
             self.dof_count = count_dofs(self.residual)
 
-            self.use_jit = self.allow_jit and has_data_in_numpy_arrays(self.residual)
+            self.use_jit = self.allow_jit and has_data_in_numpy_arrays(y)
 
         if self.use_jit:
             from hedge.tools import numpy_linear_comb

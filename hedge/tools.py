@@ -58,7 +58,7 @@ def relative_error(norm_diff, norm_true):
 def has_data_in_numpy_arrays(a):
     if is_obj_array(a):
         from pytools import indices_in_shape, all
-        return all(isinstance(a[i], numpy.ndarray)
+        return all(has_data_in_numpy_arrays(a[i])
                 for i in indices_in_shape(a.shape))
     else:
         return isinstance(a, numpy.ndarray)
