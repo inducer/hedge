@@ -376,11 +376,12 @@ class IterStabRegionCalc:
     def __init__(self):
         from cmath import pi
         self.prec = 1e-5
+
     def __call__(self, stepper_maker):
         points = []
         from cmath import pi
         for angle in numpy.array([pi/2, 3/2*pi]):
-            points.append(self.make_k(angle, self.find_stable_k(stepper_maker, angle)))
+            points.append(make_k(angle, find_stable_k(stepper_maker, angle)))
 
         points = numpy.array(points)
 
@@ -405,11 +406,11 @@ class IterStabRegionCalc:
         return -self.prec+mag*exp(1j*angle)
 
     def refine(self, stepper_maker, angle, stable, unstable):
-        assert self.is_stable(stepper_maker(), self.make_k(angle, stable))
-        assert not self.is_stable(stepper_maker(), self.make_k(angle, unstable))
+        assert is_stable(stepper_maker(), make_k(angle, stable))
+        assert not is_stable(stepper_maker(), make_k(angle, unstable))
         while abs(stable-unstable) > prec:
             mid = (stable+unstable)/2
-            if self.is_stable(stepper_maker(), self.make_k(angle, mid)):
+            if is_stable(stepper_maker(), make_k(angle, mid)):
                 stable = mid
             else:
                 unstable = mid
@@ -419,22 +420,22 @@ class IterStabRegionCalc:
     def find_stable_k(self, stepper_maker, angle):
         mag = 1
 
-        if self.is_stable(stepper_maker(), self.make_k(angle, mag)):
+        if is_stable(stepper_maker(), make_k(angle, mag)):
             # try to grow
             mag *= 2
-            while self.is_stable(stepper_maker(), self.make_k(angle, mag)):
+            while is_stable(stepper_maker(), make_k(angle, mag)):
                 mag *= 2
 
                 if mag > 2**8:
                     return mag
-            return self.refine(stepper_maker, angle, mag/2, mag)
+            return refine(stepper_maker, angle, mag/2, mag)
         else:
             mag /= 2
-            while not self.is_stable(stepper_maker(), self.make_k(angle, mag)):
+            while not is_stable(stepper_maker(), make_k(angle, mag)):
                 mag /= 2
 
                 if mag < self.prec:
                     return mag
-            return self.refine(stepper_maker, angle, mag, mag*2)
+            return refine(stepper_maker, angle, mag, mag*2)
 
 
