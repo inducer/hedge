@@ -602,7 +602,8 @@ class TestHedgeBasics(unittest.TestCase):
             mat[:,1] = (vertices[2] - vertices[0])
             tri_area = abs(la.det(mat)/2)
             tri_area_2 = abs(unit_tri_area*map.jacobian())
-            self.assert_(abs(tri_area - tri_area_2)/tri_area < 1e-15)
+
+            self.assert_(abs(tri_area - tri_area_2)/tri_area < 5e-15)
     # -------------------------------------------------------------------------
     def no_test_tri_mass_mat_gauss(self):
         """Check the integral of a Gaussian on a disk using the mass matrix"""
