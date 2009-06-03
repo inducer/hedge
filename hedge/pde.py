@@ -361,7 +361,8 @@ class VariableCoefficientAdvectionOperator:
             n_vint = numpy.dot(normal, v.int)
             n_vext = numpy.dot(normal, v.ext)
             return 0.5 * (n_vint * u.int + n_vext * u.ext) \
-                   - 0.5 * (u.ext - u.int) * c.avg
+                   - 0.5 * (u.ext - u.int) \
+                   * flux_max(c.int, c.ext)
 
         elif self.flux_type == "upwind": 
             return (
