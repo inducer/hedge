@@ -337,6 +337,8 @@ class VariableCoefficientAdvectionOperator:
         self.advec_v = advec_v
         self.bc_u_f = bc_u_f
         self.flux_type = flux_type
+        from hedge.optemplate import ElementwiseMaxOperator
+        self.wave_speed = ElementwiseMaxOperator()
 
     def flux(self):
         from hedge.flux import \
@@ -345,7 +347,7 @@ class VariableCoefficientAdvectionOperator:
 			FluxVectorPlaceholder, \
 			IfPositive, flux_max, norm
 
-	w = FluxVectorPlaceholder(1+self.dimensions)
+        w = FluxVectorPlaceholder(1+self.dimensions)
 	u = w[0]
 	v = w[1:]
 
@@ -355,15 +357,13 @@ class VariableCoefficientAdvectionOperator:
 	    return (u.int*numpy.dot(v.int, normal )
 	            + u.ext*numpy.dot(v.ext, normal)) * 0.5
         elif self.flux_type == "lf":
-            from hedge.optemplate import ElementwiseMaxOperator
             n_vint = numpy.dot(normal, v.int)
             n_vext = numpy.dot(normal, v.ext)
             return 0.5 * (n_vint * u.int + n_vext * u.ext) \
                    - 0.5 * (u.ext - u.int) \
-                   * flux_max(norm(v.int), norm(v.ext))
+                   * self.wave_speed
+                   #* flux_max(norm(v.int), norm(v.ext))
 
-                   #* ElementwiseMaxOperator()
-                    
         elif self.flux_type == "upwind": 
             return (
                     IfPositive(numpy.dot(normal, v.avg),
