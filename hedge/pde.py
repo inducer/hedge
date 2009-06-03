@@ -318,7 +318,8 @@ class VariableCoefficientAdvectionOperator:
     and returning an n-dimensional vector representing the velocity at x. 
     `bc_u_f` is a callable expecting `(x, t)` representing space and time, 
     and returning an 1-dimensional vector representing the state on the boundary.
-    `advec_v` and `bc_u_f` complies with the `hedge.data.ITimeDependentGivenFunctionInterface`.
+    Both `advec_v` and `bc_u_f` conforms to the 
+    `hedge.data.ITimeDependentGivenFunction` interface.
     """
 
     flux_types = [
