@@ -337,19 +337,20 @@ class VariableCoefficientAdvectionOperator:
         self.advec_v = advec_v
         self.bc_u_f = bc_u_f
         self.flux_type = flux_type
-        from hedge.optemplate import ElementwiseMaxOperator
-        self.wave_speed = ElementwiseMaxOperator()
 
-    def flux(self):
+    def flux(self, ):
         from hedge.flux import \
 	                make_normal, \
 			FluxScalarPlaceholder, \
 			FluxVectorPlaceholder, \
 			IfPositive, flux_max, norm
+        
+        d = self.dimensions
 
-        w = FluxVectorPlaceholder(1+self.dimensions)
+        w = FluxVectorPlaceholder((1+d)+1)
 	u = w[0]
-	v = w[1:]
+        v = w[1:d+1]
+        c = w[1+d]
 
         normal = make_normal(self.dimensions)
 
@@ -360,9 +361,7 @@ class VariableCoefficientAdvectionOperator:
             n_vint = numpy.dot(normal, v.int)
             n_vext = numpy.dot(normal, v.ext)
             return 0.5 * (n_vint * u.int + n_vext * u.ext) \
-                   - 0.5 * (u.ext - u.int) \
-                   * self.wave_speed
-                   #* flux_max(norm(v.int), norm(v.ext))
+                   - 0.5 * (u.ext - u.int) * c.avg
 
         elif self.flux_type == "upwind": 
             return (
@@ -383,18 +382,23 @@ class VariableCoefficientAdvectionOperator:
 		InverseMassOperator,\
 		make_vector_field
 
-        from hedge.tools import join_fields
+        from hedge.tools import join_fields, \
+                                ptwise_dot
+        
+        from hedge.optemplate import ElementwiseMaxOperator
 
         u = Field("u")
 	v = make_vector_field("v", self.dimensions)
-	w = join_fields(u, v)
+        c = ElementwiseMaxOperator()*ptwise_dot(1, 1, v, v)
+        w = join_fields(u, v, c)
 
         bc_u = Field("bc_u")
         bc_v = make_vector_field("bc_v", self.dimensions)
+        bc_c = ElementwiseMaxOperator()*ptwise_dot(1, 1, bc_v, bc_v)
         if self.bc_u_f is "None":
-            bc_w = join_fields(0, bc_v)
+            bc_w = join_fields(0, bc_v, bc_c)
         else:
-            bc_w = join_fields(bc_u, bc_v)
+            bc_w = join_fields(bc_u, bc_v, bc_c)
 
         minv_st = make_minv_stiffness_t(self.dimensions)
         m_inv = InverseMassOperator()
