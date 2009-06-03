@@ -694,7 +694,7 @@ class Discretization(object):
                                 f(self.nodes[point_nr], el)
         return self.convert_volume(out, kind=kind)
 
-    def boundary_empty(self, tag=hedge.mesh.TAG_ALL, shape=(), dtype=None, kind="numpy"):
+    def boundary_empty(self, tag, shape=(), dtype=None, kind="numpy"):
         if kind not in ["numpy", "numpy-mpi-recv"]:
             raise ValueError, "invalid vector kind requested"
 
@@ -702,7 +702,7 @@ class Discretization(object):
             dtype = self.default_scalar_type
         return numpy.empty(shape+(len(self.get_boundary(tag).nodes),), dtype)
 
-    def boundary_zeros(self, tag=hedge.mesh.TAG_ALL, shape=(), dtype=None, kind="numpy"):
+    def boundary_zeros(self, tag, shape=(), dtype=None, kind="numpy"):
         if kind not in ["numpy", "numpy-mpi-recv"]:
             raise ValueError, "invalid vector kind requested"
         if dtype is None:
@@ -710,7 +710,7 @@ class Discretization(object):
 
         return numpy.zeros(shape+(len(self.get_boundary(tag).nodes),), dtype)
 
-    def interpolate_boundary_function(self, f, tag=hedge.mesh.TAG_ALL, dtype=None, kind=None):
+    def interpolate_boundary_function(self, f, tag, dtype=None, kind=None):
         if kind is None:
             kind = self.compute_kind
 
@@ -730,7 +730,7 @@ class Discretization(object):
         return self.convert_boundary(out, tag, kind)
 
     @memoize_method
-    def boundary_normals(self, tag=hedge.mesh.TAG_ALL, dtype=None, kind=None):
+    def boundary_normals(self, tag, dtype=None, kind=None):
         if kind is None:
             kind = self.compute_kind
 
@@ -1007,7 +1007,7 @@ def ones_on_boundary(discr, tag):
 
 
 
-def ones_on_volume(discr, tag=hedge.mesh.TAG_ALL):
+def ones_on_volume(discr):
     result = discr.volume_zeros()
 
     from hedge._internal import UniformElementRanges

@@ -806,8 +806,13 @@ class TestHedgeDiscretizationBase(object):
                 *pair_with_boundary(Field("f1"), Field("fz")) +
                 get_flux_operator(one_sided_y)
                 *pair_with_boundary(Field("f2"), Field("fz")))
-        bdry_val = discr.compile(flux_optp)(f1=f1_v, f2=f2_v, fz=discr.boundary_zeros())
-        ref_bdry_val = ref_discr.compile(flux_optp)(f1=f1_v, f2=f2_v, fz=discr.boundary_zeros())
+
+        from hedge.mesh import TAG_ALL
+        bdry_val = discr.compile(flux_optp)(f1=f1_v, f2=f2_v, 
+                fz=discr.boundary_zeros(TAG_ALL))
+        ref_bdry_val = ref_discr.compile(flux_optp)(f1=f1_v, f2=f2_v, 
+                fz=discr.boundary_zeros(TAG_ALL))
+
         boundary_int = dot(bdry_val, ones)
 
         if False:
