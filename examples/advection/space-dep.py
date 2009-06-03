@@ -130,15 +130,15 @@ def main():
             GivenFunction
     from hedge.pde import VariableCoefficientAdvectionOperator
     op = VariableCoefficientAdvectionOperator(discr.dimensions, 
-                                              #advec_v=TimeDependentGivenFunction(
-                                              #    TimeDependentVField()),
-                                              advec_v=TimeConstantGivenFunction(
-                                                  GivenFunction(VField())), 
-                                              #bc_u_f=TimeDependentGivenFunction(
-                                              #    TimeDependentBc_u()),
-                                              bc_u_f=TimeConstantGivenFunction(
-                                                  GivenFunction(Bc_u())), 
-                                              flux_type="lf")
+        #advec_v=TimeDependentGivenFunction(
+        #    TimeDependentVField()),
+        advec_v=TimeConstantGivenFunction(
+            GivenFunction(VField())), 
+        #bc_u_f=TimeDependentGivenFunction(
+        #    TimeDependentBc_u()),
+        bc_u_f=TimeConstantGivenFunction(
+            GivenFunction(Bc_u())), 
+        flux_type="lf")
 
     # initial condition -------------------------------------------------------
     # Gauss-Pulse
