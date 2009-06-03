@@ -129,15 +129,15 @@ def main():
             TimeDependentGivenFunction, \
             GivenFunction
     from hedge.pde import VariableCoefficientAdvectionOperator
-    op = VariableCoefficientAdvectionOperator(discr.dimensions, \
+    op = VariableCoefficientAdvectionOperator(discr.dimensions, 
                                               #advec_v=TimeDependentGivenFunction(
-                                              #        TimeDependentVField()), \
+                                              #    TimeDependentVField()),
                                               advec_v=TimeConstantGivenFunction(
-                                                      GivenFunction(VField())), \
+                                                  GivenFunction(VField())), 
                                               #bc_u_f=TimeDependentGivenFunction(
-                                              #       TimeDependentBc_u()), \
+                                              #    TimeDependentBc_u()),
                                               bc_u_f=TimeConstantGivenFunction(
-                                                     GivenFunction(Bc_u())), \
+                                                  GivenFunction(Bc_u())), 
                                               flux_type="lf")
 
     # initial condition -------------------------------------------------------
@@ -173,9 +173,8 @@ def main():
 
     # filter setup-------------------------------------------------------------
     from hedge.discretization import Filter, ExponentialFilterResponseFunction
-    antialiasing = Filter(discr, \
-                          ExponentialFilterResponseFunction(min_amplification=0.9, \
-                                                            order=4))
+    antialiasing = Filter(discr,
+            ExponentialFilterResponseFunction(min_amplification=0.9,order=4))
 
     # diagnostics setup -------------------------------------------------------
     from pytools.log import LogManager, \
