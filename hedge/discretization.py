@@ -884,10 +884,6 @@ class Discretization(object):
         raise ValueError, "not a valid dof index"
         
     # misc stuff --------------------------------------------------------------
-    def get_stepper_stab_factor(self, stepper):
-        from hedge.timestep import IterStabRegionCalc
-        return IterStabRegionCalc()(stepper)
-
     def dt_non_geometric_factor(self):
         distinct_ldis = set(eg.local_discretization for eg in self.element_groups)
         return min(ldis.dt_non_geometric_factor() 
@@ -899,13 +895,17 @@ class Discretization(object):
             for el in eg.members)
             for eg in self.element_groups)
 
-    def dt_factor(self, max_system_ev, stepper):
-        return 1/max_system_ev \
-                * self.dt_non_geometric_factor() \
-                * self.dt_geometric_factor() \
-                * self.get_stepper_stab_factor(stepper)
-        #* stepper.get_stp_sz_const()
-
+    def dt_factor(self, max_system_ev, stepper=False):
+        if stepper:
+            from hedge.timestep import stability_region_calculator 
+            return 1/max_system_ev \
+                    * stability_region_calculator(stepper) \
+                    * self.dt_non_geometric_factor() \
+                    * self.dt_geometric_factor() 
+        else:
+            return 1/max_system_ev \
+                    * self.dt_non_geometric_factor() \
+                    * self.dt_geometric_factor() 
 
     def get_point_evaluator(self, point):
         for eg in self.element_groups:
