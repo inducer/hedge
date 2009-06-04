@@ -364,14 +364,13 @@ class SimplicialElement(Element):
     def dt_non_geometric_factor(self):
         unodes = self.unit_nodes()
         vertex_indices = self.vertex_indices()
-
-        return min(min(min(
+        answ =  min(min(min(
                     la.norm(unodes[face_node_index]-unodes[vertex_index])
                     for vertex_index in vertex_indices
                     if vertex_index != face_node_index)
                     for face_node_index in face_indices)
                     for face_indices in self.face_indices())
-
+        return answ
 
 
 
@@ -756,7 +755,7 @@ class TriangularElement(SimplicialElement):
 
     # time step scaling -------------------------------------------------------
     def dt_geometric_factor(self, vertices, el):
-        area = abs(2*el.map.jacobian())
+        area = abs(el.map.jacobian())
         semiperimeter = sum(la.norm(vertices[vi1]-vertices[vi2]) 
                 for vi1, vi2 in [(0,1), (1,2), (2,0)])/2
         return area/semiperimeter

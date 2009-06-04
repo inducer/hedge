@@ -886,8 +886,7 @@ class Discretization(object):
     # misc stuff --------------------------------------------------------------
     def get_stepper_stab_factor(self, stepper):
         from hedge.timestep import IterStabRegionCalc
-        print IterStabRegionCalc()(stepper)
-        raw_input()
+        return IterStabRegionCalc()(stepper)
 
     def dt_non_geometric_factor(self):
         distinct_ldis = set(eg.local_discretization for eg in self.element_groups)
@@ -902,10 +901,10 @@ class Discretization(object):
 
     def dt_factor(self, max_system_ev, stepper):
         return 1/max_system_ev \
-                * self.get_stepper_stab_factor(stepper) \
                 * self.dt_non_geometric_factor() \
-                * self.dt_geometric_factor() 
-                #* stepper.get_stp_sz_const()
+                * self.dt_geometric_factor() \
+                * self.get_stepper_stab_factor(stepper)
+        #* stepper.get_stp_sz_const()
 
 
     def get_point_evaluator(self, point):

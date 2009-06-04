@@ -65,8 +65,16 @@ def main() :
     from hedge.timestep import AdamsBashforthTimeStepper
     #stepper = AdamsBashforthTimeStepper(3)
     stepper = RK4TimeStepper()
+    class ABMaker:
+        def __init__(self, order):
+            self.order = order
 
-    dt = discr.dt_factor(op.max_eigenvalue(), stepper)
+        def __call__(self):
+            from hedge.timestep import AdamsBashforthTimeStepper
+            return AdamsBashforthTimeStepper(self.order)
+    #stepper_maker = ABMaker(3)
+    stepper_maker = RK4TimeStepper
+    dt = discr.dt_factor(op.max_eigenvalue(), stepper_maker)
     nsteps = int(3/dt)
 
 
