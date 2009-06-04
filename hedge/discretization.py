@@ -895,17 +895,16 @@ class Discretization(object):
             for el in eg.members)
             for eg in self.element_groups)
 
-    def dt_factor(self, max_system_ev, stepper=False):
-        if stepper:
-            from hedge.timestep import stability_region_calculator 
-            return 1/max_system_ev \
-                    * stability_region_calculator(stepper) \
-                    * self.dt_non_geometric_factor() \
-                    * self.dt_geometric_factor() 
+    def dt_factor(self, max_system_ev, stepper=None):
+        result = 1/max_system_ev \
+                * self.dt_non_geometric_factor() \
+                * self.dt_geometric_factor() \
+                * 1/3.35334777834
+        if stepper is None:
+            return result 
         else:
-            return 1/max_system_ev \
-                    * self.dt_non_geometric_factor() \
-                    * self.dt_geometric_factor() 
+            from hedge.timestep import stability_region_calculator 
+            return result * stability_region_calculator(stepper) 
 
     def get_point_evaluator(self, point):
         for eg in self.element_groups:
