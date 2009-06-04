@@ -27,14 +27,43 @@ wave_sp:makelist(concat(sp,i),i,1,length(wave_D));
 wave_sminw:wave_invV.wave_wm;
 wave_spinw:wave_invV.wave_wp;
 
+wave_wmins:wave_V.wave_sm;
+wave_wpins:wave_V.wave_sp;
+
 wave_radbdryspinw:makelist( 
   if wave_D[i,i] >= 0 then wave_sminw[i,1] else 0,
   i, 1, length(wave_D));
 wave_radbdrywp:fullhypsimp(wave_V.wave_radbdryspinw);
 
+wave_dirbdryspinw:makelist( 
+  if wave_D[i,i] >= 0 then wave_sminw[i,1] else ubc,
+  i, 1, length(wave_D));
+wave_dirbdrywp:fullhypsimp(wave_V.wave_dirbdryspinw);
+
 print("Radiation boundary condition for the wave equation:");
 print(wave_radbdrywp);
 
+print("Dirichlet boundary condition for the wave equation:");
+print(expand(wave_dirbdrywp));
+
+wave_known_dirbdrywp:vstack([-n.wave_vm/2 + um/2 + ubc],
+  -n*um/2 + n*ubc - 1/2*n*(n.wave_vm) + wave_vm);
+
+assert(norm_2_squared(fullhypsimp(wave_known_dirbdrywp - wave_dirbdrywp))=0);
+
+print("Hom-dirichlet in characteristic:");
+print(fullhypsimp(wave_invV.vstack(
+    -columnvector(first(wave_wmins)), 
+    rest(wave_wmins))
+    ));
+
+print("Hom-Neumann in characteristic:");
+print(fullhypsimp(wave_invV.vstack(
+    columnvector(first(wave_wmins)), 
+    -rest(wave_wmins))
+    ));
+
+/*
 /* ------------------------------------------------------------------------- */
 
 wave_eigenvalues:makelist(wave_D[i,i], i, 1, length(wave_D));
@@ -69,3 +98,4 @@ wave_knownstrongwflux:vstack(
   );
 
 assert(norm_2_squared(fullhypsimp(wave_knownstrongwflux - wave_strongwflux))=0);
+*/
