@@ -299,6 +299,21 @@ namespace hedge {
   }
 
 
+  template <class ERanges, class Vector>
+  inline
+  void perform_elwise_max_gpu(const ERanges &ers, 
+      const Vector &in, Vector out)
+  {
+    typename Vector::const_iterator in_it = in.begin();
+    typename Vector::iterator out_it = out.begin();
+    
+    BOOST_FOREACH(const element_range er, ers)
+    {
+      std::fill(out_it+er.first, out_it+er.second,
+          *std::max(in_it+er.first, in_it+er.second));
+    }
+  }
+
 
 
 }

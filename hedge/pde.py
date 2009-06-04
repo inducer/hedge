@@ -1614,7 +1614,7 @@ class EulerOperator(TimeDependentOperator):
                 (- numpy.dot(make_nabla(self.dimensions), flux(state))
                     + InverseMassOperator()*make_lax_friedrichs_flux(
                         wave_speed=
-			#ElementwiseMaxOperator()*
+			ElementwiseMaxOperator()*
 			c,
                         state=state, flux_func=flux,
                         bdry_tags_and_states=[
@@ -1634,7 +1634,8 @@ class EulerOperator(TimeDependentOperator):
                     bc_q=self.bc.boundary_interpolant(t, discr, TAG_ALL))
             max_speed = opt_result[-1]
             ode_rhs = opt_result[:-1]
-            return ode_rhs, numpy.max(max_speed)
+            #return ode_rhs, numpy.max(max_speed)
+	    return ode_rhs, discr.nodewise_max(max_speed)
 
         return wrap
 

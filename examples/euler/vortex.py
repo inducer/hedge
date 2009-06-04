@@ -94,7 +94,7 @@ def main():
 			],
 			default_scalar_type=numpy.float64)
 
-        from hedge.visualization import SiloVisualizer
+        from hedge.visualization import SiloVisualizer, VtkVisualizer
         #vis = VtkVisualizer(discr, rcon, "vortex-%d" % order)
         vis = SiloVisualizer(discr, rcon)
 
@@ -161,10 +161,10 @@ def main():
                 from pylo import DB_VARTYPE_VECTOR
                 vis.add_data(visf,
                         [
-                            ("rho", op.rho(fields)),
-                            ("e", op.e(fields)),
-                            ("rho_u", op.rho_u(fields)),
-                            ("u", op.u(fields)),
+                            ("rho", discr.convert_volume(op.rho(fields), kind="numpy")),
+                            ("e", discr.convert_volume(op.e(fields), kind="numpy")),
+                            ("rho_u", discr.convert_volume(op.rho_u(fields), kind="numpy")),
+                            ("u", discr.convert_volume(op.u(fields), kind="numpy")),
 
                             #("true_rho", op.rho(true_fields)),
                             #("true_e", op.e(true_fields)),

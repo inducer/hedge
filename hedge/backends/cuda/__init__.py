@@ -1212,6 +1212,16 @@ class Discretization(hedge.discretization.Discretization):
                 self._meaningful_volume_indices(), 
                 a, b, dtype=numpy.float64).get()
 
+    def nodewise_max(self, a):
+        return gpuarray.subset_max(
+	        self._meaningful_volume_indices(),
+		a, dtype=numpy.float64).get()
+
+    def nodewise_min(self, a):
+        return gpuarray.subset_min(
+	        self._meaningful_volume_indices(),
+		a, dtype=numpy.float64).get()
+
     # numbering tools ---------------------------------------------------------
     @memoize_method
     def elgroup_microblock_indices(self, elgroup):

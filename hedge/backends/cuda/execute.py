@@ -294,6 +294,16 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                 self.rec(insn.field),
                 *self.ex.mass_data(kernel, elgroup)))], []
 
+    def map_elementwise_max(self, op, field_expr):
+        from hedge._internal import perform_elwise_max_gpu
+	field = self.rec(field_expr)
+
+        out = self.ex.discr.volume_zeros()
+        for eg in self.ex.discr.element_groups:
+            perform_elwise_max_gpu(eg.ranges, field, out)
+        return out
+
+
 
 
 

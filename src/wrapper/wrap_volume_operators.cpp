@@ -76,6 +76,10 @@ namespace
     def("perform_elwise_max", 
         perform_elwise_max<uniform_element_ranges, numpy_vector<Scalar> >,
         (arg("ers"), arg("in"), arg("out")));
+
+    def("perform_elwise_max_gpu",
+        perform_elwise_max_gpu<uniform_element_ranges, GPUArray>,
+	(arg("ers"), arg("in"), arg("out")));
   }
 }
 
