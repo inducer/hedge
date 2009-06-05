@@ -295,6 +295,7 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
                 get_flux_operator, make_minv_stiffness_t, InverseMassOperator
 
         u = Field("u")
+
         bc_in = Field("bc_in")
         bc_out = Field("bc_out")
 
@@ -310,6 +311,140 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
                     )
 
 
+class VariableCoefficientAdvectionOperator:
+    """A class for space- and time-dependent DG-advection operators.
+
+    `advec_v` is a callable expecting two arguments `(x, t)` representing space and time, 
+    and returning an n-dimensional vector representing the velocity at x. 
+    `bc_u_f` is a callable expecting `(x, t)` representing space and time, 
+    and returning an 1-dimensional vector representing the state on the boundary.
+    Both `advec_v` and `bc_u_f` conform to the 
+    `hedge.data.ITimeDependentGivenFunction` interface.
+    """
+
+    flux_types = [
+            "central",
+            "upwind",
+            "lf"
+            ]
+
+    def __init__(self, 
+            dimensions, 
+	    advec_v,
+            bc_u_f="None",
+	    flux_type="central"
+	    ):
+        self.dimensions = dimensions
+        self.advec_v = advec_v
+        self.bc_u_f = bc_u_f
+        self.flux_type = flux_type
+
+    def flux(self, ):
+        from hedge.flux import \
+	                make_normal, \
+			FluxScalarPlaceholder, \
+			FluxVectorPlaceholder, \
+			IfPositive, flux_max, norm
+        
+        d = self.dimensions
+
+        w = FluxVectorPlaceholder((1+d)+1)
+	u = w[0]
+        v = w[1:d+1]
+        c = w[1+d]
+
+        normal = make_normal(self.dimensions)
+
+        if self.flux_type == "central":
+	    return (u.int*numpy.dot(v.int, normal )
+	            + u.ext*numpy.dot(v.ext, normal)) * 0.5
+        elif self.flux_type == "lf":
+            n_vint = numpy.dot(normal, v.int)
+            n_vext = numpy.dot(normal, v.ext)
+            return 0.5 * (n_vint * u.int + n_vext * u.ext) \
+                   - 0.5 * (u.ext - u.int) \
+                   * flux_max(c.int, c.ext)
+
+        elif self.flux_type == "upwind": 
+            return (
+                    IfPositive(numpy.dot(normal, v.avg),
+                        numpy.dot(normal, v.int) * u.int, # outflow
+                        numpy.dot(normal, v.ext) * u.ext, # inflow
+                        ))
+            return f
+        else:
+            raise ValueError, "invalid flux type"
+
+    def op_template(self):
+        from hedge.optemplate import \
+	        Field, \
+		pair_with_boundary, \
+                get_flux_operator, \
+		make_minv_stiffness_t, \
+		InverseMassOperator,\
+		make_vector_field
+
+        from hedge.tools import join_fields, \
+                                ptwise_dot
+        
+        from hedge.optemplate import ElementwiseMaxOperator
+
+        u = Field("u")
+	v = make_vector_field("v", self.dimensions)
+        c = ElementwiseMaxOperator()*ptwise_dot(1, 1, v, v)
+        w = join_fields(u, v, c)
+
+        bc_u = Field("bc_u")
+        # FIXME
+        # bc_v = BoundarizeOperator()*v
+        # bc_c = ElementwiseMaxOperator()*ptwise_dot(1, 1, bc_v, bc_v)
+        bc_c = 0
+        if self.bc_u_f is "None":
+            bc_w = join_fields(0, bc_v, bc_c)
+        else:
+            bc_w = join_fields(bc_u, bc_v, bc_c)
+
+        minv_st = make_minv_stiffness_t(self.dimensions)
+        m_inv = InverseMassOperator()
+
+        flux_op = get_flux_operator(self.flux())
+
+        from hedge.mesh import TAG_ALL
+        return numpy.dot(minv_st, v*u) - m_inv*(
+                    flux_op * w
+                    + flux_op * pair_with_boundary(w, bc_w, TAG_ALL)
+                    )
+
+    def bind(self, discr):
+        compiled_op_template = discr.compile(self.op_template())
+        
+        from hedge.mesh import check_bc_coverage, TAG_ALL
+        check_bc_coverage(discr.mesh, [TAG_ALL])
+
+        def rhs(t, u):
+	    v = self.advec_v.volume_interpolant(t, discr)
+
+            bc_v = self.advec_v.boundary_interpolant(t, discr, tag=TAG_ALL)
+            
+            if self.bc_u_f is not "None":
+                bc_u = self.bc_u_f.boundary_interpolant(t, discr, tag=TAG_ALL)
+                return compiled_op_template(u=u, v=v,
+                                            bc_u=bc_u, bc_v=bc_v)
+            else:
+                return compiled_op_template(u=u, v=v, bc_v=bc_v)
+
+        return rhs
+
+    def max_eigenvalue(self, t, discr):
+        # Gives the max eigenvalue of a vector of eigenvalues.
+        # As the velocities of each node is stored in the velocity-vector-field 
+        # a pointwise dot product of this vector has to be taken to get the 
+        # magnitude of the velocity at each node. From this vector the maximum 
+        # values limits the timestep.
+        
+        from hedge.tools import ptwise_dot
+        v = self.advec_v.volume_interpolant(t, discr)
+        return (ptwise_dot(1, 1, v, v)**0.5).max()
 
 
 

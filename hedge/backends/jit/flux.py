@@ -60,6 +60,22 @@ class FluxToCodeMapper(CCodeMapper):
         return ("value_type(pow(fp.loc.order*fp.loc.order/fp.loc.h, %(pwr)r))" 
                 % {"pwr": expr.power})
 
+    def map_function_symbol(self, expr, enclosing_prec):
+        from hedge.flux import FluxFunctionSymbol, \
+                flux_abs, flux_min, flux_max
+
+        assert isinstance(expr, FluxFunctionSymbol)
+
+        return {
+                flux_abs: "std::abs",
+                flux_max: "std::max",
+                flux_min: "std::min",
+                }[expr]
+
+
+
+
+
 
 
 
@@ -91,7 +107,7 @@ def get_flux_var_info(fluxes):
     from hedge.optemplate import BoundaryPair
 
     for flux_idx, flux_binding in enumerate(fluxes):
-        for fc in FluxDependencyMapper(composite_leaves=True)(flux_binding.op.flux):
+        for fc in FluxDependencyMapper(include_calls=False)(flux_binding.op.flux):
             assert isinstance(fc, FieldComponent)
             is_bdry = isinstance(flux_binding.field, BoundaryPair)
             if is_bdry:
@@ -163,6 +179,8 @@ def get_interior_flux_func(fluxes, fvi, toolchain, dtype):
     mod.add_to_module([
         Include("hedge/face_operators.hpp"), 
         Include("boost/foreach.hpp"), 
+        Include("cstdlib"), 
+        Include("algorithm"), 
         Line(),
         S("using namespace hedge"),
         S("using namespace pyublas"),
@@ -252,6 +270,7 @@ def get_interior_flux_func(fluxes, fvi, toolchain, dtype):
 
     #print "----------------------------------------------------------------"
     #print FunctionBody(fdecl, fbody)
+    #raw_input("Enter:")
 
     return mod.compile(toolchain, wait_on_error=True).gather_flux
 
@@ -272,6 +291,8 @@ def get_boundary_flux_func(fluxes, fvi, toolchain, dtype):
     mod.add_to_module([
         Include("hedge/face_operators.hpp"), 
         Include("boost/foreach.hpp"), 
+        Include("cstdlib"), 
+        Include("algorithm"), 
         Line(),
         S("using namespace hedge"),
         S("using namespace pyublas"),

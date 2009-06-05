@@ -142,9 +142,8 @@ class Executor(ExecutorBase):
         if "print_op_code" in discr.debug:
 	    from hedge.tools import get_rank
 	    if get_rank(discr) == 0:
-	        print self.code
+	        print self.op_data
 	        raw_input()
-
 
         def bench_diff(f):
             test_field = discr.volume_zeros()

@@ -82,13 +82,13 @@ def main() :
             return 0*source_u_vec
 
 
-    from hedge.pde import SpaceDependentStrongWaveOperator
+    from hedge.pde import VariableVelocityStrongWaveOperator
     from hedge.data import \
             TimeIntervalGivenFunction, \
             TimeConstantGivenFunction, \
             GivenFunction
     from hedge.mesh import TAG_ALL, TAG_NONE
-    op = SpaceDependentStrongWaveOperator(
+    op = VariableVelocityStrongWaveOperator(
             TimeConstantGivenFunction(
                 GivenFunction(c_speed)), 
             discr.dimensions, 
@@ -105,7 +105,7 @@ def main() :
     fields = join_fields(discr.volume_zeros(),
             [discr.volume_zeros() for i in range(discr.dimensions)])
 
-    dt = discr.dt_factor(1)
+    dt = discr.dt_factor(1) / 2
     nsteps = int(10/dt)
     if rcon.is_head_rank:
         print "dt", dt

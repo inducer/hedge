@@ -184,6 +184,13 @@ class Discretization(object):
 	    "print_op_code",
             ])
 
+    @classmethod
+    def noninteractive_debug_flags(cls):
+        return set([
+            "ilist_generation", 
+            "node_permutation",
+            ])
+
     @staticmethod
     def get_local_discretization(mesh, local_discretization=None, order=None):
         if local_discretization is None and order is None:
@@ -719,7 +726,6 @@ class Discretization(object):
         try:
             # are we interpolating many fields at once?
             shape = f.shape
-
         except AttributeError:
             # no, just one
             shape = ()

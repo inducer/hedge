@@ -70,6 +70,7 @@ def numpy_linear_comb(lin_comb):
     assert lin_comb
 
     from pytools import single_valued, indices_in_shape, flatten
+    from codepy.elementwise import make_linear_comb_kernel
     if single_valued(is_obj_array(ary) for fac, ary in lin_comb):
         oa_shape = single_valued(ary.shape for fac, ary in lin_comb)
         result = numpy.zeros(oa_shape, dtype=object)
@@ -77,7 +78,6 @@ def numpy_linear_comb(lin_comb):
             dtype = single_valued(ary[i].dtype for fac, ary in lin_comb)
             el_shape = single_valued(ary[i].shape for fac, ary in lin_comb)
 
-            from codepy.elementwise import make_linear_comb_kernel
             kernel = make_linear_comb_kernel(dtype, len(lin_comb))
 
             result[i] = numpy.zeros(el_shape, dtype)
