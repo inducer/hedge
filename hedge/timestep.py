@@ -99,6 +99,8 @@ class TimeStepper(object):
 
 
 class RK4TimeStepper(TimeStepper):
+    dt_fudge_factor = 1
+
     def __init__(self, allow_jit=True):
         from pytools.log import IntervalTimer, EventCounter
         self.timer = IntervalTimer(
@@ -152,6 +154,8 @@ class RK4TimeStepper(TimeStepper):
 
 
 class AdamsBashforthTimeStepper(TimeStepper):
+    dt_fudge_factor = 0.95
+
     def __init__(self, order, startup_stepper=None):
         self.coefficients = make_ab_coefficients(order)
         self.f_history = []
@@ -365,7 +369,18 @@ class TwoRateAdamsBashforthTimeStepper(TimeStepper):
 
 
 # bisection based method to find bounds of stability region on Imaginary axis only ---
-def stability_region_calculator(stepper_maker):
+def calculate_fudged_stability_region(stepper_class, *stepper_args):
+    return calculate_stability_region(stepper_class, *stepper_args) \
+            * stepper_class.dt_fudge_factor
+
+
+
+
+@memoize
+def calculate_stability_region(stepper_class, *stepper_args):
+    def stepper_maker():
+        return stepper_class(*stepper_args)
+
     prec = 1e-5
 
     def is_stable(stepper, k):

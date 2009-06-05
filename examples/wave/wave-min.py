@@ -61,30 +61,24 @@ def main() :
             [discr.volume_zeros() for i in range(discr.dimensions)])
 
     # timestep loop -----------------------------------------------------------
-    from hedge.timestep import RK4TimeStepper
-    from hedge.timestep import AdamsBashforthTimeStepper
-    stepper = AdamsBashforthTimeStepper(3)
-    #stepper = RK4TimeStepper()
-    class ABMaker:
-        def __init__(self, order):
-            self.order = order
+    from hedge.timestep import RK4TimeStepper, AdamsBashforthTimeStepper
+    if True:
+        stepper = AdamsBashforthTimeStepper(3)
+        dt = discr.dt_factor(op.max_eigenvalue(), 
+                AdamsBashforthTimeStepper, 3)
+    else:
+        stepper = RK4TimeStepper(3)
+        dt = discr.dt_factor(op.max_eigenvalue(), RK4TimeStepper)
 
-        def __call__(self):
-            from hedge.timestep import AdamsBashforthTimeStepper
-            return AdamsBashforthTimeStepper(self.order)
-    stepper_maker = ABMaker(3)
-    #stepper_maker = RK4TimeStepper
-    dt = discr.dt_factor(op.max_eigenvalue(), stepper_maker)
-    nsteps = int(3/dt)
-
-
+    nsteps = int(5/dt)
+    print "dt=%g nsteps=%d" % (dt, nsteps)
 
     rhs = op.bind(discr)
     for step in range(nsteps):
         t = step*dt
 
-        if step % 10 == 0:
-            print step, t
+        if step % 50 == 0:
+            print step, t, discr.norm(fields[0])
             visf = vis.make_file("fld-%04d" % step)
 
             vis.add_data(visf,
