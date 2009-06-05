@@ -521,7 +521,8 @@ class StrongWaveOperator:
                 pair_with_boundary, \
                 get_flux_operator, \
                 make_nabla, \
-                InverseMassOperator
+                InverseMassOperator, \
+                BoundarizeOperator
 
         d = self.dimensions
 
@@ -530,16 +531,21 @@ class StrongWaveOperator:
         v = w[1:]
 
         # boundary conditions -------------------------------------------------
-        from hedge.flux import make_normal
-        normal = make_normal(d)
 
         from hedge.tools import join_fields
 
         dir_bc = join_fields(-u, v)
         neu_bc = join_fields(u, -v)
+
+        from hedge.optemplate import make_normal
+        rad_normal = make_normal(self.radiation_tag, d)
+
+        rad_u = BoundarizeOperator(self.radiation_tag) * u
+        rad_v = BoundarizeOperator(self.radiation_tag) * v
+
         rad_bc = join_fields(
-                0.5*(u - self.sign*numpy.dot(normal, v)),
-                0.5*normal*(numpy.dot(normal, v) - self.sign*u)
+                0.5*(rad_u - self.sign*numpy.dot(rad_normal, rad_v)),
+                0.5*rad_normal*(numpy.dot(rad_normal, rad_v) - self.sign*rad_u)
                 )
 
         # entire operator -----------------------------------------------------

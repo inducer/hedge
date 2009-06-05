@@ -170,8 +170,7 @@ def norm(v):
 
 
 def make_normal(dimensions):
-    from hedge.tools import amap
-    return amap(Normal,  range(dimensions))
+    return numpy.array([Normal(i) for i in range(dimensions)], dtype=object)
 
 
 

@@ -138,6 +138,13 @@ class ExecutionMapperBase(hedge.optemplate.Evaluator,
         self.discr = executor.discr
         self.executor = executor
 
+    def map_normal_component(self, expr):
+        return self.discr.boundary_normals(expr.tag)[expr.axis]
+
+    def map_boundarize(self, op, field_expr):
+        return self.discr.boundarize_volume_field(
+                self.rec(field_expr), tag=op.tag)
+
     def map_diff_base(self, op, field_expr):
         field = self.rec(field_expr)
 

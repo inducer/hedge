@@ -32,7 +32,7 @@ def main() :
     from hedge.backends import guess_run_context
     rcon = guess_run_context(disable=set(["cuda"]))
 
-    dim = 3
+    dim = 2
 
     if dim == 1:
         if rcon.is_head_rank:

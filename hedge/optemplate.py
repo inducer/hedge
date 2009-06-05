@@ -22,13 +22,13 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 
+import numpy
 import pymbolic.primitives
 import pymbolic.mapper.stringifier
 import pymbolic.mapper.evaluator
 import pymbolic.mapper.dependency
 import pymbolic.mapper.constant_folder
 import hedge.mesh
-
 
 
 
@@ -52,6 +52,36 @@ def make_field(var_or_string):
         return Field(var_or_string)
     else:
         return var_or_string
+
+
+
+
+class BoundaryNormalComponent(pymbolic.primitives.AlgebraicLeaf):
+    def __init__(self, tag, axis):
+        self.tag = tag
+        self.axis = axis
+
+    def stringifier(self):
+        return StringifyMapper
+
+    def get_hash(self):
+        return hash((self.__class__, self.tag, self.axis))
+
+    def is_equal(self, other):
+        return (other.__class__ == self.__class__
+                and other.tag == self.tag
+                and other.axis == self.axis)
+
+    def get_mapper_method(self, mapper): 
+        return mapper.map_normal_component
+
+
+
+
+def make_normal(tag, dimensions):
+    return numpy.array([BoundaryNormalComponent(tag, i) 
+        for i in range(dimensions)], dtype=object)
+
 
 
 
@@ -248,6 +278,23 @@ class InverseMassOperator(MassOperatorBase):
 class ElementwiseMaxOperator(StatelessOperator):
     def get_mapper_method(self, mapper): 
         return mapper.map_elementwise_max
+
+
+
+
+class BoundarizeOperator(Operator):
+    def __init__(self, tag):
+        self.tag = tag
+
+    def get_hash(self):
+        return hash((self.__class__, self.tag))
+
+    def is_equal(self, other):
+        return (other.__class__ == self.__class__
+                and other.tag == self.tag)
+
+    def get_mapper_method(self, mapper): 
+        return mapper.map_boundarize
 
 
 
@@ -511,20 +558,13 @@ class OperatorReducerMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     def map_diff_base(self, expr, *args, **kwargs):
         return self.map_operator(expr, *args, **kwargs)
 
-    def map_mass_base(self, expr, *args, **kwargs):
-        return self.map_operator(expr, *args, **kwargs)
+    map_mass_base = map_diff_base
+    map_flux_base = map_diff_base
+    map_flux_coeff_base = map_diff_base
+    map_elementwise_max = map_diff_base
+    map_boundarize = map_diff_base
+    map_flux_exchange = map_diff_base
 
-    def map_flux_base(self, expr, *args, **kwargs):
-        return self.map_operator(expr, *args, **kwargs)
-
-    def map_flux_coeff_base(self, expr, *args, **kwargs):
-        return self.map_operator(expr, *args, **kwargs)
-
-    def map_elementwise_max(self, expr, *args, **kwargs):
-        return self.map_operator(expr, *args, **kwargs)
-
-    def map_flux_exchange(self, expr, *args, **kwargs):
-        return self.map_operator(expr, *args, **kwargs)
 
 
 
@@ -564,7 +604,10 @@ class IdentityMapperMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     map_flux_base = map_mass_base
     map_flux_coeff_base = map_mass_base
     map_elementwise_max = map_mass_base
+    map_boundarize = map_mass_base
     map_flux_exchange = map_mass_base
+
+    map_normal_component = map_mass_base
 
 
 
@@ -596,6 +639,8 @@ class DependencyMapper(
     def map_operator(self, expr):
         return set()
 
+    def map_normal_component(self, expr):
+        return set()
 
 
 
@@ -654,8 +699,14 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
     def map_elementwise_max(self, expr, enclosing_prec):
         return "ElWMax"
 
+    def map_boundarize(self, expr, enclosing_prec):
+        return "Boundarize<tag=%s>" % expr.tag
+
     def map_flux_exchange(self, expr, enclosing_prec):
         return "FExch<idx=%d,rank=%d>" % (expr.index, expr.rank)
+
+    def map_normal_component(self, expr, enclosing_prec):
+        return "Normal<tag=%s>[%d]" % (expr.tag, expr.axis)
 
     def map_operator_binding(self, expr, enclosing_prec):
         return "<%s>(%s)" % (expr.op, expr.field)
@@ -915,21 +966,22 @@ class BCToFluxRewriter(IdentityMapper):
         bdry_field = bpair.bfield
         flux = expr.op.flux
 
-        class NormalToleratingDependencyMapper(DependencyMapper):
-            # normals may occur in substitutable BCs, as a convenience.
-            def map_normal(self, expr):
-                return set([expr])
-
-            def map_operator_binding(self, epxr):
-                return set([expr])
-
-        from hedge.flux import Normal
-        bdry_dependencies = NormalToleratingDependencyMapper(
-                    include_calls="descend_args")(bdry_field)
+        bdry_dependencies = DependencyMapper(
+                    include_calls="descend_args",
+                    include_operator_bindings=True)(bdry_field)
         
         bdry_deps_without_normals = set(
                 d for d in bdry_dependencies 
-                if not isinstance(d, Normal))
+                if not isinstance(d, BoundaryNormalComponent))
+
+        vol_dependencies = DependencyMapper(
+                include_operator_bindings=True)(vol_field)
+
+        vol_bdry_intersection = bdry_deps_without_normals & vol_dependencies
+        if vol_bdry_intersection:
+            raise RuntimeError("Variables are being used as both "
+                    "boundary and volume quantities: %s" 
+                    % ", ".join(str(v) for v in vol_bdry_intersection))
 
         from hedge.tools import is_obj_array
         from hedge.flux import FieldComponent
@@ -944,10 +996,6 @@ class BCToFluxRewriter(IdentityMapper):
         # If we can't completely eliminate the explicit boundary condition,
         # we might as well not try.
         if not bdry_deps_without_normals <= set(vol_field_expr_translation.keys()):
-            if len(bdry_deps_without_normals) < len(bdry_dependencies):
-                raise RuntimeError( 
-                        "cannot use hedge.flux.Normal in non-substitutable flux expression")
-
             return IdentityMapper.map_operator_binding(self, expr)
 
         # Step I: Substitute the above volume terms into bdry_field 
@@ -1012,6 +1060,9 @@ class CollectorMixin(LocalOpReducerMixin, FluxOpReducerMixin):
         return set()
 
     def map_variable(self, expr):
+        return set()
+
+    def map_normal_component(self, expr):
         return set()
 
     

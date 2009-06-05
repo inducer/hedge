@@ -359,12 +359,6 @@ def ptwise_dot(logdims1, logdims2, a1, a2):
 
 
 
-def amap(f, obj_array):
-    return numpy.array([f(x) for x in obj_array], dtype=object)
-
-
-
-
 def levi_civita(tuple):
     """Compute an entry of the Levi-Civita tensor for the indices C{tuple}.
 
