@@ -395,8 +395,10 @@ class VariableCoefficientAdvectionOperator:
         w = join_fields(u, v, c)
 
         bc_u = Field("bc_u")
-        bc_v = make_vector_field("bc_v", self.dimensions)
-        bc_c = ElementwiseMaxOperator()*ptwise_dot(1, 1, bc_v, bc_v)
+        # FIXME
+        # bc_v = BoundarizeOperator()*v
+        # bc_c = ElementwiseMaxOperator()*ptwise_dot(1, 1, bc_v, bc_v)
+        bc_c = 0
         if self.bc_u_f is "None":
             bc_w = join_fields(0, bc_v, bc_c)
         else:
