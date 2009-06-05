@@ -99,6 +99,8 @@ class TimeStepper(object):
 
 
 class RK4TimeStepper(TimeStepper):
+    dt_fudge_factor = 1
+
     def __init__(self, allow_jit=True):
         from pytools.log import IntervalTimer, EventCounter
         self.timer = IntervalTimer(
@@ -152,6 +154,8 @@ class RK4TimeStepper(TimeStepper):
 
 
 class AdamsBashforthTimeStepper(TimeStepper):
+    dt_fudge_factor = 0.95
+
     def __init__(self, order, startup_stepper=None):
         self.coefficients = make_ab_coefficients(order)
         self.f_history = []
@@ -362,3 +366,72 @@ class TwoRateAdamsBashforthTimeStepper(TimeStepper):
             return ys
         else:
             return run_ab()
+
+
+# bisection based method to find bounds of stability region on Imaginary axis only ---
+def calculate_fudged_stability_region(stepper_class, *stepper_args):
+    return calculate_stability_region(stepper_class, *stepper_args) \
+            * stepper_class.dt_fudge_factor
+
+
+
+
+@memoize
+def calculate_stability_region(stepper_class, *stepper_args):
+    def stepper_maker():
+        return stepper_class(*stepper_args)
+
+    prec = 1e-5
+
+    def is_stable(stepper, k):
+        y = 1
+        for i in range(20):
+            if abs(y) > 2:
+                return False
+            y = stepper(y, i, 1, lambda t, y: k*y)
+        return True
+
+    def make_k(angle, mag):
+        from cmath import exp
+        return -prec+mag*exp(1j*angle)
+
+    def refine(stepper_maker, angle, stable, unstable):
+        assert is_stable(stepper_maker(), make_k(angle, stable))
+        assert not is_stable(stepper_maker(), make_k(angle, unstable))
+        while abs(stable-unstable) > prec:
+            mid = (stable+unstable)/2
+            if is_stable(stepper_maker(), make_k(angle, mid)):
+                stable = mid
+            else:
+                unstable = mid
+        else:
+            return stable
+
+    def find_stable_k(stepper_maker, angle):
+        mag = 1
+
+        if is_stable(stepper_maker(), make_k(angle, mag)):
+            mag *= 2
+            while is_stable(stepper_maker(), make_k(angle, mag)):
+                mag *= 2
+
+                if mag > 2**8:
+                    return mag
+            return refine(stepper_maker, angle, mag/2, mag)
+        else:
+            mag /= 2
+            while not is_stable(stepper_maker(), make_k(angle, mag)):
+                mag /= 2
+
+                if mag < prec:
+                    return mag
+            return refine(stepper_maker, angle, mag, mag*2)
+
+    points = []
+    from cmath import pi
+    for angle in numpy.array([pi/2, 3/2*pi]):
+        points.append(make_k(angle, find_stable_k(stepper_maker, angle)))
+
+    points = numpy.array(points)
+
+    return abs(points[0])
