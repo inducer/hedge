@@ -25,14 +25,16 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 import hedge.backends.cpu_base
 import hedge.discretization
 import hedge.optemplate
-from hedge.backends.cpu_base import ExecutorBase, ExecutionMapperBase
+from hedge.backends.exec_common import \
+        CPUExecutorBase, \
+        CPUExecutionMapperBase
 import numpy
 
 
 
 
 # exec mapper -----------------------------------------------------------------
-class ExecutionMapper(ExecutionMapperBase):
+class ExecutionMapper(CPUExecutionMapperBase):
     # code execution functions ------------------------------------------------
     def exec_assign(self, insn):
         if self.discr.instrumented:
@@ -134,15 +136,15 @@ class ExecutionMapper(ExecutionMapperBase):
 
 
 
-class Executor(ExecutorBase):
+class Executor(CPUExecutorBase):
     def __init__(self, discr, optemplate, post_bind_mapper):
-        ExecutorBase.__init__(self, discr, 
-                self.compile_optemplate(discr, optemplate, post_bind_mapper))
+        self.discr = discr
+        self.code = self.compile_optemplate(discr, optemplate, post_bind_mapper)
 
         if "print_op_code" in discr.debug:
 	    from hedge.tools import get_rank
 	    if get_rank(discr) == 0:
-	        print self.op_data
+	        print self.code
 	        raw_input()
 
         def bench_diff(f):
@@ -215,7 +217,7 @@ class Executor(ExecutorBase):
                 for i in xyz_needed]
 
     def __call__(self, **context):
-        return self.op_data.execute(
+        return self.code.execute(
                 self.discr.exec_mapper_class(context, self))
 
 
