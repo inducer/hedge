@@ -1,6 +1,6 @@
 #! /bin/bash
 
-find . \
+find . -maxdepth 1 \
   \( -name '*.vtk' \
   -o -name '*.vtu' \
   -o -name '*.pvtu' \
@@ -13,4 +13,4 @@ find . \
   -o -name '*.dat-journal' \
   -o -name '*.visit' \
   -o -name '*.png' \)\
-  -print0 | xargs -0 --no-run-if-empty rm
+  -delete
