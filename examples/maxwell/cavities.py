@@ -134,7 +134,7 @@ def main():
             logmgr.tick()
 
             if step % 10 == 0:
-                vis_timer.start()
+                sub_timer = vis_timer.start_sub_timer()
                 e, h = op.split_eh(fields)
                 visf = vis.make_file("em-%d-%04d" % (order, step))
                 vis.add_data(visf,
@@ -142,7 +142,7 @@ def main():
                         time=t, step=step
                         )
                 visf.close()
-                vis_timer.stop()
+                vis_timer.stop().submit()
 
             fields = stepper(fields, t, dt, rhs)
             t += dt
