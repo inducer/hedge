@@ -142,7 +142,7 @@ def main():
                         time=t, step=step
                         )
                 visf.close()
-                vis_timer.stop().submit()
+                sub_timer.stop().submit()
 
             fields = stepper(fields, t, dt, rhs)
             t += dt
