@@ -110,7 +110,9 @@ class FluxConcretizer(FluxIdentityMapper):
 
 
 class FluxToCodeMapper(CCodeMapper):
-    def __init__(self):
+    def __init__(self, dtype):
+        self.dtype = dtype
+
         def float_mapper(x):
             if isinstance(x, float):
                 return "value_type(%s)" % repr(x)
@@ -126,6 +128,24 @@ class FluxToCodeMapper(CCodeMapper):
         return ("pow(fpair->order*fpair->order/fpair->h, %r)" 
                 % expr.power)
 
+    def map_function_symbol(self, expr, enclosing_prec):
+        from hedge.flux import FluxFunctionSymbol, \
+                flux_abs, flux_min, flux_max
+
+        assert isinstance(expr, FluxFunctionSymbol)
+
+        if self.dtype == numpy.float32:
+            suffix = "f"
+        elif self.dtype == numpy.float64:
+            suffix = ""
+        else:
+            raise RuntimeError("invalid flux dtype: %s" % self.dtype)
+
+        return {
+                flux_abs: "fabs",
+                flux_max: "fmax",
+                flux_min: "fmin",
+                }[expr] + suffix
 
 
 
@@ -648,7 +668,7 @@ class Kernel:
                                 % self.dep_to_index[dep])),
                             "fp_tex1Dfetch(field%s_tex, b_index)" % self.dep_to_index[dep]))
 
-            f2cm = FluxToCodeMapper()
+            f2cm = FluxToCodeMapper(discr.default_scalar_type)
 
             fluxes_by_bdry_number = {}
             for flux_nr, wdflux in enumerate(self.fluxes):
@@ -737,7 +757,7 @@ class Kernel:
                                 "fp_tex1Dfetch(field%d_tex, %s_index)"
                                 % (self.dep_to_index[dep], side)))
 
-            f2cm = FluxToCodeMapper()
+            f2cm = FluxToCodeMapper(discr.default_scalar_type)
 
             flux_sub_codes = []
             for flux_nr, wdflux in enumerate(self.fluxes):
