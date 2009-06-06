@@ -852,7 +852,8 @@ class MaxwellOperator(TimeDependentOperator):
 
     def op_template(self, w=None):
         from hedge.optemplate import pair_with_boundary, \
-                InverseMassOperator, get_flux_operator
+                InverseMassOperator, get_flux_operator, \
+                BoundarizeOperator
 
         from hedge.optemplate import make_vector_field
 
@@ -865,7 +866,9 @@ class MaxwellOperator(TimeDependentOperator):
 
         # boundary conditions -------------------------------------------------
         from hedge.tools import join_fields
-        pec_bc = join_fields(-e, h)
+        pec_e = BoundarizeOperator(self.pec_tag) * e
+        pec_h = BoundarizeOperator(self.pec_tag) * h
+        pec_bc = join_fields(-pec_e, pec_h)
 
         from hedge.flux import make_normal
         normal = make_normal(self.dimensions)

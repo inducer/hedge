@@ -970,56 +970,83 @@ class BCToFluxRewriter(IdentityMapper):
                     include_calls="descend_args",
                     include_operator_bindings=True)(bdry_field)
         
-        bdry_deps_without_normals = set(
-                d for d in bdry_dependencies 
-                if not isinstance(d, BoundaryNormalComponent))
-
         vol_dependencies = DependencyMapper(
                 include_operator_bindings=True)(vol_field)
 
-        vol_bdry_intersection = bdry_deps_without_normals & vol_dependencies
+        vol_bdry_intersection = bdry_dependencies & vol_dependencies
         if vol_bdry_intersection:
             raise RuntimeError("Variables are being used as both "
                     "boundary and volume quantities: %s" 
                     % ", ".join(str(v) for v in vol_bdry_intersection))
+  
+        # Step 1: Find maximal flux-evaluable subexpression of bounary field
+        # in given BoundaryPair.
+
+        class MaxBoundaryFluxEvaluableExpressionFinder(
+                BoundOpMapperMixin, IdentityMapper):
+            def __init__(self, vol_expr_list):
+                self.vol_expr_list = vol_expr_list
+                self.vol_expr_to_idx = dict((vol_expr, idx) 
+                        for idx, vol_expr in enumerate(vol_expr_list))
+
+                self.bdry_expr_list = []
+                self.bdry_expr_to_idx = {}
+
+            def register_boundary_expr(self, expr):
+                try:
+                    return self.bdry_expr_to_idx[expr]
+                except KeyError:
+                    idx = len(self.bdry_expr_to_idx)
+                    self.bdry_expr_to_idx[expr] = idx
+                    self.bdry_expr_list.append(expr)
+                    return idx
+
+            def register_volume_expr(self, expr):
+                try:
+                    return self.vol_expr_to_idx[expr]
+                except KeyError:
+                    idx = len(self.vol_expr_to_idx)
+                    self.vol_expr_to_idx[expr] = idx
+                    self.vol_expr_list.append(expr)
+                    return idx
+
+            def map_boundarize(self, op, field_expr):
+                if op.tag != bpair.tag:
+                    raise RuntimeError("BoundarizeOperator and BoundaryPair "
+                            "do not agree about boundary tag: %s vs %s" 
+                            % (op.tag, bpair.tag))
+
+                from hedge.flux import FieldComponent
+                return FieldComponent(
+                        self.register_volume_expr(field_expr), 
+                        is_local=True)
+
+            def map_normal_component(self, expr):
+                if expr.tag != bpair.tag:
+                    raise RuntimeError("BoundaryNormalComponent and BoundaryPair "
+                            "do not agree about boundary tag: %s vs %s" 
+                            % (expr.tag, bpair.tag))
+
+                from hedge.flux import Normal
+                return Normal(expr.axis)
+
+            def map_variable(self, expr):
+                from hedge.flux import FieldComponent
+                return FieldComponent(
+                        self.register_boundary_expr(expr), 
+                        is_local=False)
+
+            map_subscript = map_variable
 
         from hedge.tools import is_obj_array
-        from hedge.flux import FieldComponent
-        if is_obj_array(vol_field):
-            vol_field_expr_translation = dict(
-                    (vol_field_expr, FieldComponent(i, is_local=True))
-                    for i, vol_field_expr in enumerate(vol_field))
-        else:
-            vol_field_expr_translation = {
-                    vol_field: FieldComponent(0, is_local=True)}
+        if not is_obj_array(vol_field):
+            vol_field = [vol_field]
 
-        # If we can't completely eliminate the explicit boundary condition,
-        # we might as well not try.
-        if not bdry_deps_without_normals <= set(vol_field_expr_translation.keys()):
-            return IdentityMapper.map_operator_binding(self, expr)
-
-        # Step I: Substitute the above volume terms into bdry_field 
-        # as FieldComponent() instances.
-        
-        from pymbolic.mapper.substitutor import SubstitutionMapper
-
-        class FieldIntoBdrySubstitutionMapper(
-                SubstitutionMapper,
-                IdentityMapperMixin):
-            def map_normal(self, expr):
-                return expr
-
-        def sub_field_into_bdry(expr):
-            try:
-                return vol_field_expr_translation[expr]
-            except KeyError:
-                return None
-
-        new_bdry_field = FieldIntoBdrySubstitutionMapper(
-                sub_field_into_bdry)(bdry_field)
+        mbfeef = MaxBoundaryFluxEvaluableExpressionFinder(vol_field)
+        new_bdry_field = mbfeef(bdry_field)
 
         # Step II: Substitute the new_bdry_field into the flux.
-        from hedge.flux import FluxSubstitutionMapper
+        from hedge.flux import FluxSubstitutionMapper, FieldComponent
 
         def sub_bdry_into_flux(expr):
             if isinstance(expr, FieldComponent) and not expr.is_local:
@@ -1032,11 +1059,14 @@ class BCToFluxRewriter(IdentityMapper):
 
         new_flux = FluxSubstitutionMapper(
                 sub_bdry_into_flux)(flux)
-        
-        result = OperatorBinding(
-                FluxOperator(new_flux), BoundaryPair(vol_field, 0, bpair.tag))
-        return result
 
+        result = OperatorBinding(
+                FluxOperator(new_flux), BoundaryPair(
+                    numpy.array(mbfeef.vol_expr_list, dtype=object), 
+                    numpy.array(mbfeef.bdry_expr_list, dtype=object), 
+                    bpair.tag))
+
+        return result
 
 
 
