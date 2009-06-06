@@ -905,7 +905,10 @@ class Kernel:
                 options=["--maxrregcount=%d" % self.plan.max_registers()]
                 )
         if "cuda_flux" in discr.debug:
-            print "flux: lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
+            print "flux: lmem=%d smem=%d regs=%d" % (
+                    mod.local_size_bytes, 
+                    mod.shared_size_bytes, 
+                    mod.num_regs)
 
         expr_to_texture_map = dict(
                 (dep_expr, mod.get_texref(

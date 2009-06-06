@@ -426,7 +426,6 @@ class Discretization(hedge.discretization.Discretization):
                         DeviceData(device), ldis, 
                         allow_microblocking=allow_mb,
                         float_type=default_scalar_type)
-                print allow_mb, given.microblock
 
                 import hedge.backends.cuda.fluxgather as fluxgather
                 flux_plan, flux_time = fluxgather.make_plan(self, given, tune_for)

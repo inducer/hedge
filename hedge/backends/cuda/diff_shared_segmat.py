@@ -141,7 +141,7 @@ class Kernel(DiffKernelBase):
         stop.synchronize()
 
         return (1e-3/count * stop.time_since(start),
-                func.lmem, func.smem, func.registers)
+                func.local_size_bytes, func.shared_size_bytes, func.num_regs)
 
     def __call__(self, op_class, field):
         discr = self.discr
@@ -386,7 +386,10 @@ class Kernel(DiffKernelBase):
                 texrefs=[field_texref, rst_to_xyz_texref])
 
         if "cuda_diff" in discr.debug:
-            print "diff: lmem=%d smem=%d regs=%d" % (func.lmem, func.smem, func.registers)
+            print "diff: lmem=%d smem=%d regs=%d" % (
+                    func.local_size_bytes, 
+                    func.shared_size_bytes, 
+                    func.num_regs)
 
         return func, field_texref
 
