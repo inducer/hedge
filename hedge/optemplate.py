@@ -363,38 +363,6 @@ class LiftingFluxOperator(FluxOperatorBase):
 
 
 
-class FluxCoefficientOperatorBase(Operator):
-    def __init__(self, int_coeff, ext_coeff):
-        Operator.__init__(self)
-        self.int_coeff = int_coeff
-        self.ext_coeff = ext_coeff
-
-    def __getinitargs__(self):
-        return (self.int_coeff, self.ext_coeff)
-
-    def get_hash(self):
-        return hash((self.__class__, self.int_coeff, self.ext_coeff))
-
-class FluxCoefficientOperator(FluxCoefficientOperatorBase):
-    """Results in a volume-global vector with data along the faces,
-    obtained by computing the flux and applying the face mass matrix.
-    """
-    def get_mapper_method(self, mapper): 
-        return mapper.map_flux_coefficient
-
-
-
-class LiftingFluxCoefficientOperator(FluxCoefficientOperatorBase):
-    """Results in a volume-global vector with data along the faces,
-    obtained by computing the flux and applying the face mass matrix
-    and the inverse volume mass matrix.
-    """
-    def get_mapper_method(self, mapper): 
-        return mapper.map_lift_coefficient
-
-
-
-
 class VectorFluxOperator(object):
     def __init__(self, fluxes):
         self.fluxes = fluxes
@@ -544,12 +512,6 @@ class FluxOpReducerMixin(object):
     def map_lift(self, expr, *args, **kwargs):
         return self.map_flux_base(expr, *args, **kwargs)
 
-    def map_flux_coefficient(self, expr, *args, **kwargs):
-        return self.map_flux_coeff_base(expr, *args, **kwargs)
-
-    def map_lift_coefficient(self, expr, *args, **kwargs):
-        return self.map_flux_coeff_base(expr, *args, **kwargs)
-
 
 
 
@@ -560,7 +522,6 @@ class OperatorReducerMixin(LocalOpReducerMixin, FluxOpReducerMixin):
 
     map_mass_base = map_diff_base
     map_flux_base = map_diff_base
-    map_flux_coeff_base = map_diff_base
     map_elementwise_max = map_diff_base
     map_boundarize = map_diff_base
     map_flux_exchange = map_diff_base
@@ -602,7 +563,6 @@ class IdentityMapperMixin(LocalOpReducerMixin, FluxOpReducerMixin):
 
     map_diff_base = map_mass_base
     map_flux_base = map_mass_base
-    map_flux_coeff_base = map_mass_base
     map_elementwise_max = map_mass_base
     map_boundarize = map_mass_base
     map_flux_exchange = map_mass_base
@@ -690,12 +650,6 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
     def map_lift(self, expr, enclosing_prec):
         return "Lift(%s)" % expr.flux
 
-    def map_flux_coefficient(self, expr, enclosing_prec):
-        return "FluxCoeff(int=%s, ext=%s)" % (expr.int_coeff, expr.ext_coeff)
-
-    def map_lift_coefficient(self, expr, enclosing_prec):
-        return "LiftFluxCoeff(int=%s, ext=%s)" % (expr.int_coeff, expr.ext_coeff)
-
     def map_elementwise_max(self, expr, enclosing_prec):
         return "ElWMax"
 
@@ -737,9 +691,7 @@ class EmptyFluxKiller(IdentityMapper):
     def map_operator_binding(self, expr):
         if (isinstance(expr.op, (
             FluxOperatorBase,
-            LiftingFluxOperator,
-            FluxCoefficientOperator,
-            LiftingFluxCoefficientOperator)) 
+            LiftingFluxOperator)) 
             and 
             isinstance(expr.field, BoundaryPair)
             and
@@ -793,11 +745,6 @@ class _InnerInverseMassContractor(pymbolic.mapper.RecursiveMapper):
             return OperatorBinding(
                     LiftingFluxOperator(binding.op.flux),
                     binding.field)
-        elif isinstance(binding.op, FluxCoefficientOperator):
-            return OperatorBinding(
-                    LiftingFluxCoefficientOperator(
-                        binding.op.int_coeff, binding.op.ext_coeff),
-                    binding.field)
         else:
             return OperatorBinding(
                 InverseMassOperator(),
@@ -844,106 +791,6 @@ class InverseMassContractor(IdentityMapper):
                     self.rec(binding.field))
         else:
             return  _InnerInverseMassContractor()(binding.field)
-
-
-
-
-class FluxDecomposer(IdentityMapper):
-    """Replaces each L{FluxOperator} in an operator template
-    with a sum of L{FluxCoefficientOperator}s.
-    """
-    # assumes all flux operators to be bound
-
-    def compile_coefficient(self, coeff):
-        return coeff
-
-    @staticmethod
-    def _subscript(field, idx, is_scalar):
-        if is_scalar:
-            return field
-        else:
-            return field[idx]
-
-    def _map_inner_flux(self, analyzed_flux, field):
-        from hedge.tools import log_shape
-        lsf = log_shape(field)
-        is_scalar = lsf == ()
-        if not is_scalar:
-            assert len(lsf) == 1
-
-        from pymbolic import flattened_sum
-        return flattened_sum(
-                OperatorBinding(
-                    FluxCoefficientOperator(
-                        self.compile_coefficient(int_flux),
-                        self.compile_coefficient(ext_flux),
-                        ),
-                    self._subscript(field, idx, is_scalar)
-                    )
-                    for idx, int_flux, ext_flux in analyzed_flux)
-
-    def _map_bdry_flux(self, analyzed_flux, field, bfield, tag):
-        class ZeroVector:
-            dtype = 0
-            def __getitem__(self, idx):
-                return 0
-
-        from hedge.tools import log_shape
-        lsf = log_shape(field)
-        blsf = log_shape(bfield)
-
-        is_scalar = lsf == () and blsf == ()
-        if not is_scalar:
-            assert len(lsf) == 1
-
-            if isinstance(bfield, int) and bfield == 0:
-                bfield = ZeroVector()
-            elif isinstance(field, int) and field == 0:
-                field = ZeroVector()
-            else:
-                assert lsf == blsf
-
-        from pymbolic import flattened_sum
-        return flattened_sum(
-                OperatorBinding(
-                    FluxCoefficientOperator(
-                        self.compile_coefficient(int_flux),
-                        self.compile_coefficient(ext_flux),
-                        ),
-                    BoundaryPair(
-                        self._subscript(field, idx, is_scalar),
-                        self._subscript(bfield, idx, is_scalar),
-                        tag)
-                    )
-                    for idx, int_flux, ext_flux in analyzed_flux)
-
-
-    def map_operator_binding(self, binding):
-        # we only care about bindings of flux operators
-        if isinstance(binding.op, FluxOperator):
-            from hedge.flux import analyze_flux
-            if isinstance(binding.field, BoundaryPair):
-                bpair = binding.field
-                return self._map_bdry_flux(
-                        analyze_flux(binding.op.flux), 
-                        bpair.field,
-                        bpair.bfield,
-                        bpair.tag)
-            else:
-                return self._map_inner_flux(
-                        analyze_flux(binding.op.flux), 
-                        binding.field)
-        elif isinstance(binding.op, (FluxCoefficientOperator, LiftingFluxCoefficientOperator)):
-            return OperatorBinding(
-                    binding.op.__class__(
-                        self.compile_coefficient(binding.op.int_coeff),
-                        self.compile_coefficient(binding.op.ext_coeff),
-                        ),
-                    self.rec(binding.field)
-                    )
-        else:
-            return binding.__class__(binding.op,
-                    self.rec(binding.field))
 
 
 
@@ -1102,9 +949,7 @@ class CollectorMixin(LocalOpReducerMixin, FluxOpReducerMixin):
 class FluxCollector(CollectorMixin, CombineMapper):
     def map_operator_binding(self, expr):
         if isinstance(expr.op, (
-            FluxOperatorBase, 
-            FluxCoefficientOperator,
-            LiftingFluxCoefficientOperator)):
+            FluxOperatorBase)):
             result = set([expr])
         else:
             result = set()
