@@ -352,7 +352,6 @@ class StupidInterdomainFluxMapper(hedge.optemplate.IdentityMapper):
     def map_operator_binding(self, expr):
         from hedge.optemplate import \
                 FluxOperatorBase, \
-                FluxCoefficientOperatorBase, \
                 BoundaryPair, \
                 OperatorBinding, \
                 IdentityMapperMixin, \
@@ -383,8 +382,6 @@ class StupidInterdomainFluxMapper(hedge.optemplate.IdentityMapper):
                             expr.field,
                             SubstitutionMapper(subst_func)(expr.field),
                         self.bdry_tag))
-        elif isinstance(expr.op, FluxCoefficientOperatorBase):
-            raise ValueError("coefficient fluxes are not suppported")
         elif isinstance(expr.op, InverseMassOperator):
             return OperatorBinding(expr.op, self.rec(expr.field))
         else:

@@ -797,12 +797,13 @@ class InverseMassContractor(IdentityMapper):
 
 # BC-to-flux rewriting --------------------------------------------------------
 class BCToFluxRewriter(IdentityMapper):
-    """Operates on L{FluxOperator} (note: not L{FluxCoefficientOperator})
-    instances bound to L{BoundaryPair}s. If the boundary pair's C{bfield} is
-    an expression of what's available in the C{field}, we can avoid fetching
-    the data for the explicit boundary condition and just substitute the C{bfield}
-    expression into the flux. This mapper does exactly that.
+    """Operates on L{FluxOperator} instances bound to L{BoundaryPair}s. If the
+    boundary pair's C{bfield} is an expression of what's available in the
+    C{field}, we can avoid fetching the data for the explicit boundary
+    condition and just substitute the C{bfield} expression into the flux. This
+    mapper does exactly that.  
     """
+
     def map_operator_binding(self, expr):
         if not (isinstance(expr.op, FluxOperator)
                 and isinstance(expr.field, BoundaryPair)):

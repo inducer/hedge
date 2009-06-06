@@ -280,14 +280,11 @@ class FluxCommunicationInserter(
     def map_operator_binding(self, expr):
         from hedge.optemplate import \
                 FluxOperatorBase, \
-                FluxCoefficientOperatorBase, \
                 BoundaryPair, OperatorBinding, \
                 FluxExchangeOperator
 
         if isinstance(expr, OperatorBinding):
-            if isinstance(expr.op, FluxCoefficientOperatorBase):
-                raise ValueError("flux coefficient operators are obsolete and not supported for MPI")
-            elif isinstance(expr.op, FluxOperatorBase):
+            if isinstance(expr.op, FluxOperatorBase):
                 if isinstance(expr.field, BoundaryPair):
                     # we're only worried about internal fluxes
                     return IdentityMapper.map_operator_binding(self, expr)
