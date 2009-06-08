@@ -411,10 +411,11 @@ class VariableCoefficientAdvectionOperator:
 
         flux_op = get_flux_operator(self.flux())
 
-        return numpy.dot(minv_st, v*u) - m_inv*(
+        result = numpy.dot(minv_st, v*u) - m_inv*(
                     flux_op * w
                     + flux_op * pair_with_boundary(w, bc_w, TAG_ALL)
                     )
+        return result
 
     def bind(self, discr):
         compiled_op_template = discr.compile(self.op_template())
