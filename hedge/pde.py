@@ -387,18 +387,20 @@ class VariableCoefficientAdvectionOperator:
         from hedge.tools import join_fields, \
                                 ptwise_dot
         
-        from hedge.optemplate import ElementwiseMaxOperator
+        from hedge.optemplate import ElementwiseMaxOperator, BoundarizeOperator
+
 
         u = Field("u")
 	v = make_vector_field("v", self.dimensions)
         c = ElementwiseMaxOperator()*ptwise_dot(1, 1, v, v)
         w = join_fields(u, v, c)
 
+        # boundary conditions -------------------------------------------------
+        from hedge.mesh import TAG_ALL
         bc_u = Field("bc_u")
         # FIXME
-        # bc_v = BoundarizeOperator()*v
-        # bc_c = ElementwiseMaxOperator()*ptwise_dot(1, 1, bc_v, bc_v)
-        bc_c = 0
+        bc_v = BoundarizeOperator(TAG_ALL) * v
+        bc_c = ElementwiseMaxOperator() * ptwise_dot(1, 1, bc_v, bc_v)
         if self.bc_u_f is "None":
             bc_w = join_fields(0, bc_v, bc_c)
         else:
@@ -409,7 +411,6 @@ class VariableCoefficientAdvectionOperator:
 
         flux_op = get_flux_operator(self.flux())
 
-        from hedge.mesh import TAG_ALL
         return numpy.dot(minv_st, v*u) - m_inv*(
                     flux_op * w
                     + flux_op * pair_with_boundary(w, bc_w, TAG_ALL)

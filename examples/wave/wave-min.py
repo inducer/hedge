@@ -51,9 +51,9 @@ def main() :
     from hedge.mesh import TAG_ALL, TAG_NONE
     op = StrongWaveOperator(-1, discr.dimensions, 
             source_vec_getter,
-            dirichlet_tag=TAG_ALL,
+            dirichlet_tag=TAG_NONE,
             neumann_tag=TAG_NONE,
-            radiation_tag=TAG_NONE,
+            radiation_tag=TAG_ALL,
             flux_type="upwind")
 
     from hedge.tools import join_fields
