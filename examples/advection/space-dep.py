@@ -109,17 +109,7 @@ def main():
     # In the operator setup it is possible to switch between a only space 
     # dependent velocity field `VField` or a time and space dependent 
     # `TimeDependentVField`. 
-
-    op = VariableCoefficientAdvectionOperator(discr.dimensions, \
-                                         #advec_v=TimeDependentGivenFunction(
-                                         #        TimeDependentVField()), \
-                                         advec_v=TimeConstantGivenFunction(
-                                                 GivenFunction(VField())), \
-                                         #bc_u_f=TimeDependentGivenFunction(
-                                         #       TimeDependentBc_u()), \
-                                         bc_u_f=TimeConstantGivenFunction(
-                                                GivenFunction(Bc_u())), \
-                                         flux_type="lf"    # For `TimeDependentVField`: advec_v=TimeDependentGivenFunction(VField())
+    # For `TimeDependentVField`: advec_v=TimeDependentGivenFunction(VField())
     # For `VField`: advec_v=TimeConstantGivenFunction(GivenFunction(VField()))
     # Same for the Bc_u Function! If you don't define Bc_u then the BC for u = 0.
     

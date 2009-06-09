@@ -547,17 +547,29 @@ class CombineMapper(CombineMapperMixin, pymbolic.mapper.CombineMapper):
 
 class IdentityMapperMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     def map_operator_binding(self, expr, *args, **kwargs):
+        assert not isinstance(self, BoundOpMapperMixin), \
+                "IdentityMapper instances cannot be combined with " \
+                "the BoundOpMapperMixin"
+
         return expr.__class__(
                 self.rec(expr.op, *args, **kwargs),
                 self.rec(expr.field, *args, **kwargs))
 
     def map_boundary_pair(self, expr, *args, **kwargs):
+        assert not isinstance(self, BoundOpMapperMixin), \
+                "IdentityMapper instances cannot be combined with " \
+                "the BoundOpMapperMixin"
+
         return expr.__class__(
                 self.rec(expr.field, *args, **kwargs),
                 self.rec(expr.bfield, *args, **kwargs),
                 expr.tag)
 
     def map_mass_base(self, expr, *args, **kwargs):
+        assert not isinstance(self, BoundOpMapperMixin), \
+                "IdentityMapper instances cannot be combined with " \
+                "the BoundOpMapperMixin"
+
         # it's a leaf--no changing children
         return expr
 
@@ -831,7 +843,7 @@ class BCToFluxRewriter(IdentityMapper):
         # in given BoundaryPair.
 
         class MaxBoundaryFluxEvaluableExpressionFinder(
-                BoundOpMapperMixin, IdentityMapper):
+                IdentityMapper, OperatorReducerMixin):
             def __init__(self, vol_expr_list):
                 self.vol_expr_list = vol_expr_list
                 self.vol_expr_to_idx = dict((vol_expr, idx) 
@@ -858,17 +870,6 @@ class BCToFluxRewriter(IdentityMapper):
                     self.vol_expr_list.append(expr)
                     return idx
 
-            def map_boundarize(self, op, field_expr):
-                if op.tag != bpair.tag:
-                    raise RuntimeError("BoundarizeOperator and BoundaryPair "
-                            "do not agree about boundary tag: %s vs %s" 
-                            % (op.tag, bpair.tag))
-
-                from hedge.flux import FieldComponent
-                return FieldComponent(
-                        self.register_volume_expr(field_expr), 
-                        is_local=True)
-
             def map_normal_component(self, expr):
                 if expr.tag != bpair.tag:
                     raise RuntimeError("BoundaryNormalComponent and BoundaryPair "
@@ -885,6 +886,23 @@ class BCToFluxRewriter(IdentityMapper):
                         is_local=False)
 
             map_subscript = map_variable
+
+            def map_operator_binding(self, expr):
+                if isinstance(expr.op, BoundarizeOperator):
+                    if expr.op.tag != bpair.tag:
+                        raise RuntimeError("BoundarizeOperator and BoundaryPair "
+                                "do not agree about boundary tag: %s vs %s" 
+                                % (expr.op.tag, bpair.tag))
+
+                    from hedge.flux import FieldComponent
+                    return FieldComponent(
+                            self.register_volume_expr(expr.field), 
+                            is_local=True)
+                else:
+                    raise RuntimeError("Found '%s' in a boundary term. "
+                            "To the best of my knowledge, no hedge operator applies "
+                            "directly to boundary data, so this is likely in error."
+                            % expr.op)
 
         from hedge.tools import is_obj_array
         if not is_obj_array(vol_field):

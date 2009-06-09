@@ -271,7 +271,6 @@ class FluxIdentityMapperMixin(object):
 
 
 
-
 class FluxIdentityMapper(
         pymbolic.mapper.IdentityMapper, 
         FluxIdentityMapperMixin):
