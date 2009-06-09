@@ -295,13 +295,47 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                 *self.ex.mass_data(kernel, elgroup)))], []
 
     def map_elementwise_max(self, op, field_expr):
-        from hedge._internal import perform_elwise_max_gpu
-	field = self.rec(field_expr)
+        from pycuda.compiler import SourceModule
+        from pycuda.tools import dtype_to_ctype
+	from hedge.element import TriangularElement as TE
 
-        out = self.ex.discr.volume_zeros()
-        for eg in self.ex.discr.element_groups:
-            perform_elwise_max_gpu(eg.ranges, field, out)
-        return out
+        field = self.rec(field_expr)
+        result = self.ex.discr.volume_empty()
+	block_size = 512
+	order = self.ex.discr.given.order()
+
+        mod = SourceModule(""" 
+	#define BLOCK_SIZE %(block_size)d
+	#define FIELD_LEN %(field_len)d
+	#define NODES_PER_EL %(nodes_per_el)d
+
+	typedef %(value_type)s value_type;
+
+	__global__ void elwise_max(value_type *result, value_type *field)
+	{
+            int idx = blockIdx.x * BLOCK_SIZE + threadIdx.x;
+            result[idx] = field[idx];
+	    __syncthreads();
+	    int base_idx = (idx / NODES_PER_EL) * NODES_PER_EL;
+	    for (int i=0; i<NODES_PER_EL; i++)
+	      result[idx] = fmaxf(result[idx], field[base_idx+i]);
+	}
+
+	"""% {
+	"block_size": block_size,
+	"field_len": len(field),
+	"nodes_per_el": TE(order).node_count(),
+	"value_type": dtype_to_ctype(field.dtype),
+	})
+
+	func = mod.get_function("elwise_max")
+	func.prepare("PP", block=(block_size, 1, 1))
+	grid_dim = int(numpy.round(len(field)/block_size+0.5))
+	func.prepared_call((grid_dim, 1), result.gpudata, field.gpudata)
+        numpy.set_printoptions(threshold=10800)
+	#print result
+	#raw_input()
+	return result
 
 
 

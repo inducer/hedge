@@ -223,3 +223,6 @@ class Discretization(hedge.discretization.Discretization):
         add_hedge(toolchain)
 
         self._toolchain = toolchain
+
+    def nodewise_max(self,a):
+        return numpy.max(a)

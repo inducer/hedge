@@ -89,7 +89,7 @@ def main():
     #for order in [3, 4, 5]:
     #for order in [1,2,3,4,5,6]:
         discr = rcon.make_discretization(mesh_data, order=order,
-			debug=["cuda_no_plan", 
+			debug=["cuda_no_plan",
 			#"print_op_code"
 			],
 			default_scalar_type=numpy.float64)
@@ -118,7 +118,7 @@ def main():
         rhs(0, fields)
 
         dt = discr.dt_factor(max_eigval[0])
-        final_time = 0.2
+        final_time = 0.5
         nsteps = int(final_time/dt)+1
         dt = final_time/nsteps
 

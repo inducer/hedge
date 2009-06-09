@@ -1634,7 +1634,6 @@ class EulerOperator(TimeDependentOperator):
                     bc_q=self.bc.boundary_interpolant(t, discr, TAG_ALL))
             max_speed = opt_result[-1]
             ode_rhs = opt_result[:-1]
-            #return ode_rhs, numpy.max(max_speed)
 	    return ode_rhs, discr.nodewise_max(max_speed)
 
         return wrap
