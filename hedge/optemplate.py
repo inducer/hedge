@@ -586,17 +586,29 @@ class CombineMapper(CombineMapperMixin, pymbolic.mapper.CombineMapper):
 
 class IdentityMapperMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     def map_operator_binding(self, expr, *args, **kwargs):
+        assert not isinstance(self, BoundOpMapperMixin), \
+                "IdentityMapper instances cannot be combined with " \
+                "the BoundOpMapperMixin"
+
         return expr.__class__(
                 self.rec(expr.op, *args, **kwargs),
                 self.rec(expr.field, *args, **kwargs))
 
     def map_boundary_pair(self, expr, *args, **kwargs):
+        assert not isinstance(self, BoundOpMapperMixin), \
+                "IdentityMapper instances cannot be combined with " \
+                "the BoundOpMapperMixin"
+
         return expr.__class__(
                 self.rec(expr.field, *args, **kwargs),
                 self.rec(expr.bfield, *args, **kwargs),
                 expr.tag)
 
     def map_mass_base(self, expr, *args, **kwargs):
+        assert not isinstance(self, BoundOpMapperMixin), \
+                "IdentityMapper instances cannot be combined with " \
+                "the BoundOpMapperMixin"
+
         # it's a leaf--no changing children
         return expr
 
