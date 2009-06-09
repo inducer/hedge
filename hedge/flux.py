@@ -268,8 +268,6 @@ class FluxIdentityMapperMixin(object):
                 self.rec(expr.else_),
                 )
 
-    #def map_elementwise_max(self, expr):
-    #    return expr
 
 
 
@@ -324,9 +322,6 @@ class FluxDependencyMapper(pymbolic.mapper.dependency.DependencyMapper):
 
     def map_if_positive(self, expr):
         return self.rec(expr.criterion) | self.rec(expr.then) | self.rec(expr.else_)
-
-    def map_elementwise_max(self, expr):
-        return set()
 
 class FluxTermCollector(pymbolic.mapper.collector.TermCollector,
         FluxIdentityMapperMixin):
