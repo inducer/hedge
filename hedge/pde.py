@@ -397,10 +397,9 @@ class VariableCoefficientAdvectionOperator:
 
         # boundary conditions -------------------------------------------------
         from hedge.mesh import TAG_ALL
+        bc_c = BoundarizeOperator(TAG_ALL) * c
         bc_u = Field("bc_u")
-        # FIXME
         bc_v = BoundarizeOperator(TAG_ALL) * v
-        bc_c = ElementwiseMaxOperator() * ptwise_dot(1, 1, bc_v, bc_v)
         if self.bc_u_f is "None":
             bc_w = join_fields(0, bc_v, bc_c)
         else:
@@ -425,15 +424,12 @@ class VariableCoefficientAdvectionOperator:
 
         def rhs(t, u):
 	    v = self.advec_v.volume_interpolant(t, discr)
-
-            bc_v = self.advec_v.boundary_interpolant(t, discr, tag=TAG_ALL)
             
             if self.bc_u_f is not "None":
                 bc_u = self.bc_u_f.boundary_interpolant(t, discr, tag=TAG_ALL)
-                return compiled_op_template(u=u, v=v,
-                                            bc_u=bc_u, bc_v=bc_v)
+                return compiled_op_template(u=u, v=v, bc_u=bc_u)
             else:
-                return compiled_op_template(u=u, v=v, bc_v=bc_v)
+                return compiled_op_template(u=u, v=v)
 
         return rhs
 
