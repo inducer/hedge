@@ -88,3 +88,25 @@ def legendre_vandermonde(points, N):
     return generic_vandermonde(points, 
             [LegendreFunction(i) for i in range(N+1)])
 
+
+
+
+def monomial_vdm(levels):
+    class Monomial:
+        def __init__(self, expt):
+            self.expt = expt
+        def __call__(self, x):
+            return x**self.expt
+
+    return generic_vandermonde(levels, 
+            [Monomial(i) for i in range(len(levels))])
+
+
+
+
+def make_interpolation_coefficients(levels, tap):
+    point_eval_vec = numpy.array([ tap**n for n in range(len(levels))])
+    return la.solve(monomial_vdm(levels).T, point_eval_vec)
+
+
+
