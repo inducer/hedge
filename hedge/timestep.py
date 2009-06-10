@@ -55,10 +55,55 @@ _RK4C = [0.0,
 
 
 def make_generic_ab_coefficients(levels, int_start, tap):
-    from hedge.polynomial import monomial_vdm
-    point_eval_vec = numpy.array([
-        1/(n+1)*(tap**(n+1)-int_start**(n+1))
-        for n in range(len(levels))])
+    """Generating AB coefficients from Interpolation using Vandermonde matrix"""
+
+    # explanations ------------------------------------------------------
+    # To calculate the AB coefficients this method makes use of the
+    # interpolation connection of the Vandermonde matrix:
+    #         
+    # V' * a(i) = f(i),                                            (1)
+    #
+    # with V' as the transposed Vandermonde matrix, a(i) the interpolation
+    # coefficients and f(i) the values on the sampling points.
+    # 
+    # The inerpolation polynomial of f(i) is defined by:
+    # 
+    # f_tilde(t) = a_0 + a_1 * t + a_2 * t**2 + ... + a_n * t**n   (2)
+    # --------------------------------------------------------------------
+    # The Adams-Bashforth method is defined by:
+    #
+    # y_(t_0 + 1) = y(t_0) + Δt * integral(f_tilde(t))             (3)
+    #
+    # with:
+    # 
+    # integral(f_tilde(t)) = sum(c_i*f(i)),
+    #
+    # with c_i beeing the AB coefficients. 
+    # ---------------------------------------------------------------------
+    # For the AB method (1) becomes to:
+    #
+    # V' * c = integral(f_tilde(t))                                 (4)
+    #
+    # with :
+    #
+    # integral(f_tilde(t)) = 1/(i+1)*(tap**(i+1)-int_start**(i+1)) * f(t_i) 
+    # 
+    # for i = 0,1,...,n sampling points, and c = [c_0, c_1, ... , c_n]'
+    # beeing the AB coefficients.
+    # 
+    # For example the integral of f_tilde evaluated for the timestep [0,1] is:
+    #
+    # integral(f_tilde(t)) = point_eval_vec = [1, 0.5, 0.333, 0.25, ... ,1/n]'.
+    #
+    # For substep levels the bounds of the integral has to be adopted to the
+    # size and position of the substep intervall [substep_int_start,
+    # substep_int_end] which is equal to the implemented [int_start, tap].
+    #
+    # Since V' and integral(f_tilde(t)) is known the AB coefficients c_i can be
+    # predicted by solving system (4). 
+
+    from hedge.polynomial import monomial_vdm point_eval_vec = numpy.array([
+        1/(n+1)*(tap**(n+1)-int_start**(n+1)) for n in range(len(levels))])
 
     return la.solve(monomial_vdm(levels).T, point_eval_vec)
 
