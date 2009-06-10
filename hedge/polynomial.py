@@ -105,7 +105,7 @@ def monomial_vdm(levels):
 
 
 def make_interpolation_coefficients(levels, int_start, tap):
-    point_eval_vec = numpy.array([ tap**n-int_start**(n+1) for n in range(len(levels))])
+    point_eval_vec = numpy.array([ tap**n-int_start**n for n in range(len(levels))])
     return la.solve(monomial_vdm(levels).T, point_eval_vec)
 
 
