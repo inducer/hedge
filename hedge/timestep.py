@@ -1,3 +1,5 @@
+# -*- coding: utf8 -*-
+
 """ODE solvers: timestepping support, such as Runge-Kutta, Adams-Bashforth, etc."""
 
 from __future__ import division
@@ -55,56 +57,80 @@ _RK4C = [0.0,
 
 
 def make_generic_ab_coefficients(levels, int_start, tap):
-    """Generating AB coefficients from Interpolation using Vandermonde matrix"""
+    """Find coefficients (αᵢ) such that
+       ∑ᵢ αᵢ F(tᵢ) = ∫[int_start..tap] f(t) dt."""
 
-    # explanations ------------------------------------------------------
-    # To calculate the AB coefficients this method makes use of the
-    # interpolation connection of the Vandermonde matrix:
+    # explanations --------------------------------------------------------------
+    # To calculate the AB coefficients this method makes use of the interpolation
+    # connection of the Vandermonde matrix:
     #         
-    # V' * a(i) = f(i),                                            (1)
+    #  Vᵀ * α = fe(t₀₊₁),                                    (1)
     #
-    # with V' as the transposed Vandermonde matrix, a(i) the interpolation
-    # coefficients and f(i) the values on the sampling points.
+    # with Vᵀ as the transposed Vandermonde matrix (with monomial base: xⁿ), 
     # 
-    # The inerpolation polynomial of f(i) is defined by:
+    #  α = (..., α₋₂, α₋₁,α₀)ᵀ                               (2)
+    #
+    # a vector of interpolation coefficients and 
     # 
-    # f_tilde(t) = a_0 + a_1 * t + a_2 * t**2 + ... + a_n * t**n   (2)
-    # --------------------------------------------------------------------
+    #  fe(t₀₊₁) = (t₀₊₁⁰, t₀₊₁¹, t₀₊₁²,...,t₀₊₁ⁿ)ᵀ           (3)
+    #
+    # a vector of the evaluated interpolation polynomial f(t) at t₀₊₁ = t₀ ∓ h 
+    # (h being any arbitrary stepsize).
+    #
+    # Solving the system (1) by knowing Vᵀ and fe(t₀₊₁) receiving α makes it 
+    # possible for any function F(t) - the function which gets interpolated 
+    # by the interpolation polynomial f(t) - to calculate f(t₀₊₁) by:
+    #
+    # f(t₀₊₁) =  ∑ᵢ αᵢ F(tᵢ)                                 (5)
+    #
+    # with F(tᵢ) being the values of F(t) at the sampling points tᵢ.
+    # --------------------------------------------------------------------------
     # The Adams-Bashforth method is defined by:
     #
-    # y_(t_0 + 1) = y(t_0) + Δt * integral(f_tilde(t))             (3)
+    #  y(t₀₊₁) = y(t₀) + Δt * ∫₀⁰⁺¹ f(t) dt                  (6)
     #
     # with:
     # 
-    # integral(f_tilde(t)) = sum(c_i*f(i)),
+    #  ∫₀⁰⁺¹ f(t) dt = ∑ᵢ ABcᵢ F(tᵢ),                        (8)
     #
-    # with c_i beeing the AB coefficients. 
-    # ---------------------------------------------------------------------
-    # For the AB method (1) becomes to:
+    # with ABcᵢ = [AB coefficients], f(t) being the interpolation polynomial,
+    # and F(tᵢ) being the values of F (= RHS) at the sampling points tᵢ.
+    # --------------------------------------------------------------------------
+    # For the AB method (1) becomes:
     #
-    # V' * c = integral(f_tilde(t))                                 (4)
+    #  Vᵀ * ABc = ∫₀⁰⁺¹ fe(t₀₊₁)                             (7)
     #
-    # with :
-    #
-    # integral(f_tilde(t)) = 1/(i+1)*(tap**(i+1)-int_start**(i+1)) * f(t_i) 
+    # with ∫₀⁰⁺¹ fe(t₀₊₁) being a vector evalueting the integral of the 
+    # interpolation polynomial in the form oft 
     # 
-    # for i = 0,1,...,n sampling points, and c = [c_0, c_1, ... , c_n]'
-    # beeing the AB coefficients.
+    #  1/(n+1)*(t₀₊₁⁽ⁿ⁾-t₀⁽ⁿ⁾)                               (8)
     # 
-    # For example the integral of f_tilde evaluated for the timestep [0,1] is:
+    #  for n = 0,1,...,N sampling points, and 
+    # 
+    # ABc = [c₀,c₁, ... , cn]ᵀ                               (9)
     #
-    # integral(f_tilde(t)) = point_eval_vec = [1, 0.5, 0.333, 0.25, ... ,1/n]'.
+    # being the AB coefficients.
+    # 
+    # For example ∫₀⁰⁺¹ f(t₀₊₁) evaluated for the timestep [t₀,t₀₊₁] = [0,1]
+    # is:
     #
-    # For substep levels the bounds of the integral has to be adopted to the
-    # size and position of the substep intervall [substep_int_start,
-    # substep_int_end] which is equal to the implemented [int_start, tap].
+    #  point_eval_vec = [1, 0.5, 0.333, 0.25, ... ,1/n]ᵀ.
     #
-    # Since V' and integral(f_tilde(t)) is known the AB coefficients c_i can be
-    # predicted by solving system (4). 
-
-    from hedge.polynomial import monomial_vdm point_eval_vec = numpy.array([
+    # For substep levels the bounds of the integral has to be adapted to the
+    # size and position of the substep interval: 
+    # 
+    #  [t₀,t₀₊₁] = [substep_int_start, substep_int_end] 
+    # 
+    # which is equal to the implemented [int_start, tap].
+    #
+    # Since Vᵀ and ∫₀⁰⁺¹ f(t₀₊₁) is known the AB coefficients c can be
+    # predicted by solving system (7) and calculating:
+    # 
+    #  ∫₀⁰⁺¹ f(t) dt = ∑ᵢ ABcᵢ F(tᵢ),
+    
+    from hedge.polynomial import monomial_vdm 
+    point_eval_vec = numpy.array([
         1/(n+1)*(tap**(n+1)-int_start**(n+1)) for n in range(len(levels))])
-
     return la.solve(monomial_vdm(levels).T, point_eval_vec)
 
 
