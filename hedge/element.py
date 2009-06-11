@@ -510,7 +510,7 @@ class IntervalElement(IntervalElementBase):
             return 1
         else:
             unodes = self.unit_nodes()
-            return la.norm(unodes[0] - unodes[1])
+            return la.norm(unodes[0] - unodes[1]) * 0.85
 
     def dt_geometric_factor(self, vertices, el):
         return abs(el.map.jacobian())
