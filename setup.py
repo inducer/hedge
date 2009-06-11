@@ -138,7 +138,6 @@ def main():
             packages=[
                     "hedge",
                     "hedge.backends",
-                    "hedge.backends.dynamic",
                     "hedge.backends.jit",
                     "hedge.backends.mpi",
                     "hedge.backends.cuda",
