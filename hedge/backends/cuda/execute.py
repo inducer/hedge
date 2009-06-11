@@ -301,41 +301,52 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
 
         field = self.rec(field_expr)
         result = self.ex.discr.volume_empty()
-	block_size = 512
+	block_size = 128
 	order = self.ex.discr.given.order()
+	nodes_per_el = TE(order).node_count()
+	aligned_floats = self.ex.discr.given.dofs_per_block()
+        nodes_per_block = nodes_per_el * self.ex.discr.given.microblock.elements
+	pad = aligned_floats - nodes_per_block
 
         mod = SourceModule(""" 
 	#define BLOCK_SIZE %(block_size)d
-	#define FIELD_LEN %(field_len)d
 	#define NODES_PER_EL %(nodes_per_el)d
+	#define ALIGNED_FLOATS %(aligned_floats)d
+	#define PAD %(pad)d
 
 	typedef %(value_type)s value_type;
 
-	__global__ void elwise_max(value_type *result, value_type *field)
+	__global__ void elwise_max(value_type *field)
 	{
             int idx = blockIdx.x * BLOCK_SIZE + threadIdx.x;
-            result[idx] = field[idx];
-	    __syncthreads();
-	    int base_idx = (idx / NODES_PER_EL) * NODES_PER_EL;
+	    int base_idx = (idx / NODES_PER_EL) * NODES_PER_EL + 
+	                   (idx / ALIGNED_FLOATS) * PAD;
 	    for (int i=0; i<NODES_PER_EL; i++)
-	      result[idx] = fmaxf(result[idx], field[base_idx+i]);
+	      field[idx] = fmax(field[idx], field[base_idx+i]);
 	}
 
 	"""% {
 	"block_size": block_size,
-	"field_len": len(field),
-	"nodes_per_el": TE(order).node_count(),
+	"nodes_per_el": nodes_per_el,
+	"aligned_floats": aligned_floats,
+	"pad": pad,
 	"value_type": dtype_to_ctype(field.dtype),
 	})
 
+        #start = cuda.Event()
+	#stop = cuda.Event()
+
 	func = mod.get_function("elwise_max")
-	func.prepare("PP", block=(block_size, 1, 1))
-	grid_dim = int(numpy.round(len(field)/block_size+0.5))
-	func.prepared_call((grid_dim, 1), result.gpudata, field.gpudata)
-        numpy.set_printoptions(threshold=10800)
-	#print result
-	#raw_input()
-	return result
+	func.prepare("P", block=(block_size, 1, 1))
+	grid_dim = (len(field) + block_size - 1) // block_size
+	#cuda.Context.synchronize()
+	#start.record()
+	func.prepared_call((grid_dim, 1),field.gpudata)
+	#stop.record()
+	#stop.synchronize()
+	#elapsed_seconds = stop.time_since(start) * 1e-3
+	#print elapsed_seconds
+	return field
 
 
 
