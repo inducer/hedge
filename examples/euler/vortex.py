@@ -105,8 +105,6 @@ def main():
 
         from hedge.pde import EulerOperator
         op = EulerOperator(dimensions=2, gamma=1.4, bc=vortex)
-        #for i, oi in enumerate(op.op_template()):
-           #print i, oi
 
         euler_ex = op.bind(discr)
 

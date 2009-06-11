@@ -110,7 +110,9 @@ class FluxConcretizer(FluxIdentityMapper):
 
 
 class FluxToCodeMapper(CCodeMapper):
-    def __init__(self):
+    def __init__(self, dtype):
+        self.dtype = dtype
+
         def float_mapper(x):
             if isinstance(x, float):
                 return "value_type(%s)" % repr(x)
@@ -126,6 +128,24 @@ class FluxToCodeMapper(CCodeMapper):
         return ("pow(fpair->order*fpair->order/fpair->h, %r)" 
                 % expr.power)
 
+    def map_function_symbol(self, expr, enclosing_prec):
+        from hedge.flux import FluxFunctionSymbol, \
+                flux_abs, flux_min, flux_max
+
+        assert isinstance(expr, FluxFunctionSymbol)
+
+        if self.dtype == numpy.float32:
+            suffix = "f"
+        elif self.dtype == numpy.float64:
+            suffix = ""
+        else:
+            raise RuntimeError("invalid flux dtype: %s" % self.dtype)
+
+        return {
+                flux_abs: "fabs",
+                flux_max: "fmax",
+                flux_min: "fmin",
+                }[expr] + suffix
 
 
 
@@ -245,8 +265,8 @@ def make_plan(discr, given, tune_for):
     def generate_valid_plans():
         valid_plan_count = 0
         for direct_store in [False, True]:
-            for parallel_faces in range(1,32):
-                for mbs_per_block in range(1,8):
+            for parallel_faces in range(1, 32):
+                for mbs_per_block in range(1, 8):
                     flux_plan = ExecutionPlan(given, parallel_faces, 
                             mbs_per_block, flux_count, 
                             direct_store=direct_store,
@@ -514,7 +534,7 @@ class Kernel:
                 Initializer, If, For, Statement, Assign, While
                 
         from codepy.cgen.cuda import CudaShared, CudaGlobal
-        from codepy.cgen import dtype_to_ctype
+        from pycuda.tools import dtype_to_ctype
 
         discr = self.discr
         given = self.plan.given
@@ -542,8 +562,8 @@ class Kernel:
         for dep_expr in self.all_deps:
             cmod.extend([
                 Comment(str(dep_expr)),
-                Value("texture<fp_tex_%s, 1, cudaReadModeElementType>"
-                    % dtype_to_ctype(float_type), 
+                Value("texture<%s, 1, cudaReadModeElementType>"
+                    % dtype_to_ctype(float_type, with_fp_tex_hack=True), 
                     "field%d_tex" % self.dep_to_index[dep_expr])
                 ])
 
@@ -648,7 +668,7 @@ class Kernel:
                                 % self.dep_to_index[dep])),
                             "fp_tex1Dfetch(field%s_tex, b_index)" % self.dep_to_index[dep]))
 
-            f2cm = FluxToCodeMapper()
+            f2cm = FluxToCodeMapper(discr.default_scalar_type)
 
             fluxes_by_bdry_number = {}
             for flux_nr, wdflux in enumerate(self.fluxes):
@@ -737,7 +757,7 @@ class Kernel:
                                 "fp_tex1Dfetch(field%d_tex, %s_index)"
                                 % (self.dep_to_index[dep], side)))
 
-            f2cm = FluxToCodeMapper()
+            f2cm = FluxToCodeMapper(discr.default_scalar_type)
 
             flux_sub_codes = []
             for flux_nr, wdflux in enumerate(self.fluxes):
@@ -885,7 +905,10 @@ class Kernel:
                 options=["--maxrregcount=%d" % self.plan.max_registers()]
                 )
         if "cuda_flux" in discr.debug:
-            print "flux: lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
+            print "flux: lmem=%d smem=%d regs=%d" % (
+                    mod.local_size_bytes, 
+                    mod.shared_size_bytes, 
+                    mod.num_regs)
 
         expr_to_texture_map = dict(
                 (dep_expr, mod.get_texref(

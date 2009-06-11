@@ -38,7 +38,7 @@ FluxFace = _internal.FluxFace
 
 
 # python fluxes ---------------------------------------------------------------
-class Flux(pymbolic.primitives.AlgebraicLeaf, _internal.Flux):
+class Flux(pymbolic.primitives.AlgebraicLeaf):
     def stringifier(self):
         return FluxStringifyMapper
 
@@ -122,9 +122,6 @@ class IfPositive(Flux):
         self.then = then
         self.else_ = else_
 
-        if FluxDependencyMapper(composite_leaves=True)(criterion):
-            raise ValueError("criterion part of IfPositive may not depend on field values")
-
     def __getinitargs__(self):
         return self.criterion, self.then, self.else_
 
@@ -147,9 +144,33 @@ class IfPositive(Flux):
 
 
 
+class FluxFunctionSymbol(pymbolic.primitives.FunctionSymbol):
+    pass
+
+class Abs(FluxFunctionSymbol):
+    arg_count = 1
+
+class Max(FluxFunctionSymbol):
+    arg_count = 2
+
+class Min(FluxFunctionSymbol):
+    arg_count = 2
+
+flux_abs = Abs()
+flux_max = Max()
+flux_min = Min()
+
+
+
+def norm(v):
+    return numpy.dot(v, v)**0.5
+
+
+
+
+
 def make_normal(dimensions):
-    from hedge.tools import amap
-    return amap(Normal,  range(dimensions))
+    return numpy.array([Normal(i) for i in range(dimensions)], dtype=object)
 
 
 
@@ -246,7 +267,6 @@ class FluxIdentityMapperMixin(object):
                 self.rec(expr.then),
                 self.rec(expr.else_),
                 )
-
 
 
 

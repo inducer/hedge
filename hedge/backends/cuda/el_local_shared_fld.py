@@ -168,7 +168,7 @@ class Kernel:
         stop.synchronize()
 
         return (1e-3/count * stop.time_since(start),
-                kernel.lmem, kernel.smem, kernel.registers)
+                kernel.local_size_bytes, kernel.shared_size_bytes, kernel.num_regs)
 
     def __call__(self, in_vector, prepped_mat, prepped_scaling):
         discr = self.discr
@@ -441,9 +441,14 @@ class Kernel:
                 #options=["--maxrregcount=12"]
                 )
 
+        func = mod.get_function("apply_el_local_mat_smem_field")
+
         if self.plan.debug_name in discr.debug:
             print "%s: lmem=%d smem=%d regs=%d" % (
-                    self.plan.debug_name, mod.lmem, mod.smem, mod.registers)
+                    self.plan.debug_name, 
+                    func.local_size_bytes, 
+                    func.shared_size_bytes, 
+                    func.num_regs)
 
         mat_texref = mod.get_texref("mat_tex")
         texrefs = [mat_texref]
@@ -454,7 +459,6 @@ class Kernel:
         else:
             scaling_texref = None
 
-        func = mod.get_function("apply_el_local_mat_smem_field")
         func.prepare(
                 "PPPI", 
                 block=(

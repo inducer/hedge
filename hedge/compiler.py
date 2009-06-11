@@ -52,7 +52,13 @@ class Instruction(Record):
         raise NotImplementedError
 
 class Assign(Instruction): 
-    # attributes: name, expr, priority
+    # attributes: name, expr, priority, flop_count
+
+    def __init__(self, name, expr, **kwargs):
+        Instruction.__init__(self, name=name, expr=expr, **kwargs)
+
+        from pymbolic.mapper.flop_counter import FlopCounter
+        self.flop_count = FlopCounter()(expr)
 
     def get_assignees(self):
         return set([self.name])

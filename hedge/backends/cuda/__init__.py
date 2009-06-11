@@ -265,6 +265,7 @@ class Discretization(hedge.discretization.Discretization):
             "cuda_no_microblock",
             "cuda_no_smem_matrix",
             "cuda_no_plan",
+            "cuda_no_plan_el_local",
             "cuda_keep_kernels",
             "cuda_try_no_microblock",
             "cuda_plan_log",
@@ -483,9 +484,9 @@ class Discretization(hedge.discretization.Discretization):
         self.blocks = self._build_blocks()
         self.face_storage_map = self._build_face_storage_map()
 
-        # make a reference discretization
+        # make a CPU reference discretization
         if "cuda_compare" in self.debug:
-            from hedge.discr_precompiled import Discretization
+            from hedge.backends.jit import Discretization
             self.test_discr = Discretization(mesh, ldis)
 
         self.stream_pool = []
@@ -1023,7 +1024,7 @@ class Discretization(hedge.discretization.Discretization):
         return self._new_vec(shape, self._zeros_gpuarray, dtype,
                 self.gpu_dof_count())
 
-    def boundary_empty(self, tag=hedge.mesh.TAG_ALL, shape=(), dtype=None, kind="gpu"):
+    def boundary_empty(self, tag, shape=(), dtype=None, kind="gpu"):
         if kind == "gpu":
             return self._new_vec(shape, self._empty_gpuarray, dtype,
                     self.aligned_boundary_floats)
@@ -1036,7 +1037,7 @@ class Discretization(hedge.discretization.Discretization):
                     self, tag, shape, dtype, kind)
 
 
-    def boundary_zeros(self, tag=hedge.mesh.TAG_ALL, shape=(), dtype=None, kind="gpu"):
+    def boundary_zeros(self, tag, shape=(), dtype=None, kind="gpu"):
         if kind == "gpu":
             return self._new_vec(shape, self._zeros_gpuarray, dtype,
                     self.aligned_boundary_floats)
@@ -1050,7 +1051,7 @@ class Discretization(hedge.discretization.Discretization):
             return hedge.discretization.Discretization.boundary_zeros(
                     self, tag, shape, dtype, kind)
 
-    def volumize_boundary_field(self, bfield, tag=hedge.mesh.TAG_ALL):
+    def volumize_boundary_field(self, bfield, tag):
         if self.get_kind(bfield) != "gpu":
             return hedge.discretization.Discretization.volumize_boundary_field(
                     self, bfield, tag)

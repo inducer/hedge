@@ -66,7 +66,7 @@ def optimize_plan(opt_name, plan_generator, target_func, maximize, debug_flags=s
     if not plans:
         raise RuntimeError, "no valid CUDA execution plans found"
 
-    if "cuda_no_plan" in debug_flags:
+    if set(["cuda_no_plan", "cuda_no_plan_"+opt_name]) & debug_flags:
         from pytools import argmax2
         return argmax2((plan, plan.occupancy_record().occupancy)
                 for plan in plans), 0

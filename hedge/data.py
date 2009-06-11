@@ -54,7 +54,7 @@ class IGivenFunction(object):
         """
         raise NotImplementedError
 
-    def boundary_interpolant(self, discr, tag=hedge.mesh.TAG_ALL):
+    def boundary_interpolant(self, discr, tag):
         """Return the boundary interpolant of this function with respect to
         the L{Discretization} discr at the boundary tagged with C{tag}.
         """
@@ -74,7 +74,7 @@ class ITimeDependentGivenFunction(object):
         """
         raise NotImplementedError
 
-    def boundary_interpolant(self, t, discr, tag=hedge.mesh.TAG_ALL):
+    def boundary_interpolant(self, t, discr, tag):
         """Return the boundary interpolant of this function with respect to
         the L{Discretization} discr at time C{t} at the boundary tagged with
         C{tag}.
@@ -109,7 +109,7 @@ class GivenFunction(IGivenFunction):
             self.volume_cache[discr] = result
             return result
 
-    def boundary_interpolant(self, discr, tag=hedge.mesh.TAG_ALL):
+    def boundary_interpolant(self, discr, tag):
         try:
             return self.boundary_cache[discr][tag]
         except KeyError:
@@ -144,7 +144,7 @@ class GivenVolumeInterpolant(IGivenFunction):
             raise ValueError, "cross-interpolation between discretizations not supported"
         return self.interpolant
 
-    def boundary_interpolant(self, discr, tag=hedge.mesh.TAG_ALL):
+    def boundary_interpolant(self, discr, tag):
         if discr != self.discr:
             raise ValueError, "cross-interpolation between discretizations not supported"
         return discr.boundarize_volume_field(self.interpolant, tag)
@@ -163,7 +163,7 @@ class TimeConstantGivenFunction(ITimeDependentGivenFunction):
     def volume_interpolant(self, t, discr):
         return self.gf.volume_interpolant(discr)
 
-    def boundary_interpolant(self, t, discr, tag=hedge.mesh.TAG_ALL):
+    def boundary_interpolant(self, t, discr, tag):
         return self.gf.boundary_interpolant(discr, tag)
 
 
@@ -189,7 +189,7 @@ class TimeHarmonicGivenFunction(ITimeDependentGivenFunction):
         return sin(self.omega*t+self.phase)\
                 *self.gf.volume_interpolant(discr)
 
-    def boundary_interpolant(self, t, discr, tag=hedge.mesh.TAG_ALL):
+    def boundary_interpolant(self, t, discr, tag):
         from math import sin
         return sin(self.omega*t+self.phase)\
                 *self.gf.boundary_interpolant(discr, tag)
@@ -220,7 +220,7 @@ class TimeIntervalGivenFunction(ITimeDependentGivenFunction):
             # difficult part here is to match shape
             return 0*self.gf.volume_interpolant(discr)
 
-    def boundary_interpolant(self, t, discr, tag=hedge.mesh.TAG_ALL):
+    def boundary_interpolant(self, t, discr, tag):
         if self.on_time <= t < self.off_time:
             return self.gf.boundary_interpolant(discr, tag)
         else:
@@ -231,15 +231,29 @@ class TimeIntervalGivenFunction(ITimeDependentGivenFunction):
 
 
 
-
 class TimeDependentGivenFunction(ITimeDependentGivenFunction):
     """Adapts a function M{f(x,t)} into the L{GivenFunction} framework.
     """
     def __init__(self, f):
         self.f = f
+    
+    class ConstantWrapper:
+        def __init__(self, f, t):
+            """Adapt a function `f(x, el, t) in such a way that it can be fed to 
+            `interpolate_*_function()`. In particular, preserve the `shape` attribute.
+            """
+            self.f = f
+            self.t = t
+        
+        @property
+        def shape(self):
+            return self.f.shape
+
+        def __call__(self, x, el):
+            return self.f(x, el, self.t)
 
     def volume_interpolant(self, t, discr):
-        return discr.interpolate_volume_function(lambda x, el: self.f(x, el, t))
+        return discr.interpolate_volume_function(self.ConstantWrapper(self.f, t))
 
-    def boundary_interpolant(self, t, discr, tag=hedge.mesh.TAG_ALL):
-        return discr.interpolate_boundary_function(lambda x, el: self.f(x, el, t), tag)
+    def boundary_interpolant(self, t, discr, tag):
+        return discr.interpolate_boundary_function(self.ConstantWrapper(self.f, t), tag)

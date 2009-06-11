@@ -51,28 +51,34 @@ def main() :
     from hedge.mesh import TAG_ALL, TAG_NONE
     op = StrongWaveOperator(-1, discr.dimensions, 
             source_vec_getter,
-            dirichlet_tag=TAG_ALL,
+            dirichlet_tag=TAG_NONE,
             neumann_tag=TAG_NONE,
-            radiation_tag=TAG_NONE,
+            radiation_tag=TAG_ALL,
             flux_type="upwind")
 
     from hedge.tools import join_fields
     fields = join_fields(discr.volume_zeros(),
             [discr.volume_zeros() for i in range(discr.dimensions)])
 
-    dt = discr.dt_factor(op.max_eigenvalue())
-    nsteps = int(3/dt)
-
     # timestep loop -----------------------------------------------------------
-    from hedge.timestep import RK4TimeStepper
-    stepper = RK4TimeStepper()
+    from hedge.timestep import RK4TimeStepper, AdamsBashforthTimeStepper
+    if True:
+        stepper = AdamsBashforthTimeStepper(3)
+        dt = discr.dt_factor(op.max_eigenvalue(), 
+                AdamsBashforthTimeStepper, 3)
+    else:
+        stepper = RK4TimeStepper(3)
+        dt = discr.dt_factor(op.max_eigenvalue(), RK4TimeStepper)
+
+    nsteps = int(5/dt)
+    print "dt=%g nsteps=%d" % (dt, nsteps)
 
     rhs = op.bind(discr)
     for step in range(nsteps):
         t = step*dt
 
-        if step % 10 == 0:
-            print step, t
+        if step % 50 == 0:
+            print step, t, discr.norm(fields[0])
             visf = vis.make_file("fld-%04d" % step)
 
             vis.add_data(visf,

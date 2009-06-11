@@ -99,34 +99,43 @@ class TimeStepper(object):
 
 
 class RK4TimeStepper(TimeStepper):
-    def __init__(self):
-        from pytools.log import IntervalTimer
+    dt_fudge_factor = 1
+
+    def __init__(self, allow_jit=True):
+        from pytools.log import IntervalTimer, EventCounter
         self.timer = IntervalTimer(
                 "t_rk4", "Time spent doing algebra in RK4")
+        self.flop_counter = EventCounter(
+                "n_flops_rk4", "Floating point operations performed in RK4")
         self.coeffs = zip(_RK4A, _RK4B, _RK4C)
+
+        self.allow_jit = allow_jit
 
     def add_instrumentation(self, logmgr):
         logmgr.add_quantity(self.timer)
+        logmgr.add_quantity(self.flop_counter)
 
     def __call__(self, y, t, dt, rhs):
         try:
             self.residual
         except AttributeError:
             self.residual = 0*rhs(t, y)
+            from hedge.tools import count_dofs, has_data_in_numpy_arrays
+            self.dof_count = count_dofs(self.residual)
 
-            from hedge.tools import is_mul_add_supported
-            self.use_mul_add = is_mul_add_supported(self.residual)
+            self.use_jit = self.allow_jit and has_data_in_numpy_arrays(y)
 
-        if self.use_mul_add:
-            from hedge.tools import mul_add
+        if self.use_jit:
+            from hedge.tools import numpy_linear_comb
 
             for a, b, c in self.coeffs:
                 this_rhs = rhs(t + c*dt, y)
 
-                self.timer.start()
-                self.residual = mul_add(a, self.residual, dt, this_rhs)
-                y = mul_add(1, y, b, self.residual)
-                self.timer.stop()
+                sub_timer = self.timer.start_sub_timer()
+                self.residual = numpy_linear_comb([(a, self.residual), (dt, this_rhs)])
+                del this_rhs
+                y = numpy_linear_comb([(1, y), (b, self.residual)])
+                sub_timer.stop().submit()
         else:
             for a, b, c in self.coeffs:
                 this_rhs = rhs(t + c*dt, y)
@@ -137,12 +146,16 @@ class RK4TimeStepper(TimeStepper):
                 y = y + b * self.residual
                 sub_timer.stop().submit()
 
+        self.flop_counter.add(len(self.coeffs)*self.dof_count*5)
+
         return y
 
 
 
 
 class AdamsBashforthTimeStepper(TimeStepper):
+    dt_fudge_factor = 0.95
+
     def __init__(self, order, startup_stepper=None):
         self.coefficients = make_ab_coefficients(order)
         self.f_history = []
@@ -353,3 +366,72 @@ class TwoRateAdamsBashforthTimeStepper(TimeStepper):
             return ys
         else:
             return run_ab()
+
+
+# bisection based method to find bounds of stability region on Imaginary axis only ---
+def calculate_fudged_stability_region(stepper_class, *stepper_args):
+    return calculate_stability_region(stepper_class, *stepper_args) \
+            * stepper_class.dt_fudge_factor
+
+
+
+
+@memoize
+def calculate_stability_region(stepper_class, *stepper_args):
+    def stepper_maker():
+        return stepper_class(*stepper_args)
+
+    prec = 1e-5
+
+    def is_stable(stepper, k):
+        y = 1
+        for i in range(20):
+            if abs(y) > 2:
+                return False
+            y = stepper(y, i, 1, lambda t, y: k*y)
+        return True
+
+    def make_k(angle, mag):
+        from cmath import exp
+        return -prec+mag*exp(1j*angle)
+
+    def refine(stepper_maker, angle, stable, unstable):
+        assert is_stable(stepper_maker(), make_k(angle, stable))
+        assert not is_stable(stepper_maker(), make_k(angle, unstable))
+        while abs(stable-unstable) > prec:
+            mid = (stable+unstable)/2
+            if is_stable(stepper_maker(), make_k(angle, mid)):
+                stable = mid
+            else:
+                unstable = mid
+        else:
+            return stable
+
+    def find_stable_k(stepper_maker, angle):
+        mag = 1
+
+        if is_stable(stepper_maker(), make_k(angle, mag)):
+            mag *= 2
+            while is_stable(stepper_maker(), make_k(angle, mag)):
+                mag *= 2
+
+                if mag > 2**8:
+                    return mag
+            return refine(stepper_maker, angle, mag/2, mag)
+        else:
+            mag /= 2
+            while not is_stable(stepper_maker(), make_k(angle, mag)):
+                mag /= 2
+
+                if mag < prec:
+                    return mag
+            return refine(stepper_maker, angle, mag, mag*2)
+
+    points = []
+    from cmath import pi
+    for angle in numpy.array([pi/2, 3/2*pi]):
+        points.append(make_k(angle, find_stable_k(stepper_maker, angle)))
+
+    points = numpy.array(points)
+
+    return abs(points[0])

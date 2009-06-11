@@ -28,11 +28,7 @@ import hedge.optemplate
 
 
 
-class ExecutorBase(object):
-    def __init__(self, discr, op_data):
-        self.discr = discr
-        self.op_data = op_data
-
+class CPUExecutorBase(object):
     def instrument(self):
         discr = self.discr
         assert discr.instrumented
@@ -138,6 +134,18 @@ class ExecutionMapperBase(hedge.optemplate.Evaluator,
         self.discr = executor.discr
         self.executor = executor
 
+    def map_normal_component(self, expr):
+        return self.discr.boundary_normals(expr.tag)[expr.axis]
+
+    def map_boundarize(self, op, field_expr):
+        return self.discr.boundarize_volume_field(
+                self.rec(field_expr), tag=op.tag)
+
+
+
+
+
+class CPUExecutionMapperBase(ExecutionMapperBase):
     def map_diff_base(self, op, field_expr):
         field = self.rec(field_expr)
 

@@ -308,7 +308,8 @@ def mpi_get_default_device(comm, dev_filter=lambda dev: True):
         def grab_device(rank):
             devs = host_to_devs[rank_to_host[rank]]
             if not devs:
-                return None
+                raise RuntimeError("No available CUDA device for rank %d (%s)"
+                        % (rank, rank_to_host[rank]))
             else:
                 return devs.pop(0)
 

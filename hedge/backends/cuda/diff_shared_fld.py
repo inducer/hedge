@@ -147,7 +147,7 @@ class Kernel(DiffKernelBase):
         stop.synchronize()
 
         return (1e-3/count * stop.time_since(start),
-                func.lmem, func.smem, func.registers)
+                func.local_size_bytes, func.shared_size_bytes, func.num_regs)
 
     def __call__(self, op_class, field):
         discr = self.discr
@@ -215,7 +215,7 @@ class Kernel(DiffKernelBase):
                 Comment, Line, Define, Include, \
                 Initializer, If, For, Statement, Assign
 
-        from codepy.cgen import dtype_to_ctype
+        from pycuda.tools import dtype_to_ctype
         from codepy.cgen.cuda import CudaShared, CudaGlobal
                 
         discr = self.discr
@@ -236,8 +236,8 @@ class Kernel(DiffKernelBase):
         cmod = Module([
                 Include("pycuda-helpers.hpp"),
                 Line(),
-                Value("texture<fp_tex_%s, 1, cudaReadModeElementType>"
-                    % dtype_to_ctype(float_type), 
+                Value("texture<%s, 1, cudaReadModeElementType>"
+                    % dtype_to_ctype(float_type, with_fp_tex_hack=True), 
                     "rst_to_xyz_tex"),
                 ])
 
@@ -409,8 +409,13 @@ class Kernel(DiffKernelBase):
                 #options=["--maxrregcount=16"]
                 )
 
+        func = mod.get_function("apply_diff_mat_smem")
+
         if "cuda_diff" in discr.debug:
-            print "diff: lmem=%d smem=%d regs=%d" % (mod.lmem, mod.smem, mod.registers)
+            print "diff: lmem=%d smem=%d regs=%d" % (
+                    func.local_size_bytes, 
+                    func.shared_size_bytes, 
+                    func.registers)
 
         if for_benchmark:
             rst_to_xyz = self.fake_localop_rst_to_xyz()
@@ -432,7 +437,6 @@ class Kernel(DiffKernelBase):
         else:
             assert False
 
-        func = mod.get_function("apply_diff_mat_smem")
         func.prepare(
                 ["PP"] + discr.dimensions*[float_type],
                 block=(

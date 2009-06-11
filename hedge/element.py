@@ -364,15 +364,13 @@ class SimplicialElement(Element):
     def dt_non_geometric_factor(self):
         unodes = self.unit_nodes()
         vertex_indices = self.vertex_indices()
-
-        return 2/3*\
+        return 2/3* \
                 min(min(min(
                     la.norm(unodes[face_node_index]-unodes[vertex_index])
                     for vertex_index in vertex_indices
                     if vertex_index != face_node_index)
                     for face_node_index in face_indices)
                     for face_indices in self.face_indices())
-
 
 
 
@@ -512,7 +510,7 @@ class IntervalElement(IntervalElementBase):
             return 1
         else:
             unodes = self.unit_nodes()
-            return la.norm(unodes[0] - unodes[1])
+            return la.norm(unodes[0] - unodes[1]) * 0.85
 
     def dt_geometric_factor(self, vertices, el):
         return abs(el.map.jacobian())

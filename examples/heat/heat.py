@@ -37,7 +37,7 @@ def main() :
 
     dim = 2
 
-    def boundary_tagger(fvi, el, fn):
+    def boundary_tagger(fvi, el, fn, all_v):
         if el.face_normals[fn][0] > 0:
             return ["dirichlet"]
         else:

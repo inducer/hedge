@@ -25,17 +25,39 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 import hedge.backends.cpu_base
 import hedge.discretization
 import hedge.optemplate
-from hedge.backends.cpu_base import ExecutorBase, ExecutionMapperBase
+from hedge.backends.exec_common import \
+        CPUExecutorBase, \
+        CPUExecutionMapperBase
 import numpy
 
 
 
 
 # exec mapper -----------------------------------------------------------------
-class ExecutionMapper(ExecutionMapperBase):
+class ExecutionMapper(CPUExecutionMapperBase):
     # code execution functions ------------------------------------------------
     def exec_assign(self, insn):
-        return [(insn.name, self(insn.expr))], []
+        if self.discr.instrumented:
+            sub_timer = self.discr.vector_math_timer.start_sub_timer()
+            result = self(insn.expr)
+            sub_timer.stop().submit()
+
+            from hedge.tools import count_dofs
+            self.discr.vector_math_flop_counter.add(count_dofs(result)*insn.flop_count)
+        else:
+            result = self(insn.expr)
+
+        return [(insn.name, result)], []
+
+    def exec_vector_expr_assign(self, insn):
+        if self.discr.instrumented:
+            def stats_callback(n, vec_expr):
+                self.discr.vector_math_flop_counter.add(n*vec_expr.flop_count)
+                return self.discr.vector_math_timer
+        else:
+            stats_callback = None
+
+        return [(insn.name, insn.compiled(self, stats_callback))], []
 
     def exec_flux_batch_assign(self, insn):
         from hedge.backends.jit.compiler import BoundaryFluxKind
@@ -114,10 +136,16 @@ class ExecutionMapper(ExecutionMapperBase):
 
 
 
-class Executor(ExecutorBase):
+class Executor(CPUExecutorBase):
     def __init__(self, discr, optemplate, post_bind_mapper):
-        ExecutorBase.__init__(self, discr, 
-                self.compile_optemplate(discr, optemplate, post_bind_mapper))
+        self.discr = discr
+        self.code = self.compile_optemplate(discr, optemplate, post_bind_mapper)
+
+        if "print_op_code" in discr.debug:
+	    from hedge.tools import get_rank
+	    if get_rank(discr) == 0:
+	        print self.code
+	        raw_input()
 
 	if "print_op_code" in discr.debug:
 	    from hedge.tools import get_rank
@@ -195,7 +223,7 @@ class Executor(ExecutorBase):
                 for i in xyz_needed]
 
     def __call__(self, **context):
-        return self.op_data.execute(
+        return self.code.execute(
                 self.discr.exec_mapper_class(context, self))
 
 

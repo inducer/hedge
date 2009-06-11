@@ -55,16 +55,48 @@ def relative_error(norm_diff, norm_true):
 
 
 
-def is_mul_add_supported(vec):
-    while isinstance(vec, numpy.ndarray) and vec.dtype == object:
-        vec = vec[0]
-    return hasattr(vec, "mul_add")
+def has_data_in_numpy_arrays(a):
+    if is_obj_array(a):
+        from pytools import indices_in_shape, all
+        return all(has_data_in_numpy_arrays(a[i])
+                for i in indices_in_shape(a.shape))
+    else:
+        return isinstance(a, numpy.ndarray)
 
 
 
+
+def numpy_linear_comb(lin_comb):
+    assert lin_comb
+
+    from pytools import single_valued, indices_in_shape, flatten
+    from codepy.elementwise import make_linear_comb_kernel
+    if single_valued(is_obj_array(ary) for fac, ary in lin_comb):
+        oa_shape = single_valued(ary.shape for fac, ary in lin_comb)
+        result = numpy.zeros(oa_shape, dtype=object)
+        for i in indices_in_shape(oa_shape):
+            dtype = single_valued(ary[i].dtype for fac, ary in lin_comb)
+            el_shape = single_valued(ary[i].shape for fac, ary in lin_comb)
+
+            kernel = make_linear_comb_kernel(dtype, len(lin_comb))
+
+            result[i] = numpy.zeros(el_shape, dtype)
+            kernel(result[i], *tuple(flatten((fac, ary[i]) for fac, ary in lin_comb)))
+
+        return result
+    else:
+        dtype = single_valued(ary.dtype for fac, ary in lin_comb)
+        shape = single_valued(ary.shape for fac, ary in lin_comb)
+        kernel = make_linear_comb_kernel(dtype, len(lin_comb))
+        result = numpy.zeros(shape, dtype)
+        kernel(result, *tuple(flatten(lin_comb)))
+        return result
+
+
+            
 
 def mul_add(afac, a, bfac, b, add_timer=None):
-    if isinstance(a, numpy.ndarray) and a.dtype == object:
+    if is_obj_array(a):
         return numpy.array([
             mul_add(afac, a_i, bfac, b_i, add_timer=add_timer)
             for a_i, b_i in zip(a, b)],
@@ -323,12 +355,6 @@ def ptwise_dot(logdims1, logdims2, a1, a2):
         return result[()]
     else: 
         return result
-
-
-
-
-def amap(f, obj_array):
-    return numpy.array([f(x) for x in obj_array], dtype=object)
 
 
 
@@ -1029,6 +1055,12 @@ class IdentityOperator(OperatorBase):
 
 
 
+class ConvergenceError(RuntimeError):
+    pass
+
+
+
+
 class CGStateContainer:
     def __init__(self, pcon, operator, precon=None, dot=None):
         if precon is None:
@@ -1097,7 +1129,7 @@ class CGStateContainer:
         delta_0 = delta = self.delta
         while iterations < max_iterations:
             if debug_callback is not None:
-                debug_callback(self.x, self.residual, self.d)
+                debug_callback("it", iterations, self.x, self.residual, self.d, delta)
 
             compute_real_residual = \
                     iterations % 50 == 0 or \
@@ -1106,6 +1138,8 @@ class CGStateContainer:
                     compute_real_residual=compute_real_residual)
 
             if compute_real_residual and abs(delta) < tol*tol * abs(delta_0):
+                if debug_callback is not None:
+                    debug_callback("end", iterations, self.x, self.residual, self.d, delta)
                 if debug:
                     print "%d iterations" % iterations
                 return self.x
@@ -1114,7 +1148,7 @@ class CGStateContainer:
                 print "debug: delta=%g" % delta
             iterations += 1
 
-        raise RuntimeError("cg failed to converge")
+        raise ConvergenceError("cg failed to converge")
             
 
 
@@ -1229,6 +1263,20 @@ def gather_flops(discr):
                 )
 
     return result
+
+
+
+
+def count_dofs(vec):
+    if isinstance(vec, numpy.ndarray):
+        if vec.dtype == object:
+            from pytools import indices_in_shape
+            return sum(count_dofs(vec[i])
+                    for i in indices_in_shape(vec.shape))
+        else:
+            return vec.size
+    else:
+        return 0
 
 
 

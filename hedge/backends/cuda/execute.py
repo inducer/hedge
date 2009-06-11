@@ -29,6 +29,7 @@ from hedge.compiler import OperatorCompilerBase, \
         Assign, FluxBatchAssign
 import pycuda.driver as cuda
 import pymbolic.mapper.stringifier
+from hedge.backends.exec_common import ExecutionMapperBase
 
 
 
@@ -135,40 +136,33 @@ def print_error_structure(discr, computed, reference, diff,
 
 
 # exec mapper -----------------------------------------------------------------
-class ExecutionMapper(hedge.optemplate.Evaluator,
-        hedge.optemplate.BoundOpMapperMixin, 
-        hedge.optemplate.LocalOpReducerMixin):
-
-    def __init__(self, context, executor):
-        hedge.optemplate.Evaluator.__init__(self, context)
-        self.ex = executor
-
+class ExecutionMapper(ExecutionMapperBase):
     def exec_assign(self, insn):
         return [(insn.name, self(insn.expr))], []
 
     def exec_vector_expr_assign(self, insn):
-        if self.ex.discr.instrumented:
-            def add_timer(n, vec_expr, t_func):
-                self.ex.discr.vector_math_timer.add_timer_callable(t_func)
-                self.ex.discr.vector_math_flop_counter.add(n*vec_expr.flop_count)
-                self.ex.discr.gmem_bytes_vector_math.add(
-                        self.ex.discr.given.float_size() * n *
+        if self.executor.discr.instrumented:
+            def stats_callback(n, vec_expr, t_func):
+                self.executor.discr.vector_math_timer.add_timer_callable(t_func)
+                self.executor.discr.vector_math_flop_counter.add(n*vec_expr.flop_count)
+                self.executor.discr.gmem_bytes_vector_math.add(
+                        self.executor.discr.given.float_size() * n *
                         (1+len(vec_expr.vector_exprs)))
         else:
-            add_timer = None
+            stats_callback = None
 
-        return [(insn.name, insn.compiled(self, add_timer))], []
+        return [(insn.name, insn.compiled(self, stats_callback))], []
 
     def exec_diff_batch_assign(self, insn):
         field = self.rec(insn.field)
 
-        discr = self.ex.discr
+        discr = self.executor.discr
         if discr.instrumented:
             discr.diff_counter.add(discr.dimensions)
             discr.diff_flop_counter.add(discr.dimensions*(
-                self.ex.diff_rst_flops + self.ex.diff_rescale_one_flops))
+                self.executor.diff_rst_flops + self.executor.diff_rescale_one_flops))
 
-        xyz_diff = self.ex.diff_kernel(insn.op_class, field)
+        xyz_diff = self.executor.diff_kernel(insn.op_class, field)
 
         if set(["cuda_diff", "cuda_compare"]) <= discr.debug:
             field = self.rec(insn.field)
@@ -202,16 +196,16 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         
 
     def exec_flux_batch_assign(self, insn):
-        discr = self.ex.discr
+        discr = self.executor.discr
 
         all_fofs = insn.kernel(self.rec, discr.fluxlocal_plan)
         elgroup, = discr.element_groups
 
         result = [
-            (name, self.ex.fluxlocal_kernel(
+            (name, self.executor.fluxlocal_kernel(
                 fluxes_on_faces, 
-                *self.ex.flux_local_data(
-                    self.ex.fluxlocal_kernel, elgroup, wdflux.is_lift)))
+                *self.executor.flux_local_data(
+                    self.executor.fluxlocal_kernel, elgroup, wdflux.is_lift)))
             for name, wdflux, fluxes_on_faces in zip(
                 insn.names, insn.fluxes, all_fofs)]
 
@@ -235,7 +229,7 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
                     )
 
             discr.lift_counter.add(flux_count)
-            discr.lift_flop_counter.add(flux_count*self.ex.lift_flops)
+            discr.lift_flop_counter.add(flux_count*self.executor.lift_flops)
 
         # debug ---------------------------------------------------------------
         if discr.debug & set(["cuda_lift", "cuda_flux"]):
@@ -288,11 +282,11 @@ class ExecutionMapper(hedge.optemplate.Evaluator,
         return result, []
 
     def exec_mass_assign(self, insn):
-        elgroup, = self.ex.discr.element_groups
-        kernel = self.ex.discr.element_local_kernel()
+        elgroup, = self.executor.discr.element_groups
+        kernel = self.executor.discr.element_local_kernel()
         return [(insn.name, kernel(
                 self.rec(insn.field),
-                *self.ex.mass_data(kernel, elgroup)))], []
+                *self.executor.mass_data(kernel, elgroup, insn.op_class)))], []
 
     def map_elementwise_max(self, op, field_expr):
         from pycuda.compiler import SourceModule
@@ -491,18 +485,19 @@ class Executor(object):
 		print self.code
 		raw_input()
 
-        from hedge.tools import get_rank
-        from hedge.compiler import dot_dataflow_graph
-        i = 0
-        while True:
-            dot_name = "rank-%d-dataflow-%d.dot" % (get_rank(discr), i)
-            from os.path import exists
-            if exists(dot_name):
-                i += 1
-                continue
+        if False:
+            from hedge.tools import get_rank
+            from hedge.compiler import dot_dataflow_graph
+            i = 0
+            while True:
+                dot_name = "rank-%d-dataflow-%d.dot" % (get_rank(discr), i)
+                from os.path import exists
+                if exists(dot_name):
+                    i += 1
+                    continue
 
-            open(dot_name, "w").write(dot_dataflow_graph(self.code))
-            break
+                open(dot_name, "w").write(dot_dataflow_graph(self.code))
+                break
 
         # build the local kernels 
         self.diff_kernel = self.discr.diff_plan.make_kernel(discr)
@@ -564,6 +559,6 @@ class Executor(object):
         return prep_mat, prep_scaling
 
     @memoize_method
-    def mass_data(self, kernel, elgroup):
-        return (kernel.prepare_matrix(elgroup.local_discretization.mass_matrix()),
-                kernel.prepare_scaling(elgroup, elgroup.inverse_jacobians))
+    def mass_data(self, kernel, elgroup, op_class):
+        return (kernel.prepare_matrix(op_class.matrix(elgroup)),
+                kernel.prepare_scaling(elgroup, op_class.coefficients(elgroup)))
