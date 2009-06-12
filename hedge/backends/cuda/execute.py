@@ -294,12 +294,12 @@ class ExecutionMapper(ExecutionMapperBase):
 	from hedge.element import TriangularElement as TE
 
         field = self.rec(field_expr)
-        result = self.ex.discr.volume_empty()
+        result = self.executor.discr.volume_empty()
 	block_size = 128
-	order = self.ex.discr.given.order()
+	order = self.executor.discr.given.order()
 	nodes_per_el = TE(order).node_count()
-	aligned_floats = self.ex.discr.given.dofs_per_block()
-        nodes_per_block = nodes_per_el * self.ex.discr.given.microblock.elements
+	aligned_floats = self.executor.discr.given.dofs_per_block()
+        nodes_per_block = nodes_per_el * self.executor.discr.given.microblock.elements
 	pad = aligned_floats - nodes_per_block
 
         mod = SourceModule(""" 
