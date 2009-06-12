@@ -293,37 +293,42 @@ class ExecutionMapper(ExecutionMapperBase):
         from pycuda.tools import dtype_to_ctype
 	from hedge.element import TriangularElement as TE
 
-        field = self.rec(field_expr)
-        result = self.executor.discr.volume_empty()
-	block_size = 128
-	order = self.executor.discr.given.order()
-	nodes_per_el = TE(order).node_count()
-	aligned_floats = self.executor.discr.given.dofs_per_block()
-        nodes_per_block = nodes_per_el * self.executor.discr.given.microblock.elements
-	pad = aligned_floats - nodes_per_block
+        discr = self.executor.discr
 
-        mod = SourceModule(""" 
-	#define BLOCK_SIZE %(block_size)d
+        field = self.rec(field_expr)
+	order = discr.given.order()
+	nodes_per_el = TE(order).node_count()
+	aligned_floats = discr.given.dofs_per_block()
+
+        block_size = 128
+        if block_size % aligned_floats != 0:
+	    block_size = block_size - block_size % aligned_floats + aligned_floats
+	    if block_size > 512:
+	        block_size = block_size - aligned_floats
+
+        if discr.default_scalar_type == numpy.float64:
+	    max_expr = "fmax"
+	elif discr.default_scalar_type == numpy.float32:
+	    max_expr = "fmaxf"
+	else:
+	    raise TypeError("invalid default_scalar_type specified")
+
+        mod = SourceModule("""
 	#define NODES_PER_EL %(nodes_per_el)d
-	#define ALIGNED_FLOATS %(aligned_floats)d
-	#define PAD %(pad)d
+        #define MAX_EXPR %(max_expr)s
 
 	typedef %(value_type)s value_type;
 
 	__global__ void elwise_max(value_type *field)
 	{
-            int idx = blockIdx.x * BLOCK_SIZE + threadIdx.x;
-	    int base_idx = (idx / NODES_PER_EL) * NODES_PER_EL + 
-	                   (idx / ALIGNED_FLOATS) * PAD;
+            int idx = blockDim.x * threadIdx.y + threadIdx.x;
+	    int base_idx = blockDim.x * threadIdx.y + threadIdx.x / NODES_PER_EL;
 	    for (int i=0; i<NODES_PER_EL; i++)
-	      field[idx] = fmax(field[idx], field[base_idx+i]);
+	      field[idx] = MAX_EXPR(field[idx], field[base_idx+i]);
 	}
-
 	"""% {
-	"block_size": block_size,
 	"nodes_per_el": nodes_per_el,
-	"aligned_floats": aligned_floats,
-	"pad": pad,
+	"max_expr": max_expr,
 	"value_type": dtype_to_ctype(field.dtype),
 	})
 
@@ -331,7 +336,7 @@ class ExecutionMapper(ExecutionMapperBase):
 	#stop = cuda.Event()
 
 	func = mod.get_function("elwise_max")
-	func.prepare("P", block=(block_size, 1, 1))
+	func.prepare("P", block=(block_size//aligned_floats, aligned_floats, 1))
 	grid_dim = (len(field) + block_size - 1) // block_size
 	#cuda.Context.synchronize()
 	#start.record()

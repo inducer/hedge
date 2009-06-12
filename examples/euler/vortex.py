@@ -116,7 +116,7 @@ def main():
         rhs(0, fields)
 
         dt = discr.dt_factor(max_eigval[0])
-        final_time = 0.5
+        final_time = 0.2
         nsteps = int(final_time/dt)+1
         dt = final_time/nsteps
 
