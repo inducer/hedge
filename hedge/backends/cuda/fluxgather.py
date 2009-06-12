@@ -718,7 +718,7 @@ class Kernel:
             flux_write_code.extend(
                     Initializer(
                         Value("value_type", f2cm.cse_prefix+str(i)), cse)
-                    for i, cse in f2cm.cses)
+                    for i, cse in enumerate(f2cm.cses))
             flux_write_code.extend(flux_sub_codes)
 
             return flux_write_code
