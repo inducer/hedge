@@ -22,7 +22,6 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 
-import hedge.backends.cpu_base
 import hedge.discretization
 import hedge.optemplate
 from pytools import memoize_method
