@@ -22,7 +22,7 @@ from __future__ import division
 
 
 
-def test_convergence_advec():
+def run_convergence_test_advec(debug_output=False):
     """Test whether 2/3D advection actually converges"""
 
     import numpy
@@ -34,12 +34,10 @@ def test_convergence_advec():
     from math import sin, pi, sqrt
     from hedge.pde import StrongAdvectionOperator
     from hedge.data import TimeDependentGivenFunction
-    from hedge.parallel import guess_parallelization_context
+    from hedge.backends import guess_run_context
     from hedge.visualization import SiloVisualizer
 
-    pcon = guess_parallelization_context()
-
-    debug_output = True
+    rcon = guess_run_context(disable=set(["cuda"]))
 
     # note: x component must remain zero because x-periodicity is used
     v = numpy.array([0.0,0.9,0.3])
@@ -50,7 +48,7 @@ def test_convergence_advec():
     def u_analytic(x, el, t):
         return f((numpy.dot(-v[:dims],x)/la.norm(v[:dims])+t*la.norm(v[:dims])))
 
-    def boundary_tagger(vertices, el, face_nr):
+    def boundary_tagger(vertices, el, face_nr, points):
         face_normal = el.face_normals[face_nr]
         if numpy.dot(face_normal, v[:len(face_normal)]) < 0:
             return ["inflow"]
@@ -65,7 +63,7 @@ def test_convergence_advec():
             boundary_tagger=boundary_tagger, 
             ),
         # 3D x-periodic
-        make_box_mesh(dimensions=(2*pi, 2, 2), max_volume=0.4,
+        make_box_mesh((0,0,0), (2*pi, 2, 2), max_volume=0.4,
             periodicity=(True, False, False),
             boundary_tagger=boundary_tagger, 
             ),
@@ -84,15 +82,15 @@ def test_convergence_advec():
                     # Another main point of this is to force the code to split
                     # a periodic face pair across nodes.
                     from random import choice
-                    partition = [choice(pcon.ranks) for el in mesh.elements]
+                    partition = [choice(rcon.ranks) for el in mesh.elements]
                 else:
                     partition = None
 
                 for order in [1,2,3,4]:
-                    if pcon.is_head_rank:
-                        mesh_data = pcon.distribute_mesh(mesh, partition)
+                    if rcon.is_head_rank:
+                        mesh_data = rcon.distribute_mesh(mesh, partition)
                     else:
-                        mesh_data = pcon.receive_mesh()
+                        mesh_data = rcon.receive_mesh()
 
                     dims = mesh.points.shape[1]
                     if dims == 2:
@@ -100,28 +98,31 @@ def test_convergence_advec():
                     else:
                         el_class = TetrahedralElement
 
-                    discr = pcon.make_discretization(mesh_data, 
-                            el_class(order), debug=True)
+                    discr = rcon.make_discretization(mesh_data, 
+                            el_class(order))
 
-                    op = StrongAdvectionOperator(discr, v[:dims], 
+                    op = StrongAdvectionOperator(v[:dims], 
                             inflow_u=TimeDependentGivenFunction(u_analytic),
                             flux_type=flux_type)
-                    vis = SiloVisualizer(discr, pcon)
+                    if debug_output:
+                        vis = SiloVisualizer(discr, rcon)
 
                     u = discr.interpolate_volume_function(lambda x, el: u_analytic(x, el, 0))
                     ic = u.copy()
 
                     dt = discr.dt_factor(op.max_eigenvalue())
                     nsteps = int(1/dt)
-                    if debug_output and pcon.is_head_rank:
+                    if debug_output and rcon.is_head_rank:
                         print "#steps=%d #elements=%d" % (nsteps, len(mesh.elements))
 
                     test_name = "test-%s-o%d-m%d-r%s" % (
                             flux_type, order, i_mesh, random_partition)
 
+                    rhs = op.bind(discr)
+
                     stepper = RK4TimeStepper()
                     for step in range(nsteps):
-                        u = stepper(u, step*dt, dt, op.rhs)
+                        u = stepper(u, step*dt, dt, rhs)
 
                     u_true = discr.interpolate_volume_function(
                             lambda x, el: u_analytic(x, el, nsteps*dt))
@@ -138,10 +139,28 @@ def test_convergence_advec():
 
                     eoc_rec.add_data_point(order, l2_error)
 
-                if debug_output and pcon.is_head_rank:
+                if debug_output and rcon.is_head_rank:
                     print "%s\n%s\n" % (flux_type.upper(), "-" * len(flux_type))
                     print eoc_rec.pretty_print(abscissa_label="Poly. Order", 
                             error_label="L2 Error")
 
-                self.assert_(eoc_rec.estimate_order_of_convergence()[0,1] > 3)
-                self.assert_(eoc_rec.estimate_order_of_convergence(2)[-1,1] > 7)
+                assert eoc_rec.estimate_order_of_convergence()[0,1] > 3
+                assert eoc_rec.estimate_order_of_convergence(2)[-1,1] > 7
+
+
+
+
+from hedge_test_util import mark_test
+@mark_test(mpi=True)
+def test_hedge_parallel():
+    import py.test
+    import boostmpi
+
+    from hedge_test_util import run_with_mpi_ranks
+    run_with_mpi_ranks(__file__, 2, run_convergence_test_advec)
+
+
+
+
+if __name__ == "__main__":
+    test_hedge_parallel()
