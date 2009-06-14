@@ -327,7 +327,7 @@ def get_boundary_flux_func(fluxes, fvi, toolchain, dtype):
         
         return [
             Initializer(Value("value_type", f2cm.cse_prefix+str(i)), cse)
-            for i, cse in f2cm.cses] + result
+            for i, cse in enumerate(f2cm.cses)] + result
 
     fbody = Block([
         Initializer(
