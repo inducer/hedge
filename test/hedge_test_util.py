@@ -58,10 +58,3 @@ def run_with_mpi_ranks(py_script, ranks, callable):
 
 
 
-try:
-    from py.test import mark as mark_test
-except ImportError:
-    def mark_test(**kwargs):
-        def dec(f):
-            return f
-        return dec

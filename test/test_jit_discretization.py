@@ -23,6 +23,7 @@ import numpy
 import numpy.linalg as la
 from hedge.backends.jit import Discretization as discr_class
 from hedge_test_util import Monomial
+from pytools.test import mark_test
 
 
 
@@ -590,6 +591,7 @@ def test_interior_fluxes_tri():
 
 
 
+@mark_test(long=True)
 def test_interior_fluxes_tet():
     """Check tetrahedron surface integrals computed using interior fluxes
     against their known values.
@@ -694,6 +696,7 @@ def test_interior_fluxes_tet():
 
 
 
+@mark_test(long=True)
 def test_symmetry_preservation_2d():
     """Test whether we preserve symmetry in a symmetric 2D advection problem"""
     from numpy import dot
@@ -812,6 +815,7 @@ def test_symmetry_preservation_2d():
 
 
 
+@mark_test(long=True)
 def test_convergence_advec_2d():
     """Test whether 2D advection actually converges"""
 
@@ -887,6 +891,7 @@ def test_convergence_advec_2d():
 
 
 
+@mark_test(long=True)
 def test_elliptic():
     """Test various properties of elliptic operators."""
 
