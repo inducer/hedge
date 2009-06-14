@@ -18,7 +18,6 @@
 
 
 from __future__ import division
-from pytools.test import mark_test
 
 
 
@@ -151,12 +150,10 @@ def run_convergence_test_advec(debug_output=False):
 
 
 
+from pytools.test import mark_test
 @mark_test(mpi=True, long=True)
 def test_hedge_parallel():
-    import py.test
-    import boostmpi
-
-    from hedge_test_util import run_with_mpi_ranks
+    from pytools.mpi import run_with_mpi_ranks
     run_with_mpi_ranks(__file__, 2, run_convergence_test_advec)
 
 
