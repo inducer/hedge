@@ -658,7 +658,8 @@ class Discretization(object):
             ls = log_shape(field)
             if field.dtype == object or ls == ():
                 from hedge.tools import with_object_array_or_scalar
-                field = with_object_array_or_scalar(lambda f: f[read_map])
+                field = with_object_array_or_scalar(
+                        lambda f: f[read_map], field)
             else:
                 field = numpy.asarray(
                         numpy.take(field, read_map, axis=len(ls)),
