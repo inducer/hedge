@@ -34,10 +34,10 @@ def run_convergence_test_advec(debug_output=False):
     from math import sin, pi, sqrt
     from hedge.pde import StrongAdvectionOperator
     from hedge.data import TimeDependentGivenFunction
-    from hedge.backends import guess_run_context
     from hedge.visualization import SiloVisualizer
 
-    rcon = guess_run_context(disable=set(["cuda"]))
+    from hedge.backends import guess_run_context
+    rcon = guess_run_context(["mpi"])
 
     # note: x component must remain zero because x-periodicity is used
     v = numpy.array([0.0,0.9,0.3])

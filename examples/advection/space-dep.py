@@ -28,7 +28,7 @@ def main():
     from math import floor
 
     from hedge.backends import guess_run_context
-    rcon = guess_run_context(disable=set(["cuda"]))
+    rcon = guess_run_context()
 
     # mesh setup --------------------------------------------------------------
     if rcon.is_head_rank:

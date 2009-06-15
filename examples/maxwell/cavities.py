@@ -24,7 +24,7 @@ import numpy.linalg as la
 
 
 
-def main(write_output=True):
+def main(write_output=True, allow_features=None):
     from hedge.element import TetrahedralElement
     from hedge.timestep import RK4TimeStepper
     from hedge.mesh import make_ball_mesh, make_cylinder_mesh, make_box_mesh
@@ -41,7 +41,7 @@ def main(write_output=True):
     from hedge.pde import MaxwellOperator
 
     from hedge.backends import guess_run_context
-    rcon = guess_run_context(disable=set(["cuda"]))
+    rcon = guess_run_context(allow_features)
 
     epsilon0 = 8.8541878176e-12 # C**2 / (N m**2)
     mu0 = 4*pi*1e-7 # N/A**2.
@@ -181,11 +181,16 @@ def test_maxwell_cavities():
 @mark_test(mpi=True, long=True)
 def test_maxwell_cavities_mpi():
     from pytools.mpi import run_with_mpi_ranks
-    run_with_mpi_ranks(__file__, 2, main, write_output=False)
+    run_with_mpi_ranks(__file__, 2, main, 
+            write_output=False, allow_features=["mpi"])
 
 
 
 
 # entry point -----------------------------------------------------------------
 if __name__ == "__main__":
-    main()
+    from pytools.mpi import in_mpi_relaunch
+    if in_mpi_relaunch():
+        test_maxwell_cavities_mpi()
+    else:
+        main()

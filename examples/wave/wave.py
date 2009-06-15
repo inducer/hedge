@@ -30,7 +30,7 @@ def main() :
     from math import sin, cos, pi, exp, sqrt
 
     from hedge.backends import guess_run_context
-    rcon = guess_run_context(disable=set(["cuda"]))
+    rcon = guess_run_context()
 
     dim = 2
 
