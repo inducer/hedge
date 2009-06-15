@@ -32,7 +32,7 @@ from hedge.optemplate import \
         FluxOpReducerMixin
 from hedge.tools import Future
 from hedge.backends import RunContext
-import hedge.mpi as mpi
+import boostmpi as mpi
 
 
 
@@ -179,7 +179,7 @@ class SendCompletionFuture(MPICompletionFuture):
         assert send_vec.dtype != object
         self.send_vec = send_vec
 
-        from hedge._internal import isend_buffer
+        from boostmpi import isend_buffer
         MPICompletionFuture.__init__(self,
                 isend_buffer(comm, rank, tag=1, 
                     vector=send_vec))
@@ -201,7 +201,7 @@ class ReceiveCompletionFuture(MPICompletionFuture):
                     shape=shape,
                     kind="numpy-mpi-recv",
                     dtype=self.pdiscr.default_scalar_type)
-        from hedge._internal import irecv_buffer
+        from boostmpi import irecv_buffer
         MPICompletionFuture.__init__(self,
                 irecv_buffer(pdiscr.context.communicator, 
                     rank, tag=1, vector=self.recv_vec))
@@ -580,7 +580,7 @@ class ParallelDiscretization(object):
 
     # norm and integral -------------------------------------------------------
     def nodewise_dot_product(self, a, b):
-        from hedge.mpi import all_reduce
+        from boostmpi import all_reduce
         from operator import add
 
         return all_reduce(self.context.communicator, 

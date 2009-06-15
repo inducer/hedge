@@ -1332,7 +1332,7 @@ def wait_for_keypress(discr):
             print "[Enter]"
             raw_input()
 
-        from hedge.mpi import broadcast
+        from boostmpi import broadcast
         broadcast(comm, value=0, root=0)
 
 def get_rank(discr):
