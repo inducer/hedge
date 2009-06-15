@@ -10,5 +10,5 @@ def main():
 
     outf = open("bessel_zeros.py", "w").write("bessel_zeros = %s" % zeros)
 
-if __name__ == "__main__:
+if __name__ == "__main__":
     main()
