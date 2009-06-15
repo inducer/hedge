@@ -52,7 +52,7 @@ class RunContext(object):
         If partition is None, act as if partition was the integer corresponding
         to the current number of ranks on the job.
 
-        If partition is not an integer, it must be a mapping from element number to 
+        If partition is not an integer, it must be a mapping from element number to
         rank. (A list or tuple of rank numbers will do, for example, or so will
         a full-blown dict.)
 
