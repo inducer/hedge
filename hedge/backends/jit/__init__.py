@@ -91,8 +91,8 @@ class ExecutionMapper(CPUExecutionMapperBase):
                     numpy.zeros(fof_shape, dtype=self.discr.default_scalar_type)
                     for f in insn.fluxes]
             insn.compiled_func(fg, *(all_fluxes_on_faces+args))
-            
-            for name, flux, fluxes_on_faces in zip(insn.names, insn.fluxes, 
+
+            for name, flux, fluxes_on_faces in zip(insn.names, insn.fluxes,
                     all_fluxes_on_faces):
                 from hedge.optemplate import LiftingFluxOperator
 
@@ -141,10 +141,10 @@ class Executor(CPUExecutorBase):
         self.code = self.compile_optemplate(discr, optemplate, post_bind_mapper)
 
         if "print_op_code" in discr.debug:
-	    from hedge.tools import get_rank
-	    if get_rank(discr) == 0:
-	        print self.code
-	        raw_input()
+            from hedge.tools import get_rank
+            if get_rank(discr) == 0:
+                print self.code
+                raw_input()
 
         def bench_diff(f):
             test_field = discr.volume_zeros()
@@ -179,12 +179,12 @@ class Executor(CPUExecutorBase):
             return argmin2(
                     (f, min(benchmark(f) for i in range(attempts)))
                     for f in choices)
-        
+
         from hedge.backends.jit.diff import JitDifferentiator
-        self.diff = pick_faster_func(bench_diff, 
+        self.diff = pick_faster_func(bench_diff,
                 [self.diff_builtin, JitDifferentiator(discr)])
         from hedge.backends.jit.lift import JitLifter
-        self.lift_flux = pick_faster_func(bench_lift, 
+        self.lift_flux = pick_faster_func(bench_lift,
                 [self.lift_flux, JitLifter(discr)])
 
     def compile_optemplate(self, discr, optemplate, post_bind_mapper):
@@ -209,7 +209,7 @@ class Executor(CPUExecutorBase):
 
     def diff_builtin(self, op_class, field, xyz_needed):
         rst_derivatives = [
-                self.diff_rst(op_class, i, field) 
+                self.diff_rst(op_class, i, field)
                 for i in range(self.discr.dimensions)]
 
         return [self.diff_rst_to_xyz(op_class(i), rst_derivatives)
@@ -239,7 +239,7 @@ class Discretization(hedge.discretization.Discretization):
             toolchain = guess_toolchain()
 
         toolchain = toolchain.with_max_optimization()
-        
+
         from codepy.libraries import add_hedge
         add_hedge(toolchain)
 
