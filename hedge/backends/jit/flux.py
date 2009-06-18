@@ -42,7 +42,7 @@ class FluxConcretizer(FluxIdentityMapper):
 
         arg_name = self.flux_var_info.flux_idx_and_dep_to_arg_name[
                 self.flux_idx, expr]
-        
+
         if not arg_name:
             return 0
         else:
@@ -57,7 +57,7 @@ class FluxToCodeMapper(CCodeMapper):
         return "value_type(fp.loc.normal[%d])" % (expr.axis)
 
     def map_penalty_term(self, expr, enclosing_prec):
-        return ("value_type(pow(fp.loc.order*fp.loc.order/fp.loc.h, %(pwr)r))" 
+        return ("value_type(pow(fp.loc.order*fp.loc.order/fp.loc.h, %(pwr)r))"
                 % {"pwr": expr.power})
 
     def map_function_symbol(self, expr, enclosing_prec):
@@ -148,7 +148,7 @@ def get_flux_var_info(fluxes):
 
                 set_or_check(
                         fvi.flux_idx_and_dep_to_arg_name,
-                        (flux_idx, fc), 
+                        (flux_idx, fc),
                         arg_name)
 
                 if not is_bdry:
@@ -157,7 +157,7 @@ def get_flux_var_info(fluxes):
                     # flipped case as well.
                     set_or_check(
                             fvi.flux_idx_and_dep_to_arg_name,
-                            (flux_idx, 
+                            (flux_idx,
                                 FieldComponent(fc.index, not fc.is_local)),
                             arg_name)
 
@@ -177,10 +177,10 @@ def get_interior_flux_func(fluxes, fvi, toolchain, dtype):
 
     S = Statement
     mod.add_to_module([
-        Include("hedge/face_operators.hpp"), 
-        Include("boost/foreach.hpp"), 
-        Include("cstdlib"), 
-        Include("algorithm"), 
+        Include("hedge/face_operators.hpp"),
+        Include("boost/foreach.hpp"),
+        Include("cstdlib"),
+        Include("algorithm"),
         Line(),
         S("using namespace hedge"),
         S("using namespace pyublas"),
@@ -190,7 +190,7 @@ def get_interior_flux_func(fluxes, fvi, toolchain, dtype):
         ])
 
     fdecl = FunctionDeclaration(
-            Value("void", "gather_flux"), 
+            Value("void", "gather_flux"),
             [
                 Const(Reference(Value("face_group", "fg"))),
                 ]+[
@@ -258,7 +258,7 @@ def get_interior_flux_func(fluxes, fvi, toolchain, dtype):
                 Block(
                     [
                     Initializer(MaybeUnused(Value("node_number_t", "%s_idx" % where)),
-                        "%(where)s_ebi + %(where)s_idx_list[i]" 
+                        "%(where)s_ebi + %(where)s_idx_list[i]"
                         % {"where": where})
                     for where in ["loc", "opp"]
                     ]+gen_flux_code()
@@ -266,7 +266,7 @@ def get_interior_flux_func(fluxes, fvi, toolchain, dtype):
                 )
             ]))
         ])
-    mod.add_function(FunctionBody(fdecl, fbody)) 
+    mod.add_function(FunctionBody(fdecl, fbody))
 
     #print "----------------------------------------------------------------"
     #print FunctionBody(fdecl, fbody)
@@ -289,10 +289,10 @@ def get_boundary_flux_func(fluxes, fvi, toolchain, dtype):
 
     S = Statement
     mod.add_to_module([
-        Include("hedge/face_operators.hpp"), 
-        Include("boost/foreach.hpp"), 
-        Include("cstdlib"), 
-        Include("algorithm"), 
+        Include("hedge/face_operators.hpp"),
+        Include("boost/foreach.hpp"),
+        Include("cstdlib"),
+        Include("algorithm"),
         Line(),
         S("using namespace hedge"),
         S("using namespace pyublas"),
@@ -301,7 +301,7 @@ def get_boundary_flux_func(fluxes, fvi, toolchain, dtype):
         ])
 
     fdecl = FunctionDeclaration(
-                Value("void", "gather_flux"), 
+                Value("void", "gather_flux"),
                 [
                 Const(Reference(Value("face_group", "fg"))),
                 ]+[
@@ -324,7 +324,7 @@ def get_boundary_flux_func(fluxes, fvi, toolchain, dtype):
                     flux_to_code(f2cm, False, flux_idx, fvi, flux.op.flux, PREC_PRODUCT))
                 for flux_idx, flux in enumerate(fluxes)
                 ]
-        
+
         return [
             Initializer(Value("value_type", f2cm.cse_prefix+str(i)), cse)
             for i, cse in enumerate(f2cm.cses)] + result
@@ -336,7 +336,7 @@ def get_boundary_flux_func(fluxes, fvi, toolchain, dtype):
         for i in range(len(fluxes))
         ]+[
         Initializer(
-            Const(Value("numpy_array<value_type>::const_iterator", 
+            Const(Value("numpy_array<value_type>::const_iterator",
                 "%s_it" % arg_name)),
             "%s.begin()" % arg_name)
         for arg_name in fvi.arg_names
@@ -365,7 +365,7 @@ def get_boundary_flux_func(fluxes, fvi, toolchain, dtype):
                     [
                     Initializer(MaybeUnused(
                         Value("node_number_t", "%s_idx" % where)),
-                        "%(where)s_ebi + %(where)s_idx_list[i]" 
+                        "%(where)s_ebi + %(where)s_idx_list[i]"
                         % {"where": where})
                     for where in ["loc", "opp"]
                     ]+gen_flux_code()
