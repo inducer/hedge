@@ -1537,9 +1537,15 @@ class WeakPoissonOperator(Operator, ):
 
             from hedge.optemplate import MassOperator
 
-            return (MassOperator().apply(self.discr, 
+            mean_state = self.discr.integral(w[0])
+
+            prep_operator = (MassOperator().apply(self.discr, 
                 rhs.volume_interpolant(self.discr))
                 - self.div_c(w=w, dir_bc_w=dir_bc_w, neu_bc_w=neu_bc_w))
+
+            m = numpy.ones_like(prep_operator)
+
+            return prep_operator - m * mean_state
 
     def bind(self, discr):
         assert self.dimensions == discr.dimensions
