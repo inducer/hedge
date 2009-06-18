@@ -1511,7 +1511,6 @@ class WeakPoissonOperator(Operator, ):
 
             M f - A Minv g - h
             """
-
             dim = self.discr.dimensions
 
             pop = self.poisson_op
@@ -1520,6 +1519,7 @@ class WeakPoissonOperator(Operator, ):
             ntag = pop.neumann_tag
 
             dir_bc_u = pop.dirichlet_bc.boundary_interpolant(self.discr, dtag)
+            #raw_input("check")
             vpart = self.grad_bc_c(dir_bc_u=dir_bc_u)
 
             from hedge.tools import ptwise_dot
@@ -1538,14 +1538,13 @@ class WeakPoissonOperator(Operator, ):
             from hedge.optemplate import MassOperator
 
             mean_state = self.discr.integral(w[0])
-
-            prep_operator = (MassOperator().apply(self.discr, 
+            from hedge.discretization import ones_on_volume
+            m = ones_on_volume(self.discr)
+            
+            return (MassOperator().apply(self.discr, 
                 rhs.volume_interpolant(self.discr))
-                - self.div_c(w=w, dir_bc_w=dir_bc_w, neu_bc_w=neu_bc_w))
-
-            m = numpy.ones_like(prep_operator)
-
-            return prep_operator - m * mean_state
+                - self.div_c(w=w, dir_bc_w=dir_bc_w, neu_bc_w=neu_bc_w)) #\
+                 #       / - m * mean_state
 
     def bind(self, discr):
         assert self.dimensions == discr.dimensions

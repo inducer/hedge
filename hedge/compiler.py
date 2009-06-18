@@ -124,7 +124,7 @@ class MassAssign(Instruction):
         return set([self.name])
 
     def get_dependencies(self):
-        return set([self.field])
+        return self.dep_mapper_factory()(self.field)
 
     def __str__(self):
         return "%s <- Mass * %s" % (self.name, self.field)
@@ -483,7 +483,8 @@ class OperatorCompilerBase(IdentityMapper):
             ma = MassAssign(
                     name=self.get_var_name(),
                     op_class=expr.op.__class__,
-                    field=self.rec(expr.field))
+                    field=self.rec(expr.field),
+                    dep_mapper_factory=self.dep_mapper_factory)
             self.code.append(ma)
 
             from pymbolic import var

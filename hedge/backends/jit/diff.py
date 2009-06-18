@@ -178,17 +178,20 @@ class JitDifferentiator:
 
     def __call__(self, op_class, field, xyz_needed):
         result = [self.discr.volume_zeros() for i in range(self.discr.dimensions)]
-        for eg in self.discr.element_groups:
-            coeffs = op_class.coefficients(eg)
-            
-            args = ([eg.ranges, field] 
-                    + [m.astype(field.dtype) for m in op_class.matrices(eg)]
-                    + result
-                    + [coeffs, eg.member_nrs, coeffs.shape[2]])
 
+        if isinstance(field, (float, int)):
+            assert field == 0
+        else:
+            for eg in self.discr.element_groups:
+                coeffs = op_class.coefficients(eg)
+                
+                args = ([eg.ranges, field] 
+                        + [m.astype(field.dtype) for m in op_class.matrices(eg)]
+                        + result
+                        + [coeffs, eg.member_nrs, coeffs.shape[2]])
 
-            diff_routine = self.make_diff_for_elgroup(eg)
-            diff_routine(*args)
+                diff_routine = self.make_diff_for_elgroup(eg)
+                diff_routine(*args)
 
         return [result[i] for i in xyz_needed]
 

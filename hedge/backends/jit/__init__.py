@@ -126,7 +126,7 @@ class ExecutionMapper(CPUExecutionMapperBase):
         field = self.rec(insn.field)
 
         if isinstance(field, (float, int)) and field == 0:
-            return 0
+            return [(insn.name, 0)], []
 
         out = self.discr.volume_zeros(dtype=field.dtype)
         self.executor.do_mass(insn.op_class, field, out)
