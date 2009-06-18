@@ -95,7 +95,7 @@ class BoundaryFluxKind(object):
 
 
 
-        
+
 class OperatorCompiler(OperatorCompilerBase):
     def __init__(self, discr):
         OperatorCompilerBase.__init__(self)
@@ -125,7 +125,7 @@ class OperatorCompiler(OperatorCompilerBase):
                 return InteriorFluxKind()
 
         return [self.FluxRecord(
-            flux_expr=flux_binding, 
+            flux_expr=flux_binding,
             kind=get_flux_kind(flux_binding),
             dependencies=get_flux_deps(flux_binding))
             for flux_binding in FluxCollector()(expr)]
@@ -155,7 +155,7 @@ class OperatorCompiler(OperatorCompilerBase):
                 get_flux_var_info, \
                 get_interior_flux_func
         fvi = get_flux_var_info(fluxes)
-        compiled_func = get_interior_flux_func(fluxes, fvi, 
+        compiled_func = get_interior_flux_func(fluxes, fvi,
                 self.discr.toolchain, self.discr.default_scalar_type)
 
         if self.discr.instrumented:
@@ -187,7 +187,7 @@ class OperatorCompiler(OperatorCompilerBase):
 
         return CompiledFluxBatchAssign(
                 names=names, fluxes=fluxes, kind=kind,
-                arg_specs=fvi.arg_specs, 
+                arg_specs=fvi.arg_specs,
                 compiled_func=compiled_func,
                 dep_mapper_factory=self.dep_mapper_factory)
 
@@ -198,7 +198,7 @@ class OperatorCompiler(OperatorCompilerBase):
                 expr=expr,
                 dep_mapper_factory=self.dep_mapper_factory,
                 compiled=CompiledVectorExpression(
-                    expr, 
+                    expr,
                     type_getter=lambda expr: (True, self.discr.default_scalar_type),
                     result_dtype=self.discr.default_scalar_type,
                     toolchain=self.discr.toolchain),
