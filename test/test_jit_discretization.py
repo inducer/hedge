@@ -1095,3 +1095,10 @@ def no_test_tri_mass_mat_gauss(self):
     err_2 = abs(num_integral_2-true_integral)
     self.assert_(err_1 < 1e-11)
     self.assert_(err_2 < 1e-11)
+
+
+
+
+if __name__ == "__main__":
+    from py.test.cmdline import main
+    main([__file__])

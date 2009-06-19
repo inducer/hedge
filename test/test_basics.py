@@ -679,3 +679,10 @@ def test_all_periodic_no_boundary():
         return result
 
     assert count(mesh.tag_to_boundary[TAG_ALL]) == 0
+
+
+
+
+if __name__ == "__main__":
+    from py.test.cmdline import main
+    main([__file__])
