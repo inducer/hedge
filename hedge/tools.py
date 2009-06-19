@@ -95,7 +95,7 @@ def numpy_linear_comb(lin_comb):
         return result
     else:
         shape = single_valued(ary.shape for fac, ary in lin_comb)
-        vector_dtypes = tuple(ary[i].dtype for fac, ary in lin_comb)
+        vector_dtypes = tuple(ary.dtype for fac, ary in lin_comb)
         scalar_dtypes = tuple(
                 match_precision(sd, vd)
                 for sd, vd in zip(scalar_dtypes, vector_dtypes))
