@@ -1084,7 +1084,7 @@ class CGStateContainer:
         if x is None:
             x = numpy.zeros((self.operator.size1(),))
         self.x = x
-
+        
         self.residual = rhs - self.operator(x)
 
         self.d = self.precon(self.residual)

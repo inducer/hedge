@@ -1300,6 +1300,7 @@ class WeakPoissonOperator(Operator, ):
         self.neumann_bc = neumann_bc
         self.neumann_tag = neumann_tag
 
+        
     # fluxes ------------------------------------------------------------------
     def get_weak_flux_set(self, flux):
         class FluxSet: pass
@@ -1414,7 +1415,7 @@ class WeakPoissonOperator(Operator, ):
 
     # bound operator ----------------------------------------------------------
     class BoundPoissonOperator(hedge.tools.OperatorBase):
-        def __init__(self, poisson_op, discr):
+        def __init__(self, poisson_op, discr, poincare_mean_value_hack):
             hedge.tools.OperatorBase.__init__(self)
             self.discr = discr
 
@@ -1433,7 +1434,9 @@ class WeakPoissonOperator(Operator, ):
                 self.diffusion = pop.diffusion_tensor.volume_interpolant(discr)
                 self.neu_diff = pop.diffusion_tensor.boundary_interpolant(discr, 
                         poisson_op.neumann_tag)
-
+            
+            self.poincare_mean_value_hack = poincare_mean_value_hack
+        
         @property
         def dtype(self):
             return self.discr.default_scalar_type
@@ -1480,10 +1483,18 @@ class WeakPoissonOperator(Operator, ):
 
         def op(self, u, apply_minv=False):
             from hedge.tools import ptwise_dot
+            if self.poincare_mean_value_hack:
+                mean_state = self.discr.integral(u)
+                from hedge.discretization import ones_on_volume
+                m = ones_on_volume(self.discr)
+                m_mean_state = m * mean_state
+            else:
+                m_mean_state = 1
 
             return self.div(
                     ptwise_dot(2, 1, self.diffusion, self.grad(u)), 
-                    u, apply_minv=apply_minv)
+                    u, apply_minv=apply_minv) \
+                            - m_mean_state
 
         __call__ = op
 
@@ -1519,7 +1530,6 @@ class WeakPoissonOperator(Operator, ):
             ntag = pop.neumann_tag
 
             dir_bc_u = pop.dirichlet_bc.boundary_interpolant(self.discr, dtag)
-            #raw_input("check")
             vpart = self.grad_bc_c(dir_bc_u=dir_bc_u)
 
             from hedge.tools import ptwise_dot
@@ -1536,23 +1546,19 @@ class WeakPoissonOperator(Operator, ):
             neu_bc_w = join_fields(0, neu_bc_v())
 
             from hedge.optemplate import MassOperator
-
-            mean_state = self.discr.integral(w[0])
-            from hedge.discretization import ones_on_volume
-            m = ones_on_volume(self.discr)
-            
+ 
             return (MassOperator().apply(self.discr, 
                 rhs.volume_interpolant(self.discr))
-                - self.div_c(w=w, dir_bc_w=dir_bc_w, neu_bc_w=neu_bc_w)) #\
-                 #       / - m * mean_state
+                - self.div_c(w=w, dir_bc_w=dir_bc_w, neu_bc_w=neu_bc_w))
+                        
 
-    def bind(self, discr):
+    def bind(self, discr, poincare_mean_value_hack):
         assert self.dimensions == discr.dimensions
 
         from hedge.mesh import check_bc_coverage
         check_bc_coverage(discr.mesh, [self.dirichlet_tag, self.neumann_tag])
 
-        return self.BoundPoissonOperator(self, discr)
+        return self.BoundPoissonOperator(self, discr, poincare_mean_value_hack)
 
     # matrix creation ---------------------------------------------------------
     def grad_matrix(self):
