@@ -1484,12 +1484,12 @@ class WeakPoissonOperator(Operator, ):
         def op(self, u, apply_minv=False):
             from hedge.tools import ptwise_dot
             if self.poincare_mean_value_hack:
+                m_mean_state = 0
+            else:
                 mean_state = self.discr.integral(u)
                 from hedge.discretization import ones_on_volume
                 m = ones_on_volume(self.discr)
                 m_mean_state = m * mean_state
-            else:
-                m_mean_state = 1
 
             return self.div(
                     ptwise_dot(2, 1, self.diffusion, self.grad(u)), 
