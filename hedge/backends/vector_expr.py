@@ -25,6 +25,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 import numpy
 import pymbolic.mapper.substitutor
 import hedge.optemplate
+from pytools import memoize_method, Record
 
 
 
@@ -40,15 +41,20 @@ class DefaultingSubstitutionMapper(
             pymbolic.mapper.substitutor.SubstitutionMapper.handle_unsupported_expression(
                     self, expr)
 
+
+
+
+class KernelRecord(Record):
+    pass
+
+
+
+
 class CompiledVectorExpressionBase(object):
-    def __init__(self, vec_expr, type_getter, result_dtype):
-        """
-        @arg type_getter: A function `expr -> (is_vector, dtype)`, where
-          C{is_vector} is a C{bool} determining whether C{expr} evaluates to 
-          an aggregate over whose entries the kernel should iterate, and 
-          C{dtype} is the numpy dtype of the expression.
-        """
-        self.result_dtype = result_dtype
+    def __init__(self, vec_expr, is_vector_func, result_dtype_getter):
+        self.vec_expr = vec_expr
+        self.is_vector_func = is_vector_func
+        self.result_dtype_getter = result_dtype_getter
 
         from hedge.optemplate import DependencyMapper
         deps = DependencyMapper(
@@ -56,18 +62,18 @@ class CompiledVectorExpressionBase(object):
                 include_lookups=True,
                 include_calls="descend_args")(vec_expr)
 
-        self.vector_exprs = [dep for dep in deps if type_getter(dep)[0]]
-        self.scalar_exprs = [dep for dep in deps if not type_getter(dep)[0]]
-        vector_names = ["v%d" % i for i in range(len(self.vector_exprs))]
-        scalar_names = ["s%d" % i for i in range(len(self.scalar_exprs))]
+        self.vector_exprs = [dep for dep in deps if is_vector_func(dep)]
+        self.scalar_exprs = [dep for dep in deps if not is_vector_func(dep)]
+        self.vector_names = ["v%d" % i for i in range(len(self.vector_exprs))]
+        self.scalar_names = ["s%d" % i for i in range(len(self.scalar_exprs))]
 
         from pymbolic import var
         var_i = var("i")
         subst_map = dict(
                 list(zip(self.vector_exprs, [var(vecname)[var_i]
-                    for vecname in vector_names]))
-                +list(zip(self.scalar_exprs, 
-                    [var(scaname) for scaname in scalar_names])))
+                    for vecname in self.vector_names]))
+                +list(zip(self.scalar_exprs,
+                    [var(scaname) for scaname in self.scalar_names])))
 
         def subst_func(expr):
             try:
@@ -75,31 +81,43 @@ class CompiledVectorExpressionBase(object):
             except KeyError:
                 return None
 
-        subst_expr = DefaultingSubstitutionMapper(subst_func)(vec_expr)
+        self.subst_expr = DefaultingSubstitutionMapper(subst_func)(vec_expr)
 
+        from hedge.tools import is_obj_array
+        if is_obj_array(self.subst_expr):
+            self.exprs = self.subst_expr
+        else:
+            self.exprs = [self.subst_expr]
+
+        self.result_count = len(self.exprs)
+
+        from pymbolic.mapper.flop_counter import FlopCounter
+        self.flop_count = FlopCounter()(self.subst_expr)
+
+    @memoize_method
+    def get_kernel(self, vector_dtypes, scalar_dtypes):
         from pymbolic.mapper.stringifier import PREC_NONE
         from pymbolic.mapper.c_code import CCodeMapper
 
         elwise = self.elementwise_mod
 
+        result_dtype = self.result_dtype_getter(
+                dict(zip(self.vector_exprs, vector_dtypes)),
+                dict(zip(self.scalar_exprs, scalar_dtypes)))
+
         from hedge.tools import is_obj_array
-        if is_obj_array(subst_expr):
+        if is_obj_array(self.subst_expr):
             args = [elwise.VectorArg(result_dtype, "_result%d" % i)
-                    for i in range(len(subst_expr))]
-            exprs = subst_expr
+                    for i in range(len(self.subst_expr))]
         else:
             args = [elwise.VectorArg(result_dtype, "_result0")]
-            exprs = [subst_expr]
 
-        self.result_count = len(exprs)
-        self.subst_expr = subst_expr
-        
         code_mapper = CCodeMapper()
-        expr_codes = [code_mapper(e, PREC_NONE) for e in exprs]
+        expr_codes = [code_mapper(e, PREC_NONE) for e in self.exprs]
         code_lines = [
             "%s = %s;" % (
                 get_c_declarator(
-                    "%s%d" % (code_mapper.cse_prefix, i), 
+                    "%s%d" % (code_mapper.cse_prefix, i),
                     False, result_dtype),
                 cse)
             for i, cse in enumerate(code_mapper.cses)
@@ -107,22 +125,16 @@ class CompiledVectorExpressionBase(object):
             "_result%d[i] = %s;" % (i, ec)
             for i, ec in enumerate(expr_codes)]
 
-        def get_arg_spec(name, is_vector, dtype):
-            if is_vector:
-                return elwise.VectorArg(dtype, name)
-            else:
-                return elwise.ScalarArg(dtype, name)
-
         args.extend(
-                get_arg_spec(var_name, *type_getter(var_expr)) 
-                for var_expr, var_name in zip(
-                    self.vector_exprs+self.scalar_exprs, 
-                    vector_names+scalar_names))
+                elwise.VectorArg(dtype, name)
+                for dtype, name in zip(vector_dtypes, self.vector_names))
+        args.extend(
+                elwise.ScalarArg(dtype, name)
+                for dtype, name in zip(scalar_dtypes, self.scalar_names))
 
         #print ",".join(args)
         #print "\n".join(code_lines)
 
-        self.make_kernel(args, "\n".join(code_lines))
-
-        from pymbolic.mapper.flop_counter import FlopCounter
-        self.flop_count = FlopCounter()(subst_expr)
+        return KernelRecord(
+                kernel=self.make_kernel_internal(args, "\n".join(code_lines)),
+                result_dtype=result_dtype)

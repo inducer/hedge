@@ -73,7 +73,10 @@ class CPUExecutorBase(object):
 
     def lift_flux(self, fgroup, matrix, scaling, field, out):
         from hedge._internal import lift_flux
-        lift_flux(fgroup, matrix.astype(field.dtype), scaling, field, out)
+        from pytools import to_uncomplex_dtype
+        lift_flux(fgroup, 
+                matrix.astype(to_uncomplex_dtype(field.dtype)), 
+                scaling, field, out)
 
     def diff_rst(self, op, rst_axis, field):
         result = self.discr.volume_zeros()

@@ -101,6 +101,8 @@ void hedge_expose_op_target()
 {
   hedge_expose_op_target_for_type<float>();
   hedge_expose_op_target_for_type<double>();
+  hedge_expose_op_target_for_type<std::complex<float> >();
+  hedge_expose_op_target_for_type<std::complex<double> >();
 
   {
     typedef coord_matrix_target cl;

@@ -40,7 +40,7 @@ class CompiledVectorExpression(CompiledVectorExpressionBase):
         self.stream = stream
         self.allocator = allocator
 
-    def make_kernel(self, args, instructions):
+    def make_kernel_internal(self, args, instructions):
         from pycuda.elementwise import get_elwise_kernel
         self.kernel = get_elwise_kernel(args, instructions, name="vector_expression")
 

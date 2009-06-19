@@ -272,7 +272,7 @@ class DataArray(object):
             elif vec.dtype == numpy.float32: return VTK_FLOAT32
             elif vec.dtype == numpy.float64: return VTK_FLOAT64
             else:
-                raise TypeError, "Unsupported vector '%s' type in VTK writer" % (vec.dtype)
+                raise TypeError, "Unsupported vector type '%s' in VTK writer" % (vec.dtype)
 
         if not isinstance(container, numpy.ndarray):
             raise ValueError, "cannot convert object of type `%s' to DataArray" % type(container)

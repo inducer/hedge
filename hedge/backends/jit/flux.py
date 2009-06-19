@@ -54,10 +54,10 @@ class FluxConcretizer(FluxIdentityMapper):
 
 class FluxToCodeMapper(CCodeMapper):
     def map_normal(self, expr, enclosing_prec):
-        return "value_type(fp.loc.normal[%d])" % (expr.axis)
+        return "uncomplex_type(fp.loc.normal[%d])" % (expr.axis)
 
     def map_penalty_term(self, expr, enclosing_prec):
-        return ("value_type(pow(fp.loc.order*fp.loc.order/fp.loc.h, %(pwr)r))"
+        return ("uncomplex_type(pow(fp.loc.order*fp.loc.order/fp.loc.h, %(pwr)r))"
                 % {"pwr": expr.power})
 
     def map_function_symbol(self, expr, enclosing_prec):
@@ -72,9 +72,13 @@ class FluxToCodeMapper(CCodeMapper):
                 flux_min: "std::min",
                 }[expr]
 
-
-
-
+    def map_constant(self, x, enclosing_prec):
+        import numpy
+        if isinstance(x, complex):
+            return "std::complex<uncomplex_type>(%s, %s)" % (
+                    repr(x.real), repr(x.imag))
+        else:
+            return "uncomplex_type(%s)" % repr(x)
 
 
 
@@ -175,17 +179,22 @@ def get_interior_flux_func(fluxes, fvi, toolchain, dtype):
     from codepy.bpl import BoostPythonModule
     mod = BoostPythonModule(max_arity=len(fluxes)+len(fvi.arg_names)+1)
 
+    from pytools import to_uncomplex_dtype, flatten
+
     S = Statement
     mod.add_to_module([
-        Include("hedge/face_operators.hpp"),
-        Include("boost/foreach.hpp"),
         Include("cstdlib"),
         Include("algorithm"),
+        Line(),
+        Include("boost/foreach.hpp"),
+        Line(),
+        Include("hedge/face_operators.hpp"),
         Line(),
         S("using namespace hedge"),
         S("using namespace pyublas"),
         Line(),
         Typedef(POD(dtype, "value_type")),
+        Typedef(POD(to_uncomplex_dtype(dtype), "uncomplex_type")),
         Line(),
         ])
 
@@ -201,8 +210,6 @@ def get_interior_flux_func(fluxes, fvi, toolchain, dtype):
                 for arg_name in fvi.arg_names
                 ]
             )
-
-    from pytools import flatten
 
     from pymbolic.mapper.stringifier import PREC_PRODUCT
 
@@ -284,20 +291,25 @@ def get_boundary_flux_func(fluxes, fvi, toolchain, dtype):
             Statement, Include, Line, Block, Initializer, Assign, \
             CustomLoop, For
 
+    from pytools import to_uncomplex_dtype, flatten
+
     from codepy.bpl import BoostPythonModule
     mod = BoostPythonModule(max_arity=len(fluxes)+len(fvi.arg_names)+1)
 
     S = Statement
     mod.add_to_module([
-        Include("hedge/face_operators.hpp"),
-        Include("boost/foreach.hpp"),
         Include("cstdlib"),
         Include("algorithm"),
+        Line(),
+        Include("boost/foreach.hpp"),
+        Line(),
+        Include("hedge/face_operators.hpp"),
         Line(),
         S("using namespace hedge"),
         S("using namespace pyublas"),
         Line(),
         Typedef(POD(dtype, "value_type")),
+        Typedef(POD(to_uncomplex_dtype(dtype), "uncomplex_type")),
         ])
 
     fdecl = FunctionDeclaration(
@@ -310,8 +322,6 @@ def get_boundary_flux_func(fluxes, fvi, toolchain, dtype):
                 ]+[
                 Const(Reference(Value("numpy_array<value_type>", arg_name)))
                 for arg_name in fvi.arg_names])
-
-    from pytools import flatten
 
     from pymbolic.mapper.stringifier import PREC_PRODUCT
 

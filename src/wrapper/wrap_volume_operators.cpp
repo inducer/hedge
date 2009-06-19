@@ -106,4 +106,6 @@ void hedge_expose_volume_operators()
 
   expose_for_type<float>();
   expose_for_type<double>();
+  expose_for_type<std::complex<float> >();
+  expose_for_type<std::complex<double> >();
 }

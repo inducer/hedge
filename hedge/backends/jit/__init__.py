@@ -64,18 +64,39 @@ class ExecutionMapper(CPUExecutionMapperBase):
 
         from pymbolic.primitives import is_zero
 
+        class ZeroSpec: pass
+        class BoundaryZeros(ZeroSpec): pass
+        class VolumeZeros(ZeroSpec): pass
+
         def eval_arg(arg_spec):
             arg_expr, is_int = arg_spec
             arg = self.rec(arg_expr)
             if is_zero(arg):
                 if is_bdry and not is_int:
-                    return self.discr.boundary_zeros(insn.kind.tag)
+                    return BoundaryZeros()
                 else:
-                    return self.discr.volume_zeros()
+                    return VolumeZeros()
             else:
                 return arg
 
-        args = [eval_arg(arg_expr) for arg_expr in insn.arg_specs]
+        args = [eval_arg(arg_expr) 
+                for arg_expr in insn.flux_var_info.arg_specs]
+
+        from pytools import common_dtype
+        max_dtype = common_dtype(
+                a.dtype for a in args if not isinstance(a, ZeroSpec))
+
+        def cast_arg(arg):
+            if isinstance(arg, BoundaryZeros):
+                return self.discr.boundary_zeros(insn.kind.tag,
+                        dtype=max_dtype)
+            elif isinstance(arg, BoundaryZeros):
+                return self.discr.volume_zeros(
+                        dtype=max_dtype)
+            else:
+                return numpy.asarray(arg, dtype=max_dtype)
+
+        args = [cast_arg(arg) for arg in args]
 
         if is_bdry:
             bdry = self.discr.get_boundary(insn.kind.tag)
@@ -88,15 +109,16 @@ class ExecutionMapper(CPUExecutionMapperBase):
         for fg in face_groups:
             fof_shape = (fg.face_count*fg.face_length()*fg.element_count(),)
             all_fluxes_on_faces = [
-                    numpy.zeros(fof_shape, dtype=self.discr.default_scalar_type)
+                    numpy.zeros(fof_shape, dtype=max_dtype)
                     for f in insn.fluxes]
-            insn.compiled_func(fg, *(all_fluxes_on_faces+args))
+            func = insn.get_function(self.discr, max_dtype)
+            func(fg, *(all_fluxes_on_faces+args))
 
             for name, flux, fluxes_on_faces in zip(insn.names, insn.fluxes,
                     all_fluxes_on_faces):
                 from hedge.optemplate import LiftingFluxOperator
 
-                out = self.discr.volume_zeros()
+                out = self.discr.volume_zeros(dtype=fluxes_on_faces.dtype)
                 if isinstance(flux.op, LiftingFluxOperator):
                     self.executor.lift_flux(fg, fg.ldis_loc.lifting_matrix(),
                             fg.local_el_inverse_jacobians, fluxes_on_faces, out)

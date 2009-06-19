@@ -30,14 +30,16 @@ from hedge.backends.vector_expr import CompiledVectorExpressionBase
 class CompiledVectorExpression(CompiledVectorExpressionBase):
     elementwise_mod = codepy.elementwise
 
-    def __init__(self, vec_expr, type_getter, result_dtype, toolchain=None):
+    def __init__(self, vec_expr, 
+            is_vector_func, result_dtype_getter, 
+            toolchain=None):
         self.toolchain = toolchain
 
-        CompiledVectorExpressionBase.__init__(self, 
-                vec_expr, type_getter, result_dtype)
+        CompiledVectorExpressionBase.__init__(self, vec_expr, 
+                is_vector_func, result_dtype_getter)
 
-    def make_kernel(self, args, instructions):
-        self.kernel = self.elementwise_mod.ElementwiseKernel(
+    def make_kernel_internal(self, args, instructions):
+        return self.elementwise_mod.ElementwiseKernel(
                 args, instructions, name="vector_expression",
                 toolchain=self.toolchain)
 
@@ -47,11 +49,14 @@ class CompiledVectorExpression(CompiledVectorExpressionBase):
 
         from pytools import single_valued
         shape = single_valued(vec.shape for vec in vectors)
-        single_valued(vec.dtype for vec in vectors)
+
+        kernel_rec = self.get_kernel(
+                tuple(v.dtype for v in vectors),
+                tuple(s.dtype for s in scalars))
 
         assert self.result_count > 0
         from hedge.tools import make_obj_array
-        results = [numpy.empty(shape, self.result_dtype)
+        results = [numpy.empty(shape, kernel_rec.result_dtype)
                 for i in range(self.result_count)]
 
         size = results[0].size
@@ -60,10 +65,10 @@ class CompiledVectorExpression(CompiledVectorExpressionBase):
         if stats_callback is not None:
             timer = stats_callback(size, self)
             sub_timer = timer.start_sub_timer()
-            self.kernel(*args)
+            kernel_rec.kernel(*args)
             sub_timer.stop().submit()
         else:
-            self.kernel(*args)
+            kernel_rec.kernel(*args)
 
         from hedge.tools import is_obj_array
         if is_obj_array(self.subst_expr):
@@ -93,5 +98,3 @@ if __name__ == "__main__":
         }
 
     print cexpr(lambda expr: ctx[expr])
-
-
