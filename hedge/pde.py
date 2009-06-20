@@ -1415,7 +1415,7 @@ class WeakPoissonOperator(Operator, ):
 
     # bound operator ----------------------------------------------------------
     class BoundPoissonOperator(hedge.tools.OperatorBase):
-        def __init__(self, poisson_op, discr, poincare_mean_value_hack):
+        def __init__(self, poisson_op, discr):
             hedge.tools.OperatorBase.__init__(self)
             self.discr = discr
 
@@ -1435,7 +1435,8 @@ class WeakPoissonOperator(Operator, ):
                 self.neu_diff = pop.diffusion_tensor.boundary_interpolant(discr, 
                         poisson_op.neumann_tag)
             
-            self.poincare_mean_value_hack = poincare_mean_value_hack
+            from hedge.mesh import TAG_ALL
+            self.poincare_mean_value_hack = len(self.discr.get_boundary(TAG_ALL).nodes) 
         
         @property
         def dtype(self):
@@ -1552,13 +1553,13 @@ class WeakPoissonOperator(Operator, ):
                 - self.div_c(w=w, dir_bc_w=dir_bc_w, neu_bc_w=neu_bc_w))
                         
 
-    def bind(self, discr, poincare_mean_value_hack):
+    def bind(self, discr):
         assert self.dimensions == discr.dimensions
 
         from hedge.mesh import check_bc_coverage
         check_bc_coverage(discr.mesh, [self.dirichlet_tag, self.neumann_tag])
 
-        return self.BoundPoissonOperator(self, discr, poincare_mean_value_hack)
+        return self.BoundPoissonOperator(self, discr)
 
     # matrix creation ---------------------------------------------------------
     def grad_matrix(self):
