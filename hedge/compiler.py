@@ -127,7 +127,10 @@ class MassAssign(Instruction):
         return set([self.field])
 
     def __str__(self):
-        return "%s <- Mass * %s" % (self.name, self.field)
+        return "%s <- %s * %s" % (
+                self.name, 
+                str(self.op_class()), 
+                self.field)
 
     def get_executor_method(self, executor):
         return executor.exec_mass_assign
