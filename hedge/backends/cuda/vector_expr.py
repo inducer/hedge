@@ -32,17 +32,17 @@ from hedge.backends.vector_expr import CompiledVectorExpressionBase
 class CompiledVectorExpression(CompiledVectorExpressionBase):
     elementwise_mod = pycuda.elementwise
 
-    def __init__(self, vec_expr, type_getter, result_dtype, 
+    def __init__(self, vec_expr, is_vector_func, result_dtype_getter, 
             stream=None, allocator=drv.mem_alloc):
-        CompiledVectorExpressionBase.__init__(self, 
-                vec_expr, type_getter, result_dtype)
+        CompiledVectorExpressionBase.__init__(self, vec_expr, 
+                is_vector_func, result_dtype_getter)
 
         self.stream = stream
         self.allocator = allocator
 
     def make_kernel_internal(self, args, instructions):
         from pycuda.elementwise import get_elwise_kernel
-        self.kernel = get_elwise_kernel(args, instructions, name="vector_expression")
+        return get_elwise_kernel(args, instructions, name="vector_expression")
 
     def __call__(self, evaluate_subexpr, stats_callback=None):
         vectors = [evaluate_subexpr(vec_expr) for vec_expr in self.vector_exprs]
@@ -50,15 +50,19 @@ class CompiledVectorExpression(CompiledVectorExpressionBase):
 
         from pytools import single_valued
         shape = single_valued(vec.shape for vec in vectors)
-        single_valued(vec.dtype for vec in vectors)
+
+        kernel_rec = self.get_kernel(
+                tuple(v.dtype for v in vectors),
+                tuple(s.dtype for s in scalars))
 
         assert self.result_count > 0
         from hedge.tools import make_obj_array
-        results = [gpuarray.empty(shape, self.result_dtype, self.allocator)
-                for i in range(self.result_count)]
+        results = [gpuarray.empty(
+            shape, kernel_rec.result_dtype, self.allocator)
+            for i in range(self.result_count)]
 
         size = results[0].size
-        self.kernel.set_block_shape(*results[0]._block)
+        kernel_rec.kernel.set_block_shape(*results[0]._block)
         args = ([r.gpudata for r in results]
                 +[v.gpudata for v in vectors]
                 +scalars
@@ -66,9 +70,9 @@ class CompiledVectorExpression(CompiledVectorExpressionBase):
 
         if stats_callback is not None:
             stats_callback(size,  self,
-                    self.kernel.prepared_timed_call(vectors[0]._grid, *args))
+                    kernel_rec.kernel.prepared_timed_call(vectors[0]._grid, *args))
         else:
-            self.kernel.prepared_async_call(vectors[0]._grid, self.stream, *args)
+            kernel_rec.kernel.prepared_async_call(vectors[0]._grid, self.stream, *args)
 
         from hedge.tools import is_obj_array
         if is_obj_array(self.subst_expr):

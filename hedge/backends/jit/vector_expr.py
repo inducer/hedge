@@ -33,10 +33,10 @@ class CompiledVectorExpression(CompiledVectorExpressionBase):
     def __init__(self, vec_expr, 
             is_vector_func, result_dtype_getter, 
             toolchain=None):
-        self.toolchain = toolchain
-
         CompiledVectorExpressionBase.__init__(self, vec_expr, 
                 is_vector_func, result_dtype_getter)
+
+        self.toolchain = toolchain
 
     def make_kernel_internal(self, args, instructions):
         return self.elementwise_mod.ElementwiseKernel(
