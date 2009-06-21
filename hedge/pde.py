@@ -1487,8 +1487,9 @@ class WeakPoissonOperator(Operator, ):
             if self.poincare_mean_value_hack:
                 m_mean_state = 0
             else:
-                mean_state = self.discr.integral(u)
                 from hedge.discretization import ones_on_volume
+                B = self.discr.integral(ones_on_volume(self.discr)) 
+                mean_state = self.discr.integral(u)/B
                 m = ones_on_volume(self.discr)
                 m_mean_state = m * mean_state
 
