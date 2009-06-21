@@ -1,3 +1,4 @@
+# -*- coding: utf8 -*-
 """Canned operators for several PDEs, such as Maxwell's, heat, Poisson, etc."""
 
 from __future__ import division
@@ -1484,12 +1485,19 @@ class WeakPoissonOperator(Operator, ):
 
         def op(self, u, apply_minv=False):
             from hedge.tools import ptwise_dot
+            
+            # Check if poincare mean value method has to be applied.
             if self.poincare_mean_value_hack:
                 m_mean_state = 0
             else:
                 from hedge.discretization import ones_on_volume
-                B = self.discr.integral(ones_on_volume(self.discr)) 
-                mean_state = self.discr.integral(u)/B
+                # |Ω|: Lebesgue measure 
+                lebesgue_measure = self.discr.integral(ones_on_volume(self.discr))
+                # ∫(Ω) u dΩ
+                state_int = self.discr.integral(u)
+                # calculate mean value:  (1/|Ω|) * ∫(Ω) u dΩ 
+                mean_state = state_int / lebesgue_measure
+                # Build vector of ones to add mean value to the operator:
                 m = ones_on_volume(self.discr)
                 m_mean_state = m * mean_state
 

@@ -179,9 +179,8 @@ class JitDifferentiator:
     def __call__(self, op_class, field, xyz_needed):
         result = [self.discr.volume_zeros() for i in range(self.discr.dimensions)]
 
-        #if isinstance(field, (float, int)):
         from hedge.tools import is_zero
-        if not is_zero(field):
+        if is_zero(field):
             assert field == 0
         else:
             for eg in self.discr.element_groups:
