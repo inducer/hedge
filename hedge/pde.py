@@ -1436,8 +1436,16 @@ class WeakPoissonOperator(Operator, ):
                 self.neu_diff = pop.diffusion_tensor.boundary_interpolant(discr, 
                         poisson_op.neumann_tag)
             
-            from hedge.mesh import TAG_ALL
-            self.poincare_mean_value_hack = len(self.discr.get_boundary(TAG_ALL).nodes) 
+            # Check whether use of Poincaré mean-value method is required.
+            # This only is requested for periodic BC's over the entire domain.
+            # Partial periodic BC mixed with other BC's does not need the
+            # special treatment. 
+            
+            from hedge.mesh import TAG_ALL 
+            if len(self.discr.get_boundary(TAG_ALL).nodes) == 0:
+                self.poincare_mean_value_hack = True 
+            else:
+                self.poincare_mean_value_hack = False
         
         @property
         def dtype(self):
@@ -1485,21 +1493,29 @@ class WeakPoissonOperator(Operator, ):
 
         def op(self, u, apply_minv=False):
             from hedge.tools import ptwise_dot
+            from hedge.optemplate import InverseMassOperator, \
+                                         MassOperator
             
             # Check if poincare mean value method has to be applied.
             if self.poincare_mean_value_hack:
-                m_mean_state = 0
-            else:
-                from hedge.discretization import ones_on_volume
+                @memoize
+                def ones_on_volume_vector(discr):
+                    result = discr.vol_empty()
+                    result.fill(1)
+                    return result
+                #from hedge.discretization import ones_on_volume
+                # Build vector of ones to add mean value to the operator:
+                m = ones_on_volume_vector(self.discr) 
                 # |Ω|: Lebesgue measure 
-                lebesgue_measure = self.discr.integral(ones_on_volume(self.discr))
+                lebesgue_measure = self.discr.integral(m)
                 # ∫(Ω) u dΩ
                 state_int = self.discr.integral(u)
                 # calculate mean value:  (1/|Ω|) * ∫(Ω) u dΩ 
                 mean_state = state_int / lebesgue_measure
-                # Build vector of ones to add mean value to the operator:
-                m = ones_on_volume(self.discr)
-                m_mean_state = m * mean_state
+                #m_mean_state = mean_state * MassOperator() * m
+                m_mean_state = mean_state * m
+            else:
+                m_mean_state = 0
 
             return self.div(
                     ptwise_dot(2, 1, self.diffusion, self.grad(u)), 
