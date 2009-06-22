@@ -182,18 +182,20 @@ class JitDifferentiator:
     def __call__(self, op_class, field, xyz_needed):
         result = [self.discr.volume_zeros(dtype=field.dtype) 
                 for i in range(self.discr.dimensions)]
-        for eg in self.discr.element_groups:
-            coeffs = op_class.coefficients(eg)
+        from hedge.tools import is_zero
+        if not is_zero(field):
+            for eg in self.discr.element_groups:
+                coeffs = op_class.coefficients(eg)
 
-            from pytools import to_uncomplex_dtype
-            uncomplex_dtype = to_uncomplex_dtype(field.dtype)
-            args = ([eg.ranges, field]
-                    + [m.astype(uncomplex_dtype) for m in op_class.matrices(eg)]
-                    + result
-                    + [coeffs, eg.member_nrs, coeffs.shape[2]])
+                from pytools import to_uncomplex_dtype
+                uncomplex_dtype = to_uncomplex_dtype(field.dtype)
+                args = ([eg.ranges, field]
+                        + [m.astype(uncomplex_dtype) for m in op_class.matrices(eg)]
+                        + result
+                        + [coeffs, eg.member_nrs, coeffs.shape[2]])
 
-            diff_routine = self.make_diff(eg, field.dtype)
-            diff_routine(*args)
+                diff_routine = self.make_diff(eg, field.dtype)
+                diff_routine(*args)
 
         return [result[i] for i in xyz_needed]
 

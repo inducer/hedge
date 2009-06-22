@@ -1,3 +1,4 @@
+# -*- coding: utf8 -*-
 """Canned operators for several PDEs, such as Maxwell's, heat, Poisson, etc."""
 
 from __future__ import division
@@ -1431,8 +1432,18 @@ class WeakPoissonOperator(Operator):
                 self.diffusion = self.neu_diff = pop.diffusion_tensor.value
             else:
                 self.diffusion = pop.diffusion_tensor.volume_interpolant(discr)
-                self.neu_diff = pop.diffusion_tensor.boundary_interpolant(discr, 
+                self.neu_diff = pop.diffusion_tensor.boundary_interpolant(discr,
                         poisson_op.neumann_tag)
+
+            # Check whether use of Poincaré mean-value method is required.
+            # This only is requested for periodic BC's over the entire domain.
+            # Partial periodic BC mixed with other BC's does not need the
+            # special treatment.
+
+            from hedge.mesh import TAG_ALL
+            self.poincare_mean_value_hack = (
+                    len(self.discr.get_boundary(TAG_ALL).nodes)
+                    == len(self.discr.get_boundary(poisson_op.neumann_tag).nodes))
 
         @property
         def dtype(self):
@@ -1481,37 +1492,54 @@ class WeakPoissonOperator(Operator):
         def op(self, u, apply_minv=False):
             from hedge.tools import ptwise_dot
 
+            # Check if poincare mean value method has to be applied.
+            if self.poincare_mean_value_hack:
+                # ∫(Ω) u dΩ
+                state_int = self.discr.integral(u)
+                # calculate mean value:  (1/|Ω|) * ∫(Ω) u dΩ
+                mean_state = state_int / self.discr.mesh_volume()
+                m_mean_state = mean_state * self.discr._mass_ones()
+                #m_mean_state = mean_state * m
+            else:
+                m_mean_state = 0
+
             return self.div(
                     ptwise_dot(2, 1, self.diffusion, self.grad(u)), 
-                    u, apply_minv=apply_minv)
+                    u, apply_minv=apply_minv) \
+                            - m_mean_state
 
         __call__ = op
 
         def prepare_rhs(self, rhs):
-            """Perform the rhs(*) function in the class description, i.e.
-            return a right hand side for the linear system op(u)=rhs(f).
-            
+            """Prepare the right-hand side for the linear system op(u)=rhs(f).
+
             In matrix form, LDG looks like this:
-            
+
             Mv = Cu + g
             Mf = Av + Bu + h
 
             where v is the auxiliary vector, u is the argument of the operator, f
-            is the result of the operator and g and h are inhom boundary data, and
-            A,B,C are some operator+lifting matrices
+            is the result of the grad operator, g and h are inhom boundary data, and
+            A,B,C are some operator+lifting matrices.
 
             M f = A Minv(Cu + g) + Bu + h
 
             so the linear system looks like
 
             M f = A Minv Cu + A Minv g + Bu + h
-            M f - A Minv g - h = (A Minv C + B)u
+            M f - A Minv g - h = (A Minv C + B)u (*)
+            --------rhs-------
 
             So the right hand side we're putting together here is really
 
             M f - A Minv g - h
-            """
 
+            Finally, note that the operator application above implements
+            the equation (*) left-multiplied by Minv, so that the
+            right-hand-side becomes
+
+            f - Minv( A Minv g + h)
+            """
             dim = self.discr.dimensions
 
             pop = self.poisson_op
@@ -1540,6 +1568,7 @@ class WeakPoissonOperator(Operator):
             return (MassOperator().apply(self.discr, 
                 rhs.volume_interpolant(self.discr))
                 - self.div_c(w=w, dir_bc_w=dir_bc_w, neu_bc_w=neu_bc_w))
+
 
     def bind(self, discr):
         assert self.dimensions == discr.dimensions
