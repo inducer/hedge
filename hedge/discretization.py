@@ -807,13 +807,16 @@ class Discretization(object):
     def nodewise_dot_product(self, a, b):
         return numpy.dot(a, b)
 
-    def integral(self, volume_vector):
+    @memoize_method
+    def _mass_ones(self):
         from hedge.optemplate import MassOperator
-        try:
-            mass_ones = self._mass_ones
-        except AttributeError:
-            self._mass_ones = mass_ones = MassOperator().apply(self, ones_on_volume(self))
-        
+        return MassOperator().apply(self, ones_on_volume(self))
+
+    @memoize_method
+    def mesh_volume(self):
+        return self.integral(ones_on_volume(self))
+
+    def integral(self, volume_vector):
         from hedge.tools import log_shape
 
         ls = log_shape(volume_vector)
@@ -824,7 +827,8 @@ class Discretization(object):
                 empty.fill(volume_vector)
                 volume_vector = empty
 
-            return self.nodewise_dot_product(mass_ones, volume_vector)
+            return self.nodewise_dot_product(
+                    self._mass_ones(), volume_vector)
         else:
             result = numpy.zeros(shape=ls, dtype=float)
             
@@ -834,7 +838,8 @@ class Discretization(object):
                 if isinstance(vvi, (int, float)) and vvi == 0:
                     result[i] = 0
                 else:
-                    result[i] = self.nodewise_dot_product(mass_ones, volume_vector[i])
+                    result[i] = self.nodewise_dot_product(
+                            self._mass_ones(), volume_vector[i])
 
             return result
 
@@ -1074,18 +1079,8 @@ def ones_on_boundary(discr, tag):
 
 
 def ones_on_volume(discr):
-    result = discr.volume_zeros()
-
-    from hedge._internal import UniformElementRanges
-
-    for eg in discr.element_groups:
-        if isinstance(eg.ranges, UniformElementRanges):
-            result[eg.ranges.start:
-                    eg.ranges.start+len(eg.ranges)*eg.ranges.el_size] = 1
-        else:
-            for e_start, e_end in eg.ranges:
-                result[e_start:e_end] = 1
-
+    result = discr.volume_empty()
+    result.fill(1)
     return result
 
 
