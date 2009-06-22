@@ -1301,7 +1301,6 @@ class WeakPoissonOperator(Operator, ):
         self.neumann_bc = neumann_bc
         self.neumann_tag = neumann_tag
 
-        
     # fluxes ------------------------------------------------------------------
     def get_weak_flux_set(self, flux):
         class FluxSet: pass
@@ -1433,17 +1432,17 @@ class WeakPoissonOperator(Operator, ):
                 self.diffusion = self.neu_diff = pop.diffusion_tensor.value
             else:
                 self.diffusion = pop.diffusion_tensor.volume_interpolant(discr)
-                self.neu_diff = pop.diffusion_tensor.boundary_interpolant(discr, 
+                self.neu_diff = pop.diffusion_tensor.boundary_interpolant(discr,
                         poisson_op.neumann_tag)
-            
+
             # Check whether use of Poincaré mean-value method is required.
             # This only is requested for periodic BC's over the entire domain.
             # Partial periodic BC mixed with other BC's does not need the
-            # special treatment. 
-            
+            # special treatment.
+
             from hedge.mesh import TAG_ALL
             self.poincare_mean_value_hack = (
-                    len(self.discr.get_boundary(TAG_ALL).nodes) 
+                    len(self.discr.get_boundary(TAG_ALL).nodes)
                     == len(self.discr.get_boundary(poisson_op.neumann_tag).nodes))
 
         @property
@@ -1492,17 +1491,16 @@ class WeakPoissonOperator(Operator, ):
 
         def op(self, u, apply_minv=False):
             from hedge.tools import ptwise_dot
-            
+
             # Check if poincare mean value method has to be applied.
             if self.poincare_mean_value_hack:
                 # ∫(Ω) u dΩ
                 state_int = self.discr.integral(u)
-                # calculate mean value:  (1/|Ω|) * ∫(Ω) u dΩ 
+                # calculate mean value:  (1/|Ω|) * ∫(Ω) u dΩ
                 mean_state = state_int / self.discr.mesh_volume()
                 m_mean_state = mean_state * self.discr._mass_ones()
                 #m_mean_state = mean_state * m
             else:
-                raw_input("Check:")
                 m_mean_state = 0
 
             return self.div(
@@ -1514,9 +1512,9 @@ class WeakPoissonOperator(Operator, ):
 
         def prepare_rhs(self, rhs):
             """Prepare the right-hand side for the linear system op(u)=rhs(f).
-            
+
             In matrix form, LDG looks like this:
-            
+
             Mv = Cu + g
             Mf = Av + Bu + h
 
@@ -1537,7 +1535,7 @@ class WeakPoissonOperator(Operator, ):
             M f - A Minv g - h
 
             Finally, note that the operator application above implements
-            the equation (*) left-multiplied by Minv, so that the 
+            the equation (*) left-multiplied by Minv, so that the
             right-hand-side becomes
 
             f - Minv( A Minv g + h)
@@ -1566,11 +1564,11 @@ class WeakPoissonOperator(Operator, ):
             neu_bc_w = join_fields(0, neu_bc_v())
 
             from hedge.optemplate import MassOperator
- 
+
             return (MassOperator().apply(self.discr, 
                 rhs.volume_interpolant(self.discr))
                 - self.div_c(w=w, dir_bc_w=dir_bc_w, neu_bc_w=neu_bc_w))
-                        
+
 
     def bind(self, discr):
         assert self.dimensions == discr.dimensions

@@ -180,13 +180,11 @@ class JitDifferentiator:
         result = [self.discr.volume_zeros() for i in range(self.discr.dimensions)]
 
         from hedge.tools import is_zero
-        if is_zero(field):
-            assert field == 0
-        else:
+        if not is_zero(field):
             for eg in self.discr.element_groups:
                 coeffs = op_class.coefficients(eg)
-                
-                args = ([eg.ranges, field] 
+
+                args = ([eg.ranges, field]
                         + [m.astype(field.dtype) for m in op_class.matrices(eg)]
                         + result
                         + [coeffs, eg.member_nrs, coeffs.shape[2]])
