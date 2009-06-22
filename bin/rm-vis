@@ -13,4 +13,4 @@ find . -maxdepth 1 \
   -o -name '*.dat-journal' \
   -o -name '*.visit' \
   -o -name '*.png' \)\
-  -delete
+  -print0 | xargs -0 -r rm
