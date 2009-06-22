@@ -1441,12 +1441,11 @@ class WeakPoissonOperator(Operator, ):
             # Partial periodic BC mixed with other BC's does not need the
             # special treatment. 
             
-            from hedge.mesh import TAG_ALL 
-            if len(self.discr.get_boundary(TAG_ALL).nodes) == 0:
-                self.poincare_mean_value_hack = True 
-            else:
-                self.poincare_mean_value_hack = False
-        
+            from hedge.mesh import TAG_ALL
+            self.poincare_mean_value_hack = (
+                    len(self.discr.get_boundary(TAG_ALL).nodes) 
+                    == len(self.discr.get_boundary(poisson_op.neumann_tag).nodes))
+
         @property
         def dtype(self):
             return self.discr.default_scalar_type
@@ -1493,28 +1492,17 @@ class WeakPoissonOperator(Operator, ):
 
         def op(self, u, apply_minv=False):
             from hedge.tools import ptwise_dot
-            from hedge.optemplate import InverseMassOperator, \
-                                         MassOperator
             
             # Check if poincare mean value method has to be applied.
             if self.poincare_mean_value_hack:
-                @memoize
-                def ones_on_volume_vector(discr):
-                    result = discr.vol_empty()
-                    result.fill(1)
-                    return result
-                #from hedge.discretization import ones_on_volume
-                # Build vector of ones to add mean value to the operator:
-                m = ones_on_volume_vector(self.discr) 
-                # |Ω|: Lebesgue measure 
-                lebesgue_measure = self.discr.integral(m)
                 # ∫(Ω) u dΩ
                 state_int = self.discr.integral(u)
                 # calculate mean value:  (1/|Ω|) * ∫(Ω) u dΩ 
-                mean_state = state_int / lebesgue_measure
-                #m_mean_state = mean_state * MassOperator() * m
-                m_mean_state = mean_state * m
+                mean_state = state_int / self.discr.mesh_volume()
+                m_mean_state = mean_state * self.discr._mass_ones()
+                #m_mean_state = mean_state * m
             else:
+                raw_input("Check:")
                 m_mean_state = 0
 
             return self.div(
@@ -1525,8 +1513,7 @@ class WeakPoissonOperator(Operator, ):
         __call__ = op
 
         def prepare_rhs(self, rhs):
-            """Perform the rhs(*) function in the class description, i.e.
-            return a right hand side for the linear system op(u)=rhs(f).
+            """Prepare the right-hand side for the linear system op(u)=rhs(f).
             
             In matrix form, LDG looks like this:
             
@@ -1534,19 +1521,26 @@ class WeakPoissonOperator(Operator, ):
             Mf = Av + Bu + h
 
             where v is the auxiliary vector, u is the argument of the operator, f
-            is the result of the operator and g and h are inhom boundary data, and
-            A,B,C are some operator+lifting matrices
+            is the result of the grad operator, g and h are inhom boundary data, and
+            A,B,C are some operator+lifting matrices.
 
             M f = A Minv(Cu + g) + Bu + h
 
             so the linear system looks like
 
             M f = A Minv Cu + A Minv g + Bu + h
-            M f - A Minv g - h = (A Minv C + B)u
+            M f - A Minv g - h = (A Minv C + B)u (*)
+            --------rhs-------
 
             So the right hand side we're putting together here is really
 
             M f - A Minv g - h
+
+            Finally, note that the operator application above implements
+            the equation (*) left-multiplied by Minv, so that the 
+            right-hand-side becomes
+
+            f - Minv( A Minv g + h)
             """
             dim = self.discr.dimensions
 
