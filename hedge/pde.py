@@ -1265,7 +1265,7 @@ class AbarbanelGottliebPMLTMMaxwellOperator(
 
 
 
-class WeakPoissonOperator(Operator, ):
+class WeakPoissonOperator(Operator):
     """Implements the Local Discontinuous Galerkin (LDG) Method for elliptic
     operators.
 
