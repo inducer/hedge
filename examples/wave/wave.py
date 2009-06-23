@@ -24,7 +24,7 @@ import numpy.linalg as la
 
 
 
-def main() :
+def main(write_output=True):
     from hedge.timestep import RK4TimeStepper
     from pytools.stopwatch import Job
     from math import sin, cos, pi, exp, sqrt
@@ -90,7 +90,7 @@ def main() :
             [discr.volume_zeros() for i in range(discr.dimensions)])
 
     dt = discr.dt_factor(op.max_eigenvalue())
-    nsteps = int(10/dt)
+    nsteps = int(2/dt)
     if rcon.is_head_rank:
         print "dt", dt
         print "nsteps", nsteps
@@ -101,7 +101,12 @@ def main() :
             add_simulation_quantities, \
             add_run_info
 
-    logmgr = LogManager("wave.dat", "w", rcon.communicator)
+    if write_output:
+        log_file_name = "wave.dat"
+    else:
+        log_file_name = None
+
+    logmgr = LogManager(log_file_name, "w", rcon.communicator)
     add_run_info(logmgr)
     add_general_quantities(logmgr)
     add_simulation_quantities(logmgr, dt)
@@ -126,7 +131,7 @@ def main() :
 
         t = step*dt
 
-        if step % 10 == 0:
+        if step % 10 == 0 and write_output:
             visf = vis.make_file("fld-%04d" % step)
 
             vis.add_data(visf,
@@ -147,4 +152,10 @@ def main() :
 
 if __name__ == "__main__":
     main()
+
+# entry points for py.test ----------------------------------------------------
+from pytools.test import mark_test
+@mark_test(long=True)
+def test_wave():
+    main(write_output=False)
 

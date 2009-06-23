@@ -24,10 +24,7 @@ import numpy.linalg as la
 
 
 
-def main(write_output=True, allow_features=None):
-    from hedge.backends import guess_run_context
-    rcon = guess_run_context()
-
+def main(write_output=True):
     from math import sin, exp, sqrt
 
     from hedge.mesh import make_rect_mesh
@@ -73,41 +70,16 @@ def main(write_output=True, allow_features=None):
         stepper = RK4TimeStepper(3)
         dt = discr.dt_factor(op.max_eigenvalue(), RK4TimeStepper)
 
-    nsteps = int(2/dt)
+    nsteps = int(1/dt)
     print "dt=%g nsteps=%d" % (dt, nsteps)
-
-    # diagnostics setup ---------------------------------------------------
-    from pytools.log import LogManager, add_general_quantities, \
-            add_simulation_quantities, add_run_info
-
-    if write_output:
-        log_file_name = "wave-min.dat"
-    else:
-        log_file_name = None
-
-    logmgr = LogManager(log_file_name, "w", rcon.communicator)
-    add_run_info(logmgr)
-    add_general_quantities(logmgr)
-    add_simulation_quantities(logmgr, dt)
-    discr.add_instrumentation(logmgr)
-    #stepper.add_instrumentation(logmgr)
-
-    from hedge.log import Integral, LpNorm
-    u_getter = lambda: fields
-    logmgr.add_quantity(Integral(u_getter, discr, name="int_u"))
-    logmgr.add_quantity(LpNorm(u_getter, discr, p=1, name="l1_u"))
-    logmgr.add_quantity(LpNorm(u_getter, discr, name="l2_u"))
-
-    logmgr.add_watches(["step.max", "t_sim.max", "l2_u", "t_step.max"])
 
 # timestep loop -----------------------------------------------------------
     rhs = op.bind(discr)
     for step in range(nsteps):
-        logmgr.tick()
         t = step*dt
 
-        if step % 50 == 0:
-            #print step, t, discr.norm(fields[0])
+        if step % 50 == 0 and write_output:
+            print step, t, discr.norm(fields[0])
             visf = vis.make_file("fld-%04d" % step)
 
             vis.add_data(visf,
