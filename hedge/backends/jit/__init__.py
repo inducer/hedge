@@ -84,7 +84,8 @@ class ExecutionMapper(CPUExecutionMapperBase):
 
         from pytools import common_dtype
         max_dtype = common_dtype(
-                a.dtype for a in args if not isinstance(a, ZeroSpec))
+                [a.dtype for a in args if not isinstance(a, ZeroSpec)],
+                self.discr.default_scalar_type)
 
         def cast_arg(arg):
             if isinstance(arg, BoundaryZeros):
