@@ -936,13 +936,15 @@ class BCToFluxRewriter(IdentityMapper):
         new_flux = FluxSubstitutionMapper(
                 sub_bdry_into_flux)(flux)
 
-        result = OperatorBinding(
-                FluxOperator(new_flux), BoundaryPair(
-                    numpy.array(mbfeef.vol_expr_list, dtype=object), 
-                    numpy.array(mbfeef.bdry_expr_list, dtype=object), 
-                    bpair.tag))
-
-        return result
+        from hedge.tools import is_zero
+        if is_zero(new_flux):
+            return 0
+        else:
+            return OperatorBinding(
+                    FluxOperator(new_flux), BoundaryPair(
+                        numpy.array(mbfeef.vol_expr_list, dtype=object), 
+                        numpy.array(mbfeef.bdry_expr_list, dtype=object), 
+                        bpair.tag))
 
 
 
