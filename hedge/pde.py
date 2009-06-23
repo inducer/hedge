@@ -305,8 +305,6 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
         # boundary conditions -------------------------------------------------
         bc_in = Field("bc_in")
         bc_out = Field("bc_out")
-        #bc_in = BoundarizeOperator(self.inflow_tag) * u
-        #bc_out = BoundarizeOperator(self.outflow_tag) * u
 
         minv_st = make_minv_stiffness_t(self.dimensions)
         m_inv = InverseMassOperator()
@@ -339,10 +337,10 @@ class VariableCoefficientAdvectionOperator:
 
     def __init__(self, 
             dimensions, 
-	    advec_v,
+            advec_v,
             bc_u_f="None",
-	    flux_type="central"
-	    ):
+            flux_type="central"
+            ):
         self.dimensions = dimensions
         self.advec_v = advec_v
         self.bc_u_f = bc_u_f
@@ -350,23 +348,23 @@ class VariableCoefficientAdvectionOperator:
 
     def flux(self, ):
         from hedge.flux import \
-	                make_normal, \
-			FluxScalarPlaceholder, \
-			FluxVectorPlaceholder, \
-			IfPositive, flux_max, norm
-        
+                make_normal, \
+                FluxScalarPlaceholder, \
+                FluxVectorPlaceholder, \
+                IfPositive, flux_max, norm
+
         d = self.dimensions
 
         w = FluxVectorPlaceholder((1+d)+1)
-	u = w[0]
+        u = w[0]
         v = w[1:d+1]
         c = w[1+d]
 
         normal = make_normal(self.dimensions)
 
         if self.flux_type == "central":
-	    return (u.int*numpy.dot(v.int, normal )
-	            + u.ext*numpy.dot(v.ext, normal)) * 0.5
+            return (u.int*numpy.dot(v.int, normal )
+                    + u.ext*numpy.dot(v.ext, normal)) * 0.5
         elif self.flux_type == "lf":
             n_vint = numpy.dot(normal, v.int)
             n_vext = numpy.dot(normal, v.ext)
@@ -386,21 +384,21 @@ class VariableCoefficientAdvectionOperator:
 
     def op_template(self):
         from hedge.optemplate import \
-	        Field, \
-		pair_with_boundary, \
+                Field, \
+                pair_with_boundary, \
                 get_flux_operator, \
-		make_minv_stiffness_t, \
-		InverseMassOperator,\
-		make_vector_field
+                make_minv_stiffness_t, \
+                InverseMassOperator,\
+                make_vector_field, \
+                ElementwiseMaxOperator, \
+                BoundarizeOperator
+
 
         from hedge.tools import join_fields, \
                                 ptwise_dot
-        
-        from hedge.optemplate import ElementwiseMaxOperator, BoundarizeOperator
-
 
         u = Field("u")
-	v = make_vector_field("v", self.dimensions)
+        v = make_vector_field("v", self.dimensions)
         c = ElementwiseMaxOperator()*ptwise_dot(1, 1, v, v)
         w = join_fields(u, v, c)
 
