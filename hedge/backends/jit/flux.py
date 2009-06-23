@@ -169,15 +169,15 @@ def get_flux_var_info(fluxes):
 
 
 
-def get_interior_flux_func(fluxes, fvi, toolchain, dtype):
+def get_interior_flux_mod(fluxes, fvi, toolchain, dtype):
     from codepy.cgen import \
             FunctionDeclaration, FunctionBody, \
             Const, Reference, Value, MaybeUnused, Typedef, POD, \
             Statement, Include, Line, Block, Initializer, Assign, \
-            CustomLoop, For
+            CustomLoop, For, Struct
 
     from codepy.bpl import BoostPythonModule
-    mod = BoostPythonModule(max_arity=len(fluxes)+len(fvi.arg_names)+1)
+    mod = BoostPythonModule()
 
     from pytools import to_uncomplex_dtype, flatten
 
@@ -198,18 +198,23 @@ def get_interior_flux_func(fluxes, fvi, toolchain, dtype):
         Line(),
         ])
 
+    arg_struct = Struct("arg_struct", [
+        Value("numpy_array<value_type>", "flux%d_on_faces" % i)
+        for i in range(len(fluxes))
+        ]+[
+        Value("numpy_array<value_type>", arg_name)
+        for arg_name in fvi.arg_names
+        ])
+
+    mod.add_struct(arg_struct, "ArgStruct")
+    mod.add_to_module([Line()])
+
     fdecl = FunctionDeclaration(
             Value("void", "gather_flux"),
             [
                 Const(Reference(Value("face_group", "fg"))),
-                ]+[
-                Value("numpy_array<value_type>", "flux%d_on_faces" % i)
-                for i in range(len(fluxes))
-                ]+[
-                Const(Reference(Value("numpy_array<value_type>", arg_name)))
-                for arg_name in fvi.arg_names
-                ]
-            )
+                Reference(Value("arg_struct", "args"))
+                ])
 
     from pymbolic.mapper.stringifier import PREC_PRODUCT
 
@@ -233,12 +238,12 @@ def get_interior_flux_func(fluxes, fvi, toolchain, dtype):
     fbody = Block([
         Initializer(
             Const(Value("numpy_array<value_type>::iterator", "fof%d_it" % i)),
-            "flux%d_on_faces.begin()" % i)
+            "args.flux%d_on_faces.begin()" % i)
         for i in range(len(fluxes))
         ]+[
         Initializer(
             Const(Value("numpy_array<value_type>::const_iterator", "%s_it" % arg_name)),
-            arg_name + ".begin()")
+            "args.%s.begin()" % arg_name)
         for arg_name in fvi.arg_names
         ]+[
         Line(),
@@ -276,17 +281,17 @@ def get_interior_flux_func(fluxes, fvi, toolchain, dtype):
     mod.add_function(FunctionBody(fdecl, fbody))
 
     #print "----------------------------------------------------------------"
-    #print FunctionBody(fdecl, fbody)
-    #raw_input("Enter:")
+    #print mod.generate()
+    #raw_input("[Enter]")
 
-    return mod.compile(toolchain, wait_on_error=True).gather_flux
-
-
+    return mod.compile(toolchain, wait_on_error=True)
 
 
-def get_boundary_flux_func(fluxes, fvi, toolchain, dtype):
+
+
+def get_boundary_flux_mod(fluxes, fvi, toolchain, dtype):
     from codepy.cgen import \
-            FunctionDeclaration, FunctionBody, Typedef, \
+            FunctionDeclaration, FunctionBody, Typedef, Struct, \
             Const, Reference, Value, POD, MaybeUnused, \
             Statement, Include, Line, Block, Initializer, Assign, \
             CustomLoop, For
@@ -294,7 +299,7 @@ def get_boundary_flux_func(fluxes, fvi, toolchain, dtype):
     from pytools import to_uncomplex_dtype, flatten
 
     from codepy.bpl import BoostPythonModule
-    mod = BoostPythonModule(max_arity=len(fluxes)+len(fvi.arg_names)+1)
+    mod = BoostPythonModule()
 
     S = Statement
     mod.add_to_module([
@@ -312,16 +317,23 @@ def get_boundary_flux_func(fluxes, fvi, toolchain, dtype):
         Typedef(POD(to_uncomplex_dtype(dtype), "uncomplex_type")),
         ])
 
+    arg_struct = Struct("arg_struct", [
+        Value("numpy_array<value_type>", "flux%d_on_faces" % i)
+        for i in range(len(fluxes))
+        ]+[
+        Const(Reference(Value("numpy_array<value_type>", arg_name)))
+        for arg_name in fvi.arg_names
+        ])
+
+    mod.add_struct(arg_struct, "ArgStruct")
+    mod.add_to_module([Line()])
+
     fdecl = FunctionDeclaration(
                 Value("void", "gather_flux"),
                 [
-                Const(Reference(Value("face_group", "fg"))),
-                ]+[
-                Value("numpy_array<value_type>", "flux%d_on_faces" % i)
-                for i in range(len(fluxes))
-                ]+[
-                Const(Reference(Value("numpy_array<value_type>", arg_name)))
-                for arg_name in fvi.arg_names])
+                    Const(Reference(Value("face_group", "fg"))),
+                    Reference(Value("arg_struct", "args"))
+                    ])
 
     from pymbolic.mapper.stringifier import PREC_PRODUCT
 
@@ -342,13 +354,13 @@ def get_boundary_flux_func(fluxes, fvi, toolchain, dtype):
     fbody = Block([
         Initializer(
             Const(Value("numpy_array<value_type>::iterator", "fof%d_it" % i)),
-            "flux%d_on_faces.begin()" % i)
+            "args.flux%d_on_faces.begin()" % i)
         for i in range(len(fluxes))
         ]+[
         Initializer(
             Const(Value("numpy_array<value_type>::const_iterator",
                 "%s_it" % arg_name)),
-            "%s.begin()" % arg_name)
+            "args.%s.begin()" % arg_name)
         for arg_name in fvi.arg_names
         ]+[
         Line(),
@@ -387,6 +399,7 @@ def get_boundary_flux_func(fluxes, fvi, toolchain, dtype):
     mod.add_function(FunctionBody(fdecl, fbody))
 
     #print "----------------------------------------------------------------"
-    #print FunctionBody(fdecl, fbody)
+    #print mod.generate()
+    #raw_input("[Enter]")
 
-    return mod.compile(toolchain, wait_on_error=True).gather_flux
+    return mod.compile(toolchain, wait_on_error=True)

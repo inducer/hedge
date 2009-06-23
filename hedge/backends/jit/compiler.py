@@ -66,20 +66,20 @@ class CompiledFluxBatchAssign(FluxBatchAssign):
         return set(flatten(dep_mapper(dep) for dep in deps))
 
     @memoize_method
-    def get_function(self, discr, dtype):
+    def get_module(self, discr, dtype):
         from hedge.backends.jit.flux import \
-                get_interior_flux_func, \
-                get_boundary_flux_func
+                get_interior_flux_mod, \
+                get_boundary_flux_mod
 
         if not self.is_boundary:
-            result = get_interior_flux_func(
+            mod = get_interior_flux_mod(
                     self.fluxes, self.flux_var_info, discr.toolchain, dtype)
 
             if discr.instrumented:
                 from hedge.tools import time_count_flop, gather_flops
-                result = \
+                mod.gather_flux = \
                         time_count_flop(
-                                result,
+                                mod.gather_flux,
                                 discr.gather_timer,
                                 discr.gather_counter,
                                 discr.gather_flop_counter,
@@ -88,15 +88,15 @@ class CompiledFluxBatchAssign(FluxBatchAssign):
                                 * len(self.flux_var_info.arg_names))
 
         else:
-            result = get_boundary_flux_func(
+            mod = get_boundary_flux_mod(
                     self.fluxes, self.flux_var_info, discr.toolchain, dtype)
 
             if discr.instrumented:
                 from pytools.log import time_and_count_function
-                result = time_and_count_function(
-                        result, discr.gather_timer)
+                mod.gather_flux = time_and_count_function(
+                        mod.gather_flux, discr.gather_timer)
 
-        return result
+        return mod
 
 
 
