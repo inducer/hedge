@@ -137,7 +137,7 @@ class DivergenceOperator(Operator):
         from hedge.mesh import TAG_ALL
         from hedge.optemplate import make_vector_field, pair_with_boundary, \
                 get_flux_operator, make_nabla, InverseMassOperator
-                
+
         nabla = make_nabla(self.dimensions)
         m_inv = InverseMassOperator()
 
@@ -152,11 +152,11 @@ class DivergenceOperator(Operator):
                 idx += 1
 
         flux_op = get_flux_operator(self.flux())
-        
+
         return local_op_result - m_inv*(
                 flux_op * v + 
                 flux_op * pair_with_boundary(v, bc, TAG_ALL))
-        
+
     def bind(self, discr):
         compiled_op_template = discr.compile(self.op_template())
 
@@ -292,13 +292,19 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
         return self.weak_flux()
 
     def op_template(self):
-        from hedge.optemplate import Field, pair_with_boundary, \
-                get_flux_operator, make_minv_stiffness_t, InverseMassOperator
+        from hedge.optemplate import \
+                Field, \
+                pair_with_boundary, \
+                get_flux_operator, \
+                make_minv_stiffness_t, \
+                InverseMassOperator, \
+                BoundarizeOperator
 
         u = Field("u")
 
-        bc_in = Field("bc_in")
-        bc_out = Field("bc_out")
+        # boundary conditions -------------------------------------------------
+        bc_in = BoundarizeOperator(self.inflow_tag) * u
+        bc_out = BoundarizeOperator(self.outflow_tag) * u
 
         minv_st = make_minv_stiffness_t(self.dimensions)
         m_inv = InverseMassOperator()
