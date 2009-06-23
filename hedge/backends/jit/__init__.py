@@ -91,7 +91,7 @@ class ExecutionMapper(CPUExecutionMapperBase):
             if isinstance(arg, BoundaryZeros):
                 return self.discr.boundary_zeros(insn.kind.tag,
                         dtype=max_dtype)
-            elif isinstance(arg, BoundaryZeros):
+            elif isinstance(arg, VolumeZeros):
                 return self.discr.volume_zeros(
                         dtype=max_dtype)
             else:
