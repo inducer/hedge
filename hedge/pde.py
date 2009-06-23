@@ -1924,3 +1924,109 @@ class EulerOperator(TimeDependentOperator):
 
 
 
+
+class NavierStokesOperator(TimeDependentOperator):
+    """An nD Navier-Stokes operator.
+
+    Field order is [rho E rho_u_x rho_u_y ...].
+    """
+    def __init__(self, dimensions, gamma, mu, bc):
+        self.dimensions = dimensions
+        self.gamma = gamma
+        self.mu = mu
+        self.bc = bc
+
+    def rho(self, q):
+        return q[0]
+
+    def e(self, q):
+        return q[1]
+
+    def rho_u(self, q):
+        return q[2:2+self.dimensions]
+
+    def u(self, q):
+        from hedge.tools import make_obj_array
+        return make_obj_array([
+                rho_u_i/self.rho(q)
+                for rho_u_i in self.rho_u(q)])
+
+    def tau(self, q):
+        from hedge.tools import make_stress_tensor
+        return make_stress_tensor(self.u(q), self.rho(q), self.rho_u(q), self.mu, self.dimensions)
+
+    def op_template(self):
+        from hedge.optemplate import make_vector_field, \
+                make_common_subexpression as cse
+
+        def u(q):
+            return cse(self.u(q))
+
+        def p(q):
+            return cse((self.gamma-1)*(self.e(q) - 0.5*numpy.dot(self.rho_u(q), u(q))))
+
+        def flux(q):
+            from pytools import delta
+            from hedge.tools import make_obj_array, join_fields
+            return [ # one entry for each flux direction
+                    cse(join_fields(
+                        # flux rho
+                        self.rho_u(q)[i],
+
+                        # flux E
+                        cse(self.e(q)+p(q))*u(q)[i] + self.tau(q)[2*self.dimensions+i],
+
+                        # flux rho_u
+                        make_obj_array([
+                            self.rho_u(q)[i]*self.u(q)[j] + delta(i,j) * p(q) + self.tau(q)[2*j+i]
+                            for j in range(self.dimensions)
+                            ])
+                        ))
+                    for i in range(self.dimensions)]
+
+        from hedge.optemplate import make_nabla, InverseMassOperator, \
+                ElementwiseMaxOperator
+
+        from pymbolic import var
+        sqrt = var("sqrt")
+
+        state = make_vector_field("q", self.dimensions+2)
+        bc_state = make_vector_field("bc_q", self.dimensions+2)
+
+        c = cse(sqrt(self.gamma*p(state)/self.rho(state)))
+
+        speed = sqrt(numpy.dot(u(state), u(state))) + c
+
+        from hedge.tools import make_lax_friedrichs_flux, join_fields
+        from hedge.mesh import TAG_ALL
+
+        return join_fields(
+                (- numpy.dot(make_nabla(self.dimensions), flux(state))
+                    + InverseMassOperator()*make_lax_friedrichs_flux(
+                        wave_speed=
+			ElementwiseMaxOperator()*
+			c,
+                        state=state, flux_func=flux,
+                        bdry_tags_and_states=[
+                            (TAG_ALL, bc_state)
+                            ],
+                        strong=True
+                        )),
+                    speed)
+
+    def bind(self, discr):
+        from hedge.mesh import TAG_ALL
+        bound_op = discr.compile(self.op_template())
+
+        def wrap(t, q):
+            opt_result = bound_op(
+                    q=q, 
+                    bc_q=self.bc.boundary_interpolant(t, discr, TAG_ALL))
+            max_speed = opt_result[-1]
+            ode_rhs = opt_result[:-1]
+	    return ode_rhs, discr.nodewise_max(max_speed)
+
+        return wrap
+
+
+
