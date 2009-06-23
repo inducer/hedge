@@ -1100,5 +1100,9 @@ def no_test_tri_mass_mat_gauss(self):
 
 
 if __name__ == "__main__":
-    from py.test.cmdline import main
-    main([__file__])
+    import sys
+    if len(sys.argv) > 1:
+        exec sys.argv[1]
+    else:
+        from py.test.cmdline import main
+        main([__file__])
