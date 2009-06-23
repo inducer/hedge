@@ -94,8 +94,10 @@ class ExecutionMapper(CPUExecutionMapperBase):
             elif isinstance(arg, VolumeZeros):
                 return self.discr.volume_zeros(
                         dtype=max_dtype)
-            else:
+            elif isinstance(arg, numpy.ndarray):
                 return numpy.asarray(arg, dtype=max_dtype)
+            else:
+                return arg
 
         args = [cast_arg(arg) for arg in args]
 
