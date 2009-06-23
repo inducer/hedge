@@ -1684,7 +1684,7 @@ class StrongHeatOperator(TimeDependentOperator):
                 InverseMassOperator, make_stiffness, get_flux_operator
 
         stiff = make_stiffness(self.dimensions)
-        
+
         u = Field("u")
         sqrt_coeff_u = Field("sqrt_coeff_u")
         dir_bc_u = Field("dir_bc_u")
@@ -1707,7 +1707,7 @@ class StrongHeatOperator(TimeDependentOperator):
                 InverseMassOperator, get_flux_operator, make_stiffness
 
         stiff = make_stiffness(self.dimensions)
-        
+
         d = self.dimensions
         w = make_vector_field("w", 1+d)
         v = w[1:]
