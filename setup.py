@@ -136,7 +136,6 @@ def main():
                         "src/wrapper/wrap_mesh.cpp", 
                         "src/wrapper/wrap_special_function.cpp", 
                         "src/wrapper/wrap_flux.cpp", 
-                        "src/wrapper/wrap_op_target.cpp", 
                         "src/wrapper/wrap_volume_operators.cpp", 
                         ],
                     include_dirs=INCLUDE_DIRS + EXTRA_INCLUDE_DIRS,

@@ -566,11 +566,6 @@ def find_matching_vertices_along_axis(axis, points_a, points_b, numbers_a, numbe
 
 
 
-make_vector_target = hedge._internal.make_vector_target
-
-
-
-
 # linear algebra tools --------------------------------------------------------
 def orthonormalize(vectors, discard_threshold=None):
     """Carry out a modified [1] Gram-Schmidt orthonormalization on

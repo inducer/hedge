@@ -1149,7 +1149,7 @@ class Projector:
                         order="C"))
 
     def __call__(self, from_vec):
-        from hedge._internal import perform_elwise_operator, VectorTarget
+        from hedge._internal import perform_elwise_operator
         from hedge.tools import log_shape
 
         ls = log_shape(from_vec)
@@ -1157,18 +1157,13 @@ class Projector:
 
         from pytools import indices_in_shape
         for i in indices_in_shape(ls):
-            target = VectorTarget(from_vec[i], result[i])
-
-            target.begin(len(self.to_discr), len(self.from_discr))
             for from_eg, to_eg, imat in zip(
                     self.from_discr.element_groups, 
                     self.to_discr.element_groups, 
                     self.interp_matrices):
                 perform_elwise_operator(
                         from_eg.ranges, to_eg.ranges, 
-                        imat, target)
-
-            target.finalize()
+                        imat, from_vec[i], result[i])
 
         return result
 
@@ -1243,16 +1238,10 @@ class Filter:
 
         from pytools import indices_in_shape
         for i in indices_in_shape(ls):
-            from hedge._internal import perform_elwise_operator, VectorTarget
-
-            target = VectorTarget(vec[i], result[i])
-
-            target.begin(len(self.discr), len(self.discr))
+            from hedge._internal import perform_elwise_operator
             for eg in self.discr.element_groups:
                 perform_elwise_operator(eg.ranges, eg.ranges, 
-                        self.filter_map[eg], target)
-
-            target.finalize()
+                        self.filter_map[eg], vec[i], result[i])
 
         return result
 
