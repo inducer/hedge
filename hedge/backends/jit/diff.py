@@ -51,10 +51,12 @@ class JitDifferentiator:
         mod = BoostPythonModule()
 
         S = Statement
-        mod.add_to_module([
+        mod.add_to_preamble([
             Include("hedge/volume_operators.hpp"),
             Include("boost/foreach.hpp"),
-            Line(),
+            ])
+
+        mod.add_to_module([
             S("namespace ublas = boost::numeric::ublas"),
             S("using namespace hedge"),
             S("using namespace pyublas"),

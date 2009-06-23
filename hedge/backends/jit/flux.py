@@ -182,14 +182,16 @@ def get_interior_flux_mod(fluxes, fvi, toolchain, dtype):
     from pytools import to_uncomplex_dtype, flatten
 
     S = Statement
-    mod.add_to_module([
+    mod.add_to_preamble([
         Include("cstdlib"),
         Include("algorithm"),
         Line(),
         Include("boost/foreach.hpp"),
         Line(),
         Include("hedge/face_operators.hpp"),
-        Line(),
+        ])
+
+    mod.add_to_module([
         S("using namespace hedge"),
         S("using namespace pyublas"),
         Line(),
