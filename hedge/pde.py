@@ -458,7 +458,7 @@ class StrongWaveOperator:
 
     The sign of M{v} determines whether we discretize the forward or the
     backward wave equation.
-    
+
     c is assumed to be constant across all space.
     """
 
@@ -530,9 +530,7 @@ class StrongWaveOperator:
         v = w[1:]
 
         # boundary conditions -------------------------------------------------
-
         from hedge.tools import join_fields
-
         dir_bc = join_fields(-u, v)
         neu_bc = join_fields(u, -v)
 
@@ -565,7 +563,7 @@ class StrongWaveOperator:
                     + flux_op * pair_with_boundary(w, rad_bc, self.radiation_tag)
                     ))
 
-    
+
     def bind(self, discr):
         from hedge.mesh import check_bc_coverage
         check_bc_coverage(discr.mesh, [
@@ -661,14 +659,15 @@ class VariableVelocityStrongWaveOperator:
                 pair_with_boundary, \
                 get_flux_operator, \
                 make_nabla, \
-                InverseMassOperator
+                InverseMassOperator, \
+                BoundarizeOperator
 
         d = self.dimensions
 
         w = make_vector_field("w", d+1)
         u = w[0]
         v = w[1:]
-        
+
         from hedge.tools import join_fields
         c = Field("c")
         flux_w = join_fields(c, w)
@@ -678,13 +677,32 @@ class VariableVelocityStrongWaveOperator:
         normal = make_normal(d)
 
         from hedge.tools import join_fields
+        # dirichlet BC's ------------------------------------------------------
+        dir_c = BoundarizeOperator(self.dirichlet_tag) * c
+        dir_u = BoundarizeOperator(self.dirichlet_tag) * u
+        dir_v = BoundarizeOperator(self.dirichlet_tag) * v
 
-        dir_bc = join_fields(c, -u, v)
-        neu_bc = join_fields(c, u, -v)
+        dir_bc = join_fields(dir_c, -dir_u, dir_v)
+
+        # neumann BC's --------------------------------------------------------
+        neu_c = BoundarizeOperator(self.neumann_tag) * c
+        neu_u = BoundarizeOperator(self.neumann_tag) * u
+        neu_v = BoundarizeOperator(self.neumann_tag) * v
+
+        neu_bc = join_fields(neu_c, neu_u, -neu_v)
+
+        # radiation BC's ------------------------------------------------------
+        from hedge.optemplate import make_normal
+        rad_normal = make_normal(self.radiation_tag, d)
+
+        rad_c = BoundarizeOperator(self.radiation_tag) * c
+        rad_u = BoundarizeOperator(self.radiation_tag) * u
+        rad_v = BoundarizeOperator(self.radiation_tag) * v
+
         rad_bc = join_fields(
-                c,
-                0.5*(u - self.time_sign*numpy.dot(normal, v)),
-                0.5*normal*(numpy.dot(normal, v) - self.time_sign*u)
+                rad_c,
+                0.5*(rad_u - self.time_sign*numpy.dot(rad_normal, rad_v)),
+                0.5*rad_normal*(numpy.dot(rad_normal, rad_v) - self.time_sign*rad_u)
                 )
 
         # entire operator -----------------------------------------------------
@@ -704,7 +722,7 @@ class VariableVelocityStrongWaveOperator:
                     + flux_op * pair_with_boundary(flux_w, rad_bc, self.radiation_tag)
                     ))
 
-    
+
     def bind(self, discr):
         from hedge.mesh import check_bc_coverage
         check_bc_coverage(discr.mesh, [

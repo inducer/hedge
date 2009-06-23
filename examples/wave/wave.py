@@ -144,6 +144,8 @@ def main(write_output=True):
             visf.close()
 
         fields = stepper(fields, t, dt, rhs)
+        # Check whether the error goes over a certain level. If so => Abort
+        assert discr.norm(fields) < 10
 
     vis.close()
 
