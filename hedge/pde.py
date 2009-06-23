@@ -303,8 +303,10 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
         u = Field("u")
 
         # boundary conditions -------------------------------------------------
-        bc_in = BoundarizeOperator(self.inflow_tag) * u
-        bc_out = BoundarizeOperator(self.outflow_tag) * u
+        bc_in = Field("bc_in")
+        bc_out = Field("bc_out")
+        #bc_in = BoundarizeOperator(self.inflow_tag) * u
+        #bc_out = BoundarizeOperator(self.outflow_tag) * u
 
         minv_st = make_minv_stiffness_t(self.dimensions)
         m_inv = InverseMassOperator()
