@@ -763,10 +763,10 @@ class MaxwellOperator(TimeDependentOperator):
 
     _default_dimensions = 3
 
-    def __init__(self, epsilon, mu, 
+    def __init__(self, epsilon, mu,
             flux_type,
             bdry_flux_type=None,
-            pec_tag=hedge.mesh.TAG_ALL, 
+            pec_tag=hedge.mesh.TAG_ALL,
             absorb_tag=hedge.mesh.TAG_NONE,
             incident_tag=hedge.mesh.TAG_NONE,
             incident_bc=None, current=None, dimensions=None):
