@@ -1824,11 +1824,7 @@ class StrongHeatOperator(TimeDependentOperator):
 
 
 
-class EulerOperator(TimeDependentOperator):
-    """An nD Euler operator.
-
-    Field order is [rho E rho_u_x rho_u_y ...].
-    """
+class GasDynamicsOperatorBase(TimeDependentOperator):
     def __init__(self, dimensions, gamma, bc):
         self.dimensions = dimensions
         self.gamma = gamma
@@ -1849,6 +1845,28 @@ class EulerOperator(TimeDependentOperator):
                 rho_u_i/self.rho(q)
                 for rho_u_i in self.rho_u(q)])
 
+    def bind(self, discr):
+        from hedge.mesh import TAG_ALL
+        bound_op = discr.compile(self.op_template())
+
+        def wrap(t, q):
+            opt_result = bound_op(
+                    q=q, 
+                    bc_q=self.bc.boundary_interpolant(t, discr, TAG_ALL))
+            max_speed = opt_result[-1]
+            ode_rhs = opt_result[:-1]
+	    return ode_rhs, discr.nodewise_max(max_speed)
+
+        return wrap
+
+
+
+
+class EulerOperator(GasDynamicsOperatorBase):
+    """An nD Euler operator.
+
+    Field order is [rho E rho_u_x rho_u_y ...].
+    """
     def op_template(self):
         from hedge.optemplate import make_vector_field, \
                 make_common_subexpression as cse
@@ -1908,48 +1926,18 @@ class EulerOperator(TimeDependentOperator):
                         )),
                     speed)
 
-    def bind(self, discr):
-        from hedge.mesh import TAG_ALL
-        bound_op = discr.compile(self.op_template())
-
-        def wrap(t, q):
-            opt_result = bound_op(
-                    q=q, 
-                    bc_q=self.bc.boundary_interpolant(t, discr, TAG_ALL))
-            max_speed = opt_result[-1]
-            ode_rhs = opt_result[:-1]
-	    return ode_rhs, discr.nodewise_max(max_speed)
-
-        return wrap
 
 
 
-
-class NavierStokesOperator(TimeDependentOperator):
+class NavierStokesOperator(GasDynamicsOperatorBase):
     """An nD Navier-Stokes operator.
 
     Field order is [rho E rho_u_x rho_u_y ...].
     """
+
     def __init__(self, dimensions, gamma, mu, bc):
-        self.dimensions = dimensions
-        self.gamma = gamma
+        GasDynamicsOperatorBase.__init__(self, dimensions, gamma, bc)
         self.mu = mu
-        self.bc = bc
-
-    def rho(self, q):
-        return q[0]
-
-    def e(self, q):
-        return q[1]
-
-    def rho_u(self, q):
-        return q[2:2+self.dimensions]
-
-    def u(self, q):
-        from hedge.tools import make_obj_array
-        return make_obj_array([
-                rho_u_i/self.rho(q)
-                for rho_u_i in self.rho_u(q)])
 
     def tau(self, q):
         from hedge.optemplate import make_nabla
@@ -1959,7 +1947,6 @@ class NavierStokesOperator(TimeDependentOperator):
         u = self.u
         mu = self.mu
         nabla = make_nabla(dimensions)
-
 
         tau = numpy.zeros((dimensions+1, dimensions), dtype=object)
         for i in range(dimensions):
@@ -2048,20 +2035,4 @@ class NavierStokesOperator(TimeDependentOperator):
                         strong=True, bdry_flux_func=bdry_flux
                         )),
                     speed)
-
-    def bind(self, discr):
-        from hedge.mesh import TAG_ALL
-        bound_op = discr.compile(self.op_template())
-
-        def wrap(t, q):
-            opt_result = bound_op(
-                    q=q, 
-                    bc_q=self.bc.boundary_interpolant(t, discr, TAG_ALL))
-            max_speed = opt_result[-1]
-            ode_rhs = opt_result[:-1]
-	    return ode_rhs, discr.nodewise_max(max_speed)
-
-        return wrap
-
-
 
