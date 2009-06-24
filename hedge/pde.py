@@ -1953,37 +1953,22 @@ class NavierStokesOperator(TimeDependentOperator):
 
     def tau(self, q):
         from hedge.optemplate import make_nabla
+        from pytools import delta
 
-        nabla = make_nabla(self.dimensions)
         dimensions = self.dimensions
-        rho = self.rho
-        rho_u = self.rho_u
         u = self.u
+        mu = self.mu
+        nabla = make_nabla(dimensions)
 
-        if dimensions == 2:
-            nabla_u = 1/rho * (numpy.dot(make_nabla(dimensions), rho_u) - u * numpy.dot(make_nabla(dimensions),rho))
-            u_inv = numpy.zeros_like(u)
-            u_inv[0] = u[1]
-            u_inv[1] = u[0]
-            rho_u_inv = numpy.zeros_like(rho_u)
-            rho_u_inv[0] = rho_u[1]
-            rho_u_inv[1] = rho_u[0]
-            nabla_u_inv = 1/rho * (numpy.dot(make_nabla(dimensions), rho_u_inv) - u_inv * numpy.dot(make_nabla(dimensions),rho))
-            #tau = numpy.zeros((3, 2), dtype=object)
-            #tau_00 = 2 * mu * (make_nabla(1) * u[0] - 1/3 * numpy.dot(, u))
-            #tau_11 = 2 * mu * (make_nabla(1) * u[1] - 1/3 * numpy.dot(make_nabla(dimensions), u))
-            #tau_01 = mu * numpy.dot(make_nabla(dimensions), u_inv)
-            tau_00 = 2 * mu * (nabla_u[0] - 1/3 * (nabla_u[0] + nabla_u[1]))
-            tau_11 = 2 * mu * (nabla_u[1] - 1/3 * (nabla_u[0] + nabla_u[1]))
-            tau_01 = mu * (nabla_u_inv[0] + nabla_u_inv[1])
-            tau_10 = tau_01
-            tau_20 = u[0] * tau_00 + u[1] * tau_01
-            tau_21 = u[0] * tau_10 + u[1] * tau_11
-            tau = make_obj_array([tau_00, tau_01, tau_10, tau_11, tau_20, tau_21])
-            return tau
-        else:
-            raise NotImplementedError
 
+        tau = numpy.zeros((dimensions+1, dimensions), dtype=object)
+        for i in range(dimensions):
+            for j in range(dimensions):
+                tau[i,j] = mu * ((nabla[j] * u(q)[i] + nabla[i] * u(q)[j]) - 
+                        2/3 * delta(i,j) * numpy.dot(nabla, u(q)))
+        for j in range(dimensions):
+            tau[dimensions,j] = numpy.dot(u(q), tau[j])
+        return tau
 
     def op_template(self):
         from hedge.optemplate import make_vector_field, \
@@ -2004,11 +1989,11 @@ class NavierStokesOperator(TimeDependentOperator):
                         self.rho_u(q)[i],
 
                         # flux E
-                        cse(self.e(q)+p(q))*u(q)[i] + self.tau(q)[2*self.dimensions+i],
+                        cse(self.e(q)+p(q))*u(q)[i] + self.tau(q)[self.dimensions,i],
 
                         # flux rho_u
                         make_obj_array([
-                            self.rho_u(q)[i]*self.u(q)[j] + delta(i,j) * p(q) + self.tau(q)[2*j+i]
+                            self.rho_u(q)[i]*self.u(q)[j] + delta(i,j) * p(q) + self.tau(q)[i,j]
                             for j in range(self.dimensions)
                             ])
                         ))
@@ -2027,7 +2012,7 @@ class NavierStokesOperator(TimeDependentOperator):
 
                         # flux rho_u
                         make_obj_array([
-                            self.rho_u(q)[i]*self.u(q)[j] + delta(i,j)
+                            self.rho_u(q)[i]*self.u(q)[j] + delta(i,j) * p(q)
                             for j in range(self.dimensions)
                             ])
                         ))
