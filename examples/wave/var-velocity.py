@@ -28,7 +28,8 @@ from hedge.mesh import TAG_ALL, TAG_NONE
 def main(write_output=True, \
         dir_tag=TAG_NONE, \
         neu_tag=TAG_NONE,\
-        rad_tag=TAG_ALL):
+        rad_tag=TAG_ALL,
+        flux_type_arg="upwind"):
     from math import sin, cos, pi, exp, sqrt
 
     from hedge.backends import guess_run_context
@@ -102,7 +103,7 @@ def main(write_output=True, \
             dirichlet_tag=dir_tag,
             neumann_tag=neu_tag,
             radiation_tag=rad_tag,
-            flux_type="upwind",
+            flux_type=flux_type_arg
             )
 
     from hedge.tools import join_fields
@@ -110,7 +111,7 @@ def main(write_output=True, \
             [discr.volume_zeros() for i in range(discr.dimensions)])
 
     dt = discr.dt_factor(1) / 2
-    nsteps = int(1/dt)
+    nsteps = int(0.1/dt)
     if rcon.is_head_rank:
         print "dt", dt
         print "nsteps", nsteps
@@ -184,6 +185,10 @@ from pytools.test import mark_test
 @mark_test(long=True)
 def test_var_velocity_radiation():
     main(write_output=False)
+
+@mark_test(long=True)
+def test_var_velocity_central_flux():
+    main(write_output=False,flux_type_arg="central")
 
 @mark_test(long=True)
 def test_var_velocity_dirichlet():

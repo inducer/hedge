@@ -28,7 +28,8 @@ from hedge.mesh import TAG_ALL, TAG_NONE
 def main(write_output=True, \
         dir_tag=TAG_NONE, \
         neu_tag=TAG_NONE,\
-        rad_tag=TAG_ALL):
+        rad_tag=TAG_ALL,
+        flux_type_arg="upwind"):
     from hedge.timestep import RK4TimeStepper
     from pytools.stopwatch import Job
     from math import sin, cos, pi, exp, sqrt
@@ -86,7 +87,7 @@ def main(write_output=True, \
             dirichlet_tag=dir_tag,
             neumann_tag=neu_tag,
             radiation_tag=rad_tag,
-            flux_type="upwind",
+            flux_type=flux_type_arg
             )
 
     from hedge.tools import join_fields
@@ -167,6 +168,10 @@ from pytools.test import mark_test
 @mark_test(long=True)
 def test_wave():
     main(write_output=False)
+
+@mark_test(long=True)
+def test_wave_central_flux():
+    main(write_output=False,flux_type_arg="central")
 
 @mark_test(long=True)
 def test_wave_dirichlet():
