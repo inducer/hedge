@@ -20,11 +20,15 @@
 from __future__ import division
 import numpy
 import numpy.linalg as la
+from hedge.mesh import TAG_ALL, TAG_NONE
 
 
 
 
-def main(write_output=True):
+def main(write_output=True, \
+        dir_tag=TAG_NONE, \
+        neu_tag=TAG_NONE,\
+        rad_tag=TAG_ALL):
     from math import sin, cos, pi, exp, sqrt
 
     from hedge.backends import guess_run_context
@@ -95,9 +99,9 @@ def main(write_output=True):
             source=TimeIntervalGivenFunction(
                 GivenFunction(source_u),
                 0, 0.1),
-            dirichlet_tag=TAG_NONE,
-            neumann_tag=TAG_NONE,
-            radiation_tag=TAG_ALL,
+            dirichlet_tag=dir_tag,
+            neumann_tag=neu_tag,
+            radiation_tag=rad_tag,
             flux_type="upwind",
             )
 
@@ -178,6 +182,17 @@ if __name__ == "__main__":
 # entry points for py.test ----------------------------------------------------
 from pytools.test import mark_test
 @mark_test(long=True)
-def test_var_velocity():
+def test_var_velocity_radiation():
     main(write_output=False)
 
+@mark_test(long=True)
+def test_var_velocity_dirichlet():
+    main(write_output=False, \
+            dir_tag=TAG_ALL, \
+            rad_tag=TAG_NONE)
+
+@mark_test(long=True)
+def test_var_velocity_neumann():
+    main(write_output=False, \
+            neu_tag=TAG_ALL, \
+            rad_tag=TAG_NONE)

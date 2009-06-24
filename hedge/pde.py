@@ -537,9 +537,19 @@ class StrongWaveOperator:
 
         # boundary conditions -------------------------------------------------
         from hedge.tools import join_fields
-        dir_bc = join_fields(-u, v)
-        neu_bc = join_fields(u, -v)
 
+
+        # dirichlet BC's ------------------------------------------------------
+        dir_u = BoundarizeOperator(self.dirichlet_tag) * u
+        dir_v = BoundarizeOperator(self.dirichlet_tag) * v
+        dir_bc = join_fields(-dir_u, dir_v)
+
+        # neumann BC's --------------------------------------------------------
+        neu_u = BoundarizeOperator(self.neumann_tag) * u
+        neu_v = BoundarizeOperator(self.neumann_tag) * v
+        neu_bc = join_fields(neu_u, -neu_v)
+
+        # radiation BC's ------------------------------------------------------
         from hedge.optemplate import make_normal
         rad_normal = make_normal(self.radiation_tag, d)
 
