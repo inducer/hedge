@@ -363,11 +363,12 @@ class OperatorCompilerWithExecutor(OperatorCompiler):
         self.executor = executor
 
     def make_assign(self, name, expr, priority):
-        def result_dtype_getter(vector_dtype_map, scalar_dtype_map):
+        def result_dtype_getter(vector_dtype_map, scalar_dtype_map, const_dtypes):
             from pytools import common_dtype
             return common_dtype(
                     vector_dtype_map.values()
-                    + scalar_dtype_map.values())
+                    + scalar_dtype_map.values()
+                    + const_dtypes)
 
         from hedge.backends.cuda.vector_expr import CompiledVectorExpression
         return VectorExprAssign(
