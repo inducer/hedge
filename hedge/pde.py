@@ -889,18 +889,25 @@ class MaxwellOperator(TimeDependentOperator):
 
         # boundary conditions -------------------------------------------------
         from hedge.tools import join_fields
+
+        # pec BC --------------------------------------------------------------
         pec_e = BoundarizeOperator(self.pec_tag) * e
         pec_h = BoundarizeOperator(self.pec_tag) * h
         pec_bc = join_fields(-pec_e, pec_h)
 
-        from hedge.flux import make_normal
-        normal = make_normal(self.dimensions)
+        # absorb BC -----------------------------------------------------------
+        from hedge.optemplate import make_normal
+        absorb_normal = make_normal(self.absorb_tag, self.dimensions)
 
-        absorb_bc = w + 1/2*join_fields(
-                self.h_cross(normal, self.e_cross(normal, e)) 
-                - self.Z*self.h_cross(normal, h),
-                self.e_cross(normal, self.h_cross(normal, h)) 
-                + self.Y*self.e_cross(normal, e)
+        absorb_e = BoundarizeOperator(self.absorb_tag) * e
+        absorb_h = BoundarizeOperator(self.absorb_tag) * h
+        absorb_w = BoundarizeOperator(self.absorb_tag) * w
+
+        absorb_bc = absorb_w + 1/2*join_fields(
+                self.h_cross(absorb_normal, self.e_cross(absorb_normal, absorb_e))
+                - self.Z*self.h_cross(absorb_normal, absorb_h),
+                self.e_cross(absorb_normal, self.h_cross(absorb_normal, absorb_h)) 
+                + self.Y*self.e_cross(absorb_normal, absorb_e)
                 )
 
         if self.incident_bc is not None:
