@@ -22,26 +22,17 @@
 
 def get_config_schema():
     from aksetup_helper import ConfigSchema, Option, \
-            IncludeDir, LibraryDir, Libraries, \
-            Switch, StringListOption
+            IncludeDir, LibraryDir, Libraries, BoostLibraries, \
+            Switch, StringListOption, make_boost_base_options
 
-    return ConfigSchema([
-        IncludeDir("BOOST", []),
-        LibraryDir("BOOST", []),
-        Libraries("BOOST_PYTHON", ["boost_python-gcc42-mt"]),
+    return ConfigSchema(make_boost_base_options() + [
+        BoostLibraries("python"),
 
         IncludeDir("BOOST_BINDINGS", []),
 
         Switch("HAVE_BLAS", False, "Whether to build with support for BLAS"),
         LibraryDir("BLAS", []),
         Libraries("BLAS", ["blas"]),
-
-        Switch("HAVE_MPI", False, "Whether to build with support for MPI"),
-        Option("MPICC", "mpicc",
-            "Path to MPI C compiler"),
-        Option("MPICXX", 
-            help="Path to MPI C++ compiler (defaults to same as MPICC)"),
-        Libraries("BOOST_MPI", ["boost_mpi-gcc42-mt"]),
 
         StringListOption("CXXFLAGS", [], 
             help="Any extra C++ compiler options to include"),
@@ -56,7 +47,6 @@ def main():
     import glob
     from aksetup_helper import hack_distutils, get_config, setup, \
             PyUblasExtension
-    from setuptools import find_packages
 
     hack_distutils()
     conf = get_config(get_config_schema())
@@ -68,16 +58,6 @@ def main():
     EXTRA_INCLUDE_DIRS = []
     EXTRA_LIBRARY_DIRS = []
     EXTRA_LIBRARIES = []
-
-    if conf["HAVE_MPI"]:
-        EXTRA_DEFINES["USE_MPI"] = 1
-        EXTRA_DEFINES["OMPI_SKIP_MPICXX"] = 1
-        LIBRARIES.extend(conf["BOOST_MPI_LIBNAME"])
-
-        from distutils import sysconfig
-        cvars = sysconfig.get_config_vars()
-        cvars["CC"] = conf["MPICC"]
-        cvars["CXX"] = conf["MPICXX"]
 
     INCLUDE_DIRS = [
             "src/cpp",
@@ -137,35 +117,16 @@ def main():
               'Topic :: Scientific/Engineering :: Visualization',
               ],
 
-            # dependencies
-            setup_requires=[
-                "PyUblas>=0.92.2",
-                ],
-            install_requires=[
-                "PyUblas>=0.92.2",
-                "pytools>=7",
-                "codepy>=0.90",
-                "pymbolic>=0.90",
-                "meshpy>=0.91",
-                ],
-            extras_require = {
-                "matrices": ["PyUblasExt>=0.92.7"],
-                "silo": ["pylo"],
-                "parallel": ["PyMetis>=0.91"],
-                },
-
             # build info
             packages=[
                     "hedge",
                     "hedge.backends",
-                    "hedge.backends.dynamic",
                     "hedge.backends.jit",
                     "hedge.backends.mpi",
                     "hedge.backends.cuda",
                     ],
             zip_safe=False,
 
-            package_dir={ "hedge": "src/python" },
             ext_package="hedge",
 
             ext_modules=[
@@ -175,9 +136,7 @@ def main():
                         "src/wrapper/wrap_mesh.cpp", 
                         "src/wrapper/wrap_special_function.cpp", 
                         "src/wrapper/wrap_flux.cpp", 
-                        "src/wrapper/wrap_op_target.cpp", 
                         "src/wrapper/wrap_volume_operators.cpp", 
-                        "src/wrapper/wrap_mpi.cpp", 
                         ],
                     include_dirs=INCLUDE_DIRS + EXTRA_INCLUDE_DIRS,
                     library_dirs=LIBRARY_DIRS + EXTRA_LIBRARY_DIRS,
@@ -187,7 +146,9 @@ def main():
                     extra_link_args=conf["LDFLAGS"],
                     ),
                 ],
-            data_files=[("include/hedge", glob.glob("src/cpp/*.hpp"))],
+            data_files=[
+            ("include/hedge", glob.glob("src/cpp/hedge/*.hpp")),
+            ],
             )
 
 

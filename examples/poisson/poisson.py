@@ -30,11 +30,11 @@ def main() :
     from hedge.data import GivenFunction, ConstantGivenFunction
 
     from hedge.backends import guess_run_context
-    rcon = guess_run_context(disable=set(["cuda"]))
+    rcon = guess_run_context()
 
     dim = 2
 
-    def boundary_tagger(fvi, el, fn):
+    def boundary_tagger(fvi, el, fn, points):
         from math import atan2, pi
         normal = el.face_normals[fn]
         if -10/180*pi < atan2(normal[1], normal[0]) < 10/180*pi:
@@ -51,7 +51,9 @@ def main() :
     elif dim == 3:
         if rcon.is_head_rank:
             from hedge.mesh import make_ball_mesh
-            mesh = make_ball_mesh(max_volume=0.0001)
+            mesh = make_ball_mesh(max_volume=0.0001,
+                    boundary_tagger=lambda fvi, el, fn, points:
+                    ["dirichlet"])
         el_class = TetrahedralElement
     else:
         raise RuntimeError, "bad number of dimensions"
@@ -92,8 +94,11 @@ def main() :
     bound_op = op.bind(discr)
 
     from hedge.tools import parallel_cg
-    u = -parallel_cg(rcon, -bound_op, bound_op.prepare_rhs(GivenFunction(rhs_c)), 
-            debug=True, tol=1e-10)
+    u = -parallel_cg(rcon, -bound_op, 
+            bound_op.prepare_rhs(GivenFunction(rhs_c)), 
+            debug=20, tol=5e-4,
+            dot=discr.nodewise_dot_product,
+            x=discr.volume_zeros())
 
     from hedge.visualization import SiloVisualizer, VtkVisualizer
     vis = VtkVisualizer(discr, rcon)

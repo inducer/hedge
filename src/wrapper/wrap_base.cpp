@@ -17,7 +17,7 @@
 
 
 
-#include "base.hpp"
+#include <hedge/base.hpp>
 #include "wrap_helpers.hpp"
 #include <boost/foreach.hpp>
 #include <boost/scoped_array.hpp>

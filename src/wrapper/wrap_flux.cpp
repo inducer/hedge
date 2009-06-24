@@ -24,9 +24,8 @@
 #include <boost/python.hpp>
 #include <boost/python/stl_iterator.hpp>
 #include <boost/python/suite/indexing/vector_indexing_suite.hpp>
-#include "flux.hpp"
-#include "face_operators.hpp"
-#include "op_target.hpp"
+#include <hedge/flux.hpp>
+#include <hedge/face_operators.hpp>
 #include "wrap_helpers.hpp"
 
 
@@ -40,116 +39,19 @@ namespace ublas = boost::numeric::ublas;
 
 
 
-namespace {
-  // flux-related -------------------------------------------------------------
-  struct flux_wrap : fluxes::flux, wrapper<fluxes::flux>
-  {
-    double operator()(
-        const fluxes::face &local, 
-        const fluxes::face *neighbor) const
-    {
-      return this->get_override("__call__")(boost::ref(local), boost::ref(neighbor));
-    }
-  };
-
-
-
-
-  template<class Operation> 
-  void expose_unary_operator(Operation, const std::string &name)
-  {
-    typedef fluxes::unary_operator<Operation, 
-            fluxes::chained_flux> cl;
-
-    class_<cl, bases<fluxes::flux>, boost::noncopyable>
-      (name.c_str(), 
-       init<fluxes::chained_flux>(args("operand"))[
-       with_custodian_and_ward<1, 2>()
-       ])
-      .add_property("operand", 
-          make_function(&cl::operand, return_internal_reference<>()))
-      ;
+namespace
+{
+#define MAKE_LIFT_EXPOSER(NAME) \
+  template <class MatrixScalar, class FieldScalar> \
+  void expose_##NAME() \
+  { \
+    def("lift_flux", NAME<MatrixScalar, FieldScalar>, \
+        args("fg", "mat", "elwise_post_scaling", "fluxes_on_faces", "result") \
+       ); \
   }
 
-
-
-
-  template<class Operation> 
-  void expose_binary_operator(Operation, const std::string &name)
-  {
-    typedef fluxes::binary_operator<Operation, 
-            fluxes::chained_flux, fluxes::chained_flux> cl;
-
-    class_<cl, bases<fluxes::flux>, boost::noncopyable>
-      (name.c_str(), 
-       init<
-       const fluxes::chained_flux &, 
-       const fluxes::chained_flux &>
-       (args("operand1", "operand2"))
-       [with_custodian_and_ward<1, 2, 
-        with_custodian_and_ward<1, 3> >()])
-      .add_property("operand1", 
-          make_function(&cl::operand1, return_internal_reference<>()))
-      .add_property("operand2", 
-          make_function(&cl::operand2, return_internal_reference<>()))
-      ;
-  }
-
-
-
-
-  template<class Operation> 
-  void expose_binary_constant_operator(Operation, const std::string &name)
-  {
-    typedef fluxes::binary_operator<Operation, 
-            fluxes::chained_flux, fluxes::constant> cl;
-    class_<cl, bases<fluxes::flux>, boost::noncopyable>
-      (name.c_str(), 
-       init<const fluxes::chained_flux &, double>
-       (args("operand1", "constant"))[with_custodian_and_ward<1, 2>()])
-      .add_property("operand1", 
-          make_function(&cl::operand1, return_internal_reference<>()))
-      .add_property("operand2", 
-          make_function(&cl::operand2, return_internal_reference<>()))
-      ;
-  }
-
-
-
-
-  template <class Scalar>
-  void expose_operators_for_type()
-  {
-    def("perform_single_sided_flux", 
-        perform_single_sided_flux<
-        fluxes::chained_flux, fluxes::chained_flux, 
-        numpy_vector<Scalar>, numpy_vector<Scalar> >,
-        args("fg", "int_flux", "ext_flux", 
-          "loc_operand", "opp_operand", "fluxes_on_faces")
-       );
-    def("perform_single_sided_flux", 
-        perform_single_sided_flux<
-        fluxes::chained_flux, fluxes::chained_flux, 
-        ublas::zero_vector<Scalar>, numpy_vector<Scalar> >,
-        args("fg", "int_flux", "ext_flux", 
-          "loc_operand", "opp_operand", "fluxes_on_faces")
-       );
-    def("perform_single_sided_flux", 
-        perform_single_sided_flux<
-        fluxes::chained_flux, fluxes::chained_flux, 
-        numpy_vector<Scalar>, ublas::zero_vector<Scalar> >,
-        args("fg", "int_flux", "ext_flux", 
-          "loc_operand", "opp_operand", "fluxes_on_faces")
-       );
-    def("perform_double_sided_flux", 
-        perform_double_sided_flux<fluxes::chained_flux, fluxes::chained_flux, Scalar>,
-        args("fg", "int_flux", "ext_flux",
-          "operand", "fluxes_on_faces")
-       );
-    def("lift_flux", lift_flux<Scalar>,
-        args("fg", "mat", "elwise_post_scaling", "fluxes_on_faces", "result")
-       );
-  }
+  MAKE_LIFT_EXPOSER(lift_flux);
+  MAKE_LIFT_EXPOSER(lift_flux_without_blas);
 }
 
 
@@ -157,93 +59,6 @@ namespace {
 
 void hedge_expose_fluxes()
 {
-  {
-    typedef fluxes::flux cl;
-    class_<flux_wrap, boost::noncopyable>("Flux")
-      .def("__call__", pure_virtual(&cl::operator()))
-      ;
-  }
-
-  {
-    typedef fluxes::chained_flux cl;
-    class_<cl, bases<fluxes::flux> >("ChainedFlux", 
-        init<fluxes::flux &>()
-        [with_custodian_and_ward<1, 2>()]
-        )
-      .add_property("child", 
-          make_function(&cl::child, return_internal_reference<>()))
-      ;
-  }
-
-  {
-    typedef fluxes::constant cl;
-
-    class_<cl, bases<fluxes::flux> >(
-        "ConstantFlux", 
-        init<double>(arg("value")))
-      .def(init<double>(arg("both")))
-      .def(self + self)
-      .def(self - self)
-      .def(- self)
-      .def(self * double())
-      .add_property("value", &cl::value)
-      ;
-  }
-
-  {
-    typedef fluxes::normal cl;
-    class_<cl, bases<fluxes::flux> >("NormalFlux", init<int>(arg("axis")))
-      .add_property("axis", &cl::axis)
-      ;
-  }
-
-  {
-    typedef fluxes::penalty_term cl;
-    class_<cl, bases<fluxes::flux> >("PenaltyFlux",
-        init<double>(arg("power"))
-        )
-      .add_property("power", &cl::power)
-      ;
-  }
-
-  {
-    typedef fluxes::if_positive<fluxes::chained_flux, 
-            fluxes::chained_flux, fluxes::chained_flux> cl;
-
-    class_<cl, bases<fluxes::flux>, boost::noncopyable>
-      ("IfPositiveFlux", 
-       init<
-         const fluxes::chained_flux &,
-         const fluxes::chained_flux &,
-         const fluxes::chained_flux &
-         >(args("criterion", "then_part", "else_part"))[
-           with_custodian_and_ward<1, 2, 
-           with_custodian_and_ward<1, 3,
-           with_custodian_and_ward<1, 4> > >()]
-       )
-      .add_property("criterion", 
-          make_function(&cl::criterion, return_internal_reference<>()))
-      .add_property("then_part", 
-          make_function(&cl::then_part, return_internal_reference<>()))
-      .add_property("else_part", 
-          make_function(&cl::else_part, return_internal_reference<>()))
-      ;
-  }
-
-  expose_binary_operator(std::plus<double>(), "SumFlux");
-  expose_binary_operator(std::minus<double>(), "DifferenceFlux");
-  expose_binary_operator(std::multiplies<double>(), "ProductFlux");
-  expose_binary_constant_operator(std::multiplies<double>(), 
-      "ProductWithConstantFlux");
-  expose_binary_constant_operator(std::multiplies<double>(), 
-      "ProductWithConstantFlux");
-
-  expose_unary_operator(std::negate<double>(), "NegativeFlux");
-
-
-
-
-  // face information ---------------------------------------------------------
   {
     typedef fluxes::face cl;
     class_<cl>("FluxFace")
@@ -292,7 +107,8 @@ void hedge_expose_fluxes()
       ;
   }
 
-  expose_operators_for_type<float>();
-  expose_operators_for_type<double>();
+  expose_lift_flux<float, float>();
+  expose_lift_flux<double, double>();
+  expose_lift_flux_without_blas<float, std::complex<float> >();
+  expose_lift_flux_without_blas<double, std::complex<double> >();
 }
-

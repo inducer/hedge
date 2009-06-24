@@ -1,7 +1,9 @@
 *~
 .*.sw[po]
 *.dat
+*.dat-rank*
 *.pyc
+*.pyo
 build
 *.prof
 siteconf.py
@@ -33,3 +35,5 @@ dist
 *.egg*
 MANIFEST
 doc/manual/.build
+*.pyd
+*.so

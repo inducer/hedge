@@ -65,7 +65,7 @@ class Vortex:
 
 def main():
     from hedge.backends import guess_run_context
-    rcon = guess_run_context(disable=set(["cuda"]))
+    rcon = guess_run_context()
 
     gamma = 1.4
 
@@ -94,8 +94,6 @@ def main():
 
         from hedge.pde import EulerOperator
         op = EulerOperator(dimensions=2, gamma=1.4, bc=vortex)
-        #for i, oi in enumerate(op.op_template()):
-            #print i, oi
 
         euler_ex = op.bind(discr)
 

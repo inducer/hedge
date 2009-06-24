@@ -38,6 +38,7 @@ def main() :
     vis = VtkVisualizer(discr, None, "fld")
 
     def source_u(x, el):
+        x = x - numpy.array([0.1,0.22])
         return exp(-numpy.dot(x, x)*128)
 
     source_u_vec = discr.interpolate_volume_function(source_u)
@@ -59,19 +60,25 @@ def main() :
     fields = join_fields(discr.volume_zeros(),
             [discr.volume_zeros() for i in range(discr.dimensions)])
 
-    dt = discr.dt_factor(op.max_eigenvalue())
-    nsteps = int(1/dt)
-
     # timestep loop -----------------------------------------------------------
-    from hedge.timestep import RK4TimeStepper
-    stepper = RK4TimeStepper()
+    from hedge.timestep import RK4TimeStepper, AdamsBashforthTimeStepper
+    if True:
+        stepper = AdamsBashforthTimeStepper(3)
+        dt = discr.dt_factor(op.max_eigenvalue(), 
+                AdamsBashforthTimeStepper, 3)
+    else:
+        stepper = RK4TimeStepper(3)
+        dt = discr.dt_factor(op.max_eigenvalue(), RK4TimeStepper)
+
+    nsteps = int(5/dt)
+    print "dt=%g nsteps=%d" % (dt, nsteps)
 
     rhs = op.bind(discr)
     for step in range(nsteps):
         t = step*dt
 
-        if step % 10 == 0:
-            print step, t
+        if step % 50 == 0:
+            print step, t, discr.norm(fields[0])
             visf = vis.make_file("fld-%04d" % step)
 
             vis.add_data(visf,

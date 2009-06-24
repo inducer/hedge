@@ -20,7 +20,7 @@
 #include <boost/foreach.hpp>
 #include <pyublas/numpy.hpp>
 #include "wrap_helpers.hpp"
-#include "base.hpp"
+#include <hedge/base.hpp>
 
 
 

@@ -33,11 +33,11 @@ def main() :
             GivenFunction, ConstantGivenFunction
 
     from hedge.backends import guess_run_context
-    rcon = guess_run_context(disable=set(["cuda"]))
+    rcon = guess_run_context()
 
     dim = 2
 
-    def boundary_tagger(fvi, el, fn):
+    def boundary_tagger(fvi, el, fn, all_v):
         if el.face_normals[fn][0] > 0:
             return ["dirichlet"]
         else:
