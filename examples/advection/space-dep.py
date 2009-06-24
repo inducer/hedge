@@ -22,7 +22,7 @@ import numpy
 import numpy.linalg as la
 
 
-def main(write_output=True):
+def main(write_output=True, flux_type_arg="lf"):
     from hedge.tools import mem_checkpoint
     from math import sin, cos, pi, sqrt, tanh
     from math import floor
@@ -128,7 +128,7 @@ def main(write_output=True):
         #    TimeDependentBc_u()),
         bc_u_f=TimeConstantGivenFunction(
             GivenFunction(Bc_u())),
-        flux_type="lf")
+        flux_type=flux_type_arg)
 
     # initial condition -------------------------------------------------------
     # Gauss-Pulse
@@ -233,5 +233,13 @@ if __name__ == "__main__":
 # entry points for py.test ----------------------------------------------------
 from pytools.test import mark_test
 @mark_test(long=True)
-def test_space_dep_advection():
+def test_space_dep_advection_lf_flux():
     main(write_output=False)
+
+@mark_test(long=True)
+def test_space_dep_advection_central_flux():
+    main(write_output=False, flux_type_arg="central")
+
+@mark_test(long=True)
+def test_space_dep_advection_upwind_flux():
+    main(write_output=False, flux_type_arg="upwind")

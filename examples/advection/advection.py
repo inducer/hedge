@@ -24,7 +24,7 @@ import numpy.linalg as la
 
 
 
-def main(write_output=True):
+def main(write_output=True, flux_type_arg="upwind"):
     from hedge.timestep import RK4TimeStepper
     from hedge.tools import mem_checkpoint
     from math import sin, cos, pi, sqrt
@@ -92,7 +92,7 @@ def main(write_output=True):
     from hedge.pde import StrongAdvectionOperator, WeakAdvectionOperator
     op = WeakAdvectionOperator(v, 
             inflow_u=TimeDependentGivenFunction(u_analytic),
-            flux_type="upwind")
+            flux_type=flux_type_arg)
 
     u = discr.interpolate_volume_function(lambda x, el: u_analytic(x, el, 0))
 
@@ -170,5 +170,13 @@ if __name__ == "__main__":
 # entry points for py.test ----------------------------------------------------
 from pytools.test import mark_test
 @mark_test(long=True)
-def test_advection():
+def test_advection_upwinf_flux():
     main(write_output=False)
+
+@mark_test(long=True)
+def test_advection_central_flux():
+    main(write_output=False, flux_type_arg="central")
+
+@mark_test(long=True)
+def test_advection_laxfriedrichs_flux():
+    main(write_output=False, flux_type_arg="lf")
