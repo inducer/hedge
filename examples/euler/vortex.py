@@ -130,8 +130,6 @@ def main(write_output=True):
             log_file_name = None
 
         logmgr = LogManager(log_file_name, "w", rcon.communicator)
-
-        logmgr = LogManager("euler-%d.dat" % order, "w", rcon.communicator)
         add_run_info(logmgr)
         add_general_quantities(logmgr)
         add_simulation_quantities(logmgr, dt)
