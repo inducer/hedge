@@ -556,39 +556,6 @@ make_vector_target = hedge._internal.make_vector_target
 
 
 
-def make_stress_tensor(u, rho, rho_u, mu, dimensions):
-    from hedge.optemplate import make_nabla
-
-    nabla = make_nabla(dimensions)
-
-    if dimensions == 2:
-        nabla_u = 1/rho * (numpy.dot(make_nabla(dimensions), rho_u) - u * numpy.dot(make_nabla(dimensions),rho))
-        u_inv = numpy.zeros_like(u)
-        u_inv[0] = u[1]
-        u_inv[1] = u[0]
-        rho_u_inv = numpy.zeros_like(rho_u)
-        rho_u_inv[0] = rho_u[1]
-        rho_u_inv[1] = rho_u[0]
-        nabla_u_inv = 1/rho * (numpy.dot(make_nabla(dimensions), rho_u_inv) - u_inv * numpy.dot(make_nabla(dimensions),rho))
-        #tau = numpy.zeros((3, 2), dtype=object)
-        #tau_00 = 2 * mu * (make_nabla(1) * u[0] - 1/3 * numpy.dot(, u))
-        #tau_11 = 2 * mu * (make_nabla(1) * u[1] - 1/3 * numpy.dot(make_nabla(dimensions), u))
-        #tau_01 = mu * numpy.dot(make_nabla(dimensions), u_inv)
-        tau_00 = 2 * mu * (nabla_u[0] - 1/3 * (nabla_u[0] + nabla_u[1]))
-        tau_11 = 2 * mu * (nabla_u[1] - 1/3 * (nabla_u[0] + nabla_u[1]))
-        tau_01 = mu * (nabla_u_inv[0] + nabla_u_inv[1])
-        tau_10 = tau_01
-        tau_20 = u[0] * tau_00 + u[1] * tau_01
-        tau_21 = u[0] * tau_10 + u[1] * tau_11
-        tau = make_obj_array([tau_00, tau_01, tau_10, tau_11, tau_20, tau_21])
-        return tau
-    else:
-        raise NotImplementedError
-
-
-
-
-
 # linear algebra tools --------------------------------------------------------
 def orthonormalize(vectors, discard_threshold=None):
     """Carry out a modified [1] Gram-Schmidt orthonormalization on
