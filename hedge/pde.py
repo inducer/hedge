@@ -1827,6 +1827,16 @@ class StrongHeatOperator(TimeDependentOperator):
 class EulerOperator(TimeDependentOperator):
     """An nD Euler operator.
 
+    see JSH, TW: Nodal Discontinuous Galerkin Methods p.206
+
+    dq/dt + dF/dx + dG/dy = 0
+
+    where e.g. in 2D
+
+    q = (rho, rho_u_x, rho_u_y, E)
+    F = (rho_u_x, rho_u_x^2 + p, rho_u_x * rho_u_y / rho, u_x * (E + p))
+    G = (rho_u_y, rho_u_x * rho_u_y / rho, rho_u_y^2 + p, u_y * (E + p))
+
     Field order is [rho E rho_u_x rho_u_y ...].
     """
     def __init__(self, dimensions, gamma, bc):
