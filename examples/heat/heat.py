@@ -66,7 +66,7 @@ def main() :
     stepper = RK4TimeStepper()
     vis = VtkVisualizer(discr, rcon, "fld")
 
-    dt = discr.dt_factor(1)**2 / 5
+    dt = discr.dt_factor(1, order=2)
     nsteps = int(1/dt)
 
     if rcon.is_head_rank:

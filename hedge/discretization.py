@@ -892,18 +892,20 @@ class Discretization(object):
         raise ValueError, "not a valid dof index"
         
     # misc stuff --------------------------------------------------------------
+    @memoize_method
     def dt_non_geometric_factor(self):
         distinct_ldis = set(eg.local_discretization for eg in self.element_groups)
         return min(ldis.dt_non_geometric_factor() 
                 for ldis in distinct_ldis)
 
+    @memoize_method
     def dt_geometric_factor(self):
         return min(min(eg.local_discretization.dt_geometric_factor(
             [self.mesh.points[i] for i in el.vertex_indices], el)
             for el in eg.members)
             for eg in self.element_groups)
 
-    def dt_factor(self, max_system_ev, stepper=None, *stepper_args):
+    def dt_factor(self, max_system_ev, stepper=None, order=1, *stepper_args):
         u"""Calculate the largest stable timestep, given a time stepper
         `stepper`. If none is given, RK4 is assumed.
         """
@@ -953,8 +955,8 @@ class Discretization(object):
         # timestepper.
 
         rk4_dt = 1/max_system_ev \
-                * self.dt_non_geometric_factor() \
-                * self.dt_geometric_factor()
+                * (self.dt_non_geometric_factor()
+                * self.dt_geometric_factor())**order
 
         from hedge.timestep import RK4TimeStepper
         if stepper is None or isinstance(stepper, RK4TimeStepper):
