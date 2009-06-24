@@ -20,15 +20,11 @@
 from __future__ import division
 import numpy
 import numpy.linalg as la
-from hedge.mesh import TAG_ALL, TAG_NONE
 
 
 
 
-def main(write_output=True, \
-        dir_tag=TAG_NONE, \
-        neu_tag=TAG_NONE,\
-        rad_tag=TAG_ALL):
+def main(write_output=True):
     from math import sin, exp, sqrt
 
     from hedge.mesh import make_rect_mesh
@@ -55,9 +51,9 @@ def main(write_output=True, \
     from hedge.mesh import TAG_ALL, TAG_NONE
     op = StrongWaveOperator(-1, discr.dimensions, 
             source_vec_getter,
-            dirichlet_tag=dir_tag,
-            neumann_tag=neu_tag,
-            radiation_tag=rad_tag,
+            dirichlet_tag=TAG_NONE,
+            neumann_tag=TAG_NONE,
+            radiation_tag=TAG_ALL,
             flux_type="upwind")
 
     from hedge.tools import join_fields
@@ -104,18 +100,7 @@ if __name__ == "__main__":
 # entry points for py.test ----------------------------------------------------
 from pytools.test import mark_test
 @mark_test(long=True)
-def test_wave_min_radiation():
+def test_wave_min():
     main(write_output=False)
 
-@mark_test(long=True)
-def test_wave_min_dirichlet():
-    main(write_output=False, \
-            dir_tag=TAG_ALL, \
-            rad_tag=TAG_NONE)
-
-@mark_test(long=True)
-def test_wave_min_neumann():
-    main(write_output=False, \
-            neu_tag=TAG_ALL, \
-            rad_tag=TAG_NONE)
 
