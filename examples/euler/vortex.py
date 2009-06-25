@@ -55,10 +55,14 @@ class Vortex:
         return join_fields(rho, e, rho*u, rho*v)
 
     def volume_interpolant(self, t, discr):
-        return self(t, discr.nodes.T)
+        return discr.convert_volume(
+			self(t, discr.nodes.T),
+			kind=discr.compute_kind)
 
     def boundary_interpolant(self, t, discr, tag):
-        return self(t, discr.get_boundary(tag).nodes.T)
+        return discr.convert_boundary(
+			self(t, discr.get_boundary(tag).nodes.T),
+			 tag=tag, kind=discr.compute_kind)
 
 
 
@@ -79,11 +83,16 @@ def main():
     else:
         mesh_data = rcon.receive_mesh()
 
-    for order in [3, 4, 5]:
+    for order in [3]:
+    #for order in [3, 4, 5]:
     #for order in [1,2,3,4,5,6]:
-        discr = rcon.make_discretization(mesh_data, order=order)
+        discr = rcon.make_discretization(mesh_data, order=order,
+			debug=["cuda_no_plan",
+			#"print_op_code"
+			],
+			default_scalar_type=numpy.float64)
 
-        from hedge.visualization import SiloVisualizer
+        from hedge.visualization import SiloVisualizer, VtkVisualizer
         #vis = VtkVisualizer(discr, rcon, "vortex-%d" % order)
         vis = SiloVisualizer(discr, rcon)
 
@@ -148,10 +157,10 @@ def main():
                 from pylo import DB_VARTYPE_VECTOR
                 vis.add_data(visf,
                         [
-                            ("rho", op.rho(fields)),
-                            ("e", op.e(fields)),
-                            ("rho_u", op.rho_u(fields)),
-                            ("u", op.u(fields)),
+                            ("rho", discr.convert_volume(op.rho(fields), kind="numpy")),
+                            ("e", discr.convert_volume(op.e(fields), kind="numpy")),
+                            ("rho_u", discr.convert_volume(op.rho_u(fields), kind="numpy")),
+                            ("u", discr.convert_volume(op.u(fields), kind="numpy")),
 
                             #("true_rho", op.rho(true_fields)),
                             #("true_e", op.e(true_fields)),

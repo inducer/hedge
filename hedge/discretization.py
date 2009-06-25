@@ -898,11 +898,13 @@ class Discretization(object):
         raise ValueError, "not a valid dof index"
         
     # misc stuff --------------------------------------------------------------
+    @memoize_method
     def dt_non_geometric_factor(self):
         distinct_ldis = set(eg.local_discretization for eg in self.element_groups)
         return min(ldis.dt_non_geometric_factor() 
                 for ldis in distinct_ldis)
 
+    @memoize_method
     def dt_geometric_factor(self):
         return min(min(eg.local_discretization.dt_geometric_factor(
             [self.mesh.points[i] for i in el.vertex_indices], el)

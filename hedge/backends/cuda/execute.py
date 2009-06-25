@@ -288,6 +288,66 @@ class ExecutionMapper(ExecutionMapperBase):
                 self.rec(insn.field),
                 *self.executor.mass_data(kernel, elgroup, insn.op_class)))], []
 
+    def map_elementwise_max(self, op, field_expr):
+        from pycuda.compiler import SourceModule
+        from pycuda.tools import dtype_to_ctype
+	from hedge.element import TriangularElement as TE
+
+        discr = self.executor.discr
+
+        field = self.rec(field_expr)
+	order = discr.given.order()
+	nodes_per_el = TE(order).node_count()
+	aligned_floats = discr.given.dofs_per_block()
+
+        block_size = 128
+        if block_size % aligned_floats != 0:
+	    block_size = block_size - block_size % aligned_floats + aligned_floats
+	    if block_size > 512:
+	        block_size = block_size - aligned_floats
+
+        if discr.default_scalar_type == numpy.float64:
+	    max_expr = "fmax"
+	elif discr.default_scalar_type == numpy.float32:
+	    max_expr = "fmaxf"
+	else:
+	    raise TypeError("invalid default_scalar_type specified")
+
+        mod = SourceModule("""
+	#define NODES_PER_EL %(nodes_per_el)d
+        #define MAX_EXPR %(max_expr)s
+
+	typedef %(value_type)s value_type;
+
+	__global__ void elwise_max(value_type *field)
+	{
+            int idx = blockDim.x * threadIdx.y + threadIdx.x;
+	    int base_idx = blockDim.x * threadIdx.y + threadIdx.x / NODES_PER_EL;
+	    for (int i=0; i<NODES_PER_EL; i++)
+	      field[idx] = MAX_EXPR(field[idx], field[base_idx+i]);
+	}
+	"""% {
+	"nodes_per_el": nodes_per_el,
+	"max_expr": max_expr,
+	"value_type": dtype_to_ctype(field.dtype),
+	})
+
+        #start = cuda.Event()
+	#stop = cuda.Event()
+
+	func = mod.get_function("elwise_max")
+	func.prepare("P", block=(block_size//aligned_floats, aligned_floats, 1))
+	grid_dim = (len(field) + block_size - 1) // block_size
+	#cuda.Context.synchronize()
+	#start.record()
+	func.prepared_call((grid_dim, 1),field.gpudata)
+	#stop.record()
+	#stop.synchronize()
+	#elapsed_seconds = stop.time_since(start) * 1e-3
+	#print elapsed_seconds
+	return field
+
+
 
 
 
@@ -430,6 +490,12 @@ class Executor(object):
         # compile the optemplate
         self.code = OperatorCompilerWithExecutor(self)(
                 self.prepare_optemplate_stage2(discr.mesh, optemplate_stage1))
+
+	if "print_op_code" in discr.debug:
+	    from hedge.tools import get_rank
+	    if get_rank(discr) == 0:
+		print self.code
+		raw_input()
 
         if False:
             from hedge.tools import get_rank

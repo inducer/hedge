@@ -1293,8 +1293,9 @@ def count_dofs(vec):
 
 # flux creation ---------------------------------------------------------------
 def make_lax_friedrichs_flux(wave_speed, state, flux_func, bdry_tags_and_states, strong):
-    from hedge.flux import make_normal, FluxVectorPlaceholder
 
+    from hedge.flux import make_normal, FluxVectorPlaceholder
+   
     fluxes = flux_func(state)
 
     n = len(state)
@@ -1310,7 +1311,7 @@ def make_lax_friedrichs_flux(wave_speed, state, flux_func, bdry_tags_and_states,
 
     if not strong:
         flux = 0.5*(sum(n_i*(f_i.int+f_i.ext) for n_i, f_i in zip(normal, fluxes_ph))
-                - penalty)
+                    - penalty)
     else:
         flux = 0.5*(sum(n_i*(f_i.int-f_i.ext) for n_i, f_i in zip(normal, fluxes_ph))
                 + penalty)
@@ -1320,6 +1321,7 @@ def make_lax_friedrichs_flux(wave_speed, state, flux_func, bdry_tags_and_states,
     int_operand = join_fields(wave_speed, state, *fluxes)
 
     from hedge.optemplate import pair_with_boundary
+
     return (flux_op*int_operand
             + sum(
                 flux_op*pair_with_boundary(int_operand,

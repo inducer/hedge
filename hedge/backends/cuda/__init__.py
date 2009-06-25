@@ -877,7 +877,7 @@ class Discretization(hedge.discretization.Discretization):
 
             if field.dtype == object:
                 self.buf = buf = discr.pagelocked_pool.allocate(
-                        ls+one_field.shape, dtype=self.default_scalar_type)
+                        ls+one_field.shape, dtype=self.discr.default_scalar_type)
                 for i, subf in enumerate(field):
                     buf[i, :] = subf
             else:
@@ -1212,6 +1212,16 @@ class Discretization(hedge.discretization.Discretization):
         return gpuarray.subset_dot(
                 self._meaningful_volume_indices(), 
                 a, b, dtype=numpy.float64).get()
+
+    def nodewise_max(self, a):
+        return gpuarray.subset_max(
+	        self._meaningful_volume_indices(),
+		a, dtype=self.default_scalar_type).get()
+
+    def nodewise_min(self, a):
+        return gpuarray.subset_min(
+	        self._meaningful_volume_indices(),
+		a, dtype=self.default_scalar_type).get()
 
     # numbering tools ---------------------------------------------------------
     @memoize_method

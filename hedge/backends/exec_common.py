@@ -157,7 +157,6 @@ class CPUExecutionMapperBase(ExecutionMapperBase):
         out = self.discr.volume_zeros()
         for eg in self.discr.element_groups:
             perform_elwise_max(eg.ranges, field, out)
-
         return out
 
     def map_call(self, expr):

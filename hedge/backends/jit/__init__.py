@@ -186,6 +186,12 @@ class Executor(CPUExecutorBase):
                 print self.code
                 raw_input()
 
+	if "print_op_code" in discr.debug:
+	    from hedge.tools import get_rank
+	    if get_rank(discr) == 0:
+		print self.code
+		raw_input()
+
         def bench_diff(f):
             test_field = discr.volume_zeros()
             from hedge.optemplate import DifferentiationOperator
@@ -284,3 +290,6 @@ class Discretization(hedge.discretization.Discretization):
         add_hedge(toolchain)
 
         self.toolchain = toolchain
+
+    def nodewise_max(self,a):
+        return numpy.max(a)
