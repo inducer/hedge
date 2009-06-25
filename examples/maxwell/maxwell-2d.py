@@ -35,9 +35,9 @@ def main():
     from pylo import DB_VARTYPE_VECTOR
     from math import sqrt, pi, exp
     from hedge.pde import TEMaxwellOperator, TMMaxwellOperator
-    from hedge.backends import guess_run_context
     from hedge.data import GivenFunction, TimeIntervalGivenFunction
 
+    from hedge.backends import guess_run_context
     rcon = guess_run_context()
 
     epsilon0 = 8.8541878176e-12 # C**2 / (N m**2)

@@ -1,3 +1,4 @@
+# -*- coding: utf8 -*-
 """Canned operators for several PDEs, such as Maxwell's, heat, Poisson, etc."""
 
 from __future__ import division
@@ -38,7 +39,7 @@ class Operator(object):
     """A base class for Discontinuous Galerkin operators.
 
     You may derive your own operators from this class, but, at present
-    this class provides no functionality. Its function is merely as 
+    this class provides no functionality. Its function is merely as
     documentation, to group related classes together in an inheritance
     tree.
     """
@@ -51,7 +52,7 @@ class TimeDependentOperator(Operator):
     """A base class for time-dependent Discontinuous Galerkin operators.
 
     You may derive your own operators from this class, but, at present
-    this class provides no functionality. Its function is merely as 
+    this class provides no functionality. Its function is merely as
     documentation, to group related classes together in an inheritance
     tree.
     """
@@ -84,7 +85,7 @@ class GradientOperator(Operator):
         flux_op = get_flux_operator(self.flux())
 
         return nabla*u - InverseMassOperator()*(
-                flux_op * u + 
+                flux_op * u +
                 flux_op * pair_with_boundary(u, bc, TAG_ALL)
                 )
 
@@ -94,7 +95,7 @@ class GradientOperator(Operator):
         def op(u):
             from hedge.mesh import TAG_ALL
 
-            return compiled_op_template(u=u, 
+            return compiled_op_template(u=u,
                     bc=discr.boundarize_volume_field(u, TAG_ALL))
 
         return op
@@ -136,7 +137,7 @@ class DivergenceOperator(Operator):
         from hedge.mesh import TAG_ALL
         from hedge.optemplate import make_vector_field, pair_with_boundary, \
                 get_flux_operator, make_nabla, InverseMassOperator
-                
+
         nabla = make_nabla(self.dimensions)
         m_inv = InverseMassOperator()
 
@@ -151,17 +152,17 @@ class DivergenceOperator(Operator):
                 idx += 1
 
         flux_op = get_flux_operator(self.flux())
-        
+
         return local_op_result - m_inv*(
-                flux_op * v + 
+                flux_op * v +
                 flux_op * pair_with_boundary(v, bc, TAG_ALL))
-        
+
     def bind(self, discr):
         compiled_op_template = discr.compile(self.op_template())
 
         def op(v):
             from hedge.mesh import TAG_ALL
-            return compiled_op_template(v=v, 
+            return compiled_op_template(v=v,
                     bc=discr.boundarize_volume_field(v, TAG_ALL))
 
         return op
@@ -177,7 +178,7 @@ class AdvectionOperatorBase(TimeDependentOperator):
             "lf"
             ]
 
-    def __init__(self, v, 
+    def __init__(self, v,
             inflow_tag="inflow",
             inflow_u=hedge.data.make_tdep_constant(0),
             outflow_tag="outflow",
@@ -227,7 +228,7 @@ class AdvectionOperatorBase(TimeDependentOperator):
 
         return rhs
 
-    def bind_interdomain(self, 
+    def bind_interdomain(self,
             my_discr, my_part_data,
             nb_discr, nb_part_data):
         from hedge.partition import compile_interdomain_flux
@@ -245,7 +246,7 @@ class AdvectionOperatorBase(TimeDependentOperator):
                 return fld[from_nb_indices]
 
         def rhs(t, u, u_neighbor):
-            return compiled_op_template(u=u, 
+            return compiled_op_template(u=u,
                     nb_bdry_u=with_object_array_or_scalar(nb_bdry_permute, u_neighbor))
 
         return rhs
@@ -275,7 +276,7 @@ class StrongAdvectionOperator(AdvectionOperatorBase):
         flux_op = get_flux_operator(self.flux())
 
         return (
-                -numpy.dot(self.v, nabla*u) 
+                -numpy.dot(self.v, nabla*u)
                 + m_inv*(
                 flux_op * u
                 + flux_op * pair_with_boundary(u, bc_in, self.inflow_tag)
@@ -314,11 +315,11 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
 class VariableCoefficientAdvectionOperator:
     """A class for space- and time-dependent DG-advection operators.
 
-    `advec_v` is a callable expecting two arguments `(x, t)` representing space and time, 
-    and returning an n-dimensional vector representing the velocity at x. 
-    `bc_u_f` is a callable expecting `(x, t)` representing space and time, 
+    `advec_v` is a callable expecting two arguments `(x, t)` representing space and time,
+    and returning an n-dimensional vector representing the velocity at x.
+    `bc_u_f` is a callable expecting `(x, t)` representing space and time,
     and returning an 1-dimensional vector representing the state on the boundary.
-    Both `advec_v` and `bc_u_f` conform to the 
+    Both `advec_v` and `bc_u_f` conform to the
     `hedge.data.ITimeDependentGivenFunction` interface.
     """
 
@@ -328,12 +329,12 @@ class VariableCoefficientAdvectionOperator:
             "lf"
             ]
 
-    def __init__(self, 
-            dimensions, 
-	    advec_v,
+    def __init__(self,
+            dimensions,
+            advec_v,
             bc_u_f="None",
-	    flux_type="central"
-	    ):
+            flux_type="central"
+            ):
         self.dimensions = dimensions
         self.advec_v = advec_v
         self.bc_u_f = bc_u_f
@@ -341,23 +342,23 @@ class VariableCoefficientAdvectionOperator:
 
     def flux(self, ):
         from hedge.flux import \
-	                make_normal, \
-			FluxScalarPlaceholder, \
-			FluxVectorPlaceholder, \
-			IfPositive, flux_max, norm
-        
+                        make_normal, \
+                        FluxScalarPlaceholder, \
+                        FluxVectorPlaceholder, \
+                        IfPositive, flux_max, norm
+
         d = self.dimensions
 
         w = FluxVectorPlaceholder((1+d)+1)
-	u = w[0]
+        u = w[0]
         v = w[1:d+1]
         c = w[1+d]
 
         normal = make_normal(self.dimensions)
 
         if self.flux_type == "central":
-	    return (u.int*numpy.dot(v.int, normal )
-	            + u.ext*numpy.dot(v.ext, normal)) * 0.5
+            return (u.int*numpy.dot(v.int, normal )
+                    + u.ext*numpy.dot(v.ext, normal)) * 0.5
         elif self.flux_type == "lf":
             n_vint = numpy.dot(normal, v.int)
             n_vext = numpy.dot(normal, v.ext)
@@ -365,7 +366,7 @@ class VariableCoefficientAdvectionOperator:
                    - 0.5 * (u.ext - u.int) \
                    * flux_max(c.int, c.ext)
 
-        elif self.flux_type == "upwind": 
+        elif self.flux_type == "upwind":
             return (
                     IfPositive(numpy.dot(normal, v.avg),
                         numpy.dot(normal, v.int) * u.int, # outflow
@@ -377,21 +378,21 @@ class VariableCoefficientAdvectionOperator:
 
     def op_template(self):
         from hedge.optemplate import \
-	        Field, \
-		pair_with_boundary, \
+                Field, \
+                pair_with_boundary, \
                 get_flux_operator, \
-		make_minv_stiffness_t, \
-		InverseMassOperator,\
-		make_vector_field
+                make_minv_stiffness_t, \
+                InverseMassOperator,\
+                make_vector_field
 
         from hedge.tools import join_fields, \
                                 ptwise_dot
-        
+
         from hedge.optemplate import ElementwiseMaxOperator, BoundarizeOperator
 
 
         u = Field("u")
-	v = make_vector_field("v", self.dimensions)
+        v = make_vector_field("v", self.dimensions)
         c = ElementwiseMaxOperator()*ptwise_dot(1, 1, v, v)
         w = join_fields(u, v, c)
 
@@ -418,13 +419,13 @@ class VariableCoefficientAdvectionOperator:
 
     def bind(self, discr):
         compiled_op_template = discr.compile(self.op_template())
-        
+
         from hedge.mesh import check_bc_coverage, TAG_ALL
         check_bc_coverage(discr.mesh, [TAG_ALL])
 
         def rhs(t, u):
-	    v = self.advec_v.volume_interpolant(t, discr)
-            
+            v = self.advec_v.volume_interpolant(t, discr)
+
             if self.bc_u_f is not "None":
                 bc_u = self.bc_u_f.boundary_interpolant(t, discr, tag=TAG_ALL)
                 return compiled_op_template(u=u, v=v, bc_u=bc_u)
@@ -435,11 +436,11 @@ class VariableCoefficientAdvectionOperator:
 
     def max_eigenvalue(self, t, discr):
         # Gives the max eigenvalue of a vector of eigenvalues.
-        # As the velocities of each node is stored in the velocity-vector-field 
-        # a pointwise dot product of this vector has to be taken to get the 
-        # magnitude of the velocity at each node. From this vector the maximum 
+        # As the velocities of each node is stored in the velocity-vector-field
+        # a pointwise dot product of this vector has to be taken to get the
+        # magnitude of the velocity at each node. From this vector the maximum
         # values limits the timestep.
-        
+
         from hedge.tools import ptwise_dot
         v = self.advec_v.volume_interpolant(t, discr)
         return (ptwise_dot(1, 1, v, v)**0.5).max()
@@ -457,11 +458,11 @@ class StrongWaveOperator:
 
     The sign of M{v} determines whether we discretize the forward or the
     backward wave equation.
-    
+
     c is assumed to be constant across all space.
     """
 
-    def __init__(self, c, dimensions, source_f=None, 
+    def __init__(self, c, dimensions, source_f=None,
             flux_type="upwind",
             dirichlet_tag=hedge.mesh.TAG_ALL,
             neumann_tag=hedge.mesh.TAG_NONE,
@@ -553,18 +554,18 @@ class StrongWaveOperator:
         from hedge.tools import join_fields
         return (
                 - join_fields(
-                    -self.c*numpy.dot(nabla, v), 
+                    -self.c*numpy.dot(nabla, v),
                     -self.c*(nabla*u)
-                    ) 
-                + 
+                    )
+                +
                 InverseMassOperator() * (
-                    flux_op*w 
+                    flux_op*w
                     + flux_op * pair_with_boundary(w, dir_bc, self.dirichlet_tag)
                     + flux_op * pair_with_boundary(w, neu_bc, self.neumann_tag)
                     + flux_op * pair_with_boundary(w, rad_bc, self.radiation_tag)
                     ))
 
-    
+
     def bind(self, discr):
         from hedge.mesh import check_bc_coverage
         check_bc_coverage(discr.mesh, [
@@ -599,7 +600,7 @@ class VariableVelocityStrongWaveOperator:
       * S{part}t v - c grad u = 0
     """
 
-    def __init__(self, c, dimensions, source=None, 
+    def __init__(self, c, dimensions, source=None,
             flux_type="upwind",
             dirichlet_tag=hedge.mesh.TAG_ALL,
             neumann_tag=hedge.mesh.TAG_NONE,
@@ -608,7 +609,7 @@ class VariableVelocityStrongWaveOperator:
         """`c` is assumed to be positive and conforms to the
         `hedge.data.ITimeDependentGivenFunction` interface.
 
-        `source` also conforms to the 
+        `source` also conforms to the
         `hedge.data.ITimeDependentGivenFunction` interface.
         """
         assert isinstance(dimensions, int)
@@ -667,7 +668,7 @@ class VariableVelocityStrongWaveOperator:
         w = make_vector_field("w", d+1)
         u = w[0]
         v = w[1:]
-        
+
         from hedge.tools import join_fields
         c = Field("c")
         flux_w = join_fields(c, w)
@@ -692,18 +693,18 @@ class VariableVelocityStrongWaveOperator:
 
         return (
                 - join_fields(
-                    -numpy.dot(nabla, self.time_sign*c*v), 
+                    -numpy.dot(nabla, self.time_sign*c*v),
                     -(nabla*(self.time_sign*c*u))
-                    ) 
-                + 
+                    )
+                +
                 InverseMassOperator() * (
-                    flux_op*flux_w 
+                    flux_op*flux_w
                     + flux_op * pair_with_boundary(flux_w, dir_bc, self.dirichlet_tag)
                     + flux_op * pair_with_boundary(flux_w, neu_bc, self.neumann_tag)
                     + flux_op * pair_with_boundary(flux_w, rad_bc, self.radiation_tag)
                     ))
 
-    
+
     def bind(self, discr):
         from hedge.mesh import check_bc_coverage
         check_bc_coverage(discr.mesh, [
@@ -738,15 +739,15 @@ class MaxwellOperator(TimeDependentOperator):
 
     _default_dimensions = 3
 
-    def __init__(self, epsilon, mu, 
+    def __init__(self, epsilon, mu,
             flux_type,
             bdry_flux_type=None,
-            pec_tag=hedge.mesh.TAG_ALL, 
+            pec_tag=hedge.mesh.TAG_ALL,
             absorb_tag=hedge.mesh.TAG_NONE,
             incident_tag=hedge.mesh.TAG_NONE,
             incident_bc=None, current=None, dimensions=None):
         """
-        @arg flux_type: can be in [0,1] for anything between central and upwind, 
+        @arg flux_type: can be in [0,1] for anything between central and upwind,
           or "lf" for Lax-Friedrichs.
         """
         e_subset = self.get_eh_subset()[0:3]
@@ -794,7 +795,7 @@ class MaxwellOperator(TimeDependentOperator):
 
         if flux_type == "lf":
             return join_fields(
-                    # flux e, 
+                    # flux e,
                     1/2*(
                         -1/self.epsilon*self.h_cross(normal, h.int-h.ext)
                         -self.c/2*(e.int-e.ext)
@@ -807,15 +808,15 @@ class MaxwellOperator(TimeDependentOperator):
         elif isinstance(flux_type, (int, float)):
             # see doc/maxima/maxwell.mac
             return join_fields(
-                    # flux e, 
+                    # flux e,
                     1/self.epsilon*(
-                        -1/2*self.h_cross(normal, 
+                        -1/2*self.h_cross(normal,
                             h.int-h.ext
                             -flux_type/self.Z*self.e_cross(normal, e.int-e.ext))
                         ),
                     # flux h
                     1/self.mu*(
-                        1/2*self.e_cross(normal, 
+                        1/2*self.e_cross(normal,
                             e.int-e.ext
                             +flux_type/(self.Y)*self.h_cross(normal, h.int-h.ext))
                         ),
@@ -837,7 +838,7 @@ class MaxwellOperator(TimeDependentOperator):
 
         if self.current is not None:
             from hedge.optemplate import make_vector_field
-            j = make_vector_field("j", 
+            j = make_vector_field("j",
                     count_subset(self.get_eh_subset()[:3]))
         else:
             j = 0
@@ -872,9 +873,9 @@ class MaxwellOperator(TimeDependentOperator):
         normal = make_normal(self.dimensions)
 
         absorb_bc = w + 1/2*join_fields(
-                self.h_cross(normal, self.e_cross(normal, e)) 
+                self.h_cross(normal, self.e_cross(normal, e))
                 - self.Z*self.h_cross(normal, h),
-                self.e_cross(normal, self.h_cross(normal, h)) 
+                self.e_cross(normal, self.h_cross(normal, h))
                 + self.Y*self.e_cross(normal, e)
                 )
 
@@ -971,7 +972,7 @@ class MaxwellOperator(TimeDependentOperator):
             return moa(e), moa(h)
 
     def get_eh_subset(self):
-        """Return a 6-tuple of C{bool}s indicating whether field components 
+        """Return a 6-tuple of C{bool}s indicating whether field components
         are to be computed. The fields are numbered in the order specified
         in the class documentation.
         """
@@ -1022,7 +1023,7 @@ class TEMaxwellOperator(MaxwellOperator):
 
 
 class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
-    """Implements a PML as in 
+    """Implements a PML as in
 
     [1] S. Abarbanel and D. Gottlieb, "On the construction and analysis of absorbing
     layers in CEM," Applied Numerical Mathematics,  vol. 27, 1998, S. 331-340.
@@ -1032,7 +1033,7 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
     boundary layers for wave-like equations,"
     Applied Numerical Mathematics,  vol. 27,
     1998, S. 533-557.
-    (eq. 4.10) 
+    (eq. 4.10)
 
     [3] Abarbanel, D. Gottlieb, and J.S. Hesthaven, "Long Time Behavior of the
     Perfectly Matched Layer Equations in Computational Electromagnetics,"
@@ -1042,7 +1043,7 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
     """
 
     class PMLCoefficients(Record):
-        __slots__ = ["sigma", "sigma_prime", "tau"] 
+        __slots__ = ["sigma", "sigma_prime", "tau"]
         # (tau=mu in [3] , to avoid confusion with permeability)
 
         def map(self, f):
@@ -1068,14 +1069,14 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
 
         from hedge.optemplate import make_vector_field
         sig = pad_vec(
-                make_vector_field("sigma", self.dimensions), 
+                make_vector_field("sigma", self.dimensions),
                 dim_subset)
         sig_prime = pad_vec(
-                make_vector_field("sigma_prime", self.dimensions), 
+                make_vector_field("sigma_prime", self.dimensions),
                 dim_subset)
         if self.add_decay:
             tau = pad_vec(
-                    make_vector_field("tau", self.dimensions), 
+                    make_vector_field("tau", self.dimensions),
                     dim_subset)
         else:
             tau = numpy.zeros((3,))
@@ -1122,8 +1123,8 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
                 ) + self.pml_local_op(w)
 
     def bind(self, discr, coefficients):
-        return MaxwellOperator.bind(self, discr, 
-                sigma=coefficients.sigma, 
+        return MaxwellOperator.bind(self, discr,
+                sigma=coefficients.sigma,
                 sigma_prime=coefficients.sigma_prime,
                 tau=coefficients.tau)
 
@@ -1174,11 +1175,11 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
             return moa(e), moa(h), moa(p), moa(q)
 
     # sigma business ----------------------------------------------------------
-    def _construct_scalar_coefficients(self, discr, node_coord, 
+    def _construct_scalar_coefficients(self, discr, node_coord,
             i_min, i_max, o_min, o_max, exponent):
-        assert o_min < i_min <= i_max < o_max 
+        assert o_min < i_min <= i_max < o_max
 
-        if o_min != i_min: 
+        if o_min != i_min:
             l_dist = (i_min - node_coord) / (i_min-o_min)
             l_dist_prime = discr.volume_zeros(kind="numpy", dtype=node_coord.dtype)
             l_dist_prime[l_dist >= 0] = -1 / (i_min-o_min)
@@ -1199,8 +1200,8 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
                 (l_dist_prime+r_dist_prime)*exponent*l_plus_r**(exponent-1), \
                 l_plus_r
 
-    def coefficients_from_boxes(self, discr, 
-            inner_bbox, outer_bbox=None, 
+    def coefficients_from_boxes(self, discr,
+            inner_bbox, outer_bbox=None,
             magnitude=None, tau_magnitude=None,
             exponent=None, dtype=None):
         if outer_bbox is None:
@@ -1230,7 +1231,7 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
             nodes = nodes.astype(dtype)
 
         sigma, sigma_prime, tau = zip(*[self._construct_scalar_coefficients(
-            discr, nodes[:,i], 
+            discr, nodes[:,i],
             i_min[i], i_max[i], o_min[i], o_max[i],
             exponent)
             for i in range(discr.dimensions)])
@@ -1240,12 +1241,12 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
                 sigma_prime=magnitude*make_obj_array(sigma_prime),
                 tau=tau_magnitude*make_obj_array(tau))
 
-    def coefficients_from_width(self, discr, width, 
+    def coefficients_from_width(self, discr, width,
             magnitude=None, tau_magnitude=None, exponent=None,
             dtype=None):
         o_min, o_max = discr.mesh.bounding_box()
-        return self.coefficients_from_boxes(discr, 
-                (o_min+width, o_max-width), 
+        return self.coefficients_from_boxes(discr,
+                (o_min+width, o_max-width),
                 (o_min, o_max),
                 magnitude, tau_magnitude, exponent, dtype)
 
@@ -1265,22 +1266,22 @@ class AbarbanelGottliebPMLTMMaxwellOperator(
 
 
 
-class WeakPoissonOperator(Operator, ):
+class WeakPoissonOperator(Operator):
     """Implements the Local Discontinuous Galerkin (LDG) Method for elliptic
     operators.
 
-    See P. Castillo et al., 
-    Local discontinuous Galerkin methods for elliptic problems", 
+    See P. Castillo et al.,
+    Local discontinuous Galerkin methods for elliptic problems",
     Communications in Numerical Methods in Engineering 18, no. 1 (2002): 69-75.
     """
 
-    def __init__(self, dimensions, diffusion_tensor=None, 
+    def __init__(self, dimensions, diffusion_tensor=None,
             dirichlet_bc=hedge.data.ConstantGivenFunction(), dirichlet_tag="dirichlet",
             neumann_bc=hedge.data.ConstantGivenFunction(), neumann_tag="neumann",
             flux="ip"):
         """Initialize the weak Poisson operator.
 
-        @arg flux: Either C{"ip"} or C{"ldg"} to indicate which type of flux is 
+        @arg flux: Either C{"ip"} or C{"ldg"} to indicate which type of flux is
         to be used. IP tends to be faster, and is therefore the default.
         """
         self.dimensions = dimensions
@@ -1409,7 +1410,7 @@ class WeakPoissonOperator(Operator, ):
                 self.get_weak_flux_set(self.flux_type).flux_u_dbdry)
 
         return InverseMassOperator() * (
-                flux_u_dbdry*pair_with_boundary(0, Field("dir_bc_u"), 
+                flux_u_dbdry*pair_with_boundary(0, Field("dir_bc_u"),
                     self.dirichlet_tag))
 
     # bound operator ----------------------------------------------------------
@@ -1431,8 +1432,18 @@ class WeakPoissonOperator(Operator, ):
                 self.diffusion = self.neu_diff = pop.diffusion_tensor.value
             else:
                 self.diffusion = pop.diffusion_tensor.volume_interpolant(discr)
-                self.neu_diff = pop.diffusion_tensor.boundary_interpolant(discr, 
+                self.neu_diff = pop.diffusion_tensor.boundary_interpolant(discr,
                         poisson_op.neumann_tag)
+
+            # Check whether use of Poincaré mean-value method is required.
+            # This only is requested for periodic BC's over the entire domain.
+            # Partial periodic BC mixed with other BC's does not need the
+            # special treatment.
+
+            from hedge.mesh import TAG_ALL
+            self.poincare_mean_value_hack = (
+                    len(self.discr.get_boundary(TAG_ALL).nodes)
+                    == len(self.discr.get_boundary(poisson_op.neumann_tag).nodes))
 
         @property
         def dtype(self):
@@ -1453,7 +1464,7 @@ class WeakPoissonOperator(Operator, ):
             The divergence computation is unaffected by the scaling
             effected by the diffusion tensor.
 
-            @param apply_minv: Bool specifying whether to compute a complete 
+            @param apply_minv: Bool specifying whether to compute a complete
               divergence operator. If False, the final application of the inverse
               mass operator is skipped. This is used in L{op}() in order to reduce
               the scheme M{M^{-1} S u = f} to M{S u = M f}, so that the mass operator
@@ -1481,37 +1492,54 @@ class WeakPoissonOperator(Operator, ):
         def op(self, u, apply_minv=False):
             from hedge.tools import ptwise_dot
 
+            # Check if poincare mean value method has to be applied.
+            if self.poincare_mean_value_hack:
+                # ∫(Ω) u dΩ
+                state_int = self.discr.integral(u)
+                # calculate mean value:  (1/|Ω|) * ∫(Ω) u dΩ
+                mean_state = state_int / self.discr.mesh_volume()
+                m_mean_state = mean_state * self.discr._mass_ones()
+                #m_mean_state = mean_state * m
+            else:
+                m_mean_state = 0
+
             return self.div(
-                    ptwise_dot(2, 1, self.diffusion, self.grad(u)), 
-                    u, apply_minv=apply_minv)
+                    ptwise_dot(2, 1, self.diffusion, self.grad(u)),
+                    u, apply_minv=apply_minv) \
+                            - m_mean_state
 
         __call__ = op
 
         def prepare_rhs(self, rhs):
-            """Perform the rhs(*) function in the class description, i.e.
-            return a right hand side for the linear system op(u)=rhs(f).
-            
+            """Prepare the right-hand side for the linear system op(u)=rhs(f).
+
             In matrix form, LDG looks like this:
-            
+
             Mv = Cu + g
             Mf = Av + Bu + h
 
             where v is the auxiliary vector, u is the argument of the operator, f
-            is the result of the operator and g and h are inhom boundary data, and
-            A,B,C are some operator+lifting matrices
+            is the result of the grad operator, g and h are inhom boundary data, and
+            A,B,C are some operator+lifting matrices.
 
             M f = A Minv(Cu + g) + Bu + h
 
             so the linear system looks like
 
             M f = A Minv Cu + A Minv g + Bu + h
-            M f - A Minv g - h = (A Minv C + B)u
+            M f - A Minv g - h = (A Minv C + B)u (*)
+            --------rhs-------
 
             So the right hand side we're putting together here is really
 
             M f - A Minv g - h
-            """
 
+            Finally, note that the operator application above implements
+            the equation (*) left-multiplied by Minv, so that the
+            right-hand-side becomes
+
+            f - Minv( A Minv g + h)
+            """
             dim = self.discr.dimensions
 
             pop = self.poisson_op
@@ -1526,7 +1554,7 @@ class WeakPoissonOperator(Operator, ):
             diff_v = ptwise_dot(2, 1, self.diffusion, vpart)
 
             def neu_bc_v():
-                return ptwise_dot(2, 1, self.neu_diff, 
+                return ptwise_dot(2, 1, self.neu_diff,
                         self.neumann_normals*
                             pop.neumann_bc.boundary_interpolant(self.discr, ntag))
 
@@ -1537,9 +1565,10 @@ class WeakPoissonOperator(Operator, ):
 
             from hedge.optemplate import MassOperator
 
-            return (MassOperator().apply(self.discr, 
+            return (MassOperator().apply(self.discr,
                 rhs.volume_interpolant(self.discr))
                 - self.div_c(w=w, dir_bc_w=dir_bc_w, neu_bc_w=neu_bc_w))
+
 
     def bind(self, discr):
         assert self.dimensions == discr.dimensions
@@ -1549,75 +1578,11 @@ class WeakPoissonOperator(Operator, ):
 
         return self.BoundPoissonOperator(self, discr)
 
-    # matrix creation ---------------------------------------------------------
-    def grad_matrix(self):
-        assert False, "this is broken"
-        discr = self.discr
-        dim = discr.dimensions
-
-        def assemble_local_vstack(operators):
-            n = len(operators)
-            dof = len(discr)
-            result = pyublas.zeros((n*dof, dof), flavor=pyublas.SparseBuildMatrix)
-
-            from hedge._internal import MatrixTarget
-            tgt = MatrixTarget(result, 0, 0)
-
-            for i, op in enumerate(operators):
-                op.perform_on(tgt.rebased_target(i*dof, 0))
-            return result
-
-        def assemble_local_hstack(operators):
-            n = len(operators)
-            dof = len(discr)
-            result = pyublas.zeros((dof, n*dof), flavor=pyublas.SparseBuildMatrix)
-
-            from hedge._internal import MatrixTarget
-            tgt = MatrixTarget(result, 0, 0)
-
-            for i, op in enumerate(operators):
-                op.perform_on(tgt.rebased_target(0, i*dof))
-            return result
-
-        def assemble_local_diag(operators):
-            n = len(operators)
-            dof = len(discr)
-            result = pyublas.zeros((n*dof, n*dof), flavor=pyublas.SparseBuildMatrix)
-
-            from hedge._internal import MatrixTarget
-            tgt = MatrixTarget(result, 0, 0)
-
-            for i, op in enumerate(operators):
-                op.perform_on(tgt.rebased_target(i*dof, i*dof))
-            return result
-
-        def fast_mat(mat):
-            return pyublas.asarray(mat, flavor=pyublas.SparseExecuteMatrix)
-
-        def assemble_grad():
-            n = self.discr.dimensions
-            dof = len(discr)
-
-            minv = fast_mat(assemble_local_diag([self.m_inv] * dim))
-
-            m_local_grad = fast_mat(-assemble_local_vstack(self.discr.minv_stiffness_t))
-
-            fluxes = pyublas.zeros((n*dof, dof), flavor=pyublas.SparseBuildMatrix)
-            from hedge._internal import MatrixTarget
-            fluxes_tgt = MatrixTarget(fluxes, 0, 0)
-            self.flux_u.perform_inner(fluxes_tgt)
-            self.flux_u_dbdry.perform_int_bdry(self.dirichlet_tag, fluxes_tgt)
-            self.flux_u_nbdry.perform_int_bdry(self.neumann_tag, fluxes_tgt)
-
-            return m_local_grad + minv * fast_mat(fluxes)
-
-        return assemble_grad()
-
 
 
 
 class StrongHeatOperator(TimeDependentOperator):
-    def __init__(self, dimensions, coeff=hedge.data.ConstantGivenFunction(1), 
+    def __init__(self, dimensions, coeff=hedge.data.ConstantGivenFunction(1),
             dirichlet_bc=hedge.data.ConstantGivenFunction(), dirichlet_tag="dirichlet",
             neumann_bc=hedge.data.ConstantGivenFunction(), neumann_tag="neumann",
             ldg=True):
@@ -1695,7 +1660,7 @@ class StrongHeatOperator(TimeDependentOperator):
                 InverseMassOperator, make_stiffness, get_flux_operator
 
         stiff = make_stiffness(self.dimensions)
-        
+
         u = Field("u")
         sqrt_coeff_u = Field("sqrt_coeff_u")
         dir_bc_u = Field("dir_bc_u")
@@ -1718,7 +1683,7 @@ class StrongHeatOperator(TimeDependentOperator):
                 InverseMassOperator, get_flux_operator, make_stiffness
 
         stiff = make_stiffness(self.dimensions)
-        
+
         d = self.dimensions
         w = make_vector_field("w", 1+d)
         v = w[1:]

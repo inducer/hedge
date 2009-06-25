@@ -22,7 +22,6 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 
-import hedge.backends.cpu_base
 import hedge.discretization
 import hedge.optemplate
 from hedge.backends.exec_common import \
@@ -65,18 +64,42 @@ class ExecutionMapper(CPUExecutionMapperBase):
 
         from pymbolic.primitives import is_zero
 
+        class ZeroSpec: pass
+        class BoundaryZeros(ZeroSpec): pass
+        class VolumeZeros(ZeroSpec): pass
+
         def eval_arg(arg_spec):
             arg_expr, is_int = arg_spec
             arg = self.rec(arg_expr)
             if is_zero(arg):
                 if is_bdry and not is_int:
-                    return self.discr.boundary_zeros(insn.kind.tag)
+                    return BoundaryZeros()
                 else:
-                    return self.discr.volume_zeros()
+                    return VolumeZeros()
             else:
                 return arg
 
-        args = [eval_arg(arg_expr) for arg_expr in insn.arg_specs]
+        args = [eval_arg(arg_expr) 
+                for arg_expr in insn.flux_var_info.arg_specs]
+
+        from pytools import common_dtype
+        max_dtype = common_dtype(
+                [a.dtype for a in args if not isinstance(a, ZeroSpec)],
+                self.discr.default_scalar_type)
+
+        def cast_arg(arg):
+            if isinstance(arg, BoundaryZeros):
+                return self.discr.boundary_zeros(insn.kind.tag,
+                        dtype=max_dtype)
+            elif isinstance(arg, VolumeZeros):
+                return self.discr.volume_zeros(
+                        dtype=max_dtype)
+            elif isinstance(arg, numpy.ndarray):
+                return numpy.asarray(arg, dtype=max_dtype)
+            else:
+                return arg
+
+        args = [cast_arg(arg) for arg in args]
 
         if is_bdry:
             bdry = self.discr.get_boundary(insn.kind.tag)
@@ -87,17 +110,33 @@ class ExecutionMapper(CPUExecutionMapperBase):
         result = []
 
         for fg in face_groups:
+            # grab module
+            module = insn.get_module(self.discr, max_dtype)
+            func = module.gather_flux
+
+            # set up argument structure
+            arg_struct = module.ArgStruct()
+            for arg_name, arg in zip(insn.flux_var_info.arg_names, args):
+                setattr(arg_struct, arg_name, arg)
+
             fof_shape = (fg.face_count*fg.face_length()*fg.element_count(),)
             all_fluxes_on_faces = [
-                    numpy.zeros(fof_shape, dtype=self.discr.default_scalar_type)
+                    numpy.zeros(fof_shape, dtype=max_dtype)
                     for f in insn.fluxes]
-            insn.compiled_func(fg, *(all_fluxes_on_faces+args))
-            
-            for name, flux, fluxes_on_faces in zip(insn.names, insn.fluxes, 
+            for i, fof in enumerate(all_fluxes_on_faces):
+                setattr(arg_struct, "flux%d_on_faces" % i, fof)
+
+            assert not arg_struct.__dict__, arg_struct.__dict__.keys()
+
+            # perform gather
+            func(fg, arg_struct)
+
+            # do lift, produce output
+            for name, flux, fluxes_on_faces in zip(insn.names, insn.fluxes,
                     all_fluxes_on_faces):
                 from hedge.optemplate import LiftingFluxOperator
 
-                out = self.discr.volume_zeros()
+                out = self.discr.volume_zeros(dtype=fluxes_on_faces.dtype)
                 if isinstance(flux.op, LiftingFluxOperator):
                     self.executor.lift_flux(fg, fg.ldis_loc.lifting_matrix(),
                             fg.local_el_inverse_jacobians, fluxes_on_faces, out)
@@ -126,7 +165,7 @@ class ExecutionMapper(CPUExecutionMapperBase):
         field = self.rec(insn.field)
 
         if isinstance(field, (float, int)) and field == 0:
-            return 0
+            return [(insn.name, 0)], []
 
         out = self.discr.volume_zeros(dtype=field.dtype)
         self.executor.do_mass(insn.op_class, field, out)
@@ -142,10 +181,10 @@ class Executor(CPUExecutorBase):
         self.code = self.compile_optemplate(discr, optemplate, post_bind_mapper)
 
         if "print_op_code" in discr.debug:
-	    from hedge.tools import get_rank
-	    if get_rank(discr) == 0:
-	        print self.code
-	        raw_input()
+            from hedge.tools import get_rank
+            if get_rank(discr) == 0:
+                print self.code
+                raw_input()
 
 	if "print_op_code" in discr.debug:
 	    from hedge.tools import get_rank
@@ -186,12 +225,12 @@ class Executor(CPUExecutorBase):
             return argmin2(
                     (f, min(benchmark(f) for i in range(attempts)))
                     for f in choices)
-        
+
         from hedge.backends.jit.diff import JitDifferentiator
-        self.diff = pick_faster_func(bench_diff, 
+        self.diff = pick_faster_func(bench_diff,
                 [self.diff_builtin, JitDifferentiator(discr)])
         from hedge.backends.jit.lift import JitLifter
-        self.lift_flux = pick_faster_func(bench_lift, 
+        self.lift_flux = pick_faster_func(bench_lift,
                 [self.lift_flux, JitLifter(discr)])
 
     def compile_optemplate(self, discr, optemplate, post_bind_mapper):
@@ -216,7 +255,7 @@ class Executor(CPUExecutorBase):
 
     def diff_builtin(self, op_class, field, xyz_needed):
         rst_derivatives = [
-                self.diff_rst(op_class, i, field) 
+                self.diff_rst(op_class, i, field)
                 for i in range(self.discr.dimensions)]
 
         return [self.diff_rst_to_xyz(op_class(i), rst_derivatives)
@@ -246,7 +285,7 @@ class Discretization(hedge.discretization.Discretization):
             toolchain = guess_toolchain()
 
         toolchain = toolchain.with_max_optimization()
-        
+
         from codepy.libraries import add_hedge
         add_hedge(toolchain)
 

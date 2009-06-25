@@ -31,7 +31,7 @@ class JitLifter:
         self.discr = discr
 
     @memoize_method
-    def make_lift_for_facegroup(self, fgroup, with_scale):
+    def make_lift(self, fgroup, with_scale, dtype):
         discr = self.discr
         from codepy.cgen import \
                 FunctionDeclaration, FunctionBody, Typedef, \
@@ -40,15 +40,19 @@ class JitLifter:
                 For, \
                 Define
 
+        from pytools import to_uncomplex_dtype
+
         from codepy.bpl import BoostPythonModule
         mod = BoostPythonModule()
 
         S = Statement
+        mod.add_to_preamble([
+            Include("hedge/face_operators.hpp"),
+            Include("hedge/volume_operators.hpp"),
+            Include("boost/foreach.hpp"),
+            ])
+
         mod.add_to_module([
-            Include("hedge/face_operators.hpp"), 
-            Include("hedge/volume_operators.hpp"), 
-            Include("boost/foreach.hpp"), 
-            Line(),
             S("namespace ublas = boost::numeric::ublas"),
             S("using namespace hedge"),
             S("using namespace pyublas"),
@@ -59,7 +63,8 @@ class JitLifter:
             Define("FACE_DOFS_PER_EL", "(DOFS_PER_FACE*FACES_PER_EL)"),
             Define("DIMENSIONS", discr.dimensions),
             Line(),
-            Typedef(POD(self.discr.default_scalar_type, "value_type")),
+            Typedef(POD(dtype, "value_type")),
+            Typedef(POD(to_uncomplex_dtype(dtype), "uncomplex_type")),
             ])
 
         def if_(cond, result, else_=None):
@@ -72,10 +77,10 @@ class JitLifter:
                     return [else_]
 
         fdecl = FunctionDeclaration(
-                    Value("void", "lift"), 
+                    Value("void", "lift"),
                     [
                     Const(Reference(Value("face_group", "fg"))),
-                    Value("ublas::matrix<value_type>", "matrix"),
+                    Value("ublas::matrix<uncomplex_type>", "matrix"),
                     Value("numpy_array<value_type>", "field"),
                     Value("numpy_array<value_type>", "result")
                     ]+if_(with_scale,
@@ -92,7 +97,7 @@ class JitLifter:
             return Initializer(
                 Value("numpy_array<%s>::%siterator" % (tpname, const), name+"_it"),
                 "%s.begin()" % name)
-        
+
         fbody = Block([
             make_it("field"),
             make_it("result", is_const=False),
@@ -100,7 +105,7 @@ class JitLifter:
             Line(),
             For("unsigned fg_el_nr = 0",
                 "fg_el_nr < fg.element_count()",
-                "++fg_el_nr", 
+                "++fg_el_nr",
                 Block([
                     Initializer(
                         Value("node_number_t", "dest_el_base"),
@@ -111,7 +116,7 @@ class JitLifter:
                     Line(),
                     For("unsigned i = 0",
                         "i < DOFS_PER_EL",
-                        "++i", 
+                        "++i",
                         Block([
                             Initializer(Value("value_type", "tmp"), 0),
                             Line(),
@@ -143,10 +148,13 @@ class JitLifter:
     def __call__(self, fgroup, matrix, scaling, field, out):
         result = self.discr.volume_zeros(dtype=field.dtype)
 
-        args = [fgroup, matrix.astype(field.dtype), field, out]
+        from pytools import to_uncomplex_dtype
+        uncomplex_dtype = to_uncomplex_dtype(field.dtype)
+        args = [fgroup, matrix.astype(uncomplex_dtype), field, out]
 
         if scaling is not None:
             args.append(scaling)
 
-        self.make_lift_for_facegroup(fgroup, 
-                with_scale=scaling is not None)(*args)
+        self.make_lift(fgroup, 
+                with_scale=scaling is not None, 
+                dtype=field.dtype)(*args)

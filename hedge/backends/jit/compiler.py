@@ -22,7 +22,6 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 
-import hedge.backends.cpu_base
 import hedge.discretization
 import hedge.optemplate
 from pytools import memoize_method
@@ -46,7 +45,7 @@ class VectorExprAssign(Assign):
 
 
 class CompiledFluxBatchAssign(FluxBatchAssign):
-    # members: compiled_func, arg_specs
+    # members: compiled_func, arg_specs, is_boundary
 
     @memoize_method
     def get_dependencies(self):
@@ -65,6 +64,40 @@ class CompiledFluxBatchAssign(FluxBatchAssign):
 
         from pytools import flatten
         return set(flatten(dep_mapper(dep) for dep in deps))
+
+    @memoize_method
+    def get_module(self, discr, dtype):
+        from hedge.backends.jit.flux import \
+                get_interior_flux_mod, \
+                get_boundary_flux_mod
+
+        if not self.is_boundary:
+            mod = get_interior_flux_mod(
+                    self.fluxes, self.flux_var_info, discr.toolchain, dtype)
+
+            if discr.instrumented:
+                from hedge.tools import time_count_flop, gather_flops
+                mod.gather_flux = \
+                        time_count_flop(
+                                mod.gather_flux,
+                                discr.gather_timer,
+                                discr.gather_counter,
+                                discr.gather_flop_counter,
+                                len(self.fluxes)
+                                * gather_flops(discr)
+                                * len(self.flux_var_info.arg_names))
+
+        else:
+            mod = get_boundary_flux_mod(
+                    self.fluxes, self.flux_var_info, discr.toolchain, dtype)
+
+            if discr.instrumented:
+                from pytools.log import time_and_count_function
+                mod.gather_flux = time_and_count_function(
+                        mod.gather_flux, discr.gather_timer)
+
+        return mod
+
 
 
 
@@ -96,7 +129,7 @@ class BoundaryFluxKind(object):
 
 
 
-        
+
 class OperatorCompiler(OperatorCompilerBase):
     def __init__(self, discr):
         OperatorCompilerBase.__init__(self)
@@ -126,7 +159,7 @@ class OperatorCompiler(OperatorCompilerBase):
                 return InteriorFluxKind()
 
         return [self.FluxRecord(
-            flux_expr=flux_binding, 
+            flux_expr=flux_binding,
             kind=get_flux_kind(flux_binding),
             dependencies=get_flux_deps(flux_binding))
             for flux_binding in FluxCollector()(expr)]
@@ -152,55 +185,35 @@ class OperatorCompiler(OperatorCompilerBase):
             raise ValueError("invalid flux batch kind: %s" % kind)
 
     def make_interior_flux_batch_assign(self, names, fluxes, kind):
-        from hedge.backends.jit.flux import \
-                get_flux_var_info, \
-                get_interior_flux_func
-        fvi = get_flux_var_info(fluxes)
-        compiled_func = get_interior_flux_func(fluxes, fvi, 
-                self.discr.toolchain, self.discr.default_scalar_type)
-
-        if self.discr.instrumented:
-            from hedge.tools import time_count_flop, gather_flops
-            compiled_func = \
-                    time_count_flop(
-                            compiled_func,
-                            self.discr.gather_timer,
-                            self.discr.gather_counter,
-                            self.discr.gather_flop_counter,
-                            len(fluxes)*gather_flops(self.discr)*len(fvi.arg_names))
-
-        return CompiledFluxBatchAssign(
+        from hedge.backends.jit.flux import get_flux_var_info
+        return CompiledFluxBatchAssign(is_boundary=False,
                 names=names, fluxes=fluxes, kind=kind,
-                arg_specs=fvi.arg_specs, compiled_func=compiled_func,
+                flux_var_info=get_flux_var_info(fluxes),
                 dep_mapper_factory=self.dep_mapper_factory)
 
     def make_boundary_flux_batch_assign(self, names, fluxes, kind):
-        from hedge.backends.jit.flux import \
-                get_flux_var_info, \
-                get_boundary_flux_func
-        fvi = get_flux_var_info(fluxes)
-        compiled_func = get_boundary_flux_func(fluxes, fvi,
-                self.discr.toolchain, self.discr.default_scalar_type)
-
-        if self.discr.instrumented:
-            from pytools.log import time_and_count_function
-            compiled_func = time_and_count_function(compiled_func, self.discr.gather_timer)
-
-        return CompiledFluxBatchAssign(
+        from hedge.backends.jit.flux import get_flux_var_info
+        return CompiledFluxBatchAssign(is_boundary=True,
                 names=names, fluxes=fluxes, kind=kind,
-                arg_specs=fvi.arg_specs, 
-                compiled_func=compiled_func,
+                flux_var_info=get_flux_var_info(fluxes),
                 dep_mapper_factory=self.dep_mapper_factory)
 
     def make_assign(self, name, expr, priority):
+        def result_dtype_getter(vector_dtype_map, scalar_dtype_map, const_dtypes):
+            from pytools import common_dtype
+            return common_dtype(
+                    vector_dtype_map.values()
+                    + scalar_dtype_map.values()
+                    + const_dtypes)
+
         from hedge.backends.jit.vector_expr import CompiledVectorExpression
         return VectorExprAssign(
                 name=name,
                 expr=expr,
                 dep_mapper_factory=self.dep_mapper_factory,
                 compiled=CompiledVectorExpression(
-                    expr, 
-                    type_getter=lambda expr: (True, self.discr.default_scalar_type),
-                    result_dtype=self.discr.default_scalar_type,
+                    expr,
+                    is_vector_func=lambda expr: True,
+                    result_dtype_getter=result_dtype_getter,
                     toolchain=self.discr.toolchain),
                 priority=priority)

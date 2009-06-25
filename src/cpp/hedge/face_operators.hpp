@@ -105,14 +105,57 @@ namespace hedge
 
 
 
-  template <class Scalar>
+  template <class MatrixScalar, class FieldScalar>
+  inline
+  void lift_flux_without_blas(
+      const face_group &fg,
+      const numpy_matrix<MatrixScalar> &matrix, 
+      const pyublas::invalid_ok<numpy_vector<double> > &elwise_post_scaling,
+      numpy_vector<FieldScalar> fluxes_on_faces,
+      numpy_vector<FieldScalar> result)
+  {
+    const unsigned el_length_result = matrix.size1();
+    const unsigned el_length_temp = fg.face_count*fg.face_length();
+
+    if (el_length_temp != matrix.size2())
+      throw std::runtime_error("matrix size mismatch in finish_flux");
+
+    if (elwise_post_scaling->is_valid())
+    {
+      numpy_vector<double>::const_iterator el_scale_it = elwise_post_scaling->begin();
+      for (unsigned i_loc_el = 0; i_loc_el < fg.element_count(); ++i_loc_el)
+        noalias(
+            subrange(result,
+              fg.local_el_to_global_el_base[i_loc_el],
+              fg.local_el_to_global_el_base[i_loc_el]+el_length_result))
+          += MatrixScalar(*el_scale_it++) * prod(matrix,
+              subrange(fluxes_on_faces,
+                el_length_temp*i_loc_el,
+                el_length_temp*(i_loc_el+1))
+              );
+    }
+    else
+    {
+      for (unsigned i_loc_el = 0; i_loc_el < fg.element_count(); ++i_loc_el)
+        noalias(
+            subrange(result,
+              fg.local_el_to_global_el_base[i_loc_el],
+              fg.local_el_to_global_el_base[i_loc_el]+el_length_result))
+          += prod(matrix,
+              subrange(fluxes_on_faces,
+                el_length_temp*i_loc_el,
+                el_length_temp*(i_loc_el+1))
+              );
+    }
+  }
+  template <class MatrixScalar, class FieldScalar>
   inline
   void lift_flux(
       const face_group &fg,
-      const numpy_matrix<Scalar> &matrix, 
+      const numpy_matrix<MatrixScalar> &matrix, 
       const pyublas::invalid_ok<numpy_vector<double> > &elwise_post_scaling,
-      numpy_vector<Scalar> fluxes_on_faces,
-      numpy_vector<Scalar> result)
+      numpy_vector<FieldScalar> fluxes_on_faces,
+      numpy_vector<FieldScalar> result)
 #ifdef USE_BLAS
   {
     using namespace boost::numeric::bindings;
@@ -124,7 +167,7 @@ namespace hedge
     if (el_length_temp != matrix.size2())
       throw std::runtime_error("matrix size mismatch in finish_flux");
 
-    vector<Scalar> result_temp(el_length_result*fg.element_count());
+    vector<FieldScalar> result_temp(el_length_result*fg.element_count());
     result_temp.clear();
     gemm(
         'T', // "matrix" is row-major
@@ -150,7 +193,7 @@ namespace hedge
             subrange(result,
               fg.local_el_to_global_el_base[i_loc_el],
               fg.local_el_to_global_el_base[i_loc_el]+el_length_result))
-          += Scalar(*el_scale_it++) * subrange(result_temp,
+          += MatrixScalar(*el_scale_it++) * subrange(result_temp,
               el_length_result*i_loc_el,
               el_length_result*(i_loc_el+1));
     }
@@ -168,39 +211,8 @@ namespace hedge
   }
 #else
   {
-    const unsigned el_length_result = matrix.size1();
-    const unsigned el_length_temp = fg.face_count*fg.face_length();
-
-    if (el_length_temp != matrix.size2())
-      throw std::runtime_error("matrix size mismatch in finish_flux");
-
-    if (elwise_post_scaling->is_valid())
-    {
-      numpy_vector<double>::const_iterator el_scale_it = elwise_post_scaling->begin();
-      for (unsigned i_loc_el = 0; i_loc_el < fg.element_count(); ++i_loc_el)
-        noalias(
-            subrange(result,
-              fg.local_el_to_global_el_base[i_loc_el],
-              fg.local_el_to_global_el_base[i_loc_el]+el_length_result))
-          += Scalar(*el_scale_it++) * prod(matrix,
-              subrange(fluxes_on_faces,
-                el_length_temp*i_loc_el,
-                el_length_temp*(i_loc_el+1))
-              );
-    }
-    else
-    {
-      for (unsigned i_loc_el = 0; i_loc_el < fg.element_count(); ++i_loc_el)
-        noalias(
-            subrange(result,
-              fg.local_el_to_global_el_base[i_loc_el],
-              fg.local_el_to_global_el_base[i_loc_el]+el_length_result))
-          += prod(matrix,
-              subrange(fluxes_on_faces,
-                el_length_temp*i_loc_el,
-                el_length_temp*(i_loc_el+1))
-              );
-    }
+    lift_flux_without_blas(fg, matrix, elwise_post_scaling,
+        fluxes_on_faces, result);
   }
 #endif
 }

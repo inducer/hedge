@@ -69,31 +69,46 @@ def has_data_in_numpy_arrays(a):
 def numpy_linear_comb(lin_comb):
     assert lin_comb
 
-    from pytools import single_valued, indices_in_shape, flatten
+    scalar_dtypes = tuple(numpy.array(fac).dtype for fac, ary in lin_comb)
+
+    from pytools import single_valued, indices_in_shape, flatten, \
+            match_precision
     from codepy.elementwise import make_linear_comb_kernel
+
     if single_valued(is_obj_array(ary) for fac, ary in lin_comb):
         oa_shape = single_valued(ary.shape for fac, ary in lin_comb)
         result = numpy.zeros(oa_shape, dtype=object)
         for i in indices_in_shape(oa_shape):
-            dtype = single_valued(ary[i].dtype for fac, ary in lin_comb)
             el_shape = single_valued(ary[i].shape for fac, ary in lin_comb)
 
-            kernel = make_linear_comb_kernel(dtype, len(lin_comb))
+            vector_dtypes = tuple(ary[i].dtype for fac, ary in lin_comb)
+            scalar_dtypes = tuple(
+                    match_precision(sd, vd)
+                    for sd, vd in zip(scalar_dtypes, vector_dtypes))
 
-            result[i] = numpy.zeros(el_shape, dtype)
+            kernel, result_dtype = make_linear_comb_kernel(
+                    scalar_dtypes, vector_dtypes)
+
+            result[i] = numpy.zeros(el_shape, result_dtype)
             kernel(result[i], *tuple(flatten((fac, ary[i]) for fac, ary in lin_comb)))
 
         return result
     else:
-        dtype = single_valued(ary.dtype for fac, ary in lin_comb)
         shape = single_valued(ary.shape for fac, ary in lin_comb)
-        kernel = make_linear_comb_kernel(dtype, len(lin_comb))
-        result = numpy.zeros(shape, dtype)
+        vector_dtypes = tuple(ary.dtype for fac, ary in lin_comb)
+        scalar_dtypes = tuple(
+                match_precision(sd, vd)
+                for sd, vd in zip(scalar_dtypes, vector_dtypes))
+
+        kernel, result_dtype = make_linear_comb_kernel(
+                scalar_dtypes, vector_dtypes)
+
+        result = numpy.zeros(shape, result_dtype)
         kernel(result, *tuple(flatten(lin_comb)))
         return result
 
 
-            
+
 
 def mul_add(afac, a, bfac, b, add_timer=None):
     if is_obj_array(a):
@@ -330,7 +345,7 @@ def ptwise_mul(a, b):
         raise ValueError, "ptwise_mul can't handle two non-scalars"
 
     return result
-            
+
 
 
 
@@ -353,7 +368,7 @@ def ptwise_dot(logdims1, logdims2, a1, a2):
 
     if result.shape == ():
         return result[()]
-    else: 
+    else:
         return result
 
 
@@ -365,9 +380,9 @@ def levi_civita(tuple):
     Only three-tuples are supported for now.
     """
     if len(tuple) == 3:
-        if tuple in [(0,1,2), (2,0,1), (1,2,0)]: 
+        if tuple in [(0,1,2), (2,0,1), (1,2,0)]:
             return 1
-        elif tuple in [(2,1,0), (0,2,1), (1,0,2)]: 
+        elif tuple in [(2,1,0), (0,2,1), (1,0,2)]:
             return -1
         else:
             return 0
@@ -464,7 +479,7 @@ class SubsettableCrossProduct:
           Given as a 3-sequence of bools.
         """
         def subset_indices(subset):
-            return [i for i, use_component in enumerate(subset) 
+            return [i for i, use_component in enumerate(subset)
                     if use_component]
 
         self.op1_subset = op1_subset
@@ -487,7 +502,7 @@ class SubsettableCrossProduct:
                         if lc != 0:
                             this_expr += lc*op1[j]*op2[k]
                             this_component.append((lc, j, k))
-                self.functions.append(pymbolic.compile(this_expr, 
+                self.functions.append(pymbolic.compile(this_expr,
                     variables=[op1, op2]))
                 self.component_lcjk.append(this_component)
 
@@ -520,11 +535,11 @@ def normalize(v):
 
 
 def sign(x):
-    if x > 0: 
+    if x > 0:
         return 1
     elif x == 0:
         return 0
-    else: 
+    else:
         return -1
 
 
@@ -551,18 +566,13 @@ def find_matching_vertices_along_axis(axis, points_a, points_b, numbers_a, numbe
 
 
 
-make_vector_target = hedge._internal.make_vector_target
-
-
-
-
 # linear algebra tools --------------------------------------------------------
 def orthonormalize(vectors, discard_threshold=None):
     """Carry out a modified [1] Gram-Schmidt orthonormalization on
     vectors.
 
-    If, during orthonormalization, the 2-norm of a vector drops 
-    below C{discard_threshold}, then this vector is silently 
+    If, during orthonormalization, the 2-norm of a vector drops
+    below C{discard_threshold}, then this vector is silently
     discarded. If C{discard_threshold} is C{None}, then no vector
     will ever be dropped, and a zero 2-norm encountered during
     orthonormalization will throw an L{OrthonormalizationError}.
@@ -598,20 +608,20 @@ def permutation_matrix(to_indices=None, from_indices=None, h=None, w=None,
         dtype=None, flavor=None):
     """Return a permutation matrix.
 
-    If to_indices is specified, the resulting permutation 
+    If to_indices is specified, the resulting permutation
     matrix P satisfies the condition
 
     P * e[i] = e[to_indices[i]] for i=1,...,len(to_indices)
 
-    where e[i] is the i-th unit vector. The height of P is 
+    where e[i] is the i-th unit vector. The height of P is
     determined either implicitly by the maximum of to_indices
     or explicitly by the parameter h.
 
-    If from_indices is specified, the resulting permutation 
+    If from_indices is specified, the resulting permutation
     matrix P satisfies the condition
 
     P * e[from_indices[i]] = e[i] for i=1,...,len(from_indices)
-    
+
     where e[i] is the i-th unit vector. The width of P is
     determined either implicitly by the maximum of from_indices
     of explicitly by the parameter w.
@@ -689,7 +699,7 @@ def estimate_order_of_convergence(abscissae, errors):
     return 10**coefficients[-1], -coefficients[-2]
 
 
-  
+
 
 class EOCRecorder(object):
     def __init__(self):
@@ -832,7 +842,7 @@ def cuthill_mckee(graph):
     """
     from pytools import argmin
 
-    # this list is called "old_numbers" because it maps a 
+    # this list is called "old_numbers" because it maps a
     # "new number to its "old number"
     old_numbers = []
     visited_nodes = set()
@@ -952,7 +962,7 @@ class BlockMatrix(object):
             return result
         elif isinstance(other, (float, complex, int)):
             return BlockMatrix(
-                    (i,j,other*chunk) 
+                    (i,j,other*chunk)
                     for i, j, chunk in self.chunks)
         else:
             return NotImplemented
@@ -960,7 +970,7 @@ class BlockMatrix(object):
     def __rmul__(self, other):
         if isinstance(other, (float, complex, int)):
             return BlockMatrix(
-                    (i,j,other*chunk) 
+                    (i,j,other*chunk)
                     for i, j, chunk in self.chunks)
         else:
             return NotImplemented
@@ -1093,7 +1103,7 @@ class CGStateContainer:
         return self.delta
 
     def one_iteration(self, compute_real_residual=False):
-        # typed up from J.R. Shewchuk, 
+        # typed up from J.R. Shewchuk,
         # An Introduction to the Conjugate Gradient Method
         # Without the Agonizing Pain, Edition 1 1/4 [8/1994]
         # Appendix B3
@@ -1149,11 +1159,11 @@ class CGStateContainer:
             iterations += 1
 
         raise ConvergenceError("cg failed to converge")
-            
 
 
 
-def parallel_cg(pcon, operator, b, precon=None, x=None, tol=1e-7, max_iterations=None, 
+
+def parallel_cg(pcon, operator, b, precon=None, x=None, tol=1e-7, max_iterations=None,
         debug=False, debug_callback=None, dot=None):
     if x is None:
         x = numpy.zeros((operator.shape[1],))
@@ -1239,7 +1249,7 @@ def lift_flops(discr):
                 2 # mul+add
                 * ldis.face_node_count()
                 * ldis.face_count()
-                * ldis.node_count() 
+                * ldis.node_count()
                 * len(eg.members)
                 )
 
@@ -1296,7 +1306,7 @@ def make_lax_friedrichs_flux(wave_speed, state, flux_func, bdry_tags_and_states,
     state_ph = fvph[1:1+n]
     fluxes_ph = [fvph[1+i*n:1+(i+1)*n] for i in range(1, d+1)]
 
-    penalty = wave_speed_ph.int*(state_ph.ext-state_ph.int) 
+    penalty = wave_speed_ph.int*(state_ph.ext-state_ph.int)
 
     if not strong:
         flux = 0.5*(sum(n_i*(f_i.int+f_i.ext) for n_i, f_i in zip(normal, fluxes_ph))
@@ -1332,7 +1342,7 @@ def wait_for_keypress(discr):
             print "[Enter]"
             raw_input()
 
-        from hedge.mpi import broadcast
+        from boostmpi import broadcast
         broadcast(comm, value=0, root=0)
 
 def get_rank(discr):

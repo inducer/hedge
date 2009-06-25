@@ -24,7 +24,7 @@ import numpy.linalg as la
 
 
 
-def main():
+def main(write_output=True, allow_features=None):
     from hedge.element import TetrahedralElement
     from hedge.timestep import RK4TimeStepper
     from hedge.mesh import make_ball_mesh, make_cylinder_mesh, make_box_mesh
@@ -41,7 +41,7 @@ def main():
     from hedge.pde import MaxwellOperator
 
     from hedge.backends import guess_run_context
-    rcon = guess_run_context(disable=set(["cuda"]))
+    rcon = guess_run_context(allow_features)
 
     epsilon0 = 8.8541878176e-12 # C**2 / (N m**2)
     mu0 = 4*pi*1e-7 # N/A**2.
@@ -57,7 +57,7 @@ def main():
         R = 1
         d = 2
         mode = CylindricalCavityMode(m=1, n=1, p=1,
-                radius=R, height=d, 
+                radius=R, height=d,
                 epsilon=epsilon, mu=mu)
         r_sol = CylindricalFieldAdapter(RealPartAdapter(mode))
         c_sol = SplitComplexAdapter(CylindricalFieldAdapter(mode))
@@ -109,7 +109,13 @@ def main():
         from pytools.log import LogManager, add_general_quantities, \
                 add_simulation_quantities, add_run_info
 
-        logmgr = LogManager("maxwell-%d.dat" % order, "w", rcon.communicator)
+        if write_output:
+            log_file_name = "maxwell-%d.dat" % order
+        else:
+            log_file_name = None
+
+        logmgr = LogManager(log_file_name, "w", rcon.communicator)
+
         add_run_info(logmgr)
         add_general_quantities(logmgr)
         add_simulation_quantities(logmgr, dt)
@@ -123,7 +129,7 @@ def main():
         from hedge.log import EMFieldGetter, add_em_quantities
         field_getter = EMFieldGetter(discr, op, lambda: fields)
         add_em_quantities(logmgr, op, field_getter)
-        
+
         logmgr.add_watches(["step.max", "t_sim.max", "W_field", "t_step.max"])
 
         # timestep loop -------------------------------------------------------
@@ -133,7 +139,7 @@ def main():
         for step in range(nsteps):
             logmgr.tick()
 
-            if step % 10 == 0:
+            if step % 10 == 0 and write_output:
                 sub_timer = vis_timer.start_sub_timer()
                 e, h = op.split_eh(fields)
                 visf = vis.make_file("em-%d-%04d" % (order, step))
@@ -160,5 +166,31 @@ def main():
             print
             print eoc_rec.pretty_print("P.Deg.", "L2 Error")
 
+    assert eoc_rec.estimate_order_of_convergence()[0,1] > 6
+
+
+
+
+
+# entry points for py.test ----------------------------------------------------
+from pytools.test import mark_test
+@mark_test(long=True)
+def test_maxwell_cavities():
+    main(write_output=False)
+
+@mark_test(mpi=True, long=True)
+def test_maxwell_cavities_mpi():
+    from pytools.mpi import run_with_mpi_ranks
+    run_with_mpi_ranks(__file__, 2, main, 
+            write_output=False, allow_features=["mpi"])
+
+
+
+
+# entry point -----------------------------------------------------------------
 if __name__ == "__main__":
-    main()
+    from pytools.mpi import in_mpi_relaunch
+    if in_mpi_relaunch():
+        test_maxwell_cavities_mpi()
+    else:
+        main()

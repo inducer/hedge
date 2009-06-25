@@ -26,7 +26,6 @@
 #include <boost/python/suite/indexing/vector_indexing_suite.hpp>
 #include <hedge/flux.hpp>
 #include <hedge/face_operators.hpp>
-#include <hedge/op_target.hpp>
 #include "wrap_helpers.hpp"
 
 
@@ -42,13 +41,17 @@ namespace ublas = boost::numeric::ublas;
 
 namespace
 {
-  template <class Scalar>
-  void expose_lift()
-  {
-    def("lift_flux", lift_flux<Scalar>,
-        args("fg", "mat", "elwise_post_scaling", "fluxes_on_faces", "result")
-       );
+#define MAKE_LIFT_EXPOSER(NAME) \
+  template <class MatrixScalar, class FieldScalar> \
+  void expose_##NAME() \
+  { \
+    def("lift_flux", NAME<MatrixScalar, FieldScalar>, \
+        args("fg", "mat", "elwise_post_scaling", "fluxes_on_faces", "result") \
+       ); \
   }
+
+  MAKE_LIFT_EXPOSER(lift_flux);
+  MAKE_LIFT_EXPOSER(lift_flux_without_blas);
 }
 
 
@@ -56,7 +59,6 @@ namespace
 
 void hedge_expose_fluxes()
 {
-  // face information ---------------------------------------------------------
   {
     typedef fluxes::face cl;
     class_<cl>("FluxFace")
@@ -105,7 +107,8 @@ void hedge_expose_fluxes()
       ;
   }
 
-  expose_lift<float>();
-  expose_lift<double>();
+  expose_lift_flux<float, float>();
+  expose_lift_flux<double, double>();
+  expose_lift_flux_without_blas<float, std::complex<float> >();
+  expose_lift_flux_without_blas<double, std::complex<double> >();
 }
-

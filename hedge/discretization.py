@@ -658,7 +658,8 @@ class Discretization(object):
             ls = log_shape(field)
             if field.dtype == object or ls == ():
                 from hedge.tools import with_object_array_or_scalar
-                field = with_object_array_or_scalar(lambda f: f[read_map])
+                field = with_object_array_or_scalar(
+                        lambda f: f[read_map], field)
             else:
                 field = numpy.asarray(
                         numpy.take(field, read_map, axis=len(ls)),
@@ -807,13 +808,16 @@ class Discretization(object):
     def nodewise_dot_product(self, a, b):
         return numpy.dot(a, b)
 
-    def integral(self, volume_vector):
+    @memoize_method
+    def _mass_ones(self):
         from hedge.optemplate import MassOperator
-        try:
-            mass_ones = self._mass_ones
-        except AttributeError:
-            self._mass_ones = mass_ones = MassOperator().apply(self, ones_on_volume(self))
-        
+        return MassOperator().apply(self, ones_on_volume(self))
+
+    @memoize_method
+    def mesh_volume(self):
+        return self.integral(ones_on_volume(self))
+
+    def integral(self, volume_vector):
         from hedge.tools import log_shape
 
         ls = log_shape(volume_vector)
@@ -824,7 +828,8 @@ class Discretization(object):
                 empty.fill(volume_vector)
                 volume_vector = empty
 
-            return self.nodewise_dot_product(mass_ones, volume_vector)
+            return self.nodewise_dot_product(
+                    self._mass_ones(), volume_vector)
         else:
             result = numpy.zeros(shape=ls, dtype=float)
             
@@ -834,7 +839,8 @@ class Discretization(object):
                 if isinstance(vvi, (int, float)) and vvi == 0:
                     result[i] = 0
                 else:
-                    result[i] = self.nodewise_dot_product(mass_ones, volume_vector[i])
+                    result[i] = self.nodewise_dot_product(
+                            self._mass_ones(), volume_vector[i])
 
             return result
 
@@ -1076,18 +1082,8 @@ def ones_on_boundary(discr, tag):
 
 
 def ones_on_volume(discr):
-    result = discr.volume_zeros()
-
-    from hedge._internal import UniformElementRanges
-
-    for eg in discr.element_groups:
-        if isinstance(eg.ranges, UniformElementRanges):
-            result[eg.ranges.start:
-                    eg.ranges.start+len(eg.ranges)*eg.ranges.el_size] = 1
-        else:
-            for e_start, e_end in eg.ranges:
-                result[e_start:e_end] = 1
-
+    result = discr.volume_empty()
+    result.fill(1)
     return result
 
 
@@ -1155,7 +1151,7 @@ class Projector:
                         order="C"))
 
     def __call__(self, from_vec):
-        from hedge._internal import perform_elwise_operator, VectorTarget
+        from hedge._internal import perform_elwise_operator
         from hedge.tools import log_shape
 
         ls = log_shape(from_vec)
@@ -1163,18 +1159,13 @@ class Projector:
 
         from pytools import indices_in_shape
         for i in indices_in_shape(ls):
-            target = VectorTarget(from_vec[i], result[i])
-
-            target.begin(len(self.to_discr), len(self.from_discr))
             for from_eg, to_eg, imat in zip(
                     self.from_discr.element_groups, 
                     self.to_discr.element_groups, 
                     self.interp_matrices):
                 perform_elwise_operator(
                         from_eg.ranges, to_eg.ranges, 
-                        imat, target)
-
-            target.finalize()
+                        imat, from_vec[i], result[i])
 
         return result
 
@@ -1249,16 +1240,10 @@ class Filter:
 
         from pytools import indices_in_shape
         for i in indices_in_shape(ls):
-            from hedge._internal import perform_elwise_operator, VectorTarget
-
-            target = VectorTarget(vec[i], result[i])
-
-            target.begin(len(self.discr), len(self.discr))
+            from hedge._internal import perform_elwise_operator
             for eg in self.discr.element_groups:
                 perform_elwise_operator(eg.ranges, eg.ranges, 
-                        self.filter_map[eg], target)
-
-            target.finalize()
+                        self.filter_map[eg], vec[i], result[i])
 
         return result
 

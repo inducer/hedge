@@ -20,7 +20,6 @@
 #include <boost/python.hpp>
 #include <boost/python/slice.hpp>
 #include <boost/numeric/ublas/io.hpp>
-#include <hedge/op_target.hpp>
 #include <hedge/volume_operators.hpp>
 #include "wrap_helpers.hpp"
 
@@ -54,24 +53,15 @@ namespace
   template <class Scalar>
   void expose_for_type()
   {
-#define ARG_TYPES \
-    const uniform_element_ranges &, \
-    const uniform_element_ranges &, \
-    const numpy_matrix<Scalar> &,
-    DEF_FOR_EACH_OP_TARGET(perform_elwise_operator, Scalar, ARG_TYPES);
-#undef ARG_TYPES
-#define ARG_TYPES \
-    const uniform_element_ranges &, \
-    const uniform_element_ranges &, \
-    const numpy_vector<double> &, \
-    const numpy_matrix<Scalar> &,
-    DEF_FOR_EACH_OP_TARGET(perform_elwise_scaled_operator, Scalar, ARG_TYPES);
-#undef ARG_TYPES
+    def("perform_elwise_operator",
+        perform_elwise_operator<Scalar>);
+
+    def("perform_elwise_scaled_operator",
+        perform_elwise_scaled_operator<Scalar>);
 
     def("perform_elwise_scale", 
-        perform_elwise_scale<uniform_element_ranges, 
-          vector_target<numpy_vector<Scalar> > >,
-        (arg("ers"), arg("scale_factors"), arg("target")));
+        perform_elwise_scale<uniform_element_ranges, Scalar>,
+        (args("ers", "scale_factors", "operand", "result")));
 
     def("perform_elwise_max", 
         perform_elwise_max<uniform_element_ranges, numpy_vector<Scalar> >,
@@ -106,4 +96,6 @@ void hedge_expose_volume_operators()
 
   expose_for_type<float>();
   expose_for_type<double>();
+  expose_for_type<std::complex<float> >();
+  expose_for_type<std::complex<double> >();
 }

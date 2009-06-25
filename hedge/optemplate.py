@@ -888,16 +888,26 @@ class BCToFluxRewriter(IdentityMapper):
             map_subscript = map_variable
 
             def map_operator_binding(self, expr):
+                from hedge.flux import FieldComponent
                 if isinstance(expr.op, BoundarizeOperator):
                     if expr.op.tag != bpair.tag:
                         raise RuntimeError("BoundarizeOperator and BoundaryPair "
                                 "do not agree about boundary tag: %s vs %s" 
                                 % (expr.op.tag, bpair.tag))
 
-                    from hedge.flux import FieldComponent
                     return FieldComponent(
                             self.register_volume_expr(expr.field), 
                             is_local=True)
+                elif isinstance(expr.op, FluxExchangeOperator):
+                    from hedge.mesh import TAG_RANK_BOUNDARY
+                    op_tag = TAG_RANK_BOUNDARY(expr.op.rank)
+                    if bpair.tag != op_tag:
+                        raise RuntimeError("BoundarizeOperator and FluxExchangeOperator "
+                                "do not agree about boundary tag: %s vs %s" 
+                                % (op_tag, bpair.tag))
+                    return FieldComponent(
+                            self.register_boundary_expr(expr), 
+                            is_local=False)
                 else:
                     raise RuntimeError("Found '%s' in a boundary term. "
                             "To the best of my knowledge, no hedge operator applies "
@@ -926,13 +936,15 @@ class BCToFluxRewriter(IdentityMapper):
         new_flux = FluxSubstitutionMapper(
                 sub_bdry_into_flux)(flux)
 
-        result = OperatorBinding(
-                FluxOperator(new_flux), BoundaryPair(
-                    numpy.array(mbfeef.vol_expr_list, dtype=object), 
-                    numpy.array(mbfeef.bdry_expr_list, dtype=object), 
-                    bpair.tag))
-
-        return result
+        from hedge.tools import is_zero
+        if is_zero(new_flux):
+            return 0
+        else:
+            return OperatorBinding(
+                    FluxOperator(new_flux), BoundaryPair(
+                        numpy.array(mbfeef.vol_expr_list, dtype=object), 
+                        numpy.array(mbfeef.bdry_expr_list, dtype=object), 
+                        bpair.tag))
 
 
 

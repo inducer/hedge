@@ -73,55 +73,42 @@ class CPUExecutorBase(object):
 
     def lift_flux(self, fgroup, matrix, scaling, field, out):
         from hedge._internal import lift_flux
-        lift_flux(fgroup, matrix.astype(field.dtype), scaling, field, out)
+        from pytools import to_uncomplex_dtype
+        lift_flux(fgroup, 
+                matrix.astype(to_uncomplex_dtype(field.dtype)), 
+                scaling, field, out)
 
     def diff_rst(self, op, rst_axis, field):
-        result = self.discr.volume_zeros()
-
-        from hedge.tools import make_vector_target
-        target = make_vector_target(field, result)
-
-        target.begin(len(self.discr), len(self.discr))
+        result = self.discr.volume_zeros(dtype=field.dtype)
 
         from hedge._internal import perform_elwise_operator
         for eg in self.discr.element_groups:
             perform_elwise_operator(eg.ranges, eg.ranges, 
-                    op.matrices(eg)[rst_axis].astype(field.dtype), target)
-
-        target.finalize()
+                    op.matrices(eg)[rst_axis].astype(field.dtype), 
+                    field, result)
 
         return result
 
     def diff_rst_to_xyz(self, op, rst, result=None):
-        from hedge.tools import make_vector_target
         from hedge._internal import perform_elwise_scale
 
         if result is None:
-            result = self.discr.volume_zeros()
+            result = self.discr.volume_zeros(dtype=rst[0].dtype)
 
         for rst_axis in range(self.discr.dimensions):
-            target = make_vector_target(rst[rst_axis], result)
-
-            target.begin(len(self.discr), len(self.discr))
             for eg in self.discr.element_groups:
                 perform_elwise_scale(eg.ranges,
                         op.coefficients(eg)[op.xyz_axis][rst_axis],
-                        target)
-            target.finalize()
+                        rst[rst_axis], result)
 
         return result
 
     def do_mass(self, op, field, out):
-        from hedge.tools import make_vector_target
-        target = make_vector_target(field, out)
-
-        target.begin(len(self.discr), len(self.discr))
         for eg in self.discr.element_groups:
             from hedge._internal import perform_elwise_scaled_operator
             perform_elwise_scaled_operator(eg.ranges, eg.ranges,
                    op.coefficients(eg), numpy.asarray(op.matrix(eg), dtype=field.dtype),
-                   target)
-        target.finalize()
+                   field, out)
 
 
 

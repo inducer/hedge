@@ -414,6 +414,13 @@ class OperatorCompilerWithExecutor(OperatorCompiler):
         self.executor = executor
 
     def make_assign(self, name, expr, priority):
+        def result_dtype_getter(vector_dtype_map, scalar_dtype_map, const_dtypes):
+            from pytools import common_dtype
+            return common_dtype(
+                    vector_dtype_map.values()
+                    + scalar_dtype_map.values()
+                    + const_dtypes)
+
         from hedge.backends.cuda.vector_expr import CompiledVectorExpression
         return VectorExprAssign(
                 name=name,
@@ -421,8 +428,8 @@ class OperatorCompilerWithExecutor(OperatorCompiler):
                 dep_mapper_factory=self.dep_mapper_factory,
                 compiled=CompiledVectorExpression(
                     expr, 
-                    type_getter=lambda expr: (True, self.executor.discr.default_scalar_type),
-                    result_dtype=self.executor.discr.default_scalar_type,
+                    is_vector_func=lambda expr: True,
+                    result_dtype_getter=result_dtype_getter,
                     allocator=self.executor.discr.pool.allocate),
                 priority=priority)
 

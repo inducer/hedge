@@ -60,6 +60,9 @@ class TAG_RANK_BOUNDARY(object):
     def __eq__(self, other):
         return isinstance(other, TAG_RANK_BOUNDARY) and self.rank == other.rank
 
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
     def __hash__(self):
         return 0xaffe ^ hash(self.rank)
 

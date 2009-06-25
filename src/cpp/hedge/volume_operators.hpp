@@ -33,7 +33,6 @@
 #include <boost/numeric/bindings/traits/ublas_matrix.hpp>
 #include <boost/iterator/iterator_facade.hpp>
 #include "base.hpp"
-#include "op_target.hpp"
 #include "flux.hpp"
 
 
@@ -148,61 +147,19 @@ namespace hedge {
 
 
   // generic operations -------------------------------------------------------
-  template <class SrcERanges, class DestERanges, class Mat, class OT>
-  inline
-  void perform_elwise_operator(
-      const SrcERanges &src_ers, 
-      const DestERanges &dest_ers,
-      const Mat &matrix, OT target)
-  {
-    if (src_ers.size() != dest_ers.size())
-      throw std::runtime_error("element ranges have different sizes");
-
-    typename DestERanges::const_iterator dest_ers_it = dest_ers.begin();
-
-    BOOST_FOREACH(const element_range src_er, src_ers)
-    {
-      const element_range dest_er = *dest_ers_it++;
-      target.add_coefficients(dest_er.first, src_er.first, matrix);
-    }
-  }
-
-
-
-
-  template <class SrcERanges, class DestERanges, class Mat, class OT>
-  inline
-  void perform_elwise_scaled_operator(
-      const SrcERanges &src_ers, 
-      const DestERanges &dest_ers,
-      const numpy_vector<double> &scale_factors, const Mat &matrix, OT target)
-  {
-    if (src_ers.size() != dest_ers.size())
-      throw std::runtime_error("element ranges have different sizes");
-
-    unsigned i = 0;
-    BOOST_FOREACH(const element_range src_er, src_ers)
-    {
-      const element_range dest_er = dest_ers[i];
-      target.add_scaled_coefficients(dest_er.first, src_er.first, 
-          scale_factors[i++], matrix);
-    }
-  }
-
-
-
-
-  template <class ERanges, class VectorTarget>
+  template <class ERanges, class Scalar>
   inline
   void perform_elwise_scale(const ERanges &ers, 
-      numpy_vector<double> const &scale_factors, VectorTarget tgt)
+      numpy_vector<double> const &scale_factors, 
+      numpy_vector<Scalar> const &operand,
+      numpy_vector<Scalar> result)
   {
     unsigned i = 0;
     BOOST_FOREACH(const element_range er, ers)
     {
-      noalias(subrange(tgt.m_result, er.first, er.second)) += 
-        typename VectorTarget::scalar_type(scale_factors[i++]) * 
-        subrange(tgt.m_operand, er.first, er.second);
+      noalias(subrange(result, er.first, er.second)) += 
+        Scalar(scale_factors[i++]) * 
+        subrange(operand, er.first, er.second);
     }
   }
 
@@ -217,24 +174,24 @@ namespace hedge {
       const uniform_element_ranges &src_ers, 
       const uniform_element_ranges &dest_ers, 
       const numpy_vector<double> &scale_factors, 
-      const numpy_matrix<Scalar> &matrix, 
-      vector_target<numpy_vector<Scalar> > target)
+      const numpy_matrix<Scalar> &matrix,
+      numpy_vector<Scalar> const &operand,
+      numpy_vector<Scalar> result)
   {
-    if (src_ers.size()*src_ers.el_size() != target.m_operand.size())
+    if (src_ers.size()*src_ers.el_size() != operand.size())
       throw std::runtime_error("operand is of wrong size");
-    if (dest_ers.size()*dest_ers.el_size() != target.m_result.size())
-      throw std::runtime_error("operand is of wrong size");
+    if (dest_ers.size()*dest_ers.el_size() != result.size())
+      throw std::runtime_error("result is of wrong size");
 
     unsigned i = 0;
-    numpy_vector<Scalar> new_operand(target.m_operand.size());
+    numpy_vector<Scalar> new_operand(operand.size());
     BOOST_FOREACH(const element_range r, src_ers)
     {
       noalias(subrange(new_operand, r.first, r.second)) = 
-        Scalar(scale_factors[i++]) * subrange(target.m_operand, r.first, r.second);
+        Scalar(scale_factors[i++]) * subrange(operand, r.first, r.second);
     }
 
-    perform_elwise_operator(src_ers, dest_ers, matrix, 
-        vector_target<numpy_vector<Scalar> >(new_operand, target.m_result));
+    perform_elwise_operator(src_ers, dest_ers, matrix, new_operand, result);
   }
 
 
@@ -247,7 +204,8 @@ namespace hedge {
       const uniform_element_ranges &src_ers, 
       const uniform_element_ranges &dest_ers, 
       const numpy_matrix<Scalar> &matrix, 
-      vector_target<numpy_vector<Scalar> > target)
+      numpy_vector<Scalar> const &operand,
+      numpy_vector<Scalar> result)
   {
     if (src_ers.size() != dest_ers.size())
       throw std::runtime_error("element ranges have different sizes");
@@ -255,10 +213,10 @@ namespace hedge {
       throw std::runtime_error("number of matrix columns != size of src element");
     if (matrix.size1() != dest_ers.el_size())
       throw std::runtime_error("number of matrix rows != size of dest element");
-    if (src_ers.size()*src_ers.el_size() != target.m_operand.size())
+    if (src_ers.size()*src_ers.el_size() != operand.size())
       throw std::runtime_error("operand is of wrong size");
-    if (dest_ers.size()*dest_ers.el_size() != target.m_result.size())
-      throw std::runtime_error("operand is of wrong size");
+    if (dest_ers.size()*dest_ers.el_size() != result.size())
+      throw std::runtime_error("result is of wrong size");
 
     using namespace boost::numeric::bindings;
     using blas::detail::gemm;
@@ -272,10 +230,10 @@ namespace hedge {
         /*alpha*/ 1,
         /*a*/ boost::numeric::bindings::traits::matrix_storage(matrix.as_ublas()),
         /*lda*/ matrix.size2(),
-        /*b*/ traits::vector_storage(target.m_operand) + src_ers.start(), 
+        /*b*/ traits::vector_storage(operand) + src_ers.start(), 
         /*ldb*/ src_ers.el_size(),
         /*beta*/ 1,
-        /*c*/ traits::vector_storage(target.m_result) + dest_ers.start(), 
+        /*c*/ traits::vector_storage(result) + dest_ers.start(), 
         /*ldc*/ dest_ers.el_size()
         );
   }
@@ -297,10 +255,6 @@ namespace hedge {
           *std::max(in_it+er.first, in_it+er.second));
     }
   }
-
-
-
-
 }
 
 

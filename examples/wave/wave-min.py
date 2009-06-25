@@ -14,6 +14,9 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+"""This is an example of the very minimum amount of code that's
+necessary to get a hedge solver going."""
+
 
 
 
@@ -61,14 +64,9 @@ def main() :
             [discr.volume_zeros() for i in range(discr.dimensions)])
 
     # timestep loop -----------------------------------------------------------
-    from hedge.timestep import RK4TimeStepper, AdamsBashforthTimeStepper
-    if True:
-        stepper = AdamsBashforthTimeStepper(3)
-        dt = discr.dt_factor(op.max_eigenvalue(), 
-                AdamsBashforthTimeStepper, 3)
-    else:
-        stepper = RK4TimeStepper(3)
-        dt = discr.dt_factor(op.max_eigenvalue(), RK4TimeStepper)
+    from hedge.timestep import RK4TimeStepper
+    stepper = RK4TimeStepper()
+    dt = discr.dt_factor(op.max_eigenvalue(), RK4TimeStepper)
 
     nsteps = int(5/dt)
     print "dt=%g nsteps=%d" % (dt, nsteps)
