@@ -303,15 +303,17 @@ def get_boundary_flux_mod(fluxes, fvi, toolchain, dtype):
     from codepy.bpl import BoostPythonModule
     mod = BoostPythonModule()
 
-    S = Statement
-    mod.add_to_module([
+    mod.add_to_preamble([
         Include("cstdlib"),
         Include("algorithm"),
         Line(),
         Include("boost/foreach.hpp"),
         Line(),
         Include("hedge/face_operators.hpp"),
-        Line(),
+	])
+
+    S = Statement
+    mod.add_to_module([
         S("using namespace hedge"),
         S("using namespace pyublas"),
         Line(),
@@ -323,7 +325,7 @@ def get_boundary_flux_mod(fluxes, fvi, toolchain, dtype):
         Value("numpy_array<value_type>", "flux%d_on_faces" % i)
         for i in range(len(fluxes))
         ]+[
-        Const(Reference(Value("numpy_array<value_type>", arg_name)))
+        Value("numpy_array<value_type>", arg_name)
         for arg_name in fvi.arg_names
         ])
 
