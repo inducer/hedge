@@ -1824,21 +1824,7 @@ class StrongHeatOperator(TimeDependentOperator):
 
 
 
-class EulerOperator(TimeDependentOperator):
-    """An nD Euler operator.
-
-    see JSH, TW: Nodal Discontinuous Galerkin Methods p.206
-
-    dq/dt + dF/dx + dG/dy = 0
-
-    where e.g. in 2D
-
-    q = (rho, rho_u_x, rho_u_y, E)
-    F = (rho_u_x, rho_u_x^2 + p, rho_u_x * rho_u_y / rho, u_x * (E + p))
-    G = (rho_u_y, rho_u_x * rho_u_y / rho, rho_u_y^2 + p, u_y * (E + p))
-
-    Field order is [rho E rho_u_x rho_u_y ...].
-    """
+class GasDynamicsOperatorBase(TimeDependentOperator):
     def __init__(self, dimensions, gamma, bc):
         self.dimensions = dimensions
         self.gamma = gamma
@@ -1858,6 +1844,39 @@ class EulerOperator(TimeDependentOperator):
         return make_obj_array([
                 rho_u_i/self.rho(q)
                 for rho_u_i in self.rho_u(q)])
+
+    def bind(self, discr):
+        from hedge.mesh import TAG_ALL
+        bound_op = discr.compile(self.op_template())
+
+        def wrap(t, q):
+            opt_result = bound_op(
+                    q=q, 
+                    bc_q=self.bc.boundary_interpolant(t, discr, TAG_ALL))
+            max_speed = opt_result[-1]
+            ode_rhs = opt_result[:-1]
+	    return ode_rhs, discr.nodewise_max(max_speed)
+
+        return wrap
+
+
+
+
+class EulerOperator(GasDynamicsOperatorBase):
+    """An nD Euler operator.
+
+    see JSH, TW: Nodal Discontinuous Galerkin Methods p.206
+
+    dq/dt + dF/dx + dG/dy = 0
+
+    where e.g. in 2D
+
+    q = (rho, rho_u_x, rho_u_y, E)
+    F = (rho_u_x, rho_u_x^2 + p, rho_u_x * rho_u_y / rho, u_x * (E + p))
+    G = (rho_u_y, rho_u_x * rho_u_y / rho, rho_u_y^2 + p, u_y * (E + p))
+
+    Field order is [rho E rho_u_x rho_u_y ...].
+    """
 
     def op_template(self):
         from hedge.optemplate import make_vector_field, \
@@ -1917,20 +1936,3 @@ class EulerOperator(TimeDependentOperator):
                         strong=True
                         )),
                     speed)
-
-    def bind(self, discr):
-        from hedge.mesh import TAG_ALL
-        bound_op = discr.compile(self.op_template())
-
-        def wrap(t, q):
-            opt_result = bound_op(
-                    q=q, 
-                    bc_q=self.bc.boundary_interpolant(t, discr, TAG_ALL))
-            max_speed = opt_result[-1]
-            ode_rhs = opt_result[:-1]
-	    return ode_rhs, discr.nodewise_max(max_speed)
-
-        return wrap
-
-
-
