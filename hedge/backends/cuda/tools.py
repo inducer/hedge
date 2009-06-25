@@ -290,7 +290,7 @@ def mpi_get_default_device(comm, dev_filter=lambda dev: True):
         for i, d in enumerate(cuda_devices)
         if dev_filter(d)]
 
-    from hedge.mpi import gather, scatter
+    from boostmpi import gather, scatter
     all_devprops = gather(comm, (gethostname(), cuda_devprops), 0)
 
     if comm.rank == 0:

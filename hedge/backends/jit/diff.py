@@ -32,7 +32,7 @@ class JitDifferentiator:
         self.discr = discr
 
     @memoize_method
-    def make_diff_for_elgroup(self, elgroup):
+    def make_diff(self, elgroup, dtype):
         from hedge._internal import UniformElementRanges
         assert isinstance(elgroup.ranges, UniformElementRanges)
 
@@ -45,14 +45,18 @@ class JitDifferentiator:
                 For, \
                 Define
 
+        from pytools import to_uncomplex_dtype
+
         from codepy.bpl import BoostPythonModule
         mod = BoostPythonModule()
 
         S = Statement
+        mod.add_to_preamble([
+            Include("hedge/volume_operators.hpp"),
+            Include("boost/foreach.hpp"),
+            ])
+
         mod.add_to_module([
-            Include("hedge/volume_operators.hpp"), 
-            Include("boost/foreach.hpp"), 
-            Line(),
             S("namespace ublas = boost::numeric::ublas"),
             S("using namespace hedge"),
             S("using namespace pyublas"),
@@ -60,16 +64,17 @@ class JitDifferentiator:
             Define("DOFS_PER_EL", ldis.node_count()),
             Define("DIMENSIONS", discr.dimensions),
             Line(),
-            Typedef(POD(self.discr.default_scalar_type, "value_type")),
+            Typedef(POD(dtype, "value_type")),
+            Typedef(POD(to_uncomplex_dtype(dtype), "uncomplex_type")),
             ])
 
         fdecl = FunctionDeclaration(
-                    Value("void", "diff"), 
+                    Value("void", "diff"),
                     [
                     Const(Reference(Value("uniform_element_ranges", "ers"))),
                     Value("numpy_array<value_type>", "field")
                     ]+[
-                    Value("ublas::matrix<value_type>", "diffmat_rst%d" % rst)
+                    Value("ublas::matrix<uncomplex_type>", "diffmat_rst%d" % rst)
                     for rst in range(discr.dimensions)
                     ]+[
                     Value("numpy_array<value_type>", "result%d" % i)
@@ -105,7 +110,7 @@ class JitDifferentiator:
             Line(),
             For("element_number_t eg_el_nr = 0",
                 "eg_el_nr < ers.size()",
-                "++eg_el_nr", 
+                "++eg_el_nr",
                 Block([
                     Initializer(
                         Value("node_number_t", "el_base"),
@@ -116,7 +121,7 @@ class JitDifferentiator:
                     Line(),
                     For("unsigned i = 0",
                         "i < DOFS_PER_EL",
-                        "++i", 
+                        "++i",
                         Block([
                             Initializer(Value("value_type", "drst_%d" % rst), 0)
                             for rst in range(discr.dimensions)
@@ -127,7 +132,7 @@ class JitDifferentiator:
                                 "j < DOFS_PER_EL",
                                 "++j",
                                 Block([
-                                    S("drst_%(rst)d += diffmat_rst%(rst)d(i, j)*field_it[el_base+j]" 
+                                    S("drst_%(rst)d += diffmat_rst%(rst)d(i, j)*field_it[el_base+j]"
                                         % {"rst":rst})
                                     for rst in range(discr.dimensions)
                                     ])
@@ -136,7 +141,7 @@ class JitDifferentiator:
                             ]+[
                             Assign("result%d_it[el_base+i]" % xyz,
                                 " + ".join(
-                                    "value_type(coeffs_it[total_el_count*("
+                                    "uncomplex_type(coeffs_it[total_el_count*("
                                     "DIMENSIONS*%(xyz)d + %(rst)d) + el_nr])"
                                     " * drst_%(rst)d"
                                     % {"xyz":xyz, "rst":rst}
@@ -154,7 +159,7 @@ class JitDifferentiator:
         mod.add_function(FunctionBody(fdecl, fbody))
 
         #print "----------------------------------------------------------------"
-        #print FunctionBody(fdecl, fbody)
+        #print mod.generate()
         #raw_input()
 
         compiled_func = mod.compile(self.discr.toolchain, wait_on_error=True).diff
@@ -162,8 +167,8 @@ class JitDifferentiator:
         if self.discr.instrumented:
             from hedge.tools import time_count_flop
 
-            compiled_func = time_count_flop(compiled_func, 
-                    discr.diff_timer, discr.diff_counter, 
+            compiled_func = time_count_flop(compiled_func,
+                    discr.diff_timer, discr.diff_counter,
                     discr.diff_flop_counter,
                     flops=discr.dimensions*(
                         2 # mul+add
@@ -177,18 +182,22 @@ class JitDifferentiator:
         return compiled_func
 
     def __call__(self, op_class, field, xyz_needed):
-        result = [self.discr.volume_zeros() for i in range(self.discr.dimensions)]
-        for eg in self.discr.element_groups:
-            coeffs = op_class.coefficients(eg)
-            
-            args = ([eg.ranges, field] 
-                    + [m.astype(field.dtype) for m in op_class.matrices(eg)]
-                    + result
-                    + [coeffs, eg.member_nrs, coeffs.shape[2]])
+        result = [self.discr.volume_zeros(dtype=field.dtype) 
+                for i in range(self.discr.dimensions)]
+        from hedge.tools import is_zero
+        if not is_zero(field):
+            for eg in self.discr.element_groups:
+                coeffs = op_class.coefficients(eg)
 
+                from pytools import to_uncomplex_dtype
+                uncomplex_dtype = to_uncomplex_dtype(field.dtype)
+                args = ([eg.ranges, field]
+                        + [m.astype(uncomplex_dtype) for m in op_class.matrices(eg)]
+                        + result
+                        + [coeffs, eg.member_nrs, coeffs.shape[2]])
 
-            diff_routine = self.make_diff_for_elgroup(eg)
-            diff_routine(*args)
+                diff_routine = self.make_diff(eg, field.dtype)
+                diff_routine(*args)
 
         return [result[i] for i in xyz_needed]
 

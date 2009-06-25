@@ -42,9 +42,6 @@ class Flux(pymbolic.primitives.AlgebraicLeaf):
     def stringifier(self):
         return FluxStringifyMapper
 
-    def perform(self, face_group, which_faces, fmm, target):
-        _internal.ChainedFlux(self).perform(face_group, which_faces, fmm, target)
-
 
 
 

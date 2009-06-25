@@ -38,11 +38,6 @@
 
 
 
-#define DEF_FOR_EACH_OP_TARGET(NAME, SCALAR, ARG_TYPES) \
-  def(#NAME, (void (*)(ARG_TYPES null_target<numpy_vector<SCALAR> >)) NAME); \
-  def(#NAME, (void (*)(ARG_TYPES matrix_target<coordinate_matrix<SCALAR, column_major> >)) NAME); \
-  def(#NAME, (void (*)(ARG_TYPES vector_target<numpy_vector<SCALAR> >)) NAME);
-
 #define ENUM_VALUE(NAME) \
   value(#NAME, NAME)
 

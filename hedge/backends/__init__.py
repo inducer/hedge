@@ -52,7 +52,7 @@ class RunContext(object):
         If partition is None, act as if partition was the integer corresponding
         to the current number of ranks on the job.
 
-        If partition is not an integer, it must be a mapping from element number to 
+        If partition is not an integer, it must be a mapping from element number to
         rank. (A list or tuple of rank numbers will do, for example, or so will
         a full-blown dict.)
 
@@ -118,31 +118,26 @@ class SerialRunContext(RunContext):
 
 
 
-FEAT_INTERNAL = "internal"
 FEAT_MPI = "mpi"
 FEAT_CUDA = "cuda"
-FEAT_CODEPY = "codepy"
 
 
 
-def generate_features(disabled_features):
-    try:
-        import hedge._internal
-    except ImportError:
-        pass
-    else:
-        yield FEAT_INTERNAL
+def generate_features(allowed_features):
+    if FEAT_MPI in allowed_features:
+        import pytools.prefork
+        pytools.prefork.enable_prefork()
 
-    if FEAT_MPI not in disabled_features:
         try:
-            import hedge.mpi as mpi
+            import boostmpi.autoinit
         except ImportError:
             pass
         else:
+            import boostmpi as mpi
             if mpi.size > 1:
                 yield FEAT_MPI
 
-    if FEAT_CUDA not in disabled_features:
+    if FEAT_CUDA in allowed_features:
         try:
             import pycuda
         except ImportError:
@@ -156,36 +151,38 @@ def generate_features(disabled_features):
                 # pycuda not initialized--we'll give it the benefit of the doubt.
                 yield FEAT_CUDA
 
-    try:
-        import codepy
-    except ImportError:
-        pass
-    else:
-        from codepy.jit import guess_toolchain, ToolchainGuessError
-        try:
-            plat = guess_toolchain()
-        except ToolchainGuessError:
-            pass
-        else:
-            yield FEAT_CODEPY
 
 
 
+def guess_run_context(allow=None):
+    if allow is None:
+        import sys
 
-def guess_run_context(disable=set()):
-    feat = set(generate_features(disable)) - disable
+        i = 1
+        while i < len(sys.argv):
+            arg = sys.argv[i]
+            if arg.startswith("--features="):
+                allow = arg[arg.index("=")+1:].split(",")
+                i += 1
+            elif arg == "-f" and i+1 < len(sys.argv):
+                allow = sys.argv[i+1].split(",")
+                i += 2
+            else:
+                i += 1
+
+        if allow is None:
+            allow = []
+
+    feat = list(generate_features(allow))
 
     if FEAT_CUDA in feat:
         from hedge.backends.cuda import Discretization as discr_class
-    elif FEAT_CODEPY in feat:
-        from hedge.backends.jit import Discretization as discr_class
     else:
-        raise RuntimeError, "could not find usable backend"
+        from hedge.backends.jit import Discretization as discr_class
 
     if FEAT_MPI in feat:
         from hedge.backends.mpi import MPIRunContext
-        import hedge.mpi as mpi
+        import boostmpi as mpi
         return MPIRunContext(mpi.world, discr_class)
     else:
         return SerialRunContext(discr_class)
-

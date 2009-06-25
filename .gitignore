@@ -1,6 +1,7 @@
 *~
 .*.sw[po]
 *.dat
+*.dat-rank*
 *.pyc
 *.pyo
 build
