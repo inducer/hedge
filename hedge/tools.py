@@ -1283,7 +1283,6 @@ def count_dofs(vec):
 
 # flux creation ---------------------------------------------------------------
 def make_lax_friedrichs_flux(wave_speed, state, flux_func, bdry_tags_and_states, strong):
-
     from hedge.flux import make_normal, FluxVectorPlaceholder
 
     fluxes = flux_func(state)
