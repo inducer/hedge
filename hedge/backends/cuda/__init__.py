@@ -1216,12 +1216,12 @@ class Discretization(hedge.discretization.Discretization):
     def nodewise_max(self, a):
         return gpuarray.subset_max(
 	        self._meaningful_volume_indices(),
-		a, dtype=numpy.float64).get()
+		a, dtype=self.default_scalar_type).get()
 
     def nodewise_min(self, a):
         return gpuarray.subset_min(
 	        self._meaningful_volume_indices(),
-		a, dtype=numpy.float64).get()
+		a, dtype=self.default_scalar_type).get()
 
     # numbering tools ---------------------------------------------------------
     @memoize_method
