@@ -52,23 +52,42 @@ class Instruction(Record):
         raise NotImplementedError
 
 class Assign(Instruction):
-    # attributes: name, expr, priority, flop_count
+    # attributes: names, exprs, priority, flop_count
 
-    def __init__(self, name, expr, **kwargs):
-        Instruction.__init__(self, name=name, expr=expr, **kwargs)
+    comment = ""
+
+    def __init__(self, names, exprs, **kwargs):
+        Instruction.__init__(self, names=names, exprs=exprs, **kwargs)
 
         from pymbolic.mapper.flop_counter import FlopCounter
-        self.flop_count = FlopCounter()(expr)
+        self.flop_count = sum(FlopCounter()(expr) for expr in exprs)
 
     def get_assignees(self):
-        return set([self.name])
+        return set(self.names)
 
     @memoize_method
     def get_dependencies(self):
-        return self.dep_mapper_factory()(self.expr)
+        from operator import or_
+        return reduce(or_, (self.dep_mapper_factory()(expr) 
+                for expr in self.exprs))
 
     def __str__(self):
-        return "%s <- %s" % (self.name, self.expr)
+        comment = self.comment
+        if len(self.names) == 1:
+            if comment:
+                comment = "/* %s */ " % comment
+
+            return "%s <- %s%s" % (self.names[0], comment, self.exprs[0])
+        else:
+            if comment:
+                comment = " /* %s */" % comment
+
+            lines = []
+            lines.append("{"+comment)
+            for n, e in zip(self.names, self.exprs):
+                lines.append("  %s <- %s" % (n, e))
+            lines.append("}")
+            return "\n".join(lines)
 
     def get_executor_method(self, executor):
         return executor.exec_assign
@@ -173,6 +192,7 @@ class FluxExchangeBatchAssign(Instruction):
 
     def get_executor_method(self, executor):
         return executor.exec_flux_exchange_batch_assign
+
 
 
 
@@ -562,8 +582,109 @@ class OperatorCompilerBase(IdentityMapper):
 
     # instruction producers ---------------------------------------------------
     def make_assign(self, name, expr, priority):
-        return Assign(name=name, expr=expr, dep_mapper_factory=self.dep_mapper_factory,
+        return Assign(names=[name], exprs=[expr], 
+                dep_mapper_factory=self.dep_mapper_factory,
                 priority=priority)
 
     def make_flux_batch_assign(self, names, fluxes, kind):
         return FluxBatchAssign(names=names, fluxes=fluxes, kind=kind)
+
+    # assignment aggregration pass --------------------------------------------
+    def aggregate_assignments(self, insns):
+        # agregation helpers --------------------------------------------------
+        def get_complete_origins_set(insn):
+            result = set()
+            for dep in insn.get_dependencies():
+                dep_origin = origins_map[dep]
+                result.add(dep_origin)
+                result |= make_complete_origins_set(dep_origin)
+
+        def get_indirect_origins_set(insn):
+            from operator import or_
+            return reduce(or_, get_complete_origins_set(origins_map[dep])
+                    for dep in insn.get_dependencies())
+
+        def aggregate_two_assignments(ass_1, ass_2):
+            dep_mapper = self.dep_mapper_factory()
+
+            names_exprs = (list(zip(ass_1.names, ass_1.expressions))
+                    + list(zip(ass_2.names, ass_2.expressions)))
+
+            from pymbolic import Variable
+            my_assignees = set(name for name, expr in all_pairs)
+            names_exprs_deps = [
+                    (name, expr, 
+                        set(dep.name for dep in dep_mapper(expr) if
+                            isinstance(dep, Variable)) & my_assignees)
+                    for name, expr in names_exprs]
+
+            ordered_names_exprs = []
+            available_names = set()
+
+            while names_exprs_deps:
+                scheduled_one = False
+                for i, (name, expr, deps) in enumerate(names_exprs_deps):
+                    unsatisfied_deps = deps - available_names
+
+                    if not unsatisfied_deps:
+                        ordered_names_exprs.append(name, expr)
+                        scheduled_one = True
+                        del names_exprs_deps[i]
+                        break
+
+                if not scheduled_one:
+                    raise RuntimeError("tried to aggregate two un-aggregable assignments")
+
+            return Assign(
+                    names=[name for name, expr in ordered_names_exprs],
+                    expressions=[expr for name, expr in ordered_names_exprs],
+                    priority=max(ass_1.priority, ass_2.priority), 
+                    dep_mapper_factory=self.dep_mapper_factory)
+
+        # main aggregation pass -----------------------------------------------
+        origins_map = dict(
+                    (assignee, insn)
+                    for insn in instructions
+                    for assignee in insn.get_assignees()))
+
+        from pytools import partition
+        unprocessed_assigns, other_insns = partition(
+                lambda insn: isinstance(insn, Assign))
+
+        processed_assigns = []
+
+        while unprocessed_assigns:
+            my_assign = unprocessed_assigns.pop()
+
+            my_deps = my_deps.get_dependencies()
+            agg_candidates = [other_assign
+                    for other_assign in unprocessed_assigns
+                    if my_deps & other_assign.get_dependencies()
+                    and my_assign.priority == other_assign.priority]
+
+            my_indirect_origins = get_indirect_origins_set(my_assign)
+
+            did_work = False
+
+            for other_assign in agg_candidates:
+                other_indirect_origins = get_indirect_origins_set(my_assign)
+
+                if (my_assign not in other_indirect_origins and
+                        other_assign not in my_indirect_origins):
+
+                    did_work = True
+
+                    # aggregate the two assignments
+                    new_assignment = aggregate_two_assignments(my_assign, other_assign)
+                    unprocessed_assigns.append(new_assignment)
+                    for assignee in new_assignment.get_assignees():
+                        origins_map[assignee] = new_assignment
+
+                    break
+
+            if did_work:
+                processed_assigns.append(my_assign)
+
+        return [self.finalize_multi_assign(
+            ass.names, ass.expressions, ass.priority) 
+            for ass in processed_assigns] + other_insns

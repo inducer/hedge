@@ -38,8 +38,7 @@ class VectorExprAssign(Assign):
     def get_executor_method(self, executor):
         return executor.exec_vector_expr_assign
 
-    def __str__(self):
-        return "%s <- (compiled) %s" % (self.name, self.expr)
+    comment = "compiled"
 
 
 
@@ -198,7 +197,8 @@ class OperatorCompiler(OperatorCompilerBase):
                 flux_var_info=get_flux_var_info(fluxes),
                 dep_mapper_factory=self.dep_mapper_factory)
 
-    def make_assign(self, name, expr, priority):
+    # vector math -------------------------------------------------------------
+    def finalize_multi_assign(self, names, exprs, priority):
         def result_dtype_getter(vector_dtype_map, scalar_dtype_map, const_dtypes):
             from pytools import common_dtype
             return common_dtype(
@@ -208,11 +208,11 @@ class OperatorCompiler(OperatorCompilerBase):
 
         from hedge.backends.jit.vector_expr import CompiledVectorExpression
         return VectorExprAssign(
-                name=name,
-                expr=expr,
+                names=names,
+                exprs=exprs,
                 dep_mapper_factory=self.dep_mapper_factory,
                 compiled=CompiledVectorExpression(
-                    expr,
+                    exprs,
                     is_vector_func=lambda expr: True,
                     result_dtype_getter=result_dtype_getter,
                     toolchain=self.discr.toolchain),
