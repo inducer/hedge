@@ -86,8 +86,6 @@ def main():
         mesh_data = rcon.receive_mesh()
 
     for order in [3]:
-    #for order in [3, 4, 5]:
-    #for order in [1,2,3,4,5,6]:
         discr = rcon.make_discretization(mesh_data, order=order,
 			debug=["cuda_no_plan",
 			#"print_op_code"

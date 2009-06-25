@@ -332,19 +332,10 @@ class ExecutionMapper(ExecutionMapperBase):
 	"value_type": dtype_to_ctype(field.dtype),
 	})
 
-        #start = cuda.Event()
-	#stop = cuda.Event()
-
 	func = mod.get_function("elwise_max")
 	func.prepare("P", block=(block_size//aligned_floats, aligned_floats, 1))
 	grid_dim = (len(field) + block_size - 1) // block_size
-	#cuda.Context.synchronize()
-	#start.record()
 	func.prepared_call((grid_dim, 1),field.gpudata)
-	#stop.record()
-	#stop.synchronize()
-	#elapsed_seconds = stop.time_since(start) * 1e-3
-	#print elapsed_seconds
 	return field
 
 
