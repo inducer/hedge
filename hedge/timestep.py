@@ -127,8 +127,8 @@ def make_generic_ab_coefficients(levels, int_start, tap):
     # predicted by solving system (7) and calculating:
     # 
     #  ∫₀⁰⁺¹ f(t) dt = ∑ᵢ ABcᵢ F(tᵢ),
-    
-    from hedge.polynomial import monomial_vdm 
+
+    from hedge.polynomial import monomial_vdm
     point_eval_vec = numpy.array([
         1/(n+1)*(tap**(n+1)-int_start**(n+1)) for n in range(len(levels))])
     return la.solve(monomial_vdm(levels).T, point_eval_vec)
@@ -254,7 +254,7 @@ class TwoRateAdamsBashforthTimeStepper(TimeStepper):
     """
 
     def __init__(self, large_dt, step_ratio, order, \
-            largest_first, \
+            largest_first=False, \
             update_large_for_small=False, \
             startup_stepper=None, \
             slowest_first=False, \
@@ -281,12 +281,33 @@ class TwoRateAdamsBashforthTimeStepper(TimeStepper):
         self.update_large_for_small = update_large_for_small
 
         self.coefficients = make_ab_coefficients(order)
+        # get the extrapolation coeffcients:
         self.substep_coefficients = [
                 make_generic_ab_coefficients(
                     numpy.arange(0, -order, -1), 
                     (i-1)/step_ratio, 
                     i/step_ratio)
                 for i in range(1, step_ratio+1)]
+
+        # get the interpolation coefficients:
+        from hedge.polynomial import make_interpolation_coefficients
+        self.interp_coefficients = [
+                make_interpolation_coefficients(
+                    numpy.arange(0, -order, -1),
+                    i/step_ratio-1)
+                for i in range(1, step_ratio+1)]
+        #print numpy.arange(0, -order, -1), range(1, step_ratio+1)
+        #print self.interp_coeffs
+        #raw_input("Interp_Coeff_Check:")
+
+        # get the extrapolation coefficients for the large substeps:
+        from hedge.polynomial import make_interpolation_coefficients
+        self.extrapol_coefficients = [
+                make_interpolation_coefficients(
+                    numpy.arange(0, -order, -1),
+                    i/step_ratio)
+                for i in range(1, step_ratio+1)]
+
 
         # rhs_histories is row major--see documentation for 
         # rhss arg of __call__.
@@ -317,7 +338,7 @@ class TwoRateAdamsBashforthTimeStepper(TimeStepper):
 
             n = len(self.coefficients)
 
-            if self.largest_first:
+            if not self.update_large_for_small:
                 hist_s2l = list(hist_s2l[::self.step_ratio])
             else:
                 hist_s2l = list(hist_s2l[:n])
@@ -325,7 +346,7 @@ class TwoRateAdamsBashforthTimeStepper(TimeStepper):
             self.rhs_histories = [
                     list(hist_s2s[:n]),
                     list(hist_l2s[::self.step_ratio]),
-                    hist_s2l,
+                    hist_s2s,
                     list(hist_l2l[::self.step_ratio]),
                     ]
 
@@ -414,8 +435,9 @@ class TwoRateAdamsBashforthTimeStepper(TimeStepper):
 
             elif self.fastest_first:
                 # substep the faster component first:
-                for i in range(self.step_ratio): sub_coeff =
-                self.substep_coefficients[i]
+                for i in range(self.step_ratio): 
+                    sub_coeff = self.substep_coefficients[i]
+
                     # ------------------------------------------------------------
                     # RHS of the Maxwell's equations:
                     #
@@ -439,54 +461,74 @@ class TwoRateAdamsBashforthTimeStepper(TimeStepper):
                     if i == self.step_ratio-1: 
                         break
 
+                    # Make it possible to run the slow componet - Particle state
+                    # with y_large - on substep level. As this is not required for
+                    # decoupled systems it is an option. For PIC it is not required.
+                    if self.update_large_for_small:
+                        # This step requires extrapolation of the entire y_large 
+                        # information on dt_small - substep level:
+                        extrap_coeffs = self.extrap_coefficients[i]
+                        y_large_this_substep = y_large + (
+                                self.large_dt * linear_comb(extrap_coeffs, hist_l2l)
+                                + self.large_dt * linear_comb(extrap_coeffs, hist_s2l))
+
+                        # Now also the RHS of the coupling terms can be evaluated:
+                        # TBD....
+
+                    else:
+                        # If not required to extrapolate the slow component it can 
+                        # be set to None. For PIC this is the case. Calculation of the 
+                        # Field - s2s - does not require to calculate Lorentz
+                        # forces on the  particle - s2l - and their position - l2l.
+                        y_large_this_substep = None
+
                     # Build RHS of fast component:
                     rotate_insert(hist_s2s, rhs_s2s(t+(i+1)*self.small_dt,
-                                  y_small, None))
+                                  y_small, y_large_this_substep))
 
-                # step the 'large' part
-                y_large = y_large + self.large_dt * (
-                        linear_comb(coeff, hist_l2l) + linear_comb(coeff, hist_s2l))
+                if not self.update_large_for_small:
+                    # step the 'large' part
+                    y_large = y_large + self.large_dt * (
+                            linear_comb(coeff, hist_l2l) + linear_comb(coeff, hist_s2l))
 
-                # calculate all right hand sides involving the 'large dt' part
-                rotate_insert(hist_s2l, rhs_s2l(t+self.large_dt, y_small, y_large))
-                rotate_insert(hist_l2l, rhs_l2l(t+self.large_dt, y_small, y_large))
-                rotate_insert(hist_l2s, rhs_l2s(t+self.large_dt, y_small, y_large))
+                    # calculate all right hand sides involving the 'large dt' part
+                    rotate_insert(hist_s2l, rhs_s2l(t+self.large_dt, y_small, y_large))
+                    rotate_insert(hist_l2l, rhs_l2l(t+self.large_dt, y_small, y_large))
+                    rotate_insert(hist_l2s, rhs_l2s(t+self.large_dt, y_small, y_large))
 
 
-                # calculate the last 'small dt' rhs using the new 'large' data
-                rotate_insert(hist_s2s, rhs_s2s(t+self.large_dt, y_small, y_large))
+                    # calculate the last 'small dt' rhs using the new 'large' data
+                    rotate_insert(hist_s2s, rhs_s2s(t+self.large_dt, y_small, y_large))
+                #else:
+                    # Do something weird...
 
                 return make_obj_array([y_small, y_large])
 
             elif self.slowest_first:
                 # step the slowest component - particles - first and get a new state:
-                y_large_new = y_large + self.large_dt * (
+                y_large = y_large + self.large_dt * (
                         linear_comb(coeff, hist_l2l) + linear_comb(coeff, hist_s2l))
 
-                # interpolate values between the y_large and y_large_new and step
-                # the fast component - field.
-                for i in range(self.step_ratio):
-                    # function to interpolate the substep_states has to be implemented. 
-                    # The interface shall look like this.
-                    #y_large_substep = substep_interpol(y_large, \
-                    #                                   y_large_new, \
-                    #                                   self.large_dt, \
-                    #                                   step_ratio, i)
-                    # for now we suggest that the changes to the particle state are neglectable
-                    # and choose the worst approximation:
-                    y_large_substep = y_large
+                # pre-calculation of RHS of coupling part - current density l2s - to
+                # update history for use with interpolation:
+                rotate_insert(hist_l2s, rhs_l2s(t+self.large_dt, y_small, y_large))
+                # calculation of RHS that only involves 'large_dt' part:
+                rotate_insert(hist_l2l, rhs_l2l(t+self.large_dt, y_small, y_large))
 
+                # integrate values of fast component - field s2s - and interpolate
+                # the values og the coupling part - current density l2s:
+                for i in range(self.step_ratio):
                     # step small timestep for the fast component:
-                    sub_coeff = self.substep_coefficients[i]
+                    interp_coeffs =  self.interp_coefficients[i]
                     y_small = y_small + (
                             self.small_dt * linear_comb(sub_coeff, hist_s2s)
-                            + self.small_dt * linear_comb(sub_coeff, hist_l2s)
+                            + linear_comb(interp_coeffs, hist_l2s)
                             )
 
                     if i == self.step_ratio-1:
                         break
 
-                    # Update the history for the field and the part2field rhs:
+                    # Update the history for the fast - field s2s -:
                     rotate_insert(hist_l2s, \
                                   rhs_l2s(t+(i+1)*self.small_dt, \
                                   y_small, \
