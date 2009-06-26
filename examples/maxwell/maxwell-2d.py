@@ -24,7 +24,7 @@ import numpy.linalg as la
 
 
 
-def main():
+def main(write_output=True):
     from hedge.element import TriangularElement
     from hedge.timestep import RK4TimeStepper
     from hedge.mesh import make_disk_mesh
@@ -94,7 +94,12 @@ def main():
     from pytools.log import LogManager, add_general_quantities, \
             add_simulation_quantities, add_run_info
 
-    logmgr = LogManager("maxwell-%d.dat" % order, "w", rcon.communicator)
+    if write_output:
+        log_file_name = "maxwell-%d.dat" % order
+    else:
+        log_file_name = None
+
+    logmgr = LogManager(log_file_name, "w", rcon.communicator)
     add_run_info(logmgr)
     add_general_quantities(logmgr)
     add_simulation_quantities(logmgr, dt)
@@ -108,7 +113,7 @@ def main():
     from hedge.log import EMFieldGetter, add_em_quantities
     field_getter = EMFieldGetter(discr, op, lambda: fields)
     add_em_quantities(logmgr, op, field_getter)
-    
+
     logmgr.add_watches(["step.max", "t_sim.max", "W_field", "t_step.max"])
 
     # timestep loop -------------------------------------------------------
@@ -117,7 +122,7 @@ def main():
     for step in range(nsteps):
         logmgr.tick()
 
-        if True:
+        if step % 10 == 0 and write_output:
             e, h = op.split_eh(fields)
             visf = vis.make_file("em-%d-%04d" % (order, step))
             vis.add_data(visf,
@@ -134,3 +139,11 @@ if __name__ == "__main__":
     #profile.run("main()", "wave2d.prof")
     main()
 
+
+
+
+# entry points for py.test ----------------------------------------------------
+from pytools.test import mark_test
+@mark_test(long=True)
+def test_maxwell_2d():
+    main(write_output=False)

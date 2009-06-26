@@ -24,7 +24,7 @@ from hedge.tools import Rotation
 
 
 
-def main() :
+def main(write_output=True) :
     from hedge.element import TriangularElement, TetrahedralElement
     from hedge.timestep import RK4TimeStepper
     from hedge.visualization import SiloVisualizer, VtkVisualizer
@@ -107,7 +107,12 @@ def main() :
             add_simulation_quantities, \
             add_run_info
 
-    logmgr = LogManager("heat.dat", "w", rcon.communicator)
+    if write_output:
+        log_file_name = "heat.dat"
+    else:
+        log_file_name = None
+
+    logmgr = LogManager(log_file_name, "w", rcon.communicator)
     add_run_info(logmgr)
     add_general_quantities(logmgr)
     add_simulation_quantities(logmgr, dt)
@@ -128,12 +133,14 @@ def main() :
         logmgr.tick()
         t = step*dt
 
-        if step % 10 == 0:
+        if step % 10 == 0 and write_output:
             visf = vis.make_file("fld-%04d" % step)
             vis.add_data(visf, [("u", u), ], time=t, step=step)
             visf.close()
 
         u = stepper(u, t, dt, rhs)
+        # Check whether the error goes over a certain level. If so => Abort
+        assert discr.norm(u) < 10
 
 
 
@@ -141,3 +148,11 @@ def main() :
 if __name__ == "__main__":
     main()
 
+
+
+
+# entry points for py.test ----------------------------------------------------
+from pytools.test import mark_test
+@mark_test(long=True)
+def test_heat():
+    main(write_output=False)

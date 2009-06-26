@@ -292,11 +292,17 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
         return self.weak_flux()
 
     def op_template(self):
-        from hedge.optemplate import Field, pair_with_boundary, \
-                get_flux_operator, make_minv_stiffness_t, InverseMassOperator
+        from hedge.optemplate import \
+                Field, \
+                pair_with_boundary, \
+                get_flux_operator, \
+                make_minv_stiffness_t, \
+                InverseMassOperator, \
+                BoundarizeOperator
 
         u = Field("u")
 
+        # boundary conditions -------------------------------------------------
         bc_in = Field("bc_in")
         bc_out = Field("bc_out")
 
@@ -342,10 +348,10 @@ class VariableCoefficientAdvectionOperator:
 
     def flux(self, ):
         from hedge.flux import \
-                        make_normal, \
-                        FluxScalarPlaceholder, \
-                        FluxVectorPlaceholder, \
-                        IfPositive, flux_max, norm
+                make_normal, \
+                FluxScalarPlaceholder, \
+                FluxVectorPlaceholder, \
+                IfPositive, flux_max, norm
 
         d = self.dimensions
 
@@ -383,13 +389,13 @@ class VariableCoefficientAdvectionOperator:
                 get_flux_operator, \
                 make_minv_stiffness_t, \
                 InverseMassOperator,\
-                make_vector_field
+                make_vector_field, \
+                ElementwiseMaxOperator, \
+                BoundarizeOperator
+
 
         from hedge.tools import join_fields, \
                                 ptwise_dot
-
-        from hedge.optemplate import ElementwiseMaxOperator, BoundarizeOperator
-
 
         u = Field("u")
         v = make_vector_field("v", self.dimensions)
@@ -530,12 +536,20 @@ class StrongWaveOperator:
         v = w[1:]
 
         # boundary conditions -------------------------------------------------
-
         from hedge.tools import join_fields
 
-        dir_bc = join_fields(-u, v)
-        neu_bc = join_fields(u, -v)
 
+        # dirichlet BC's ------------------------------------------------------
+        dir_u = BoundarizeOperator(self.dirichlet_tag) * u
+        dir_v = BoundarizeOperator(self.dirichlet_tag) * v
+        dir_bc = join_fields(-dir_u, dir_v)
+
+        # neumann BC's --------------------------------------------------------
+        neu_u = BoundarizeOperator(self.neumann_tag) * u
+        neu_v = BoundarizeOperator(self.neumann_tag) * v
+        neu_bc = join_fields(neu_u, -neu_v)
+
+        # radiation BC's ------------------------------------------------------
         from hedge.optemplate import make_normal
         rad_normal = make_normal(self.radiation_tag, d)
 
@@ -661,7 +675,8 @@ class VariableVelocityStrongWaveOperator:
                 pair_with_boundary, \
                 get_flux_operator, \
                 make_nabla, \
-                InverseMassOperator
+                InverseMassOperator, \
+                BoundarizeOperator
 
         d = self.dimensions
 
@@ -678,13 +693,32 @@ class VariableVelocityStrongWaveOperator:
         normal = make_normal(d)
 
         from hedge.tools import join_fields
+        # dirichlet BC's ------------------------------------------------------
+        dir_c = BoundarizeOperator(self.dirichlet_tag) * c
+        dir_u = BoundarizeOperator(self.dirichlet_tag) * u
+        dir_v = BoundarizeOperator(self.dirichlet_tag) * v
 
-        dir_bc = join_fields(c, -u, v)
-        neu_bc = join_fields(c, u, -v)
+        dir_bc = join_fields(dir_c, -dir_u, dir_v)
+
+        # neumann BC's --------------------------------------------------------
+        neu_c = BoundarizeOperator(self.neumann_tag) * c
+        neu_u = BoundarizeOperator(self.neumann_tag) * u
+        neu_v = BoundarizeOperator(self.neumann_tag) * v
+
+        neu_bc = join_fields(neu_c, neu_u, -neu_v)
+
+        # radiation BC's ------------------------------------------------------
+        from hedge.optemplate import make_normal
+        rad_normal = make_normal(self.radiation_tag, d)
+
+        rad_c = BoundarizeOperator(self.radiation_tag) * c
+        rad_u = BoundarizeOperator(self.radiation_tag) * u
+        rad_v = BoundarizeOperator(self.radiation_tag) * v
+
         rad_bc = join_fields(
-                c,
-                0.5*(u - self.time_sign*numpy.dot(normal, v)),
-                0.5*normal*(numpy.dot(normal, v) - self.time_sign*u)
+                rad_c,
+                0.5*(rad_u - self.time_sign*numpy.dot(rad_normal, rad_v)),
+                0.5*rad_normal*(numpy.dot(rad_normal, rad_v) - self.time_sign*rad_u)
                 )
 
         # entire operator -----------------------------------------------------
@@ -865,18 +899,25 @@ class MaxwellOperator(TimeDependentOperator):
 
         # boundary conditions -------------------------------------------------
         from hedge.tools import join_fields
+
+        # pec BC --------------------------------------------------------------
         pec_e = BoundarizeOperator(self.pec_tag) * e
         pec_h = BoundarizeOperator(self.pec_tag) * h
         pec_bc = join_fields(-pec_e, pec_h)
 
-        from hedge.flux import make_normal
-        normal = make_normal(self.dimensions)
+        # absorb BC -----------------------------------------------------------
+        from hedge.optemplate import make_normal
+        absorb_normal = make_normal(self.absorb_tag, self.dimensions)
 
-        absorb_bc = w + 1/2*join_fields(
-                self.h_cross(normal, self.e_cross(normal, e))
-                - self.Z*self.h_cross(normal, h),
-                self.e_cross(normal, self.h_cross(normal, h))
-                + self.Y*self.e_cross(normal, e)
+        absorb_e = BoundarizeOperator(self.absorb_tag) * e
+        absorb_h = BoundarizeOperator(self.absorb_tag) * h
+        absorb_w = BoundarizeOperator(self.absorb_tag) * w
+
+        absorb_bc = absorb_w + 1/2*join_fields(
+                self.h_cross(absorb_normal, self.e_cross(absorb_normal, absorb_e))
+                - self.Z*self.h_cross(absorb_normal, absorb_h),
+                self.e_cross(absorb_normal, self.h_cross(absorb_normal, absorb_h)) 
+                + self.Y*self.e_cross(absorb_normal, absorb_e)
                 )
 
         if self.incident_bc is not None:
