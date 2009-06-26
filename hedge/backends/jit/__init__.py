@@ -110,13 +110,28 @@ class ExecutionMapper(CPUExecutionMapperBase):
         result = []
 
         for fg in face_groups:
+            # grab module
+            module = insn.get_module(self.discr, max_dtype)
+            func = module.gather_flux
+
+            # set up argument structure
+            arg_struct = module.ArgStruct()
+            for arg_name, arg in zip(insn.flux_var_info.arg_names, args):
+                setattr(arg_struct, arg_name, arg)
+
             fof_shape = (fg.face_count*fg.face_length()*fg.element_count(),)
             all_fluxes_on_faces = [
                     numpy.zeros(fof_shape, dtype=max_dtype)
                     for f in insn.fluxes]
-            func = insn.get_function(self.discr, max_dtype)
-            func(fg, *(all_fluxes_on_faces+args))
+            for i, fof in enumerate(all_fluxes_on_faces):
+                setattr(arg_struct, "flux%d_on_faces" % i, fof)
 
+            assert not arg_struct.__dict__, arg_struct.__dict__.keys()
+
+            # perform gather
+            func(fg, arg_struct)
+
+            # do lift, produce output
             for name, flux, fluxes_on_faces in zip(insn.names, insn.fluxes,
                     all_fluxes_on_faces):
                 from hedge.optemplate import LiftingFluxOperator

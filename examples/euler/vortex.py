@@ -63,7 +63,7 @@ class Vortex:
 
 
 
-def main():
+def main(write_output=True):
     from hedge.backends import guess_run_context
     rcon = guess_run_context()
 
@@ -71,7 +71,7 @@ def main():
 
     from hedge.tools import EOCRecorder, to_obj_array
     eoc_rec = EOCRecorder()
-    
+
     if rcon.is_head_rank:
         from hedge.mesh import make_rect_mesh
         mesh = make_rect_mesh((0,-5), (10,5), max_area=0.15)
@@ -124,7 +124,12 @@ def main():
         from pytools.log import LogManager, add_general_quantities, \
                 add_simulation_quantities, add_run_info
 
-        logmgr = LogManager("euler-%d.dat" % order, "w", rcon.communicator)
+        if write_output:
+            log_file_name = "euler-%d.dat" % order
+        else:
+            log_file_name = None
+
+        logmgr = LogManager(log_file_name, "w", rcon.communicator)
         add_run_info(logmgr)
         add_general_quantities(logmgr)
         add_simulation_quantities(logmgr, dt)
@@ -139,7 +144,7 @@ def main():
         for step in range(nsteps):
             logmgr.tick()
 
-            if step % 1 == 0:
+            if step % 1 == 0 and write_output:
             #if False:
                 visf = vis.make_file("vortex-%d-%04d" % (order, step))
 
@@ -188,3 +193,11 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+# entry points for py.test ----------------------------------------------------
+from pytools.test import mark_test
+@mark_test(long=True)
+def test_euler_vortex():
+    main(write_output=False)

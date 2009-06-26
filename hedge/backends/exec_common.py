@@ -79,7 +79,7 @@ class CPUExecutorBase(object):
                 scaling, field, out)
 
     def diff_rst(self, op, rst_axis, field):
-        result = self.discr.volume_zeros()
+        result = self.discr.volume_zeros(dtype=field.dtype)
 
         from hedge._internal import perform_elwise_operator
         for eg in self.discr.element_groups:
@@ -93,7 +93,7 @@ class CPUExecutorBase(object):
         from hedge._internal import perform_elwise_scale
 
         if result is None:
-            result = self.discr.volume_zeros()
+            result = self.discr.volume_zeros(dtype=rst[0].dtype)
 
         for rst_axis in range(self.discr.dimensions):
             for eg in self.discr.element_groups:

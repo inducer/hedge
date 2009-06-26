@@ -51,7 +51,7 @@ class Instruction(Record):
     def get_executor_method(self, executor):
         raise NotImplementedError
 
-class Assign(Instruction): 
+class Assign(Instruction):
     # attributes: name, expr, priority, flop_count
 
     def __init__(self, name, expr, **kwargs):
@@ -128,8 +128,8 @@ class MassAssign(Instruction):
 
     def __str__(self):
         return "%s <- %s * %s" % (
-                self.name, 
-                str(self.op_class()), 
+                self.name,
+                str(self.op_class()),
                 self.field)
 
     def get_executor_method(self, executor):
@@ -147,7 +147,7 @@ class FluxExchangeBatchAssign(Instruction):
             rank_to_index_and_name.setdefault(rank, []).append(
                 (index, name))
 
-        Instruction.__init__(self, 
+        Instruction.__init__(self,
                 names=names,
                 indices_and_ranks=indices_and_ranks,
                 rank_to_index_and_name=rank_to_index_and_name,
@@ -212,7 +212,7 @@ def dot_dataflow_graph(code, max_node_label_length=30):
             gen_expr_arrow(dep, node_names[insn])
 
     from hedge.tools import is_obj_array
-    
+
     if is_obj_array(code.result):
         for subexp in code.result:
             gen_expr_arrow(subexp, "result")
@@ -222,7 +222,7 @@ def dot_dataflow_graph(code, max_node_label_length=30):
     return "digraph dataflow {\n%s\n}\n" % "\n".join(result)
 
 
-            
+
 
 
 # code ------------------------------------------------------------------------
@@ -239,13 +239,13 @@ class Code(object):
         from pytools import all, argmax2
         available_insns = [
                 (insn, insn.priority) for insn in self.instructions
-                if insn not in done_insns 
-                and all(dep.name in available_names 
+                if insn not in done_insns
+                and all(dep.name in available_names
                     for dep in insn.get_dependencies())]
 
         if not available_insns:
             raise self.NoInstructionAvailable
-        
+
         from pytools import flatten
         discardable_vars = set(available_names) - set(flatten(
             [dep.name for dep in insn.get_dependencies()]
@@ -292,7 +292,7 @@ class Code(object):
 
                 del future
 
-            # pick the next insn 
+            # pick the next insn
             try:
                 insn, discardable_vars = self.get_next_step(
                         frozenset(context.keys()),
@@ -372,7 +372,7 @@ class OperatorCompilerBase(IdentityMapper):
         for fr in flux_queue:
             fr.dependencies = set()
             for d in fr.dependencies:
-                fr.dependencies |= set(sf.flux_expr 
+                fr.dependencies |= set(sf.flux_expr
                         for sf in self.get_contained_fluxes(d))
 
         # Then figure out batches of fluxes to evaluate
@@ -405,8 +405,8 @@ class OperatorCompilerBase(IdentityMapper):
                 raise RuntimeError, "cannot resolve flux evaluation order"
 
         # Once flux batching is figured out, we also need to know which
-        # derivatives are going to be needed, because once the 
-        # rst-derivatives are available, it's best to calculate the 
+        # derivatives are going to be needed, because once the
+        # rst-derivatives are available, it's best to calculate the
         # xyz ones and throw the rst ones out. It's naturally good if
         # we can avoid computing (or storing) some of the xyz ones.
         # So figure out which XYZ derivatives of what are needed.
@@ -554,7 +554,7 @@ class OperatorCompilerBase(IdentityMapper):
         from pymbolic.primitives import Variable
         if isinstance(expr, Variable):
             return expr
-            
+
         new_name = self.get_var_name()
         self.code.append(self.make_assign(new_name, expr, priority))
 

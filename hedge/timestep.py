@@ -1,3 +1,5 @@
+# -*- coding: utf8 -*-
+
 """ODE solvers: timestepping support, such as Runge-Kutta, Adams-Bashforth, etc."""
 
 from __future__ import division
@@ -53,32 +55,82 @@ _RK4C = [0.0,
 
 
 
-def monomial_vdm(levels):
-    class Monomial:
-        def __init__(self, expt):
-            self.expt = expt
-        def __call__(self, x):
-            return x**self.expt
-
-    from hedge.polynomial import generic_vandermonde
-    return generic_vandermonde(levels, 
-            [Monomial(i) for i in range(len(levels))])
-
-
-
-
-def make_interpolation_coefficients(levels, tap):
-    point_eval_vec = numpy.array([ tap**n for n in range(len(levels))])
-    return la.solve(monomial_vdm(levels).T, point_eval_vec)
-
-
-
 
 def make_generic_ab_coefficients(levels, int_start, tap):
-    point_eval_vec = numpy.array([
-        1/(n+1)*(tap**(n+1)-int_start**(n+1))
-        for n in range(len(levels))])
+    """Find coefficients (αᵢ) such that
+       ∑ᵢ αᵢ F(tᵢ) = ∫[int_start..tap] f(t) dt."""
 
+    # explanations --------------------------------------------------------------
+    # To calculate the AB coefficients this method makes use of the interpolation
+    # connection of the Vandermonde matrix:
+    #         
+    #  Vᵀ * α = fe(t₀₊₁),                                    (1)
+    #
+    # with Vᵀ as the transposed Vandermonde matrix (with monomial base: xⁿ), 
+    # 
+    #  α = (..., α₋₂, α₋₁,α₀)ᵀ                               (2)
+    #
+    # a vector of interpolation coefficients and 
+    # 
+    #  fe(t₀₊₁) = (t₀₊₁⁰, t₀₊₁¹, t₀₊₁²,...,t₀₊₁ⁿ)ᵀ           (3)
+    #
+    # a vector of the evaluated interpolation polynomial f(t) at t₀₊₁ = t₀ ∓ h 
+    # (h being any arbitrary stepsize).
+    #
+    # Solving the system (1) by knowing Vᵀ and fe(t₀₊₁) receiving α makes it 
+    # possible for any function F(t) - the function which gets interpolated 
+    # by the interpolation polynomial f(t) - to calculate f(t₀₊₁) by:
+    #
+    # f(t₀₊₁) =  ∑ᵢ αᵢ F(tᵢ)                                 (5)
+    #
+    # with F(tᵢ) being the values of F(t) at the sampling points tᵢ.
+    # --------------------------------------------------------------------------
+    # The Adams-Bashforth method is defined by:
+    #
+    #  y(t₀₊₁) = y(t₀) + Δt * ∫₀⁰⁺¹ f(t) dt                  (6)
+    #
+    # with:
+    # 
+    #  ∫₀⁰⁺¹ f(t) dt = ∑ᵢ ABcᵢ F(tᵢ),                        (8)
+    #
+    # with ABcᵢ = [AB coefficients], f(t) being the interpolation polynomial,
+    # and F(tᵢ) being the values of F (= RHS) at the sampling points tᵢ.
+    # --------------------------------------------------------------------------
+    # For the AB method (1) becomes:
+    #
+    #  Vᵀ * ABc = ∫₀⁰⁺¹ fe(t₀₊₁)                             (7)
+    #
+    # with ∫₀⁰⁺¹ fe(t₀₊₁) being a vector evalueting the integral of the 
+    # interpolation polynomial in the form oft 
+    # 
+    #  1/(n+1)*(t₀₊₁⁽ⁿ⁾-t₀⁽ⁿ⁾)                               (8)
+    # 
+    #  for n = 0,1,...,N sampling points, and 
+    # 
+    # ABc = [c₀,c₁, ... , cn]ᵀ                               (9)
+    #
+    # being the AB coefficients.
+    # 
+    # For example ∫₀⁰⁺¹ f(t₀₊₁) evaluated for the timestep [t₀,t₀₊₁] = [0,1]
+    # is:
+    #
+    #  point_eval_vec = [1, 0.5, 0.333, 0.25, ... ,1/n]ᵀ.
+    #
+    # For substep levels the bounds of the integral has to be adapted to the
+    # size and position of the substep interval: 
+    # 
+    #  [t₀,t₀₊₁] = [substep_int_start, substep_int_end] 
+    # 
+    # which is equal to the implemented [int_start, tap].
+    #
+    # Since Vᵀ and ∫₀⁰⁺¹ f(t₀₊₁) is known the AB coefficients c can be
+    # predicted by solving system (7) and calculating:
+    # 
+    #  ∫₀⁰⁺¹ f(t) dt = ∑ᵢ ABcᵢ F(tᵢ),
+    
+    from hedge.polynomial import monomial_vdm 
+    point_eval_vec = numpy.array([
+        1/(n+1)*(tap**(n+1)-int_start**(n+1)) for n in range(len(levels))])
     return la.solve(monomial_vdm(levels).T, point_eval_vec)
 
 

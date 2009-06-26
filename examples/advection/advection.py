@@ -24,7 +24,7 @@ import numpy.linalg as la
 
 
 
-def main():
+def main(write_output=True, flux_type_arg="upwind"):
     from hedge.timestep import RK4TimeStepper
     from hedge.tools import mem_checkpoint
     from math import sin, cos, pi, sqrt
@@ -92,7 +92,7 @@ def main():
     from hedge.pde import StrongAdvectionOperator, WeakAdvectionOperator
     op = WeakAdvectionOperator(v, 
             inflow_u=TimeDependentGivenFunction(u_analytic),
-            flux_type="upwind")
+            flux_type=flux_type_arg)
 
     u = discr.interpolate_volume_function(lambda x, el: u_analytic(x, el, 0))
 
@@ -100,7 +100,7 @@ def main():
     stepper = RK4TimeStepper()
 
     dt = discr.dt_factor(op.max_eigenvalue())
-    nsteps = int(700/dt)
+    nsteps = int(1/dt)
 
     if rcon.is_head_rank:
         print "%d elements, dt=%g, nsteps=%d" % (
@@ -114,7 +114,12 @@ def main():
             add_simulation_quantities, \
             add_run_info
 
-    logmgr = LogManager("advection.dat", "w", rcon.communicator)
+    if write_output:
+        log_file_name = "advection.dat"
+    else:
+        log_file_name = None
+
+    logmgr = LogManager(log_file_name, "w", rcon.communicator)
     add_run_info(logmgr)
     add_general_quantities(logmgr)
     add_simulation_quantities(logmgr, dt)
@@ -137,16 +142,18 @@ def main():
 
         t = step*dt
 
-        if step % 5 == 0:
+        if step % 5 == 0 and write_output:
             visf = vis.make_file("fld-%04d" % step)
-            vis.add_data(visf, [ ("u", u), ], 
-                        time=t, 
+            vis.add_data(visf, [ ("u", u), ],
+                        time=t,
                         step=step
                         )
             visf.close()
 
 
         u = stepper(u, t, dt, rhs)
+        # Check whether the error goes over a certain level. If so => Abort
+        assert discr.norm(u) < 10
 
     vis.close()
 
@@ -156,3 +163,20 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+
+# entry points for py.test ----------------------------------------------------
+from pytools.test import mark_test
+@mark_test(long=True)
+def test_advection_upwinf_flux():
+    main(write_output=False)
+
+@mark_test(long=True)
+def test_advection_central_flux():
+    main(write_output=False, flux_type_arg="central")
+
+@mark_test(long=True)
+def test_advection_laxfriedrichs_flux():
+    main(write_output=False, flux_type_arg="lf")

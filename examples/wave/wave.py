@@ -20,11 +20,16 @@
 from __future__ import division
 import numpy
 import numpy.linalg as la
+from hedge.mesh import TAG_ALL, TAG_NONE
 
 
 
 
-def main() :
+def main(write_output=True, \
+        dir_tag=TAG_NONE, \
+        neu_tag=TAG_NONE,\
+        rad_tag=TAG_ALL,
+        flux_type_arg="upwind"):
     from hedge.timestep import RK4TimeStepper
     from pytools.stopwatch import Job
     from math import sin, cos, pi, exp, sqrt
@@ -79,10 +84,10 @@ def main() :
     from hedge.mesh import TAG_ALL, TAG_NONE
     op = StrongWaveOperator(-1, discr.dimensions, 
             source_vec_getter,
-            dirichlet_tag=TAG_NONE,
-            neumann_tag=TAG_NONE,
-            radiation_tag=TAG_ALL,
-            flux_type="upwind",
+            dirichlet_tag=dir_tag,
+            neumann_tag=neu_tag,
+            radiation_tag=rad_tag,
+            flux_type=flux_type_arg
             )
 
     from hedge.tools import join_fields
@@ -90,7 +95,7 @@ def main() :
             [discr.volume_zeros() for i in range(discr.dimensions)])
 
     dt = discr.dt_factor(op.max_eigenvalue())
-    nsteps = int(10/dt)
+    nsteps = int(2/dt)
     if rcon.is_head_rank:
         print "dt", dt
         print "nsteps", nsteps
@@ -101,7 +106,12 @@ def main() :
             add_simulation_quantities, \
             add_run_info
 
-    logmgr = LogManager("wave.dat", "w", rcon.communicator)
+    if write_output:
+        log_file_name = "wave.dat"
+    else:
+        log_file_name = None
+
+    logmgr = LogManager(log_file_name, "w", rcon.communicator)
     add_run_info(logmgr)
     add_general_quantities(logmgr)
     add_simulation_quantities(logmgr, dt)
@@ -126,7 +136,7 @@ def main() :
 
         t = step*dt
 
-        if step % 10 == 0:
+        if step % 10 == 0 and write_output:
             visf = vis.make_file("fld-%04d" % step)
 
             vis.add_data(visf,
@@ -139,6 +149,8 @@ def main() :
             visf.close()
 
         fields = stepper(fields, t, dt, rhs)
+        # Check whether the error goes over a certain level. If so => Abort
+        assert discr.norm(fields) < 10
 
     vis.close()
 
@@ -148,3 +160,27 @@ def main() :
 if __name__ == "__main__":
     main()
 
+
+
+
+# entry points for py.test ----------------------------------------------------
+from pytools.test import mark_test
+@mark_test(long=True)
+def test_wave():
+    main(write_output=False)
+
+@mark_test(long=True)
+def test_wave_central_flux():
+    main(write_output=False,flux_type_arg="central")
+
+@mark_test(long=True)
+def test_wave_dirichlet():
+    main(write_output=False, \
+            dir_tag=TAG_ALL, \
+            rad_tag=TAG_NONE)
+
+@mark_test(long=True)
+def test_wave_neumann():
+    main(write_output=False, \
+            neu_tag=TAG_ALL, \
+            rad_tag=TAG_NONE)

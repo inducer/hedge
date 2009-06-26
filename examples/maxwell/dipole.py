@@ -24,7 +24,7 @@ import numpy.linalg as la
 
 
 
-def main():
+def main(write_output=True, allow_features=None):
     from hedge.timestep import RK4TimeStepper
     from hedge.mesh import make_ball_mesh, make_cylinder_mesh, make_box_mesh
     from hedge.visualization import \
@@ -32,9 +32,9 @@ def main():
             SiloVisualizer, \
             get_rank_partition
     from math import sqrt, pi
-    from hedge.parallel import guess_parallelization_context
 
-    pcon = guess_parallelization_context()
+    from hedge.backends import guess_run_context
+    rcon = guess_run_context(allow_features)
 
     epsilon0 = 8.8541878176e-12 # C**2 / (N m**2)
     mu0 = 4*pi*1e-7 # N/A**2.
@@ -43,7 +43,7 @@ def main():
 
     dims = 3
 
-    if pcon.is_head_rank:
+    if rcon.is_head_rank:
         if dims == 2:
             from hedge.mesh import make_rect_mesh
             mesh = make_rect_mesh(
@@ -58,15 +58,15 @@ def main():
                     b=(10.5,1.5,1.5),
                     max_volume=0.1)
 
-    if pcon.is_head_rank:
-        mesh_data = pcon.distribute_mesh(mesh)
+    if rcon.is_head_rank:
+        mesh_data = rcon.distribute_mesh(mesh)
     else:
-        mesh_data = pcon.receive_mesh()
+        mesh_data = rcon.receive_mesh()
 
     #for order in [1,2,3,4,5,6]:
-    discr = pcon.make_discretization(mesh_data, order=3)
+    discr = rcon.make_discretization(mesh_data, order=3)
 
-    vis = SiloVisualizer(discr, pcon)
+    vis = SiloVisualizer(discr, rcon)
 
     from analytic_solutions import DipoleFarField, SphericalFieldAdapter
     from hedge.data import ITimeDependentGivenFunction
@@ -104,9 +104,9 @@ def main():
     else:
         from hedge.pde import MaxwellOperator
 
-    op = MaxwellOperator(discr, 
-            epsilon, mu, 
-            upwind_alpha=1,
+    op = MaxwellOperator(
+            epsilon, mu,
+            flux_type=1,
             pec_tag=TAG_NONE,
             absorb_tag=TAG_ALL,
             current=PointDipoleSource(),
@@ -119,7 +119,7 @@ def main():
     nsteps = int(final_time/dt)+1
     dt = final_time/nsteps
 
-    if pcon.is_head_rank:
+    if rcon.is_head_rank:
         print "dt", dt
         print "nsteps", nsteps
         print "#elements=", len(mesh.elements)
@@ -130,7 +130,7 @@ def main():
     from pytools.log import LogManager, add_general_quantities, \
             add_simulation_quantities, add_run_info
 
-    logmgr = LogManager("dipole.dat", "w", pcon.communicator)
+    logmgr = LogManager("dipole.dat", "w", rcon.communicator)
     add_run_info(logmgr)
     add_general_quantities(logmgr)
     add_simulation_quantities(logmgr, dt)
@@ -144,7 +144,6 @@ def main():
     from hedge.log import EMFieldGetter, add_em_quantities
     field_getter = EMFieldGetter(op, lambda: fields)
     add_em_quantities(logmgr, op, field_getter)
-    
 
     from pytools.log import PushLogQuantity
     relerr_e_q = PushLogQuantity("relerr_e", "1", "Relative error in masked E-field")

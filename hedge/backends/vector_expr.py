@@ -44,6 +44,19 @@ class DefaultingSubstitutionMapper(
 
 
 
+
+class ConstantGatherMapper(
+        hedge.optemplate.CombineMapper,
+        hedge.optemplate.CollectorMixin):
+    def map_algebraic_leaf(self, expr):
+        return set()
+
+    def map_constant(self, expr):
+        return set([expr])
+
+
+
+
 class KernelRecord(Record):
     pass
 
@@ -66,6 +79,10 @@ class CompiledVectorExpressionBase(object):
         self.scalar_exprs = [dep for dep in deps if not is_vector_func(dep)]
         self.vector_names = ["v%d" % i for i in range(len(self.vector_exprs))]
         self.scalar_names = ["s%d" % i for i in range(len(self.scalar_exprs))]
+
+        self.constant_dtypes = [
+                numpy.array(const).dtype
+                for const in ConstantGatherMapper()(vec_expr)]
 
         from pymbolic import var
         var_i = var("i")
@@ -103,7 +120,8 @@ class CompiledVectorExpressionBase(object):
 
         result_dtype = self.result_dtype_getter(
                 dict(zip(self.vector_exprs, vector_dtypes)),
-                dict(zip(self.scalar_exprs, scalar_dtypes)))
+                dict(zip(self.scalar_exprs, scalar_dtypes)),
+                self.constant_dtypes)
 
         from hedge.tools import is_obj_array
         if is_obj_array(self.subst_expr):
