@@ -1005,7 +1005,7 @@ class TMMaxwellOperator(MaxwellOperator):
 
 
 class TEMaxwellOperator(MaxwellOperator):
-    """A 2D TE Maxwell operator with PEC boundaries.
+    """A 2D TE Maxwell operator.
 
     Field order is [Ex Ey Hz].
     """
@@ -1019,6 +1019,36 @@ class TEMaxwellOperator(MaxwellOperator):
                 (False,False,True) # only hz
                 )
 
+class MaxwellOperator(MaxwellOperator):
+    """A 1D TE Maxwell operator.
+
+    Field order is [Ex Ey Hz].
+    """
+
+    _default_dimensions = 1
+
+    def get_eh_subset(self):
+        return (
+                (False,True,False)
+                +
+                (False,False,True)
+                )
+
+
+class SourceFree1DMaxwellOperator(MaxwellOperator):
+    """A 1D TE Maxwell operator.
+
+    Field order is [Ey Hz].
+    """
+
+    _default_dimensions = 1
+
+    def get_eh_subset(self):
+        return (
+                (False,True,False)
+                +
+                (False,False,True)
+                )
 
 
 
