@@ -305,6 +305,8 @@ namespace hedge {
 
 
 
+
+  // other helpers ------------------------------------------------------------
   template <class ERanges, class Vector>
   inline
   void perform_elwise_max(const ERanges &ers, 
