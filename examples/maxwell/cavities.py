@@ -161,7 +161,6 @@ def main(write_output=True, \
         logmgr.tick()
         logmgr.save()
 
-        numpy.seterr('raise')
         mode.set_time(t)
         true_fields = to_obj_array(mode(discr).real)
 

@@ -111,7 +111,7 @@ def main(write_output=True, \
             [discr.volume_zeros() for i in range(discr.dimensions)])
 
     dt = discr.dt_factor(1) / 2
-    nsteps = int(0.1/dt)
+    nsteps = int(1/dt)
     if rcon.is_head_rank:
         print "dt", dt
         print "nsteps", nsteps
@@ -166,8 +166,8 @@ def main(write_output=True, \
             visf.close()
 
         fields = stepper(fields, t, dt, rhs)
-        # Check whether the error goes over a certain level. If so => Abort
-        assert discr.norm(fields) < 10
+
+    assert discr.norm(fields) < 10
 
     vis.close()
 

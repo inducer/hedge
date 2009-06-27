@@ -233,13 +233,13 @@ if __name__ == "__main__":
 # entry points for py.test ----------------------------------------------------
 from pytools.test import mark_test
 @mark_test(long=True)
-def test_space_dep_advection_lf_flux():
+def test_var_velocity_advection_lf_flux():
     main(write_output=False)
 
 @mark_test(long=True)
-def test_space_dep_advection_central_flux():
+def test_var_velocity_advection_central_flux():
     main(write_output=False, flux_type_arg="central")
 
 @mark_test(long=True)
-def test_space_dep_advection_upwind_flux():
+def test_var_velocity_advection_upwind_flux():
     main(write_output=False, flux_type_arg="upwind")
