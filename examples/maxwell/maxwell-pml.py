@@ -27,7 +27,7 @@ import numpy.linalg as la
 def make_mesh(a, b, pml_width=0.25, **kwargs):
     from meshpy.geometry import GeometryBuilder, make_box
     geob = GeometryBuilder()
-    
+
     box_points, box_facets, _ = make_box(a, b)
     geob.add_geometry(box_points, box_facets)
     geob.wrap_in_box(pml_width)
@@ -40,7 +40,7 @@ def make_mesh(a, b, pml_width=0.25, **kwargs):
 
     print "%d elements" % len(built_mi.elements)
 
-    def boundary_tagger(fvi, el, fn):
+    def boundary_tagger(fvi, el, fn, *args):
         return []
 
     from hedge.mesh import make_conformal_mesh
@@ -52,7 +52,7 @@ def make_mesh(a, b, pml_width=0.25, **kwargs):
 
 
 
-def main():
+def main(write_output=True):
     from hedge.element import TriangularElement
     from hedge.timestep import RK4TimeStepper
     from hedge.mesh import make_disk_mesh
@@ -87,7 +87,7 @@ def main():
     class Current:
         def volume_interpolant(self, t, discr):
             result = discr.volume_zeros()
-            
+
             omega = 6*c
             if omega*t > 2*pi:
                 return result
@@ -99,10 +99,10 @@ def main():
             idx = r<0.3
             result[idx] = (1+numpy.cos(pi*r/0.3))[idx] \
                     *numpy.sin(omega*t)**3
-            
+
             return make_obj_array([-result, result, result])
 
-    final_time = 20/c
+    final_time = 1/c
     order = 3
     discr = rcon.make_discretization(mesh_data, order=order)
 
@@ -144,7 +144,12 @@ def main():
     from pytools.log import LogManager, add_general_quantities, \
             add_simulation_quantities, add_run_info
 
-    logmgr = LogManager("maxwell-%d.dat" % order, "w", rcon.communicator)
+    if write_output:
+        log_file_name = "maxwell-%d.dat" % order
+    else:
+        log_file_name = None
+
+    logmgr = LogManager(log_file_name, "w", rcon.communicator)
     add_run_info(logmgr)
     add_general_quantities(logmgr)
     add_simulation_quantities(logmgr, dt)
@@ -158,7 +163,7 @@ def main():
     from hedge.log import EMFieldGetter, add_em_quantities
     field_getter = EMFieldGetter(discr, op, lambda: fields)
     add_em_quantities(logmgr, op, field_getter)
-    
+
     logmgr.add_watches(["step.max", "t_sim.max", "W_field", "t_step.max"])
 
     from hedge.log import LpNorm
@@ -180,7 +185,7 @@ def main():
         logmgr.tick()
         logmgr.save()
 
-        if step % 10 == 0:
+        if step % 10 == 0 and write_output:
             e, h, p, q = op.split_ehpq(fields)
             visf = vis.make_file("em-%d-%04d" % (order, step))
             #pml_rhs_e, pml_rhs_h, pml_rhs_p, pml_rhs_q = \
@@ -210,3 +215,11 @@ def main():
 if __name__ == "__main__":
     main()
 
+
+
+
+# entry points for py.test ----------------------------------------------------
+from pytools.test import mark_test
+@mark_test(long=True)
+def test_maxwell_pml():
+    main(write_output=False)
