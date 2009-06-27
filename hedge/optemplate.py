@@ -429,9 +429,12 @@ def pair_with_boundary(field, bfield, tag=hedge.mesh.TAG_ALL):
 
 # convenience functions -------------------------------------------------------
 def make_vector_field(name, components):
+    if isinstance(components, int):
+        components = range(components)
+
     from hedge.tools import join_fields
     vfld = pymbolic.primitives.Variable(name)
-    return join_fields(*[vfld[i] for i in range(components)])
+    return join_fields(*[vfld[i] for i in components])
 
 
 
