@@ -51,12 +51,12 @@ class ExecutionMapper(CPUExecutionMapperBase):
     def exec_vector_expr_assign(self, insn):
         if self.discr.instrumented:
             def stats_callback(n, vec_expr):
-                self.discr.vector_math_flop_counter.add(n*vec_expr.flop_count)
+                self.discr.vector_math_flop_counter.add(n*insn.flop_count)
                 return self.discr.vector_math_timer
         else:
             stats_callback = None
 
-        return [(insn.name, insn.compiled(self, stats_callback))], []
+        return zip(insn.names, insn.compiled(self, stats_callback)), []
 
     def exec_flux_batch_assign(self, insn):
         from hedge.backends.jit.compiler import BoundaryFluxKind

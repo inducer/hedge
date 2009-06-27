@@ -64,16 +64,18 @@ class KernelRecord(Record):
 
 
 class CompiledVectorExpressionBase(object):
-    def __init__(self, vec_expr, is_vector_func, result_dtype_getter):
-        self.vec_expr = vec_expr
+    def __init__(self, vec_exprs, is_vector_func, result_dtype_getter):
+        self.vec_exprs = vec_exprs
         self.is_vector_func = is_vector_func
         self.result_dtype_getter = result_dtype_getter
 
         from hedge.optemplate import DependencyMapper
-        deps = DependencyMapper(
+        from operator import or_
+        dep_mapper = DependencyMapper(
                 include_subscripts=True,
                 include_lookups=True,
-                include_calls="descend_args")(vec_expr)
+                include_calls="descend_args")
+        deps = reduce(or_, (dep_mapper(ve) for ve in vec_exprs))
 
         self.vector_exprs = [dep for dep in deps if is_vector_func(dep)]
         self.scalar_exprs = [dep for dep in deps if not is_vector_func(dep)]
@@ -82,7 +84,8 @@ class CompiledVectorExpressionBase(object):
 
         self.constant_dtypes = [
                 numpy.array(const).dtype
-                for const in ConstantGatherMapper()(vec_expr)]
+                for ve in vec_exprs
+                for const in ConstantGatherMapper()(ve)]
 
         from pymbolic import var
         var_i = var("i")
@@ -98,18 +101,9 @@ class CompiledVectorExpressionBase(object):
             except KeyError:
                 return None
 
-        self.subst_expr = DefaultingSubstitutionMapper(subst_func)(vec_expr)
-
-        from hedge.tools import is_obj_array
-        if is_obj_array(self.subst_expr):
-            self.exprs = self.subst_expr
-        else:
-            self.exprs = [self.subst_expr]
-
-        self.result_count = len(self.exprs)
-
-        from pymbolic.mapper.flop_counter import FlopCounter
-        self.flop_count = FlopCounter()(self.subst_expr)
+        self.exprs = [
+                DefaultingSubstitutionMapper(subst_func)(ve)
+                for ve in vec_exprs]
 
     @memoize_method
     def get_kernel(self, vector_dtypes, scalar_dtypes):
@@ -124,11 +118,8 @@ class CompiledVectorExpressionBase(object):
                 self.constant_dtypes)
 
         from hedge.tools import is_obj_array
-        if is_obj_array(self.subst_expr):
-            args = [elwise.VectorArg(result_dtype, "_result%d" % i)
-                    for i in range(len(self.subst_expr))]
-        else:
-            args = [elwise.VectorArg(result_dtype, "_result0")]
+        args = [elwise.VectorArg(result_dtype, "_result%d" % i)
+                for i in range(len(self.exprs))]
 
         code_mapper = CCodeMapper()
         expr_codes = [code_mapper(e, PREC_NONE) for e in self.exprs]

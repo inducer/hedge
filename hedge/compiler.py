@@ -251,6 +251,21 @@ class Code(object):
         self.instructions = instructions
         self.result = result
 
+        if True:
+            from hedge.tools import get_rank
+            from hedge.compiler import dot_dataflow_graph
+            i = 0
+            while True:
+                dot_name = "dataflow-%d.dot" % i
+                from os.path import exists
+                if exists(dot_name):
+                    i += 1
+                    continue
+
+                open(dot_name, "w").write(dot_dataflow_graph(self))
+                break
+
+
     class NoInstructionAvailable(Exception):
         pass
 
@@ -442,7 +457,7 @@ class OperatorCompilerBase(IdentityMapper):
         # Then, put the toplevel expressions into variables as well.
         from hedge.tools import with_object_array_or_scalar
         result = with_object_array_or_scalar(self.assign_to_new_var, result)
-        return Code(self.code, result)
+        return Code(self.aggregate_assignments(self.code), result)
 
     def get_var_name(self):
         new_name = self.prefix+str(self.assigned_var_count)
@@ -590,28 +605,29 @@ class OperatorCompilerBase(IdentityMapper):
         return FluxBatchAssign(names=names, fluxes=fluxes, kind=kind)
 
     # assignment aggregration pass --------------------------------------------
-    def aggregate_assignments(self, insns):
+    def aggregate_assignments(self, instructions):
+        from pymbolic.primitives import Variable
+
         # agregation helpers --------------------------------------------------
-        def get_complete_origins_set(insn):
+        def get_complete_origins_set(insn, skip_levels=0):
             result = set()
             for dep in insn.get_dependencies():
-                dep_origin = origins_map[dep]
-                result.add(dep_origin)
-                result |= make_complete_origins_set(dep_origin)
+                if isinstance(dep, Variable):
+                    dep_origin = origins_map.get(dep.name, None)
+                    if dep_origin is not None:
+                        if skip_levels <= 0:
+                            result.add(dep_origin)
+                        result |= get_complete_origins_set(dep_origin, skip_levels-1)
 
-        def get_indirect_origins_set(insn):
-            from operator import or_
-            return reduce(or_, get_complete_origins_set(origins_map[dep])
-                    for dep in insn.get_dependencies())
+            return result
 
         def aggregate_two_assignments(ass_1, ass_2):
             dep_mapper = self.dep_mapper_factory()
 
-            names_exprs = (list(zip(ass_1.names, ass_1.expressions))
-                    + list(zip(ass_2.names, ass_2.expressions)))
+            names_exprs = (list(zip(ass_1.names, ass_1.exprs))
+                    + list(zip(ass_2.names, ass_2.exprs)))
 
-            from pymbolic import Variable
-            my_assignees = set(name for name, expr in all_pairs)
+            my_assignees = set(name for name, expr in names_exprs)
             names_exprs_deps = [
                     (name, expr, 
                         set(dep.name for dep in dep_mapper(expr) if
@@ -627,7 +643,7 @@ class OperatorCompilerBase(IdentityMapper):
                     unsatisfied_deps = deps - available_names
 
                     if not unsatisfied_deps:
-                        ordered_names_exprs.append(name, expr)
+                        ordered_names_exprs.append((name, expr))
                         scheduled_one = True
                         del names_exprs_deps[i]
                         break
@@ -637,7 +653,7 @@ class OperatorCompilerBase(IdentityMapper):
 
             return Assign(
                     names=[name for name, expr in ordered_names_exprs],
-                    expressions=[expr for name, expr in ordered_names_exprs],
+                    exprs=[expr for name, expr in ordered_names_exprs],
                     priority=max(ass_1.priority, ass_2.priority), 
                     dep_mapper_factory=self.dep_mapper_factory)
 
@@ -645,46 +661,53 @@ class OperatorCompilerBase(IdentityMapper):
         origins_map = dict(
                     (assignee, insn)
                     for insn in instructions
-                    for assignee in insn.get_assignees()))
+                    for assignee in insn.get_assignees())
 
         from pytools import partition
         unprocessed_assigns, other_insns = partition(
-                lambda insn: isinstance(insn, Assign))
+                lambda insn: isinstance(insn, Assign),
+                instructions)
 
         processed_assigns = []
+        print "ENTER AGG"
 
         while unprocessed_assigns:
             my_assign = unprocessed_assigns.pop()
 
-            my_deps = my_deps.get_dependencies()
-            agg_candidates = [other_assign
-                    for other_assign in unprocessed_assigns
+            my_deps = my_assign.get_dependencies()
+            agg_candidates = [(i, other_assign)
+                    for i, other_assign in enumerate(unprocessed_assigns)
                     if my_deps & other_assign.get_dependencies()
                     and my_assign.priority == other_assign.priority]
 
-            my_indirect_origins = get_indirect_origins_set(my_assign)
-
             did_work = False
 
-            for other_assign in agg_candidates:
-                other_indirect_origins = get_indirect_origins_set(my_assign)
+            if agg_candidates:
+                my_indirect_origins = get_complete_origins_set(
+                        my_assign, skip_levels=1)
 
-                if (my_assign not in other_indirect_origins and
-                        other_assign not in my_indirect_origins):
+                for other_assign_index, other_assign in agg_candidates:
+                    other_indirect_origins = get_complete_origins_set(
+                            my_assign, skip_levels=1)
 
-                    did_work = True
+                    if (my_assign not in other_indirect_origins and
+                            other_assign not in my_indirect_origins):
 
-                    # aggregate the two assignments
-                    new_assignment = aggregate_two_assignments(my_assign, other_assign)
-                    unprocessed_assigns.append(new_assignment)
-                    for assignee in new_assignment.get_assignees():
-                        origins_map[assignee] = new_assignment
+                        did_work = True
 
-                    break
+                        # aggregate the two assignments
+                        new_assignment = aggregate_two_assignments(my_assign, other_assign)
+                        del unprocessed_assigns[other_assign_index]
+                        unprocessed_assigns.append(new_assignment)
+                        for assignee in new_assignment.get_assignees():
+                            origins_map[assignee] = new_assignment
 
-            if did_work:
+                        break
+
+            if not did_work:
                 processed_assigns.append(my_assign)
 
+        print "LEAVE AGG"
         return [self.finalize_multi_assign(
-            ass.names, ass.expressions, ass.priority) 
+            ass.names, ass.exprs, ass.priority) 
             for ass in processed_assigns] + other_insns
