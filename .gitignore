@@ -19,6 +19,7 @@ tags
 *.vtu
 *.pvtu
 *.pvd
+*.dot
 doc/user-reference
 doc/dev-reference
 *.poly
