@@ -431,20 +431,6 @@ class Executor(object):
         self.code = OperatorCompilerWithExecutor(self)(
                 self.prepare_optemplate_stage2(discr.mesh, optemplate_stage1))
 
-        if False:
-            from hedge.tools import get_rank
-            from hedge.compiler import dot_dataflow_graph
-            i = 0
-            while True:
-                dot_name = "rank-%d-dataflow-%d.dot" % (get_rank(discr), i)
-                from os.path import exists
-                if exists(dot_name):
-                    i += 1
-                    continue
-
-                open(dot_name, "w").write(dot_dataflow_graph(self.code))
-                break
-
         # build the local kernels 
         self.diff_kernel = self.discr.diff_plan.make_kernel(discr)
         self.fluxlocal_kernel = self.discr.fluxlocal_plan.make_kernel(discr,
