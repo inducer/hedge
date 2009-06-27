@@ -24,7 +24,10 @@ import numpy.linalg as la
 
 
 
-def main(write_output=True, allow_features=None):
+def main(write_output=True, \
+        allow_features=None, \
+        flux_type_arg=1, \
+        bdry_flux_type_arg=None):
     from hedge.element import TetrahedralElement
     from hedge.timestep import RK4TimeStepper
     from hedge.mesh import make_ball_mesh, make_cylinder_mesh, make_box_mesh
@@ -88,10 +91,12 @@ def main(write_output=True, allow_features=None):
 
         mode.set_time(0)
         fields = to_obj_array(mode(discr).real.copy())
-        op = MaxwellOperator(epsilon, mu, flux_type=1)
+        op = MaxwellOperator(epsilon, mu, \
+                flux_type=flux_type_arg, \
+                bdry_flux_type=bdry_flux_type_arg)
 
         dt = discr.dt_factor(op.max_eigenvalue())
-        final_time = 1e-9
+        final_time = 0.5e-9
         nsteps = int(final_time/dt)+1
         dt = final_time/nsteps
 
@@ -177,6 +182,10 @@ from pytools.test import mark_test
 @mark_test(long=True)
 def test_maxwell_cavities():
     main(write_output=False)
+
+@mark_test(long=True)
+def test_maxwell_cavities_lf():
+    main(write_output=False, flux_type_arg="lf", bdry_flux_type_arg=1)
 
 @mark_test(mpi=True, long=True)
 def test_maxwell_cavities_mpi():

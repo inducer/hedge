@@ -27,7 +27,7 @@ import numpy.linalg as la
 
 
 
-def main() :
+def main(write_output=True):
     from math import sin, exp, sqrt
 
     from hedge.mesh import make_rect_mesh
@@ -68,14 +68,15 @@ def main() :
     stepper = RK4TimeStepper()
     dt = discr.dt_factor(op.max_eigenvalue(), RK4TimeStepper)
 
-    nsteps = int(5/dt)
+    nsteps = int(1/dt)
     print "dt=%g nsteps=%d" % (dt, nsteps)
 
+# timestep loop -----------------------------------------------------------
     rhs = op.bind(discr)
     for step in range(nsteps):
         t = step*dt
 
-        if step % 50 == 0:
+        if step % 50 == 0 and write_output:
             print step, t, discr.norm(fields[0])
             visf = vis.make_file("fld-%04d" % step)
 
@@ -93,5 +94,11 @@ def main() :
 
 if __name__ == "__main__":
     main()
+
+# entry points for py.test ----------------------------------------------------
+#from pytools.test import mark_test
+#@mark_test(long=True)
+#def test_wave_min():
+#    main(write_output=False)
 
 

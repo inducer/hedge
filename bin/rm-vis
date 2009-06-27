@@ -8,6 +8,7 @@ find . -maxdepth 1 \
   -o -name '*.silo' \
   -o -name '*.eps' \
   -o -name '*.dat' \
+  -o -name '*.dot' \
   -o -name '*.dat-rank*' \
   -o -name '*completed' \
   -o -name '*.dat-journal' \
