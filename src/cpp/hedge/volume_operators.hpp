@@ -255,7 +255,7 @@ namespace hedge {
         Scalar(scale_factors[i++]) * subrange(operand, r.first, r.second);
     }
 
-    perform_elwise_operator(src_ers, dest_ers, matrix, new_operand, result);
+    perform_elwise_operator_using_blas(src_ers, dest_ers, matrix, new_operand, result);
   }
 
 
