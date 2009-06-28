@@ -225,7 +225,7 @@ def get_interior_flux_mod(fluxes, fvi, toolchain, dtype):
 
         result = [
                 Assign("fof%d_it[%s_fof_base+%s]" % (flux_idx, where, tgt_idx),
-                    "fp.loc.face_jacobian * " +
+                    "uncomplex_type(fp.loc.face_jacobian) * " +
                     flux_to_code(f2cm, is_flipped, flux_idx, fvi, flux.op.flux, PREC_PRODUCT))
                 for flux_idx, flux in enumerate(fluxes)
                 for where, is_flipped, tgt_idx in [
@@ -346,7 +346,7 @@ def get_boundary_flux_mod(fluxes, fvi, toolchain, dtype):
 
         result = [
                 Assign("fof%d_it[loc_fof_base+i]" % flux_idx,
-                    "fp.loc.face_jacobian * " +
+                    "uncomplex_type(fp.loc.face_jacobian) * " +
                     flux_to_code(f2cm, False, flux_idx, fvi, flux.op.flux, PREC_PRODUCT))
                 for flux_idx, flux in enumerate(fluxes)
                 ]
