@@ -1152,10 +1152,12 @@ class Discretization(hedge.discretization.Discretization):
                     make_new = self.boundary_empty
 
                 if ls != ():
-                    out = result = make_new(tag, shape=ls)
+                    from pytools import single_valued
+                    out = result = make_new(tag, shape=ls, 
+                            dtype=single_valued(f.dtype for f in field))
                     src = field
                 else:
-                    result = make_new(tag)
+                    result = make_new(tag, dtype=field.dtype)
                     out = [result]
                     src = [field]
 
