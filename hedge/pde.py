@@ -1060,7 +1060,7 @@ class TEMaxwellOperator(MaxwellOperator):
                 (False,False,True) # only hz
                 )
 
-class MaxwellOperator(MaxwellOperator):
+class TEMaxwell1DOperator(MaxwellOperator):
     """A 1D TE Maxwell operator.
 
     Field order is [Ex Ey Hz].
@@ -1070,7 +1070,7 @@ class MaxwellOperator(MaxwellOperator):
 
     def get_eh_subset(self):
         return (
-                (False,True,False)
+                (True,True,False)
                 +
                 (False,False,True)
                 )
