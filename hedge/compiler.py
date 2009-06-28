@@ -57,8 +57,11 @@ class Assign(Instruction):
     def __init__(self, name, expr, **kwargs):
         Instruction.__init__(self, name=name, expr=expr, **kwargs)
 
+    @property
+    @memoize_method
+    def flop_count(self):
         from pymbolic.mapper.flop_counter import FlopCounter
-        self.flop_count = FlopCounter()(expr)
+        self.flop_count = FlopCounter()(self.expr)
 
     def get_assignees(self):
         return set([self.name])
