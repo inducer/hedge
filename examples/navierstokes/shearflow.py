@@ -32,9 +32,10 @@ class SteadyShearFlow:
     def __call__(self, t, x_vec):
         # JSH/TW Nodal DG Methods, p.326 
 
-        rho = 1 + 0*x_vec[0]
+        rho = numpy.zeros_like(x_vec[0])
+        rho.fill(1)
         rho_u = x_vec[1] * x_vec[1]
-        rho_v = 0 * x_vec[0]
+        rho_v = numpy.zeros_like(x_vec[0])
         e = (2 * self.mu * x_vec[0] + 10) / (self.gamma - 1) + rho_u * rho_u / 2
 
         from hedge.tools import join_fields
@@ -56,7 +57,7 @@ class SteadyShearFlow:
 def main():
     from hedge.backends import guess_run_context
     rcon = guess_run_context(
-    #disable=set(["cuda"])
+    ["cuda"]
     )
 
     gamma = 1.5
@@ -99,7 +100,7 @@ def main():
         rhs(0, fields)
 
         dt = discr.dt_factor(max_eigval[0], order=2)
-        final_time = 0.01
+        final_time = 0.2
         nsteps = int(final_time/dt)+1
         dt = final_time/nsteps
 
@@ -133,7 +134,7 @@ def main():
         for step in range(nsteps):
             logmgr.tick()
 
-            if step % 1 == 0:
+            if step % 100 == 0:
             #if False:
                 visf = vis.make_file("shearflow-%d-%04d" % (order, step))
 

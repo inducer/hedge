@@ -70,7 +70,7 @@ class Vortex:
 def main():
     from hedge.backends import guess_run_context
     rcon = guess_run_context(
-    #disable=set(["cuda"])
+    ["cuda"]
     )
 
     gamma = 1.4
@@ -87,7 +87,7 @@ def main():
 
     for order in [3]:
         discr = rcon.make_discretization(mesh_data, order=order,
-			debug=["cuda_no_plan",
+			debug=[#"cuda_no_plan",
 			#"print_op_code"
 			],
 			default_scalar_type=numpy.float64)

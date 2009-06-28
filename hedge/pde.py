@@ -1947,6 +1947,7 @@ class NavierStokesOperator(GasDynamicsOperatorBase):
         def flux(q):
             from pytools import delta
             from hedge.tools import make_obj_array, join_fields
+
             return [ # one entry for each flux direction
                     cse(join_fields(
                         # flux rho
