@@ -14,6 +14,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+# FIXME: This example doesn't quite do what it should any more.
+
 
 
 
@@ -66,7 +68,8 @@ def main(write_output=True, allow_features=None):
     #for order in [1,2,3,4,5,6]:
     discr = rcon.make_discretization(mesh_data, order=3)
 
-    vis = SiloVisualizer(discr, rcon)
+    if write_output:
+        vis = VtkVisualizer(discr, rcon, "dipole")
 
     from analytic_solutions import DipoleFarField, SphericalFieldAdapter
     from hedge.data import ITimeDependentGivenFunction
@@ -112,10 +115,10 @@ def main(write_output=True, allow_features=None):
             current=PointDipoleSource(),
             )
 
-    fields = op.assemble_fields()
+    fields = op.assemble_eh(discr=discr)
 
     dt = discr.dt_factor(op.max_eigenvalue())
-    final_time = 1e-7
+    final_time = 1e-8
     nsteps = int(final_time/dt)+1
     dt = final_time/nsteps
 
@@ -130,7 +133,12 @@ def main(write_output=True, allow_features=None):
     from pytools.log import LogManager, add_general_quantities, \
             add_simulation_quantities, add_run_info
 
-    logmgr = LogManager("dipole.dat", "w", rcon.communicator)
+    if write_output:
+        log_file_name = "dipole.dat"
+    else:
+        log_file_name = None
+
+    logmgr = LogManager(log_file_name, "w", rcon.communicator)
     add_run_info(logmgr)
     add_general_quantities(logmgr)
     add_simulation_quantities(logmgr, dt)
@@ -142,7 +150,7 @@ def main(write_output=True, allow_features=None):
     logmgr.add_quantity(vis_timer)
 
     from hedge.log import EMFieldGetter, add_em_quantities
-    field_getter = EMFieldGetter(op, lambda: fields)
+    field_getter = EMFieldGetter(discr, op, lambda: fields)
     add_em_quantities(logmgr, op, field_getter)
 
     from pytools.log import PushLogQuantity
@@ -175,62 +183,68 @@ def main(write_output=True, allow_features=None):
 
         return result
 
+    rhs = op.bind(discr)
+
     t = 0
-    for step in range(nsteps):
-        if step % 10 == 0:
-            vis_timer.start()
-            e, h = op.split_eh(fields)
-            sph_dipole.set_time(t)
-            true_e, true_h = op.split_eh(
-                    discr.interpolate_volume_function(cart_dipole))
-            visf = vis.make_file("dipole-%04d" % step)
+    try:
+        for step in range(nsteps):
+            if write_output and step % 10 == 0:
+                sub_timer = vis_timer.start_sub_timer()
+                e, h = op.split_eh(fields)
+                sph_dipole.set_time(t)
+                true_e, true_h = op.split_eh(
+                        discr.interpolate_volume_function(cart_dipole))
+                visf = vis.make_file("dipole-%04d" % step)
 
-            mask_e = apply_mask(e)
-            mask_h = apply_mask(h)
-            mask_true_e = apply_mask(true_e)
-            mask_true_h = apply_mask(true_h)
+                mask_e = apply_mask(e)
+                mask_h = apply_mask(h)
+                mask_true_e = apply_mask(true_e)
+                mask_true_h = apply_mask(true_h)
 
-            from pylo import DB_VARTYPE_VECTOR
-            vis.add_data(visf,
-                    [ 
-                        ("e", e), 
-                        ("h", h), 
-                        ("true_e", true_e), 
-                        ("true_h", true_h), 
-                        ("mask_e", mask_e), 
-                        ("mask_h", mask_h), 
-                        ("mask_true_e", mask_true_e), 
-                        ("mask_true_h", mask_true_h), 
-                        ],
-                    expressions=[
-                        ("diff_e", "mask_e-mask_true_e", DB_VARTYPE_VECTOR),
-                        ("diff_h", "mask_h-mask_true_h", DB_VARTYPE_VECTOR),
-                        ],
-                    time=t, step=step
-                    )
-            visf.close()
-            vis_timer.stop()
+                from pylo import DB_VARTYPE_VECTOR
+                vis.add_data(visf,
+                        [ 
+                            ("e", e), 
+                            ("h", h), 
+                            ("true_e", true_e), 
+                            ("true_h", true_h), 
+                            ("mask_e", mask_e), 
+                            ("mask_h", mask_h), 
+                            ("mask_true_e", mask_true_e), 
+                            ("mask_true_h", mask_true_h), 
+                            ],
+                        expressions=[
+                            ("diff_e", "mask_e-mask_true_e", DB_VARTYPE_VECTOR),
+                            ("diff_h", "mask_h-mask_true_h", DB_VARTYPE_VECTOR),
+                            ],
+                        time=t, step=step
+                        )
+                visf.close()
+                sub_timer.stop().submit()
 
-            from hedge.tools import relative_error
-            relerr_e_q.push_value(
-                    relative_error(
-                        discr.norm(mask_e-mask_true_e),
-                        discr.norm(mask_true_e)))
-            relerr_h_q.push_value(
-                    relative_error(
-                        discr.norm(mask_h-mask_true_h),
-                        discr.norm(mask_true_h)))
+                from hedge.tools import relative_error
+                relerr_e_q.push_value(
+                        relative_error(
+                            discr.norm(mask_e-mask_true_e),
+                            discr.norm(mask_true_e)))
+                relerr_h_q.push_value(
+                        relative_error(
+                            discr.norm(mask_h-mask_true_h),
+                            discr.norm(mask_true_h)))
 
-            for outf_num, outf_true, evaluator in point_timeseries:
-                for outf, ev_h in zip([outf_num, outf_true],
-                        [h, true_h]):
-                    outf.write("%g\t%g\n" % (t, op.mu*evaluator(ev_h[1])))
-                    outf.flush()
+                for outf_num, outf_true, evaluator in point_timeseries:
+                    for outf, ev_h in zip([outf_num, outf_true],
+                            [h, true_h]):
+                        outf.write("%g\t%g\n" % (t, op.mu*evaluator(ev_h[1])))
+                        outf.flush()
 
-        logmgr.tick()
+            logmgr.tick()
 
-        fields = stepper(fields, t, dt, op.rhs)
-        t += dt
+            fields = stepper(fields, t, dt, rhs)
+            t += dt
+    finally:
+        if write_output:
+            vis.close()
 
     logmgr.tick()
     logmgr.save()
@@ -239,3 +253,11 @@ def main(write_output=True, allow_features=None):
 
 if __name__ == "__main__":
     main()
+
+
+
+
+from pytools.test import mark_test
+@mark_test(long=True)
+def test_run():
+    main(write_output=False)

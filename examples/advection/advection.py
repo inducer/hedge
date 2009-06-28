@@ -80,9 +80,9 @@ def main(write_output=True, flux_type_arg="upwind"):
     discr = rcon.make_discretization(mesh_data, order=4)
     vis_discr = discr
 
-    from hedge.visualization import VtkVisualizer, SiloVisualizer
-    vis = VtkVisualizer(vis_discr, rcon, "fld")
-    #vis = SiloVisualizer(vis_discr, rcon)
+    from hedge.visualization import VtkVisualizer
+    if write_output:
+        vis = VtkVisualizer(vis_discr, rcon, "fld")
 
     # operator setup ----------------------------------------------------------
     from hedge.data import \
@@ -100,7 +100,7 @@ def main(write_output=True, flux_type_arg="upwind"):
     stepper = RK4TimeStepper()
 
     dt = discr.dt_factor(op.max_eigenvalue())
-    nsteps = int(1/dt)
+    nsteps = int(3/dt)
 
     if rcon.is_head_rank:
         print "%d elements, dt=%g, nsteps=%d" % (
@@ -137,28 +137,34 @@ def main(write_output=True, flux_type_arg="upwind"):
 
     # timestep loop -----------------------------------------------------------
     rhs = op.bind(discr)
-    for step in xrange(nsteps):
+
+    try:
+        for step in xrange(nsteps):
+            logmgr.tick()
+
+            t = step*dt
+
+            if step % 5 == 0 and write_output:
+                visf = vis.make_file("fld-%04d" % step)
+                vis.add_data(visf, [ ("u", u), ],
+                            time=t,
+                            step=step
+                            )
+                visf.close()
+
+
+            u = stepper(u, t, dt, rhs)
+    finally:
+        if write_output:
+            vis.close()
+
         logmgr.tick()
+        logmgr.save()
 
-        t = step*dt
+    true_u = discr.interpolate_volume_function(lambda x, el: u_analytic(x, el, t))
+    print discr.norm(u-true_u)
+    assert discr.norm(u-true_u) < 1e-2
 
-        if step % 5 == 0 and write_output:
-            visf = vis.make_file("fld-%04d" % step)
-            vis.add_data(visf, [ ("u", u), ],
-                        time=t,
-                        step=step
-                        )
-            visf.close()
-
-
-        u = stepper(u, t, dt, rhs)
-        # Check whether the error goes over a certain level. If so => Abort
-        assert discr.norm(u) < 10
-
-    vis.close()
-
-    logmgr.tick()
-    logmgr.save()
 
 
 if __name__ == "__main__":
@@ -168,15 +174,10 @@ if __name__ == "__main__":
 
 
 # entry points for py.test ----------------------------------------------------
-from pytools.test import mark_test
-@mark_test(long=True)
-def test_advection_upwinf_flux():
-    main(write_output=False)
+def test_advection():
+    from pytools.test import mark_test
+    mark_long = mark_test(long=True)
 
-@mark_test(long=True)
-def test_advection_central_flux():
-    main(write_output=False, flux_type_arg="central")
-
-@mark_test(long=True)
-def test_advection_laxfriedrichs_flux():
-    main(write_output=False, flux_type_arg="lf")
+    for flux_type in ["upwind", "central", "lf"]:
+        yield "advection with %s flux" % flux_type, \
+                mark_long(main), False, flux_type

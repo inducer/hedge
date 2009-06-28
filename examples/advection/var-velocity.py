@@ -102,8 +102,9 @@ def main(write_output=True, flux_type_arg="lf"):
 
 
     # visualization setup -----------------------------------------------------
-    from hedge.visualization import VtkVisualizer, SiloVisualizer
-    vis = VtkVisualizer(vis_discr, rcon, "fld")
+    from hedge.visualization import VtkVisualizer
+    if write_output:
+        vis = VtkVisualizer(vis_discr, rcon, "fld")
 
     # operator setup ----------------------------------------------------------
     # In the operator setup it is possible to switch between a only space
@@ -197,31 +198,35 @@ def main(write_output=True, flux_type_arg="lf"):
     v = op.advec_v.volume_interpolant(t, discr)
     # timestep loop -----------------------------------------------------------
     rhs = op.bind(discr)
-    for step in xrange(nsteps):
-        logmgr.tick()
+    try:
+        for step in xrange(nsteps):
+            logmgr.tick()
 
-        t = step*dt
+            t = step*dt
 
-        if step % 10 == 0 and write_output:
-            visf = vis.make_file("fld-%04d" % step)
-            vis.add_data(visf, [ ("u", u), ("v", v)],
-                        time=t,
-                        step=step
-                        )
-            visf.close()
+            if step % 10 == 0 and write_output:
+                visf = vis.make_file("fld-%04d" % step)
+                vis.add_data(visf, [ ("u", u), ("v", v)],
+                            time=t,
+                            step=step
+                            )
+                visf.close()
 
 
-        u = stepper(u, t, dt, rhs)
-        # Check whether the error goes over a certain level. If so => Abort
+            u = stepper(u, t, dt, rhs)
+
+            # Use Filter:
+            u = antialiasing(u)
+
         assert discr.norm(u) < 10
 
-        # Use Filter:
-        u = antialiasing(u)
+    finally:
+        if write_output:
+            vis.close()
 
-    vis.close()
+        logmgr.tick()
+        logmgr.save()
 
-    logmgr.tick()
-    logmgr.save()
 
 
 if __name__ == "__main__":
@@ -231,15 +236,10 @@ if __name__ == "__main__":
 
 
 # entry points for py.test ----------------------------------------------------
-from pytools.test import mark_test
-@mark_test(long=True)
-def test_var_velocity_advection_lf_flux():
-    main(write_output=False)
+def test_var_velocity_advection():
+    from pytools.test import mark_test
+    mark_long = mark_test(long=True)
 
-@mark_test(long=True)
-def test_var_velocity_advection_central_flux():
-    main(write_output=False, flux_type_arg="central")
-
-@mark_test(long=True)
-def test_var_velocity_advection_upwind_flux():
-    main(write_output=False, flux_type_arg="upwind")
+    for flux_type in ["upwind", "central", "lf"]:
+        yield "variable-velocity-advection with %s flux" % flux_type, \
+                mark_long(main), False, flux_type

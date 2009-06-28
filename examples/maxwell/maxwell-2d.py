@@ -28,10 +28,6 @@ def main(write_output=True):
     from hedge.element import TriangularElement
     from hedge.timestep import RK4TimeStepper
     from hedge.mesh import make_disk_mesh
-    from hedge.visualization import \
-            VtkVisualizer, \
-            SiloVisualizer, \
-            get_rank_partition
     from pylo import DB_VARTYPE_VECTOR
     from math import sqrt, pi, exp
     from hedge.pde import TEMaxwellOperator, TMMaxwellOperator
@@ -64,8 +60,9 @@ def main(write_output=True):
     order = 3
     discr = rcon.make_discretization(mesh_data, order=order)
 
-    vis = VtkVisualizer(discr, rcon, "em-%d" % order)
-    #vis = SiloVisualizer(discr, rcon)
+    from hedge.visualization import VtkVisualizer
+    if write_output:
+        vis = VtkVisualizer(discr, rcon, "em-%d" % order)
 
     dt = discr.dt_factor(1/sqrt(mu*epsilon))
     final_time = dt*200
@@ -119,20 +116,29 @@ def main(write_output=True):
     # timestep loop -------------------------------------------------------
     rhs = op.bind(discr)
 
-    for step in range(nsteps):
-        logmgr.tick()
+    try:
+        for step in range(nsteps):
+            logmgr.tick()
 
-        if step % 10 == 0 and write_output:
-            e, h = op.split_eh(fields)
-            visf = vis.make_file("em-%d-%04d" % (order, step))
-            vis.add_data(visf,
-                    [ ("e", e), ("h", h), ],
-                    time=t, step=step
-                    )
-            visf.close()
+            if step % 10 == 0 and write_output:
+                e, h = op.split_eh(fields)
+                visf = vis.make_file("em-%d-%04d" % (order, step))
+                vis.add_data(visf,
+                        [ ("e", e), ("h", h), ],
+                        time=t, step=step
+                        )
+                visf.close()
 
-        fields = stepper(fields, t, dt, rhs)
-        t += dt
+            fields = stepper(fields, t, dt, rhs)
+            t += dt
+
+        assert discr.norm(fields) < 0.03
+    finally:
+        if write_output:
+            vis.close()
+
+        logmgr.close()
+        discr.close()
 
 if __name__ == "__main__":
     import cProfile as profile
