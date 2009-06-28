@@ -63,9 +63,9 @@ def main(write_output=True, \
     from hedge.timestep import RK4TimeStepper
     stepper = RK4TimeStepper()
 
-    from hedge.visualization import SiloVisualizer, VtkVisualizer
-    vis = VtkVisualizer(discr, rcon, "fld")
-    #vis = SiloVisualizer(discr, rcon)
+    from hedge.visualization import VtkVisualizer
+    if write_output:
+        vis = VtkVisualizer(discr, rcon, "fld")
 
     def source_u(x, el):
         x = x - numpy.array([0.7, 0.4])
@@ -111,7 +111,7 @@ def main(write_output=True, \
             [discr.volume_zeros() for i in range(discr.dimensions)])
 
     dt = discr.dt_factor(1) / 2
-    nsteps = int(0.1/dt)
+    nsteps = int(1/dt)
     if rcon.is_head_rank:
         print "dt", dt
         print "nsteps", nsteps
@@ -147,32 +147,34 @@ def main(write_output=True, \
 
     # timestep loop -----------------------------------------------------------
     rhs = op.bind(discr)
-    for step in range(nsteps):
-        logmgr.tick()
+    try:
+        for step in range(nsteps):
+            logmgr.tick()
 
-        t = step*dt
+            t = step*dt
 
-        if step % 10 == 0 and write_output:
-            visf = vis.make_file("fld-%04d" % step)
+            if step % 10 == 0 and write_output:
+                visf = vis.make_file("fld-%04d" % step)
 
-            vis.add_data(visf,
-                    [
-                        ("u", fields[0]),
-                        ("v", fields[1:]), 
-                        ("c", op.c.volume_interpolant(0, discr)), 
-                    ],
-                    time=t,
-                    step=step)
-            visf.close()
+                vis.add_data(visf,
+                        [
+                            ("u", fields[0]),
+                            ("v", fields[1:]), 
+                            ("c", op.c.volume_interpolant(0, discr)), 
+                        ],
+                        time=t,
+                        step=step)
+                visf.close()
 
-        fields = stepper(fields, t, dt, rhs)
-        # Check whether the error goes over a certain level. If so => Abort
-        assert discr.norm(fields) < 10
+            fields = stepper(fields, t, dt, rhs)
 
-    vis.close()
+        assert discr.norm(fields) < 1
+    finally:
+        if write_output:
+            vis.close()
 
-    logmgr.tick()
-    logmgr.save()
+        logmgr.close()
+        discr.close()
 
 if __name__ == "__main__":
     main()
@@ -181,23 +183,15 @@ if __name__ == "__main__":
 
 
 # entry points for py.test ----------------------------------------------------
-from pytools.test import mark_test
-@mark_test(long=True)
-def test_var_velocity_radiation():
-    main(write_output=False)
+def test_var_velocity_wave():
+    from pytools.test import mark_test
+    mark_long = mark_test(long=True)
 
-@mark_test(long=True)
-def test_var_velocity_central_flux():
-    main(write_output=False,flux_type_arg="central")
-
-@mark_test(long=True)
-def test_var_velocity_dirichlet():
-    main(write_output=False, \
-            dir_tag=TAG_ALL, \
-            rad_tag=TAG_NONE)
-
-@mark_test(long=True)
-def test_var_velocity_neumann():
-    main(write_output=False, \
-            neu_tag=TAG_ALL, \
-            rad_tag=TAG_NONE)
+    for flux_type in ["upwind", "central"]:
+        yield ("dirichlet var-v wave equation with %s flux" % flux_type,
+                mark_long(main),
+                False, TAG_ALL, TAG_NONE, TAG_NONE, flux_type)
+    yield ("neumann var-v wave equation", mark_long(main),
+            False, TAG_NONE, TAG_ALL, TAG_NONE)
+    yield ("radiation-bc var-v wave equation", mark_long(main),
+            False, TAG_NONE, TAG_NONE, TAG_ALL)

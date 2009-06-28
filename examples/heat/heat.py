@@ -27,7 +27,6 @@ from hedge.tools import Rotation
 def main(write_output=True) :
     from hedge.element import TriangularElement, TetrahedralElement
     from hedge.timestep import RK4TimeStepper
-    from hedge.visualization import SiloVisualizer, VtkVisualizer
     from math import sin, cos, pi, exp, sqrt
     from hedge.data import TimeConstantGivenFunction, \
             GivenFunction, ConstantGivenFunction
@@ -64,10 +63,13 @@ def main(write_output=True) :
 
     discr = rcon.make_discretization(mesh_data, el_class(3))
     stepper = RK4TimeStepper()
-    vis = VtkVisualizer(discr, rcon, "fld")
+
+    if write_output:
+        from hedge.visualization import  VtkVisualizer
+        vis = VtkVisualizer(discr, rcon, "fld")
 
     dt = discr.dt_factor(1)**2 / 5
-    nsteps = int(1/dt)
+    nsteps = int(1e-2/dt)
 
     if rcon.is_head_rank:
         print "dt", dt
@@ -92,11 +94,11 @@ def main(write_output=True) :
         return 2
 
     from hedge.pde import StrongHeatOperator
-    op = StrongHeatOperator(discr.dimensions, 
+    op = StrongHeatOperator(discr.dimensions,
             #coeff=coeff,
             dirichlet_tag="dirichlet",
             dirichlet_bc=TimeConstantGivenFunction(ConstantGivenFunction(0)),
-            neumann_tag="neumann", 
+            neumann_tag="neumann",
             neumann_bc=TimeConstantGivenFunction(ConstantGivenFunction(1))
             )
     u = discr.interpolate_volume_function(u0)
@@ -129,18 +131,22 @@ def main(write_output=True) :
 
     # timestep loop -----------------------------------------------------------
     rhs = op.bind(discr)
-    for step in range(nsteps):
-        logmgr.tick()
-        t = step*dt
+    try:
+        for step in range(nsteps):
+            logmgr.tick()
+            t = step*dt
 
-        if step % 10 == 0 and write_output:
-            visf = vis.make_file("fld-%04d" % step)
-            vis.add_data(visf, [("u", u), ], time=t, step=step)
-            visf.close()
+            if step % 10 == 0 and write_output:
+                visf = vis.make_file("fld-%04d" % step)
+                vis.add_data(visf, [("u", u), ], time=t, step=step)
+                visf.close()
 
-        u = stepper(u, t, dt, rhs)
-        # Check whether the error goes over a certain level. If so => Abort
-        assert discr.norm(u) < 10
+            u = stepper(u, t, dt, rhs)
+
+        assert discr.norm(u) < 1
+    finally:
+        if write_output:
+            vis.close()
 
 
 

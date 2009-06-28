@@ -59,6 +59,9 @@ class Assign(Instruction):
     def __init__(self, names, exprs, **kwargs):
         Instruction.__init__(self, names=names, exprs=exprs, **kwargs)
 
+    @property
+    @memoize_method
+    def flop_count(self):
         from pymbolic.mapper.flop_counter import FlopCounter
         self.flop_count = sum(FlopCounter()(expr) for expr in exprs)
 

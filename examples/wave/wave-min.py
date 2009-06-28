@@ -63,7 +63,6 @@ def main(write_output=True):
     fields = join_fields(discr.volume_zeros(),
             [discr.volume_zeros() for i in range(discr.dimensions)])
 
-    # timestep loop -----------------------------------------------------------
     from hedge.timestep import RK4TimeStepper
     stepper = RK4TimeStepper()
     dt = discr.dt_factor(op.max_eigenvalue(), RK4TimeStepper)
@@ -71,7 +70,6 @@ def main(write_output=True):
     nsteps = int(1/dt)
     print "dt=%g nsteps=%d" % (dt, nsteps)
 
-# timestep loop -----------------------------------------------------------
     rhs = op.bind(discr)
     for step in range(nsteps):
         t = step*dt
@@ -94,11 +92,3 @@ def main(write_output=True):
 
 if __name__ == "__main__":
     main()
-
-# entry points for py.test ----------------------------------------------------
-#from pytools.test import mark_test
-#@mark_test(long=True)
-#def test_wave_min():
-#    main(write_output=False)
-
-
