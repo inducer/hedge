@@ -24,31 +24,16 @@ import numpy.linalg as la
 
 
 
-class Vortex:
-    def __init__(self, beta, gamma, center, velocity):
-        self.beta = beta
+class Sinewave:
+    def __init__(self, gamma):
         self.gamma = gamma
-        self.center = numpy.asarray(center)
-        self.velocity = numpy.asarray(velocity)
 
     def __call__(self, t, x_vec):
-        vortex_loc = self.center + t*self.velocity
 
-        # coordinates relative to vortex center
-        x_rel = x_vec[0] - vortex_loc[0]
-        y_rel = x_vec[1] - vortex_loc[1]
-
-        # Y.C. Zhou, G.W. Wei / Journal of Computational Physics 189 (2003) 159
-        # also JSH/TW Nodal DG Methods, p. 209
-
-        from math import pi
-        r = numpy.sqrt(x_rel**2+y_rel**2)
-        expterm = self.beta*numpy.exp(1-r**2)
-        u = self.velocity[0] - expterm*y_rel/(2*pi)
-        v = self.velocity[1] + expterm*x_rel/(2*pi)
-        rho = (1-(self.gamma-1)/(16*self.gamma*pi**2)*expterm**2)**(1/(self.gamma-1))
-        p = rho**self.gamma
-
+        rho = 2 + numpy.sin(x_vec[0] + x_vec[1] - 2 * t)
+        u = 1
+        v = 1
+        p = 1
         e = p/(self.gamma-1) + rho/2*(u**2+v**2)
 
         from hedge.tools import join_fields
@@ -93,16 +78,14 @@ def main():
 			default_scalar_type=numpy.float64)
 
         from hedge.visualization import SiloVisualizer, VtkVisualizer
-        #vis = VtkVisualizer(discr, rcon, "vortex-%d" % order)
+        #vis = VtkVisualizer(discr, rcon, "sinewave-%d" % order)
         vis = SiloVisualizer(discr, rcon)
 
-        vortex = Vortex(beta=5, gamma=gamma, 
-                center=[5,0], 
-                velocity=[1,0])
-        fields = vortex.volume_interpolant(0, discr)
+        sinewave = Sinewave(gamma=gamma)
+        fields = sinewave.volume_interpolant(0, discr)
 
         from hedge.pde import EulerOperator
-        op = EulerOperator(dimensions=2, gamma=1.4, bc=vortex)
+        op = EulerOperator(dimensions=2, gamma=gamma, bc=sinewave)
 
         euler_ex = op.bind(discr)
 
@@ -114,7 +97,7 @@ def main():
         rhs(0, fields)
 
         dt = discr.dt_factor(max_eigval[0])
-        final_time = 0.2
+        final_time = 1
         nsteps = int(final_time/dt)+1
         dt = final_time/nsteps
 
@@ -150,9 +133,7 @@ def main():
 
             if step % 1 == 0:
             #if False:
-                visf = vis.make_file("vortex-%d-%04d" % (order, step))
-
-                #true_fields = vortex.volume_interpolant(t, discr)
+                visf = vis.make_file("sinewave-%d-%04d" % (order, step))
 
                 from pylo import DB_VARTYPE_VECTOR
                 vis.add_data(visf,
@@ -190,7 +171,7 @@ def main():
         logmgr.tick()
         logmgr.save()
 
-        true_fields = vortex.volume_interpolant(t, discr)
+        true_fields = sinewave.volume_interpolant(t, discr)
         eoc_rec.add_data_point(order, discr.norm(fields-true_fields))
         print
         print eoc_rec.pretty_print("P.Deg.", "L2 Error")

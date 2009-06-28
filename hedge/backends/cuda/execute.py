@@ -288,6 +288,7 @@ class ExecutionMapper(ExecutionMapperBase):
                 self.rec(insn.field),
                 *self.executor.mass_data(kernel, elgroup, insn.op_class)))], []
 
+    @memoize_method
     def map_elementwise_max(self, op, field_expr):
         from pycuda.compiler import SourceModule
         from pycuda.tools import dtype_to_ctype
@@ -298,42 +299,53 @@ class ExecutionMapper(ExecutionMapperBase):
         field = self.rec(field_expr)
 	order = discr.given.order()
 	nodes_per_el = TE(order).node_count()
-	aligned_floats = discr.given.dofs_per_block()
+        nodes_per_el_rec = 1 / nodes_per_el
+	aligned_floats = discr.given.microblock.aligned_floats
 
+        # Set block_size and make sure, that block_size is divisible by
+        # aligned_floats (necessary for the function call) and not bigger
+        # than 512 or smaller than 0.
         block_size = 128
         if block_size % aligned_floats != 0:
 	    block_size = block_size - block_size % aligned_floats + aligned_floats
 	    if block_size > 512:
 	        block_size = block_size - aligned_floats
 
-        if discr.default_scalar_type == numpy.float64:
+        if field.dtype == numpy.float64:
 	    max_expr = "fmax"
-	elif discr.default_scalar_type == numpy.float32:
+	elif field.dtype == numpy.float32:
 	    max_expr = "fmaxf"
 	else:
 	    raise TypeError("invalid default_scalar_type specified")
 
         mod = SourceModule("""
 	#define NODES_PER_EL %(nodes_per_el)d
+        #define NODES_PER_EL_REC %(nodes_per_el_rec)d
         #define MAX_EXPR %(max_expr)s
+        #define ALIGNED_FLOATS blockDim.x
 
 	typedef %(value_type)s value_type;
 
 	__global__ void elwise_max(value_type *field)
 	{
-            int idx = blockDim.x * threadIdx.y + threadIdx.x;
-	    int base_idx = blockDim.x * threadIdx.y + threadIdx.x / NODES_PER_EL;
+            int idx = ALIGNED_FLOATS * threadIdx.y + threadIdx.x;
+	    int element_base_idx = ALIGNED_FLOATS * threadIdx.y +
+                                   threadIdx.x * NODES_PER_EL_REC;
+            int own_value = field[idx];
+
 	    for (int i=0; i<NODES_PER_EL; i++)
-	      field[idx] = MAX_EXPR(field[idx], field[base_idx+i]);
+	      own_value = MAX_EXPR(own_value, field[element_base_idx+i]);
+            field[idx] = own_value;
 	}
 	"""% {
 	"nodes_per_el": nodes_per_el,
+        "nodes_per_el_rec": nodes_per_el_rec,
 	"max_expr": max_expr,
 	"value_type": dtype_to_ctype(field.dtype),
 	})
 
 	func = mod.get_function("elwise_max")
-	func.prepare("P", block=(block_size//aligned_floats, aligned_floats, 1))
+	func.prepare("P", block=(aligned_floats, block_size//aligned_floats, 1))
 	grid_dim = (len(field) + block_size - 1) // block_size
 	func.prepared_call((grid_dim, 1),field.gpudata)
 	return field
