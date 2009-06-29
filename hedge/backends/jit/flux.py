@@ -169,7 +169,24 @@ def get_flux_var_info(fluxes):
 
 
 
-def get_interior_flux_mod(fluxes, fvi, toolchain, dtype):
+
+def get_flux_toolchain(discr, fluxes):
+    from hedge.flux import FluxFlopCounter
+    flop_count = sum(FluxFlopCounter()(flux.op.flux) for flux in fluxes)
+
+    toolchain = discr.toolchain
+    if flop_count > 250:
+        if "jit_dont_optimize_large_exprs" in discr.debug:
+            toolchain = toolchain.with_optimization_level(0)
+        else:
+            toolchain = toolchain.with_optimization_level(1)
+
+    return toolchain
+
+
+
+
+def get_interior_flux_mod(fluxes, fvi, discr, dtype):
     from codepy.cgen import \
             FunctionDeclaration, FunctionBody, \
             Const, Reference, Value, MaybeUnused, Typedef, POD, \
@@ -286,12 +303,13 @@ def get_interior_flux_mod(fluxes, fvi, toolchain, dtype):
     #print mod.generate()
     #raw_input("[Enter]")
 
-    return mod.compile(toolchain, wait_on_error=True)
+    return mod.compile(get_flux_toolchain(discr, fluxes), 
+            wait_on_error=True)
 
 
 
 
-def get_boundary_flux_mod(fluxes, fvi, toolchain, dtype):
+def get_boundary_flux_mod(fluxes, fvi, discr, dtype):
     from codepy.cgen import \
             FunctionDeclaration, FunctionBody, Typedef, Struct, \
             Const, Reference, Value, POD, MaybeUnused, \
@@ -406,4 +424,5 @@ def get_boundary_flux_mod(fluxes, fvi, toolchain, dtype):
     #print mod.generate()
     #raw_input("[Enter]")
 
-    return mod.compile(toolchain, wait_on_error=True)
+    return mod.compile(get_flux_toolchain(discr, fluxes), 
+            wait_on_error=True)

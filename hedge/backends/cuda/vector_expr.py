@@ -32,9 +32,9 @@ from hedge.backends.vector_expr import CompiledVectorExpressionBase
 class CompiledVectorExpression(CompiledVectorExpressionBase):
     elementwise_mod = pycuda.elementwise
 
-    def __init__(self, vec_expr, is_vector_func, result_dtype_getter, 
+    def __init__(self, vec_exprs, is_vector_func, result_dtype_getter, 
             stream=None, allocator=drv.mem_alloc):
-        CompiledVectorExpressionBase.__init__(self, vec_expr, 
+        CompiledVectorExpressionBase.__init__(self, vec_exprs,
                 is_vector_func, result_dtype_getter)
 
         self.stream = stream
@@ -55,11 +55,10 @@ class CompiledVectorExpression(CompiledVectorExpressionBase):
                 tuple(v.dtype for v in vectors),
                 tuple(s.dtype for s in scalars))
 
-        assert self.result_count > 0
         from hedge.tools import make_obj_array
         results = [gpuarray.empty(
             shape, kernel_rec.result_dtype, self.allocator)
-            for i in range(self.result_count)]
+            for expr in self.exprs]
 
         size = results[0].size
         kernel_rec.kernel.set_block_shape(*results[0]._block)
@@ -74,11 +73,7 @@ class CompiledVectorExpression(CompiledVectorExpressionBase):
         else:
             kernel_rec.kernel.prepared_async_call(vectors[0]._grid, self.stream, *args)
 
-        from hedge.tools import is_obj_array
-        if is_obj_array(self.subst_expr):
-            return make_obj_array(results)
-        else:
-            return results[0]
+        return results
 
 
 

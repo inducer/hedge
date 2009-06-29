@@ -33,13 +33,37 @@ from hedge.compiler import OperatorCompilerBase, FluxBatchAssign, \
 
 # compiler stuff --------------------------------------------------------------
 class VectorExprAssign(Assign):
-    __slots__ = ["compiled"]
+    __slots__ = ["toolchain"]
 
     def get_executor_method(self, executor):
         return executor.exec_vector_expr_assign
 
     comment = "compiled"
 
+    @memoize_method
+    def compiled(self, discr):
+        def result_dtype_getter(vector_dtype_map, scalar_dtype_map, const_dtypes):
+            from pytools import common_dtype
+            return common_dtype(
+                    vector_dtype_map.values()
+                    + scalar_dtype_map.values()
+                    + const_dtypes)
+
+        if self.flop_count() > 500:
+            # reduce optimization level for complicated expressions
+            if "jit_dont_optimize_large_exprs" in discr.debug:
+                toolchain = discr.toolchain.with_optimization_level(0)
+            else:
+                toolchain = discr.toolchain.with_optimization_level(1)
+        else:
+            toolchain = discr.toolchain
+
+        from hedge.backends.jit.vector_expr import CompiledVectorExpression
+        return CompiledVectorExpression(
+                self.exprs,
+                is_vector_func=lambda expr: True,
+                result_dtype_getter=result_dtype_getter,
+                toolchain=toolchain)
 
 
 
@@ -72,7 +96,8 @@ class CompiledFluxBatchAssign(FluxBatchAssign):
 
         if not self.is_boundary:
             mod = get_interior_flux_mod(
-                    self.fluxes, self.flux_var_info, discr.toolchain, dtype)
+                    self.fluxes, self.flux_var_info, 
+                    discr, dtype)
 
             if discr.instrumented:
                 from hedge.tools import time_count_flop, gather_flops
@@ -88,7 +113,7 @@ class CompiledFluxBatchAssign(FluxBatchAssign):
 
         else:
             mod = get_boundary_flux_mod(
-                    self.fluxes, self.flux_var_info, discr.toolchain, dtype)
+                    self.fluxes, self.flux_var_info, discr, dtype)
 
             if discr.instrumented:
                 from pytools.log import time_and_count_function
@@ -199,21 +224,6 @@ class OperatorCompiler(OperatorCompilerBase):
 
     # vector math -------------------------------------------------------------
     def finalize_multi_assign(self, names, exprs, priority):
-        def result_dtype_getter(vector_dtype_map, scalar_dtype_map, const_dtypes):
-            from pytools import common_dtype
-            return common_dtype(
-                    vector_dtype_map.values()
-                    + scalar_dtype_map.values()
-                    + const_dtypes)
-
-        from hedge.backends.jit.vector_expr import CompiledVectorExpression
-        return VectorExprAssign(
-                names=names,
-                exprs=exprs,
+        return VectorExprAssign(names=names, exprs=exprs,
                 dep_mapper_factory=self.dep_mapper_factory,
-                compiled=CompiledVectorExpression(
-                    exprs,
-                    is_vector_func=lambda expr: True,
-                    result_dtype_getter=result_dtype_getter,
-                    toolchain=self.discr.toolchain),
                 priority=priority)

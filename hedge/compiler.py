@@ -52,27 +52,30 @@ class Instruction(Record):
         raise NotImplementedError
 
 class Assign(Instruction):
-    # attributes: names, exprs, priority, flop_count
+    # attributes: names, exprs, priority
 
     comment = ""
 
     def __init__(self, names, exprs, **kwargs):
         Instruction.__init__(self, names=names, exprs=exprs, **kwargs)
 
-    @property
     @memoize_method
     def flop_count(self):
         from pymbolic.mapper.flop_counter import FlopCounter
-        self.flop_count = sum(FlopCounter()(expr) for expr in exprs)
+        return sum(FlopCounter()(expr) for expr in self.exprs)
 
     def get_assignees(self):
         return set(self.names)
 
-    @memoize_method
     def get_dependencies(self):
-        from operator import or_
-        return reduce(or_, (self.dep_mapper_factory()(expr) 
-                for expr in self.exprs))
+        try:
+            return self._dependencies
+        except:
+            from operator import or_
+            self._dependencies = reduce(
+                    or_, (self.dep_mapper_factory()(expr) 
+                    for expr in self.exprs))
+            return self._dependencies
 
     def __str__(self):
         comment = self.comment
@@ -625,40 +628,12 @@ class OperatorCompilerBase(IdentityMapper):
             return result
 
         def aggregate_two_assignments(ass_1, ass_2):
-            dep_mapper = self.dep_mapper_factory()
-
-            names_exprs = (list(zip(ass_1.names, ass_1.exprs))
-                    + list(zip(ass_2.names, ass_2.exprs)))
-
-            my_assignees = set(name for name, expr in names_exprs)
-            names_exprs_deps = [
-                    (name, expr, 
-                        set(dep.name for dep in dep_mapper(expr) if
-                            isinstance(dep, Variable)) & my_assignees)
-                    for name, expr in names_exprs]
-
-            ordered_names_exprs = []
-            available_names = set()
-
-            while names_exprs_deps:
-                scheduled_one = False
-                for i, (name, expr, deps) in enumerate(names_exprs_deps):
-                    unsatisfied_deps = deps - available_names
-
-                    if not unsatisfied_deps:
-                        ordered_names_exprs.append((name, expr))
-                        scheduled_one = True
-                        del names_exprs_deps[i]
-                        break
-
-                if not scheduled_one:
-                    raise RuntimeError("tried to aggregate two un-aggregable assignments")
-
             return Assign(
-                    names=[name for name, expr in ordered_names_exprs],
-                    exprs=[expr for name, expr in ordered_names_exprs],
-                    priority=max(ass_1.priority, ass_2.priority), 
-                    dep_mapper_factory=self.dep_mapper_factory)
+                    names=ass_1.names+ass_2.names,
+                    exprs=ass_1.exprs+ass_2.exprs,
+                    _dependencies=
+                    ass_1.get_dependencies() | ass_2.get_dependencies(),
+                    priority=max(ass_1.priority, ass_2.priority))
 
         # main aggregation pass -----------------------------------------------
         origins_map = dict(
@@ -672,7 +647,6 @@ class OperatorCompilerBase(IdentityMapper):
                 instructions)
 
         processed_assigns = []
-        print "ENTER AGG"
 
         while unprocessed_assigns:
             my_assign = unprocessed_assigns.pop()
@@ -710,7 +684,39 @@ class OperatorCompilerBase(IdentityMapper):
             if not did_work:
                 processed_assigns.append(my_assign)
 
-        print "LEAVE AGG"
-        return [self.finalize_multi_assign(
-            ass.names, ass.exprs, ass.priority) 
+        def schedule_and_finalize_assignment(ass):
+            dep_mapper = self.dep_mapper_factory()
+
+            names_exprs = zip(ass.names, ass.exprs)
+
+            my_assignees = set(name for name, expr in names_exprs)
+            names_exprs_deps = [
+                    (name, expr, 
+                        set(dep.name for dep in dep_mapper(expr) if
+                            isinstance(dep, Variable)) & my_assignees)
+                    for name, expr in names_exprs]
+
+            ordered_names_exprs = []
+            available_names = set()
+
+            while names_exprs_deps:
+                scheduled_one = False
+                for i, (name, expr, deps) in enumerate(names_exprs_deps):
+                    unsatisfied_deps = deps - available_names
+
+                    if not unsatisfied_deps:
+                        ordered_names_exprs.append((name, expr))
+                        scheduled_one = True
+                        del names_exprs_deps[i]
+                        break
+
+                if not scheduled_one:
+                    raise RuntimeError("aggregation resulted in an impossible assignment")
+
+            return self.finalize_multi_assign(
+                    names=[name for name, expr in ordered_names_exprs],
+                    exprs=[expr for name, expr in ordered_names_exprs],
+                    priority=ass.priority)
+
+        return [schedule_and_finalize_assignment(ass)
             for ass in processed_assigns] + other_insns

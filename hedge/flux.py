@@ -28,6 +28,7 @@ import pymbolic.mapper.expander
 import pymbolic.mapper.flattener
 import pymbolic.mapper.substitutor
 import pymbolic.mapper.constant_folder
+import pymbolic.mapper.flop_counter
 
 
 
@@ -303,10 +304,17 @@ class FluxStringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
     def map_if_positive(self, expr, enclosing_prec):
         return "IfPositive(%s, %s, %s)" % (expr.criterion, expr.then, expr.else_)
 
+
+
+
 class FluxFlattenMapper(pymbolic.mapper.flattener.FlattenMapper,
         FluxIdentityMapperMixin):
     pass
-        
+
+
+
+
+
 class FluxDependencyMapper(pymbolic.mapper.dependency.DependencyMapper):
     def map_field_component(self, expr):
         return set([expr])
@@ -320,9 +328,16 @@ class FluxDependencyMapper(pymbolic.mapper.dependency.DependencyMapper):
     def map_if_positive(self, expr):
         return self.rec(expr.criterion) | self.rec(expr.then) | self.rec(expr.else_)
 
+
+
+
+
 class FluxTermCollector(pymbolic.mapper.collector.TermCollector,
         FluxIdentityMapperMixin):
     pass
+
+
+
 
 class FluxAllDependencyMapper(FluxDependencyMapper):
     def map_normal(self, expr):
@@ -330,6 +345,9 @@ class FluxAllDependencyMapper(FluxDependencyMapper):
 
     def map_penalty_term(self, expr):
         return set([expr])
+
+
+
 
 class FluxNormalizationMapper(pymbolic.mapper.collector.TermCollector,
         FluxIdentityMapperMixin):
@@ -342,16 +360,25 @@ class FluxNormalizationMapper(pymbolic.mapper.collector.TermCollector,
         else:
             return expr
 
+
+
+
 class FluxCCFMapper(pymbolic.mapper.constant_folder.CommutativeConstantFoldingMapper,
         FluxIdentityMapperMixin):
     def is_constant(self, expr):
         return not bool(FluxAllDependencyMapper()(expr))
+
+
+
 
 class FluxExpandMapper(pymbolic.mapper.expander.ExpandMapper,
         FluxIdentityMapperMixin):
     def __init__(self):
         pymbolic.mapper.expander.ExpandMapper.__init__(self,
                 FluxNormalizationMapper())
+
+
+
 
 class FluxFlipper(FluxIdentityMapper):
     def map_normal(self, expr):
@@ -360,7 +387,23 @@ class FluxFlipper(FluxIdentityMapper):
     def map_field_component(self, expr):
         return expr.__class__(expr.index, not expr.is_local)
 
-        
+
+
+
+
+class FluxFlopCounter(pymbolic.mapper.flop_counter.FlopCounter):
+    def map_normal(self, expr):
+        return 0
+
+    def map_field_component(self, expr):
+        return 0
+
+    def map_if_positive(self, expr):
+        return self.rec(expr.criterion) + max(
+                self.rec(expr.then),
+                self.rec(expr.else_))
+
+
 
 
 
