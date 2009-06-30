@@ -43,9 +43,9 @@ class ExecutionMapper(CPUExecutionMapperBase):
         else:
             stats_callback = None
 
-        if insn.flop_count == 0:
+        if insn.flop_count() == 0:
             return [(name, self(expr))
-                for name, expr in zip(insn.names, insn.exprs)]
+                for name, expr in zip(insn.names, insn.exprs)], []
         else:
             return zip(insn.names, 
                     insn.compiled(self.discr)(self, stats_callback)
