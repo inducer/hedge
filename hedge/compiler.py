@@ -671,11 +671,16 @@ class OperatorCompilerBase(IdentityMapper):
         while unprocessed_assigns:
             my_assign = unprocessed_assigns.pop()
 
+            if my_assign.flop_count() == 0:
+                processed_assigns.append(my_assign)
+                continue
+
             my_deps = my_assign.get_dependencies()
             agg_candidates = [(i, other_assign)
                     for i, other_assign in enumerate(unprocessed_assigns)
                     if my_deps & other_assign.get_dependencies()
-                    and my_assign.priority == other_assign.priority]
+                    and my_assign.priority == other_assign.priority
+                    and other_assign.flop_count() > 0]
 
             did_work = False
 
