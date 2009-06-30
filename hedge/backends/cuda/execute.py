@@ -288,7 +288,7 @@ class ExecutionMapper(ExecutionMapperBase):
                 self.rec(insn.field),
                 *self.executor.mass_data(kernel, elgroup, insn.op_class)))], []
 
-    @memoize_method
+    # @memoize_method
     def map_elementwise_max(self, op, field_expr):
         from pycuda.compiler import SourceModule
         from pycuda.tools import dtype_to_ctype
@@ -299,7 +299,6 @@ class ExecutionMapper(ExecutionMapperBase):
         field = self.rec(field_expr)
 	order = discr.given.order()
 	nodes_per_el = TE(order).node_count()
-        nodes_per_el_rec = 1 / nodes_per_el
 	aligned_floats = discr.given.microblock.aligned_floats
 
         # Set block_size and make sure, that block_size is divisible by
@@ -320,27 +319,24 @@ class ExecutionMapper(ExecutionMapperBase):
 
         mod = SourceModule("""
 	#define NODES_PER_EL %(nodes_per_el)d
-        #define NODES_PER_EL_REC %(nodes_per_el_rec)d
         #define MAX_EXPR %(max_expr)s
-        #define ALIGNED_FLOATS blockDim.x
+        #define BLOCK_SIZE %(block_size)d
 
 	typedef %(value_type)s value_type;
 
 	__global__ void elwise_max(value_type *field)
 	{
-            int idx = ALIGNED_FLOATS * threadIdx.y + threadIdx.x;
-	    int element_base_idx = ALIGNED_FLOATS * threadIdx.y +
-                                   threadIdx.x * NODES_PER_EL_REC;
-            int own_value = field[idx];
+            int idx = blockIdx.x * BLOCK_SIZE + blockDim.x * threadIdx.y + threadIdx.x;
+	    int element_base_idx = blockIdx.x * BLOCK_SIZE + blockDim.x * threadIdx.y + 
+                (threadIdx.x / NODES_PER_EL) * NODES_PER_EL;
 
 	    for (int i=0; i<NODES_PER_EL; i++)
-	      own_value = MAX_EXPR(own_value, field[element_base_idx+i]);
-            field[idx] = own_value;
+	      field[idx] = MAX_EXPR(field[idx], field[element_base_idx+i]);
 	}
 	"""% {
 	"nodes_per_el": nodes_per_el,
-        "nodes_per_el_rec": nodes_per_el_rec,
 	"max_expr": max_expr,
+        "block_size": block_size,
 	"value_type": dtype_to_ctype(field.dtype),
 	})
 
