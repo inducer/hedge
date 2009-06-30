@@ -321,22 +321,28 @@ class ExecutionMapper(ExecutionMapperBase):
 	#define NODES_PER_EL %(nodes_per_el)d
         #define MAX_EXPR %(max_expr)s
         #define BLOCK_SIZE %(block_size)d
+        #define ALIGNED_FLOATS %(aligned_floats)d
 
 	typedef %(value_type)s value_type;
 
 	__global__ void elwise_max(value_type *field)
 	{
-            int idx = blockIdx.x * BLOCK_SIZE + blockDim.x * threadIdx.y + threadIdx.x;
-	    int element_base_idx = blockIdx.x * BLOCK_SIZE + blockDim.x * threadIdx.y + 
+            int idx = blockIdx.x * BLOCK_SIZE + 
+                ALIGNED_FLOATS * threadIdx.y + threadIdx.x;
+	    int element_base_idx = blockIdx.x * BLOCK_SIZE + 
+                ALIGNED_FLOATS * threadIdx.y + 
                 (threadIdx.x / NODES_PER_EL) * NODES_PER_EL;
 
+            float own_value = field[idx];
 	    for (int i=0; i<NODES_PER_EL; i++)
-	      field[idx] = MAX_EXPR(field[idx], field[element_base_idx+i]);
+	      own_value = MAX_EXPR(own_value, field[element_base_idx+i]);
+            field[idx] = own_value;
 	}
 	"""% {
 	"nodes_per_el": nodes_per_el,
 	"max_expr": max_expr,
         "block_size": block_size,
+        "aligned_floats": aligned_floats,
 	"value_type": dtype_to_ctype(field.dtype),
 	})
 
