@@ -61,7 +61,7 @@ class Assign(Instruction):
 
     @memoize_method
     def flop_count(self):
-        from pymbolic.mapper.flop_counter import FlopCounter
+        from hedge.optemplate import FlopCounter
         return sum(FlopCounter()(expr) for expr in self.exprs)
 
     def get_assignees(self):
@@ -72,10 +72,15 @@ class Assign(Instruction):
             return self._dependencies
         except:
             from operator import or_
-            self._dependencies = reduce(
+            deps = reduce(
                     or_, (self.dep_mapper_factory()(expr) 
                     for expr in self.exprs))
-            return self._dependencies
+
+            from pymbolic.primitives import Variable
+            deps -= set(Variable(name) for name in self.names)
+
+            self._dependencies = deps
+            return deps
 
     def __str__(self):
         comment = self.comment
@@ -215,7 +220,11 @@ def dot_dataflow_graph(code, max_node_label_length=30):
     for num, insn in enumerate(code.instructions):
         node_name = "node%d" % num
         node_names[insn] = node_name
-        node_label = repr(str(insn))[1:-1][:max_node_label_length]
+        node_label = str(insn).replace("\n", "\\l")+"\\l"
+
+        if max_node_label_length is not None:
+            node_label = node_label[:max_node_label_length]
+
         result.append("%s [ label=\"p%d: %s\" shape=box ];" % (
             node_name, insn.priority, node_label))
 
@@ -268,7 +277,8 @@ class Code(object):
                     i += 1
                     continue
 
-                open(dot_name, "w").write(dot_dataflow_graph(self))
+                open(dot_name, "w").write(
+                        dot_dataflow_graph(self, max_node_label_length=None))
                 break
 
 
@@ -484,7 +494,9 @@ class OperatorCompilerBase(IdentityMapper):
         from hedge.optemplate import \
                 DiffOperatorBase, \
                 MassOperatorBase, \
-                FluxExchangeOperator
+                FluxExchangeOperator, \
+                OperatorBinding, \
+                Field
         if isinstance(expr.op, DiffOperatorBase):
             return self.map_diff_op_binding(expr)
         elif isinstance(expr.op, MassOperatorBase):
@@ -492,7 +504,11 @@ class OperatorCompilerBase(IdentityMapper):
         elif isinstance(expr.op, FluxExchangeOperator):
             return self.map_flux_exchange_op_binding(expr)
         else:
-            return IdentityMapper.map_operator_binding(self, expr)
+            field_var = self.assign_to_new_var(
+                    self.rec(expr.field))
+            result_var = self.assign_to_new_var(
+                    OperatorBinding(expr.op, field_var))
+            return result_var
 
     def map_diff_op_binding(self, expr):
         try:
@@ -628,11 +644,15 @@ class OperatorCompilerBase(IdentityMapper):
             return result
 
         def aggregate_two_assignments(ass_1, ass_2):
+            names = ass_1.names+ass_2.names
+
+            from pymbolic.primitives import Variable
+            deps = (ass_1.get_dependencies() | ass_2.get_dependencies()) \
+                    - set(Variable(name) for name in names)
+
             return Assign(
-                    names=ass_1.names+ass_2.names,
-                    exprs=ass_1.exprs+ass_2.exprs,
-                    _dependencies=
-                    ass_1.get_dependencies() | ass_2.get_dependencies(),
+                    names=names, exprs=ass_1.exprs+ass_2.exprs,
+                    _dependencies=deps,
                     priority=max(ass_1.priority, ass_2.priority))
 
         # main aggregation pass -----------------------------------------------
@@ -707,6 +727,7 @@ class OperatorCompilerBase(IdentityMapper):
                     if not unsatisfied_deps:
                         ordered_names_exprs.append((name, expr))
                         scheduled_one = True
+                        available_names.add(name)
                         del names_exprs_deps[i]
                         break
 

@@ -28,6 +28,7 @@ import pymbolic.mapper.stringifier
 import pymbolic.mapper.evaluator
 import pymbolic.mapper.dependency
 import pymbolic.mapper.constant_folder
+import pymbolic.mapper.flop_counter
 import hedge.mesh
 
 
@@ -41,8 +42,7 @@ def make_common_subexpression(fields):
 
 
 
-class Field(pymbolic.primitives.Variable):
-    pass
+Field = pymbolic.primitives.Variable
 
 
 
@@ -616,6 +616,15 @@ class DependencyMapper(
 
     def map_normal_component(self, expr):
         return set()
+
+
+
+class FlopCounter(
+        CombineMapperMixin,
+        pymbolic.mapper.flop_counter.FlopCounter):
+    def map_operator_binding(self, expr):
+        return self.rec(expr.field)
+
 
 
 

@@ -30,10 +30,11 @@ from hedge.backends.vector_expr import CompiledVectorExpressionBase
 class CompiledVectorExpression(CompiledVectorExpressionBase):
     elementwise_mod = codepy.elementwise
 
-    def __init__(self, vec_exprs, 
-            is_vector_func, result_dtype_getter, 
+    def __init__(self, vec_exprs, vec_names,
+            is_vector_func, result_dtype_getter,
             toolchain=None):
-        CompiledVectorExpressionBase.__init__(self, vec_exprs,
+        CompiledVectorExpressionBase.__init__(self,
+                vec_exprs, vec_names,
                 is_vector_func, result_dtype_getter)
 
         self.toolchain = toolchain
@@ -44,8 +45,10 @@ class CompiledVectorExpression(CompiledVectorExpressionBase):
                 toolchain=self.toolchain)
 
     def __call__(self, evaluate_subexpr, stats_callback=None):
-        vectors = [evaluate_subexpr(vec_expr) for vec_expr in self.vector_exprs]
-        scalars = [evaluate_subexpr(scal_expr) for scal_expr in self.scalar_exprs]
+        vectors = [evaluate_subexpr(vec_expr) 
+                for vec_expr in self.vector_deps]
+        scalars = [evaluate_subexpr(scal_expr) 
+                for scal_expr in self.scalar_deps]
 
         from pytools import single_valued
         shape = single_valued(vec.shape for vec in vectors)

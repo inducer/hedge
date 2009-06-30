@@ -148,7 +148,7 @@ class ExecutionMapper(ExecutionMapperBase):
                         n*insn.flop_count())
                 self.executor.discr.gmem_bytes_vector_math.add(
                         self.executor.discr.given.float_size() * n *
-                        (1+len(vec_expr.vector_exprs)))
+                        (len(vec_expr.vector_deps)+len(insn.exprs)))
         else:
             stats_callback = None
 
@@ -319,7 +319,7 @@ class VectorExprAssign(Assign):
 
         from hedge.backends.cuda.vector_expr import CompiledVectorExpression
         return CompiledVectorExpression(
-                self.exprs,
+                self.exprs, self.names,
                 is_vector_func=lambda expr: True,
                 result_dtype_getter=result_dtype_getter,
                 allocator=discr.pool.allocate)

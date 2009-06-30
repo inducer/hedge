@@ -32,9 +32,11 @@ from hedge.backends.vector_expr import CompiledVectorExpressionBase
 class CompiledVectorExpression(CompiledVectorExpressionBase):
     elementwise_mod = pycuda.elementwise
 
-    def __init__(self, vec_exprs, is_vector_func, result_dtype_getter, 
+    def __init__(self, vec_exprs, vec_names,
+            is_vector_func, result_dtype_getter, 
             stream=None, allocator=drv.mem_alloc):
-        CompiledVectorExpressionBase.__init__(self, vec_exprs,
+        CompiledVectorExpressionBase.__init__(self, 
+                vec_exprs, vec_names,
                 is_vector_func, result_dtype_getter)
 
         self.stream = stream
@@ -45,8 +47,10 @@ class CompiledVectorExpression(CompiledVectorExpressionBase):
         return get_elwise_kernel(args, instructions, name="vector_expression")
 
     def __call__(self, evaluate_subexpr, stats_callback=None):
-        vectors = [evaluate_subexpr(vec_expr) for vec_expr in self.vector_exprs]
-        scalars = [evaluate_subexpr(scal_expr) for scal_expr in self.scalar_exprs]
+        vectors = [evaluate_subexpr(vec_expr) 
+                for vec_expr in self.vector_deps]
+        scalars = [evaluate_subexpr(scal_expr) 
+                for scal_expr in self.scalar_deps]
 
         from pytools import single_valued
         shape = single_valued(vec.shape for vec in vectors)

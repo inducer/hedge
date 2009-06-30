@@ -33,6 +33,14 @@ from pytools import memoize_method, Record
 class DefaultingSubstitutionMapper(
         pymbolic.mapper.substitutor.SubstitutionMapper,
         hedge.optemplate.IdentityMapperMixin):
+    def map_operator_binding(self, expr):
+        result = self.subst_func(expr)
+        if result is None:
+            raise ValueError("operator binding may not survive "
+                    "vector expression subsitution")
+
+        return result
+
     def handle_unsupported_expression(self, expr):
         result = self.subst_func(expr)
         if result is not None:
@@ -47,12 +55,16 @@ class DefaultingSubstitutionMapper(
 
 class ConstantGatherMapper(
         hedge.optemplate.CombineMapper,
-        hedge.optemplate.CollectorMixin):
+        hedge.optemplate.CollectorMixin,
+        hedge.optemplate.OperatorReducerMixin):
     def map_algebraic_leaf(self, expr):
         return set()
 
     def map_constant(self, expr):
         return set([expr])
+
+    def map_operator(self, expr):
+        return set()
 
 
 
@@ -64,36 +76,45 @@ class KernelRecord(Record):
 
 
 class CompiledVectorExpressionBase(object):
-    def __init__(self, vec_exprs, is_vector_func, result_dtype_getter):
+    def __init__(self, vec_exprs, vec_names, is_vector_func, result_dtype_getter):
+        assert len(vec_exprs) == len(vec_names)
+
         self.vec_exprs = vec_exprs
+        self.vec_names = vec_names
+
         self.is_vector_func = is_vector_func
         self.result_dtype_getter = result_dtype_getter
 
         from hedge.optemplate import DependencyMapper
         from operator import or_
+        from pymbolic import var
+
         dep_mapper = DependencyMapper(
                 include_subscripts=True,
                 include_lookups=True,
                 include_calls="descend_args")
         deps = reduce(or_, (dep_mapper(ve) for ve in vec_exprs))
 
-        self.vector_exprs = [dep for dep in deps if is_vector_func(dep)]
-        self.scalar_exprs = [dep for dep in deps if not is_vector_func(dep)]
-        self.vector_names = ["v%d" % i for i in range(len(self.vector_exprs))]
-        self.scalar_names = ["s%d" % i for i in range(len(self.scalar_exprs))]
+        deps -= set(var(vn) for vn in vec_names)
+
+        self.vector_deps = [dep for dep in deps if is_vector_func(dep)]
+        self.scalar_deps = [dep for dep in deps if not is_vector_func(dep)]
+        self.vector_dep_names = ["v%d" % i for i in range(len(self.vector_deps))]
+        self.scalar_dep_names = ["s%d" % i for i in range(len(self.scalar_deps))]
 
         self.constant_dtypes = [
                 numpy.array(const).dtype
                 for ve in vec_exprs
                 for const in ConstantGatherMapper()(ve)]
 
-        from pymbolic import var
         var_i = var("i")
         subst_map = dict(
-                list(zip(self.vector_exprs, [var(vecname)[var_i]
-                    for vecname in self.vector_names]))
-                +list(zip(self.scalar_exprs,
-                    [var(scaname) for scaname in self.scalar_names])))
+                list(zip(self.vector_deps, [var(vecname)[var_i]
+                    for vecname in self.vector_dep_names]))
+                +list(zip(self.scalar_deps,
+                    [var(scaname) for scaname in self.scalar_dep_names]))
+                +[(var(vn), var(vn)[var_i]) for vn in vec_names]
+                )
 
         def subst_func(expr):
             try:
@@ -113,36 +134,30 @@ class CompiledVectorExpressionBase(object):
         elwise = self.elementwise_mod
 
         result_dtype = self.result_dtype_getter(
-                dict(zip(self.vector_exprs, vector_dtypes)),
-                dict(zip(self.scalar_exprs, scalar_dtypes)),
+                dict(zip(self.vector_deps, vector_dtypes)),
+                dict(zip(self.scalar_deps, scalar_dtypes)),
                 self.constant_dtypes)
 
         from hedge.tools import is_obj_array
-        args = [elwise.VectorArg(result_dtype, "_result%d" % i)
-                for i in range(len(self.exprs))]
+        args = [elwise.VectorArg(result_dtype, vn)
+                for vn in self.vec_names]
 
         code_mapper = CCodeMapper()
         expr_codes = [code_mapper(e, PREC_NONE) for e in self.exprs]
+
+        # common subexpressions have been taken care of by the compiler
+        assert not code_mapper.cses
+
         code_lines = [
-            "%s = %s;" % (
-                get_c_declarator(
-                    "%s%d" % (code_mapper.cse_prefix, i),
-                    False, result_dtype),
-                cse)
-            for i, cse in enumerate(code_mapper.cses)
-            ] + [
-            "_result%d[i] = %s;" % (i, ec)
-            for i, ec in enumerate(expr_codes)]
+            "%s[i] = %s;" % (vn, ec)
+            for vn, ec in zip(self.vec_names, expr_codes)]
 
         args.extend(
                 elwise.VectorArg(dtype, name)
-                for dtype, name in zip(vector_dtypes, self.vector_names))
+                for dtype, name in zip(vector_dtypes, self.vector_dep_names))
         args.extend(
                 elwise.ScalarArg(dtype, name)
-                for dtype, name in zip(scalar_dtypes, self.scalar_names))
-
-        #print ",".join(args)
-        #print "\n".join(code_lines)
+                for dtype, name in zip(scalar_dtypes, self.scalar_dep_names))
 
         return KernelRecord(
                 kernel=self.make_kernel_internal(args, "\n".join(code_lines)),
