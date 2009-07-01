@@ -142,7 +142,7 @@ class CompiledVectorExpressionBase(object):
         args = [elwise.VectorArg(result_dtype, vn)
                 for vn in self.vec_names]
 
-        code_mapper = CCodeMapper()
+        code_mapper = CCodeMapper(constant_mapper=lambda c: "double(%r)" % c)
         expr_codes = [code_mapper(e, PREC_NONE) for e in self.exprs]
 
         # common subexpressions have been taken care of by the compiler
