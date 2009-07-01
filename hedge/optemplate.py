@@ -30,6 +30,7 @@ import pymbolic.mapper.dependency
 import pymbolic.mapper.constant_folder
 import pymbolic.mapper.flop_counter
 import hedge.mesh
+from pymbolic.mapper import CSECachingMapperMixin
 
 
 
@@ -707,10 +708,13 @@ class BoundOpMapperMixin(object):
 
 
 
-class EmptyFluxKiller(IdentityMapper):
+class EmptyFluxKiller(CSECachingMapperMixin, IdentityMapper):
     def __init__(self, discr):
         IdentityMapper.__init__(self)
         self.discr = discr
+
+    map_common_subexpression_uncached = \
+            IdentityMapper.map_common_subexpression
 
     def map_operator_binding(self, expr):
         if (isinstance(expr.op, (
@@ -727,7 +731,10 @@ class EmptyFluxKiller(IdentityMapper):
 
 
         
-class OperatorBinder(IdentityMapper):
+class OperatorBinder(CSECachingMapperMixin, IdentityMapper):
+    map_common_subexpression_uncached = \
+            IdentityMapper.map_common_subexpression
+
     def map_product(self, expr):
         if len(expr.children) == 0:
             return expr
@@ -802,8 +809,10 @@ class _InnerInverseMassContractor(pymbolic.mapper.RecursiveMapper):
 
 
         
-class InverseMassContractor(IdentityMapper):
+class InverseMassContractor(CSECachingMapperMixin, IdentityMapper):
     # assumes all operators to be bound
+    map_common_subexpression_uncached = \
+            IdentityMapper.map_common_subexpression
 
     def map_boundary_pair(self, bp):
         return BoundaryPair(self.rec(bp.field), self.rec(bp.bfield), bp.tag)
@@ -820,13 +829,16 @@ class InverseMassContractor(IdentityMapper):
 
 
 # BC-to-flux rewriting --------------------------------------------------------
-class BCToFluxRewriter(IdentityMapper):
+class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
     """Operates on L{FluxOperator} instances bound to L{BoundaryPair}s. If the
     boundary pair's C{bfield} is an expression of what's available in the
     C{field}, we can avoid fetching the data for the explicit boundary
     condition and just substitute the C{bfield} expression into the flux. This
     mapper does exactly that.  
     """
+
+    map_common_subexpression_uncached = \
+            IdentityMapper.map_common_subexpression
 
     def map_operator_binding(self, expr):
         if not (isinstance(expr.op, FluxOperator)
@@ -989,7 +1001,10 @@ class CollectorMixin(LocalOpReducerMixin, FluxOpReducerMixin):
 
 
 
-class FluxCollector(CollectorMixin, CombineMapper):
+class FluxCollector(CSECachingMapperMixin, CollectorMixin, CombineMapper):
+    map_common_subexpression_uncached = \
+            CombineMapper.map_common_subexpression
+
     def map_operator_binding(self, expr):
         if isinstance(expr.op, (
             FluxOperatorBase)):
@@ -1009,9 +1024,12 @@ class BoundaryTagCollector(CollectorMixin, CombineMapper):
 
 
 
-class BoundOperatorCollector(CollectorMixin, CombineMapper):
+class BoundOperatorCollector(CSECachingMapperMixin, CollectorMixin, CombineMapper):
     def __init__(self, op_class):
         self.op_class = op_class
+
+    map_common_subexpression_uncached = \
+            CombineMapper.map_common_subexpression
 
     def map_operator_binding(self, expr):
         if isinstance(expr.op, self.op_class):
