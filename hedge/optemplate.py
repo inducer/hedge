@@ -632,8 +632,13 @@ class FlopCounter(
 class CommutativeConstantFoldingMapper(
         pymbolic.mapper.constant_folder.CommutativeConstantFoldingMapper,
         IdentityMapperMixin):
+
+    def __init__(self):
+        pymbolic.mapper.constant_folder.CommutativeConstantFoldingMapper.__init__(self)
+        self.dep_mapper = DependencyMapper()
+
     def is_constant(self, expr):
-        return not bool(DependencyMapper()(expr))
+        return not bool(self.dep_mapper(expr))
 
 
 
