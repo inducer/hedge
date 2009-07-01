@@ -104,6 +104,9 @@ def main():
         from hedge.pde import EulerOperator
         op = EulerOperator(dimensions=2, gamma=1.4, bc=vortex)
 
+        summe = 0
+        file = open("benchmark_max.dat", "w")
+
         euler_ex = op.bind(discr)
 
         max_eigval = [0]
@@ -192,6 +195,9 @@ def main():
 
         true_fields = vortex.volume_interpolant(t, discr)
         eoc_rec.add_data_point(order, discr.norm(fields-true_fields))
+        file = open("benchmark_max.dat", "r")
+        for line in file: summe = summe+float(line)
+        print "time for elementwise max in seconds:", summe
         print
         print eoc_rec.pretty_print("P.Deg.", "L2 Error")
 
