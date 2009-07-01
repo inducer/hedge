@@ -266,7 +266,7 @@ class Code(object):
         self.instructions = instructions
         self.result = result
 
-        if True:
+        if False:
             from hedge.tools import get_rank
             from hedge.compiler import dot_dataflow_graph
             i = 0
@@ -390,12 +390,14 @@ class OperatorCompilerBase(IdentityMapper):
         self.assigned_var_count = 0
         self.expr_to_var = {}
 
-    def dep_mapper_factory(self):
         from hedge.optemplate import DependencyMapper
-        return DependencyMapper(
+        self.dep_mapper = DependencyMapper(
                 include_operator_bindings=False,
                 include_subscripts=False,
                 include_calls="descend_args")
+
+    def dep_mapper_factory(self):
+        return self.dep_mapper
 
     def get_contained_fluxes(self, expr):
         """Recursively enumerate all flux expressions in the expression tree
