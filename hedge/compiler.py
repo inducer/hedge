@@ -676,21 +676,30 @@ class OperatorCompilerBase(IdentityMapper):
                 lambda insn: isinstance(insn, Assign),
                 instructions)
 
-        processed_assigns = []
+        # filter out zero-flop-count assigns--no need to bother with those
+        processed_assigns, unprocessed_assigns = partition(
+                lambda ass: ass.flop_count() == 0,
+                unprocessed_assigns)
 
+        # greedy aggregation
         while unprocessed_assigns:
             my_assign = unprocessed_assigns.pop()
 
-            if my_assign.flop_count() == 0:
-                processed_assigns.append(my_assign)
-                continue
-
             my_deps = my_assign.get_dependencies()
-            agg_candidates = [(i, other_assign)
-                    for i, other_assign in enumerate(unprocessed_assigns)
-                    if my_deps & other_assign.get_dependencies()
-                    and my_assign.priority == other_assign.priority
-                    and other_assign.flop_count() > 0]
+            my_assignees = set(Variable(assignee) 
+                    for assignee in my_assign.get_assignees())
+
+            agg_candidates = []
+            for i, other_assign in enumerate(unprocessed_assigns):
+                other_deps = other_assign.get_dependencies()
+                other_assignees = set(Variable(assignee) 
+                        for assignee in other_assign.get_assignees())
+
+                if ((my_deps & other_deps
+                        or my_deps & other_assignees
+                        or other_deps & my_assignees)
+                        and my_assign.priority == other_assign.priority):
+                    agg_candidates.append((i, other_assign))
 
             did_work = False
 
