@@ -633,17 +633,25 @@ class OperatorCompilerBase(IdentityMapper):
         from pymbolic.primitives import Variable
 
         # agregation helpers --------------------------------------------------
+        origins_set_cache = {}
         def get_complete_origins_set(insn, skip_levels=0):
-            result = set()
-            for dep in insn.get_dependencies():
-                if isinstance(dep, Variable):
-                    dep_origin = origins_map.get(dep.name, None)
-                    if dep_origin is not None:
-                        if skip_levels <= 0:
-                            result.add(dep_origin)
-                        result |= get_complete_origins_set(dep_origin, skip_levels-1)
+            if skip_levels < 0:
+                skip_levels = 0
 
-            return result
+            try:
+                return origins_set_cache[insn, skip_levels]
+            except KeyError:
+                result = set()
+                for dep in insn.get_dependencies():
+                    if isinstance(dep, Variable):
+                        dep_origin = origins_map.get(dep.name, None)
+                        if dep_origin is not None:
+                            if skip_levels <= 0:
+                                result.add(dep_origin)
+                            result |= get_complete_origins_set(dep_origin, skip_levels-1)
+
+                origins_set_cache[insn, skip_levels] = result
+                return result
 
         def aggregate_two_assignments(ass_1, ass_2):
             names = ass_1.names+ass_2.names
