@@ -30,12 +30,11 @@ from hedge.backends.vector_expr import CompiledVectorExpressionBase
 class CompiledVectorExpression(CompiledVectorExpressionBase):
     elementwise_mod = codepy.elementwise
 
-    def __init__(self, vec_exprs, vec_names,
+    def __init__(self, vec_expr_info_list,
             is_vector_func, result_dtype_getter,
             toolchain=None):
         CompiledVectorExpressionBase.__init__(self,
-                vec_exprs, vec_names,
-                is_vector_func, result_dtype_getter)
+                vec_expr_info_list, is_vector_func, result_dtype_getter)
 
         self.toolchain = toolchain
 
@@ -57,10 +56,9 @@ class CompiledVectorExpression(CompiledVectorExpressionBase):
                 tuple(v.dtype for v in vectors),
                 tuple(s.dtype for s in scalars))
 
-        assert self.exprs
         from hedge.tools import make_obj_array
         results = [numpy.empty(shape, kernel_rec.result_dtype)
-                for expr in self.exprs]
+                for vei in self.result_vec_expr_info_list]
 
         size = results[0].size
         args = (results+vectors+scalars)

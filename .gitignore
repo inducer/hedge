@@ -38,3 +38,4 @@ MANIFEST
 doc/manual/.build
 *.pyd
 *.so
+*.eps

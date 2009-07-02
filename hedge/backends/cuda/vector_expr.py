@@ -32,12 +32,11 @@ from hedge.backends.vector_expr import CompiledVectorExpressionBase
 class CompiledVectorExpression(CompiledVectorExpressionBase):
     elementwise_mod = pycuda.elementwise
 
-    def __init__(self, vec_exprs, vec_names,
+    def __init__(self, vec_expr_info_list,
             is_vector_func, result_dtype_getter, 
             stream=None, allocator=drv.mem_alloc):
         CompiledVectorExpressionBase.__init__(self, 
-                vec_exprs, vec_names,
-                is_vector_func, result_dtype_getter)
+                vec_expr_info_list, is_vector_func, result_dtype_getter)
 
         self.stream = stream
         self.allocator = allocator
@@ -62,7 +61,7 @@ class CompiledVectorExpression(CompiledVectorExpressionBase):
         from hedge.tools import make_obj_array
         results = [gpuarray.empty(
             shape, kernel_rec.result_dtype, self.allocator)
-            for expr in self.exprs]
+            for expr in self.result_vec_expr_info_list]
 
         size = results[0].size
         kernel_rec.kernel.set_block_shape(*results[0]._block)

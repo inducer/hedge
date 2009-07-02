@@ -75,12 +75,15 @@ class KernelRecord(Record):
 
 
 
-class CompiledVectorExpressionBase(object):
-    def __init__(self, vec_exprs, vec_names, is_vector_func, result_dtype_getter):
-        assert len(vec_exprs) == len(vec_names)
+class VectorExpressionInfo(Record):
+    __slots__ = ["name", "expr", "do_not_return"]
 
-        self.vec_exprs = vec_exprs
-        self.vec_names = vec_names
+
+
+
+class CompiledVectorExpressionBase(object):
+    def __init__(self, vec_expr_info_list, is_vector_func, result_dtype_getter):
+        #self.vec_expr_info_list = vec_expr_info_list
 
         self.is_vector_func = is_vector_func
         self.result_dtype_getter = result_dtype_getter
@@ -93,9 +96,9 @@ class CompiledVectorExpressionBase(object):
                 include_subscripts=True,
                 include_lookups=True,
                 include_calls="descend_args")
-        deps = reduce(or_, (dep_mapper(ve) for ve in vec_exprs))
+        deps = reduce(or_, (dep_mapper(vei.expr) for vei in vec_expr_info_list))
 
-        deps -= set(var(vn) for vn in vec_names)
+        deps -= set(var(vei.name) for vei in vec_expr_info_list)
 
         self.vector_deps = [dep for dep in deps if is_vector_func(dep)]
         self.scalar_deps = [dep for dep in deps if not is_vector_func(dep)]
@@ -104,8 +107,8 @@ class CompiledVectorExpressionBase(object):
 
         self.constant_dtypes = [
                 numpy.array(const).dtype
-                for ve in vec_exprs
-                for const in ConstantGatherMapper()(ve)]
+                for vei in vec_expr_info_list
+                for const in ConstantGatherMapper()(vei.expr)]
 
         var_i = var("i")
         subst_map = dict(
@@ -113,7 +116,9 @@ class CompiledVectorExpressionBase(object):
                     for vecname in self.vector_dep_names]))
                 +list(zip(self.scalar_deps,
                     [var(scaname) for scaname in self.scalar_dep_names]))
-                +[(var(vn), var(vn)[var_i]) for vn in vec_names]
+                +[(var(vei.name), var(vei.name)[var_i]) 
+                    for vei in vec_expr_info_list
+                    if not vei.do_not_return]
                 )
 
         def subst_func(expr):
@@ -122,9 +127,14 @@ class CompiledVectorExpressionBase(object):
             except KeyError:
                 return None
 
-        self.exprs = [
-                DefaultingSubstitutionMapper(subst_func)(ve)
-                for ve in vec_exprs]
+        self.vec_expr_info_list = [
+                vei.copy(expr=DefaultingSubstitutionMapper(subst_func)(vei.expr))
+                for vei in vec_expr_info_list]
+        self.result_vec_expr_info_list = [
+                vei for vei in vec_expr_info_list if not vei.do_not_return]
+    @memoize_method
+    def result_names(self):
+        return [rvei.name for rvei in self.result_vec_expr_info_list]
 
     @memoize_method
     def get_kernel(self, vector_dtypes, scalar_dtypes):
@@ -139,18 +149,33 @@ class CompiledVectorExpressionBase(object):
                 self.constant_dtypes)
 
         from hedge.tools import is_obj_array
-        args = [elwise.VectorArg(result_dtype, vn)
-                for vn in self.vec_names]
+        args = [elwise.VectorArg(result_dtype, vei.name)
+                for vei in self.vec_expr_info_list
+                if not vei.do_not_return]
 
-        code_mapper = CCodeMapper(constant_mapper=lambda c: "double(%r)" % c)
-        expr_codes = [code_mapper(e, PREC_NONE) for e in self.exprs]
+        def real_const_mapper(num):
+            r = repr(num)
+            if "." not in r:
+                return "double(%s)" % r
+            else:
+                return r
+
+        code_mapper = CCodeMapper(constant_mapper=real_const_mapper)
+
+        code_lines = []
+        for vei in self.vec_expr_info_list:
+            expr_code = code_mapper(vei.expr, PREC_NONE)
+            if vei.do_not_return:
+                from codepy.cgen import dtype_to_ctype
+                code_lines.append(
+                        "%s %s = %s;" % (
+                            dtype_to_ctype(result_dtype), vei.name, expr_code))
+            else:
+                code_lines.append(
+                        "%s[i] = %s;" % (vei.name, expr_code))
 
         # common subexpressions have been taken care of by the compiler
         assert not code_mapper.cses
-
-        code_lines = [
-            "%s[i] = %s;" % (vn, ec)
-            for vn, ec in zip(self.vec_names, expr_codes)]
 
         args.extend(
                 elwise.VectorArg(dtype, name)

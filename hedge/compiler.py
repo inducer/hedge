@@ -52,12 +52,19 @@ class Instruction(Record):
         raise NotImplementedError
 
 class Assign(Instruction):
-    # attributes: names, exprs, priority
+    # attributes: names, exprs, do_not_return, priority
+    # 
+    # do_not_return is a list of bools indicating whether the corresponding
+    # entry in names and exprs describes an expression that is not needed
+    # beyond this assignment
 
     comment = ""
 
     def __init__(self, names, exprs, **kwargs):
         Instruction.__init__(self, names=names, exprs=exprs, **kwargs)
+
+        if not hasattr(self, "do_not_return"):
+            self.do_not_return = [False] * len(names)
 
     @memoize_method
     def flop_count(self):
@@ -95,8 +102,13 @@ class Assign(Instruction):
 
             lines = []
             lines.append("{"+comment)
-            for n, e in zip(self.names, self.exprs):
-                lines.append("  %s <- %s" % (n, e))
+            for n, e, dnr  in zip(self.names, self.exprs, self.do_not_return):
+                if dnr:
+                    dnr_indicator = "-i"
+                else:
+                    dnr_indicator = ""
+
+                lines.append("  %s <%s- %s" % (n, dnr_indicator, e))
             lines.append("}")
             return "\n".join(lines)
 
@@ -475,7 +487,7 @@ class OperatorCompilerBase(IdentityMapper):
         # Then, put the toplevel expressions into variables as well.
         from hedge.tools import with_object_array_or_scalar
         result = with_object_array_or_scalar(self.assign_to_new_var, result)
-        return Code(self.aggregate_assignments(self.code), result)
+        return Code(self.aggregate_assignments(self.code, result), result)
 
     def get_var_name(self):
         new_name = self.prefix+str(self.assigned_var_count)
@@ -629,7 +641,7 @@ class OperatorCompilerBase(IdentityMapper):
         return FluxBatchAssign(names=names, fluxes=fluxes, kind=kind)
 
     # assignment aggregration pass --------------------------------------------
-    def aggregate_assignments(self, instructions):
+    def aggregate_assignments(self, instructions, result):
         from pymbolic.primitives import Variable
 
         # agregation helpers --------------------------------------------------
@@ -728,6 +740,17 @@ class OperatorCompilerBase(IdentityMapper):
             if not did_work:
                 processed_assigns.append(my_assign)
 
+        externally_used_names = set(
+                expr
+                for insn in processed_assigns+other_insns
+                for expr in insn.get_dependencies())
+
+        from hedge.tools import is_obj_array
+        if is_obj_array(result):
+            externally_used_names |= set(expr for expr in result)
+        else:
+            externally_used_names |= set([result])
+
         def schedule_and_finalize_assignment(ass):
             dep_mapper = self.dep_mapper_factory()
 
@@ -761,6 +784,8 @@ class OperatorCompilerBase(IdentityMapper):
             return self.finalize_multi_assign(
                     names=[name for name, expr in ordered_names_exprs],
                     exprs=[expr for name, expr in ordered_names_exprs],
+                    do_not_return=[Variable(name) not in externally_used_names
+                        for name, expr in ordered_names_exprs],
                     priority=ass.priority)
 
         return [schedule_and_finalize_assignment(ass)

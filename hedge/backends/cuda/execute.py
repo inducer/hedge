@@ -156,9 +156,9 @@ class ExecutionMapper(ExecutionMapperBase):
             return [(name, self(expr))
                 for name, expr in zip(insn.names, insn.exprs)], []
         else:
-            return zip(insn.names, 
-                    insn.compiled(self.discr)(self, stats_callback)
-                    ), []
+            compiled = insn.compiled(self.discr)
+            return zip(compiled.result_names(),
+                    compiled(self, stats_callback)), []
 
     def exec_diff_batch_assign(self, insn):
         field = self.rec(insn.field)
@@ -317,9 +317,15 @@ class VectorExprAssign(Assign):
                     + scalar_dtype_map.values()
                     + const_dtypes)
 
+        from hedge.backends.vector_expr import VectorExpressionInfo
         from hedge.backends.cuda.vector_expr import CompiledVectorExpression
         return CompiledVectorExpression(
-                self.exprs, self.names,
+                [VectorExpressionInfo(
+                    name=name,
+                    expr=expr,
+                    do_not_return=dnr)
+                    for name, expr, dnr in zip(
+                        self.names, self.exprs, self.do_not_return)],
                 is_vector_func=lambda expr: True,
                 result_dtype_getter=result_dtype_getter,
                 allocator=discr.pool.allocate)
@@ -378,8 +384,9 @@ class OperatorCompiler(OperatorCompilerBase):
         return CUDAFluxBatchAssign(names=names, fluxes=fluxes, kind=kind,
                 dep_mapper_factory=self.dep_mapper_factory)
 
-    def finalize_multi_assign(self, names, exprs, priority):
+    def finalize_multi_assign(self, names, exprs, do_not_return, priority):
         return VectorExprAssign(names=names, exprs=exprs,
+                do_not_return=do_not_return,
                 dep_mapper_factory=self.dep_mapper_factory,
                 priority=priority)
 

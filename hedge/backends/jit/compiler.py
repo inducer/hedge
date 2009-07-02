@@ -58,9 +58,15 @@ class VectorExprAssign(Assign):
         else:
             toolchain = discr.toolchain
 
+        from hedge.backends.vector_expr import VectorExpressionInfo
         from hedge.backends.jit.vector_expr import CompiledVectorExpression
         return CompiledVectorExpression(
-                self.exprs, self.names,
+                [VectorExpressionInfo(
+                    name=name,
+                    expr=expr,
+                    do_not_return=dnr)
+                    for name, expr, dnr in zip(
+                        self.names, self.exprs, self.do_not_return)],
                 is_vector_func=lambda expr: True,
                 result_dtype_getter=result_dtype_getter,
                 toolchain=toolchain)
@@ -223,7 +229,8 @@ class OperatorCompiler(OperatorCompilerBase):
                 dep_mapper_factory=self.dep_mapper_factory)
 
     # vector math -------------------------------------------------------------
-    def finalize_multi_assign(self, names, exprs, priority):
-        return VectorExprAssign(names=names, exprs=exprs,
+    def finalize_multi_assign(self, names, exprs, do_not_return, priority):
+        return VectorExprAssign(names=names, exprs=exprs, 
+                do_not_return=do_not_return,
                 dep_mapper_factory=self.dep_mapper_factory,
                 priority=priority)

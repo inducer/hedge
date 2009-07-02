@@ -47,9 +47,9 @@ class ExecutionMapper(CPUExecutionMapperBase):
             return [(name, self(expr))
                 for name, expr in zip(insn.names, insn.exprs)], []
         else:
-            return zip(insn.names, 
-                    insn.compiled(self.discr)(self, stats_callback)
-                    ), []
+            compiled = insn.compiled(self.discr)
+            return zip(compiled.result_names(),
+                    compiled(self, stats_callback)), []
 
     def exec_flux_batch_assign(self, insn):
         from hedge.backends.jit.compiler import BoundaryFluxKind
