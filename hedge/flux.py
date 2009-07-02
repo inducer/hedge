@@ -392,6 +392,9 @@ class FluxFlipper(FluxIdentityMapper):
 
 
 class FluxFlopCounter(pymbolic.mapper.flop_counter.FlopCounter):
+    def map_penalty_term(self, expr):
+        return 0
+
     def map_normal(self, expr):
         return 0
 
@@ -402,6 +405,9 @@ class FluxFlopCounter(pymbolic.mapper.flop_counter.FlopCounter):
         return self.rec(expr.criterion) + max(
                 self.rec(expr.then),
                 self.rec(expr.else_))
+
+    def map_function_symbol(self, expr):
+        return 0
 
 
 
