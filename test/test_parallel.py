@@ -32,7 +32,7 @@ def run_convergence_test_advec(debug_output=False):
     from hedge.timestep import RK4TimeStepper
     from hedge.tools import EOCRecorder
     from math import sin, pi, sqrt
-    from hedge.pde import StrongAdvectionOperator
+    from hedge.models.advection import StrongAdvectionOperator
     from hedge.data import TimeDependentGivenFunction
     from hedge.visualization import SiloVisualizer
 

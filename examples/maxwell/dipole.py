@@ -103,9 +103,9 @@ def main(write_output=True, allow_features=None):
 
     from hedge.mesh import TAG_ALL, TAG_NONE
     if dims == 2:
-        from hedge.pde import TMMaxwellOperator as MaxwellOperator
+        from hedge.models.em import TMMaxwellOperator as MaxwellOperator
     else:
-        from hedge.pde import MaxwellOperator
+        from hedge.models.em import MaxwellOperator
 
     op = MaxwellOperator(
             epsilon, mu,

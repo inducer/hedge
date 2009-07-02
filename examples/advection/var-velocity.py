@@ -119,7 +119,7 @@ def main(write_output=True, flux_type_arg="lf"):
             TimeConstantGivenFunction, \
             TimeDependentGivenFunction, \
             GivenFunction
-    from hedge.pde import VariableCoefficientAdvectionOperator
+    from hedge.models.advection import VariableCoefficientAdvectionOperator
     op = VariableCoefficientAdvectionOperator(discr.dimensions,
         #advec_v=TimeDependentGivenFunction(
         #    TimeDependentVField()),

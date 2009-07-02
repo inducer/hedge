@@ -89,7 +89,7 @@ def main(write_output=True, flux_type_arg="upwind"):
             ConstantGivenFunction, \
             TimeConstantGivenFunction, \
             TimeDependentGivenFunction
-    from hedge.pde import StrongAdvectionOperator, WeakAdvectionOperator
+    from hedge.models.advection import StrongAdvectionOperator, WeakAdvectionOperator
     op = WeakAdvectionOperator(v, 
             inflow_u=TimeDependentGivenFunction(u_analytic),
             flux_type=flux_type_arg)

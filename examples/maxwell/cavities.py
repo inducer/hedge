@@ -39,7 +39,7 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
             CylindricalCavityMode, \
             RectangularWaveguideMode, \
             RectangularCavityMode
-    from hedge.pde import MaxwellOperator
+    from hedge.models.em import MaxwellOperator
 
     from hedge.backends import guess_run_context
     rcon = guess_run_context(allow_features)

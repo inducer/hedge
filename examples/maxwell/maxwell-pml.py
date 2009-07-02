@@ -113,8 +113,8 @@ def main(write_output=True):
 
     from hedge.mesh import TAG_ALL, TAG_NONE
     from hedge.data import GivenFunction, TimeHarmonicGivenFunction, TimeIntervalGivenFunction
-    from hedge.pde import \
-            MaxwellOperator, \
+    from hedge.models.em import MaxwellOperator
+    from hedge.models.pml import \
             AbarbanelGottliebPMLMaxwellOperator, \
             AbarbanelGottliebPMLTMMaxwellOperator, \
             AbarbanelGottliebPMLTEMaxwellOperator

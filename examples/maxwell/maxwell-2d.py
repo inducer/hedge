@@ -25,13 +25,7 @@ import numpy.linalg as la
 
 
 def main(write_output=True):
-    from hedge.element import TriangularElement
-    from hedge.timestep import RK4TimeStepper
-    from hedge.mesh import make_disk_mesh
-    from pylo import DB_VARTYPE_VECTOR
     from math import sqrt, pi, exp
-    from hedge.pde import TEMaxwellOperator, TMMaxwellOperator
-    from hedge.data import GivenFunction, TimeIntervalGivenFunction
 
     from hedge.backends import guess_run_context
     rcon = guess_run_context()
@@ -44,6 +38,7 @@ def main(write_output=True):
     cylindrical = False
     periodic = False
 
+    from hedge.mesh import make_disk_mesh
     mesh = make_disk_mesh(r=0.5)
 
     if rcon.is_head_rank:
@@ -76,12 +71,15 @@ def main(write_output=True):
         print "#elements=", len(mesh.elements)
 
     from hedge.mesh import TAG_ALL, TAG_NONE
+    from hedge.models.em import TMMaxwellOperator
+    from hedge.data import GivenFunction, TimeIntervalGivenFunction
     op = TMMaxwellOperator(epsilon, mu, flux_type=1,
             current=TimeIntervalGivenFunction(
                 GivenFunction(CurrentSource()), off_time=final_time/10),
             absorb_tag=TAG_ALL, pec_tag=TAG_NONE)
     fields = op.assemble_eh(discr=discr)
 
+    from hedge.timestep import RK4TimeStepper
     stepper = RK4TimeStepper()
     from time import time
     last_tstep = time()

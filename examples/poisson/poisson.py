@@ -81,7 +81,7 @@ def main(write_output=True):
         result[0,0] = 0.1
         return result
 
-    from hedge.pde import WeakPoissonOperator
+    from hedge.models.poisson import WeakPoissonOperator
     op = WeakPoissonOperator(discr.dimensions, 
             diffusion_tensor=ConstantGivenFunction(my_diff_tensor()),
 
