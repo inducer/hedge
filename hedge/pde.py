@@ -1830,7 +1830,6 @@ class GasDynamicsOperatorBase(TimeDependentOperator):
 class EulerOperator(GasDynamicsOperatorBase):
     """An nD Euler operator.
 
-    Field order is [rho E rho_u_x rho_u_y ...].
     see JSH, TW: Nodal Discontinuous Galerkin Methods p.206
 
     dq/dt + dF/dx + dG/dy = 0
@@ -1908,6 +1907,23 @@ class EulerOperator(GasDynamicsOperatorBase):
 
 class NavierStokesOperator(GasDynamicsOperatorBase):
     """An nD Navier-Stokes operator.
+
+    see JSH, TW: Nodal Discontinuous Galerkin Methods p.320
+
+    dq/dt = d/dx * (-F + tau_:1) + d/dy * (-G + tau_:2)
+
+    where e.g. in 2D
+
+    q = (rho, rho_u_x, rho_u_y, E)
+    F = (rho_u_x, rho_u_x^2 + p, rho_u_x * rho_u_y / rho, u_x * (E + p))
+    G = (rho_u_y, rho_u_x * rho_u_y / rho, rho_u_y^2 + p, u_y * (E + p))
+    
+    tau_11 = mu * (2 * du/dx - 2/3 * (du/dx + dv/dy))
+    tau_12 = mu * (du/dy + dv/dx)
+    tau_21 = tau_12
+    tau_22 = mu * (2 * dv/dy - 2/3 * (du/dx + dv/dy))
+    tau_31 = u * tau_11 + v * tau_12
+    tau_32 = u * tau_21 + v * tau_22
 
     Field order is [rho E rho_u_x rho_u_y ...].
     """

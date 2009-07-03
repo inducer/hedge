@@ -24,19 +24,24 @@ import numpy.linalg as la
 
 
 
-class SteadyShearFlow:
-    def __init__(self, gamma, mu):
+class Naca:
+    def __init__(self, gamma):
         self.gamma = gamma
-        self.mu = mu
 
     def __call__(self, t, x_vec):
         # JSH/TW Nodal DG Methods, p.326 
 
         rho = numpy.zeros_like(x_vec[0])
         rho.fill(1)
-        rho_u = x_vec[1] * x_vec[1]
-        rho_v = numpy.zeros_like(x_vec[0])
-        e = (2 * self.mu * x_vec[0] + 10) / (self.gamma - 1) + x_vec[1]**4 / 2
+        u = 100
+        v = 0
+        p = 1
+        rho_u = rho * u
+        rho_v = rho * v
+        e = p / (self.gamma - 1) + rho / 2 *(u ** 2 + v ** 2)
+        R = 287.1
+        T = p / (rho * R)
+        mu = 1.45 * T ** 1.5 / (T + 110) * 1e-6
 
         from hedge.tools import join_fields
         return join_fields(rho, e, rho_u, rho_v)
@@ -60,15 +65,14 @@ def main():
     ["cuda"]
     )
 
-    gamma = 1.5
-    mu = 0.01
+    gamma = 1.4
 
     from hedge.tools import EOCRecorder, to_obj_array
     eoc_rec = EOCRecorder()
     
     if rcon.is_head_rank:
-        from hedge.mesh import make_rect_mesh
-        mesh = make_rect_mesh((0,-5), (10,5), max_area=0.15)
+        from meshpy import nacamesh
+        mesh = nacamesh.main()
         mesh_data = rcon.distribute_mesh(mesh)
     else:
         mesh_data = rcon.receive_mesh()
@@ -84,11 +88,11 @@ def main():
         #vis = VtkVisualizer(discr, rcon, "shearflow-%d" % order)
         vis = SiloVisualizer(discr, rcon)
 
-        shearflow = SteadyShearFlow(gamma=gamma, mu=mu)
-        fields = shearflow.volume_interpolant(0, discr)
+        naca = Naca(gamma=gamma)
+        fields = naca.volume_interpolant(0, discr)
 
         from hedge.pde import NavierStokesOperator
-        op = NavierStokesOperator(dimensions=2, gamma=gamma, mu=mu, bc=shearflow)
+        op = NavierStokesOperator(dimensions=2, gamma=gamma, bc=naca)
 
         navierstokes_ex = op.bind(discr)
 
@@ -136,9 +140,9 @@ def main():
 
             if step % 100 == 0:
             #if False:
-                visf = vis.make_file("shearflow-%d-%04d" % (order, step))
+                visf = vis.make_file("naca-%d-%04d" % (order, step))
 
-                #true_fields = shearflow.volume_interpolant(t, discr)
+                #true_fields = naca.volume_interpolant(t, discr)
 
                 from pylo import DB_VARTYPE_VECTOR
                 vis.add_data(visf,
@@ -176,7 +180,7 @@ def main():
         logmgr.tick()
         logmgr.save()
 
-        true_fields = shearflow.volume_interpolant(t, discr)
+        true_fields = naca.volume_interpolant(t, discr)
         eoc_rec.add_data_point(order, discr.norm(fields-true_fields))
         print
         print eoc_rec.pretty_print("P.Deg.", "L2 Error")
