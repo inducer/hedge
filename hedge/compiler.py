@@ -378,6 +378,10 @@ class Code(object):
                     context[target] = value
                 futures.extend(new_futures)
 
+        if len(done_insns) < len(self.instructions):
+            raise RuntimeError("not all instructions are reachable"
+                    "--did you forget to pass a value for a placeholder?")
+
         from hedge.tools import with_object_array_or_scalar
         return with_object_array_or_scalar(exec_mapper, self.result)
 
@@ -665,6 +669,16 @@ class OperatorCompilerBase(IdentityMapper):
                 origins_set_cache[insn, skip_levels] = result
                 return result
 
+        var_assignees_cache = {}
+        def get_var_assignees(insn):
+            try:
+                return var_assignees_cache[insn]
+            except KeyError:
+                result = set(Variable(assignee) 
+                        for assignee in insn.get_assignees())
+                var_assignees_cache[insn] = result
+                return result
+
         def aggregate_two_assignments(ass_1, ass_2):
             names = ass_1.names+ass_2.names
 
@@ -698,14 +712,12 @@ class OperatorCompilerBase(IdentityMapper):
             my_assign = unprocessed_assigns.pop()
 
             my_deps = my_assign.get_dependencies()
-            my_assignees = set(Variable(assignee) 
-                    for assignee in my_assign.get_assignees())
+            my_assignees = get_var_assignees(my_assign)
 
             agg_candidates = []
             for i, other_assign in enumerate(unprocessed_assigns):
                 other_deps = other_assign.get_dependencies()
-                other_assignees = set(Variable(assignee) 
-                        for assignee in other_assign.get_assignees())
+                other_assignees = get_var_assignees(other_assign)
 
                 if ((my_deps & other_deps
                         or my_deps & other_assignees

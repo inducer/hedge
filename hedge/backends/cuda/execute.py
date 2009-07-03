@@ -156,7 +156,7 @@ class ExecutionMapper(ExecutionMapperBase):
             return [(name, self(expr))
                 for name, expr in zip(insn.names, insn.exprs)], []
         else:
-            compiled = insn.compiled(self.discr)
+            compiled = insn.compiled(self.executor)
             return zip(compiled.result_names(),
                     compiled(self, stats_callback)), []
 
@@ -309,7 +309,9 @@ class VectorExprAssign(Assign):
     comment = "compiled"
 
     @memoize_method
-    def compiled(self, discr):
+    def compiled(self, executor):
+        discr = executor.discr
+
         def result_dtype_getter(vector_dtype_map, scalar_dtype_map, const_dtypes):
             from pytools import common_dtype
             return common_dtype(
@@ -326,7 +328,7 @@ class VectorExprAssign(Assign):
                     do_not_return=dnr)
                     for name, expr, dnr in zip(
                         self.names, self.exprs, self.do_not_return)],
-                is_vector_func=lambda expr: True,
+                is_vector_pred=executor.is_vector_pred,
                 result_dtype_getter=result_dtype_getter,
                 allocator=discr.pool.allocate)
 
@@ -396,8 +398,10 @@ class OperatorCompiler(OperatorCompilerBase):
 class Executor(object):
     exec_mapper_class = ExecutionMapper
 
-    def __init__(self, discr, optemplate, post_bind_mapper):
+    def __init__(self, discr, optemplate, post_bind_mapper,
+            is_vector_pred):
         self.discr = discr
+        self.is_vector_pred = is_vector_pred
 
         from hedge.tools import diff_rst_flops, diff_rescale_one_flops, \
                 mass_flops, lift_flops

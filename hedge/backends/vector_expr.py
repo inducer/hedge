@@ -82,10 +82,8 @@ class VectorExpressionInfo(Record):
 
 
 class CompiledVectorExpressionBase(object):
-    def __init__(self, vec_expr_info_list, is_vector_func, result_dtype_getter):
-        #self.vec_expr_info_list = vec_expr_info_list
-
-        self.is_vector_func = is_vector_func
+    def __init__(self, vec_expr_info_list, is_vector_pred, result_dtype_getter):
+        self.is_vector_pred = is_vector_pred
         self.result_dtype_getter = result_dtype_getter
 
         from hedge.optemplate import DependencyMapper
@@ -100,8 +98,9 @@ class CompiledVectorExpressionBase(object):
 
         deps -= set(var(vei.name) for vei in vec_expr_info_list)
 
-        self.vector_deps = [dep for dep in deps if is_vector_func(dep)]
-        self.scalar_deps = [dep for dep in deps if not is_vector_func(dep)]
+        from pytools import partition
+
+        self.vector_deps, self.scalar_deps  = partition(is_vector_pred, deps)
         self.vector_dep_names = ["v%d" % i for i in range(len(self.vector_deps))]
         self.scalar_dep_names = ["s%d" % i for i in range(len(self.scalar_deps))]
 

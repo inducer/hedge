@@ -31,10 +31,10 @@ class CompiledVectorExpression(CompiledVectorExpressionBase):
     elementwise_mod = codepy.elementwise
 
     def __init__(self, vec_expr_info_list,
-            is_vector_func, result_dtype_getter,
+            is_vector_pred, result_dtype_getter,
             toolchain=None):
         CompiledVectorExpressionBase.__init__(self,
-                vec_expr_info_list, is_vector_func, result_dtype_getter)
+                vec_expr_info_list, is_vector_pred, result_dtype_getter)
 
         self.toolchain = toolchain
 

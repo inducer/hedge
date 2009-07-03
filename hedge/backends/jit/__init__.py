@@ -47,7 +47,7 @@ class ExecutionMapper(CPUExecutionMapperBase):
             return [(name, self(expr))
                 for name, expr in zip(insn.names, insn.exprs)], []
         else:
-            compiled = insn.compiled(self.discr)
+            compiled = insn.compiled(self.executor)
             return zip(compiled.result_names(),
                     compiled(self, stats_callback)), []
 
@@ -169,8 +169,11 @@ class ExecutionMapper(CPUExecutionMapperBase):
 
 
 class Executor(CPUExecutorBase):
-    def __init__(self, discr, optemplate, post_bind_mapper):
+    def __init__(self, discr, optemplate, post_bind_mapper,
+            is_vector_pred):
         self.discr = discr
+        self.is_vector_pred = is_vector_pred
+
         self.code = self.compile_optemplate(discr, optemplate, post_bind_mapper)
 
         if "print_op_code" in discr.debug:
