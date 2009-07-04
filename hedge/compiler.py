@@ -376,6 +376,7 @@ class Code(object):
                         insn.get_executor_method(exec_mapper)(insn)
                 for target, value in assignments:
                     context[target] = value
+
                 futures.extend(new_futures)
 
         if len(done_insns) < len(self.instructions):
