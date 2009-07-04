@@ -162,13 +162,14 @@ def main(write_output=True, allow_features=None):
     logmgr.add_watches(["step.max", "t_sim.max", "W_field", "t_step.max",
         "relerr_e", "relerr_h"])
 
-    point_timeseries = [
-            (open("b-x%d-vs-time.dat" % i, "w"), 
-                open("b-x%d-vs-time-true.dat" % i, "w"), 
-                discr.get_point_evaluator(numpy.array([i,0,0][:dims],
-                    dtype=discr.default_scalar_type)))
-            for i in range(1,5)
-            ]
+    if write_output:
+        point_timeseries = [
+                (open("b-x%d-vs-time.dat" % i, "w"), 
+                    open("b-x%d-vs-time-true.dat" % i, "w"), 
+                    discr.get_point_evaluator(numpy.array([i,0,0][:dims],
+                        dtype=discr.default_scalar_type)))
+                    for i in range(1,5)
+                    ]
 
     # timestep loop -------------------------------------------------------
     mask = discr.interpolate_volume_function(sph_dipole.far_field_mask)
@@ -232,11 +233,12 @@ def main(write_output=True, allow_features=None):
                             discr.norm(mask_h-mask_true_h),
                             discr.norm(mask_true_h)))
 
-                for outf_num, outf_true, evaluator in point_timeseries:
-                    for outf, ev_h in zip([outf_num, outf_true],
-                            [h, true_h]):
-                        outf.write("%g\t%g\n" % (t, op.mu*evaluator(ev_h[1])))
-                        outf.flush()
+                if write_output:
+                    for outf_num, outf_true, evaluator in point_timeseries:
+                        for outf, ev_h in zip([outf_num, outf_true],
+                                [h, true_h]):
+                            outf.write("%g\t%g\n" % (t, op.mu*evaluator(ev_h[1])))
+                            outf.flush()
 
             logmgr.tick()
 
