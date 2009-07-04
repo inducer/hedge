@@ -45,11 +45,12 @@ class VectorExprAssign(Assign):
         discr = executor.discr
 
         def result_dtype_getter(vector_dtype_map, scalar_dtype_map, const_dtypes):
-            from pytools import common_dtype
-            return common_dtype(
-                    vector_dtype_map.values()
-                    + scalar_dtype_map.values()
-                    + const_dtypes)
+            from pytools import common_dtype, match_precision
+            vec_dtype = common_dtype(vector_dtype_map.values())
+            return match_precision(
+                    common_dtype(
+                        scalar_dtype_map.values() + const_dtypes),
+                        dtype_to_match=vec_dtype)
 
         if self.flop_count() > 500:
             # reduce optimization level for complicated expressions
