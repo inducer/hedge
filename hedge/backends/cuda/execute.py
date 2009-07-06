@@ -292,14 +292,12 @@ class ExecutionMapper(ExecutionMapperBase):
     def map_elementwise_max(self, op, field_expr):
         from pycuda.compiler import SourceModule
         from pycuda.tools import dtype_to_ctype
-	from hedge.element import TriangularElement as TE
         discr = self.executor.discr
 
         field = self.rec(field_expr)
 	order = discr.given.order()
-	nodes_per_el = TE(order).node_count()
+	dofs_per_el = discr.given.dofs_per_el()
 	aligned_floats = discr.given.microblock.aligned_floats
-        padding = aligned_floats % nodes_per_el
 
         # Set block_size and make sure, that block_size is divisible by
         # aligned_floats (necessary for the function call) and not bigger
@@ -310,112 +308,90 @@ class ExecutionMapper(ExecutionMapperBase):
 	    if block_size > 512:
 	        block_size = block_size - aligned_floats
 
-        el_per_block = block_size // nodes_per_el
-        el_per_mb = (aligned_floats - padding) // nodes_per_el
-
         if field.dtype == numpy.float64:
-	    max_expr = "fmax"
+	    max_func = "fmax"
 	elif field.dtype == numpy.float32:
-	    max_expr = "fmaxf"
+	    max_func = "fmaxf"
 	else:
-	    raise TypeError("invalid default_scalar_type specified")
+	    raise TypeError("invalid field.dtype specified")
 
         mod = SourceModule("""
-	#define NODES_PER_EL %(nodes_per_el)d
-        #define MAX_EXPR %(max_expr)s
+        #include <pycuda-helpers.hpp>
+
+	#define DOFS_PER_EL %(dofs_per_el)d
+        #define MAX_FUNC %(max_func)s
         #define BLOCK_SIZE %(block_size)d
-        #define ALIGNED_FLOATS %(aligned_floats)d
-        #define PADDING %(padding)d
-        #define EL_PER_BLOCK %(el_per_block)d
-        #define EL_PER_MB %(el_per_mb)d
-        #define TEXT 1
+       
+        #define MY_INFINITY (1./0.)
+
+        #define NODE_IN_MB_IDX  threadIdx.x
+        #define MB_IN_BLOCK_IDX threadIdx.y
+        #define BLOCK_IN_GRID_IDX blockIdx.x
+        #define ALIGNED_FLOATS_IN_MB blockDim.x
+
+        #define SHARED
 
 	typedef %(value_type)s value_type;
+        typedef %(texture_type)s texture_type;
 
-        texture<float, 1, cudaReadModeElementType> field_tex;
+        texture<texture_type, 1, cudaReadModeElementType> field_tex;
 
 
 	__global__ void elwise_max(value_type *field)
 	{
-          #if defined(SHARED_1)
-            int idx = blockIdx.x * BLOCK_SIZE + 
-                ALIGNED_FLOATS * threadIdx.y + threadIdx.x;
-	    int element_base_idx = ALIGNED_FLOATS * threadIdx.y + 
-                (threadIdx.x / NODES_PER_EL) * NODES_PER_EL;
+          #if defined(SHARED)
+            int idx = BLOCK_IN_GRID_IDX * BLOCK_SIZE + 
+                ALIGNED_FLOATS_IN_MB * MB_IN_BLOCK_IDX + NODE_IN_MB_IDX;
+	    int element_base_idx = ALIGNED_FLOATS_IN_MB * MB_IN_BLOCK_IDX + 
+                (NODE_IN_MB_IDX / DOFS_PER_EL) * DOFS_PER_EL;
 
-            float own_value = field[idx];
-            __shared__  float whole_block[BLOCK_SIZE];
-            int idx_in_block = ALIGNED_FLOATS * threadIdx.y + threadIdx.x;
-            whole_block[idx_in_block] = own_value;
+            value_type own_value = -MY_INFINITY;
+            __shared__  value_type whole_block[BLOCK_SIZE];
+            int idx_in_block = ALIGNED_FLOATS_IN_MB * MB_IN_BLOCK_IDX + NODE_IN_MB_IDX;
+            whole_block[idx_in_block] = field[idx];
 
             __syncthreads();
 
-	    for (int i=0; i<NODES_PER_EL; i++)
-	      own_value = MAX_EXPR(own_value, whole_block[element_base_idx+i]);
+	    for (int i=0; i<DOFS_PER_EL; i++)
+	      own_value = MAX_FUNC(own_value, whole_block[element_base_idx+i]);
             field[idx] = own_value;
 
-          #elif defined(SHARED_2)
-            int idx = blockIdx.x * BLOCK_SIZE + 
-                ALIGNED_FLOATS * threadIdx.y + threadIdx.x;
+          #elif defined(TEXTURE)
+            int idx = BLOCK_IN_GRID_IDX * BLOCK_SIZE + 
+                ALIGNED_FLOATS_IN_MB * MB_IN_BLOCK_IDX + NODE_IN_MB_IDX;
+            int element_base_idx = BLOCK_IN_GRID_IDX * BLOCK_SIZE + 
+                ALIGNED_FLOATS_IN_MB * MB_IN_BLOCK_IDX + 
+                (NODE_IN_MB_IDX / DOFS_PER_EL) * DOFS_PER_EL;
 
-            __shared__ int element_base_idx_x[ALIGNED_FLOATS];
-            if (threadIdx.y == 0)
-              element_base_idx_x[threadIdx.x] = (threadIdx.x / NODES_PER_EL) * NODES_PER_EL;
-
-            __syncthreads();
-
-            int element_base_idx = ALIGNED_FLOATS * threadIdx.y + element_base_idx_x[threadIdx.x];
-
-            float own_value = field[idx];
-            __shared__  float whole_block[BLOCK_SIZE];
-            int idx_in_block = ALIGNED_FLOATS * threadIdx.y + threadIdx.x;
-            whole_block[idx_in_block] = own_value;
-
-            __syncthreads();
-
-	    for (int i=0; i<NODES_PER_EL; i++)
-	      own_value = MAX_EXPR(own_value, whole_block[element_base_idx+i]);
-            field[idx] = own_value;
- 
-          #elif defined(TEXT)
-            int idx = blockIdx.x * BLOCK_SIZE + 
-                ALIGNED_FLOATS * threadIdx.y + threadIdx.x;
-            int element_base_idx = blockIdx.x * BLOCK_SIZE + 
-                ALIGNED_FLOATS * threadIdx.y + 
-                (threadIdx.x / NODES_PER_EL) * NODES_PER_EL;
-
-            float own_value = tex1D(field_tex, idx);
-	    for (int i=0; i<NODES_PER_EL; i++)
-	      own_value = MAX_EXPR(own_value, tex1D(field_tex, element_base_idx+i));
-            //tex1D(field_tex, idx) = own_value;
+            value_type own_value = -MY_INFINITY;
+	    for (int i=0; i<DOFS_PER_EL; i++)
+	      own_value = MAX_FUNC(own_value, 
+                          fp_tex1Dfetch(field_tex, element_base_idx+i));
             field[idx] = own_value;
 
           #else 
-            int idx = blockIdx.x * BLOCK_SIZE + 
-                ALIGNED_FLOATS * threadIdx.y + threadIdx.x;
-            int element_base_idx = blockIdx.x * BLOCK_SIZE + 
-                ALIGNED_FLOATS * threadIdx.y + 
-                (threadIdx.x / NODES_PER_EL) * NODES_PER_EL;
+            int idx = BLOCK_IN_GRID_IDX * BLOCK_SIZE + 
+                ALIGNED_FLOATS_IN_MB * MB_IN_BLOCK_IDX + NODE_IN_MB_IDX;
+            int element_base_idx = BLOCK_IN_GRID_IDX * BLOCK_SIZE + 
+                ALIGNED_FLOATS_IN_MB * MB_IN_BLOCK_IDX + 
+                (NODE_IN_MB_IDX / DOFS_PER_EL) * DOFS_PER_EL;
 
-            float own_value = field[idx];
-	    for (int i=0; i<NODES_PER_EL; i++)
-	      own_value = MAX_EXPR(own_value, field[element_base_idx+i]);
+            value_type own_value = -MY_INFINITY;
+	    for (int i=0; i<DOFS_PER_EL; i++)
+	      own_value = MAX_FUNC(own_value, field[element_base_idx+i]);
             field[idx] = own_value;
           #endif  
 	}
 	"""% {
-	"nodes_per_el": nodes_per_el,
-	"max_expr": max_expr,
+	"dofs_per_el": dofs_per_el,
+	"max_func": max_func,
         "block_size": block_size,
-        "aligned_floats": aligned_floats,
-        "padding": padding,
-        "el_per_block": el_per_block,
-        "el_per_mb": el_per_mb,
 	"value_type": dtype_to_ctype(field.dtype),
+        "texture_type": dtype_to_ctype(field.dtype, with_fp_tex_hack=True),
 	})
 
         field_tex = mod.get_texref("field_tex")
-        cuda.bind_array_to_texref(field, field_tex)
+        field.bind_to_texref_ext(field_tex, allow_double_hack=True)
 
         start = cuda.Event()
         stop = cuda.Event()
@@ -429,7 +405,7 @@ class ExecutionMapper(ExecutionMapperBase):
         stop.record()
         stop.synchronize()
         elapsed_seconds = stop.time_since(start) * 1e-3
-        file = open("benchmark_max.dat", "a")
+        file = open("time_for_elwise_max.dat", "a")
         print >> file, elapsed_seconds
 	return field
 
