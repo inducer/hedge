@@ -122,9 +122,7 @@ class TestMultirateTimesteperAccuracy:
     ODE-system - complex
     A = [[0,1]
         [-1,0]],
-    with pure complex eigenvalues λ₁=i and λ₂=-i. This is a
-    skew-symmetric matrix which also is used in the Maxwell
-    operator for the curl operator.
+    with pure complex eigenvalues λ₁=i and λ₂=-i.
 
     ODE-system - complex-conjungated
     A = [[1,1]
@@ -158,12 +156,12 @@ class TestMultirateTimesteperAccuracy:
             self.sub_arg = True
         elif method==3:
             print "Method: fastest_first without substepping"
-            self.sf_arg = True
+            self.sf_arg = False
             self.ff_arg = True
             self.sub_arg = False
         elif method==4:
             print "Method: fastest_first with substepping"
-            self.sf_arg = True
+            self.sf_arg = False
             self.ff_arg = True
             self.sub_arg = True
 
