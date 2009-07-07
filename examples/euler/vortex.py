@@ -72,7 +72,7 @@ def main():
     #starting_time = time.clock()
     from hedge.backends import guess_run_context
     rcon = guess_run_context(
-    #["cuda"]
+    ["cuda"]
     )
 
     gamma = 1.4
@@ -81,22 +81,27 @@ def main():
     eoc_rec = EOCRecorder()
     
     if rcon.is_head_rank:
-        from hedge.mesh import make_rect_mesh
-        mesh = make_rect_mesh((0,-5), (10,5), max_area=0.01)
+        from hedge.mesh import \
+                make_rect_mesh, \
+                make_centered_regular_rect_mesh
+
+        refine = 4
+        mesh = make_centered_regular_rect_mesh((0,-5), (10,5), n=(9,9),
+                post_refine_factor=refine)
         mesh_data = rcon.distribute_mesh(mesh)
     else:
         mesh_data = rcon.receive_mesh()
 
-    for order in [3]:
+    for order in [5]:
         discr = rcon.make_discretization(mesh_data, order=order,
-			debug=[#"cuda_no_plan",
+			debug=["cuda_no_plan",
 			#"print_op_code"
 			],
 			default_scalar_type=numpy.float64)
 
         from hedge.visualization import SiloVisualizer, VtkVisualizer
-        #vis = VtkVisualizer(discr, rcon, "vortex-%d" % order)
-        vis = SiloVisualizer(discr, rcon)
+        vis = VtkVisualizer(discr, rcon, "vortex-%d" % order)
+        #vis = SiloVisualizer(discr, rcon)
 
         vortex = Vortex(beta=5, gamma=gamma, 
                 center=[5,0], 
@@ -119,7 +124,7 @@ def main():
         rhs(0, fields)
 
         dt = discr.dt_factor(max_eigval[0])
-        final_time = 0.2
+        final_time = 0.6
         nsteps = int(final_time/dt)+1
         dt = final_time/nsteps
 
@@ -138,7 +143,13 @@ def main():
         from pytools.log import LogManager, add_general_quantities, \
                 add_simulation_quantities, add_run_info
 
-        logmgr = LogManager("euler-%d.dat" % order, "w", rcon.communicator)
+        if True:
+            logmgr = LogManager("euler-cpu-%(order)d-%(refine)d.dat" 
+                                % {"order":order, "refine":refine},
+                                "w", rcon.communicator)
+        else:
+            logmgr = LogManager(None, "w", rcon.communicator)
+
         add_run_info(logmgr)
         add_general_quantities(logmgr)
         add_simulation_quantities(logmgr, dt)
@@ -198,7 +209,7 @@ def main():
         ending_time = time.clock()
 
         true_fields = vortex.volume_interpolant(t, discr)
-        eoc_rec.add_data_point(order, discr.norm(fields-true_fields))
+        eoc_rec.add_data_point(order, discr.norm(fields[0]-true_fields[0]))
         file = open("time_for_elwise_max.dat", "r")
         for line in file: summe = summe+float(line)
         print "time for elementwise max in seconds:", summe

@@ -329,7 +329,7 @@ class ExecutionMapper(ExecutionMapperBase):
         #define BLOCK_IN_GRID_IDX blockIdx.x
         #define ALIGNED_FLOATS_IN_MB blockDim.x
 
-        #define SHARED
+        #define TEXTURE
 
 	typedef %(value_type)s value_type;
         typedef %(texture_type)s texture_type;
