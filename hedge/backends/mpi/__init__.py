@@ -378,7 +378,6 @@ class ParallelDiscretization(object):
                 "Number of inner flux communication runs")
 
         mgr.add_quantity(self.comm_flux_counter)
-        mgr.set_constant("rank_count", len(self.context.ranks))
 
     # property forwards -------------------------------------------------------
     def __len__(self):
