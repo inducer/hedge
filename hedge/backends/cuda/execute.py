@@ -299,6 +299,8 @@ class ExecutionMapper(ExecutionMapperBase):
 	dofs_per_el = discr.given.dofs_per_el()
 	aligned_floats = discr.given.microblock.aligned_floats
 
+        if aligned_floats > discr.given.devdata.max_threads:
+            raise RuntimeError("Size of microblock bigger than maximum block size on device.")
         # Set block_size and make sure, that block_size is divisible by
         # aligned_floats (necessary for the function call) and not bigger
         # than 512 or smaller than 0.
@@ -329,7 +331,7 @@ class ExecutionMapper(ExecutionMapperBase):
         #define BLOCK_IN_GRID_IDX blockIdx.x
         #define ALIGNED_FLOATS_IN_MB blockDim.x
 
-        #define TEXTURE
+        #define SHARED
 
 	typedef %(value_type)s value_type;
         typedef %(texture_type)s texture_type;
