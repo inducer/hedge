@@ -162,7 +162,8 @@ class JitDifferentiator:
         #print mod.generate()
         #raw_input()
 
-        compiled_func = mod.compile(self.discr.toolchain, wait_on_error=True).diff
+        compiled_func = mod.compile(self.discr.toolchain, 
+                wait_on_error="jit_wait_on_compile_error" in discr.debug).diff
 
         if self.discr.instrumented:
             from hedge.tools import time_count_flop

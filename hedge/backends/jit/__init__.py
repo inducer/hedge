@@ -268,6 +268,12 @@ class Discretization(hedge.discretization.Discretization):
     def all_debug_flags(cls):
         return hedge.discretization.Discretization.all_debug_flags() | set([
             "jit_dont_optimize_large_exprs",
+            "jit_wait_on_compile_error",
+            ])
+
+    def noninteractive_debug_flags(cls):
+        return hedge.discretization.Discretization.noninteractive_debug_flags() | set([
+            "jit_dont_optimize_large_exprs",
             ])
 
     def __init__(self, *args, **kwargs):

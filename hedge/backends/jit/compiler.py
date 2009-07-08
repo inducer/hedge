@@ -72,7 +72,8 @@ class VectorExprAssign(Assign):
                         self.names, self.exprs, self.do_not_return)],
                 is_vector_pred=executor.is_vector_pred,
                 result_dtype_getter=result_dtype_getter,
-                toolchain=toolchain)
+                toolchain=toolchain,
+                wait_on_error="jit_wait_on_compile_error" in discr.debug)
 
 
 
