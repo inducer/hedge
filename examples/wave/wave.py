@@ -27,7 +27,7 @@ from hedge.mesh import TAG_ALL, TAG_NONE
 
 def main(write_output=True, 
         dir_tag=TAG_NONE, neu_tag=TAG_NONE, rad_tag=TAG_ALL, 
-        flux_type_arg="upwind", dtype=numpy.float64):
+        flux_type_arg="upwind", dtype=numpy.float64, debug=[]):
     from hedge.timestep import RK4TimeStepper
     from pytools.stopwatch import Job
     from math import sin, cos, pi, exp, sqrt
@@ -58,7 +58,7 @@ def main(write_output=True,
     else:
         mesh_data = rcon.receive_mesh()
 
-    discr = rcon.make_discretization(mesh_data, order=4)
+    discr = rcon.make_discretization(mesh_data, order=4, debug=debug)
     stepper = RK4TimeStepper()
 
     from hedge.visualization import VtkVisualizer
