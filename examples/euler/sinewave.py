@@ -54,7 +54,6 @@ class SineWave:
 
 
 def main():
-    import time
     from hedge.backends import guess_run_context
     platform = "gpu"
     if platform == "gpu":
@@ -130,7 +129,6 @@ def main():
         discr.add_instrumentation(logmgr)
         stepper.add_instrumentation(logmgr)
 
-        starting_time = time.clock()
         logmgr.add_watches(["step.max", "t_sim.max", "t_step.max"])
 
         # timestep loop -------------------------------------------------------
@@ -178,7 +176,6 @@ def main():
 
         logmgr.tick()
         logmgr.save()
-        ending_time = time.clock()
 
         true_fields = sinewave.volume_interpolant(t, discr)
         eoc_rec.add_data_point(order, discr.norm(fields-true_fields))
@@ -186,18 +183,6 @@ def main():
         print eoc_rec.pretty_print("P.Deg.", "L2 Error")
 
         print "Computation Time:", ending_time - starting_time
-        # Benchmarking of elwise max
-        els =len(mesh.elements)
-        file_2 = open("benchmark-max-%d-%d.dat" %(order, els), "w")
-        print >> file_2, "---------------------------------------------"
-        print >> file_2, "order %d" % order
-        print >> file_2, "---------------------------------------------"
-        print >> file_2, "dt", dt
-        print >> file_2, "nsteps", nsteps
-        print >> file_2, "#elements=", len(mesh.elements)
-        print >> file_2, eoc_rec.pretty_print("P.Deg.", "L2 Error")
-        print >> file_2, "Computation Time in seconds:", ending_time - starting_time
-
 
 if __name__ == "__main__":
     main()

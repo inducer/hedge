@@ -68,8 +68,6 @@ class Vortex:
 
 
 def main():
-    import time
-    #starting_time = time.clock()
     from hedge.backends import guess_run_context
     rcon = guess_run_context(
     ["cuda"]
@@ -110,9 +108,6 @@ def main():
 
         from hedge.pde import EulerOperator
         op = EulerOperator(dimensions=2, gamma=1.4, bc=vortex)
-
-        summe = 0
-        file = open("time_for_elwise_max.dat", "w")
 
         euler_ex = op.bind(discr)
 
@@ -156,7 +151,6 @@ def main():
         discr.add_instrumentation(logmgr)
         stepper.add_instrumentation(logmgr)
 
-        starting_time = time.clock()
         logmgr.add_watches(["step.max", "t_sim.max", "t_step.max"])
 
         # timestep loop -------------------------------------------------------
@@ -206,31 +200,11 @@ def main():
 
         logmgr.tick()
         logmgr.save()
-        ending_time = time.clock()
 
         true_fields = vortex.volume_interpolant(t, discr)
         eoc_rec.add_data_point(order, discr.norm(fields[0]-true_fields[0]))
-        file = open("time_for_elwise_max.dat", "r")
-        for line in file: summe = summe+float(line)
-        print "time for elementwise max in seconds:", summe
         print
         print eoc_rec.pretty_print("P.Deg.", "L2 Error")
-
-        #ending_time = time.clock()
-        print "Computation Time:", ending_time - starting_time
-        # Benchmarking of elwise max
-        els =len(mesh.elements)
-        file_2 = open("benchmark-max-%d-%d.dat" %(order, els), "w")
-        print >> file_2, "---------------------------------------------"
-        print >> file_2, "order %d" % order
-        print >> file_2, "---------------------------------------------"
-        print >> file_2, "dt", dt
-        print >> file_2, "nsteps", nsteps
-        print >> file_2, "#elements=", len(mesh.elements)
-        print >> file_2, "time for elementwise max in seconds:", summe
-        print >> file_2, eoc_rec.pretty_print("P.Deg.", "L2 Error")
-        print >> file_2, "Computation Time in seconds:", ending_time - starting_time
-  
 
 if __name__ == "__main__":
     main()
