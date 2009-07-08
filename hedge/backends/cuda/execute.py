@@ -288,129 +288,33 @@ class ExecutionMapper(ExecutionMapperBase):
                 self.rec(insn.field),
                 *self.executor.mass_data(kernel, elgroup, insn.op_class)))], []
 
-    # @memoize_method
     def map_elementwise_max(self, op, field_expr):
-        from pycuda.compiler import SourceModule
-        from pycuda.tools import dtype_to_ctype
         discr = self.executor.discr
 
         field = self.rec(field_expr)
-	order = discr.given.order()
 	dofs_per_el = discr.given.dofs_per_el()
-	aligned_floats = discr.given.microblock.aligned_floats
+	floats_per_mb = discr.given.microblock.aligned_floats
 
-        if aligned_floats > discr.given.devdata.max_threads:
-            raise RuntimeError("Size of microblock bigger than maximum block size on device.")
-        # Set block_size and make sure, that block_size is divisible by
-        # aligned_floats (necessary for the function call) and not bigger
-        # than 512 or smaller than 0.
+        # round block_size up to nearest multiple of floats_per_mb
         block_size = 128
-        if block_size % aligned_floats != 0:
-	    block_size = block_size - block_size % aligned_floats + aligned_floats
-	    if block_size > 512:
-	        block_size = block_size - aligned_floats
+        mbs_per_block = (block_size + floats_per_mb - 1) // floats_per_mb
+        block_size = floats_per_mb * mbs_per_block
 
-        if field.dtype == numpy.float64:
-	    max_func = "fmax"
-	elif field.dtype == numpy.float32:
-	    max_func = "fmaxf"
-	else:
-	    raise TypeError("invalid field.dtype specified")
+	if block_size > discr.given.devdata.max_threads:
+            # rounding up took us beyond the max block size,
+            # round down instead
+	    block_size = block_size - floats_per_mb
 
-        mod = SourceModule("""
-        #include <pycuda-helpers.hpp>
+        if block_size > discr.given.devdata.max_threads or block_size == 0:
+            raise RuntimeError("Computation of thread block size for "
+                    "elementwise max gave invalid result %d." % block_size)
 
-	#define DOFS_PER_EL %(dofs_per_el)d
-        #define MAX_FUNC %(max_func)s
-        #define BLOCK_SIZE %(block_size)d
-       
-        #define MY_INFINITY (1./0.)
+        mod = self.executor.get_elwise_max_kernel(dofs_per_el, 
+                  block_size, floats_per_mb, mbs_per_block, field.dtype)
 
-        #define NODE_IN_MB_IDX  threadIdx.x
-        #define MB_IN_BLOCK_IDX threadIdx.y
-        #define BLOCK_IN_GRID_IDX blockIdx.x
-        #define ALIGNED_FLOATS_IN_MB blockDim.x
-
-        #define SHARED
-
-	typedef %(value_type)s value_type;
-        typedef %(texture_type)s texture_type;
-
-        texture<texture_type, 1, cudaReadModeElementType> field_tex;
-
-
-	__global__ void elwise_max(value_type *field)
-	{
-          #if defined(SHARED)
-            int idx = BLOCK_IN_GRID_IDX * BLOCK_SIZE + 
-                ALIGNED_FLOATS_IN_MB * MB_IN_BLOCK_IDX + NODE_IN_MB_IDX;
-	    int element_base_idx = ALIGNED_FLOATS_IN_MB * MB_IN_BLOCK_IDX + 
-                (NODE_IN_MB_IDX / DOFS_PER_EL) * DOFS_PER_EL;
-
-            value_type own_value = -MY_INFINITY;
-            __shared__  value_type whole_block[BLOCK_SIZE];
-            int idx_in_block = ALIGNED_FLOATS_IN_MB * MB_IN_BLOCK_IDX + NODE_IN_MB_IDX;
-            whole_block[idx_in_block] = field[idx];
-
-            __syncthreads();
-
-	    for (int i=0; i<DOFS_PER_EL; i++)
-	      own_value = MAX_FUNC(own_value, whole_block[element_base_idx+i]);
-            field[idx] = own_value;
-
-          #elif defined(TEXTURE)
-            int idx = BLOCK_IN_GRID_IDX * BLOCK_SIZE + 
-                ALIGNED_FLOATS_IN_MB * MB_IN_BLOCK_IDX + NODE_IN_MB_IDX;
-            int element_base_idx = BLOCK_IN_GRID_IDX * BLOCK_SIZE + 
-                ALIGNED_FLOATS_IN_MB * MB_IN_BLOCK_IDX + 
-                (NODE_IN_MB_IDX / DOFS_PER_EL) * DOFS_PER_EL;
-
-            value_type own_value = -MY_INFINITY;
-	    for (int i=0; i<DOFS_PER_EL; i++)
-	      own_value = MAX_FUNC(own_value, 
-                          fp_tex1Dfetch(field_tex, element_base_idx+i));
-            field[idx] = own_value;
-
-          #else 
-            int idx = BLOCK_IN_GRID_IDX * BLOCK_SIZE + 
-                ALIGNED_FLOATS_IN_MB * MB_IN_BLOCK_IDX + NODE_IN_MB_IDX;
-            int element_base_idx = BLOCK_IN_GRID_IDX * BLOCK_SIZE + 
-                ALIGNED_FLOATS_IN_MB * MB_IN_BLOCK_IDX + 
-                (NODE_IN_MB_IDX / DOFS_PER_EL) * DOFS_PER_EL;
-
-            value_type own_value = -MY_INFINITY;
-	    for (int i=0; i<DOFS_PER_EL; i++)
-	      own_value = MAX_FUNC(own_value, field[element_base_idx+i]);
-            field[idx] = own_value;
-          #endif  
-	}
-	"""% {
-	"dofs_per_el": dofs_per_el,
-	"max_func": max_func,
-        "block_size": block_size,
-	"value_type": dtype_to_ctype(field.dtype),
-        "texture_type": dtype_to_ctype(field.dtype, with_fp_tex_hack=True),
-	})
-
-        field_tex = mod.get_texref("field_tex")
-        field.bind_to_texref_ext(field_tex, allow_double_hack=True)
-
-        start = cuda.Event()
-        stop = cuda.Event()
-
-	func = mod.get_function("elwise_max")
-	func.prepare("P", block=(aligned_floats, block_size//aligned_floats, 1), texrefs = [field_tex])
 	grid_dim = (len(field) + block_size - 1) // block_size
-        cuda.Context.synchronize()
-        start.record()
 	func.prepared_call((grid_dim, 1),field.gpudata)
-        stop.record()
-        stop.synchronize()
-        elapsed_seconds = stop.time_since(start) * 1e-3
-        file = open("time_for_elwise_max.dat", "a")
-        print >> file, elapsed_seconds
 	return field
-
 
 
 
@@ -638,3 +542,65 @@ class Executor(object):
     def mass_data(self, kernel, elgroup, op_class):
         return (kernel.prepare_matrix(op_class.matrix(elgroup)),
                 kernel.prepare_scaling(elgroup, op_class.coefficients(elgroup)))
+
+    @memoize_method
+    def get_elwise_max_kernel(self, dofs_per_el, block_size,
+                              floats_per_mb, mbs_per_block, dtype):
+        if dtype == numpy.float64:
+	    max_func = "fmax"
+	elif dtype == numpy.float32:
+	    max_func = "fmaxf"
+	else:
+	    raise TypeError("Could not find a maximum function due to unsupported field.dtype.")
+
+        from pycuda.tools import dtype_to_ctype
+        from pycuda.compiler import SourceModule
+        mod = SourceModule("""
+        #include <pycuda-helpers.hpp>
+
+        #define DOFS_PER_EL %(dofs_per_el)d
+        #define MAX_FUNC %(max_func)s
+        #define BLOCK_SIZE %(block_size)d
+        #define FLOATS_PER_MB %(floats_per_mb)d
+        #define MBS_PER_BLOCK %(mbs_per_block)d
+       
+        #define MY_INFINITY (1./0.)
+
+        #define NODE_IN_MB_IDX  threadIdx.x
+        #define MB_IN_BLOCK_IDX threadIdx.y
+        #define BLOCK_IDX blockIdx.x
+
+        typedef %(value_type)s value_type;
+
+        __global__ void elwise_max(value_type *field)
+        {
+            int idx = (BLOCK_IDX * MBS_PER_BLOCK + MB_IN_BLOCK_IDX) *
+                       FLOATS_PER_MB + NODE_IN_MB_IDX;
+            int element_base_idx = FLOATS_PER_MB * MB_IN_BLOCK_IDX + 
+                (NODE_IN_MB_IDX / DOFS_PER_EL) * DOFS_PER_EL;
+
+            __shared__ value_type whole_block[BLOCK_SIZE];
+            int idx_in_block = FLOATS_PER_MB * MB_IN_BLOCK_IDX + NODE_IN_MB_IDX;
+            whole_block[idx_in_block] = field[idx];
+
+            __syncthreads();
+
+            value_type own_value = -MY_INFINITY;
+
+            for (int i=0; i<DOFS_PER_EL; i++)
+                own_value = MAX_FUNC(own_value, whole_block[element_base_idx+i]);
+            field[idx] = own_value;
+        }
+        """% {
+        "dofs_per_el": dofs_per_el,
+        "max_func": max_func,
+        "block_size": block_size,
+        "floats_per_mb": floats_per_mb,
+        "mbs_per_block": mbs_per_block,
+        "value_type": dtype_to_ctype(dtype),
+        })
+
+	func = mod.get_function("elwise_max")
+	func.prepare("P", block=(floats_per_mb, block_size//floats_per_mb, 1))
+
+        return func
