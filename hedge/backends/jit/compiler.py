@@ -46,12 +46,17 @@ class VectorExprAssign(Assign):
 
         def result_dtype_getter(vector_dtype_map, scalar_dtype_map, const_dtypes):
             from pytools import common_dtype, match_precision
-            vec_dtype = common_dtype(vector_dtype_map.values())
-            prec_matched_scalar_dtype = match_precision(
-                    common_dtype(
-                        scalar_dtype_map.values() + const_dtypes),
-                    dtype_to_match=vec_dtype)
-            return common_dtype([vec_dtype, prec_matched_scalar_dtype])
+
+            result = common_dtype(vector_dtype_map.values())
+
+            scalar_dtypes = scalar_dtype_map.values() + const_dtypes
+            if scalar_dtypes:
+                prec_matched_scalar_dtype = match_precision(
+                        common_dtype(scalar_dtypes),
+                        dtype_to_match=result)
+                result = common_dtype([result, prec_matched_scalar_dtype])
+
+            return result
 
         if self.flop_count() > 500:
             # reduce optimization level for complicated expressions
