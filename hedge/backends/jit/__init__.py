@@ -265,12 +265,14 @@ class Discretization(hedge.discretization.Discretization):
     exec_mapper_class = ExecutionMapper
     executor_class = Executor
 
+    @classmethod
     def all_debug_flags(cls):
         return hedge.discretization.Discretization.all_debug_flags() | set([
             "jit_dont_optimize_large_exprs",
             "jit_wait_on_compile_error",
             ])
 
+    @classmethod
     def noninteractive_debug_flags(cls):
         return hedge.discretization.Discretization.noninteractive_debug_flags() | set([
             "jit_dont_optimize_large_exprs",
