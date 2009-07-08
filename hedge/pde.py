@@ -1790,6 +1790,9 @@ class StrongHeatOperator(TimeDependentOperator):
 
 
 class GasDynamicsOperatorBase(TimeDependentOperator):
+    """Basis for Euler and Navier-Stokes Operator.
+       Field order is [rho E rho_u_x rho_u_y ...].
+    """
     def __init__(self, dimensions, gamma, bc):
         self.dimensions = dimensions
         self.gamma = gamma
