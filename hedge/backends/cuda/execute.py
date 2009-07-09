@@ -408,7 +408,7 @@ class Executor(object):
         self.diff_rst_flops = diff_rst_flops(discr)
         self.diff_rescale_one_flops = diff_rescale_one_flops(discr)
         self.mass_flops = mass_flops(discr)
-        self.lift_flops = lift_flops(discr)
+        self.lift_flops = sum(lift_flops(fg) for fg in discr.face_groups)
 
         optemplate_stage1 = self.prepare_optemplate_stage1(
                 optemplate, post_bind_mapper)

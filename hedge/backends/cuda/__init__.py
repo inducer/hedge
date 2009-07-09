@@ -743,7 +743,7 @@ class Discretization(hedge.discretization.Discretization):
         self.diff_op_timer = CallableCollectionTimer("t_diff",
                 "Time spent applying applying differentiation operators")
         self.vector_math_timer = CallableCollectionTimer("t_vector_math",
-                "Time spent applying doing vector math")
+                "Time spent doing vector math")
 
         return [self.flux_gather_timer, 
                 self.el_local_timer,

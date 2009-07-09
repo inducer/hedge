@@ -254,7 +254,7 @@ class Discretization(object):
         self.diff_timer = IntervalTimer("t_diff",
                 "Time spent applying applying differentiation operators")
         self.vector_math_timer = IntervalTimer("t_vector_math",
-                "Time spent applying doing vector math")
+                "Time spent doing vector math")
 
         return [self.gather_timer, 
                 self.lift_timer,
