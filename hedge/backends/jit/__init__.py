@@ -137,10 +137,8 @@ class ExecutionMapper(CPUExecutionMapperBase):
                     self.executor.lift_flux(fg, fg.ldis_loc.multi_face_mass_matrix(),
                             None, fluxes_on_faces, out)
 
-                if not is_bdry:
-                    # count interior lifts for full flop co
-                    from hedge.tools import lift_flops
-                    self.discr.lift_flop_counter.add(lift_flops(fg))
+                from hedge.tools import lift_flops
+                self.discr.lift_flop_counter.add(lift_flops(fg))
 
                 result.append((name, out))
 
