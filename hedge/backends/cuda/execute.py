@@ -221,7 +221,7 @@ class ExecutionMapper(ExecutionMapperBase):
             given = discr.given
 
             flux_count = len(insn.fluxes)
-            dep_count = len(kernel.all_deps)
+            dep_count = len(kernel.interior_deps)
 
             discr.gather_counter.add(
                     flux_count*dep_count)
