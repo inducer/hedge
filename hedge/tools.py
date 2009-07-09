@@ -1237,20 +1237,15 @@ def mass_flops(discr):
 
 
 
-def lift_flops(discr):
-    result = 0
-
-    for eg in discr.element_groups:
-        ldis = eg.local_discretization
-        result += (
-                2 # mul+add
-                * ldis.face_node_count()
-                * ldis.face_count()
-                * ldis.node_count()
-                * len(eg.members)
-                )
-
-    return result
+def lift_flops(fg):
+    ldis = fg.ldis_loc
+    return (
+            2 # mul+add
+            * ldis.face_node_count()
+            * ldis.face_count()
+            * ldis.node_count()
+            * fg.element_count()
+            )
 
 
 
