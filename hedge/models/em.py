@@ -325,7 +325,7 @@ class TEMaxwellOperator(MaxwellOperator):
                 (False,False,True) # only hz
                 )
 
-class TEMaxwell1DOperator(MaxwellOperator):
+class TE1DMaxwellOperator(MaxwellOperator):
     """A 1D TE Maxwell operator.
 
     Field order is [Ex Ey Hz].
