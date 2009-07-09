@@ -411,8 +411,6 @@ class TwoRateAdamsBashforthTimeStepperFastestFirstMethod(TwoRateAdamsBashforthTi
 
         y_slow_substep = y_slow
 
-        y_slow_start = y_slow
-
         # substep the faster component - y_fast -
         # first and extrapolate the the slow component -y_slow:
         for i in range(self.step_ratio):
@@ -420,98 +418,45 @@ class TwoRateAdamsBashforthTimeStepperFastestFirstMethod(TwoRateAdamsBashforthTi
             sub_ex_coeff = self.ab_extrapol_substep_coefficients[i]
             sub_ex_side_free_coeffs = self.ab_extrapol_side_effect_free_substep_coefficients[i]
 #
-            if "eval_s2f_on_substeplevel" in self.method:
-                y_fast = y_fast + ( self.small_dt * _linear_comb(coeff, hist_f2f)
-                        + self.small_dt * _linear_comb(coeff, hist_s2f))
-            else:
-                y_fast = y_fast + ( self.small_dt * _linear_comb(coeff, hist_f2f)
+            #if "eval_s2f_on_substeplevel" in self.method:
+            #    y_fast = y_fast + (
+            #            self.small_dt * _linear_comb(coeff, hist_f2f)
+            #            + self.small_dt * _linear_comb(coeff, hist_s2f))
+            #else:
+            def y_fast_substep_func():
+                return y_fast + (
+                        self.small_dt * _linear_comb(coeff, hist_f2f)
                         + self.large_dt * _linear_comb(sub_ex_coeff, hist_s2f))
 
             if i == self.step_ratio-1:
                 break
 
-            #if "large_dt_for_small" in self.method:
-            #    y_slow_substep = y_slow_substep + (
-            #            self.large_dt * _linear_comb(sub_ex_coeff, hist_s2s)
-            #            + self.large_dt * _linear_comb(sub_ex_coeff, hist_f2s))
-
-
-
-            if "eval_s2f_on_substeplevel" in self.method:
-                y_slow_substep = y_slow_substep + (
-                        self.large_dt * _linear_comb(sub_ex_coeff, hist_s2s)
-                        + self.large_dt * _linear_comb(sub_ex_coeff, hist_f2s))
-
-                _rotate_insert(hist_s2f, rhs_s2f(t+(i+1)*self.small_dt,
-                    y_fast, y_slow_substep))
-
-            #else:
-            #    # If s2s only f(y_small) - PIC !!! - calculation of y_slow on 
-            #    # substep level not required.
-            #    y_slow_substep = None
-
-            # compute s2s-RHS of fast component:
-            #_rotate_insert(hist_f2f, rhs_f2f(t+(i+1)*self.small_dt,
-            #              y_fast, y_slow_substep))
-
+            # define function to ensure "lazy evaluation". This ensures, that only if 
+            # required y_slow gets extrapolated on substep level.
             def y_slow_substep_func():
                 return y_slow + (
                         self.large_dt * _linear_comb(sub_ex_side_free_coeffs, hist_s2s)
                         + self.large_dt * _linear_comb(sub_ex_side_free_coeffs, hist_f2s))
 
+            # calculate the RHS's on substep level:
             _rotate_insert(hist_f2f, rhs_f2f(t+(i+1)*self.small_dt,
-                          y_fast, y_slow_substep_func()))
+                          y_fast_substep_func, y_slow_substep_func))
+            y_fast = y_fast_substep_func
 
-        if "large_dt_for_small" in self.method:
-            sub_ex_coeffs = self.ab_extrapol_substep_coefficients[
-                    self.step_ratio-1]
-            #y_slow = y_slow_substep + (
-            #        self.large_dt * _linear_comb(sub_ex_coeffs, hist_s2s)
-            #        + self.large_dt * _linear_comb(sub_ex_coeffs, hist_f2s))
-            y_slow = y_slow_start + (
-                    self.large_dt * _linear_comb(coeff, hist_s2s)
-                    + self.large_dt * _linear_comb(coeff, hist_f2s))
+            if "eval_s2f_on_substeplevel" in self.method:
+                _rotate_insert(hist_s2f, rhs_s2f(t+(i+1)*self.small_dt,
+                    y_fast, y_slow_substep_func))
 
-            # calculate all RHS running on dt_large level:
-            _rotate_insert(hist_s2s, rhs_s2s(t+self.large_dt, y_fast, y_slow))
-            _rotate_insert(hist_s2f, rhs_s2f(t+self.large_dt, y_fast, y_slow))
+        # step the 'large' part
+        y_slow = y_slow + self.large_dt * (
+                _linear_comb(coeff, hist_s2s)
+                + _linear_comb(coeff, hist_f2s))
 
-            # calculate all RHS running on substep - dt_small - level:
-            _rotate_insert(hist_f2s, rhs_f2s(t+self.large_dt, y_fast, y_slow))
-            _rotate_insert(hist_f2f, rhs_f2f(t+self.large_dt, y_fast, y_slow))
-
-        elif "eval_s2f_on_substeplevel" in self.method:
-            # step the 'large' part based on the substepped history of
-            # s2l-RHS and y_large_substep. Extrapolation of l2l-RHS for
-            # last substep reqired.
-            sub_ex_coeff = self.ab_extrapol_substep_coefficients[
-                    self.step_ratio-1]
-            y_slow = y_slow_substep + (
-                    self.large_dt * _linear_comb(sub_ex_coeff, hist_s2s)
-                    + self.large_dt * _linear_comb(sub_ex_coeff, hist_f2s))
-
-            # calculate all RHS running on dt_large level:
-            _rotate_insert(hist_s2s, rhs_s2s(t+self.large_dt, y_fast, y_slow))
-            _rotate_insert(hist_s2f, rhs_s2f(t+self.large_dt, y_fast, y_slow))
-
-            # calculate all RHS running on substep - dt_small - level:
-            _rotate_insert(hist_f2s, rhs_f2s(t+self.large_dt, y_fast, y_slow))
-            _rotate_insert(hist_f2f, rhs_f2f(t+self.large_dt, y_fast, y_slow))
-
-
-        else:
-            # step the 'large' part
-            y_slow = y_slow + self.large_dt * (
-                    _linear_comb(coeff, hist_s2s)
-                    + _linear_comb(coeff, hist_f2s))
-
-            # calculate all RHS running on dt_large level:
-            _rotate_insert(hist_f2s, rhs_f2s(t+self.large_dt, y_fast, y_slow))
-            _rotate_insert(hist_s2s, rhs_s2s(t+self.large_dt, y_fast, y_slow))
-            _rotate_insert(hist_s2f, rhs_s2f(t+self.large_dt, y_fast, y_slow))
-
-            # calculate RHS running on substep - dt_small - level:
-            _rotate_insert(hist_f2f, rhs_f2f(t+self.large_dt, y_fast, y_slow))
+        # calculate all RHS:
+        _rotate_insert(hist_f2s, rhs_f2s(t+self.large_dt, y_fast, y_slow))
+        _rotate_insert(hist_s2s, rhs_s2s(t+self.large_dt, y_fast, y_slow))
+        _rotate_insert(hist_s2f, rhs_s2f(t+self.large_dt, y_fast, y_slow))
+        _rotate_insert(hist_f2f, rhs_f2f(t+self.large_dt, y_fast, y_slow))
 
         from hedge.tools import make_obj_array
         return make_obj_array([y_fast, y_slow])
@@ -536,6 +481,15 @@ class TwoRateAdamsBashforthTimeStepperSlowestFirstMethod(TwoRateAdamsBashforthTi
                     i/step_ratio-1)
                 for i in range(1, step_ratio+1)]
 
+        # get the AB interpolation coefficients on
+        # small_dt substep level between two large_dt values:
+        self.ab_interp_side_free_substep_coefficients = [
+                make_generic_ab_coefficients(
+                    numpy.arange(0, -order, -1),
+                    -1,
+                    i/step_ratio-1)
+                for i in range(1, step_ratio+1)]
+
     def run_ab(self, ys, t, rhss):
         y_fast, y_slow = ys
         rhs_f2f, rhs_s2f, rhs_f2s, rhs_s2s = rhss
@@ -543,58 +497,59 @@ class TwoRateAdamsBashforthTimeStepperSlowestFirstMethod(TwoRateAdamsBashforthTi
 
         coeff = self.coefficients
 
-        y_slow_substep = y_slow
+        y_slow_start = y_slow
 
         # extrapolate y_slow from t=0 to t=1
         y_slow = y_slow + (
                 self.large_dt * _linear_comb(coeff, hist_s2s)
                 + self.large_dt * _linear_comb(coeff, hist_f2s))
 
-        # update RHS's running 'large_dt' level:
+        # update RHS's:
         _rotate_insert(hist_s2s, rhs_s2s(t+self.large_dt, y_fast, y_slow))
-        _rotate_insert(hist_s2f, rhs_s2f(t+self.large_dt, y_fast, y_slow))
+        #_rotate_insert(hist_f2s, rhs_f2s(t+self.large_dt, y_fast, y_slow))
+        if "eval_s2f_on_substeplevel" not in self.method:
+            _rotate_insert(hist_s2f, rhs_s2f(t+self.large_dt, y_fast, y_slow))
 
         for i in range(self.step_ratio):
             # substep fast component - y_small - and interpolate
-            # the values of the coupling l2s-RHS:
-            sub_int_coeffs = self.ab_interp_substep_coefficients[i]
-            y_fast = y_fast + (
-                    self.small_dt * _linear_comb(coeff, hist_f2f)
-                    + self.large_dt * _linear_comb(sub_int_coeffs, hist_s2f)
-                    )
+            # the values of the coupling s2f-RHS:
+            if "eval_s2f_on_substeplevel" in self.method:
+                # extrapolate y_fast from t=0 to t=h on substeplevel:
+                y_fast = y_fast +  (
+                        self.small_dt * _linear_comb(coeff, hist_f2f)
+                        + self.small_dt * _linear_comb(coeff, hist_s2f)
+                        )
+            else:
+                sub_int_coeff = self.ab_interp_substep_coefficients[i]
+                y_fast = y_fast + (
+                        self.small_dt * _linear_comb(coeff, hist_f2f)
+                        + self.large_dt * _linear_comb(sub_int_coeff, hist_s2f)
+                        )
 
             if i == self.step_ratio-1:
                 break
 
-            if "large_dt_for_small" in self.method:
-                # If s2s = f(y_fast, y_slow), inter/extra-polation [l2l/s2l]
-                # of y_slow on substep level required:
-                sub_ex_coeff =  self.ab_extrapol_substep_coefficients[i]
-                y_slow_substep =  y_slow_substep + (
-                        self.large_dt * _linear_comb(sub_int_coeffs, hist_s2s)
-                        + self.large_dt * _linear_comb(sub_ex_coeff, hist_f2s))
-
-            else:
-                y_slow_substep=None
+            # define function to ensure "lazy evaluation". This ensures, that only if 
+            # required y_slow gets extrapolated on substep level.
+            def y_slow_substep_func():
+                sub_ex_side_free_coeff = self.ab_extrapol_side_effect_free_substep_coefficients[i]
+                sub_int_side_free_coeff = self.ab_interp_side_free_substep_coefficients[i]
+                return y_slow_start + (
+                        self.large_dt * _linear_comb(sub_int_side_free_coeff, hist_s2s)
+                        + self.large_dt * _linear_comb(sub_ex_side_free_coeff, hist_f2s))
 
             # compute s2s-RHS of fast component:
             _rotate_insert(hist_f2f, rhs_f2f(t+(i+1)*self.small_dt,
-                          y_fast, y_slow_substep))
+                          y_fast, y_slow_substep_func()))
+            if "eval_s2f_on_substeplevel" in self.method:
+                _rotate_insert(hist_s2f, rhs_s2f(t+(i+1)*self.small_dt,
+                    y_fast, y_slow_substep_func()))
 
-        if "large_dt_for_small" in self.method:
-            sub_int_coeffs = self.ab_interp_substep_coefficients[self.step_ratio-1]
-            sub_ex_coeffs =  self.ab_extrapol_substep_coefficients[self.step_ratio-1]
-            y_slow = y_slow_substep + (
-                    self.large_dt * _linear_comb(sub_int_coeffs, hist_s2s)
-                    + self.large_dt * _linear_comb(sub_ex_coeffs, hist_f2s))
-
-            # calculate missing RHS's:
-            _rotate_insert(hist_f2f, rhs_f2f(t+self.large_dt, y_fast, y_slow))
-            _rotate_insert(hist_f2s, rhs_f2s(t+self.large_dt, y_fast, y_slow))
-
-        else:
-            _rotate_insert(hist_f2f, rhs_f2f(t+self.large_dt, y_fast, y_slow_substep))
-            _rotate_insert(hist_f2s, rhs_f2s(t+self.large_dt, y_fast, y_slow))
+        # compute RHS's:
+        _rotate_insert(hist_f2f, rhs_f2f(t+self.large_dt, y_fast, y_slow_substep_func()))
+        _rotate_insert(hist_f2s, rhs_f2s(t+self.large_dt, y_fast, y_slow_substep_func()))
+        if "eval_s2f_on_usubsteplevel" in self.method:
+            _rotate_insert(hist_s2f, rhs_s2f(t+self.large_dt, y_fast, y_slow_substep_func()))
 
         from hedge.tools import make_obj_array
         return make_obj_array([y_fast, y_slow])
