@@ -1214,14 +1214,10 @@ class Discretization(hedge.discretization.Discretization):
                 a, b, dtype=numpy.float64).get()
 
     def nodewise_max(self, a):
-        return gpuarray.subset_max(
-	        self._meaningful_volume_indices(),
-		a, dtype=self.default_scalar_type).get()
+        return gpuarray.subset_max(self._meaningful_volume_indices(), a).get()
 
     def nodewise_min(self, a):
-        return gpuarray.subset_min(
-	        self._meaningful_volume_indices(),
-		a, dtype=self.default_scalar_type).get()
+        return gpuarray.subset_min(self._meaningful_volume_indices(), a).get()
 
     # numbering tools ---------------------------------------------------------
     @memoize_method

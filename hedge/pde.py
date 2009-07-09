@@ -1932,24 +1932,6 @@ class NavierStokesOperator(GasDynamicsOperatorBase):
         GasDynamicsOperatorBase.__init__(self, dimensions, gamma, bc)
         self.mu = mu
 
-    def tau(self, q):
-        from hedge.optemplate import make_nabla
-        from pytools import delta
-
-        dimensions = self.dimensions
-        u = self.u
-        mu = self.mu
-        nabla = make_nabla(dimensions)
-
-        tau = numpy.zeros((dimensions+1, dimensions), dtype=object)
-        for i in range(dimensions):
-            for j in range(dimensions):
-                tau[i,j] = mu * ((nabla[j] * u(q)[i] + nabla[i] * u(q)[j]) - 
-                        2/3 * delta(i,j) * numpy.dot(nabla, u(q)))
-        for j in range(dimensions):
-            tau[dimensions,j] = numpy.dot(u(q), tau[j])
-        return tau
-
     def op_template(self):
         from hedge.optemplate import make_vector_field, \
                 make_common_subexpression as cse
@@ -1959,6 +1941,92 @@ class NavierStokesOperator(GasDynamicsOperatorBase):
 
         def p(q):
             return cse((self.gamma-1)*(self.e(q) - 0.5*numpy.dot(self.rho_u(q), u(q))))
+
+        def make_central_flux(wave_speed, state, flux_func, bdry_tags_and_states):
+
+            from hedge.flux import make_normal, FluxVectorPlaceholder
+
+            fluxes = flux_func#(state)
+
+            n = len(state)
+            d = len(fluxes)
+            normal = make_normal(d)
+            fvph = FluxVectorPlaceholder(len(state)*(1+d)+1)
+
+            wave_speed_ph = fvph[0]
+            state_ph = fvph[1:1+n]
+            fluxes_ph = [fvph[1+i*n:1+(i+1)*n] for i in range(1, d+1)]
+
+            penalty = wave_speed_ph.int*(state_ph.ext-state_ph.int)
+
+            flux = numpy.zeros((self.dimensions+2, self.dimensions), dtype=object)
+            for i in range(self.dimensions):
+                flux[:,i] = 0.5 * (normal[i] * (fluxes_ph[i].int + 
+                            fluxes_ph[i].ext)) - penalty
+
+            from hedge.optemplate import get_flux_operator
+            flux_op = numpy.zeros((self.dimensions), dtype=object)
+            for i in range(self.dimensions):
+                flux_op[i] = get_flux_operator(flux[:,i])
+            int_operand = join_fields(wave_speed, state, *fluxes)
+
+            from hedge.optemplate import pair_with_boundary
+            output = numpy.zeros((self.dimensions+2, self.dimensions), dtype=object)
+            for i in range(self.dimensions):
+                output[:,i] = (flux_op[i]*int_operand
+                               + sum(
+                               flux_op[i]*pair_with_boundary(int_operand,
+                               join_fields(0, ext_state), tag)
+                               for tag, ext_state in bdry_tags_and_states))
+            print output
+            raw_input()
+            return output
+
+        def dq(q):
+            from hedge.flux import make_normal
+            from hedge.tools import join_fields
+            from hedge.optemplate import make_nabla, \
+                    InverseMassOperator, ElementwiseMaxOperator
+
+            nabla = make_nabla(self.dimensions)
+
+            normal = make_normal(self.dimensions)
+            return (-InverseMassOperator()*
+                   (numpy.array([nabla[0] * q, nabla[1] * q],
+                       dtype=object).transpose() +
+                   make_central_flux(
+                        wave_speed=
+                        ElementwiseMaxOperator()*
+                        c,
+                        state=make_vector_field("q", self.dimensions+2),
+                        flux_func=[q,q],
+                        bdry_tags_and_states=[
+                            (TAG_ALL, bc_state)]
+                            )))
+
+        def tau(q):
+            from hedge.optemplate import make_nabla
+            from pytools import delta
+
+            mu = self.mu
+            dimensions = self.dimensions
+            nabla = make_nabla(dimensions)
+
+            du = numpy.zeros((dimensions, dimensions), dtype=object)
+            for i in range(dimensions):
+                for j in range(dimensions):
+                    du[i,j] = (dq(q)[i+2,j] - u(q)[i] * dq(q)[0,j]) / self.rho(q)
+
+            tau = numpy.zeros((dimensions+1, dimensions), dtype=object)
+            for i in range(dimensions):
+                for j in range(dimensions):
+                    tau[i,j] = mu * (du[i,j] + du[j,i] -
+                               2/3 * delta(i,j) * (du[0,0] + du[1,1]))
+                    #tau[i,j] = mu * ((nabla[j] * u(q)[i] + nabla[i] * u(q)[j]) - 
+                    #           2/3 * delta(i,j) * numpy.dot(nabla, u(q)))
+            for j in range(dimensions):
+                tau[dimensions,j] = numpy.dot(u(q), tau[j])
+            return tau
 
         def flux(q):
             from pytools import delta
@@ -1970,11 +2038,11 @@ class NavierStokesOperator(GasDynamicsOperatorBase):
                         self.rho_u(q)[i],
 
                         # flux E
-                        cse(self.e(q)+p(q))*u(q)[i] + self.tau(q)[self.dimensions,i],
+                        cse(self.e(q)+p(q))*u(q)[i] - tau(q)[self.dimensions,i],
 
                         # flux rho_u
                         make_obj_array([
-                            self.rho_u(q)[i]*self.u(q)[j] + delta(i,j) * p(q) + self.tau(q)[i,j]
+                            self.rho_u(q)[i]*self.u(q)[j] + delta(i,j) * p(q) - tau(q)[i,j]
                             for j in range(self.dimensions)
                             ])
                         ))
