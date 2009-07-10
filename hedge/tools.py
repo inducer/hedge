@@ -28,6 +28,9 @@ import numpy.linalg as la
 import pyublas
 import hedge._internal
 
+#scott added for debugging 
+import pdb
+
 
 
 ZeroVector = hedge._internal.ZeroVector
@@ -1293,7 +1296,7 @@ def count_dofs(vec):
 
 # flux creation ---------------------------------------------------------------
 def make_lax_friedrichs_flux(wave_speed, state, flux_func, bdry_tags_and_states, strong):
-
+    #print bdry_tags_and_states
     from hedge.flux import make_normal, FluxVectorPlaceholder
    
     fluxes = flux_func(state)
@@ -1307,6 +1310,7 @@ def make_lax_friedrichs_flux(wave_speed, state, flux_func, bdry_tags_and_states,
     state_ph = fvph[1:1+n]
     fluxes_ph = [fvph[1+i*n:1+(i+1)*n] for i in range(1, d+1)]
 
+    from hedge.flux import Max
     penalty = wave_speed_ph.int*(state_ph.ext-state_ph.int)
 
     if not strong:
@@ -1321,14 +1325,33 @@ def make_lax_friedrichs_flux(wave_speed, state, flux_func, bdry_tags_and_states,
     int_operand = join_fields(wave_speed, state, *fluxes)
 
     from hedge.optemplate import pair_with_boundary
-
+    #temp1 = (flux_op*int_operand
+    #        + sum(
+    #            flux_op*pair_with_boundary(int_operand,
+    #                join_fields(0, ext_state, *flux_func(ext_state)), tag)
+    #            for tag, ext_state in bdry_tags_and_states)
+    #       )
+    #print temp1
+    #first way, impose exact solution as BC
     return (flux_op*int_operand
             + sum(
                 flux_op*pair_with_boundary(int_operand,
                     join_fields(0, ext_state, *flux_func(ext_state)), tag)
-                for tag, ext_state in bdry_tags_and_states))
-
-
+                for tag, ext_state in bdry_tags_and_states)
+           )
+    #impose no BC (is this true??)
+    #impose no BC on LHS, exact solution on RHS
+    #return (flux_op*int_operand
+    #        + sum(
+    #            flux_op*pair_with_boundary(int_operand,
+    #                join_fields(0, ext_state, *flux_func(ext_state)), tag)
+    #            for tag, ext_state in bdry_tags_and_states)
+    #        + sum(
+    #            flux_op*pair_with_boundary(int_operand,
+    #                join_fields(0, ext_state, *flux_func(ext_state)), tag)
+    #            for tag, ext_state in bdry_tags_and_states)
+    #       )
+    #pdb.set_trace()
 
 
 # debug tools -----------------------------------------------------------------

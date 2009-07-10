@@ -32,6 +32,8 @@ import hedge.mesh
 import hedge.data
 from pytools import memoize_method, Record
 
+import pdb
+
 
 
 
@@ -1813,13 +1815,29 @@ class GasDynamicsOperatorBase(TimeDependentOperator):
     def bind(self, discr):
         from hedge.mesh import TAG_ALL
         bound_op = discr.compile(self.op_template())
-
+        #def wrap(t, q):
+        #    opt_result = bound_op(
+        #            q=q, 
+        #            bc_q=self.bc.boundary_interpolant(t, discr, TAG_ALL))
+        #    max_speed = opt_result[-1]
+        #    ode_rhs = opt_result[:-1]
+	    #return ode_rhs, discr.nodewise_max(max_speed)
+        #Scott's routine (TEST to get no BC on RHS and exact on LHS)
         def wrap(t, q):
+            bc_q=self.bc.boundary_interpolant(t, discr, TAG_ALL)
+            #print q
+            #pdb.set_trace()
+            bc_q[0][0]=q[0][11*10-1]
+            bc_q[1][0]=q[1][11*10-1]
+            bc_q[2][0]=q[2][11*10-1]
+            #pdb.set_trace()
             opt_result = bound_op(
                     q=q, 
-                    bc_q=self.bc.boundary_interpolant(t, discr, TAG_ALL))
+                    bc_q=bc_q)
             max_speed = opt_result[-1]
             ode_rhs = opt_result[:-1]
+            #print q
+            #print bc_q
 	    return ode_rhs, discr.nodewise_max(max_speed)
 
         return wrap
@@ -1886,8 +1904,22 @@ class EulerOperator(GasDynamicsOperatorBase):
         speed = sqrt(numpy.dot(u(state), u(state))) + c
 
         from hedge.tools import make_lax_friedrichs_flux, join_fields
-        from hedge.mesh import TAG_ALL
-
+        from hedge.mesh import TAG_ALL, TAG_NONE
+      
+        #first way of doing it
+        #return join_fields(
+        #        (- numpy.dot(make_nabla(self.dimensions), flux(state))
+        #            + InverseMassOperator()*make_lax_friedrichs_flux(
+         #               wave_speed=
+	#		ElementwiseMaxOperator()*
+	#		c,
+         #               state=state, flux_func=flux,
+          #              bdry_tags_and_states=[
+           #                 (TAG_ALL, bc_state)
+            #                ],
+             #           strong=True
+              #          )),
+               #     speed)
         return join_fields(
                 (- numpy.dot(make_nabla(self.dimensions), flux(state))
                     + InverseMassOperator()*make_lax_friedrichs_flux(

@@ -231,6 +231,8 @@ class Code(object):
         self.instructions = instructions
         self.result = result
 
+        open("dataflow.dot", "w").write(dot_dataflow_graph(self,10000))
+
     class NoInstructionAvailable(Exception):
         pass
 
