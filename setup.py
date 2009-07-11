@@ -125,6 +125,7 @@ def main():
                     "hedge.backends.mpi",
                     "hedge.backends.cuda",
                     "hedge.timestep",
+                    "hedge.timestep.multirate_ab",
                     ],
             zip_safe=False,
 

@@ -59,8 +59,10 @@ class TwoRateAdamsBashforthTimeStepperBase(TimeStepper):
     Numerical Mathematics,  vol. 24, Dec. 1984, pg. 484-502.
     """
 
-    def __init__(self, large_dt, step_ratio, order, startup_stepper=None,
-            eval_s2f_dt_small=False):
+    def __init__(self, method, large_dt, step_ratio, order, 
+            order_s2s=None, order_f2s=None,
+            order_s2f=None, order_f2f=None,
+            startup_stepper=None):
         """
 
         If `substepping` is set to True, then an 
