@@ -1945,36 +1945,25 @@ class NavierStokesOperator(GasDynamicsOperatorBase):
         def make_central_flux(flux_func, bdry_tags_and_states):
 
             from hedge.flux import make_normal, FluxVectorPlaceholder
-
-            fluxes = flux_func
-
-            d = len(fluxes)
+            d = len(flux_func)
             normal = make_normal(d)
-            fvph = FluxVectorPlaceholder(d)
-
-            fluxes_ph = fvph
+            fluxes_ph = FluxVectorPlaceholder(d)
 
             flux = numpy.zeros((self.dimensions+2, self.dimensions), dtype=object)
             for i in range(self.dimensions):
-                flux[:,i] = 0.5 * normal[i] * (fluxes_ph.int + 
-                                   fluxes_ph.ext)
+                flux[:,i] = 0.5 * normal[i] * (fluxes_ph.int + fluxes_ph.ext)
 
             from hedge.optemplate import get_flux_operator
             flux_op = numpy.zeros((self.dimensions), dtype=object)
             for i in range(self.dimensions):
                 flux_op[i] = get_flux_operator(flux[:,i])
 
-            int_operand = fluxes #join_fields(fluxes)
-
             from hedge.optemplate import pair_with_boundary
             central_flux = numpy.zeros((self.dimensions+2, self.dimensions), dtype=object)
             for i in range(self.dimensions):
-                central_flux[:,i] = (flux_op[i]*int_operand
+                central_flux[:,i] = (flux_op[i]*flux_func
                                 + sum(
-                                flux_op[i]*pair_with_boundary(int_operand,
-                                ext_state
-                                #join_fields(ext_state)
-                                , tag)
+                                flux_op[i]*pair_with_boundary(flux_func, ext_state, tag)
                                 for tag, ext_state in bdry_tags_and_states))
 
             #from pytools import indices_in_shape
