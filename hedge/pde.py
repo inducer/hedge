@@ -1942,39 +1942,29 @@ class NavierStokesOperator(GasDynamicsOperatorBase):
         def p(q):
             return cse((self.gamma-1)*(self.e(q) - 0.5*numpy.dot(self.rho_u(q), u(q))))
 
-        def make_central_flux(wave_speed, flux_func, bdry_tags_and_states):
+        def make_central_flux(flux_func, bdry_tags_and_states):
 
             from hedge.flux import make_normal, FluxVectorPlaceholder
 
             fluxes = flux_func
-            #print fluxes
-            #print len(fluxes)
-            #print fluxes.size
-            #raw_input()
 
             d = len(fluxes)
             normal = make_normal(d)
-            fvph = FluxVectorPlaceholder(d+1)
+            fvph = FluxVectorPlaceholder(d)
 
-            #print fvph
-            #raw_input()
-
-            wave_speed_ph = fvph[0]
-            fluxes_ph = fvph[1:d+1]
-
-            #penalty = wave_speed_ph.int*(state_ph.ext-state_ph.int)
+            fluxes_ph = fvph
 
             flux = numpy.zeros((self.dimensions+2, self.dimensions), dtype=object)
             for i in range(self.dimensions):
-                flux[:,i] = 0.5 * (normal[i] * fluxes_ph.int + 
-                                   fluxes_ph.ext)# - penalty
+                flux[:,i] = 0.5 * normal[i] * (fluxes_ph.int + 
+                                   fluxes_ph.ext)
 
             from hedge.optemplate import get_flux_operator
             flux_op = numpy.zeros((self.dimensions), dtype=object)
             for i in range(self.dimensions):
                 flux_op[i] = get_flux_operator(flux[:,i])
 
-            int_operand = join_fields(wave_speed, fluxes)
+            int_operand = fluxes #join_fields(fluxes)
 
             from hedge.optemplate import pair_with_boundary
             central_flux = numpy.zeros((self.dimensions+2, self.dimensions), dtype=object)
@@ -1982,7 +1972,9 @@ class NavierStokesOperator(GasDynamicsOperatorBase):
                 central_flux[:,i] = (flux_op[i]*int_operand
                                 + sum(
                                 flux_op[i]*pair_with_boundary(int_operand,
-                                join_fields(0, ext_state), tag)
+                                ext_state
+                                #join_fields(ext_state)
+                                , tag)
                                 for tag, ext_state in bdry_tags_and_states))
 
             #from pytools import indices_in_shape
@@ -2007,9 +1999,9 @@ class NavierStokesOperator(GasDynamicsOperatorBase):
                        dtype=object).transpose() -
                    InverseMassOperator()*
                    make_central_flux(
-                        wave_speed=
-                        ElementwiseMaxOperator()*
-                        c,
+                        #wave_speed= 
+                        #ElementwiseMaxOperator()*
+                        #c,
                         flux_func=q,
                         bdry_tags_and_states=[
                             (TAG_ALL, make_vector_field("bc_q", self.dimensions+2)
