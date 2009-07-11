@@ -124,6 +124,7 @@ def main():
                     "hedge.backends.jit",
                     "hedge.backends.mpi",
                     "hedge.backends.cuda",
+                    "hedge.timestep",
                     ],
             zip_safe=False,
 
