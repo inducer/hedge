@@ -193,6 +193,9 @@ class FluxScalarPlaceholder(object):
     def __init__(self, component=0):
         self.component = component
 
+    def __str__(self):
+        return "FSP(%d)" % self.component
+
     @property
     def int(self):
         return FieldComponent(self.component, True)
@@ -225,6 +228,9 @@ class FluxVectorPlaceholder(object):
 
     def __len__(self):
         return len(self.scalars)
+
+    def __str__(self):
+        return "%s(%s)" % (self.__class__.__name__, self.scalars)
 
     def __getitem__(self, idx):
         if isinstance(idx, int):
