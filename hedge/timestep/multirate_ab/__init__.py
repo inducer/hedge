@@ -26,20 +26,21 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 import numpy
 import numpy.linalg as la
-from pytools import memoize
+from pytools import memoize, memoize_method
 from hedge.timestep.base import TimeStepper
 from hedge.timestep.rk4 import RK4TimeStepper
 from hedge.timestep.ab import \
         make_generic_ab_coefficients, \
         make_ab_coefficients
+from hedge.timestep.multirate_ab.methods import \
+        HIST_NAMES
+from hedge.timestep.multirate_ab.processors import \
+        MRABProcessor
 
 
 
 
 # helper functions ------------------------------------------------------------
-def _rotate_insert(l, new_item):
-    l.pop()
-    l.insert(0, new_item)
 
 def _linear_comb(coefficients, vectors):
     from operator import add
@@ -51,7 +52,7 @@ def _linear_comb(coefficients, vectors):
 
 
 
-class TwoRateAdamsBashforthTimeStepperBase(TimeStepper):
+class TwoRateAdamsBashforthTimeStepper(TimeStepper):
     """Simultaneously timesteps two parts of an ODE system,
     the first with a small timestep, the second with a large timestep.
 
@@ -59,55 +60,38 @@ class TwoRateAdamsBashforthTimeStepperBase(TimeStepper):
     Numerical Mathematics,  vol. 24, Dec. 1984, pg. 484-502.
     """
 
-    def __init__(self, method, large_dt, step_ratio, order, 
-            order_s2s=None, order_f2s=None,
-            order_s2f=None, order_f2f=None,
+    def __init__(self, method, large_dt, substep_count, order,
+            order_f2f=None, order_s2f=None,
+            order_f2s=None, order_s2s=None,
             startup_stepper=None):
-        """
 
-        If `substepping` is set to True, then an 
-        exptrapolation of the state of the large-dt part of the
-        system is computed for each small-dt timestep. If set to
-        False, None will instead be passed to right-hand sides
-        that would otherwise receive it.
-
-        If `slowest_first` is set to True, then the time-stepper uses the
-        "slowest-first" approach from [1].
-
-        If `fastest_first` is set to True, then the time-stepper uses the 
-        "fastest-first" approach from [1].
-        """
+        if isinstance(method, str):
+            from hedge.timestep.multirate_ab.methods import methods
+            method = methods[method]
+        self.method = method
 
         self.large_dt = large_dt
-        self.small_dt = large_dt/step_ratio
-        self.step_ratio = step_ratio
-        self.eval_s2f_dt_small = eval_s2f_dt_small
+        self.small_dt = large_dt/substep_count
+        self.substep_count = substep_count
 
-        # get the "standard" AB coefficients extrapolating y for an entire
-        # large_dt timestep:
-        self.coefficients = make_ab_coefficients(order)
+        from hedge.timestep.multirate_ab.methods import \
+                HIST_F2F, HIST_F2S, HIST_S2F, HIST_S2S
 
-        # get the AB extrapolation coeffcients on
-        # small_dt substep level:
-        self.ab_extrapol_substep_coefficients = [
-                make_generic_ab_coefficients(
-                    numpy.arange(0, -order, -1),
-                    (i-1)/step_ratio,
-                    i/step_ratio)
-                for i in range(1, step_ratio+1)]
+        self.orders = {
+                HIST_F2F: order_f2f,
+                HIST_S2F: order_s2f,
+                HIST_F2S: order_f2s,
+                HIST_S2S: order_s2s,
+                }
 
-        # get the side effect free AB extrapolation 
-        # coeffcients on small_dt substep level:
-        self.ab_extrapol_side_effect_free_substep_coefficients = [
-                make_generic_ab_coefficients(
-                    numpy.arange(0, -order, -1),
-                    0,
-                    i/step_ratio)
-                for i in range(1, step_ratio+1)]
+        for hn in HIST_NAMES:
+            if self.orders[hn] is None:
+                self.orders[hn] = order
 
-        # rhs_histories is row major--see documentation for 
-        # rhss arg of __call__.
-        self.rhs_histories = [[] for i in range(2*2)]
+        self.max_order = max(self.orders.values())
+
+        # histories of rhs evaluations
+        self.histories = dict((hn, []) for hn in HIST_NAMES)
 
         if startup_stepper is not None:
             self.startup_stepper = startup_stepper
@@ -116,50 +100,45 @@ class TwoRateAdamsBashforthTimeStepperBase(TimeStepper):
 
         self.startup_history = []
 
+        self.hist_is_fast = {
+                HIST_F2F: True,
+                HIST_S2F: self.method.s2f_hist_is_fast,
+                HIST_S2S: False,
+                HIST_F2S: False
+                }
 
     def __call__(self, ys, t, rhss):
         """
         @arg rhss: Matrix of right-hand sides, stored in row-major order, i.e.
-        C{[s2f, s2f, f2s, s2s]}.
+        C{[f2f, s2f, f2s, s2s]}.
         """
         from hedge.tools import make_obj_array
 
         def finish_startup():
             # we're done starting up, pack data into split histories
-            hist_f2f, hist_s2f, hist_f2s, hist_s2s = zip(*self.startup_history)
+            for hn, hist in zip(HIST_NAMES, self.startup_history):
+                if not self.hist_is_fast[hn]:
+                    hist = hist[::self.substep_count]
 
-            n = len(self.coefficients)
-
-            if self.eval_s2f_dt_small:
-                hist_s2f = list(hist_s2f[:n])
-            else:
-                hist_s2f = list(hist_s2f[::self.step_ratio])
-
-            self.rhs_histories = [
-                    list(hist_f2f[:n]),
-                    hist_s2f,
-                    list(hist_f2s[::self.step_ratio]),
-                    list(hist_s2s[::self.step_ratio])
-                    ]
-
-            from pytools import single_valued
-            assert single_valued(len(h) for h in self.rhs_histories) == n
+                self.histories[hn] = list(hist[:self.orders[hn]])
 
             # here's some memory we won't need any more
             self.startup_stepper = None
             del self.startup_history
 
         def combined_rhs(t, y):
-            return make_obj_array([rhs(t, *y) for rhs in rhss])
+            y_fast, y_slow = y
+            return make_obj_array([
+                rhs(t, lambda: y_fast, lambda: y_slow)
+                for rhs in rhss])
 
         def combined_summed_rhs(t, y):
             return numpy.sum(combined_rhs(t, y).reshape((2,2), order="C"), axis=1)
 
-
         if self.startup_stepper is not None:
             ys = make_obj_array(ys)
 
-            if len(self.coefficients) == 1:
+            if self.max_order == 1:
                 # we're running forward Euler, no need for the startup stepper
 
                 assert not self.startup_history
@@ -167,20 +146,128 @@ class TwoRateAdamsBashforthTimeStepperBase(TimeStepper):
                 finish_startup()
                 return self.run_ab(ys, t, rhss)
 
-            for i in range(self.step_ratio):
+            for i in range(self.substep_count):
                 ys = self.startup_stepper(ys, t+i*self.small_dt, self.small_dt,
                         combined_summed_rhs)
                 self.startup_history.insert(0, combined_rhs(t+(i+1)*self.small_dt, ys))
 
-            if len(self.startup_history) == len(self.coefficients)*self.step_ratio:
+            if len(self.startup_history) == self.max_order*self.substep_count:
                 finish_startup()
 
             return ys
         else:
             return self.run_ab(ys, t, rhss)
 
+    def run_ab(self, ys, t, rhss):
+        step_evaluator = _MRABEvaluator(self, ys, t, rhss)
+        step_evaluator.run()
+        return step_evaluator.get_result()
+
+    @memoize_method
+    def get_coefficients(self, for_fast_history, t_start, t_end, order):
+        history_times = numpy.arange(0, -order, -1,
+                dtype=numpy.float64)
+
+        if for_fast_history:
+            history_times /= self.substep_count
+
+        return make_generic_ab_coefficients(history_times, t_start, t_end)
 
 
+
+
+class _MRABEvaluator(MRABProcessor):
+    def __init__(self, stepper, y, t, rhss):
+        MRABProcessor.__init__(self, stepper.method, stepper.substep_count)
+
+        self.stepper = stepper
+
+        self.t_start = t
+
+        self.context = {}
+        self.var_time_level = {}
+
+        self.rhss = rhss
+
+        y_fast, y_slow = y
+        from hedge.timestep.multirate_ab.methods import CO_FAST, CO_SLOW
+        self.last_y = {CO_FAST: y_fast, CO_SLOW: y_slow}
+
+    def integrate_in_time(self, insn):
+        from hedge.timestep.multirate_ab.methods import CO_FAST, CO_SLOW
+        from hedge.timestep.multirate_ab.methods import \
+                HIST_F2F, HIST_F2S, HIST_S2F, HIST_S2S
+
+        if insn.component == CO_FAST:
+            self_hn, cross_hn = HIST_F2F, HIST_S2F
+        else:
+            self_hn, cross_hn = HIST_S2S, HIST_F2S
+
+        start_time_level = self.eval_expr(insn.start)
+        end_time_level = self.eval_expr(insn.end)
+
+        self_coefficients = self.stepper.get_coefficients(
+                self.stepper.hist_is_fast[self_hn],
+                start_time_level/self.stepper.substep_count,
+                end_time_level/self.stepper.substep_count,
+                self.stepper.orders[self_hn])
+        cross_coefficients = self.stepper.get_coefficients(
+                self.stepper.hist_is_fast[cross_hn],
+                start_time_level/self.stepper.substep_count,
+                end_time_level/self.stepper.substep_count,
+                self.stepper.orders[cross_hn])
+
+        if start_time_level == 0 or (insn.result_name not in self.context):
+            my_y = self.last_y[insn.component]
+            assert start_time_level == 0
+        else:
+            my_y = self.context[insn.result_name]()
+            assert start_time_level == \
+                    self.var_time_level[insn.result_name]
+
+        hists = self.stepper.histories
+        my_integrated_y = memoize(
+                lambda: my_y + self.stepper.large_dt * (
+                _linear_comb(self_coefficients, hists[self_hn])
+                + _linear_comb(cross_coefficients, hists[cross_hn])))
+
+        self.context[insn.result_name] = my_integrated_y
+        self.var_time_level[insn.result_name] = end_time_level
+
+        MRABProcessor.integrate_in_time(self, insn)
+
+    def history_update(self, insn):
+        time_slow = self.var_time_level[insn.slow_arg]
+        time_fast = self.var_time_level[insn.fast_arg]
+
+        assert time_slow == time_fast
+
+        t = self.t_start + time_slow/self.stepper.substep_count
+
+        rhs = self.rhss[HIST_NAMES.index(insn.which)]
+
+        hist = self.stepper.histories[insn.which]
+        hist.pop()
+        hist.insert(0,
+                rhs(t,
+                    self.context[insn.slow_arg],
+                    self.context[insn.fast_arg]))
+
+        MRABProcessor.history_update(self, insn)
+
+    def get_result(self):
+        meth = self.stepper.method
+
+        assert self.var_time_level[meth.result_slow] == self.stepper.substep_count
+        assert self.var_time_level[meth.result_fast] == self.stepper.substep_count
+
+        return (self.context[meth.result_fast](),
+                self.context[meth.result_slow]())
+
+
+
+class TwoRateAdamsBashforthTimeStepperBase:
+    pass
 
 class TwoRateAdamsBashforthTimeStepperFastestFirstMethod(TwoRateAdamsBashforthTimeStepperBase):
     def __init__(self, large_dt, step_ratio, order, startup_stepper=None,
@@ -249,7 +336,7 @@ class TwoRateAdamsBashforthTimeStepperFastestFirstMethod(TwoRateAdamsBashforthTi
 
 
 class TwoRateAdamsBashforthTimeStepperSlowestFirstMethodType_2(TwoRateAdamsBashforthTimeStepperBase):
-    def __init__(self, large_dt, step_ratio, order, startup_stepper=None, 
+    def __init__(self, large_dt, step_ratio, order, startup_stepper=None,
             eval_s2f_dt_small=False):
         TwoRateAdamsBashforthTimeStepperBase.__init__(self, large_dt, step_ratio, order,
                 startup_stepper, eval_s2f_dt_small)
@@ -321,7 +408,7 @@ class TwoRateAdamsBashforthTimeStepperSlowestFirstMethodType_2(TwoRateAdamsBashf
             if i == self.step_ratio-1:
                 break
 
-            # define function to ensure "lazy evaluation". This ensures, that only if 
+            # define function to ensure "lazy evaluation". This ensures, that only if
             # required y_slow gets extrapolated on substep level.
             def y_slow_substep_func():
                 sub_ex_side_free_coeff = self.ab_extrapol_side_effect_free_substep_coefficients[i]
@@ -351,7 +438,7 @@ class TwoRateAdamsBashforthTimeStepperSlowestFirstMethodType_2(TwoRateAdamsBashf
 
 
 class TwoRateAdamsBashforthTimeStepperSlowestFirstMethodType_1(TwoRateAdamsBashforthTimeStepperBase):
-    def __init__(self, large_dt, step_ratio, order, startup_stepper=None, 
+    def __init__(self, large_dt, step_ratio, order, startup_stepper=None,
             eval_s2f_dt_small=False):
         TwoRateAdamsBashforthTimeStepperBase.__init__(self, large_dt, step_ratio, order,
                 startup_stepper, eval_s2f_dt_small)
@@ -416,7 +503,7 @@ class TwoRateAdamsBashforthTimeStepperSlowestFirstMethodType_1(TwoRateAdamsBashf
             if i == self.step_ratio-1:
                 break
 
-            # define function to ensure "lazy evaluation". This ensures, that only if 
+            # define function to ensure "lazy evaluation". This ensures, that only if
             # required y_slow gets extrapolated on substep level.
             def y_slow_substep_func():
                 sub_ex_side_free_coeff = self.ab_extrapol_side_effect_free_substep_coefficients[i]
@@ -506,7 +593,7 @@ class TwoRateAdamsBashforthTimeStepperSlowestFirstMethodType_4(TwoRateAdamsBashf
             if i == self.step_ratio-1:
                 break
 
-            # define function to ensure "lazy evaluation". This ensures, that only if 
+            # define function to ensure "lazy evaluation". This ensures, that only if
             # required y_slow gets extrapolated on substep level.
             def y_slow_substep_func():
                 sub_ex_side_free_coeff = self.ab_extrapol_side_effect_free_substep_coefficients[i]
@@ -529,7 +616,7 @@ class TwoRateAdamsBashforthTimeStepperSlowestFirstMethodType_4(TwoRateAdamsBashf
 
 
 class TwoRateAdamsBashforthTimeStepperSlowestFirstMethodType_3(TwoRateAdamsBashforthTimeStepperBase):
-    def __init__(self, large_dt, step_ratio, order, startup_stepper=None, 
+    def __init__(self, large_dt, step_ratio, order, startup_stepper=None,
             eval_s2f_dt_small=False):
         TwoRateAdamsBashforthTimeStepperBase.__init__(self, large_dt, step_ratio, order,
                 startup_stepper, eval_s2f_dt_small)
@@ -594,7 +681,7 @@ class TwoRateAdamsBashforthTimeStepperSlowestFirstMethodType_3(TwoRateAdamsBashf
             if i == self.step_ratio-1:
                 break
 
-            # define function to ensure "lazy evaluation". This ensures, that only if 
+            # define function to ensure "lazy evaluation". This ensures, that only if
             # required y_slow gets extrapolated on substep level.
             def y_slow_substep_func():
                 sub_ex_side_free_coeff = self.ab_extrapol_side_effect_free_substep_coefficients[i]
@@ -613,10 +700,3 @@ class TwoRateAdamsBashforthTimeStepperSlowestFirstMethodType_3(TwoRateAdamsBashf
 
         from hedge.tools import make_obj_array
         return make_obj_array([y_fast, y_slow])
-
-
-
-
-
-
-

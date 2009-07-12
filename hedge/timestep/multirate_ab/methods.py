@@ -1,17 +1,45 @@
+"""Multirate-AB ODE solver."""
+
 from __future__ import division
+
+__copyright__ = "Copyright (C) 2009 Andreas Stock, Andreas Kloeckner"
+
+__license__ = """
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see U{http://www.gnu.org/licenses/}.
+"""
+
+
+
+
 from pytools import Record
 from pymbolic import var
 
+
+
+
 # symbols ---------------------------------------------------------------------
 # components
-class co_fast: pass
-class co_slow: pass
+class CO_FAST: pass
+class CO_SLOW: pass
 
 # histories:
-class hist_s2s: pass
-class hist_s2f: pass
-class hist_f2s: pass
-class hist_f2f: pass
+class HIST_F2F: pass
+class HIST_F2S: pass
+class HIST_S2F: pass
+class HIST_S2S: pass
+
+HIST_NAMES = [HIST_F2F, HIST_F2S, HIST_S2F, HIST_S2S]
 
 
 
@@ -56,168 +84,183 @@ class EndSubstepLoop(Record):
 
 # actual method descriptions --------------------------------------------------
 class MRABMethod(Record):
-    __slots__ = ["steps", "s2f_hist_is_fast"]
+    __slots__ = ["steps", "s2f_hist_is_fast", "result_slow", "result_fast"]
 
 methods = {
         "fastest_first_1a": MRABMethod(s2f_hist_is_fast=False,
             steps=[
-            IntegrateInTime(start=0, end=(i+1)/n, component=co_slow,
+            IntegrateInTime(start=0, end=i+1, component=CO_SLOW,
                 result_name="y_s"),
-            IntegrateInTime(start=i/n, end=(i+1)/n, component=co_fast,
+            IntegrateInTime(start=i, end=i+1, component=CO_FAST,
                 result_name="y_f"),
             HistoryUpdate(slow_arg="y_s", fast_arg="y_f",
-                which=hist_f2f),
+                which=HIST_F2F),
             EndSubstepLoop(),
             HistoryUpdate(slow_arg="y_s", fast_arg="y_f",
-                which=hist_s2f),
+                which=HIST_S2F),
             HistoryUpdate(slow_arg="y_s", fast_arg="y_f",
-                which=hist_f2s),
+                which=HIST_F2S),
             HistoryUpdate(slow_arg="y_s", fast_arg="y_f",
-                which=hist_s2s),
-            ]),
-
+                which=HIST_S2S),
+            ],
+            result_slow="y_s",
+            result_fast="y_f"),
         "fastest_first_1b": MRABMethod(s2f_hist_is_fast=True,
             steps=[
-            IntegrateInTime(start=0, end=(i+1)/n, component=co_slow,
+            IntegrateInTime(start=0, end=i+1, component=CO_SLOW,
                 result_name="y_s"),
-            IntegrateInTime(start=i/n, end=(i+1)/n, component=co_fast,
+            IntegrateInTime(start=i, end=i+1, component=CO_FAST,
                 result_name="y_f"),
             HistoryUpdate(slow_arg="y_s", fast_arg="y_f",
-                which=hist_f2f),
+                which=HIST_F2F),
             HistoryUpdate(slow_arg="y_s", fast_arg="y_f",
-                which=hist_s2f),
+                which=HIST_S2F),
             EndSubstepLoop(),
             HistoryUpdate(slow_arg="y_s", fast_arg="y_f",
-                which=hist_f2s),
+                which=HIST_F2S),
             HistoryUpdate(slow_arg="y_s", fast_arg="y_f",
-                which=hist_s2s),
-            ]),
+                which=HIST_S2S),
+            ],
+            result_slow="y_s",
+            result_fast="y_f"),
         "slowest_first_1": MRABMethod(s2f_hist_is_fast=False,
             steps=[
-                IntegrateInTime(start=0, end=1, component=co_slow,
+                IntegrateInTime(start=0, end=n, component=CO_SLOW,
                 result_name="\\tilde y_s"),
-            IntegrateInTime(start=0, end=1, component=co_fast,
+            IntegrateInTime(start=0, end=n, component=CO_FAST,
                 result_name="\\tilde y_f"),
             HistoryUpdate(slow_arg="\\tilde y_s", fast_arg="\\tilde y_f",
-                which=hist_s2s),
+                which=HIST_S2S),
             HistoryUpdate(slow_arg="\\tilde y_s", fast_arg="\\tilde y_f",
-                which=hist_s2f),
+                which=HIST_S2F),
             StartSubstepLoop(),
-            IntegrateInTime(start=0, end=(i+1)/n, component=co_slow,
+            IntegrateInTime(start=0, end=i+1, component=CO_SLOW,
                 result_name="y_s"),
-            IntegrateInTime(start=i/n, end=(i+1)/n, component=co_fast,
+            IntegrateInTime(start=i, end=i+1, component=CO_FAST,
                 result_name="y_f"),
             HistoryUpdate(slow_arg="y_s", fast_arg="y_f",
-                which=hist_f2f),
+                which=HIST_F2F),
             EndSubstepLoop(),
             HistoryUpdate(slow_arg="y_s", fast_arg="y_f",
-                which=hist_f2s),
-            ]),
+                which=HIST_F2S),
+            ],
+            result_slow="y_s",
+            result_fast="y_f"),
         "slowest_first_2a": MRABMethod(s2f_hist_is_fast=False,
                 steps=[
-            IntegrateInTime(start=0, end=1, component=co_slow,
+            IntegrateInTime(start=0, end=n, component=CO_SLOW,
                 result_name="\\tilde y_s"),
-            IntegrateInTime(start=0, end=1, component=co_fast,
+            IntegrateInTime(start=0, end=n, component=CO_FAST,
                 result_name="\\tilde y_f"),
             HistoryUpdate(slow_arg="\\tilde y_s", fast_arg="\\tilde y_f",
-                which=hist_s2s),
+                which=HIST_S2S),
             StartSubstepLoop(),
-            IntegrateInTime(start=0, end=(i+1)/n, component=co_slow,
+            IntegrateInTime(start=0, end=i+1, component=CO_SLOW,
                 result_name="y_s"),
-            IntegrateInTime(start=i/n, end=(i+1)/n, component=co_fast,
+            IntegrateInTime(start=i, end=i+1, component=CO_FAST,
                 result_name="y_f"),
             HistoryUpdate(slow_arg="y_s", fast_arg="y_f",
-                which=hist_f2f),
+                which=HIST_F2F),
             EndSubstepLoop(),
             HistoryUpdate(slow_arg="y_s", fast_arg="y_f",
-                which=hist_f2s),
+                which=HIST_F2S),
             HistoryUpdate(slow_arg="y_s", fast_arg="y_f",
-                which=hist_s2f),
-            ]),
+                which=HIST_S2F),
+            ],
+            result_slow="y_s",
+            result_fast="y_f"),
         "slowest_first_2b": MRABMethod(s2f_hist_is_fast=True,
                 steps=[
-            IntegrateInTime(start=0, end=1, component=co_slow,
+            IntegrateInTime(start=0, end=n, component=CO_SLOW,
                 result_name="\\tilde y_s"),
-            IntegrateInTime(start=0, end=1, component=co_fast,
+            IntegrateInTime(start=0, end=n, component=CO_FAST,
                 result_name="\\tilde y_f"),
             HistoryUpdate(slow_arg="\\tilde y_s", fast_arg="\\tilde y_f",
-                which=hist_s2s),
+                which=HIST_S2S),
             StartSubstepLoop(),
-            IntegrateInTime(start=0, end=(i+1)/n, component=co_slow,
+            IntegrateInTime(start=0, end=i+1, component=CO_SLOW,
                 result_name="y_s"),
-            IntegrateInTime(start=i/n, end=(i+1)/n, component=co_fast,
+            IntegrateInTime(start=i, end=i+1, component=CO_FAST,
                 result_name="y_f"),
             HistoryUpdate(slow_arg="y_s", fast_arg="y_f",
-                which=hist_f2f),
+                which=HIST_F2F),
             HistoryUpdate(slow_arg="y_s", fast_arg="y_f",
-                which=hist_s2f),
+                which=HIST_S2F),
             EndSubstepLoop(),
             HistoryUpdate(slow_arg="y_s", fast_arg="y_f",
-                which=hist_f2s),
-            ]),
+                which=HIST_F2S),
+            ],
+            result_slow="y_s",
+            result_fast="y_f"),
         "slowest_first_3a": MRABMethod(s2f_hist_is_fast=False,
                 steps=[
-            IntegrateInTime(start=0, end=1, component=co_slow,
+            IntegrateInTime(start=0, end=n, component=CO_SLOW,
                 result_name="\\tilde y_s"),
-            IntegrateInTime(start=0, end=1, component=co_fast,
+            IntegrateInTime(start=0, end=n, component=CO_FAST,
                 result_name="\\tilde y_f"),
             HistoryUpdate(slow_arg="\\tilde y_s", fast_arg="\\tilde y_f",
-                which=hist_s2s),
+                which=HIST_S2S),
             HistoryUpdate(slow_arg="\\tilde y_s", fast_arg="\\tilde y_f",
-                which=hist_f2s),
+                which=HIST_F2S),
             StartSubstepLoop(),
-            IntegrateInTime(start=0, end=(i+1)/n, component=co_slow,
+            IntegrateInTime(start=0, end=i+1, component=CO_SLOW,
                 result_name="y_s"),
-            IntegrateInTime(start=i/n, end=(i+1)/n, component=co_fast,
+            IntegrateInTime(start=i, end=i+1, component=CO_FAST,
                 result_name="y_f"),
             HistoryUpdate(slow_arg="y_s", fast_arg="y_f",
-                which=hist_f2f),
+                which=HIST_F2F),
             EndSubstepLoop(),
             HistoryUpdate(slow_arg="y_s", fast_arg="y_f",
-                which=hist_s2f),
-            ]),
+                which=HIST_S2F),
+            ],
+            result_slow="y_s",
+            result_fast="y_f"),
         "slowest_first_3b": MRABMethod(s2f_hist_is_fast=True,
                 steps=[
-            IntegrateInTime(start=0, end=1, component=co_slow,
+            IntegrateInTime(start=0, end=n, component=CO_SLOW,
                 result_name="\\tilde y_s"),
-            IntegrateInTime(start=0, end=1, component=co_fast,
+            IntegrateInTime(start=0, end=n, component=CO_FAST,
                 result_name="\\tilde y_f"),
             HistoryUpdate(slow_arg="\\tilde y_s", fast_arg="\\tilde y_f",
-                which=hist_s2s),
+                which=HIST_S2S),
             HistoryUpdate(slow_arg="\\tilde y_s", fast_arg="\\tilde y_f",
-                which=hist_f2s),
+                which=HIST_F2S),
             StartSubstepLoop(),
-            IntegrateInTime(start=0, end=(i+1)/n, component=co_slow,
+            IntegrateInTime(start=0, end=i+1, component=CO_SLOW,
                 result_name="y_s"),
-            IntegrateInTime(start=i/n, end=(i+1)/n, component=co_fast,
+            IntegrateInTime(start=i, end=i+1, component=CO_FAST,
                 result_name="y_f"),
             HistoryUpdate(slow_arg="y_s", fast_arg="y_f",
-                which=hist_f2f),
+                which=HIST_F2F),
             HistoryUpdate(slow_arg="y_s", fast_arg="y_f",
-                which=hist_s2f),
+                which=HIST_S2F),
             EndSubstepLoop(),
-            ]),
+            ],
+            result_slow="y_s",
+            result_fast="y_f"),
         "slowest_first_4": MRABMethod(s2f_hist_is_fast=False,
                 steps=[
-            IntegrateInTime(start=0, end=1, component=co_slow,
+            IntegrateInTime(start=0, end=n, component=CO_SLOW,
                 result_name="\\tilde y_s"),
-            IntegrateInTime(start=0, end=1, component=co_fast,
+            IntegrateInTime(start=0, end=n, component=CO_FAST,
                 result_name="\\tilde y_f"),
             HistoryUpdate(slow_arg="\\tilde y_s", fast_arg="\\tilde y_f",
-                which=hist_s2s),
+                which=HIST_S2S),
             HistoryUpdate(slow_arg="\\tilde y_s", fast_arg="\\tilde y_f",
-                which=hist_f2s),
+                which=HIST_F2S),
             HistoryUpdate(slow_arg="\\tilde y_s", fast_arg="\\tilde y_f",
-                which=hist_s2f),
+                which=HIST_S2F),
             StartSubstepLoop(),
-            IntegrateInTime(start=0, end=(i+1)/n, component=co_slow,
+            IntegrateInTime(start=0, end=i+1, component=CO_SLOW,
                 result_name="y_s"),
-            IntegrateInTime(start=i/n, end=(i+1)/n, component=co_fast,
+            IntegrateInTime(start=i, end=i+1, component=CO_FAST,
                 result_name="y_f"),
             HistoryUpdate(slow_arg="y_s", fast_arg="y_f",
-                which=hist_f2f),
+                which=HIST_F2F),
             EndSubstepLoop(),
-            ])
+            ],
+            result_slow="y_s",
+            result_fast="y_f")
         }
 
 
@@ -253,7 +296,7 @@ def _remove_last_yslow_evaluation_from_slowest_first(method):
         else:
             raise NotImplementedError
 
-    return method.copy(steps=new_steps)
+    return method.copy(steps=new_steps, result_slow="\\tilde y_s")
 
 
 

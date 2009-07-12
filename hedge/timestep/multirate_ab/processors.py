@@ -1,4 +1,23 @@
+"""Multirate-AB ODE solver."""
+
 from __future__ import division
+
+__copyright__ = "Copyright (C) 2009 Andreas Stock, Andreas Kloeckner"
+
+__license__ = """
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see U{http://www.gnu.org/licenses/}.
+"""
 
 
 
@@ -53,57 +72,60 @@ class MRABToTeXProcessor(MRABProcessor):
         self.f2s_hist_head = 0
         self.f2f_hist_head = 0
 
-    def integrate_in_time(self, insn):
-        from mrab_description import co_fast
+        self.last_assigned_at = {}
 
-        if insn.component == co_fast:
-            src_self = "ftf"
+    def integrate_in_time(self, insn):
+        from hedge.timestep.multirate_ab.methods import CO_FAST
+
+        if insn.component == CO_FAST:
+            self_name = "fast"
             src_self_speed = r"\smallstep"
             src_self_where = self.f2f_hist_head
 
-            src_other = "stf"
             if self.method.s2f_hist_is_fast:
                 src_other_speed = r"\smallstep"
             else:
                 src_other_speed = r"\bigstep"
             src_other_where = self.s2f_hist_head
         else:
-            src_self = "sts"
+            self_name = "slow"
             src_self_speed = r"\bigstep"
             src_self_where = self.s2s_hist_head
 
-            src_other = "fts"
             src_other_speed = r"\bigstep"
             src_other_where = self.f2s_hist_head
 
+        self.last_assigned_at[insn.result_name] = len(self.result)
+
         self.result.append(
-                "\integrate {%s}{%f}{%f} {%s}{%f}{%s} {%s}{%f}{%s}"
+                "\integrate {%s}{%f}{%f}{%s} {%f}{%s} {%f}{%s}"
                 % (insn.result_name, 
-                    self.eval_expr(insn.start), 
-                    self.eval_expr(insn.end),
-                    src_self, src_self_where, src_self_speed,
-                    src_other, src_other_where, src_other_speed))
+                    self.eval_expr(insn.start)/self.substep_count, 
+                    self.eval_expr(insn.end)/self.substep_count,
+                    self_name,
+                    src_self_where, src_self_speed,
+                    src_other_where, src_other_speed))
 
         MRABProcessor.integrate_in_time(self, insn)
 
     def history_update(self, insn):
-        from mrab_description import \
-                hist_f2f, hist_s2f, \
-                hist_f2s, hist_s2s
+        from hedge.timestep.multirate_ab.methods import \
+                HIST_F2F, HIST_S2F, \
+                HIST_F2S, HIST_S2S
 
-        if insn.which == hist_f2f:
+        if insn.which == HIST_F2F:
             step_size = 1/self.substep_count
             name = "f2f"
-        elif insn.which == hist_s2f:
+        elif insn.which == HIST_S2F:
             if self.method.s2f_hist_is_fast:
                 step_size = 1/self.substep_count
             else:
                 step_size = 1
             name = "s2f"
-        elif insn.which == hist_f2s:
+        elif insn.which == HIST_F2S:
             step_size = 1
             name = "f2s"
-        elif insn.which == hist_s2s:
+        elif insn.which == HIST_S2S:
             step_size = 1
             name = "s2s"
 
@@ -124,6 +146,21 @@ class MRABToTeXProcessor(MRABProcessor):
         else:
             which_hist = "slowstfhist"
 
+        result_generators = [
+                self.last_assigned_at[self.method.result_fast],
+                self.last_assigned_at[self.method.result_slow],
+                ]
+
+        texed_instructions = []
+        for i, insn_tex in enumerate(self.result):
+            if insn_tex.startswith("\integrate"):
+                if i in result_generators:
+                    insn_tex += " {isresult}"
+                else:
+                    insn_tex += " {}"
+
+            texed_instructions.append(insn_tex)
+
         return "\n".join(
                 [
                     "{"
@@ -132,22 +169,9 @@ class MRABToTeXProcessor(MRABProcessor):
                     r"\def\smallstep{%f}" % (1/self.substep_count),
                     r"\begin{tikzpicture}[mrabpic]"
                     r"\%s{0}" % which_hist,
-                    ]+self.result+[
+                    ]+texed_instructions+[
                     r"\%s{1}" % which_hist,
                     r"\colorlegend",
                     r"\makeaxis",
                     r"\end{tikzpicture}",
                     "}"])
-
-
-
-
-if __name__ == "__main__":
-    from mrab_description import methods
-    for name, method in methods.iteritems():
-        mrab2tex = MRABToTeXProcessor(method, 2)
-        mrab2tex.run()
-        open("out/%s.tex" % name, "w").write(
-                "\\verb|%s|\n\n" % name+
-                mrab2tex.get_result())
-
