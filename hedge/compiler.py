@@ -370,10 +370,9 @@ class OperatorCompilerBase(IdentityMapper):
         # For each FluxRecord, find the other fluxes its flux depends on.
         flux_queue = self.get_contained_fluxes(expr)
         for fr in flux_queue:
-            fr.dependencies = set()
-            for d in fr.dependencies:
-                fr.dependencies |= set(sf.flux_expr
-                        for sf in self.get_contained_fluxes(d))
+            fr.dependencies = set(sf.flux_expr
+                    for sf in self.get_contained_fluxes(fr.flux_expr)) \
+                            - set([fr.flux_expr])
 
         # Then figure out batches of fluxes to evaluate
         self.flux_batches = []
@@ -400,7 +399,7 @@ class OperatorCompilerBase(IdentityMapper):
                     self.flux_batches.append(
                             self.FluxBatch(kind=kind, flux_exprs=list(batch)))
 
-                admissible_deps |= present_batch
+                admissible_deps |= set(fr.flux_expr for fr in present_batch)
             else:
                 raise RuntimeError, "cannot resolve flux evaluation order"
 
@@ -443,13 +442,18 @@ class OperatorCompilerBase(IdentityMapper):
         from hedge.optemplate import \
                 DiffOperatorBase, \
                 MassOperatorBase, \
-                FluxExchangeOperator
+                FluxExchangeOperator, \
+                FluxOperator, \
+                LiftingFluxOperator
         if isinstance(expr.op, DiffOperatorBase):
             return self.map_diff_op_binding(expr)
         elif isinstance(expr.op, MassOperatorBase):
             return self.map_mass_op_binding(expr)
         elif isinstance(expr.op, FluxExchangeOperator):
             return self.map_flux_exchange_op_binding(expr)
+        elif isinstance(expr.op, (FluxOperator, LiftingFluxOperator)):
+            raise RuntimeError("Backend-subclassed operator compiler "
+                    "did not take care of flux.")
         else:
             return IdentityMapper.map_operator_binding(self, expr)
 
