@@ -750,7 +750,7 @@ def test_symmetry_preservation_2d():
     from hedge.element import TriangularElement
     from hedge.timestep import RK4TimeStepper
     from math import sqrt, sin
-    from hedge.pde import StrongAdvectionOperator
+    from hedge.models.advection import StrongAdvectionOperator
     from hedge.data import TimeDependentGivenFunction
 
     v = numpy.array([-1,0])
@@ -825,7 +825,7 @@ def test_convergence_advec_2d():
     from hedge.timestep import RK4TimeStepper
     from hedge.tools import EOCRecorder
     from math import sin, pi, sqrt
-    from hedge.pde import StrongAdvectionOperator
+    from hedge.models.advection import StrongAdvectionOperator
     from hedge.data import TimeDependentGivenFunction
 
     v = numpy.array([0.27,0])
@@ -957,7 +957,7 @@ def test_elliptic():
                     debug=discr_class.noninteractive_debug_flags())
 
             from hedge.data import GivenFunction
-            from hedge.pde import WeakPoissonOperator
+            from hedge.models.poisson import WeakPoissonOperator
             op = WeakPoissonOperator(discr.dimensions,
                     dirichlet_tag=TAG_ALL,
                     dirichlet_bc=GivenFunction(

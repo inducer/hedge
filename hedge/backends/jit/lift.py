@@ -143,7 +143,8 @@ class JitLifter:
         #print FunctionBody(fdecl, fbody)
         #raw_input()
 
-        return mod.compile(self.discr.toolchain, wait_on_error=True).lift
+        return mod.compile(self.discr.toolchain, 
+                wait_on_error="jit_wait_on_compile_error" in discr.debug).lift
 
     def __call__(self, fgroup, matrix, scaling, field, out):
         result = self.discr.volume_zeros(dtype=field.dtype)

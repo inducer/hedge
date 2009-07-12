@@ -169,7 +169,24 @@ def get_flux_var_info(fluxes):
 
 
 
-def get_interior_flux_mod(fluxes, fvi, toolchain, dtype):
+
+def get_flux_toolchain(discr, fluxes):
+    from hedge.flux import FluxFlopCounter
+    flop_count = sum(FluxFlopCounter()(flux.op.flux) for flux in fluxes)
+
+    toolchain = discr.toolchain
+    if flop_count > 250:
+        if "jit_dont_optimize_large_exprs" in discr.debug:
+            toolchain = toolchain.with_optimization_level(0)
+        else:
+            toolchain = toolchain.with_optimization_level(1)
+
+    return toolchain
+
+
+
+
+def get_interior_flux_mod(fluxes, fvi, discr, dtype):
     from codepy.cgen import \
             FunctionDeclaration, FunctionBody, \
             Const, Reference, Value, MaybeUnused, Typedef, POD, \
@@ -225,7 +242,7 @@ def get_interior_flux_mod(fluxes, fvi, toolchain, dtype):
 
         result = [
                 Assign("fof%d_it[%s_fof_base+%s]" % (flux_idx, where, tgt_idx),
-                    "fp.loc.face_jacobian * " +
+                    "uncomplex_type(fp.loc.face_jacobian) * " +
                     flux_to_code(f2cm, is_flipped, flux_idx, fvi, flux.op.flux, PREC_PRODUCT))
                 for flux_idx, flux in enumerate(fluxes)
                 for where, is_flipped, tgt_idx in [
@@ -286,12 +303,13 @@ def get_interior_flux_mod(fluxes, fvi, toolchain, dtype):
     #print mod.generate()
     #raw_input("[Enter]")
 
-    return mod.compile(toolchain, wait_on_error=True)
+    return mod.compile(get_flux_toolchain(discr, fluxes), 
+            wait_on_error="jit_wait_on_compile_error" in discr.debug)
 
 
 
 
-def get_boundary_flux_mod(fluxes, fvi, toolchain, dtype):
+def get_boundary_flux_mod(fluxes, fvi, discr, dtype):
     from codepy.cgen import \
             FunctionDeclaration, FunctionBody, Typedef, Struct, \
             Const, Reference, Value, POD, MaybeUnused, \
@@ -346,7 +364,7 @@ def get_boundary_flux_mod(fluxes, fvi, toolchain, dtype):
 
         result = [
                 Assign("fof%d_it[loc_fof_base+i]" % flux_idx,
-                    "fp.loc.face_jacobian * " +
+                    "uncomplex_type(fp.loc.face_jacobian) * " +
                     flux_to_code(f2cm, False, flux_idx, fvi, flux.op.flux, PREC_PRODUCT))
                 for flux_idx, flux in enumerate(fluxes)
                 ]
@@ -406,4 +424,5 @@ def get_boundary_flux_mod(fluxes, fvi, toolchain, dtype):
     #print mod.generate()
     #raw_input("[Enter]")
 
-    return mod.compile(toolchain, wait_on_error=True)
+    return mod.compile(get_flux_toolchain(discr, fluxes), 
+            wait_on_error="jit_wait_on_compile_error" in discr.debug)

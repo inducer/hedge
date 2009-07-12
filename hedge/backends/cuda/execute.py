@@ -144,14 +144,21 @@ class ExecutionMapper(ExecutionMapperBase):
         if self.executor.discr.instrumented:
             def stats_callback(n, vec_expr, t_func):
                 self.executor.discr.vector_math_timer.add_timer_callable(t_func)
-                self.executor.discr.vector_math_flop_counter.add(n*vec_expr.flop_count)
+                self.executor.discr.vector_math_flop_counter.add(
+                        n*insn.flop_count())
                 self.executor.discr.gmem_bytes_vector_math.add(
                         self.executor.discr.given.float_size() * n *
-                        (1+len(vec_expr.vector_exprs)))
+                        (len(vec_expr.vector_deps)+len(insn.exprs)))
         else:
             stats_callback = None
 
-        return [(insn.name, insn.compiled(self, stats_callback))], []
+        if insn.flop_count() == 0:
+            return [(name, self(expr))
+                for name, expr in zip(insn.names, insn.exprs)], []
+        else:
+            compiled = insn.compiled(self.executor)
+            return zip(compiled.result_names(),
+                    compiled(self, stats_callback)), []
 
     def exec_diff_batch_assign(self, insn):
         field = self.rec(insn.field)
@@ -198,7 +205,8 @@ class ExecutionMapper(ExecutionMapperBase):
     def exec_flux_batch_assign(self, insn):
         discr = self.executor.discr
 
-        all_fofs = insn.kernel(self.rec, discr.fluxlocal_plan)
+        kernel = insn.kernel(self.executor)
+        all_fofs = kernel(self.rec, discr.fluxlocal_plan)
         elgroup, = discr.element_groups
 
         result = [
@@ -213,7 +221,7 @@ class ExecutionMapper(ExecutionMapperBase):
             given = discr.given
 
             flux_count = len(insn.fluxes)
-            dep_count = len(insn.kernel.all_deps)
+            dep_count = len(kernel.interior_deps)
 
             discr.gather_counter.add(
                     flux_count*dep_count)
@@ -326,8 +334,31 @@ class VectorExprAssign(Assign):
     def get_executor_method(self, executor):
         return executor.exec_vector_expr_assign
 
-    def __str__(self):
-        return "%s <- (compiled) %s" % (self.name, self.expr)
+    comment = "compiled"
+
+    @memoize_method
+    def compiled(self, executor):
+        discr = executor.discr
+
+        def result_dtype_getter(vector_dtype_map, scalar_dtype_map, const_dtypes):
+            from pytools import common_dtype
+            return common_dtype(
+                    vector_dtype_map.values()
+                    + scalar_dtype_map.values()
+                    + const_dtypes)
+
+        from hedge.backends.vector_expr import VectorExpressionInfo
+        from hedge.backends.cuda.vector_expr import CompiledVectorExpression
+        return CompiledVectorExpression(
+                [VectorExpressionInfo(
+                    name=name,
+                    expr=expr,
+                    do_not_return=dnr)
+                    for name, expr, dnr in zip(
+                        self.names, self.exprs, self.do_not_return)],
+                is_vector_pred=executor.is_vector_pred,
+                result_dtype_getter=result_dtype_getter,
+                allocator=discr.pool.allocate)
 
 class CUDAFluxBatchAssign(FluxBatchAssign):
     @memoize_method
@@ -342,9 +373,10 @@ class CUDAFluxBatchAssign(FluxBatchAssign):
         from pytools import flatten
         return set(flatten(dep_mapper(dep) for dep in deps))
 
-class CompiledCUDAFluxBatchAssign(CUDAFluxBatchAssign):
-    __slots__ = ["kernel"]
-
+    @memoize_method
+    def kernel(self, executor):
+        return executor.discr.flux_plan.make_kernel(
+                executor.discr, executor, self.fluxes)
 
 
 
@@ -382,45 +414,11 @@ class OperatorCompiler(OperatorCompilerBase):
         return CUDAFluxBatchAssign(names=names, fluxes=fluxes, kind=kind,
                 dep_mapper_factory=self.dep_mapper_factory)
 
-
-
-
-class OperatorCompilerWithExecutor(OperatorCompiler):
-    def __init__(self, executor):
-        OperatorCompiler.__init__(self)
-        self.executor = executor
-
-    def make_assign(self, name, expr, priority):
-        def result_dtype_getter(vector_dtype_map, scalar_dtype_map, const_dtypes):
-            from pytools import common_dtype
-            return common_dtype(
-                    vector_dtype_map.values()
-                    + scalar_dtype_map.values()
-                    + const_dtypes)
-
-        from hedge.backends.cuda.vector_expr import CompiledVectorExpression
-        return VectorExprAssign(
-                name=name,
-                expr=expr,
+    def finalize_multi_assign(self, names, exprs, do_not_return, priority):
+        return VectorExprAssign(names=names, exprs=exprs,
+                do_not_return=do_not_return,
                 dep_mapper_factory=self.dep_mapper_factory,
-                compiled=CompiledVectorExpression(
-                    expr, 
-                    is_vector_func=lambda expr: True,
-                    result_dtype_getter=result_dtype_getter,
-                    allocator=self.executor.discr.pool.allocate),
                 priority=priority)
-
-    def make_flux_batch_assign(self, names, fluxes, kind):
-        return CompiledCUDAFluxBatchAssign(
-                names=names,
-                fluxes=fluxes,
-                kind=kind,
-                kernel=self.executor.discr.flux_plan.make_kernel(
-                    self.executor.discr,
-                    self.executor,
-                    fluxes),
-                dep_mapper_factory=self.dep_mapper_factory)
-
 
 
 
@@ -428,15 +426,17 @@ class OperatorCompilerWithExecutor(OperatorCompiler):
 class Executor(object):
     exec_mapper_class = ExecutionMapper
 
-    def __init__(self, discr, optemplate, post_bind_mapper):
+    def __init__(self, discr, optemplate, post_bind_mapper,
+            is_vector_pred):
         self.discr = discr
+        self.is_vector_pred = is_vector_pred
 
         from hedge.tools import diff_rst_flops, diff_rescale_one_flops, \
                 mass_flops, lift_flops
         self.diff_rst_flops = diff_rst_flops(discr)
         self.diff_rescale_one_flops = diff_rescale_one_flops(discr)
         self.mass_flops = mass_flops(discr)
-        self.lift_flops = lift_flops(discr)
+        self.lift_flops = sum(lift_flops(fg) for fg in discr.face_groups)
 
         optemplate_stage1 = self.prepare_optemplate_stage1(
                 optemplate, post_bind_mapper)
@@ -456,28 +456,8 @@ class Executor(object):
                 e2bb[elface] = (e2bb.get(elface, 0) | bdry_bit)
 
         # compile the optemplate
-        self.code = OperatorCompilerWithExecutor(self)(
+        self.code = OperatorCompiler()(
                 self.prepare_optemplate_stage2(discr.mesh, optemplate_stage1))
-
-	if "print_op_code" in discr.debug:
-	    from hedge.tools import get_rank
-	    if get_rank(discr) == 0:
-		print self.code
-		raw_input()
-
-        if False:
-            from hedge.tools import get_rank
-            from hedge.compiler import dot_dataflow_graph
-            i = 0
-            while True:
-                dot_name = "rank-%d-dataflow-%d.dot" % (get_rank(discr), i)
-                from os.path import exists
-                if exists(dot_name):
-                    i += 1
-                    continue
-
-                open(dot_name, "w").write(dot_dataflow_graph(self.code))
-                break
 
         # build the local kernels 
         self.diff_kernel = self.discr.diff_plan.make_kernel(discr)

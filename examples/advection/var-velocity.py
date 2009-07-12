@@ -22,7 +22,7 @@ import numpy
 import numpy.linalg as la
 
 
-def main():
+def main(write_output=True, flux_type_arg="lf"):
     from hedge.tools import mem_checkpoint
     from math import sin, cos, pi, sqrt, tanh
     from math import floor
@@ -102,8 +102,9 @@ def main():
 
 
     # visualization setup -----------------------------------------------------
-    from hedge.visualization import VtkVisualizer, SiloVisualizer
-    vis = VtkVisualizer(vis_discr, rcon, "fld")
+    from hedge.visualization import VtkVisualizer
+    if write_output:
+        vis = VtkVisualizer(vis_discr, rcon, "fld")
 
     # operator setup ----------------------------------------------------------
     # In the operator setup it is possible to switch between a only space
@@ -118,7 +119,7 @@ def main():
             TimeConstantGivenFunction, \
             TimeDependentGivenFunction, \
             GivenFunction
-    from hedge.pde import VariableCoefficientAdvectionOperator
+    from hedge.models.advection import VariableCoefficientAdvectionOperator
     op = VariableCoefficientAdvectionOperator(discr.dimensions,
         #advec_v=TimeDependentGivenFunction(
         #    TimeDependentVField()),
@@ -128,7 +129,7 @@ def main():
         #    TimeDependentBc_u()),
         bc_u_f=TimeConstantGivenFunction(
             GivenFunction(Bc_u())),
-        flux_type="lf")
+        flux_type=flux_type_arg)
 
     # initial condition -------------------------------------------------------
     # Gauss-Pulse
@@ -153,7 +154,7 @@ def main():
     stepper = RK4TimeStepper()
     t = 0
     dt = discr.dt_factor(op.max_eigenvalue(t, discr))
-    nsteps = int(700/dt)
+    nsteps = int(3/dt)
 
     if rcon.is_head_rank:
         print "%d elements, dt=%g, nsteps=%d" % (
@@ -172,7 +173,12 @@ def main():
             add_simulation_quantities, \
             add_run_info
 
-    logmgr = LogManager("advection.dat", "w", rcon.communicator)
+    if write_output:
+        log_file_name = "space-dep.dat"
+    else:
+        log_file_name = None
+
+    logmgr = LogManager(log_file_name, "w", rcon.communicator)
     add_run_info(logmgr)
     add_general_quantities(logmgr)
     add_simulation_quantities(logmgr, dt)
@@ -192,29 +198,48 @@ def main():
     v = op.advec_v.volume_interpolant(t, discr)
     # timestep loop -----------------------------------------------------------
     rhs = op.bind(discr)
-    for step in xrange(nsteps):
+    try:
+        for step in xrange(nsteps):
+            logmgr.tick()
+
+            t = step*dt
+
+            if step % 10 == 0 and write_output:
+                visf = vis.make_file("fld-%04d" % step)
+                vis.add_data(visf, [ ("u", u), ("v", v)],
+                            time=t,
+                            step=step
+                            )
+                visf.close()
+
+
+            u = stepper(u, t, dt, rhs)
+
+            # Use Filter:
+            u = antialiasing(u)
+
+        assert discr.norm(u) < 10
+
+    finally:
+        if write_output:
+            vis.close()
+
         logmgr.tick()
+        logmgr.save()
 
-        t = step*dt
-
-        if step % 10 == 0:
-            visf = vis.make_file("fld-%04d" % step)
-            vis.add_data(visf, [ ("u", u), ("v", v)],
-                        time=t,
-                        step=step
-                        )
-            visf.close()
-
-
-        u = stepper(u, t, dt, rhs)
-        # Use Filter:
-        u = antialiasing(u)
-
-    vis.close()
-
-    logmgr.tick()
-    logmgr.save()
 
 
 if __name__ == "__main__":
     main()
+
+
+
+
+# entry points for py.test ----------------------------------------------------
+def test_var_velocity_advection():
+    from pytools.test import mark_test
+    mark_long = mark_test(long=True)
+
+    for flux_type in ["upwind", "central", "lf"]:
+        yield "variable-velocity-advection with %s flux" % flux_type, \
+                mark_long(main), False, flux_type

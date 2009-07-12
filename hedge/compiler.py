@@ -52,23 +52,65 @@ class Instruction(Record):
         raise NotImplementedError
 
 class Assign(Instruction):
-    # attributes: name, expr, priority, flop_count
+    # attributes: names, exprs, do_not_return, priority
+    # 
+    # do_not_return is a list of bools indicating whether the corresponding
+    # entry in names and exprs describes an expression that is not needed
+    # beyond this assignment
 
-    def __init__(self, name, expr, **kwargs):
-        Instruction.__init__(self, name=name, expr=expr, **kwargs)
+    comment = ""
 
-        from pymbolic.mapper.flop_counter import FlopCounter
-        self.flop_count = FlopCounter()(expr)
+    def __init__(self, names, exprs, **kwargs):
+        Instruction.__init__(self, names=names, exprs=exprs, **kwargs)
 
-    def get_assignees(self):
-        return set([self.name])
+        if not hasattr(self, "do_not_return"):
+            self.do_not_return = [False] * len(names)
 
     @memoize_method
+    def flop_count(self):
+        from hedge.optemplate import FlopCounter
+        return sum(FlopCounter()(expr) for expr in self.exprs)
+
+    def get_assignees(self):
+        return set(self.names)
+
     def get_dependencies(self):
-        return self.dep_mapper_factory()(self.expr)
+        try:
+            return self._dependencies
+        except:
+            from operator import or_
+            deps = reduce(
+                    or_, (self.dep_mapper_factory()(expr) 
+                    for expr in self.exprs))
+
+            from pymbolic.primitives import Variable
+            deps -= set(Variable(name) for name in self.names)
+
+            self._dependencies = deps
+            return deps
 
     def __str__(self):
-        return "%s <- %s" % (self.name, self.expr)
+        comment = self.comment
+        if len(self.names) == 1:
+            if comment:
+                comment = "/* %s */ " % comment
+
+            return "%s <- %s%s" % (self.names[0], comment, self.exprs[0])
+        else:
+            if comment:
+                comment = " /* %s */" % comment
+
+            lines = []
+            lines.append("{"+comment)
+            for n, e, dnr  in zip(self.names, self.exprs, self.do_not_return):
+                if dnr:
+                    dnr_indicator = "-i"
+                else:
+                    dnr_indicator = ""
+
+                lines.append("  %s <%s- %s" % (n, dnr_indicator, e))
+            lines.append("}")
+            return "\n".join(lines)
 
     def get_executor_method(self, executor):
         return executor.exec_assign
@@ -177,6 +219,7 @@ class FluxExchangeBatchAssign(Instruction):
 
 
 
+
 def dot_dataflow_graph(code, max_node_label_length=30):
     origins = {}
     node_names = {}
@@ -189,7 +232,11 @@ def dot_dataflow_graph(code, max_node_label_length=30):
     for num, insn in enumerate(code.instructions):
         node_name = "node%d" % num
         node_names[insn] = node_name
-        node_label = repr(str(insn))[1:-1][:max_node_label_length]
+        node_label = str(insn).replace("\n", "\\l")+"\\l"
+
+        if max_node_label_length is not None:
+            node_label = node_label[:max_node_label_length]
+
         result.append("%s [ label=\"p%d: %s\" shape=box ];" % (
             node_name, insn.priority, node_label))
 
@@ -230,6 +277,22 @@ class Code(object):
     def __init__(self, instructions, result):
         self.instructions = instructions
         self.result = result
+
+        if False:
+            from hedge.tools import get_rank
+            from hedge.compiler import dot_dataflow_graph
+            i = 0
+            while True:
+                dot_name = "dataflow-%d.dot" % i
+                from os.path import exists
+                if exists(dot_name):
+                    i += 1
+                    continue
+
+                open(dot_name, "w").write(
+                        dot_dataflow_graph(self, max_node_label_length=None))
+                break
+
 
     class NoInstructionAvailable(Exception):
         pass
@@ -313,7 +376,12 @@ class Code(object):
                         insn.get_executor_method(exec_mapper)(insn)
                 for target, value in assignments:
                     context[target] = value
+
                 futures.extend(new_futures)
+
+        if len(done_insns) < len(self.instructions):
+            raise RuntimeError("not all instructions are reachable"
+                    "--did you forget to pass a value for a placeholder?")
 
         from hedge.tools import with_object_array_or_scalar
         return with_object_array_or_scalar(exec_mapper, self.result)
@@ -339,12 +407,14 @@ class OperatorCompilerBase(IdentityMapper):
         self.assigned_var_count = 0
         self.expr_to_var = {}
 
-    def dep_mapper_factory(self):
         from hedge.optemplate import DependencyMapper
-        return DependencyMapper(
+        self.dep_mapper = DependencyMapper(
                 include_operator_bindings=False,
                 include_subscripts=False,
                 include_calls="descend_args")
+
+    def dep_mapper_factory(self):
+        return self.dep_mapper
 
     def get_contained_fluxes(self, expr):
         """Recursively enumerate all flux expressions in the expression tree
@@ -422,7 +492,7 @@ class OperatorCompilerBase(IdentityMapper):
         # Then, put the toplevel expressions into variables as well.
         from hedge.tools import with_object_array_or_scalar
         result = with_object_array_or_scalar(self.assign_to_new_var, result)
-        return Code(self.code, result)
+        return Code(self.aggregate_assignments(self.code, result), result)
 
     def get_var_name(self):
         new_name = self.prefix+str(self.assigned_var_count)
@@ -443,7 +513,9 @@ class OperatorCompilerBase(IdentityMapper):
         from hedge.optemplate import \
                 DiffOperatorBase, \
                 MassOperatorBase, \
-                FluxExchangeOperator
+                FluxExchangeOperator, \
+                OperatorBinding, \
+                Field
         if isinstance(expr.op, DiffOperatorBase):
             return self.map_diff_op_binding(expr)
         elif isinstance(expr.op, MassOperatorBase):
@@ -451,7 +523,11 @@ class OperatorCompilerBase(IdentityMapper):
         elif isinstance(expr.op, FluxExchangeOperator):
             return self.map_flux_exchange_op_binding(expr)
         else:
-            return IdentityMapper.map_operator_binding(self, expr)
+            field_var = self.assign_to_new_var(
+                    self.rec(expr.field))
+            result_var = self.assign_to_new_var(
+                    OperatorBinding(expr.op, field_var))
+            return result_var
 
     def map_diff_op_binding(self, expr):
         try:
@@ -562,8 +638,168 @@ class OperatorCompilerBase(IdentityMapper):
 
     # instruction producers ---------------------------------------------------
     def make_assign(self, name, expr, priority):
-        return Assign(name=name, expr=expr, dep_mapper_factory=self.dep_mapper_factory,
+        return Assign(names=[name], exprs=[expr], 
+                dep_mapper_factory=self.dep_mapper_factory,
                 priority=priority)
 
     def make_flux_batch_assign(self, names, fluxes, kind):
         return FluxBatchAssign(names=names, fluxes=fluxes, kind=kind)
+
+    # assignment aggregration pass --------------------------------------------
+    def aggregate_assignments(self, instructions, result):
+        from pymbolic.primitives import Variable
+
+        # agregation helpers --------------------------------------------------
+        origins_set_cache = {}
+        def get_complete_origins_set(insn, skip_levels=0):
+            if skip_levels < 0:
+                skip_levels = 0
+
+            try:
+                return origins_set_cache[insn, skip_levels]
+            except KeyError:
+                result = set()
+                for dep in insn.get_dependencies():
+                    if isinstance(dep, Variable):
+                        dep_origin = origins_map.get(dep.name, None)
+                        if dep_origin is not None:
+                            if skip_levels <= 0:
+                                result.add(dep_origin)
+                            result |= get_complete_origins_set(dep_origin, skip_levels-1)
+
+                origins_set_cache[insn, skip_levels] = result
+                return result
+
+        var_assignees_cache = {}
+        def get_var_assignees(insn):
+            try:
+                return var_assignees_cache[insn]
+            except KeyError:
+                result = set(Variable(assignee) 
+                        for assignee in insn.get_assignees())
+                var_assignees_cache[insn] = result
+                return result
+
+        def aggregate_two_assignments(ass_1, ass_2):
+            names = ass_1.names+ass_2.names
+
+            from pymbolic.primitives import Variable
+            deps = (ass_1.get_dependencies() | ass_2.get_dependencies()) \
+                    - set(Variable(name) for name in names)
+
+            return Assign(
+                    names=names, exprs=ass_1.exprs+ass_2.exprs,
+                    _dependencies=deps,
+                    priority=max(ass_1.priority, ass_2.priority))
+
+        # main aggregation pass -----------------------------------------------
+        origins_map = dict(
+                    (assignee, insn)
+                    for insn in instructions
+                    for assignee in insn.get_assignees())
+
+        from pytools import partition
+        unprocessed_assigns, other_insns = partition(
+                lambda insn: isinstance(insn, Assign),
+                instructions)
+
+        # filter out zero-flop-count assigns--no need to bother with those
+        processed_assigns, unprocessed_assigns = partition(
+                lambda ass: ass.flop_count() == 0,
+                unprocessed_assigns)
+
+        # greedy aggregation
+        while unprocessed_assigns:
+            my_assign = unprocessed_assigns.pop()
+
+            my_deps = my_assign.get_dependencies()
+            my_assignees = get_var_assignees(my_assign)
+
+            agg_candidates = []
+            for i, other_assign in enumerate(unprocessed_assigns):
+                other_deps = other_assign.get_dependencies()
+                other_assignees = get_var_assignees(other_assign)
+
+                if ((my_deps & other_deps
+                        or my_deps & other_assignees
+                        or other_deps & my_assignees)
+                        and my_assign.priority == other_assign.priority):
+                    agg_candidates.append((i, other_assign))
+
+            did_work = False
+
+            if agg_candidates:
+                my_indirect_origins = get_complete_origins_set(
+                        my_assign, skip_levels=1)
+
+                for other_assign_index, other_assign in agg_candidates:
+                    other_indirect_origins = get_complete_origins_set(
+                            my_assign, skip_levels=1)
+
+                    if (my_assign not in other_indirect_origins and
+                            other_assign not in my_indirect_origins):
+
+                        did_work = True
+
+                        # aggregate the two assignments
+                        new_assignment = aggregate_two_assignments(my_assign, other_assign)
+                        del unprocessed_assigns[other_assign_index]
+                        unprocessed_assigns.append(new_assignment)
+                        for assignee in new_assignment.get_assignees():
+                            origins_map[assignee] = new_assignment
+
+                        break
+
+            if not did_work:
+                processed_assigns.append(my_assign)
+
+        externally_used_names = set(
+                expr
+                for insn in processed_assigns+other_insns
+                for expr in insn.get_dependencies())
+
+        from hedge.tools import is_obj_array
+        if is_obj_array(result):
+            externally_used_names |= set(expr for expr in result)
+        else:
+            externally_used_names |= set([result])
+
+        def schedule_and_finalize_assignment(ass):
+            dep_mapper = self.dep_mapper_factory()
+
+            names_exprs = zip(ass.names, ass.exprs)
+
+            my_assignees = set(name for name, expr in names_exprs)
+            names_exprs_deps = [
+                    (name, expr, 
+                        set(dep.name for dep in dep_mapper(expr) if
+                            isinstance(dep, Variable)) & my_assignees)
+                    for name, expr in names_exprs]
+
+            ordered_names_exprs = []
+            available_names = set()
+
+            while names_exprs_deps:
+                scheduled_one = False
+                for i, (name, expr, deps) in enumerate(names_exprs_deps):
+                    unsatisfied_deps = deps - available_names
+
+                    if not unsatisfied_deps:
+                        ordered_names_exprs.append((name, expr))
+                        scheduled_one = True
+                        available_names.add(name)
+                        del names_exprs_deps[i]
+                        break
+
+                if not scheduled_one:
+                    raise RuntimeError("aggregation resulted in an impossible assignment")
+
+            return self.finalize_multi_assign(
+                    names=[name for name, expr in ordered_names_exprs],
+                    exprs=[expr for name, expr in ordered_names_exprs],
+                    do_not_return=[Variable(name) not in externally_used_names
+                        for name, expr in ordered_names_exprs],
+                    priority=ass.priority)
+
+        return [schedule_and_finalize_assignment(ass)
+            for ass in processed_assigns] + other_insns

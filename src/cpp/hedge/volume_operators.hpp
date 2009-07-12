@@ -165,12 +165,76 @@ namespace hedge {
 
 
 
+  // non-BLAS versions --------------------------------------------------------
+  template <class SrcERanges, class DestERanges, class Scalar>
+  inline
+  void perform_elwise_scaled_operator(
+      const SrcERanges &src_ers, 
+      const DestERanges &dest_ers,
+      const numpy_vector<double> &scale_factors, 
+      const matrix<Scalar> &mat,
+      const numpy_vector<Scalar> &operand,
+      numpy_vector<Scalar> result)
+  {
+    if (src_ers.size() != dest_ers.size())
+      throw std::runtime_error("element ranges have different sizes");
 
-  // fast specializations -----------------------------------------------------
+    typedef typename numpy_matrix<Scalar>::size_type size_type;
+    size_type h = mat.size1();
+    size_type w = mat.size2();
+
+    unsigned i = 0;
+    BOOST_FOREACH(const element_range src_er, src_ers)
+    {
+      const element_range dest_er = dest_ers[i];
+
+      noalias(subrange(result, dest_er.first, dest_er.first+h)) +=
+        Scalar(scale_factors[i]) * prod(mat, subrange(operand, src_er.first, src_er.first+w));
+
+      ++i;
+    }
+  }
+
+
+
+
+
+  template <class SrcERanges, class DestERanges, class Scalar>
+  inline
+  void perform_elwise_operator(
+      const SrcERanges &src_ers, 
+      const DestERanges &dest_ers,
+      const matrix<Scalar> &mat,
+      const numpy_vector<Scalar> &operand,
+      numpy_vector<Scalar> result)
+  {
+    if (src_ers.size() != dest_ers.size())
+      throw std::runtime_error("element ranges have different sizes");
+
+    typedef typename numpy_matrix<Scalar>::size_type size_type;
+    size_type h = mat.size1();
+    size_type w = mat.size2();
+
+    unsigned i = 0;
+    BOOST_FOREACH(const element_range src_er, src_ers)
+    {
+      const element_range dest_er = dest_ers[i];
+
+      noalias(subrange(result, dest_er.first, dest_er.first+h)) +=
+        prod(mat, subrange(operand, src_er.first, src_er.first+w));
+
+      ++i;
+    }
+  }
+
+
+
+
+  // BLAS versions ------------------------------------------------------------
 #ifdef USE_BLAS
   template <class Scalar>
   inline
-  void perform_elwise_scaled_operator(
+  void perform_elwise_scaled_operator_using_blas(
       const uniform_element_ranges &src_ers, 
       const uniform_element_ranges &dest_ers, 
       const numpy_vector<double> &scale_factors, 
@@ -191,7 +255,7 @@ namespace hedge {
         Scalar(scale_factors[i++]) * subrange(operand, r.first, r.second);
     }
 
-    perform_elwise_operator(src_ers, dest_ers, matrix, new_operand, result);
+    perform_elwise_operator_using_blas(src_ers, dest_ers, matrix, new_operand, result);
   }
 
 
@@ -200,7 +264,7 @@ namespace hedge {
 
   template <class Scalar>
   inline
-  void perform_elwise_operator(
+  void perform_elwise_operator_using_blas(
       const uniform_element_ranges &src_ers, 
       const uniform_element_ranges &dest_ers, 
       const numpy_matrix<Scalar> &matrix, 
@@ -241,6 +305,8 @@ namespace hedge {
 
 
 
+
+  // other helpers ------------------------------------------------------------
   template <class ERanges, class Vector>
   inline
   void perform_elwise_max(const ERanges &ers, 

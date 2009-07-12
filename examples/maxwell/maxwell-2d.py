@@ -24,18 +24,8 @@ import numpy.linalg as la
 
 
 
-def main():
-    from hedge.element import TriangularElement
-    from hedge.timestep import RK4TimeStepper
-    from hedge.mesh import make_disk_mesh
-    from hedge.visualization import \
-            VtkVisualizer, \
-            SiloVisualizer, \
-            get_rank_partition
-    from pylo import DB_VARTYPE_VECTOR
+def main(write_output=True):
     from math import sqrt, pi, exp
-    from hedge.pde import TEMaxwellOperator, TMMaxwellOperator
-    from hedge.data import GivenFunction, TimeIntervalGivenFunction
 
     from hedge.backends import guess_run_context
     rcon = guess_run_context()
@@ -48,6 +38,7 @@ def main():
     cylindrical = False
     periodic = False
 
+    from hedge.mesh import make_disk_mesh
     mesh = make_disk_mesh(r=0.5)
 
     if rcon.is_head_rank:
@@ -64,8 +55,9 @@ def main():
     order = 3
     discr = rcon.make_discretization(mesh_data, order=order)
 
-    vis = VtkVisualizer(discr, rcon, "em-%d" % order)
-    #vis = SiloVisualizer(discr, rcon)
+    from hedge.visualization import VtkVisualizer
+    if write_output:
+        vis = VtkVisualizer(discr, rcon, "em-%d" % order)
 
     dt = discr.dt_factor(1/sqrt(mu*epsilon))
     final_time = dt*200
@@ -79,12 +71,15 @@ def main():
         print "#elements=", len(mesh.elements)
 
     from hedge.mesh import TAG_ALL, TAG_NONE
+    from hedge.models.em import TMMaxwellOperator
+    from hedge.data import GivenFunction, TimeIntervalGivenFunction
     op = TMMaxwellOperator(epsilon, mu, flux_type=1,
             current=TimeIntervalGivenFunction(
                 GivenFunction(CurrentSource()), off_time=final_time/10),
             absorb_tag=TAG_ALL, pec_tag=TAG_NONE)
     fields = op.assemble_eh(discr=discr)
 
+    from hedge.timestep import RK4TimeStepper
     stepper = RK4TimeStepper()
     from time import time
     last_tstep = time()
@@ -94,7 +89,12 @@ def main():
     from pytools.log import LogManager, add_general_quantities, \
             add_simulation_quantities, add_run_info
 
-    logmgr = LogManager("maxwell-%d.dat" % order, "w", rcon.communicator)
+    if write_output:
+        log_file_name = "maxwell-%d.dat" % order
+    else:
+        log_file_name = None
+
+    logmgr = LogManager(log_file_name, "w", rcon.communicator)
     add_run_info(logmgr)
     add_general_quantities(logmgr)
     add_simulation_quantities(logmgr, dt)
@@ -108,29 +108,46 @@ def main():
     from hedge.log import EMFieldGetter, add_em_quantities
     field_getter = EMFieldGetter(discr, op, lambda: fields)
     add_em_quantities(logmgr, op, field_getter)
-    
+
     logmgr.add_watches(["step.max", "t_sim.max", "W_field", "t_step.max"])
 
     # timestep loop -------------------------------------------------------
     rhs = op.bind(discr)
 
-    for step in range(nsteps):
-        logmgr.tick()
+    try:
+        for step in range(nsteps):
+            logmgr.tick()
 
-        if True:
-            e, h = op.split_eh(fields)
-            visf = vis.make_file("em-%d-%04d" % (order, step))
-            vis.add_data(visf,
-                    [ ("e", e), ("h", h), ],
-                    time=t, step=step
-                    )
-            visf.close()
+            if step % 10 == 0 and write_output:
+                e, h = op.split_eh(fields)
+                visf = vis.make_file("em-%d-%04d" % (order, step))
+                vis.add_data(visf,
+                        [ ("e", e), ("h", h), ],
+                        time=t, step=step
+                        )
+                visf.close()
 
-        fields = stepper(fields, t, dt, rhs)
-        t += dt
+            fields = stepper(fields, t, dt, rhs)
+            t += dt
+
+        assert discr.norm(fields) < 0.03
+    finally:
+        if write_output:
+            vis.close()
+
+        logmgr.close()
+        discr.close()
 
 if __name__ == "__main__":
     import cProfile as profile
     #profile.run("main()", "wave2d.prof")
     main()
 
+
+
+
+# entry points for py.test ----------------------------------------------------
+from pytools.test import mark_test
+@mark_test(long=True)
+def test_maxwell_2d():
+    main(write_output=False)

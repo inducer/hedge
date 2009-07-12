@@ -743,7 +743,7 @@ class Discretization(hedge.discretization.Discretization):
         self.diff_op_timer = CallableCollectionTimer("t_diff",
                 "Time spent applying applying differentiation operators")
         self.vector_math_timer = CallableCollectionTimer("t_vector_math",
-                "Time spent applying doing vector math")
+                "Time spent doing vector math")
 
         return [self.flux_gather_timer, 
                 self.el_local_timer,
@@ -1152,10 +1152,12 @@ class Discretization(hedge.discretization.Discretization):
                     make_new = self.boundary_empty
 
                 if ls != ():
-                    out = result = make_new(tag, shape=ls)
+                    from pytools import single_valued
+                    out = result = make_new(tag, shape=ls, 
+                            dtype=single_valued(f.dtype for f in field))
                     src = field
                 else:
-                    result = make_new(tag)
+                    result = make_new(tag, dtype=field.dtype)
                     out = [result]
                     src = [field]
 

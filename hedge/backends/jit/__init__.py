@@ -35,28 +35,21 @@ import numpy
 # exec mapper -----------------------------------------------------------------
 class ExecutionMapper(CPUExecutionMapperBase):
     # code execution functions ------------------------------------------------
-    def exec_assign(self, insn):
-        if self.discr.instrumented:
-            sub_timer = self.discr.vector_math_timer.start_sub_timer()
-            result = self(insn.expr)
-            sub_timer.stop().submit()
-
-            from hedge.tools import count_dofs
-            self.discr.vector_math_flop_counter.add(count_dofs(result)*insn.flop_count)
-        else:
-            result = self(insn.expr)
-
-        return [(insn.name, result)], []
-
     def exec_vector_expr_assign(self, insn):
         if self.discr.instrumented:
             def stats_callback(n, vec_expr):
-                self.discr.vector_math_flop_counter.add(n*vec_expr.flop_count)
+                self.discr.vector_math_flop_counter.add(n*insn.flop_count())
                 return self.discr.vector_math_timer
         else:
             stats_callback = None
 
-        return [(insn.name, insn.compiled(self, stats_callback))], []
+        if insn.flop_count() == 0:
+            return [(name, self(expr))
+                for name, expr in zip(insn.names, insn.exprs)], []
+        else:
+            compiled = insn.compiled(self.executor)
+            return zip(compiled.result_names(),
+                    compiled(self, stats_callback)), []
 
     def exec_flux_batch_assign(self, insn):
         from hedge.backends.jit.compiler import BoundaryFluxKind
@@ -144,6 +137,10 @@ class ExecutionMapper(CPUExecutionMapperBase):
                     self.executor.lift_flux(fg, fg.ldis_loc.multi_face_mass_matrix(),
                             None, fluxes_on_faces, out)
 
+                if self.discr.instrumented:
+                    from hedge.tools import lift_flops
+                    self.discr.lift_flop_counter.add(lift_flops(fg))
+
                 result.append((name, out))
 
         if not face_groups:
@@ -176,8 +173,11 @@ class ExecutionMapper(CPUExecutionMapperBase):
 
 
 class Executor(CPUExecutorBase):
-    def __init__(self, discr, optemplate, post_bind_mapper):
+    def __init__(self, discr, optemplate, post_bind_mapper,
+            is_vector_pred):
         self.discr = discr
+        self.is_vector_pred = is_vector_pred
+
         self.code = self.compile_optemplate(discr, optemplate, post_bind_mapper)
 
         if "print_op_code" in discr.debug:
@@ -275,16 +275,28 @@ class Discretization(hedge.discretization.Discretization):
     exec_mapper_class = ExecutionMapper
     executor_class = Executor
 
-    def __init__(self, *args, **kwargs):
-        hedge.discretization.Discretization.__init__(self, *args, **kwargs)
+    @classmethod
+    def all_debug_flags(cls):
+        return hedge.discretization.Discretization.all_debug_flags() | set([
+            "jit_dont_optimize_large_exprs",
+            "jit_wait_on_compile_error",
+            ])
 
+    @classmethod
+    def noninteractive_debug_flags(cls):
+        return hedge.discretization.Discretization.noninteractive_debug_flags() | set([
+            "jit_dont_optimize_large_exprs",
+            ])
+
+    def __init__(self, *args, **kwargs):
         toolchain = kwargs.pop("toolchain", None)
+
+        hedge.discretization.Discretization.__init__(self, *args, **kwargs)
 
         if toolchain is None:
             from codepy.jit import guess_toolchain
             toolchain = guess_toolchain()
-
-        toolchain = toolchain.with_max_optimization()
+            toolchain = toolchain.with_optimization_level(3)
 
         from codepy.libraries import add_hedge
         add_hedge(toolchain)

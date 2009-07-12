@@ -19,20 +19,21 @@
 
 from __future__ import division
 
+import numpy
+import numpy.linalg as la
 
 
 
-def run_convergence_test_advec(debug_output=False):
+
+def run_convergence_test_advec(dtype, debug_output=False):
     """Test whether 2/3D advection actually converges"""
 
-    import numpy
-    import numpy.linalg as la
     from hedge.mesh import make_ball_mesh, make_box_mesh, make_rect_mesh
     from hedge.element import TetrahedralElement, TriangularElement
     from hedge.timestep import RK4TimeStepper
     from hedge.tools import EOCRecorder
     from math import sin, pi, sqrt
-    from hedge.pde import StrongAdvectionOperator
+    from hedge.models.advection import StrongAdvectionOperator
     from hedge.data import TimeDependentGivenFunction
     from hedge.visualization import SiloVisualizer
 
@@ -98,8 +99,8 @@ def run_convergence_test_advec(debug_output=False):
                     else:
                         el_class = TetrahedralElement
 
-                    discr = rcon.make_discretization(mesh_data, 
-                            el_class(order))
+                    discr = rcon.make_discretization(mesh_data, order=order,
+                            default_scalar_type=dtype)
 
                     op = StrongAdvectionOperator(v[:dims], 
                             inflow_u=TimeDependentGivenFunction(u_analytic),
@@ -107,7 +108,8 @@ def run_convergence_test_advec(debug_output=False):
                     if debug_output:
                         vis = SiloVisualizer(discr, rcon)
 
-                    u = discr.interpolate_volume_function(lambda x, el: u_analytic(x, el, 0))
+                    u = discr.interpolate_volume_function(
+                            lambda x, el: u_analytic(x, el, 0))
                     ic = u.copy()
 
                     dt = discr.dt_factor(op.max_eigenvalue())
@@ -123,6 +125,8 @@ def run_convergence_test_advec(debug_output=False):
                     stepper = RK4TimeStepper()
                     for step in range(nsteps):
                         u = stepper(u, step*dt, dt, rhs)
+
+                    assert u.dtype == dtype
 
                     u_true = discr.interpolate_volume_function(
                             lambda x, el: u_analytic(x, el, nsteps*dt))
@@ -150,14 +154,24 @@ def run_convergence_test_advec(debug_output=False):
 
 
 
-from pytools.test import mark_test
-@mark_test(mpi=True, long=True)
-def test_hedge_parallel():
+def run_parallel_test(dtype):
     from pytools.mpi import run_with_mpi_ranks
-    run_with_mpi_ranks(__file__, 2, run_convergence_test_advec)
+    run_with_mpi_ranks(__file__, 2, lambda: run_convergence_test_advec(dtype))
+
+
+
+
+def test_hedge_parallel():
+    from pytools.test import mark_test
+    mark_long_mpi = mark_test(mpi=True, long=True)
+
+    for dtype in [numpy.float32, numpy.float64]:
+        yield ("CPU-MPI in %s precision" % dtype, 
+                mark_long_mpi(run_parallel_test),
+                dtype)
 
 
 
 
 if __name__ == "__main__":
-    test_hedge_parallel()
+    run_parallel_test(numpy.float32)

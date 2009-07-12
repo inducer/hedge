@@ -33,11 +33,11 @@ class CPUExecutorBase(object):
         discr = self.discr
         assert discr.instrumented
 
+        from pytools.log import time_and_count_function
         from hedge.tools import time_count_flop
 
         from hedge.tools import \
-                diff_rst_flops, diff_rescale_one_flops, lift_flops, \
-                mass_flops
+                diff_rst_flops, diff_rescale_one_flops, mass_flops
 
         self.diff_rst = \
                 time_count_flop(
@@ -64,12 +64,10 @@ class CPUExecutorBase(object):
                         mass_flops(discr))
 
         self.lift_flux = \
-                time_count_flop(
+                time_and_count_function(
                         self.lift_flux,
                         discr.lift_timer,
-                        discr.lift_counter,
-                        discr.lift_flop_counter,
-                        lift_flops(discr))
+                        discr.lift_counter)
 
     def lift_flux(self, fgroup, matrix, scaling, field, out):
         from hedge._internal import lift_flux

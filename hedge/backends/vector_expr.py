@@ -33,6 +33,14 @@ from pytools import memoize_method, Record
 class DefaultingSubstitutionMapper(
         pymbolic.mapper.substitutor.SubstitutionMapper,
         hedge.optemplate.IdentityMapperMixin):
+    def map_operator_binding(self, expr):
+        result = self.subst_func(expr)
+        if result is None:
+            raise ValueError("operator binding may not survive "
+                    "vector expression subsitution")
+
+        return result
+
     def handle_unsupported_expression(self, expr):
         result = self.subst_func(expr)
         if result is not None:
@@ -47,12 +55,16 @@ class DefaultingSubstitutionMapper(
 
 class ConstantGatherMapper(
         hedge.optemplate.CombineMapper,
-        hedge.optemplate.CollectorMixin):
+        hedge.optemplate.CollectorMixin,
+        hedge.optemplate.OperatorReducerMixin):
     def map_algebraic_leaf(self, expr):
         return set()
 
     def map_constant(self, expr):
         return set([expr])
+
+    def map_operator(self, expr):
+        return set()
 
 
 
@@ -63,34 +75,50 @@ class KernelRecord(Record):
 
 
 
+class VectorExpressionInfo(Record):
+    __slots__ = ["name", "expr", "do_not_return"]
+
+
+
+
 class CompiledVectorExpressionBase(object):
-    def __init__(self, vec_expr, is_vector_func, result_dtype_getter):
-        self.vec_expr = vec_expr
-        self.is_vector_func = is_vector_func
+    def __init__(self, vec_expr_info_list, is_vector_pred, result_dtype_getter):
+        self.is_vector_pred = is_vector_pred
         self.result_dtype_getter = result_dtype_getter
 
         from hedge.optemplate import DependencyMapper
-        deps = DependencyMapper(
+        from operator import or_
+        from pymbolic import var
+
+        dep_mapper = DependencyMapper(
                 include_subscripts=True,
                 include_lookups=True,
-                include_calls="descend_args")(vec_expr)
+                include_calls="descend_args")
+        deps = reduce(or_, (dep_mapper(vei.expr) for vei in vec_expr_info_list))
 
-        self.vector_exprs = [dep for dep in deps if is_vector_func(dep)]
-        self.scalar_exprs = [dep for dep in deps if not is_vector_func(dep)]
-        self.vector_names = ["v%d" % i for i in range(len(self.vector_exprs))]
-        self.scalar_names = ["s%d" % i for i in range(len(self.scalar_exprs))]
+        deps -= set(var(vei.name) for vei in vec_expr_info_list)
+
+        from pytools import partition
+
+        self.vector_deps, self.scalar_deps  = partition(is_vector_pred, deps)
+        self.vector_dep_names = ["v%d" % i for i in range(len(self.vector_deps))]
+        self.scalar_dep_names = ["s%d" % i for i in range(len(self.scalar_deps))]
 
         self.constant_dtypes = [
                 numpy.array(const).dtype
-                for const in ConstantGatherMapper()(vec_expr)]
+                for vei in vec_expr_info_list
+                for const in ConstantGatherMapper()(vei.expr)]
 
-        from pymbolic import var
         var_i = var("i")
         subst_map = dict(
-                list(zip(self.vector_exprs, [var(vecname)[var_i]
-                    for vecname in self.vector_names]))
-                +list(zip(self.scalar_exprs,
-                    [var(scaname) for scaname in self.scalar_names])))
+                list(zip(self.vector_deps, [var(vecname)[var_i]
+                    for vecname in self.vector_dep_names]))
+                +list(zip(self.scalar_deps,
+                    [var(scaname) for scaname in self.scalar_dep_names]))
+                +[(var(vei.name), var(vei.name)[var_i]) 
+                    for vei in vec_expr_info_list
+                    if not vei.do_not_return]
+                )
 
         def subst_func(expr):
             try:
@@ -98,18 +126,14 @@ class CompiledVectorExpressionBase(object):
             except KeyError:
                 return None
 
-        self.subst_expr = DefaultingSubstitutionMapper(subst_func)(vec_expr)
-
-        from hedge.tools import is_obj_array
-        if is_obj_array(self.subst_expr):
-            self.exprs = self.subst_expr
-        else:
-            self.exprs = [self.subst_expr]
-
-        self.result_count = len(self.exprs)
-
-        from pymbolic.mapper.flop_counter import FlopCounter
-        self.flop_count = FlopCounter()(self.subst_expr)
+        self.vec_expr_info_list = [
+                vei.copy(expr=DefaultingSubstitutionMapper(subst_func)(vei.expr))
+                for vei in vec_expr_info_list]
+        self.result_vec_expr_info_list = [
+                vei for vei in vec_expr_info_list if not vei.do_not_return]
+    @memoize_method
+    def result_names(self):
+        return [rvei.name for rvei in self.result_vec_expr_info_list]
 
     @memoize_method
     def get_kernel(self, vector_dtypes, scalar_dtypes):
@@ -119,39 +143,45 @@ class CompiledVectorExpressionBase(object):
         elwise = self.elementwise_mod
 
         result_dtype = self.result_dtype_getter(
-                dict(zip(self.vector_exprs, vector_dtypes)),
-                dict(zip(self.scalar_exprs, scalar_dtypes)),
+                dict(zip(self.vector_deps, vector_dtypes)),
+                dict(zip(self.scalar_deps, scalar_dtypes)),
                 self.constant_dtypes)
 
         from hedge.tools import is_obj_array
-        if is_obj_array(self.subst_expr):
-            args = [elwise.VectorArg(result_dtype, "_result%d" % i)
-                    for i in range(len(self.subst_expr))]
-        else:
-            args = [elwise.VectorArg(result_dtype, "_result0")]
+        args = [elwise.VectorArg(result_dtype, vei.name)
+                for vei in self.vec_expr_info_list
+                if not vei.do_not_return]
 
-        code_mapper = CCodeMapper()
-        expr_codes = [code_mapper(e, PREC_NONE) for e in self.exprs]
-        code_lines = [
-            "%s = %s;" % (
-                get_c_declarator(
-                    "%s%d" % (code_mapper.cse_prefix, i),
-                    False, result_dtype),
-                cse)
-            for i, cse in enumerate(code_mapper.cses)
-            ] + [
-            "_result%d[i] = %s;" % (i, ec)
-            for i, ec in enumerate(expr_codes)]
+        def real_const_mapper(num):
+            r = repr(num)
+            if "." not in r:
+                return "double(%s)" % r
+            else:
+                return r
+
+        code_mapper = CCodeMapper(constant_mapper=real_const_mapper)
+
+        code_lines = []
+        for vei in self.vec_expr_info_list:
+            expr_code = code_mapper(vei.expr, PREC_NONE)
+            if vei.do_not_return:
+                from codepy.cgen import dtype_to_ctype
+                code_lines.append(
+                        "%s %s = %s;" % (
+                            dtype_to_ctype(result_dtype), vei.name, expr_code))
+            else:
+                code_lines.append(
+                        "%s[i] = %s;" % (vei.name, expr_code))
+
+        # common subexpressions have been taken care of by the compiler
+        assert not code_mapper.cses
 
         args.extend(
                 elwise.VectorArg(dtype, name)
-                for dtype, name in zip(vector_dtypes, self.vector_names))
+                for dtype, name in zip(vector_dtypes, self.vector_dep_names))
         args.extend(
                 elwise.ScalarArg(dtype, name)
-                for dtype, name in zip(scalar_dtypes, self.scalar_names))
-
-        #print ",".join(args)
-        #print "\n".join(code_lines)
+                for dtype, name in zip(scalar_dtypes, self.scalar_dep_names))
 
         return KernelRecord(
                 kernel=self.make_kernel_internal(args, "\n".join(code_lines)),

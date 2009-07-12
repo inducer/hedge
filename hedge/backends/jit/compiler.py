@@ -33,14 +33,53 @@ from hedge.compiler import OperatorCompilerBase, FluxBatchAssign, \
 
 # compiler stuff --------------------------------------------------------------
 class VectorExprAssign(Assign):
-    __slots__ = ["compiled"]
+    __slots__ = ["toolchain"]
 
     def get_executor_method(self, executor):
         return executor.exec_vector_expr_assign
 
-    def __str__(self):
-        return "%s <- (compiled) %s" % (self.name, self.expr)
+    comment = "compiled"
 
+    @memoize_method
+    def compiled(self, executor):
+        discr = executor.discr
+
+        def result_dtype_getter(vector_dtype_map, scalar_dtype_map, const_dtypes):
+            from pytools import common_dtype, match_precision
+
+            result = common_dtype(vector_dtype_map.values())
+
+            scalar_dtypes = scalar_dtype_map.values() + const_dtypes
+            if scalar_dtypes:
+                prec_matched_scalar_dtype = match_precision(
+                        common_dtype(scalar_dtypes),
+                        dtype_to_match=result)
+                result = common_dtype([result, prec_matched_scalar_dtype])
+
+            return result
+
+        if self.flop_count() > 500:
+            # reduce optimization level for complicated expressions
+            if "jit_dont_optimize_large_exprs" in discr.debug:
+                toolchain = discr.toolchain.with_optimization_level(0)
+            else:
+                toolchain = discr.toolchain.with_optimization_level(1)
+        else:
+            toolchain = discr.toolchain
+
+        from hedge.backends.vector_expr import VectorExpressionInfo
+        from hedge.backends.jit.vector_expr import CompiledVectorExpression
+        return CompiledVectorExpression(
+                [VectorExpressionInfo(
+                    name=name,
+                    expr=expr,
+                    do_not_return=dnr)
+                    for name, expr, dnr in zip(
+                        self.names, self.exprs, self.do_not_return)],
+                is_vector_pred=executor.is_vector_pred,
+                result_dtype_getter=result_dtype_getter,
+                toolchain=toolchain,
+                wait_on_error="jit_wait_on_compile_error" in discr.debug)
 
 
 
@@ -73,7 +112,8 @@ class CompiledFluxBatchAssign(FluxBatchAssign):
 
         if not self.is_boundary:
             mod = get_interior_flux_mod(
-                    self.fluxes, self.flux_var_info, discr.toolchain, dtype)
+                    self.fluxes, self.flux_var_info, 
+                    discr, dtype)
 
             if discr.instrumented:
                 from hedge.tools import time_count_flop, gather_flops
@@ -89,7 +129,7 @@ class CompiledFluxBatchAssign(FluxBatchAssign):
 
         else:
             mod = get_boundary_flux_mod(
-                    self.fluxes, self.flux_var_info, discr.toolchain, dtype)
+                    self.fluxes, self.flux_var_info, discr, dtype)
 
             if discr.instrumented:
                 from pytools.log import time_and_count_function
@@ -198,22 +238,9 @@ class OperatorCompiler(OperatorCompilerBase):
                 flux_var_info=get_flux_var_info(fluxes),
                 dep_mapper_factory=self.dep_mapper_factory)
 
-    def make_assign(self, name, expr, priority):
-        def result_dtype_getter(vector_dtype_map, scalar_dtype_map, const_dtypes):
-            from pytools import common_dtype
-            return common_dtype(
-                    vector_dtype_map.values()
-                    + scalar_dtype_map.values()
-                    + const_dtypes)
-
-        from hedge.backends.jit.vector_expr import CompiledVectorExpression
-        return VectorExprAssign(
-                name=name,
-                expr=expr,
+    # vector math -------------------------------------------------------------
+    def finalize_multi_assign(self, names, exprs, do_not_return, priority):
+        return VectorExprAssign(names=names, exprs=exprs, 
+                do_not_return=do_not_return,
                 dep_mapper_factory=self.dep_mapper_factory,
-                compiled=CompiledVectorExpression(
-                    expr,
-                    is_vector_func=lambda expr: True,
-                    result_dtype_getter=result_dtype_getter,
-                    toolchain=self.discr.toolchain),
                 priority=priority)

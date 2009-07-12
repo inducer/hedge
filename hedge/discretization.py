@@ -254,7 +254,7 @@ class Discretization(object):
         self.diff_timer = IntervalTimer("t_diff",
                 "Time spent applying applying differentiation operators")
         self.vector_math_timer = IntervalTimer("t_vector_math",
-                "Time spent applying doing vector math")
+                "Time spent doing vector math")
 
         return [self.gather_timer, 
                 self.lift_timer,
@@ -991,8 +991,10 @@ class Discretization(object):
         raise RuntimeError, "point %s not found" % point
 
     # op template execution ---------------------------------------------------
-    def compile(self, optemplate, post_bind_mapper=lambda x: x):
-        ex = self.executor_class(self, optemplate, post_bind_mapper)
+    def compile(self, optemplate, post_bind_mapper=lambda x: x,
+            is_vector_pred=lambda expr: True):
+        ex = self.executor_class(self, optemplate, post_bind_mapper,
+                is_vector_pred=is_vector_pred)
         if self.instrumented:
             ex.instrument()
         return ex
