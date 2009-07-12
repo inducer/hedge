@@ -28,6 +28,7 @@ import pymbolic.mapper.expander
 import pymbolic.mapper.flattener
 import pymbolic.mapper.substitutor
 import pymbolic.mapper.constant_folder
+import pymbolic.mapper.flop_counter
 
 
 
@@ -309,10 +310,17 @@ class FluxStringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
     def map_if_positive(self, expr, enclosing_prec):
         return "IfPositive(%s, %s, %s)" % (expr.criterion, expr.then, expr.else_)
 
+
+
+
 class FluxFlattenMapper(pymbolic.mapper.flattener.FlattenMapper,
         FluxIdentityMapperMixin):
     pass
-        
+
+
+
+
+
 class FluxDependencyMapper(pymbolic.mapper.dependency.DependencyMapper):
     def map_field_component(self, expr):
         return set([expr])
@@ -326,9 +334,16 @@ class FluxDependencyMapper(pymbolic.mapper.dependency.DependencyMapper):
     def map_if_positive(self, expr):
         return self.rec(expr.criterion) | self.rec(expr.then) | self.rec(expr.else_)
 
+
+
+
+
 class FluxTermCollector(pymbolic.mapper.collector.TermCollector,
         FluxIdentityMapperMixin):
     pass
+
+
+
 
 class FluxAllDependencyMapper(FluxDependencyMapper):
     def map_normal(self, expr):
@@ -336,6 +351,9 @@ class FluxAllDependencyMapper(FluxDependencyMapper):
 
     def map_penalty_term(self, expr):
         return set([expr])
+
+
+
 
 class FluxNormalizationMapper(pymbolic.mapper.collector.TermCollector,
         FluxIdentityMapperMixin):
@@ -348,16 +366,25 @@ class FluxNormalizationMapper(pymbolic.mapper.collector.TermCollector,
         else:
             return expr
 
+
+
+
 class FluxCCFMapper(pymbolic.mapper.constant_folder.CommutativeConstantFoldingMapper,
         FluxIdentityMapperMixin):
     def is_constant(self, expr):
         return not bool(FluxAllDependencyMapper()(expr))
+
+
+
 
 class FluxExpandMapper(pymbolic.mapper.expander.ExpandMapper,
         FluxIdentityMapperMixin):
     def __init__(self):
         pymbolic.mapper.expander.ExpandMapper.__init__(self,
                 FluxNormalizationMapper())
+
+
+
 
 class FluxFlipper(FluxIdentityMapper):
     def map_normal(self, expr):
@@ -366,115 +393,32 @@ class FluxFlipper(FluxIdentityMapper):
     def map_field_component(self, expr):
         return expr.__class__(expr.index, not expr.is_local)
 
-        
+
+
+
+
+class FluxFlopCounter(pymbolic.mapper.flop_counter.FlopCounter):
+    def map_penalty_term(self, expr):
+        return 0
+
+    def map_normal(self, expr):
+        return 0
+
+    def map_field_component(self, expr):
+        return 0
+
+    def map_if_positive(self, expr):
+        return self.rec(expr.criterion) + max(
+                self.rec(expr.then),
+                self.rec(expr.else_))
+
+    def map_function_symbol(self, expr):
+        return 0
+
+
 
 
 
 def normalize_flux(flux):
     return FluxCCFMapper()(FluxNormalizationMapper()(
         FluxFlattenMapper()(FluxExpandMapper()(flux))))
-
-
-
-
-
-
-
-
-class FluxDifferentiationMapper(pymbolic.mapper.differentiator.DifferentiationMapper):
-    def map_field_component(self, expr):
-        if expr == self.variable:
-            return 1
-        else:
-            return 0
-
-    def map_normal(self, expr):
-        return 0
-
-    def map_penalty_term(self, expr):
-        return 0
-
-    def map_if_positive(self, expr):
-        return IfPositive(
-                expr.criterion,
-                self.rec(expr.then),
-                self.rec(expr.else_),
-                )
-
-
-
-
-def analyze_flux(flux):
-    """For a multi-dependency scalar flux passed in,
-    return a list of tuples C{(in_field_idx, int, ext)}, where C{int}
-    and C{ext} are the (expressions of the) flux coefficients for the
-    dependency with number C{in_field_idx}.
-    """
-
-    def compile_scalar_flux(flux):
-        def in_fields_cmp(a, b):
-            return cmp(a.index, b.index) \
-                    or cmp(a.is_local, b.is_local)
-
-        in_fields = list(FluxDependencyMapper(composite_leaves=True)(flux))
-
-        # check that all in_fields are FieldComponents
-        for in_field in in_fields:
-            if not isinstance(in_field, FieldComponent):
-                raise ValueError, "flux depends on invalid term `%s'" % str(in_field)
-            
-        in_fields.sort(in_fields_cmp)
-
-        result = []
-
-        if in_fields:
-            max_in_field = max(in_field.index for in_field in in_fields)
-
-            # find d<flux> / d<in_fields>
-            in_derivatives = dict(
-                    ((in_field.index, in_field.is_local),
-                    normalize_flux(FluxDifferentiationMapper(in_field)(flux)))
-                    for in_field in in_fields)
-
-            # check for (invalid) nonlinearity
-            for (idx, is_local), deriv in in_derivatives.iteritems():
-                if FluxDependencyMapper()(deriv):
-                    def is_local_to_str(is_local):
-                        if is_local:
-                            return "Int"
-                        else:
-                            return "Ext"
-
-                    raise ValueError("Flux is nonlinear in component %s[%d]:\n"
-                            "  flux: %s\n"
-                            "  coefficient: %s\n"
-                            "  derivative: %s"
-                            % (is_local_to_str(is_local), idx, 
-                                str(flux), str(deriv), 
-                                str(FluxDifferentiationMapper(
-                                    FieldComponent(idx, is_local))(flux)
-                                    ))
-                            )
-
-            for in_field_idx in range(max_in_field+1):
-                int = in_derivatives.get((in_field_idx, True), 0)
-                ext = in_derivatives.get((in_field_idx, False), 0)
-
-                if int or ext:
-                    result.append((in_field_idx, int, ext))
-
-        try:
-            flux._compiled = result
-        except AttributeError:
-            pass # ok if we can't set cache
-
-        return result
-
-    try:
-        return flux._compiled
-    except AttributeError:
-        return compile_scalar_flux(flux)
-
-
-
-

@@ -31,6 +31,16 @@ import hedge.backends.cuda.plan
 from pymbolic.mapper.c_code import CCodeMapper
 from hedge.flux import FluxIdentityMapper
 
+from codepy.cgen import \
+        Pointer, POD, Value, ArrayOf, Typedef, \
+        Module, FunctionDeclaration, FunctionBody, Block, \
+        Comment, Line, Include, \
+        MaybeUnused, \
+        Define, \
+        Initializer, If, For, Statement, Assign, While
+
+from pymbolic.mapper.stringifier import PREC_NONE
+
 
 
 
@@ -523,16 +533,181 @@ class Kernel:
 
         return all_fluxes_on_faces
 
+    def gen_store(self, flux_nr, index, what):
+        if self.plan.direct_store:
+            return Assign(
+                    "gmem_fluxes_on_faces%d[FOF_BLOCK_BASE + %s]" % (flux_nr, index),
+                    what)
+        else:
+            return Assign(
+                    "smem_fluxes_on_faces[%d][%s]" % (flux_nr, index),
+                    what)
+
+    def write_interior_flux_code(self, is_twosided):
+        given = self.plan.given
+
+        def get_field(flux_rec, is_interior, flipped):
+            if is_interior ^ flipped:
+                prefix = "a"
+            else:
+                prefix = "b"
+
+            return ("val_%s_field%d" % (prefix, self.dep_to_index[flux_rec.field_expr]))
+
+        flux_write_code = Block([])
+        
+        flux_var_decl = [Initializer( POD(given.float_type, "a_flux"), 0)]
+
+        if is_twosided:
+            flux_var_decl.append(Initializer(POD(given.float_type, "b_flux"), 0))
+            prefixes = ["a", "b"]
+            flip_values = [False, True]
+        else:
+            prefixes = ["a"]
+            flip_values = [False]
+
+        flux_write_code.append(Line())
+
+        for dep in self.interior_deps:
+            for side in ["a", "b"]:
+                flux_write_code.append(
+                        Initializer(
+                            MaybeUnused(POD(given.float_type, "val_%s_field%d" 
+                                % (side, self.dep_to_index[dep]))),
+                            "fp_tex1Dfetch(field%d_tex, %s_index)"
+                            % (self.dep_to_index[dep], side)))
+
+        f2cm = FluxToCodeMapper(given.float_type)
+
+        flux_sub_codes = []
+        for flux_nr, wdflux in enumerate(self.fluxes):
+            my_flux_block = Block(flux_var_decl)
+
+            for int_rec in wdflux.interiors:
+                for prefix, is_flipped in zip(prefixes, flip_values):
+                    my_flux_block.append(
+                            Statement("%s_flux += %s"
+                                % (prefix, 
+                                    flux_to_code(f2cm, is_flipped,
+                                        int_rec.field_expr, 
+                                        int_rec.field_expr, 
+                                        self.dep_to_index,
+                                        int_rec.flux_expr, PREC_NONE),
+                                    )))
+
+            my_flux_block.append(Line())
+
+            my_flux_block.append(
+                    self.gen_store(flux_nr, "fpair->a_dest+FACEDOF_NR",
+                        "fpair->face_jacobian*a_flux"))
+
+            #my_flux_block.append(
+                    #Assign("debugbuf[blockIdx.x*96+fpair_nr]", "10000+fpair->a_dest"),
+                    #)
+
+            if is_twosided:
+                my_flux_block.append(
+                        self.gen_store(flux_nr, 
+                            "fpair->b_dest+tex1Dfetch(tex_index_lists, "
+                            "fpair->b_write_ilist_index + FACEDOF_NR)",
+                            "fpair->face_jacobian*b_flux"))
+
+                #my_flux_block.append(
+                        #Assign("debugbuf[blockIdx.x*96+fpair_nr+8]", "10000+fpair->b_dest"),
+                        #)
+
+            flux_sub_codes.append(my_flux_block)
+
+        flux_write_code.extend(
+                Initializer(
+                    Value("value_type", f2cm.cse_prefix+str(i)), cse)
+                for i, cse in f2cm.cses)
+        flux_write_code.extend(flux_sub_codes)
+
+        return flux_write_code
+
+    def write_boundary_flux_code(self, for_benchmark):
+        given = self.plan.given
+
+        flux_write_code = Block()
+
+        fluxes_by_bdry_number = {}
+        for flux_nr, wdflux in enumerate(self.fluxes):
+            for bflux_info in wdflux.boundaries:
+                if for_benchmark:
+                    bdry_number = 0
+                else:
+                    bdry_number = self.executor.boundary_tag_to_number[
+                            bflux_info.bpair.tag]
+
+                fluxes_by_bdry_number.setdefault(bdry_number, [])\
+                        .append((flux_nr, bflux_info))
+
+        flux_write_code.extend([
+            Initializer(
+                MaybeUnused(POD(given.float_type, "flux%d" % flux_nr)),
+                0)
+            for flux_nr in range(len(self.fluxes))])
+
+        for bdry_number, nrs_and_fluxes in fluxes_by_bdry_number.iteritems():
+            bblock = []
+
+            from pytools import set_sum
+            int_deps = set_sum(flux_rec.int_dependencies
+                    for flux_nr, flux_rec in nrs_and_fluxes)
+            ext_deps = set_sum(flux_rec.ext_dependencies
+                    for flux_nr, flux_rec in nrs_and_fluxes)
+
+            for dep in int_deps:
+                bblock.append(
+                        Initializer(
+                            MaybeUnused(POD(given.float_type, "val_a_field%d" 
+                                % self.dep_to_index[dep])),
+                            "fp_tex1Dfetch(field%d_tex, a_index)" % self.dep_to_index[dep]))
+            for dep in ext_deps:
+                bblock.append(
+                        Initializer(
+                            MaybeUnused(POD(given.float_type, "val_b_field%d" 
+                                % self.dep_to_index[dep])),
+                            "fp_tex1Dfetch(field%s_tex, b_index)" % self.dep_to_index[dep]))
+
+            f2cm = FluxToCodeMapper(given.float_type)
+
+            comp_code = [Line()]
+            for flux_nr, flux_rec in nrs_and_fluxes:
+                comp_code.append(
+                        Statement(("flux%d += " % flux_nr) +
+                            flux_to_code(f2cm, is_flipped=False,
+                                int_field_expr=flux_rec.bpair.field,
+                                ext_field_expr=flux_rec.bpair.bfield,
+                                dep_to_index=self.dep_to_index, 
+                                flux=flux_rec.flux_expr, prec=PREC_NONE)))
+
+            bblock.extend(
+                    Initializer(
+                        Value("value_type", f2cm.cse_prefix+str(i)), cse)
+                    for i, cse in enumerate(f2cm.cses))
+
+            flux_write_code.extend([
+                Line(),
+                Comment(nrs_and_fluxes[0][1].bpair.tag),
+                If("(fpair->boundary_bitmap) & (1 << %d)" % (bdry_number),
+                    Block(bblock+comp_code)),
+                ])
+
+        flux_write_code.extend([Line(),]
+            +[
+            self.gen_store(flux_nr, "fpair->a_dest+FACEDOF_NR",
+                "fpair->face_jacobian * flux%d" % flux_nr)
+            for flux_nr in range(len(self.fluxes))
+            ]
+            #Assign("debugbuf[blockIdx.x*96+fpair_nr]", "10000+fpair->a_dest"),
+            )
+
+        return flux_write_code
+
     @memoize_method
     def get_kernel(self, fdata, ilist_data, for_benchmark):
-        from codepy.cgen import \
-                Pointer, POD, Value, ArrayOf, Typedef, \
-                Module, FunctionDeclaration, FunctionBody, Block, \
-                Comment, Line, Include, \
-                MaybeUnused, \
-                Define, \
-                Initializer, If, For, Statement, Assign, While
-                
         from codepy.cgen.cuda import CudaShared, CudaGlobal
         from pycuda.tools import dtype_to_ctype
 
@@ -640,171 +815,6 @@ class Kernel:
             descr="load face_pair data")
             +[ S("__syncthreads()"), Line() ])
 
-        def gen_store(flux_nr, index, what):
-            if fplan.direct_store:
-                return Assign(
-                        "gmem_fluxes_on_faces%d[FOF_BLOCK_BASE + %s]" % (flux_nr, index),
-                        what)
-            else:
-                return Assign(
-                        "smem_fluxes_on_faces[%d][%s]" % (flux_nr, index),
-                        what)
-
-        def bdry_flux_writer():
-            from pymbolic.mapper.stringifier import PREC_NONE
-
-            flux_write_code = Block()
-
-            for dep in self.boundary_int_deps:
-                flux_write_code.append(
-                        Initializer(
-                            MaybeUnused(POD(float_type, "val_a_field%d" 
-                                % self.dep_to_index[dep])),
-                            "fp_tex1Dfetch(field%d_tex, a_index)" % self.dep_to_index[dep]))
-            for dep in self.boundary_ext_deps:
-                flux_write_code.append(
-                        Initializer(
-                            MaybeUnused(POD(float_type, "val_b_field%d" 
-                                % self.dep_to_index[dep])),
-                            "fp_tex1Dfetch(field%s_tex, b_index)" % self.dep_to_index[dep]))
-
-            f2cm = FluxToCodeMapper(discr.default_scalar_type)
-
-            fluxes_by_bdry_number = {}
-            for flux_nr, wdflux in enumerate(self.fluxes):
-                for tag, fluxes in wdflux.tag_to_fluxes.iteritems():
-                    if for_benchmark:
-                        bdry_number = 0
-                    else:
-                        bdry_number = self.executor.boundary_tag_to_number[tag]
-
-                    fluxes_by_bdry_number.setdefault(bdry_number, [])\
-                            .append((flux_nr, fluxes))
-
-            flux_write_code.extend([
-                Initializer(
-                    MaybeUnused(POD(float_type, "flux%d" % flux_nr)),
-                    0)
-                for flux_nr in range(len(self.fluxes))])
-
-            flux_sub_codes = []
-            for bdry_number, nrs_and_fluxes in fluxes_by_bdry_number.iteritems():
-                bblock = []
-                for flux_nr, fluxes in nrs_and_fluxes:
-                    bblock.extend([S(("flux%d += " % flux_nr) +
-                                flux_to_code(f2cm, is_flipped=False,
-                                    int_field_expr=flux_rec.bpair.field,
-                                    ext_field_expr=flux_rec.bpair.bfield,
-                                    dep_to_index=self.dep_to_index, 
-                                    flux=flux_rec.flux_expr, prec=PREC_NONE))
-                                for flux_rec in fluxes])
-
-                flux_sub_codes.extend([
-                    Line(),
-                    Comment(nrs_and_fluxes[0][1][0].bpair.tag),
-                    If("(fpair->boundary_bitmap) & (1 << %d)" % (bdry_number),
-                        Block(bblock)),
-                    ])
-
-            flux_sub_codes.extend([Line(),]
-                +[
-                gen_store(flux_nr, "fpair->a_dest+FACEDOF_NR",
-                    "fpair->face_jacobian * flux%d" % flux_nr)
-                for flux_nr in range(len(self.fluxes))
-                ]
-                #Assign("debugbuf[blockIdx.x*96+fpair_nr]", "10000+fpair->a_dest"),
-                )
-
-            flux_write_code.extend(
-                    Initializer(
-                        Value("value_type", f2cm.cse_prefix+str(i)), cse)
-                    for i, cse in enumerate(f2cm.cses))
-            flux_write_code.extend(flux_sub_codes)
-
-            return flux_write_code
-
-        def int_flux_writer(is_twosided):
-            def get_field(flux_rec, is_interior, flipped):
-                if is_interior ^ flipped:
-                    prefix = "a"
-                else:
-                    prefix = "b"
-
-                return ("val_%s_field%d" % (prefix, self.dep_to_index[flux_rec.field_expr]))
-
-            from pymbolic.mapper.stringifier import PREC_NONE
-
-            flux_write_code = Block([])
-            
-            flux_var_decl = [Initializer( POD(float_type, "a_flux"), 0)]
-
-            if is_twosided:
-                flux_var_decl.append(Initializer(POD(float_type, "b_flux"), 0))
-                prefixes = ["a", "b"]
-                flip_values = [False, True]
-            else:
-                prefixes = ["a"]
-                flip_values = [False]
-
-            flux_write_code.append(Line())
-
-            for dep in self.interior_deps:
-                for side in ["a", "b"]:
-                    flux_write_code.append(
-                            Initializer(
-                                MaybeUnused(POD(float_type, "val_%s_field%d" 
-                                    % (side, self.dep_to_index[dep]))),
-                                "fp_tex1Dfetch(field%d_tex, %s_index)"
-                                % (self.dep_to_index[dep], side)))
-
-            f2cm = FluxToCodeMapper(discr.default_scalar_type)
-
-            flux_sub_codes = []
-            for flux_nr, wdflux in enumerate(self.fluxes):
-                my_flux_block = Block(flux_var_decl)
-
-                for int_rec in wdflux.interiors:
-                    for prefix, is_flipped in zip(prefixes, flip_values):
-                        my_flux_block.append(
-                                S("%s_flux += %s"
-                                    % (prefix, 
-                                        flux_to_code(f2cm, is_flipped,
-                                            int_rec.field_expr, 
-                                            int_rec.field_expr, 
-                                            self.dep_to_index,
-                                            int_rec.flux_expr, PREC_NONE),
-                                        )))
-
-                my_flux_block.append(Line())
-
-                my_flux_block.append(
-                        gen_store(flux_nr, "fpair->a_dest+FACEDOF_NR",
-                            "fpair->face_jacobian*a_flux"))
-
-                #my_flux_block.append(
-                        #Assign("debugbuf[blockIdx.x*96+fpair_nr]", "10000+fpair->a_dest"),
-                        #)
-
-                if is_twosided:
-                    my_flux_block.append(
-                            gen_store(flux_nr, 
-                                "fpair->b_dest+tex1Dfetch(tex_index_lists, "
-                                "fpair->b_write_ilist_index + FACEDOF_NR)",
-                                "fpair->face_jacobian*b_flux"))
-
-                    #my_flux_block.append(
-                            #Assign("debugbuf[blockIdx.x*96+fpair_nr+8]", "10000+fpair->b_dest"),
-                            #)
-
-                flux_sub_codes.append(my_flux_block)
-
-            flux_write_code.extend(
-                    Initializer(
-                        Value("value_type", f2cm.cse_prefix+str(i)), cse)
-                    for i, cse in f2cm.cses)
-            flux_write_code.extend(flux_sub_codes)
-
-            return flux_write_code
 
         def get_flux_code(flux_writer):
             flux_code = Block([])
@@ -832,7 +842,8 @@ class Kernel:
         flux_computation = Block([
             Comment("fluxes for dual-sided (intra-block) interior face pairs"),
             While("fpair_nr < data.header.same_facepairs_end",
-                get_flux_code(lambda: int_flux_writer(True))
+                get_flux_code(lambda: 
+                    self.write_interior_flux_code(True))
                 ),
             Line(),
             Comment("work around nvcc assertion failure"),
@@ -841,12 +852,14 @@ class Kernel:
             Line(),
             Comment("fluxes for single-sided (inter-block) interior face pairs"),
             While("fpair_nr < data.header.diff_facepairs_end",
-                get_flux_code(lambda: int_flux_writer(False))
+                get_flux_code(lambda: 
+                    self.write_interior_flux_code(False))
                 ),
             Line(),
             Comment("fluxes for single-sided boundary face pairs"),
             While("fpair_nr < data.header.bdry_facepairs_end",
-                get_flux_code(bdry_flux_writer)
+                get_flux_code(
+                    lambda: self.write_boundary_flux_code(for_benchmark))
                 ),
             ])
 

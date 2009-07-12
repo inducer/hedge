@@ -21,7 +21,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 
-from pytools import Record
+from pytools import Record, memoize_method
 import pymbolic.primitives
 import pymbolic.mapper
 import hedge.optemplate
@@ -39,7 +39,7 @@ class StringifyMapper(hedge.optemplate.StringifyMapper):
         return "%s(is_lift=%s,\n    int=%s,\n    tag->flux=%s)" % (tag, 
                 expr.is_lift,
                 expr.interiors,
-                expr.tag_to_fluxes)
+                expr.boundaries)
 
 
 
@@ -94,13 +94,33 @@ class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
             return "%s(%s)" % (
                     self.__class__.__name__,
                     ", ".join("%s=%s" % (fld, getattr(self, fld))
-                        for fld in self.__class__.fields))
+                        for fld in self.__class__.fields
+                        if hasattr(self, fld)))
 
     class InteriorInfo(FluxInfo):
-        __slots__ = ["flux_expr", "field_expr"]
+        # attributes: flux_expr, field_expr, 
+
+        @property
+        @memoize_method
+        def dependencies(self):
+            return set(get_flux_dependencies(
+                self.flux_expr, self.field_expr))
 
     class BoundaryInfo(FluxInfo):
-        __slots__ = ["flux_expr", "bpair"]
+        # attributes: flux_expr, bpair
+
+        @property
+        @memoize_method
+        def int_dependencies(self):
+            return set(get_flux_dependencies(
+                    self.flux_expr, self.bpair, bdry="int"))
+
+        @property
+        @memoize_method
+        def ext_dependencies(self):
+            return set(get_flux_dependencies(
+                    self.flux_expr, self.bpair, bdry="ext"))
+                
 
     def __init__(self, is_lift, interiors, boundaries, 
             flux_optemplate=None):
@@ -109,18 +129,12 @@ class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
         self.interiors = interiors
         self.boundaries = boundaries
 
-        def set_sum(set_iterable):
-            from operator import or_
-            return reduce(or_, set_iterable, set())
-
-        interior_deps = set_sum(
-                set(get_flux_dependencies(iflux.flux_expr, iflux.field_expr))
+        from pytools import set_sum
+        interior_deps = set_sum(iflux.dependencies
                 for iflux in interiors)
-        boundary_int_deps = set_sum(
-                set(get_flux_dependencies(bflux.flux_expr, bflux.bpair, bdry="int"))
+        boundary_int_deps = set_sum(bflux.int_dependencies
                 for bflux in boundaries)
-        boundary_ext_deps = set_sum(
-                set(get_flux_dependencies(bflux.flux_expr, bflux.bpair, bdry="ext"))
+        boundary_ext_deps = set_sum(bflux.ext_dependencies
                 for bflux in boundaries)
 
         self.interior_deps = list(interior_deps)
@@ -133,11 +147,6 @@ class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
             for dep in get_flux_dependencies(
                     bflux.flux_expr, bflux.bpair, bdry="ext"):
                 self.dep_to_tag[dep] = bflux.bpair.tag
-
-        self.tag_to_fluxes = {}
-
-        for bflux in boundaries:
-            self.tag_to_fluxes.setdefault(bflux.bpair.tag, []).append(bflux)
 
         self.flux_optemplate = flux_optemplate
 
@@ -162,8 +171,8 @@ class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
 
 
 class BoundaryCombiner(hedge.optemplate.IdentityMapper):
-    """Combines inner fluxes and boundary fluxes on disjoint parts of the
-    boundary into a single, whole-domain operator of type
+    """Combines inner fluxes and boundary fluxes into a 
+    single, whole-domain operator of type 
     L{hedge.backends.cuda.execute.WholeDomainFluxOperator}.
     """
     def __init__(self, mesh):
@@ -202,8 +211,7 @@ class BoundaryCombiner(hedge.optemplate.IdentityMapper):
                     if self.mesh.tag_to_boundary.get(bpair.tag, []):
                         boundaries.append(WholeDomainFluxOperator.BoundaryInfo(
                             flux_expr=ch.op.flux,
-                            bpair=bpair,
-                            ))
+                            bpair=bpair))
                 else:
                     interiors.append(WholeDomainFluxOperator.InteriorInfo(
                             flux_expr=ch.op.flux,

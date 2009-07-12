@@ -27,7 +27,7 @@ import numpy.linalg as la
 
 
 
-def main() :
+def main(write_output=True):
     from math import sin, exp, sqrt
 
     from hedge.mesh import make_rect_mesh
@@ -63,19 +63,18 @@ def main() :
     fields = join_fields(discr.volume_zeros(),
             [discr.volume_zeros() for i in range(discr.dimensions)])
 
-    # timestep loop -----------------------------------------------------------
     from hedge.timestep import RK4TimeStepper
     stepper = RK4TimeStepper()
     dt = discr.dt_factor(op.max_eigenvalue(), RK4TimeStepper)
 
-    nsteps = int(5/dt)
+    nsteps = int(1/dt)
     print "dt=%g nsteps=%d" % (dt, nsteps)
 
     rhs = op.bind(discr)
     for step in range(nsteps):
         t = step*dt
 
-        if step % 50 == 0:
+        if step % 50 == 0 and write_output:
             print step, t, discr.norm(fields[0])
             visf = vis.make_file("fld-%04d" % step)
 
@@ -93,5 +92,3 @@ def main() :
 
 if __name__ == "__main__":
     main()
-
-

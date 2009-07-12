@@ -220,7 +220,7 @@ class EMFieldDivergenceD(LogQuantity):
 
         self.fields = fields
 
-        from hedge.pde import DivergenceOperator
+        from hedge.models.nd_calculus import DivergenceOperator
         div_op = DivergenceOperator(maxwell_op.dimensions,
                 maxwell_op.get_eh_subset()[:3])
         self.bound_div_op = div_op.bind(self.fields.discr)
@@ -239,7 +239,7 @@ class EMFieldDivergenceB(MultiLogQuantity):
     def __init__(self, maxwell_op, fields, names=None):
         self.fields = fields
 
-        from hedge.pde import DivergenceOperator
+        from hedge.models.nd_calculus import DivergenceOperator
         self.div_op = DivergenceOperator(maxwell_op.dimensions,
                 maxwell_op.get_eh_subset()[3:]).bind(self.fields.discr)
 

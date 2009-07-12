@@ -24,7 +24,8 @@ import numpy.linalg as la
 
 
 
-def main(write_output=True, allow_features=None):
+def main(write_output=True, allow_features=None, flux_type_arg=1,
+        bdry_flux_type_arg=None, extra_discr_args={}):
     from hedge.element import TetrahedralElement
     from hedge.timestep import RK4TimeStepper
     from hedge.mesh import make_ball_mesh, make_cylinder_mesh, make_box_mesh
@@ -38,7 +39,7 @@ def main(write_output=True, allow_features=None):
             CylindricalCavityMode, \
             RectangularWaveguideMode, \
             RectangularCavityMode
-    from hedge.pde import MaxwellOperator
+    from hedge.models.em import MaxwellOperator
 
     from hedge.backends import guess_run_context
     rcon = guess_run_context(allow_features)
@@ -81,17 +82,27 @@ def main(write_output=True, allow_features=None):
         mesh_data = rcon.receive_mesh()
 
     for order in [1,2,3,4,5,6]:
-        discr = rcon.make_discretization(mesh_data, order=order)
+        discr = rcon.make_discretization(mesh_data, order=order,
+                **extra_discr_args)
 
         from hedge.visualization import VtkVisualizer
-        vis = VtkVisualizer(discr, rcon, "em-%d" % order)
+        if write_output:
+            vis = VtkVisualizer(discr, rcon, "em-%d" % order)
 
         mode.set_time(0)
-        fields = to_obj_array(mode(discr).real.copy())
-        op = MaxwellOperator(epsilon, mu, flux_type=1)
+        def get_true_field():
+            return discr.convert_volume(
+                to_obj_array(mode(discr)
+                    .real.astype(discr.default_scalar_type).copy()),
+                kind=discr.compute_kind)
+        fields = get_true_field()
+
+        op = MaxwellOperator(epsilon, mu, \
+                flux_type=flux_type_arg, \
+                bdry_flux_type=bdry_flux_type_arg)
 
         dt = discr.dt_factor(op.max_eigenvalue())
-        final_time = 1e-9
+        final_time = 0.5e-9
         nsteps = int(final_time/dt)+1
         dt = final_time/nsteps
 
@@ -136,31 +147,38 @@ def main(write_output=True, allow_features=None):
         t = 0
         rhs = op.bind(discr)
 
-        for step in range(nsteps):
-            logmgr.tick()
+        try:
+            for step in range(nsteps):
+                logmgr.tick()
 
-            if step % 10 == 0 and write_output:
-                sub_timer = vis_timer.start_sub_timer()
-                e, h = op.split_eh(fields)
-                visf = vis.make_file("em-%d-%04d" % (order, step))
-                vis.add_data(visf,
-                        [("e", e), ("h", h),],
-                        time=t, step=step
-                        )
-                visf.close()
-                sub_timer.stop().submit()
+                if step % 10 == 0 and write_output:
+                    sub_timer = vis_timer.start_sub_timer()
+                    e, h = op.split_eh(fields)
+                    visf = vis.make_file("em-%d-%04d" % (order, step))
+                    vis.add_data(visf,
+                            [
+                                ("e", 
+                                    discr.convert_volume(e, kind="numpy")), 
+                                ("h", 
+                                    discr.convert_volume(h, kind="numpy")),],
+                            time=t, step=step
+                            )
+                    visf.close()
+                    sub_timer.stop().submit()
 
-            fields = stepper(fields, t, dt, rhs)
-            t += dt
+                fields = stepper(fields, t, dt, rhs)
+                t += dt
+        finally:
+            if write_output:
+                vis.close()
 
-        logmgr.tick()
-        logmgr.save()
+            logmgr.close()
+            discr.close()
 
-        numpy.seterr('raise')
         mode.set_time(t)
-        true_fields = to_obj_array(mode(discr).real)
 
-        eoc_rec.add_data_point(order, discr.norm(fields-true_fields))
+        eoc_rec.add_data_point(order, 
+                discr.norm(fields-get_true_field()))
 
         if rcon.is_head_rank:
             print
@@ -178,11 +196,43 @@ from pytools.test import mark_test
 def test_maxwell_cavities():
     main(write_output=False)
 
+@mark_test(long=True)
+def test_maxwell_cavities_lf():
+    main(write_output=False, flux_type_arg="lf", bdry_flux_type_arg=1)
+
 @mark_test(mpi=True, long=True)
 def test_maxwell_cavities_mpi():
     from pytools.mpi import run_with_mpi_ranks
     run_with_mpi_ranks(__file__, 2, main, 
             write_output=False, allow_features=["mpi"])
+
+
+
+
+
+def test_cuda():
+    marker = mark_test(cuda=True, long=True)
+
+    yield "SP CUDA Maxwell", do_test_maxwell_cavities_cuda, numpy.float32
+    yield "DP CUDA Maxwell", do_test_maxwell_cavities_cuda, numpy.float64
+
+
+
+
+def do_test_maxwell_cavities_cuda(dtype):
+    import py.test
+
+    try:
+        import pycuda.autoinit
+    except ImportError:
+        py.test.skip()
+
+    main(write_output=False, allow_features=["cuda"], 
+            extra_discr_args=dict(
+                init_cuda=False,
+                debug=["cuda_no_plan"],
+                default_scalar_type=dtype,
+                ))
 
 
 
@@ -193,4 +243,5 @@ if __name__ == "__main__":
     if in_mpi_relaunch():
         test_maxwell_cavities_mpi()
     else:
-        main()
+        #main()
+        do_test_maxwell_cavities_cuda(numpy.float32)

@@ -24,17 +24,18 @@ import numpy.linalg as la
 
 
 
-class Sinewave:
+class SineWave:
     def __init__(self, gamma):
         self.gamma = gamma
 
     def __call__(self, t, x_vec):
 
-        rho = 2 + numpy.sin(x_vec[0] + x_vec[1] - 2 * t)
+        rho = 2 + numpy.sin(x_vec[0] + x_vec[1] + x_vec[2] - 2 * t)
         u = 1
         v = 1
+        w = 0
         p = 1
-        e = p/(self.gamma-1) + rho/2*(u**2+v**2)
+        e = p/(self.gamma-1) + rho/2 * (u**2 + v**2 + w**2)
 
         from hedge.tools import join_fields
         return join_fields(rho, e, rho*u, rho*v)
@@ -54,9 +55,11 @@ class Sinewave:
 
 def main():
     from hedge.backends import guess_run_context
-    rcon = guess_run_context(
-    ["cuda"]
-    )
+    platform = "gpu"
+    if platform == "gpu":
+        rcon = guess_run_context(["cuda"])
+    else:
+        rcon = guess_run_context()
 
     gamma = 1.4
 
@@ -64,24 +67,24 @@ def main():
     eoc_rec = EOCRecorder()
     
     if rcon.is_head_rank:
-        from hedge.mesh import make_rect_mesh
-        mesh = make_rect_mesh((0,-5), (10,5), max_area=0.15)
+        from hedge.mesh import make_box_mesh
+        mesh = make_box_mesh((0,0,0), (10,10,10), max_volume=0.5)
         mesh_data = rcon.distribute_mesh(mesh)
     else:
         mesh_data = rcon.receive_mesh()
 
     for order in [3]:
         discr = rcon.make_discretization(mesh_data, order=order,
-			debug=["cuda_no_plan",
+			debug=[#"cuda_no_plan",
 			#"print_op_code"
 			],
 			default_scalar_type=numpy.float64)
 
         from hedge.visualization import SiloVisualizer, VtkVisualizer
-        #vis = VtkVisualizer(discr, rcon, "sinewave-%d" % order)
-        vis = SiloVisualizer(discr, rcon)
+        vis = VtkVisualizer(discr, rcon, "sinewave-%d" % order)
+        #vis = SiloVisualizer(discr, rcon)
 
-        sinewave = Sinewave(gamma=gamma)
+        sinewave = SineWave(gamma=gamma)
         fields = sinewave.volume_interpolant(0, discr)
 
         from hedge.pde import EulerOperator
@@ -116,7 +119,10 @@ def main():
         from pytools.log import LogManager, add_general_quantities, \
                 add_simulation_quantities, add_run_info
 
-        logmgr = LogManager("euler-%d.dat" % order, "w", rcon.communicator)
+        logmgr = LogManager("euler-sinewave-%(order)d-%(els)d-%(platform)s.dat" 
+                            % {"order":order, "els":len(mesh.elements), 
+                               "platform":platform},
+                            "w", rcon.communicator)
         add_run_info(logmgr)
         add_general_quantities(logmgr)
         add_simulation_quantities(logmgr, dt)
@@ -131,8 +137,8 @@ def main():
         for step in range(nsteps):
             logmgr.tick()
 
-            if step % 1 == 0:
-            #if False:
+            #if step % 10 == 0:
+            if False:
                 visf = vis.make_file("sinewave-%d-%04d" % (order, step))
 
                 from pylo import DB_VARTYPE_VECTOR
@@ -175,6 +181,8 @@ def main():
         eoc_rec.add_data_point(order, discr.norm(fields-true_fields))
         print
         print eoc_rec.pretty_print("P.Deg.", "L2 Error")
+
+        print "Computation Time:", ending_time - starting_time
 
 if __name__ == "__main__":
     main()

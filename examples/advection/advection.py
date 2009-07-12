@@ -24,7 +24,7 @@ import numpy.linalg as la
 
 
 
-def main():
+def main(write_output=True, flux_type_arg="upwind"):
     from hedge.timestep import RK4TimeStepper
     from hedge.tools import mem_checkpoint
     from math import sin, cos, pi, sqrt
@@ -80,19 +80,19 @@ def main():
     discr = rcon.make_discretization(mesh_data, order=4)
     vis_discr = discr
 
-    from hedge.visualization import VtkVisualizer, SiloVisualizer
-    vis = VtkVisualizer(vis_discr, rcon, "fld")
-    #vis = SiloVisualizer(vis_discr, rcon)
+    from hedge.visualization import VtkVisualizer
+    if write_output:
+        vis = VtkVisualizer(vis_discr, rcon, "fld")
 
     # operator setup ----------------------------------------------------------
     from hedge.data import \
             ConstantGivenFunction, \
             TimeConstantGivenFunction, \
             TimeDependentGivenFunction
-    from hedge.pde import StrongAdvectionOperator, WeakAdvectionOperator
+    from hedge.models.advection import StrongAdvectionOperator, WeakAdvectionOperator
     op = WeakAdvectionOperator(v, 
             inflow_u=TimeDependentGivenFunction(u_analytic),
-            flux_type="upwind")
+            flux_type=flux_type_arg)
 
     u = discr.interpolate_volume_function(lambda x, el: u_analytic(x, el, 0))
 
@@ -100,7 +100,7 @@ def main():
     stepper = RK4TimeStepper()
 
     dt = discr.dt_factor(op.max_eigenvalue())
-    nsteps = int(700/dt)
+    nsteps = int(3/dt)
 
     if rcon.is_head_rank:
         print "%d elements, dt=%g, nsteps=%d" % (
@@ -114,7 +114,12 @@ def main():
             add_simulation_quantities, \
             add_run_info
 
-    logmgr = LogManager("advection.dat", "w", rcon.communicator)
+    if write_output:
+        log_file_name = "advection.dat"
+    else:
+        log_file_name = None
+
+    logmgr = LogManager(log_file_name, "w", rcon.communicator)
     add_run_info(logmgr)
     add_general_quantities(logmgr)
     add_simulation_quantities(logmgr, dt)
@@ -132,27 +137,47 @@ def main():
 
     # timestep loop -----------------------------------------------------------
     rhs = op.bind(discr)
-    for step in xrange(nsteps):
+
+    try:
+        for step in xrange(nsteps):
+            logmgr.tick()
+
+            t = step*dt
+
+            if step % 5 == 0 and write_output:
+                visf = vis.make_file("fld-%04d" % step)
+                vis.add_data(visf, [ ("u", u), ],
+                            time=t,
+                            step=step
+                            )
+                visf.close()
+
+
+            u = stepper(u, t, dt, rhs)
+    finally:
+        if write_output:
+            vis.close()
+
         logmgr.tick()
+        logmgr.save()
 
-        t = step*dt
+    true_u = discr.interpolate_volume_function(lambda x, el: u_analytic(x, el, t))
+    print discr.norm(u-true_u)
+    assert discr.norm(u-true_u) < 1e-2
 
-        if step % 5 == 0:
-            visf = vis.make_file("fld-%04d" % step)
-            vis.add_data(visf, [ ("u", u), ], 
-                        time=t, 
-                        step=step
-                        )
-            visf.close()
-
-
-        u = stepper(u, t, dt, rhs)
-
-    vis.close()
-
-    logmgr.tick()
-    logmgr.save()
 
 
 if __name__ == "__main__":
     main()
+
+
+
+
+# entry points for py.test ----------------------------------------------------
+def test_advection():
+    from pytools.test import mark_test
+    mark_long = mark_test(long=True)
+
+    for flux_type in ["upwind", "central", "lf"]:
+        yield "advection with %s flux" % flux_type, \
+                mark_long(main), False, flux_type

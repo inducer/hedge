@@ -32,10 +32,11 @@ from hedge.backends.vector_expr import CompiledVectorExpressionBase
 class CompiledVectorExpression(CompiledVectorExpressionBase):
     elementwise_mod = pycuda.elementwise
 
-    def __init__(self, vec_expr, is_vector_func, result_dtype_getter, 
+    def __init__(self, vec_expr_info_list,
+            is_vector_pred, result_dtype_getter, 
             stream=None, allocator=drv.mem_alloc):
-        CompiledVectorExpressionBase.__init__(self, vec_expr, 
-                is_vector_func, result_dtype_getter)
+        CompiledVectorExpressionBase.__init__(self, 
+                vec_expr_info_list, is_vector_pred, result_dtype_getter)
 
         self.stream = stream
         self.allocator = allocator
@@ -45,8 +46,10 @@ class CompiledVectorExpression(CompiledVectorExpressionBase):
         return get_elwise_kernel(args, instructions, name="vector_expression")
 
     def __call__(self, evaluate_subexpr, stats_callback=None):
-        vectors = [evaluate_subexpr(vec_expr) for vec_expr in self.vector_exprs]
-        scalars = [evaluate_subexpr(scal_expr) for scal_expr in self.scalar_exprs]
+        vectors = [evaluate_subexpr(vec_expr) 
+                for vec_expr in self.vector_deps]
+        scalars = [evaluate_subexpr(scal_expr) 
+                for scal_expr in self.scalar_deps]
 
         from pytools import single_valued
         shape = single_valued(vec.shape for vec in vectors)
@@ -55,11 +58,10 @@ class CompiledVectorExpression(CompiledVectorExpressionBase):
                 tuple(v.dtype for v in vectors),
                 tuple(s.dtype for s in scalars))
 
-        assert self.result_count > 0
         from hedge.tools import make_obj_array
         results = [gpuarray.empty(
             shape, kernel_rec.result_dtype, self.allocator)
-            for i in range(self.result_count)]
+            for expr in self.result_vec_expr_info_list]
 
         size = results[0].size
         kernel_rec.kernel.set_block_shape(*results[0]._block)
@@ -74,11 +76,7 @@ class CompiledVectorExpression(CompiledVectorExpressionBase):
         else:
             kernel_rec.kernel.prepared_async_call(vectors[0]._grid, self.stream, *args)
 
-        from hedge.tools import is_obj_array
-        if is_obj_array(self.subst_expr):
-            return make_obj_array(results)
-        else:
-            return results[0]
+        return results
 
 
 

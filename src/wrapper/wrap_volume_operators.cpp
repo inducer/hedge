@@ -53,11 +53,23 @@ namespace
   template <class Scalar>
   void expose_for_type()
   {
+#ifdef USE_BLAS
     def("perform_elwise_operator",
-        perform_elwise_operator<Scalar>);
-
+        perform_elwise_operator_using_blas<Scalar>);
     def("perform_elwise_scaled_operator",
-        perform_elwise_scaled_operator<Scalar>);
+        perform_elwise_scaled_operator_using_blas<Scalar>);
+#else
+    def("perform_elwise_operator",
+        perform_elwise_operator<
+          uniform_element_ranges,
+          uniform_element_ranges,
+          Scalar>);
+    def("perform_elwise_scaled_operator",
+        perform_elwise_scaled_operator<
+          uniform_element_ranges,
+          uniform_element_ranges,
+          Scalar>);
+#endif
 
     def("perform_elwise_scale", 
         perform_elwise_scale<uniform_element_ranges, Scalar>,

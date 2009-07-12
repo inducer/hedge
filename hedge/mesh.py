@@ -739,6 +739,9 @@ def make_regular_rect_mesh(a=(0,0), b=(1,1), n=(5,5), periodicity=None,
     @arg periodicity: either None, or a tuple of bools specifying whether
       the mesh is to be periodic in x and y.
     """
+    if min(n) < 2:
+        raise ValueError("need at least two points in each direction")
+
     node_dict = {}
     points = []
     points_1d = [numpy.linspace(a_i, b_i, n_i)
@@ -798,6 +801,111 @@ def make_regular_rect_mesh(a=(0,0), b=(1,1), n=(5,5), periodicity=None,
 
     return make_conformal_mesh(points, elements, wrapped_boundary_tagger,
             periodicity=mesh_periodicity)
+
+
+
+
+def make_centered_regular_rect_mesh(a=(0,0), b=(1,1), n=(5,5), periodicity=None,
+        post_refine_factor=1, boundary_tagger=(lambda fvi, el, fn, all_v: [])):
+    """Create a semi-structured rectangular mesh.
+
+    @arg a: the lower left hand point of the rectangle
+    @arg b: the upper right hand point of the rectangle
+    @arg n: a tuple of integers indicating the total number of points
+      on [a,b].
+    @arg periodicity: either None, or a tuple of bools specifying whether
+      the mesh is to be periodic in x and y.
+    """
+    if min(n) < 2:
+        raise ValueError("need at least two points in each direction")
+
+    node_dict = {}
+    centered_node_dict = {}
+    points = []
+    points_1d = [numpy.linspace(a_i, b_i, n_i)
+            for a_i, b_i, n_i in zip(a, b, n)]
+    dx = (numpy.array(b, dtype=numpy.float64)
+            - numpy.array(a, dtype=numpy.float64)) / (numpy.array(n)-1)
+    half_dx = dx/2
+
+    for j in range(n[1]):
+        for i in range(n[0]):
+            node_dict[i,j] = len(points)
+            points.append(numpy.array([points_1d[0][i], points_1d[1][j]]))
+
+    centered_points = []
+    for j in range(n[1]-1):
+        for i in range(n[0]-1):
+            centered_node_dict[i,j] = len(points)
+            points.append(numpy.array([points_1d[0][i], points_1d[1][j]]) + half_dx)
+
+    elements = []
+
+    if periodicity is None:
+        periodicity = (False, False)
+
+    axes = ["x", "y"]
+    mesh_periodicity = []
+    periodic_tags = set()
+    for i, axis in enumerate(axes):
+        if periodicity[i]:
+            minus_tag = "minus_"+axis
+            plus_tag = "plus_"+axis
+            mesh_periodicity.append((minus_tag, plus_tag))
+            periodic_tags.add(minus_tag)
+            periodic_tags.add(plus_tag)
+        else:
+            mesh_periodicity.append(None)
+
+    fvi2fm = {}
+
+    for i in range(n[0]-1):
+        for j in range(n[1]-1):
+
+            # c---d
+            # |\ /|
+            # | m |
+            # |/ \|
+            # a---b
+
+            a = node_dict[i,j]
+            b = node_dict[i+1,j]
+            c = node_dict[i,j+1]
+            d = node_dict[i+1,j+1]
+
+            m = centered_node_dict[i,j]
+
+            elements.append((a,b,m))
+            elements.append((b,d,m))
+            elements.append((d,c,m))
+            elements.append((c,a,m))
+
+            if i == 0: fvi2fm[frozenset((a,c))] = "minus_x"
+            if i == n[0]-2: fvi2fm[frozenset((b,d))] = "plus_x"
+            if j == 0: fvi2fm[frozenset((a,b))] = "minus_y"
+            if j == n[1]-2: fvi2fm[frozenset((c,d))] = "plus_y"
+
+    def wrapped_boundary_tagger(fvi, el, fn, all_v):
+        btag = fvi2fm[frozenset(fvi)]
+        if btag in periodic_tags:
+            return [btag]
+        else:
+            return [btag] + boundary_tagger(fvi, el, fn, all_v)
+
+    if post_refine_factor > 1:
+        from meshpy.tools import uniform_refine_triangles
+        points, elements, of2nf = uniform_refine_triangles(
+                points, elements, post_refine_factor)
+        old_fvi2fm = fvi2fm
+        fvi2fm = {}
+        
+        for fvi, fm in old_fvi2fm.iteritems():
+            for new_fvi in of2nf[fvi]:
+                fvi2fm[frozenset(new_fvi)] = fm
+
+    return make_conformal_mesh(points, elements, wrapped_boundary_tagger,
+            periodicity=mesh_periodicity)
+
 
 
 
