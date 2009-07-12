@@ -198,7 +198,7 @@ class BoundaryCombiner(hedge.optemplate.IdentityMapper):
                 flux_optemplate_summands.append(ch)
 
                 if isinstance(ch.field, BoundaryPair):
-                    bpair = ch.field
+                    bpair = self.rec(ch.field)
                     if self.mesh.tag_to_boundary.get(bpair.tag, []):
                         boundaries.append(WholeDomainFluxOperator.BoundaryInfo(
                             flux_expr=ch.op.flux,
@@ -207,7 +207,7 @@ class BoundaryCombiner(hedge.optemplate.IdentityMapper):
                 else:
                     interiors.append(WholeDomainFluxOperator.InteriorInfo(
                             flux_expr=ch.op.flux,
-                            field_expr=ch.field))
+                            field_expr=self.rec(ch.field)))
             else:
                 rest.append(ch)
 
