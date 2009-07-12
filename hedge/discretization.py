@@ -969,7 +969,9 @@ class Discretization(object):
         else:
             assert isinstance(stepper_class, type)
 
-            from hedge.timestep import calculate_fudged_stability_region 
+            from hedge.timestep.stability import \
+                    calculate_fudged_stability_region
+
             return rk4_dt \
                     * calculate_fudged_stability_region(
                             stepper_class, *stepper_args) \
