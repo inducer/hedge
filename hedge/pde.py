@@ -1988,14 +1988,10 @@ class NavierStokesOperator(GasDynamicsOperatorBase):
                        dtype=object).transpose() -
                    InverseMassOperator()*
                    make_central_flux(
-                        #wave_speed= 
-                        #ElementwiseMaxOperator()*
-                        #c,
                         flux_func=q,
                         bdry_tags_and_states=[
-                            (TAG_ALL, make_vector_field("bc_q", self.dimensions+2)
-                                )]
-                            ))
+                            (TAG_ALL, make_vector_field("bc_q", self.dimensions+2))]
+                        ))
 
         def tau(q):
             from hedge.optemplate import make_nabla
