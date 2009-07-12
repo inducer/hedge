@@ -732,15 +732,18 @@ class OperatorBinder(IdentityMapper):
 
 
 class _InnerInverseMassContractor(pymbolic.mapper.RecursiveMapper):
+    def __init__(self, outer_mass_contractor):
+        self.outer_mass_contractor = outer_mass_contractor
+
     def map_constant(self, expr):
         return OperatorBinding(
                 InverseMassOperator(),
-                expr)
+                self.outer_mass_contractor(expr))
 
     def map_algebraic_leaf(self, expr):
         return OperatorBinding(
                 InverseMassOperator(),
-                expr)
+                self.outer_mass_contractor(expr))
 
     def map_operator_binding(self, binding):
         if isinstance(binding.op, MassOperator):
@@ -748,19 +751,19 @@ class _InnerInverseMassContractor(pymbolic.mapper.RecursiveMapper):
         elif isinstance(binding.op, StiffnessOperator):
             return OperatorBinding(
                     DifferentiationOperator(binding.op.xyz_axis),
-                    binding.field)
+                    self.outer_mass_contractor(binding.field))
         elif isinstance(binding.op, StiffnessTOperator):
             return OperatorBinding(
                     MInvSTOperator(binding.op.xyz_axis),
-                    binding.field)
+                    self.outer_mass_contractor(binding.field))
         elif isinstance(binding.op, FluxOperator):
             return OperatorBinding(
                     LiftingFluxOperator(binding.op.flux),
-                    binding.field)
+                    self.outer_mass_contractor(binding.field))
         else:
             return OperatorBinding(
                 InverseMassOperator(),
-                binding)
+                self.outer_mass_contractor(binding))
 
     def map_sum(self, expr):
         return expr.__class__(tuple(self.rec(child) for child in expr.children))
@@ -776,7 +779,9 @@ class _InnerInverseMassContractor(pymbolic.mapper.RecursiveMapper):
 
         if nonscalar_count > 1:
             # too complicated, don't touch it
-            return expr
+            return OperatorBinding(
+                    InverseMassOperator(),
+                    self.outer_mass_contractor(expr))
         else:
             def do_map(expr):
                 if is_scalar(expr):
@@ -798,11 +803,11 @@ class InverseMassContractor(IdentityMapper):
 
     def map_operator_binding(self, binding):
         # we only care about bindings of inverse mass operators
-        if not isinstance(binding.op, InverseMassOperator):
+        if isinstance(binding.op, InverseMassOperator):
+            return _InnerInverseMassContractor(self)(binding.field)
+        else:
             return binding.__class__(binding.op,
                     self.rec(binding.field))
-        else:
-            return  _InnerInverseMassContractor()(binding.field)
 
 
 
