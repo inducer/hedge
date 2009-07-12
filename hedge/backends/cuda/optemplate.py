@@ -249,7 +249,14 @@ class BoundaryCombiner(hedge.optemplate.IdentityMapper):
 # collectors ------------------------------------------------------------------
 class FluxCollector(hedge.optemplate.CollectorMixin, hedge.optemplate.CombineMapper):
     def map_whole_domain_flux(self, wdflux):
-        return set([wdflux])
+        result = set([wdflux]) 
+
+        for intr in wdflux.interiors:
+            result |= self.rec(intr.field_expr)
+        for bdry in wdflux.boundaries:
+            result |= self.rec(bdry.bpair)
+
+        return  result
 
 class BoundOperatorCollector(hedge.optemplate.BoundOperatorCollector):
     def map_whole_domain_flux(self, expr):
