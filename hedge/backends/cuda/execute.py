@@ -584,11 +584,12 @@ class Executor(object):
                 BCToFluxRewriter, CommutativeConstantFoldingMapper
         from hedge.backends.cuda.optemplate import BoundaryCombiner
 
-        return BoundaryCombiner(mesh)(
-                InverseMassContractor()(
-                    CommutativeConstantFoldingMapper()(
-                        BCToFluxRewriter()(
-                            optemplate))))
+        optemplate = BCToFluxRewriter()(optemplate)
+        optemplate = CommutativeConstantFoldingMapper()(optemplate)
+        optemplate = InverseMassContractor()(optemplate)
+        optemplate = BoundaryCombiner(mesh)(optemplate)
+
+        return optemplate
 
     @staticmethod
     def prepare_optemplate_stage1(optemplate, post_bind_mapper=lambda x: x):
