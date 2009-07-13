@@ -909,9 +909,9 @@ class Discretization(object):
             for el in eg.members)
             for eg in self.element_groups)
 
-    def dt_factor(self, max_system_ev, stepper=None, *stepper_args):
+    def dt_factor(self, max_system_ev, stepper_class=None, *stepper_args):
         u"""Calculate the largest stable timestep, given a time stepper
-        `stepper`. If none is given, RK4 is assumed.
+        `stepper_class`. If none is given, RK4 is assumed.
         """
 
         # Calculating the correct timestep Δt for a DG scheme using the RK4
@@ -958,18 +958,23 @@ class Discretization(object):
         # C_TimeStepper gets calculated by a bisection method for every kind of
         # timestepper.
 
+
         rk4_dt = 1/max_system_ev \
                 * self.dt_non_geometric_factor() \
                 * self.dt_geometric_factor()
 
         from hedge.timestep import RK4TimeStepper
-        if stepper is None or isinstance(stepper, RK4TimeStepper):
+        if stepper_class is None or stepper_class == RK4TimeStepper:
             return rk4_dt
         else:
-            from hedge.timestep import calculate_fudged_stability_region 
+            assert isinstance(stepper_class, type)
+
+            from hedge.timestep.stability import \
+                    calculate_fudged_stability_region
+
             return rk4_dt \
                     * calculate_fudged_stability_region(
-                            stepper, *stepper_args) \
+                            stepper_class, *stepper_args) \
                     / calculate_fudged_stability_region(RK4TimeStepper)
 
     def get_point_evaluator(self, point):
