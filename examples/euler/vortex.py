@@ -67,7 +67,7 @@ class Vortex:
 
 
 
-def main(write_output=True):
+def main(write_output=False):
     from hedge.backends import guess_run_context
     rcon = guess_run_context(
     ["cuda"]
@@ -138,22 +138,12 @@ def main(write_output=True):
         from pytools.log import LogManager, add_general_quantities, \
                 add_simulation_quantities, add_run_info
 
-<<<<<<< HEAD:examples/euler/vortex.py
-        if True:
-            logmgr = LogManager("euler-cpu-%(order)d-%(refine)d.dat" 
-                                % {"order":order, "refine":refine},
-                                "w", rcon.communicator)
-        else:
-            logmgr = LogManager(None, "w", rcon.communicator)
-
-=======
         if write_output:
             log_file_name = "euler-%d.dat" % order
         else:
             log_file_name = None
 
         logmgr = LogManager(log_file_name, "w", rcon.communicator)
->>>>>>> master:examples/euler/vortex.py
         add_run_info(logmgr)
         add_general_quantities(logmgr)
         add_simulation_quantities(logmgr, dt)
@@ -178,10 +168,10 @@ def main(write_output=True):
                     from pylo import DB_VARTYPE_VECTOR
                     vis.add_data(visf,
                             [
-                                ("rho", op.rho(fields)),
-                                ("e", op.e(fields)),
-                                ("rho_u", op.rho_u(fields)),
-                                ("u", op.u(fields)),
+                                ("rho", discr.convert_volume(op.rho(fields), kind="numpy")),
+                                ("e", discr.convert_volume(op.e(fields), kind="numpy")),
+                                ("rho_u", discr.convert_volume(op.rho_u(fields), kind="numpy")),
+                                ("u", discr.convert_volume(op.u(fields), kind="numpy")),
 
                                 #("true_rho", op.rho(true_fields)),
                                 #("true_e", op.e(true_fields)),

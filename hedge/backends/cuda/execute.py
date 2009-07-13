@@ -297,9 +297,12 @@ class ExecutionMapper(ExecutionMapperBase):
                 *self.executor.mass_data(kernel, elgroup, insn.op_class)))], []
 
     def map_elementwise_max(self, op, field_expr):
+        import pycuda.gpuarray
         discr = self.executor.discr
 
         field = self.rec(field_expr)
+        field_out = pycuda.gpuarray.zeros_like(field)
+
 	dofs_per_el = discr.given.dofs_per_el()
 	floats_per_mb = discr.given.microblock.aligned_floats
 
@@ -322,8 +325,8 @@ class ExecutionMapper(ExecutionMapperBase):
                   block_size, floats_per_mb, mbs_per_block, field.dtype)
 
 	grid_dim = (len(field) + block_size - 1) // block_size
-	func.prepared_call((grid_dim, 1), field.gpudata)
-	return field
+	func.prepared_call((grid_dim, 1),field.gpudata, field_out.gpudata)
+	return field_out
 
 
 
@@ -554,7 +557,7 @@ class Executor(object):
 
         typedef %(value_type)s value_type;
 
-        __global__ void elwise_max(value_type *field)
+        __global__ void elwise_max(value_type *field, value_type *field_out)
         {
             int idx = (BLOCK_IDX * MBS_PER_BLOCK + MB_IN_BLOCK_IDX) *
                        FLOATS_PER_MB + NODE_IN_MB_IDX;
@@ -571,7 +574,7 @@ class Executor(object):
 
             for (int i=0; i<DOFS_PER_EL; i++)
                 own_value = MAX_FUNC(own_value, whole_block[element_base_idx+i]);
-            field[idx] = own_value;
+            field_out[idx] = own_value;
         }
         """% {
         "dofs_per_el": dofs_per_el,
@@ -583,6 +586,6 @@ class Executor(object):
         })
 
 	func = mod.get_function("elwise_max")
-	func.prepare("P", block=(floats_per_mb, block_size//floats_per_mb, 1))
+	func.prepare("PP", block=(floats_per_mb, block_size//floats_per_mb, 1))
 
         return func
