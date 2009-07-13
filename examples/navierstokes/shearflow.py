@@ -67,8 +67,12 @@ def main():
     eoc_rec = EOCRecorder()
     
     if rcon.is_head_rank:
-        from hedge.mesh import make_rect_mesh
-        mesh = make_rect_mesh((0,-5), (10,5), max_area=0.15)
+        from hedge.mesh import make_rect_mesh, \
+                               make_centered_regular_rect_mesh
+        #mesh = make_rect_mesh((0,-5), (10,5), max_area=0.15)
+        refine = 1
+        mesh = make_centered_regular_rect_mesh((0,0), (1,1), n=(9,9),
+                            post_refine_factor=refine)
         mesh_data = rcon.distribute_mesh(mesh)
     else:
         mesh_data = rcon.receive_mesh()
@@ -177,7 +181,7 @@ def main():
         logmgr.save()
 
         true_fields = shearflow.volume_interpolant(t, discr)
-        eoc_rec.add_data_point(order, discr.norm(fields-true_fields))
+        eoc_rec.add_data_point(order, discr.norm(fields[1]-true_fields[1]))
         print
         print eoc_rec.pretty_print("P.Deg.", "L2 Error")
 

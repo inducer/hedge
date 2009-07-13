@@ -506,7 +506,8 @@ class NavierStokesOperator(GasDynamicsOperatorBase):
             return cse(self.u(q))
 
         def p(q):
-            return cse((self.gamma-1)*(self.e(q) - 0.5*numpy.dot(self.rho_u(q), u(q))))
+            return cse((self.gamma-1)*(self.e(q) - 
+                       0.5*numpy.dot(self.rho_u(q), u(q))))
 
         def make_central_flux(flux_func, bdry_tags_and_states):
 
@@ -515,9 +516,9 @@ class NavierStokesOperator(GasDynamicsOperatorBase):
             normal = make_normal(d)
             fluxes_ph = FluxVectorPlaceholder(d)
 
-            flux = numpy.zeros((self.dimensions+2, self.dimensions), dtype=object)
+            flux = numpy.zeros((d, self.dimensions), dtype=object)
             for i in range(self.dimensions):
-                flux[:,i] = 0.5 * normal[i] * (fluxes_ph.int + fluxes_ph.ext)
+                flux[:,i] = 0.5 * normal[i] * (fluxes_ph.int - fluxes_ph.ext)
 
             from hedge.optemplate import get_flux_operator
             flux_op = numpy.zeros((self.dimensions), dtype=object)
@@ -525,19 +526,13 @@ class NavierStokesOperator(GasDynamicsOperatorBase):
                 flux_op[i] = get_flux_operator(flux[:,i])
 
             from hedge.optemplate import pair_with_boundary
-            central_flux = numpy.zeros((self.dimensions+2, self.dimensions), dtype=object)
+            central_flux = numpy.zeros((d, self.dimensions), dtype=object)
             for i in range(self.dimensions):
                 central_flux[:,i] = (flux_op[i]*flux_func
                                 + sum(
-                                flux_op[i]*pair_with_boundary(flux_func, ext_state, tag)
+                                flux_op[i]*
+                                pair_with_boundary(flux_func, ext_state, tag)
                                 for tag, ext_state in bdry_tags_and_states))
-
-            #from pytools import indices_in_shape
-            #for i in indices_in_shape(central_flux.shape):
-            #    print i
-            #    print central_flux[i]
-            #    raw_input()
-            #    print
 
             return central_flux
 
@@ -545,19 +540,23 @@ class NavierStokesOperator(GasDynamicsOperatorBase):
             from hedge.flux import make_normal
             from hedge.tools import join_fields
             from hedge.optemplate import make_nabla, \
-                    InverseMassOperator, ElementwiseMaxOperator
+                    InverseMassOperator
 
             nabla = make_nabla(self.dimensions)
 
             normal = make_normal(self.dimensions)
-            return (numpy.array([nabla[0] * q, nabla[1] * q],
-                       dtype=object).transpose() -
+
+            nabla_q = numpy.zeros((self.dimensions+2, self.dimensions), 
+                                   dtype=object)
+            for i in range(self.dimensions):
+                nabla_q[:,i] = nabla[i] * q
+
+            return (nabla_q -
                    InverseMassOperator()*
                    make_central_flux(
                         flux_func=q,
-                        bdry_tags_and_states=[
-                            (TAG_ALL, make_vector_field("bc_q", self.dimensions+2))]
-                        ))
+                        bdry_tags_and_states=[(TAG_ALL, 
+                            make_vector_field("bc_q", self.dimensions+2))]))
 
         def tau(q):
             from hedge.optemplate import make_nabla
@@ -642,13 +641,8 @@ class NavierStokesOperator(GasDynamicsOperatorBase):
         return join_fields(
                 (- numpy.dot(make_nabla(self.dimensions), flux(state))
                     + InverseMassOperator()*make_lax_friedrichs_flux(
-                        wave_speed=
-			ElementwiseMaxOperator()*
-			c,
+                        wave_speed=ElementwiseMaxOperator()*c,
                         state=state, flux_func=flux,
-                        bdry_tags_and_states=[
-                            (TAG_ALL, bc_state)
-                            ],
-                        strong=True, bdry_flux_func=bdry_flux
-                        )),
-                    speed)
+                        bdry_tags_and_states=[(TAG_ALL, bc_state)],
+                        strong=True, bdry_flux_func=bdry_flux)),
+                 speed)
