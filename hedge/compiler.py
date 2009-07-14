@@ -388,6 +388,10 @@ class Code(object):
                 futures.extend(new_futures)
 
         if len(done_insns) < len(self.instructions):
+            print "Unreachable instructions:"
+            for insn in set(self.instructions) - done_insns:
+                print "    ", insn
+
             raise RuntimeError("not all instructions are reachable"
                     "--did you forget to pass a value for a placeholder?")
 
