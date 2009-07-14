@@ -422,7 +422,10 @@ class Executor(object):
                 e2bb[elface] = (e2bb.get(elface, 0) | bdry_bit)
 
         # compile the optemplate
-        self.code = OperatorCompiler()(
+        from struct import calcsize
+        self.code = OperatorCompiler(
+                max_vectors_in_batch_expr=220 // calcsize("P")
+                )(
                 self.prepare_optemplate_stage2(discr.mesh, optemplate_stage1))
 
         # build the local kernels 
