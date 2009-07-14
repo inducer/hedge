@@ -76,7 +76,7 @@ def test_ab_coefficients():
             [1901/720, -2774/720, 2616/720, -1274/720, 251/720]
             ]
 
-    from hedge.timestep import make_ab_coefficients
+    from hedge.timestep.ab import make_ab_coefficients
     for order in range(1,len(_ABCoefficients)):
         assert la.norm(make_ab_coefficients(order)
                 - numpy.array(_ABCoefficients[order])) < 5e-14
@@ -296,7 +296,7 @@ class TestMultirateTimesteperAccuracy:
         eocrec = EOCRecorder()
         for n in range(4,9):
             dt = 2**(-n)
-            from hedge.timestep import TwoRateAdamsBashforthTimeStepper
+            from hedge.timestep.multirate_ab import TwoRateAdamsBashforthTimeStepper
             stepper = TwoRateAdamsBashforthTimeStepper(dt, 5, order,
                     slowest_first=self.sf_arg,
                     fastest_first=self.ff_arg,
