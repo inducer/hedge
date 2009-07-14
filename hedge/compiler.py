@@ -758,7 +758,7 @@ class OperatorCompilerBase(IdentityMapper):
                             continue
 
                     other_indirect_origins = get_complete_origins_set(
-                            my_assign, skip_levels=1)
+                            other_assign, skip_levels=1)
 
                     if (my_assign not in other_indirect_origins and
                             other_assign not in my_indirect_origins):
