@@ -81,6 +81,20 @@ class VectorExpressionInfo(Record):
 
 
 
+def simple_result_dtype_getter(vector_dtype_map, scalar_dtype_map, const_dtypes):
+    from pytools import common_dtype, match_precision
+
+    result = common_dtype(vector_dtype_map.values())
+
+    scalar_dtypes = scalar_dtype_map.values() + const_dtypes
+    if scalar_dtypes:
+        prec_matched_scalar_dtype = match_precision(
+                common_dtype(scalar_dtypes),
+                dtype_to_match=result)
+        result = common_dtype([result, prec_matched_scalar_dtype])
+
+    return result
+
 class CompiledVectorExpressionBase(object):
     def __init__(self, vec_expr_info_list, is_vector_pred, result_dtype_getter):
         self.is_vector_pred = is_vector_pred

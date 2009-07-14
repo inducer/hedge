@@ -157,8 +157,3 @@ class AdamsBashforthTimeStepper(TimeStepper):
 
         self.f_history.insert(0, rhs(t+dt, ynew))
         return ynew
-
-
-
-
-

@@ -312,14 +312,8 @@ class VectorExprAssign(Assign):
     def compiled(self, executor):
         discr = executor.discr
 
-        def result_dtype_getter(vector_dtype_map, scalar_dtype_map, const_dtypes):
-            from pytools import common_dtype
-            return common_dtype(
-                    vector_dtype_map.values()
-                    + scalar_dtype_map.values()
-                    + const_dtypes)
-
-        from hedge.backends.vector_expr import VectorExpressionInfo
+        from hedge.backends.vector_expr import \
+                VectorExpressionInfo, simple_result_dtype_getter
         from hedge.backends.cuda.vector_expr import CompiledVectorExpression
         return CompiledVectorExpression(
                 [VectorExpressionInfo(
@@ -329,7 +323,7 @@ class VectorExprAssign(Assign):
                     for name, expr, dnr in zip(
                         self.names, self.exprs, self.do_not_return)],
                 is_vector_pred=executor.is_vector_pred,
-                result_dtype_getter=result_dtype_getter,
+                result_dtype_getter=simple_result_dtype_getter,
                 allocator=discr.pool.allocate)
 
 class CUDAFluxBatchAssign(FluxBatchAssign):
