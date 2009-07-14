@@ -297,6 +297,9 @@ class BoundarizeOperator(Operator):
     def get_mapper_method(self, mapper): 
         return mapper.map_boundarize
 
+    def __getinitargs__(self):
+        return (self.tag,)
+
 
 
 
