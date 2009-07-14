@@ -181,7 +181,8 @@ class Discretization(object):
         return set([
             "ilist_generation", 
             "node_permutation",
-	    "print_op_code",
+            "print_op_code",
+            "dump_dataflow_graph",
             ])
 
     @classmethod
@@ -998,6 +999,10 @@ class Discretization(object):
             is_vector_pred=lambda expr: True):
         ex = self.executor_class(self, optemplate, post_bind_mapper,
                 is_vector_pred=is_vector_pred)
+
+        if "dump_dataflow_graph" in self.debug:
+            ex.code.dump_dataflow_graph()
+
         if self.instrumented:
             ex.instrument()
         return ex
