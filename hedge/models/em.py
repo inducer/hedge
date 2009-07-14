@@ -49,14 +49,23 @@ class MaxwellOperator(TimeDependentOperator):
         @arg flux_type: can be in [0,1] for anything between central and upwind,
           or "lf" for Lax-Friedrichs.
         """
+
+        self.dimensions = dimensions or self._default_dimensions
+
+        space_subset = [True]*self.dimensions + [False]*(3-self.dimensions)
+
         e_subset = self.get_eh_subset()[0:3]
         h_subset = self.get_eh_subset()[3:6]
 
         from hedge.tools import SubsettableCrossProduct
-        self.e_cross = SubsettableCrossProduct(
-                op2_subset=e_subset, result_subset=h_subset)
-        self.h_cross = SubsettableCrossProduct(
-                op2_subset=h_subset, result_subset=e_subset)
+        self.space_cross_e = SubsettableCrossProduct(
+                op1_subset=space_subset,
+                op2_subset=e_subset, 
+                result_subset=h_subset)
+        self.space_cross_h = SubsettableCrossProduct(
+                op1_subset=space_subset,
+                op2_subset=h_subset, 
+                result_subset=e_subset)
 
         from math import sqrt
 
@@ -80,8 +89,6 @@ class MaxwellOperator(TimeDependentOperator):
         self.current = current
         self.incident_bc = incident_bc
 
-        self.dimensions = dimensions or self._default_dimensions
-
     def flux(self, flux_type):
         from hedge.flux import make_normal, FluxVectorPlaceholder
         from hedge.tools import join_fields
@@ -96,12 +103,12 @@ class MaxwellOperator(TimeDependentOperator):
             return join_fields(
                     # flux e,
                     1/2*(
-                        -1/self.epsilon*self.h_cross(normal, h.int-h.ext)
+                        -1/self.epsilon*self.space_cross_h(normal, h.int-h.ext)
                         -self.c/2*(e.int-e.ext)
                     ),
                     # flux h
                     1/2*(
-                        1/self.mu*self.e_cross(normal, e.int-e.ext)
+                        1/self.mu*self.space_cross_e(normal, e.int-e.ext)
                         -self.c/2*(h.int-h.ext))
                     )
         elif isinstance(flux_type, (int, float)):
@@ -109,15 +116,17 @@ class MaxwellOperator(TimeDependentOperator):
             return join_fields(
                     # flux e,
                     1/self.epsilon*(
-                        -1/2*self.h_cross(normal,
+                        -1/2*self.space_cross_h(normal,
                             h.int-h.ext
-                            -flux_type/self.Z*self.e_cross(normal, e.int-e.ext))
+                            -flux_type/self.Z*self.space_cross_e(
+                                normal, e.int-e.ext))
                         ),
                     # flux h
                     1/self.mu*(
-                        1/2*self.e_cross(normal,
+                        1/2*self.space_cross_e(normal,
                             e.int-e.ext
-                            +flux_type/(self.Y)*self.h_cross(normal, h.int-h.ext))
+                            +flux_type/(self.Y)*self.space_cross_h(
+                                normal, h.int-h.ext))
                         ),
                     )
         else:
@@ -125,10 +134,10 @@ class MaxwellOperator(TimeDependentOperator):
 
     def local_op(self, e, h):
         def e_curl(field):
-            return self.e_cross(nabla, field)
+            return self.space_cross_e(nabla, field)
 
         def h_curl(field):
-            return self.h_cross(nabla, field)
+            return self.space_cross_h(nabla, field)
 
         from hedge.optemplate import make_nabla
         from hedge.tools import join_fields, count_subset
@@ -179,10 +188,12 @@ class MaxwellOperator(TimeDependentOperator):
         absorb_w = BoundarizeOperator(self.absorb_tag) * w
 
         absorb_bc = absorb_w + 1/2*join_fields(
-                self.h_cross(absorb_normal, self.e_cross(absorb_normal, absorb_e))
-                - self.Z*self.h_cross(absorb_normal, absorb_h),
-                self.e_cross(absorb_normal, self.h_cross(absorb_normal, absorb_h)) 
-                + self.Y*self.e_cross(absorb_normal, absorb_e)
+                self.space_cross_h(absorb_normal, self.space_cross_e(
+                    absorb_normal, absorb_e))
+                - self.Z*self.space_cross_h(absorb_normal, absorb_h),
+                self.space_cross_e(absorb_normal, self.space_cross_h(
+                    absorb_normal, absorb_h)) 
+                + self.Y*self.space_cross_e(absorb_normal, absorb_e)
                 )
 
         if self.incident_bc is not None:
