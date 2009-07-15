@@ -71,7 +71,8 @@ def main():
                                make_centered_regular_rect_mesh
         #mesh = make_rect_mesh((0,-5), (10,5), max_area=0.15)
         refine = 1
-        mesh = make_centered_regular_rect_mesh((0,0), (1,1), n=(9,9),
+        mesh = make_centered_regular_rect_mesh((0,0), (10,1), n=(9,9),
+                            periodicity=(True, False),
                             post_refine_factor=refine)
         mesh_data = rcon.distribute_mesh(mesh)
     else:
@@ -142,7 +143,9 @@ def main():
             #if False:
                 visf = vis.make_file("shearflow-%d-%04d" % (order, step))
 
-                #true_fields = shearflow.volume_interpolant(t, discr)
+                true_fields = shearflow.volume_interpolant(t, discr)
+
+                rhs_fields = rhs(t, fields)
 
                 from pylo import DB_VARTYPE_VECTOR
                 vis.add_data(visf,
@@ -152,22 +155,22 @@ def main():
                             ("rho_u", discr.convert_volume(op.rho_u(fields), kind="numpy")),
                             ("u", discr.convert_volume(op.u(fields), kind="numpy")),
 
-                            #("true_rho", op.rho(true_fields)),
-                            #("true_e", op.e(true_fields)),
-                            #("true_rho_u", op.rho_u(true_fields)),
-                            #("true_u", op.u(true_fields)),
+                            ("true_rho", discr.convert_volume(op.rho(true_fields), kind="numpy")),
+                            ("true_e", discr.convert_volume(op.e(true_fields), kind="numpy")),
+                            ("true_rho_u", discr.convert_volume(op.rho_u(true_fields), kind="numpy")),
+                            ("true_u", discr.convert_volume(op.u(true_fields), kind="numpy")),
 
-                            #("rhs_rho", op.rho(rhs_fields)),
-                            #("rhs_e", op.e(rhs_fields)),
-                            #("rhs_rho_u", op.rho_u(rhs_fields)),
+                            ("rhs_rho", discr.convert_volume(op.rho(rhs_fields), kind="numpy")),
+                            ("rhs_e", discr.convert_volume(op.e(rhs_fields), kind="numpy")),
+                            ("rhs_rho_u", discr.convert_volume(op.rho_u(rhs_fields), kind="numpy")),
                             ],
-                        #expressions=[
-                            #("diff_rho", "rho-true_rho"),
-                            #("diff_e", "e-true_e"),
-                            #("diff_rho_u", "rho_u-true_rho_u", DB_VARTYPE_VECTOR),
+                        expressions=[
+                            ("diff_rho", "rho-true_rho"),
+                            ("diff_e", "e-true_e"),
+                            ("diff_rho_u", "rho_u-true_rho_u", DB_VARTYPE_VECTOR),
 
-                            #("p", "0.4*(e- 0.5*(rho_u*u))"),
-                            #],
+                            ("p", "0.4*(e- 0.5*(rho_u*u))"),
+                            ],
                         time=t, step=step
                         )
                 visf.close()
