@@ -602,8 +602,11 @@ class Discretization(object):
 
         face_group.commit(self, ldis, ldis)
 
+        nodes_ary = numpy.array(nodes)
+        nodes_ary.shape = (len(nodes), self.dimensions)
+
         bdry = _Boundary(
-                nodes=numpy.array(nodes),
+                nodes=nodes_ary,
                 ranges=face_ranges,
                 vol_indices=numpy.asarray(vol_indices, dtype=numpy.intp),
                 face_groups=[face_group],
