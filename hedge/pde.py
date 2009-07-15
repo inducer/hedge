@@ -509,54 +509,91 @@ class NavierStokesOperator(GasDynamicsOperatorBase):
             return cse((self.gamma-1)*(self.e(q) - 
                        0.5*numpy.dot(self.rho_u(q), u(q))))
 
-        def make_central_flux(flux_func, bdry_tags_and_states):
+        def make_gradient(flux_func, bdry_tags_and_states):
+
+            dimensions = self.dimensions
+            d = len(flux_func)
+
+            from hedge.optemplate import make_nabla
+            nabla = make_nabla(dimensions)
+
+            nabla_func = numpy.zeros((d, dimensions), dtype=object)
+            for i in range(dimensions):
+                nabla_func[:,i] = nabla[i] * flux_func
 
             from hedge.flux import make_normal, FluxVectorPlaceholder
-            d = len(flux_func)
             normal = make_normal(d)
             fluxes_ph = FluxVectorPlaceholder(d)
 
-            flux = numpy.zeros((d, self.dimensions), dtype=object)
-            for i in range(self.dimensions):
+            flux = numpy.zeros((d, dimensions), dtype=object)
+            for i in range(dimensions):
                 flux[:,i] = 0.5 * normal[i] * (fluxes_ph.int - fluxes_ph.ext)
 
             from hedge.optemplate import get_flux_operator
-            flux_op = numpy.zeros((self.dimensions), dtype=object)
-            for i in range(self.dimensions):
+            flux_op = numpy.zeros((dimensions), dtype=object)
+            for i in range(dimensions):
                 flux_op[i] = get_flux_operator(flux[:,i])
 
             from hedge.optemplate import pair_with_boundary
-            central_flux = numpy.zeros((d, self.dimensions), dtype=object)
-            for i in range(self.dimensions):
-                central_flux[:,i] = (flux_op[i]*flux_func
+            gradient = numpy.zeros((d, dimensions), dtype=object)
+            for i in range(dimensions):
+                gradient[:,i] = (flux_op[i]*flux_func
                                 + sum(
                                 flux_op[i]*
                                 pair_with_boundary(flux_func, ext_state, tag)
                                 for tag, ext_state in bdry_tags_and_states))
 
-            return central_flux
+            from hedge.optemplate import InverseMassOperator
+            return (nabla_func - InverseMassOperator() * gradient)
 
-        def dq(q):
-            from hedge.flux import make_normal
-            from hedge.tools import join_fields
-            from hedge.optemplate import make_nabla, \
-                    InverseMassOperator
+        def make_divergence(state, flux_func, bdry_flux_func, bdry_tags_and_states):
 
-            nabla = make_nabla(self.dimensions)
+            dimensions = self.dimensions
+            fluxes = flux_func(state)
+            d = len(fluxes)
 
-            normal = make_normal(self.dimensions)
+            fluxes = numpy.array((fluxes), dtype=object)
 
-            nabla_q = numpy.zeros((self.dimensions+2, self.dimensions), 
-                                   dtype=object)
-            for i in range(self.dimensions):
-                nabla_q[:,i] = nabla[i] * q
+            from hedge.optemplate import make_nabla
+            nabla = make_nabla(dimensions)
 
-            return (nabla_q -
-                   InverseMassOperator()*
-                   make_central_flux(
-                        flux_func=q,
-                        bdry_tags_and_states=[(TAG_ALL, 
-                            make_vector_field("bc_q", self.dimensions+2))]))
+            nabla_func = numpy.dot(nabla, fluxes)
+
+            from hedge.flux import make_normal, FluxVectorPlaceholder
+            normal = make_normal(d)
+            fluxes_ph = FluxVectorPlaceholder(d)
+
+            flux_int = 0
+            flux_ext = 0
+
+            for i in range(dimensions):
+                flux_int = (flux_int + normal[i]*fluxes_ph[i].int) 
+                flux_ext = (flux_ext + normal[i]*fluxes_ph[i].ext)
+
+            from hedge.optemplate import get_flux_operator
+            flux_op_int = get_flux_operator(flux_int)
+            flux_op_ext = get_flux_operator(flux_ext)
+
+            int_operand = join_fields(*fluxes)
+
+            from hedge.optemplate import pair_with_boundary
+            divergence_int = (flux_op_int * int_operand
+                                + sum(
+                                flux_op_int *
+                                pair_with_boundary(bdry_flux_func(ext_state),
+                                    ext_state, tag)
+                                for tag, ext_state in bdry_tags_and_states))
+            divergence_ext = (flux_op_ext * int_operand
+                                + sum(
+                                flux_op_ext *
+                                pair_with_boundary(bdry_flux_func(ext_state),
+                                    ext_state, tag)
+                                for tag, ext_state in bdry_tags_and_states))
+
+            divergence = (divergence_int + divergence_ext)/2
+
+            from hedge.optemplate import InverseMassOperator
+            return (nabla_func - InverseMassOperator() * divergence)
 
         def tau(q):
             from hedge.optemplate import make_nabla
@@ -566,10 +603,14 @@ class NavierStokesOperator(GasDynamicsOperatorBase):
             dimensions = self.dimensions
             nabla = make_nabla(dimensions)
 
+            dq = make_gradient(flux_func=q,
+                            bdry_tags_and_states=[(TAG_ALL, 
+                            make_vector_field("bc_q", self.dimensions+2))])
+
             du = numpy.zeros((dimensions, dimensions), dtype=object)
             for i in range(dimensions):
                 for j in range(dimensions):
-                    du[i,j] = (dq(q)[i+2,j] - u(q)[i] * dq(q)[0,j]) / self.rho(q)
+                    du[i,j] = (dq[i+2,j] - u(q)[i] * dq[0,j]) / self.rho(q)
 
             tau = numpy.zeros((dimensions+1, dimensions), dtype=object)
             for i in range(dimensions):
@@ -638,11 +679,23 @@ class NavierStokesOperator(GasDynamicsOperatorBase):
         from hedge.tools import make_lax_friedrichs_flux, join_fields
         from hedge.mesh import TAG_ALL
 
+        #from hedge.flux import PenaltyTerm
+        #lambda_term = (u(state)[0]**2 + u(state)[1]**2)**0.5 + \
+        #              (self.gamma * p(state) / self.rho(state))**0.5
+        #penalty = PenaltyTerm(state)
+
         return join_fields(
                 (- numpy.dot(make_nabla(self.dimensions), flux(state))
                     + InverseMassOperator()*make_lax_friedrichs_flux(
-                        wave_speed=ElementwiseMaxOperator()*c,
+                       wave_speed=ElementwiseMaxOperator()*c,
                         state=state, flux_func=flux,
                         bdry_tags_and_states=[(TAG_ALL, bc_state)],
-                        strong=True, bdry_flux_func=bdry_flux)),
+                        strong=True, bdry_flux_func=bdry_flux
+                        )),
                  speed)
+        #return join_fields(
+        #        (- numpy.dot(make_nabla(self.dimensions), flux(state))
+        #            + InverseMassOperator()*make_divergence(
+        #                state=state, flux_func=flux, bdry_flux_func=bdry_flux,
+        #                bdry_tags_and_states=[(TAG_ALL, bc_state)])
+        #            + penalty))
