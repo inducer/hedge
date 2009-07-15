@@ -546,55 +546,6 @@ class NavierStokesOperator(GasDynamicsOperatorBase):
             from hedge.optemplate import InverseMassOperator
             return (nabla_func - InverseMassOperator() * gradient)
 
-        def make_divergence(state, flux_func, bdry_flux_func, bdry_tags_and_states):
-
-            dimensions = self.dimensions
-            fluxes = flux_func(state)
-            d = len(fluxes)
-
-            fluxes = numpy.array((fluxes), dtype=object)
-
-            from hedge.optemplate import make_nabla
-            nabla = make_nabla(dimensions)
-
-            nabla_func = numpy.dot(nabla, fluxes)
-
-            from hedge.flux import make_normal, FluxVectorPlaceholder
-            normal = make_normal(d)
-            fluxes_ph = FluxVectorPlaceholder(d)
-
-            flux_int = 0
-            flux_ext = 0
-
-            for i in range(dimensions):
-                flux_int = (flux_int + normal[i]*fluxes_ph[i].int) 
-                flux_ext = (flux_ext + normal[i]*fluxes_ph[i].ext)
-
-            from hedge.optemplate import get_flux_operator
-            flux_op_int = get_flux_operator(flux_int)
-            flux_op_ext = get_flux_operator(flux_ext)
-
-            int_operand = join_fields(*fluxes)
-
-            from hedge.optemplate import pair_with_boundary
-            divergence_int = (flux_op_int * int_operand
-                                + sum(
-                                flux_op_int *
-                                pair_with_boundary(bdry_flux_func(ext_state),
-                                    ext_state, tag)
-                                for tag, ext_state in bdry_tags_and_states))
-            divergence_ext = (flux_op_ext * int_operand
-                                + sum(
-                                flux_op_ext *
-                                pair_with_boundary(bdry_flux_func(ext_state),
-                                    ext_state, tag)
-                                for tag, ext_state in bdry_tags_and_states))
-
-            divergence = (divergence_int + divergence_ext)/2
-
-            from hedge.optemplate import InverseMassOperator
-            return (nabla_func - InverseMassOperator() * divergence)
-
         def tau(q):
             from hedge.optemplate import make_nabla
             from pytools import delta
@@ -679,11 +630,6 @@ class NavierStokesOperator(GasDynamicsOperatorBase):
         from hedge.tools import make_lax_friedrichs_flux, join_fields
         from hedge.mesh import TAG_ALL
 
-        #from hedge.flux import PenaltyTerm
-        #lambda_term = (u(state)[0]**2 + u(state)[1]**2)**0.5 + \
-        #              (self.gamma * p(state) / self.rho(state))**0.5
-        #penalty = PenaltyTerm(state)
-
         return join_fields(
                 (- numpy.dot(make_nabla(self.dimensions), flux(state))
                     + InverseMassOperator()*make_lax_friedrichs_flux(
@@ -693,9 +639,3 @@ class NavierStokesOperator(GasDynamicsOperatorBase):
                         strong=True, bdry_flux_func=bdry_flux
                         )),
                  speed)
-        #return join_fields(
-        #        (- numpy.dot(make_nabla(self.dimensions), flux(state))
-        #            + InverseMassOperator()*make_divergence(
-        #                state=state, flux_func=flux, bdry_flux_func=bdry_flux,
-        #                bdry_tags_and_states=[(TAG_ALL, bc_state)])
-        #            + penalty))
