@@ -76,7 +76,7 @@ def test_ab_coefficients():
             [1901/720, -2774/720, 2616/720, -1274/720, 251/720]
             ]
 
-    from hedge.timestep import make_ab_coefficients
+    from hedge.timestep.ab import make_ab_coefficients
     for order in range(1,len(_ABCoefficients)):
         assert la.norm(make_ab_coefficients(order)
                 - numpy.array(_ABCoefficients[order])) < 5e-14
@@ -86,186 +86,26 @@ def test_ab_coefficients():
 
 from math import sqrt, log, sin, cos, exp
 from hedge.tools import EOCRecorder
-class TestMultirateTimesteperAccuracy:
+class CheckMultirateTimesteperAccuracy:
     """Check that the multirate timestepper has the advertised accuracy
-
-    Solve linear ODE-system:
-
-                            ∂w/∂t = A w, 
-
-    with w = [u,v] = [u,∂u/∂t]. The system gets solved for differen matrix A.
-
-    ODE-system - basic
-    ∂u/∂t = v
-    ∂v/∂t = -u/t²
-    A = [[0, 1]
-        [-1/t², 0]].
-
-
-    ODE-system - full
-    From:
-        Gewöhnliche Differentialgleichungen
-        Theorie und Praxis - vertieft und visualisiert mit Maple
-        Wilhelm Forst and Dieter Hoffmann
-        2005, Springer Berlin Heidelberg
-        p. 145
-    A = [[cos(2*t),-(sin(2*t)-1)]
-        [(sin(2*t)+1),-cos(2*t)]].
-
-    ODE-system - real
-    A = [[-1,3]
-        [2,-2]],
-    with the real eigenvalues λ₁=1 and λ₂=-4 which are quite far away from each
-    other representing a recognizable difference between the speed of the
-    two systems.
-
-    ODE-system - complex
-    A = [[0,1]
-        [-1,0]],
-    with pure complex eigenvalues λ₁=i and λ₂=-i.
-
-    ODE-system - complex-conjungated
-    A = [[1,1]
-        [-1,1]]
-    with the complex conjungated eigenvalues λ₁=1-i and λ₂=1+i.
-
-    ODE-system - tria
-    ∂²u/∂t² + ∂u/∂t + u = 0
-    gets to:
-    ∂u/∂t = v
-    ∂v/∂t = -v -u.
-
     """
-    def __init__(self, method=1, ode="basic"):
-        from math import sqrt, log, sin, cos, exp
-        from hedge.tools import EOCRecorder
+    def __init__(self,
+            method,
+            order,
+            step_ratio,
+            outfile,
+            ode):
 
-        self.method = method
-        self.ode = ode
-        #print self.ode
-        #raw_input()
-        if method==1:
-            print "Method: slowest_first without substepping"
-            self.sf_arg = True
-            self.ff_arg = False
-            self.sub_arg = False
-        elif method==2:
-            print "Method: slowest_first with substepping"
-            self.sf_arg = True
-            self.ff_arg = False
-            self.sub_arg = True
-        elif method==3:
-            print "Method: fastest_first without substepping"
-            self.sf_arg = False
-            self.ff_arg = True
-            self.sub_arg = False
-        elif method==4:
-            print "Method: fastest_first with substepping"
-            self.sf_arg = False
-            self.ff_arg = True
-            self.sub_arg = True
-
-    def s2s_rhs(self, t, u, v):
-        if self.ode=="basic":
-            return 0
-        if self.ode=="full":
-            return cos(2*t)*u
-        if self.ode=="real":
-            return -u
-        if self.ode=="complex":
-            return 0
-        if self.ode=="complex-conjungated":
-            return u
-        if self.ode=="tria":
-            return 0
-
-    def l2s_rhs(self, t, u, v):
-        if self.ode=="basic":
-            return v
-        if self.ode=="full":
-            return (sin(2*t)-1)*v
-        if self.ode=="real":
-            return 3*v
-        if self.ode=="complex":
-            return v
-        if self.ode=="complex-conjungated":
-            return v
-        if self.ode=="tria":
-            return v
-
-    def s2l_rhs(self, t, u, v):
-        if self.ode=="basic":
-            return -u/t**2
-        if self.ode=="full":
-            return (sin(2*t)+1)*u
-        if self.ode=="real":
-            return 2*u
-        if self.ode=="complex":
-            return -u
-        if self.ode=="complex-conjungated":
-            return -u
-        if self.ode=="tria":
-            return -u
-
-    def l2l_rhs(self, t, u, v):
-        if self.ode=="basic":
-            return 0
-        if self.ode=="full":
-            return -cos(2*t)*v
-        if self.ode=="real":
-            return -2*v
-        if self.ode=="complex":
-            return 0
-        if self.ode=="complex-conjungated":
-            return v
-        if self.ode=="tria":
-            return -v
-
-    def soln_0(self, t):
-        if self.ode=="basic":
-            inner = sqrt(3)/2*log(t)
-            return sqrt(t)*(
-                    5*sqrt(3)/3*sin(inner)
-                    + cos(inner)
-                    )
-        if self.ode=="full":
-            return exp(t)*cos(t)
-        if self.ode=="real":
-            return exp(-4*t)*(exp(5*t)+1)
-        if self.ode=="complex":
-            return sin(t)*sin(2*t)+cos(t)*(cos(2*t)+1)
-        if self.ode=="complex-conjungated":
-            return exp(t)*sin(t)
-        if self.ode=="tria":
-            inner = sqrt(3)/2*t
-            return exp(-t/2)*(
-                    7*sqrt(3)/3*sin(inner)
-                    + cos(inner)
-                    )
-
-    def soln_1(self, t):
-        if self.ode=="full":
-            return exp(t)*sin(t)
-        if self.ode=="real":
-            return 1/3*exp(-4*t)*(2*exp(5*t)-3)
-        if self.ode=="complex":
-            return sin(t)*(cos(2*t)-1)-cos(t)*sin(2*t)
-        if self.ode=="complex-conjungated":
-            return exp(t)*cos(t)
+        self.method      = method
+        self.order       = order
+        self.step_ratio  = step_ratio
+        self.out = outfile
+        self.ode         = ode()
 
     def get_error(self, stepper, dt, name=None):
-        if self.ode=="basic":
-            t = 1
-            y = numpy.array([1, 3])
-            final_t = 10
-        elif self.ode=="tria":
-            t = 0
-            y = numpy.array([1, 3])
-            final_t = 10
-        else:
-            t = 0
-            y = numpy.array([self.soln_0(t), self.soln_1(t)])
-            final_t = 1
+        t = self.ode.t_start
+        y = self.ode.initial_values
+        final_t = self.ode.t_end
 
         nsteps = int((final_t-t)/dt)
 
@@ -273,62 +113,124 @@ class TestMultirateTimesteperAccuracy:
             outf = open(name, "w")
             format = "%g\t%g\t" + "%g\t" * len(y)
 
+        times = []
         hist = []
         for i in range(nsteps):
-            y = stepper(y, t, (self.s2s_rhs, self.l2s_rhs, self.s2l_rhs, self.l2l_rhs))
-            if name is not None:
-                outf.write(format % ((t,self.soln_0(t+dt))+tuple(y)) + "\n")
-
-
+            y = stepper(y, t, (self.ode.f2f_rhs, self.ode.s2f_rhs, self.ode.f2s_rhs, self.ode.s2s_rhs))
             t += dt
             hist.append(y)
 
-        if self.ode=="basic" or "tria":
-            return abs(y[0]-self.soln_0(t))
+        if False:
+            times.append(t)
+            from matplotlib.pyplot import plot, show
+            plot(times, [h[0] for h in hist], "o", hold=True)
+            plot(times, [self.soln_0(t) for t in times], hold=True)
+            show()
+
+        from ode_systems import Basic, Tria
+
+        if isinstance(self.ode, Basic) or isinstance(self.ode, Tria):
+            return abs(y[0]-self.ode.soln_0(t))
         else:
             return abs(
-                    sqrt(y[0]**2 + y[1]**2) 
-                    - sqrt(self.soln_0(t)**2 + self.soln_1(t)**2)
+                    sqrt(y[0]**2 + y[1]**2)
+                    - sqrt(self.ode.soln_0(t)**2 + self.ode.soln_1(t)**2)
                     )
 
-    def __call__(self, order):
-
+    def __call__(self):
+        print "Method:",self.method
         eocrec = EOCRecorder()
         for n in range(4,9):
             dt = 2**(-n)
-            from hedge.timestep import TwoRateAdamsBashforthTimeStepper
-            stepper = TwoRateAdamsBashforthTimeStepper(dt, 5, order,
-                    slowest_first=self.sf_arg,
-                    fastest_first=self.ff_arg,
-                    substepping=self.sub_arg)
-            error = self.get_error(stepper, dt, "mrab-%d.dat" % order)
+
+            from hedge.timestep.multirate_ab import \
+                     TwoRateAdamsBashforthTimeStepper
+
+            stepper = TwoRateAdamsBashforthTimeStepper(
+                    self.method, dt, self.step_ratio, self.order)
+
+            error = self.get_error(stepper, dt, "mrab-%d.dat" % self.order)
             eocrec.add_data_point(1/dt, error)
 
-        #print stepper
-        #print "------------------------------------------------------"
-        #print "ORDER %d" % order
-        #print "------------------------------------------------------"
-        #print eocrec.pretty_print()
+        print "------------------------------------------------------"
+        print "ORDER %d" % self.order
+        print "------------------------------------------------------"
+        print eocrec.pretty_print()
 
         orderest = eocrec.estimate_order_of_convergence()[0,1]
-        print orderest, order
-        assert orderest > order*0.80
+        print orderest, self.order
+        #assert orderest > order*0.80
+        print ""
+        print ""
+
+        self.out.write(" %f &" % orderest)
 
 
 
 def test_multirate_timestep_accuracy():
     """Check that the multirate timestepper has the advertised accuracy"""
 
-    min_order = 3
-    max_order = 6
+    from hedge.timestep.multirate_ab.methods import methods
+    if False:
+         methods_man = ['f_f_1a', 'f_f_1b',
+                 's_f_1', 's_f_1_nr',
+                 's_f_2a', 's_f_2a_nr',
+                 's_f_2b', 's_f_2b_nr',
+                 's_f_3a', 's_f_3a_nr',
+                 's_f_3b', 's_f_3b_nr',
+                 's_f_4', 's_f_4_nr']
 
-    for ode_arg in ["basic", "full", "real", "complex", "complex-conjungated", "tria"]:
-    #for ode_arg in ["tria"]:
-        for method_arg in [1,2,3,4]:
-            test = TestMultirateTimesteperAccuracy(method=method_arg, ode=ode_arg)
-            print "ODE-System: %s" % ode_arg
-            for order in range(min_order, max_order):
-                test(order)
+    else:
+        methods_man = ['f_f_1a']
+
+    from ode_systems import Basic, \
+             Full, \
+             Real, \
+             Comp, \
+             CC,\
+             Tria, \
+             Inh, \
+             Inh2
+    min_order = 2
+    max_order = 6
+    step_ratio = 10
+    #ode_arg_set = [Basic,Full,Real,Comp,CC,
+    #            Tria,Inh,Inh2]
+    ode_arg_set = [Comp,Inh,Inh2]
+
+    for order in range(min_order, max_order):
+
+        # outputfile setup: ---------------------------------------------
+        outfilename = "mrab-out/mrab-order-%d-r-%d.dat" % (order,step_ratio)
+        outfile = open(outfilename, "w")
+
+        outfile.write("&")
+        for m in ode_arg_set:
+            m_str = str(m)
+            outfile.write("%s &" %m_str.strip("ode_systems."))
+
+        outfile.write("\\""\\" + "\n")
+        outfile.write("\\hline" + "\n")
+
+        for method in methods:
+        #for method in methods_man:
+            out_method = str(method)
+            outfile.write("\\verb|""%s | &" %out_method)
+            for ode_arg in ode_arg_set:
+
+                print ""
+                print "----------------------------------------------------------------------------"
+                print "ODE-System: %s" % ode_arg
+                print "step ratio:", step_ratio
+                checkup = CheckMultirateTimesteperAccuracy(
+                        method,
+                        order,
+                        step_ratio,
+                        outfile,
+                        ode = ode_arg)
+                checkup()
+            outfile.write("\\""\\" + "\n")
+            outfile.write("\\hline" + "\n")
 
 
 
@@ -383,7 +285,8 @@ def test_timestep_accuracy():
         #print orderest, order
         assert orderest > order*0.95
 
-    from hedge.timestep import RK4TimeStepper, AdamsBashforthTimeStepper
+    from hedge.timestep.rk4 import RK4TimeStepper
+    from hedge.timestep.ab import AdamsBashforthTimeStepper
 
     for o in range(1,5):
         verify_timestep_order(lambda : AdamsBashforthTimeStepper(o), o)
@@ -872,3 +775,4 @@ def test_all_periodic_no_boundary():
 if __name__ == "__main__":
     from py.test.cmdline import main
     main([__file__])
+    #test_multirate_timestep_accuracy()
