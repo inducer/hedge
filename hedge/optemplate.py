@@ -27,6 +27,7 @@ import pymbolic.primitives
 import pymbolic.mapper.stringifier
 import pymbolic.mapper.evaluator
 import pymbolic.mapper.dependency
+import pymbolic.mapper.substitutor
 import pymbolic.mapper.constant_folder
 import pymbolic.mapper.flop_counter
 import hedge.mesh
@@ -651,6 +652,13 @@ class IdentityMapper(
         pymbolic.mapper.IdentityMapper):
     pass
 
+
+
+
+
+class SubstitutionMapper(pymbolic.mapper.substitutor.SubstitutionMapper,
+        IdentityMapperMixin):
+    pass
 
 
 
