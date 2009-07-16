@@ -307,6 +307,10 @@ class Mesh(pytools.Record):
             yield face1, face2
             yield face2, face1
 
+    @property
+    def dimensions(self):
+        return self.points.shape[1]
+
     def bounding_box(self):
         try:
             return self._bounding_box
