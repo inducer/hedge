@@ -297,6 +297,3 @@ class _MRABEvaluator(MRABProcessor):
 
         return (self.context[meth.result_fast](),
                 self.context[meth.result_slow]())
-
-
-
