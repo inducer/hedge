@@ -324,8 +324,11 @@ class ExecutionMapper(ExecutionMapperBase):
         func = self.executor.get_elwise_max_kernel(dofs_per_el, 
                   block_size, floats_per_mb, mbs_per_block, field.dtype)
 
-	grid_dim = (len(field) + block_size - 1) // block_size
-	func.prepared_call((grid_dim, 1),field.gpudata, field_out.gpudata)
+        mb_count = len(discr.blocks) * discr.given.microblocks_per_block
+
+	grid_dim = (mb_count + mbs_per_block - 1) // mbs_per_block
+	func.prepared_call((grid_dim, 1), 
+            field.gpudata, field_out.gpudata, mb_count)
 	return field_out
 
 
@@ -555,27 +558,31 @@ class Executor(object):
         #define NODE_IN_MB_IDX  threadIdx.x
         #define MB_IN_BLOCK_IDX threadIdx.y
         #define BLOCK_IDX blockIdx.x
+        #define MB_NUMBER (BLOCK_IDX * MBS_PER_BLOCK + MB_IN_BLOCK_IDX)
 
         typedef %(value_type)s value_type;
 
-        __global__ void elwise_max(value_type *field, value_type *field_out)
+        __global__ void elwise_max(value_type *field, value_type *field_out, 
+          unsigned mb_count)
         {
-            int idx = (BLOCK_IDX * MBS_PER_BLOCK + MB_IN_BLOCK_IDX) *
-                       FLOATS_PER_MB + NODE_IN_MB_IDX;
-            int element_base_idx = FLOATS_PER_MB * MB_IN_BLOCK_IDX + 
-                (NODE_IN_MB_IDX / DOFS_PER_EL) * DOFS_PER_EL;
+          if (MB_NUMBER >= mb_count)
+            return;
+        
+          int idx =  MB_NUMBER * FLOATS_PER_MB + NODE_IN_MB_IDX;
+          int element_base_idx = FLOATS_PER_MB * MB_IN_BLOCK_IDX + 
+              (NODE_IN_MB_IDX / DOFS_PER_EL) * DOFS_PER_EL;
 
-            __shared__ value_type whole_block[BLOCK_SIZE];
-            int idx_in_block = FLOATS_PER_MB * MB_IN_BLOCK_IDX + NODE_IN_MB_IDX;
-            whole_block[idx_in_block] = field[idx];
+          __shared__ value_type whole_block[BLOCK_SIZE];
+          int idx_in_block = FLOATS_PER_MB * MB_IN_BLOCK_IDX + NODE_IN_MB_IDX;
+          whole_block[idx_in_block] = field[idx];
 
-            __syncthreads();
+          __syncthreads();
 
-            value_type own_value = -MY_INFINITY;
+          value_type own_value = -MY_INFINITY;
 
-            for (int i=0; i<DOFS_PER_EL; i++)
-                own_value = MAX_FUNC(own_value, whole_block[element_base_idx+i]);
-            field_out[idx] = own_value;
+          for (int i=0; i<DOFS_PER_EL; i++)
+              own_value = MAX_FUNC(own_value, whole_block[element_base_idx+i]);
+          field_out[idx] = own_value;
         }
         """% {
         "dofs_per_el": dofs_per_el,
@@ -587,6 +594,6 @@ class Executor(object):
         })
 
 	func = mod.get_function("elwise_max")
-	func.prepare("PP", block=(floats_per_mb, block_size//floats_per_mb, 1))
+	func.prepare("PPI", block=(floats_per_mb, block_size//floats_per_mb, 1))
 
         return func
