@@ -917,12 +917,6 @@ class Kernel:
                 keep="cuda_keep_kernels" in discr.debug, 
                 options=["--maxrregcount=%d" % self.plan.max_registers()]
                 )
-        if "cuda_flux" in discr.debug:
-            print "flux: lmem=%d smem=%d regs=%d" % (
-                    mod.local_size_bytes, 
-                    mod.shared_size_bytes, 
-                    mod.num_regs)
-
         expr_to_texture_map = dict(
                 (dep_expr, mod.get_texref(
                     "field%d_tex" % self.dep_to_index[dep_expr]))
@@ -943,6 +937,12 @@ class Kernel:
                     fplan.parallel_faces, 1),
                 texrefs=expr_to_texture_map.values()
                 + [index_list_texref])
+
+        if "cuda_flux" in discr.debug:
+            print "flux: lmem=%d smem=%d regs=%d" % (
+                    func.local_size_bytes, 
+                    func.shared_size_bytes, 
+                    func.num_regs)
 
         return func, expr_to_texture_map
 
