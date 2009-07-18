@@ -460,13 +460,15 @@ class SiloVisualizer(Visualizer):
 
         if self.dim == 1:
             for name, field in variables:
-                if isinstance(field, list) and len(field) > 1:
-                    from warnings import warn
-                    warn("Silo visualization does not support vectors in 1D, ignoring '%s'" % name)
+                from hedge.tools import is_obj_array
+                if is_obj_array(field):
+                    AXES = ["x", "y", "z", "w"]
+                    for i, f_i in enumerate(field):
+                        silo.put_curve(name+AXES[i], self.xvals, 
+                                scale_factor*f_i, mesh_opts)
                 else:
-                    if isinstance(field, list):
-                        field = field[0]
-                    silo.put_curve(name, self.xvals, scale_factor*field, mesh_opts)
+                    silo.put_curve(name, self.xvals, 
+                            scale_factor*field, mesh_opts)
         else:
             self.fine_mesh.put_mesh(silo, "finezonelist", "finemesh", mesh_opts)
             self.coarse_mesh.put_mesh(silo, "coarsezonelist", "mesh", mesh_opts)

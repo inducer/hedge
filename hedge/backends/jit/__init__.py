@@ -291,6 +291,9 @@ class Discretization(hedge.discretization.Discretization):
     def __init__(self, *args, **kwargs):
         toolchain = kwargs.pop("toolchain", None)
 
+        # tolerate (and ignore) the CUDA backend's tune_for argument
+        _ = kwargs.pop("tune_for", None)
+
         hedge.discretization.Discretization.__init__(self, *args, **kwargs)
 
         if toolchain is None:

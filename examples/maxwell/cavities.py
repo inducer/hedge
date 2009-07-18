@@ -243,5 +243,4 @@ if __name__ == "__main__":
     if in_mpi_relaunch():
         test_maxwell_cavities_mpi()
     else:
-        #main()
-        do_test_maxwell_cavities_cuda(numpy.float32)
+        main()
