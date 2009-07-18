@@ -104,7 +104,7 @@ class Assign(Instruction):
             lines.append("{"+comment)
             for n, e, dnr  in zip(self.names, self.exprs, self.do_not_return):
                 if dnr:
-                    dnr_indicator = "-i"
+                    dnr_indicator = "-#"
                 else:
                     dnr_indicator = ""
 
