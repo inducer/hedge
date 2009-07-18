@@ -32,8 +32,7 @@ class SteadyShearFlow:
     def __call__(self, t, x_vec):
         # JSH/TW Nodal DG Methods, p.326 
 
-        rho = numpy.zeros_like(x_vec[0])
-        rho.fill(1)
+        rho = numpy.ones_like(x_vec[0])
         rho_u = x_vec[1] * x_vec[1]
         rho_v = numpy.zeros_like(x_vec[0])
         e = (2 * self.mu * x_vec[0] + 10) / (self.gamma - 1) + x_vec[1]**4 / 2
@@ -69,16 +68,16 @@ def main():
     if rcon.is_head_rank:
         from hedge.mesh import make_rect_mesh, \
                                make_centered_regular_rect_mesh
-        #mesh = make_rect_mesh((0,-5), (10,5), max_area=0.15)
+        #mesh = make_rect_mesh((0,0), (10,1), max_area=0.01)
         refine = 1
         mesh = make_centered_regular_rect_mesh((0,0), (10,1), n=(9,9),
-                            periodicity=(True, False),
+                            #periodicity=(True, False),
                             post_refine_factor=refine)
         mesh_data = rcon.distribute_mesh(mesh)
     else:
         mesh_data = rcon.receive_mesh()
 
-    for order in [3]:
+    for order in [1]:
         discr = rcon.make_discretization(mesh_data, order=order,
 			debug=["cuda_no_plan",
 			#"print_op_code"

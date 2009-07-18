@@ -1284,15 +1284,9 @@ def count_dofs(vec):
 
 
 # flux creation ---------------------------------------------------------------
-def make_lax_friedrichs_flux(wave_speed, state, flux_func, bdry_tags_and_states, 
-        strong, bdry_flux_func=None):
-
-    if bdry_flux_func is None:
-        bdry_flux_func = flux_func
-
+def make_lax_friedrichs_flux(wave_speed, state, fluxes, bdry_tags_states_and_fluxes, 
+        strong):
     from hedge.flux import make_normal, FluxVectorPlaceholder
-
-    fluxes = flux_func(state)
 
     n = len(state)
     d = len(fluxes)
@@ -1306,22 +1300,26 @@ def make_lax_friedrichs_flux(wave_speed, state, flux_func, bdry_tags_and_states,
     penalty = wave_speed_ph.int*(state_ph.ext-state_ph.int)
 
     if not strong:
-        flux = 0.5*(sum(n_i*(f_i.int+f_i.ext) for n_i, f_i in zip(normal, fluxes_ph))
+        num_flux = 0.5*(sum(n_i*(f_i.int+f_i.ext) for n_i, f_i in zip(normal, fluxes_ph))
                 - penalty)
     else:
-        flux = 0.5*(sum(n_i*(f_i.int-f_i.ext) for n_i, f_i in zip(normal, fluxes_ph))
+        num_flux = 0.5*(sum(n_i*(f_i.int-f_i.ext) for n_i, f_i in zip(normal, fluxes_ph))
                 + penalty)
 
     from hedge.optemplate import get_flux_operator
-    flux_op = get_flux_operator(flux)
+    flux_op = get_flux_operator(num_flux)
     int_operand = join_fields(wave_speed, state, *fluxes)
+
+    #for tag,bdry_state, bdry_fluxes in bdry_tags_states_and_fluxes:
+    #    print (join_fields(0, bdry_state, bdry_fluxes)).shape
+    #raw_input()
 
     from hedge.optemplate import pair_with_boundary
     return (flux_op*int_operand
             + sum(
                 flux_op*pair_with_boundary(int_operand,
-                    join_fields(0, ext_state, *bdry_flux_func(ext_state)), tag)
-                for tag, ext_state in bdry_tags_and_states))
+                    join_fields(0, bdry_state, *bdry_fluxes), tag)
+                for tag, bdry_state, bdry_fluxes in bdry_tags_states_and_fluxes))
 
 
 

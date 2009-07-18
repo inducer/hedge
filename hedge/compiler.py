@@ -278,7 +278,7 @@ class Code(object):
         self.instructions = instructions
         self.result = result
 
-        if False:
+        if True:
             from hedge.tools import get_rank
             from hedge.compiler import dot_dataflow_graph
             i = 0
