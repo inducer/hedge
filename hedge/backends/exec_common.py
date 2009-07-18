@@ -152,7 +152,7 @@ class CPUExecutionMapperBase(ExecutionMapperBase):
         from hedge._internal import perform_elwise_max
         field = self.rec(field_expr)
 
-        out = self.discr.volume_zeros()
+        out = self.discr.volume_zeros(dtype=field.dtype)
         for eg in self.discr.element_groups:
             perform_elwise_max(eg.ranges, field, out)
 
