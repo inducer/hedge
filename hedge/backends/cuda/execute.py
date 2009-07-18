@@ -510,8 +510,14 @@ class Executor(object):
 
     # actual execution --------------------------------------------------------
     def __call__(self, **vars):
+        def pre_assign_check(tgt, value):
+            if numpy.isnan(self.discr.convert_volume(value, kind="numpy")).any():
+                print "%s was assigned a nan-containing value." % tgt
+
         return self.code.execute(
-                self.discr.exec_mapper_class(vars, self))
+                self.discr.exec_mapper_class(vars, self),
+                #pre_assign_check=pre_assign_check
+                )
 
     # data caches for execution -----------------------------------------------
     @memoize_method

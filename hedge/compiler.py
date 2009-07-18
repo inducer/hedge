@@ -330,7 +330,7 @@ class Code(object):
 
         return "\n".join(lines)
 
-    def execute(self, exec_mapper):
+    def execute(self, exec_mapper, pre_assign_check=None):
         context = exec_mapper.context
 
         futures = []
@@ -346,6 +346,9 @@ class Code(object):
                 if force_future or future.is_ready():
                     assignments, new_futures = future()
                     for target, value in assignments:
+                        if pre_assign_check is not None:
+                            pre_assign_check(target, value)
+
                         context[target] = value
                     futures.extend(new_futures)
                     futures.pop(i)
@@ -375,6 +378,9 @@ class Code(object):
                 assignments, new_futures = \
                         insn.get_executor_method(exec_mapper)(insn)
                 for target, value in assignments:
+                    if pre_assign_check is not None:
+                        pre_assign_check(target, value)
+
                     context[target] = value
 
                 futures.extend(new_futures)
