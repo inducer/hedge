@@ -868,13 +868,13 @@ class Kernel:
             If("FACEDOF_NR < DOFS_PER_FACE", flux_computation)
             ])
 
-        f_body.extend([
-            Line(),
-            S("__syncthreads()"),
-            Line()
-            ])
-
         if not fplan.direct_store:
+            f_body.extend([
+                Line(),
+                S("__syncthreads()"),
+                Line()
+                ])
+
             f_body.extend_log_block("store fluxes", [
                     #Assign("debugbuf[blockIdx.x]", "FOF_BLOCK_BASE"),
                     #Assign("debugbuf[0]", "FOF_BLOCK_BASE"),
