@@ -27,6 +27,7 @@ import pymbolic.primitives
 import pymbolic.mapper.stringifier
 import pymbolic.mapper.evaluator
 import pymbolic.mapper.dependency
+import pymbolic.mapper.substitutor
 import pymbolic.mapper.constant_folder
 import pymbolic.mapper.flop_counter
 import hedge.mesh
@@ -297,6 +298,9 @@ class BoundarizeOperator(Operator):
     def get_mapper_method(self, mapper): 
         return mapper.map_boundarize
 
+    def __getinitargs__(self):
+        return (self.tag,)
+
 
 
 
@@ -322,6 +326,54 @@ class FluxExchangeOperator(Operator):
 
     def get_mapper_method(self, mapper): 
         return mapper.map_flux_exchange
+
+
+
+
+# other parts of an operator template -----------------------------------------
+class BoundaryPair(pymbolic.primitives.AlgebraicLeaf):
+    """Represents a pairing of a volume and a boundary field, used for the
+    application of boundary fluxes.
+    """
+
+    def __init__(self, field, bfield, tag=hedge.mesh.TAG_ALL):
+        self.field = field
+        self.bfield = bfield
+        self.tag = tag
+
+    def get_mapper_method(self, mapper):
+        return mapper.map_boundary_pair
+
+    def stringifier(self):
+        return StringifyMapper
+    
+    def __getinitargs__(self):
+        return (self.field, self.bfield, self.tag)
+
+    def get_hash(self):
+        from hedge.tools import hashable_field
+
+        return hash((self.__class__, 
+            hashable_field(self.field), 
+            hashable_field(self.bfield), 
+            self.tag))
+
+    def is_equal(self, other):
+        from hedge.tools import field_equal
+        return (self.__class__ == other.__class__
+                and field_equal(other.field,  self.field)
+                and field_equal(other.bfield, self.bfield)
+                and other.tag == self.tag)
+        
+
+
+
+
+def pair_with_boundary(field, bfield, tag=hedge.mesh.TAG_ALL):
+    if tag is hedge.mesh.TAG_NONE:
+        return 0
+    else:
+        return BoundaryPair(field, bfield, tag)
 
 
 
@@ -376,54 +428,6 @@ class VectorFluxOperator(object):
                 [OperatorBinding(FluxOperator(f), arg)
                     for f in self.fluxes])
                 
-
-
-
-
-# other parts of an operator template -----------------------------------------
-class BoundaryPair(pymbolic.primitives.AlgebraicLeaf):
-    """Represents a pairing of a volume and a boundary field, used for the
-    application of boundary fluxes.
-    """
-
-    def __init__(self, field, bfield, tag=hedge.mesh.TAG_ALL):
-        self.field = field
-        self.bfield = bfield
-        self.tag = tag
-
-    def get_mapper_method(self, mapper):
-        return mapper.map_boundary_pair
-
-    def stringifier(self):
-        return StringifyMapper
-    
-    def __getinitargs__(self):
-        return (self.field, self.bfield, self.tag)
-
-    def get_hash(self):
-        from hedge.tools import hashable_field
-
-        return hash((self.__class__, 
-            hashable_field(self.field), 
-            hashable_field(self.bfield), 
-            self.tag))
-
-    def is_equal(self, other):
-        from hedge.tools import field_equal
-        return (self.__class__ == other.__class__
-                and field_equal(other.field,  self.field)
-                and field_equal(other.bfield, self.bfield)
-                and other.tag == self.tag)
-        
-
-
-
-
-def pair_with_boundary(field, bfield, tag=hedge.mesh.TAG_ALL):
-    if tag is hedge.mesh.TAG_NONE:
-        return 0
-    else:
-        return BoundaryPair(field, bfield, tag)
 
 
 
@@ -648,6 +652,13 @@ class IdentityMapper(
         pymbolic.mapper.IdentityMapper):
     pass
 
+
+
+
+
+class SubstitutionMapper(pymbolic.mapper.substitutor.SubstitutionMapper,
+        IdentityMapperMixin):
+    pass
 
 
 

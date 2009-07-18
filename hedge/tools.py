@@ -55,13 +55,15 @@ def relative_error(norm_diff, norm_true):
 
 
 
-def has_data_in_numpy_arrays(a):
-    if is_obj_array(a):
+def has_data_in_numpy_arrays(a, allow_objarray_levels):
+    if is_obj_array(a) and allow_objarray_levels > 0:
         from pytools import indices_in_shape, all
-        return all(has_data_in_numpy_arrays(a[i])
+        return all(
+                has_data_in_numpy_arrays(
+                    a[i], allow_objarray_levels=allow_objarray_levels-1)
                 for i in indices_in_shape(a.shape))
     else:
-        return isinstance(a, numpy.ndarray)
+        return isinstance(a, numpy.ndarray) and a.dtype != object
 
 
 

@@ -26,7 +26,7 @@ import pycuda.driver as cuda
 import numpy
 from pytools import Record
 from pytools.log import LogQuantity
-import hedge.timestep
+import hedge.timestep.base
 
 
 
@@ -207,7 +207,7 @@ def unroll(body_gen, total_number, max_unroll=None, start=0):
 
         
 
-class RK4TimeStepper(hedge.timestep.TimeStepper):
+class RK4TimeStepper(hedge.timestep.base.TimeStepper):
     def __init__(self):
         from hedge.timestep import _RK4A, _RK4B, _RK4C
         self.coeffs = zip(_RK4A, _RK4B, _RK4C)
