@@ -30,11 +30,10 @@ from hedge.backends.vector_expr import CompiledVectorExpressionBase
 class CompiledVectorExpression(CompiledVectorExpressionBase):
     elementwise_mod = codepy.elementwise
 
-    def __init__(self, vec_expr_info_list,
-            is_vector_pred, result_dtype_getter,
+    def __init__(self, vec_expr_info_list, result_dtype_getter,
             toolchain=None, wait_on_error=False):
         CompiledVectorExpressionBase.__init__(self,
-                vec_expr_info_list, is_vector_pred, result_dtype_getter)
+                vec_expr_info_list, result_dtype_getter)
 
         self.toolchain = toolchain
         self.wait_on_error = wait_on_error

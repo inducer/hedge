@@ -46,14 +46,21 @@ def make_common_subexpression(fields):
 
 Field = pymbolic.primitives.Variable
 
-
-
-
 def make_field(var_or_string):
     if not isinstance(var_or_string, pymbolic.primitives.Expression):
         return Field(var_or_string)
     else:
         return var_or_string
+
+
+
+
+class ScalarParameter(pymbolic.primitives.Variable):
+    def stringifier(self):
+        return StringifyMapper
+
+    def get_mapper_method(self, mapper):
+        return mapper.map_scalar_parameter
 
 
 
@@ -581,6 +588,10 @@ class IdentityMapperMixin(LocalOpReducerMixin, FluxOpReducerMixin):
         # it's a leaf--no changing children
         return expr
 
+    def map_scalar_parameter(self, expr, *args, **kwargs):
+        # it's a leaf--no changing children
+        return expr
+
     map_diff_base = map_mass_base
     map_flux_base = map_mass_base
     map_elementwise_max = map_mass_base
@@ -619,6 +630,9 @@ class DependencyMapper(
     def map_operator(self, expr):
         return set()
 
+    def map_scalar_parameter(self, expr):
+        return set([expr])
+
     def map_normal_component(self, expr):
         return set()
 
@@ -629,6 +643,9 @@ class FlopCounter(
         pymbolic.mapper.flop_counter.FlopCounter):
     def map_operator_binding(self, expr):
         return self.rec(expr.field)
+
+    def map_scalar_parameter(self, expr):
+        return 0
 
 
 
@@ -705,6 +722,10 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
 
     def map_operator_binding(self, expr, enclosing_prec):
         return "<%s>(%s)" % (expr.op, expr.field)
+
+    def map_scalar_parameter(self, expr, enclosing_prec):
+        return "ScalarPar[%s]" % expr.name
+
 
 
 
@@ -1013,7 +1034,9 @@ class CollectorMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     def map_normal_component(self, expr):
         return set()
 
-    
+    def map_scalar_parameter(self, expr):
+        return set()
+
 
 
 

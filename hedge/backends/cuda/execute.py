@@ -322,7 +322,6 @@ class VectorExprAssign(Assign):
                     do_not_return=dnr)
                     for name, expr, dnr in zip(
                         self.names, self.exprs, self.do_not_return)],
-                is_vector_pred=executor.is_vector_pred,
                 result_dtype_getter=simple_result_dtype_getter,
                 allocator=discr.pool.allocate)
 
@@ -392,10 +391,8 @@ class OperatorCompiler(OperatorCompilerBase):
 class Executor(object):
     exec_mapper_class = ExecutionMapper
 
-    def __init__(self, discr, optemplate, post_bind_mapper,
-            is_vector_pred):
+    def __init__(self, discr, optemplate, post_bind_mapper):
         self.discr = discr
-        self.is_vector_pred = is_vector_pred
 
         from hedge.tools import diff_rst_flops, diff_rescale_one_flops, \
                 mass_flops, lift_flops

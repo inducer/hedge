@@ -995,10 +995,8 @@ class Discretization(object):
         raise RuntimeError, "point %s not found" % point
 
     # op template execution ---------------------------------------------------
-    def compile(self, optemplate, post_bind_mapper=lambda x: x,
-            is_vector_pred=lambda expr: True):
-        ex = self.executor_class(self, optemplate, post_bind_mapper,
-                is_vector_pred=is_vector_pred)
+    def compile(self, optemplate, post_bind_mapper=lambda x: x):
+        ex = self.executor_class(self, optemplate, post_bind_mapper)
 
         if "dump_dataflow_graph" in self.debug:
             ex.code.dump_dataflow_graph()

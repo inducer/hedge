@@ -49,6 +49,11 @@ class FluxConcretizer(FluxIdentityMapper):
             from pymbolic import var
             return var(arg_name+"_it")[var(where+"_idx")]
 
+    def map_scalar_parameter(self, expr):
+        from pymbolic import var
+        return var("args._scalar_arg_%d" 
+                % self.flux_var_info.scalar_parameters.index(expr))
+
 
 
 
@@ -83,6 +88,7 @@ class FluxToCodeMapper(CCodeMapper):
 
 
 
+
 def flux_to_code(f2c, is_flipped, flux_idx, fvi, flux, prec):
     if is_flipped:
         from hedge.flux import FluxFlipper
@@ -99,71 +105,83 @@ def get_flux_var_info(fluxes):
     class FluxVariableInfo(Record):
         pass
 
+    scalar_parameters = set()
+
     fvi = FluxVariableInfo(
-            arg_specs = [],
-            arg_names = [],
-            flux_idx_and_dep_to_arg_name = {}, # or 0 if zero
+            scalar_parameters=None,
+            arg_specs=[],
+            arg_names=[],
+            flux_idx_and_dep_to_arg_name={}, # or 0 if zero
             )
 
     field_expr_to_arg_name = {}
 
-    from hedge.flux import FieldComponent, FluxDependencyMapper
+    from hedge.flux import \
+            FieldComponent, FluxDependencyMapper, \
+            FluxScalarParameter
+
     from hedge.optemplate import BoundaryPair
 
     for flux_idx, flux_binding in enumerate(fluxes):
-        for fc in FluxDependencyMapper(include_calls=False)(flux_binding.op.flux):
-            assert isinstance(fc, FieldComponent)
-            is_bdry = isinstance(flux_binding.field, BoundaryPair)
-            if is_bdry:
-                if fc.is_local:
-                    this_field_expr = flux_binding.field.field
+        for dep in FluxDependencyMapper(include_calls=False)(flux_binding.op.flux):
+            if isinstance(dep, FluxScalarParameter):
+                scalar_parameters.add(dep)
+            elif isinstance(dep, FieldComponent):
+                is_bdry = isinstance(flux_binding.field, BoundaryPair)
+                if is_bdry:
+                    if dep.is_local:
+                        this_field_expr = flux_binding.field.field
+                    else:
+                        this_field_expr = flux_binding.field.bfield
                 else:
-                    this_field_expr = flux_binding.field.bfield
-            else:
-                this_field_expr = flux_binding.field
+                    this_field_expr = flux_binding.field
 
-            from hedge.tools import is_obj_array
-            if is_obj_array(this_field_expr):
-                fc_field_expr = this_field_expr[fc.index]
-            else:
-                assert fc.index == 0
-                fc_field_expr = this_field_expr
-
-            def set_or_check(dict_instance, key, value):
-                try:
-                    existing_value = dict_instance[key]
-                except KeyError:
-                    dict_instance[key] = value
+                from hedge.tools import is_obj_array
+                if is_obj_array(this_field_expr):
+                    fc_field_expr = this_field_expr[dep.index]
                 else:
-                    assert existing_value == value
+                    assert dep.index == 0
+                    fc_field_expr = this_field_expr
 
-            from pymbolic.primitives import is_zero
-            if is_zero(fc_field_expr):
-                fvi.flux_idx_and_dep_to_arg_name[flux_idx, fc] = 0
-            else:
-                if fc_field_expr not in field_expr_to_arg_name:
-                    arg_name = "arg%d" % len(fvi.arg_specs)
-                    field_expr_to_arg_name[fc_field_expr] = arg_name
+                def set_or_check(dict_instance, key, value):
+                    try:
+                        existing_value = dict_instance[key]
+                    except KeyError:
+                        dict_instance[key] = value
+                    else:
+                        assert existing_value == value
 
-                    fvi.arg_names.append(arg_name)
-                    fvi.arg_specs.append((fc_field_expr, fc.is_local))
+                from pymbolic.primitives import is_zero
+                if is_zero(fc_field_expr):
+                    fvi.flux_idx_and_dep_to_arg_name[flux_idx, dep] = 0
                 else:
-                    arg_name = field_expr_to_arg_name[fc_field_expr]
+                    if fc_field_expr not in field_expr_to_arg_name:
+                        arg_name = "arg%d" % len(fvi.arg_specs)
+                        field_expr_to_arg_name[fc_field_expr] = arg_name
 
-                set_or_check(
-                        fvi.flux_idx_and_dep_to_arg_name,
-                        (flux_idx, fc),
-                        arg_name)
+                        fvi.arg_names.append(arg_name)
+                        fvi.arg_specs.append((fc_field_expr, dep.is_local))
+                    else:
+                        arg_name = field_expr_to_arg_name[fc_field_expr]
 
-                if not is_bdry:
-                    # Interior fluxes are used flipped as well.
-                    # Make sure we have assigned arg names for the
-                    # flipped case as well.
                     set_or_check(
                             fvi.flux_idx_and_dep_to_arg_name,
-                            (flux_idx,
-                                FieldComponent(fc.index, not fc.is_local)),
+                            (flux_idx, dep),
                             arg_name)
+
+                    if not is_bdry:
+                        # Interior fluxes are used flipped as well.
+                        # Make sure we have assigned arg names for the
+                        # flipped case as well.
+                        set_or_check(
+                                fvi.flux_idx_and_dep_to_arg_name,
+                                (flux_idx,
+                                    FieldComponent(dep.index, not dep.is_local)),
+                                arg_name)
+            else:
+                raise ValueError("unknown flux dependency type: %s" % dep)
+
+    fvi.scalar_parameters = list(scalar_parameters)
 
     return fvi
 
@@ -223,6 +241,10 @@ def get_interior_flux_mod(fluxes, fvi, discr, dtype):
         ]+[
         Value("numpy_array<value_type>", arg_name)
         for arg_name in fvi.arg_names
+        ]+[
+        Value("value_type" if scalar_par.is_complex else "uncomplex_type", 
+            "_scalar_arg_%d" % i)
+        for i, scalar_par in enumerate(fvi.scalar_parameters)
         ])
 
     mod.add_struct(arg_struct, "ArgStruct")
