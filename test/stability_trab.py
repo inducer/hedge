@@ -1,3 +1,4 @@
+# -*- coding: utf8 -*-
 """Automatic size finding for stability regions."""
 
 from __future__ import division
@@ -20,19 +21,19 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 """
 
 
+""" Calculating stability regions for Two-Rate-Adams-Bashforth method
+    Method:
+    2 cases we are interested in:
+    1. Compelx conjungated EV
+    2. Real EV
 
-from ode_systems import Basic, \
-        Full, \
-        Real, \
-        Comp, \
-        CC,\
-        Tria, \
-        Inh, \
-        Inh2
+"""
 
-from math import sqrt, log, sin, cos, exp
+from math import sqrt, log, sin, cos
+from cmath import exp
 import numpy
-
+from cmath import pi
+from numpy import matrix
 from hedge.timestep.multirate_ab.methods import methods
 if False:
     methods_man = ['f_f_1a', 'f_f_1b',
@@ -45,36 +46,78 @@ if False:
 
 else:
     methods_man = ['f_f_1a']
+import pickle
+
+class calc_stab_reg():
+    def __init__(self):
+        # Two-Rate-AB settings ----------------------------------------------------
+        self.order = 2
+        self.step_ratio = 2
+
+        # parameterization dense --------------------------------------------------
+        self.p_dense = 20
+
+    # Case 1: Negative real EW's ----------------------------------------------
+    def case_1(self):
+    #def case_1(self,a_start,a_end,
+     #       a_dense):
+        points_1=[]
+        lambda_case = 1
+        for a in numpy.arange(-1, 0, 1/self.p_dense):
+            lambda_1 = 1
+            lambda_2 = a
+            d_matrix = numpy.array([[lambda_1,0],[0,lambda_1]])
+            for b in numpy.arange(2*pi/self.p_dense,2*pi, 2*pi/self.p_dense):
+                for c in numpy.arange(2*pi/self.p_dense+b,2*pi+b, 2*pi/self.p_dense):
+                    print a, b, c
+                    get_stab_reg = calculate_stability_region('f_f_1a', 
+                            self.order,
+                            self.step_ratio,
+                            lambda_1,
+                            lambda_2,
+                            a, b, c,
+                            lambda_case)
+
+                    points_1.append(numpy.array([get_stab_reg(),a,b,c,]))
+        filename = "case_1_res_a_start_%s_a_end_%s" %(a_start, a_end)
+        case_1_res = {"case_1_res" : numpy.array(points_1.append)}
+        pickle.dump(case_1_res, open(filename,"w"))
+                    #print points_1
+                    #raw_input()
 
 
 
+    # Case 2: Complex Conjungated EW's ----------------------------------------
+    def case_2(self):
+        points_2 = []
+        lambda_case = 2
+        for a in numpy.arange(pi*0.5, pi, 1/self.p_dense):
+            lambda_1 = complex(cos(a),sin(a))
+            lambda_2 = complex(cos(a),-sin(a))
+            d_matrix = matrix([[lambda_1,0],[0,lambda_1]])
+            for b in numpy.arange(2*pi/self.p_dense,2*pi, 2*pi/self.p_dense):
+                print b
+                for c in numpy.arange(2*pi/self.p_dense+b,2*pi+b, 2*pi/self.p_dense):
+                    v_matrix = matrix([
+                        [sin(b)*exp(complex(0,-c/2)), sin(b)*exp(complex(0,c/2))],
+                        [cos(b)*exp(complex(0,c/2)), cos(b)*exp(complex(0,-c/2))]
+                        ])
+                    a_matrix = v_matrix*d_matrix*v_matrix.I
+                    print d_matrix, a_matrix, v_matrix
+                    raw_input()
+                    get_stab_reg = calculate_stability_region('f_f_1a',
+                            self.order,
+                            self.step_ratio,
+                            lambda_1,
+                            lambda_2,
+                            a_matrix, v_matrix,
+                            lambda_case)
 
+                    points_2.append(numpy.array([get_stab_reg(),a,b,c,]))
+                    #print points_2
+                    #raw_input()
 
-
-
-# bisection based method to find bounds of stability region on Imaginary axis only ---
-def calculate_fudged_stability_region(stepper_class, *stepper_args):
-    return calculate_stability_region(stepper_class, *stepper_args) \
-            * stepper_class.dt_fudge_factor
-
-
-
-
-
-def calc_stab_reg():
-
-    from hedge.timestep.multirate_ab import \
-                     TwoRateAdamsBashforthTimeStepper
-    from hedge.timestep.ab import AdamsBashforthTimeStepper
-    stepper_class = AdamsBashforthTimeStepper
-    stepper_args = [3]
-    order = 5
-    step_ratio = 10
-    ode = Inh
-    #stepper = TwoRateAdamsBashforthTimeStepper(
-    #                self.method, dt, self.step_ratio, self.order)
-    find_sta_reg = calculate_stability_region('f_f_1a', order, step_ratio, ode)
-    print "stabel_dt:", find_sta_reg()
+    #print "stabel_dt:", find_sta_reg()
 
 
 
@@ -83,36 +126,98 @@ def calc_stab_reg():
 
 #@memoize
 class calculate_stability_region:
-    def __init__(self, method, order, step_ratio, ode):
+    def __init__(self, method, order, step_ratio, lambda_1, lambda_2,
+            a_matrix, v_matrix, lambda_case):
         self.method      = method
         self.order       = order
         self.step_ratio  = step_ratio
-        self.ode         = ode()
+        self.lambda_1    = lambda_1
+        self.lambda_2    = lambda_2
+        self.a           = a_matrix
+        self.v           = v_matrix
+        self.lambda_case = lambda_case
 
-        from hedge.timestep.multirate_ab import \
-                TwoRateAdamsBashforthTimeStepper
-        #self.stepper = TwoRateAdamsBashforthTimeStepper(
-        #        self.method, dt, self.step_ratio, self.order)
+        # Abort criteria:
+        self.prec = 1e-3
+        # maximal error between exact and numerical solution ------------------
+        self.max_error = 1e-5
 
-        self.prec = 1e-2
+    # define rhs's ------------------------------------------------------------
+    # A = V D V⁻¹
+    # with D = [[λ₁ , 0 ]
+    #           [0  , λ₂]]
+    def f2f_rhs(self, t, y_f, y_s):
+        if self.lambda_case == 1:
+            return - (sin(self.b) * cos(self.c) * self.lambda_2 
+                    - cos(self.b) * sin(self.c) * self.lambda_1)/ \
+                            (cos(self.b) * sin(self.c) - sin(self.b) * cos(self.c))  *  y_f()
+        elif self.lambda_case == 2:
+            return sin(self.c -self.a) / sin(self.c) * y_f()
+    def s2f_rhs(self, t, y_f, y_s):
+        if self.lambda_case == 1:
+            return (cos(self.b) * cos(self.c) * self.lambda_2 - cos(self.b) * cos(self.c) * self.lambda_1)/ \
+                    (cos(self.b) * sin(self.c) - sin(self.b) * cos(self.c))  *  y_s()
+        elif self.lambda_case == 2:
+            return - (cos(self.b + self.a) - cos(self.b - self.a))/ \
+                    (sin(self.c + self.b) + sin(self.c - self.b))  *  y_s()
+    def f2s_rhs(self, t, y_f, y_s):
+        if self.lambda_case == 1:
+            return - (sin(self.b) * sin(self.c) * self.lambda_2 - sin(self.b) * sin(self.c) * self.lambda_1)/ \
+                    (cos(self.b) * sin(self.c) - sin(self.b) * cos(self.c))  *  y_f()
+        elif self.lambda_case == 2:
+            return (sin(self.b + self.a) - sin(self.b -self.a))/ \
+                    (cos(self.c + self.b) - cos(self.c - self.b))  *  y_f()
+    def s2s_rhs(self, t, y_f, y_s):
+        if self.lambda_case == 1:
+            return (cos(self.b) * sin(self.c) * self.lambda_2 - sin(self.b) * cos(self.c) * self.lambda_1)/ \
+                    (cos(self.b) * sin(self.c) - sin(self.b) * cos(self.c))  *  y_s()
+        elif self.lambda_case == 2:
+            return (sin(self.c + self.a)) / sin(self.c) * y_s()
+
+
+    # exact solution ------------------------------------------------------
+    # w = [exp(λ₁*t , exp(λ₂*t)]
+    # soln_y = V w
+    # in case 2 only the realpart contributes to the solution:
+    def exact_soln(self, t):
+        exponent_1 =  exp(self.lambda_1*t).real
+        exponent_2 =  exp(self.lambda_2*t).real
+        return numpy.array([
+            cos(self.b) * exponent_1 + cos(self.c) * exponent_2,
+            sin(self.b) * exponent_1 + sin(self.c) * exponent_2,
+            ])
 
     def is_stable(self, dt):
+        # initialize stepper --------------------------------------------------
         from hedge.timestep.multirate_ab import \
                 TwoRateAdamsBashforthTimeStepper
         stepper = TwoRateAdamsBashforthTimeStepper(self.method, dt, self.step_ratio, self.order)
-        t = self.ode.t_start
-        y = numpy.array([self.ode.soln_0(t),self.ode.soln_1(t)])
-    print dt
+
+        # set intial conditions -----------------------------------------------
+        t = 0
+        y = self.exact_soln(t)
+        #print y
+        #raw_input()
+
+        #print self.f2s_rhs(0,lambda:1,lambda:pi)
+        #raw_input()
+
+        # run integration -----------------------------------------------------
         for i in range(20):
+            soln = self.exact_soln(t)
             err = abs(
                     sqrt(y[0]**2 + y[1]**2)
-                    - sqrt(self.ode.soln_0(t)**2 + self.ode.soln_1(t)**2)
+                    - sqrt(soln[0]**2 + soln[1]**2)
                     )
-            print err, y, i
-            raw_input()
-            if err > 1:
+            #print soln, y, t
+            #print err
+            #raw_input()
+            if err > self.max_error:
                 return False
-            y = stepper(y, t, (self.ode.f2f_rhs, self.ode.s2f_rhs, self.ode.f2s_rhs, self.ode.s2s_rhs))
+            y = stepper(y, t, (self.f2f_rhs,
+                               self.s2f_rhs,
+                               self.f2s_rhs,
+                               self.s2s_rhs))
             t += dt
         return True
 
@@ -122,17 +227,17 @@ class calculate_stability_region:
         assert not self.is_stable(unstable_dt)
         while abs(stable_dt-unstable_dt) > self.prec:
             mid_dt = (stable_dt+unstable_dt)/2
-            print "refine", mid_dt
             if self.is_stable(mid_dt):
-                stable = mid_dt
+                stable_dt = mid_dt
             else:
-                unstable = mid_dt
+                unstable_dt = mid_dt
         else:
-            return stable
+            return stable_dt
 
-    def find_stable_dt(self):
-        dt = 1/2
+    def __call__(self):
+        dt = 0.5
 
+        # bisection method ----------------------------------------------------
         if self.is_stable(dt):
             dt *= 2
             while self.is_stable(dt):
@@ -149,17 +254,20 @@ class calculate_stability_region:
                     return dt
             return self.refine(dt, dt*2)
 
-    # -----------------------------------------------------------------------------
-    def __call__(self):
-        #import rpdb2; rpdb2.start_embedded_debugger_interactive_password()
-        return self.find_stable_dt()
 
 
 
-
-
+#import rpdb2; rpdb2.start_embedded_debugger_interactive_password()
 if __name__ == "__main__":
     #from py.test.cmdline import main
     #main([__file__])
     #test_multirate_timestep_accuracy()
-    calc_stab_reg()
+    a = calc_stab_reg()
+    #a.case_1()
+    a.case_2()
+    #n_per_rank = 2
+    #p_dense = 20
+    #a_step = 2*pi/p_dense
+    #a.case_1(0*a_step,a_step,2*pi/p_dense)
+
+
