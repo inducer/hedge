@@ -62,39 +62,10 @@ class calc_stab_reg():
     #def case_1(self,a_start,a_end,
      #       a_dense):
         points_1=[]
-        lambda_case = 1
         for a in numpy.arange(-1, 0, 1/self.p_dense):
             lambda_1 = 1
             lambda_2 = a
-            d_matrix = numpy.array([[lambda_1,0],[0,lambda_1]])
-            for b in numpy.arange(2*pi/self.p_dense,2*pi, 2*pi/self.p_dense):
-                for c in numpy.arange(2*pi/self.p_dense+b,2*pi+b, 2*pi/self.p_dense):
-                    print a, b, c
-                    get_stab_reg = calculate_stability_region('f_f_1a', 
-                            self.order,
-                            self.step_ratio,
-                            lambda_1,
-                            lambda_2,
-                            a, b, c,
-                            lambda_case)
-
-                    points_1.append(numpy.array([get_stab_reg(),a,b,c,]))
-        filename = "case_1_res_a_start_%s_a_end_%s" %(a_start, a_end)
-        case_1_res = {"case_1_res" : numpy.array(points_1.append)}
-        pickle.dump(case_1_res, open(filename,"w"))
-                    #print points_1
-                    #raw_input()
-
-
-
-    # Case 2: Complex Conjungated EW's ----------------------------------------
-    def case_2(self):
-        points_2 = []
-        lambda_case = 2
-        for a in numpy.arange(pi*0.5, pi, 1/self.p_dense):
-            lambda_1 = complex(cos(a),sin(a))
-            lambda_2 = complex(cos(a),-sin(a))
-            d_matrix = matrix([[lambda_1,0],[0,lambda_1]])
+            d_matrix = matrix([[lambda_1,0],[0,lambda_2]])
             for b in numpy.arange(2*pi/self.p_dense,2*pi, 2*pi/self.p_dense):
                 print b
                 for c in numpy.arange(2*pi/self.p_dense+b,2*pi+b, 2*pi/self.p_dense):
@@ -102,32 +73,73 @@ class calc_stab_reg():
                         [sin(b)*exp(complex(0,-c/2)), sin(b)*exp(complex(0,c/2))],
                         [cos(b)*exp(complex(0,c/2)), cos(b)*exp(complex(0,-c/2))]
                         ])
-                    a_matrix = v_matrix*d_matrix*v_matrix.I
-                    print d_matrix, a_matrix, v_matrix
-                    raw_input()
+                    # ---------------------------------------------------------
+                    # A = V D V⁻¹
+                    # with D = [[λ₁ , 0 ]
+                    #           [0  , λ₂]
+                    a_matrix = (v_matrix*d_matrix*v_matrix.I).real
                     get_stab_reg = calculate_stability_region('f_f_1a',
                             self.order,
                             self.step_ratio,
                             lambda_1,
                             lambda_2,
-                            a_matrix, v_matrix,
-                            lambda_case)
+                            a_matrix, v_matrix)
+
+                    points_1.append(numpy.array([get_stab_reg(),a,b,c,]))
+
+        filename = "case_1_res_a_start_%s_a_end_%s" %(a_start, a_end)
+        case_1_res = {"case_1_res" : numpy.array(points_1.append)}
+        pickle.dump(case_1_res, open(filename,"w"))
+
+
+
+    # Case 2: Complex Conjungated EW's ----------------------------------------
+    def case_2(self):
+        points_2 = []
+        for a in numpy.arange(pi*0.5, pi, 1/self.p_dense):
+            lambda_1 = complex(cos(a),sin(a))
+            lambda_2 = complex(cos(a),-sin(a))
+            d_matrix = matrix([[lambda_1,0],[0,lambda_2]])
+            for b in numpy.arange(2*pi/self.p_dense,2*pi, 2*pi/self.p_dense):
+                #print b
+                for c in numpy.arange(2*pi/self.p_dense+b,2*pi+b, 2*pi/self.p_dense):
+                    v_matrix = matrix([
+                        [sin(b)*exp(complex(0,-c/2)), sin(b)*exp(complex(0,c/2))],
+                        [cos(b)*exp(complex(0,c/2)), cos(b)*exp(complex(0,-c/2))]
+                        ])
+                    # ---------------------------------------------------------
+                    # A = V D V⁻¹
+                    # with D = [[λ₁ , 0 ]
+                    #           [0  , λ₂]
+                    a_matrix = (v_matrix*d_matrix*v_matrix.I).real
+                    get_stab_reg = calculate_stability_region('f_f_1a',
+                            self.order,
+                            self.step_ratio,
+                            lambda_1,
+                            lambda_2,
+                            a_matrix, v_matrix)
 
                     points_2.append(numpy.array([get_stab_reg(),a,b,c,]))
-                    #print points_2
-                    #raw_input()
 
-    #print "stabel_dt:", find_sta_reg()
-
-
+        filename = "case_2_res_a_start_%s_a_end_%s" %(a_start, a_end)
+        case_2_res = {"case_2_res" : numpy.array(points_1.append)}
+        pickle.dump(case_1_res, open(filename,"w"))
 
 
+def make_mpi_stab_reg(rank)
+    a = calc_stab_reg()
+    a.case_1()
+    #a.case_2()
+    #n_per_rank = 2
+    #p_dense = 20
+    #a_step = 2*pi/p_dense
+    #a.case_1(0*a_step,a_step,2*pi/p_dense)
 
 
 #@memoize
 class calculate_stability_region:
     def __init__(self, method, order, step_ratio, lambda_1, lambda_2,
-            a_matrix, v_matrix, lambda_case):
+            a_matrix, v_matrix):
         self.method      = method
         self.order       = order
         self.step_ratio  = step_ratio
@@ -135,7 +147,6 @@ class calculate_stability_region:
         self.lambda_2    = lambda_2
         self.a           = a_matrix
         self.v           = v_matrix
-        self.lambda_case = lambda_case
 
         # Abort criteria:
         self.prec = 1e-3
@@ -147,32 +158,16 @@ class calculate_stability_region:
     # with D = [[λ₁ , 0 ]
     #           [0  , λ₂]]
     def f2f_rhs(self, t, y_f, y_s):
-        if self.lambda_case == 1:
-            return - (sin(self.b) * cos(self.c) * self.lambda_2 
-                    - cos(self.b) * sin(self.c) * self.lambda_1)/ \
-                            (cos(self.b) * sin(self.c) - sin(self.b) * cos(self.c))  *  y_f()
-        elif self.lambda_case == 2:
-            return sin(self.c -self.a) / sin(self.c) * y_f()
+            return self.a[0,0] * y_f()
+
     def s2f_rhs(self, t, y_f, y_s):
-        if self.lambda_case == 1:
-            return (cos(self.b) * cos(self.c) * self.lambda_2 - cos(self.b) * cos(self.c) * self.lambda_1)/ \
-                    (cos(self.b) * sin(self.c) - sin(self.b) * cos(self.c))  *  y_s()
-        elif self.lambda_case == 2:
-            return - (cos(self.b + self.a) - cos(self.b - self.a))/ \
-                    (sin(self.c + self.b) + sin(self.c - self.b))  *  y_s()
+            return self.a[0,1] * y_s()
+
     def f2s_rhs(self, t, y_f, y_s):
-        if self.lambda_case == 1:
-            return - (sin(self.b) * sin(self.c) * self.lambda_2 - sin(self.b) * sin(self.c) * self.lambda_1)/ \
-                    (cos(self.b) * sin(self.c) - sin(self.b) * cos(self.c))  *  y_f()
-        elif self.lambda_case == 2:
-            return (sin(self.b + self.a) - sin(self.b -self.a))/ \
-                    (cos(self.c + self.b) - cos(self.c - self.b))  *  y_f()
+            return self.a[1,0] * y_f()
+
     def s2s_rhs(self, t, y_f, y_s):
-        if self.lambda_case == 1:
-            return (cos(self.b) * sin(self.c) * self.lambda_2 - sin(self.b) * cos(self.c) * self.lambda_1)/ \
-                    (cos(self.b) * sin(self.c) - sin(self.b) * cos(self.c))  *  y_s()
-        elif self.lambda_case == 2:
-            return (sin(self.c + self.a)) / sin(self.c) * y_s()
+            return self.a[1,1] * y_s()
 
 
     # exact solution ------------------------------------------------------
@@ -180,12 +175,10 @@ class calculate_stability_region:
     # soln_y = V w
     # in case 2 only the realpart contributes to the solution:
     def exact_soln(self, t):
-        exponent_1 =  exp(self.lambda_1*t).real
-        exponent_2 =  exp(self.lambda_2*t).real
-        return numpy.array([
-            cos(self.b) * exponent_1 + cos(self.c) * exponent_2,
-            sin(self.b) * exponent_1 + sin(self.c) * exponent_2,
-            ])
+        exp_lambda_1 =  exp(self.lambda_1*t)
+        exp_lambda_2 =  exp(self.lambda_2*t)
+        w = matrix([[exp_lambda_1],[exp_lambda_2]])
+        return (self.v * w).real
 
     def is_stable(self, dt):
         # initialize stepper --------------------------------------------------
@@ -196,11 +189,6 @@ class calculate_stability_region:
         # set intial conditions -----------------------------------------------
         t = 0
         y = self.exact_soln(t)
-        #print y
-        #raw_input()
-
-        #print self.f2s_rhs(0,lambda:1,lambda:pi)
-        #raw_input()
 
         # run integration -----------------------------------------------------
         for i in range(20):
@@ -209,9 +197,6 @@ class calculate_stability_region:
                     sqrt(y[0]**2 + y[1]**2)
                     - sqrt(soln[0]**2 + soln[1]**2)
                     )
-            #print soln, y, t
-            #print err
-            #raw_input()
             if err > self.max_error:
                 return False
             y = stepper(y, t, (self.f2f_rhs,
@@ -257,17 +242,9 @@ class calculate_stability_region:
 
 
 
-#import rpdb2; rpdb2.start_embedded_debugger_interactive_password()
 if __name__ == "__main__":
-    #from py.test.cmdline import main
-    #main([__file__])
-    #test_multirate_timestep_accuracy()
     a = calc_stab_reg()
-    #a.case_1()
-    a.case_2()
-    #n_per_rank = 2
-    #p_dense = 20
-    #a_step = 2*pi/p_dense
-    #a.case_1(0*a_step,a_step,2*pi/p_dense)
+    a.case_1()
+    #a.case_2()
 
 
