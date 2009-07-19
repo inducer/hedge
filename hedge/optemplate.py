@@ -1062,3 +1062,45 @@ class Evaluator(pymbolic.mapper.evaluator.EvaluationMapper):
     def map_boundary_pair(self, bp):
         return BoundaryPair(self.rec(bp.field), self.rec(bp.bfield), bp.tag)
 
+
+
+
+# optemplate tools ------------------------------------------------------------
+def split_optemplate_for_multirate(state_vector, op_template, 
+        index_groups):
+    class IndexGroupKillerSubstMap:
+        def __init__(self, kill_set):
+            self.kill_set = kill_set
+
+        def __call__(self, expr):
+            if expr in kill_set:
+                return 0
+            else:
+                return None
+
+    # make IndexGroupKillerSubstMap that kill everything
+    # *except* what's in that index group
+    killers = []
+    for i in range(len(index_groups)):
+        kill_set = set()
+        for j in range(len(index_groups)):
+            if i != j:
+                kill_set |= set(index_groups[j])
+
+        killers.append(IndexGroupKillerSubstMap(kill_set))
+
+    from hedge.optemplate import \
+            SubstitutionMapper, \
+            CommutativeConstantFoldingMapper
+
+    return [
+            CommutativeConstantFoldingMapper()(
+                SubstitutionMapper(killer)(
+                    op_template[ig]))
+            for ig in index_groups
+            for killer in killers]
+
+
+
+
+
