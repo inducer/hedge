@@ -29,6 +29,8 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 """
 
+import boostmpi as mpi
+import boostmpi.autoinit
 from math import sqrt, log, sin, cos
 from cmath import exp
 import numpy
@@ -49,35 +51,43 @@ else:
 import pickle
 
 class calc_stab_reg():
-    def __init__(self):
+    def __init__(self, p_dense, a_start, a_end, int_len):
         # Two-Rate-AB settings ----------------------------------------------------
         self.order = 2
         self.step_ratio = 2
 
         # parameterization dense --------------------------------------------------
-        self.p_dense = 20
+        self.p_dense = p_dense
+        self.a_start = a_start
+        self.a_end   = a_end
+        self.int_len = int_len
+
+        # ---------------------------------------------------------
+        # A = V D V⁻¹
+        # with D = [[λ₁ , 0 ]
+        #           [0  , λ₂]
 
     # Case 1: Negative real EW's ----------------------------------------------
     def case_1(self):
-    #def case_1(self,a_start,a_end,
-     #       a_dense):
         points_1=[]
-        for a in numpy.arange(-1, 0, 1/self.p_dense):
+        for a in numpy.linspace(self.a_start,
+                self.a_end-self.int_len/self.p_dense,
+                self.p_dense/mpi.size):
             lambda_1 = 1
             lambda_2 = a
             d_matrix = matrix([[lambda_1,0],[0,lambda_2]])
-            for b in numpy.arange(2*pi/self.p_dense,2*pi, 2*pi/self.p_dense):
-                print b
-                for c in numpy.arange(2*pi/self.p_dense+b,2*pi+b, 2*pi/self.p_dense):
+            for b in numpy.arange(0, 2*pi, 2*pi/self.p_dense):
+                # run c from b on through 2*pi intervall
+                for c in numpy.arange(2*pi/self.p_dense+b,
+                        2*pi+b+2*pi/self.p_dense,
+                        2*pi/self.p_dense):
                     v_matrix = matrix([
-                        [sin(b)*exp(complex(0,-c/2)), sin(b)*exp(complex(0,c/2))],
-                        [cos(b)*exp(complex(0,c/2)), cos(b)*exp(complex(0,-c/2))]
+                        [cos(b), cos(c)],
+                        [sin(b), sin(c)]
                         ])
-                    # ---------------------------------------------------------
-                    # A = V D V⁻¹
-                    # with D = [[λ₁ , 0 ]
-                    #           [0  , λ₂]
+
                     a_matrix = (v_matrix*d_matrix*v_matrix.I).real
+
                     get_stab_reg = calculate_stability_region('f_f_1a',
                             self.order,
                             self.step_ratio,
@@ -87,8 +97,9 @@ class calc_stab_reg():
 
                     points_1.append(numpy.array([get_stab_reg(),a,b,c,]))
 
-        filename = "case_1_res_a_start_%s_a_end_%s" %(a_start, a_end)
-        case_1_res = {"case_1_res" : numpy.array(points_1.append)}
+        filename = "case_1_res_a_start_%s_a_end_%s.dat" %(self.a_start, self.a_end)
+        print "finished:", filename
+        case_1_res = {"case_1_res" : numpy.array(points_1)}
         pickle.dump(case_1_res, open(filename,"w"))
 
 
@@ -96,22 +107,25 @@ class calc_stab_reg():
     # Case 2: Complex Conjungated EW's ----------------------------------------
     def case_2(self):
         points_2 = []
-        for a in numpy.arange(pi*0.5, pi, 1/self.p_dense):
+        for a in numpy.linspace(self.a_start,
+                self.a_end-self.int_len/self.p_dense,
+                self.p_dense/mpi.size):
             lambda_1 = complex(cos(a),sin(a))
             lambda_2 = complex(cos(a),-sin(a))
             d_matrix = matrix([[lambda_1,0],[0,lambda_2]])
-            for b in numpy.arange(2*pi/self.p_dense,2*pi, 2*pi/self.p_dense):
-                #print b
-                for c in numpy.arange(2*pi/self.p_dense+b,2*pi+b, 2*pi/self.p_dense):
+            for b in numpy.arange(0, 2*pi, 2*pi/self.p_dense):
+                if numpy.fmod(b,pi*0.5) == 0:
+                    b += 1e-05
+                for c in numpy.arange(1, 0, -1/self.p_dense):
                     v_matrix = matrix([
                         [sin(b)*exp(complex(0,-c/2)), sin(b)*exp(complex(0,c/2))],
                         [cos(b)*exp(complex(0,c/2)), cos(b)*exp(complex(0,-c/2))]
                         ])
-                    # ---------------------------------------------------------
-                    # A = V D V⁻¹
-                    # with D = [[λ₁ , 0 ]
-                    #           [0  , λ₂]
-                    a_matrix = (v_matrix*d_matrix*v_matrix.I).real
+
+                    a_matrix = (v_matrix*d_matrix*v_matrix.I)
+                    assert a_matrix.imag.max > 1e-10
+                    a_matrix = a_matrix.real
+
                     get_stab_reg = calculate_stability_region('f_f_1a',
                             self.order,
                             self.step_ratio,
@@ -121,22 +135,55 @@ class calc_stab_reg():
 
                     points_2.append(numpy.array([get_stab_reg(),a,b,c,]))
 
-        filename = "case_2_res_a_start_%s_a_end_%s" %(a_start, a_end)
-        case_2_res = {"case_2_res" : numpy.array(points_1.append)}
-        pickle.dump(case_1_res, open(filename,"w"))
+        filename = "case_2_res_a_start_%s_a_end_%s.dat" %(self.a_start, self.a_end)
+        print "finished:", filename
+        case_2_res = {"case_2_res" : numpy.array(points_2)}
+        pickle.dump(case_2_res, open(filename,"w"))
 
 
-def make_mpi_stab_reg(rank)
-    a = calc_stab_reg()
-    a.case_1()
-    #a.case_2()
-    #n_per_rank = 2
-    #p_dense = 20
-    #a_step = 2*pi/p_dense
-    #a.case_1(0*a_step,a_step,2*pi/p_dense)
+def make_mpi_stab_reg(p_dense):
+    assert p_dense >= mpi.size
+    # number of ranks should fit to p_dense in an integer relation
+    work_list = []
+    # initiate case 1 ---------------------------------------------------------
+    int_a = -1
+    int_b = 0
+    int_len = abs(int_a-int_b)
+    for i in range(mpi.size):
+        a_start = int_a + i/mpi.size * abs(int_b-int_a)
+        a_end = int_a + (i+1)/mpi.size * abs(int_b-int_a)
+        work_list.append(calc_stab_reg(p_dense, a_start, a_end, int_len).case_1)
+    # initiate case 2 ---------------------------------------------------------
+    int_a = pi * 0.5
+    int_b = pi
+    # Due to the implementation pi will never be calculated. But this is not necessary
+    # since it describes the case that we are on the real axis. This case is allready 
+    # covered by case 1.
+    int_len = abs(int_a-int_b)
+    for i in range(mpi.size):
+        a_start = int_a + i/mpi.size * abs(int_b-int_a)
+        a_end = int_a + (i+1)/mpi.size * abs(int_b-int_a)
+        work_list.append(calc_stab_reg(p_dense, a_start, a_end, int_len).case_2)
 
+    if mpi.rank == 0:
+        print "Worklist length:", len(work_list)
+        print "Number of processes:", mpi.size
+    # make shure that the p_dense and the number of prozesses have an interger
+    # relation.
+    #assert int(p_dense/mpi.size) == p_dense/mpi.size
 
-#@memoize
+    # dispose to different processes ------------------------------------------
+    divisor = int(len(work_list)/mpi.size)
+
+    # first pop all all not wished list entries without executing them:
+    for i in range(mpi.rank):
+       for j in range(divisor):
+           work_list.pop()
+
+    # pop all entries which shall be executed:
+    for i in range(divisor):
+        work_list.pop()()
+
 class calculate_stability_region:
     def __init__(self, method, order, step_ratio, lambda_1, lambda_2,
             a_matrix, v_matrix):
@@ -243,8 +290,9 @@ class calculate_stability_region:
 
 
 if __name__ == "__main__":
-    a = calc_stab_reg()
-    a.case_1()
+    #a = calc_stab_reg(20, -0.9, -0.8)
+    #a.case_1()
     #a.case_2()
+    make_mpi_stab_reg(10)
 
 
