@@ -63,7 +63,7 @@ def main():
     )
 
     gamma = 1.5
-    mu = 0.01
+    mu = 0.0
 
     from hedge.tools import EOCRecorder, to_obj_array
     eoc_rec = EOCRecorder()
@@ -72,7 +72,7 @@ def main():
         from hedge.mesh import make_rect_mesh, \
                                make_centered_regular_rect_mesh
         #mesh = make_rect_mesh((0,0), (10,1), max_area=0.01)
-        refine = 4
+        refine = 1
         mesh = make_centered_regular_rect_mesh((0,0), (10,1), n=(20,4),
                             #periodicity=(True, False),
                             post_refine_factor=refine)
@@ -80,7 +80,7 @@ def main():
     else:
         mesh_data = rcon.receive_mesh()
 
-    for order in [3]:
+    for order in [4]:
         discr = rcon.make_discretization(mesh_data, order=order,
 			debug=["cuda_no_plan",
                             #"dump_dataflow_graph",

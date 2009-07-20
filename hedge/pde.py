@@ -527,7 +527,7 @@ class NavierStokesOperator(GasDynamicsOperatorBase):
 
             flux = numpy.zeros((d, dimensions), dtype=object)
             for i in range(dimensions):
-                flux[:,i] = 0.5 * normal[i] * (fluxes_ph.int - fluxes_ph.ext)
+                flux[:,i] = 0.5 * normal[i] * (fluxes_ph.ext - fluxes_ph.int)
 
             from hedge.optemplate import get_flux_operator
             flux_op = numpy.zeros((dimensions), dtype=object)
@@ -580,11 +580,13 @@ class NavierStokesOperator(GasDynamicsOperatorBase):
                         self.rho_u(q)[i],
 
                         # flux E
-                        cse(self.e(q)+p(q))*u(q)[i] - tau(q)[self.dimensions,i],
+                        cse(self.e(q)+p(q))*u(q)[i] - 
+                        cse(tau(q)[self.dimensions,i]),
 
                         # flux rho_u
                         make_obj_array([
-                            self.rho_u(q)[i]*self.u(q)[j] + delta(i,j) * p(q) - tau(q)[i,j]
+                            self.rho_u(q)[i]*self.u(q)[j] + delta(i,j) * p(q) -
+                            cse(tau(q)[i,j])
                             for j in range(self.dimensions)
                             ])
                         ))
