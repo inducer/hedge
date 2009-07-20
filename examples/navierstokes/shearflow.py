@@ -42,13 +42,16 @@ class SteadyShearFlow:
 
     def volume_interpolant(self, t, discr):
         return discr.convert_volume(
-			self(t, discr.nodes.T),
+			self(t, discr.nodes.T
+                            .astype(discr.default_scalar_type)),
 			kind=discr.compute_kind)
 
     def boundary_interpolant(self, t, discr, tag):
-        return discr.convert_boundary(
-			self(t, discr.get_boundary(tag).nodes.T),
-			 tag=tag, kind=discr.compute_kind)
+        result = discr.convert_boundary(
+			self(t, discr.get_boundary(tag).nodes.T
+                            .astype(discr.default_scalar_type)),
+                        tag=tag, kind=discr.compute_kind)
+        return result
 
 
 
@@ -69,17 +72,20 @@ def main():
         from hedge.mesh import make_rect_mesh, \
                                make_centered_regular_rect_mesh
         #mesh = make_rect_mesh((0,0), (10,1), max_area=0.01)
-        refine = 1
-        mesh = make_centered_regular_rect_mesh((0,0), (10,1), n=(9,9),
+        refine = 4
+        mesh = make_centered_regular_rect_mesh((0,0), (10,1), n=(20,4),
                             #periodicity=(True, False),
                             post_refine_factor=refine)
         mesh_data = rcon.distribute_mesh(mesh)
     else:
         mesh_data = rcon.receive_mesh()
 
-    for order in [1]:
+    for order in [3]:
         discr = rcon.make_discretization(mesh_data, order=order,
 			debug=["cuda_no_plan",
+                            #"dump_dataflow_graph",
+                            #"cuda_dump_kernels",
+                            #"cuda_flux",
 			#"print_op_code"
 			],
 			default_scalar_type=numpy.float64)
@@ -101,6 +107,8 @@ def main():
             ode_rhs, speed = navierstokes_ex(t, q)
             max_eigval[0] = speed
             return ode_rhs
+
+        # needed to get first estimate of maximum eigenvalue
         rhs(0, fields)
 
         dt = discr.dt_factor(max_eigval[0], order=2)
@@ -123,7 +131,8 @@ def main():
         from pytools.log import LogManager, add_general_quantities, \
                 add_simulation_quantities, add_run_info
 
-        logmgr = LogManager("navierstokes-%d.dat" % order, "w", rcon.communicator)
+        logmgr = LogManager("navierstokes-cpu-%d-%d.dat" % (order, refine), 
+                            "w", rcon.communicator)
         add_run_info(logmgr)
         add_general_quantities(logmgr)
         add_simulation_quantities(logmgr, dt)
@@ -183,7 +192,7 @@ def main():
         logmgr.save()
 
         true_fields = shearflow.volume_interpolant(t, discr)
-        eoc_rec.add_data_point(order, discr.norm(fields[1]-true_fields[1]))
+        eoc_rec.add_data_point(order, discr.norm(fields-true_fields))
         print
         print eoc_rec.pretty_print("P.Deg.", "L2 Error")
 
