@@ -454,15 +454,17 @@ class EulerOperator(GasDynamicsOperatorBase):
         from hedge.tools import make_lax_friedrichs_flux, join_fields
         from hedge.mesh import TAG_ALL
 
+        flux_state = flux(state)
+
         return join_fields(
-                (- numpy.dot(make_nabla(self.dimensions), flux(state))
+                (- numpy.dot(make_nabla(self.dimensions), flux_state)
                     + InverseMassOperator()*make_lax_friedrichs_flux(
                         wave_speed=
 			ElementwiseMaxOperator()*
 			c,
-                        state=state, flux_func=flux,
-                        bdry_tags_and_states=[
-                            (TAG_ALL, bc_state)
+                        state=state, fluxes=flux_state,
+                        bdry_tags_states_and_fluxes=[
+                            (TAG_ALL, bc_state, flux(bc_state))
                             ],
                         strong=True
                         )),

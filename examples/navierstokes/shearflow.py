@@ -63,7 +63,7 @@ def main():
     )
 
     gamma = 1.5
-    mu = 0.0
+    mu = 0.01
 
     from hedge.tools import EOCRecorder, to_obj_array
     eoc_rec = EOCRecorder()
