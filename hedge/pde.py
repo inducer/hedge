@@ -545,9 +545,6 @@ class NavierStokesOperator(GasDynamicsOperatorBase):
 
             from hedge.optemplate import InverseMassOperator
             return (nabla_func - InverseMassOperator() * flux_part)
-            #return nabla_func
-            #return InverseMassOperator()*flux_part
-            #return flux_part
 
         def tau(q):
             from hedge.optemplate import make_nabla
