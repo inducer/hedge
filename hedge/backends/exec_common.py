@@ -126,6 +126,9 @@ class ExecutionMapperBase(hedge.optemplate.Evaluator,
         return self.discr.boundarize_volume_field(
                 self.rec(field_expr), tag=op.tag)
 
+    def map_scalar_parameter(self, expr):
+        return self.context[expr.name]
+
 
 
 

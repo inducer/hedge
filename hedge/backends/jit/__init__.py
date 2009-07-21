@@ -111,6 +111,10 @@ class ExecutionMapper(CPUExecutionMapperBase):
             arg_struct = module.ArgStruct()
             for arg_name, arg in zip(insn.flux_var_info.arg_names, args):
                 setattr(arg_struct, arg_name, arg)
+            for arg_num, scalar_arg_expr in enumerate(insn.flux_var_info.scalar_parameters):
+                setattr(arg_struct, 
+                        "_scalar_arg_%d" % arg_num, 
+                        self.rec(scalar_arg_expr))
 
             fof_shape = (fg.face_count*fg.face_length()*fg.element_count(),)
             all_fluxes_on_faces = [
@@ -173,10 +177,8 @@ class ExecutionMapper(CPUExecutionMapperBase):
 
 
 class Executor(CPUExecutorBase):
-    def __init__(self, discr, optemplate, post_bind_mapper,
-            is_vector_pred):
+    def __init__(self, discr, optemplate, post_bind_mapper):
         self.discr = discr
-        self.is_vector_pred = is_vector_pred
 
         self.code = self.compile_optemplate(discr, optemplate, post_bind_mapper)
 
@@ -284,6 +286,9 @@ class Discretization(hedge.discretization.Discretization):
 
     def __init__(self, *args, **kwargs):
         toolchain = kwargs.pop("toolchain", None)
+
+        # tolerate (and ignore) the CUDA backend's tune_for argument
+        _ = kwargs.pop("tune_for", None)
 
         hedge.discretization.Discretization.__init__(self, *args, **kwargs)
 

@@ -46,6 +46,17 @@ class Flux(pymbolic.primitives.AlgebraicLeaf):
 
 
 
+class FluxScalarParameter(pymbolic.primitives.Variable):
+    def __init__(self, name, is_complex=False):
+        pymbolic.primitives.Variable.__init__(self, name)
+        self.is_complex = is_complex
+
+    def get_mapper_method(self, mapper):
+        return mapper.map_scalar_parameter
+
+
+
+
 class FieldComponent(Flux):
     def __init__(self, index, is_local):
         self.index = index
@@ -266,6 +277,9 @@ class FluxIdentityMapperMixin(object):
                 self.rec(expr.else_),
                 )
 
+    def map_scalar_parameter(self, expr):
+        return expr
+
 
 
 
@@ -327,6 +341,9 @@ class FluxDependencyMapper(pymbolic.mapper.dependency.DependencyMapper):
 
     def map_if_positive(self, expr):
         return self.rec(expr.criterion) | self.rec(expr.then) | self.rec(expr.else_)
+
+    def map_scalar_parameter(self, expr):
+        return set([expr])
 
 
 
@@ -407,6 +424,9 @@ class FluxFlopCounter(pymbolic.mapper.flop_counter.FlopCounter):
                 self.rec(expr.else_))
 
     def map_function_symbol(self, expr):
+        return 1
+
+    def map_scalar_parameter(self, expr):
         return 0
 
 

@@ -39,7 +39,7 @@ def make_generic_ab_coefficients(levels, int_start, tap):
     # explanations --------------------------------------------------------------
     # To calculate the AB coefficients this method makes use of the interpolation
     # connection of the Vandermonde matrix:
-    #         
+    #
     #  Vᵀ * α = fe(t₀₊₁),                                    (1)
     #
     # with Vᵀ as the transposed Vandermonde matrix (with monomial base: xⁿ), 
@@ -158,8 +158,3 @@ class AdamsBashforthTimeStepper(TimeStepper):
 
         self.f_history.insert(0, rhs(t+dt, ynew))
         return ynew
-
-
-
-
-

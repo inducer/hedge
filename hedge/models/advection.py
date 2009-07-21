@@ -83,9 +83,7 @@ class AdvectionOperatorBase(TimeDependentOperator):
 
         def rhs(t, u):
             bc_in = self.inflow_u.boundary_interpolant(t, discr, self.inflow_tag)
-            bc_out = discr.boundarize_volume_field(u, self.outflow_tag)
-
-            return compiled_op_template(u=u, bc_in=bc_in, bc_out=bc_out)
+            return compiled_op_template(u=u, bc_in=bc_in)
 
         return rhs
 
@@ -141,7 +139,6 @@ class StrongAdvectionOperator(AdvectionOperatorBase):
                 + m_inv*(
                 flux_op * u
                 + flux_op * pair_with_boundary(u, bc_in, self.inflow_tag)
-                #+ flux_op * pair_with_boundary(u, bc_out, self.outflow_tag)
                 )
                 )
 
@@ -164,8 +161,9 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
         u = Field("u")
 
         # boundary conditions -------------------------------------------------
+        from hedge.optemplate import BoundarizeOperator
         bc_in = Field("bc_in")
-        bc_out = Field("bc_out")
+        bc_out = BoundarizeOperator(self.outflow_tag)*u
 
         minv_st = make_minv_stiffness_t(self.dimensions)
         m_inv = InverseMassOperator()

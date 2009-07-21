@@ -74,19 +74,27 @@ class Assign(Instruction):
     def get_assignees(self):
         return set(self.names)
 
-    def get_dependencies(self):
+    def get_dependencies(self, each_vector=False):
         try:
-            return self._dependencies
+            if each_vector:
+                raise AttributeError
+            else:
+                return self._dependencies
         except:
+            # arg is include_subscripts
+            dep_mapper = self.dep_mapper_factory(each_vector) 
+
             from operator import or_
             deps = reduce(
-                    or_, (self.dep_mapper_factory()(expr) 
+                    or_, (dep_mapper(expr) 
                     for expr in self.exprs))
 
             from pymbolic.primitives import Variable
             deps -= set(Variable(name) for name in self.names)
 
-            self._dependencies = deps
+            if not each_vector:
+                self._dependencies = deps
+
             return deps
 
     def __str__(self):
@@ -278,20 +286,20 @@ class Code(object):
         self.instructions = instructions
         self.result = result
 
-        if False:
-            from hedge.tools import get_rank
-            from hedge.compiler import dot_dataflow_graph
-            i = 0
-            while True:
-                dot_name = "dataflow-%d.dot" % i
-                from os.path import exists
-                if exists(dot_name):
-                    i += 1
-                    continue
+    def dump_dataflow_graph(self):
+        from hedge.tools import get_rank
+        from hedge.compiler import dot_dataflow_graph
+        i = 0
+        while True:
+            dot_name = "dataflow-%d.dot" % i
+            from os.path import exists
+            if exists(dot_name):
+                i += 1
+                continue
 
-                open(dot_name, "w").write(
-                        dot_dataflow_graph(self, max_node_label_length=None))
-                break
+            open(dot_name, "w").write(
+                    dot_dataflow_graph(self, max_node_label_length=None))
+            break
 
 
     class NoInstructionAvailable(Exception):
@@ -380,6 +388,10 @@ class Code(object):
                 futures.extend(new_futures)
 
         if len(done_insns) < len(self.instructions):
+            print "Unreachable instructions:"
+            for insn in set(self.instructions) - done_insns:
+                print "    ", insn
+
             raise RuntimeError("not all instructions are reachable"
                     "--did you forget to pass a value for a placeholder?")
 
@@ -400,20 +412,24 @@ class OperatorCompilerBase(IdentityMapper):
     class FluxBatch(Record):
         __slots__ = ["flux_exprs", "kind"]
 
-    def __init__(self, prefix="_expr"):
+    def __init__(self, prefix="_expr", max_vectors_in_batch_expr=None):
         IdentityMapper.__init__(self)
         self.prefix = prefix
+
+        self.max_vectors_in_batch_expr = max_vectors_in_batch_expr
+
         self.code = []
         self.assigned_var_count = 0
         self.expr_to_var = {}
 
+    @memoize_method
+    def dep_mapper_factory(self, include_subscripts=False):
         from hedge.optemplate import DependencyMapper
         self.dep_mapper = DependencyMapper(
                 include_operator_bindings=False,
-                include_subscripts=False,
+                include_subscripts=include_subscripts,
                 include_calls="descend_args")
 
-    def dep_mapper_factory(self):
         return self.dep_mapper
 
     def get_contained_fluxes(self, expr):
@@ -650,25 +666,20 @@ class OperatorCompilerBase(IdentityMapper):
         from pymbolic.primitives import Variable
 
         # agregation helpers --------------------------------------------------
-        origins_set_cache = {}
         def get_complete_origins_set(insn, skip_levels=0):
             if skip_levels < 0:
                 skip_levels = 0
 
-            try:
-                return origins_set_cache[insn, skip_levels]
-            except KeyError:
-                result = set()
-                for dep in insn.get_dependencies():
-                    if isinstance(dep, Variable):
-                        dep_origin = origins_map.get(dep.name, None)
-                        if dep_origin is not None:
-                            if skip_levels <= 0:
-                                result.add(dep_origin)
-                            result |= get_complete_origins_set(dep_origin, skip_levels-1)
+            result = set()
+            for dep in insn.get_dependencies():
+                if isinstance(dep, Variable):
+                    dep_origin = origins_map.get(dep.name, None)
+                    if dep_origin is not None:
+                        if skip_levels <= 0:
+                            result.add(dep_origin)
+                        result |= get_complete_origins_set(dep_origin, skip_levels-1)
 
-                origins_set_cache[insn, skip_levels] = result
-                return result
+            return result
 
         var_assignees_cache = {}
         def get_var_assignees(insn):
@@ -690,6 +701,7 @@ class OperatorCompilerBase(IdentityMapper):
             return Assign(
                     names=names, exprs=ass_1.exprs+ass_2.exprs,
                     _dependencies=deps,
+                    dep_mapper_factory=self.dep_mapper_factory,
                     priority=max(ass_1.priority, ass_2.priority))
 
         # main aggregation pass -----------------------------------------------
@@ -733,12 +745,23 @@ class OperatorCompilerBase(IdentityMapper):
                         my_assign, skip_levels=1)
 
                 for other_assign_index, other_assign in agg_candidates:
+                    if self.max_vectors_in_batch_expr is not None:
+                        new_assignee_count = len(
+                                set(my_assign.get_assignees())
+                                | set(other_assign.get_assignees()))
+                        new_dep_count = len(
+                                my_assign.get_dependencies(each_vector=True)
+                                | other_assign.get_dependencies(each_vector=True))
+
+                        if (new_assignee_count + new_dep_count \
+                                > self.max_vectors_in_batch_expr):
+                            continue
+
                     other_indirect_origins = get_complete_origins_set(
-                            my_assign, skip_levels=1)
+                            other_assign, skip_levels=1)
 
                     if (my_assign not in other_indirect_origins and
                             other_assign not in my_indirect_origins):
-
                         did_work = True
 
                         # aggregate the two assignments
@@ -780,18 +803,28 @@ class OperatorCompilerBase(IdentityMapper):
             available_names = set()
 
             while names_exprs_deps:
-                scheduled_one = False
-                for i, (name, expr, deps) in enumerate(names_exprs_deps):
+                schedulable = []
+
+                i = 0
+                while i < len(names_exprs_deps):
+                    name, expr, deps = names_exprs_deps[i]
+
                     unsatisfied_deps = deps - available_names
 
                     if not unsatisfied_deps:
-                        ordered_names_exprs.append((name, expr))
-                        scheduled_one = True
-                        available_names.add(name)
+                        schedulable.append((str(expr), name, expr))
                         del names_exprs_deps[i]
-                        break
+                    else:
+                        i += 1
 
-                if not scheduled_one:
+                # make sure these come out in a constant order
+                schedulable.sort()
+
+                if schedulable:
+                    for key, name, expr in schedulable:
+                        ordered_names_exprs.append((name, expr))
+                        available_names.add(name)
+                else:
                     raise RuntimeError("aggregation resulted in an impossible assignment")
 
             return self.finalize_multi_assign(

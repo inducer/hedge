@@ -27,6 +27,7 @@ import pymbolic.primitives
 import pymbolic.mapper.stringifier
 import pymbolic.mapper.evaluator
 import pymbolic.mapper.dependency
+import pymbolic.mapper.substitutor
 import pymbolic.mapper.constant_folder
 import pymbolic.mapper.flop_counter
 import hedge.mesh
@@ -45,14 +46,21 @@ def make_common_subexpression(fields):
 
 Field = pymbolic.primitives.Variable
 
-
-
-
 def make_field(var_or_string):
     if not isinstance(var_or_string, pymbolic.primitives.Expression):
         return Field(var_or_string)
     else:
         return var_or_string
+
+
+
+
+class ScalarParameter(pymbolic.primitives.Variable):
+    def stringifier(self):
+        return StringifyMapper
+
+    def get_mapper_method(self, mapper):
+        return mapper.map_scalar_parameter
 
 
 
@@ -297,6 +305,9 @@ class BoundarizeOperator(Operator):
     def get_mapper_method(self, mapper): 
         return mapper.map_boundarize
 
+    def __getinitargs__(self):
+        return (self.tag,)
+
 
 
 
@@ -322,6 +333,54 @@ class FluxExchangeOperator(Operator):
 
     def get_mapper_method(self, mapper): 
         return mapper.map_flux_exchange
+
+
+
+
+# other parts of an operator template -----------------------------------------
+class BoundaryPair(pymbolic.primitives.AlgebraicLeaf):
+    """Represents a pairing of a volume and a boundary field, used for the
+    application of boundary fluxes.
+    """
+
+    def __init__(self, field, bfield, tag=hedge.mesh.TAG_ALL):
+        self.field = field
+        self.bfield = bfield
+        self.tag = tag
+
+    def get_mapper_method(self, mapper):
+        return mapper.map_boundary_pair
+
+    def stringifier(self):
+        return StringifyMapper
+    
+    def __getinitargs__(self):
+        return (self.field, self.bfield, self.tag)
+
+    def get_hash(self):
+        from hedge.tools import hashable_field
+
+        return hash((self.__class__, 
+            hashable_field(self.field), 
+            hashable_field(self.bfield), 
+            self.tag))
+
+    def is_equal(self, other):
+        from hedge.tools import field_equal
+        return (self.__class__ == other.__class__
+                and field_equal(other.field,  self.field)
+                and field_equal(other.bfield, self.bfield)
+                and other.tag == self.tag)
+        
+
+
+
+
+def pair_with_boundary(field, bfield, tag=hedge.mesh.TAG_ALL):
+    if tag is hedge.mesh.TAG_NONE:
+        return 0
+    else:
+        return BoundaryPair(field, bfield, tag)
 
 
 
@@ -376,54 +435,6 @@ class VectorFluxOperator(object):
                 [OperatorBinding(FluxOperator(f), arg)
                     for f in self.fluxes])
                 
-
-
-
-
-# other parts of an operator template -----------------------------------------
-class BoundaryPair(pymbolic.primitives.AlgebraicLeaf):
-    """Represents a pairing of a volume and a boundary field, used for the
-    application of boundary fluxes.
-    """
-
-    def __init__(self, field, bfield, tag=hedge.mesh.TAG_ALL):
-        self.field = field
-        self.bfield = bfield
-        self.tag = tag
-
-    def get_mapper_method(self, mapper):
-        return mapper.map_boundary_pair
-
-    def stringifier(self):
-        return StringifyMapper
-    
-    def __getinitargs__(self):
-        return (self.field, self.bfield, self.tag)
-
-    def get_hash(self):
-        from hedge.tools import hashable_field
-
-        return hash((self.__class__, 
-            hashable_field(self.field), 
-            hashable_field(self.bfield), 
-            self.tag))
-
-    def is_equal(self, other):
-        from hedge.tools import field_equal
-        return (self.__class__ == other.__class__
-                and field_equal(other.field,  self.field)
-                and field_equal(other.bfield, self.bfield)
-                and other.tag == self.tag)
-        
-
-
-
-
-def pair_with_boundary(field, bfield, tag=hedge.mesh.TAG_ALL):
-    if tag is hedge.mesh.TAG_NONE:
-        return 0
-    else:
-        return BoundaryPair(field, bfield, tag)
 
 
 
@@ -577,6 +588,10 @@ class IdentityMapperMixin(LocalOpReducerMixin, FluxOpReducerMixin):
         # it's a leaf--no changing children
         return expr
 
+    def map_scalar_parameter(self, expr, *args, **kwargs):
+        # it's a leaf--no changing children
+        return expr
+
     map_diff_base = map_mass_base
     map_flux_base = map_mass_base
     map_elementwise_max = map_mass_base
@@ -615,6 +630,9 @@ class DependencyMapper(
     def map_operator(self, expr):
         return set()
 
+    def map_scalar_parameter(self, expr):
+        return set([expr])
+
     def map_normal_component(self, expr):
         return set()
 
@@ -625,6 +643,9 @@ class FlopCounter(
         pymbolic.mapper.flop_counter.FlopCounter):
     def map_operator_binding(self, expr):
         return self.rec(expr.field)
+
+    def map_scalar_parameter(self, expr):
+        return 0
 
 
 
@@ -648,6 +669,13 @@ class IdentityMapper(
         pymbolic.mapper.IdentityMapper):
     pass
 
+
+
+
+
+class SubstitutionMapper(pymbolic.mapper.substitutor.SubstitutionMapper,
+        IdentityMapperMixin):
+    pass
 
 
 
@@ -694,6 +722,10 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
 
     def map_operator_binding(self, expr, enclosing_prec):
         return "<%s>(%s)" % (expr.op, expr.field)
+
+    def map_scalar_parameter(self, expr, enclosing_prec):
+        return "ScalarPar[%s]" % expr.name
+
 
 
 
@@ -1002,7 +1034,9 @@ class CollectorMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     def map_normal_component(self, expr):
         return set()
 
-    
+    def map_scalar_parameter(self, expr):
+        return set()
+
 
 
 
@@ -1050,4 +1084,46 @@ class BoundOperatorCollector(CSECachingMapperMixin, CollectorMixin, CombineMappe
 class Evaluator(pymbolic.mapper.evaluator.EvaluationMapper):
     def map_boundary_pair(self, bp):
         return BoundaryPair(self.rec(bp.field), self.rec(bp.bfield), bp.tag)
+
+
+
+
+# optemplate tools ------------------------------------------------------------
+def split_optemplate_for_multirate(state_vector, op_template, 
+        index_groups):
+    class IndexGroupKillerSubstMap:
+        def __init__(self, kill_set):
+            self.kill_set = kill_set
+
+        def __call__(self, expr):
+            if expr in kill_set:
+                return 0
+            else:
+                return None
+
+    # make IndexGroupKillerSubstMap that kill everything
+    # *except* what's in that index group
+    killers = []
+    for i in range(len(index_groups)):
+        kill_set = set()
+        for j in range(len(index_groups)):
+            if i != j:
+                kill_set |= set(index_groups[j])
+
+        killers.append(IndexGroupKillerSubstMap(kill_set))
+
+    from hedge.optemplate import \
+            SubstitutionMapper, \
+            CommutativeConstantFoldingMapper
+
+    return [
+            CommutativeConstantFoldingMapper()(
+                SubstitutionMapper(killer)(
+                    op_template[ig]))
+            for ig in index_groups
+            for killer in killers]
+
+
+
+
 

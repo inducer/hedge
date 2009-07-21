@@ -312,14 +312,8 @@ class VectorExprAssign(Assign):
     def compiled(self, executor):
         discr = executor.discr
 
-        def result_dtype_getter(vector_dtype_map, scalar_dtype_map, const_dtypes):
-            from pytools import common_dtype
-            return common_dtype(
-                    vector_dtype_map.values()
-                    + scalar_dtype_map.values()
-                    + const_dtypes)
-
-        from hedge.backends.vector_expr import VectorExpressionInfo
+        from hedge.backends.vector_expr import \
+                VectorExpressionInfo, simple_result_dtype_getter
         from hedge.backends.cuda.vector_expr import CompiledVectorExpression
         return CompiledVectorExpression(
                 [VectorExpressionInfo(
@@ -328,8 +322,7 @@ class VectorExprAssign(Assign):
                     do_not_return=dnr)
                     for name, expr, dnr in zip(
                         self.names, self.exprs, self.do_not_return)],
-                is_vector_pred=executor.is_vector_pred,
-                result_dtype_getter=result_dtype_getter,
+                result_dtype_getter=simple_result_dtype_getter,
                 allocator=discr.pool.allocate)
 
 class CUDAFluxBatchAssign(FluxBatchAssign):
@@ -398,10 +391,8 @@ class OperatorCompiler(OperatorCompilerBase):
 class Executor(object):
     exec_mapper_class = ExecutionMapper
 
-    def __init__(self, discr, optemplate, post_bind_mapper,
-            is_vector_pred):
+    def __init__(self, discr, optemplate, post_bind_mapper):
         self.discr = discr
-        self.is_vector_pred = is_vector_pred
 
         from hedge.tools import diff_rst_flops, diff_rescale_one_flops, \
                 mass_flops, lift_flops
@@ -428,7 +419,10 @@ class Executor(object):
                 e2bb[elface] = (e2bb.get(elface, 0) | bdry_bit)
 
         # compile the optemplate
-        self.code = OperatorCompiler()(
+        from struct import calcsize
+        self.code = OperatorCompiler(
+                max_vectors_in_batch_expr=220 // calcsize("P")
+                )(
                 self.prepare_optemplate_stage2(discr.mesh, optemplate_stage1))
 
         # build the local kernels 

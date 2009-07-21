@@ -44,20 +44,6 @@ class VectorExprAssign(Assign):
     def compiled(self, executor):
         discr = executor.discr
 
-        def result_dtype_getter(vector_dtype_map, scalar_dtype_map, const_dtypes):
-            from pytools import common_dtype, match_precision
-
-            result = common_dtype(vector_dtype_map.values())
-
-            scalar_dtypes = scalar_dtype_map.values() + const_dtypes
-            if scalar_dtypes:
-                prec_matched_scalar_dtype = match_precision(
-                        common_dtype(scalar_dtypes),
-                        dtype_to_match=result)
-                result = common_dtype([result, prec_matched_scalar_dtype])
-
-            return result
-
         if self.flop_count() > 500:
             # reduce optimization level for complicated expressions
             if "jit_dont_optimize_large_exprs" in discr.debug:
@@ -67,7 +53,8 @@ class VectorExprAssign(Assign):
         else:
             toolchain = discr.toolchain
 
-        from hedge.backends.vector_expr import VectorExpressionInfo
+        from hedge.backends.vector_expr import \
+                VectorExpressionInfo, simple_result_dtype_getter
         from hedge.backends.jit.vector_expr import CompiledVectorExpression
         return CompiledVectorExpression(
                 [VectorExpressionInfo(
@@ -76,8 +63,7 @@ class VectorExprAssign(Assign):
                     do_not_return=dnr)
                     for name, expr, dnr in zip(
                         self.names, self.exprs, self.do_not_return)],
-                is_vector_pred=executor.is_vector_pred,
-                result_dtype_getter=result_dtype_getter,
+                result_dtype_getter=simple_result_dtype_getter,
                 toolchain=toolchain,
                 wait_on_error="jit_wait_on_compile_error" in discr.debug)
 
@@ -172,7 +158,8 @@ class BoundaryFluxKind(object):
 
 class OperatorCompiler(OperatorCompilerBase):
     def __init__(self, discr):
-        OperatorCompilerBase.__init__(self)
+        OperatorCompilerBase.__init__(self,
+                max_vectors_in_batch_expr=100)
         self.discr = discr
 
     def get_contained_fluxes(self, expr):

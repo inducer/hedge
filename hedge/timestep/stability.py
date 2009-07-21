@@ -24,6 +24,12 @@ from pytools import memoize
 
 
 
+import numpy
+from pytools import memoize
+
+
+
+
 # bisection based method to find bounds of stability region on Imaginary axis only ---
 def calculate_fudged_stability_region(stepper_class, *stepper_args):
     return calculate_stability_region(stepper_class, *stepper_args) \
