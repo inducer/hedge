@@ -164,7 +164,7 @@ def main(write_output=True):
     field_getter = EMFieldGetter(discr, op, lambda: fields)
     add_em_quantities(logmgr, op, field_getter)
 
-    logmgr.add_watches(["step.max", "t_sim.max", "W_field", "t_step.max"])
+    logmgr.add_watches(["step.max", "t_sim.max", ("W_field", "W_el+W_mag"), "t_step.max"])
 
     from hedge.log import LpNorm
     class FieldIdxGetter:
@@ -212,7 +212,7 @@ def main(write_output=True):
             fields = stepper(fields, t, dt, rhs)
             t += dt
 
-        _, _, energies_data = logmgr.get_expr_dataset("W_field")
+        _, _, energies_data = logmgr.get_expr_dataset("W_el+W_mag")
         energies = [value for tick_nbr, value in energies_data]
 
         assert energies[-1] < max(energies) * 1e-2
