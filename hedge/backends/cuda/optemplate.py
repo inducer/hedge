@@ -46,7 +46,8 @@ class StringifyMapper(hedge.optemplate.StringifyMapper):
 
 def get_flux_dependencies(flux, field, bdry="all"):
     from hedge.flux import FluxDependencyMapper, FieldComponent
-    in_fields = list(FluxDependencyMapper(composite_leaves=True)(flux))
+    in_fields = list(FluxDependencyMapper(
+        include_calls=False)(flux))
 
     # check that all in_fields are FieldComponent instances
     assert not [in_field
