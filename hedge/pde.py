@@ -461,7 +461,7 @@ class EulerOperator(GasDynamicsOperatorBase):
                     + InverseMassOperator()*make_lax_friedrichs_flux(
                         wave_speed=
 			ElementwiseMaxOperator()*
-			c,
+			speed,
                         state=state, fluxes=flux_state,
                         bdry_tags_states_and_fluxes=[
                             (TAG_ALL, bc_state, flux(bc_state))
@@ -529,7 +529,7 @@ class NavierStokesOperator(GasDynamicsOperatorBase):
 
             flux = numpy.zeros((d, dimensions), dtype=object)
             for i in range(dimensions):
-                flux[:,i] = 0.5 * normal[i] * (fluxes_ph.ext - fluxes_ph.int)
+                flux[:,i] = 0.5 * normal[i] * (fluxes_ph.int - fluxes_ph.ext)
 
             from hedge.optemplate import get_flux_operator
             flux_op = numpy.zeros((dimensions), dtype=object)
@@ -629,7 +629,7 @@ class NavierStokesOperator(GasDynamicsOperatorBase):
 
         c = cse(sqrt(self.gamma*p(state)/self.rho(state)))
 
-        speed = sqrt(numpy.dot(u(state), u(state))) + c
+        speed = cse(sqrt(numpy.dot(u(state), u(state)))) + c
 
         from hedge.tools import make_lax_friedrichs_flux, join_fields
         from hedge.mesh import TAG_ALL
@@ -639,7 +639,7 @@ class NavierStokesOperator(GasDynamicsOperatorBase):
         return join_fields(
                 (- numpy.dot(make_nabla(self.dimensions), flux_state)
                  + InverseMassOperator()*make_lax_friedrichs_flux(
-                        wave_speed=cse(ElementwiseMaxOperator()*c),
+                        wave_speed=cse(ElementwiseMaxOperator()*speed),
                         state=state, fluxes=flux_state,
                         bdry_tags_states_and_fluxes=[(TAG_ALL, bc_state,
                         bdry_flux(bc_state, state))],
