@@ -209,7 +209,7 @@ def unroll(body_gen, total_number, max_unroll=None, start=0):
 
 class RK4TimeStepper(hedge.timestep.base.TimeStepper):
     def __init__(self):
-        from hedge.timestep import _RK4A, _RK4B, _RK4C
+        from hedge.timestep.rk4 import _RK4A, _RK4B, _RK4C
         self.coeffs = zip(_RK4A, _RK4B, _RK4C)
 
         self.instrumented = False
