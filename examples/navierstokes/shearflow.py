@@ -80,7 +80,7 @@ def main():
     else:
         mesh_data = rcon.receive_mesh()
 
-    for order in [4]:
+    for order in [3]:
         discr = rcon.make_discretization(mesh_data, order=order,
 			debug=["cuda_no_plan",
                             #"dump_dataflow_graph",
@@ -124,7 +124,8 @@ def main():
             print "nsteps", nsteps
             print "#elements=", len(mesh.elements)
 
-        from hedge.timestep import RK4TimeStepper
+        #from hedge.timestep import RK4TimeStepper
+        from hedge.backends.cuda.tools import RK4TimeStepper
         stepper = RK4TimeStepper()
 
         # diagnostics setup ---------------------------------------------------
@@ -189,12 +190,18 @@ def main():
             dt = discr.dt_factor(max_eigval[0], order=2)
 
         logmgr.tick()
-        logmgr.save()
 
         true_fields = shearflow.volume_interpolant(t, discr)
-        eoc_rec.add_data_point(order, discr.norm(fields-true_fields))
+        l2_error = discr.norm(op.u(fields)-op.u(true_fields))
+        eoc_rec.add_data_point(order, l2_error)
         print
         print eoc_rec.pretty_print("P.Deg.", "L2 Error")
+
+        logmgr.set_constant("l2_error", l2_error)
+
+        logmgr.close()
+
+        discr.close()
 
 if __name__ == "__main__":
     main()

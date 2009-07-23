@@ -85,16 +85,16 @@ def main(write_output=True):
                 make_rect_mesh, \
                 make_centered_regular_rect_mesh
 
-        refine = 1
+        refine = 4
         mesh = make_centered_regular_rect_mesh((0,-5), (10,5), n=(9,9),
                 post_refine_factor=refine)
         mesh_data = rcon.distribute_mesh(mesh)
     else:
         mesh_data = rcon.receive_mesh()
 
-    for order in [4]:
+    for order in [1]:
         discr = rcon.make_discretization(mesh_data, order=order,
-			debug=["cuda_no_plan",
+			debug=[#"cuda_no_plan",
 			#"print_op_code"
 			],
 			default_scalar_type=numpy.float64)
@@ -133,7 +133,8 @@ def main(write_output=True):
             print "nsteps", nsteps
             print "#elements=", len(mesh.elements)
 
-        from hedge.timestep import RK4TimeStepper
+        #from hedge.timestep import RK4TimeStepper
+        from hedge.backends.cuda.tools import RK4TimeStepper
         stepper = RK4TimeStepper()
 
         # diagnostics setup ---------------------------------------------------
@@ -161,8 +162,8 @@ def main(write_output=True):
             for step in range(nsteps):
                 logmgr.tick()
 
-                if step % 10 == 0 and write_output:
-                #if False:
+                #if step % 10 == 0 and write_output:
+                if False:
                     visf = vis.make_file("vortex-%d-%04d" % (order, step))
 
                     true_fields = vortex.volume_interpolant(t, discr)
@@ -201,17 +202,30 @@ def main(write_output=True):
                 t += dt
 
                 dt = discr.dt_factor(max_eigval[0])
+            logmgr.tick()
 
             true_fields = vortex.volume_interpolant(t, discr)
-            eoc_rec.add_data_point(order, discr.norm(fields[0]-true_fields[0]))
+            l2_error = discr.norm(fields-true_fields)
+            l2_error_rho = discr.norm(op.rho(fields)-op.rho(true_fields))
+            l2_error_e = discr.norm(op.e(fields)-op.e(true_fields))
+            l2_error_rhou = discr.norm(op.rho_u(fields)-op.rho_u(true_fields))
+            l2_error_u = discr.norm(op.u(fields)-op.u(true_fields))
+
+            eoc_rec.add_data_point(order, l2_error)
             print
             print eoc_rec.pretty_print("P.Deg.", "L2 Error")
+
+            logmgr.set_constant("l2_error", l2_error)
+            logmgr.set_constant("l2_error_rho", l2_error_rho)
+            logmgr.set_constant("l2_error_e", l2_error_e)
+            logmgr.set_constant("l2_error_rhou", l2_error_rhou)
+            logmgr.set_constant("l2_error_u", l2_error_u)
+            logmgr.set_constant("refinement", refine)
 
         finally:
             if write_output:
                 vis.close()
 
-            logmgr.tick()
             logmgr.save()
 
             discr.close()
