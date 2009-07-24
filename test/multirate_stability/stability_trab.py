@@ -68,6 +68,46 @@ class calc_stab_reg():
         #           [0  , λ₂]
 
     # Case 1: Negative real EW's ----------------------------------------------
+    def case_1_mod(self):
+        mod_dense = 20
+        data = numpy.empty((1, mod_dense, mod_dense), dtype=numpy.float64, order="F")
+        lambda_1 = 1
+        lambda_2 = 0.001
+        d_matrix = matrix([[lambda_1,0],[0,lambda_2]])
+        i = -1
+        for b in numpy.arange(0, 2*pi, 2*pi/mod_dense):
+            i += 1
+            j = i
+            print "-----------"
+            # run c from b on through 2*pi intervall
+            for c in numpy.arange(2*pi/mod_dense+b,
+                    2*pi+b+2*pi/mod_dense,
+                    2*pi/mod_dense):
+                j += 1
+                print i, numpy.fmod(j,mod_dense)
+                v_matrix = matrix([
+                    [cos(b), cos(c)],
+                    [sin(b), sin(c)]
+                    ])
+
+                a_matrix = (v_matrix*d_matrix*v_matrix.I).real
+
+                get_stab_reg = calculate_stability_region('f_f_1a',
+                        self.order,
+                        self.step_ratio,
+                        lambda_1,
+                        lambda_2,
+                        a_matrix, v_matrix)
+
+                data[0][i][numpy.fmod(j,mod_dense)] = get_stab_reg()
+
+        filename = "case_1_res_a_%s.dat" %(lambda_2)
+        print "finished:", filename
+        case_1_res = {"case_1_res" : data}
+        pickle.dump(case_1_res, open(filename,"w"))
+
+
+    # Case 1: Negative real EW's ----------------------------------------------
     def case_1(self):
         points_1=[]
         for a in numpy.linspace(self.a_start,
@@ -139,6 +179,17 @@ class calc_stab_reg():
         print "finished:", filename
         case_2_res = {"case_2_res" : numpy.array(points_2)}
         pickle.dump(case_2_res, open(filename,"w"))
+
+
+def make_serial_stab_reg():
+    # initiate case 1 ---------------------------------------------------------
+    int_a = -1
+    int_b = 0
+    int_len = abs(int_a-int_b)
+    for i in range(mpi.size):
+        a_start = int_a + i/mpi.size * abs(int_b-int_a)
+        a_end = int_a + (i+1)/mpi.size * abs(int_b-int_a)
+        calc_stab_reg(1, a_start, a_end, int_len).case_1_mod()
 
 
 def make_mpi_stab_reg(p_dense):
@@ -293,6 +344,6 @@ if __name__ == "__main__":
     #a = calc_stab_reg(20, -0.9, -0.8)
     #a.case_1()
     #a.case_2()
-    make_mpi_stab_reg(10)
-
+    #make_mpi_stab_reg(10)
+    make_serial_stab_reg()
 
