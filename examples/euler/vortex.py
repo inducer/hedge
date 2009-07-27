@@ -92,7 +92,7 @@ def main(write_output=True):
     else:
         mesh_data = rcon.receive_mesh()
 
-    for order in [1]:
+    for order in [3]:
         discr = rcon.make_discretization(mesh_data, order=order,
 			debug=[#"cuda_no_plan",
 			#"print_op_code"
@@ -162,8 +162,8 @@ def main(write_output=True):
             for step in range(nsteps):
                 logmgr.tick()
 
-                #if step % 10 == 0 and write_output:
-                if False:
+                if step % 1 == 0 and write_output:
+                #if False:
                     visf = vis.make_file("vortex-%d-%04d" % (order, step))
 
                     true_fields = vortex.volume_interpolant(t, discr)
@@ -178,19 +178,19 @@ def main(write_output=True):
                                 ("rho_u", discr.convert_volume(op.rho_u(fields), kind="numpy")),
                                 ("u", discr.convert_volume(op.u(fields), kind="numpy")),
 
-                                ("true_rho", discr.convert_volume(op.rho(true_fields), kind="numpy")),
-                                ("true_e", discr.convert_volume(op.e(true_fields), kind="numpy")),
-                                ("true_rho_u", discr.convert_volume(op.rho_u(true_fields), kind="numpy")),
-                                ("true_u", discr.convert_volume(op.u(true_fields), kind="numpy")),
+                                #("true_rho", discr.convert_volume(op.rho(true_fields), kind="numpy")),
+                                #("true_e", discr.convert_volume(op.e(true_fields), kind="numpy")),
+                                #("true_rho_u", discr.convert_volume(op.rho_u(true_fields), kind="numpy")),
+                                #("true_u", discr.convert_volume(op.u(true_fields), kind="numpy")),
 
-                                ("rhs_rho", discr.convert_volume(op.rho(rhs_fields), kind="numpy")),
-                                ("rhs_e", discr.convert_volume(op.e(rhs_fields), kind="numpy")),
-                                ("rhs_rho_u", discr.convert_volume(op.rho_u(rhs_fields), kind="numpy")),
+                                #("rhs_rho", discr.convert_volume(op.rho(rhs_fields), kind="numpy")),
+                                #("rhs_e", discr.convert_volume(op.e(rhs_fields), kind="numpy")),
+                                #("rhs_rho_u", discr.convert_volume(op.rho_u(rhs_fields), kind="numpy")),
                                 ],
                             expressions=[
-                                ("diff_rho", "rho-true_rho"),
-                                ("diff_e", "e-true_e"),
-                                ("diff_rho_u", "rho_u-true_rho_u", DB_VARTYPE_VECTOR),
+                                #("diff_rho", "rho-true_rho"),
+                                #("diff_e", "e-true_e"),
+                                #("diff_rho_u", "rho_u-true_rho_u", DB_VARTYPE_VECTOR),
 
                                 ("p", "0.4*(e- 0.5*(rho_u*u))"),
                                 ],

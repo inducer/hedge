@@ -72,7 +72,7 @@ def main():
         from hedge.mesh import make_rect_mesh, \
                                make_centered_regular_rect_mesh
         #mesh = make_rect_mesh((0,0), (10,1), max_area=0.01)
-        refine = 1
+        refine = 4
         mesh = make_centered_regular_rect_mesh((0,0), (10,1), n=(20,4),
                             #periodicity=(True, False),
                             post_refine_factor=refine)
@@ -148,7 +148,7 @@ def main():
         for step in range(nsteps):
             logmgr.tick()
 
-            if step % 100 == 0:
+            if step % 10 == 0:
             #if False:
                 visf = vis.make_file("shearflow-%d-%04d" % (order, step))
 
