@@ -1071,11 +1071,10 @@ class ConvergenceError(RuntimeError):
 
 
 class CGStateContainer:
-    def __init__(self, pcon, operator, precon=None, dot=None):
+    def __init__(self, operator, precon=None, dot=None):
         if precon is None:
             precon = IdentityOperator(operator.dtype, operator.shape[0])
 
-        self.pcon = pcon
         self.operator = operator
         self.precon = precon
 
@@ -1091,7 +1090,7 @@ class CGStateContainer:
         self.rhs = rhs
 
         if x is None:
-            x = numpy.zeros((self.operator.size1(),))
+            x = numpy.zeros((self.operator.shape[0],))
         self.x = x
 
         self.residual = rhs - self.operator(x)
@@ -1137,12 +1136,17 @@ class CGStateContainer:
         iterations = 0
         delta_0 = delta = self.delta
         while iterations < max_iterations:
-            if debug_callback is not None:
-                debug_callback("it", iterations, self.x, self.residual, self.d, delta)
-
             compute_real_residual = \
                     iterations % 50 == 0 or \
                     abs(delta) < tol*tol * abs(delta_0)
+
+            if debug_callback is not None:
+                if compute_real_residual:
+                    what = "it"
+                else:
+                    what = "it-noop"
+                debug_callback(what, iterations, self.x, self.residual, self.d, delta)
+
             delta = self.one_iteration(
                     compute_real_residual=compute_real_residual)
 
@@ -1153,7 +1157,7 @@ class CGStateContainer:
                     print "%d iterations" % iterations
                 return self.x
 
-            if debug and iterations % debug == 0 and self.pcon.is_head_rank:
+            if debug and iterations % debug == 0:
                 print "debug: delta=%g" % delta
             iterations += 1
 
@@ -1167,8 +1171,12 @@ def parallel_cg(pcon, operator, b, precon=None, x=None, tol=1e-7, max_iterations
     if x is None:
         x = numpy.zeros((operator.shape[1],))
 
-    cg = CGStateContainer(pcon, operator, precon, dot=dot)
+    cg = CGStateContainer(operator, precon, dot=dot)
     cg.reset(b, x)
+
+    if not pcon.is_head_rank:
+        debug = False
+
     return cg.run(max_iterations, tol, debug_callback, debug)
 
 
