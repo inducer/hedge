@@ -138,7 +138,7 @@ class CheckMultirateTimesteperAccuracy:
                     )
 
     def __call__(self):
-        print "Method:",self.method
+        import fpformat as fpf
         eocrec = EOCRecorder()
         for n in range(4,9):
             dt = 2**(-n)
@@ -150,6 +150,7 @@ class CheckMultirateTimesteperAccuracy:
                     self.method, dt, self.step_ratio, self.order)
 
             error = self.get_error(stepper, dt, "mrab-%d.dat" % self.order)
+            self.out.write("& %s" % fpf.sci(error,2))
             eocrec.add_data_point(1/dt, error)
 
         print "------------------------------------------------------"
@@ -160,10 +161,8 @@ class CheckMultirateTimesteperAccuracy:
         orderest = eocrec.estimate_order_of_convergence()[0,1]
         print orderest, self.order
         #assert orderest > order*0.80
-        print ""
-        print ""
 
-        self.out.write(" %f &" % orderest)
+        self.out.write("& %s" % fpf.fix(orderest,2))
 
 
 
@@ -171,17 +170,8 @@ def test_multirate_timestep_accuracy():
     """Check that the multirate timestepper has the advertised accuracy"""
 
     from hedge.timestep.multirate_ab.methods import methods
-    if False:
-         methods_man = ['f_f_1a', 'f_f_1b',
-                 's_f_1', 's_f_1_nr',
-                 's_f_2a', 's_f_2a_nr',
-                 's_f_2b', 's_f_2b_nr',
-                 's_f_3a', 's_f_3a_nr',
-                 's_f_3b', 's_f_3b_nr',
-                 's_f_4', 's_f_4_nr']
 
-    else:
-        methods_man = ['f_f_1a']
+    methods_man = ['f_f_1a']
 
     from ode_systems import Basic, \
              Full, \
@@ -190,48 +180,57 @@ def test_multirate_timestep_accuracy():
              CC,\
              Tria, \
              Inh, \
-             Inh2
-    min_order = 2
+             Inh2, \
+             StiffUncoupled, \
+             NonStiffUncoupled, \
+             WeakCoupled, \
+             StrongCoupled, \
+             ExtForceNonStiff, \
+             ExtForceStiff, \
+             StiffCoupled2, \
+             StiffComp, \
+             StiffComp2, \
+             StiffOscil,\
+             WeakCoupledInit
+
+    min_order = 1
     max_order = 6
     step_ratio = 10
     #ode_arg_set = [Basic,Full,Real,Comp,CC,
     #            Tria,Inh,Inh2]
-    ode_arg_set = [Comp,Inh,Inh2]
+    ode_arg = StiffComp2
+    order_list =  range(min_order, max_order)
 
-    for order in range(min_order, max_order):
+    #for method in methods:
+    for method in ['f_f_1a']:
 
         # outputfile setup: ---------------------------------------------
-        outfilename = "mrab-out/mrab-order-%d-r-%d.dat" % (order,step_ratio)
+        outfilename = "mrab-out/mrab-EOC-%s.tex" % str(method)
         outfile = open(outfilename, "w")
 
-        outfile.write("&")
-        for m in ode_arg_set:
-            m_str = str(m)
-            outfile.write("%s &" %m_str.strip("ode_systems."))
 
+        outfile.write("\\begin{tabular}{l")
+        for i in order_list:
+            outfile.write("c")
+        outfile.write("}" + "\n")
+        outfile.write("N & h & h/2 & h/4 & Rate")
         outfile.write("\\""\\" + "\n")
         outfile.write("\\hline" + "\n")
 
-        for method in methods:
-        #for method in methods_man:
-            out_method = str(method)
-            outfile.write("\\verb|""%s | &" %out_method)
-            for ode_arg in ode_arg_set:
-
-                print ""
-                print "----------------------------------------------------------------------------"
-                print "ODE-System: %s" % ode_arg
-                print "step ratio:", step_ratio
-                checkup = CheckMultirateTimesteperAccuracy(
-                        method,
-                        order,
-                        step_ratio,
-                        outfile,
-                        ode = ode_arg)
-                checkup()
+        for order in order_list:
+            outfile.write("%s" %order)
+            checkup = CheckMultirateTimesteperAccuracy(
+                    method,
+                    order,
+                    step_ratio,
+                    outfile,
+                    ode = ode_arg)
+            checkup()
             outfile.write("\\""\\" + "\n")
-            outfile.write("\\hline" + "\n")
+            #outfile.write("\\hline" + "\n")
 
+        outfile.write("\\hline" + "\n")
+        outfile.write("\\end{tabular}" + "\n")
 
 
 
@@ -773,6 +772,6 @@ def test_all_periodic_no_boundary():
 
 
 if __name__ == "__main__":
-    from py.test.cmdline import main
-    main([__file__])
-    #test_multirate_timestep_accuracy()
+    #from py.test.cmdline import main
+    #main([__file__])
+    test_multirate_timestep_accuracy()
