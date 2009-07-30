@@ -284,7 +284,8 @@ class Discretization(hedge.discretization.Discretization):
             from codepy.jit import guess_toolchain
             toolchain = guess_toolchain()
 
-        toolchain = toolchain.with_max_optimization()
+		##by scott to try and get hedge working again (GCC error)
+        ##toolchain = toolchain.with_max_optimization()
 
         from codepy.libraries import add_hedge
         add_hedge(toolchain)
