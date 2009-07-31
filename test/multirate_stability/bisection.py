@@ -57,17 +57,20 @@ class bisection:
         i = 0
         while t <= 20 or i <= 20:
         #while i <= 20:
-            err = abs(
-                    sqrt(y[0]**2 + y[1]**2)
-                    - sqrt(self.ode.soln_0(t)**2 + self.ode.soln_1(t)**2)
-                    )
+            #err = abs(
+            #        sqrt(y[0]**2 + y[1]**2)
+            #        - sqrt(self.ode.soln_0(t)**2 + self.ode.soln_1(t)**2)
+            #        )
+            err0 = abs(y[0] - self.ode.soln_0(t))
+            err1 = abs(y[1] - self.ode.soln_1(t))
             log_y.append(sqrt(y[0]**2 + y[1]**2))
             log_soln.append(sqrt(self.ode.soln_0(t)**2 + self.ode.soln_1(t)**2))
             log_t.append(t)
             i += 1
             #if err > self.max_error:
             #if (y[0] > (y_zero[0] + self.max_error)) or (y[1] > (y_zero[1] + self.max_error)):
-            if (abs(y[0]) > 2) or (abs(y[1]) > 2):
+            if (err0 > 1) or (err1 > 1):
+            #if (abs(y[0]) > 2) or (abs(y[1]) > 2):
                 if False:
                     print "steps:", i
                     log_t = numpy.array(log_t)

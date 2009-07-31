@@ -68,16 +68,21 @@ def make_serial_stab_reg():
     import fpformat as fpf
     from ode_systems import NonStiffUncoupled, \
             StiffUncoupled, \
-            WeakCoupled, \
+            WeakCoupledInit, \
             StrongCoupled, \
             ExtForceStiff, \
             ExtForceNonStiff
-    #ode = ExtForceStiff
-    ode = StiffUncoupled
+    ode = ExtForceStiff
     order_list = [2, 3, 4, 5]
+    method_dict = {'f_f_1a':'FFw' , 'f_f_1b':'FFs',
+            's_f_1':'SF1r', 's_f_1_nr':'SF1',
+            's_f_2a':'SF2wr', 's_f_2a_nr':'SF2w',
+            's_f_2b':'SF2sr', 's_f_2b_nr':'SF2s',
+            's_f_3a':'SF3wr', 's_f_3a_nr':'SF3w',
+            's_f_3b':'SF3sr', 's_f_3b_nr':'SF3s',
+            's_f_4':'SF4r', 's_f_4_nr':'SF4'}
     step_ratio = 10
     err = 1
-    method = "f_f_1a"
     # outputfile setup: ---------------------------------------------
     ode_str = str(ode).strip("ode_systems.")
     outfile = "stab-mrab-out/%s_all_methods_order_var_r_%s.tex" % (ode_str,
@@ -103,8 +108,7 @@ def make_serial_stab_reg():
     # initiate case 1 ---------------------------------------------------------
     for method in methods_man:
         #outfile.write("\\hline" + "\n")
-        out_method = str(method)
-        outfile.write("\\verb|""%s | " %out_method)
+        outfile.write("%s " %(method_dict.get(str(method))))
         for order in order_list:
             calc_stab_reg(method, order, step_ratio, ode, outfile, err).case_1()
         outfile.write("\\""\\" + "\n")

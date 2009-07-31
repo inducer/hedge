@@ -68,11 +68,17 @@ def make_serial_stab_reg():
             StrongCoupled, \
             ExtForceStiff, \
             ExtForceNonStiff
-    #ode = ExtForceStiff
     ode = WeakCoupledInit
     single_ab_dt_dict = {"2":0.53 , "3": 0.77, "4": 0.64, "5":0.51, "6":0.47, "7":0.45}
+    method_dict = {'f_f_1a':'FFw' , 'f_f_1b':'FFs',
+            's_f_1':'SF1r', 's_f_1_nr':'SF1',
+            's_f_2a':'SF2wr', 's_f_2a_nr':'SF2w',
+            's_f_2b':'SF2sr', 's_f_2b_nr':'SF2s',
+            's_f_3a':'SF3wr', 's_f_3a_nr':'SF3w',
+            's_f_3b':'SF3sr', 's_f_3b_nr':'SF3s',
+            's_f_4':'SF4r', 's_f_4_nr':'SF4'}
     order_list = [2, 3, 4, 5, 6]
-    step_ratio = 2
+    step_ratio = 10
     err = 1
     method = "f_f_1a"
     # outputfile setup: ---------------------------------------------

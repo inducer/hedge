@@ -21,7 +21,7 @@ from ode_systems import NonStiffUncoupled, \
 ode_list = [NonStiffUncoupled, StiffUncoupled, WeakCoupled,\
         StrongCoupled, ExtForceStiff, ExtForceNonStiff, \
         StiffCoupled2, StiffComp2, StiffOscil, WeakCoupledInit]
-ode_list = [StiffUncoupled]
+ode_list = [ExtForceStiff]
 
 for ode_arg in ode_list:
     ode = ode_arg()
@@ -39,13 +39,17 @@ for ode_arg in ode_list:
     y0 = numpy.array(y0)
     y1 = numpy.array(y1)
 
-    figure(1)
+    figure(1, (8,4))
     xlabel("t")
     ylabel("y")
     grid()
     line1 = plot(t,y0,'r', linewidth=4) # Fields: strong damped
     line2 = plot(t,y1,'b--', linewidth=4) # Particles: weak damped
-    legend((line1,line2),('$y_{fast}$','$y_{slow}$'))
+    #ylim((0,1.1))
+    #xlim((0,10))
+    ylim((0,5))
+    xlim((0,5))
+    legend((line1,line2),('$y_{fast}$','$y_{slow}$'),'lower right')
     ode_str = str(ode_arg).strip("ode_systems.")
     fname = "stab-mrab-out/%s_plot.png" % (ode_str)
     savefig(fname, dpi = 300, format='png')
