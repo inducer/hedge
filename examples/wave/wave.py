@@ -32,7 +32,7 @@ def main() :
     from hedge.backends import guess_run_context
     rcon = guess_run_context()
 
-    dim = 2
+    dim = 3
 
     if dim == 1:
         if rcon.is_head_rank:
@@ -90,7 +90,7 @@ def main() :
             [discr.volume_zeros() for i in range(discr.dimensions)])
 
     dt = discr.dt_factor(op.max_eigenvalue())
-    nsteps = int(10/dt)
+    nsteps = int(4.0/dt)
     if rcon.is_head_rank:
         print "dt", dt
         print "nsteps", nsteps

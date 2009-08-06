@@ -190,6 +190,8 @@ def main():
 
     # Initialize v for data output:
     v = op.advec_v.volume_interpolant(t, discr)
+
+    from numpy import shape
     # timestep loop -----------------------------------------------------------
     rhs = op.bind(discr)
     for step in xrange(nsteps):
@@ -208,8 +210,8 @@ def main():
 
         u = stepper(u, t, dt, rhs)
         # Use Filter:
+        #print shape(u)
         u = antialiasing(u)
-
     vis.close()
 
     logmgr.tick()

@@ -9,7 +9,7 @@ __copyright__ = "Copyright (C) 2007 Andreas Kloeckner"
 __license__ = """
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
+the Free Software Foundation, either version 3 of the License, orjo
 (at your option) any later version.
 
 This program is distributed in the hope that it will be useful,
@@ -1234,6 +1234,55 @@ class Filter:
 
     def __call__(self, vec):
         from hedge.tools import log_shape
+        from numpy import shape
+
+        ls = log_shape(vec)
+        result = self.discr.volume_zeros(ls)
+
+
+        from pytools import indices_in_shape
+        for i in indices_in_shape(ls):
+            from hedge._internal import perform_elwise_operator
+            for eg in self.discr.element_groups:
+                print eg.ranges
+                perform_elwise_operator(eg.ranges, eg.ranges, 
+                        self.filter_map[eg], vec[i], result[i])
+
+        return result
+
+    def get_filter_matrix(self, el_group):
+        return self.filter_map[el_group]
+
+
+class SlopeLimiter1N:
+    def __init__(self, discr):
+        """Construct a limiter from Jan's book page 225
+        """
+        self.discr = discr
+
+        #AVE*colVect=average of colVect
+        self.AVE_map = {}
+
+        for eg in discr.element_groups:
+            ldis = eg.local_discretization
+
+            node_count = ldis.node_count()
+
+
+            # build AVE matrix (should confirm gives cell averages)
+            #instead of /2.0 try /(volume of standard element)
+            massMatrix = ldis.mass_matrix()
+            from numpy import size, zeros, sum
+            AVEt = sum(massMatrix,0)
+            AVEt = AVEt/2.0
+            AVE = zeros((size(AVEt),size(AVEt)))
+            #apply AVE to a solution vector gives cell average at each node
+            for ii in range(0,size(AVEt)):
+                AVE[ii]=AVEt
+            self.AVE_map[eg] = AVE
+
+    def GetAve(self,vec):
+        from hedge.tools import log_shape
 
         ls = log_shape(vec)
         result = self.discr.volume_zeros(ls)
@@ -1243,9 +1292,158 @@ class Filter:
             from hedge._internal import perform_elwise_operator
             for eg in self.discr.element_groups:
                 perform_elwise_operator(eg.ranges, eg.ranges, 
-                        self.filter_map[eg], vec[i], result[i])
+                        self.AVE_map[eg], vec[i], result[i])
+        #result now contains cell average at each nodal point
+        #could use this to get dG -> first order FV method
+		return result
+
+    def __call__(self, vec):
+
+        result=self.GetAve(vec)
 
         return result
 
-    def get_filter_matrix(self, el_group):
-        return self.filter_map[el_group]
+
+class SlopeLimiter1NEuler:
+    def __init__(self, discr,gamma,dimensions):
+        """Construct a limiter from Jan's book page 225
+        """
+        self.discr = discr
+        self.gamma=gamma
+        self.dimensions=dimensions
+
+        #computed from description of elements found in element.py
+        if(self.dimensions==1 or self.dimensions==2):
+            self.standard_el_vol = 2.0
+        if(self.dimensions==3):
+            self.standard_el_vol = 4.0/3.0
+
+        #AVE*colVect=average of colVect
+        self.AVE_map = {}
+
+        for eg in discr.element_groups:
+            ldis = eg.local_discretization
+
+            node_count = ldis.node_count()
+
+
+            # build AVE matrix (should confirm gives cell averages)
+            #instead of /2.0 try /(volume of standard element)
+            #in 1,2D vol of standard element =2, in 3D=4/3
+            massMatrix = ldis.mass_matrix()
+            from numpy import size, zeros, sum
+            AVEt = sum(massMatrix,0)
+            AVEt = AVEt/2.0
+            AVE = zeros((size(AVEt),size(AVEt)))
+            #apply AVE to a solution vector gives cell average at each node
+            for ii in range(0,size(AVEt)):
+                AVE[ii]=AVEt
+            if(self.dimensions==3):
+                AVE=AVE*(3.0/2.0)
+            self.AVE_map[eg] = AVE
+
+    def GetAve(self,vec):
+
+        from hedge.tools import log_shape
+        from pytools import indices_in_shape
+        from hedge._internal import perform_elwise_operator
+
+
+        ls = log_shape(vec)
+        result = self.discr.volume_zeros(ls)
+
+        from pytools import indices_in_shape
+        for i in indices_in_shape(ls):
+            from hedge._internal import perform_elwise_operator
+            for eg in self.discr.element_groups:
+                perform_elwise_operator(eg.ranges, eg.ranges, 
+                        self.AVE_map[eg], vec[i], result[i])
+        #result now contains cell average at each nodal point
+        #could use this to get dG -> first order FV method
+		return result
+
+
+    def rho(self, vec):
+        return vec[0]
+
+    def e(self, vec):
+        return vec[1]
+
+    def rho_u(self,vec):
+        return vec[2]
+
+    def rho_v(self,vec):
+        return vec[3]
+
+    def rho_w(self,vec):
+        return vec[4]
+
+    def rho_u_vec(self, vec):
+        return vec[2:2+self.dimensions]
+
+    def u(self, q):
+        from hedge.tools import make_obj_array
+        return make_obj_array([
+                rho_u_i/self.rho(q)
+                for rho_u_i in self.rho_u_vec(q)])
+
+    def p(self,vec):
+        return (self.gamma-1)*(self.e(vec) - 0.5*numpy.dot(self.rho_u_vec(vec), self.u(vec)))
+
+    def __call__(self, vec):
+
+        #join fields 
+        from hedge.tools import join_fields
+
+        #get conserved fields
+        rho=self.rho(vec)
+        e=self.e(vec)
+        rhou=self.rho_u(vec)
+        if(self.dimensions==2):
+            rhov=self.rho_v(vec)
+        if(self.dimensions==3):
+            rhov=self.rho_v(vec)
+            rhow=self.rho_w(vec)
+        rhouVec=self.rho_u_vec(vec)
+        
+        #get primative fields 
+        p=self.p(vec)
+        u=self.u(vec)
+        if(self.dimensions==2):
+            v=u[1]
+        if(self.dimensions==3):
+            v=u[1]
+            w=u[2]
+        rhouVec=self.rho_u_vec(vec)
+
+        #limit conserved fields
+        rhoLim=self.GetAve(rho)
+        eLim=self.GetAve(e)
+        rhouLim=self.GetAve(rhou)
+        if(self.dimensions==2):
+            rhovLim=self.GetAve(rhov)
+        if(self.dimensions==3):
+            rhovLim=self.GetAve(rhov)
+            rhowLim=self.GetAve(rhow)
+        rhouVecLim=self.GetAve(rhouVec)
+        #print rhoLim
+        print self.standard_el_vol
+
+        #limit primative fields
+        #uLim=self.GetAve(u)
+        #pLim=self.GetAve(p)
+ 
+        #reconstruct conserved fields from primative fields
+
+
+        if(self.dimensions==1):
+            return join_fields(rhoLim, eLim, rhouLim)
+
+        if(self.dimensions==2):
+            return join_fields(rhoLim, eLim, rhouLim, rhovLim)
+            #return join_fields(rhoLim, eLim, rhouVecLim)
+            #return join_fields(rho, e, rhouVec)
+
+        if(self.dimensions==3):
+            return join_fields(rhoLim, eLim, rhouLim, rhovLim,rhowLim)
+
