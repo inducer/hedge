@@ -75,6 +75,25 @@ class IdentityOperator(OperatorBase):
 
 
 
+class DiagonalPreconditioner(OperatorBase):
+    def __init__(self, diagonal):
+        self.diagonal = diagonal
+
+    @property
+    def dtype(self):
+        return self.diagonal.dtype
+
+    @property
+    def shape(self):
+        n = self.diagonal.shape[0]
+        return n, n
+
+    def __call__(self, operand):
+        return self.diagonal*operand
+
+
+
+
 class ConvergenceError(RuntimeError):
     pass
 
@@ -104,7 +123,8 @@ class CGStateContainer:
             x = numpy.zeros((self.operator.shape[0],))
         self.x = x
 
-        self.residual = rhs - self.operator(x)
+        ax = self.operator(x)
+        self.residual = rhs - ax
 
         self.d = self.precon(self.residual)
 
