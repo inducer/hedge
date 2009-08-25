@@ -168,7 +168,7 @@ if __name__ == "__main__":
 # entry points for py.test ----------------------------------------------------
 def test_wave():
     from pytools.test import mark_test
-    mark_long = mark_test(long=True)
+    mark_long = mark_test.long
 
     yield ("dirichlet wave equation with SP data", mark_long(main),
             False, TAG_ALL, TAG_NONE, TAG_NONE, "upwind", numpy.float64)
