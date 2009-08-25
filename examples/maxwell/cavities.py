@@ -196,15 +196,16 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
 
 # entry points for py.test ----------------------------------------------------
 from pytools.test import mark_test
-@mark_test(long=True)
+@mark_test.long
 def test_maxwell_cavities():
     main(write_output=False)
 
-@mark_test(long=True)
+@mark_test.long
 def test_maxwell_cavities_lf():
     main(write_output=False, flux_type_arg="lf", bdry_flux_type_arg=1)
 
-@mark_test(mpi=True, long=True)
+@mark_test.mpi
+@mark_test.long
 def test_maxwell_cavities_mpi():
     from pytools.mpi import run_with_mpi_ranks
     run_with_mpi_ranks(__file__, 2, main, 
@@ -215,8 +216,6 @@ def test_maxwell_cavities_mpi():
 
 
 def test_cuda():
-    marker = mark_test(cuda=True, long=True)
-
     yield "SP CUDA Maxwell", do_test_maxwell_cavities_cuda, numpy.float32
     yield "DP CUDA Maxwell", do_test_maxwell_cavities_cuda, numpy.float64
 

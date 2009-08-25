@@ -159,6 +159,6 @@ if __name__ == "__main__":
 
 # entry points for py.test ----------------------------------------------------
 from pytools.test import mark_test
-@mark_test(long=True)
+@mark_test.long
 def test_heat():
     main(write_output=False)
