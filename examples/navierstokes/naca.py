@@ -31,7 +31,7 @@ class Naca:
     def __call__(self, t, x_vec):
         # JSH/TW Nodal DG Methods, p.326 
 
-        rho = numpy.zeros_like(x_vec[0])
+        rho = numpy.empty_like(x_vec[0])
         rho.fill(1)
         u = 100
         v = 0
@@ -39,9 +39,6 @@ class Naca:
         rho_u = rho * u
         rho_v = rho * v
         e = p / (self.gamma - 1) + rho / 2 *(u ** 2 + v ** 2)
-        R = 287.1
-        T = p / (rho * R)
-        mu = 1.45 * T ** 1.5 / (T + 110) * 1e-6
 
         from hedge.tools import join_fields
         return join_fields(rho, e, rho_u, rho_v)
@@ -58,6 +55,56 @@ class Naca:
 
 
 
+def nacamesh():
+    def airfoil_from_generator():
+        import meshpy.naca as naca
+        return naca.generate_naca(naca_digits="0012", number_of_points=50,
+                sharp_trailing_edge=True, uniform_distribution=False,
+                verbose=True)
+
+    def round_trip_connect(seq):
+        result = []
+        for i in range(len(seq)):
+            result.append((i, (i+1)%len(seq)))
+        return result
+
+    def needs_refinement(vertices, area):
+        barycenter =  sum(numpy.array(v) for v in vertices)/3
+
+        pt_back = numpy.array([1,0])
+
+        max_area_front = 0.002*la.norm(barycenter) + 1e-5
+        max_area_back = 0.02*la.norm(barycenter-pt_back) + 1e-3
+        return bool(area > min(max_area_front, max_area_back))
+
+    import sys
+    points = airfoil_from_generator()
+
+    from meshpy.geometry import GeometryBuilder
+    from meshpy.triangle import write_gnuplot_mesh
+
+    builder = GeometryBuilder()
+    builder.add_geometry(points=points,
+            facets=round_trip_connect(points))
+    builder.wrap_in_box(2)
+
+    from meshpy.triangle import MeshInfo, build
+    mi = MeshInfo()
+    builder.set(mi)
+    mi.set_holes([builder.center()])
+    mesh = build(mi, refinement_func=needs_refinement)
+
+    print "%d elements" % len(mesh.elements)
+
+    #print mesh.elements[0]
+    #raw_input()
+
+    write_gnuplot_mesh("mesh.dat", mesh)
+
+    return mesh
+
+
+
 
 def main():
     from hedge.backends import guess_run_context
@@ -66,16 +113,20 @@ def main():
     )
 
     gamma = 1.4
+    prandtl = 0.72
+    spec_gas_const = 287.1
 
     from hedge.tools import EOCRecorder, to_obj_array
     eoc_rec = EOCRecorder()
     
     if rcon.is_head_rank:
-        from meshpy import nacamesh
-        mesh = nacamesh.main()
+        mesh = nacamesh()
         mesh_data = rcon.distribute_mesh(mesh)
     else:
         mesh_data = rcon.receive_mesh()
+
+    #print mesh.elements[0]
+    #raw_input()
 
     for order in [3]:
         discr = rcon.make_discretization(mesh_data, order=order,
@@ -91,8 +142,9 @@ def main():
         naca = Naca(gamma=gamma)
         fields = naca.volume_interpolant(0, discr)
 
-        from hedge.pde import NavierStokesOperator
-        op = NavierStokesOperator(dimensions=2, gamma=gamma, bc=naca)
+        from hedge.pde import NavierStokesWithHeatOperator
+        op = NavierStokesWithHeatOperator(dimensions=2, gamma=gamma,
+                prandtl=prandtl, spec_gas_const=spec_gas_const, bc=naca)
 
         navierstokes_ex = op.bind(discr)
 
