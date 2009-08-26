@@ -32,7 +32,7 @@ def main() :
     from hedge.backends import guess_run_context
     rcon = guess_run_context()
 
-    dim = 2
+    dim = 3
 
     def boundary_tagger(fvi, el, fn, points):
         from math import atan2, pi

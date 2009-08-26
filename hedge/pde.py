@@ -1813,33 +1813,22 @@ class GasDynamicsOperatorBase(TimeDependentOperator):
                 for rho_u_i in self.rho_u(q)])
 
     def bind(self, discr):
-        from hedge.mesh import TAG_ALL
+        from hedge.mesh import TAG_ALL, TAG_NONE
+        from hedge.tools import join_fields
         bound_op = discr.compile(self.op_template())
         def wrap(t, q):
+            temp1=discr.get_boundary('outflow').vol_indices
+            temp= join_fields(q[0][temp1], q[1][temp1], q[2][temp1])
             opt_result = bound_op(
                     q=q, 
-                    bc_q=self.bc.boundary_interpolant(t, discr, TAG_ALL))
+                    #bc_q=self.bc.boundary_interpolant(t, discr, TAG_ALL)
+                    #bc_q=temp
+                    bc_q=self.bc.boundary_interpolant(t, discr, 'inflow'),
+                    bc_q_out=temp
+                    )
             max_speed = opt_result[-1]
             ode_rhs = opt_result[:-1]
 	    return ode_rhs, discr.nodewise_max(max_speed)
-        #Scott's routine (TEST to get no BC on RHS and exact on LHS)
-        #def wrap(t, q):
-        #    bc_q=self.bc.boundary_interpolant(t, discr, TAG_ALL)
-        #    #print q
-        #    #pdb.set_trace()
-        #    bc_q[0][0]=q[0][11*10-1]
-        #    bc_q[1][0]=q[1][11*10-1]
-        #    bc_q[2][0]=q[2][11*10-1]
-        #    #pdb.set_trace()
-        #    opt_result = bound_op(
-        #            q=q, 
-        #            bc_q=bc_q)
-        #    max_speed = opt_result[-1]
-        #    ode_rhs = opt_result[:-1]
-        #    #print q
-        #    #print bc_q
-	    #return ode_rhs, discr.nodewise_max(max_speed)
-
         return wrap
 
 
@@ -1898,6 +1887,85 @@ class EulerOperator(GasDynamicsOperatorBase):
 
         state = make_vector_field("q", self.dimensions+2)
         bc_state = make_vector_field("bc_q", self.dimensions+2)
+        bc_state_out = make_vector_field("bc_q_out", self.dimensions+2)
+
+        c = cse(sqrt(self.gamma*p(state)/self.rho(state)))
+
+        speed = sqrt(numpy.dot(u(state), u(state))) + c
+
+        from hedge.tools import make_lax_friedrichs_flux, join_fields
+        from hedge.mesh import TAG_ALL, TAG_NONE
+        #from Euler1DScott_Order.py 'import' inflow/outflow
+        #bdry_tags_and_states=[(TAG_ALL, bc_state)]
+        #bdry_tags_and_states=[('inflow', bc_state)]
+        bdry_tags_and_states=[('inflow', bc_state),(('outflow', bc_state_out))]
+      
+        return join_fields(
+                (- numpy.dot(make_nabla(self.dimensions), flux(state))
+                    + InverseMassOperator()*make_lax_friedrichs_flux(
+                        wave_speed=
+			ElementwiseMaxOperator()*
+			c,
+                        state=state, flux_func=flux,
+                        bdry_tags_and_states=bdry_tags_and_states,
+                        strong=True
+                        )),
+                    speed)
+
+
+class SourcesEulerOperator(GasDynamicsOperatorBase):
+    '''extension of EulerOperator (above) to include sources
+       which can depend on the hydrodynamic fields as 
+       well as other fields, referre to externalField'''
+
+    def __init__(self, dimensions, gamma, bc, source):
+        GasDynamicsOperatorBase.__init__(self, dimensions, gamma, bc)
+        #self.dimensions = dimensions
+        #self.gamma = gamma
+        #self.bc = bc
+        self.source=source
+
+    def op_template(self):
+        from hedge.optemplate import make_vector_field, \
+                make_common_subexpression as cse
+
+        def MakeSource(q,externalField):
+            return cse(self.source.GetSource(q,externalField))
+
+        def u(q):
+            return cse(self.u(q))
+
+        def p(q):
+            return cse((self.gamma-1)*(self.e(q) - 0.5*numpy.dot(self.rho_u(q), u(q))))
+
+        def flux(q):
+            from pytools import delta
+            from hedge.tools import make_obj_array, join_fields
+            return [ # one entry for each flux direction
+                    cse(join_fields(
+                        # flux rho
+                        self.rho_u(q)[i],
+
+                        # flux E
+                        cse(self.e(q)+p(q))*u(q)[i],
+
+                        # flux rho_u
+                        make_obj_array([
+                            self.rho_u(q)[i]*self.u(q)[j] + delta(i,j) * p(q)
+                            for j in range(self.dimensions)
+                            ])
+                        ))
+                    for i in range(self.dimensions)]
+
+        from hedge.optemplate import make_nabla, InverseMassOperator, \
+                ElementwiseMaxOperator
+
+        from pymbolic import var
+        sqrt = var("sqrt")
+
+        state = make_vector_field("q", self.dimensions+2)
+        externalFieldState = make_vector_field("externalField", self.dimensions)
+        bc_state = make_vector_field("bc_q", self.dimensions+2)
 
         c = cse(sqrt(self.gamma*p(state)/self.rho(state)))
 
@@ -1906,22 +1974,9 @@ class EulerOperator(GasDynamicsOperatorBase):
         from hedge.tools import make_lax_friedrichs_flux, join_fields
         from hedge.mesh import TAG_ALL, TAG_NONE
       
-        #first way of doing it
-        #return join_fields(
-        #        (- numpy.dot(make_nabla(self.dimensions), flux(state))
-        #            + InverseMassOperator()*make_lax_friedrichs_flux(
-         #               wave_speed=
-	#		ElementwiseMaxOperator()*
-	#		c,
-         #               state=state, flux_func=flux,
-          #              bdry_tags_and_states=[
-           #                 (TAG_ALL, bc_state)
-            #                ],
-             #           strong=True
-              #          )),
-               #     speed)
         return join_fields(
                 (- numpy.dot(make_nabla(self.dimensions), flux(state))
+                    + MakeSource(state,externalFieldState)
                     + InverseMassOperator()*make_lax_friedrichs_flux(
                         wave_speed=
 			ElementwiseMaxOperator()*
@@ -1933,3 +1988,17 @@ class EulerOperator(GasDynamicsOperatorBase):
                         strong=True
                         )),
                     speed)
+
+    def bind(self, discr):
+        from hedge.mesh import TAG_ALL
+        bound_op = discr.compile(self.op_template())
+        def wrap(t, q, gradu):
+            opt_result = bound_op(
+                    q=q, 
+                    bc_q=self.bc.boundary_interpolant(t, discr, TAG_ALL),
+                    externalField=gradu)
+            max_speed = opt_result[-1]
+            ode_rhs = opt_result[:-1]
+	    return ode_rhs, discr.nodewise_max(max_speed)
+        return wrap
+

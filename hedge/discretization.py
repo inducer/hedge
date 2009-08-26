@@ -1235,6 +1235,7 @@ class Filter:
     def __call__(self, vec):
         from hedge.tools import log_shape
         from numpy import shape
+        from hedge.tools import make_obj_array
 
         ls = log_shape(vec)
         result = self.discr.volume_zeros(ls)
@@ -1244,11 +1245,11 @@ class Filter:
         for i in indices_in_shape(ls):
             from hedge._internal import perform_elwise_operator
             for eg in self.discr.element_groups:
-                print eg.ranges
                 perform_elwise_operator(eg.ranges, eg.ranges, 
                         self.filter_map[eg], vec[i], result[i])
 
-        return result
+        return make_obj_array(result)
+        #return result
 
     def get_filter_matrix(self, el_group):
         return self.filter_map[el_group]
@@ -1327,19 +1328,14 @@ class SlopeLimiter1NEuler:
             node_count = ldis.node_count()
 
 
-            # build AVE matrix (should confirm gives cell averages)
-            #instead of /2.0 try /(volume of standard element)
-            #in 1,2D vol of standard element =2, in 3D=4/3
+            # build AVE matrix
             massMatrix = ldis.mass_matrix()
             from numpy import size, zeros, sum
             AVEt = sum(massMatrix,0)
-            AVEt = AVEt/2.0
+            AVEt = AVEt/self.standard_el_vol
             AVE = zeros((size(AVEt),size(AVEt)))
-            #apply AVE to a solution vector gives cell average at each node
             for ii in range(0,size(AVEt)):
                 AVE[ii]=AVEt
-            if(self.dimensions==3):
-                AVE=AVE*(3.0/2.0)
             self.AVE_map[eg] = AVE
 
     def GetAve(self,vec):
@@ -1426,8 +1422,6 @@ class SlopeLimiter1NEuler:
             rhovLim=self.GetAve(rhov)
             rhowLim=self.GetAve(rhow)
         rhouVecLim=self.GetAve(rhouVec)
-        #print rhoLim
-        print self.standard_el_vol
 
         #limit primative fields
         #uLim=self.GetAve(u)

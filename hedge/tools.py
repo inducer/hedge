@@ -1297,7 +1297,7 @@ def count_dofs(vec):
 # flux creation ---------------------------------------------------------------
 def make_lax_friedrichs_flux(wave_speed, state, flux_func, bdry_tags_and_states, strong):
     #print bdry_tags_and_states
-    from hedge.flux import make_normal, FluxVectorPlaceholder
+    from hedge.flux import make_normal, FluxVectorPlaceholder, Max, flux_max
    
     fluxes = flux_func(state)
 
@@ -1310,8 +1310,9 @@ def make_lax_friedrichs_flux(wave_speed, state, flux_func, bdry_tags_and_states,
     state_ph = fvph[1:1+n]
     fluxes_ph = [fvph[1+i*n:1+(i+1)*n] for i in range(1, d+1)]
 
-    from hedge.flux import Max
-    penalty = wave_speed_ph.int*(state_ph.ext-state_ph.int)
+    #print wave_speed_ph.int
+    #penalty = wave_speed_ph.int*(state_ph.ext-state_ph.int)
+    penalty = flux_max(wave_speed_ph.int,wave_speed_ph.ext)*(state_ph.ext-state_ph.int)
 
     if not strong:
         flux = 0.5*(sum(n_i*(f_i.int+f_i.ext) for n_i, f_i in zip(normal, fluxes_ph))
@@ -1332,6 +1333,12 @@ def make_lax_friedrichs_flux(wave_speed, state, flux_func, bdry_tags_and_states,
     #            for tag, ext_state in bdry_tags_and_states)
     #       )
     #print temp1
+    #temp1 =sum(
+    #            pair_with_boundary(int_operand,
+    #                join_fields(0, ext_state, *flux_func(ext_state)), tag)
+    #            for tag, ext_state in bdry_tags_and_states)
+    #print temp1
+
     #first way, impose exact solution as BC
     return (flux_op*int_operand
             + sum(
@@ -1442,3 +1449,49 @@ class NestedFuture(Future):
             return self.outer_future_factory(self.inner_future())()
         else:
             return self.outer_future()
+
+# Scott Added functions, should ask andreas where they might go
+def GetSphericalCoord(x_vec):
+
+   #this coordinate trans has phi as angle in (x,y) plane and taking values in (-pi,pi)
+
+    x = x_vec[0]
+    y = x_vec[1]
+    z = x_vec[2]
+
+    r = numpy.sqrt(x**2+y**2+z**2)
+
+    if(numpy.any(r)<numpy.power(10.0,-10.0)):
+        print 'spherical coordinate transformation ill-defined at r=0'
+
+    phi=numpy.arctan2(y,x)
+    theta=numpy.arccos(z/r)
+
+    return join_fields(r,phi,theta)
+
+def IndexSummation(TensorA,TensorB,indexList):
+#given tensors A and B, preform a sum on indicies
+#indexList takes the form [(e,f),(g,h),...], and summation preformed 
+#over e^th entry of A and f^th entry of B, etc
+#result is a tensor field of correct rank
+#user must be sure correct of correct contra/covariant orderings,etc
+
+#currently only tested and working for vectors, need to get this better
+#    sum(
+#                flux_op*pair_with_boundary(int_operand,
+#                    join_fields(0, ext_state, *flux_func(ext_state)), tag)
+#                for tag, ext_state in bdry_tags_and_states)
+#           )
+    from numpy import dot
+    from hedge.tools import ptwise_dot
+    #print 4
+    #print numpy.shape(TensorA)
+    #print numpy.shape(TensorB)
+    #print TensorA
+    #print TensorB
+    #result = ptwise_dot(1,1,TensorA,TensorB)
+    result = dot(TensorA,TensorB)
+    #print result
+    #return result
+ 
+ 
