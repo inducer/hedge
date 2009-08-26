@@ -63,7 +63,6 @@ class VectorExprAssign(Assign):
                     do_not_return=dnr)
                     for name, expr, dnr in zip(
                         self.names, self.exprs, self.do_not_return)],
-                is_vector_pred=executor.is_vector_pred,
                 result_dtype_getter=simple_result_dtype_getter,
                 toolchain=toolchain,
                 wait_on_error="jit_wait_on_compile_error" in discr.debug)
@@ -159,7 +158,8 @@ class BoundaryFluxKind(object):
 
 class OperatorCompiler(OperatorCompilerBase):
     def __init__(self, discr):
-        OperatorCompilerBase.__init__(self)
+        OperatorCompilerBase.__init__(self,
+                max_vectors_in_batch_expr=100)
         self.discr = discr
 
     def get_contained_fluxes(self, expr):

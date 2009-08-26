@@ -32,11 +32,10 @@ from hedge.backends.vector_expr import CompiledVectorExpressionBase
 class CompiledVectorExpression(CompiledVectorExpressionBase):
     elementwise_mod = pycuda.elementwise
 
-    def __init__(self, vec_expr_info_list,
-            is_vector_pred, result_dtype_getter, 
+    def __init__(self, vec_expr_info_list, result_dtype_getter, 
             stream=None, allocator=drv.mem_alloc):
         CompiledVectorExpressionBase.__init__(self, 
-                vec_expr_info_list, is_vector_pred, result_dtype_getter)
+                vec_expr_info_list, result_dtype_getter)
 
         self.stream = stream
         self.allocator = allocator

@@ -4,6 +4,8 @@ assume(m>0);
 assume(N>0);
 assume(s>0);
 
+N:kg*m/s^2;
+
 C : A*s;
 J : N*m;
 V : J/C;

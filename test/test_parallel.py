@@ -163,7 +163,7 @@ def run_parallel_test(dtype):
 
 def test_hedge_parallel():
     from pytools.test import mark_test
-    mark_long_mpi = mark_test(mpi=True, long=True)
+    mark_long_mpi = lambda f: mark_test.long(mark_test.mpi(f))
 
     for dtype in [numpy.float32, numpy.float64]:
         yield ("CPU-MPI in %s precision" % dtype, 

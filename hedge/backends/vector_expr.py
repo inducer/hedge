@@ -49,6 +49,10 @@ class DefaultingSubstitutionMapper(
             pymbolic.mapper.substitutor.SubstitutionMapper.handle_unsupported_expression(
                     self, expr)
 
+    def map_scalar_parameter(self, expr):
+        return pymbolic.mapper.substitutor.SubstitutionMapper.map_variable(
+                self, expr)
+
 
 
 
@@ -95,12 +99,15 @@ def simple_result_dtype_getter(vector_dtype_map, scalar_dtype_map, const_dtypes)
 
     return result
 
+
+
+
 class CompiledVectorExpressionBase(object):
-    def __init__(self, vec_expr_info_list, is_vector_pred, result_dtype_getter):
-        self.is_vector_pred = is_vector_pred
+    def __init__(self, vec_expr_info_list, result_dtype_getter):
         self.result_dtype_getter = result_dtype_getter
 
-        from hedge.optemplate import DependencyMapper
+        from hedge.optemplate import \
+                DependencyMapper, ScalarParameter
         from operator import or_
         from pymbolic import var
 
@@ -114,7 +121,18 @@ class CompiledVectorExpressionBase(object):
 
         from pytools import partition
 
-        self.vector_deps, self.scalar_deps  = partition(is_vector_pred, deps)
+        def is_vector_pred(dep):
+            return not isinstance(dep, ScalarParameter)
+
+        vdeps, sdeps  = partition(is_vector_pred, deps)
+
+        vdeps = [(str(vdep), vdep) for vdep in vdeps]
+        sdeps = [(str(sdep), sdep) for sdep in sdeps]
+        vdeps.sort()
+        sdeps.sort()
+        self.vector_deps = [vdep for key, vdep in vdeps]
+        self.scalar_deps = [sdep for key, sdep in sdeps]
+
         self.vector_dep_names = ["v%d" % i for i in range(len(self.vector_deps))]
         self.scalar_dep_names = ["s%d" % i for i in range(len(self.scalar_deps))]
 
@@ -143,8 +161,10 @@ class CompiledVectorExpressionBase(object):
         self.vec_expr_info_list = [
                 vei.copy(expr=DefaultingSubstitutionMapper(subst_func)(vei.expr))
                 for vei in vec_expr_info_list]
+
         self.result_vec_expr_info_list = [
                 vei for vei in vec_expr_info_list if not vei.do_not_return]
+
     @memoize_method
     def result_names(self):
         return [rvei.name for rvei in self.result_vec_expr_info_list]

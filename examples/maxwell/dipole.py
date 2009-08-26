@@ -159,7 +159,8 @@ def main(write_output=True, allow_features=None):
     logmgr.add_quantity(relerr_e_q)
     logmgr.add_quantity(relerr_h_q)
 
-    logmgr.add_watches(["step.max", "t_sim.max", "W_field", "t_step.max",
+    logmgr.add_watches(["step.max", "t_sim.max", 
+        ("W_field", "W_el+W_mag"), "t_step.max",
         "relerr_e", "relerr_h"])
 
     if write_output:
@@ -260,6 +261,6 @@ if __name__ == "__main__":
 
 
 from pytools.test import mark_test
-@mark_test(long=True)
+@mark_test.long
 def test_run():
     main(write_output=False)

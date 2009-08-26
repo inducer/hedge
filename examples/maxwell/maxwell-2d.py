@@ -109,7 +109,8 @@ def main(write_output=True):
     field_getter = EMFieldGetter(discr, op, lambda: fields)
     add_em_quantities(logmgr, op, field_getter)
 
-    logmgr.add_watches(["step.max", "t_sim.max", "W_field", "t_step.max"])
+    logmgr.add_watches(["step.max", "t_sim.max", 
+        ("W_field", "W_el+W_mag"), "t_step.max"])
 
     # timestep loop -------------------------------------------------------
     rhs = op.bind(discr)
@@ -148,6 +149,6 @@ if __name__ == "__main__":
 
 # entry points for py.test ----------------------------------------------------
 from pytools.test import mark_test
-@mark_test(long=True)
+@mark_test.long
 def test_maxwell_2d():
     main(write_output=False)

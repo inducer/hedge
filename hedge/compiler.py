@@ -813,18 +813,28 @@ class OperatorCompilerBase(IdentityMapper):
             available_names = set()
 
             while names_exprs_deps:
-                scheduled_one = False
-                for i, (name, expr, deps) in enumerate(names_exprs_deps):
+                schedulable = []
+
+                i = 0
+                while i < len(names_exprs_deps):
+                    name, expr, deps = names_exprs_deps[i]
+
                     unsatisfied_deps = deps - available_names
 
                     if not unsatisfied_deps:
-                        ordered_names_exprs.append((name, expr))
-                        scheduled_one = True
-                        available_names.add(name)
+                        schedulable.append((str(expr), name, expr))
                         del names_exprs_deps[i]
-                        break
+                    else:
+                        i += 1
 
-                if not scheduled_one:
+                # make sure these come out in a constant order
+                schedulable.sort()
+
+                if schedulable:
+                    for key, name, expr in schedulable:
+                        ordered_names_exprs.append((name, expr))
+                        available_names.add(name)
+                else:
                     raise RuntimeError("aggregation resulted in an impossible assignment")
 
             return self.finalize_multi_assign(

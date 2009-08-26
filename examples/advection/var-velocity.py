@@ -238,7 +238,7 @@ if __name__ == "__main__":
 # entry points for py.test ----------------------------------------------------
 def test_var_velocity_advection():
     from pytools.test import mark_test
-    mark_long = mark_test(long=True)
+    mark_long = mark_test.long
 
     for flux_type in ["upwind", "central", "lf"]:
         yield "variable-velocity-advection with %s flux" % flux_type, \
