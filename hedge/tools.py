@@ -1176,11 +1176,11 @@ def make_lax_friedrichs_flux(wave_speed, state, fluxes, bdry_tags_states_and_flu
     #first way, impose exact solution as BC
     # OLD WAY:
     #return (flux_op*int_operand
-            + sum(
-                flux_op*pair_with_boundary(int_operand,
-                    join_fields(0, ext_state, *flux_func(ext_state)), tag)
-                for tag, ext_state in bdry_tags_and_states)
-           )
+            #+ sum(
+                #flux_op*pair_with_boundary(int_operand,
+                    #join_fields(0, ext_state, *flux_func(ext_state)), tag)
+                #for tag, ext_state in bdry_tags_and_states)
+           #)
     #impose no BC (is this true??)
     #impose no BC on LHS, exact solution on RHS
     #return (flux_op*int_operand
