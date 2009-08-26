@@ -20,7 +20,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 
-import hedge.tools 
+import hedge.tools
 import numpy
 
 
@@ -65,12 +65,12 @@ class LegacyVtkFile(object):
     def close(self):
         if not self.is_closed:
             from pyvtk import PointData, VtkData
-            vtk = VtkData(self.structure, 
-                    self.description, 
+            vtk = VtkData(self.structure,
+                    self.description,
                     PointData(*self.pointdata))
             vtk.tofile(self.pathname)
             self.is_closed = True
-            
+
 
 
 
@@ -84,7 +84,7 @@ class LegacyVtkVisualizer(Visualizer):
         for eg in discr.element_groups:
             ldis = eg.local_discretization
             for el, (el_start, el_stop) in zip(eg.members, eg.ranges):
-                polygons += [[el_start+j for j in element] 
+                polygons += [[el_start+j for j in element]
                         for element in ldis.get_submesh_indices()]
 
         self.structure = PolyData(points=points, polygons=polygons)
@@ -99,11 +99,11 @@ class LegacyVtkVisualizer(Visualizer):
         from pyvtk import Scalars, Vectors
 
         vtkfile.pointdata.extend(
-                Scalars(numpy.array(scale_factor*field), 
-                    name=name, lookup_table="default") 
+                Scalars(numpy.array(scale_factor*field),
+                    name=name, lookup_table="default")
                 for name, field in scalars)
         vtkfile.pointdata.extend(
-                Vectors([_three_vector(scale_factor*v) 
+                Vectors([_three_vector(scale_factor*v)
                     for v in zip(field)], name=name)
                 for name, field in vectors)
 
@@ -218,9 +218,9 @@ class VtkVisualizer(Visualizer, hedge.tools.Closable):
             cell_types.extend([vtk_eltype] * len(smi) * len(eg.members))
 
         self.grid = UnstructuredGrid(
-                (len(discr), 
+                (len(discr),
                     DataArray("points", discr.nodes, vector_format=VF_LIST_OF_VECTORS)),
-                numpy.asarray(cells), 
+                numpy.asarray(cells),
                 cell_types=numpy.asarray(cell_types, dtype=numpy.uint8))
 
 
@@ -256,7 +256,7 @@ class VtkVisualizer(Visualizer, hedge.tools.Closable):
         appended to `pathname'.
         """
         if self.pcontext is None or len(self.pcontext.ranks) == 1:
-            return VtkFile(pathname+"."+self.grid.vtk_extension(), 
+            return VtkFile(pathname+"."+self.grid.vtk_extension(),
                     self.grid.copy(),
                     compressor=self.compressor
                     )
@@ -266,16 +266,16 @@ class VtkVisualizer(Visualizer, hedge.tools.Closable):
             if self.pcontext.is_head_rank:
                 return ParallelVtkFile(
                         filename_pattern % self.pcontext.rank,
-                        self.grid.copy(), 
+                        self.grid.copy(),
                         index_pathname="%s.p%s" % (
                             pathname, self.grid.vtk_extension()),
                         pathnames=[
                             filename_pattern % rank for rank in self.pcontext.ranks],
-                       compressor=self.compressor 
+                       compressor=self.compressor
                        )
             else:
                 return VtkFile(
-                        filename_pattern % self.pcontext.rank, 
+                        filename_pattern % self.pcontext.rank,
                         self.grid.copy(),
                         compressor=self.compressor
                         )
@@ -346,7 +346,7 @@ class SiloMeshData(object):
                         self.shapetypes.append(DB_ZONETYPE_TET)
                     else:
                         raise RuntimeError, "unsupported element type: %s" % ldis.geometry
-            
+
                 self.shapesizes.append(poly_length)
                 self.shapecounts.append(poly_count)
                 self.nzones += poly_count
@@ -375,7 +375,7 @@ class SiloVisualizer(Visualizer):
 
     def _generate(self):
         # only generate vis data when vis is really needed.
-        # saves startup time when debugging.    
+        # saves startup time when debugging.
         def generate_fine_elements(eg):
             ldis = eg.local_discretization
             smi = ldis.get_submesh_indices()
@@ -408,10 +408,10 @@ class SiloVisualizer(Visualizer):
         discr = self.discr
         self.dim = discr.dimensions
         if self.dim != 1:
-            self.fine_mesh = SiloMeshData(self.dim, 
+            self.fine_mesh = SiloMeshData(self.dim,
                     numpy.asarray(discr.nodes.T, order="C"),
                     generate_fine_element_groups())
-            self.coarse_mesh = SiloMeshData(self.dim, 
+            self.coarse_mesh = SiloMeshData(self.dim,
                     numpy.asarray(discr.mesh.points.T, order="C"),
                     generate_coarse_element_groups())
         else:
@@ -438,7 +438,7 @@ class SiloVisualizer(Visualizer):
         else:
             from pylo import ParallelSiloFile
             return ParallelSiloFile(
-                    pathname, 
+                    pathname,
                     self.pcontext.rank, self.pcontext.ranks)
 
     def add_data(self, silo, variables=[], scalars=[], vectors=[], expressions=[],
@@ -460,13 +460,15 @@ class SiloVisualizer(Visualizer):
 
         if self.dim == 1:
             for name, field in variables:
-                if isinstance(field, list) and len(field) > 1:
-                    from warnings import warn
-                    warn("Silo visualization does not support vectors in 1D, ignoring '%s'" % name)
+                from hedge.tools import is_obj_array
+                if is_obj_array(field):
+                    AXES = ["x", "y", "z", "w"]
+                    for i, f_i in enumerate(field):
+                        silo.put_curve(name+AXES[i], self.xvals, 
+                                scale_factor*f_i, mesh_opts)
                 else:
-                    if isinstance(field, list):
-                        field = field[0]
-                    silo.put_curve(name, self.xvals, scale_factor*field, mesh_opts)
+                    silo.put_curve(name, self.xvals, 
+                            scale_factor*field, mesh_opts)
         else:
             self.fine_mesh.put_mesh(silo, "finezonelist", "finemesh", mesh_opts)
             self.coarse_mesh.put_mesh(silo, "coarsezonelist", "mesh", mesh_opts)
@@ -478,8 +480,8 @@ class SiloVisualizer(Visualizer):
                 ls = log_shape(field)
                 if ls != () and ls[0] > 1:
                     assert len(ls) == 1
-                    silo.put_ucdvar(name, "finemesh", 
-                            ["%s_comp%d" % (name, i) 
+                    silo.put_ucdvar(name, "finemesh",
+                            ["%s_comp%d" % (name, i)
                                 for i in range(ls[0])],
                             scale_factor*field, DB_NODECENT)
                 else:

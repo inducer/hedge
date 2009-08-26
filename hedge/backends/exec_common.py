@@ -33,11 +33,11 @@ class CPUExecutorBase(object):
         discr = self.discr
         assert discr.instrumented
 
+        from pytools.log import time_and_count_function
         from hedge.tools import time_count_flop
 
         from hedge.tools import \
-                diff_rst_flops, diff_rescale_one_flops, lift_flops, \
-                mass_flops
+                diff_rst_flops, diff_rescale_one_flops, mass_flops
 
         self.diff_rst = \
                 time_count_flop(
@@ -64,12 +64,10 @@ class CPUExecutorBase(object):
                         mass_flops(discr))
 
         self.lift_flux = \
-                time_count_flop(
+                time_and_count_function(
                         self.lift_flux,
                         discr.lift_timer,
-                        discr.lift_counter,
-                        discr.lift_flop_counter,
-                        lift_flops(discr))
+                        discr.lift_counter)
 
     def lift_flux(self, fgroup, matrix, scaling, field, out):
         from hedge._internal import lift_flux
@@ -128,6 +126,9 @@ class ExecutionMapperBase(hedge.optemplate.Evaluator,
         return self.discr.boundarize_volume_field(
                 self.rec(field_expr), tag=op.tag)
 
+    def map_scalar_parameter(self, expr):
+        return self.context[expr.name]
+
 
 
 
@@ -154,9 +155,10 @@ class CPUExecutionMapperBase(ExecutionMapperBase):
         from hedge._internal import perform_elwise_max
         field = self.rec(field_expr)
 
-        out = self.discr.volume_zeros()
+        out = self.discr.volume_zeros(dtype=field.dtype)
         for eg in self.discr.element_groups:
             perform_elwise_max(eg.ranges, field, out)
+
         return out
 
     def map_call(self, expr):

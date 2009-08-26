@@ -144,14 +144,21 @@ class ExecutionMapper(ExecutionMapperBase):
         if self.executor.discr.instrumented:
             def stats_callback(n, vec_expr, t_func):
                 self.executor.discr.vector_math_timer.add_timer_callable(t_func)
-                self.executor.discr.vector_math_flop_counter.add(n*vec_expr.flop_count)
+                self.executor.discr.vector_math_flop_counter.add(
+                        n*insn.flop_count())
                 self.executor.discr.gmem_bytes_vector_math.add(
                         self.executor.discr.given.float_size() * n *
-                        (1+len(vec_expr.vector_exprs)))
+                        (len(vec_expr.vector_deps)+len(insn.exprs)))
         else:
             stats_callback = None
 
-        return [(insn.name, insn.compiled(self, stats_callback))], []
+        if insn.flop_count() == 0:
+            return [(name, self(expr))
+                for name, expr in zip(insn.names, insn.exprs)], []
+        else:
+            compiled = insn.compiled(self.executor)
+            return zip(compiled.result_names(),
+                    compiled(self, stats_callback)), []
 
     def exec_diff_batch_assign(self, insn):
         field = self.rec(insn.field)
@@ -198,7 +205,8 @@ class ExecutionMapper(ExecutionMapperBase):
     def exec_flux_batch_assign(self, insn):
         discr = self.executor.discr
 
-        all_fofs = insn.kernel(self.rec, discr.fluxlocal_plan)
+        kernel = insn.kernel(self.executor)
+        all_fofs = kernel(self.rec, discr.fluxlocal_plan)
         elgroup, = discr.element_groups
 
         result = [
@@ -213,7 +221,7 @@ class ExecutionMapper(ExecutionMapperBase):
             given = discr.given
 
             flux_count = len(insn.fluxes)
-            dep_count = len(insn.kernel.all_deps)
+            dep_count = len(kernel.interior_deps)
 
             discr.gather_counter.add(
                     flux_count*dep_count)
@@ -289,64 +297,39 @@ class ExecutionMapper(ExecutionMapperBase):
                 *self.executor.mass_data(kernel, elgroup, insn.op_class)))], []
 
     def map_elementwise_max(self, op, field_expr):
-        from pycuda.compiler import SourceModule
-        from pycuda.tools import dtype_to_ctype
-	from hedge.element import TriangularElement as TE
-
+        import pycuda.gpuarray
         discr = self.executor.discr
 
         field = self.rec(field_expr)
-	order = discr.given.order()
-	nodes_per_el = TE(order).node_count()
-	aligned_floats = discr.given.dofs_per_block()
+        field_out = pycuda.gpuarray.zeros_like(field)
 
+	dofs_per_el = discr.given.dofs_per_el()
+	floats_per_mb = discr.given.microblock.aligned_floats
+
+        # round block_size up to nearest multiple of floats_per_mb
         block_size = 128
-        if block_size % aligned_floats != 0:
-	    block_size = block_size - block_size % aligned_floats + aligned_floats
-	    if block_size > 512:
-	        block_size = block_size - aligned_floats
 
-        if discr.default_scalar_type == numpy.float64:
-	    max_expr = "fmax"
-	elif discr.default_scalar_type == numpy.float32:
-	    max_expr = "fmaxf"
-	else:
-	    raise TypeError("invalid default_scalar_type specified")
+        mbs_per_block = (block_size + floats_per_mb - 1) // floats_per_mb
+        block_size = floats_per_mb * mbs_per_block
 
-        mod = SourceModule("""
-	#define NODES_PER_EL %(nodes_per_el)d
-        #define MAX_EXPR %(max_expr)s
+	if block_size > discr.given.devdata.max_threads:
+            # rounding up took us beyond the max block size,
+            # round down instead
+	    block_size = block_size - floats_per_mb
 
-	typedef %(value_type)s value_type;
+        if block_size > discr.given.devdata.max_threads or block_size == 0:
+            raise RuntimeError("Computation of thread block size for "
+                    "elementwise max gave invalid result %d." % block_size)
 
-	__global__ void elwise_max(value_type *field)
-	{
-            int idx = blockDim.x * threadIdx.y + threadIdx.x;
-	    int base_idx = blockDim.x * threadIdx.y + threadIdx.x / NODES_PER_EL;
-	    for (int i=0; i<NODES_PER_EL; i++)
-	      field[idx] = MAX_EXPR(field[idx], field[base_idx+i]);
-	}
-	"""% {
-	"nodes_per_el": nodes_per_el,
-	"max_expr": max_expr,
-	"value_type": dtype_to_ctype(field.dtype),
-	})
+        func = self.executor.get_elwise_max_kernel(dofs_per_el, 
+                  block_size, floats_per_mb, mbs_per_block, field.dtype)
 
-        #start = cuda.Event()
-	#stop = cuda.Event()
+        mb_count = len(discr.blocks) * discr.given.microblocks_per_block
 
-	func = mod.get_function("elwise_max")
-	func.prepare("P", block=(block_size//aligned_floats, aligned_floats, 1))
-	grid_dim = (len(field) + block_size - 1) // block_size
-	#cuda.Context.synchronize()
-	#start.record()
-	func.prepared_call((grid_dim, 1),field.gpudata)
-	#stop.record()
-	#stop.synchronize()
-	#elapsed_seconds = stop.time_since(start) * 1e-3
-	#print elapsed_seconds
-	return field
-
+	grid_dim = (mb_count + mbs_per_block - 1) // mbs_per_block
+	func.prepared_call((grid_dim, 1), 
+            field.gpudata, field_out.gpudata, mb_count)
+	return field_out
 
 
 
@@ -358,8 +341,24 @@ class VectorExprAssign(Assign):
     def get_executor_method(self, executor):
         return executor.exec_vector_expr_assign
 
-    def __str__(self):
-        return "%s <- (compiled) %s" % (self.name, self.expr)
+    comment = "compiled"
+
+    @memoize_method
+    def compiled(self, executor):
+        discr = executor.discr
+
+        from hedge.backends.vector_expr import \
+                VectorExpressionInfo, simple_result_dtype_getter
+        from hedge.backends.cuda.vector_expr import CompiledVectorExpression
+        return CompiledVectorExpression(
+                [VectorExpressionInfo(
+                    name=name,
+                    expr=expr,
+                    do_not_return=dnr)
+                    for name, expr, dnr in zip(
+                        self.names, self.exprs, self.do_not_return)],
+                result_dtype_getter=simple_result_dtype_getter,
+                allocator=discr.pool.allocate)
 
 class CUDAFluxBatchAssign(FluxBatchAssign):
     @memoize_method
@@ -374,9 +373,10 @@ class CUDAFluxBatchAssign(FluxBatchAssign):
         from pytools import flatten
         return set(flatten(dep_mapper(dep) for dep in deps))
 
-class CompiledCUDAFluxBatchAssign(CUDAFluxBatchAssign):
-    __slots__ = ["kernel"]
-
+    @memoize_method
+    def kernel(self, executor):
+        return executor.discr.flux_plan.make_kernel(
+                executor.discr, executor, self.fluxes)
 
 
 
@@ -395,7 +395,7 @@ class OperatorCompiler(OperatorCompilerBase):
 
     def internal_map_flux(self, wdflux):
         from hedge.backends.cuda.optemplate import WholeDomainFluxOperator
-        return WholeDomainFluxOperator(
+        result = WholeDomainFluxOperator(
             wdflux.is_lift,
             [wdflux.InteriorInfo(
                 flux_expr=ii.flux_expr, 
@@ -406,6 +406,7 @@ class OperatorCompiler(OperatorCompilerBase):
                 bpair=self.rec(bi.bpair))
                 for bi in wdflux.boundaries],
             wdflux.flux_optemplate)
+        return result
 
     def map_whole_domain_flux(self, wdflux):
         return self.map_planned_flux(wdflux)
@@ -414,45 +415,11 @@ class OperatorCompiler(OperatorCompilerBase):
         return CUDAFluxBatchAssign(names=names, fluxes=fluxes, kind=kind,
                 dep_mapper_factory=self.dep_mapper_factory)
 
-
-
-
-class OperatorCompilerWithExecutor(OperatorCompiler):
-    def __init__(self, executor):
-        OperatorCompiler.__init__(self)
-        self.executor = executor
-
-    def make_assign(self, name, expr, priority):
-        def result_dtype_getter(vector_dtype_map, scalar_dtype_map, const_dtypes):
-            from pytools import common_dtype
-            return common_dtype(
-                    vector_dtype_map.values()
-                    + scalar_dtype_map.values()
-                    + const_dtypes)
-
-        from hedge.backends.cuda.vector_expr import CompiledVectorExpression
-        return VectorExprAssign(
-                name=name,
-                expr=expr,
+    def finalize_multi_assign(self, names, exprs, do_not_return, priority):
+        return VectorExprAssign(names=names, exprs=exprs,
+                do_not_return=do_not_return,
                 dep_mapper_factory=self.dep_mapper_factory,
-                compiled=CompiledVectorExpression(
-                    expr, 
-                    is_vector_func=lambda expr: True,
-                    result_dtype_getter=result_dtype_getter,
-                    allocator=self.executor.discr.pool.allocate),
                 priority=priority)
-
-    def make_flux_batch_assign(self, names, fluxes, kind):
-        return CompiledCUDAFluxBatchAssign(
-                names=names,
-                fluxes=fluxes,
-                kind=kind,
-                kernel=self.executor.discr.flux_plan.make_kernel(
-                    self.executor.discr,
-                    self.executor,
-                    fluxes),
-                dep_mapper_factory=self.dep_mapper_factory)
-
 
 
 
@@ -468,7 +435,7 @@ class Executor(object):
         self.diff_rst_flops = diff_rst_flops(discr)
         self.diff_rescale_one_flops = diff_rescale_one_flops(discr)
         self.mass_flops = mass_flops(discr)
-        self.lift_flops = lift_flops(discr)
+        self.lift_flops = sum(lift_flops(fg) for fg in discr.face_groups)
 
         optemplate_stage1 = self.prepare_optemplate_stage1(
                 optemplate, post_bind_mapper)
@@ -488,28 +455,11 @@ class Executor(object):
                 e2bb[elface] = (e2bb.get(elface, 0) | bdry_bit)
 
         # compile the optemplate
-        self.code = OperatorCompilerWithExecutor(self)(
+        from struct import calcsize
+        self.code = OperatorCompiler(
+                max_vectors_in_batch_expr=220 // calcsize("P")
+                )(
                 self.prepare_optemplate_stage2(discr.mesh, optemplate_stage1))
-
-	if "print_op_code" in discr.debug:
-	    from hedge.tools import get_rank
-	    if get_rank(discr) == 0:
-		print self.code
-		raw_input()
-
-        if False:
-            from hedge.tools import get_rank
-            from hedge.compiler import dot_dataflow_graph
-            i = 0
-            while True:
-                dot_name = "rank-%d-dataflow-%d.dot" % (get_rank(discr), i)
-                from os.path import exists
-                if exists(dot_name):
-                    i += 1
-                    continue
-
-                open(dot_name, "w").write(dot_dataflow_graph(self.code))
-                break
 
         # build the local kernels 
         self.diff_kernel = self.discr.diff_plan.make_kernel(discr)
@@ -522,11 +472,12 @@ class Executor(object):
                 BCToFluxRewriter, CommutativeConstantFoldingMapper
         from hedge.backends.cuda.optemplate import BoundaryCombiner
 
-        return BoundaryCombiner(mesh)(
-                InverseMassContractor()(
-                    CommutativeConstantFoldingMapper()(
-                        BCToFluxRewriter()(
-                            optemplate))))
+        optemplate = BCToFluxRewriter()(optemplate)
+        optemplate = CommutativeConstantFoldingMapper()(optemplate)
+        optemplate = InverseMassContractor()(optemplate)
+        optemplate = BoundaryCombiner(mesh)(optemplate)
+
+        return optemplate
 
     @staticmethod
     def prepare_optemplate_stage1(optemplate, post_bind_mapper=lambda x: x):
@@ -553,8 +504,14 @@ class Executor(object):
 
     # actual execution --------------------------------------------------------
     def __call__(self, **vars):
+        def pre_assign_check(tgt, value):
+            if numpy.isnan(self.discr.convert_volume(value, kind="numpy")).any():
+                print "%s was assigned a nan-containing value." % tgt
+
         return self.code.execute(
-                self.discr.exec_mapper_class(vars, self))
+                self.discr.exec_mapper_class(vars, self),
+                #pre_assign_check=pre_assign_check
+                )
 
     # data caches for execution -----------------------------------------------
     @memoize_method
@@ -574,3 +531,69 @@ class Executor(object):
     def mass_data(self, kernel, elgroup, op_class):
         return (kernel.prepare_matrix(op_class.matrix(elgroup)),
                 kernel.prepare_scaling(elgroup, op_class.coefficients(elgroup)))
+
+    @memoize_method
+    def get_elwise_max_kernel(self, dofs_per_el, block_size,
+                              floats_per_mb, mbs_per_block, dtype):
+        if dtype == numpy.float64:
+	    max_func = "fmax"
+	elif dtype == numpy.float32:
+	    max_func = "fmaxf"
+	else:
+	    raise TypeError("Could not find a maximum function due to unsupported field.dtype.")
+
+        from pycuda.tools import dtype_to_ctype
+        from pycuda.compiler import SourceModule
+        mod = SourceModule("""
+        #include <pycuda-helpers.hpp>
+
+        #define DOFS_PER_EL %(dofs_per_el)d
+        #define MAX_FUNC %(max_func)s
+        #define BLOCK_SIZE %(block_size)d
+        #define FLOATS_PER_MB %(floats_per_mb)d
+        #define MBS_PER_BLOCK %(mbs_per_block)d
+       
+        #define MY_INFINITY (1./0.)
+
+        #define NODE_IN_MB_IDX  threadIdx.x
+        #define MB_IN_BLOCK_IDX threadIdx.y
+        #define BLOCK_IDX blockIdx.x
+        #define MB_NUMBER (BLOCK_IDX * MBS_PER_BLOCK + MB_IN_BLOCK_IDX)
+
+        typedef %(value_type)s value_type;
+
+        __global__ void elwise_max(value_type *field, value_type *field_out, 
+          unsigned mb_count)
+        {
+          if (MB_NUMBER >= mb_count)
+            return;
+        
+          int idx =  MB_NUMBER * FLOATS_PER_MB + NODE_IN_MB_IDX;
+          int element_base_idx = FLOATS_PER_MB * MB_IN_BLOCK_IDX + 
+              (NODE_IN_MB_IDX / DOFS_PER_EL) * DOFS_PER_EL;
+
+          __shared__ value_type whole_block[BLOCK_SIZE];
+          int idx_in_block = FLOATS_PER_MB * MB_IN_BLOCK_IDX + NODE_IN_MB_IDX;
+          whole_block[idx_in_block] = field[idx];
+
+          __syncthreads();
+
+          value_type own_value = -MY_INFINITY;
+
+          for (int i=0; i<DOFS_PER_EL; i++)
+              own_value = MAX_FUNC(own_value, whole_block[element_base_idx+i]);
+          field_out[idx] = own_value;
+        }
+        """% {
+        "dofs_per_el": dofs_per_el,
+        "max_func": max_func,
+        "block_size": block_size,
+        "floats_per_mb": floats_per_mb,
+        "mbs_per_block": mbs_per_block,
+        "value_type": dtype_to_ctype(dtype),
+        })
+
+	func = mod.get_function("elwise_max")
+	func.prepare("PPI", block=(floats_per_mb, block_size//floats_per_mb, 1))
+
+        return func

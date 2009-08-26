@@ -147,10 +147,9 @@ class EMFieldGetter(object):
 
 
 
-
-class EMFieldEnergy(LogQuantity):
-    def __init__(self, fields, name="W_field"):
-        LogQuantity.__init__(self, name, "J", "Field Energy")
+class ElectricFieldEnergy(LogQuantity):
+    def __init__(self, fields, name="W_el"):
+        LogQuantity.__init__(self, name, "J", "Energy of the electric field")
         self.fields = fields
 
     @property
@@ -162,17 +161,34 @@ class EMFieldEnergy(LogQuantity):
         max_op = self.fields.maxwell_op
 
         e = self.fields.e
-        h = self.fields.h
         d = max_op.epsilon * e
+
+        from hedge.tools import ptwise_dot
+        energy_density = 1/2*(ptwise_dot(1, 1, e, d))
+        return self.fields.discr.integral(energy_density)
+
+
+
+
+class MagneticFieldEnergy(LogQuantity):
+    def __init__(self, fields, name="W_mag"):
+        LogQuantity.__init__(self, name, "J", "Energy of the magnetic field")
+        self.fields = fields
+
+    @property
+    def default_aggregator(self): 
+        from pytools import norm_2
+        return norm_2
+
+    def __call__(self):
+        max_op = self.fields.maxwell_op
+
+        h = self.fields.h
         b = max_op.mu * h
 
         from hedge.tools import ptwise_dot
-        energy_density = 1/2*(
-                ptwise_dot(1, 1, e, d) 
-                + ptwise_dot(1, 1, h, b))
-
+        energy_density = 1/2*(ptwise_dot(1, 1, h, b))
         return self.fields.discr.integral(energy_density)
-
 
 
 
@@ -220,7 +236,7 @@ class EMFieldDivergenceD(LogQuantity):
 
         self.fields = fields
 
-        from hedge.pde import DivergenceOperator
+        from hedge.models.nd_calculus import DivergenceOperator
         div_op = DivergenceOperator(maxwell_op.dimensions,
                 maxwell_op.get_eh_subset()[:3])
         self.bound_div_op = div_op.bind(self.fields.discr)
@@ -239,7 +255,7 @@ class EMFieldDivergenceB(MultiLogQuantity):
     def __init__(self, maxwell_op, fields, names=None):
         self.fields = fields
 
-        from hedge.pde import DivergenceOperator
+        from hedge.models.nd_calculus import DivergenceOperator
         self.div_op = DivergenceOperator(maxwell_op.dimensions,
                 maxwell_op.get_eh_subset()[3:]).bind(self.fields.discr)
 
@@ -263,7 +279,8 @@ class EMFieldDivergenceB(MultiLogQuantity):
 
 
 def add_em_quantities(mgr, maxwell_op, fields):
-    mgr.add_quantity(EMFieldEnergy(fields))
+    mgr.add_quantity(ElectricFieldEnergy(fields))
+    mgr.add_quantity(MagneticFieldEnergy(fields))
     mgr.add_quantity(EMFieldMomentum(fields, maxwell_op.c))
     mgr.add_quantity(EMFieldDivergenceD(maxwell_op, fields))
     mgr.add_quantity(EMFieldDivergenceB(maxwell_op, fields))

@@ -21,7 +21,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 
-from pytools import Record
+from pytools import Record, memoize_method
 import pymbolic.primitives
 import pymbolic.mapper
 import hedge.optemplate
@@ -39,14 +39,15 @@ class StringifyMapper(hedge.optemplate.StringifyMapper):
         return "%s(is_lift=%s,\n    int=%s,\n    tag->flux=%s)" % (tag, 
                 expr.is_lift,
                 expr.interiors,
-                expr.tag_to_fluxes)
+                expr.boundaries)
 
 
 
 
 def get_flux_dependencies(flux, field, bdry="all"):
     from hedge.flux import FluxDependencyMapper, FieldComponent
-    in_fields = list(FluxDependencyMapper(composite_leaves=True)(flux))
+    in_fields = list(FluxDependencyMapper(
+        include_calls=False)(flux))
 
     # check that all in_fields are FieldComponent instances
     assert not [in_field
@@ -94,13 +95,33 @@ class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
             return "%s(%s)" % (
                     self.__class__.__name__,
                     ", ".join("%s=%s" % (fld, getattr(self, fld))
-                        for fld in self.__class__.fields))
+                        for fld in self.__class__.fields
+                        if hasattr(self, fld)))
 
     class InteriorInfo(FluxInfo):
-        __slots__ = ["flux_expr", "field_expr"]
+        # attributes: flux_expr, field_expr, 
+
+        @property
+        @memoize_method
+        def dependencies(self):
+            return set(get_flux_dependencies(
+                self.flux_expr, self.field_expr))
 
     class BoundaryInfo(FluxInfo):
-        __slots__ = ["flux_expr", "bpair"]
+        # attributes: flux_expr, bpair
+
+        @property
+        @memoize_method
+        def int_dependencies(self):
+            return set(get_flux_dependencies(
+                    self.flux_expr, self.bpair, bdry="int"))
+
+        @property
+        @memoize_method
+        def ext_dependencies(self):
+            return set(get_flux_dependencies(
+                    self.flux_expr, self.bpair, bdry="ext"))
+                
 
     def __init__(self, is_lift, interiors, boundaries, 
             flux_optemplate=None):
@@ -109,18 +130,12 @@ class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
         self.interiors = interiors
         self.boundaries = boundaries
 
-        def set_sum(set_iterable):
-            from operator import or_
-            return reduce(or_, set_iterable, set())
-
-        interior_deps = set_sum(
-                set(get_flux_dependencies(iflux.flux_expr, iflux.field_expr))
+        from pytools import set_sum
+        interior_deps = set_sum(iflux.dependencies
                 for iflux in interiors)
-        boundary_int_deps = set_sum(
-                set(get_flux_dependencies(bflux.flux_expr, bflux.bpair, bdry="int"))
+        boundary_int_deps = set_sum(bflux.int_dependencies
                 for bflux in boundaries)
-        boundary_ext_deps = set_sum(
-                set(get_flux_dependencies(bflux.flux_expr, bflux.bpair, bdry="ext"))
+        boundary_ext_deps = set_sum(bflux.ext_dependencies
                 for bflux in boundaries)
 
         self.interior_deps = list(interior_deps)
@@ -133,11 +148,6 @@ class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
             for dep in get_flux_dependencies(
                     bflux.flux_expr, bflux.bpair, bdry="ext"):
                 self.dep_to_tag[dep] = bflux.bpair.tag
-
-        self.tag_to_fluxes = {}
-
-        for bflux in boundaries:
-            self.tag_to_fluxes.setdefault(bflux.bpair.tag, []).append(bflux)
 
         self.flux_optemplate = flux_optemplate
 
@@ -162,8 +172,8 @@ class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
 
 
 class BoundaryCombiner(hedge.optemplate.IdentityMapper):
-    """Combines inner fluxes and boundary fluxes on disjoint parts of the
-    boundary into a single, whole-domain operator of type
+    """Combines inner fluxes and boundary fluxes into a 
+    single, whole-domain operator of type 
     L{hedge.backends.cuda.execute.WholeDomainFluxOperator}.
     """
     def __init__(self, mesh):
@@ -198,16 +208,15 @@ class BoundaryCombiner(hedge.optemplate.IdentityMapper):
                 flux_optemplate_summands.append(ch)
 
                 if isinstance(ch.field, BoundaryPair):
-                    bpair = ch.field
+                    bpair = self.rec(ch.field)
                     if self.mesh.tag_to_boundary.get(bpair.tag, []):
                         boundaries.append(WholeDomainFluxOperator.BoundaryInfo(
                             flux_expr=ch.op.flux,
-                            bpair=bpair,
-                            ))
+                            bpair=bpair))
                 else:
                     interiors.append(WholeDomainFluxOperator.InteriorInfo(
                             flux_expr=ch.op.flux,
-                            field_expr=ch.field))
+                            field_expr=self.rec(ch.field)))
             else:
                 rest.append(ch)
 
@@ -249,7 +258,14 @@ class BoundaryCombiner(hedge.optemplate.IdentityMapper):
 # collectors ------------------------------------------------------------------
 class FluxCollector(hedge.optemplate.CollectorMixin, hedge.optemplate.CombineMapper):
     def map_whole_domain_flux(self, wdflux):
-        return set([wdflux])
+        result = set([wdflux]) 
+
+        for intr in wdflux.interiors:
+            result |= self.rec(intr.field_expr)
+        for bdry in wdflux.boundaries:
+            result |= self.rec(bdry.bpair)
+
+        return  result
 
 class BoundOperatorCollector(hedge.optemplate.BoundOperatorCollector):
     def map_whole_domain_flux(self, expr):

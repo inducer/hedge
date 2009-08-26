@@ -144,7 +144,8 @@ class BoundarizeSendFuture(Future):
 
     def __call__(self):
         return [], [SendCompletionFuture(
-            self.pdiscr.context.communicator, self.rank, self.bdry_future())]
+            self.pdiscr.context.communicator, self.rank, 
+            self.bdry_future(), self.pdiscr)]
 
 
 
@@ -175,9 +176,10 @@ class MPICompletionFuture(Future):
 
 
 class SendCompletionFuture(MPICompletionFuture):
-    def __init__(self, comm, rank, send_vec):
-        assert send_vec.dtype != object
+    def __init__(self, comm, rank, send_vec, pdiscr):
         self.send_vec = send_vec
+
+        assert send_vec.dtype == pdiscr.default_scalar_type
 
         from boostmpi import isend_buffer
         MPICompletionFuture.__init__(self,
@@ -376,7 +378,6 @@ class ParallelDiscretization(object):
                 "Number of inner flux communication runs")
 
         mgr.add_quantity(self.comm_flux_counter)
-        mgr.set_constant("rank_count", len(self.context.ranks))
 
     # property forwards -------------------------------------------------------
     def __len__(self):

@@ -1,0 +1,107 @@
+\def\bigstep{1}
+\def\order{2}
+\def\ordloopend{1}
+
+\tikzset{
+  ftf/.style={red},
+  sts/.style={blue},
+  fts/.style={magenta},
+  stf/.style={cyan},
+  %
+  fastselfcolor/.style={ftf},
+  fastothercolor/.style={stf},
+  slowselfcolor/.style={sts},
+  slowothercolor/.style={fts},
+  %
+  fastline/.style={ftf},
+  slowline/.style={sts,decorate,decoration={snake,amplitude=0.25mm}},
+  %
+  mrabpic/.style={xscale=5,yscale=0.75,>=triangle 60},
+  isresult/.style={circle,draw,inner sep=0.1em},
+}
+
+\newcounter{step}
+
+% Inter/Extrapolate Makro:
+
+% Input: (1) variable name,(2)start,(3)end, (4) component (fast/slow)
+% (5)self-history head location,(6)self-history stepsize,
+% (7)other-history head location,(8)other-history stepsize
+% (9)isresult or empty
+
+% \interp{y_s^{1}}{0}{1}  {\slow}{0}{\bigstep}    {\fts}{0}{\bigstep}
+\def\histdot{ellipse (0.1cm*0.2 and 0.1cm*1.3333)}
+\def\histcirc{ellipse (0.1cm*0.2*1.4 and 0.1cm*1.3333*1.4)}
+\newcommand{\integrate}[9]{
+  % self-history
+  \foreach \i in {0,...,\ordloopend}
+    \fill [#4selfcolor] (#5-\i*#6,\value{step}-0.1333) \histdot;
+  \draw [dotted,thick,#4selfcolor](#5-\ordloopend*#6,\value{step}-0.133) -- (#5,\value{step}-0.133);
+
+  % cross-history
+  \foreach \i in {0,...,\ordloopend}
+    \fill [#4othercolor] (#7-\i*#8,\value{step}+0.1333) \histdot;
+  \draw [dotted,thick,#4othercolor](#7-\ordloopend*#8,\value{step}+0.133) -- (#7,\value{step}+0.133);
+
+  \draw [thick,->,#4line] (#2,\value{step}) -- (#3,\value{step}) node [above,#9] {$#1$} ;
+  \addtocounter{step}{1}
+}
+
+% Makro: Hist-Update
+% Input: RHS-Color, Component-RHS-Name, time, req. y's
+\newcommand{\histupdate}[4]{
+  \fill [#1] (#3,\value{step}) \histdot node [above] {$f_{#2}(#4)$} ;
+  \draw [thick, #1] (#3,\value{step}) \histcirc;
+  \addtocounter{step}{1}
+}
+
+\newcommand{\colorlegend}{
+  \fill (0,-3+0.5)[fts] \histdot node [right=0.2cm] {fast-to-slow history};
+  \fill (0,-3)[sts] \histdot node [right=0.2cm] {slow history};
+  \fill (0,-3+1.5)[stf] \histdot node [right=0.2cm] {slow-to-fast history};
+  \fill (0,-3+1)[ftf] \histdot node [right=0.2cm] {fast history};
+}
+
+\newcommand{\makeaxis}{
+  \addtocounter{step}{1}
+  \draw [->] (-1.3,0) -- +(2.6,0) node [right=0.2cm] {Integration time};
+  \draw [->] (-0,0) -- +(0,\value{step}) node [above=0.2cm] {Execution order};
+  \foreach \i in {0,...,\smallstepcount}
+    \draw [thick](\smallstep*\i,-0.05) -- +(0,0.1) ;
+  \draw [ultra thick] (\bigstep,-0.1) -- +(0,0.2) node [below=0.2cm] {$t=1$};
+  \draw [ultra thick] (0,-0.1) -- +(0,0.2) node [below=0.2cm] {$t=0$};
+}
+
+\newcommand{\slowstfhist}[1]{
+  % Situation of the RHS-History at the beginning:
+  \addtocounter{step}{1}
+  \draw +(0-#1,\value{step}) node [right=1cm] {RHS history};
+  \foreach \i in {0,...,\ordloopend}
+     \fill [ftf] (#1-\i*\smallstep,\value{step}+0.1333) \histdot;
+  \foreach \i in {0,...,\ordloopend}
+     \fill [fts] (#1-\i*\bigstep,\value{step}-0.1333) \histdot;
+  \foreach \i in {0,...,\ordloopend}
+     \fill [sts] (#1-\i*\bigstep,\value{step}-0.1333*3) \histdot;
+  \foreach \i in {0,...,\ordloopend}
+     \fill [stf] (#1-\i*\bigstep,\value{step}+0.1333*3) \histdot;
+  %\draw [thick, dotted] (-1.3,\value{step}+(-1)^(#1)*0.1333*5+(#1)*0.3) 
+    %-- (1.3,\value{step}+(-1)^(#1)*0.1333*5+(#1)*0.3);
+  \addtocounter{step}{1}
+}
+
+
+\newcommand{\faststfhist}[1]{
+  \addtocounter{step}{1}
+  % Situation of the RHS-History at the beginning:
+  \draw +(0-#1,\value{step}) node [right=1cm] {RHS history};
+  \foreach \i in {0,...,\ordloopend}
+     \fill [ftf] (#1-\i*\smallstep,\value{step}+0.1333) \histdot;
+  \foreach \i in {0,...,\ordloopend}
+     \fill [fts] (#1-\i*\bigstep,\value{step}-0.1333) \histdot;
+  \foreach \i in {0,...,\ordloopend}
+     \fill [sts] (#1-\i*\bigstep,\value{step}-0.1333*3) \histdot;
+  \foreach \i in {0,...,\ordloopend}
+     \fill [stf] (#1-\i*\smallstep,\value{step}+0.1333*3) \histdot;
+  %\draw [thick, dotted] (-1.3,\value{step}+(-1)^(#1)*0.1333*5+(#1)*0.3) -- (1.3,\value{step}+(-1)^(#1)*0.1333*5+(#1)*0.3);
+  \addtocounter{step}{1}
+}

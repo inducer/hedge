@@ -58,13 +58,15 @@ def relative_error(norm_diff, norm_true):
 
 
 
-def has_data_in_numpy_arrays(a):
-    if is_obj_array(a):
+def has_data_in_numpy_arrays(a, allow_objarray_levels):
+    if is_obj_array(a) and allow_objarray_levels > 0:
         from pytools import indices_in_shape, all
-        return all(has_data_in_numpy_arrays(a[i])
+        return all(
+                has_data_in_numpy_arrays(
+                    a[i], allow_objarray_levels=allow_objarray_levels-1)
                 for i in indices_in_shape(a.shape))
     else:
-        return isinstance(a, numpy.ndarray)
+        return isinstance(a, numpy.ndarray) and a.dtype != object
 
 
 
@@ -763,9 +765,6 @@ class Closable(object):
     def __init__(self):
         self.is_closed = False
 
-    def __del__(self):
-        self.close()
-
     def __enter__(self):
         return self
 
@@ -1021,163 +1020,6 @@ class IndexListRegistry(object):
 
 
 
-# parallel cg -----------------------------------------------------------------
-class OperatorBase(object):
-    @property
-    def dtype(self):
-        raise NotImplementedError
-
-    @property
-    def shape(self):
-        raise NotImplementedError
-
-    def __neg__(self):
-        return NegOperator(self)
-
-class NegOperator(OperatorBase):
-    def __init__(self, sub_op):
-        self.sub_op = sub_op
-
-    @property
-    def dtype(self):
-        return self.sub_op.dtype
-
-    @property
-    def shape(self):
-        return self.sub_op.shape
-
-    def __call__(self, operand):
-        return -self.sub_op(operand)
-
-class IdentityOperator(OperatorBase):
-    def __init__(self, dtype, n):
-        self.my_dtype = dtype
-        self.n = n
-
-    @property
-    def dtype(self):
-        return self.my_dtype
-
-    @property
-    def shape(self):
-        return self.n, self.n
-
-    def __call__(self, operand):
-        return operand
-
-
-
-
-class ConvergenceError(RuntimeError):
-    pass
-
-
-
-
-class CGStateContainer:
-    def __init__(self, pcon, operator, precon=None, dot=None):
-        if precon is None:
-            precon = IdentityOperator(operator.dtype, operator.shape[0])
-
-        self.pcon = pcon
-        self.operator = operator
-        self.precon = precon
-
-        if dot is None:
-            dot = numpy.dot
-
-        def inner(a, b):
-            return dot(a, b.conj())
-
-        self.inner = inner
-
-    def reset(self, rhs, x=None):
-        self.rhs = rhs
-
-        if x is None:
-            x = numpy.zeros((self.operator.size1(),))
-        self.x = x
-
-        self.residual = rhs - self.operator(x)
-
-        self.d = self.precon(self.residual)
-
-        self.delta = self.inner(self.residual, self.d)
-        return self.delta
-
-    def one_iteration(self, compute_real_residual=False):
-        # typed up from J.R. Shewchuk,
-        # An Introduction to the Conjugate Gradient Method
-        # Without the Agonizing Pain, Edition 1 1/4 [8/1994]
-        # Appendix B3
-
-        q = self.operator(self.d)
-        myip = self.inner(self.d, q)
-        alpha = self.delta / myip
-
-        self.x += alpha * self.d
-
-        if compute_real_residual:
-            self.residual = self.rhs - self.operator(self.x)
-        else:
-            self.residual -= alpha*q
-
-        s = self.precon(self.residual)
-        delta_old = self.delta
-        self.delta = self.inner(self.residual, s)
-
-        beta = self.delta / delta_old;
-        self.d = s + beta * self.d;
-
-        return self.delta
-
-    def run(self, max_iterations=None, tol=1e-7, debug_callback=None, debug=0):
-        if max_iterations is None:
-            max_iterations = 10 * self.operator.shape[0]
-
-        if self.inner(self.rhs, self.rhs) == 0:
-            return self.rhs
-
-        iterations = 0
-        delta_0 = delta = self.delta
-        while iterations < max_iterations:
-            if debug_callback is not None:
-                debug_callback("it", iterations, self.x, self.residual, self.d, delta)
-
-            compute_real_residual = \
-                    iterations % 50 == 0 or \
-                    abs(delta) < tol*tol * abs(delta_0)
-            delta = self.one_iteration(
-                    compute_real_residual=compute_real_residual)
-
-            if compute_real_residual and abs(delta) < tol*tol * abs(delta_0):
-                if debug_callback is not None:
-                    debug_callback("end", iterations, self.x, self.residual, self.d, delta)
-                if debug:
-                    print "%d iterations" % iterations
-                return self.x
-
-            if debug and iterations % debug == 0 and self.pcon.is_head_rank:
-                print "debug: delta=%g" % delta
-            iterations += 1
-
-        raise ConvergenceError("cg failed to converge")
-
-
-
-
-def parallel_cg(pcon, operator, b, precon=None, x=None, tol=1e-7, max_iterations=None,
-        debug=False, debug_callback=None, dot=None):
-    if x is None:
-        x = numpy.zeros((operator.shape[1],))
-
-    cg = CGStateContainer(pcon, operator, precon, dot=dot)
-    cg.reset(b, x)
-    return cg.run(max_iterations, tol, debug_callback, debug)
-
-
-
-
 # diagnostics -----------------------------------------------------------------
 def time_count_flop(func, timer, counter, flop_counter, flops, increment=1):
     def wrapped_f(*args, **kwargs):
@@ -1243,20 +1085,15 @@ def mass_flops(discr):
 
 
 
-def lift_flops(discr):
-    result = 0
-
-    for eg in discr.element_groups:
-        ldis = eg.local_discretization
-        result += (
-                2 # mul+add
-                * ldis.face_node_count()
-                * ldis.face_count()
-                * ldis.node_count()
-                * len(eg.members)
-                )
-
-    return result
+def lift_flops(fg):
+    ldis = fg.ldis_loc
+    return (
+            2 # mul+add
+            * ldis.face_node_count()
+            * ldis.face_count()
+            * ldis.node_count()
+            * fg.element_count()
+            )
 
 
 
@@ -1295,11 +1132,9 @@ def count_dofs(vec):
 
 
 # flux creation ---------------------------------------------------------------
-def make_lax_friedrichs_flux(wave_speed, state, flux_func, bdry_tags_and_states, strong):
-    #print bdry_tags_and_states
-    from hedge.flux import make_normal, FluxVectorPlaceholder, Max, flux_max
-   
-    fluxes = flux_func(state)
+def make_lax_friedrichs_flux(wave_speed, state, fluxes, bdry_tags_states_and_fluxes, 
+        strong):
+    from hedge.flux import make_normal, FluxVectorPlaceholder, flux_max
 
     n = len(state)
     d = len(fluxes)
@@ -1310,22 +1145,21 @@ def make_lax_friedrichs_flux(wave_speed, state, flux_func, bdry_tags_and_states,
     state_ph = fvph[1:1+n]
     fluxes_ph = [fvph[1+i*n:1+(i+1)*n] for i in range(1, d+1)]
 
-    #print wave_speed_ph.int
-    #penalty = wave_speed_ph.int*(state_ph.ext-state_ph.int)
     penalty = flux_max(wave_speed_ph.int,wave_speed_ph.ext)*(state_ph.ext-state_ph.int)
 
     if not strong:
-        flux = 0.5*(sum(n_i*(f_i.int+f_i.ext) for n_i, f_i in zip(normal, fluxes_ph))
-                    - penalty)
+        num_flux = 0.5*(sum(n_i*(f_i.int+f_i.ext) for n_i, f_i in zip(normal, fluxes_ph))
+                - penalty)
     else:
-        flux = 0.5*(sum(n_i*(f_i.int-f_i.ext) for n_i, f_i in zip(normal, fluxes_ph))
+        num_flux = 0.5*(sum(n_i*(f_i.int-f_i.ext) for n_i, f_i in zip(normal, fluxes_ph))
                 + penalty)
 
     from hedge.optemplate import get_flux_operator
-    flux_op = get_flux_operator(flux)
+    flux_op = get_flux_operator(num_flux)
     int_operand = join_fields(wave_speed, state, *fluxes)
 
     from hedge.optemplate import pair_with_boundary
+
     #temp1 = (flux_op*int_operand
     #        + sum(
     #            flux_op*pair_with_boundary(int_operand,
@@ -1340,7 +1174,8 @@ def make_lax_friedrichs_flux(wave_speed, state, flux_func, bdry_tags_and_states,
     #print temp1
 
     #first way, impose exact solution as BC
-    return (flux_op*int_operand
+    # OLD WAY:
+    #return (flux_op*int_operand
             + sum(
                 flux_op*pair_with_boundary(int_operand,
                     join_fields(0, ext_state, *flux_func(ext_state)), tag)
@@ -1359,6 +1194,15 @@ def make_lax_friedrichs_flux(wave_speed, state, flux_func, bdry_tags_and_states,
     #            for tag, ext_state in bdry_tags_and_states)
     #       )
     #pdb.set_trace()
+
+    # NEW WAY:
+    return (flux_op*int_operand
+            + sum(
+                flux_op*pair_with_boundary(int_operand,
+                    join_fields(0, bdry_state, *bdry_fluxes), tag)
+                for tag, bdry_state, bdry_fluxes in bdry_tags_states_and_fluxes))
+
+
 
 
 # debug tools -----------------------------------------------------------------

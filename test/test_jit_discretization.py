@@ -591,7 +591,7 @@ def test_interior_fluxes_tri():
 
 
 
-@mark_test(long=True)
+@mark_test.long
 def test_interior_fluxes_tet():
     """Check tetrahedron surface integrals computed using interior fluxes
     against their known values.
@@ -696,7 +696,7 @@ def test_interior_fluxes_tet():
 
 
 
-@mark_test(long=True)
+@mark_test.long
 def test_symmetry_preservation_2d():
     """Test whether we preserve symmetry in a symmetric 2D advection problem"""
     from numpy import dot
@@ -750,7 +750,7 @@ def test_symmetry_preservation_2d():
     from hedge.element import TriangularElement
     from hedge.timestep import RK4TimeStepper
     from math import sqrt, sin
-    from hedge.pde import StrongAdvectionOperator
+    from hedge.models.advection import StrongAdvectionOperator
     from hedge.data import TimeDependentGivenFunction
 
     v = numpy.array([-1,0])
@@ -815,7 +815,7 @@ def test_symmetry_preservation_2d():
 
 
 
-@mark_test(long=True)
+@mark_test.long
 def test_convergence_advec_2d():
     """Test whether 2D advection actually converges"""
 
@@ -825,7 +825,7 @@ def test_convergence_advec_2d():
     from hedge.timestep import RK4TimeStepper
     from hedge.tools import EOCRecorder
     from math import sin, pi, sqrt
-    from hedge.pde import StrongAdvectionOperator
+    from hedge.models.advection import StrongAdvectionOperator
     from hedge.data import TimeDependentGivenFunction
 
     v = numpy.array([0.27,0])
@@ -891,7 +891,7 @@ def test_convergence_advec_2d():
 
 
 
-@mark_test(long=True)
+@mark_test.long
 def test_elliptic():
     """Test various properties of elliptic operators."""
 
@@ -957,7 +957,7 @@ def test_elliptic():
                     debug=discr_class.noninteractive_debug_flags())
 
             from hedge.data import GivenFunction
-            from hedge.pde import WeakPoissonOperator
+            from hedge.models.poisson import WeakPoissonOperator
             op = WeakPoissonOperator(discr.dimensions,
                     dirichlet_tag=TAG_ALL,
                     dirichlet_bc=GivenFunction(

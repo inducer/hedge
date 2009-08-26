@@ -20,11 +20,14 @@
 from __future__ import division
 import numpy
 import numpy.linalg as la
+from hedge.mesh import TAG_ALL, TAG_NONE
 
 
 
 
-def main() :
+def main(write_output=True, 
+        dir_tag=TAG_NONE, neu_tag=TAG_NONE, rad_tag=TAG_ALL, 
+        flux_type_arg="upwind", dtype=numpy.float64, debug=[]):
     from hedge.timestep import RK4TimeStepper
     from pytools.stopwatch import Job
     from math import sin, cos, pi, exp, sqrt
@@ -55,12 +58,12 @@ def main() :
     else:
         mesh_data = rcon.receive_mesh()
 
-    discr = rcon.make_discretization(mesh_data, order=4)
+    discr = rcon.make_discretization(mesh_data, order=4, debug=debug)
     stepper = RK4TimeStepper()
 
-    from hedge.visualization import SiloVisualizer, VtkVisualizer
-    vis = VtkVisualizer(discr, rcon, "fld")
-    #vis = SiloVisualizer(discr, rcon)
+    from hedge.visualization import VtkVisualizer
+    if write_output:
+        vis = VtkVisualizer(discr, rcon, "fld")
 
     def source_u(x, el):
         return exp(-numpy.dot(x, x)*128)
@@ -79,15 +82,15 @@ def main() :
     from hedge.mesh import TAG_ALL, TAG_NONE
     op = StrongWaveOperator(-1, discr.dimensions, 
             source_vec_getter,
-            dirichlet_tag=TAG_NONE,
-            neumann_tag=TAG_NONE,
-            radiation_tag=TAG_ALL,
-            flux_type="upwind",
+            dirichlet_tag=dir_tag,
+            neumann_tag=neu_tag,
+            radiation_tag=rad_tag,
+            flux_type=flux_type_arg
             )
 
     from hedge.tools import join_fields
-    fields = join_fields(discr.volume_zeros(),
-            [discr.volume_zeros() for i in range(discr.dimensions)])
+    fields = join_fields(discr.volume_zeros(dtype=dtype),
+            [discr.volume_zeros(dtype=dtype) for i in range(discr.dimensions)])
 
     dt = discr.dt_factor(op.max_eigenvalue())
     nsteps = int(4.0/dt)
@@ -101,7 +104,12 @@ def main() :
             add_simulation_quantities, \
             add_run_info
 
-    logmgr = LogManager("wave.dat", "w", rcon.communicator)
+    if write_output:
+        log_file_name = "wave.dat"
+    else:
+        log_file_name = None
+
+    logmgr = LogManager(log_file_name, "w", rcon.communicator)
     add_run_info(logmgr)
     add_general_quantities(logmgr)
     add_simulation_quantities(logmgr, dt)
@@ -121,30 +129,58 @@ def main() :
 
     # timestep loop -----------------------------------------------------------
     rhs = op.bind(discr)
-    for step in range(nsteps):
-        logmgr.tick()
+    try:
+        for step in range(nsteps):
+            logmgr.tick()
 
-        t = step*dt
+            t = step*dt
 
-        if step % 10 == 0:
-            visf = vis.make_file("fld-%04d" % step)
+            if step % 10 == 0 and write_output:
+                visf = vis.make_file("fld-%04d" % step)
 
-            vis.add_data(visf,
-                    [
-                        ("u", fields[0]),
-                        ("v", fields[1:]), 
-                    ],
-                    time=t,
-                    step=step)
-            visf.close()
+                vis.add_data(visf,
+                        [
+                            ("u", fields[0]),
+                            ("v", fields[1:]), 
+                        ],
+                        time=t,
+                        step=step)
+                visf.close()
 
-        fields = stepper(fields, t, dt, rhs)
+            fields = stepper(fields, t, dt, rhs)
 
-    vis.close()
+        assert discr.norm(fields) < 1
+        assert fields[0].dtype == dtype
 
-    logmgr.tick()
-    logmgr.save()
+    finally:
+        if write_output:
+            vis.close()
+
+        logmgr.close()
+        discr.close()
 
 if __name__ == "__main__":
     main()
 
+
+
+
+# entry points for py.test ----------------------------------------------------
+def test_wave():
+    from pytools.test import mark_test
+    mark_long = mark_test.long
+
+    yield ("dirichlet wave equation with SP data", mark_long(main),
+            False, TAG_ALL, TAG_NONE, TAG_NONE, "upwind", numpy.float64)
+    yield ("dirichlet wave equation with SP complex data", mark_long(main),
+            False, TAG_ALL, TAG_NONE, TAG_NONE, "upwind", numpy.complex64)
+    yield ("dirichlet wave equation with DP complex data", mark_long(main),
+            False, TAG_ALL, TAG_NONE, TAG_NONE, "upwind", numpy.complex128)
+    for flux_type in ["upwind", "central"]:
+        yield ("dirichlet wave equation with %s flux" % flux_type,
+                mark_long(main),
+                False, TAG_ALL, TAG_NONE, TAG_NONE, flux_type)
+    yield ("neumann wave equation", mark_long(main),
+            False, TAG_NONE, TAG_ALL, TAG_NONE)
+    yield ("radiation-bc wave equation", mark_long(main),
+            False, TAG_NONE, TAG_NONE, TAG_ALL)

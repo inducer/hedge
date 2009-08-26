@@ -56,42 +56,47 @@ class Vortex:
 
     def volume_interpolant(self, t, discr):
         return discr.convert_volume(
-			self(t, discr.nodes.T),
+			self(t, discr.nodes.T
+                            .astype(discr.default_scalar_type)),
 			kind=discr.compute_kind)
 
     def boundary_interpolant(self, t, discr, tag):
         return discr.convert_boundary(
-			self(t, discr.get_boundary(tag).nodes.T),
+			self(t, discr.get_boundary(tag).nodes.T
+                            .astype(discr.default_scalar_type)),
 			 tag=tag, kind=discr.compute_kind)
 
 
 
 
-def main():
+def main(write_output=True):
     from hedge.backends import guess_run_context
-    rcon = guess_run_context()
+    rcon = guess_run_context(
+		    ["cuda"]
+		    )
 
     gamma = 1.4
 
     from hedge.tools import EOCRecorder, to_obj_array
     eoc_rec = EOCRecorder()
-    
+
     if rcon.is_head_rank:
-        from hedge.mesh import make_rect_mesh
-        mesh = make_rect_mesh((0,-5), (10,5), max_area=0.15)
+        from hedge.mesh import \
+                make_rect_mesh, \
+                make_centered_regular_rect_mesh
+
+        refine = 4
+        mesh = make_centered_regular_rect_mesh((0,-5), (10,5), n=(9,9),
+                post_refine_factor=refine)
         mesh_data = rcon.distribute_mesh(mesh)
     else:
         mesh_data = rcon.receive_mesh()
 
-    #for order in [3]:
     for order in [3, 4, 5]:
-    #for order in [1,2,3,4,5,6]:
-        #discr = rcon.make_discretization(mesh_data, order=order,
-#			debug=["cuda_no_plan",
-#			#"print_op_code"
-#			],
-#			default_scalar_type=numpy.float64)
         discr = rcon.make_discretization(mesh_data, order=order,
+			debug=[#"cuda_no_plan",
+			#"print_op_code"
+			],
 			default_scalar_type=numpy.float64)
 
         from hedge.visualization import SiloVisualizer, VtkVisualizer
@@ -116,7 +121,7 @@ def main():
         rhs(0, fields)
 
         dt = discr.dt_factor(max_eigval[0])
-        final_time = 0.2
+        final_time = 0.6
         nsteps = int(final_time/dt)+1
         dt = final_time/nsteps
 
@@ -128,14 +133,20 @@ def main():
             print "nsteps", nsteps
             print "#elements=", len(mesh.elements)
 
-        from hedge.timestep import RK4TimeStepper
+        #from hedge.timestep import RK4TimeStepper
+        from hedge.backends.cuda.tools import RK4TimeStepper
         stepper = RK4TimeStepper()
 
         # diagnostics setup ---------------------------------------------------
         from pytools.log import LogManager, add_general_quantities, \
                 add_simulation_quantities, add_run_info
 
-        logmgr = LogManager("euler-%d.dat" % order, "w", rcon.communicator)
+        if write_output:
+            log_file_name = "euler-%d.dat" % order
+        else:
+            log_file_name = None
+
+        logmgr = LogManager(log_file_name, "w", rcon.communicator)
         add_run_info(logmgr)
         add_general_quantities(logmgr)
         add_simulation_quantities(logmgr, dt)
@@ -147,55 +158,91 @@ def main():
         # timestep loop -------------------------------------------------------
         t = 0
 
-        for step in range(nsteps):
+        try:
+            for step in range(nsteps):
+                logmgr.tick()
+
+                if step % 1 == 0 and write_output:
+                #if False:
+                    visf = vis.make_file("vortex-%d-%04d" % (order, step))
+
+                    true_fields = vortex.volume_interpolant(t, discr)
+
+                    rhs_fields = rhs(t, fields)
+
+                    from pylo import DB_VARTYPE_VECTOR
+                    vis.add_data(visf,
+                            [
+                                ("rho", discr.convert_volume(op.rho(fields), kind="numpy")),
+                                ("e", discr.convert_volume(op.e(fields), kind="numpy")),
+                                ("rho_u", discr.convert_volume(op.rho_u(fields), kind="numpy")),
+                                ("u", discr.convert_volume(op.u(fields), kind="numpy")),
+
+                                #("true_rho", discr.convert_volume(op.rho(true_fields), kind="numpy")),
+                                #("true_e", discr.convert_volume(op.e(true_fields), kind="numpy")),
+                                #("true_rho_u", discr.convert_volume(op.rho_u(true_fields), kind="numpy")),
+                                #("true_u", discr.convert_volume(op.u(true_fields), kind="numpy")),
+
+                                #("rhs_rho", discr.convert_volume(op.rho(rhs_fields), kind="numpy")),
+                                #("rhs_e", discr.convert_volume(op.e(rhs_fields), kind="numpy")),
+                                #("rhs_rho_u", discr.convert_volume(op.rho_u(rhs_fields), kind="numpy")),
+                                ],
+                            expressions=[
+                                #("diff_rho", "rho-true_rho"),
+                                #("diff_e", "e-true_e"),
+                                #("diff_rho_u", "rho_u-true_rho_u", DB_VARTYPE_VECTOR),
+
+                                ("p", "0.4*(e- 0.5*(rho_u*u))"),
+                                ],
+                            time=t, step=step
+                            )
+                    visf.close()
+
+                fields = stepper(fields, t, dt, rhs)
+                t += dt
+
+                dt = discr.dt_factor(max_eigval[0])
             logmgr.tick()
 
-            if step % 1 == 0:
-            #if False:
-                visf = vis.make_file("vortex-%d-%04d" % (order, step))
+            true_fields = vortex.volume_interpolant(t, discr)
+            l2_error = discr.norm(fields-true_fields)
+            l2_error_rho = discr.norm(op.rho(fields)-op.rho(true_fields))
+            l2_error_e = discr.norm(op.e(fields)-op.e(true_fields))
+            l2_error_rhou = discr.norm(op.rho_u(fields)-op.rho_u(true_fields))
+            l2_error_u = discr.norm(op.u(fields)-op.u(true_fields))
 
-                #true_fields = vortex.volume_interpolant(t, discr)
+            eoc_rec.add_data_point(order, l2_error)
+            print
+            print eoc_rec.pretty_print("P.Deg.", "L2 Error")
 
-                from pylo import DB_VARTYPE_VECTOR
-                vis.add_data(visf,
-                        [
-                            ("rho", discr.convert_volume(op.rho(fields), kind="numpy")),
-                            ("e", discr.convert_volume(op.e(fields), kind="numpy")),
-                            ("rho_u", discr.convert_volume(op.rho_u(fields), kind="numpy")),
-                            ("u", discr.convert_volume(op.u(fields), kind="numpy")),
+            logmgr.set_constant("l2_error", l2_error)
+            logmgr.set_constant("l2_error_rho", l2_error_rho)
+            logmgr.set_constant("l2_error_e", l2_error_e)
+            logmgr.set_constant("l2_error_rhou", l2_error_rhou)
+            logmgr.set_constant("l2_error_u", l2_error_u)
+            logmgr.set_constant("refinement", refine)
 
-                            #("true_rho", op.rho(true_fields)),
-                            #("true_e", op.e(true_fields)),
-                            #("true_rho_u", op.rho_u(true_fields)),
-                            #("true_u", op.u(true_fields)),
+        finally:
+            if write_output:
+                vis.close()
 
-                            #("rhs_rho", op.rho(rhs_fields)),
-                            #("rhs_e", op.e(rhs_fields)),
-                            #("rhs_rho_u", op.rho_u(rhs_fields)),
-                            ],
-                        #expressions=[
-                            #("diff_rho", "rho-true_rho"),
-                            #("diff_e", "e-true_e"),
-                            #("diff_rho_u", "rho_u-true_rho_u", DB_VARTYPE_VECTOR),
+            logmgr.save()
 
-                            #("p", "0.4*(e- 0.5*(rho_u*u))"),
-                            #],
-                        time=t, step=step
-                        )
-                visf.close()
+            discr.close()
 
-            fields = stepper(fields, t, dt, rhs)
-            t += dt
+    # after order loop
+    #assert eoc_rec.estimate_order_of_convergence()[0,1] > 6
 
-            dt = discr.dt_factor(max_eigval[0])
 
-        logmgr.tick()
-        logmgr.save()
 
-        true_fields = vortex.volume_interpolant(t, discr)
-        eoc_rec.add_data_point(order, discr.norm(fields-true_fields))
-        print
-        print eoc_rec.pretty_print("P.Deg.", "L2 Error")
 
 if __name__ == "__main__":
     main()
+
+
+
+# entry points for py.test ----------------------------------------------------
+from pytools.test import mark_test
+@mark_test.long
+def test_euler_vortex():
+    main(write_output=True)

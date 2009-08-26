@@ -27,7 +27,7 @@ import numpy.linalg as la
 def make_mesh(a, b, pml_width=0.25, **kwargs):
     from meshpy.geometry import GeometryBuilder, make_box
     geob = GeometryBuilder()
-    
+
     box_points, box_facets, _ = make_box(a, b)
     geob.add_geometry(box_points, box_facets)
     geob.wrap_in_box(pml_width)
@@ -40,7 +40,7 @@ def make_mesh(a, b, pml_width=0.25, **kwargs):
 
     print "%d elements" % len(built_mi.elements)
 
-    def boundary_tagger(fvi, el, fn):
+    def boundary_tagger(fvi, el, fn, points):
         return []
 
     from hedge.mesh import make_conformal_mesh
@@ -52,7 +52,7 @@ def make_mesh(a, b, pml_width=0.25, **kwargs):
 
 
 
-def main():
+def main(write_output=True):
     from hedge.element import TriangularElement
     from hedge.timestep import RK4TimeStepper
     from hedge.mesh import make_disk_mesh
@@ -73,9 +73,9 @@ def main():
     periodic = False
 
     pml_width = 0.5
-    mesh = make_mesh(a=numpy.array((-1,-1,-1)), b=numpy.array((1,1,1)), 
+    #mesh = make_mesh(a=numpy.array((-1,-1,-1)), b=numpy.array((1,1,1)), 
     #mesh = make_mesh(a=numpy.array((-3,-3)), b=numpy.array((3,3)), 
-    #mesh = make_mesh(a=numpy.array((-1,-1)), b=numpy.array((1,1)), 
+    mesh = make_mesh(a=numpy.array((-1,-1)), b=numpy.array((1,1)), 
     #mesh = make_mesh(a=numpy.array((-2,-2)), b=numpy.array((2,2)), 
             pml_width=pml_width, max_volume=0.01)
 
@@ -86,40 +86,40 @@ def main():
 
     class Current:
         def volume_interpolant(self, t, discr):
+            from hedge.tools import make_obj_array
+
             result = discr.volume_zeros()
-            
+
             omega = 6*c
             if omega*t > 2*pi:
-                return result
+                return make_obj_array([result, result, result])
 
-            from hedge.tools import make_obj_array
             x = make_obj_array(discr.nodes.T)
             r = numpy.sqrt(numpy.dot(x, x))
 
             idx = r<0.3
             result[idx] = (1+numpy.cos(pi*r/0.3))[idx] \
                     *numpy.sin(omega*t)**3
-            
+
             return make_obj_array([-result, result, result])
 
-    final_time = 20/c
+    final_time = 4/c
     order = 3
     discr = rcon.make_discretization(mesh_data, order=order)
 
-    from hedge.visualization import VtkVisualizer, SiloVisualizer
-    #vis = VtkVisualizer(discr, rcon, "em-%d" % order)
-    vis = SiloVisualizer(discr, rcon)
+    from hedge.visualization import VtkVisualizer
+    if write_output:
+        vis = VtkVisualizer(discr, rcon, "em-%d" % order)
 
     from hedge.mesh import TAG_ALL, TAG_NONE
     from hedge.data import GivenFunction, TimeHarmonicGivenFunction, TimeIntervalGivenFunction
-    from hedge.pde import \
-            MaxwellOperator, \
+    from hedge.models.em import MaxwellOperator
+    from hedge.models.pml import \
             AbarbanelGottliebPMLMaxwellOperator, \
             AbarbanelGottliebPMLTMMaxwellOperator, \
-            AbarbanelGottliebPMLTEMaxwellOperator, \
-            AbarbanelGottliebPMLMaxwellOperator, \
-            TEMaxwellOperator
-    op = AbarbanelGottliebPMLMaxwellOperator(epsilon, mu, flux_type=1,
+            AbarbanelGottliebPMLTEMaxwellOperator
+
+    op = AbarbanelGottliebPMLTEMaxwellOperator(epsilon, mu, flux_type=1,
             current=Current(),
             pec_tag=TAG_ALL,
             absorb_tag=TAG_NONE,
@@ -144,7 +144,12 @@ def main():
     from pytools.log import LogManager, add_general_quantities, \
             add_simulation_quantities, add_run_info
 
-    logmgr = LogManager("maxwell-%d.dat" % order, "w", rcon.communicator)
+    if write_output:
+        log_file_name = "maxwell-%d.dat" % order
+    else:
+        log_file_name = None
+
+    logmgr = LogManager(log_file_name, "w", rcon.communicator)
     add_run_info(logmgr)
     add_general_quantities(logmgr)
     add_simulation_quantities(logmgr, dt)
@@ -158,8 +163,8 @@ def main():
     from hedge.log import EMFieldGetter, add_em_quantities
     field_getter = EMFieldGetter(discr, op, lambda: fields)
     add_em_quantities(logmgr, op, field_getter)
-    
-    logmgr.add_watches(["step.max", "t_sim.max", "W_field", "t_step.max"])
+
+    logmgr.add_watches(["step.max", "t_sim.max", ("W_field", "W_el+W_mag"), "t_step.max"])
 
     from hedge.log import LpNorm
     class FieldIdxGetter:
@@ -176,37 +181,56 @@ def main():
     pml_coeff = op.coefficients_from_width(discr, width=pml_width)
     rhs = op.bind(discr, pml_coeff)
 
-    for step in range(nsteps):
-        logmgr.tick()
-        logmgr.save()
+    try:
+        for step in range(nsteps):
+            logmgr.tick()
 
-        if step % 10 == 0:
-            e, h, p, q = op.split_ehpq(fields)
-            visf = vis.make_file("em-%d-%04d" % (order, step))
-            #pml_rhs_e, pml_rhs_h, pml_rhs_p, pml_rhs_q = \
-                    #op.split_ehpq(rhs(t, fields))
-            from pylo import DB_VARTYPE_VECTOR, DB_VARTYPE_SCALAR
-            vis.add_data(visf, [ 
-                ("e", e), 
-                ("h", h), 
-                ("p", p), 
-                ("q", q), 
-                ("j", Current().volume_interpolant(t, discr)), 
-                #("pml_rhs_e", pml_rhs_e),
-                #("pml_rhs_h", pml_rhs_h),
-                #("pml_rhs_p", pml_rhs_p),
-                #("pml_rhs_q", pml_rhs_q),
-                #("max_rhs_e", max_rhs_e),
-                #("max_rhs_h", max_rhs_h),
-                #("max_rhs_p", max_rhs_p),
-                #("max_rhs_q", max_rhs_q),
-                ], 
-                time=t, step=step)
-            visf.close()
+            if step % 10 == 0 and write_output:
+                e, h, p, q = op.split_ehpq(fields)
+                visf = vis.make_file("em-%d-%04d" % (order, step))
+                #pml_rhs_e, pml_rhs_h, pml_rhs_p, pml_rhs_q = \
+                        #op.split_ehpq(rhs(t, fields))
+                from pylo import DB_VARTYPE_VECTOR, DB_VARTYPE_SCALAR
+                vis.add_data(visf, [ 
+                    ("e", e), 
+                    ("h", h), 
+                    ("p", p), 
+                    ("q", q), 
+                    ("j", Current().volume_interpolant(t, discr)), 
+                    #("pml_rhs_e", pml_rhs_e),
+                    #("pml_rhs_h", pml_rhs_h),
+                    #("pml_rhs_p", pml_rhs_p),
+                    #("pml_rhs_q", pml_rhs_q),
+                    #("max_rhs_e", max_rhs_e),
+                    #("max_rhs_h", max_rhs_h),
+                    #("max_rhs_p", max_rhs_p),
+                    #("max_rhs_q", max_rhs_q),
+                    ], 
+                    time=t, step=step)
+                visf.close()
 
-        fields = stepper(fields, t, dt, rhs)
-        t += dt
+            fields = stepper(fields, t, dt, rhs)
+            t += dt
+
+        _, _, energies_data = logmgr.get_expr_dataset("W_el+W_mag")
+        energies = [value for tick_nbr, value in energies_data]
+
+        assert energies[-1] < max(energies) * 1e-2
+
+    finally:
+        logmgr.close()
+
+        if write_output:
+            vis.close()
 
 if __name__ == "__main__":
     main()
 
+
+
+
+# entry points for py.test ----------------------------------------------------
+from pytools.test import mark_test
+@mark_test.long
+def test_maxwell_pml():
+    main(write_output=False)

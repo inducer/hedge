@@ -14,6 +14,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+# FIXME: This example doesn't quite do what it should any more.
+
 
 
 
@@ -24,7 +26,7 @@ import numpy.linalg as la
 
 
 
-def main():
+def main(write_output=True, allow_features=None):
     from hedge.timestep import RK4TimeStepper
     from hedge.mesh import make_ball_mesh, make_cylinder_mesh, make_box_mesh
     from hedge.visualization import \
@@ -32,9 +34,9 @@ def main():
             SiloVisualizer, \
             get_rank_partition
     from math import sqrt, pi
-    from hedge.parallel import guess_parallelization_context
 
-    pcon = guess_parallelization_context()
+    from hedge.backends import guess_run_context
+    rcon = guess_run_context(allow_features)
 
     epsilon0 = 8.8541878176e-12 # C**2 / (N m**2)
     mu0 = 4*pi*1e-7 # N/A**2.
@@ -43,7 +45,7 @@ def main():
 
     dims = 3
 
-    if pcon.is_head_rank:
+    if rcon.is_head_rank:
         if dims == 2:
             from hedge.mesh import make_rect_mesh
             mesh = make_rect_mesh(
@@ -58,15 +60,16 @@ def main():
                     b=(10.5,1.5,1.5),
                     max_volume=0.1)
 
-    if pcon.is_head_rank:
-        mesh_data = pcon.distribute_mesh(mesh)
+    if rcon.is_head_rank:
+        mesh_data = rcon.distribute_mesh(mesh)
     else:
-        mesh_data = pcon.receive_mesh()
+        mesh_data = rcon.receive_mesh()
 
     #for order in [1,2,3,4,5,6]:
-    discr = pcon.make_discretization(mesh_data, order=3)
+    discr = rcon.make_discretization(mesh_data, order=3)
 
-    vis = SiloVisualizer(discr, pcon)
+    if write_output:
+        vis = VtkVisualizer(discr, rcon, "dipole")
 
     from analytic_solutions import DipoleFarField, SphericalFieldAdapter
     from hedge.data import ITimeDependentGivenFunction
@@ -100,26 +103,26 @@ def main():
 
     from hedge.mesh import TAG_ALL, TAG_NONE
     if dims == 2:
-        from hedge.pde import TMMaxwellOperator as MaxwellOperator
+        from hedge.models.em import TMMaxwellOperator as MaxwellOperator
     else:
-        from hedge.pde import MaxwellOperator
+        from hedge.models.em import MaxwellOperator
 
-    op = MaxwellOperator(discr, 
-            epsilon, mu, 
-            upwind_alpha=1,
+    op = MaxwellOperator(
+            epsilon, mu,
+            flux_type=1,
             pec_tag=TAG_NONE,
             absorb_tag=TAG_ALL,
             current=PointDipoleSource(),
             )
 
-    fields = op.assemble_fields()
+    fields = op.assemble_eh(discr=discr)
 
     dt = discr.dt_factor(op.max_eigenvalue())
-    final_time = 1e-7
+    final_time = 1e-8
     nsteps = int(final_time/dt)+1
     dt = final_time/nsteps
 
-    if pcon.is_head_rank:
+    if rcon.is_head_rank:
         print "dt", dt
         print "nsteps", nsteps
         print "#elements=", len(mesh.elements)
@@ -130,7 +133,12 @@ def main():
     from pytools.log import LogManager, add_general_quantities, \
             add_simulation_quantities, add_run_info
 
-    logmgr = LogManager("dipole.dat", "w", pcon.communicator)
+    if write_output:
+        log_file_name = "dipole.dat"
+    else:
+        log_file_name = None
+
+    logmgr = LogManager(log_file_name, "w", rcon.communicator)
     add_run_info(logmgr)
     add_general_quantities(logmgr)
     add_simulation_quantities(logmgr, dt)
@@ -142,9 +150,8 @@ def main():
     logmgr.add_quantity(vis_timer)
 
     from hedge.log import EMFieldGetter, add_em_quantities
-    field_getter = EMFieldGetter(op, lambda: fields)
+    field_getter = EMFieldGetter(discr, op, lambda: fields)
     add_em_quantities(logmgr, op, field_getter)
-    
 
     from pytools.log import PushLogQuantity
     relerr_e_q = PushLogQuantity("relerr_e", "1", "Relative error in masked E-field")
@@ -152,16 +159,18 @@ def main():
     logmgr.add_quantity(relerr_e_q)
     logmgr.add_quantity(relerr_h_q)
 
-    logmgr.add_watches(["step.max", "t_sim.max", "W_field", "t_step.max",
+    logmgr.add_watches(["step.max", "t_sim.max", 
+        ("W_field", "W_el+W_mag"), "t_step.max",
         "relerr_e", "relerr_h"])
 
-    point_timeseries = [
-            (open("b-x%d-vs-time.dat" % i, "w"), 
-                open("b-x%d-vs-time-true.dat" % i, "w"), 
-                discr.get_point_evaluator(numpy.array([i,0,0][:dims],
-                    dtype=discr.default_scalar_type)))
-            for i in range(1,5)
-            ]
+    if write_output:
+        point_timeseries = [
+                (open("b-x%d-vs-time.dat" % i, "w"), 
+                    open("b-x%d-vs-time-true.dat" % i, "w"), 
+                    discr.get_point_evaluator(numpy.array([i,0,0][:dims],
+                        dtype=discr.default_scalar_type)))
+                    for i in range(1,5)
+                    ]
 
     # timestep loop -------------------------------------------------------
     mask = discr.interpolate_volume_function(sph_dipole.far_field_mask)
@@ -176,62 +185,69 @@ def main():
 
         return result
 
+    rhs = op.bind(discr)
+
     t = 0
-    for step in range(nsteps):
-        if step % 10 == 0:
-            vis_timer.start()
-            e, h = op.split_eh(fields)
-            sph_dipole.set_time(t)
-            true_e, true_h = op.split_eh(
-                    discr.interpolate_volume_function(cart_dipole))
-            visf = vis.make_file("dipole-%04d" % step)
+    try:
+        for step in range(nsteps):
+            if write_output and step % 10 == 0:
+                sub_timer = vis_timer.start_sub_timer()
+                e, h = op.split_eh(fields)
+                sph_dipole.set_time(t)
+                true_e, true_h = op.split_eh(
+                        discr.interpolate_volume_function(cart_dipole))
+                visf = vis.make_file("dipole-%04d" % step)
 
-            mask_e = apply_mask(e)
-            mask_h = apply_mask(h)
-            mask_true_e = apply_mask(true_e)
-            mask_true_h = apply_mask(true_h)
+                mask_e = apply_mask(e)
+                mask_h = apply_mask(h)
+                mask_true_e = apply_mask(true_e)
+                mask_true_h = apply_mask(true_h)
 
-            from pylo import DB_VARTYPE_VECTOR
-            vis.add_data(visf,
-                    [ 
-                        ("e", e), 
-                        ("h", h), 
-                        ("true_e", true_e), 
-                        ("true_h", true_h), 
-                        ("mask_e", mask_e), 
-                        ("mask_h", mask_h), 
-                        ("mask_true_e", mask_true_e), 
-                        ("mask_true_h", mask_true_h), 
-                        ],
-                    expressions=[
-                        ("diff_e", "mask_e-mask_true_e", DB_VARTYPE_VECTOR),
-                        ("diff_h", "mask_h-mask_true_h", DB_VARTYPE_VECTOR),
-                        ],
-                    time=t, step=step
-                    )
-            visf.close()
-            vis_timer.stop()
+                from pylo import DB_VARTYPE_VECTOR
+                vis.add_data(visf,
+                        [ 
+                            ("e", e), 
+                            ("h", h), 
+                            ("true_e", true_e), 
+                            ("true_h", true_h), 
+                            ("mask_e", mask_e), 
+                            ("mask_h", mask_h), 
+                            ("mask_true_e", mask_true_e), 
+                            ("mask_true_h", mask_true_h), 
+                            ],
+                        expressions=[
+                            ("diff_e", "mask_e-mask_true_e", DB_VARTYPE_VECTOR),
+                            ("diff_h", "mask_h-mask_true_h", DB_VARTYPE_VECTOR),
+                            ],
+                        time=t, step=step
+                        )
+                visf.close()
+                sub_timer.stop().submit()
 
-            from hedge.tools import relative_error
-            relerr_e_q.push_value(
-                    relative_error(
-                        discr.norm(mask_e-mask_true_e),
-                        discr.norm(mask_true_e)))
-            relerr_h_q.push_value(
-                    relative_error(
-                        discr.norm(mask_h-mask_true_h),
-                        discr.norm(mask_true_h)))
+                from hedge.tools import relative_error
+                relerr_e_q.push_value(
+                        relative_error(
+                            discr.norm(mask_e-mask_true_e),
+                            discr.norm(mask_true_e)))
+                relerr_h_q.push_value(
+                        relative_error(
+                            discr.norm(mask_h-mask_true_h),
+                            discr.norm(mask_true_h)))
 
-            for outf_num, outf_true, evaluator in point_timeseries:
-                for outf, ev_h in zip([outf_num, outf_true],
-                        [h, true_h]):
-                    outf.write("%g\t%g\n" % (t, op.mu*evaluator(ev_h[1])))
-                    outf.flush()
+                if write_output:
+                    for outf_num, outf_true, evaluator in point_timeseries:
+                        for outf, ev_h in zip([outf_num, outf_true],
+                                [h, true_h]):
+                            outf.write("%g\t%g\n" % (t, op.mu*evaluator(ev_h[1])))
+                            outf.flush()
 
-        logmgr.tick()
+            logmgr.tick()
 
-        fields = stepper(fields, t, dt, op.rhs)
-        t += dt
+            fields = stepper(fields, t, dt, rhs)
+            t += dt
+    finally:
+        if write_output:
+            vis.close()
 
     logmgr.tick()
     logmgr.save()
@@ -240,3 +256,11 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+
+from pytools.test import mark_test
+@mark_test.long
+def test_run():
+    main(write_output=False)

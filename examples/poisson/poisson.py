@@ -25,7 +25,7 @@ from hedge.tools import Reflection, Rotation
 
 
 
-def main() :
+def main(write_output=True):
     from hedge.element import TriangularElement, TetrahedralElement
     from hedge.data import GivenFunction, ConstantGivenFunction
 
@@ -81,7 +81,7 @@ def main() :
         result[0,0] = 0.1
         return result
 
-    from hedge.pde import WeakPoissonOperator
+    from hedge.models.poisson import WeakPoissonOperator
     op = WeakPoissonOperator(discr.dimensions, 
             diffusion_tensor=ConstantGivenFunction(my_diff_tensor()),
 
@@ -100,11 +100,12 @@ def main() :
             dot=discr.nodewise_dot_product,
             x=discr.volume_zeros())
 
-    from hedge.visualization import SiloVisualizer, VtkVisualizer
-    vis = VtkVisualizer(discr, rcon)
-    visf = vis.make_file("fld")
-    vis.add_data(visf, [ ("sol", u), ])
-    visf.close()
+    if write_output:
+        from hedge.visualization import SiloVisualizer, VtkVisualizer
+        vis = VtkVisualizer(discr, rcon)
+        visf = vis.make_file("fld")
+        vis.add_data(visf, [ ("sol", u), ])
+        visf.close()
 
 
 
@@ -113,3 +114,11 @@ def main() :
 if __name__ == "__main__":
     main()
 
+
+
+
+# entry points for py.test ----------------------------------------------------
+from pytools.test import mark_test
+@mark_test.long
+def test_poisson():
+    main(write_output=False)
