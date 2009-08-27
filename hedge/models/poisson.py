@@ -28,6 +28,7 @@ import numpy.linalg as la
 
 from hedge.models import Operator
 import hedge.data
+import hedge.iterative
 from pytools import memoize_method
 
 
