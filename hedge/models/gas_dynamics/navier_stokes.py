@@ -407,11 +407,7 @@ class NavierStokesWithHeatOperator(GasDynamicsOperatorBase):
         speed = cse(sqrt(numpy.dot(u(state), u(state)))) + c
 
         from hedge.tools import make_lax_friedrichs_flux, join_fields
-        from hedge.mesh import TAG_ALL, TAG_NONE
-        #from Euler1DScott_Order.py 'import' inflow/outflow
-        #bdry_tags_and_states=[(TAG_ALL, bc_state)]
-        #bdry_tags_and_states=[('inflow', bc_state)]
-        bdry_tags_and_states=[('inflow', bc_state),(('outflow', bc_state_out))]
+        from hedge.mesh import TAG_ALL
       
         flux_state = flux(state)
 

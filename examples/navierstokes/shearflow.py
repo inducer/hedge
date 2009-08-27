@@ -97,7 +97,7 @@ def main():
         shearflow = SteadyShearFlow(gamma=gamma, mu=mu)
         fields = shearflow.volume_interpolant(0, discr)
 
-        from hedge.pde import NavierStokesOperator
+        from hedge.models.gas_dynamics.navier_stokes import NavierStokesOperator
         op = NavierStokesOperator(dimensions=2, gamma=gamma, mu=mu, bc=shearflow)
 
         navierstokes_ex = op.bind(discr)
