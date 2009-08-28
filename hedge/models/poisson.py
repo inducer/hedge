@@ -184,7 +184,7 @@ class WeakPoissonOperator(Operator):
     # bound operator ----------------------------------------------------------
     class BoundPoissonOperator(hedge.iterative.OperatorBase):
         def __init__(self, poisson_op, discr):
-            hedge.tools.OperatorBase.__init__(self)
+            hedge.iterative.OperatorBase.__init__(self)
             self.discr = discr
 
             pop = self.poisson_op = poisson_op

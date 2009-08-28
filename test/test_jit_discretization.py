@@ -974,7 +974,7 @@ def test_elliptic():
                 assert sym_err<1e-12
                 #check_grad_mat()
 
-            from hedge.tools import parallel_cg
+            from hedge.iterative import parallel_cg
             truesol_v = discr.interpolate_volume_function(
                     lambda x, el: truesol_c(x))
             sol_v = -parallel_cg(
