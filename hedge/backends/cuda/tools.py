@@ -258,7 +258,8 @@ class RK4TimeStepper(hedge.timestep.base.TimeStepper):
 
 # instrumentation -------------------------------------------------------------
 class CallableCollectionTimer(LogQuantity):
-    """Records the elapsed time between L{start} and L{stop} calls."""
+    """Records the elapsed time returned by a number of callables added
+    via L{add_timer_callable}."""
     def __init__(self, name="interval", description=None):
         LogQuantity.__init__(self, name, "s", description)
 

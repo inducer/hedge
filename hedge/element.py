@@ -450,8 +450,8 @@ class IntervalElement(IntervalElementBase):
 
     unit coordinates (r)::
 
-    ---[--------0--------]--->
-       -1                1
+        ---[--------0--------]--->
+           -1                1
     """
 
     def __init__(self, order):

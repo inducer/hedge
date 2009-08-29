@@ -1,3 +1,5 @@
+"""C code generation for vector expressions."""
+
 from __future__ import division
 
 __copyright__ = "Copyright (C) 2008 Andreas Kloeckner"

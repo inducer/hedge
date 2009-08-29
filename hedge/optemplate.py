@@ -1,4 +1,4 @@
-"""Lazy evaluation support infastructure."""
+"""Building blocks and mappers for operator expression trees."""
 
 from __future__ import division
 

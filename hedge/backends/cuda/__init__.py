@@ -66,7 +66,7 @@ class GPUBlock(object):
 class GPUFaceStorage(object):
     """Describes where the dofs of an element face are stored.
 
-    @ivar opposite: the L{GPUFacestorage} instance for the face
+    @ivar opposite: the L{GPUFaceStorage} instance for the face
       oposite to this one.
     """
     __slots__ = ["opposite"]
@@ -1218,7 +1218,7 @@ class Discretization(hedge.discretization.Discretization):
     # numbering tools ---------------------------------------------------------
     @memoize_method
     def elgroup_microblock_indices(self, elgroup):
-        """For a given L{hedge.discretization.ElementGroup} instance
+        """For a given L{hedge.discretization._ElementGroup} instance
         C{elgroup}, return an index array (of dtype C{numpy.intp}) that,
         indexed by the block-microblock element number, gives the element
         number within C{elgroup}.

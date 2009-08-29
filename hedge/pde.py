@@ -1,5 +1,5 @@
 # -*- coding: utf8 -*-
-"""Canned operators for several PDEs, such as Maxwell's, heat, Poisson, etc."""
+"""Canned operators for several PDEs, such as Maxwell's, heat, Poisson, etc. (deprecated module)"""
 
 from __future__ import division
 
@@ -46,8 +46,8 @@ class StrongWaveOperator:
 
     To be precise, we discretize the hyperbolic system
 
-      * S{part}t u - c div v = 0
-      * S{part}t v - c grad u = 0
+     - S{part}t u - c div v = 0
+     - S{part}t v - c grad u = 0
 
     The sign of M{v} determines whether we discretize the forward or the
     backward wave equation.
@@ -197,8 +197,8 @@ class VariableVelocityStrongWaveOperator:
 
     To be precise, we discretize the hyperbolic system
 
-      * S{part}t u - c div v = 0
-      * S{part}t v - c grad u = 0
+     - S{part}t u - c div v = 0
+     - S{part}t v - c grad u = 0
     """
 
     def __init__(self, c, dimensions, source=None,

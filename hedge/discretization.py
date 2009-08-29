@@ -89,9 +89,9 @@ class _FaceGroup(hedge._internal.FaceGroup):
 class _ElementGroup(object):
     """Once fully filled, this structure has the following data members:
 
-    @ivar members: a list of hedge.mesh.Element instances in this group.
+    @ivar members: a list of L{hedge.mesh.Element} instances in this group.
     @ivar member_nrs: a list of the element ID numbers in this group.
-    @ivar local_discretization: an instance of hedge.element.Element.
+    @ivar local_discretization: an instance of L{hedge.element.Element}.
     @ivar ranges: a list of C{slice} objects indicating the DOF numbers for
       each element. Note: This is actually a C++ ElementRanges object.
     @ivar mass_matrix: The element-local mass matrix M{M}.
@@ -1189,11 +1189,11 @@ class ExponentialFilterResponseFunction:
     def __init__(self, min_amplification=0.1, order=6):
         """Construct the filter function.
 
+        The amplification factor of the lowest-order (constant) mode is always 1.
+
         @arg min_amplification: The amplification factor applied to the highest mode.
         @arg order: The order of the filter. This controls how fast (or slowly) the
           C{min_amplification} is reached.
-
-        The amplification factor of the lowest-order (constant) mode is always 1.
         """
         from math import log
         self.alpha = -log(min_amplification)
@@ -1214,7 +1214,7 @@ class Filter:
 
         @arg discr: The L{Discretization} for which the filter is to be
           constructed.
-        @mode_response_func: A function mapping 
+        @arg mode_response_func: A function mapping 
           C{(mode_tuple, local_discretization)} to a float indicating the
           factor by which this mode is to be multiplied after filtering.
         """

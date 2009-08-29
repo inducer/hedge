@@ -577,7 +577,7 @@ def orthonormalize(vectors, discard_threshold=None):
     below C{discard_threshold}, then this vector is silently
     discarded. If C{discard_threshold} is C{None}, then no vector
     will ever be dropped, and a zero 2-norm encountered during
-    orthonormalization will throw an L{OrthonormalizationError}.
+    orthonormalization will throw a C{RuntimeError}.
 
     [1] U{http://en.wikipedia.org/wiki/Gram%E2%80%93Schmidt_process}
     """

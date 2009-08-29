@@ -50,13 +50,13 @@ class IGivenFunction(object):
 
     def volume_interpolant(self, discr):
         """Return the volume interpolant of this function with respect to
-        the L{Discretization} C{discr}.
+        the L{discretization.Discretization} C{discr}.
         """
         raise NotImplementedError
 
     def boundary_interpolant(self, discr, tag):
         """Return the boundary interpolant of this function with respect to
-        the L{Discretization} discr at the boundary tagged with C{tag}.
+        the L{discretization.Discretization} discr at the boundary tagged with C{tag}.
         """
         raise NotImplementedError
 
@@ -70,13 +70,13 @@ class ITimeDependentGivenFunction(object):
 
     def volume_interpolant(self, t, discr):
         """Return the volume interpolant of this function with respect to
-        the L{Discretization} discr at time {t}.
+        the L{discretization.Discretization} discr at time {t}.
         """
         raise NotImplementedError
 
     def boundary_interpolant(self, t, discr, tag):
         """Return the boundary interpolant of this function with respect to
-        the L{Discretization} discr at time C{t} at the boundary tagged with
+        the L{discretization.Discretization} discr at time C{t} at the boundary tagged with
         C{tag}.
         """
         raise NotImplementedError

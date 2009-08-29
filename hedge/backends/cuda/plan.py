@@ -31,11 +31,11 @@ class Parallelism:
     """Defines how much of a task is accomplished sequentially vs. in-line parallel
     vs. completely in parallel.
 
-    To fix terminology: 
-    
-    - "parallel" means "in separate threads".
-    - "inline" means "in the same thread, but sharing some data."
-    - "serial" means "in the same thread, but in separate, data-independent stages."
+    To fix terminology:
+
+     - "parallel" means "in separate threads".
+     - "inline" means "in the same thread, but sharing some data."
+     - "serial" means "in the same thread, but in separate, data-independent stages."
     """
     def __init__(self, parallel, inline, serial):
         self.parallel = parallel
@@ -91,7 +91,7 @@ def optimize_plan(opt_name, plan_generator, target_func, maximize, debug_flags=s
                   create table data (
                     id integer primary key autoincrement,
                     %s,
-                    value real)""" 
+                    value real)"""
                     % ", ".join(feature_columns))
         except sqlite.OperationalError:
             pass
@@ -124,7 +124,7 @@ def optimize_plan(opt_name, plan_generator, target_func, maximize, debug_flags=s
                     if log_filename is not None:
                         db_conn.execute(
                                 "insert into data (%s,value) values (%s)"
-                                % (", ".join(feature_names), 
+                                % (", ".join(feature_names),
                                     ",".join(["?"]*(1+len(feature_names)))),
                                 p.features(*extra_info)+(value,))
     finally:
@@ -192,8 +192,8 @@ class ExecutionPlan(object):
             return ("regs=%d(+%d) threads=%d smem=%d occ=%f" % (
                 self.registers(),
                 self.max_registers()-self.registers(),
-                self.threads(), 
-                self.shared_mem_use(), 
+                self.threads(),
+                self.shared_mem_use(),
                 self.occupancy_record().occupancy,
                 ))
 
@@ -230,7 +230,7 @@ class PlanGivenData(object):
 
     def face_dofs_per_microblock(self):
         return self.microblock.elements*self.faces_per_el()*self.dofs_per_face()
-        
+
     @memoize_method
     def aligned_face_dofs_per_microblock(self):
         return self.devdata.align_dtype(
@@ -324,7 +324,7 @@ class SegmentedMatrixLocalOpExecutionPlan(ExecutionPlan):
     @memoize_method
     def shared_mem_use(self):
         given = self.given
-        
+
         return (128 # parameters, block header, small extra stuff
                + given.float_size() * (
                    # segment of the local op matrix
@@ -361,7 +361,7 @@ class SMemFieldLocalOpExecutionPlan(ExecutionPlan):
         return self.parallelism.total() * self.given.microblock.aligned_floats
 
     def preimage_dofs_per_macroblock(self):
-        return (self.parallelism.total() 
+        return (self.parallelism.total()
                 * self.aligned_preimage_dofs_per_microblock)
 
     def threads(self):
@@ -384,8 +384,8 @@ MAX_INLINE = 6
 
 def make_diff_plan(discr, given):
     def generate_plans():
-        segment_sizes = range(given.microblock.align_size, 
-                given.microblock.elements*given.dofs_per_el()+1, 
+        segment_sizes = range(given.microblock.align_size,
+                given.microblock.elements*given.dofs_per_el()+1,
                 given.microblock.align_size)
 
         from hedge.backends.cuda.diff_shared_segmat import ExecutionPlan as SSegPlan
@@ -396,15 +396,15 @@ def make_diff_plan(discr, given):
                     for seq in range(1, 4):
                         for segment_size in segment_sizes:
                             yield SSegPlan(
-                                    given, Parallelism(pe, inline, seq), 
-                                    segment_size, 
+                                    given, Parallelism(pe, inline, seq),
+                                    segment_size,
                                     max_unroll=given.dofs_per_el())
 
         from hedge.backends.cuda.diff_shared_fld import ExecutionPlan as SFieldPlan
 
         for pe in range(1,32+1):
             for inline in range(1, MAX_INLINE+1):
-                yield SFieldPlan(given, Parallelism(pe, inline, 1), 
+                yield SFieldPlan(given, Parallelism(pe, inline, 1),
                         max_unroll=given.dofs_per_el())
 
     def target_func(plan):
@@ -418,7 +418,7 @@ def make_diff_plan(discr, given):
 
 
 
-def make_element_local_plan(discr, given, 
+def make_element_local_plan(discr, given,
         op_name, aligned_preimage_dofs_per_microblock,
         preimage_dofs_per_el, with_index_check):
     def generate_plans():
@@ -427,15 +427,15 @@ def make_element_local_plan(discr, given,
 
             for use_prefetch_branch in [True]:
             #for use_prefetch_branch in [True, False]:
-                segment_sizes = range(given.microblock.align_size, 
-                        given.microblock.elements*given.dofs_per_el()+1, 
+                segment_sizes = range(given.microblock.align_size,
+                        given.microblock.elements*given.dofs_per_el()+1,
                         given.microblock.align_size)
 
                 for pe in range(1,32+1):
                     for inline in range(1, MAX_INLINE+1):
                         for seq in range(1, 4+1):
                             for segment_size in segment_sizes:
-                                yield SSegPlan(given, 
+                                yield SSegPlan(given,
                                         Parallelism(pe, inline, seq),
                                         segment_size,
                                         max_unroll=preimage_dofs_per_el,
@@ -450,7 +450,7 @@ def make_element_local_plan(discr, given,
 
         for pe in range(1,32+1):
             for inline in range(1, MAX_INLINE):
-                yield SFieldPlan(given, Parallelism(pe, inline, 1), 
+                yield SFieldPlan(given, Parallelism(pe, inline, 1),
                         max_unroll=preimage_dofs_per_el,
 
                         debug_name="cuda_%s" % op_name,

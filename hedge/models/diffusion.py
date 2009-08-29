@@ -1,5 +1,5 @@
 # -*- coding: utf8 -*-
-"""Operators modeling advective phenomena."""
+"""Operators modeling diffusive phenomena."""
 
 from __future__ import division
 

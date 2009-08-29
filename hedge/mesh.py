@@ -605,13 +605,13 @@ class ConformalMesh(Mesh):
 def check_bc_coverage(mesh, bc_tags, incomplete_ok=False):
     """Verify boundary condition coverage.
 
-    @arg incomplete_ok: Do not report an error if some faces are not covered
-      by the boundary conditions.
-    
     Given a list of boundary tags as C{bc_tags}, this function verifies
     that
         1. the union of all these boundaries gives the complete boundary,
         2. all these boundaries are disjoint.
+
+    @arg incomplete_ok: Do not report an error if some faces are not covered
+      by the boundary conditions.
     """
 
     bdry_to_tag = {}
@@ -1044,10 +1044,6 @@ def make_rect_mesh_with_corner(a=(0,0), b=(1,1), max_area=None,
     @arg a: the lower left hand point of the rectangle
     @arg b: the upper right hand point of the rectangle
     @arg max_area: maximum area of each triangle.
-    @arg periodicity: either None, or a tuple of bools specifying whether
-      the mesh is to be periodic in x and y.
-    @arg subdivisions: If not C{None}, this is a 2-tuple specifying
-      the number of facet subdivisions in X and Y.
     @arg refine_func: A refinement function as taken by C{meshpy.triangle.build}.
     @arg corner_fraction: Tuple of fraction of the width taken up by 
       the rentrant corner.
