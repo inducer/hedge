@@ -54,6 +54,7 @@ class AdvectionOperatorBase(TimeDependentOperator):
 
     def weak_flux(self):
         from hedge.flux import make_normal, FluxScalarPlaceholder, IfPositive
+        from pymbolic.primitives import IfPositive
 
         u = FluxScalarPlaceholder(0)
         normal = make_normal(self.dimensions)
@@ -213,7 +214,8 @@ class VariableCoefficientAdvectionOperator(TimeDependentOperator):
                 make_normal, \
                 FluxScalarPlaceholder, \
                 FluxVectorPlaceholder, \
-                IfPositive, flux_max, norm
+                flux_max, norm
+        from pymbolic.primitives import IfPositive
 
         d = self.dimensions
 

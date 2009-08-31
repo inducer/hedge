@@ -142,7 +142,9 @@ def test_2d_gauss_theorem():
             debug=discr_class.noninteractive_debug_flags())
     ref_discr = discr_class(mesh, order=order)
 
-    from hedge.flux import make_normal, FluxScalarPlaceholder, IfPositive
+    from hedge.flux import make_normal, FluxScalarPlaceholder
+    from pymbolic.primitives import IfPositive
+
     normal = make_normal(discr.dimensions)
     flux_f_ph = FluxScalarPlaceholder(0)
     one_sided_x = flux_f_ph.int*normal[0]

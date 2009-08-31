@@ -889,7 +889,7 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
                     "boundary and volume quantities: %s" 
                     % ", ".join(str(v) for v in vol_bdry_intersection))
   
-        # Step 1: Find maximal flux-evaluable subexpression of bounary field
+        # Step 1: Find maximal flux-evaluable subexpression of boundary field
         # in given BoundaryPair.
 
         class MaxBoundaryFluxEvaluableExpressionFinder(
