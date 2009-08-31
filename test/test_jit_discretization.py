@@ -158,7 +158,7 @@ def test_2d_gauss_theorem():
     f1_v = discr.interpolate_volume_function(f1)
     f2_v = discr.interpolate_volume_function(f2)
 
-    from hedge.optemplate import pair_with_boundary, Field, make_nabla, \
+    from hedge.optemplate import BoundaryPair, Field, make_nabla, \
             get_flux_operator
     nabla = make_nabla(discr.dimensions)
     diff_optp = nabla[0] * Field("f1") + nabla[1] * Field("f2")
@@ -168,9 +168,9 @@ def test_2d_gauss_theorem():
 
     flux_optp = (
             get_flux_operator(one_sided_x)
-            *pair_with_boundary(Field("f1"), Field("fz")) +
+            *BoundaryPair(Field("f1"), Field("fz")) +
             get_flux_operator(one_sided_y)
-            *pair_with_boundary(Field("f2"), Field("fz")))
+            *BoundaryPair(Field("f2"), Field("fz")))
 
     from hedge.mesh import TAG_ALL
     bdry_val = discr.compile(flux_optp)(f1=f1_v, f2=f2_v,

@@ -50,13 +50,13 @@ class IGivenFunction(object):
 
     def volume_interpolant(self, discr):
         """Return the volume interpolant of this function with respect to
-        the L{discretization.Discretization} C{discr}.
+        the :class:`hedge.discretization.Discretization` *discr*.
         """
         raise NotImplementedError
 
     def boundary_interpolant(self, discr, tag):
         """Return the boundary interpolant of this function with respect to
-        the L{discretization.Discretization} discr at the boundary tagged with C{tag}.
+        the :class:`hedge.discretization.Discretization` *discr* at the boundary tagged with *tag*.
         """
         raise NotImplementedError
 
@@ -64,20 +64,20 @@ class IGivenFunction(object):
 
 
 class ITimeDependentGivenFunction(object):
-    """Abstract interface for obtaining interpolants of I{time-dependent} 
+    """Abstract interface for obtaining interpolants of time-dependent 
     functions.
     """
 
     def volume_interpolant(self, t, discr):
         """Return the volume interpolant of this function with respect to
-        the L{discretization.Discretization} discr at time {t}.
+        the :class:`hedge.discretization.Discretization` discr at time {t}.
         """
         raise NotImplementedError
 
     def boundary_interpolant(self, t, discr, tag):
         """Return the boundary interpolant of this function with respect to
-        the L{discretization.Discretization} discr at time C{t} at the boundary tagged with
-        C{tag}.
+        the :class:`hedge.discretization.Discretization` *discr* at time *t* at the boundary tagged with
+        *tag*.
         """
         raise NotImplementedError
 
@@ -85,14 +85,14 @@ class ITimeDependentGivenFunction(object):
 
 
 class GivenFunction(IGivenFunction):
-    """Adapter for a function M{f(x)} into an L{IGivenFunction}.
+    """Adapter for a function :math:`f(x)` into an :class:`IGivenFunction`.
     """
     def __init__(self, f):
-        """Initialize the caches and store the function C{f}.
+        """Initialize the caches and store the function :math:`f`.
 
-        @param f: a function mapping space to a scalar value.
-          If f.target_dimensions exists and equals M{n}, then f maps into an
-          M{n}-dimensional vector space instead.
+        :param f: a function mapping space to a scalar value.
+          If f.target_dimensions exists and equals :math:`n`, then f maps into an
+          :math:`n`-dimensional vector space instead.
         """
         from weakref import WeakKeyDictionary
 
@@ -122,7 +122,7 @@ class GivenFunction(IGivenFunction):
 
 
 class ConstantGivenFunction(GivenFunction):
-    """A L{GivenFunction} that has a constant value on all space.
+    """A :class:`GivenFunction` that has a constant value on all space.
     """
     def __init__(self, value=0):
         self.value = value
@@ -133,7 +133,7 @@ class ConstantGivenFunction(GivenFunction):
 
 
 class GivenVolumeInterpolant(IGivenFunction):
-    """A constant-valued L{GivenFunction}.
+    """A constant-valued :class:`GivenFunction`.
     """
     def __init__(self, discr, interpolant):
         self.discr = discr
@@ -154,7 +154,7 @@ class GivenVolumeInterpolant(IGivenFunction):
 
 
 class TimeConstantGivenFunction(ITimeDependentGivenFunction):
-    """Adapts a L{GivenFunction} to have a (formal) time-dependency, being constant
+    """Adapts a :class:`GivenFunction` to have a (formal) time-dependency, being constant
     over all time.
     """
     def __init__(self, gf):
@@ -177,7 +177,7 @@ def make_tdep_constant(x):
 
 
 class TimeHarmonicGivenFunction(ITimeDependentGivenFunction):
-    """Adapts an L{IGivenFunction} to have a harmonic time-dependency.
+    """Adapts an :class:`IGivenFunction` to have a harmonic time-dependency.
     """
     def __init__(self, gf, omega, phase=0):
         self.gf = gf
@@ -199,9 +199,9 @@ class TimeHarmonicGivenFunction(ITimeDependentGivenFunction):
 
 
 class TimeIntervalGivenFunction(ITimeDependentGivenFunction):
-    """Adapts an L{IGivenFunction} to depend on time by "turning it on"
-    for the time interval [on_time, off_time), and having it be zero
-    the rest of the time.
+    """Adapts an :class:`IGivenFunction` to depend on time by "turning it on"
+    for the time interval :math:`[\\text{on\\_time}, \\text{off\\_time})`, and 
+    having it be zero the rest of the time.
     """
 
     def __init__(self, gf, on_time=0, off_time=1):
@@ -232,14 +232,14 @@ class TimeIntervalGivenFunction(ITimeDependentGivenFunction):
 
 
 class TimeDependentGivenFunction(ITimeDependentGivenFunction):
-    """Adapts a function M{f(x,t)} into the L{GivenFunction} framework.
+    """Adapts a function :math:`f(x,t)` into the :class:`GivenFunction` framework.
     """
     def __init__(self, f):
         self.f = f
     
     class ConstantWrapper:
         def __init__(self, f, t):
-            """Adapt a function `f(x, el, t) in such a way that it can be fed to 
+            """Adapt a function :math:`f(x, el, t)` in such a way that it can be fed to 
             `interpolate_*_function()`. In particular, preserve the `shape` attribute.
             """
             self.f = f

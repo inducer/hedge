@@ -41,7 +41,7 @@ class GradientOperator(Operator):
 
     def op_template(self):
         from hedge.mesh import TAG_ALL
-        from hedge.optemplate import Field, pair_with_boundary, \
+        from hedge.optemplate import Field, BoundaryPair, \
                 make_nabla, InverseMassOperator, get_flux_operator
 
         u = Field("u")
@@ -52,7 +52,7 @@ class GradientOperator(Operator):
 
         return nabla*u - InverseMassOperator()*(
                 flux_op * u +
-                flux_op * pair_with_boundary(u, bc, TAG_ALL)
+                flux_op * BoundaryPair(u, bc, TAG_ALL)
                 )
 
     def bind(self, discr):
@@ -101,7 +101,7 @@ class DivergenceOperator(Operator):
 
     def op_template(self):
         from hedge.mesh import TAG_ALL
-        from hedge.optemplate import make_vector_field, pair_with_boundary, \
+        from hedge.optemplate import make_vector_field, BoundaryPair, \
                 get_flux_operator, make_nabla, InverseMassOperator
 
         nabla = make_nabla(self.dimensions)
@@ -121,7 +121,7 @@ class DivergenceOperator(Operator):
 
         return local_op_result - m_inv*(
                 flux_op * v +
-                flux_op * pair_with_boundary(v, bc, TAG_ALL))
+                flux_op * BoundaryPair(v, bc, TAG_ALL))
 
     def bind(self, discr):
         compiled_op_template = discr.compile(self.op_template())

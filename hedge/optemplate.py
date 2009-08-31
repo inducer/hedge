@@ -37,6 +37,8 @@ from pymbolic.mapper import CSECachingMapperMixin
 
 
 def make_common_subexpression(fields): 
+    """Wrap each component of a vector field in a CSE."""
+
     from hedge.tools import with_object_array_or_scalar
     from pymbolic.primitives import CommonSubexpression
     return with_object_array_or_scalar(CommonSubexpression, fields)
@@ -56,6 +58,8 @@ def make_field(var_or_string):
 
 
 class ScalarParameter(pymbolic.primitives.Variable):
+    """A placeholder for a user-supplied scalar variable."""
+
     def stringifier(self):
         return StringifyMapper
 
@@ -371,16 +375,6 @@ class BoundaryPair(pymbolic.primitives.AlgebraicLeaf):
                 and field_equal(other.field,  self.field)
                 and field_equal(other.bfield, self.bfield)
                 and other.tag == self.tag)
-        
-
-
-
-
-def pair_with_boundary(field, bfield, tag=hedge.mesh.TAG_ALL):
-    if tag is hedge.mesh.TAG_NONE:
-        return 0
-    else:
-        return BoundaryPair(field, bfield, tag)
 
 
 
@@ -441,6 +435,11 @@ class VectorFluxOperator(object):
 
 # convenience functions -------------------------------------------------------
 def make_vector_field(name, components):
+    """Return an object array of *components* subscripted 
+    :class:`Field` instances.
+
+    :param components: The number of components in the vector.
+    """
     if isinstance(components, int):
         components = range(components)
 
@@ -453,8 +452,8 @@ def make_vector_field(name, components):
 
 def get_flux_operator(flux):
     """Return a flux operator that can be multiplied with
-    a volume field to obtain the lifted interior fluxes
-    or with a boundary pair to obtain the lifted boundary
+    a volume field to obtain the interior fluxes
+    or with a :class:`BoundaryPair` to obtain the lifted boundary
     flux.
     """
     from hedge.tools import is_obj_array
@@ -867,10 +866,10 @@ class InverseMassContractor(CSECachingMapperMixin, IdentityMapper):
 
 # BC-to-flux rewriting --------------------------------------------------------
 class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
-    """Operates on L{FluxOperator} instances bound to L{BoundaryPair}s. If the
-    boundary pair's C{bfield} is an expression of what's available in the
-    C{field}, we can avoid fetching the data for the explicit boundary
-    condition and just substitute the C{bfield} expression into the flux. This
+    """Operates on :class:`FluxOperator` instances bound to :class:`BoundaryPair`. If the
+    boundary pair's *bfield* is an expression of what's available in the
+    *field*, we can avoid fetching the data for the explicit boundary
+    condition and just substitute the *bfield* expression into the flux. This
     mapper does exactly that.  
     """
 
@@ -1122,8 +1121,3 @@ def split_optemplate_for_multirate(state_vector, op_template,
                     op_template[ig]))
             for ig in index_groups
             for killer in killers]
-
-
-
-
-

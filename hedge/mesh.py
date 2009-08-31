@@ -43,11 +43,12 @@ class TAG_ALL(object):
 class TAG_REALLY_ALL(object): 
     """A boundary tag representing the entire boundary.
     
-    Unlike L{TAG_ALL}, this includes rank boundaries,
-    or, more generally, everything tagged with TAG_NO_BOUNDARY."""
+    Unlike :class:`TAG_ALL`, this includes rank boundaries,
+    or, more generally, everything tagged with :class:`TAG_NO_BOUNDARY`."""
     pass
 class TAG_NO_BOUNDARY(object): 
-    """A boundary tag indicating that this edge should not fall under TAG_ALL."""
+    """A boundary tag indicating that this edge should not fall under 
+    :class:`TAG_ALL`."""
     pass
 class TAG_RANK_BOUNDARY(object): 
     """A boundary tag indicating the boundary with a neighboring rank."""
@@ -266,36 +267,36 @@ class Mesh(pytools.Record):
     element mesh. (Note: no information about the discretization
     is stored here.)
 
-    @ivar points: list of Pylinear vectors of node coordinates
-    @ivar elements: list of Element instances
-    @ivar interfaces: a list of pairs::
+    :ivar points: list of Pylinear vectors of node coordinates
+    :ivar elements: list of Element instances
+    :ivar interfaces: a list of pairs:
 
           ((element instance 1, face index 1), (element instance 2, face index 2))
 
       enumerating elements bordering one another.  The relation "element 1 touches 
       element 2" is always reflexive, but this list will only contain one entry
       per element pair.
-    @ivar tag_to_boundary: a mapping of the form::
+    :ivar tag_to_boundary: a mapping of the form:
           boundary_tag -> [(element instance, face index)])
 
-      The boundary tag TAG_NONE always refers to an empty boundary.
-      The boundary tag TAG_ALL always refers to the entire boundary.
-    @ivar tag_to_elements: a mapping of the form
+      The boundary tag :class:`TAG_NONE` always refers to an empty boundary.
+      The boundary tag :class:`TAG_ALL` always refers to the entire boundary.
+    :ivar tag_to_elements: a mapping of the form
       element_tag -> [element instances]
 
-      The boundary tag TAG_NONE always refers to an empty domain.
-      The boundary tag TAG_ALL always refers to the entire domain.
-    @ivar periodicity: A list of tuples (minus_tag, plus_tag) or None
+      The element tag :class:`TAG_NONE` always refers to an empty domain.
+      The element tag :class:`TAG_ALL` always refers to the entire domain.
+    :ivar periodicity: A list of tuples (minus_tag, plus_tag) or None
       indicating the tags of the boundaries to be matched together
       as periodic. There is one tuple per axis, so that for example
       a 3D mesh has three tuples.
-    @ivar periodic_opposite_faces: a mapping of the form::
+    :ivar periodic_opposite_faces: a mapping of the form:
           (face_vertex_indices) -> 
             (opposite_face_vertex_indices), axis
 
       This maps a face to its periodicity-induced opposite.
 
-    @ivar periodic_opposite_vertices: a mapping of the form::
+    :ivar periodic_opposite_vertices: a mapping of the form:
           vertex_index -> [(opposite_vertex_index, axis), ...]
 
       This maps one vertex to a list of its periodicity-induced 
@@ -466,34 +467,46 @@ def _build_mesh_data_dict(points, elements, boundary_tagger, periodicity, is_ran
 
 
 def make_conformal_mesh(points, elements, 
-        boundary_tagger=(lambda fvi, el, fn, all_v: []), 
-        element_tagger=(lambda el, all_v: []),
+        boundary_tagger=None, 
+        element_tagger=None,
         periodicity=None,
-        _is_rankbdry_face=(lambda (el, face): False),
+        _is_rankbdry_face=None,
         ):
     """Construct a simplical mesh.
 
     Face indices follow the convention for the respective element,
     such as Triangle or Tetrahedron, in this module.
 
-    @param points: an iterable of vertex coordinates, given as vectors.
-    @param elements: an iterable of tuples of indices into points,
+    :param points: an iterable of vertex coordinates, given as vectors.
+    :param elements: an iterable of tuples of indices into points,
       giving element endpoints.
-    @param boundary_tagger: a function that takes the arguments
-      C{(set_of_face_vertex_indices, element, face_number, all_vertices)}
+    :param boundary_tagger: a function that takes the arguments
+      *(set_of_face_vertex_indices, element, face_number, all_vertices)*
       It returns a list of tags that apply to this surface.
-    @param element_tagger: a function that takes the arguments
+    :param element_tagger: a function that takes the arguments
       (element, all_vertices) and returns the a list of tags that apply
       to that element.
-    @param periodicity: either None or is a list of tuples
-      just like the one documented for the C{periodicity}
-      member of class L{Mesh}.
-    @param _is_rankbdry_face: an implementation detail, 
+    :param periodicity: either None or is a list of tuples
+      just like the one documented for the `periodicity`
+      member of class :class:`Mesh`.
+    :param _is_rankbdry_face: an implementation detail, 
       should not be used from user code. It is a function
       returning whether a given face identified by 
-      C{(element instance, face_nr)} is cut by a parallel
+      *(element instance, face_nr)* is cut by a parallel
       mesh partition.
     """
+    if boundary_tagger is None:
+        def boundary_tagger(fvi, el, fn, all_v):
+            return []
+
+    if element_tagger is None:
+        def element_tagger(el, all_v):
+            return []
+
+    if _is_rankbdry_face is None:
+        def _is_rankbdry_face(el, face):
+            return False
+
     if len(points) == 0:
         raise ValueError, "mesh contains no points"
 
@@ -536,12 +549,12 @@ def make_conformal_mesh(points, elements,
 class ConformalMesh(Mesh):
     """A mesh whose elements' faces exactly match up with one another.
 
-    See the Mesh class for data members provided by this class.
+    See :class:`Mesh` for attributes provided by this class.
     """
 
     def __init__(self, points, elements, interfaces, tag_to_boundary, tag_to_elements,
             periodicity, periodic_opposite_faces, periodic_opposite_vertices):
-        """This constructor is for internal use only. Use L{make_conformal_mesh} instead.
+        """This constructor is for internal use only. Use :func:`make_conformal_mesh` instead.
         """
         Mesh.__init__(self, locals())
 
@@ -553,13 +566,18 @@ class ConformalMesh(Mesh):
             raise ValueError, "invalid mesh reorder method"
 
     def reordered_by(self, method):
+        """Return a reordered copy of *self*.
+
+        :param method: "cuthill"
+        """
+
         old_numbers = self.get_reorder_oldnumbers(method)
         return self.reordered(old_numbers)
 
     def reordered(self, old_numbers):
-        """Return a copy of this C{Mesh} whose elements are 
-        reordered using such that for each element C{i},
-        C{old_numbers[i]} gives the previous number of that
+        """Return a copy of *self* whose elements are 
+        reordered using such that for each element *i*,
+        *old_numbers[i]* gives the previous number of that
         element.
         """
 
@@ -605,12 +623,13 @@ class ConformalMesh(Mesh):
 def check_bc_coverage(mesh, bc_tags, incomplete_ok=False):
     """Verify boundary condition coverage.
 
-    Given a list of boundary tags as C{bc_tags}, this function verifies
+    Given a list of boundary tags as *bc_tags*, this function verifies
     that
-        1. the union of all these boundaries gives the complete boundary,
-        2. all these boundaries are disjoint.
 
-    @arg incomplete_ok: Do not report an error if some faces are not covered
+     1. the union of all these boundaries gives the complete boundary,
+     1. all these boundaries are disjoint.
+
+    :param incomplete_ok: Do not report an error if some faces are not covered
       by the boundary conditions.
     """
 
@@ -736,11 +755,11 @@ def make_regular_rect_mesh(a=(0,0), b=(1,1), n=(5,5), periodicity=None,
         boundary_tagger=(lambda fvi, el, fn, all_v: [])):
     """Create a semi-structured rectangular mesh.
 
-    @arg a: the lower left hand point of the rectangle
-    @arg b: the upper right hand point of the rectangle
-    @arg n: a tuple of integers indicating the total number of points
+    :param a: the lower left hand point of the rectangle
+    :param b: the upper right hand point of the rectangle
+    :param n: a tuple of integers indicating the total number of points
       on [a,b].
-    @arg periodicity: either None, or a tuple of bools specifying whether
+    :param periodicity: either None, or a tuple of bools specifying whether
       the mesh is to be periodic in x and y.
     """
     if min(n) < 2:
@@ -813,11 +832,11 @@ def make_centered_regular_rect_mesh(a=(0,0), b=(1,1), n=(5,5), periodicity=None,
         post_refine_factor=1, boundary_tagger=(lambda fvi, el, fn, all_v: [])):
     """Create a semi-structured rectangular mesh.
 
-    @arg a: the lower left hand point of the rectangle
-    @arg b: the upper right hand point of the rectangle
-    @arg n: a tuple of integers indicating the total number of points
+    :param a: the lower left hand point of the rectangle
+    :param b: the upper right hand point of the rectangle
+    :param n: a tuple of integers indicating the total number of points
       on [a,b].
-    @arg periodicity: either None, or a tuple of bools specifying whether
+    :param periodicity: either None, or a tuple of bools specifying whether
       the mesh is to be periodic in x and y.
     """
     if min(n) < 2:
@@ -918,10 +937,10 @@ def make_regular_square_mesh(a=-0.5, b=0.5, n=5, periodicity=None,
         boundary_tagger=(lambda fvi, el, fn, all_v: [])):
     """Create a semi-structured square mesh.
 
-    @arg a: the lower x and y coordinate of the square
-    @arg b: the upper x and y coordinate of the square
-    @arg n: integer indicating the total number of points on [a,b].
-    @arg periodicity: either None, or a tuple of bools specifying whether
+    :param a: the lower x and y coordinate of the square
+    :param b: the upper x and y coordinate of the square
+    :param n: integer indicating the total number of points on [a,b].
+    :param periodicity: either None, or a tuple of bools specifying whether
       the mesh is to be periodic in x and y.
     """
     return make_regular_rect_mesh(
@@ -993,14 +1012,15 @@ def make_rect_mesh(a=(0,0), b=(1,1), max_area=None,
         refine_func=None):
     """Create an unstructured rectangular mesh.
 
-    @arg a: the lower left hand point of the rectangle
-    @arg b: the upper right hand point of the rectangle
-    @arg max_area: maximum area of each triangle.
-    @arg periodicity: either None, or a tuple of bools specifying whether
+    :param a: the lower left hand point of the rectangle
+    :param b: the upper right hand point of the rectangle
+    :param max_area: maximum area of each triangle.
+    :param periodicity: either None, or a tuple of bools specifying whether
       the mesh is to be periodic in x and y.
-    @arg subdivisions: If not C{None}, this is a 2-tuple specifying
+    :param subdivisions: If not *None*, this is a 2-tuple specifying
       the number of facet subdivisions in X and Y.
-    @arg refine_func: A refinement function as taken by C{meshpy.triangle.build}.
+    :param refine_func: A refinement function as taken by 
+      :func:`meshpy.triangle.build`.
     """
     import meshpy.triangle as triangle
 
@@ -1041,11 +1061,11 @@ def make_rect_mesh_with_corner(a=(0,0), b=(1,1), max_area=None,
     """Create an unstructured rectangular mesh with a reentrant
     corner at (-x, -y).
 
-    @arg a: the lower left hand point of the rectangle
-    @arg b: the upper right hand point of the rectangle
-    @arg max_area: maximum area of each triangle.
-    @arg refine_func: A refinement function as taken by C{meshpy.triangle.build}.
-    @arg corner_fraction: Tuple of fraction of the width taken up by 
+    :param a: the lower left hand point of the rectangle
+    :param b: the upper right hand point of the rectangle
+    :param max_area: maximum area of each triangle.
+    :param refine_func: A refinement function as taken by :func:`meshpy.triangle.build`.
+    :param corner_fraction: Tuple of fraction of the width taken up by 
       the rentrant corner.
     """
     import meshpy.triangle as triangle
@@ -1104,9 +1124,9 @@ def make_square_mesh(a=-0.5, b=0.5, max_area=4e-3,
         boundary_tagger=(lambda fvi, el, fn, all_v: [])):
     """Create an unstructured square mesh.
 
-    @arg a: the lower x and y coordinate of the square
-    @arg b: the upper x and y coordinate of the square
-    @arg max_area: maximum area of each triangle
+    :param a: the lower x and y coordinate of the square
+    :param b: the upper x and y coordinate of the square
+    :param max_area: maximum area of each triangle
     """
     return make_rect_mesh((a,a), (b,b), max_area, boundary_tagger)
 
@@ -1251,12 +1271,12 @@ def make_box_mesh(a=(0,0,0),b=(1,1,1),
         max_volume=None, periodicity=None,
         boundary_tagger=(lambda fvi, el, fn, all_v: []),
         return_meshpy_mesh=False):
-    """Return a mesh for a brick from the origin to `dimensions'.
+    """Return a mesh for a brick from the origin to `dimensions`.
 
-    `max_volume' specifies the maximum volume for each tetrahedron.
-    `periodicity' is either None, or a triple of bools, indicating
+    *max_volume* specifies the maximum volume for each tetrahedron.
+    *periodicity* is either None, or a triple of bools, indicating
     whether periodic BCs are to be applied along that axis.
-    See ConformalMesh.__init__ for the meaning of boundary_tagger.
+    See :func:`make_conformal_mesh` for the meaning of *boundary_tagger*.
 
     A few stock boundary tags are provided for easy application
     of boundary conditions, namely plus_[xyz] and minus_[xyz] tag

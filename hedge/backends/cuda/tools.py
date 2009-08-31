@@ -45,14 +45,14 @@ def exact_div(dividend, divisor):
     return quot
 
 def int_ceiling(value, multiple_of=1):
-    """Round C{value} up to be a C{multiple_of} something."""
+    """Round *value* up to be a *multiple_of* something."""
     # Mimicks the Excel "floor" function (for code stolen from occupany calculator)
 
     from math import ceil
     return int(ceil(value/multiple_of))*multiple_of
 
 def int_floor(value, multiple_of=1):
-    """Round C{value} down to be a C{multiple_of} something."""
+    """Round *value* down to be a *multiple_of* something."""
     # Mimicks the Excel "floor" function (for code stolen from occupany calculator)
 
     from math import floor

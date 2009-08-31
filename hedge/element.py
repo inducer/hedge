@@ -226,7 +226,7 @@ class Element(object):
                 self.multi_face_mass_matrix())
 
     def find_diff_mat_permutation(self, target_idx):
-        """Find a permuation C{p} such that::
+        """Find a permuation *p* such that::
 
             diff_mats = self.differentiation_matrices()
             diff_mats[0][p][:,p] == diff_mats[target_idx]
@@ -395,7 +395,7 @@ class IntervalElementBase(SimplicialElement):
 
     def faces_for_node_tuple(self, node_idx):
         """Return the list of face indices of faces on which the node 
-        represented by C{node_idx} lies.
+        represented by *node_idx* lies.
         """
 
         if node_idx == (0,):
@@ -619,7 +619,7 @@ class TriangularElement(SimplicialElement):
 
     def faces_for_node_tuple(self, node_tuple):
         """Return the list of face indices of faces on which the node 
-        represented by C{node_tuple} lies.
+        represented by *node_tuple* lies.
         """
         m, n = node_tuple
 
@@ -894,7 +894,7 @@ class TetrahedralElement(SimplicialElement):
 
     def faces_for_node_tuple(self, node_tuple):
         """Return the list of face indices of faces on which the node 
-        represented by C{node_tuple} lies.
+        represented by *node_tuple* lies.
         """
         m,n,o = node_tuple
         result = []

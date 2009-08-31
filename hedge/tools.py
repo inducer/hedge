@@ -377,7 +377,7 @@ def ptwise_dot(logdims1, logdims2, a1, a2):
 
 
 def levi_civita(tuple):
-    """Compute an entry of the Levi-Civita tensor for the indices C{tuple}.
+    """Compute an entry of the Levi-Civita tensor for the indices *tuple*.
 
     Only three-tuples are supported for now.
     """
@@ -473,11 +473,11 @@ class SubsettableCrossProduct:
     def __init__(self, op1_subset=full_subset, op2_subset=full_subset, result_subset=full_subset):
         """Construct a subset-able cross product.
 
-        @arg op1_subset: The subset of indices of operand 1 to be taken into account.
+        :param op1_subset: The subset of indices of operand 1 to be taken into account.
           Given as a 3-sequence of bools.
-        @arg op2_subset: The subset of indices of operand 2 to be taken into account.
+        :param op2_subset: The subset of indices of operand 2 to be taken into account.
           Given as a 3-sequence of bools.
-        @arg result_subset: The subset of indices of the result that are calculated.
+        :param result_subset: The subset of indices of the result that are calculated.
           Given as a 3-sequence of bools.
         """
         def subset_indices(subset):
@@ -509,10 +509,10 @@ class SubsettableCrossProduct:
                 self.component_lcjk.append(this_component)
 
     def __call__(self, x, y, three_mult=None):
-        """Compute the subsetted cross product on the indexables C{x} and C{y}.
+        """Compute the subsetted cross product on the indexables *x* and *y*.
 
-        @arg three_mult: a function of three arguments C{sign, xj, yk}
-          used in place of the product C{sign*xj*yk}. Defaults to just this
+        :param three_mult: a function of three arguments *sign, xj, yk*
+          used in place of the product *sign*xj*yk*. Defaults to just this
           product if not given.
         """
         if three_mult is None:
@@ -574,12 +574,12 @@ def orthonormalize(vectors, discard_threshold=None):
     vectors.
 
     If, during orthonormalization, the 2-norm of a vector drops
-    below C{discard_threshold}, then this vector is silently
-    discarded. If C{discard_threshold} is C{None}, then no vector
+    below *discard_threshold*, then this vector is silently
+    discarded. If *discard_threshold* is *None*, then no vector
     will ever be dropped, and a zero 2-norm encountered during
-    orthonormalization will throw a C{RuntimeError}.
+    orthonormalization will throw a :exc:`RuntimeError`.
 
-    [1] U{http://en.wikipedia.org/wiki/Gram%E2%80%93Schmidt_process}
+    [1] http://en.wikipedia.org/wiki/Gram%E2%80%93Schmidt_process
     """
 
     from numpy import dot
@@ -691,7 +691,6 @@ def estimate_order_of_convergence(abscissae, errors):
 
     this function finds, in a least-squares sense, the best approximation of
     constant and order for the given data set. It returns a tuple (constant, order).
-    Both inputs must be PyLinear vectors.
     """
     assert len(abscissae) == len(errors)
     if len(abscissae) <= 1:
@@ -793,41 +792,6 @@ def mem_checkpoint(name=None):
 
 
 
-# index map tools -------------------------------------------------------------
-def apply_index_map(imap, vector):
-    from hedge._internal import VectorTarget, perform_index_map
-
-    ls = log_shape(vector)
-    if ls == ():
-        result = numpy.zeros(shape=(imap.to_length,), dtype=float)
-        perform_index_map(imap, VectorTarget(vector, result))
-    else:
-        result = numpy.zeros(shape=ls+(imap.to_length,), dtype=float)
-        from pytools import indices_in_shape
-        for i in indices_in_shape(ls):
-            perform_index_map(imap, VectorTarget(vector[i], result[i]))
-    return result
-
-
-
-
-def apply_inverse_index_map(imap, vector):
-    from hedge._internal import VectorTarget, perform_inverse_index_map
-
-    ls = log_shape(vector)
-    if ls == ():
-        result = numpy.zeros(shape=(imap.from_length,), dtype=float)
-        perform_inverse_index_map(imap, VectorTarget(vector, result))
-    else:
-        result = numpy.zeros(shape=ls+(imap.from_length,), dtype=float)
-        from pytools import indices_in_shape
-        for i in indices_in_shape(ls):
-            perform_inverse_index_map(imap, VectorTarget(vector[i], result[i]))
-    return result
-
-
-
-
 # mesh reorderings ------------------------------------------------------------
 def cuthill_mckee(graph):
     """Return a Cuthill-McKee ordering for the given graph.
@@ -836,7 +800,7 @@ def cuthill_mckee(graph):
     Y. Saad, Iterative Methods for Sparse Linear System,
     2nd edition, p. 76.
 
-    `graph' is given as an adjacency mapping, i.e. each node is
+    *graph* is given as an adjacency mapping, i.e. each node is
     mapped to a list of its neighbors.
     """
     from pytools import argmin
@@ -889,94 +853,6 @@ def reverse_lookup_table(lut):
     for key, value in enumerate(lut):
         result[value] = key
     return result
-
-
-
-
-# block matrix ----------------------------------------------------------------
-class BlockMatrix(object):
-    """A block matrix is the sum of different smaller
-    matrices positioned within one big matrix.
-    """
-
-    def __init__(self, chunks):
-        """Return a new block matrix made up of components (`chunks')
-        given as triples (i,j,smaller_matrix), where the top left (0,0)
-        corner of the smaller_matrix is taken to be at position (i,j).
-
-        smaller_matrix may be anything that can be left-multiplied to
-        a Pylinear vector, including BlockMatrix instances.
-        """
-        self.chunks = []
-        for i, j, chunk in chunks:
-            if isinstance(chunk, BlockMatrix):
-                self.chunks.extend(
-                        (i+subi, j+subj, subchunk)
-                        for subi, subj, subchunk in chunk.chunks)
-            else:
-                self.chunks.append((i, j, chunk))
-
-    @property
-    def T(self):
-        return BlockMatrix(
-                (j, i, chunk.T) for i, j, chunk in self.chunks)
-
-    @property
-    def H(self):
-        return BlockMatrix(
-                (j, i, chunk.H) for i, j, chunk in self.chunks)
-
-    @property
-    def shape(self):
-        return (
-                max(i+chunk.shape[0] for i, j, chunk in self.chunks),
-                max(j+chunk.shape[0] for i, j, chunk in self.chunks)
-                )
-
-    def __add__(self, other):
-        if isinstance(other, BlockMatrix):
-            return BlockMatrix(self.chunks + other.chunks)
-        else:
-            return NotImplemented
-
-    def __neg__(self):
-        return BlockMatrix((i,j,-chunk) for i, j, chunk in self.chunks)
-
-    def __sub__(self, other):
-        if isinstance(other, BlockMatrix):
-            return BlockMatrix(self.chunks + (-other).chunks)
-        else:
-            return NotImplemented
-
-    def __mul__(self, other):
-        if num.Vector.is_a(other):
-            h, w = self.shape
-            assert len(other) == w
-            result = num.zeros((h,))
-
-            for i, j, chunk in self.chunks:
-                ch, cw = chunk.shape
-                result[i:i+ch] += chunk * other[j:j+cw]
-
-            return result
-        elif isinstance(other, (float, complex, int)):
-            return BlockMatrix(
-                    (i,j,other*chunk)
-                    for i, j, chunk in self.chunks)
-        else:
-            return NotImplemented
-
-    def __rmul__(self, other):
-        if isinstance(other, (float, complex, int)):
-            return BlockMatrix(
-                    (i,j,other*chunk)
-                    for i, j, chunk in self.chunks)
-        else:
-            return NotImplemented
-
-    def add_to_build_matrix(self, bmat):
-        for i, j, chunk in self.chunks:
-            bmat.add_block(i, j, chunk)
 
 
 
@@ -1156,10 +1032,10 @@ def make_lax_friedrichs_flux(wave_speed, state, flux_func, bdry_tags_and_states,
     flux_op = get_flux_operator(flux)
     int_operand = join_fields(wave_speed, state, *fluxes)
 
-    from hedge.optemplate import pair_with_boundary
+    from hedge.optemplate import BoundaryPair
     return (flux_op*int_operand
             + sum(
-                flux_op*pair_with_boundary(int_operand,
+                flux_op*BoundaryPair(int_operand,
                     join_fields(0, ext_state, *flux_func(ext_state)), tag)
                 for tag, ext_state in bdry_tags_and_states))
 

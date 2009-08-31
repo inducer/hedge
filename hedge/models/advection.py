@@ -123,7 +123,7 @@ class StrongAdvectionOperator(AdvectionOperatorBase):
         return u.int * numpy.dot(normal, self.v) - self.weak_flux()
 
     def op_template(self):
-        from hedge.optemplate import Field, pair_with_boundary, \
+        from hedge.optemplate import Field, BoundaryPair, \
                 get_flux_operator, make_nabla, InverseMassOperator
 
         u = Field("u")
@@ -138,7 +138,7 @@ class StrongAdvectionOperator(AdvectionOperatorBase):
                 -numpy.dot(self.v, nabla*u)
                 + m_inv*(
                 flux_op * u
-                + flux_op * pair_with_boundary(u, bc_in, self.inflow_tag)
+                + flux_op * BoundaryPair(u, bc_in, self.inflow_tag)
                 )
                 )
 
@@ -152,7 +152,7 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
     def op_template(self):
         from hedge.optemplate import \
                 Field, \
-                pair_with_boundary, \
+                BoundaryPair, \
                 get_flux_operator, \
                 make_minv_stiffness_t, \
                 InverseMassOperator, \
@@ -172,8 +172,8 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
 
         return numpy.dot(self.v, minv_st*u) - m_inv*(
                     flux_op*u
-                    + flux_op * pair_with_boundary(u, bc_in, self.inflow_tag)
-                    + flux_op * pair_with_boundary(u, bc_out, self.outflow_tag)
+                    + flux_op * BoundaryPair(u, bc_in, self.inflow_tag)
+                    + flux_op * BoundaryPair(u, bc_out, self.outflow_tag)
                     )
 
 
@@ -247,7 +247,7 @@ class VariableCoefficientAdvectionOperator(TimeDependentOperator):
     def op_template(self):
         from hedge.optemplate import \
                 Field, \
-                pair_with_boundary, \
+                BoundaryPair, \
                 get_flux_operator, \
                 make_minv_stiffness_t, \
                 InverseMassOperator,\
@@ -281,7 +281,7 @@ class VariableCoefficientAdvectionOperator(TimeDependentOperator):
 
         result = numpy.dot(minv_st, v*u) - m_inv*(
                     flux_op * w
-                    + flux_op * pair_with_boundary(w, bc_w, TAG_ALL)
+                    + flux_op * BoundaryPair(w, bc_w, TAG_ALL)
                     )
         return result
 

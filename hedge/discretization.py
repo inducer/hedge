@@ -89,20 +89,20 @@ class _FaceGroup(hedge._internal.FaceGroup):
 class _ElementGroup(object):
     """Once fully filled, this structure has the following data members:
 
-    @ivar members: a list of L{hedge.mesh.Element} instances in this group.
-    @ivar member_nrs: a list of the element ID numbers in this group.
-    @ivar local_discretization: an instance of L{hedge.element.Element}.
-    @ivar ranges: a list of C{slice} objects indicating the DOF numbers for
+    :ivar members: a list of L{hedge.mesh.Element} instances in this group.
+    :ivar member_nrs: a list of the element ID numbers in this group.
+    :ivar local_discretization: an instance of L{hedge.element.Element}.
+    :ivar ranges: a list of :class:`slice` objects indicating the DOF numbers for
       each element. Note: This is actually a C++ ElementRanges object.
-    @ivar mass_matrix: The element-local mass matrix M{M}.
-    @ivar inverse_mass_matrix: the element-local inverese mass matrix M{M^{-1}}.
-    @ivar differentiation_matrices: local differentiation matrices M{D_r, D_s, D_t}, 
-      i.e.  differentiation by M{r, s, t, ....}.
-    @ivar stiffness_matrices: the element-local stiffness matrices M{M*D_r, M*D_s,...}.
-    @ivar jacobians: list of jacobians over all elements
-    @ivar inverse_jacobians: inverses of L{jacobians}.
-    @ivar diff_coefficients: a M{(d,d)}-matrix of coefficient vectors to turn
-      M{(r,s,t)}-differentiation into M{(x,y,z)}.
+    :ivar mass_matrix: The element-local mass matrix :math:`M`.
+    :ivar inverse_mass_matrix: the element-local inverese mass matrix M{M^{-1}}.
+    :ivar differentiation_matrices: local differentiation matrices :math:`D_r, D_s, D_t`, 
+      i.e.  differentiation by :math:`r, s, t, \dots`.
+    :ivar stiffness_matrices: the element-local stiffness matrices :math:`MD_r, MD_s,\dots`.
+    :ivar jacobians: list of jacobians over all elements
+    :ivar inverse_jacobians: inverses of L{jacobians}.
+    :ivar diff_coefficients: a :math:`d\\times d`-matrix of coefficient vectors to turn
+      :math:`(r,s,t)`-differentiation into :math:`(x,y,z)`.
     """
     pass
 
@@ -187,6 +187,9 @@ class Discretization(object):
 
     @classmethod
     def noninteractive_debug_flags(cls):
+        """Return all debug flags that do not entail user interaction
+        (such as key presses or console output).
+        """
         return set([
             "ilist_generation", 
             "node_permutation",
@@ -213,7 +216,7 @@ class Discretization(object):
             run_context=None):
         """
 
-        @arg debug: A set of strings indicating which debug checks should
+        :param debug: A set of strings indicating which debug checks should
           be activated. See validity check below for the currently defined
           set of debug flags.
         """
@@ -547,7 +550,7 @@ class Discretization(object):
         else:
             self.face_groups = []
         
-    def boundary_nonempty(self, tag):
+    def is_boundary_tag_nonempty(self, tag):
         return bool(self.mesh.tag_to_boundary.get(tag, []))
 
     @memoize_method
@@ -625,13 +628,6 @@ class Discretization(object):
         return "numpy"
 
     compute_kind = "numpy"
-
-    def convert_dtype(self, field, dtype):
-        from hedge.tools import with_object_array_or_scalar
-        if dtype is not None:
-            return with_object_array_or_scalar(lambda f: f.astype(dtype), field)
-        else:
-            return field
 
     def convert_volume(self, field, kind):
         orig_kind = self.get_kind(field)
@@ -1191,9 +1187,9 @@ class ExponentialFilterResponseFunction:
 
         The amplification factor of the lowest-order (constant) mode is always 1.
 
-        @arg min_amplification: The amplification factor applied to the highest mode.
-        @arg order: The order of the filter. This controls how fast (or slowly) the
-          C{min_amplification} is reached.
+        :param min_amplification: The amplification factor applied to the highest mode.
+        :param order: The order of the filter. This controls how fast (or slowly) the
+          *min_amplification* is reached.
         """
         from math import log
         self.alpha = -log(min_amplification)
@@ -1212,11 +1208,12 @@ class Filter:
     def __init__(self, discr, mode_response_func):
         """Construct a filter.
 
-        @arg discr: The L{Discretization} for which the filter is to be
+        :param discr: The :class:`Discretization` for which the filter is to be
           constructed.
-        @arg mode_response_func: A function mapping 
-          C{(mode_tuple, local_discretization)} to a float indicating the
+        :param mode_response_func: A function mapping 
+          ``(mode_tuple, local_discretization)`` to a float indicating the
           factor by which this mode is to be multiplied after filtering.
+          (For example an instance of :class:`ExponentialFilterResponseFunction`.
         """
         self.discr = discr
 
