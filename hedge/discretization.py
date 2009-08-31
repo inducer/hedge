@@ -364,7 +364,8 @@ class Discretization(object):
         #   | | |
         #   x y z
 
-        # nodes should not be a multi-d array: this would break once
+        # while it seems convenient, nodes should not have an
+        # "element number" dimension: this would break once
         # p-adaptivity is implemented
         self.nodes = numpy.empty(
                 (len(self.mesh.elements)*nodes_per_el, self.dimensions),

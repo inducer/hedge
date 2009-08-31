@@ -53,7 +53,7 @@ class AdvectionOperatorBase(TimeDependentOperator):
         self.flux_type = flux_type
 
     def weak_flux(self):
-        from hedge.flux import make_normal, FluxScalarPlaceholder, IfPositive
+        from hedge.flux import make_normal, FluxScalarPlaceholder
         from pymbolic.primitives import IfPositive
 
         u = FluxScalarPlaceholder(0)
