@@ -190,7 +190,7 @@ class WeakPoissonOperator(Operator):
         from hedge.mesh import check_bc_coverage
         check_bc_coverage(discr.mesh, [self.dirichlet_tag, self.neumann_tag])
 
-        return self.BoundPoissonOperator(self, discr)
+        return BoundPoissonOperator(self, discr)
 
 
 
@@ -329,6 +329,7 @@ class BoundPoissonOperator(hedge.iterative.OperatorBase):
 
         .. math::
             \\text{rhs} = f - M^{-1}( A M^{-1} g + h)
+
         """
         dim = self.discr.dimensions
 
