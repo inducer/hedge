@@ -209,7 +209,7 @@ class MaxwellOperator(TimeDependentOperator):
         fld_cnt = count_subset(self.get_eh_subset())
 
         if self.incident_bc_data is not None:
-            from hedge.optemplate import make_common_subexpression
+            from hedge.tools import make_common_subexpression
             return make_common_subexpression(
                     -make_vector_field("incident_bc", fld_cnt))
         else:

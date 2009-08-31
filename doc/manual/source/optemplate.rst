@@ -16,7 +16,7 @@ one in :mod:`hedge`:
   expression tree. :func:`pymbolic.primitives.is_constant`
   is a predicate to test for constant-ness.
 
-* :class:`numpy.ndarray` with `dtype=object` (called
+* :class:`numpy.ndarray` with *dtype=:class:`object`* (called
   "object array" in :mod:`numpy`-speak). These evaluate to the
   same-shape array with each component evaluated.
 
@@ -39,13 +39,18 @@ one in :mod:`hedge`:
   :class:`pymbolic.primitives.Power`: These are created implicitly
   when :class:`~pymbolic.primitives.Expression` objects are combined
   using the `+`, `-`, `*`, `/` and `**` operators.
+  These are all interpreted in a node-by-node fashion.
+
+* :class:`pymbolic.primitives.IfPositive` offers a simple way
+  to build conditionals and is interpreted in a node-by-node
+  fashion.
 
 * :class:`pymbolic.primitives.CommonSubexpression` (CSE for short):
   Prevents double evaluation of identical subexpressions
   when the operator expression tree is walked to evaluate
   the operator.
 
-  Use :func:`make_common_subexpression` to wrap each component
+  Use :func:`hedge.tools.make_common_subexpression` to wrap each component
   of an object array in a CSE.
 
 * :class:`pymbolic.primitives.Call`: The function attribute must
@@ -71,8 +76,6 @@ Leaf Nodes
 
 "Wrapper" Nodes
 ^^^^^^^^^^^^^^^
-
-.. autofunction:: make_common_subexpression
 
 .. autoclass:: PrioritizedSubexpression
 
@@ -109,10 +112,13 @@ Flux Operators and Related Functionality
 
 .. autofunction:: get_flux_operator
 
+    See :ref:`fluxspec` for more details on how numerical fluxes
+    are specified  language.
+
 Boundary-valued operators
 """""""""""""""""""""""""
 
-These operators are only allowed within the *bfield*
+These operators are only meaningful within the *bfield*
 argument of :class:`BoundaryPair`, because they 
 evaluate to boundary vectors of the given *tag*.
 

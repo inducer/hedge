@@ -16,6 +16,7 @@ and (moderately useless)
     discretization
 
     optemplate
+    fluxes
     models
     data
 

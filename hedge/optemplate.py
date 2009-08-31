@@ -36,16 +36,6 @@ from pymbolic.mapper import CSECachingMapperMixin
 
 
 
-def make_common_subexpression(fields): 
-    """Wrap each component of a vector field in a CSE."""
-
-    from hedge.tools import with_object_array_or_scalar
-    from pymbolic.primitives import CommonSubexpression
-    return with_object_array_or_scalar(CommonSubexpression, fields)
-
-
-
-
 Field = pymbolic.primitives.Variable
 
 def make_field(var_or_string):
@@ -943,7 +933,7 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
                 from hedge.flux import FieldComponent
                 return FieldComponent(
                         self.register_boundary_expr(expr), 
-                        is_local=False)
+                        is_interior=False)
 
             map_subscript = map_variable
 
@@ -957,7 +947,7 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
 
                     return FieldComponent(
                             self.register_volume_expr(expr.field), 
-                            is_local=True)
+                            is_interior=True)
                 elif isinstance(expr.op, FluxExchangeOperator):
                     from hedge.mesh import TAG_RANK_BOUNDARY
                     op_tag = TAG_RANK_BOUNDARY(expr.op.rank)
@@ -967,7 +957,7 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
                                 % (op_tag, bpair.tag))
                     return FieldComponent(
                             self.register_boundary_expr(expr), 
-                            is_local=False)
+                            is_interior=False)
                 else:
                     raise RuntimeError("Found '%s' in a boundary term. "
                             "To the best of my knowledge, no hedge operator applies "
@@ -985,7 +975,7 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
         from hedge.flux import FluxSubstitutionMapper, FieldComponent
 
         def sub_bdry_into_flux(expr):
-            if isinstance(expr, FieldComponent) and not expr.is_local:
+            if isinstance(expr, FieldComponent) and not expr.is_interior:
                 if expr.index == 0 and not is_obj_array(bdry_field):
                     return new_bdry_field
                 else:

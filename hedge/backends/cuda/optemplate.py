@@ -64,7 +64,7 @@ def get_flux_dependencies(flux, field, bdry="all"):
     from hedge.optemplate import BoundaryPair
     if isinstance(field, BoundaryPair):
         for inf in in_fields:
-            if inf.is_local:
+            if inf.is_interior:
                 if bdry in ["all", "int"]:
                     value = maybe_index(field.field, inf.index)
 

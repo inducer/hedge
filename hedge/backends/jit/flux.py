@@ -35,7 +35,7 @@ class FluxConcretizer(FluxIdentityMapper):
         self.flux_var_info = fvi
 
     def map_field_component(self, expr):
-        if expr.is_local:
+        if expr.is_interior:
             where = "loc"
         else:
             where = "opp"
@@ -129,7 +129,7 @@ def get_flux_var_info(fluxes):
             elif isinstance(dep, FieldComponent):
                 is_bdry = isinstance(flux_binding.field, BoundaryPair)
                 if is_bdry:
-                    if dep.is_local:
+                    if dep.is_interior:
                         this_field_expr = flux_binding.field.field
                     else:
                         this_field_expr = flux_binding.field.bfield
@@ -160,7 +160,7 @@ def get_flux_var_info(fluxes):
                         field_expr_to_arg_name[fc_field_expr] = arg_name
 
                         fvi.arg_names.append(arg_name)
-                        fvi.arg_specs.append((fc_field_expr, dep.is_local))
+                        fvi.arg_specs.append((fc_field_expr, dep.is_interior))
                     else:
                         arg_name = field_expr_to_arg_name[fc_field_expr]
 
@@ -176,7 +176,7 @@ def get_flux_var_info(fluxes):
                         set_or_check(
                                 fvi.flux_idx_and_dep_to_arg_name,
                                 (flux_idx,
-                                    FieldComponent(dep.index, not dep.is_local)),
+                                    FieldComponent(dep.index, not dep.is_interior)),
                                 arg_name)
             else:
                 raise ValueError("unknown flux dependency type: %s" % dep)

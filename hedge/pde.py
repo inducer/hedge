@@ -386,7 +386,8 @@ class EulerOperator(TimeDependentOperator):
                 for rho_u_i in self.rho_u(q)])
 
     def op_template(self):
-        from hedge.optemplate import make_vector_field, \
+        from hedge.optemplate import make_vector_field
+        from hedge.tools import \
                 make_common_subexpression as cse
 
         def u(q):

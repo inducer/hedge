@@ -329,6 +329,15 @@ def with_object_array_or_scalar(f, field):
 
 
 
+def make_common_subexpression(fields): 
+    """Wrap each component of a vector field in a CSE."""
+
+    from pymbolic.primitives import CommonSubexpression
+    return with_object_array_or_scalar(CommonSubexpression, fields)
+
+
+
+
 def ptwise_mul(a, b):
     a_log_shape = log_shape(a)
     b_log_shape = log_shape(b)

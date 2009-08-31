@@ -58,24 +58,24 @@ class FluxScalarParameter(pymbolic.primitives.Variable):
 
 
 class FieldComponent(Flux):
-    def __init__(self, index, is_local):
+    def __init__(self, index, is_interior):
         self.index = index
-        self.is_local = is_local
+        self.is_interior = is_interior
 
     def is_equal(self, other):
         return (isinstance(other, FieldComponent) 
                 and self.index == other.index
-                and self.is_local == other.is_local
+                and self.is_interior == other.is_interior
                 )
 
     def __getinitargs__(self):
-        return self.index, self.is_local
+        return self.index, self.is_interior
 
     def get_hash(self):
         return hash((
                 self.__class__,
                 self.index,
-                self.is_local))
+                self.is_interior))
 
     def get_mapper_method(self, mapper):
         return mapper.map_field_component
@@ -121,34 +121,6 @@ class PenaltyTerm(Flux):
 
     def get_mapper_method(self, mapper):
         return mapper.map_penalty_term
-
-
-
-
-class IfPositive(Flux):
-    def __init__(self, criterion, then, else_):
-        self.criterion = criterion
-        self.then = then
-        self.else_ = else_
-
-    def __getinitargs__(self):
-        return self.criterion, self.then, self.else_
-
-    def is_equal(self, other):
-        return (isinstance(other, IfPositive)
-                and self.criterion == other.criterion
-                and self.then == other.then
-                and self.else_ == other.else_)
-
-    def get_hash(self):
-        return hash((
-                self.__class__,
-                self.criterion,
-                self.then,
-                self.else_))
-
-    def get_mapper_method(self, mapper):
-        return mapper.map_if_positive
 
 
 
@@ -270,13 +242,6 @@ class FluxIdentityMapperMixin(object):
     def map_penalty_term(self, expr):
         return expr.__class__(self.rec(expr.power))
 
-    def map_if_positive(self, expr):
-        return expr.__class__(
-                self.rec(expr.criterion),
-                self.rec(expr.then),
-                self.rec(expr.else_),
-                )
-
     def map_scalar_parameter(self, expr):
         return expr
 
@@ -304,7 +269,7 @@ class FluxSubstitutionMapper(pymbolic.mapper.substitutor.SubstitutionMapper,
 
 class FluxStringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
     def map_field_component(self, expr, enclosing_prec):
-        if expr.is_local:
+        if expr.is_interior:
             return "Int[%d]" % expr.index
         else:
             return "Ext[%d]" % expr.index
@@ -314,9 +279,6 @@ class FluxStringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
 
     def map_penalty_term(self, expr, enclosing_prec):
         return "Penalty(%s)" % (expr.power)
-
-    def map_if_positive(self, expr, enclosing_prec):
-        return "IfPositive(%s, %s, %s)" % (expr.criterion, expr.then, expr.else_)
 
 
 
@@ -338,9 +300,6 @@ class FluxDependencyMapper(pymbolic.mapper.dependency.DependencyMapper):
 
     def map_penalty_term(self, expr):
         return set()
-
-    def map_if_positive(self, expr):
-        return self.rec(expr.criterion) | self.rec(expr.then) | self.rec(expr.else_)
 
     def map_scalar_parameter(self, expr):
         return set([expr])
@@ -402,7 +361,7 @@ class FluxFlipper(FluxIdentityMapper):
         return -expr
 
     def map_field_component(self, expr):
-        return expr.__class__(expr.index, not expr.is_local)
+        return expr.__class__(expr.index, not expr.is_interior)
 
 
 
@@ -418,21 +377,8 @@ class FluxFlopCounter(pymbolic.mapper.flop_counter.FlopCounter):
     def map_field_component(self, expr):
         return 0
 
-    def map_if_positive(self, expr):
-        return self.rec(expr.criterion) + max(
-                self.rec(expr.then),
-                self.rec(expr.else_))
-
     def map_function_symbol(self, expr):
         return 1
 
     def map_scalar_parameter(self, expr):
         return 0
-
-
-
-
-
-def normalize_flux(flux):
-    return FluxCCFMapper()(FluxNormalizationMapper()(
-        FluxFlattenMapper()(FluxExpandMapper()(flux))))

@@ -10,8 +10,13 @@ Object Arrays
 .. autofunction:: to_obj_array
 .. autofunction:: join_fields
 .. autofunction:: log_shape
+
+Operator Expression Helpers
+---------------------------
+
 .. autofunction:: ptwise_mul
 .. autofunction:: ptwise_dot
+.. autofunction:: make_common_subexpression
 
 Operator Subsetting
 -------------------
@@ -33,7 +38,6 @@ Mathematical Helpers
 .. autofunction:: unit_vector
 .. autofunction:: relative_error
 .. autoclass:: AffineMap
-
 
 Convergence Tests
 -----------------
