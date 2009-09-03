@@ -67,6 +67,9 @@ def main():
 
     from hedge.tools import EOCRecorder, to_obj_array
     eoc_rec = EOCRecorder()
+
+    def boundary_tagger(vertices, el, face_nr, all_v):
+        return ["inflow"]
     
     if rcon.is_head_rank:
         from hedge.mesh import make_rect_mesh, \
@@ -75,7 +78,8 @@ def main():
         refine = 4
         mesh = make_centered_regular_rect_mesh((0,0), (10,1), n=(20,4),
                             #periodicity=(True, False),
-                            post_refine_factor=refine)
+                            post_refine_factor=refine,
+                            boundary_tagger=boundary_tagger)
         mesh_data = rcon.distribute_mesh(mesh)
     else:
         mesh_data = rcon.receive_mesh()
@@ -97,8 +101,10 @@ def main():
         shearflow = SteadyShearFlow(gamma=gamma, mu=mu)
         fields = shearflow.volume_interpolant(0, discr)
 
-        from hedge.models.gas_dynamics.navier_stokes import NavierStokesOperator
-        op = NavierStokesOperator(dimensions=2, gamma=gamma, mu=mu, bc=shearflow)
+        from hedge.models.gas_dynamics.navier_stokes import NavierStokesWithHeatOperator
+        op = NavierStokesWithHeatOperator(dimensions=2, gamma=gamma, 
+                #mu=mu, 
+                bc=shearflow, inflow_tag="inflow")
 
         navierstokes_ex = op.bind(discr)
 
