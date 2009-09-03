@@ -39,10 +39,19 @@ class GasDynamicsOperatorBase(TimeDependentOperator):
     """Basis for Euler and Navier-Stokes Operator.
     Field order is [rho E rho_u_x rho_u_y ...].
     """
-    def __init__(self, dimensions, gamma, bc):
+    def __init__(self, dimensions, gamma, bc_inflow, 
+            inflow_tag="inflow",
+            outflow_tag="outflow",
+            no_slip_tag="no_slip"):
+
         self.dimensions = dimensions
         self.gamma = gamma
-        self.bc = bc
+
+        self.bc_inflow = bc_inflow
+
+        self.inflow_tag = inflow_tag
+        self.outflow_tag = outflow_tag
+        self.no_slip_tag = no_slip_tag
 
     def rho(self, q):
         return q[0]
@@ -59,7 +68,7 @@ class GasDynamicsOperatorBase(TimeDependentOperator):
                 rho_u_i/self.rho(q)
                 for rho_u_i in self.rho_u(q)])
 
-    def bind(self, discr):
+    def _original_bind(self, discr):
         from hedge.mesh import TAG_ALL
         bound_op = discr.compile(self.op_template())
 
@@ -67,6 +76,29 @@ class GasDynamicsOperatorBase(TimeDependentOperator):
             opt_result = bound_op(
                     q=q, 
                     bc_q=self.bc.boundary_interpolant(t, discr, TAG_ALL))
+            max_speed = opt_result[-1]
+            ode_rhs = opt_result[:-1]
+	    return ode_rhs, discr.nodewise_max(max_speed)
+
+        return wrap
+
+    def bind(self, discr):
+        from hedge.optemplate import BoundarizeOperator
+        
+        bound_op = discr.compile(self.op_template())
+
+        from hedge.mesh import check_bc_coverage
+        check_bc_coverage(discr.mesh, [
+            self.inflow_tag,
+            self.outflow_tag,
+            self.no_slip_tag,
+            ])
+
+        def wrap(t, q):
+            opt_result = bound_op(q=q,
+                    bc_q_in=self.bc_inflow.boundary_interpolant(
+                        t, discr, self.inflow_tag),
+                    )
             max_speed = opt_result[-1]
             ode_rhs = opt_result[:-1]
 	    return ode_rhs, discr.nodewise_max(max_speed)
