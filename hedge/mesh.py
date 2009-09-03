@@ -81,6 +81,8 @@ def make_element(class_, id, vertex_indices, all_vertices):
         vertices = [all_vertices[v] for v in vertex_indices]
         map = class_.get_map_unit_to_global(vertices)
 
+    vertex_indices = numpy.array(vertex_indices, dtype=numpy.intp)
+
     face_normals, face_jacobians = \
             class_.face_normals_and_jacobians(vertices, map)
 
@@ -359,11 +361,12 @@ def _build_mesh_data_dict(points, elements, boundary_tagger, periodicity, is_ran
             interfaces.append(els_faces)
         elif len(els_faces) == 1:
             el_face = el, face = els_faces[0]
-            tags = set(boundary_tagger(face_vertices, el, face, points)) - all_tags
+            tags = boundary_tagger(face_vertices, el, face, points)
 
             if isinstance(tags, str):
-                from warnings import warn
-                warn("Received string as tag list")
+                raise RuntimeError("Received string as tag list")
+
+            tags = set(tags) - all_tags
 
             for btag in tags:
                 tag_to_boundary.setdefault(btag, []) \
@@ -628,11 +631,22 @@ def check_bc_coverage(mesh, bc_tags, incomplete_ok=False):
                 bdry_face_countdown -= 1
 
     if bdry_face_countdown > 0 and not incomplete_ok:
-        raise RuntimeError, "No BCs on faces %s" % (
-                set(all_bdry_faces)-set(bdry_to_tag.keys()))
+        no_bc_faces = set(all_bdry_faces)-set(bdry_to_tag.keys())
+
+        from sys import stderr
+        print>>stderr, "Faces without BC:"
+        for el, face_nr in no_bc_faces:
+            x = mesh.points[el.vertex_indices]
+            face_vertices = el.face_vertices(
+                    x)[face_nr]
+            normal = el.face_normals[face_nr]
+            print>>stderr, "  normal: %s vertices: %s" % (
+                    normal, ", ".join(str(v) for v in face_vertices))
+
+        raise RuntimeError("Found faces without boundary conditions--see above for list.")
     elif bdry_face_countdown < 0:
-        raise RuntimeError, "More BCs were assigned than boundary faces are present " \
-                "(did something screw up your periodicity?)"
+        raise RuntimeError("More BCs were assigned than boundary faces are present "
+                "(did something screw up your periodicity?)")
 
 
 
