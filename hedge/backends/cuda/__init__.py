@@ -353,6 +353,9 @@ class Discretization(hedge.discretization.Discretization):
         flux plan will be tuned.
         """
 
+        if not isinstance(mesh, hedge.mesh.Mesh):
+            raise TypeError("mesh must be of type hedge.mesh.Mesh")
+
         if tune_for is None:
             from warnings import warn
             warn("You can achieve better performance if you pass an optemplate "
