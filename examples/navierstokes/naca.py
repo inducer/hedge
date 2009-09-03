@@ -25,17 +25,22 @@ import numpy.linalg as la
 
 
 class Naca:
-    def __init__(self, gamma):
+    def __init__(self, gamma, spec_gas_const):
         self.gamma = gamma
+        self.spec_gas_const = spec_gas_const
 
     def __call__(self, t, x_vec):
-        # JSH/TW Nodal DG Methods, p.326 
+        # JSH/TW Nodal DG Methods, p.326
 
         rho = numpy.empty_like(x_vec[0])
-        rho.fill(1)
-        u = 100
+        rho_value = 1.2
+        rho.fill(rho_value)
+        t_inf = 280
+        c = (self.gamma * self.spec_gas_const * t_inf)**0.5
+        Ma = 0.3
+        u = Ma * c
         v = 0
-        p = 1
+        p = rho_value * self.spec_gas_const * t_inf
         rho_u = rho * u
         rho_v = rho * v
         e = p / (self.gamma - 1) + rho / 2 *(u ** 2 + v ** 2)
@@ -58,8 +63,8 @@ class Naca:
 def nacamesh():
     def airfoil_from_generator():
         import meshpy.naca as naca
-        return naca.generate_naca(naca_digits="0012", number_of_points=50,
-                sharp_trailing_edge=True, uniform_distribution=False,
+        return naca.generate_naca(naca_digits="0012", number_of_points=20,
+                sharp_trailing_edge=True, uniform_distribution=True,
                 verbose=True)
 
     def round_trip_connect(seq):
@@ -73,35 +78,52 @@ def nacamesh():
 
         pt_back = numpy.array([1,0])
 
-        max_area_front = 0.002*la.norm(barycenter) + 1e-5
-        max_area_back = 0.02*la.norm(barycenter-pt_back) + 1e-3
+        max_area_front = 0.2*la.norm(barycenter) + 1e-3
+        max_area_back = 2*la.norm(barycenter-pt_back) + 1e-1
         return bool(area > min(max_area_front, max_area_back))
 
     import sys
     points = airfoil_from_generator()
 
-    from meshpy.geometry import GeometryBuilder
+    from meshpy.geometry import GeometryBuilder, Marker
     from meshpy.triangle import write_gnuplot_mesh
 
+    profile_marker = Marker.FIRST_USER_MARKER
     builder = GeometryBuilder()
     builder.add_geometry(points=points,
-            facets=round_trip_connect(points))
-    builder.wrap_in_box(2)
+            facets=round_trip_connect(points),
+            facet_markers=profile_marker)
+    builder.wrap_in_box(1)
 
     from meshpy.triangle import MeshInfo, build
     mi = MeshInfo()
     builder.set(mi)
     mi.set_holes([builder.center()])
-    mesh = build(mi, refinement_func=needs_refinement)
+    mesh = build(mi, refinement_func=needs_refinement,
+            generate_faces=True)
 
     print "%d elements" % len(mesh.elements)
 
-    #print mesh.elements[0]
-    #raw_input()
-
     write_gnuplot_mesh("mesh.dat", mesh)
 
-    return mesh
+    fvi2fm = mesh.face_vertex_indices_to_face_marker
+
+    face_marker_to_tag = {
+            profile_marker: "no_slip",
+            Marker.MINUS_X: "inflow",
+            Marker.PLUS_X: "outflow",
+            Marker.MINUS_Y: "minus_y",
+            Marker.PLUS_Y: "plus_y"
+            }
+
+    def bdry_tagger(fvi, el, fn, all_v):
+        face_marker = fvi2fm[fvi]
+        return [face_marker_to_tag[face_marker]]
+
+    from hedge.mesh import make_conformal_mesh
+    return make_conformal_mesh(
+            mesh.points, mesh.elements, bdry_tagger,
+            periodicity=[None, ("minus_y", "plus_y")])
 
 
 
@@ -125,26 +147,26 @@ def main():
     else:
         mesh_data = rcon.receive_mesh()
 
-    #print mesh.elements[0]
-    #raw_input()
-
-    for order in [3]:
+    for order in [1]:
         discr = rcon.make_discretization(mesh_data, order=order,
 			debug=["cuda_no_plan",
-			#"print_op_code"
-			],
+                               #"dump_dataflow_graph",
+                               #"print_op_code"
+			      ],
 			default_scalar_type=numpy.float64)
 
         from hedge.visualization import SiloVisualizer, VtkVisualizer
         #vis = VtkVisualizer(discr, rcon, "shearflow-%d" % order)
         vis = SiloVisualizer(discr, rcon)
 
-        naca = Naca(gamma=gamma)
+        naca = Naca(gamma=gamma, spec_gas_const=spec_gas_const)
         fields = naca.volume_interpolant(0, discr)
 
-        from hedge.pde import NavierStokesWithHeatOperator
+        from hedge.models.gas_dynamics.navier_stokes import NavierStokesWithHeatOperator
         op = NavierStokesWithHeatOperator(dimensions=2, gamma=gamma,
-                prandtl=prandtl, spec_gas_const=spec_gas_const, bc=naca)
+                #prandtl=prandtl, spec_gas_const=spec_gas_const, 
+                bc=naca, 
+                inflow_tag="inflow", outflow_tag="outflow", no_slip_tag="no_slip")
 
         navierstokes_ex = op.bind(discr)
 
@@ -156,8 +178,9 @@ def main():
         rhs(0, fields)
 
         dt = discr.dt_factor(max_eigval[0], order=2)
-        final_time = 0.2
+        final_time = 0.001
         nsteps = int(final_time/dt)+1
+        #nsteps = 1000     # just for the purpose of testing
         dt = final_time/nsteps
 
         if rcon.is_head_rank:
@@ -196,6 +219,8 @@ def main():
 
                 #true_fields = naca.volume_interpolant(t, discr)
 
+                rhs_fields = rhs(t, fields)
+
                 from pylo import DB_VARTYPE_VECTOR
                 vis.add_data(visf,
                         [
@@ -209,9 +234,9 @@ def main():
                             #("true_rho_u", op.rho_u(true_fields)),
                             #("true_u", op.u(true_fields)),
 
-                            #("rhs_rho", op.rho(rhs_fields)),
-                            #("rhs_e", op.e(rhs_fields)),
-                            #("rhs_rho_u", op.rho_u(rhs_fields)),
+                            ("rhs_rho", discr.convert_volume(op.rho(rhs_fields), kind="numpy")),
+                            ("rhs_e", discr.convert_volume(op.e(rhs_fields), kind="numpy")),
+                            ("rhs_rho_u", discr.convert_volume(op.rho_u(rhs_fields), kind="numpy")),
                             ],
                         #expressions=[
                             #("diff_rho", "rho-true_rho"),
