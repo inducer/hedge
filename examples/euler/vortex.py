@@ -72,7 +72,7 @@ class Vortex:
 def main(write_output=True):
     from hedge.backends import guess_run_context
     rcon = guess_run_context(
-		    ["cuda"]
+		    #["cuda"]
 		    )
 
     gamma = 1.4
@@ -85,14 +85,14 @@ def main(write_output=True):
                 make_rect_mesh, \
                 make_centered_regular_rect_mesh
 
-        refine = 4
+        refine = 1
         mesh = make_centered_regular_rect_mesh((0,-5), (10,5), n=(9,9),
                 post_refine_factor=refine)
         mesh_data = rcon.distribute_mesh(mesh)
     else:
         mesh_data = rcon.receive_mesh()
 
-    for order in [3, 4, 5]:
+    for order in [1, 2, 3]:
         discr = rcon.make_discretization(mesh_data, order=order,
 			debug=[#"cuda_no_plan",
 			#"print_op_code"
@@ -108,8 +108,13 @@ def main(write_output=True):
                 velocity=[1,0])
         fields = vortex.volume_interpolant(0, discr)
 
-        from hedge.pde import EulerOperator
-        op = EulerOperator(dimensions=2, gamma=1.4, bc=vortex)
+        #from hedge.models.gas_dynamics.euler import EulerOperator
+        #from hedge.mesh import TAG_ALL
+        #op = EulerOperator(dimensions=2, gamma=gamma, bc=vortex, inflow_tag=TAG_ALL)
+        from hedge.models.gas_dynamics.navier_stokes import NavierStokesWithHeatOperator
+        from hedge.mesh import TAG_ALL
+        op = NavierStokesWithHeatOperator(dimensions=2, gamma=gamma, bc=vortex,
+                inflow_tag=TAG_ALL)
 
         euler_ex = op.bind(discr)
 
@@ -133,8 +138,8 @@ def main(write_output=True):
             print "nsteps", nsteps
             print "#elements=", len(mesh.elements)
 
-        #from hedge.timestep import RK4TimeStepper
-        from hedge.backends.cuda.tools import RK4TimeStepper
+        from hedge.timestep import RK4TimeStepper
+        #from hedge.backends.cuda.tools import RK4TimeStepper
         stepper = RK4TimeStepper()
 
         # diagnostics setup ---------------------------------------------------
@@ -211,7 +216,7 @@ def main(write_output=True):
             l2_error_rhou = discr.norm(op.rho_u(fields)-op.rho_u(true_fields))
             l2_error_u = discr.norm(op.u(fields)-op.u(true_fields))
 
-            eoc_rec.add_data_point(order, l2_error)
+            eoc_rec.add_data_point(order, l2_error_rho)
             print
             print eoc_rec.pretty_print("P.Deg.", "L2 Error")
 
