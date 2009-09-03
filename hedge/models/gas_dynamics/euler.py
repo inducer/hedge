@@ -51,6 +51,16 @@ class EulerOperator(GasDynamicsOperatorBase):
     Field order is [rho E rho_u_x rho_u_y ...].
     """
 
+    def __init__(self, dimensions, gamma,
+            bc,
+            inflow_tag="inflow",
+            outflow_tag="outflow",
+            no_slip_tag="no_slip"):
+
+        GasDynamicsOperatorBase.__init__(self, dimensions, gamma, bc,
+                inflow_tag, outflow_tag, no_slip_tag)
+
+
     def op_template(self):
         from hedge.optemplate import make_vector_field, \
                 make_common_subexpression as cse
@@ -87,7 +97,7 @@ class EulerOperator(GasDynamicsOperatorBase):
         sqrt = var("sqrt")
 
         state = make_vector_field("q", self.dimensions+2)
-        bc_state = make_vector_field("bc_q", self.dimensions+2)
+        #bc_state = make_vector_field("bc_q", self.dimensions+2)
 
         c = cse(sqrt(self.gamma*p(state)/self.rho(state)))
 
@@ -98,6 +108,23 @@ class EulerOperator(GasDynamicsOperatorBase):
 
         flux_state = flux(state)
 
+        from hedge.optemplate import BoundarizeOperator
+        from hedge.tools import make_obj_array
+
+        all_tags_and_bcs = [
+                (self.outflow_tag, BoundarizeOperator(self.outflow_tag)(state)),
+                (self.inflow_tag, make_vector_field("bc_q_in", self.dimensions+2)),
+                (self.no_slip_tag, BoundarizeOperator(self.no_slip_tag)(join_fields(
+                    # rho
+                    state[0],
+                    # energy
+                    state[1],
+                    # momenta
+                    make_obj_array(numpy.zeros(self.dimensions))
+                    )))
+                    ]
+
+
         return join_fields(
                 (- numpy.dot(make_nabla(self.dimensions), flux_state)
                     + InverseMassOperator()*make_lax_friedrichs_flux(
@@ -106,7 +133,8 @@ class EulerOperator(GasDynamicsOperatorBase):
 			speed,
                         state=state, fluxes=flux_state,
                         bdry_tags_states_and_fluxes=[
-                            (TAG_ALL, bc_state, flux(bc_state))
+                            (tag, bc_state, flux(bc_state))
+                            for tag, bc_state in all_tags_and_bcs
                             ],
                         strong=True
                         )),
