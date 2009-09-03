@@ -217,6 +217,9 @@ class Discretization(object):
           be activated. See validity check below for the currently defined
           set of debug flags.
         """
+
+        if not isinstance(mesh, hedge.mesh.Mesh):
+            raise TypeError("mesh must be of type hedge.mesh.Mesh")
           
         self.mesh = mesh
 
