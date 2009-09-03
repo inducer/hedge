@@ -329,7 +329,7 @@ class SiloMeshData(object):
             for polygon in eg:
                 prev_nodelist_len = len(self.nodelist)
                 for i in polygon:
-                    self.nodelist.append(i)
+                    self.nodelist.append(int(i))
                 poly_count += 1
                 poly_length = len(self.nodelist) - prev_nodelist_len
 
