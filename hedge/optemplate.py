@@ -122,9 +122,11 @@ class Operator(pymbolic.primitives.Leaf):
     def stringifier(self):
         return StringifyMapper
 
-    def __call__(self, *args, **kwargs):
-        # prevent lazy-eval semantics from kicking in
-        raise RuntimeError, "symbolic operators are not callable"
+    def __call__(self, expr):
+        from hedge.tools import with_object_array_or_scalar
+        return with_object_array_or_scalar(
+                lambda subexpr: OperatorBinding(self, subexpr),
+                expr)
 
     def apply(self, discr, field):
         return discr.compile(self * Field("f"))(f=field)
@@ -682,7 +684,11 @@ class SubstitutionMapper(pymbolic.mapper.substitutor.SubstitutionMapper,
 
 class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
     def map_boundary_pair(self, expr, enclosing_prec):
-        return "BPair(%s, %s, %s)" % (expr.field, expr.bfield, repr(expr.tag))
+        from pymbolic.mapper.stringifier import PREC_NONE
+        return "BPair(%s, %s, %s)" % (
+                self.rec(expr.field, PREC_NONE),
+                self.rec(expr.bfield, PREC_NONE),
+                repr(expr.tag))
 
     def map_diff(self, expr, enclosing_prec):
         return "Diff%d" % expr.xyz_axis
@@ -721,13 +727,21 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
         return "Normal<tag=%s>[%d]" % (expr.tag, expr.axis)
 
     def map_operator_binding(self, expr, enclosing_prec):
-        return "<%s>(%s)" % (expr.op, expr.field)
+        from pymbolic.mapper.stringifier import PREC_NONE
+        return "<%s>(%s)" % (
+                self.rec(expr.op, PREC_NONE), 
+                self.rec(expr.field, PREC_NONE))
 
     def map_scalar_parameter(self, expr, enclosing_prec):
         return "ScalarPar[%s]" % expr.name
 
 
 
+
+class CSESplittingStringifyMapper(
+        pymbolic.mapper.stringifier.CSESplittingStringifyMapperMixin,
+        pymbolic.mapper.stringifier.StringifyMapper):
+    pass
 
 
 
@@ -901,6 +915,8 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
 
         vol_bdry_intersection = bdry_dependencies & vol_dependencies
         if vol_bdry_intersection:
+            print CSESplittingStringifyMapper()(bdry_field[6])
+            raw_input()
             raise RuntimeError("Variables are being used as both "
                     "boundary and volume quantities: %s" 
                     % ", ".join(str(v) for v in vol_bdry_intersection))
