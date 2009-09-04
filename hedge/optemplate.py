@@ -915,8 +915,6 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
 
         vol_bdry_intersection = bdry_dependencies & vol_dependencies
         if vol_bdry_intersection:
-            print CSESplittingStringifyMapper()(bdry_field[6])
-            raw_input()
             raise RuntimeError("Variables are being used as both "
                     "boundary and volume quantities: %s" 
                     % ", ".join(str(v) for v in vol_bdry_intersection))
@@ -1018,14 +1016,14 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
         new_flux = FluxSubstitutionMapper(
                 sub_bdry_into_flux)(flux)
 
-        from hedge.tools import is_zero
+        from hedge.tools import is_zero, make_obj_array
         if is_zero(new_flux):
             return 0
         else:
             return OperatorBinding(
                     FluxOperator(new_flux), BoundaryPair(
-                        numpy.array(mbfeef.vol_expr_list, dtype=object), 
-                        numpy.array(mbfeef.bdry_expr_list, dtype=object), 
+                        make_obj_array([self.rec(e) for e in mbfeef.vol_expr_list]), 
+                        make_obj_array([self.rec(e) for e in mbfeef.bdry_expr_list]), 
                         bpair.tag))
 
 
