@@ -1053,6 +1053,9 @@ class CollectorMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     def map_elementwise_max(self, expr, *args, **kwargs):
         return set()
 
+    def map_boundarize(self, expr, *args, **kwargs):
+        return set()
+
     def map_normal_component(self, expr):
         return set()
 
