@@ -1077,7 +1077,7 @@ def generate_random_constant_on_elements(discr):
 
 
 def ones_on_boundary(discr, tag):
-    result = discr.volume_zeros()
+    result = discr.volume_zeros(kind="numpy")
 
     try:
         faces = discr.mesh.tag_to_boundary[tag]
@@ -1087,11 +1087,10 @@ def ones_on_boundary(discr, tag):
         for face in faces:
             el, fl = face
 
-            (el_start, el_end), ldis = discr.find_el_data(el.id)
+            el_range, ldis = discr.find_el_data(el.id)
             fl_indices = ldis.face_indices()[fl]
-
-            for i in fl_indices:
-                result[el_start+i] = 1
+            result[el_range.start
+                    .asarray(fl_indices, dtype=numpy.intp)] = 1
 
     return result
 
