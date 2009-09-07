@@ -404,8 +404,7 @@ class OperatorCompiler(OperatorCompilerBase):
             [wdflux.BoundaryInfo(
                 flux_expr=bi.flux_expr, 
                 bpair=self.rec(bi.bpair))
-                for bi in wdflux.boundaries],
-            wdflux.flux_optemplate)
+                for bi in wdflux.boundaries])
         return result
 
     def map_whole_domain_flux(self, wdflux):

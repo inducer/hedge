@@ -108,12 +108,11 @@ class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
                     self.flux_expr, self.bpair, bdry="ext"))
                 
 
-    def __init__(self, is_lift, interiors, boundaries, 
-            flux_optemplate=None):
+    def __init__(self, is_lift, interiors, boundaries):
         self.is_lift = is_lift
 
-        self.interiors = interiors
-        self.boundaries = boundaries
+        self.interiors = tuple(interiors)
+        self.boundaries = tuple(boundaries)
 
         from pytools import set_sum
         interior_deps = set_sum(iflux.dependencies
@@ -134,15 +133,34 @@ class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
                     bflux.flux_expr, bflux.bpair, bdry="ext"):
                 self.dep_to_tag[dep] = bflux.bpair.tag
 
-        self.flux_optemplate = flux_optemplate
+    @memoize_method
+    def rebuild_optemplate(self):
+        from hedge.optemplate import OperatorBinding, \
+                FluxOperator, LiftingFluxOperator
+
+        if self.is_lift:
+            f_op = LiftingFluxOperator
+        else:
+            f_op = FluxOperator
+
+        summands = []
+        for i in self.interiors:
+            summands.append(OperatorBinding(
+                    f_op(i.flux_expr), i.field_expr))
+        for b in self.boundaries:
+            summands.append(OperatorBinding(
+                    f_op(b.flux_expr), b.bpair))
+
+        from pymbolic.primitives import flattened_sum
+        return flattened_sum(summands)
 
     # infrastructure interaction 
     def get_hash(self):
-        return hash((self.__class__, self.flux_optemplate))
+        return hash((self.__class__, self.rebuild_optemplate()))
 
     def is_equal(self, other):
         return (other.__class__ == WholeDomainFluxOperator
-                and self.flux_optemplate == other.flux_optemplate)
+                and self.rebuild_optemplate() == other.rebuild_optemplate())
 
     def __getinitargs__(self):
         return self.is_lift, self.interiors, self.boundaries
@@ -176,7 +194,6 @@ class BoundaryCombiner(hedge.optemplate.IdentityMapper):
         is_lift = None
 
         rest = []
-        flux_optemplate_summands = []
 
         for ch in expressions:
             if (isinstance(ch, OperatorBinding) 
@@ -189,8 +206,6 @@ class BoundaryCombiner(hedge.optemplate.IdentityMapper):
                     if is_lift != my_is_lift:
                         rest.append(ch)
                         continue
-
-                flux_optemplate_summands.append(ch)
 
                 if isinstance(ch.field, BoundaryPair):
                     bpair = self.rec(ch.field)
@@ -210,8 +225,7 @@ class BoundaryCombiner(hedge.optemplate.IdentityMapper):
             wdf = WholeDomainFluxOperator(
                     is_lift=is_lift,
                     interiors=interiors,
-                    boundaries=boundaries,
-                    flux_optemplate=flattened_sum(flux_optemplate_summands))
+                    boundaries=boundaries)
         else:
             wdf = None
         return wdf, rest
@@ -250,7 +264,7 @@ class FluxCollector(hedge.optemplate.CollectorMixin, hedge.optemplate.CombineMap
         for bdry in wdflux.boundaries:
             result |= self.rec(bdry.bpair)
 
-        return  result
+        return result
 
 class BoundOperatorCollector(hedge.optemplate.BoundOperatorCollector):
     def map_whole_domain_flux(self, expr):
