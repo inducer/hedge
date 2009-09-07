@@ -515,7 +515,8 @@ class Kernel:
         cmod.append(FunctionBody(f_decl, f_body))
 
         if not for_benchmark and "cuda_dump_kernels" in discr.debug:
-            open("%s.cu" % self.plan.debug_name, "w").write(str(cmod))
+            from hedge.tools import open_unique_debug_file
+            open_unique_debug_file(self.plan.debug_name, ".cu").write(str(cmod))
 
         mod = SourceModule(cmod, 
                 keep="cuda_keep_kernels" in discr.debug, 

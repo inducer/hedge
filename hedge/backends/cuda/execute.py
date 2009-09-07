@@ -459,7 +459,8 @@ class Executor(object):
         self.code = OperatorCompiler(
                 max_vectors_in_batch_expr=220 // calcsize("P")
                 )(
-                self.prepare_optemplate_stage2(discr.mesh, optemplate_stage1))
+                self.prepare_optemplate_stage2(discr.mesh, optemplate_stage1,
+                    discr.debug))
 
         # build the local kernels 
         self.diff_kernel = self.discr.diff_plan.make_kernel(discr)
@@ -467,15 +468,31 @@ class Executor(object):
                 with_index_check=False)
 
     @staticmethod
-    def prepare_optemplate_stage2(mesh, optemplate):
+    def prepare_optemplate_stage2(mesh, optemplate, debug_flags=set()):
         from hedge.optemplate import InverseMassContractor, \
                 BCToFluxRewriter, CommutativeConstantFoldingMapper
         from hedge.backends.cuda.optemplate import BoundaryCombiner
 
+        def dump_optemplate(name, optemplate):
+            if "dump_optemplate_stages" in debug_flags:
+                from hedge.tools import open_unique_debug_file
+                from hedge.optemplate import pretty_print_optemplate
+                open_unique_debug_file(name, ".txt").write(
+                        pretty_print_optemplate(optemplate))
+
+        dump_optemplate("01-before-bc2flux", optemplate)
         optemplate = BCToFluxRewriter()(optemplate)
+
+        dump_optemplate("02-before-cfold", optemplate)
         optemplate = CommutativeConstantFoldingMapper()(optemplate)
+
+        dump_optemplate("03-before-imass", optemplate)
         optemplate = InverseMassContractor()(optemplate)
+
+        dump_optemplate("04-before-bcomb", optemplate)
         optemplate = BoundaryCombiner(mesh)(optemplate)
+
+        dump_optemplate("05-final", optemplate)
 
         return optemplate
 

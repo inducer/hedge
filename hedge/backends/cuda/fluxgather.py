@@ -908,7 +908,8 @@ class Kernel:
         cmod.append(FunctionBody(f_decl, f_body))
 
         if not for_benchmark and "cuda_dump_kernels" in discr.debug:
-            open("flux_gather.cu", "w").write(str(cmod))
+            from hedge.tools import open_unique_debug_file
+            open_unique_debug_file("flux_gather", ".cu").write(str(cmod))
 
         #from pycuda.tools import allow_user_edit
         mod = SourceModule(

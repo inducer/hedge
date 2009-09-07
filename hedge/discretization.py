@@ -183,6 +183,7 @@ class Discretization(object):
             "node_permutation",
             "print_op_code",
             "dump_dataflow_graph",
+            "dump_optemplate_stages",
             ])
 
     @classmethod

@@ -402,7 +402,8 @@ class Kernel(DiffKernelBase):
         cmod.append(FunctionBody(f_decl, f_body))
 
         if not for_benchmark and "cuda_dump_kernels" in discr.debug:
-            open("diff.cu", "w").write(str(cmod))
+            from hedge.tools import open_unique_debug_file
+            open_unique_debug_file("diff", ".cu").write(str(cmod))
 
         mod = SourceModule(cmod, 
                 keep="cuda_keep_kernels" in discr.debug, 

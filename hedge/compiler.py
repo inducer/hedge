@@ -287,19 +287,10 @@ class Code(object):
         self.result = result
 
     def dump_dataflow_graph(self):
-        from hedge.tools import get_rank
-        from hedge.compiler import dot_dataflow_graph
-        i = 0
-        while True:
-            dot_name = "dataflow-%d.dot" % i
-            from os.path import exists
-            if exists(dot_name):
-                i += 1
-                continue
+        from hedge.tools import open_unique_debug_file
 
-            open(dot_name, "w").write(
-                    dot_dataflow_graph(self, max_node_label_length=None))
-            break
+        open_unique_debug_file("dataflow", ".dot")\
+                .write(dot_dataflow_graph(self, max_node_label_length=None))
 
     class NoInstructionAvailable(Exception):
         pass
