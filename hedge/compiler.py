@@ -130,10 +130,24 @@ class FluxBatchAssign(Instruction):
         return set(self.names)
 
     def __str__(self):
+        from hedge.flux import PrettyFluxStringifyMapper as PFSM
+        flux_strifier = PFSM()
+        from hedge.optemplate import StringifyMapper as OSM
+        op_strifier = OSM(flux_stringify_mapper=flux_strifier)
+
+        from pymbolic.mapper.stringifier import PREC_NONE
+
         lines = []
         lines.append("{ /* %s */" % self.kind)
+
+        lines_expr = []
         for n, f in zip(self.names, self.fluxes):
-            lines.append("  %s <- %s" % (n, f))
+            lines_expr.append("  %s <- %s" % (n, op_strifier(f, PREC_NONE)))
+
+        for n, str_f in getattr(flux_strifier, "cse_name_list", []):
+            lines.append("  (flux-local) %s <- %s" % (n, str_f))
+
+        lines.extend(lines_expr)
         lines.append("}")
         return "\n".join(lines)
 
@@ -415,8 +429,9 @@ class OperatorCompilerBase(IdentityMapper):
         self.max_vectors_in_batch_expr = max_vectors_in_batch_expr
 
         self.code = []
-        self.assigned_var_count = 0
         self.expr_to_var = {}
+
+        self.assigned_names = set()
 
     @memoize_method
     def dep_mapper_factory(self, include_subscripts=False):
@@ -505,10 +520,32 @@ class OperatorCompilerBase(IdentityMapper):
         result = with_object_array_or_scalar(self.assign_to_new_var, result)
         return Code(self.aggregate_assignments(self.code, result), result)
 
-    def get_var_name(self):
-        new_name = self.prefix+str(self.assigned_var_count)
-        self.assigned_var_count += 1
-        return new_name
+    def get_var_name(self, prefix=None):
+        def generate_suffixes():
+            yield ""
+            i = 2
+            while True:
+                yield "_%d" % i
+                i += 1
+
+        def generate_plain_names():
+            i = 0
+            while True:
+                yield self.prefix+str(i)
+                i += 1
+
+        if prefix is None:
+            for name in generate_plain_names():
+                if name not in self.assigned_names:
+                    break
+        else:
+            for suffix in generate_suffixes():
+                name = prefix + suffix
+                if name not in self.assigned_names:
+                    break
+
+        self.assigned_names.add(name)
+        return name
 
     def map_common_subexpression(self, expr):
         try:
@@ -516,7 +553,7 @@ class OperatorCompilerBase(IdentityMapper):
         except KeyError:
             priority = getattr(expr, "priority", 0)
             cse_var = self.assign_to_new_var(self.rec(expr.child),
-                    priority=priority)
+                    priority=priority, prefix=expr.prefix)
             self.expr_to_var[expr.child] = cse_var
             return cse_var
 
@@ -643,12 +680,12 @@ class OperatorCompilerBase(IdentityMapper):
 
             raise RuntimeError("flux '%s' not in any flux batch" % expr)
 
-    def assign_to_new_var(self, expr, priority=0):
+    def assign_to_new_var(self, expr, priority=0, prefix=None):
         from pymbolic.primitives import Variable
         if isinstance(expr, Variable):
             return expr
 
-        new_name = self.get_var_name()
+        new_name = self.get_var_name(prefix)
         self.code.append(self.make_assign(new_name, expr, priority))
 
         return Variable(new_name)

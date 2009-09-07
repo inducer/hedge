@@ -208,7 +208,7 @@ class CompiledVectorExpressionBase(object):
                         "%s[i] = %s;" % (vei.name, expr_code))
 
         # common subexpressions have been taken care of by the compiler
-        assert not code_mapper.cses
+        assert not code_mapper.cse_names
 
         args.extend(
                 elwise.VectorArg(dtype, name)
