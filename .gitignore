@@ -39,3 +39,4 @@ doc/manual/.build
 *.pyd
 *.so
 *.eps
+run-debug-*
