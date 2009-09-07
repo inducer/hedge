@@ -569,6 +569,8 @@ class Kernel:
         flux_write_code.append(Line())
 
         for dep in self.interior_deps:
+            flux_write_code.append(Comment(str(dep)))
+
             for side in ["a", "b"]:
                 flux_write_code.append(
                         Initializer(
@@ -618,10 +620,14 @@ class Kernel:
 
             flux_sub_codes.append(my_flux_block)
 
+        if f2cm.cse_name_list:
+            flux_write_code.append(Line())
+
         flux_write_code.extend(
                 Initializer(
-                    Value("value_type", f2cm.cse_prefix+str(i)), cse)
-                for i, cse in f2cm.cses)
+                    Value("value_type", cse_name), cse_str)
+                for cse_name, cse_str in f2cm.cse_name_list)
+
         flux_write_code.extend(flux_sub_codes)
 
         return flux_write_code
@@ -659,17 +665,21 @@ class Kernel:
                     for flux_nr, flux_rec in nrs_and_fluxes)
 
             for dep in int_deps:
-                bblock.append(
-                        Initializer(
-                            MaybeUnused(POD(given.float_type, "val_a_field%d" 
-                                % self.dep_to_index[dep])),
-                            "fp_tex1Dfetch(field%d_tex, a_index)" % self.dep_to_index[dep]))
+                bblock.extend([
+                    Comment(str(dep)),
+                    Initializer(
+                        MaybeUnused(POD(given.float_type, "val_a_field%d" 
+                            % self.dep_to_index[dep])),
+                        "fp_tex1Dfetch(field%d_tex, a_index)" % self.dep_to_index[dep])
+                    ])
             for dep in ext_deps:
-                bblock.append(
-                        Initializer(
-                            MaybeUnused(POD(given.float_type, "val_b_field%d" 
-                                % self.dep_to_index[dep])),
-                            "fp_tex1Dfetch(field%s_tex, b_index)" % self.dep_to_index[dep]))
+                bblock.extend([
+                    Comment(str(dep)),
+                    Initializer(
+                        MaybeUnused(POD(given.float_type, "val_b_field%d" 
+                            % self.dep_to_index[dep])),
+                        "fp_tex1Dfetch(field%s_tex, b_index)" % self.dep_to_index[dep])
+                    ])
 
             f2cm = FluxToCodeMapper(given.float_type)
 
@@ -683,10 +693,13 @@ class Kernel:
                                 dep_to_index=self.dep_to_index, 
                                 flux=flux_rec.flux_expr, prec=PREC_NONE)))
 
+            if f2cm.cse_name_list:
+                bblock.append(Line())
+
             bblock.extend(
                     Initializer(
-                        Value("value_type", f2cm.cse_prefix+str(i)), cse)
-                    for i, cse in enumerate(f2cm.cses))
+                        Value("value_type", cse_name), cse_str)
+                    for cse_name, cse_str in f2cm.cse_name_list)
 
             flux_write_code.extend([
                 Line(),
@@ -736,7 +749,6 @@ class Kernel:
 
         for dep_expr in self.all_deps:
             cmod.extend([
-                Comment(str(dep_expr)),
                 Value("texture<%s, 1, cudaReadModeElementType>"
                     % dtype_to_ctype(float_type, with_fp_tex_hack=True), 
                     "field%d_tex" % self.dep_to_index[dep_expr])

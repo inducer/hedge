@@ -29,21 +29,6 @@ import hedge.optemplate
 
 
 
-class StringifyMapper(hedge.optemplate.StringifyMapper):
-    def map_whole_domain_flux(self, expr, enclosing_prec):
-        if expr.is_lift:
-            tag = "WLift"
-        else:
-            tag = "WFlux"
-
-        return "%s(is_lift=%s,\n    int=%s,\n    tag->flux=%s)" % (tag, 
-                expr.is_lift,
-                expr.interiors,
-                expr.boundaries)
-
-
-
-
 def get_flux_dependencies(flux, field, bdry="all"):
     from hedge.flux import FluxDependencyMapper, FieldComponent
     in_fields = list(FluxDependencyMapper(composite_leaves=True)(flux))
@@ -162,7 +147,7 @@ class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
         return self.is_lift, self.interiors, self.boundaries
         
     def stringifier(self):
-        return StringifyMapper
+        return hedge.optemplate.StringifyMapper
 
     def get_mapper_method(self, mapper): 
         return mapper.map_whole_domain_flux

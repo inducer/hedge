@@ -36,6 +36,30 @@ from pymbolic.mapper import CSECachingMapperMixin
 
 
 
+def make_common_subexpression(field, prefix=None): 
+    from hedge.tools import log_shape
+
+    from pymbolic.primitives import CommonSubexpression
+
+    ls = log_shape(field)
+    if ls != ():
+        from pytools import indices_in_shape
+        result = numpy.zeros(ls, dtype=object)
+
+        for i in indices_in_shape(ls):
+            if prefix is not None:
+                component_prefix = prefix+"_".join(str(i_i) for i_i in i)
+            else:
+                component_prefix = None
+            result[i] = CommonSubexpression(field[i], component_prefix)
+            
+        return result
+    else:
+        return CommonSubexpression(field, prefix)
+
+
+
+
 Field = pymbolic.primitives.Variable
 
 def make_field(var_or_string):
@@ -670,6 +694,16 @@ class SubstitutionMapper(pymbolic.mapper.substitutor.SubstitutionMapper,
 
 
 class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
+    def __init__(self, constant_mapper=str, flux_stringify_mapper=None):
+        pymbolic.mapper.stringifier.StringifyMapper.__init__(
+                self, constant_mapper=constant_mapper)
+
+        if flux_stringify_mapper is None:
+            from hedge.flux import FluxStringifyMapper
+            flux_stringify_mapper = FluxStringifyMapper()
+
+        self.flux_stringify_mapper = flux_stringify_mapper
+
     def map_boundary_pair(self, expr, enclosing_prec):
         return "BPair(%s, %s, %s)" % (expr.field, expr.bfield, repr(expr.tag))
 
@@ -692,10 +726,23 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
         return "InvM"
 
     def map_flux(self, expr, enclosing_prec):
-        return "Flux(%s)" % expr.flux
+        from pymbolic.mapper.stringifier import PREC_NONE
+        return "Flux(%s)" % self.flux_stringify_mapper(expr.flux, PREC_NONE)
 
     def map_lift(self, expr, enclosing_prec):
-        return "Lift(%s)" % expr.flux
+        from pymbolic.mapper.stringifier import PREC_NONE
+        return "Lift(%s)" % self.flux_stringify_mapper(expr.flux, PREC_NONE)
+
+    def map_whole_domain_flux(self, expr, enclosing_prec):
+        # used from hedge.backends.cuda.optemplate
+        if expr.is_lift:
+            opname = "WLift"
+        else:
+            opname = "WFlux"
+
+        from pymbolic.mapper.stringifier import PREC_NONE
+        return "%s(%s)" % (opname, 
+                self.rec(expr.rebuild_optemplate(), PREC_NONE))
 
     def map_elementwise_max(self, expr, enclosing_prec):
         return "ElWMax"
@@ -716,6 +763,102 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
         return "ScalarPar[%s]" % expr.name
 
 
+
+
+class PrettyStringifyMapper(
+        pymbolic.mapper.stringifier.CSESplittingStringifyMapperMixin,
+        StringifyMapper):
+    def __init__(self):
+        pymbolic.mapper.stringifier.CSESplittingStringifyMapperMixin.__init__(self)
+        StringifyMapper.__init__(self)
+
+        self.flux_to_number = {}
+        self.flux_string_list = []
+
+        self.bc_to_number = {}
+        self.bc_string_list = []
+
+        from hedge.flux import PrettyFluxStringifyMapper
+        self.flux_stringify_mapper = PrettyFluxStringifyMapper()
+
+    def get_flux_number(self, flux):
+        try:
+            return self.flux_to_number[flux]
+        except KeyError:
+            from pymbolic.mapper.stringifier import PREC_NONE
+            str_flux = self.flux_stringify_mapper(flux, PREC_NONE)
+
+            flux_number = len(self.flux_to_number)
+            self.flux_string_list.append(str_flux)
+            self.flux_to_number[flux] = flux_number
+            return flux_number
+
+    def map_boundary_pair(self, expr, enclosing_prec):
+        try:
+            bc_number = self.bc_to_number[expr]
+        except KeyError:
+            from pymbolic.mapper.stringifier import PREC_NONE
+            str_bc = StringifyMapper.map_boundary_pair(self, expr, PREC_NONE)
+
+            bc_number = len(self.bc_to_number)
+            self.bc_string_list.append(str_bc)
+            self.bc_to_number[expr] = bc_number
+
+        return "BC%d@%s" % (bc_number, expr.tag)
+
+    def map_operator_binding(self, expr, enclosing_prec):
+        if isinstance(expr.op, BoundarizeOperator):
+            from pymbolic.mapper.stringifier import PREC_CALL, PREC_SUM
+            return self.parenthesize_if_needed(
+                    "%s@%s" % (
+                        self.rec(expr.field, PREC_CALL),
+                        expr.op.tag),
+                    enclosing_prec, PREC_SUM)
+        else:
+            return StringifyMapper.map_operator_binding(
+                    self, expr, enclosing_prec)
+
+    def get_bc_strings(self):
+        return [ "BC%d : %s" % (i, bc_str)
+                for i, bc_str in enumerate(self.bc_string_list)]
+
+    def get_flux_strings(self):
+        return [ "Flux%d : %s" % (i, flux_str)
+                for i, flux_str in enumerate(self.flux_string_list)]
+
+    def map_flux(self, expr, enclosing_prec):
+        return "Flux%d" % self.get_flux_number(expr.flux)
+
+    def map_lift(self, expr, enclosing_prec):
+        return "Lift-Flux%d" % self.get_flux_number(expr.flux)
+
+
+
+
+def pretty_print_optemplate(optemplate):
+    stringify_mapper = PrettyStringifyMapper()
+    from pymbolic.mapper.stringifier import PREC_NONE
+    result = stringify_mapper(optemplate, PREC_NONE)
+
+    splitter = "="*75 + "\n"
+
+    bc_strs = stringify_mapper.get_bc_strings()
+    if bc_strs:
+        result = "\n".join(bc_strs)+"\n"+splitter+result
+
+    cse_strs = stringify_mapper.get_cse_strings()
+    if cse_strs:
+        result = "\n".join(cse_strs)+"\n"+splitter+result
+
+    flux_strs = stringify_mapper.get_flux_strings()
+    if flux_strs:
+        result = "\n".join(flux_strs)+"\n"+splitter+result
+
+    flux_cses = stringify_mapper.flux_stringify_mapper.get_cse_strings()
+    if flux_cses:
+        result = "\n".join("flux "+fs for fs in flux_cses)+"\n\n"+result
+
+    return result
 
 
 

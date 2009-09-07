@@ -283,6 +283,13 @@ class FluxStringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
 
 
 
+class PrettyFluxStringifyMapper(
+        pymbolic.mapper.stringifier.CSESplittingStringifyMapperMixin,
+        FluxStringifyMapper):
+    pass
+
+
+
 class FluxFlattenMapper(pymbolic.mapper.flattener.FlattenMapper,
         FluxIdentityMapperMixin):
     pass
