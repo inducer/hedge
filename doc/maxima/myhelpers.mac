@@ -25,6 +25,9 @@ crossprod(a,b):=crossfunc(lambda([j,k], a[j]*b[k]));
 subrange(v, start, stop):=makelist(v[i,1],i,start,stop);
 
 extract_diagonal(A):=makelist(A[i][i],i,1,length(A));
+make_diagonal_matrix(v):=genmatrix(
+  lambda([i,j], if i=j then v[i] else 0),
+  length(v),length(v));
 
 /* ------------------------------------------------------------------------- */
 /* Simplification for expressions stemming from hyperbolic systems */

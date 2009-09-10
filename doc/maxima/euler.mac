@@ -37,6 +37,10 @@ u0vec:makelist(concat(usyms[i], 0), i, 1, d);
 duvec:makelist(concat('d, usyms[i]), i, 1, d);
 drhouvec:rho0*duvec+drho*u0vec;
 
+assume(%gamma>1);
+assume(p0>0);
+assume(rho0>0);
+
 zero_subst:append(
     [rho=rho0, p=p0], 
     makelist(usyms[i] =concat(usyms[i], 0), i, 1, d));
@@ -94,9 +98,38 @@ lin_euler_eqns_p:kill_second_order_terms(lin_euler_eqns_p);
 
 /* matrix building ---------------------------------------------------------- */
 prim_lin_vars:append([drho,dp],duvec);
+n:makelist(concat(n, coords[k]), k, 1, d);
 euler_mat:genmatrix(
   lambda([i,j],
-    sum(concat(n, coords[k])
+    sum(n[k]
       *diff(rhs(lin_euler_eqns_p[i]), diff(prim_lin_vars[j], coords[k])),
       k, 1, d)),
   length(lin_vars), length(lin_vars));
+
+/* diagonalize system ------------------------------------------------------- */
+[euler_V, euler_D, euler_invV]:hypdiagonalize(euler_mat);
+
+rel_D:ratsimp(euler_D - n.u0vec*ident(d+2));
+
+/* auxiliary variables, external and internal states ------------------------ */
+c:sqrt(%gamma)*sqrt(p0)/sqrt(rho0);
+
+euler_wm:makelist(concat(prim_lin_vars[i], m), i, 1, length(prim_lin_vars));
+dumvec:makelist(euler_wm[i+2], i, 1, d);
+euler_sminw:hypsimp(euler_invV.euler_wm);
+
+/* subsonic outflow bc------------------------------------------------------- */
+euler_outflowbdryspinw:makelist(
+  if rel_D[i,i] >= 0 then euler_sminw[i,1] else 0,
+    i, 1, d+2);
+
+euler_woutflowbdry:fullhypsimp(euler_V.euler_outflowbdryspinw);
+
+euler_known_woutflowbdry:vstack([
+  drhom + n.dumvec*rho0/(2*c) - dpm/(2*c^2),
+  c*rho0*(n.dumvec)/2 + dpm/2
+  ],
+  dumvec - n*(n.dumvec)/2 + dpm*n/(2*c*rho0)
+  );
+
+assert(norm_2_squared(hypsimp(euler_woutflowbdry-euler_known_woutflowbdry))=0);
