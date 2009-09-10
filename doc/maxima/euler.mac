@@ -115,11 +115,24 @@ rel_D:ratsimp(euler_D - n.u0vec*ident(d+2));
 c:sqrt(%gamma)*sqrt(p0)/sqrt(rho0);
 
 euler_wm:makelist(concat(prim_lin_vars[i], m), i, 1, length(prim_lin_vars));
-dumvec:makelist(euler_wm[i+2], i, 1, d);
+euler_wp:makelist(concat(prim_lin_vars[i], p), i, 1, length(prim_lin_vars));
+
 euler_sminw:hypsimp(euler_invV.euler_wm);
+euler_spinw:hypsimp(euler_invV.euler_wp);
+
+dumvec:makelist(euler_wm[i+2], i, 1, d);
+dupvec:makelist(euler_wp[i+2], i, 1, d);
 
 /* subsonic outflow bc------------------------------------------------------- */
 euler_outflowbdryspinw:makelist(
+  /* outer state equals free-stream flow, about which we have linearized. 
+  Hence the linearized state variable, which is the difference to free-stream
+  flow, is set to zero. */
+  /* 
+  = 0: convection: from interior
+  > 0: supersonic outflow: from interior
+  < 0: supersonic inflow: from exterior
+  */
   if rel_D[i,i] >= 0 then euler_sminw[i,1] else 0,
     i, 1, d+2);
 
@@ -127,9 +140,33 @@ euler_woutflowbdry:fullhypsimp(euler_V.euler_outflowbdryspinw);
 
 euler_known_woutflowbdry:vstack([
   drhom + n.dumvec*rho0/(2*c) - dpm/(2*c^2),
-  c*rho0*(n.dumvec)/2 + dpm/2
-  ],
+  c*rho0*(n.dumvec)/2 + dpm/2],
   dumvec - n*(n.dumvec)/2 + dpm*n/(2*c*rho0)
   );
 
-assert(norm_2_squared(hypsimp(euler_woutflowbdry-euler_known_woutflowbdry))=0);
+euler_diff_woutflowbdry:hypsimp(euler_woutflowbdry-euler_known_woutflowbdry);
+assert(norm_2_squared(euler_diff_woutflowbdry)=0);
+
+/* subsonic inflow bc ------------------------------------------------------- */
+euler_inflowbdryspinw:makelist(
+  /* outer state equals free-stream flow, about which we have linearized. 
+  Hence the linearized state variable, which is the difference to free-stream
+  flow, is set to zero. */
+  /* 
+  > 0: supersonic outflow: from interior
+  = 0: convection: from exterior
+  < 0: supersonic inflow: from exterior
+  */
+  if rel_D[i,i] <= 0 then 0 else euler_sminw[i,1],
+    i, 1, d+2);
+
+euler_winflowbdry:fullhypsimp(euler_V.euler_inflowbdryspinw);
+
+euler_known_winflowbdry:vstack([
+  n.dumvec*rho0/(2*c) + dpm/(2*c^2),
+  c*rho0*(n.dumvec)/2 + dpm/2],
+  n*(n.dumvec)/2 + dpm*n/(2*c*rho0)
+  );
+
+euler_diff_winflowbdry:hypsimp(euler_winflowbdry-euler_known_winflowbdry);
+assert(norm_2_squared(euler_diff_winflowbdry)=0);
