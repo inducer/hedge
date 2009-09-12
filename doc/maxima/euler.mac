@@ -112,7 +112,7 @@ euler_mat:genmatrix(
 rel_D:ratsimp(euler_D - n.u0vec*ident(d+2));
 
 /* auxiliary variables, external and internal states ------------------------ */
-c:sqrt(%gamma)*sqrt(p0)/sqrt(rho0);
+c0:sqrt(%gamma)*sqrt(p0)/sqrt(rho0);
 
 euler_wm:makelist(concat(prim_lin_vars[i], m), i, 1, length(prim_lin_vars));
 euler_wp:makelist(concat(prim_lin_vars[i], p), i, 1, length(prim_lin_vars));
@@ -139,9 +139,9 @@ euler_outflowbdryspinw:makelist(
 euler_woutflowbdry:fullhypsimp(euler_V.euler_outflowbdryspinw);
 
 euler_known_woutflowbdry:vstack([
-  drhom + n.dumvec*rho0/(2*c) - dpm/(2*c^2),
-  c*rho0*(n.dumvec)/2 + dpm/2],
-  dumvec - n*(n.dumvec)/2 + dpm*n/(2*c*rho0)
+  drhom + n.dumvec*rho0/(2*c0) - dpm/(2*c0^2),
+  c0*rho0*(n.dumvec)/2 + dpm/2],
+  dumvec - n*(n.dumvec)/2 + dpm*n/(2*c0*rho0)
   );
 
 euler_diff_woutflowbdry:hypsimp(euler_woutflowbdry-euler_known_woutflowbdry);
@@ -163,9 +163,9 @@ euler_inflowbdryspinw:makelist(
 euler_winflowbdry:fullhypsimp(euler_V.euler_inflowbdryspinw);
 
 euler_known_winflowbdry:vstack([
-  n.dumvec*rho0/(2*c) + dpm/(2*c^2),
-  c*rho0*(n.dumvec)/2 + dpm/2],
-  n*(n.dumvec)/2 + dpm*n/(2*c*rho0)
+  n.dumvec*rho0/(2*c0) + dpm/(2*c0^2),
+  c0*rho0*(n.dumvec)/2 + dpm/2],
+  n*(n.dumvec)/2 + dpm*n/(2*c0*rho0)
   );
 
 euler_diff_winflowbdry:hypsimp(euler_winflowbdry-euler_known_winflowbdry);
