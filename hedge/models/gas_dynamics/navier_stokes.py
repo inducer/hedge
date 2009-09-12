@@ -253,43 +253,55 @@ class NavierStokesWithHeatOperator(GasDynamicsOperatorBase):
     Field order is [rho E rho_u_x rho_u_y ...].
     """
 
-    def __init__(self, dimensions, gamma,
-            # prandtl, spec_gas_const, 
-            bc,
+    def __init__(self, dimensions, discr, gamma,
+            prandtl, spec_gas_const, 
+            bc_q_in, bc_q_out, bc_q_noslip,
             inflow_tag="inflow",
             outflow_tag="outflow",
-            no_slip_tag="no_slip"):
+            noslip_tag="noslip"):
 
-        GasDynamicsOperatorBase.__init__(self, dimensions, gamma, bc,
-                inflow_tag, outflow_tag, no_slip_tag)
-        #self.prandtl = prandtl
-        #self.spec_gas_const = spec_gas_const
+        GasDynamicsOperatorBase.__init__(self, dimensions, gamma, 
+                bc_q_in, bc_q_out, bc_q_noslip,
+                inflow_tag, outflow_tag, noslip_tag)
+        self.prandtl = prandtl
+        self.spec_gas_const = spec_gas_const
+        self.discr = discr
 
     def op_template(self):
         from hedge.optemplate import make_vector_field, \
                 make_common_subexpression as cse
 
-        #c_p = self.gamma / (self.gamma - 1) * self.spec_gas_const
-        #c_v = c_p - self.spec_gas_const
+        c_p = self.gamma / (self.gamma - 1) * self.spec_gas_const
+        c_v = c_p - self.spec_gas_const
+
+        AXES = ["x", "y", "z", "w"]
 
         def u(q):
-            return cse(self.u(q))
+            return cse(self.u(q), "u")
+
+        def rho(q):
+            return cse(self.rho(q), "rho")
+
+        def rho_u(q):
+            return cse(self.rho_u(q), "rho_u")
 
         def p(q):
             return cse((self.gamma-1)*(self.e(q) - 
-                       0.5*numpy.dot(self.rho_u(q), u(q))))
+                       0.5*numpy.dot(self.rho_u(q), u(q))), "p")
 
         def t(q):
-            return cse((self.e(q)/self.rho(q) - 0.5 * numpy.dot(u(q),u(q))) / c_v)
+            return cse(
+                    (self.e(q)/self.rho(q) - 0.5 * numpy.dot(u(q),u(q))) / c_v,
+                    "t")
 
         def mu(q):
             #Sutherland's law with t_ref = 1K and t_inf = 280K
             #mu_inf = 1.735e-5
-            #mu_inf = 0.01   # for the purpose of testing the shearflow test case
-            mu_inf = 0
+            #mu_inf = 0.
+            mu_inf = (0.1 * self.gamma ** 0.5) / 100
             t_s = 110.4
             #return cse(mu_inf * t(q) ** 1.5 * (1 + t_s) / (t(q) + t_s))
-            return mu_inf    # for the purpose of testing
+            return mu_inf
 
         def heat_flux(q):
             from hedge.tools import make_obj_array
@@ -328,14 +340,15 @@ class NavierStokesWithHeatOperator(GasDynamicsOperatorBase):
             for i in range(dimensions):
                 flux_op[i] = get_flux_operator(flux[:,i])
 
-            from hedge.optemplate import pair_with_boundary
+            from hedge.optemplate import BoundaryPair
             flux_part = numpy.zeros((d, dimensions), dtype=object)
             for i in range(dimensions):
                 flux_part[:,i] = (flux_op[i]*q
                                 + sum(
                                 flux_op[i]*
-                                pair_with_boundary(q, bc, tag)
-                                for tag, bc in all_tags_and_bcs))
+                                BoundaryPair(q, bc, tag)
+                                for tag, bc in all_tags_and_bcs)
+                                )
 
             from hedge.optemplate import InverseMassOperator
             return (nabla_func - InverseMassOperator() * flux_part)
@@ -351,15 +364,20 @@ class NavierStokesWithHeatOperator(GasDynamicsOperatorBase):
             du = numpy.zeros((dimensions, dimensions), dtype=object)
             for i in range(dimensions):
                 for j in range(dimensions):
-                    du[i,j] = (dq[i+2,j] - u(q)[i] * dq[0,j]) / self.rho(q)
+                    du[i,j] = cse(
+                            (dq[i+2,j] - u(q)[i] * dq[0,j]) / self.rho(q),
+                            "du%d_d%s" % (i, AXES[j]))
 
             tau = numpy.zeros((dimensions+1, dimensions), dtype=object)
             for i in range(dimensions):
                 for j in range(dimensions):
-                    tau[i,j] = mu(q) * (du[i,j] + du[j,i] -
-                               2/3 * delta(i,j) * (du[0,0] + du[1,1]))
+                    tau[i,j] = cse(mu(q) * (du[i,j] + du[j,i] -
+                               2/3 * delta(i,j) * (du[0,0] + du[1,1])),
+                               "tau_%d%d" % (i, j))
+
             for j in range(dimensions):
-                tau[dimensions,j] = numpy.dot(u(q), tau[j])
+                tau[dimensions,j] = cse(numpy.dot(u(q), tau[j]),
+                                    "tau_%d%d" % (dimensions, j))
             return tau
 
         def flux(q):
@@ -373,17 +391,17 @@ class NavierStokesWithHeatOperator(GasDynamicsOperatorBase):
 
                         # flux E
                         cse(self.e(q)+p(q))*u(q)[i] - 
-                        cse(tau(q)[self.dimensions,i]) #+ 
+                        tau(q)[self.dimensions,i] #+ 
                         #heat_flux(q)[i]
                         ,
 
                         # flux rho_u
                         make_obj_array([
                             self.rho_u(q)[i]*self.u(q)[j] + delta(i,j) * p(q) -
-                            cse(tau(q)[i,j])
+                            tau(q)[i,j]
                             for j in range(self.dimensions)
                             ])
-                        ))
+                        ), "%s_flux" % AXES[i])
                     for i in range(self.dimensions)]
 
         def bdry_flux(q_bdry, q_vol, tag):
@@ -398,7 +416,7 @@ class NavierStokesWithHeatOperator(GasDynamicsOperatorBase):
                         # flux E
                         cse(self.e(q_bdry)+p(q_bdry))*u(q_bdry)[i] - 
                         BoundarizeOperator(tag)(
-                            cse(tau(q_vol)[self.dimensions,i]) #+ 
+                            tau(q_vol)[self.dimensions,i] #+ 
                             #heat_flux(q_vol)[i]
                             ),
 
@@ -406,10 +424,10 @@ class NavierStokesWithHeatOperator(GasDynamicsOperatorBase):
                         make_obj_array([
                             self.rho_u(q_bdry)[i]*self.u(q_bdry)[j] + 
                             delta(i,j) * p(q_bdry) - 
-                            BoundarizeOperator(tag)(cse(tau(q_vol)[i,j]))
+                            BoundarizeOperator(tag)(tau(q_vol)[i,j])
                             for j in range(self.dimensions)
                             ])
-                        ))
+                        ), "%s_bflux" % AXES[i])
                     for i in range(self.dimensions)]
 
         from pymbolic import var
@@ -417,25 +435,102 @@ class NavierStokesWithHeatOperator(GasDynamicsOperatorBase):
 
         state = make_vector_field("q", self.dimensions+2)
 
-        c = cse(sqrt(self.gamma*p(state)/self.rho(state)))
+        c = cse(sqrt(self.gamma*p(state)/self.rho(state)), "c")
 
-        speed = cse(sqrt(numpy.dot(u(state), u(state)))) + c
+        speed = cse(sqrt(numpy.dot(u(state), u(state))), "norm_u") + c
 
         from hedge.tools import make_obj_array, join_fields
         from hedge.optemplate import BoundarizeOperator
 
         # boundary conditions -------------------------------------------------
+
+        def outflow_state(state):
+            from hedge.optemplate import make_normal
+            normal = make_normal(self.outflow_tag, self.dimensions)
+
+            state0 = make_vector_field("bc_q_out", self.dimensions+2)
+
+            rho0 = rho(state0)
+            drhom = BoundarizeOperator(self.outflow_tag)(rho(state)) - rho0
+            dumvec = BoundarizeOperator(self.outflow_tag)(u(state)) - u(state0)
+            dpm = BoundarizeOperator(self.outflow_tag)(p(state)) - p(state0)
+            c = BoundarizeOperator(self.outflow_tag)(
+                (self.gamma * p(state) / rho(state))**0.5)
+
+            prims = join_fields(
+                    drhom + numpy.dot(normal, dumvec)*rho0/(2*c) -
+                        dpm/(2*c*c) + rho0,
+                    c*rho0*numpy.dot(normal, dumvec)/2 + dpm/2 + p(state0),
+                    dumvec - normal*numpy.dot(normal, dumvec)/2 +
+                        dpm*normal/(2*c*rho0) + u(state0))
+
+            cons = join_fields(
+                   prims[0],
+                   prims[1] / (self.gamma - 1) + prims[0] / 2 *
+                       numpy.dot(prims[2: 2+self.dimensions], 
+                       prims[2: 2+self.dimensions]),
+                   prims[0] * prims[2: 2+self.dimensions])
+            return cons
+
+        def inflow_state(state):
+            from hedge.optemplate import make_normal
+            normal = make_normal(self.inflow_tag, self.dimensions)
+
+            state0 = make_vector_field("bc_q_in", self.dimensions+2)
+
+            rho0 = rho(state0)
+            drhom = BoundarizeOperator(self.inflow_tag)(rho(state)) - rho0
+            dumvec = BoundarizeOperator(self.inflow_tag)(u(state)) - u(state0)
+            dpm = BoundarizeOperator(self.inflow_tag)(p(state)) - p(state0)
+            c = BoundarizeOperator(self.inflow_tag)(
+                (self.gamma * p(state) / rho(state))**0.5)
+
+            prims = join_fields(
+                    numpy.dot(normal, dumvec)*rho0/(2*c) + dpm/(2*c*c) + rho0,
+                    c*rho0*numpy.dot(normal, dumvec)/2 + dpm/2 + p(state0),
+                    normal*numpy.dot(normal, dumvec)/2 + dpm*normal/(2*c*rho0)
+                    + u(state0))
+
+            cons = join_fields(
+                   prims[0],
+                   prims[1] / (self.gamma - 1) + prims[0] / 2 *
+                       numpy.dot(prims[2: 2+self.dimensions], 
+                       prims[2: 2+self.dimensions]),
+                   prims[0] * prims[2: 2+self.dimensions])
+            return cons
+
+        def noslip_state(state):
+            from hedge.optemplate import make_normal
+            normal = make_normal(self.noslip_tag, self.dimensions)
+
+            state0 = make_vector_field("bc_q_noslip", self.dimensions+2)
+
+            rho0 = rho(state0)
+            drhom = BoundarizeOperator(self.noslip_tag)(rho(state)) - rho0
+            dumvec = BoundarizeOperator(self.noslip_tag)(u(state)) - u(state0)
+            dpm = BoundarizeOperator(self.noslip_tag)(p(state)) - p(state0)
+            c = BoundarizeOperator(self.noslip_tag)(
+                (self.gamma * p(state) / rho(state))**0.5)
+
+            prims = join_fields(
+                    numpy.dot(normal, dumvec)*rho0/(2*c) + dpm/(2*c*c) + rho0,
+                    c*rho0*numpy.dot(normal, dumvec)/2 + dpm/2 + p(state0),
+                    [0]*self.dimensions)
+                    #normal*numpy.dot(normal, dumvec)/2 + dpm*normal/(2*c*rho0)
+                    #+u(state0))
+
+            cons = join_fields(
+                   prims[0],
+                   prims[1] / (self.gamma - 1) + prims[0] / 2 *
+                       numpy.dot(prims[2: 2+self.dimensions], 
+                       prims[2: 2+self.dimensions]),
+                   prims[0] * prims[2: 2+self.dimensions])
+            return cons
+
         all_tags_and_bcs = [
-                (self.outflow_tag, BoundarizeOperator(self.outflow_tag)(state)),
-                (self.inflow_tag, make_vector_field("bc_q_in", self.dimensions+2)),
-                (self.no_slip_tag, BoundarizeOperator(self.no_slip_tag)(join_fields(
-                    # rho
-                    state[0],
-                    # energy
-                    state[1],
-                    # momenta
-                    make_obj_array(numpy.zeros(self.dimensions))
-                    )))
+                (self.outflow_tag, outflow_state(state)),
+                (self.inflow_tag, inflow_state(state)),
+                (self.noslip_tag, noslip_state(state))
                     ]
 
         flux_state = flux(state)
@@ -448,7 +543,7 @@ class NavierStokesWithHeatOperator(GasDynamicsOperatorBase):
         return join_fields(
                 (- numpy.dot(make_nabla(self.dimensions), flux_state)
                  + InverseMassOperator()*make_lax_friedrichs_flux(
-                        wave_speed=cse(ElementwiseMaxOperator()*speed),
+                        wave_speed=cse(ElementwiseMaxOperator()*speed, "emax_c"),
                         state=state, fluxes=flux_state,
                         bdry_tags_states_and_fluxes=[
                             (tag, bc, bdry_flux(bc, state, tag))
@@ -457,8 +552,3 @@ class NavierStokesWithHeatOperator(GasDynamicsOperatorBase):
                         strong=True
                         )),
                  speed)
-
-
-
-
-
