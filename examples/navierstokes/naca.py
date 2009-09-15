@@ -38,8 +38,9 @@ class Naca:
         t_inf = 280
         c = (self.gamma * self.spec_gas_const * t_inf)**0.5
         Ma = 0.3
-        u = Ma * c
-        v = 0
+        velocity = Ma * c
+        u = velocity #numpy.cos(3./180.*numpy.pi) * velocity
+        v = 0 #numpy.sin(3./180.*numpy.pi) * velocity
         p = rho_value * self.spec_gas_const * t_inf
         rho_u = rho * u
         rho_v = rho * v
@@ -63,8 +64,8 @@ class Naca:
 def nacamesh():
     def airfoil_from_generator():
         import meshpy.naca as naca
-        return naca.generate_naca(naca_digits="0012", number_of_points=20,
-                sharp_trailing_edge=True, uniform_distribution=True,
+        return naca.generate_naca(naca_digits="0012", number_of_points=100,
+                sharp_trailing_edge=True, uniform_distribution=False,
                 verbose=True)
 
     def round_trip_connect(seq):
@@ -78,8 +79,8 @@ def nacamesh():
 
         pt_back = numpy.array([1,0])
 
-        max_area_front = 0.2*la.norm(barycenter) + 1e-3
-        max_area_back = 2*la.norm(barycenter-pt_back) + 1e-1
+        max_area_front = 0.02*la.norm(barycenter) + 1e-5
+        max_area_back = 0.2*la.norm(barycenter-pt_back) + 1e-3
         return bool(area > min(max_area_front, max_area_back))
 
     import sys
@@ -93,13 +94,15 @@ def nacamesh():
     builder.add_geometry(points=points,
             facets=round_trip_connect(points),
             facet_markers=profile_marker)
-    builder.wrap_in_box(1)
+    builder.wrap_in_box(2, (10, 8))
 
     from meshpy.triangle import MeshInfo, build
     mi = MeshInfo()
     builder.set(mi)
     mi.set_holes([builder.center()])
+
     mesh = build(mi, refinement_func=needs_refinement,
+            allow_boundary_steiner=False,
             generate_faces=True)
 
     print "%d elements" % len(mesh.elements)
@@ -121,6 +124,8 @@ def nacamesh():
         return [face_marker_to_tag[face_marker]]
 
     from hedge.mesh import make_conformal_mesh
+    print mesh.points
+    raw_input()
     return make_conformal_mesh(
             mesh.points, mesh.elements, bdry_tagger,
             periodicity=[None, ("minus_y", "plus_y")])
@@ -147,7 +152,7 @@ def main():
     else:
         mesh_data = rcon.receive_mesh()
 
-    for order in [1]:
+    for order in [3]:
         discr = rcon.make_discretization(mesh_data, order=order,
 			debug=["cuda_no_plan",
                                #"dump_dataflow_graph",
@@ -164,7 +169,7 @@ def main():
 
         from hedge.models.gas_dynamics.navier_stokes import NavierStokesWithHeatOperator
         op = NavierStokesWithHeatOperator(dimensions=2, gamma=gamma,
-                #prandtl=prandtl, spec_gas_const=spec_gas_const, 
+                prandtl=prandtl, spec_gas_const=spec_gas_const, 
                 bc=naca, 
                 inflow_tag="inflow", outflow_tag="outflow", no_slip_tag="no_slip")
 
@@ -180,7 +185,6 @@ def main():
         dt = discr.dt_factor(max_eigval[0], order=2)
         final_time = 0.001
         nsteps = int(final_time/dt)+1
-        #nsteps = 1000     # just for the purpose of testing
         dt = final_time/nsteps
 
         if rcon.is_head_rank:
@@ -213,7 +217,7 @@ def main():
         for step in range(nsteps):
             logmgr.tick()
 
-            if step % 100 == 0:
+            if step % 10000 == 0:
             #if False:
                 visf = vis.make_file("naca-%d-%04d" % (order, step))
 
@@ -238,16 +242,18 @@ def main():
                             ("rhs_e", discr.convert_volume(op.e(rhs_fields), kind="numpy")),
                             ("rhs_rho_u", discr.convert_volume(op.rho_u(rhs_fields), kind="numpy")),
                             ],
-                        #expressions=[
+                        expressions=[
                             #("diff_rho", "rho-true_rho"),
                             #("diff_e", "e-true_e"),
                             #("diff_rho_u", "rho_u-true_rho_u", DB_VARTYPE_VECTOR),
 
-                            #("p", "0.4*(e- 0.5*(rho_u*u))"),
-                            #],
+                            ("p", "(0.4)*(e- 0.5*(rho_u*u))"),
+                            ],
                         time=t, step=step
                         )
                 visf.close()
+
+            old_fields = fields
 
             fields = stepper(fields, t, dt, rhs)
             t += dt
@@ -258,9 +264,9 @@ def main():
         logmgr.save()
 
         true_fields = naca.volume_interpolant(t, discr)
-        eoc_rec.add_data_point(order, discr.norm(fields-true_fields))
+        eoc_rec.add_data_point(order, fields-old_fields)
         print
-        print eoc_rec.pretty_print("P.Deg.", "L2 Error")
+        print eoc_rec.pretty_print("P.Deg.", "Residual")
 
 if __name__ == "__main__":
     main()
