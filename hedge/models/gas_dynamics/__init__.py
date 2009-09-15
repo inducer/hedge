@@ -73,12 +73,14 @@ class GasDynamicsOperatorBase(TimeDependentOperator):
 
         return wrap
 
-    def _scotts_bind(self, discr):
+    def scotts_bind(self, discr):  #IMPLIMENTS 1D inflow/outflow for Euler
         from hedge.mesh import TAG_ALL, TAG_NONE
         from hedge.tools import join_fields
         bound_op = discr.compile(self.op_template())
         def wrap(t, q):
             temp1=discr.get_boundary('outflow').vol_indices
+            #temp1=discr.get_boundary(TAG_ALL).vol_indices
+            #ASSUMES 1D
             temp= join_fields(q[0][temp1], q[1][temp1], q[2][temp1])
             opt_result = bound_op(
                     q=q, 

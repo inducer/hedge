@@ -88,6 +88,9 @@ class EulerOperator(GasDynamicsOperatorBase):
 
         state = make_vector_field("q", self.dimensions+2)
         bc_state = make_vector_field("bc_q", self.dimensions+2)
+        #this line works with scott_bind for outflow conditions
+        bc_state_out = make_vector_field("bc_q_out", self.dimensions+2)
+
 
         c = cse(sqrt(self.gamma*p(state)/self.rho(state)))
 
@@ -95,6 +98,23 @@ class EulerOperator(GasDynamicsOperatorBase):
 
         from hedge.tools import make_lax_friedrichs_flux, join_fields
         from hedge.mesh import TAG_ALL
+
+        #from Euler1DScott_Order.py 'import' inflow/outflow
+        #bdry_tags_and_states=[(TAG_ALL, bc_state)]
+        #bdry_tags_and_states=[('inflow', bc_state)]
+        #bdry_tags_states_and_fluxes=[('inflow', bc_state,flux(bc_state)),(('outflow', bc_state_out,flux(bc_state_out)))]
+        #bdry_tags_states_and_fluxes=[(TAG_ALL, bc_state, flux(bc_state))]
+        from hedge.flux import  make_normal, IfPositive
+        from hedge.optemplate import BoundarizeOperator
+        normal = make_normal(self.dimensions)
+        #temp = IfPositive(numpy.dot(normal, self.u(state)),u,bc_state)
+        #temp = IfPositive(numpy.dot(normal, self.u(state)),BoundarizeOperator(TAG_ALL)*u,bc_state)
+        #temp = IfPositive(numpy.dot(normal, self.u(state)),bc_state_out,bc_state)
+        temp = IfPositive(numpy.dot(normal, self.u(bc_state_out)),bc_state_out,bc_state)
+        #temp = IfPositive(self.u(bc_state),bc_state_out,bc_state)
+        #print temp
+        bdry_tags_states_and_fluxes=[(TAG_ALL, temp, flux(temp))]
+
 
         flux_state = flux(state)
 
@@ -105,14 +125,10 @@ class EulerOperator(GasDynamicsOperatorBase):
 			ElementwiseMaxOperator()*
 			speed,
                         state=state, fluxes=flux_state,
-                        bdry_tags_states_and_fluxes=[
-                            (TAG_ALL, bc_state, flux(bc_state))
-                            ],
+                        bdry_tags_states_and_fluxes=bdry_tags_states_and_fluxes,
                         strong=True
                         )),
                     speed)
-
-
 
 
 class SourcesEulerOperator(GasDynamicsOperatorBase):

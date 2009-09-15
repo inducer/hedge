@@ -1160,40 +1160,13 @@ def make_lax_friedrichs_flux(wave_speed, state, fluxes, bdry_tags_states_and_flu
 
     from hedge.optemplate import pair_with_boundary
 
-    #temp1 = (flux_op*int_operand
-    #        + sum(
-    #            flux_op*pair_with_boundary(int_operand,
-    #                join_fields(0, ext_state, *flux_func(ext_state)), tag)
-    #            for tag, ext_state in bdry_tags_and_states)
-    #       )
-    #print temp1
-    #temp1 =sum(
-    #            pair_with_boundary(int_operand,
-    #                join_fields(0, ext_state, *flux_func(ext_state)), tag)
-    #            for tag, ext_state in bdry_tags_and_states)
-    #print temp1
-
-    #first way, impose exact solution as BC
-    # OLD WAY:
-    #return (flux_op*int_operand
-            #+ sum(
-                #flux_op*pair_with_boundary(int_operand,
-                    #join_fields(0, ext_state, *flux_func(ext_state)), tag)
-                #for tag, ext_state in bdry_tags_and_states)
-           #)
-    #impose no BC (is this true??)
-    #impose no BC on LHS, exact solution on RHS
+    # OLD WAY (with new notation, bdry_tatgs_and_states=bdry_tatgs_states_and_fluxes):
     #return (flux_op*int_operand
     #        + sum(
     #            flux_op*pair_with_boundary(int_operand,
     #                join_fields(0, ext_state, *flux_func(ext_state)), tag)
-    #            for tag, ext_state in bdry_tags_and_states)
-    #        + sum(
-    #            flux_op*pair_with_boundary(int_operand,
-    #                join_fields(0, ext_state, *flux_func(ext_state)), tag)
-    #            for tag, ext_state in bdry_tags_and_states)
+    #            for tag, ext_state in bdry_tags_states_and_fluxes)
     #       )
-    #pdb.set_trace()
 
     # NEW WAY:
     return (flux_op*int_operand

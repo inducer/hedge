@@ -64,6 +64,7 @@ class AdvectionOperatorBase(TimeDependentOperator):
             return u.avg*numpy.dot(normal, self.v) \
                     + 0.5*la.norm(self.v)*(u.int - u.ext)
         elif self.flux_type == "upwind":
+            print IfPositive(numpy.dot(normal, self.v),u.int, u.ext)
             return (numpy.dot(normal, self.v)*
                     IfPositive(numpy.dot(normal, self.v),
                         u.int, # outflow
