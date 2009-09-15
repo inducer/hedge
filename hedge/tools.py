@@ -1157,47 +1157,11 @@ def make_lax_friedrichs_flux(wave_speed, state, fluxes, bdry_tags_states_and_flu
     flux_op = get_flux_operator(num_flux)
     int_operand = join_fields(wave_speed, state, *fluxes)
 
-    from hedge.optemplate import pair_with_boundary
+    from hedge.optemplate import BoundaryPair
 
-    #temp1 = (flux_op*int_operand
-    #        + sum(
-    #            flux_op*pair_with_boundary(int_operand,
-    #                join_fields(0, ext_state, *flux_func(ext_state)), tag)
-    #            for tag, ext_state in bdry_tags_and_states)
-    #       )
-    #print temp1
-    #temp1 =sum(
-    #            pair_with_boundary(int_operand,
-    #                join_fields(0, ext_state, *flux_func(ext_state)), tag)
-    #            for tag, ext_state in bdry_tags_and_states)
-    #print temp1
-
-    #first way, impose exact solution as BC
-    # OLD WAY:
-    #return (flux_op*int_operand
-            #+ sum(
-                #flux_op*pair_with_boundary(int_operand,
-                    #join_fields(0, ext_state, *flux_func(ext_state)), tag)
-                #for tag, ext_state in bdry_tags_and_states)
-           #)
-    #impose no BC (is this true??)
-    #impose no BC on LHS, exact solution on RHS
-    #return (flux_op*int_operand
-    #        + sum(
-    #            flux_op*pair_with_boundary(int_operand,
-    #                join_fields(0, ext_state, *flux_func(ext_state)), tag)
-    #            for tag, ext_state in bdry_tags_and_states)
-    #        + sum(
-    #            flux_op*pair_with_boundary(int_operand,
-    #                join_fields(0, ext_state, *flux_func(ext_state)), tag)
-    #            for tag, ext_state in bdry_tags_and_states)
-    #       )
-    #pdb.set_trace()
-
-    # NEW WAY:
     return (flux_op*int_operand
             + sum(
-                flux_op*pair_with_boundary(int_operand,
+                flux_op*BoundaryPair(int_operand,
                     join_fields(0, bdry_state, *bdry_fluxes), tag)
                 for tag, bdry_state, bdry_fluxes in bdry_tags_states_and_fluxes))
 
@@ -1255,7 +1219,7 @@ def make_unique_filesystem_object(stem, extension="", directory="",
     if creator is None:
         def creator(name):
             return os.fdopen(os.open(name,
-                    os.O_CREAT | os.O_WRONLY | os.O_EXCL, 0755), "w")
+                    os.O_CREAT | os.O_WRONLY | os.O_EXCL, 0444), "w")
 
     i = 0
     while True:
