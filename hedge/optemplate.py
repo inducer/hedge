@@ -39,6 +39,7 @@ from pymbolic.mapper import CSECachingMapperMixin
 def make_common_subexpression(field, prefix=None): 
     from hedge.tools import log_shape
 
+    from hedge.tools import is_zero
     from pymbolic.primitives import CommonSubexpression
 
     ls = log_shape(field)
@@ -51,11 +52,18 @@ def make_common_subexpression(field, prefix=None):
                 component_prefix = prefix+"_".join(str(i_i) for i_i in i)
             else:
                 component_prefix = None
-            result[i] = CommonSubexpression(field[i], component_prefix)
+
+            if is_zero(field[i]):
+                result[i] = 0
+            else:
+                result[i] = CommonSubexpression(field[i], component_prefix)
             
         return result
     else:
-        return CommonSubexpression(field, prefix)
+        if is_zero(field):
+            return 0
+        else:
+            return CommonSubexpression(field, prefix)
 
 
 
