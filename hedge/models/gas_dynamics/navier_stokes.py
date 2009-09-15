@@ -31,6 +31,7 @@ import hedge.data
 from pytools import memoize_method
 from hedge.models import Operator, TimeDependentOperator
 from hedge.models.gas_dynamics import GasDynamicsOperatorBase
+from pytools import Record
 
 
 
@@ -444,62 +445,87 @@ class NavierStokesWithHeatOperator(GasDynamicsOperatorBase):
 
         # boundary conditions -------------------------------------------------
 
+        class BCInfo(Record): pass
+
+        def make_bc_info(bc_name, tag, state, set_velocity_to_zero=False):
+            if set_velocity_to_zero:
+                state0 = join_fields(make_vector_field(bc_name, 2), [0]*self.dimensions)
+            else:
+                state0 = make_vector_field(bc_name, self.dimensions+2)
+
+            rho0 = rho(state0)
+            p0 = p(state0)
+            u0 = u(state0)
+            c0 = (self.gamma * p0 / rho0)**0.5
+
+            bdrize_op = BoundarizeOperator(tag)
+            return BCInfo(
+                rho0=rho0, p0=p0, u0=u0, c0=c0,
+
+                # notation: suffix "m" for "minus", i.e. "interior"
+                drhom=cse(bdrize_op(rho(state)) - rho0, "drhom"),
+                dumvec=cse(bdrize_op(u(state)) - u0, "dumvec"),
+                dpm=cse(bdrize_op(p(state)) - p0, "dpm"))
+
+        def primitive_to_conservative(prims):
+            rho = prims[0]
+            p = prims[1]
+            u = prims[2:]
+            return join_fields(
+                   rho,
+                   cse(p / (self.gamma - 1) + rho / 2 * numpy.dot(u, u), "e"),
+                   rho * u)
+
         def outflow_state(state):
             from hedge.optemplate import make_normal
             normal = make_normal(self.outflow_tag, self.dimensions)
+            bc = make_bc_info("bc_q_out", self.outflow_tag, state)
 
-            state0 = make_vector_field("bc_q_out", self.dimensions+2)
+            # see hedge/doc/maxima/euler.mac
+            return primitive_to_conservative(join_fields(
+                # bc rho
+                cse(bc.rho0
+                + bc.drhom + numpy.dot(normal, bc.dumvec)*bc.rho0/(2*bc.c0)
+                - bc.dpm/(2*bc.c0*bc.c0), "bc_rho_outflow"),
 
-            rho0 = rho(state0)
-            drhom = BoundarizeOperator(self.outflow_tag)(rho(state)) - rho0
-            dumvec = BoundarizeOperator(self.outflow_tag)(u(state)) - u(state0)
-            dpm = BoundarizeOperator(self.outflow_tag)(p(state)) - p(state0)
-            c = BoundarizeOperator(self.outflow_tag)(
-                (self.gamma * p(state) / rho(state))**0.5)
+                # bc p
+                cse(bc.p0
+                + bc.c0*bc.rho0*numpy.dot(normal, bc.dumvec)/2 + bc.dpm/2, "bc_p_outflow"),
 
-            prims = join_fields(
-                    drhom + numpy.dot(normal, dumvec)*rho0/(2*c) -
-                        dpm/(2*c*c) + rho0,
-                    c*rho0*numpy.dot(normal, dumvec)/2 + dpm/2 + p(state0),
-                    dumvec - normal*numpy.dot(normal, dumvec)/2 +
-                        dpm*normal/(2*c*rho0) + u(state0))
+                # bc u
+                cse(bc.u0
+                + bc.dumvec - normal*numpy.dot(normal, bc.dumvec)/2
+                + bc.dpm*normal/(2*bc.c0*bc.rho0), "bc_u_outflow")))
 
-            cons = join_fields(
-                   prims[0],
-                   prims[1] / (self.gamma - 1) + prims[0] / 2 *
-                       numpy.dot(prims[2: 2+self.dimensions], 
-                       prims[2: 2+self.dimensions]),
-                   prims[0] * prims[2: 2+self.dimensions])
-            return cons
+        def inflow_state_inner(normal, bc, name):
+            # see hedge/doc/maxima/euler.mac
+            return primitive_to_conservative(join_fields(
+                # bc rho
+                cse(bc.rho0
+                + numpy.dot(normal, bc.dumvec)*bc.rho0/(2*bc.c0) + bc.dpm/(2*bc.c0*bc.c0), "bc_rho_"+name),
+
+                # bc p
+                cse(bc.p0
+                + bc.c0*bc.rho0*numpy.dot(normal, bc.dumvec)/2 + bc.dpm/2, "bc_p_"+name),
+
+                # bc u
+                cse(bc.u0
+                + normal*numpy.dot(normal, bc.dumvec)/2 + bc.dpm*normal/(2*bc.c0*bc.rho0), "bc_u_"+name)))
 
         def inflow_state(state):
             from hedge.optemplate import make_normal
             normal = make_normal(self.inflow_tag, self.dimensions)
-
-            state0 = make_vector_field("bc_q_in", self.dimensions+2)
-
-            rho0 = rho(state0)
-            drhom = BoundarizeOperator(self.inflow_tag)(rho(state)) - rho0
-            dumvec = BoundarizeOperator(self.inflow_tag)(u(state)) - u(state0)
-            dpm = BoundarizeOperator(self.inflow_tag)(p(state)) - p(state0)
-            c = BoundarizeOperator(self.inflow_tag)(
-                (self.gamma * p(state) / rho(state))**0.5)
-
-            prims = join_fields(
-                    numpy.dot(normal, dumvec)*rho0/(2*c) + dpm/(2*c*c) + rho0,
-                    c*rho0*numpy.dot(normal, dumvec)/2 + dpm/2 + p(state0),
-                    normal*numpy.dot(normal, dumvec)/2 + dpm*normal/(2*c*rho0)
-                    + u(state0))
-
-            cons = join_fields(
-                   prims[0],
-                   prims[1] / (self.gamma - 1) + prims[0] / 2 *
-                       numpy.dot(prims[2: 2+self.dimensions], 
-                       prims[2: 2+self.dimensions]),
-                   prims[0] * prims[2: 2+self.dimensions])
-            return cons
+            bc = make_bc_info("bc_q_in", self.inflow_tag, state)
+            return inflow_state_inner(normal, bc, "inflow")
 
         def noslip_state(state):
+            from hedge.optemplate import make_normal
+            normal = make_normal(self.noslip_tag, self.dimensions)
+            bc = make_bc_info("bc_q_noslip", self.noslip_tag, state,
+                    set_velocity_to_zero=True)
+            return inflow_state_inner(normal, bc, "noslip")
+
+        def noslip_state_old(state):
             from hedge.optemplate import make_normal
             normal = make_normal(self.noslip_tag, self.dimensions)
 
@@ -512,20 +538,14 @@ class NavierStokesWithHeatOperator(GasDynamicsOperatorBase):
             c = BoundarizeOperator(self.noslip_tag)(
                 (self.gamma * p(state) / rho(state))**0.5)
 
-            prims = join_fields(
+            # see hedge/doc/maxima/euler.mac, under inflow
+            return primitive_to_conservative(join_fields(
                     numpy.dot(normal, dumvec)*rho0/(2*c) + dpm/(2*c*c) + rho0,
                     c*rho0*numpy.dot(normal, dumvec)/2 + dpm/2 + p(state0),
                     [0]*self.dimensions)
                     #normal*numpy.dot(normal, dumvec)/2 + dpm*normal/(2*c*rho0)
                     #+u(state0))
-
-            cons = join_fields(
-                   prims[0],
-                   prims[1] / (self.gamma - 1) + prims[0] / 2 *
-                       numpy.dot(prims[2: 2+self.dimensions], 
-                       prims[2: 2+self.dimensions]),
-                   prims[0] * prims[2: 2+self.dimensions])
-            return cons
+                    )
 
         all_tags_and_bcs = [
                 (self.outflow_tag, outflow_state(state)),
