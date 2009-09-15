@@ -108,13 +108,12 @@ def main(write_output=True):
                 velocity=[1,0])
         fields = vortex.volume_interpolant(0, discr)
 
-        #from hedge.models.gas_dynamics.euler import EulerOperator
-        #from hedge.mesh import TAG_ALL
-        #op = EulerOperator(dimensions=2, gamma=gamma, bc=vortex, inflow_tag=TAG_ALL)
-        from hedge.models.gas_dynamics.navier_stokes import NavierStokesWithHeatOperator
+        from hedge.models.gasdynamics import GasDynamicsOperator
         from hedge.mesh import TAG_ALL
-        op = NavierStokesWithHeatOperator(dimensions=2, gamma=gamma, bc=vortex,
-                inflow_tag=TAG_ALL)
+        op = GasDynamicsOperator(dimensions=2, discr= discr,
+                gamma=gamma, prandtl=0.72, spec_gas_const=287.1,
+                bc_inflow=vortex, bc_outflow=vortex, bc_noslip=vortex,
+                inflow_tag=TAG_ALL, euler=True)
 
         euler_ex = op.bind(discr)
 
