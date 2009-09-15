@@ -286,6 +286,8 @@ class MaxwellOperator(TimeDependentOperator):
         from hedge.tools import join_fields
         return join_fields(e, h)
 
+    assemble_fields = assemble_eh
+
     @memoize_method
     def partial_to_eh_subsets(self):
         e_subset = self.get_eh_subset()[0:3]
