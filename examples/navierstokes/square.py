@@ -148,10 +148,10 @@ def main():
     eoc_rec = EOCRecorder()
     
     if rcon.is_head_rank:
-        mesh = squaremesh()
-        #from hedge.mesh import make_rect_mesh
-        #mesh = make_rect_mesh(
-               #boundary_tagger=lambda fvi, el, fn, all_v: ["inflow"])
+        #mesh = squaremesh()
+        from hedge.mesh import make_rect_mesh
+        mesh = make_rect_mesh(
+               boundary_tagger=lambda fvi, el, fn, all_v: ["inflow"])
         mesh_data = rcon.distribute_mesh(mesh)
     else:
         mesh_data = rcon.receive_mesh()
@@ -174,11 +174,12 @@ def main():
         square = Square(gamma=gamma, spec_gas_const=spec_gas_const)
         fields = square.volume_interpolant(0, discr)
 
-        from hedge.models.gas_dynamics.navier_stokes import NavierStokesWithHeatOperator
-        op = NavierStokesWithHeatOperator(dimensions=2, discr=discr, gamma=gamma,
+        from hedge.models.gasdynamics import GasDynamicsOperator
+        op = GasDynamicsOperator(dimensions=2, discr=discr, gamma=gamma,
                 prandtl=prandtl, spec_gas_const=spec_gas_const, 
-                bc_q_in=square, bc_q_out=square, bc_q_noslip=square,
-                inflow_tag="inflow", outflow_tag="outflow", noslip_tag="noslip")
+                bc_inflow=square, bc_outflow=square, bc_noslip=square,
+                inflow_tag="inflow", outflow_tag="outflow", noslip_tag="noslip",
+                euler = False)
 
         navierstokes_ex = op.bind(discr)
 
