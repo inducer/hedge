@@ -142,7 +142,9 @@ def test_2d_gauss_theorem():
             debug=discr_class.noninteractive_debug_flags())
     ref_discr = discr_class(mesh, order=order)
 
-    from hedge.flux import make_normal, FluxScalarPlaceholder, IfPositive
+    from hedge.flux import make_normal, FluxScalarPlaceholder
+    from pymbolic.primitives import IfPositive
+
     normal = make_normal(discr.dimensions)
     flux_f_ph = FluxScalarPlaceholder(0)
     one_sided_x = flux_f_ph.int*normal[0]
@@ -158,7 +160,7 @@ def test_2d_gauss_theorem():
     f1_v = discr.interpolate_volume_function(f1)
     f2_v = discr.interpolate_volume_function(f2)
 
-    from hedge.optemplate import pair_with_boundary, Field, make_nabla, \
+    from hedge.optemplate import BoundaryPair, Field, make_nabla, \
             get_flux_operator
     nabla = make_nabla(discr.dimensions)
     diff_optp = nabla[0] * Field("f1") + nabla[1] * Field("f2")
@@ -168,9 +170,9 @@ def test_2d_gauss_theorem():
 
     flux_optp = (
             get_flux_operator(one_sided_x)
-            *pair_with_boundary(Field("f1"), Field("fz")) +
+            *BoundaryPair(Field("f1"), Field("fz")) +
             get_flux_operator(one_sided_y)
-            *pair_with_boundary(Field("f2"), Field("fz")))
+            *BoundaryPair(Field("f2"), Field("fz")))
 
     from hedge.mesh import TAG_ALL
     bdry_val = discr.compile(flux_optp)(f1=f1_v, f2=f2_v,
@@ -974,7 +976,7 @@ def test_elliptic():
                 assert sym_err<1e-12
                 #check_grad_mat()
 
-            from hedge.tools import parallel_cg
+            from hedge.iterative import parallel_cg
             truesol_v = discr.interpolate_volume_function(
                     lambda x, el: truesol_c(x))
             sol_v = -parallel_cg(

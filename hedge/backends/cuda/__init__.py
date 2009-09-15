@@ -66,7 +66,7 @@ class GPUBlock(object):
 class GPUFaceStorage(object):
     """Describes where the dofs of an element face are stored.
 
-    @ivar opposite: the L{GPUFacestorage} instance for the face
+    @ivar opposite: the L{GPUFaceStorage} instance for the face
       oposite to this one.
     """
     __slots__ = ["opposite"]
@@ -83,12 +83,12 @@ class GPUFaceStorage(object):
 class GPUInteriorFaceStorage(GPUFaceStorage):
     """Describes storage locations for a face local to an element in a block.
 
-    @ivar el_face: a tuple C{(element, face_number)}.
-    @ivar cpu_slice: the base index of the element in CPU numbering.
-    @ivar native_index_list_id: 
-    @ivar opp_write_index_list_id:
-    @ivar native_block: block in which element is to be found.
-    @ivar face_pair_side:
+    :ivar el_face: a tuple *(element, face_number)*.
+    :ivar cpu_slice: the base index of the element in CPU numbering.
+    :ivar native_index_list_id: 
+    :ivar opp_write_index_list_id:
+    :ivar native_block: block in which element is to be found.
+    :ivar face_pair_side:
     """
     __slots__ = [
             "el_face", "cpu_slice", 
@@ -349,7 +349,7 @@ class Discretization(hedge.discretization.Discretization):
             mpi_cuda_dev_filter=lambda dev: True):
         """
 
-        @arg tune_for: An optemplate for whose application this discretization's
+        :param tune_for: An optemplate for whose application this discretization's
         flux plan will be tuned.
         """
 
@@ -830,7 +830,7 @@ class Discretization(hedge.discretization.Discretization):
     @memoize_method
     def _gpu_boundary_embedding(self, tag):
         """Return an array of indices embedding a CPU boundary
-        field for C{tag} into the GPU boundary field."""
+        field for *tag* into the GPU boundary field."""
 
         bdry = self.get_boundary(tag)
         result = numpy.empty(
@@ -1227,10 +1227,10 @@ class Discretization(hedge.discretization.Discretization):
     # numbering tools ---------------------------------------------------------
     @memoize_method
     def elgroup_microblock_indices(self, elgroup):
-        """For a given L{hedge.discretization.ElementGroup} instance
-        C{elgroup}, return an index array (of dtype C{numpy.intp}) that,
+        """For a given :class:`hedge.discretization._ElementGroup` instance
+        *elgroup*, return an index array (of dtype :class:`numpy.intp`) that,
         indexed by the block-microblock element number, gives the element
-        number within C{elgroup}.
+        number within *elgroup*.
         """
 
         def get_el_index_in_el_group(el):

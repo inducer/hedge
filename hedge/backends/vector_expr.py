@@ -1,4 +1,4 @@
-"""Base facility for compiled vector expressions."""
+"""Base facility for C generation from vector expressions."""
 
 from __future__ import division
 

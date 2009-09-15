@@ -1,0 +1,172 @@
+kill(all);
+
+load("myhelpers.mac");
+
+assume(%gamma>1);
+
+d:2;
+usyms:[u,v,w];
+coords:[x,y,z];
+uvec:makelist(usyms[i], i, 1, d);
+rhouvec:rho*uvec;
+E_expr:p/(%gamma-1)+rho/2*uvec.uvec;
+
+p_solved:rhs(solve(E=E_expr,p)[1]);
+p_used: p; /* p or p_solved */
+
+/* fluxes ------------------------------------------------------------------- */
+vars:append([rho, E], rhouvec);
+depends(append([rho, E, p], uvec), [x,y,z,t]);
+
+rho_flux:rhouvec;
+E_flux:uvec*(E+p_used);
+rhou_flux:makelist(makelist(
+  rhouvec[i]*uvec[j] + if i = j then p_used else 0,
+  j, 1, d), i, 1, d);
+
+all_fluxes:makelist(
+  vstack([rho_flux[i]], [E_flux[i]], rhou_flux[i]),
+  i, 1, d);
+
+euler_eqns:makelist(
+  -'diff(vars[nr],t)=sum('diff(all_fluxes[i][nr], coords[i]), i, 1, d),
+  nr, 1, length(vars));
+
+/* linearization ------------------------------------------------------------ */
+u0vec:makelist(concat(usyms[i], 0), i, 1, d);
+duvec:makelist(concat('d, usyms[i]), i, 1, d);
+drhouvec:rho0*duvec+drho*u0vec;
+
+assume(%gamma>1);
+assume(p0>0);
+assume(rho0>0);
+
+zero_subst:append(
+    [rho=rho0, p=p0], 
+    makelist(usyms[i] =concat(usyms[i], 0), i, 1, d));
+lin_subst:append(
+    [rho=rho0+drho, p=p0+dp], 
+    makelist(usyms[i] =concat(usyms[i], 0) + duvec[i], i, 1, d));
+
+E0_expr:subst(zero_subst,E_expr);
+dE:subst(lin_subst,E_expr)-E0_expr;
+
+lin_subst:append(lin_subst, [E=E0+dE]);
+
+kill_second_order_terms(x):=block(
+  for lv1 in all_lin_vars do
+    for lv2 in all_lin_vars do
+      block(
+        x:ratsubst(0,lv1*lv2, x),
+        for co in coords do
+          x:ratsubst(0,diff(lv1, co)*lv2, x)),
+  x);
+
+lin_vars:append([drho, dE], drhouvec);
+all_lin_vars:append(duvec, [drho, dp]);
+
+depends(all_lin_vars, [x,y,z,t]);
+
+lin_euler_eqns:kill_second_order_terms(makelist(
+  /* ref solution is time-invariant*/
+  -diff(lin_vars[nr],t)
+  =sum(diff(subst(lin_subst, all_fluxes[i][nr]), coords[i]), i, 1, d),
+  nr, 1, length(vars)));
+
+lin_euler_eqns:ratsimp(lin_euler_eqns);
+
+/* convert to primitive variables */
+ddrho_dt: rhs(solve(lin_euler_eqns[1],diff(drho,t))[1]);
+
+lin_euler_eqns_p:makelist(lin_euler_eqns[i], i, 1, length(lin_euler_eqns));
+
+for i:2 thru d+2 do
+  lin_euler_eqns_p[i]:subst(diff(drho,t)=ddrho_dt, lin_euler_eqns_p[i]),
+
+for i:1 thru d do
+    lin_euler_eqns_p[2+i]:-solve(lin_euler_eqns_p[2+i], diff(duvec[i], t))[1];
+dduvec_dt: makelist(
+  rhs(solve(lin_euler_eqns_p[i+2],diff(duvec[i],t))[1]),
+  i, 1, d);
+
+lin_euler_eqns_p[2]:subst(E0=E0_expr, lin_euler_eqns_p[2]);
+for i:1 thru d do
+  lin_euler_eqns_p[2]:subst(diff(duvec[i],t)=dduvec_dt[i], lin_euler_eqns_p[2]);
+lin_euler_eqns_p[2]:-solve(lin_euler_eqns_p[2], diff(dp, t))[1];
+
+lin_euler_eqns_p:kill_second_order_terms(lin_euler_eqns_p);
+
+/* matrix building ---------------------------------------------------------- */
+prim_lin_vars:append([drho,dp],duvec);
+n:makelist(concat(n, coords[k]), k, 1, d);
+euler_mat:genmatrix(
+  lambda([i,j],
+    sum(n[k]
+      *diff(rhs(lin_euler_eqns_p[i]), diff(prim_lin_vars[j], coords[k])),
+      k, 1, d)),
+  length(lin_vars), length(lin_vars));
+
+/* diagonalize system ------------------------------------------------------- */
+[euler_V, euler_D, euler_invV]:hypdiagonalize(euler_mat);
+
+rel_D:ratsimp(euler_D - n.u0vec*ident(d+2));
+
+/* auxiliary variables, external and internal states ------------------------ */
+c0:sqrt(%gamma)*sqrt(p0)/sqrt(rho0);
+
+euler_wm:makelist(concat(prim_lin_vars[i], m), i, 1, length(prim_lin_vars));
+euler_wp:makelist(concat(prim_lin_vars[i], p), i, 1, length(prim_lin_vars));
+
+euler_sminw:hypsimp(euler_invV.euler_wm);
+euler_spinw:hypsimp(euler_invV.euler_wp);
+
+dumvec:makelist(euler_wm[i+2], i, 1, d);
+dupvec:makelist(euler_wp[i+2], i, 1, d);
+
+/* subsonic outflow bc------------------------------------------------------- */
+euler_outflowbdryspinw:makelist(
+  /* outer state equals free-stream flow, about which we have linearized. 
+  Hence the linearized state variable, which is the difference to free-stream
+  flow, is set to zero. */
+  /* 
+  = 0: convection: from interior
+  > 0: supersonic outflow: from interior
+  < 0: supersonic inflow: from exterior
+  */
+  if rel_D[i,i] >= 0 then euler_sminw[i,1] else 0,
+    i, 1, d+2);
+
+euler_woutflowbdry:fullhypsimp(euler_V.euler_outflowbdryspinw);
+
+euler_known_woutflowbdry:vstack([
+  drhom + n.dumvec*rho0/(2*c0) - dpm/(2*c0^2),
+  c0*rho0*(n.dumvec)/2 + dpm/2],
+  dumvec - n*(n.dumvec)/2 + dpm*n/(2*c0*rho0)
+  );
+
+euler_diff_woutflowbdry:hypsimp(euler_woutflowbdry-euler_known_woutflowbdry);
+assert(norm_2_squared(euler_diff_woutflowbdry)=0);
+
+/* subsonic inflow bc ------------------------------------------------------- */
+euler_inflowbdryspinw:makelist(
+  /* outer state equals free-stream flow, about which we have linearized. 
+  Hence the linearized state variable, which is the difference to free-stream
+  flow, is set to zero. */
+  /* 
+  > 0: supersonic outflow: from interior
+  = 0: convection: from exterior
+  < 0: supersonic inflow: from exterior
+  */
+  if rel_D[i,i] <= 0 then 0 else euler_sminw[i,1],
+    i, 1, d+2);
+
+euler_winflowbdry:fullhypsimp(euler_V.euler_inflowbdryspinw);
+
+euler_known_winflowbdry:vstack([
+  n.dumvec*rho0/(2*c0) + dpm/(2*c0^2),
+  c0*rho0*(n.dumvec)/2 + dpm/2],
+  n*(n.dumvec)/2 + dpm*n/(2*c0*rho0)
+  );
+
+euler_diff_winflowbdry:hypsimp(euler_winflowbdry-euler_known_winflowbdry);
+assert(norm_2_squared(euler_diff_winflowbdry)=0);

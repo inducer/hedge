@@ -75,7 +75,7 @@ class JacobiGaussQuadrature(Quadrature):
     """An M{N}th order Gauss quadrature associated with the Jacobi
     polynomials of type M{(alpha,beta) > -1} 
     
-    C{alpha} and C{beta} may not be -0.5.
+    *alpha* and *beta* may not be -0.5.
 
     Integrates on the interval (-1,1).
     """

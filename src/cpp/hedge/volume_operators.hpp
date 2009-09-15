@@ -318,7 +318,7 @@ namespace hedge {
     BOOST_FOREACH(const element_range er, ers)
     {
       std::fill(out_it+er.first, out_it+er.second,
-          *std::max(in_it+er.first, in_it+er.second));
+          *std::max_element(in_it+er.first, in_it+er.second));
     }
   }
 }

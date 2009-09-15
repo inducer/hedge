@@ -93,7 +93,7 @@ def main(write_output=True):
             )
     bound_op = op.bind(discr)
 
-    from hedge.tools import parallel_cg
+    from hedge.iterative import parallel_cg
     u = -parallel_cg(rcon, -bound_op, 
             bound_op.prepare_rhs(GivenFunction(rhs_c)), 
             debug=20, tol=5e-4,

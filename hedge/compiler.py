@@ -1,3 +1,5 @@
+"""Compiler to turn operator expression tree into (imperative) bytecode."""
+
 from __future__ import division
 
 __copyright__ = "Copyright (C) 2008 Andreas Kloeckner"

@@ -1,4 +1,4 @@
-"""Parallelism support"""
+"""MPI-based distributed-memory parallelism support"""
 
 from __future__ import division
 

@@ -50,6 +50,18 @@ namespace
 
 
 
+
+  template <class Scalar>
+  void expose_for_real_valued_type()
+  {
+    def("perform_elwise_max", 
+        perform_elwise_max<uniform_element_ranges, numpy_vector<Scalar> >,
+        (arg("ers"), arg("in"), arg("out")));
+  }
+
+
+
+
   template <class Scalar>
   void expose_for_type()
   {
@@ -74,10 +86,6 @@ namespace
     def("perform_elwise_scale", 
         perform_elwise_scale<uniform_element_ranges, Scalar>,
         (args("ers", "scale_factors", "operand", "result")));
-
-    def("perform_elwise_max", 
-        perform_elwise_max<uniform_element_ranges, numpy_vector<Scalar> >,
-        (arg("ers"), arg("in"), arg("out")));
   }
 }
 
@@ -110,4 +118,7 @@ void hedge_expose_volume_operators()
   expose_for_type<double>();
   expose_for_type<std::complex<float> >();
   expose_for_type<std::complex<double> >();
+
+  expose_for_real_valued_type<float>();
+  expose_for_real_valued_type<double>();
 }

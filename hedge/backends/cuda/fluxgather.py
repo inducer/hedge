@@ -96,7 +96,7 @@ class FluxConcretizer(FluxIdentityMapper):
         self.dep_to_index = dep_to_index
 
     def map_field_component(self, expr):
-        if expr.is_local:
+        if expr.is_interior:
             prefix = "a"
             f_expr = self.int_field_expr
         else:

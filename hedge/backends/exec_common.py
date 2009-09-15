@@ -1,4 +1,4 @@
-"""Base functionality for both JIT and dynamic CPU backends."""
+"""Code for operator execution shared among multiple backends."""
 
 from __future__ import division
 

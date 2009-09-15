@@ -1,5 +1,5 @@
 # -*- coding: utf8 -*-
-"""Canned operators for several PDEs, such as Maxwell's, heat, Poisson, etc."""
+"""Canned operators for several PDEs, such as Maxwell's, heat, Poisson, etc. (deprecated module)"""
 
 from __future__ import division
 
@@ -42,17 +42,21 @@ from hedge.models import Operator, TimeDependentOperator
 
 
 class StrongWaveOperator:
-    """This operator discretizes the Wave equation S{part}tt u = c^2 S{Delta} u.
+    """This operator discretizes the wave equation 
+    :math:`\\partial_t^2 u = c^2 \\Delta u`.
 
     To be precise, we discretize the hyperbolic system
 
-      * S{part}t u - c div v = 0
-      * S{part}t v - c grad u = 0
+    .. math::
 
-    The sign of M{v} determines whether we discretize the forward or the
+        \partial_t u - c \\nabla \\cdot v = 0
+
+        \partial_t v - c \\nabla u = 0
+
+    The sign of :math:`v` determines whether we discretize the forward or the
     backward wave equation.
 
-    c is assumed to be constant across all space.
+    :math:`c` is assumed to be constant across all space.
     """
 
     def __init__(self, c, dimensions, source_f=None,
@@ -110,7 +114,7 @@ class StrongWaveOperator:
     def op_template(self):
         from hedge.optemplate import \
                 make_vector_field, \
-                pair_with_boundary, \
+                BoundaryPair, \
                 get_flux_operator, \
                 make_nabla, \
                 InverseMassOperator, \
@@ -161,9 +165,9 @@ class StrongWaveOperator:
                 +
                 InverseMassOperator() * (
                     flux_op*w
-                    + flux_op * pair_with_boundary(w, dir_bc, self.dirichlet_tag)
-                    + flux_op * pair_with_boundary(w, neu_bc, self.neumann_tag)
-                    + flux_op * pair_with_boundary(w, rad_bc, self.radiation_tag)
+                    + flux_op * BoundaryPair(w, dir_bc, self.dirichlet_tag)
+                    + flux_op * BoundaryPair(w, neu_bc, self.neumann_tag)
+                    + flux_op * BoundaryPair(w, rad_bc, self.radiation_tag)
                     ))
 
 
@@ -193,12 +197,16 @@ class StrongWaveOperator:
 
 
 class VariableVelocityStrongWaveOperator:
-    """This operator discretizes the Wave equation S{part}tt u = c^2 S{Delta} u.
+    """This operator discretizes the wave equation 
+    :math:`\\partial_t^2 u = c^2 \\Delta u`.
 
     To be precise, we discretize the hyperbolic system
 
-      * S{part}t u - c div v = 0
-      * S{part}t v - c grad u = 0
+    .. math::
+
+        \partial_t u - c \\nabla \\cdot v = 0
+
+        \partial_t v - c \\nabla u = 0
     """
 
     def __init__(self, c, dimensions, source=None,
@@ -208,10 +216,10 @@ class VariableVelocityStrongWaveOperator:
             radiation_tag=hedge.mesh.TAG_NONE,
             time_sign=1):
         """`c` is assumed to be positive and conforms to the
-        `hedge.data.ITimeDependentGivenFunction` interface.
+        :class:`hedge.data.ITimeDependentGivenFunction` interface.
 
         `source` also conforms to the
-        `hedge.data.ITimeDependentGivenFunction` interface.
+        :class:`hedge.data.ITimeDependentGivenFunction` interface.
         """
         assert isinstance(dimensions, int)
 
@@ -259,7 +267,7 @@ class VariableVelocityStrongWaveOperator:
         from hedge.optemplate import \
                 Field, \
                 make_vector_field, \
-                pair_with_boundary, \
+                BoundaryPair, \
                 get_flux_operator, \
                 make_nabla, \
                 InverseMassOperator, \
@@ -320,9 +328,9 @@ class VariableVelocityStrongWaveOperator:
                 +
                 InverseMassOperator() * (
                     flux_op*flux_w
-                    + flux_op * pair_with_boundary(flux_w, dir_bc, self.dirichlet_tag)
-                    + flux_op * pair_with_boundary(flux_w, neu_bc, self.neumann_tag)
-                    + flux_op * pair_with_boundary(flux_w, rad_bc, self.radiation_tag)
+                    + flux_op * BoundaryPair(flux_w, dir_bc, self.dirichlet_tag)
+                    + flux_op * BoundaryPair(flux_w, neu_bc, self.neumann_tag)
+                    + flux_op * BoundaryPair(flux_w, rad_bc, self.radiation_tag)
                     ))
 
 

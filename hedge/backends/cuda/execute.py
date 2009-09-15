@@ -331,6 +331,14 @@ class ExecutionMapper(ExecutionMapperBase):
             field.gpudata, field_out.gpudata, mb_count)
 	return field_out
 
+    def map_if_positive(self, expr):
+        crit = self.rec(expr.criterion)
+        then_ = self.rec(expr.then_)
+        else_ = self.rec(expr.else_)
+
+        import pycuda.gpuarray as gpuarray
+        return gpuarray.if_positive(crit, then_, else_)
+
 
 
 

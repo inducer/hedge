@@ -109,8 +109,8 @@ class TwoRateAdamsBashforthTimeStepper(TimeStepper):
 
     def __call__(self, ys, t, rhss):
         """
-        @arg rhss: Matrix of right-hand sides, stored in row-major order, i.e.
-        C{[f2f, s2f, f2s, s2s]}.
+        :param rhss: Matrix of right-hand sides, stored in row-major order, 
+            i.e. *[f2f, s2f, f2s, s2s]*.
         """
         from hedge.tools import make_obj_array
 

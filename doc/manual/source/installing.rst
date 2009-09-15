@@ -123,10 +123,10 @@ For your information: This step in the installation will automatically
 download and install (or update) the correct versions of the following
 packages:
 
- * Pytools
- * Pymbolic
- * PyUblas
- * MeshPy
+* Pytools
+* Pymbolic
+* PyUblas
+* MeshPy
 
 Success! So what now?
 ---------------------

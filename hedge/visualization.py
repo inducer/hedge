@@ -250,10 +250,10 @@ class VtkVisualizer(Visualizer, hedge.tools.Closable):
         self.update_pvd()
 
     def make_file(self, pathname):
-        """FIXME
+        """
 
         An appropriate extension (including the dot) is automatically
-        appended to `pathname'.
+        appended to *pathname*.
         """
         if self.pcontext is None or len(self.pcontext.ranks) == 1:
             return VtkFile(pathname+"."+self.grid.vtk_extension(),
@@ -423,11 +423,11 @@ class SiloVisualizer(Visualizer):
         pass
 
     def make_file(self, pathname):
-        """This function returns either a pylo.SiloFile or a
-        pylo.ParallelSiloFile, depending on the ParallelContext
+        """This function returns either a :class:`pylo.SiloFile` or a
+        :class:`pylo.ParallelSiloFile`, depending on the ParallelContext
         under which we are running
 
-        An extension of .silo is automatically appended to `pathname'.
+        An extension of .silo is automatically appended to *pathname*.
         """
         if not self.generated:
             self._generate()

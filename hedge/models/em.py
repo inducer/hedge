@@ -31,7 +31,7 @@ from hedge.models import TimeDependentOperator
 
 
 class MaxwellOperator(TimeDependentOperator):
-    """A 3D Maxwell operator with PEC boundaries.
+    """A 3D Maxwell operator.
 
     Field order is [Ex Ey Ez Hx Hy Hz].
     """
@@ -46,7 +46,7 @@ class MaxwellOperator(TimeDependentOperator):
             incident_tag=hedge.mesh.TAG_NONE,
             incident_bc=None, current=None, dimensions=None):
         """
-        @arg flux_type: can be in [0,1] for anything between central and upwind,
+        :param flux_type: can be in [0,1] for anything between central and upwind,
           or "lf" for Lax-Friedrichs.
         """
 
@@ -159,7 +159,7 @@ class MaxwellOperator(TimeDependentOperator):
                 1/self.mu * e_curl(e),
                 )
 
-        from hedge.optemplate import pair_with_boundary, \
+        from hedge.optemplate import BoundaryPair, \
                 InverseMassOperator, get_flux_operator, \
                 BoundarizeOperator
 
@@ -209,7 +209,7 @@ class MaxwellOperator(TimeDependentOperator):
         fld_cnt = count_subset(self.get_eh_subset())
 
         if self.incident_bc_data is not None:
-            from hedge.optemplate import make_common_subexpression
+            from hedge.tools import make_common_subexpression
             return make_common_subexpression(
                     -make_vector_field("incident_bc", fld_cnt))
         else:
@@ -219,7 +219,7 @@ class MaxwellOperator(TimeDependentOperator):
     def op_template(self, w=None):
         w = self.field_placeholder(w)
 
-        from hedge.optemplate import pair_with_boundary, \
+        from hedge.optemplate import BoundaryPair, \
                 InverseMassOperator, get_flux_operator
 
         flux_op = get_flux_operator(self.flux(self.flux_type))
@@ -228,11 +228,11 @@ class MaxwellOperator(TimeDependentOperator):
         return - self.local_derivatives(w) \
                 + InverseMassOperator()*(
                     flux_op * w
-                    +bdry_flux_op * pair_with_boundary(
+                    +bdry_flux_op * BoundaryPair(
                         w, self.pec_bc(w), self.pec_tag)
-                    +bdry_flux_op * pair_with_boundary(
+                    +bdry_flux_op * BoundaryPair(
                         w, self.absorbing_bc(w), self.absorb_tag)
-                    +bdry_flux_op * pair_with_boundary(
+                    +bdry_flux_op * BoundaryPair(
                         w, self.incident_bc(w), self.incident_tag)
                     )
 
@@ -286,6 +286,8 @@ class MaxwellOperator(TimeDependentOperator):
         from hedge.tools import join_fields
         return join_fields(e, h)
 
+    assemble_fields = assemble_eh
+
     @memoize_method
     def partial_to_eh_subsets(self):
         e_subset = self.get_eh_subset()[0:3]
@@ -307,7 +309,7 @@ class MaxwellOperator(TimeDependentOperator):
             return moa(e), moa(h)
 
     def get_eh_subset(self):
-        """Return a 6-tuple of C{bool}s indicating whether field components
+        """Return a 6-tuple of :class:`bool` objects indicating whether field components
         are to be computed. The fields are numbered in the order specified
         in the class documentation.
         """
@@ -384,6 +386,3 @@ class SourceFree1DMaxwellOperator(MaxwellOperator):
                 +
                 (False,False,True)
                 )
-
-
-

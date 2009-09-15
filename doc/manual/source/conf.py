@@ -23,7 +23,15 @@ import sys, os
 
 # Add any Sphinx extension module names here, as strings. They can be extensions
 # coming with Sphinx (named 'sphinx.ext.*') or your custom ones.
-#extensions = []
+extensions = [
+        'sphinx.ext.intersphinx',
+        'sphinx.ext.autodoc',
+        'sphinx.ext.pngmath',
+        'sphinx.ext.inheritance_diagram',
+        ]
+
+pngmath_dvipng_args = ['-gamma', '1.5', '-D', '110', '-bg', 'Transparent']
+pngmath_use_preview = True
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['.templates']
@@ -36,7 +44,7 @@ master_doc = 'index'
 
 # General substitutions.
 project = 'Hedge'
-copyright = '2008, Andreas Klöckner'
+copyright = u'2007-2009, Andreas Klöckner and contributors'
 
 # The default replacements for |version| and |release|, also used in various
 # other places throughout the built documents.
@@ -45,7 +53,7 @@ copyright = '2008, Andreas Klöckner'
 import re
 ver_re = re.compile(r'version\s*=\s*"([0-9.]+)"')
 version = [ver_re.search(line).group(1) 
-        for line in open("../../setup.py").readlines() 
+        for line in open("../../../setup.py").readlines() 
         if ver_re.search(line)][0]
 # The full version, including alpha/beta/rc tags.
 release = version
@@ -161,7 +169,7 @@ htmlhelp_basename = 'Hedgedoc'
 # Grouping the document tree into LaTeX files. List of tuples
 # (source start file, target name, title, author, document class [howto/manual]).
 latex_documents = [
-  ('index', 'Hedge.tex', 'Hedge Documentation', 'Andreas Klöckner', 'manual'),
+  ('index', 'Hedge.tex', 'Hedge Documentation', u'Andreas Klöckner', 'manual'),
 ]
 
 # The name of an image file (relative to this directory) to place at the top of
@@ -180,3 +188,28 @@ latex_documents = [
 
 # If false, no module index is generated.
 #latex_use_modindex = True
+
+intersphinx_mapping = {
+        'http://docs.python.org/dev': None,
+        'http://docs.scipy.org/doc/numpy/': None,
+        'http://documen.tician.de/codepy/': None,
+        'http://documen.tician.de/boostmpi/': None,
+        'http://documen.tician.de/pymbolic/': None,
+        'http://documen.tician.de/pylo/': None,
+        'http://documen.tician.de/meshpy/': None,
+        }
+
+def autodoc_process_signature(app, what, name, obj, options, signature, 
+        return_annotation):
+    from re import sub
+    signature = sub(r"<class 'hedge\.mesh\.(TAG_[A-Z]+)'>", r"\1", signature)
+    signature = sub(r"<(hedge\.data\.[a-zA-Z]+) object at 0x[0-9a-f]+>", r"\1(0)", signature)
+    signature = sub(r"<function <lambda> at 0x[0-9a-f]+>", "function", signature)
+    signature = sub(r"0*0000000000[0-9]", "", signature)
+    return (signature, return_annotation)
+
+def setup(app):
+    app.connect("autodoc-process-signature", autodoc_process_signature)
+
+
+

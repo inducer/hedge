@@ -173,6 +173,19 @@ class ExecutionMapper(CPUExecutionMapperBase):
 
         return [(insn.name, out)], []
 
+    def map_if_positive(self, expr):
+        crit = self.rec(expr.criterion) > 0
+        then_ = self.rec(expr.then_)
+        else_ = self.rec(expr.else_)
+
+        true_indices = numpy.nonzero(crit)
+        false_indices = numpy.nonzero(~crit)
+
+        result = numpy.empty_like(then_)
+        result[true_indices] = then_[true_indices]
+        result[false_indices] = else_[false_indices]
+        return result
+
 
 
 

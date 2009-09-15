@@ -155,7 +155,7 @@ class EncodedBuffer:
         raise NotImplementedError
 
     def add_to_xml_element(self, xml_element):
-        """Add encoded buffer to the given C{xml_element}.
+        """Add encoded buffer to the given *xml_element*
         Return total size of encoded buffer in bytes."""
 
         raise NotImplementedError
@@ -202,7 +202,7 @@ class Base64EncodedBuffer:
         return b64decode(self.b64data)
 
     def add_to_xml_element(self, xml_element):
-        """Add encoded buffer to the given C{xml_element}.
+        """Add encoded buffer to the given *xml_element*.
         Return total size of encoded buffer in bytes."""
 
         xml_element.add_child(self.b64header)
@@ -236,7 +236,7 @@ class Base64ZLibEncodedBuffer:
         return decompress(b64decode(self.b64data))
 
     def add_to_xml_element(self, xml_element):
-        """Add encoded buffer to the given C{xml_element}.
+        """Add encoded buffer to the given *xml_element*.
         Return total size of encoded buffer in bytes."""
 
         xml_element.add_child(self.b64header)

@@ -1,4 +1,4 @@
-"""Lazy evaluation support infastructure."""
+"""Building blocks and mappers for operator expression trees."""
 
 from __future__ import division
 
@@ -72,6 +72,8 @@ def make_field(var_or_string):
 
 
 class ScalarParameter(pymbolic.primitives.Variable):
+    """A placeholder for a user-supplied scalar variable."""
+
     def stringifier(self):
         return StringifyMapper
 
@@ -99,6 +101,9 @@ class BoundaryNormalComponent(pymbolic.primitives.AlgebraicLeaf):
 
     def get_mapper_method(self, mapper): 
         return mapper.map_normal_component
+
+    def __getinitargs__(self):
+        return (self.tag, self.axis)
 
 
 
@@ -389,16 +394,6 @@ class BoundaryPair(pymbolic.primitives.AlgebraicLeaf):
                 and field_equal(other.field,  self.field)
                 and field_equal(other.bfield, self.bfield)
                 and other.tag == self.tag)
-        
-
-
-
-
-def pair_with_boundary(field, bfield, tag=hedge.mesh.TAG_ALL):
-    if tag is hedge.mesh.TAG_NONE:
-        return 0
-    else:
-        return BoundaryPair(field, bfield, tag)
 
 
 
@@ -459,6 +454,11 @@ class VectorFluxOperator(object):
 
 # convenience functions -------------------------------------------------------
 def make_vector_field(name, components):
+    """Return an object array of *components* subscripted 
+    :class:`Field` instances.
+
+    :param components: The number of components in the vector.
+    """
     if isinstance(components, int):
         components = range(components)
 
@@ -471,8 +471,8 @@ def make_vector_field(name, components):
 
 def get_flux_operator(flux):
     """Return a flux operator that can be multiplied with
-    a volume field to obtain the lifted interior fluxes
-    or with a boundary pair to obtain the lifted boundary
+    a volume field to obtain the interior fluxes
+    or with a :class:`BoundaryPair` to obtain the lifted boundary
     flux.
     """
     from hedge.tools import is_obj_array
@@ -1016,10 +1016,10 @@ class InverseMassContractor(CSECachingMapperMixin, IdentityMapper):
 
 # BC-to-flux rewriting --------------------------------------------------------
 class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
-    """Operates on L{FluxOperator} instances bound to L{BoundaryPair}s. If the
-    boundary pair's C{bfield} is an expression of what's available in the
-    C{field}, we can avoid fetching the data for the explicit boundary
-    condition and just substitute the C{bfield} expression into the flux. This
+    """Operates on :class:`FluxOperator` instances bound to :class:`BoundaryPair`. If the
+    boundary pair's *bfield* is an expression of what's available in the
+    *field*, we can avoid fetching the data for the explicit boundary
+    condition and just substitute the *bfield* expression into the flux. This
     mapper does exactly that.  
     """
 
@@ -1049,7 +1049,7 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
                     "boundary and volume quantities: %s" 
                     % ", ".join(str(v) for v in vol_bdry_intersection))
   
-        # Step 1: Find maximal flux-evaluable subexpression of bounary field
+        # Step 1: Find maximal flux-evaluable subexpression of boundary field
         # in given BoundaryPair.
 
         class MaxBoundaryFluxEvaluableExpressionFinder(
@@ -1080,6 +1080,13 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
                     self.vol_expr_list.append(expr)
                     return idx
 
+            def map_normal(self, expr):
+                raise RuntimeError("Your operator template contains a flux normal. "
+                        "You may find this confusing, but you can't do that. "
+                        "It turns out that you need to use "
+                        "hedge.optemplate.make_normal() for normals in boundary "
+                        "terms of operator templates.")
+
             def map_normal_component(self, expr):
                 if expr.tag != bpair.tag:
                     raise RuntimeError("BoundaryNormalComponent and BoundaryPair "
@@ -1093,7 +1100,7 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
                 from hedge.flux import FieldComponent
                 return FieldComponent(
                         self.register_boundary_expr(expr), 
-                        is_local=False)
+                        is_interior=False)
 
             map_subscript = map_variable
 
@@ -1107,7 +1114,7 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
 
                     return FieldComponent(
                             self.register_volume_expr(expr.field), 
-                            is_local=True)
+                            is_interior=True)
                 elif isinstance(expr.op, FluxExchangeOperator):
                     from hedge.mesh import TAG_RANK_BOUNDARY
                     op_tag = TAG_RANK_BOUNDARY(expr.op.rank)
@@ -1117,7 +1124,7 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
                                 % (op_tag, bpair.tag))
                     return FieldComponent(
                             self.register_boundary_expr(expr), 
-                            is_local=False)
+                            is_interior=False)
                 else:
                     raise RuntimeError("Found '%s' in a boundary term. "
                             "To the best of my knowledge, no hedge operator applies "
@@ -1135,7 +1142,7 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
         from hedge.flux import FluxSubstitutionMapper, FieldComponent
 
         def sub_bdry_into_flux(expr):
-            if isinstance(expr, FieldComponent) and not expr.is_local:
+            if isinstance(expr, FieldComponent) and not expr.is_interior:
                 if expr.index == 0 and not is_obj_array(bdry_field):
                     return new_bdry_field
                 else:
@@ -1277,8 +1284,3 @@ def split_optemplate_for_multirate(state_vector, op_template,
                     op_template[ig]))
             for ig in index_groups
             for killer in killers]
-
-
-
-
-

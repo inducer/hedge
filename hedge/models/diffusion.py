@@ -1,5 +1,5 @@
 # -*- coding: utf8 -*-
-"""Operators modeling advective phenomena."""
+"""Operators modeling diffusive phenomena."""
 
 from __future__ import division
 
@@ -106,7 +106,7 @@ class StrongHeatOperator(TimeDependentOperator):
 
     # right-hand side ---------------------------------------------------------
     def grad_op_template(self):
-        from hedge.optemplate import Field, pair_with_boundary, \
+        from hedge.optemplate import Field, BoundaryPair, \
                 InverseMassOperator, make_stiffness, get_flux_operator
 
         stiff = make_stiffness(self.dimensions)
@@ -124,12 +124,12 @@ class StrongHeatOperator(TimeDependentOperator):
         return InverseMassOperator() * (
                 stiff * u
                 - flux_u*sqrt_coeff_u
-                - flux_u_dbdry*pair_with_boundary(sqrt_coeff_u, dir_bc_u, self.dirichlet_tag)
-                - flux_u_nbdry*pair_with_boundary(sqrt_coeff_u, neu_bc_u, self.neumann_tag)
+                - flux_u_dbdry*BoundaryPair(sqrt_coeff_u, dir_bc_u, self.dirichlet_tag)
+                - flux_u_nbdry*BoundaryPair(sqrt_coeff_u, neu_bc_u, self.neumann_tag)
                 )
 
     def div_op_template(self):
-        from hedge.optemplate import make_vector_field, pair_with_boundary, \
+        from hedge.optemplate import make_vector_field, BoundaryPair, \
                 InverseMassOperator, get_flux_operator, make_stiffness
 
         stiff = make_stiffness(self.dimensions)
@@ -149,8 +149,8 @@ class StrongHeatOperator(TimeDependentOperator):
         return InverseMassOperator() * (
                 numpy.dot(stiff, v)
                 - flux_v * w
-                - flux_v_dbdry * pair_with_boundary(w, dir_bc_w, self.dirichlet_tag)
-                - flux_v_nbdry * pair_with_boundary(w, neu_bc_w, self.neumann_tag)
+                - flux_v_dbdry * BoundaryPair(w, dir_bc_w, self.dirichlet_tag)
+                - flux_v_nbdry * BoundaryPair(w, neu_bc_w, self.neumann_tag)
                 )
 
     # boundary conditions -----------------------------------------------------

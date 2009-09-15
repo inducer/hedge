@@ -1,4 +1,4 @@
-"""Logging utilities."""
+"""Timeseries data gathering sensors."""
 
 from __future__ import division
 
@@ -43,12 +43,12 @@ class Integral(LogQuantity):
             unit="1", description=None):
         """Construct the integral logger.
 
-        @arg getter: a callable that returns the value of which to 
+        :param getter: a callable that returns the value of which to 
           take the integral.
-        @arg discr: a L{Discretization} to which the variable belongs.
-        @arg name: the name reported to the C{LogManager}.
-        @arg unit: the unit of measure for the log quantity.
-        @arg description: A description fed to the C{LogManager}.
+        :param discr: a L{discretization.Discretization} to which the variable belongs.
+        :param name: the name reported to the :class:`pytools.log.LogManager`.
+        :param unit: the unit of measure for the log quantity.
+        :param description: A description fed to the :class:`pytools.log.LogManager`.
         """
         self.getter = getter
 
@@ -88,13 +88,13 @@ class LpNorm(LogQuantity):
             unit="1", description=None):
         """Construct the Lp norm logger.
 
-        @arg getter: a callable that returns the value of which to 
+        :param getter: a callable that returns the value of which to 
           take the norm.
-        @arg discr: a L{Discretization} to which the variable belongs.
-        @arg p: the power of the norm.
-        @arg name: the name reported to the C{LogManager}.
-        @arg unit: the unit of measure for the log quantity.
-        @arg description: A description fed to the C{LogManager}.
+        :param discr: a L{discretization.Discretization} to which the variable belongs.
+        :param p: the power of the norm.
+        :param name: the name reported to the :class:`pytools.log.LogManager`.
+        :param unit: the unit of measure for the log quantity.
+        :param description: A description fed to the :class:`pytools.log.LogManager`.
         """
         self.getter = getter
         self.discr = discr
