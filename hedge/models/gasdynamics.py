@@ -389,28 +389,6 @@ class GasDynamicsOperator(TimeDependentOperator):
                     set_velocity_to_zero=True)
             return inflow_state_inner(normal, bc, "noslip")
 
-        def noslip_state_old(state):
-            from hedge.optemplate import make_normal
-            normal = make_normal(self.noslip_tag, self.dimensions)
-
-            state0 = make_vector_field("bc_q_noslip", self.dimensions+2)
-
-            rho0 = rho(state0)
-            drhom = BoundarizeOperator(self.noslip_tag)(rho(state)) - rho0
-            dumvec = BoundarizeOperator(self.noslip_tag)(u(state)) - u(state0)
-            dpm = BoundarizeOperator(self.noslip_tag)(p(state)) - p(state0)
-            c = BoundarizeOperator(self.noslip_tag)(
-                (self.gamma * p(state) / rho(state))**0.5)
-
-            # see hedge/doc/maxima/euler.mac, under inflow
-            return primitive_to_conservative(join_fields(
-                    numpy.dot(normal, dumvec)*rho0/(2*c) + dpm/(2*c*c) + rho0,
-                    c*rho0*numpy.dot(normal, dumvec)/2 + dpm/2 + p(state0),
-                    [0]*self.dimensions)
-                    #normal*numpy.dot(normal, dumvec)/2 + dpm*normal/(2*c*rho0)
-                    #+u(state0))
-                    )
-
         all_tags_and_bcs = [
                 (self.outflow_tag, outflow_state(state)),
                 (self.inflow_tag, inflow_state(state)),
