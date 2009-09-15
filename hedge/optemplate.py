@@ -1066,6 +1066,13 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
                     self.vol_expr_list.append(expr)
                     return idx
 
+            def map_normal(self, expr):
+                raise RuntimeError("Your operator template contains a flux normal. "
+                        "You may find this confusing, but you can't do that. "
+                        "It turns out that you need to use "
+                        "hedge.optemplate.make_normal() for normals in boundary "
+                        "terms of operator templates.")
+
             def map_normal_component(self, expr):
                 if expr.tag != bpair.tag:
                     raise RuntimeError("BoundaryNormalComponent and BoundaryPair "
