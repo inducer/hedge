@@ -273,8 +273,8 @@ def get_interior_flux_mod(fluxes, fvi, discr, dtype):
                     ]]
 
         return [
-            Initializer(Value("value_type", f2cm.cse_prefix+str(i)), cse)
-            for i, cse in f2cm.cses] + result
+            Initializer(Value("value_type", cse_name), cse_str)
+            for cse_name, cse_str in f2cm.cse_name_list] + result
 
     fbody = Block([
         Initializer(
@@ -392,8 +392,8 @@ def get_boundary_flux_mod(fluxes, fvi, discr, dtype):
                 ]
 
         return [
-            Initializer(Value("value_type", f2cm.cse_prefix+str(i)), cse)
-            for i, cse in enumerate(f2cm.cses)] + result
+            Initializer(Value("value_type", cse_name), cse_str)
+            for cse_name, cse_str in f2cm.cse_name_list] + result
 
     fbody = Block([
         Initializer(
