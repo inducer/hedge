@@ -148,10 +148,10 @@ def main():
     eoc_rec = EOCRecorder()
     
     if rcon.is_head_rank:
-        #mesh = squaremesh()
-        from hedge.mesh import make_rect_mesh
-        mesh = make_rect_mesh(
-               boundary_tagger=lambda fvi, el, fn, all_v: ["inflow"])
+        mesh = squaremesh()
+        #from hedge.mesh import make_rect_mesh
+        #mesh = make_rect_mesh(
+               #boundary_tagger=lambda fvi, el, fn, all_v: ["inflow"])
         mesh_data = rcon.distribute_mesh(mesh)
     else:
         mesh_data = rcon.receive_mesh()
