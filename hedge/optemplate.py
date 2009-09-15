@@ -102,6 +102,9 @@ class BoundaryNormalComponent(pymbolic.primitives.AlgebraicLeaf):
     def get_mapper_method(self, mapper): 
         return mapper.map_normal_component
 
+    def __getinitargs__(self):
+        return (self.tag, self.axis)
+
 
 
 
