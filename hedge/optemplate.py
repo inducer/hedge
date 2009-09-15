@@ -1111,7 +1111,7 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
         if not is_obj_array(vol_field):
             vol_field = [vol_field]
 
-        mbfeef = MaxBoundaryFluxEvaluableExpressionFinder(vol_field)
+        mbfeef = MaxBoundaryFluxEvaluableExpressionFinder(list(vol_field))
         new_bdry_field = mbfeef(bdry_field)
 
         # Step II: Substitute the new_bdry_field into the flux.
