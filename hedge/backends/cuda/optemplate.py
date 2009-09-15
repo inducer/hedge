@@ -25,6 +25,7 @@ from pytools import Record, memoize_method
 import pymbolic.primitives
 import pymbolic.mapper
 import hedge.optemplate
+from pymbolic.mapper import CSECachingMapperMixin
 
 
 
@@ -174,7 +175,7 @@ class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
 
 
 
-class BoundaryCombiner(hedge.optemplate.IdentityMapper):
+class BoundaryCombiner(CSECachingMapperMixin, hedge.optemplate.IdentityMapper):
     """Combines inner fluxes and boundary fluxes into a 
     single, whole-domain operator of type 
     L{hedge.backends.cuda.execute.WholeDomainFluxOperator}.
@@ -184,6 +185,9 @@ class BoundaryCombiner(hedge.optemplate.IdentityMapper):
 
     flux_op_types = (hedge.optemplate.FluxOperator, 
             hedge.optemplate.LiftingFluxOperator)
+
+    map_common_subexpression_uncached = \
+            hedge.optemplate.IdentityMapper.map_common_subexpression
 
     def gather_one_wdflux(self, expressions):
         from hedge.optemplate import OperatorBinding, \
