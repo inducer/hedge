@@ -70,7 +70,13 @@ class GasDynamicsOperator(TimeDependentOperator):
             inflow_tag="inflow",
             outflow_tag="outflow",
             noslip_tag="noslip",
+            source=None,
             euler=False):
+        """
+        :param source: should implement 
+        :class:`hedge.data.IFieldDependentGivenFunction`
+        or be None.
+        """
 
         self.dimensions = dimensions
         self.discr = discr
@@ -86,6 +92,8 @@ class GasDynamicsOperator(TimeDependentOperator):
         self.inflow_tag = inflow_tag
         self.outflow_tag = outflow_tag
         self.noslip_tag = noslip_tag
+
+        self.source = source
 
         self.euler = euler
         
@@ -104,31 +112,6 @@ class GasDynamicsOperator(TimeDependentOperator):
                 rho_u_i/self.rho(q)
                 for rho_u_i in self.rho_u(q)])
 
-    def bind(self, discr):
-        bound_op = discr.compile(self.op_template())
-
-        from hedge.mesh import check_bc_coverage
-        check_bc_coverage(discr.mesh, [
-            self.inflow_tag,
-            self.outflow_tag,
-            self.noslip_tag,
-            ])
-
-        def wrap(t, q):
-            opt_result = bound_op(q=q,
-                    bc_q_in=self.bc_inflow.boundary_interpolant(
-                        t, discr, self.inflow_tag),
-                    bc_q_out=self.bc_inflow.boundary_interpolant(
-                        t, discr, self.outflow_tag),
-                    bc_q_noslip=self.bc_inflow.boundary_interpolant(
-                        t, discr, self.noslip_tag),
-                    )
-            max_speed = opt_result[-1]
-            ode_rhs = opt_result[:-1]
-	    return ode_rhs, discr.nodewise_max(max_speed)
-
-        return wrap
-        
     def op_template(self):
         from hedge.optemplate import make_vector_field, \
                 make_common_subexpression as cse
@@ -402,7 +385,7 @@ class GasDynamicsOperator(TimeDependentOperator):
                 ElementwiseMaxOperator
 
         # operator assembly ---------------------------------------------------
-        return join_fields(
+        result = join_fields(
                 (- numpy.dot(make_nabla(self.dimensions), flux_state)
                  + InverseMassOperator()*make_lax_friedrichs_flux(
                         wave_speed=cse(ElementwiseMaxOperator()*speed, "emax_c"),
@@ -414,3 +397,41 @@ class GasDynamicsOperator(TimeDependentOperator):
                         strong=True
                         )),
                  speed)
+
+        if self.source is not None:
+            source_ph = make_vector_field("source", self.dimensions+2)
+            result += source_ph
+        
+        return result
+
+    def bind(self, discr):
+        bound_op = discr.compile(self.op_template())
+
+        from hedge.mesh import check_bc_coverage
+        check_bc_coverage(discr.mesh, [
+            self.inflow_tag,
+            self.outflow_tag,
+            self.noslip_tag,
+            ])
+
+        def rhs(t, q):
+            extra_kwargs = {}
+            if self.source is not None:
+                extra_kwargs["source"] = self.source.volume_interpolant(
+                        t, q, discr)
+
+            opt_result = bound_op(q=q,
+                    bc_q_in=self.bc_inflow.boundary_interpolant(
+                        t, discr, self.inflow_tag),
+                    bc_q_out=self.bc_inflow.boundary_interpolant(
+                        t, discr, self.outflow_tag),
+                    bc_q_noslip=self.bc_inflow.boundary_interpolant(
+                        t, discr, self.noslip_tag),
+                    **extra_kwargs)
+
+            max_speed = opt_result[-1]
+            ode_rhs = opt_result[:-1]
+	    return ode_rhs, discr.nodewise_max(max_speed)
+
+        return rhs
+        

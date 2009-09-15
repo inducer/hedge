@@ -42,7 +42,7 @@ class _ConstantFunctionContainer:
 
 
 
-# interpolation wrappers ------------------------------------------------------
+# abstract interfaces ---------------------------------------------------------
 class IGivenFunction(object):
     """Abstract interface for obtaining interpolants of I{time-independent} 
     functions.
@@ -84,6 +84,28 @@ class ITimeDependentGivenFunction(object):
 
 
 
+class IFieldDependentGivenFunction(object):
+    """Abstract interface for obtaining interpolants of functions
+    that depend on both time and system state.
+    """
+
+    def volume_interpolant(self, t, fields, discr):
+        """Return the volume interpolant of this function with respect to
+        the :class:`hedge.discretization.Discretization` discr at time {t}.
+        """
+        raise NotImplementedError
+
+    def boundary_interpolant(self, t, fields, discr, tag):
+        """Return the boundary interpolant of this function with respect to
+        the :class:`hedge.discretization.Discretization` *discr* at time *t* at the boundary tagged with
+        *tag*.
+        """
+        raise NotImplementedError
+
+
+
+
+# actual implementations ------------------------------------------------------
 class GivenFunction(IGivenFunction):
     """Adapter for a function :math:`f(x)` into an :class:`IGivenFunction`.
     """
