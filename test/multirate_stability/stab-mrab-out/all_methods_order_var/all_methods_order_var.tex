@@ -1,0 +1,93 @@
+\documentclass[a4paper,10pt]{article}
+
+\usepackage{geometry}
+%opening
+\title{Stability analysis for Two-Rate-AB Method: Stable step size for a variation of orders for all ethods}
+%\date{}
+\author{}
+
+\begin{document}
+\maketitle
+
+
+\section{PIC equal stiff system}
+\begin{equation}
+ \dot{\textbf{y}} = \left(
+        \begin{array}{cc}
+           -1 & 0.001\\
+           0.001  & -0.001
+        \end{array}
+     \right) \textbf{y} + \left(
+        \begin{array}{c}
+           0 \\
+           f_{Force}(t)
+        \end{array}
+     \right),
+\label{ExtForceStiff}
+\end{equation}
+with a decreasing force,
+\begin{equation}
+ f_{Force}(t) = e^{-t} + e^{-0.001t},
+\end{equation}
+
+substeps: 10\\
+\input{ExtForceStiff_all_methods_order_var_r_10}
+
+
+
+\section{Uncoupled System: non stiff}
+\begin{equation}
+ \dot{y}= \left( 
+        \begin{array}{cc}
+           -1 & 0 \\
+            0 & -1
+        \end{array}
+     \right) y,
+\end{equation}
+
+substeps: 10\\
+\input{NonStiffUncoupl_all_methods_order_var_r_10}
+
+\section{Uncoupled System: stiff}
+\begin{equation}
+ \dot{y}= \left( 
+        \begin{array}{cc}
+           -1 & 0 \\
+            0 & -0.001
+        \end{array}
+     \right) y,
+\end{equation}
+
+substeps: 10\\
+\input{StiffUncoupl_all_methods_order_var_r_10}
+
+\section{Weak Coupled System:}
+\begin{equation}
+ \dot{y}= \left( 
+        \begin{array}{cc}
+           -1 & 0.001 \\
+            0.001 & -0.001
+        \end{array}
+     \right) y,
+\end{equation}
+
+substeps: 10\\
+\input{WeakCoupl_all_methods_order_var_r_10}
+
+
+\section{Strong Coupled System:}
+slow2fast coupling is high
+\begin{equation}
+ \dot{y}=  \left( 
+        \begin{array}{cc}
+           -1 & 1 \\
+            0.001 & -0.001
+        \end{array}
+     \right) y,
+\end{equation}
+
+substeps: 10\\
+\input{StrongCoupl_all_methods_order_var_r_10}
+
+
+\end{document}

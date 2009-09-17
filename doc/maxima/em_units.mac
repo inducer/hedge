@@ -9,6 +9,7 @@ J : N*m;
 V : J/C;
 F : C/V;
 T : V*s/m^2;
+N : kg*m/s^2;
 
 u_c0 : m/s;
 u_mu0 : N / A^2;

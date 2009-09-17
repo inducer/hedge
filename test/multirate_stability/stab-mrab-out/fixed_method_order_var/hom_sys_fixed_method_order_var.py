@@ -64,11 +64,13 @@ class calc_stab_reg():
 def make_serial_stab_reg():
     import fpformat as fpf
     from ode_systems import NonStiffUncoupled, \
-            WeakCoupledInit, \
+            StiffUncoupled, \
+            WeakCoupled, \
             StrongCoupled, \
             ExtForceStiff, \
             ExtForceNonStiff
-    ode = WeakCoupledInit
+    #ode = ExtForceStiff
+    ode = WeakCoupled
     single_ab_dt_dict = {"2":0.53 , "3": 0.77, "4": 0.64, "5":0.51, "6":0.47, "7":0.45}
     order_list = [2, 3, 4, 5, 6]
     step_ratio = 10
