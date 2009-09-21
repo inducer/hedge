@@ -248,4 +248,4 @@ if __name__ == "__main__":
 from pytools.test import mark_test
 @mark_test.long
 def test_euler_vortex():
-    main(write_output=True)
+    main()
