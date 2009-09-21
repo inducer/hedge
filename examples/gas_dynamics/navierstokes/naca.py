@@ -24,43 +24,20 @@ import numpy.linalg as la
 
 
 
-class Square:
-    def __init__(self, gamma, spec_gas_const):
-        self.gamma = gamma
-        self.spec_gas_const = spec_gas_const
-
-    def __call__(self, t, x_vec):
-        # JSH/TW Nodal DG Methods, p.326
-
-        rho = numpy.empty_like(x_vec[0])
-        rho_value = 1
-        rho.fill(rho_value)
-        p = 1
-        c = (self.gamma * p / rho_value)**0.5
-        Ma = 0.1
-        velocity = Ma * c
-        u = velocity #numpy.cos(3./180.*numpy.pi) * velocity
-        v = 0 #numpy.sin(3./180.*numpy.pi) * velocity
-        rho_u = rho * u
-        rho_v = rho * v
-        e = p / (self.gamma - 1) + rho / 2 *(u ** 2 + v ** 2)
-
-        from hedge.tools import join_fields
-        return join_fields(rho, e, rho_u, rho_v)
-
-    def volume_interpolant(self, t, discr):
-        return discr.convert_volume(
-			self(t, discr.nodes.T),
-			kind=discr.compute_kind)
-
-    def boundary_interpolant(self, t, discr, tag):
-        return discr.convert_boundary(
-			self(t, discr.get_boundary(tag).nodes.T),
-			 tag=tag, kind=discr.compute_kind)
-
-
-
-def squaremesh():
+def make_nacamesh():
+    def airfoil_from_generator():
+        import meshpy.naca as naca
+        # parameters for the airfoil generator
+        naca_digits = "0012"
+        number_of_points = 30
+        sharp_trailing_edge = True
+        uniform_distribution = False
+        verbose = True
+        return naca.generate_naca(naca_digits=naca_digits,
+                number_of_points=number_of_points,
+                sharp_trailing_edge=sharp_trailing_edge,
+                uniform_distribution=uniform_distribution,
+                verbose=verbose)
 
     def round_trip_connect(seq):
         result = []
@@ -69,45 +46,39 @@ def squaremesh():
         return result
 
     def needs_refinement(vertices, area):
-        x =  sum(numpy.array(v) for v in vertices)/3
+        barycenter =  sum(numpy.array(v) for v in vertices)/3
 
-        max_area_volume = 1e-2 + 0.05*(0.05*x[1]**2 + 0.3*min(x[0]+1,0)**2)
+        pt_back = numpy.array([1,0])
 
-        max_area_corners = 1e-3 + 0.001*max(
-                la.norm(x-corner)**3 for corner in obstacle_corners)
-
-        return bool(area > min(max_area_volume, max_area_corners))
+        max_area_front = 0.02*la.norm(barycenter)**2 + 1e-4
+        max_area_back = 0.06*la.norm(barycenter-pt_back)**2 + 1e-4
+        return bool(area > min(max_area_front, max_area_back))
 
     import sys
-
-    from meshpy.geometry import make_box
-    points, facets, _ = make_box((-0.5,-0.5), (0.5,0.5))
-    obstacle_corners = points[:]
+    points = airfoil_from_generator()
 
     from meshpy.geometry import GeometryBuilder, Marker
     from meshpy.triangle import write_gnuplot_mesh
 
     profile_marker = Marker.FIRST_USER_MARKER
     builder = GeometryBuilder()
-    builder.add_geometry(points=points, facets=facets,
+    builder.add_geometry(points=points,
+            facets=round_trip_connect(points),
             facet_markers=profile_marker)
-
-    points, facets, facet_markers = make_box((-5, -10), (20, 10))
-    builder.add_geometry(points=points, facets=facets,
-            facet_markers=facet_markers)
+    builder.wrap_in_box(8, (10, 8))
 
     from meshpy.triangle import MeshInfo, build
     mi = MeshInfo()
     builder.set(mi)
-    mi.set_holes([(0,0)])
+    mi.set_holes([builder.center()])
 
     mesh = build(mi, refinement_func=needs_refinement,
-            allow_boundary_steiner=True,
+            allow_boundary_steiner=False,
             generate_faces=True)
 
-    print "%d elements" % len(mesh.elements)
-
     write_gnuplot_mesh("mesh.dat", mesh)
+
+    print "%d elements" % len(mesh.elements)
 
     fvi2fm = mesh.face_vertex_indices_to_face_marker
 
@@ -115,10 +86,8 @@ def squaremesh():
             profile_marker: "noslip",
             Marker.MINUS_X: "inflow",
             Marker.PLUS_X: "outflow",
-            #Marker.MINUS_Y: "minus_y",
-            Marker.MINUS_Y: "inflow",
-            #Marker.PLUS_Y: "plus_y"
-            Marker.PLUS_Y: "inflow"
+            Marker.MINUS_Y: "minus_y",
+            Marker.PLUS_Y: "plus_y"
             }
 
     def bdry_tagger(fvi, el, fn, all_v):
@@ -128,8 +97,7 @@ def squaremesh():
     from hedge.mesh import make_conformal_mesh
     return make_conformal_mesh(
             mesh.points, mesh.elements, bdry_tagger,
-            #periodicity=[None, ("minus_y", "plus_y")]
-            )
+            periodicity=[None, ("minus_y", "plus_y")])
 
 
 
@@ -140,46 +108,32 @@ def main():
     ["cuda"]
     )
 
-    gamma = 1.4
-    prandtl = 0.72
-    spec_gas_const = 287.1
-
-    from hedge.tools import EOCRecorder, to_obj_array
-    eoc_rec = EOCRecorder()
-    
     if rcon.is_head_rank:
-        mesh = squaremesh()
-        #from hedge.mesh import make_rect_mesh
-        #mesh = make_rect_mesh(
-               #boundary_tagger=lambda fvi, el, fn, all_v: ["inflow"])
+        mesh = make_nacamesh()
         mesh_data = rcon.distribute_mesh(mesh)
     else:
         mesh_data = rcon.receive_mesh()
 
     for order in [3]:
         discr = rcon.make_discretization(mesh_data, order=order,
-			debug=[#"cuda_no_plan",
-                            #"cuda_dump_kernels",
-                            #"dump_dataflow_graph",
-                            #"dump_optemplate_stages",
-                            #"dump_dataflow_graph",
-                            #"print_op_code"
-                            ],
+			debug=["cuda_no_plan"],
 			default_scalar_type=numpy.float64)
 
         from hedge.visualization import SiloVisualizer, VtkVisualizer
         #vis = VtkVisualizer(discr, rcon, "shearflow-%d" % order)
         vis = SiloVisualizer(discr, rcon)
 
-        square = Square(gamma=gamma, spec_gas_const=spec_gas_const)
-        fields = square.volume_interpolant(0, discr)
+        from hedge.models.gas_dynamics_initials import UniformMachFlow
+        naca = UniformMachFlow()
+        fields = naca.volume_interpolant(0, discr)
+        gamma, mu, prandtl, spec_gas_const = naca.properties()
 
         from hedge.models.gasdynamics import GasDynamicsOperator
-        op = GasDynamicsOperator(dimensions=2, discr=discr, gamma=gamma,
-                prandtl=prandtl, spec_gas_const=spec_gas_const, 
-                bc_inflow=square, bc_outflow=square, bc_noslip=square,
+        op = GasDynamicsOperator(dimensions=2, discr=discr,
+                gamma=gamma, prandtl=prandtl, spec_gas_const=spec_gas_const, mu=0,
+                bc_inflow=naca, bc_outflow=naca, bc_noslip=naca,
                 inflow_tag="inflow", outflow_tag="outflow", noslip_tag="noslip",
-                euler = False)
+                euler=False)
 
         navierstokes_ex = op.bind(discr)
 
@@ -191,7 +145,7 @@ def main():
         rhs(0, fields)
 
         dt = discr.dt_factor(max_eigval[0], order=2)
-        final_time = 200
+        final_time = 20
         nsteps = int(final_time/dt)+1
         dt = final_time/nsteps
 
@@ -225,14 +179,15 @@ def main():
         for step in range(nsteps):
             logmgr.tick()
 
-            if (step % 10000 == 0): #and step < 950000) or (step % 500 == 0 and step > 950000):
+            if step % 1000 == 0:
             #if False:
-                visf = vis.make_file("square-%d-%06d" % (order, step))
+                visf = vis.make_file("naca-%d-%04d" % (order, step))
+
+                #true_fields = naca.volume_interpolant(t, discr)
 
                 #rhs_fields = rhs(t, fields)
 
                 from pylo import DB_VARTYPE_VECTOR
-                from hedge.discretization import ones_on_boundary
                 vis.add_data(visf,
                         [
                             ("rho", discr.convert_volume(op.rho(fields), kind="numpy")),
@@ -240,11 +195,20 @@ def main():
                             ("rho_u", discr.convert_volume(op.rho_u(fields), kind="numpy")),
                             ("u", discr.convert_volume(op.u(fields), kind="numpy")),
 
+                            #("true_rho", op.rho(true_fields)),
+                            #("true_e", op.e(true_fields)),
+                            #("true_rho_u", op.rho_u(true_fields)),
+                            #("true_u", op.u(true_fields)),
+
                             #("rhs_rho", discr.convert_volume(op.rho(rhs_fields), kind="numpy")),
                             #("rhs_e", discr.convert_volume(op.e(rhs_fields), kind="numpy")),
                             #("rhs_rho_u", discr.convert_volume(op.rho_u(rhs_fields), kind="numpy")),
                             ],
                         expressions=[
+                            #("diff_rho", "rho-true_rho"),
+                            #("diff_e", "e-true_e"),
+                            #("diff_rho_u", "rho_u-true_rho_u", DB_VARTYPE_VECTOR),
+
                             ("p", "(0.4)*(e- 0.5*(rho_u*u))"),
                             ],
                         time=t, step=step
@@ -261,7 +225,7 @@ def main():
         logmgr.tick()
         logmgr.save()
 
-        true_fields = square.volume_interpolant(t, discr)
+        true_fields = naca.volume_interpolant(t, discr)
         eoc_rec.add_data_point(order, discr.norm(fields-old_fields))
         print
         print eoc_rec.pretty_print("P.Deg.", "Residual")

@@ -25,9 +25,11 @@ import numpy.linalg as la
 
 
 class SteadyShearFlow:
-    def __init__(self, gamma, mu):
-        self.gamma = gamma
-        self.mu = mu
+    def __init__(self):
+        self.gamma = 1.5
+        self.mu = 0.01
+        self.prandtl = 0.72
+        self.spec_gas_const = 287.1
 
     def __call__(self, t, x_vec):
         # JSH/TW Nodal DG Methods, p.326 
@@ -39,6 +41,9 @@ class SteadyShearFlow:
 
         from hedge.tools import join_fields
         return join_fields(rho, e, rho_u, rho_v)
+
+    def properties(self):
+        return(self.gamma, self.mu, self.prandtl, self.spec_gas_const)
 
     def volume_interpolant(self, t, discr):
         return discr.convert_volume(
@@ -59,11 +64,8 @@ class SteadyShearFlow:
 def main():
     from hedge.backends import guess_run_context
     rcon = guess_run_context(
-    ["cuda"]
+    #["cuda"]
     )
-
-    gamma = 1.5
-    mu = 0.01
 
     from hedge.tools import EOCRecorder, to_obj_array
     eoc_rec = EOCRecorder()
@@ -86,25 +88,22 @@ def main():
 
     for order in [3]:
         discr = rcon.make_discretization(mesh_data, order=order,
-			debug=["cuda_no_plan",
-                            #"dump_dataflow_graph",
-                            #"cuda_dump_kernels",
-                            #"cuda_flux",
-			#"print_op_code"
-			],
 			default_scalar_type=numpy.float64)
 
         from hedge.visualization import SiloVisualizer, VtkVisualizer
         #vis = VtkVisualizer(discr, rcon, "shearflow-%d" % order)
         vis = SiloVisualizer(discr, rcon)
 
-        shearflow = SteadyShearFlow(gamma=gamma, mu=mu)
+        shearflow = SteadyShearFlow()
         fields = shearflow.volume_interpolant(0, discr)
+        gamma, mu, prandtl, spec_gas_const = shearflow.properties()
 
-        from hedge.models.gas_dynamics.navier_stokes import NavierStokesWithHeatOperator
-        op = NavierStokesWithHeatOperator(dimensions=2, gamma=gamma, 
-                #mu=mu, 
-                bc=shearflow, inflow_tag="inflow")
+        from hedge.models.gasdynamics import GasDynamicsOperator
+        op = GasDynamicsOperator(dimensions=2, discr=discr, gamma=gamma, mu=mu,
+                prandtl=prandtl, spec_gas_const=spec_gas_const,
+                bc_inflow=shearflow, bc_outflow=shearflow, bc_noslip=shearflow,
+                inflow_tag="inflow", outflow_tag="outflow", noslip_tag="noslip",
+                euler=False)
 
         navierstokes_ex = op.bind(discr)
 
@@ -130,8 +129,7 @@ def main():
             print "nsteps", nsteps
             print "#elements=", len(mesh.elements)
 
-        #from hedge.timestep import RK4TimeStepper
-        from hedge.backends.cuda.tools import RK4TimeStepper
+        from hedge.timestep import RK4TimeStepper
         stepper = RK4TimeStepper()
 
         # diagnostics setup ---------------------------------------------------
@@ -158,9 +156,7 @@ def main():
             #if False:
                 visf = vis.make_file("shearflow-%d-%04d" % (order, step))
 
-                true_fields = shearflow.volume_interpolant(t, discr)
-
-                rhs_fields = rhs(t, fields)
+                #true_fields = shearflow.volume_interpolant(t, discr)
 
                 from pylo import DB_VARTYPE_VECTOR
                 vis.add_data(visf,
@@ -170,19 +166,15 @@ def main():
                             ("rho_u", discr.convert_volume(op.rho_u(fields), kind="numpy")),
                             ("u", discr.convert_volume(op.u(fields), kind="numpy")),
 
-                            ("true_rho", discr.convert_volume(op.rho(true_fields), kind="numpy")),
-                            ("true_e", discr.convert_volume(op.e(true_fields), kind="numpy")),
-                            ("true_rho_u", discr.convert_volume(op.rho_u(true_fields), kind="numpy")),
-                            ("true_u", discr.convert_volume(op.u(true_fields), kind="numpy")),
-
-                            ("rhs_rho", discr.convert_volume(op.rho(rhs_fields), kind="numpy")),
-                            ("rhs_e", discr.convert_volume(op.e(rhs_fields), kind="numpy")),
-                            ("rhs_rho_u", discr.convert_volume(op.rho_u(rhs_fields), kind="numpy")),
+                            #("true_rho", discr.convert_volume(op.rho(true_fields), kind="numpy")),
+                            #("true_e", discr.convert_volume(op.e(true_fields), kind="numpy")),
+                            #("true_rho_u", discr.convert_volume(op.rho_u(true_fields), kind="numpy")),
+                            #("true_u", discr.convert_volume(op.u(true_fields), kind="numpy")),
                             ],
                         expressions=[
-                            ("diff_rho", "rho-true_rho"),
-                            ("diff_e", "e-true_e"),
-                            ("diff_rho_u", "rho_u-true_rho_u", DB_VARTYPE_VECTOR),
+                            #("diff_rho", "rho-true_rho"),
+                            #("diff_e", "e-true_e"),
+                            #("diff_rho_u", "rho_u-true_rho_u", DB_VARTYPE_VECTOR),
 
                             ("p", "0.4*(e- 0.5*(rho_u*u))"),
                             ],

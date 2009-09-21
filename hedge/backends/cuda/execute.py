@@ -403,7 +403,7 @@ class OperatorCompiler(OperatorCompilerBase):
 
     def internal_map_flux(self, wdflux):
         from hedge.backends.cuda.optemplate import WholeDomainFluxOperator
-        result = WholeDomainFluxOperator(
+        return WholeDomainFluxOperator(
             wdflux.is_lift,
             [wdflux.InteriorInfo(
                 flux_expr=ii.flux_expr, 
@@ -413,7 +413,6 @@ class OperatorCompiler(OperatorCompilerBase):
                 flux_expr=bi.flux_expr, 
                 bpair=self.rec(bi.bpair))
                 for bi in wdflux.boundaries])
-        return result
 
     def map_whole_domain_flux(self, wdflux):
         return self.map_planned_flux(wdflux)

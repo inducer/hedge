@@ -25,20 +25,27 @@ import numpy.linalg as la
 
 
 class SineWave:
-    def __init__(self, gamma):
-        self.gamma = gamma
+    def __init__(self):
+        self.gamma = 1.4
+        self.mu = 0
+        self.prandtl = 0.72
+        self.spec_gas_const = 287.1
 
     def __call__(self, t, x_vec):
 
         rho = 2 + numpy.sin(x_vec[0] + x_vec[1] + x_vec[2] - 2 * t)
-        u = 1
-        v = 1
-        w = 0
+        velocity = numpy.array([1, 1, 0])
         p = 1
-        e = p/(self.gamma-1) + rho/2 * (u**2 + v**2 + w**2)
+        e = p/(self.gamma-1) + rho/2 * numpy.dot(velocity, velocity)
+        rho_u = rho * velocity[0]
+        rho_v = rho * velocity[1]
+        rho_w = rho * velocity[2]
 
         from hedge.tools import join_fields
-        return join_fields(rho, e, rho*u, rho*v)
+        return join_fields(rho, e, rho_u, rho_v, rho_w)
+
+    def properties(self):
+        return(self.gamma, self.mu, self.prandtl, self.spec_gas_const)
 
     def volume_interpolant(self, t, discr):
         return discr.convert_volume(
@@ -55,13 +62,11 @@ class SineWave:
 
 def main():
     from hedge.backends import guess_run_context
-    platform = "gpu"
+    platform = "cpu"
     if platform == "gpu":
         rcon = guess_run_context(["cuda"])
     else:
         rcon = guess_run_context()
-
-    gamma = 1.4
 
     from hedge.tools import EOCRecorder, to_obj_array
     eoc_rec = EOCRecorder()
@@ -73,24 +78,22 @@ def main():
     else:
         mesh_data = rcon.receive_mesh()
 
-    for order in [3]:
+    for order in [3, 4, 5]:
         discr = rcon.make_discretization(mesh_data, order=order,
-			debug=["cuda_no_plan",
-			#"print_op_code"
-			],
 			default_scalar_type=numpy.float64)
 
         from hedge.visualization import SiloVisualizer, VtkVisualizer
         vis = VtkVisualizer(discr, rcon, "sinewave-%d" % order)
         #vis = SiloVisualizer(discr, rcon)
 
-        sinewave = SineWave(gamma=gamma)
+        sinewave = SineWave()
         fields = sinewave.volume_interpolant(0, discr)
+        gamma, mu, prandtl, spec_gas_const = sinewave.properties()
 
         from hedge.mesh import TAG_ALL
         from hedge.models.gasdynamics import GasDynamicsOperator
-        op = GasDynamicsOperator(dimensions=2, discr=discr,
-                gamma=gamma, prandtl=0.72, spec_gas_const=287.1,
+        op = GasDynamicsOperator(dimensions=2, discr=discr, gamma=gamma, mu=mu,
+                prandtl=prandtl, spec_gas_const=spec_gas_const,
                 bc_inflow=sinewave, bc_outflow=sinewave, bc_noslip=sinewave,
                 inflow_tag=TAG_ALL, euler=True)
 
@@ -188,3 +191,10 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# entry points for py.test ----------------------------------------------------
+from pytools.test import mark_test
+@mark_test.long
+def test_euler_sine_wave():
+    main()
+

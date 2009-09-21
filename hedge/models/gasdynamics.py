@@ -3,7 +3,7 @@
 
 from __future__ import division
 
-__copyright__ = "Copyright (C) 2007 Andreas Kloeckner"
+__copyright__ = "Copyright (C) 2007 Hendrik Riedmann, Andreas Kloeckner"
 
 __license__ = """
 This program is free software: you can redistribute it and/or modify
@@ -65,7 +65,7 @@ class GasDynamicsOperator(TimeDependentOperator):
     Field order is [rho E rho_u_x rho_u_y ...].
     """
     def __init__(self, dimensions, discr,
-            gamma, prandtl, spec_gas_const,
+            gamma, prandtl, spec_gas_const, mu,
             bc_inflow, bc_outflow, bc_noslip,
             inflow_tag="inflow",
             outflow_tag="outflow",
@@ -78,6 +78,7 @@ class GasDynamicsOperator(TimeDependentOperator):
         self.gamma = gamma
         self.prandtl = prandtl
         self.spec_gas_const = spec_gas_const
+        self.mu = mu
 
         self.bc_inflow = bc_inflow
         self.bc_outflow = bc_outflow
@@ -157,14 +158,14 @@ class GasDynamicsOperator(TimeDependentOperator):
                     "t")
 
         def mu(q):
+            mu = self.mu
             if self.euler == True:
-                mu = 0
-            else:
-                mu = (0.1 * self.gamma ** 0.5) / 100
+                assert mu == 0.
+            if mu == "sutherland":
                 # Sutherland's law: !!!not tested!!!
-                #t_s = 110.4
-                #mu_inf = 1.735e-5
-                #mu = cse(mu_inf * t(q) ** 1.5 * (1 + t_s) / (t(q) + t_s))
+                t_s = 110.4
+                mu_inf = 1.735e-5
+                mu = cse(mu_inf * t(q) ** 1.5 * (1 + t_s) / (t(q) + t_s))
             return mu
 
         def heat_flux(q):
