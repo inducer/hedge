@@ -1215,13 +1215,12 @@ class FluxCollector(CSECachingMapperMixin, CollectorMixin, CombineMapper):
             CombineMapper.map_common_subexpression
 
     def map_operator_binding(self, expr):
-        if isinstance(expr.op, (
-            FluxOperatorBase)):
+        if isinstance(expr.op, FluxOperatorBase):
             result = set([expr])
         else:
             result = set()
 
-        return result | self.rec(expr.field)
+        return result | CombineMapper.map_operator_binding(self, expr)
 
 
 
@@ -1246,7 +1245,7 @@ class BoundOperatorCollector(CSECachingMapperMixin, CollectorMixin, CombineMappe
         else:
             result = set()
 
-        return result | self.rec(expr.field)
+        return result | CombineMapper.map_operator_binding(self, expr)
 
 
 
