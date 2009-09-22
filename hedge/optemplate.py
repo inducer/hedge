@@ -1183,29 +1183,15 @@ class CollectorMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     def map_constant(self, bpair):
         return set()
 
-    def map_mass_base(self, expr):
-        return set()
-    
-    def map_diff_base(self, expr):
-        return set()
-
-    def map_flux_base(self, expr):
-        return set()
-
-    def map_variable(self, expr):
-        return set()
-
-    def map_elementwise_max(self, expr, *args, **kwargs):
-        return set()
-
-    def map_boundarize(self, expr, *args, **kwargs):
-        return set()
-
-    def map_normal_component(self, expr):
-        return set()
-
-    def map_scalar_parameter(self, expr):
-        return set()
+    map_mass_base = map_constant
+    map_diff_base = map_constant
+    map_flux_base = map_constant
+    map_variable = map_constant
+    map_elementwise_max = map_constant
+    map_boundarize = map_constant
+    map_flux_exchange = map_constant
+    map_normal_component = map_constant
+    map_scalar_parameter = map_constant
 
 
 
