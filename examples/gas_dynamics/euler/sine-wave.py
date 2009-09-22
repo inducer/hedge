@@ -91,7 +91,7 @@ def main():
         gamma, mu, prandtl, spec_gas_const = sinewave.properties()
 
         from hedge.mesh import TAG_ALL
-        from hedge.models.gasdynamics import GasDynamicsOperator
+        from hedge.models.gas_dynamics import GasDynamicsOperator
         op = GasDynamicsOperator(dimensions=2, discr=discr, gamma=gamma, mu=mu,
                 prandtl=prandtl, spec_gas_const=spec_gas_const,
                 bc_inflow=sinewave, bc_outflow=sinewave, bc_noslip=sinewave,

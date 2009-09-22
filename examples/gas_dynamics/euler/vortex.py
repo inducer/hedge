@@ -110,7 +110,7 @@ def main(write_output=True):
         fields = vortex.volume_interpolant(0, discr)
         gamma, mu, prandtl, spec_gas_const = vortex.properties()
 
-        from hedge.models.gasdynamics import GasDynamicsOperator
+        from hedge.models.gas_dynamics import GasDynamicsOperator
         from hedge.mesh import TAG_ALL
         op = GasDynamicsOperator(dimensions=2, discr=discr, gamma=gamma, mu=mu,
                 prandtl=prandtl, spec_gas_const=spec_gas_const,
