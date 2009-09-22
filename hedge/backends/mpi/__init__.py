@@ -330,7 +330,7 @@ class FluxCommunicationInserter(
 
 
 
-class ParallelDiscretization(object):
+class ParallelDiscretization(hedge.discretization.TimestepCalculator):
     @classmethod
     def my_debug_flags(cls):
         return set([
@@ -612,11 +612,6 @@ class ParallelDiscretization(object):
         return mpi.all_reduce(self.context.communicator, 
                 self.subdiscr.dt_geometric_factor(),
                 min)
-
-    def dt_factor(self, max_system_ev):
-        return 1/max_system_ev \
-                * self.dt_non_geometric_factor() \
-                * self.dt_geometric_factor()
 
     # compilation -------------------------------------------------------------
     def compile(self, optemplate, post_bind_mapper=lambda x:x ):
