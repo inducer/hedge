@@ -234,7 +234,7 @@ def to_obj_array(ary):
 
 def is_field_equal(a, b):
     if is_obj_array(a):
-        return is_obj_array(b) and (a == b).all()
+        return is_obj_array(b) and (a.shape == b.shape) and (a == b).all()
     else:
         return not is_obj_array(b) and a == b
 
