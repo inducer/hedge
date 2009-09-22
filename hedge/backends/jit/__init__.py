@@ -257,16 +257,29 @@ class Executor(CPUExecutorBase):
 
         from hedge.optemplate import CommutativeConstantFoldingMapper
 
-        prepared_optemplate = (
-                InverseMassContractor()(
-                    EmptyFluxKiller(discr)(
-                        CommutativeConstantFoldingMapper()(
-                            post_bind_mapper(
-                                BCToFluxRewriter()(
-                                    OperatorBinder()(
-                                        optemplate)))))))
+        def dump_optemplate(name, optemplate):
+            if "dump_optemplate_stages" in discr.debug:
+                from hedge.tools import open_unique_debug_file
+                from hedge.optemplate import pretty_print_optemplate
+                open_unique_debug_file(name, ".txt").write(
+                        pretty_print_optemplate(optemplate))
+
+        dump_optemplate("01-before-bind", optemplate)
+        optemplate = OperatorBinder()(optemplate)
+        dump_optemplate("02-before-postbind", optemplate)
+        optemplate = post_bind_mapper(optemplate)
+        dump_optemplate("03-before-bc2flux", optemplate)
+        optemplate = BCToFluxRewriter()(optemplate)
+        dump_optemplate("04-before-cfold", optemplate)
+        optemplate = CommutativeConstantFoldingMapper()(optemplate)
+        dump_optemplate("05-before-empty-flux-killer", optemplate)
+        optemplate = EmptyFluxKiller(discr)(optemplate)
+        dump_optemplate("05-before-imass", optemplate)
+        optemplate = InverseMassContractor()(optemplate)
+        dump_optemplate("06-final", optemplate)
+
         from hedge.backends.jit.compiler import OperatorCompiler
-        return OperatorCompiler(discr)(prepared_optemplate)
+        return OperatorCompiler(discr)(optemplate)
 
     def diff_builtin(self, op_class, field, xyz_needed):
         rst_derivatives = [
