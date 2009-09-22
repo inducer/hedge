@@ -87,7 +87,7 @@ class MRABMethod(Record):
     __slots__ = ["steps", "s2f_hist_is_fast", "result_slow", "result_fast"]
 
 methods = {
-        "f_f_1a": MRABMethod(s2f_hist_is_fast=False,
+        "fastest_first_w": MRABMethod(s2f_hist_is_fast=False,
             steps=[
             IntegrateInTime(start=0, end=i+1, component=CO_SLOW,
                 result_name="y_s"),
@@ -105,7 +105,7 @@ methods = {
             ],
             result_slow="y_s",
             result_fast="y_f"),
-        "f_f_1b": MRABMethod(s2f_hist_is_fast=True,
+        "fastest_first_s": MRABMethod(s2f_hist_is_fast=True,
             steps=[
             IntegrateInTime(start=0, end=i+1, component=CO_SLOW,
                 result_name="y_s"),
@@ -123,7 +123,7 @@ methods = {
             ],
             result_slow="y_s",
             result_fast="y_f"),
-        "s_f_1": MRABMethod(s2f_hist_is_fast=False,
+        "slowest_first_1": MRABMethod(s2f_hist_is_fast=False,
             steps=[
                 IntegrateInTime(start=0, end=n, component=CO_SLOW,
                 result_name="\\tilde y_s"),
@@ -146,7 +146,7 @@ methods = {
             ],
             result_slow="y_s",
             result_fast="y_f"),
-        "s_f_2a": MRABMethod(s2f_hist_is_fast=False,
+        "slowest_first_2w": MRABMethod(s2f_hist_is_fast=False,
                 steps=[
             IntegrateInTime(start=0, end=n, component=CO_SLOW,
                 result_name="\\tilde y_s"),
@@ -169,7 +169,7 @@ methods = {
             ],
             result_slow="y_s",
             result_fast="y_f"),
-        "s_f_2b": MRABMethod(s2f_hist_is_fast=True,
+        "slowest_first_2s": MRABMethod(s2f_hist_is_fast=True,
                 steps=[
             IntegrateInTime(start=0, end=n, component=CO_SLOW,
                 result_name="\\tilde y_s"),
@@ -192,7 +192,7 @@ methods = {
             ],
             result_slow="y_s",
             result_fast="y_f"),
-        "s_f_3a": MRABMethod(s2f_hist_is_fast=False,
+        "slowest_first_3w": MRABMethod(s2f_hist_is_fast=False,
                 steps=[
             IntegrateInTime(start=0, end=n, component=CO_SLOW,
                 result_name="\\tilde y_s"),
@@ -215,7 +215,7 @@ methods = {
             ],
             result_slow="y_s",
             result_fast="y_f"),
-        "s_f_3b": MRABMethod(s2f_hist_is_fast=True,
+        "slowest_first_3s": MRABMethod(s2f_hist_is_fast=True,
                 steps=[
             IntegrateInTime(start=0, end=n, component=CO_SLOW,
                 result_name="\\tilde y_s"),
@@ -238,7 +238,7 @@ methods = {
             ],
             result_slow="y_s",
             result_fast="y_f"),
-        "s_f_4": MRABMethod(s2f_hist_is_fast=False,
+        "slowest_first_4": MRABMethod(s2f_hist_is_fast=False,
                 steps=[
             IntegrateInTime(start=0, end=n, component=CO_SLOW,
                 result_name="\\tilde y_s"),
@@ -304,7 +304,7 @@ def _add_slowest_first_variants(methods):
     result = {}
     for name, method in methods.iteritems():
         result[name] = method
-        if name.startswith("s_f"):
+        if name.startswith("slowest_first"):
             # no_slow_reeval = nr
             # s_f = slowest_first
             result[name+"_nr"] = \

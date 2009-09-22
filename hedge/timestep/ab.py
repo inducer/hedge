@@ -124,7 +124,6 @@ class AdamsBashforthTimeStepper(TimeStepper):
     dt_fudge_factor = 0.95
 
     def __init__(self, order, startup_stepper=None):
-        from hedge.timestep.ab import make_ab_coefficients
         self.coefficients = make_ab_coefficients(order)
         self.f_history = []
 

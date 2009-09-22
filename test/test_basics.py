@@ -162,7 +162,7 @@ class CheckMultirateTimesteperAccuracy:
         print orderest, self.order
         #assert orderest > order*0.80
 
-        self.out.write("& %s" % fpf.fix(orderest,2))
+        #self.out.write("& %s" % fpf.fix(orderest,2))
 
 
 
@@ -170,8 +170,6 @@ def test_multirate_timestep_accuracy():
     """Check that the multirate timestepper has the advertised accuracy"""
 
     from hedge.timestep.multirate_ab.methods import methods
-
-    methods_man = ['f_f_1a']
 
     from ode_systems import Basic, \
              Full, \
@@ -196,26 +194,23 @@ def test_multirate_timestep_accuracy():
     min_order = 1
     max_order = 6
     step_ratio = 10
-    #ode_arg_set = [Basic,Full,Real,Comp,CC,
-    #            Tria,Inh,Inh2]
-    ode_arg = StiffComp2
-    order_list =  range(min_order, max_order)
+    ode_arg_set = [Basic,Full,Real,Comp,CC,
+                Tria,Inh,Inh2]
+    for ode_arg in ode_arg_set:
+        order_list =  range(min_order, max_order)
 
-    #for method in methods:
-    for method in ['f_f_1a']:
+        for method in methods:
 
         # outputfile setup: ---------------------------------------------
-        outfilename = "mrab-out/mrab-EOC-%s.tex" % str(method)
-        outfile = open(outfilename, "w")
-
-
-        outfile.write("\\begin{tabular}{l")
-        for i in order_list:
-            outfile.write("c")
-        outfile.write("}" + "\n")
-        outfile.write("N & h & h/2 & h/4 & Rate")
-        outfile.write("\\""\\" + "\n")
-        outfile.write("\\hline" + "\n")
+        #outfilename = "mrab-out/mrab-EOC-%s.tex" % str(method)
+        #outfile = open(outfilename, "w")
+        #outfile.write("\\begin{tabular}{l")
+        #for i in order_list:
+        #    outfile.write("c")
+        #outfile.write("}" + "\n")
+        #outfile.write("N & h & h/2 & h/4 & Rate")
+        #outfile.write("\\""\\" + "\n")
+        #outfile.write("\\hline" + "\n")
 
         for order in order_list:
             outfile.write("%s" %order)
@@ -226,11 +221,11 @@ def test_multirate_timestep_accuracy():
                     outfile,
                     ode = ode_arg)
             checkup()
-            outfile.write("\\""\\" + "\n")
+            #outfile.write("\\""\\" + "\n")
             #outfile.write("\\hline" + "\n")
 
-        outfile.write("\\hline" + "\n")
-        outfile.write("\\end{tabular}" + "\n")
+        #outfile.write("\\hline" + "\n")
+        #outfile.write("\\end{tabular}" + "\n")
 
 
 
