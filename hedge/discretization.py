@@ -637,21 +637,29 @@ class Discretization(object):
 
     compute_kind = "numpy"
 
-    def convert_volume(self, field, kind):
+    def convert_volume(self, field, kind, dtype=None):
         orig_kind = self.get_kind(field)
 
         if orig_kind != "numpy":
             raise ValueError, "unable to perform kind conversion: %s -> %s" % (
                     orig_kind, kind)
+
+        if dtype is not None:
+            from hedge.tools import cast_field
+            field = cast_field(field, dtype)
 
         return field
 
-    def convert_boundary(self, field, tag, kind):
+    def convert_boundary(self, field, tag, kind, dtype=None):
         orig_kind = self.get_kind(field)
 
         if orig_kind != "numpy":
             raise ValueError, "unable to perform kind conversion: %s -> %s" % (
                     orig_kind, kind)
+
+        if dtype is not None:
+            from hedge.tools import cast_field
+            field = cast_field(field, dtype)
 
         return field
 

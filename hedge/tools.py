@@ -331,6 +331,13 @@ def with_object_array_or_scalar(f, field):
 
 
 
+def cast_field(field, dtype):
+    return with_object_array_or_scalar(
+            lambda f: f.astype(dtype), field)
+
+
+
+
 def make_common_subexpression(fields): 
     """Wrap each component of a vector field in a CSE."""
 
