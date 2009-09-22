@@ -258,7 +258,11 @@ class BoundaryCombiner(CSECachingMapperMixin, hedge.optemplate.IdentityMapper):
 
 
 # collectors ------------------------------------------------------------------
-class FluxCollector(hedge.optemplate.CollectorMixin, hedge.optemplate.CombineMapper):
+class FluxCollector(CSECachingMapperMixin,
+        hedge.optemplate.CollectorMixin, hedge.optemplate.CombineMapper):
+    map_common_subexpression_uncached = \
+            hedge.optemplate.CombineMapper.map_common_subexpression
+
     def map_whole_domain_flux(self, wdflux):
         result = set([wdflux]) 
 
@@ -268,6 +272,9 @@ class FluxCollector(hedge.optemplate.CollectorMixin, hedge.optemplate.CombineMap
             result |= self.rec(bdry.bpair)
 
         return result
+
+
+
 
 class BoundOperatorCollector(hedge.optemplate.BoundOperatorCollector):
     def map_whole_domain_flux(self, expr):
