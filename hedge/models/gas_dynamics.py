@@ -64,7 +64,7 @@ class GasDynamicsOperator(TimeDependentOperator):
 
     Field order is [rho E rho_u_x rho_u_y ...].
     """
-    def __init__(self, dimensions, discr,
+    def __init__(self, dimensions,
             gamma, prandtl, spec_gas_const, mu,
             bc_inflow, bc_outflow, bc_noslip,
             inflow_tag="inflow",
@@ -73,7 +73,6 @@ class GasDynamicsOperator(TimeDependentOperator):
             euler=False):
 
         self.dimensions = dimensions
-        self.discr = discr
         
         self.gamma = gamma
         self.prandtl = prandtl
