@@ -563,7 +563,8 @@ class Executor(object):
 	elif dtype == numpy.float32:
 	    max_func = "fmaxf"
 	else:
-	    raise TypeError("Could not find a maximum function due to unsupported field.dtype.")
+	    raise TypeError("Could not find a maximum function"
+	        " due to unsupported field.dtype.")
 
         from pycuda.tools import dtype_to_ctype
         from pycuda.compiler import SourceModule
