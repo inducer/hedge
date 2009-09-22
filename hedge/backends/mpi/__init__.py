@@ -33,6 +33,7 @@ from hedge.optemplate import \
 from hedge.tools import Future
 from hedge.backends import RunContext
 import boostmpi as mpi
+from pymbolic.mapper import CSECachingMapperMixin
 
 
 
@@ -274,10 +275,14 @@ def make_custom_exec_mapper_class(superclass):
 
 
 class FluxCommunicationInserter(
+        CSECachingMapperMixin,
         IdentityMapper, 
         FluxOpReducerMixin):
     def __init__(self, interacting_ranks):
         self.interacting_ranks = interacting_ranks
+
+    map_common_subexpression_uncached = \
+            IdentityMapper.map_common_subexpression
 
     def map_operator_binding(self, expr):
         from hedge.optemplate import \
