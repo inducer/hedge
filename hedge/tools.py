@@ -212,7 +212,7 @@ def plot_1d(f, a, b, steps=100, driver=None):
 # obj array helpers -----------------------------------------------------------
 def is_obj_array(val):
     try:
-        return val.dtype == object
+        return isinstance(val, numpy.ndarray) and val.dtype == object
     except AttributeError:
         return False
 
