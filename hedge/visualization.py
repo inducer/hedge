@@ -32,6 +32,19 @@ class Visualizer(object):
 
 
 
+# gnuplot mesh vis ------------------------------------------------------------
+def write_gnuplot_mesh(filename, mesh):
+    gp_file = open(filename, "w")
+    
+    for el in mesh.elements:
+        assert el.dimensions == 2
+        for pt in el.vertex_indices:
+            gp_file.write("%f %f\n" % tuple(mesh.points[pt]))
+        gp_file.write("%f %f\n\n" % tuple(mesh.points[el.vertex_indices[0]]))
+
+
+
+
 # legacy vtk ------------------------------------------------------------------
 def _three_vector(x):
     if len(x) == 3:
