@@ -84,6 +84,12 @@ class EndSubstepLoop(Record):
 
 # actual method descriptions --------------------------------------------------
 class MRABMethod(Record):
+    """
+    What does the letters at the end of the scheme name mean?
+       -  w: weak coupling => s2f_hist_is_fast = False
+       -  s: strong coupling => s2f_hist_is_fast = True
+    """
+
     __slots__ = ["steps", "s2f_hist_is_fast", "result_slow", "result_fast"]
 
 methods = {
@@ -305,9 +311,7 @@ def _add_slowest_first_variants(methods):
     for name, method in methods.iteritems():
         result[name] = method
         if name.startswith("slowest_first"):
-            # no_slow_reeval = nr
-            # s_f = slowest_first
-            result[name+"_nr"] = \
+            result[name+"_no_slow_reeval"] = \
                     _remove_last_yslow_evaluation_from_slowest_first(method)
 
     return result
