@@ -1009,15 +1009,21 @@ def gather_flops(discr):
 
 
 def count_dofs(vec):
-    if isinstance(vec, numpy.ndarray):
-        if vec.dtype == object:
-            from pytools import indices_in_shape
-            return sum(count_dofs(vec[i])
-                    for i in indices_in_shape(vec.shape))
-        else:
-            return vec.size
-    else:
+    try:
+        dtype = vec.dtype
+        size = vec.size
+        shape = vec.shape
+    except AttributeError:
+        from warnings import warn
+        warn("could not count dofs of vector")
         return 0
+
+    if dtype == object:
+        from pytools import indices_in_shape
+        return sum(count_dofs(vec[i])
+                for i in indices_in_shape(vec.shape))
+    else:
+        return size
 
 
 
