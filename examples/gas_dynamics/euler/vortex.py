@@ -91,10 +91,12 @@ def main(write_output=True):
                 make_rect_mesh, \
                 make_centered_regular_rect_mesh
 
-        refine = 1
+        refine = 4
         mesh = make_centered_regular_rect_mesh((0,-5), (10,5), n=(9,9),
                 post_refine_factor=refine)
         mesh_data = rcon.distribute_mesh(mesh)
+        from hedge.visualization import write_gnuplot_mesh
+        write_gnuplot_mesh("mesh.dat", mesh)
     else:
         mesh_data = rcon.receive_mesh()
 
@@ -112,7 +114,7 @@ def main(write_output=True):
 
         from hedge.models.gas_dynamics import GasDynamicsOperator
         from hedge.mesh import TAG_ALL
-        op = GasDynamicsOperator(dimensions=2, discr=discr, gamma=gamma, mu=mu,
+        op = GasDynamicsOperator(dimensions=2, gamma=gamma, mu=mu,
                 prandtl=prandtl, spec_gas_const=spec_gas_const,
                 bc_inflow=vortex, bc_outflow=vortex, bc_noslip=vortex,
                 inflow_tag=TAG_ALL, euler=True)

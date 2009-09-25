@@ -24,70 +24,65 @@ import numpy.linalg as la
 
 
 
-def make_nacamesh():
-    def airfoil_from_generator():
-        import meshpy.naca as naca
-        # parameters for the airfoil generator
-        naca_digits = "2412"
-        number_of_points = 40
-        sharp_trailing_edge = True
-        uniform_distribution = False
-        verbose = True
-        return naca.generate_naca(naca_digits=naca_digits,
-                number_of_points=number_of_points,
-                sharp_trailing_edge=sharp_trailing_edge,
-                uniform_distribution=uniform_distribution,
-                verbose=verbose)
+def make_boxmesh():
+    import numpy
+    from math import pi, cos, sin
+    from meshpy.tet import MeshInfo, build
+    from meshpy.geometry import GeometryBuilder, Marker, make_box
 
-    def round_trip_connect(seq):
-        result = []
-        for i in range(len(seq)):
-            result.append((i, (i+1)%len(seq)))
-        return result
+    geob = GeometryBuilder()
 
-    def needs_refinement(vertices, area):
-        barycenter =  sum(numpy.array(v) for v in vertices)/3
+    box_marker = Marker.FIRST_USER_MARKER
+    extent_small = 0.1*numpy.ones(3, dtype=numpy.float64)
+    points, facets, _ = \
+            make_box(-extent_small, extent_small)
 
-        pt_back = numpy.array([1,0])
+    geob.add_geometry(points, facets, facet_markers=box_marker)
 
-        max_area_front = 0.02*la.norm(barycenter)**2 + 1e-3
-        max_area_back = 0.06*la.norm(barycenter-pt_back)**2 + 1e-3
-        return bool(area > min(max_area_front, max_area_back))
+    # make small "separator box" for region attribute
+    points, facets, _ = \
+            make_box(
+                    -extent_small*4, 
+                    numpy.array([4,0.4,0.4], dtype=numpy.float64))
 
-    import sys
-    points = airfoil_from_generator()
+    geob.add_geometry(points, facets)
 
-    from meshpy.geometry import GeometryBuilder, Marker
-    from meshpy.triangle import write_gnuplot_mesh
+    points, facets, facet_markers = \
+            make_box(
+                    numpy.array([-1,-1,-1], dtype=numpy.float64), 
+                    numpy.array([5,1,1], dtype=numpy.float64))
 
-    profile_marker = Marker.FIRST_USER_MARKER
-    builder = GeometryBuilder()
-    builder.add_geometry(points=points,
-            facets=round_trip_connect(points),
-            facet_markers=profile_marker)
-    builder.wrap_in_box(8, (10, 8))
+    geob.add_geometry(points, facets, facet_markers=facet_markers)
 
-    from meshpy.triangle import MeshInfo, build
-    mi = MeshInfo()
-    builder.set(mi)
-    mi.set_holes([builder.center()])
+    mesh_info = MeshInfo()
+    geob.set(mesh_info)
+    mesh_info.set_holes([(0,0,0)])
 
-    mesh = build(mi, refinement_func=needs_refinement,
-            allow_boundary_steiner=False,
-            generate_faces=True)
+    # region attributes
+    mesh_info.regions.resize(1)
+    mesh_info.regions[0] = (
+            # point in region
+            list(extent_small*2) + [
+            # region number
+            1,
+            # max volume in region
+            0.0001])
 
-    write_gnuplot_mesh("mesh.dat", mesh)
-
+    mesh = build(mesh_info, max_volume=0.02, volume_constraints=True, attributes=True)
     print "%d elements" % len(mesh.elements)
+    #mesh.write_vtk("box-in-box.vtk")
+    #print "done writing"
 
     fvi2fm = mesh.face_vertex_indices_to_face_marker
 
     face_marker_to_tag = {
-            profile_marker: "noslip",
+            box_marker: "noslip",
             Marker.MINUS_X: "inflow",
             Marker.PLUS_X: "outflow",
-            Marker.MINUS_Y: "minus_y",
-            Marker.PLUS_Y: "plus_y"
+            Marker.MINUS_Y: "inflow",
+            Marker.PLUS_Y: "inflow",
+            Marker.PLUS_Z: "inflow",
+            Marker.MINUS_Z: "inflow"
             }
 
     def bdry_tagger(fvi, el, fn, all_v):
@@ -96,8 +91,8 @@ def make_nacamesh():
 
     from hedge.mesh import make_conformal_mesh
     return make_conformal_mesh(
-            mesh.points, mesh.elements, bdry_tagger,
-            periodicity=[None, ("minus_y", "plus_y")])
+            mesh.points, mesh.elements, bdry_tagger
+            )
 
 
 
@@ -109,7 +104,10 @@ def main():
     )
 
     if rcon.is_head_rank:
-        mesh = make_nacamesh()
+        mesh = make_boxmesh()
+        #from hedge.mesh import make_rect_mesh
+        #mesh = make_rect_mesh(
+        #       boundary_tagger=lambda fvi, el, fn, all_v: ["inflow"])
         mesh_data = rcon.distribute_mesh(mesh)
     else:
         mesh_data = rcon.receive_mesh()
@@ -119,23 +117,24 @@ def main():
         add_python_path_relative_to_script("..")
 
         from gas_dynamics_initials import UniformMachFlow
-        naca = UniformMachFlow()
+        box = UniformMachFlow(angle_of_attack=0)
 
         from hedge.models.gas_dynamics import GasDynamicsOperator
-        op = GasDynamicsOperator(dimensions=2,
-                gamma=naca.gamma, prandtl=naca.prandtl, 
-                spec_gas_const=naca.spec_gas_const, mu=naca.mu,
-                bc_inflow=naca, bc_outflow=naca, bc_noslip=naca,
+        op = GasDynamicsOperator(dimensions=3, 
+                gamma=box.gamma, mu=box.mu,
+                prandtl=box.prandtl, spec_gas_const=box.spec_gas_const, 
+                bc_inflow=box, bc_outflow=box, bc_noslip=box,
                 inflow_tag="inflow", outflow_tag="outflow", noslip_tag="noslip",
                 euler=False)
 
         discr = rcon.make_discretization(mesh_data, order=order,
-			debug=[
-                            #"cuda_no_plan",
+			debug=[#"cuda_no_plan",
                             #"cuda_dump_kernels",
+                            #"dump_dataflow_graph",
                             #"dump_optemplate_stages",
                             #"dump_dataflow_graph",
-                            #"print_op_code"
+                            #"print_op_code",
+                            "cuda_no_plan_el_local",
                             ],
 			default_scalar_type=numpy.float32,
                         tune_for=op.op_template())
@@ -144,7 +143,7 @@ def main():
         #vis = VtkVisualizer(discr, rcon, "shearflow-%d" % order)
         vis = SiloVisualizer(discr, rcon)
 
-        fields = naca.volume_interpolant(0, discr)
+        fields = box.volume_interpolant(0, discr)
 
         navierstokes_ex = op.bind(discr)
 
@@ -156,7 +155,7 @@ def main():
         rhs(0, fields)
 
         dt = discr.dt_factor(max_eigval[0], order=2)
-        final_time = 50
+        final_time = 200
         nsteps = int(final_time/dt)+1
         dt = final_time/nsteps
 
@@ -207,11 +206,14 @@ def main():
         for step in range(nsteps):
             logmgr.tick()
 
-            if step % 10000 == 0:
+            if (step % 10000 == 0): #and step < 950000) or (step % 500 == 0 and step > 950000):
             #if False:
-                visf = vis.make_file("naca-%d-%06d" % (order, step))
+                visf = vis.make_file("box-%d-%06d" % (order, step))
+
+                #rhs_fields = rhs(t, fields)
 
                 from pylo import DB_VARTYPE_VECTOR
+                from hedge.discretization import ones_on_boundary
                 vis.add_data(visf,
                         [
                             ("rho", discr.convert_volume(op.rho(fields), kind="numpy")),
@@ -219,20 +221,11 @@ def main():
                             ("rho_u", discr.convert_volume(op.rho_u(fields), kind="numpy")),
                             ("u", discr.convert_volume(op.u(fields), kind="numpy")),
 
-                            #("true_rho", op.rho(true_fields)),
-                            #("true_e", op.e(true_fields)),
-                            #("true_rho_u", op.rho_u(true_fields)),
-                            #("true_u", op.u(true_fields)),
-
                             #("rhs_rho", discr.convert_volume(op.rho(rhs_fields), kind="numpy")),
                             #("rhs_e", discr.convert_volume(op.e(rhs_fields), kind="numpy")),
                             #("rhs_rho_u", discr.convert_volume(op.rho_u(rhs_fields), kind="numpy")),
                             ],
                         expressions=[
-                            #("diff_rho", "rho-true_rho"),
-                            #("diff_e", "e-true_e"),
-                            #("diff_rho_u", "rho_u-true_rho_u", DB_VARTYPE_VECTOR),
-
                             ("p", "(0.4)*(e- 0.5*(rho_u*u))"),
                             ],
                         time=t, step=step

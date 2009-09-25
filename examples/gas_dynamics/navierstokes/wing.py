@@ -24,61 +24,65 @@ import numpy.linalg as la
 
 
 
-def make_nacamesh():
-    def airfoil_from_generator():
-        import meshpy.naca as naca
-        # parameters for the airfoil generator
-        naca_digits = "2412"
-        number_of_points = 40
-        sharp_trailing_edge = True
-        uniform_distribution = False
-        verbose = True
-        return naca.generate_naca(naca_digits=naca_digits,
-                number_of_points=number_of_points,
-                sharp_trailing_edge=sharp_trailing_edge,
-                uniform_distribution=uniform_distribution,
-                verbose=verbose)
+def make_wingmesh():
+    import numpy
+    from math import pi, cos, sin
+    from meshpy.tet import MeshInfo, build
+    from meshpy.geometry import GeometryBuilder, Marker, \
+            generate_extrusion, make_box
 
-    def round_trip_connect(seq):
-        result = []
-        for i in range(len(seq)):
-            result.append((i, (i+1)%len(seq)))
-        return result
+    from meshpy.naca import generate_naca
 
-    def needs_refinement(vertices, area):
-        barycenter =  sum(numpy.array(v) for v in vertices)/3
-
-        pt_back = numpy.array([1,0])
-
-        max_area_front = 0.02*la.norm(barycenter)**2 + 1e-3
-        max_area_back = 0.06*la.norm(barycenter-pt_back)**2 + 1e-3
-        return bool(area > min(max_area_front, max_area_back))
-
-    import sys
-    points = airfoil_from_generator()
-
-    from meshpy.geometry import GeometryBuilder, Marker
-    from meshpy.triangle import write_gnuplot_mesh
+    geob = GeometryBuilder()
 
     profile_marker = Marker.FIRST_USER_MARKER
-    builder = GeometryBuilder()
-    builder.add_geometry(points=points,
-            facets=round_trip_connect(points),
-            facet_markers=profile_marker)
-    builder.wrap_in_box(8, (10, 8))
 
-    from meshpy.triangle import MeshInfo, build
-    mi = MeshInfo()
-    builder.set(mi)
-    mi.set_holes([builder.center()])
+    wing_length = 2
+    wing_subdiv = 5
 
-    mesh = build(mi, refinement_func=needs_refinement,
-            allow_boundary_steiner=False,
-            generate_faces=True)
+    rz_points = [
+            (0, -wing_length*1.05),
+            (0.7, -wing_length*1.05),
+            ] + [
+                (r, x) for x, r in zip(
+                    numpy.linspace(-wing_length, 0, wing_subdiv, endpoint=False),
+                    numpy.linspace(0.8, 1, wing_subdiv, endpoint=False))
+            ] + [(1,0)] + [
+                (r, x) for x, r in zip(
+                    numpy.linspace(wing_length, 0, wing_subdiv, endpoint=False),
+                    numpy.linspace(0.8, 1, wing_subdiv, endpoint=False))
+            ][::-1] + [
+            (0.7, wing_length*1.05),
+            (0, wing_length*1.05)
+            ]
 
-    write_gnuplot_mesh("mesh.dat", mesh)
+    geob.add_geometry(*generate_extrusion(
+        rz_points=rz_points,
+        base_shape=generate_naca("0012", verbose=False, number_of_points=40),
+        ring_markers=(wing_subdiv*2+4)*[profile_marker]))
 
+    def deform_wing(p):
+        x, y, z = p
+        return numpy.array([
+            x + 0.8*abs(z/wing_length)** 1.2,
+            y + 0.1*abs(z/wing_length)**2,
+            z])
+
+    geob.apply_transform(deform_wing)
+
+    points, facets, facet_markers = make_box(
+            numpy.array([-1.5,-1,-wing_length-1], dtype=numpy.float64),
+            numpy.array([3,1,wing_length+1], dtype=numpy.float64))
+
+    geob.add_geometry(points, facets, facet_markers=facet_markers)
+
+    mesh_info = MeshInfo()
+    geob.set(mesh_info)
+    mesh_info.set_holes([(0.5,0,0)])
+
+    mesh = build(mesh_info)
     print "%d elements" % len(mesh.elements)
+    mesh.write_vtk("airfoil3d.vtk")
 
     fvi2fm = mesh.face_vertex_indices_to_face_marker
 
@@ -86,8 +90,10 @@ def make_nacamesh():
             profile_marker: "noslip",
             Marker.MINUS_X: "inflow",
             Marker.PLUS_X: "outflow",
-            Marker.MINUS_Y: "minus_y",
-            Marker.PLUS_Y: "plus_y"
+            Marker.MINUS_Y: "inflow",
+            Marker.PLUS_Y: "inflow",
+            Marker.PLUS_Z: "inflow",
+            Marker.MINUS_Z: "inflow"
             }
 
     def bdry_tagger(fvi, el, fn, all_v):
@@ -97,19 +103,20 @@ def make_nacamesh():
     from hedge.mesh import make_conformal_mesh
     return make_conformal_mesh(
             mesh.points, mesh.elements, bdry_tagger,
-            periodicity=[None, ("minus_y", "plus_y")])
+            )
 
 
 
 
 def main():
     from hedge.backends import guess_run_context
-    rcon = guess_run_context(
-    ["cuda"]
-    )
+    rcon = guess_run_context( ["cuda", "mpi"])
 
     if rcon.is_head_rank:
-        mesh = make_nacamesh()
+        mesh = make_wingmesh()
+        #from hedge.mesh import make_rect_mesh
+        #mesh = make_rect_mesh(
+        #       boundary_tagger=lambda fvi, el, fn, all_v: ["inflow"])
         mesh_data = rcon.distribute_mesh(mesh)
     else:
         mesh_data = rcon.receive_mesh()
@@ -119,32 +126,33 @@ def main():
         add_python_path_relative_to_script("..")
 
         from gas_dynamics_initials import UniformMachFlow
-        naca = UniformMachFlow()
+        wing = UniformMachFlow(angle_of_attack=0)
 
         from hedge.models.gas_dynamics import GasDynamicsOperator
-        op = GasDynamicsOperator(dimensions=2,
-                gamma=naca.gamma, prandtl=naca.prandtl, 
-                spec_gas_const=naca.spec_gas_const, mu=naca.mu,
-                bc_inflow=naca, bc_outflow=naca, bc_noslip=naca,
+        op = GasDynamicsOperator(dimensions=3,
+                gamma=wing.gamma, mu=wing.mu,
+                prandtl=wing.prandtl, spec_gas_const=wing.spec_gas_const, 
+                bc_inflow=wing, bc_outflow=wing, bc_noslip=wing,
                 inflow_tag="inflow", outflow_tag="outflow", noslip_tag="noslip",
                 euler=False)
 
         discr = rcon.make_discretization(mesh_data, order=order,
-			debug=[
-                            #"cuda_no_plan",
+			debug=["cuda_no_plan",
                             #"cuda_dump_kernels",
+                            #"dump_dataflow_graph",
                             #"dump_optemplate_stages",
                             #"dump_dataflow_graph",
                             #"print_op_code"
+                            "cuda_no_metis",
                             ],
-			default_scalar_type=numpy.float32,
+			default_scalar_type=numpy.float64,
                         tune_for=op.op_template())
 
         from hedge.visualization import SiloVisualizer, VtkVisualizer
         #vis = VtkVisualizer(discr, rcon, "shearflow-%d" % order)
         vis = SiloVisualizer(discr, rcon)
 
-        fields = naca.volume_interpolant(0, discr)
+        fields = wing.volume_interpolant(0, discr)
 
         navierstokes_ex = op.bind(discr)
 
@@ -156,7 +164,7 @@ def main():
         rhs(0, fields)
 
         dt = discr.dt_factor(max_eigval[0], order=2)
-        final_time = 50
+        final_time = 200
         nsteps = int(final_time/dt)+1
         dt = final_time/nsteps
 
@@ -184,34 +192,20 @@ def main():
 
         logmgr.add_watches(["step.max", "t_sim.max", "t_step.max"])
 
-        from pytools.log import LogQuantity
-        class ChangeSinceLastStep(LogQuantity):
-            """Records the change of a variable between a time step and the previous
-               one"""
-
-            def __init__(self, name="change"):
-                LogQuantity.__init__(self, name, "1", "Change since last time step")
-
-                self.old_fields = 0
-
-            def __call__(self):
-                result = discr.norm(fields - self.old_fields)
-                self.old_fields = fields
-                return result
-
-        logmgr.add_quantity(ChangeSinceLastStep())
-
         # timestep loop -------------------------------------------------------
         t = 0
 
         for step in range(nsteps):
             logmgr.tick()
 
-            if step % 10000 == 0:
+            if (step % 10000 == 0): #and step < 950000) or (step % 500 == 0 and step > 950000):
             #if False:
-                visf = vis.make_file("naca-%d-%06d" % (order, step))
+                visf = vis.make_file("wing-%d-%06d" % (order, step))
+
+                #rhs_fields = rhs(t, fields)
 
                 from pylo import DB_VARTYPE_VECTOR
+                from hedge.discretization import ones_on_boundary
                 vis.add_data(visf,
                         [
                             ("rho", discr.convert_volume(op.rho(fields), kind="numpy")),
@@ -219,25 +213,18 @@ def main():
                             ("rho_u", discr.convert_volume(op.rho_u(fields), kind="numpy")),
                             ("u", discr.convert_volume(op.u(fields), kind="numpy")),
 
-                            #("true_rho", op.rho(true_fields)),
-                            #("true_e", op.e(true_fields)),
-                            #("true_rho_u", op.rho_u(true_fields)),
-                            #("true_u", op.u(true_fields)),
-
                             #("rhs_rho", discr.convert_volume(op.rho(rhs_fields), kind="numpy")),
                             #("rhs_e", discr.convert_volume(op.e(rhs_fields), kind="numpy")),
                             #("rhs_rho_u", discr.convert_volume(op.rho_u(rhs_fields), kind="numpy")),
                             ],
                         expressions=[
-                            #("diff_rho", "rho-true_rho"),
-                            #("diff_e", "e-true_e"),
-                            #("diff_rho_u", "rho_u-true_rho_u", DB_VARTYPE_VECTOR),
-
                             ("p", "(0.4)*(e- 0.5*(rho_u*u))"),
                             ],
                         time=t, step=step
                         )
                 visf.close()
+
+            old_fields = fields
 
             fields = stepper(fields, t, dt, rhs)
             t += dt
@@ -246,6 +233,11 @@ def main():
 
         logmgr.tick()
         logmgr.save()
+
+        true_fields = wing.volume_interpolant(t, discr)
+        eoc_rec.add_data_point(order, discr.norm(fields-old_fields))
+        print
+        print eoc_rec.pretty_print("P.Deg.", "Residual")
 
 if __name__ == "__main__":
     main()

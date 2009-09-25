@@ -77,7 +77,7 @@ def main():
         from hedge.mesh import make_rect_mesh, \
                                make_centered_regular_rect_mesh
         #mesh = make_rect_mesh((0,0), (10,1), max_area=0.01)
-        refine = 4
+        refine = 1
         mesh = make_centered_regular_rect_mesh((0,0), (10,1), n=(20,4),
                             #periodicity=(True, False),
                             post_refine_factor=refine,
@@ -98,8 +98,8 @@ def main():
         fields = shearflow.volume_interpolant(0, discr)
         gamma, mu, prandtl, spec_gas_const = shearflow.properties()
 
-        from hedge.models.gasdynamics import GasDynamicsOperator
-        op = GasDynamicsOperator(dimensions=2, discr=discr, gamma=gamma, mu=mu,
+        from hedge.models.gas_dynamics import GasDynamicsOperator
+        op = GasDynamicsOperator(dimensions=2, gamma=gamma, mu=mu,
                 prandtl=prandtl, spec_gas_const=spec_gas_const,
                 bc_inflow=shearflow, bc_outflow=shearflow, bc_noslip=shearflow,
                 inflow_tag="inflow", outflow_tag="outflow", noslip_tag="noslip",
