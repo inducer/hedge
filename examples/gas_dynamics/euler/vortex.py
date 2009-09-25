@@ -25,11 +25,15 @@ import numpy.linalg as la
 
 
 class Vortex:
-    def __init__(self, beta, gamma, center, velocity):
-        self.beta = beta
-        self.gamma = gamma
-        self.center = numpy.asarray(center)
-        self.velocity = numpy.asarray(velocity)
+    def __init__(self):
+        self.beta = 5
+        self.gamma = 1.4
+        self.center = numpy.array([5, 0])
+        self.velocity = numpy.array([1, 0])
+
+        self.mu = 0
+        self.prandtl = 0.72
+        self.spec_gas_const = 287.1
 
     def __call__(self, t, x_vec):
         vortex_loc = self.center + t*self.velocity
@@ -54,6 +58,10 @@ class Vortex:
         from hedge.tools import join_fields
         return join_fields(rho, e, rho*u, rho*v)
 
+    def properties(self):
+        return(self.gamma, self.mu, self.prandtl, self.spec_gas_const)
+
+
     def volume_interpolant(self, t, discr):
         return discr.convert_volume(
 			self(t, discr.nodes.T
@@ -75,8 +83,6 @@ def main(write_output=True):
 		    #["cuda"]
 		    )
 
-    gamma = 1.4
-
     from hedge.tools import EOCRecorder, to_obj_array
     eoc_rec = EOCRecorder()
 
@@ -85,33 +91,31 @@ def main(write_output=True):
                 make_rect_mesh, \
                 make_centered_regular_rect_mesh
 
-        refine = 1
+        refine = 4
         mesh = make_centered_regular_rect_mesh((0,-5), (10,5), n=(9,9),
                 post_refine_factor=refine)
         mesh_data = rcon.distribute_mesh(mesh)
+        from hedge.visualization import write_gnuplot_mesh
+        write_gnuplot_mesh("mesh.dat", mesh)
     else:
         mesh_data = rcon.receive_mesh()
 
-    for order in [1, 2, 3]:
+    for order in [3, 4, 5]:
         discr = rcon.make_discretization(mesh_data, order=order,
-			debug=[#"cuda_no_plan",
-			#"print_op_code"
-			],
 			default_scalar_type=numpy.float64)
 
         from hedge.visualization import SiloVisualizer, VtkVisualizer
         #vis = VtkVisualizer(discr, rcon, "vortex-%d" % order)
         vis = SiloVisualizer(discr, rcon)
 
-        vortex = Vortex(beta=5, gamma=gamma, 
-                center=[5,0], 
-                velocity=[1,0])
+        vortex = Vortex()
         fields = vortex.volume_interpolant(0, discr)
+        gamma, mu, prandtl, spec_gas_const = vortex.properties()
 
-        from hedge.models.gasdynamics import GasDynamicsOperator
+        from hedge.models.gas_dynamics import GasDynamicsOperator
         from hedge.mesh import TAG_ALL
-        op = GasDynamicsOperator(dimensions=2, discr= discr,
-                gamma=gamma, prandtl=0.72, spec_gas_const=287.1,
+        op = GasDynamicsOperator(dimensions=2, gamma=gamma, mu=mu,
+                prandtl=prandtl, spec_gas_const=spec_gas_const,
                 bc_inflow=vortex, bc_outflow=vortex, bc_noslip=vortex,
                 inflow_tag=TAG_ALL, euler=True,source=None)
 
@@ -138,7 +142,6 @@ def main(write_output=True):
             print "#elements=", len(mesh.elements)
 
         from hedge.timestep import RK4TimeStepper
-        #from hedge.backends.cuda.tools import RK4TimeStepper
         stepper = RK4TimeStepper()
 
         # diagnostics setup ---------------------------------------------------
@@ -171,8 +174,6 @@ def main(write_output=True):
                     visf = vis.make_file("vortex-%d-%04d" % (order, step))
 
                     true_fields = vortex.volume_interpolant(t, discr)
-
-                    rhs_fields = rhs(t, fields)
 
                     from pylo import DB_VARTYPE_VECTOR
                     vis.add_data(visf,
@@ -215,7 +216,7 @@ def main(write_output=True):
             l2_error_rhou = discr.norm(op.rho_u(fields)-op.rho_u(true_fields))
             l2_error_u = discr.norm(op.u(fields)-op.u(true_fields))
 
-            eoc_rec.add_data_point(order, l2_error_rho)
+            eoc_rec.add_data_point(order, l2_error)
             print
             print eoc_rec.pretty_print("P.Deg.", "L2 Error")
 
@@ -235,7 +236,7 @@ def main(write_output=True):
             discr.close()
 
     # after order loop
-    #assert eoc_rec.estimate_order_of_convergence()[0,1] > 6
+    assert eoc_rec.estimate_order_of_convergence()[0,1] > 6
 
 
 
@@ -249,4 +250,4 @@ if __name__ == "__main__":
 from pytools.test import mark_test
 @mark_test.long
 def test_euler_vortex():
-    main(write_output=True)
+    main()

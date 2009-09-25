@@ -212,7 +212,7 @@ def plot_1d(f, a, b, steps=100, driver=None):
 # obj array helpers -----------------------------------------------------------
 def is_obj_array(val):
     try:
-        return val.dtype == object
+        return isinstance(val, numpy.ndarray) and val.dtype == object
     except AttributeError:
         return False
 
@@ -234,7 +234,7 @@ def to_obj_array(ary):
 
 def is_field_equal(a, b):
     if is_obj_array(a):
-        return is_obj_array(b) and (a == b).all()
+        return is_obj_array(b) and (a.shape == b.shape) and (a == b).all()
     else:
         return not is_obj_array(b) and a == b
 
@@ -327,6 +327,13 @@ def with_object_array_or_scalar(f, field):
         return result
     else:
         return f(field)
+
+
+
+
+def cast_field(field, dtype):
+    return with_object_array_or_scalar(
+            lambda f: f.astype(dtype), field)
 
 
 
@@ -1002,15 +1009,21 @@ def gather_flops(discr):
 
 
 def count_dofs(vec):
-    if isinstance(vec, numpy.ndarray):
-        if vec.dtype == object:
-            from pytools import indices_in_shape
-            return sum(count_dofs(vec[i])
-                    for i in indices_in_shape(vec.shape))
-        else:
-            return vec.size
-    else:
+    try:
+        dtype = vec.dtype
+        size = vec.size
+        shape = vec.shape
+    except AttributeError:
+        from warnings import warn
+        warn("could not count dofs of vector")
         return 0
+
+    if dtype == object:
+        from pytools import indices_in_shape
+        return sum(count_dofs(vec[i])
+                for i in indices_in_shape(vec.shape))
+    else:
+        return size
 
 
 

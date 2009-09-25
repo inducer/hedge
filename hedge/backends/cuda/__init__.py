@@ -270,6 +270,7 @@ class Discretization(hedge.discretization.Discretization):
             "cuda_try_no_microblock",
             "cuda_plan_log",
             "cuda_plan_no_progress",
+            "cuda_no_metis",
             ])
 
     class PartitionData(Record):
@@ -285,6 +286,9 @@ class Discretization(hedge.discretization.Discretization):
             import pymetis
             metis_available = True
         except ImportError:
+            metis_available = False
+
+        if "cuda_no_metis" in self.debug:
             metis_available = False
 
         if max_block_size >= 10 and metis_available:
@@ -809,8 +813,11 @@ class Discretization(hedge.discretization.Discretization):
                     dtype=numpy.uint32),
                 allocator=self.pool.allocate)
 
-    def _volume_to_gpu(self, field):
+    def _volume_to_gpu(self, field, dtype):
         def f(subfld):
+            if dtype is not None:
+                subfld = subfld.astype(dtype)
+
             cpu_transfer = self.pagelocked_pool.allocate(
                     (self.gpu_dof_count(),), dtype=subfld.dtype)
 
@@ -820,8 +827,11 @@ class Discretization(hedge.discretization.Discretization):
         from hedge.tools import with_object_array_or_scalar
         return with_object_array_or_scalar(f, field)
 
-    def _volume_from_gpu(self, field):
+    def _volume_from_gpu(self, field, dtype=None):
         def f(subfld):
+            if dtype is not None:
+                subfld = subfld.astype(dtype)
+
             return subfld.get(pagelocked=True)[self._gpu_volume_embedding()]
 
         from hedge.tools import with_object_array_or_scalar
@@ -882,6 +892,7 @@ class Discretization(hedge.discretization.Discretization):
                 self.buf = buf = discr.pagelocked_pool.allocate(
                         ls+one_field.shape, dtype=self.discr.default_scalar_type)
                 for i, subf in enumerate(field):
+                    assert subf.flags.c_contiguous
                     buf[i, :] = subf
             else:
                 assert field.flags.c_contiguous
@@ -930,30 +941,37 @@ class Discretization(hedge.discretization.Discretization):
             self.discr._release_stream(self.stream)
             return self.result
 
-    def _boundary_from_gpu(self, field, tag):
+    def _boundary_from_gpu(self, field, tag, dtype):
         def f(field):
+            if dtype is not None:
+                subfld = subfld.astype(dtype)
+
             return field.get()[self._gpu_boundary_embedding(tag)]
 
         from hedge.tools import with_object_array_or_scalar
         return with_object_array_or_scalar(f, field)
 
-    def convert_volume(self, field, kind):
+    def convert_volume(self, field, kind, dtype=None):
         orig_kind = self.get_kind(field)
 
         if kind == "numpy" and orig_kind == "gpu":
-            return self._volume_from_gpu(field)
+            return self._volume_from_gpu(field, dtype)
         elif kind == "gpu" and orig_kind == "numpy":
-            return self._volume_to_gpu(field)
+            return self._volume_to_gpu(field, dtype)
         else:
             return hedge.discretization.Discretization.convert_volume(
                     self, field, kind)
 
-    def convert_boundary(self, field, tag, kind):
+    def convert_boundary(self, field, tag, kind, dtype=None):
         orig_kind = self.get_kind(field)
 
         if kind == "numpy" and orig_kind == "gpu":
-            return self._boundary_from_gpu(field, tag)
+            return self._boundary_from_gpu(field, tag, dtype)
         elif kind == "gpu" and orig_kind == "numpy":
+            if dtype is not None:
+                from hedge.tools import cast_field
+                field = cast_field(field, dtype)
+
             return self._BoundaryToGPUFuture(self, field, tag)()
         else:
             return hedge.discretization.Discretization.convert_boundary(

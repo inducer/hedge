@@ -40,4 +40,4 @@ doc/manual/.build
 *.so
 *.eps
 run-debug-*
-*#
+.nfs*

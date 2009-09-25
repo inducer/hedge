@@ -507,7 +507,7 @@ def make_conformal_mesh(points, elements,
             return []
 
     if _is_rankbdry_face is None:
-        def _is_rankbdry_face(el, face):
+        def _is_rankbdry_face(el_face):
             return False
 
     if len(points) == 0:

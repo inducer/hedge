@@ -9,7 +9,7 @@ __copyright__ = "Copyright (C) 2007 Andreas Kloeckner"
 __license__ = """
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, orjo
+the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 
 This program is distributed in the hope that it will be useful,
@@ -167,7 +167,81 @@ class _PointEvaluator(object):
             return numpy.dot(self.interp_coeff, field[self.el_range])
 
 
-class Discretization(object):
+
+
+class TimestepCalculator(object):
+    def dt_factor(self, max_system_ev, order=1, stepper_class=None, *stepper_args):
+        u"""Calculate the largest stable timestep, given a time stepper
+        `stepper_class`. If none is given, RK4 is assumed.
+        """
+
+        # Calculating the correct timestep Δt for a DG scheme using the RK4
+        # method is described in: "Nodal DG Methods, Algorithm, Analysis and
+        # Applications" by J.S. Hesthaven & T. Warburton, p. 93, "Discrete
+        # stability and timestep choise".  The implementation of timestep
+        # calculation here is based upon this chapter.
+        #
+        # For a spatially continuous problem, the timestep can be calculated by
+        # the following relation: 
+        #
+        #           max|λop| * Δt =  C_TimeStepper,
+        #
+        # where max|λop| is the maximum eigenvalue of the operator and
+        # C_TimeStepper represents the maximum size of the stability region of
+        # the timestepper along the imaginary axis. 
+        #
+        # For a DG-discretized problem another factor has to be added:
+        #
+        #            fDG = fNG * fG,
+        #
+        # fNG: non geometric factor fG:  geometric factor
+        #
+        # The discrete relation is: max|λop| * Δt = fDG * C_Timestepper
+        #
+        # Since the LocalDiscretization.dt_non_geometric_factor() and
+        # LocalDiscretization.dt_geometric_factor() implicitly scale their
+        # results for an RK4 time stepper, fDG includes already C_RK4 such as
+        # fDG becomes fDG_RK4 and the relation is:
+        #
+        #           max|λop| * Δt = fDG_RK4
+        #
+        # As this is only sufficient for the use of RK4 timestepper but not for
+        # any other implemented approache (e.g. Adams-Bashforth) additional
+        # information about the size of the stability region is required to be
+        # added into the relation.
+        #
+        # Unifying the relation with the size of the RK4 stability region and
+        # multiplying it with the size of the specific timestepper stability
+        # region brings out the correct relation:
+        #
+        #           max|λop| * Δt = fDG_RK4 / C_RK4 * C_TimeStepper
+        #
+        # C_TimeStepper gets calculated by a bisection method for every kind of
+        # timestepper.
+
+
+        rk4_dt = 1/max_system_ev \
+                * (self.dt_non_geometric_factor()
+                * self.dt_geometric_factor())**order
+
+        from hedge.timestep import RK4TimeStepper
+        if stepper_class is None or stepper_class == RK4TimeStepper:
+            return rk4_dt
+        else:
+            assert isinstance(stepper_class, type)
+
+            from hedge.timestep.stability import \
+                    calculate_fudged_stability_region
+
+            return rk4_dt \
+                    * calculate_fudged_stability_region(
+                            stepper_class, *stepper_args) \
+                    / calculate_fudged_stability_region(RK4TimeStepper)
+
+
+
+
+class Discretization(TimestepCalculator):
     """The global approximation space.
 
     Instances of this class tie together a local discretization (i.e. polynomials
@@ -637,21 +711,29 @@ class Discretization(object):
 
     compute_kind = "numpy"
 
-    def convert_volume(self, field, kind):
+    def convert_volume(self, field, kind, dtype=None):
         orig_kind = self.get_kind(field)
 
         if orig_kind != "numpy":
             raise ValueError, "unable to perform kind conversion: %s -> %s" % (
                     orig_kind, kind)
+
+        if dtype is not None:
+            from hedge.tools import cast_field
+            field = cast_field(field, dtype)
 
         return field
 
-    def convert_boundary(self, field, tag, kind):
+    def convert_boundary(self, field, tag, kind, dtype=None):
         orig_kind = self.get_kind(field)
 
         if orig_kind != "numpy":
             raise ValueError, "unable to perform kind conversion: %s -> %s" % (
                     orig_kind, kind)
+
+        if dtype is not None:
+            from hedge.tools import cast_field
+            field = cast_field(field, dtype)
 
         return field
 
@@ -915,74 +997,6 @@ class Discretization(object):
             [self.mesh.points[i] for i in el.vertex_indices], el)
             for el in eg.members)
             for eg in self.element_groups)
-
-    def dt_factor(self, max_system_ev, order=1, stepper_class=None, *stepper_args):
-        u"""Calculate the largest stable timestep, given a time stepper
-        `stepper_class`. If none is given, RK4 is assumed.
-        """
-
-        # Calculating the correct timestep Δt for a DG scheme using the RK4
-        # method is described in: "Nodal DG Methods, Algorithm, Analysis and
-        # Applications" by J.S. Hesthaven & T. Warburton, p. 93, "Discrete
-        # stability and timestep choise".  The implementation of timestep
-        # calculation here is based upon this chapter.
-        #
-        # For a spatially continuous problem, the timestep can be calculated by
-        # the following relation: 
-        #
-        #           max|λop| * Δt =  C_TimeStepper,
-        #
-        # where max|λop| is the maximum eigenvalue of the operator and
-        # C_TimeStepper represents the maximum size of the stability region of
-        # the timestepper along the imaginary axis. 
-        #
-        # For a DG-discretized problem another factor has to be added:
-        #
-        #            fDG = fNG * fG,
-        #
-        # fNG: non geometric factor fG:  geometric factor
-        #
-        # The discrete relation is: max|λop| * Δt = fDG * C_Timestepper
-        #
-        # Since the LocalDiscretization.dt_non_geometric_factor() and
-        # LocalDiscretization.dt_geometric_factor() implicitly scale their
-        # results for an RK4 time stepper, fDG includes already C_RK4 such as
-        # fDG becomes fDG_RK4 and the relation is:
-        #
-        #           max|λop| * Δt = fDG_RK4
-        #
-        # As this is only sufficient for the use of RK4 timestepper but not for
-        # any other implemented approache (e.g. Adams-Bashforth) additional
-        # information about the size of the stability region is required to be
-        # added into the relation.
-        #
-        # Unifying the relation with the size of the RK4 stability region and
-        # multiplying it with the size of the specific timestepper stability
-        # region brings out the correct relation:
-        #
-        #           max|λop| * Δt = fDG_RK4 / C_RK4 * C_TimeStepper
-        #
-        # C_TimeStepper gets calculated by a bisection method for every kind of
-        # timestepper.
-
-
-        rk4_dt = 1/max_system_ev \
-                * (self.dt_non_geometric_factor()
-                * self.dt_geometric_factor())**order
-
-        from hedge.timestep import RK4TimeStepper
-        if stepper_class is None or stepper_class == RK4TimeStepper:
-            return rk4_dt
-        else:
-            assert isinstance(stepper_class, type)
-
-            from hedge.timestep.stability import \
-                    calculate_fudged_stability_region
-
-            return rk4_dt \
-                    * calculate_fudged_stability_region(
-                            stepper_class, *stepper_args) \
-                    / calculate_fudged_stability_region(RK4TimeStepper)
 
     def get_point_evaluator(self, point):
         for eg in self.element_groups:
