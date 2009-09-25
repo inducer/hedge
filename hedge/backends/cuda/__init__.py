@@ -270,6 +270,7 @@ class Discretization(hedge.discretization.Discretization):
             "cuda_try_no_microblock",
             "cuda_plan_log",
             "cuda_plan_no_progress",
+            "cuda_no_metis",
             ])
 
     class PartitionData(Record):
@@ -285,6 +286,9 @@ class Discretization(hedge.discretization.Discretization):
             import pymetis
             metis_available = True
         except ImportError:
+            metis_available = False
+
+        if "cuda_no_metis" in self.debug:
             metis_available = False
 
         if max_block_size >= 10 and metis_available:
@@ -888,6 +892,7 @@ class Discretization(hedge.discretization.Discretization):
                 self.buf = buf = discr.pagelocked_pool.allocate(
                         ls+one_field.shape, dtype=self.discr.default_scalar_type)
                 for i, subf in enumerate(field):
+                    assert subf.flags.c_contiguous
                     buf[i, :] = subf
             else:
                 assert field.flags.c_contiguous
