@@ -160,7 +160,7 @@ class GasDynamicsOperator(TimeDependentOperator):
             mu = self.mu
             if self.euler == True:
                 assert mu == 0.
-            if mu == "sutherland":
+            elif mu == "sutherland":
                 # Sutherland's law: !!!not tested!!!
                 t_s = 110.4
                 mu_inf = 1.735e-5
@@ -237,7 +237,7 @@ class GasDynamicsOperator(TimeDependentOperator):
             for i in range(dimensions):
                 for j in range(dimensions):
                     tau[i,j] = cse(mu(q) * (du[i,j] + du[j,i] -
-                               2/3 * delta(i,j) * (du[0,0] + du[1,1])),
+                               2/3 * delta(i,j) * numpy.trace(du)),
                                "tau_%d%d" % (i, j))
 
             for j in range(dimensions):
