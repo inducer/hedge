@@ -1206,30 +1206,4 @@ def GetSphericalCoord(x_vec):
     theta=numpy.arccos(z/r)
 
     return join_fields(r,phi,theta)
-
-def IndexSummation(TensorA,TensorB,indexList):
-#given tensors A and B, preform a sum on indicies
-#indexList takes the form [(e,f),(g,h),...], and summation preformed 
-#over e^th entry of A and f^th entry of B, etc
-#result is a tensor field of correct rank
-#user must be sure correct of correct contra/covariant orderings,etc
-
-#currently only tested and working for vectors, need to get this better
-#    sum(
-#                flux_op*pair_with_boundary(int_operand,
-#                    join_fields(0, ext_state, *flux_func(ext_state)), tag)
-#                for tag, ext_state in bdry_tags_and_states)
-#           )
-    from numpy import dot
-    from hedge.tools import ptwise_dot
-    #print 4
-    #print numpy.shape(TensorA)
-    #print numpy.shape(TensorB)
-    #print TensorA
-    #print TensorB
-    #result = ptwise_dot(1,1,TensorA,TensorB)
-    result = dot(TensorA,TensorB)
-    #print result
-    #return result
- 
  

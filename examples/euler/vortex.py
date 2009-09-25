@@ -113,7 +113,7 @@ def main(write_output=True):
         op = GasDynamicsOperator(dimensions=2, discr= discr,
                 gamma=gamma, prandtl=0.72, spec_gas_const=287.1,
                 bc_inflow=vortex, bc_outflow=vortex, bc_noslip=vortex,
-                inflow_tag=TAG_ALL, euler=True)
+                inflow_tag=TAG_ALL, euler=True,source=None)
 
         euler_ex = op.bind(discr)
 
