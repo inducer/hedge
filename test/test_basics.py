@@ -93,13 +93,13 @@ class CheckMultirateTimesteperAccuracy:
             method,
             order,
             step_ratio,
-            outfile,
+            #outfile,
             ode):
 
         self.method      = method
         self.order       = order
         self.step_ratio  = step_ratio
-        self.out = outfile
+        #self.out = outfile
         self.ode         = ode()
 
     def get_error(self, stepper, dt, name=None):
@@ -150,7 +150,7 @@ class CheckMultirateTimesteperAccuracy:
                     self.method, dt, self.step_ratio, self.order)
 
             error = self.get_error(stepper, dt, "mrab-%d.dat" % self.order)
-            self.out.write("& %s" % fpf.sci(error,2))
+            #self.out.write("& %s" % fpf.sci(error,2))
             eocrec.add_data_point(1/dt, error)
 
         print "------------------------------------------------------"
@@ -160,7 +160,7 @@ class CheckMultirateTimesteperAccuracy:
 
         orderest = eocrec.estimate_order_of_convergence()[0,1]
         print orderest, self.order
-        #assert orderest > order*0.80
+        assert orderest > self.order*0.70
 
         #self.out.write("& %s" % fpf.fix(orderest,2))
 
@@ -171,35 +171,22 @@ def test_multirate_timestep_accuracy():
 
     from hedge.timestep.multirate_ab.methods import methods
 
-    from ode_systems import Basic, \
-             Full, \
-             Real, \
-             Comp, \
-             CC,\
-             Tria, \
-             Inh, \
-             Inh2, \
-             StiffUncoupled, \
-             NonStiffUncoupled, \
-             WeakCoupled, \
-             StrongCoupled, \
-             ExtForceNonStiff, \
-             ExtForceStiff, \
-             StiffCoupled2, \
-             StiffComp, \
-             StiffComp2, \
-             StiffOscil,\
-             WeakCoupledInit
+
+    import ode_systems
+
+    system_names = ["Basic", "Full","Comp", "Tria"]
 
     min_order = 1
     max_order = 6
-    step_ratio = 10
-    ode_arg_set = [Basic,Full,Real,Comp,CC,
-                Tria,Inh,Inh2]
-    for ode_arg in ode_arg_set:
+    step_ratio = 2
+
+    for sys_name in system_names:
+        system = getattr(ode_systems, sys_name)
         order_list =  range(min_order, max_order)
 
         for method in methods:
+            print sys_name
+            print method
 
         # outputfile setup: ---------------------------------------------
         #outfilename = "mrab-out/mrab-EOC-%s.tex" % str(method)
@@ -212,15 +199,15 @@ def test_multirate_timestep_accuracy():
         #outfile.write("\\""\\" + "\n")
         #outfile.write("\\hline" + "\n")
 
-        for order in order_list:
-            outfile.write("%s" %order)
-            checkup = CheckMultirateTimesteperAccuracy(
-                    method,
-                    order,
-                    step_ratio,
-                    outfile,
-                    ode = ode_arg)
-            checkup()
+            for order in order_list:
+                #outfile.write("%s" %order)
+                checkup = CheckMultirateTimesteperAccuracy(
+                        method,
+                        order,
+                       step_ratio,
+                        ode = system)
+                        #outfile,
+                checkup()
             #outfile.write("\\""\\" + "\n")
             #outfile.write("\\hline" + "\n")
 
@@ -767,6 +754,14 @@ def test_all_periodic_no_boundary():
 
 
 if __name__ == "__main__":
-    #from py.test.cmdline import main
-    #main([__file__])
-    test_multirate_timestep_accuracy()
+    from py.test.cmdline import main
+    main([__file__])
+
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) > 1:
+        exec sys.argv[1]
+    else:
+        from py.test.cmdline import main
+        main([__file__])
+

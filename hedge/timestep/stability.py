@@ -24,11 +24,6 @@ from pytools import memoize
 
 
 
-import numpy
-from pytools import memoize
-
-
-
 
 def calculate_fudged_stability_region(stepper_class, *stepper_args):
     """
