@@ -28,6 +28,7 @@ import hedge.optemplate
 from hedge.compiler import OperatorCompilerBase, \
         Assign, FluxBatchAssign
 import pycuda.driver as cuda
+import pycuda.gpuarray as gpuarray
 import pymbolic.mapper.stringifier
 from hedge.backends.exec_common import ExecutionMapperBase
 
@@ -297,38 +298,15 @@ class ExecutionMapper(ExecutionMapperBase):
                 *self.executor.mass_data(kernel, elgroup, insn.op_class)))], []
 
     def map_elementwise_max(self, op, field_expr):
-        import pycuda.gpuarray
-        discr = self.executor.discr
 
         field = self.rec(field_expr)
-        field_out = pycuda.gpuarray.zeros_like(field)
+        field_out = gpuarray.zeros_like(field)
 
-	dofs_per_el = discr.given.dofs_per_el()
-	floats_per_mb = discr.given.microblock.aligned_floats
+        func_rec = self.executor.get_elwise_max_kernel(field.dtype)
 
-        # round block_size up to nearest multiple of floats_per_mb
-        block_size = 128
+	func_rec.func.prepared_call((func_rec.grid_dim, 1), 
+            field.gpudata, field_out.gpudata, func_rec.mb_count)
 
-        mbs_per_block = (block_size + floats_per_mb - 1) // floats_per_mb
-        block_size = floats_per_mb * mbs_per_block
-
-	if block_size > discr.given.devdata.max_threads:
-            # rounding up took us beyond the max block size,
-            # round down instead
-	    block_size = block_size - floats_per_mb
-
-        if block_size > discr.given.devdata.max_threads or block_size == 0:
-            raise RuntimeError("Computation of thread block size for "
-                    "elementwise max gave invalid result %d." % block_size)
-
-        func = self.executor.get_elwise_max_kernel(dofs_per_el, 
-                  block_size, floats_per_mb, mbs_per_block, field.dtype)
-
-        mb_count = len(discr.blocks) * discr.given.microblocks_per_block
-
-	grid_dim = (mb_count + mbs_per_block - 1) // mbs_per_block
-	func.prepared_call((grid_dim, 1), 
-            field.gpudata, field_out.gpudata, mb_count)
 	return field_out
 
     def map_if_positive(self, expr):
@@ -336,7 +314,6 @@ class ExecutionMapper(ExecutionMapperBase):
         then_ = self.rec(expr.then_)
         else_ = self.rec(expr.else_)
 
-        import pycuda.gpuarray as gpuarray
         return gpuarray.if_positive(crit, then_, else_)
 
 
@@ -556,8 +533,30 @@ class Executor(object):
                 kernel.prepare_scaling(elgroup, op_class.coefficients(elgroup)))
 
     @memoize_method
-    def get_elwise_max_kernel(self, dofs_per_el, block_size,
-                              floats_per_mb, mbs_per_block, dtype):
+    def get_elwise_max_kernel(self, dtype):
+        discr = self.discr
+
+	dofs_per_el = discr.given.dofs_per_el()
+	floats_per_mb = discr.given.microblock.aligned_floats
+
+        # round block_size up to nearest multiple of floats_per_mb
+        block_size = 128
+
+        mbs_per_block = (block_size + floats_per_mb - 1) // floats_per_mb
+        block_size = floats_per_mb * mbs_per_block
+
+	if block_size > discr.given.devdata.max_threads:
+            # rounding up took us beyond the max block size,
+            # round down instead
+	    block_size = block_size - floats_per_mb
+
+        if block_size > discr.given.devdata.max_threads or block_size == 0:
+            raise RuntimeError("Computation of thread block size for "
+                    "elementwise max gave invalid result %d." % block_size)
+
+        mb_count = len(discr.blocks) * discr.given.microblocks_per_block
+
+	grid_dim = (mb_count + mbs_per_block - 1) // mbs_per_block
         if dtype == numpy.float64:
 	    max_func = "fmax"
 	elif dtype == numpy.float32:
@@ -620,4 +619,10 @@ class Executor(object):
 	func = mod.get_function("elwise_max")
 	func.prepare("PPI", block=(floats_per_mb, block_size//floats_per_mb, 1))
 
-        return func
+        from pytools import Record
+        class ElementwiseMaxKernelInfo(Record): pass
+        
+        return ElementwiseMaxKernelInfo(
+                func=func,
+                grid_dim=grid_dim,
+                mb_count=mb_count)
