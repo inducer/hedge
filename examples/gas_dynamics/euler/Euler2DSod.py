@@ -186,9 +186,7 @@ def main():
 
         #not solution, just to check against when making code changes
         true_fields = sodfield.volume_interpolant(t, discr)
-        eoc_rec.add_data_point(order, discr.norm(fields-true_fields))
-        print
-        print eoc_rec.pretty_print("P.Deg.", "L2 Error")
+        print discr.norm(fields-true_fields)
 
 if __name__ == "__main__":
     main()

@@ -197,7 +197,6 @@ def main(write_output=True, flux_type_arg="lf"):
     # Initialize v for data output:
     v = op.advec_v.volume_interpolant(t, discr)
 
-    from numpy import shape
     # timestep loop -----------------------------------------------------------
     rhs = op.bind(discr)
     try:
