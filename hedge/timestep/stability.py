@@ -18,18 +18,18 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 """
-
-
-
-
 import numpy
 from pytools import memoize
 
 
 
 
-# bisection based method to find bounds of stability region on Imaginary axis only ---
+
 def calculate_fudged_stability_region(stepper_class, *stepper_args):
+    """
+    bisection based method to find bounds of stability region on Imaginary 
+    axis only
+    """
     return calculate_stability_region(stepper_class, *stepper_args) \
             * stepper_class.dt_fudge_factor
 
