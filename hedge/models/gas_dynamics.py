@@ -70,7 +70,13 @@ class GasDynamicsOperator(TimeDependentOperator):
             inflow_tag="inflow",
             outflow_tag="outflow",
             noslip_tag="noslip",
+            source=None,
             euler=False):
+        """
+        :param source: should implement 
+        :class:`hedge.data.IFieldDependentGivenFunction`
+        or be None.
+        """
 
         self.dimensions = dimensions
         
@@ -86,6 +92,8 @@ class GasDynamicsOperator(TimeDependentOperator):
         self.inflow_tag = inflow_tag
         self.outflow_tag = outflow_tag
         self.noslip_tag = noslip_tag
+
+        self.source = source
 
         self.euler = euler
         
@@ -104,31 +112,6 @@ class GasDynamicsOperator(TimeDependentOperator):
                 rho_u_i/self.rho(q)
                 for rho_u_i in self.rho_u(q)])
 
-    def bind(self, discr):
-        bound_op = discr.compile(self.op_template())
-
-        from hedge.mesh import check_bc_coverage
-        check_bc_coverage(discr.mesh, [
-            self.inflow_tag,
-            self.outflow_tag,
-            self.noslip_tag,
-            ])
-
-        def wrap(t, q):
-            opt_result = bound_op(q=q,
-                    bc_q_in=self.bc_inflow.boundary_interpolant(
-                        t, discr, self.inflow_tag),
-                    bc_q_out=self.bc_inflow.boundary_interpolant(
-                        t, discr, self.outflow_tag),
-                    bc_q_noslip=self.bc_inflow.boundary_interpolant(
-                        t, discr, self.noslip_tag),
-                    )
-            max_speed = opt_result[-1]
-            ode_rhs = opt_result[:-1]
-	    return ode_rhs, discr.nodewise_max(max_speed)
-
-        return wrap
-        
     def op_template(self):
         from hedge.optemplate import make_vector_field, \
                 make_common_subexpression as cse
@@ -402,7 +385,7 @@ class GasDynamicsOperator(TimeDependentOperator):
                 ElementwiseMaxOperator
 
         # operator assembly ---------------------------------------------------
-        return join_fields(
+        result = join_fields(
                 (- numpy.dot(make_nabla(self.dimensions), flux_state)
                  + InverseMassOperator()*make_lax_friedrichs_flux(
                         wave_speed=cse(ElementwiseMaxOperator()*speed, "emax_c"),
@@ -414,3 +397,119 @@ class GasDynamicsOperator(TimeDependentOperator):
                         strong=True
                         )),
                  speed)
+
+        if self.source is not None:
+            #need extra slot for speed, will set to zero in source class
+            source_ph = make_vector_field("source_vect", self.dimensions+2+1)
+            result = join_fields(result + source_ph)
+        
+        return result
+
+    def bind(self, discr):
+        bound_op = discr.compile(self.op_template())
+
+        from hedge.mesh import check_bc_coverage
+        check_bc_coverage(discr.mesh, [
+            self.inflow_tag,
+            self.outflow_tag,
+            self.noslip_tag,
+            ])
+
+        def rhs(t, q):
+            extra_kwargs = {}
+            if self.source is not None:
+                extra_kwargs["source_vect"] = self.source.volume_interpolant(
+                        t, q, discr)
+
+            opt_result = bound_op(q=q,
+                    bc_q_in=self.bc_inflow.boundary_interpolant(
+                        t, discr, self.inflow_tag),
+                    bc_q_out=self.bc_inflow.boundary_interpolant(
+                        t, discr, self.outflow_tag),
+                    bc_q_noslip=self.bc_inflow.boundary_interpolant(
+                        t, discr, self.noslip_tag),
+                    **extra_kwargs
+                    )
+
+            max_speed = opt_result[-1]
+            ode_rhs = opt_result[:-1]
+	    return ode_rhs, discr.nodewise_max(max_speed)
+
+        return rhs
+       
+
+
+class SlopeLimiter1NEuler:
+    def __init__(self, discr,gamma,dimensions,op):
+        """Construct a limiter from Jan's book page 225
+        """
+        self.discr = discr
+        self.gamma=gamma
+        self.dimensions=dimensions
+        self.op=op
+
+        #AVE*colVect=average of colVect
+        self.AVE_map = {}
+
+        for eg in discr.element_groups:
+            ldis = eg.local_discretization
+            node_count = ldis.node_count()
+
+
+            # build AVE matrix
+            massMatrix = ldis.mass_matrix()
+            #compute area of the element
+            self.standard_el_vol= numpy.sum(numpy.dot(massMatrix,numpy.ones(massMatrix.shape[0])))
+            
+            from numpy import size, zeros, sum
+            AVEt = sum(massMatrix,0)
+            AVEt = AVEt/self.standard_el_vol
+            AVE = zeros((size(AVEt),size(AVEt)))
+            for ii in range(0,size(AVEt)):
+                AVE[ii]=AVEt
+            self.AVE_map[eg] = AVE
+
+    def get_average(self,vec):
+
+        from hedge.tools import log_shape
+        from pytools import indices_in_shape
+        from hedge._internal import perform_elwise_operator
+
+
+        ls = log_shape(vec)
+        result = self.discr.volume_zeros(ls)
+
+        from pytools import indices_in_shape
+        for i in indices_in_shape(ls):
+            from hedge._internal import perform_elwise_operator
+            for eg in self.discr.element_groups:
+                perform_elwise_operator(eg.ranges, eg.ranges, 
+                        self.AVE_map[eg], vec[i], result[i])
+		
+                return result
+
+    def __call__(self, vec):
+
+        #join fields 
+        from hedge.tools import join_fields
+
+        #get conserved fields
+        rho=self.op.rho(vec)
+        e=self.op.e(vec)
+        rho_velocity=self.op.rho_u(vec)
+
+        #get primative fields 
+        #to do
+
+        #reset field values to cell average
+        rhoLim=self.get_average(rho)
+        eLim=self.get_average(e)
+        temp=join_fields([self.get_average(rho_vel)
+                for rho_vel in rho_velocity])
+
+        #should do for primative fields too
+
+ 
+        return join_fields(rhoLim, eLim, temp)
+
+

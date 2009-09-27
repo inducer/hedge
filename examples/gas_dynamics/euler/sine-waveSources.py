@@ -25,27 +25,20 @@ import numpy.linalg as la
 
 
 class SineWave:
-    def __init__(self):
-        self.gamma = 1.4
-        self.mu = 0
-        self.prandtl = 0.72
-        self.spec_gas_const = 287.1
+    def __init__(self, gamma):
+        self.gamma = gamma
 
     def __call__(self, t, x_vec):
 
-        rho = 2 + numpy.sin(x_vec[0] + x_vec[1] + x_vec[2] - 2 * t)
-        velocity = numpy.array([1, 1, 0])
-        p = 1
-        e = p/(self.gamma-1) + rho/2 * numpy.dot(velocity, velocity)
-        rho_u = rho * velocity[0]
-        rho_v = rho * velocity[1]
-        rho_w = rho * velocity[2]
+        rho = 2 + .2*numpy.sin(x_vec[0] + x_vec[1] + x_vec[2] - t)
+        u = 1
+        v = 0
+        w = 0
+        p = 1+0.01*x_vec[0]*x_vec[0]
+        e = p/(self.gamma-1) + rho/2 * (u**2 + v**2 + w**2)
 
         from hedge.tools import join_fields
-        return join_fields(rho, e, rho_u, rho_v, rho_w)
-
-    def properties(self):
-        return(self.gamma, self.mu, self.prandtl, self.spec_gas_const)
+        return join_fields(rho, e, rho*u, rho*v)
 
     def volume_interpolant(self, t, discr):
         return discr.convert_volume(
@@ -57,7 +50,29 @@ class SineWave:
 			self(t, discr.get_boundary(tag).nodes.T),
 			 tag=tag, kind=discr.compute_kind)
 
+class SourceTerms:
+    def __init__(self, gamma):
+        self.gamma = gamma
 
+    def __call__(self, t, x_vec):
+
+        source_rho = x_vec[0]-x_vec[0]
+        source_e = .01*(1+1/(self.gamma-1))*2*x_vec[0]
+        source_rhou = .01*2*x_vec[0]
+        source_rhov = x_vec[0]-x_vec[0]
+
+        #source_e=x_vec-x_vec
+        #source_rhou=x_vec-x_vec
+
+        from hedge.tools import join_fields
+        return join_fields(source_rho, source_e, source_rhou, source_rhov, x_vec[0]-x_vec[0])
+        #return join_fields(source_rho, source_e, source_rhou, source_rhov)
+
+
+    def volume_interpolant(self, t, q, discr):
+        return discr.convert_volume(
+			self(t, discr.nodes.T),
+			kind=discr.compute_kind)
 
 
 def main():
@@ -68,34 +83,40 @@ def main():
     else:
         rcon = guess_run_context()
 
+    gamma = 1.4
+
     from hedge.tools import EOCRecorder, to_obj_array
     eoc_rec = EOCRecorder()
     
     if rcon.is_head_rank:
         from hedge.mesh import make_box_mesh
-        mesh = make_box_mesh((0,0,0), (10,10,10), max_volume=0.5)
+        from numpy import pi
+        mesh = make_box_mesh((0,0,0), (2*pi,2*pi,2*pi), max_volume=0.5)
         mesh_data = rcon.distribute_mesh(mesh)
     else:
         mesh_data = rcon.receive_mesh()
 
-    for order in [3, 4, 5]:
+    for order in [4,6,8]:
         discr = rcon.make_discretization(mesh_data, order=order,
+			debug=[#"cuda_no_plan",
+                            #"print_op_code"
+			],
 			default_scalar_type=numpy.float64)
 
         from hedge.visualization import SiloVisualizer, VtkVisualizer
-        vis = VtkVisualizer(discr, rcon, "sinewave-%d" % order)
-        #vis = SiloVisualizer(discr, rcon)
+        #vis = VtkVisualizer(discr, rcon, "sinewave-%d" % order)
+        vis = SiloVisualizer(discr, rcon)
 
-        sinewave = SineWave()
+        sinewave = SineWave(gamma=gamma)
+        sources = SourceTerms(gamma=gamma)
         fields = sinewave.volume_interpolant(0, discr)
-        gamma, mu, prandtl, spec_gas_const = sinewave.properties()
 
         from hedge.mesh import TAG_ALL
-        from hedge.models.gas_dynamics import GasDynamicsOperator
-        op = GasDynamicsOperator(dimensions=2, discr=discr, gamma=gamma, mu=mu,
-                prandtl=prandtl, spec_gas_const=spec_gas_const,
+        from hedge.models.gasdynamics import GasDynamicsOperator
+        op = GasDynamicsOperator(dimensions=2, discr=discr,
+                gamma=gamma, prandtl=0.72, spec_gas_const=287.1,
                 bc_inflow=sinewave, bc_outflow=sinewave, bc_noslip=sinewave,
-                inflow_tag=TAG_ALL, euler=True,source=None)
+                inflow_tag=TAG_ALL, source=sources,euler=True)
 
         euler_ex = op.bind(discr)
 
@@ -107,7 +128,7 @@ def main():
         rhs(0, fields)
 
         dt = discr.dt_factor(max_eigval[0])
-        final_time = 1
+        final_time = .3
         nsteps = int(final_time/dt)+1
         dt = final_time/nsteps
 
@@ -191,10 +212,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-# entry points for py.test ----------------------------------------------------
-from pytools.test import mark_test
-@mark_test.long
-def test_euler_sine_wave():
-    main()
-

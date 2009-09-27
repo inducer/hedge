@@ -21,19 +21,18 @@ from __future__ import division
 import numpy
 import numpy.linalg as la
 
-
+#modifies isentropic vortex solution so that rho->Arho, P->A^gamma rho^gamma
+#this will be analytic solution if appropriate source terms are added
+#to the RHS. coded for vel_x=1, vel_y=0
 
 
 class Vortex:
-    def __init__(self):
-        self.beta = 5
-        self.gamma = 1.4
-        self.center = numpy.array([5, 0])
-        self.velocity = numpy.array([1, 0])
-
-        self.mu = 0
-        self.prandtl = 0.72
-        self.spec_gas_const = 287.1
+    def __init__(self, beta, gamma, center, velocity, densityA):
+        self.beta = beta
+        self.gamma = gamma
+        self.center = numpy.asarray(center)
+        self.velocity = numpy.asarray(velocity)
+        self.densityA = densityA
 
     def __call__(self, t, x_vec):
         vortex_loc = self.center + t*self.velocity
@@ -50,17 +49,13 @@ class Vortex:
         expterm = self.beta*numpy.exp(1-r**2)
         u = self.velocity[0] - expterm*y_rel/(2*pi)
         v = self.velocity[1] + expterm*x_rel/(2*pi)
-        rho = (1-(self.gamma-1)/(16*self.gamma*pi**2)*expterm**2)**(1/(self.gamma-1))
+        rho = self.densityA*(1-(self.gamma-1)/(16*self.gamma*pi**2)*expterm**2)**(1/(self.gamma-1))
         p = rho**self.gamma
 
         e = p/(self.gamma-1) + rho/2*(u**2+v**2)
 
         from hedge.tools import join_fields
         return join_fields(rho, e, rho*u, rho*v)
-
-    def properties(self):
-        return(self.gamma, self.mu, self.prandtl, self.spec_gas_const)
-
 
     def volume_interpolant(self, t, discr):
         return discr.convert_volume(
@@ -76,12 +71,86 @@ class Vortex:
 
 
 
+class SourceTerms:
+
+    def __init__(self, beta, gamma, center, velocity, densityA):
+        self.beta = beta
+        self.gamma = gamma
+        self.center = numpy.asarray(center)
+        self.velocity = numpy.asarray(velocity)
+        self.densityA = densityA
+
+
+
+    def __call__(self,t,x_vec,q):
+        
+        vortex_loc = self.center + t*self.velocity
+
+        # coordinates relative to vortex center
+        x_rel = x_vec[0] - vortex_loc[0]
+        y_rel = x_vec[1] - vortex_loc[1]
+
+        # Sources written in terms of A=1.0 solution (standard isentropic vortex)
+
+        from math import pi
+        r = numpy.sqrt(x_rel**2+y_rel**2)
+        expterm = self.beta*numpy.exp(1-r**2)
+        u = self.velocity[0] - expterm*y_rel/(2*pi)
+        v = self.velocity[1] + expterm*x_rel/(2*pi)
+        rho = (1-(self.gamma-1)/(16*self.gamma*pi**2)*expterm**2)**(1/(self.gamma-1))
+        p = rho**self.gamma
+        
+        #computed necessary derivatives
+        expterm_t = 2*expterm*x_rel
+        expterm_x = -2*expterm*x_rel
+        expterm_y = -2*expterm*y_rel
+        u_x = -expterm*y_rel/(2*pi)*(-2*x_rel)
+        v_y = expterm*x_rel/(2*pi)*(-2*y_rel)
+
+        #derivatives for rho (A=1)
+        facG=self.gamma-1
+        rho_t = (1/facG)*(1-(facG)/(16*self.gamma*pi**2)*expterm**2)**(1/facG-1)*(-facG/(16*self.gamma*pi**2)*2*expterm*expterm_t)
+        rho_x = (1/facG)*(1-(facG)/(16*self.gamma*pi**2)*expterm**2)**(1/facG-1)*(-facG/(16*self.gamma*pi**2)*2*expterm*expterm_x)
+        rho_y = (1/facG)*(1-(facG)/(16*self.gamma*pi**2)*expterm**2)**(1/facG-1)*(-facG/(16*self.gamma*pi**2)*2*expterm*expterm_y)
+
+        #derivatives for rho (A=1) to the power of gamma
+        rho_gamma_t = self.gamma*rho**(self.gamma-1)*rho_t
+        rho_gamma_x = self.gamma*rho**(self.gamma-1)*rho_x
+        rho_gamma_y = self.gamma*rho**(self.gamma-1)*rho_y
+
+
+        factorA=self.densityA**self.gamma-self.densityA
+        #construct source terms
+        source_rho = x_vec[0]-x_vec[0]
+        source_e = (factorA/(self.gamma-1))*(rho_gamma_t + self.gamma*(u_x*rho**self.gamma+u*rho_gamma_x)+self.gamma*(v_y*rho**self.gamma+v*rho_gamma_y))
+        source_rhou = factorA*rho_gamma_x
+        source_rhov = factorA*rho_gamma_y
+
+        from hedge.tools import join_fields
+        return join_fields(source_rho, source_e, source_rhou, source_rhov, x_vec[0]-x_vec[0])
+        
+        #return join_fields(q[0]-q[0], q[1]-q[1], q[2]-q[2], q[3]-q[3], x_vec[0]-x_vec[0])
+
+    
+
+    def volume_interpolant(self,t,q,discr):
+    #    return self(t,discr.nodes.T,q)
+
+    #    return discr.convert_volume(
+    #            self(t,discr.nodes.T.astype(discr.default_scalar_type),q),
+    #            kind=discr.compute_kind)
+        return discr.convert_volume(
+                self(t,discr.nodes.T,q), 
+                kind=discr.compute_kind)
+
 
 def main(write_output=True):
     from hedge.backends import guess_run_context
     rcon = guess_run_context(
 		    #["cuda"]
 		    )
+
+    gamma = 1.4
 
     from hedge.tools import EOCRecorder, to_obj_array
     eoc_rec = EOCRecorder()
@@ -91,33 +160,38 @@ def main(write_output=True):
                 make_rect_mesh, \
                 make_centered_regular_rect_mesh
 
-        refine = 4
+        refine = 1
         mesh = make_centered_regular_rect_mesh((0,-5), (10,5), n=(9,9),
                 post_refine_factor=refine)
         mesh_data = rcon.distribute_mesh(mesh)
-        from hedge.visualization import write_gnuplot_mesh
-        write_gnuplot_mesh("mesh.dat", mesh)
     else:
         mesh_data = rcon.receive_mesh()
 
-    for order in [3, 4, 5]:
+    for order in [4]:
         discr = rcon.make_discretization(mesh_data, order=order,
+			debug=[#"cuda_no_plan",
+			#"print_op_code"
+			],
 			default_scalar_type=numpy.float64)
 
         from hedge.visualization import SiloVisualizer, VtkVisualizer
         #vis = VtkVisualizer(discr, rcon, "vortex-%d" % order)
         vis = SiloVisualizer(discr, rcon)
 
-        vortex = Vortex()
+        vortex = Vortex(beta=5, gamma=gamma, 
+                center=[5,0], 
+                velocity=[1,0], densityA=1.0)
         fields = vortex.volume_interpolant(0, discr)
-        gamma, mu, prandtl, spec_gas_const = vortex.properties()
+        sources=SourceTerms(beta=5, gamma=gamma,
+                center=[5,0],
+                velocity=[1,0], densityA=1.0)
 
-        from hedge.models.gas_dynamics import GasDynamicsOperator
+        from hedge.models.gasdynamics import GasDynamicsOperator
         from hedge.mesh import TAG_ALL
-        op = GasDynamicsOperator(dimensions=2, gamma=gamma, mu=mu,
-                prandtl=prandtl, spec_gas_const=spec_gas_const,
+        op = GasDynamicsOperator(dimensions=2, discr= discr,
+                gamma=gamma, prandtl=0.72, spec_gas_const=287.1,
                 bc_inflow=vortex, bc_outflow=vortex, bc_noslip=vortex,
-                inflow_tag=TAG_ALL, euler=True,source=None)
+                inflow_tag=TAG_ALL, euler=True,source=sources)
 
         euler_ex = op.bind(discr)
 
@@ -142,6 +216,7 @@ def main(write_output=True):
             print "#elements=", len(mesh.elements)
 
         from hedge.timestep import RK4TimeStepper
+        #from hedge.backends.cuda.tools import RK4TimeStepper
         stepper = RK4TimeStepper()
 
         # diagnostics setup ---------------------------------------------------
@@ -174,6 +249,8 @@ def main(write_output=True):
                     visf = vis.make_file("vortex-%d-%04d" % (order, step))
 
                     true_fields = vortex.volume_interpolant(t, discr)
+
+                    rhs_fields = rhs(t, fields)
 
                     from pylo import DB_VARTYPE_VECTOR
                     vis.add_data(visf,
@@ -216,7 +293,7 @@ def main(write_output=True):
             l2_error_rhou = discr.norm(op.rho_u(fields)-op.rho_u(true_fields))
             l2_error_u = discr.norm(op.u(fields)-op.u(true_fields))
 
-            eoc_rec.add_data_point(order, l2_error)
+            eoc_rec.add_data_point(order, l2_error_rho)
             print
             print eoc_rec.pretty_print("P.Deg.", "L2 Error")
 
@@ -236,7 +313,7 @@ def main(write_output=True):
             discr.close()
 
     # after order loop
-    assert eoc_rec.estimate_order_of_convergence()[0,1] > 6
+    #assert eoc_rec.estimate_order_of_convergence()[0,1] > 6
 
 
 
@@ -250,4 +327,4 @@ if __name__ == "__main__":
 from pytools.test import mark_test
 @mark_test.long
 def test_euler_vortex():
-    main()
+    main(write_output=True)

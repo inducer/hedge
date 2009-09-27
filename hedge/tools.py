@@ -1201,10 +1201,19 @@ class NestedFuture(Future):
         else:
             return self.outer_future()
 
-# Scott Added functions, should ask andreas where they might go
-def GetSphericalCoord(x_vec):
 
-   #this coordinate trans has phi as angle in (x,y) plane and taking values in (-pi,pi)
+def get_spherical_coord(x_vec):
+    """
+    :param x_vec: is an array whose leading dimension iterates over
+    the X, Y, Z axes, and whose further dimensions may iterate over
+    a number of points.
+
+    :returns: object array of [r, phi, theta].
+        phi is the angle in (x,y) in :math:`(-\\pi,\\pi)`.
+    """
+
+    if len(x_vec) != 3:
+        raise ValueError("only 3-d arrays are supported")
 
     x = x_vec[0]
     y = x_vec[1]
@@ -1212,37 +1221,12 @@ def GetSphericalCoord(x_vec):
 
     r = numpy.sqrt(x**2+y**2+z**2)
 
+    from warnings import warn
     if(numpy.any(r)<numpy.power(10.0,-10.0)):
-        print 'spherical coordinate transformation ill-defined at r=0'
+        warn('spherical coordinate transformation ill-defined at r=0')
 
-    phi=numpy.arctan2(y,x)
-    theta=numpy.arccos(z/r)
+    phi = numpy.arctan2(y,x)
+    theta = numpy.arccos(z/r)
 
     return join_fields(r,phi,theta)
-
-def IndexSummation(TensorA,TensorB,indexList):
-#given tensors A and B, preform a sum on indicies
-#indexList takes the form [(e,f),(g,h),...], and summation preformed 
-#over e^th entry of A and f^th entry of B, etc
-#result is a tensor field of correct rank
-#user must be sure correct of correct contra/covariant orderings,etc
-
-#currently only tested and working for vectors, need to get this better
-#    sum(
-#                flux_op*pair_with_boundary(int_operand,
-#                    join_fields(0, ext_state, *flux_func(ext_state)), tag)
-#                for tag, ext_state in bdry_tags_and_states)
-#           )
-    from numpy import dot
-    from hedge.tools import ptwise_dot
-    #print 4
-    #print numpy.shape(TensorA)
-    #print numpy.shape(TensorB)
-    #print TensorA
-    #print TensorB
-    #result = ptwise_dot(1,1,TensorA,TensorB)
-    result = dot(TensorA,TensorB)
-    #print result
-    #return result
- 
  
