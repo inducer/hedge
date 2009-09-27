@@ -43,7 +43,9 @@ def main(write_output=True, flux_type_arg="lf"):
         mesh_data = rcon.receive_mesh()
 
     # discretization setup ----------------------------------------------------
-    discr = rcon.make_discretization(mesh_data, order=4)
+    discr = rcon.make_discretization(mesh_data, order=4,
+            #debug=["cuda_no_plan_el_local"],
+            default_scalar_type=numpy.float64)
     vis_discr = discr
 
     # space-time-dependent-velocity-field -------------------------------------
@@ -77,8 +79,6 @@ def main(write_output=True, flux_type_arg="lf"):
     # space-time-dependent State BC (optional)-----------------------------------
     class TimeDependentBc_u:
         """ space and time dependent BC for state u"""
-        shape = (2,)
-
         def __call__(self, pt, el, t):
             x, y = pt
             if t <= 0.5:
@@ -91,8 +91,6 @@ def main(write_output=True, flux_type_arg="lf"):
 
     class Bc_u:
         """ Only space dependent BC for state u"""
-        shape = (2,)
-
         def __call__(seld, pt, el):
             x, y = pt
             if x > 0:
@@ -208,12 +206,11 @@ def main(write_output=True, flux_type_arg="lf"):
 
             if step % 10 == 0 and write_output:
                 visf = vis.make_file("fld-%04d" % step)
-                vis.add_data(visf, [ ("u", u), ("v", v)],
-                            time=t,
-                            step=step
-                            )
+                vis.add_data(visf, [ 
+                    ("u", discr.convert_volume(u, kind="numpy")), 
+                    ("v", discr.convert_volume(v, kind="numpy"))
+                    ], time=t, step=step)
                 visf.close()
-
 
             u = stepper(u, t, dt, rhs)
 
