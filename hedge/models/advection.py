@@ -314,4 +314,4 @@ class VariableCoefficientAdvectionOperator(TimeDependentOperator):
 
         from hedge.tools import ptwise_dot
         v = self.advec_v.volume_interpolant(t, discr)
-        return (ptwise_dot(1, 1, v, v)**0.5).max()
+        return discr.nodewise_max(ptwise_dot(1, 1, v, v)**0.5)

@@ -966,6 +966,12 @@ class Discretization(TimestepCalculator):
                         sub_a, mass_op(sub_b))
                     for sub_a, sub_b in zip(a,b)))
 
+    def nodewise_max(self,a):
+        return numpy.max(a)
+
+    def nodewise_min(self,a):
+        return numpy.min(a)
+
     # element data retrieval --------------------------------------------------
     def find_el_range(self, el_id):
         group, idx = self.group_map[el_id]
