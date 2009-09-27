@@ -378,6 +378,9 @@ class Kernel:
         start = cuda.Event()
         start.record()
         for i in range(count):
+            if block_count >= 2*16:
+                return None
+
             try:
                 gather.prepared_call(
                         (block_count, 1),
