@@ -378,7 +378,7 @@ class Kernel:
         start = cuda.Event()
         start.record()
         for i in range(count):
-            if block_count >= 2*16:
+            if block_count >= 2**16:
                 return None
 
             try:
