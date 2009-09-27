@@ -170,7 +170,7 @@ class Kernel:
         return (1e-3/count * stop.time_since(start),
                 kernel.local_size_bytes, kernel.shared_size_bytes, kernel.num_regs)
 
-    def __call__(self, in_vector, prepped_mat, prepped_scaling):
+    def __call__(self, in_vector, prepped_mat, prepped_scaling, out_vector=None):
         discr = self.discr
         elgroup, = discr.element_groups
         given = self.discr.given
@@ -183,7 +183,8 @@ class Kernel:
             prepped_scaling.bind_to_texref_ext(scaling_texref,
                     allow_double_hack=True)
 
-        out_vector = discr.volume_empty() 
+        if out_vector is None:
+            out_vector = discr.volume_empty() 
 
         if set([self.plan.debug_name, "cuda_debugbuf"]) <= discr.debug:
             debugbuf = gpuarray.zeros((1024,), dtype=self.plan.given.float_type)

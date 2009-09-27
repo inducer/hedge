@@ -186,7 +186,7 @@ class Kernel:
         return (1e-3/count * stop.time_since(start),
                 kernel.local_size_bytes, kernel.shared_size_bytes, kernel.num_regs)
 
-    def __call__(self, in_vector, prepped_mat, prepped_scaling):
+    def __call__(self, in_vector, prepped_mat, prepped_scaling, out_vector=None):
         discr = self.discr
         elgroup, = discr.element_groups
         given = self.plan.given
@@ -194,7 +194,9 @@ class Kernel:
         kernel, in_vector_texref, scaling_texref = \
                 self.get_kernel(prepped_scaling is not None)
 
-        out_vector = discr.volume_empty() 
+        if out_vector is None:
+            out_vector = discr.volume_empty() 
+
         in_vector.bind_to_texref_ext(in_vector_texref, allow_double_hack=True)
         if prepped_scaling is not None:
             prepped_scaling.bind_to_texref_ext(scaling_texref,
