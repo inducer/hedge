@@ -1034,6 +1034,60 @@ class Discretization(TimestepCalculator):
     def add_function(self, name, func):
         self.exec_functions[name] = func
 
+    # element-local stuff -----------------------------------------------------
+    def apply_element_local_matrix(self, eg_to_matrix, field, eg_to_scaling=None,
+            prepared_data_store=None):
+        """
+        :param eg_to_matrix: a function that, given an element group, returns
+            the (numpy) matrix to be applied to elements in that group.
+        :param eg_to_scaling: a function that, given an element group, returns
+            the (numpy) array of scaling factors to be applied to elements 
+            in that group.
+        :param prepared_data_store: if not None, this is a mapping in which
+          prepared versions of the results of eg_to_matrix and eg_to_scaling
+          may be stored.
+        """
+        MATRIX = intern("matrix")
+        SCALING = intern("scaling")
+
+        from hedge._internal import \
+                perform_elwise_operator, \
+                perform_elwise_scaled_operator
+
+        def f(subfield):
+            subresult = self.volume_zeros(dtype=subfield.dtype)
+            
+            for eg in self.element_groups:
+                if prepared_data_store is not None:
+                    try:
+                        matrix = prepared_data_store[(MATRIX, eg)]
+                    except KeyError:
+                        prepared_data_store[(MATRIX, eg)] = \
+                                matrix = eg_to_matrix(eg)
+
+                    if eg_to_scaling is not None:
+                        try:
+                            scaling = prepared_data_store[(SCALING, eg)]
+                        except KeyError:
+                            prepared_data_store[(SCALING, eg)] = \
+                                    scaling = eg_to_scaling(eg)
+                else:
+                    matrix = eg_to_matrix(eg)
+                    if eg_to_scaling is not None:
+                        scaling = eg_to_scaling(eg)
+
+                if eg_to_scaling is None:
+                    perform_elwise_operator(eg.ranges, eg.ranges, 
+                            matrix, subfield, subresult)
+                else:
+                    perform_elwise_operator(eg.ranges, eg.ranges, 
+                            scaling, matrix, subfield, subresult)
+
+            return subresult
+
+        from hedge.tools import with_object_array_or_scalar
+        return with_object_array_or_scalar(f, field)
+
 
 
 
@@ -1245,48 +1299,34 @@ class Filter:
           (For example an instance of :class:`ExponentialFilterResponseFunction`.
         """
         self.discr = discr
-
-        self.filter_map = {}
-
-        for eg in discr.element_groups:
-            ldis = eg.local_discretization
-
-            node_count = ldis.node_count()
-
-            filter_coeffs = [mode_response_func(mid, ldis)
-                for mid in ldis.generate_mode_identifiers()] 
-
-            # build filter matrix
-            vdm = ldis.vandermonde()
-            from hedge.tools import leftsolve
-            from numpy import dot
-            mat = numpy.asarray(
-                leftsolve(vdm,
-                    dot(vdm, numpy.diag(filter_coeffs))),
-                order="C")
-            self.filter_map[eg] = mat
+        self.mode_response_func = mode_response_func
+        self.prepared_data_store = {}
 
     def __call__(self, vec):
-        from hedge.tools import log_shape
-        from numpy import shape
-        from hedge.tools import make_obj_array
+        return self.discr.apply_element_local_matrix(
+                self.get_filter_matrix, vec, 
+                prepared_data_store=self.prepared_data_store)
 
-        ls = log_shape(vec)
-        result = self.discr.volume_zeros(ls)
+    def get_filter_matrix(self, eg):
+        ldis = eg.local_discretization
+
+        node_count = ldis.node_count()
+
+        filter_coeffs = [self.mode_response_func(mid, ldis)
+            for mid in ldis.generate_mode_identifiers()] 
+
+        # build filter matrix
+        vdm = ldis.vandermonde()
+        from hedge.tools import leftsolve
+        from numpy import dot
+        mat = numpy.asarray(
+            leftsolve(vdm,
+                dot(vdm, numpy.diag(filter_coeffs))),
+            order="C")
+
+        return mat
 
 
-        from pytools import indices_in_shape
-        for i in indices_in_shape(ls):
-            from hedge._internal import perform_elwise_operator
-            for eg in self.discr.element_groups:
-                perform_elwise_operator(eg.ranges, eg.ranges, 
-                        self.filter_map[eg], vec[i], result[i])
-
-        return make_obj_array(result)
-        #return result
-
-    def get_filter_matrix(self, el_group):
-        return self.filter_map[el_group]
 
 
 class SlopeLimiter1N:
