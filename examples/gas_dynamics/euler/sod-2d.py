@@ -1,22 +1,3 @@
-# Hedge - the Hybrid'n'Easy DG Environment
-# Copyright (C) 2008 Andreas Kloeckner
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
-
-
-
 from __future__ import division
 import numpy
 import numpy.linalg as la
@@ -24,28 +5,28 @@ import numpy.linalg as la
 
 
 
-class SineWave:
-    def __init__(self):
-        self.gamma = 1.4
-        self.mu = 0
-        self.prandtl = 0.72
-        self.spec_gas_const = 287.1
+class Sod:
+    def __init__(self, gamma):
+        self.gamma = gamma
 
     def __call__(self, t, x_vec):
 
-        rho = 2 + numpy.sin(x_vec[0] + x_vec[1] + x_vec[2] - 2 * t)
-        velocity = numpy.array([1, 1, 0])
-        p = 1
-        e = p/(self.gamma-1) + rho/2 * numpy.dot(velocity, velocity)
-        rho_u = rho * velocity[0]
-        rho_v = rho * velocity[1]
-        rho_w = rho * velocity[2]
+        x_rel = x_vec[0]
+        y_rel = x_vec[1]
+
+        from math import pi
+        r = numpy.sqrt(x_rel**2+y_rel**2)
+        r_shift=r-3.0
+        u = 0.0
+        v = 0.0
+        from numpy import sign
+        rho = sign(-r_shift)*(1+sign(-r_shift))/2.0+.125*(1.0-sign(-r_shift)*(1+sign(-r_shift))/2.0)
+        e = (1.0/(self.gamma-1.0))*(sign(-r_shift)*(1+sign(-r_shift))/2.0+.1*(1-sign(-r_shift)*(1+sign(-r_shift))/2.0))
+        p = (self.gamma-1.0)*e
 
         from hedge.tools import join_fields
-        return join_fields(rho, e, rho_u, rho_v, rho_w)
+        return join_fields(rho, e, rho*u, rho*v)
 
-    def properties(self):
-        return(self.gamma, self.mu, self.prandtl, self.spec_gas_const)
 
     def volume_interpolant(self, t, discr):
         return discr.convert_volume(
@@ -62,40 +43,37 @@ class SineWave:
 
 def main():
     from hedge.backends import guess_run_context
-    platform = "cpu"
-    if platform == "gpu":
-        rcon = guess_run_context(["cuda"])
-    else:
-        rcon = guess_run_context()
+    rcon = guess_run_context()
 
-    from hedge.tools import EOCRecorder, to_obj_array
-    eoc_rec = EOCRecorder()
+    gamma = 1.4
+
+    from hedge.tools import to_obj_array
     
     if rcon.is_head_rank:
-        from hedge.mesh import make_box_mesh
-        mesh = make_box_mesh((0,0,0), (10,10,10), max_volume=0.5)
+        from hedge.mesh import make_rect_mesh
+        mesh = make_rect_mesh((-5,-5), (5,5), max_area=0.01)
         mesh_data = rcon.distribute_mesh(mesh)
     else:
         mesh_data = rcon.receive_mesh()
 
-    for order in [3, 4, 5]:
+    for order in [1]:
         discr = rcon.make_discretization(mesh_data, order=order,
 			default_scalar_type=numpy.float64)
 
         from hedge.visualization import SiloVisualizer, VtkVisualizer
-        vis = VtkVisualizer(discr, rcon, "sinewave-%d" % order)
+        vis = VtkVisualizer(discr, rcon, "Sod2D-%d" % order)
         #vis = SiloVisualizer(discr, rcon)
 
-        sinewave = SineWave()
-        fields = sinewave.volume_interpolant(0, discr)
-        gamma, mu, prandtl, spec_gas_const = sinewave.properties()
+        sodfield = Sod(gamma=gamma)
+        fields = sodfield.volume_interpolant(0, discr)
 
+        from hedge.models.gasdynamics import GasDynamicsOperator
         from hedge.mesh import TAG_ALL
-        from hedge.models.gas_dynamics import GasDynamicsOperator
-        op = GasDynamicsOperator(dimensions=2, gamma=gamma, mu=mu,
-                prandtl=prandtl, spec_gas_const=spec_gas_const,
-                bc_inflow=sinewave, bc_outflow=sinewave, bc_noslip=sinewave,
-                inflow_tag=TAG_ALL, euler=True,source=None)
+        op = GasDynamicsOperator(dimensions=2, discr=discr, gamma=1.4, 
+                prandtl=0.72, spec_gas_const=287.1, inflow_tag=TAG_ALL,
+                bc_inflow=sodfield,
+                bc_outflow=sodfield,bc_noslip=sodfield,
+                euler=True,source=None)
 
         euler_ex = op.bind(discr)
 
@@ -107,7 +85,7 @@ def main():
         rhs(0, fields)
 
         dt = discr.dt_factor(max_eigval[0])
-        final_time = 1
+        final_time = 2.5
         nsteps = int(final_time/dt)+1
         dt = final_time/nsteps
 
@@ -126,10 +104,7 @@ def main():
         from pytools.log import LogManager, add_general_quantities, \
                 add_simulation_quantities, add_run_info
 
-        logmgr = LogManager("euler-sinewave-%(order)d-%(els)d-%(platform)s.dat" 
-                            % {"order":order, "els":len(mesh.elements), 
-                               "platform":platform},
-                            "w", rcon.communicator)
+        logmgr = LogManager("euler-%d.dat" % order, "w", rcon.communicator)
         add_run_info(logmgr)
         add_general_quantities(logmgr)
         add_simulation_quantities(logmgr, dt)
@@ -138,15 +113,34 @@ def main():
 
         logmgr.add_watches(["step.max", "t_sim.max", "t_step.max"])
 
+
+        # limiter setup-------------------------------------------------------------
+        from hedge.models.gasdynamics import SlopeLimiter1NEuler
+        limiter =  SlopeLimiter1NEuler(discr,gamma, 2, op)
+
+
+        # filter setup-------------------------------------------------------------
+        from hedge.discretization import Filter, ExponentialFilterResponseFunction
+        antialiasing = Filter(discr,
+                ExponentialFilterResponseFunction(min_amplification=0.9,order=4))
+
+
         # timestep loop -------------------------------------------------------
         t = 0
+
+        from numpy import shape
+
+        #limit IC...appears to result in a problem (no idea why)
+        #fields = limiter(fields)
 
         for step in range(nsteps):
             logmgr.tick()
 
-            #if step % 10 == 0:
-            if False:
-                visf = vis.make_file("sinewave-%d-%04d" % (order, step))
+            if step % 5 == 0:
+            #if False:
+                visf = vis.make_file("vortex-%d-%04d" % (order, step))
+
+                #true_fields = vortex.volume_interpolant(t, discr)
 
                 from pylo import DB_VARTYPE_VECTOR
                 vis.add_data(visf,
@@ -177,24 +171,20 @@ def main():
                 visf.close()
 
             fields = stepper(fields, t, dt, rhs)
+            #apply slope limiter
+            fields = limiter(fields)
+            #fields = antialiasing(fields)
             t += dt
 
             dt = discr.dt_factor(max_eigval[0])
+            assert not numpy.isnan(numpy.sum(fields[0])):
 
         logmgr.tick()
         logmgr.save()
 
-        true_fields = sinewave.volume_interpolant(t, discr)
-        eoc_rec.add_data_point(order, discr.norm(fields-true_fields))
-        print
-        print eoc_rec.pretty_print("P.Deg.", "L2 Error")
+        #not solution, just to check against when making code changes
+        true_fields = sodfield.volume_interpolant(t, discr)
+        print discr.norm(fields-true_fields)
 
 if __name__ == "__main__":
     main()
-
-# entry points for py.test ----------------------------------------------------
-from pytools.test import mark_test
-@mark_test.long
-def test_euler_sine_wave():
-    main()
-
