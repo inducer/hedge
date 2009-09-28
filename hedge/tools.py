@@ -1205,8 +1205,8 @@ class NestedFuture(Future):
 def get_spherical_coord(x_vec):
     """
     :param x_vec: is an array whose leading dimension iterates over
-    the X, Y, Z axes, and whose further dimensions may iterate over
-    a number of points.
+        the X, Y, Z axes, and whose further dimensions may iterate over
+        a number of points.
 
     :returns: object array of [r, phi, theta].
         phi is the angle in (x,y) in :math:`(-\\pi,\\pi)`.
