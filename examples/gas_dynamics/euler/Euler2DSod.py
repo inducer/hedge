@@ -68,12 +68,11 @@ def main():
         sodfield = Sod(gamma=gamma)
         fields = sodfield.volume_interpolant(0, discr)
 
-        from hedge.models.gasdynamics import GasDynamicsOperator
+        from hedge.models.gas_dynamics import GasDynamicsOperator
         from hedge.mesh import TAG_ALL
-        op = GasDynamicsOperator(dimensions=2, discr=discr, gamma=1.4, 
-                prandtl=0.72, spec_gas_const=287.1, inflow_tag=TAG_ALL,
+        op = GasDynamicsOperator(dimensions=2, gamma=1.4, 
                 bc_inflow=sodfield,
-                bc_outflow=sodfield,bc_noslip=sodfield,
+                bc_outflow=sodfield,bc_noslip=sodfield,inflow_tag=TAG_ALL,
                 euler=True,source=None)
 
         euler_ex = op.bind(discr)
@@ -116,7 +115,7 @@ def main():
 
 
         # limiter setup-------------------------------------------------------------
-        from hedge.models.gasdynamics import SlopeLimiter1NEuler
+        from hedge.models.gas_dynamics import SlopeLimiter1NEuler
         limiter =  SlopeLimiter1NEuler(discr,gamma, 2, op)
 
 

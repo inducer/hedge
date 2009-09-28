@@ -100,7 +100,7 @@ def main(write_output=True):
     else:
         mesh_data = rcon.receive_mesh()
 
-    for order in [3, 4, 5]:
+    for order in [6]:
         discr = rcon.make_discretization(mesh_data, order=order,
 			default_scalar_type=numpy.float64)
 
@@ -128,8 +128,10 @@ def main(write_output=True):
             return ode_rhs
         rhs(0, fields)
 
-        dt = discr.dt_factor(max_eigval[0])
-        final_time = 0.6
+        #for testing temporal convergence can just scale by dt_scale
+        dt_scale=.8
+        dt = discr.dt_factor(dt_scale*max_eigval[0])
+        final_time = 0.3
         nsteps = int(final_time/dt)+1
         dt = final_time/nsteps
 
@@ -205,10 +207,14 @@ def main(write_output=True):
 
                 fields = stepper(fields, t, dt, rhs)
                 t += dt
+                dt = discr.dt_factor(dt_scale*max_eigval[0])
+                if(numpy.isnan(numpy.sum(fields[0]))==True):
+                    print 'Solution is blowing up'
+                
+                if(final_time<t+dt):
+                    dt=final_time-t
 
-                dt = discr.dt_factor(max_eigval[0])
             logmgr.tick()
-
             true_fields = vortex.volume_interpolant(t, discr)
             l2_error = discr.norm(fields-true_fields)
             l2_error_rho = discr.norm(op.rho(fields)-op.rho(true_fields))
