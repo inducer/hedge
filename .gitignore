@@ -41,3 +41,6 @@ doc/manual/.build
 *.eps
 run-debug-*
 .nfs*
+doc/manual/.static
+doc/manual/source/.static
+doc/manual/.templates
