@@ -116,9 +116,6 @@ class GasDynamicsOperator(TimeDependentOperator):
         from hedge.optemplate import make_vector_field, \
                 make_common_subexpression as cse
 
-        c_p = self.gamma / (self.gamma - 1) * self.spec_gas_const
-        c_v = c_p - self.spec_gas_const
-
         AXES = ["x", "y", "z", "w"]
 
         def u(q):
@@ -135,11 +132,12 @@ class GasDynamicsOperator(TimeDependentOperator):
                        0.5*numpy.dot(self.rho_u(q), u(q))), "p")
 
         def t(q):
+            c_v = 1 / (self.gamma - 1) *self.spec_gas_const
             return cse(
                     (self.e(q)/self.rho(q) - 0.5 * numpy.dot(u(q),u(q))) / c_v,
                     "t")
 
-        def mu(q):
+        def get_mu(q):
             mu = self.mu
             if self.euler == True:
                 assert mu == 0.
@@ -155,8 +153,9 @@ class GasDynamicsOperator(TimeDependentOperator):
             from hedge.tools import make_obj_array
             from hedge.optemplate import make_nabla
 
+            c_p = self.gamma / (self.gamma - 1) * self.spec_gas_const
             nabla = make_nabla(self.dimensions)
-            k = c_p * mu(q) / self.prandtl
+            k = c_p * get_mu(q) / self.prandtl
 
             result = numpy.empty((self.dimensions,1), dtype=object)
             for i in range(len(result)):
@@ -219,7 +218,7 @@ class GasDynamicsOperator(TimeDependentOperator):
             tau = numpy.zeros((dimensions+1, dimensions), dtype=object)
             for i in range(dimensions):
                 for j in range(dimensions):
-                    tau[i,j] = cse(mu(q) * (du[i,j] + du[j,i] -
+                    tau[i,j] = cse(get_mu(q) * (du[i,j] + du[j,i] -
                                2/3 * delta(i,j) * numpy.trace(du)),
                                "tau_%d%d" % (i, j))
 

@@ -44,7 +44,6 @@ def main(write_output=True, flux_type_arg="lf"):
 
     # discretization setup ----------------------------------------------------
     discr = rcon.make_discretization(mesh_data, order=4,
-            #debug=["cuda_no_plan_el_local"],
             default_scalar_type=numpy.float64)
     vis_discr = discr
 

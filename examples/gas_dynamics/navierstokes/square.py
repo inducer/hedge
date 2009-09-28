@@ -20,7 +20,10 @@
 from __future__ import division
 import numpy
 import numpy.linalg as la
-import pycuda.autoinit
+try:
+    import pycuda.autoinit
+except ImportError:
+    pass
 
 
 
@@ -134,7 +137,7 @@ def main():
 
         if is_cpu == False:
             discr = rcon.make_discretization(mesh_data, order=order,
-			debug=[#"cuda_no_plan",
+			debug=["cuda_no_plan",
                             #"cuda_dump_kernels",
                             #"dump_dataflow_graph",
                             #"dump_optemplate_stages",
@@ -142,14 +145,13 @@ def main():
                             #"print_op_code"
                             #"cuda_no_plan_el_local"
                             ],
-			default_scalar_type=numpy.float64,
+			default_scalar_type=numpy.float32,
                         tune_for=op.op_template(),
                         init_cuda=False)
         else:
             discr = rcon.make_discretization(mesh_data, order=order,
-			default_scalar_type=numpy.float64,
-                        tune_for=op.op_template()
-                        )
+			default_scalar_type=numpy.float32,
+                        tune_for=op.op_template())
 
         from hedge.visualization import SiloVisualizer, VtkVisualizer
         #vis = VtkVisualizer(discr, rcon, "shearflow-%d" % order)
@@ -166,9 +168,9 @@ def main():
                 add_simulation_quantities, add_run_info
 
         if is_cpu == False:
-            logmgr = LogManager("cns-square-gpu-dp-%d.dat" % order, "w", rcon.communicator)
+            logmgr = LogManager("cns-square-gpu-sp-%d.dat" % order, "w", rcon.communicator)
         else:
-            logmgr = LogManager("cns-square-cpu-dp-%d.dat" % order, "w", rcon.communicator)
+            logmgr = LogManager("cns-square-cpu-sp-%d.dat" % order, "w", rcon.communicator)
         add_run_info(logmgr)
         add_general_quantities(logmgr)
         discr.add_instrumentation(logmgr)
@@ -221,33 +223,30 @@ def main():
         add_simulation_quantities(logmgr, dt)
         logmgr.add_watches(["step.max", "t_sim.max", "t_step.max"])
 
+        # filter setup ------------------------------------------------------------
+        from hedge.discretization import Filter, ExponentialFilterResponseFunction
+        antialiasing = Filter(discr,
+                ExponentialFilterResponseFunction(min_amplification=0.95, order=4))
 
         # timestep loop -------------------------------------------------------
         t = 0
 
         try:
-            for step in range(nsteps):
+            for step in xrange(nsteps):
                 logmgr.tick()
 
-                #if (step % 10000 == 0): #and step < 950000) or (step % 500 == 0 and step > 950000):
+                #if step % 10000 == 0:
                 if False:
                     visf = vis.make_file("square-%d-%06d" % (order, step))
 
-                    #rhs_fields = rhs(t, fields)
-
                     from pylo import DB_VARTYPE_VECTOR
-                    from hedge.discretization import ones_on_boundary
                     vis.add_data(visf,
                             [
                                 ("rho", discr.convert_volume(op.rho(fields), kind="numpy")),
                                 ("e", discr.convert_volume(op.e(fields), kind="numpy")),
                                 ("rho_u", discr.convert_volume(op.rho_u(fields), kind="numpy")),
                                 ("u", discr.convert_volume(op.u(fields), kind="numpy")),
-
-                                #("rhs_rho", discr.convert_volume(op.rho(rhs_fields), kind="numpy")),
-                                #("rhs_e", discr.convert_volume(op.e(rhs_fields), kind="numpy")),
-                                #("rhs_rho_u", discr.convert_volume(op.rho_u(rhs_fields), kind="numpy")),
-                                ],
+                            ],
                             expressions=[
                                 ("p", "(0.4)*(e- 0.5*(rho_u*u))"),
                                 ],
@@ -256,6 +255,7 @@ def main():
                     visf.close()
 
                 fields = stepper(fields, t, dt, rhs)
+                fields = antialiasing(fields)
                 t += dt
 
                 dt = discr.dt_factor(max_eigval[0], order=2)
