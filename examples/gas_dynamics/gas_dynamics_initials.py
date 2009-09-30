@@ -64,7 +64,10 @@ class UniformMachFlow:
         self.c = (self.gamma * p / rho)**0.5
         u = self.velocity = mach * self.c
         self.e = p / (self.gamma - 1) + rho / 2 * u**2
-        self.mu = u * self.length * rho / self.reynolds
+        if numpy.isinf(self.reynolds):
+            self.mu = 0
+        else:
+            self.mu = u * self.length * rho / self.reynolds
 
     def __call__(self, t, x_vec):
         ones = numpy.ones_like(x_vec[0])
