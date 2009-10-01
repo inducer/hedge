@@ -177,7 +177,7 @@ def main():
             t += dt
 
             dt = discr.dt_factor(max_eigval[0])
-            assert not numpy.isnan(numpy.sum(fields[0])):
+            assert not numpy.isnan(numpy.sum(fields[0]))
 
         logmgr.tick()
         logmgr.save()
