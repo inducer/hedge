@@ -109,9 +109,12 @@ class SourceTerms:
 
         #derivatives for rho (A=1)
         facG=self.gamma-1
-        rho_t = (1/facG)*(1-(facG)/(16*self.gamma*pi**2)*expterm**2)**(1/facG-1)*(-facG/(16*self.gamma*pi**2)*2*expterm*expterm_t)
-        rho_x = (1/facG)*(1-(facG)/(16*self.gamma*pi**2)*expterm**2)**(1/facG-1)*(-facG/(16*self.gamma*pi**2)*2*expterm*expterm_x)
-        rho_y = (1/facG)*(1-(facG)/(16*self.gamma*pi**2)*expterm**2)**(1/facG-1)*(-facG/(16*self.gamma*pi**2)*2*expterm*expterm_y)
+        rho_t = (1/facG)*(1-(facG)/(16*self.gamma*pi**2)*expterm**2)**(1/facG-1)* \
+                (-facG/(16*self.gamma*pi**2)*2*expterm*expterm_t)
+        rho_x = (1/facG)*(1-(facG)/(16*self.gamma*pi**2)*expterm**2)**(1/facG-1)* \
+                (-facG/(16*self.gamma*pi**2)*2*expterm*expterm_x)
+        rho_y = (1/facG)*(1-(facG)/(16*self.gamma*pi**2)*expterm**2)**(1/facG-1)* \
+                (-facG/(16*self.gamma*pi**2)*2*expterm*expterm_y)
 
         #derivatives for rho (A=1) to the power of gamma
         rho_gamma_t = self.gamma*rho**(self.gamma-1)*rho_t
@@ -122,23 +125,15 @@ class SourceTerms:
         factorA=self.densityA**self.gamma-self.densityA
         #construct source terms
         source_rho = x_vec[0]-x_vec[0]
-        source_e = (factorA/(self.gamma-1))*(rho_gamma_t + self.gamma*(u_x*rho**self.gamma+u*rho_gamma_x)+self.gamma*(v_y*rho**self.gamma+v*rho_gamma_y))
+        source_e = (factorA/(self.gamma-1))*(rho_gamma_t + self.gamma*(u_x*rho**self.gamma+u*rho_gamma_x)+ \
+                self.gamma*(v_y*rho**self.gamma+v*rho_gamma_y))
         source_rhou = factorA*rho_gamma_x
         source_rhov = factorA*rho_gamma_y
 
         from hedge.tools import join_fields
         return join_fields(source_rho, source_e, source_rhou, source_rhov, x_vec[0]-x_vec[0])
-        
-        #return join_fields(q[0]-q[0], q[1]-q[1], q[2]-q[2], q[3]-q[3], x_vec[0]-x_vec[0])
-
     
-
     def volume_interpolant(self,t,q,discr):
-    #    return self(t,discr.nodes.T,q)
-
-    #    return discr.convert_volume(
-    #            self(t,discr.nodes.T.astype(discr.default_scalar_type),q),
-    #            kind=discr.compute_kind)
         return discr.convert_volume(
                 self(t,discr.nodes.T,q), 
                 kind=discr.compute_kind)
@@ -151,6 +146,8 @@ def main(write_output=True):
 		    )
 
     gamma = 1.4
+    #at A=1 we have case of isentropic vortex, source terms arise for other values
+    densityA = 2.0
 
     from hedge.tools import EOCRecorder, to_obj_array
     eoc_rec = EOCRecorder()
@@ -180,18 +177,18 @@ def main(write_output=True):
 
         vortex = Vortex(beta=5, gamma=gamma, 
                 center=[5,0], 
-                velocity=[1,0], densityA=1.0)
+                velocity=[1,0], densityA=densityA)
         fields = vortex.volume_interpolant(0, discr)
         sources=SourceTerms(beta=5, gamma=gamma,
                 center=[5,0],
-                velocity=[1,0], densityA=1.0)
+                velocity=[1,0], densityA=densityA)
 
-        from hedge.models.gasdynamics import GasDynamicsOperator
+        from hedge.models.gas_dynamics import GasDynamicsOperator
         from hedge.mesh import TAG_ALL
-        op = GasDynamicsOperator(dimensions=2, discr= discr,
+        op = GasDynamicsOperator(dimensions=2,
                 gamma=gamma, prandtl=0.72, spec_gas_const=287.1,
                 bc_inflow=vortex, bc_outflow=vortex, bc_noslip=vortex,
-                inflow_tag=TAG_ALL, euler=True,source=sources)
+                inflow_tag=TAG_ALL, euler=True, source=sources)
 
         euler_ex = op.bind(discr)
 

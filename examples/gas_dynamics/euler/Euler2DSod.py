@@ -97,12 +97,21 @@ def main():
             print "nsteps", nsteps
             print "#elements=", len(mesh.elements)
 
-        from hedge.timestep import RK4TimeStepper
-        stepper = RK4TimeStepper()
 
         # diagnostics setup ---------------------------------------------------
         from pytools.log import LogManager, add_general_quantities, \
                 add_simulation_quantities, add_run_info
+
+        # limiter setup-------------------------------------------------------------
+        from hedge.models.gas_dynamics import SlopeLimiter1NEuler
+        limiter =  SlopeLimiter1NEuler(discr,gamma, 2, op)
+        
+
+        # integrator setup---------------------------------------------------------
+        from hedge.timestep import SSPRK3TimeStepper
+        from hedge.timestep import RK4TimeStepper
+        stepper = SSPRK3TimeStepper(limit_stages=True,limiter=limiter)
+        #stepper = RK4TimeStepper()
 
         logmgr = LogManager("euler-%d.dat" % order, "w", rcon.communicator)
         add_run_info(logmgr)
@@ -112,11 +121,6 @@ def main():
         stepper.add_instrumentation(logmgr)
 
         logmgr.add_watches(["step.max", "t_sim.max", "t_step.max"])
-
-
-        # limiter setup-------------------------------------------------------------
-        from hedge.models.gas_dynamics import SlopeLimiter1NEuler
-        limiter =  SlopeLimiter1NEuler(discr,gamma, 2, op)
 
 
         # filter setup-------------------------------------------------------------

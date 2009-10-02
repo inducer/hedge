@@ -56,6 +56,13 @@ _RK4C = [0.0,
 
 
 class RK4TimeStepper(TimeStepper):
+    '''A low storage fourth-order Runge-Kutta method
+
+    See JSH, TW: Nodal Discontinuous Galerkin Methods p.64
+
+    '''
+
+
     dt_fudge_factor = 1
 
     def __init__(self, allow_jit=True):

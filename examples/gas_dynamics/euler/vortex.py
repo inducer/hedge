@@ -129,8 +129,7 @@ def main(write_output=True):
         rhs(0, fields)
 
         #for testing temporal convergence can just scale by dt_scale
-        dt_scale=.8
-        dt = discr.dt_factor(dt_scale*max_eigval[0])
+        dt = discr.dt_factor(max_eigval[0])
         final_time = 0.3
         nsteps = int(final_time/dt)+1
         dt = final_time/nsteps
@@ -143,8 +142,16 @@ def main(write_output=True):
             print "nsteps", nsteps
             print "#elements=", len(mesh.elements)
 
+        from hedge.timestep import SSPRK3TimeStepper
         from hedge.timestep import RK4TimeStepper
+        #stepper = SSPRK3TimeStepper()
+        #stepper_class = SSPRK3TimeStepper
         stepper = RK4TimeStepper()
+        stepper_class = RK4TimeStepper
+
+        #limiter -------------------------------------------------------------
+        from hedge.models.gas_dynamics import SlopeLimiter1NEuler
+        limiter = SlopeLimiter1NEuler(discr, gamma, 3, op)
 
         # diagnostics setup ---------------------------------------------------
         from pytools.log import LogManager, add_general_quantities, \
@@ -163,6 +170,10 @@ def main(write_output=True):
         stepper.add_instrumentation(logmgr)
 
         logmgr.add_watches(["step.max", "t_sim.max", "t_step.max"])
+
+        # positivity preserving check/fix ------------------------------------
+        from hedge.models.gas_dynamics import PositivityCheck
+        pos_fix = PositivityCheck(op, 1e-7)
 
         # timestep loop -------------------------------------------------------
         t = 0
@@ -206,8 +217,10 @@ def main(write_output=True):
                     visf.close()
 
                 fields = stepper(fields, t, dt, rhs)
+                fields = limiter(fields)
+                fields = pos_fix(fields)
                 t += dt
-                dt = discr.dt_factor(dt_scale*max_eigval[0])
+                dt = discr.dt_factor(max_eigval[0],stepper_class=stepper_class)
                 if(numpy.isnan(numpy.sum(fields[0]))==True):
                     print 'Solution is blowing up'
                 

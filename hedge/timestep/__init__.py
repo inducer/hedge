@@ -32,3 +32,4 @@ from pytools import memoize
 
 from hedge.timestep.rk4 import RK4TimeStepper
 from hedge.timestep.ab import AdamsBashforthTimeStepper
+from hedge.timestep.ssprk3 import SSPRK3TimeStepper
