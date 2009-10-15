@@ -30,13 +30,31 @@
 #include <vector>
 #include <utility>
 #include "base.hpp"
-#include "flux.hpp"
 
 
 
 
 namespace hedge 
 {
+  namespace fluxes {
+    struct face
+    {
+      double h;
+      double face_jacobian;
+      element_number_t element_id;
+      face_number_t face_id;
+      unsigned order;
+      bounded_vector<double, max_dims> normal;
+
+      face()
+        : h(0), face_jacobian(0), 
+        element_id(INVALID_ELEMENT), face_id(INVALID_FACE),
+        order(0)
+      { }
+    };
+  }
+
+
   typedef numpy_vector<npy_uint> index_lists_t;
   typedef unsigned index_list_number_t;
 
