@@ -44,3 +44,5 @@ run-debug-*
 doc/manual/.static
 doc/manual/source/.static
 doc/manual/.templates
+distribute-*.tar.gz
+setuptools.pth
