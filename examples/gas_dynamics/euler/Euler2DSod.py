@@ -11,6 +11,9 @@ class Sod:
 
     def __call__(self, t, x_vec):
 
+        from hedge.tools import heaviside
+        from hedge.tools import heaviside_a
+
         x_rel = x_vec[0]
         y_rel = x_vec[1]
 
@@ -20,8 +23,8 @@ class Sod:
         u = 0.0
         v = 0.0
         from numpy import sign
-        rho = sign(-r_shift)*(1+sign(-r_shift))/2.0+.125*(1.0-sign(-r_shift)*(1+sign(-r_shift))/2.0)
-        e = (1.0/(self.gamma-1.0))*(sign(-r_shift)*(1+sign(-r_shift))/2.0+.1*(1-sign(-r_shift)*(1+sign(-r_shift))/2.0))
+        rho = heaviside(-r_shift)+.125*heaviside_a(r_shift,1.0)
+        e = (1.0/(self.gamma-1.0))*(heaviside(-r_shift)+.1*heaviside_a(r_shift,1.0))
         p = (self.gamma-1.0)*e
 
         from hedge.tools import join_fields

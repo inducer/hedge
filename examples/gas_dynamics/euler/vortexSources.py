@@ -220,6 +220,11 @@ def main(write_output=True):
         from pytools.log import LogManager, add_general_quantities, \
                 add_simulation_quantities, add_run_info
 
+        # limiter setup -------------------------------------------------------
+        from hedge.models.gas_dynamics import SlopeLimiter1NEuler
+        limiter = SlopeLimiter1NEuler(discr, gamma, 2, op)
+
+
         if write_output:
             log_file_name = "euler-%d.dat" % order
         else:
@@ -236,6 +241,8 @@ def main(write_output=True):
 
         # timestep loop -------------------------------------------------------
         t = 0
+
+        fields = limiter(fields)
 
         try:
             for step in range(nsteps):

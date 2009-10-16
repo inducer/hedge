@@ -151,7 +151,7 @@ def main(write_output=True):
 
         #limiter -------------------------------------------------------------
         from hedge.models.gas_dynamics import SlopeLimiter1NEuler
-        limiter = SlopeLimiter1NEuler(discr, gamma, 3, op)
+        limiter = SlopeLimiter1NEuler(discr, gamma, 2, op)
 
         # diagnostics setup ---------------------------------------------------
         from pytools.log import LogManager, add_general_quantities, \
