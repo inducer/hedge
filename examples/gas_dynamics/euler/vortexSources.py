@@ -185,10 +185,13 @@ def main(write_output=True):
 
         from hedge.models.gas_dynamics import GasDynamicsOperator
         from hedge.mesh import TAG_ALL
-        op = GasDynamicsOperator(dimensions=2,
-                gamma=gamma, prandtl=0.72, spec_gas_const=287.1,
+        
+        op = GasDynamicsOperator(dimensions=2, gamma=gamma, mu=0.0,
+                prandtl=0.0, spec_gas_const=0.0,
                 bc_inflow=vortex, bc_outflow=vortex, bc_noslip=vortex,
-                inflow_tag=TAG_ALL, euler=True, source=sources)
+                inflow_tag=TAG_ALL, euler=True,source=sources)
+
+        euler_ex = op.bind(discr)
 
         euler_ex = op.bind(discr)
 

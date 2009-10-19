@@ -513,20 +513,3 @@ class SlopeLimiter1NEuler:
         return join_fields(rhoLim, eLim, temp)
 
 
-class PositivityCheck:
-    def __init__(self, op, atmosphere):
-        self.op = op
-
-        #atmosphere one can set density to
-        self.at = atmosphere
-
-    def __call__(self, fields):
-        rho = self.op.rho(fields)
-        e = self.op.e(fields)
-        rho_u=self.op.rho_u(fields)
-        u = self.op.u(fields)
-        P = (self.op.gamma-1)*(e -.5*numpy.dot(rho_u,u))
-        #need to check if rho, P neg, reset them to some pos value
-
-
-        return fields

@@ -49,7 +49,7 @@ class SSPRK3TimeStepper(TimeStepper):
     '''
    
     #from book would expect factor to be 1, this factor might not be optimal. See Ref. above
-    dt_fudge_factor = 1/1.5
+    dt_fudge_factor = 1/(2.0)
 
     def __init__(self, allow_jit=False, limit_stages=False, limiter=None):
         from pytools.log import IntervalTimer, EventCounter

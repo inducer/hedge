@@ -141,17 +141,19 @@ def main(write_output=True):
             print "dt", dt
             print "nsteps", nsteps
             print "#elements=", len(mesh.elements)
-
-        from hedge.timestep import SSPRK3TimeStepper
-        from hedge.timestep import RK4TimeStepper
-        #stepper = SSPRK3TimeStepper()
-        #stepper_class = SSPRK3TimeStepper
-        stepper = RK4TimeStepper()
-        stepper_class = RK4TimeStepper
-
+        
+        
         #limiter -------------------------------------------------------------
         from hedge.models.gas_dynamics import SlopeLimiter1NEuler
         limiter = SlopeLimiter1NEuler(discr, gamma, 2, op)
+
+
+        from hedge.timestep import SSPRK3TimeStepper
+        from hedge.timestep import RK4TimeStepper
+        stepper = SSPRK3TimeStepper(limit_stages=True,limiter=limiter)
+        stepper_class = SSPRK3TimeStepper
+        #stepper = RK4TimeStepper()
+        #stepper_class = RK4TimeStepper
 
         # diagnostics setup ---------------------------------------------------
         from pytools.log import LogManager, add_general_quantities, \
@@ -171,12 +173,9 @@ def main(write_output=True):
 
         logmgr.add_watches(["step.max", "t_sim.max", "t_step.max"])
 
-        # positivity preserving check/fix ------------------------------------
-        from hedge.models.gas_dynamics import PositivityCheck
-        pos_fix = PositivityCheck(op, 1e-7)
-
         # timestep loop -------------------------------------------------------
         t = 0
+
 
         try:
             for step in range(nsteps):
