@@ -92,7 +92,7 @@ def main():
 
         from hedge.mesh import TAG_ALL
         from hedge.models.gas_dynamics import GasDynamicsOperator
-        op = GasDynamicsOperator(dimensions=2, discr=discr, gamma=gamma, mu=mu,
+        op = GasDynamicsOperator(dimensions=2, gamma=gamma, mu=mu,
                 prandtl=prandtl, spec_gas_const=spec_gas_const,
                 bc_inflow=sinewave, bc_outflow=sinewave, bc_noslip=sinewave,
                 inflow_tag=TAG_ALL, euler=True,source=None)

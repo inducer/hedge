@@ -55,3 +55,7 @@ Flux Helpers
 
 .. autofunction:: make_lax_friedrichs_flux
 
+Miscellaneous
+-------------
+
+.. autofunction:: get_spherical_coord

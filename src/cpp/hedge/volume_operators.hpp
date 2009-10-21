@@ -33,7 +33,6 @@
 #include <boost/numeric/bindings/traits/ublas_matrix.hpp>
 #include <boost/iterator/iterator_facade.hpp>
 #include "base.hpp"
-#include "flux.hpp"
 
 
 

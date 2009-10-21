@@ -186,9 +186,9 @@ def main(write_output=True):
                 center=[5,0],
                 velocity=[1,0], densityA=1.0)
 
-        from hedge.models.gasdynamics import GasDynamicsOperator
+        from hedge.models.gas_dynamics import GasDynamicsOperator
         from hedge.mesh import TAG_ALL
-        op = GasDynamicsOperator(dimensions=2, discr= discr,
+        op = GasDynamicsOperator(dimensions=2,
                 gamma=gamma, prandtl=0.72, spec_gas_const=287.1,
                 bc_inflow=vortex, bc_outflow=vortex, bc_noslip=vortex,
                 inflow_tag=TAG_ALL, euler=True,source=sources)
