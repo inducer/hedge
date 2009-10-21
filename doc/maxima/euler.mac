@@ -112,7 +112,7 @@ euler_mat:genmatrix(
 rel_D:ratsimp(euler_D - n.u0vec*ident(d+2));
 
 /* auxiliary variables, external and internal states ------------------------ */
-c0:sqrt(%gamma)*sqrt(p0)/sqrt(rho0);
+c0:sqrt(%gamma*p0/rho0);
 
 euler_wm:makelist(concat(prim_lin_vars[i], m), i, 1, length(prim_lin_vars));
 euler_wp:makelist(concat(prim_lin_vars[i], p), i, 1, length(prim_lin_vars));

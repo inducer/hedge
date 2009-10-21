@@ -50,8 +50,7 @@ def main():
 
     gamma = 1.4
 
-    from hedge.tools import EOCRecorder, to_obj_array
-    eoc_rec = EOCRecorder()
+    from hedge.tools import to_obj_array
     
     if rcon.is_head_rank:
         from hedge.mesh import make_rect_mesh
@@ -184,8 +183,7 @@ def main():
             t += dt
 
             dt = discr.dt_factor(max_eigval[0])
-            if(numpy.isnan(numpy.sum(fields[0]))==True):
-                print 'Solution is blowing up'
+            assert not numpy.isnan(numpy.sum(fields[0]))
 
         logmgr.tick()
         logmgr.save()

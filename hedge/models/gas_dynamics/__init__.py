@@ -29,7 +29,7 @@ import hedge.tools
 import hedge.mesh
 import hedge.data
 from pytools import memoize_method
-from hedge.models import Operator, TimeDependentOperator
+from hedge.models import TimeDependentOperator
 from pytools import Record
 
 

@@ -24,7 +24,6 @@
 #include <boost/python.hpp>
 #include <boost/python/stl_iterator.hpp>
 #include <boost/python/suite/indexing/vector_indexing_suite.hpp>
-#include <hedge/flux.hpp>
 #include <hedge/face_operators.hpp>
 #include "wrap_helpers.hpp"
 

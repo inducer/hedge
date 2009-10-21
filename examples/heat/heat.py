@@ -68,7 +68,7 @@ def main(write_output=True) :
         from hedge.visualization import  VtkVisualizer
         vis = VtkVisualizer(discr, rcon, "fld")
 
-    dt = discr.dt_factor(1, order=2)
+    dt = discr.dt_factor(1, order=2)*0.2
     nsteps = int(1/dt)
 
     if rcon.is_head_rank:
