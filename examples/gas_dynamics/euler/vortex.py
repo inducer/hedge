@@ -100,7 +100,7 @@ def main(write_output=True):
     else:
         mesh_data = rcon.receive_mesh()
 
-    for order in [6]:
+    for order in [3, 4, 5]:
         discr = rcon.make_discretization(mesh_data, order=order,
 			default_scalar_type=numpy.float64)
 
@@ -128,9 +128,8 @@ def main(write_output=True):
             return ode_rhs
         rhs(0, fields)
 
-        #for testing temporal convergence can just scale by dt_scale
         dt = discr.dt_factor(max_eigval[0])
-        final_time = 0.3
+        final_time = 0.6
         nsteps = int(final_time/dt)+1
         dt = final_time/nsteps
 
@@ -216,13 +215,14 @@ def main(write_output=True):
                     visf.close()
 
                 fields = stepper(fields, t, dt, rhs)
-                fields = limiter(fields)
-                fields = pos_fix(fields)
-                t += dt
-                dt = discr.dt_factor(max_eigval[0],stepper_class=stepper_class)
-                if(numpy.isnan(numpy.sum(fields[0]))==True):
-                    print 'Solution is blowing up'
+                #fields = limiter(fields)
                 
+                t += dt
+
+                dt = discr.dt_factor(max_eigval[0],stepper_class=stepper_class)
+                
+                assert not numpy.isnan(numpy.sum(fields[0]))
+
                 if(final_time<t+dt):
                     dt=final_time-t
 

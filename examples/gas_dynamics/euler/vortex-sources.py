@@ -193,8 +193,6 @@ def main(write_output=True):
 
         euler_ex = op.bind(discr)
 
-        euler_ex = op.bind(discr)
-
         max_eigval = [0]
         def rhs(t, q):
             ode_rhs, speed = euler_ex(t, q)
