@@ -65,8 +65,8 @@ class GasDynamicsOperator(TimeDependentOperator):
     Field order is [rho E rho_u_x rho_u_y ...].
     """
     def __init__(self, dimensions,
-            gamma, bc_inflow, bc_outflow, bc_noslip,
-            prandtl=0.0, spec_gas_const=0.0, mu=0.0,
+            gamma, mu, bc_inflow, bc_outflow, bc_noslip,
+            prandtl=None, spec_gas_const=1.0,
             inflow_tag="inflow",
             outflow_tag="outflow",
             noslip_tag="noslip",

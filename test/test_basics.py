@@ -268,13 +268,12 @@ def test_timestep_accuracy():
 
     from hedge.timestep.rk4 import RK4TimeStepper
     from hedge.timestep.ab import AdamsBashforthTimeStepper
+    from hedge.timestep.ssprk3 import SSPRK3TimeStepper
 
     for o in range(1,5):
         verify_timestep_order(lambda : AdamsBashforthTimeStepper(o), o)
     verify_timestep_order(RK4TimeStepper, 4)
-
-
-
+    verify_timestep_order(SSPRK3TimeStepper, 3)
 
 
 def test_face_vertex_order():

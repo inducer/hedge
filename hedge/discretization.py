@@ -229,7 +229,6 @@ class TimestepCalculator(object):
         if stepper_class is None or stepper_class == RK4TimeStepper:
             return rk4_dt
         elif stepper_class == SSPRK3TimeStepper: 
-            #ssprk3 scales same way as rk4, see ssprk3.py
             return rk4_dt*SSPRK3TimeStepper.dt_fudge_factor
         else:
             assert isinstance(stepper_class, type)

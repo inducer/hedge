@@ -1236,10 +1236,10 @@ def heaviside(x):
 
     :returns: Heaviside step function where H(0)=0
     '''
-
-    H = 0.5*numpy.sign(x)*(1.0+numpy.sign(x))
-
-    return H
+    return (x>0).astype(numpy.float64)
+    #H = 0.5*numpy.sign(x)*(1.0+numpy.sign(x))
+    #
+    #return H
 
 def heaviside_a(x,a):
     '''

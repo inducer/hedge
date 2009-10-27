@@ -59,6 +59,9 @@ class RK4TimeStepper(TimeStepper):
     '''A low storage fourth-order Runge-Kutta method
 
     See JSH, TW: Nodal Discontinuous Galerkin Methods p.64
+    or 
+    Carpenter, M.H., and Kennedy, C.A., Fourth-order-2N-storage 
+    Runge-Kutta schemes, NASA Langley Tech Report TM 109112, 1994
 
     '''
 

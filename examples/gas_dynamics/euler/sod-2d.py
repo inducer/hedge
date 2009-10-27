@@ -72,10 +72,11 @@ def main():
 
         from hedge.models.gas_dynamics import GasDynamicsOperator
         from hedge.mesh import TAG_ALL
-        op = GasDynamicsOperator(dimensions=2, gamma=1.4, 
+        op = GasDynamicsOperator(dimensions=2, gamma=1.4, mu=0.0,
                 bc_inflow=sodfield,
                 bc_outflow=sodfield,bc_noslip=sodfield,inflow_tag=TAG_ALL,
                 euler=True,source=None)
+
 
         euler_ex = op.bind(discr)
 

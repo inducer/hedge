@@ -2,7 +2,7 @@
 
 from __future__ import division
 
-__copyright__ = "Copyright (C) 2007 Andreas Kloeckner"
+__copyright__ = "Copyright (C) 2009 Scott Field"
 
 __license__ = """
 This program is free software: you can redistribute it and/or modify
@@ -27,29 +27,17 @@ from pytools import memoize
 from hedge.timestep.base import TimeStepper
 
 
-_SSPRK3A = [(1.0,0.0,0.0),
-        (.75,.25,0.0),
-        (1.0/3.0,0.0,2.0/3.0)]
-
-_SSPRK3B = [(1.0,0.0,0.0),
-        (0.0,1.0/4.0,0.0),
-        (0.0,0.0,2.0/3.0)]
-
-_SSPRK3C = [0.0,1.0,0.5]
-
-
-
-
-
 class SSPRK3TimeStepper(TimeStepper):
-    '''A third-order strong stability preserving Runge-Kutta method
+    """A third-order strong stability preserving Runge-Kutta method
 
     See JSH, TW: Nodal Discontinuous Galerkin Methods p.158
 
-    '''
-   
-    #from book would expect factor to be 1, this factor might not be optimal. See Ref. above
-    dt_fudge_factor = 1/(2.0)
+
+    :param limit_stages: bool indicating whether to limit after each stage.
+
+    """
+    # SSP stability region = FE region.  along imaginary axis is 1/3 of RK4.
+    dt_fudge_factor = 1/(3.0)
 
     def __init__(self, allow_jit=False, limit_stages=False, limiter=None):
         from pytools.log import IntervalTimer, EventCounter
@@ -58,7 +46,6 @@ class SSPRK3TimeStepper(TimeStepper):
         self.flop_counter = EventCounter(
                 "n_flops_ssprk3", "Floating point operations performed in SSPRK3")
 
-        self.coeffs = zip(_SSPRK3A, _SSPRK3B, _SSPRK3C)
 
         self.allow_jit = allow_jit
         self.limit_stages = limit_stages
@@ -81,10 +68,8 @@ class SSPRK3TimeStepper(TimeStepper):
                     y, allow_objarray_levels=1)
 
         if self.use_jit:
-            print 'not coded yet'
-            #from hedge.tools import numpy_linear_comb
+            raise NotImplementedError
 
-            #this_rhs = dt*rhs(t,y)
         else:
             sub_timer = self.timer.start_sub_timer()
             if self.limit_stages:
@@ -102,9 +87,8 @@ class SSPRK3TimeStepper(TimeStepper):
 
             sub_timer.stop().submit()
         
-
-        # 5 is the number of flops above, *NOT* the number of stages,
-        # which is already captured in len(self.coeffs)
         self.flop_counter.add(3*self.dof_count*5)
+
+
 
         return y
