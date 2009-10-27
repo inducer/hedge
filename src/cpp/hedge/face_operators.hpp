@@ -33,91 +33,118 @@
 
 
 
-
 namespace hedge 
 {
-  namespace fluxes {
-    struct face
-    {
-      double h;
-      double face_jacobian;
-      element_number_t element_id;
-      face_number_t face_id;
-      unsigned order;
-      bounded_vector<double, max_dims> normal;
-
-      face()
-        : h(0), face_jacobian(0), 
-        element_id(INVALID_ELEMENT), face_id(INVALID_FACE),
-        order(0)
-      { }
-    };
-  }
-
-
-  typedef numpy_vector<npy_uint> index_lists_t;
-  typedef unsigned index_list_number_t;
-
-  struct face_pair
+  struct face_base
   {
-    static const unsigned INVALID_INDEX = UINT_MAX;
+    double h;
+    element_number_t element_id;
+    face_number_t face_id;
+    unsigned order;
 
-    static unsigned get_INVALID_INDEX()
-    { return INVALID_INDEX; }
-
-    struct side : public fluxes::face
-    {
-      node_number_t el_base_index;
-      index_list_number_t face_index_list_number;
-
-      /** An element number local to this face group. */
-      unsigned local_el_number;
-
-      side()
-        : el_base_index(INVALID_NODE),
-        face_index_list_number(INVALID_INDEX),
-        local_el_number(INVALID_INDEX)
-      { }
-    };
-
-    side loc, opp;
-    index_list_number_t opp_native_write_map;
-
-    face_pair()
-      : opp_native_write_map(INVALID_INDEX)
+    face_base()
+      : h(0), 
+      element_id(INVALID_ELEMENT), face_id(INVALID_FACE),
+      order(0)
     { }
   };
 
+
+
+  struct straight_face : face_base
+  {
+    double face_jacobian;
+    bounded_vector<double, max_dims> normal;
+
+    straight_face()
+      : face_jacobian(0)
+    { }
+  };
+
+
+
+
+  struct curved_face : face_base
+  {
+  };
+
+
+
+
+
+  typedef numpy_vector<index_t> index_lists_t;
+  typedef unsigned index_list_number_t;
+
+  template <class FaceType>
+  struct face_pair_side : public face
+  {
+    node_number_t el_base_index;
+    index_list_number_t face_index_list_number;
+
+    /** An element number local to this face group. */
+    unsigned local_el_number;
+
+    side()
+      : el_base_index(INVALID_NODE),
+      face_index_list_number(INVALID_INDEX),
+      local_el_number(INVALID_INDEX)
+    { }
+  };
+
+
+
+
+
+  template <class IntFaceType, class ExtFaceType>
+  struct face_pair
+  {
+    typedef IntFaceType int_face_type;
+    typedef ExtFaceType ext_face_type;
+
+    side<int_face_type> int_side;
+    side<ext_face_type> ext_side;
+
+    index_list_number_t ext_native_write_map;
+
+    face_pair()
+      : ext_native_write_map(INVALID_INDEX)
+    { }
+  };
+
+
+
+
+  template <class FacePairType>
   struct face_group
   {
-    public:
-      typedef std::vector<face_pair> face_pair_vector;
+    typedef FacePairType face_pair_type;
+    typedef std::vector<face_pair_type> face_pair_vector;
 
-      face_pair_vector face_pairs;
-      index_lists_t index_lists;
+    face_pair_vector face_pairs;
+    index_lists_t index_lists;
 
-      const bool double_sided;
-      /** The number of elements touched by this face group.
-       * Used for sizing a temporary.
-       */
-      unsigned face_count;
-      numpy_vector<npy_uint> local_el_to_global_el_base;
+    const bool double_sided;
+    /** The number of elements touched by this face group.
+     * Used for sizing a temporary.
+     */
+    unsigned face_count;
+    numpy_vector<npy_uint> local_el_to_global_el_base;
 
-      face_group(bool d_sided)
-        : double_sided(d_sided), 
-        face_count(0)
-      { }
+    face_group(bool d_sided)
+      : double_sided(d_sided), 
+      face_count(0)
+    { }
 
-      unsigned element_count() const
-      { return local_el_to_global_el_base.size(); }
+    unsigned element_count() const
+    { return local_el_to_global_el_base.size(); }
 
-      unsigned face_length() const
-      { return index_lists.dims()[1]; }
+    unsigned face_length() const
+    { return index_lists.dims()[1]; }
 
-      index_lists_t::const_iterator index_list(index_list_number_t number) const
-      { 
-        return index_lists.begin() + face_length()*number;
-      }
+    index_lists_t::const_iterator index_list(index_list_number_t number) const
+    { 
+      return index_lists.begin() + face_length()*number;
+    }
   };
 
 

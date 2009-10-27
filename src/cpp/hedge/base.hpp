@@ -39,6 +39,7 @@ namespace hedge {
   typedef npy_uint face_number_t;
   typedef npy_uint vertex_number_t;
   typedef npy_uint node_number_t;
+  typedef npy_uint index_t;
 
   typedef std::vector<element_number_t> el_id_vector;
   typedef std::vector<vertex_number_t> vtx_id_vector;
@@ -48,6 +49,8 @@ namespace hedge {
   static const face_number_t INVALID_FACE = UINT_MAX;
   static const vertex_number_t INVALID_VERTEX = UINT_MAX;
   static const node_number_t INVALID_NODE = UINT_MAX;
+  static const index_t INVALID_INDEX = UINT_MAX;
+
 
   using pyublas::numpy_vector;
   using pyublas::numpy_matrix;
