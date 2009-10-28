@@ -1,4 +1,4 @@
-"""LSERK ODE timestepper."""
+"""Strongly Stability Preserving third-order RK ODE timestepper."""
 
 from __future__ import division
 
