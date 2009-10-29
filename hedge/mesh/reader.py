@@ -1,4 +1,6 @@
-"""Hedge is the Hybrid'n'Easy Discontinuous Galerkin Environment."""
+"""Mesh topology/geometry representation."""
+
+from __future__ import division
 
 __copyright__ = "Copyright (C) 2007 Andreas Kloeckner"
 
@@ -17,8 +19,3 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 """
 
-# make sure numpy-to-C++ converters are available
-import pyublas
-
-# make sure hedge.mesh.generators -> hedge.mesh monkeypatch happens
-import hedge.mesh.generator
