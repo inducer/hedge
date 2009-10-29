@@ -76,7 +76,7 @@ namespace hedge
   typedef unsigned index_list_number_t;
 
   template <class FaceType>
-  struct face_pair_side : public face
+  struct face_pair_side : FaceType
   {
     node_number_t el_base_index;
     index_list_number_t face_index_list_number;
@@ -84,7 +84,7 @@ namespace hedge
     /** An element number local to this face group. */
     unsigned local_el_number;
 
-    side()
+    face_pair_side()
       : el_base_index(INVALID_NODE),
       face_index_list_number(INVALID_INDEX),
       local_el_number(INVALID_INDEX)
@@ -95,14 +95,14 @@ namespace hedge
 
 
 
-  template <class IntFaceType, class ExtFaceType>
+  template <class IntFaceType, class ExtFaceType = IntFaceType>
   struct face_pair
   {
     typedef IntFaceType int_face_type;
     typedef ExtFaceType ext_face_type;
 
-    side<int_face_type> int_side;
-    side<ext_face_type> ext_side;
+    face_pair_side<int_face_type> int_side;
+    face_pair_side<ext_face_type> ext_side;
 
     index_list_number_t ext_native_write_map;
 
@@ -153,7 +153,7 @@ namespace hedge
   template <class MatrixScalar, class FieldScalar>
   inline
   void lift_flux_without_blas(
-      const face_group &fg,
+      const face_group<face_pair<straight_face> > &fg,
       const numpy_matrix<MatrixScalar> &matrix, 
       const pyublas::invalid_ok<numpy_vector<double> > &elwise_post_scaling,
       numpy_vector<FieldScalar> fluxes_on_faces,
@@ -196,7 +196,7 @@ namespace hedge
   template <class MatrixScalar, class FieldScalar>
   inline
   void lift_flux(
-      const face_group &fg,
+      const face_group<face_pair<straight_face> > &fg,
       const numpy_matrix<MatrixScalar> &matrix, 
       const pyublas::invalid_ok<numpy_vector<double> > &elwise_post_scaling,
       numpy_vector<FieldScalar> fluxes_on_faces,

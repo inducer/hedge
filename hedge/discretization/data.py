@@ -38,7 +38,7 @@ class ElementGroupBase(object):
 
 
 
-class StraightElementGroup(object):
+class StraightElementGroup(ElementGroupBase):
     """Once fully filled, this structure has the following data members:
 
     :ivar members: a list of L{hedge.mesh.Element} instances in this group.
@@ -68,9 +68,9 @@ class CurvedElementGroup(ElementGroupBase):
 
 
 # face groups -----------------------------------------------------------------
-class FaceGroup(hedge._internal.FaceGroup):
+class StraightFaceGroup(hedge._internal.StraightFaceGroup):
     def __init__(self, double_sided, debug):
-        hedge._internal.FaceGroup.__init__(self, double_sided)
+        hedge._internal.StraightFaceGroup.__init__(self, double_sided)
         from hedge.tools import IndexListRegistry
         self.fil_registry = IndexListRegistry(debug)
 
@@ -93,7 +93,7 @@ class FaceGroup(hedge._internal.FaceGroup):
         used_bases_and_els = list(set(
                 (side.el_base_index, side.element_id)
                 for fp in self.face_pairs
-                for side in [fp.loc, fp.opp]
+                for side in [fp.int_side, fp.ext_side]
                 if side.element_id != hedge._internal.INVALID_ELEMENT))
 
         used_bases_and_els.sort()
@@ -103,7 +103,7 @@ class FaceGroup(hedge._internal.FaceGroup):
                 (bae[0] for bae in used_bases_and_els), dtype=numpy.uint32)
 
         for fp in self.face_pairs:
-            for side in [fp.loc, fp.opp]:
+            for side in [fp.int_side, fp.ext_side]:
                 if side.element_id != hedge._internal.INVALID_ELEMENT:
                     side.local_el_number = el_id_to_local_number[side.element_id]
 
@@ -116,9 +116,101 @@ class FaceGroup(hedge._internal.FaceGroup):
         self.ldis_loc = ldis_loc
         self.ldis_opp = ldis_opp
 
+class CurvedFaceGroup(hedge._internal.CurvedFaceGroup):
+    def __init__(self, double_sided, debug):
+        hedge._internal.CurvedFaceGroup.__init__(self, double_sided)
+        from hedge.tools import IndexListRegistry
+        self.fil_registry = IndexListRegistry(debug)
 
+    def register_face_index_list(self, identifier, generator):
+        return self.fil_registry.register(identifier, generator)
 
+    def commit(self, discr, ldis_loc, ldis_opp):
+        if self.fil_registry.index_lists:
+            self.index_lists = numpy.array(
+                    self.fil_registry.index_lists,
+                    dtype=numpy.uint32, order="C")
+            del self.fil_registry
 
+        if ldis_loc is None:
+            self.face_count = 0
+        else:
+            self.face_count = ldis_loc.face_count()
+
+        # number elements locally
+        used_bases_and_els = list(set(
+                (side.el_base_index, side.element_id)
+                for fp in self.face_pairs
+                for side in [fp.int_side, fp.ext_side]
+                if side.element_id != hedge._internal.INVALID_ELEMENT))
+
+        used_bases_and_els.sort()
+        el_id_to_local_number = dict(
+                (bae[1], i) for i, bae in enumerate(used_bases_and_els))
+        self.local_el_to_global_el_base = numpy.fromiter(
+                (bae[0] for bae in used_bases_and_els), dtype=numpy.uint32)
+
+        for fp in self.face_pairs:
+            for side in [fp.int_side, fp.ext_side]:
+                if side.element_id != hedge._internal.INVALID_ELEMENT:
+                    side.local_el_number = el_id_to_local_number[side.element_id]
+
+        # transfer inverse jacobians
+        self.local_el_inverse_jacobians = numpy.fromiter(
+                (abs(discr.mesh.elements[bae[1]].inverse_map.jacobian()) 
+                    for bae in used_bases_and_els),
+                dtype=float)
+
+        self.ldis_loc = ldis_loc
+        self.ldis_opp = ldis_opp
+
+class StraightCurvedFaceGroup(hedge._internal.StraightCurvedFaceGroup):
+    def __init__(self, double_sided, debug):
+        hedge._internal.StraightCurvedFaceGroup.__init__(self, double_sided)
+        from hedge.tools import IndexListRegistry
+        self.fil_registry = IndexListRegistry(debug)
+
+    def register_face_index_list(self, identifier, generator):
+        return self.fil_registry.register(identifier, generator)
+
+    def commit(self, discr, ldis_loc, ldis_opp):
+        if self.fil_registry.index_lists:
+            self.index_lists = numpy.array(
+                    self.fil_registry.index_lists,
+                    dtype=numpy.uint32, order="C")
+            del self.fil_registry
+
+        if ldis_loc is None:
+            self.face_count = 0
+        else:
+            self.face_count = ldis_loc.face_count()
+
+        # number elements locally
+        used_bases_and_els = list(set(
+                (side.el_base_index, side.element_id)
+                for fp in self.face_pairs
+                for side in [fp.int_side, fp.ext_side]
+                if side.element_id != hedge._internal.INVALID_ELEMENT))
+
+        used_bases_and_els.sort()
+        el_id_to_local_number = dict(
+                (bae[1], i) for i, bae in enumerate(used_bases_and_els))
+        self.local_el_to_global_el_base = numpy.fromiter(
+                (bae[0] for bae in used_bases_and_els), dtype=numpy.uint32)
+
+        for fp in self.face_pairs:
+            for side in [fp.int_side, fp.ext_side]:
+                if side.element_id != hedge._internal.INVALID_ELEMENT:
+                    side.local_el_number = el_id_to_local_number[side.element_id]
+
+        # transfer inverse jacobians
+        self.local_el_inverse_jacobians = numpy.fromiter(
+                (abs(discr.mesh.elements[bae[1]].inverse_map.jacobian()) 
+                    for bae in used_bases_and_els),
+                dtype=float)
+
+        self.ldis_loc = ldis_loc
+        self.ldis_opp = ldis_opp
 # boundary --------------------------------------------------------------------
 class Boundary(object):
     def __init__(self, nodes, ranges, vol_indices, face_groups,
@@ -139,7 +231,7 @@ class Boundary(object):
         fp = self.find_facepair(el_face)
         el, face_nbr = el_face
 
-        for flux_face in [fp.loc, fp.opp]:
+        for flux_face in [fp.int_side, fp.ext_side]:
             if flux_face.element_id == el.id and flux_face.face_id == face_nbr:
                 return flux_face
         raise KeyError, "flux face not found in boundary"

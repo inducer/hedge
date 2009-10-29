@@ -76,9 +76,11 @@ template <class IntFaceType, class ExtFaceType>
 void expose_face_pair(std::string const &face_pair_type_name)
 {
   typedef face_pair<IntFaceType, ExtFaceType> face_pair_type;
-  typedef face_group<FacePairType> face_group_type;
-
-  class_<cl, boost::shared_ptr<face_group_type> > fg_wrap(
+  typedef face_group<face_pair_type> face_group_type;
+  
+  // FaceGroup name is composed here from type of face pair
+  // and "FaceGroup" suffix.
+  class_<face_group_type, boost::shared_ptr<face_group_type> > fg_wrap(
       (face_pair_type_name + "FaceGroup" ).c_str(),
       init<bool>(args("double_sided")));
 
@@ -86,7 +88,7 @@ void expose_face_pair(std::string const &face_pair_type_name)
 
   {
     typedef face_pair_type cl;
-    class_<cl> fp_wrap("FacePair");
+    class_<cl>("FacePair")
       .DEF_SIMPLE_RW_MEMBER(int_side)
       .DEF_SIMPLE_RW_MEMBER(ext_side)
       .DEF_SIMPLE_RW_MEMBER(ext_native_write_map)
@@ -94,14 +96,14 @@ void expose_face_pair(std::string const &face_pair_type_name)
   }
 
   {
-    typedef face_pair_type::face_pair_vector cl;
+    typedef typename face_group_type::face_pair_vector cl;
     class_<cl>("FacePairVector")
       .def(no_compare_indexing_suite<cl>())
       ;
   }
 
   {
-    typedef face_group cl;
+    typedef face_group_type cl;
     fg_wrap
       .DEF_SIMPLE_RW_MEMBER(face_pairs)
       .DEF_SIMPLE_RW_MEMBER(face_count)

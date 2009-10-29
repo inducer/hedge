@@ -30,6 +30,7 @@ import hedge.tools
 import hedge.mesh
 import hedge.optemplate
 import hedge._internal
+import hedge.discretization
 from pytools import memoize_method
 
 
@@ -323,8 +324,9 @@ class Discretization(TimestepCalculator):
     # initialization ----------------------------------------------------------
     def _build_element_groups_and_nodes(self, local_discretization):
         from hedge._internal import UniformElementRanges
+        from hedge.discretization.data import StraightElementGroup
 
-        eg = _ElementGroup()
+        eg = StraightElementGroup()
         eg.members = self.mesh.elements
         eg.member_nrs = numpy.fromiter((el.id for el in eg.members), dtype=numpy.uint32)
         eg.local_discretization = ldis = local_discretization
@@ -429,10 +431,10 @@ class Discretization(TimestepCalculator):
         f.h = abs(el.map.jacobian()/f.face_jacobian)
 
     def _build_interior_face_groups(self):
-        from hedge._internal import FacePair
         from hedge.element import FaceVertexMismatch
-
-        fg = _FaceGroup(double_sided=True,
+        from hedge.discretization.data import  StraightFaceGroup
+        fg_type = StraightFaceGroup
+        fg = fg_type(double_sided=True,
                 debug="ilist_generation" in self.debug)
 
         all_ldis_l = []
@@ -487,33 +489,33 @@ class Discretization(TimestepCalculator):
                         assert la.norm(dist) < 1e-14
 
             # create and fill the face pair
-            fp = FacePair()
+            fp = fg_type.FacePair()
 
-            fp.loc.el_base_index = eslice_l.start
-            fp.opp.el_base_index = eslice_n.start
+            fp.int_side.el_base_index = eslice_l.start
+            fp.ext_side.el_base_index = eslice_n.start
 
-            fp.loc.face_index_list_number = fg.register_face_index_list(
+            fp.int_side.face_index_list_number = fg.register_face_index_list(
                     identifier=fi_l, 
                     generator=lambda: findices_l)
-            fp.opp.face_index_list_number = fg.register_face_index_list(
+            fp.ext_side.face_index_list_number = fg.register_face_index_list(
                     identifier=(fi_n, findices_shuffle_op_n),
                     generator=lambda : findices_shuffle_op_n(findices_n))
             from pytools import get_write_to_map_from_permutation
-            fp.opp_native_write_map = fg.register_face_index_list(
+            fp.ext_native_write_map = fg.register_face_index_list(
                     identifier=(fi_n, findices_shuffle_op_n, "wtm"),
                     generator=lambda : 
                     get_write_to_map_from_permutation(
                     findices_shuffle_op_n(findices_n), findices_n))
 
-            self._set_flux_face_data(fp.loc, ldis_l, local_face)
-            self._set_flux_face_data(fp.opp, ldis_n, neigh_face)
+            self._set_flux_face_data(fp.int_side, ldis_l, local_face)
+            self._set_flux_face_data(fp.ext_side, ldis_n, neigh_face)
 
             # unify h across the faces
-            fp.loc.h = fp.opp.h = max(fp.loc.h, fp.opp.h)
+            fp.int_side.h = fp.ext_side.h = max(fp.int_side.h, fp.ext_side.h)
 
             assert len(fp.__dict__) == 0
-            assert len(fp.loc.__dict__) == 0
-            assert len(fp.opp.__dict__) == 0
+            assert len(fp.int_side.__dict__) == 0
+            assert len(fp.ext_side.__dict__) == 0
 
             fg.face_pairs.append(fp)
 
@@ -533,19 +535,19 @@ class Discretization(TimestepCalculator):
 
     @memoize_method
     def get_boundary(self, tag):
-        """Get a _Boundary instance for a given `tag'.
+        """Get a Boundary instance for a given `tag'.
 
-        If there is no boundary tagged with `tag', an empty _Boundary instance
+        If there is no boundary tagged with `tag', an empty Boundary instance
         is returned. Asking for a nonexistant boundary is not an error. 
         (Otherwise get_boundary would unnecessarily become non-local when run 
         in parallel.)
         """
-        from hedge._internal import FacePair
-
+        from hedge.discretization.data  import StraightFaceGroup
         nodes = []
         face_ranges = {}
         vol_indices = []
-        face_group = _FaceGroup(double_sided=False,
+        fg_type = StraightFaceGroup
+        face_group = fg_type(double_sided=False,
                 debug="ilist_generation" in self.debug)
         ldis = None # if this boundary is empty, we might as well have no ldis
         el_face_to_face_group_and_face_pair = {}
@@ -562,19 +564,19 @@ class Discretization(TimestepCalculator):
             vol_indices.extend(el_slice.start+i for i in face_indices)
 
             # create the face pair
-            fp = FacePair()
-            fp.loc.el_base_index = el_slice.start
-            fp.opp.el_base_index = f_start
-            fp.loc.face_index_list_number = face_group.register_face_index_list(
+            fp = face_group.FacePair()
+            fp.int_side.el_base_index = el_slice.start
+            fp.ext_side.el_base_index = f_start
+            fp.int_side.face_index_list_number = face_group.register_face_index_list(
                     identifier=face_nr,
                     generator=lambda: face_indices)
-            fp.opp.face_index_list_number = face_group.register_face_index_list(
+            fp.ext_side.face_index_list_number = face_group.register_face_index_list(
                     identifier=(),
                     generator=lambda: tuple(xrange(len(face_indices))))
-            self._set_flux_face_data(fp.loc, ldis, ef)
+            self._set_flux_face_data(fp.int_side, ldis, ef)
             assert len(fp.__dict__) == 0
-            assert len(fp.loc.__dict__) == 0
-            assert len(fp.opp.__dict__) == 0
+            assert len(fp.int_side.__dict__) == 0
+            assert len(fp.ext_side.__dict__) == 0
 
             face_group.face_pairs.append(fp)
 
@@ -586,8 +588,9 @@ class Discretization(TimestepCalculator):
 
         nodes_ary = numpy.array(nodes)
         nodes_ary.shape = (len(nodes), self.dimensions)
-
-        bdry = _Boundary(
+        
+        from hedge.discretization.data import Boundary
+        bdry = Boundary(
                 nodes=nodes_ary,
                 ranges=face_ranges,
                 vol_indices=numpy.asarray(vol_indices, dtype=numpy.intp),
@@ -733,10 +736,10 @@ class Discretization(TimestepCalculator):
                 kind="numpy")
         for fg in self.get_boundary(tag).face_groups:
             for face_pair in fg.face_pairs:
-                oeb = face_pair.opp.el_base_index
-                opp_index_list = fg.index_lists[face_pair.opp.face_index_list_number]
+                oeb = face_pair.ext_side.el_base_index
+                opp_index_list = fg.index_lists[face_pair.ext_side.face_index_list_number]
                 for i in opp_index_list:
-                    result[:,oeb+i] = face_pair.loc.normal
+                    result[:,oeb+i] = face_pair.int_side.normal
 
         return self.convert_boundary(result, tag, kind)
 
