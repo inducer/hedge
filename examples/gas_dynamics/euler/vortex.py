@@ -140,9 +140,19 @@ def main(write_output=True):
             print "dt", dt
             print "nsteps", nsteps
             print "#elements=", len(mesh.elements)
+        
+        
+        #limiter -------------------------------------------------------------
+        from hedge.models.gas_dynamics import SlopeLimiter1NEuler
+        limiter = SlopeLimiter1NEuler(discr, gamma, 2, op)
 
+
+        from hedge.timestep import SSPRK3TimeStepper
         from hedge.timestep import RK4TimeStepper
-        stepper = RK4TimeStepper()
+        stepper = SSPRK3TimeStepper(limit_stages=True,limiter=limiter)
+        stepper_class = SSPRK3TimeStepper
+        #stepper = RK4TimeStepper()
+        #stepper_class = RK4TimeStepper
 
         # diagnostics setup ---------------------------------------------------
         from pytools.log import LogManager, add_general_quantities, \
@@ -164,6 +174,7 @@ def main(write_output=True):
 
         # timestep loop -------------------------------------------------------
         t = 0
+
 
         try:
             for step in range(nsteps):
@@ -204,11 +215,18 @@ def main(write_output=True):
                     visf.close()
 
                 fields = stepper(fields, t, dt, rhs)
+                #fields = limiter(fields)
+                
                 t += dt
 
-                dt = discr.dt_factor(max_eigval[0])
-            logmgr.tick()
+                dt = discr.dt_factor(max_eigval[0],stepper_class=stepper_class)
+                
+                assert not numpy.isnan(numpy.sum(fields[0]))
 
+                if(final_time<t+dt):
+                    dt=final_time-t
+
+            logmgr.tick()
             true_fields = vortex.volume_interpolant(t, discr)
             l2_error = discr.norm(fields-true_fields)
             l2_error_rho = discr.norm(op.rho(fields)-op.rho(true_fields))

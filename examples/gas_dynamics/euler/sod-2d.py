@@ -11,6 +11,9 @@ class Sod:
 
     def __call__(self, t, x_vec):
 
+        from hedge.tools import heaviside
+        from hedge.tools import heaviside_a
+
         x_rel = x_vec[0]
         y_rel = x_vec[1]
 
@@ -20,8 +23,8 @@ class Sod:
         u = 0.0
         v = 0.0
         from numpy import sign
-        rho = sign(-r_shift)*(1+sign(-r_shift))/2.0+.125*(1.0-sign(-r_shift)*(1+sign(-r_shift))/2.0)
-        e = (1.0/(self.gamma-1.0))*(sign(-r_shift)*(1+sign(-r_shift))/2.0+.1*(1-sign(-r_shift)*(1+sign(-r_shift))/2.0))
+        rho = heaviside(-r_shift)+.125*heaviside_a(r_shift,1.0)
+        e = (1.0/(self.gamma-1.0))*(heaviside(-r_shift)+.1*heaviside_a(r_shift,1.0))
         p = (self.gamma-1.0)*e
 
         from hedge.tools import join_fields
@@ -67,13 +70,13 @@ def main():
         sodfield = Sod(gamma=gamma)
         fields = sodfield.volume_interpolant(0, discr)
 
-        from hedge.models.gasdynamics import GasDynamicsOperator
+        from hedge.models.gas_dynamics import GasDynamicsOperator
         from hedge.mesh import TAG_ALL
-        op = GasDynamicsOperator(dimensions=2, discr=discr, gamma=1.4, 
-                prandtl=0.72, spec_gas_const=287.1, inflow_tag=TAG_ALL,
+        op = GasDynamicsOperator(dimensions=2, gamma=1.4, mu=0.0,
                 bc_inflow=sodfield,
-                bc_outflow=sodfield,bc_noslip=sodfield,
+                bc_outflow=sodfield,bc_noslip=sodfield,inflow_tag=TAG_ALL,
                 euler=True,source=None)
+
 
         euler_ex = op.bind(discr)
 
@@ -97,12 +100,21 @@ def main():
             print "nsteps", nsteps
             print "#elements=", len(mesh.elements)
 
-        from hedge.timestep import RK4TimeStepper
-        stepper = RK4TimeStepper()
 
         # diagnostics setup ---------------------------------------------------
         from pytools.log import LogManager, add_general_quantities, \
                 add_simulation_quantities, add_run_info
+
+        # limiter setup-------------------------------------------------------------
+        from hedge.models.gas_dynamics import SlopeLimiter1NEuler
+        limiter =  SlopeLimiter1NEuler(discr,gamma, 2, op)
+        
+
+        # integrator setup---------------------------------------------------------
+        from hedge.timestep import SSPRK3TimeStepper
+        from hedge.timestep import RK4TimeStepper
+        stepper = SSPRK3TimeStepper(limit_stages=True,limiter=limiter)
+        #stepper = RK4TimeStepper()
 
         logmgr = LogManager("euler-%d.dat" % order, "w", rcon.communicator)
         add_run_info(logmgr)
@@ -112,11 +124,6 @@ def main():
         stepper.add_instrumentation(logmgr)
 
         logmgr.add_watches(["step.max", "t_sim.max", "t_step.max"])
-
-
-        # limiter setup-------------------------------------------------------------
-        from hedge.models.gasdynamics import SlopeLimiter1NEuler
-        limiter =  SlopeLimiter1NEuler(discr,gamma, 2, op)
 
 
         # filter setup-------------------------------------------------------------

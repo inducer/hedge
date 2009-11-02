@@ -65,8 +65,8 @@ class GasDynamicsOperator(TimeDependentOperator):
     Field order is [rho E rho_u_x rho_u_y ...].
     """
     def __init__(self, dimensions,
-            gamma, prandtl, spec_gas_const, mu,
-            bc_inflow, bc_outflow, bc_noslip,
+            gamma, mu, bc_inflow, bc_outflow, bc_noslip,
+            prandtl=None, spec_gas_const=1.0,
             inflow_tag="inflow",
             outflow_tag="outflow",
             noslip_tag="noslip",
@@ -488,15 +488,15 @@ class SlopeLimiter1NEuler:
 		
                 return result
 
-    def __call__(self, vec):
+    def __call__(self, fields):
 
         #join fields 
         from hedge.tools import join_fields
 
         #get conserved fields
-        rho=self.op.rho(vec)
-        e=self.op.e(vec)
-        rho_velocity=self.op.rho_u(vec)
+        rho=self.op.rho(fields)
+        e=self.op.e(fields)
+        rho_velocity=self.op.rho_u(fields)
 
         #get primative fields 
         #to do

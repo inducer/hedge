@@ -123,10 +123,13 @@ class TimestepCalculator(object):
         rk4_dt = 1/max_system_ev \
                 * (self.dt_non_geometric_factor()
                 * self.dt_geometric_factor())**order
-
+        
         from hedge.timestep import RK4TimeStepper
+        from hedge.timestep import SSPRK3TimeStepper
         if stepper_class is None or stepper_class == RK4TimeStepper:
             return rk4_dt
+        elif stepper_class == SSPRK3TimeStepper: 
+            return rk4_dt*SSPRK3TimeStepper.dt_fudge_factor
         else:
             assert isinstance(stepper_class, type)
 
