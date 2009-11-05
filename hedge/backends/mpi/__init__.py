@@ -32,15 +32,15 @@ from hedge.optemplate import \
         FluxOpReducerMixin
 from hedge.tools import Future
 from hedge.backends import RunContext
-import boostmpi as mpi
+import pytools.mpiwrap as mpi
 from pymbolic.mapper import CSECachingMapperMixin
 
 
 
 
 class RankData(pytools.Record):
-    def __init__(self, 
-            mesh, 
+    def __init__(self,
+            mesh,
             global2local_elements,
             global2local_vertex_indices,
             neighbor_ranks,
@@ -86,7 +86,7 @@ class MPIRunContext(RunContext):
         # compute partition using Metis, if necessary
         if isinstance(partition, int):
             from pymetis import part_graph
-            dummy, partition = part_graph(partition, 
+            dummy, partition = part_graph(partition,
                     mesh.element_adjacency_graph())
 
         from hedge.partition import partition_mesh
@@ -100,20 +100,20 @@ class MPIRunContext(RunContext):
                     global2local_vertex_indices=part_data.global2local_vertex_indices,
                     neighbor_ranks=part_data.neighbor_parts,
                     global_periodic_opposite_faces=part_data.global_periodic_opposite_faces)
-            
+
             rank = part_data.part_nr
 
             if rank == self.head_rank:
                 result = rank_data
             else:
                 print "send rank", rank
-                self.communicator.send(rank, 0, rank_data)
+                self.communicator.send(rank_data, rank, 0)
                 print "end send", rank
 
         return result
 
     def receive_mesh(self):
-        return self.communicator.recv(self.head_rank, 0)
+        return self.communicator.recv(source=self.head_rank, tag=0)
         print "receive end rank", self.rank
 
     def make_discretization(self, mesh_data, *args, **kwargs):
@@ -126,7 +126,7 @@ class MPIRunContext(RunContext):
 # for as long as the request is not completed. The wrapper aids this
 # by making sure the vector outlives the request by using Boost.Python's
 # with_custodian_and_ward mechanism. However, this "life support" gets
-# eliminated if the only reference to the request is from inside a 
+# eliminated if the only reference to the request is from inside a
 # RequestList, so we need to provide our own life support for these vectors.
 
 
@@ -145,7 +145,7 @@ class BoundarizeSendFuture(Future):
 
     def __call__(self):
         return [], [SendCompletionFuture(
-            self.pdiscr.context.communicator, self.rank, 
+            self.pdiscr.context.communicator, self.rank,
             self.bdry_future(), self.pdiscr)]
 
 
@@ -158,8 +158,8 @@ class MPICompletionFuture(Future):
 
     def is_ready(self):
         if self.request is not None:
-            status = self.request.test()
-            if status is not None:
+            status = mpi.Status()
+            if self.request.Test(status):
                 self.result = self.finish(status)
                 self.request = None
                 return True
@@ -168,7 +168,8 @@ class MPICompletionFuture(Future):
 
     def __call__(self):
         if self.request is not None:
-            status = self.request.wait()
+            status = mpi.Status()
+            self.request.Wait(status)
             return self.finish(status)
         else:
             return self.result
@@ -182,10 +183,8 @@ class SendCompletionFuture(MPICompletionFuture):
 
         assert send_vec.dtype == pdiscr.default_scalar_type
 
-        from boostmpi import isend_buffer
         MPICompletionFuture.__init__(self,
-                isend_buffer(comm, rank, tag=1, 
-                    vector=send_vec))
+                comm.Isend([send_vec, pdiscr.mpi_scalar_type], rank, tag=1))
 
     def finish(self, status):
         return [], []
@@ -204,10 +203,10 @@ class ReceiveCompletionFuture(MPICompletionFuture):
                     shape=shape,
                     kind="numpy-mpi-recv",
                     dtype=self.pdiscr.default_scalar_type)
-        from boostmpi import irecv_buffer
         MPICompletionFuture.__init__(self,
-                irecv_buffer(pdiscr.context.communicator, 
-                    rank, tag=1, vector=self.recv_vec))
+                pdiscr.context.communicator.Irecv(
+                    [self.recv_vec, pdiscr.mpi_scalar_type],
+                    source=rank, tag=1))
 
     def finish(self, status):
         return [], [BoundaryConvertFuture(
@@ -225,7 +224,7 @@ class BoundaryConvertFuture(Future):
         self.recv_vec = recv_vec
 
         fnm = pdiscr.from_neighbor_maps[rank]
-        
+
         from hedge.mesh import TAG_RANK_BOUNDARY
         self.convert_future = self.pdiscr.convert_boundary_async(
                 self.recv_vec, TAG_RANK_BOUNDARY(rank),
@@ -236,7 +235,7 @@ class BoundaryConvertFuture(Future):
 
     def __call__(self):
         converted_vec = self.convert_future()
-        return [(name, converted_vec[idx]) 
+        return [(name, converted_vec[idx])
                 for idx, name in self.indices_and_names], []
 
 
@@ -262,10 +261,10 @@ def make_custom_exec_mapper_class(superclass):
                 else:
                     pdiscr.comm_flux_counter.add(len(pdiscr.neighbor_ranks))
 
-            return ([], 
+            return ([],
                     [BoundarizeSendFuture(pdiscr, rank, field)
                         for rank in pdiscr.neighbor_ranks]
-                    + [ReceiveCompletionFuture(pdiscr, shape, rank, 
+                    + [ReceiveCompletionFuture(pdiscr, shape, rank,
                         insn.rank_to_index_and_name[rank])
                         for rank in pdiscr.neighbor_ranks])
 
@@ -276,7 +275,7 @@ def make_custom_exec_mapper_class(superclass):
 
 class FluxCommunicationInserter(
         CSECachingMapperMixin,
-        IdentityMapper, 
+        IdentityMapper,
         FluxOpReducerMixin):
     def __init__(self, interacting_ranks):
         self.interacting_ranks = interacting_ranks
@@ -315,7 +314,7 @@ class FluxCommunicationInserter(
                                 OperatorBinding(
                                     func(()),
                                     arg_fields))
-                    
+
                 from hedge.mesh import TAG_RANK_BOUNDARY
 
                 def exchange_and_cse(rank):
@@ -325,7 +324,7 @@ class FluxCommunicationInserter(
 
                 return flattened_sum([expr]
                     + [OperatorBinding(expr.op, BoundaryPair(
-                        expr.field, 
+                        expr.field,
                         exchange_and_cse(rank),
                         TAG_RANK_BOUNDARY(rank)))
                         for rank in self.interacting_ranks])
@@ -339,7 +338,7 @@ class ParallelDiscretization(hedge.discretization.TimestepCalculator):
     @classmethod
     def my_debug_flags(cls):
         return set([
-            "parallel_setup", 
+            "parallel_setup",
             ])
 
     @classmethod
@@ -360,7 +359,7 @@ class ParallelDiscretization(hedge.discretization.TimestepCalculator):
         self.received_bdrys = {}
         self.context = rcon
 
-        self.global2local_vertex_indices = rank_data.global2local_vertex_indices 
+        self.global2local_vertex_indices = rank_data.global2local_vertex_indices
         self.neighbor_ranks = rank_data.neighbor_ranks
         self.global_periodic_opposite_faces = rank_data.global_periodic_opposite_faces
 
@@ -371,15 +370,20 @@ class ParallelDiscretization(hedge.discretization.TimestepCalculator):
                     (gi, new_el_numbers[li])
                     for gi, li in rank_data.global2local_elements.iteritems())
         else:
-            self.global2local_elements = rank_data.global2local_elements 
+            self.global2local_elements = rank_data.global2local_elements
 
         self._setup_neighbor_connections()
+
+        self.mpi_scalar_type = {
+                numpy.float64: mpi.DOUBLE,
+                numpy.float32: mpi.FLOAT,
+                }[self.default_scalar_type]
 
     def add_instrumentation(self, mgr):
         self.subdiscr.add_instrumentation(mgr)
 
         from pytools.log import EventCounter
-        self.comm_flux_counter = EventCounter("n_comm_flux", 
+        self.comm_flux_counter = EventCounter("n_comm_flux",
                 "Number of inner flux communication runs")
 
         mgr.add_quantity(self.comm_flux_counter)
@@ -398,25 +402,25 @@ class ParallelDiscretization(hedge.discretization.TimestepCalculator):
     def _setup_neighbor_connections(self):
         comm = self.context.communicator
 
-        # Why is this barrier needed? Some of our ranks may arrive at this 
+        # Why is this barrier needed? Some of our ranks may arrive at this
         # point early and start sending packets to ranks that are still stuck
         # in previous wildcard-recv loops. These receivers will then be very
-        # confused by packets they didn't expect, and, once they reach their 
+        # confused by packets they didn't expect, and, once they reach their
         # recv bit in *this* subroutine, will wait for packets that will never
-        # arrive. This same argument does not apply to other recv()s in this 
-        # file because they are targeted and thus benefit from MPI's 
+        # arrive. This same argument does not apply to other recv()s in this
+        # file because they are targeted and thus benefit from MPI's
         # non-overtaking rule.
         #
         # Parallel programming is fun.
-        comm.barrier()
-        
+        comm.Barrier()
+
         if self.neighbor_ranks:
             # send interface information to neighboring ranks -----------------
             from pytools import reverse_dictionary
             local2global_vertex_indices = \
                     reverse_dictionary(self.global2local_vertex_indices)
 
-            send_requests = mpi.RequestList()
+            send_requests = []
 
             for rank in self.neighbor_ranks:
                 bdry_tag = hedge.mesh.TAG_RANK_BOUNDARY(rank)
@@ -444,19 +448,20 @@ class ParallelDiscretization(hedge.discretization.TimestepCalculator):
                 # compile a list of FluxFace.h values for unification
                 # across the rank boundary
 
-                my_h_values = [rank_discr_boundary.find_facepair_side(el_face).h 
+                my_h_values = [rank_discr_boundary.find_facepair_side(el_face).h
                         for el_face in rank_bdry]
-                
+
                 packet = (my_vertices_global, my_node_coords, my_h_values)
 
-                send_requests.append(comm.isend(rank, 0, packet))
+                send_requests.append(comm.isend(packet, dest=rank, tag=0))
 
             received_packets = {}
             while len(received_packets) < len(self.neighbor_ranks):
-                received_packet, status = comm.recv(tag=0, return_status=True)
+                status = mpi.Status()
+                received_packet = comm.recv(tag=0, source=mpi.ANY_SOURCE, status=status)
                 received_packets[status.source] = received_packet
 
-            mpi.wait_all(send_requests)
+            mpi.Request.Waitall(send_requests)
 
             # process received packets ----------------------------------------
             from pytools import flatten
@@ -473,7 +478,7 @@ class ParallelDiscretization(hedge.discretization.TimestepCalculator):
 
                 flat_nb_node_coords = list(flatten(nb_node_coords))
 
-                # step 1: find start node indices for each 
+                # step 1: find start node indices for each
                 # of the neighbor's elements
                 nb_face_starts = [0]
                 for node_coords in nb_node_coords[:-1]:
@@ -513,8 +518,8 @@ class ParallelDiscretization(hedge.discretization.TimestepCalculator):
                         nb_face_idx = nb_face_order[frozenset(my_global_vertices)]
                         # continue below in else part
                     except KeyError:
-                        # this happens if my_global_vertices is not a permutation 
-                        # of the neighbor's face vertices. Periodicity is the only 
+                        # this happens if my_global_vertices is not a permutation
+                        # of the neighbor's face vertices. Periodicity is the only
                         # reason why that would be so.
                         my_vertices_there, axis = self.global_periodic_opposite_faces[
                                 my_global_vertices]
@@ -524,15 +529,15 @@ class ParallelDiscretization(hedge.discretization.TimestepCalculator):
                                 nb_all_facevertices_global[nb_face_idx]]
 
                         assert axis == axis2
-                        
+
                         nb_face_start = nb_face_starts[nb_face_idx]
 
                         shuffle_op = \
                                 ldis.get_face_index_shuffle_to_match(
                                         my_global_vertices,
-                                        his_vertices_here) 
+                                        his_vertices_here)
 
-                        shuffled_other_node_indices = [nb_face_start+i 
+                        shuffled_other_node_indices = [nb_face_start+i
                                 for i in get_shuffled_indices(
                                     face_node_count, shuffle_op)]
 
@@ -557,7 +562,7 @@ class ParallelDiscretization(hedge.discretization.TimestepCalculator):
                                         my_global_vertices,
                                         nb_global_vertices)
 
-                        shuffled_other_node_indices = [nb_face_start+i 
+                        shuffled_other_node_indices = [nb_face_start+i
                                 for i in get_shuffled_indices(
                                     face_node_count, shuffle_op)]
 
@@ -565,7 +570,7 @@ class ParallelDiscretization(hedge.discretization.TimestepCalculator):
 
                         # check if the nodes really match up
                         if "parallel_setup" in self.debug:
-                            my_node_indices = [eslice.start+i 
+                            my_node_indices = [eslice.start+i
                                     for i in ldis.face_indices()[face_nr]]
 
                             for my_i, other_i in zip(my_node_indices, shuffled_other_node_indices):
@@ -586,37 +591,31 @@ class ParallelDiscretization(hedge.discretization.TimestepCalculator):
 
     # norm and integral -------------------------------------------------------
     def nodewise_dot_product(self, a, b):
-        from boostmpi import all_reduce
-        from operator import add
-
-        return all_reduce(self.context.communicator, 
-                self.subdiscr.nodewise_inner_product(a, b), 
-                add)
+        return self.context.communicator.allreduce(
+                self.subdiscr.nodewise_inner_product(a, b))
 
     def norm(self, volume_vector, p=2):
         def add_norms(x, y):
             return (x**p + y**p)**(1/p)
 
-        return mpi.all_reduce(self.context.communicator, 
+        return self.context.communicator.allreduce(
                 self.subdiscr.norm(volume_vector, p),
-                add_norms)
+                op=add_norms)
 
     def integral(self, volume_vector):
-        from operator import add
-        return mpi.all_reduce(self.context.communicator, 
-                self.subdiscr.integral(volume_vector),
-                add)
+        return self.context.communicator.allreduce(
+                self.subdiscr.integral(volume_vector))
 
     # dt estimation -----------------------------------------------------------
     def dt_non_geometric_factor(self):
-        return mpi.all_reduce(self.context.communicator, 
+        return self.context.communicator.allreduce(
                 self.subdiscr.dt_non_geometric_factor(),
-                min)
+                op=mpi.MIN)
 
     def dt_geometric_factor(self):
-        return mpi.all_reduce(self.context.communicator, 
+        return self.context.communicator.allreduce(
                 self.subdiscr.dt_geometric_factor(),
-                min)
+                op=mpi.MIN)
 
     # compilation -------------------------------------------------------------
     def compile(self, optemplate, post_bind_mapper=lambda x:x ):
@@ -624,7 +623,7 @@ class ParallelDiscretization(hedge.discretization.TimestepCalculator):
         return self.subdiscr.compile(
                 optemplate,
                 post_bind_mapper=lambda x: fci(post_bind_mapper(x)))
-        
+
 
 
 
@@ -643,8 +642,8 @@ def reassemble_volume_field(rcon, global_discr, local_discr, field):
         a.update(b)
         return a
 
-    gfield_parts = mpi.reduce(
-            rcon.communicator, send_packet, reduction, rcon.head_rank)
+    gfield_parts = rcon.communicator.reduce(
+            send_packet, root=rcon.head_rank, op=reduction)
 
     if rcon.is_head_rank:
         result = global_discr.volume_zeros()
