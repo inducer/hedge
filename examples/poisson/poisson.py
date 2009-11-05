@@ -61,8 +61,7 @@ def main(write_output=True):
     else:
         mesh_data = rcon.receive_mesh()
 
-    discr = rcon.make_discretization(mesh_data, order=5,
-            debug=["cuda_no_plan"])
+    discr = rcon.make_discretization(mesh_data, order=5, debug=[])
 
     def dirichlet_bc(x, el):
         from math import sin
