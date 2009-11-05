@@ -69,6 +69,8 @@ class UniformMachFlow:
     def __call__(self, t, x_vec):
         ones = numpy.ones_like(x_vec[0])
         rho_field = ones*self.rho
+        # Gaussian Pulse to support assymetry
+        rho_field = (ones + 0.1 * numpy.exp(- ((x_vec[0] - 2) ** 2 + (x_vec[1] - 1) ** 2) /2)) * self.rho
 
         if self.direction is not None:
             direction = self.direction
