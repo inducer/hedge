@@ -140,7 +140,7 @@ class GasDynamicsOperator(TimeDependentOperator):
         def get_mu(q):
             mu = self.mu
             if self.euler == True:
-                assert mu == 0.
+                mu == 0.
             elif mu == "sutherland":
                 # Sutherland's law: !!!not tested!!!
                 t_s = 110.4
@@ -295,13 +295,21 @@ class GasDynamicsOperator(TimeDependentOperator):
 
         def make_bc_info(bc_name, tag, state, set_velocity_to_zero=False):
             if set_velocity_to_zero:
-                state0 = join_fields(make_vector_field(bc_name, 2), [0]*self.dimensions)
+                if self.euler == False:
+                    state0 = join_fields(make_vector_field(bc_name, 2), [0]*self.dimensions)
+                else:
+                    state0 = join_fields(make_vector_field(bc_name, self.dimensions+2))
             else:
                 state0 = make_vector_field(bc_name, self.dimensions+2)
+
+            from hedge.optemplate import make_normal
 
             rho0 = rho(state0)
             p0 = p(state0)
             u0 = u(state0)
+            if self.euler and set_velocity_to_zero:
+                normal = make_normal(tag, self.dimensions)
+                u0 = u0 - numpy.dot(u0, normal) / numpy.dot(normal, normal) * normal / numpy.dot(normal,normal)
             c0 = (self.gamma * p0 / rho0)**0.5
 
             bdrize_op = BoundarizeOperator(tag)
