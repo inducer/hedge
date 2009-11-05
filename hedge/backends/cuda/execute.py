@@ -104,7 +104,7 @@ def print_error_structure(discr, computed, reference, diff,
                     eventful = True
                     struc_line += "N"
                     add_lines.append(str(diff[s]))
-                    
+
                     if detail:
                         print "block %d, el %d, global el #%d, rel.l2err=%g" % (
                                 block.number, i_el, el.id, relerr)
@@ -181,7 +181,7 @@ class ExecutionMapper(ExecutionMapperBase):
 
             test_discr = discr.test_discr
             real_dx = test_discr.nabla[0].apply(f.astype(numpy.float64))
-            
+
             diff = dx - real_dx
 
             for i, xd in enumerate(cpu_xyz_diff):
@@ -189,7 +189,7 @@ class ExecutionMapper(ExecutionMapperBase):
                     self.print_error_structure(xd, xd, xd-xd,
                             eventful_only=False, detail=False)
                     assert False, "Resulting field %d contained NaNs." % i
-            
+
             from hedge.tools import relative_error
             rel_err_norm = relative_error(la.norm(diff), la.norm(real_dx))
             print "diff", rel_err_norm
@@ -201,7 +201,7 @@ class ExecutionMapper(ExecutionMapperBase):
 
         return [(name, xyz_diff[op.xyz_axis])
                 for name, op in zip(insn.names, insn.operators)], []
-        
+
 
     def exec_flux_batch_assign(self, insn):
         discr = self.executor.discr
@@ -212,7 +212,7 @@ class ExecutionMapper(ExecutionMapperBase):
 
         result = [
             (name, self.executor.fluxlocal_kernel(
-                fluxes_on_faces, 
+                fluxes_on_faces,
                 *self.executor.flux_local_data(
                     self.executor.fluxlocal_kernel, elgroup, wdflux.is_lift)))
             for name, wdflux, fluxes_on_faces in zip(
@@ -263,7 +263,7 @@ class ExecutionMapper(ExecutionMapperBase):
                         have_used_nans = True
 
                 if have_used_nans:
-                    struc = ( given.dofs_per_face(),
+                    struc = (given.dofs_per_face(),
                             given.dofs_per_face()*given.faces_per_el(),
                             given.aligned_face_dofs_per_microblock(),
                             )
@@ -276,7 +276,7 @@ class ExecutionMapper(ExecutionMapperBase):
         if "cuda_lift" in discr.debug:
             cuda.Context.synchronize()
             print "NANCHECK"
-            
+
             for name in insn.names:
                 flux = self.context[name]
                 copied_flux = discr.convert_volume(flux, kind="numpy")
@@ -304,10 +304,10 @@ class ExecutionMapper(ExecutionMapperBase):
 
         func_rec = self.executor.get_elwise_max_kernel(field.dtype)
 
-	func_rec.func.prepared_call((func_rec.grid_dim, 1), 
+        func_rec.func.prepared_call((func_rec.grid_dim, 1),
             field.gpudata, field_out.gpudata, func_rec.mb_count)
 
-	return field_out
+        return field_out
 
     def map_if_positive(self, expr):
         crit = self.rec(expr.criterion)
@@ -373,7 +373,7 @@ class OperatorCompiler(OperatorCompilerBase):
     def get_contained_fluxes(self, expr):
         from hedge.backends.cuda.optemplate import FluxCollector
         return [self.FluxRecord(
-            flux_expr=wdflux, 
+            flux_expr=wdflux,
             dependencies=set(wdflux.interior_deps) | set(wdflux.boundary_deps),
             kind="whole-domain")
             for wdflux in FluxCollector()(expr)]
@@ -383,11 +383,11 @@ class OperatorCompiler(OperatorCompilerBase):
         return WholeDomainFluxOperator(
             wdflux.is_lift,
             [wdflux.InteriorInfo(
-                flux_expr=ii.flux_expr, 
+                flux_expr=ii.flux_expr,
                 field_expr=self.rec(ii.field_expr))
                 for ii in wdflux.interiors],
             [wdflux.BoundaryInfo(
-                flux_expr=bi.flux_expr, 
+                flux_expr=bi.flux_expr,
                 bpair=self.rec(bi.bpair))
                 for bi in wdflux.boundaries])
 
@@ -427,11 +427,11 @@ class Executor(object):
         from hedge.optemplate import BoundaryTagCollector
         self.boundary_tag_to_number = {}
         for btag in BoundaryTagCollector()(optemplate_stage1):
-            self.boundary_tag_to_number.setdefault(btag, 
+            self.boundary_tag_to_number.setdefault(btag,
                     len(self.boundary_tag_to_number))
 
         e2bb = self.elface_to_bdry_bitmap = {}
-        
+
         for btag, bdry_number in self.boundary_tag_to_number.iteritems():
             bdry_bit = 1 << bdry_number
             for elface in discr.mesh.tag_to_boundary.get(btag, []):
@@ -445,7 +445,7 @@ class Executor(object):
                 self.prepare_optemplate_stage2(discr.mesh, optemplate_stage1,
                     discr.debug))
 
-        # build the local kernels 
+        # build the local kernels
         self.diff_kernel = self.discr.diff_plan.make_kernel(discr)
         self.fluxlocal_kernel = self.discr.fluxlocal_plan.make_kernel(discr,
                 with_index_check=False)
@@ -536,8 +536,8 @@ class Executor(object):
     def get_elwise_max_kernel(self, dtype):
         discr = self.discr
 
-	dofs_per_el = discr.given.dofs_per_el()
-	floats_per_mb = discr.given.microblock.aligned_floats
+        dofs_per_el = discr.given.dofs_per_el()
+        floats_per_mb = discr.given.microblock.aligned_floats
 
         # round block_size up to nearest multiple of floats_per_mb
         block_size = 128
@@ -545,10 +545,10 @@ class Executor(object):
         mbs_per_block = (block_size + floats_per_mb - 1) // floats_per_mb
         block_size = floats_per_mb * mbs_per_block
 
-	if block_size > discr.given.devdata.max_threads:
+        if block_size > discr.given.devdata.max_threads:
             # rounding up took us beyond the max block size,
             # round down instead
-	    block_size = block_size - floats_per_mb
+            block_size = block_size - floats_per_mb
 
         if block_size > discr.given.devdata.max_threads or block_size == 0:
             raise RuntimeError("Computation of thread block size for "
@@ -556,14 +556,14 @@ class Executor(object):
 
         mb_count = len(discr.blocks) * discr.given.microblocks_per_block
 
-	grid_dim = (mb_count + mbs_per_block - 1) // mbs_per_block
+        grid_dim = (mb_count + mbs_per_block - 1) // mbs_per_block
         if dtype == numpy.float64:
-	    max_func = "fmax"
-	elif dtype == numpy.float32:
-	    max_func = "fmaxf"
-	else:
-	    raise TypeError("Could not find a maximum function"
-	        " due to unsupported field.dtype.")
+            max_func = "fmax"
+        elif dtype == numpy.float32:
+            max_func = "fmaxf"
+        else:
+            raise TypeError("Could not find a maximum function"
+                " due to unsupported field.dtype.")
 
         from pycuda.tools import dtype_to_ctype
         from pycuda.compiler import SourceModule
@@ -575,7 +575,7 @@ class Executor(object):
         #define BLOCK_SIZE %(block_size)d
         #define FLOATS_PER_MB %(floats_per_mb)d
         #define MBS_PER_BLOCK %(mbs_per_block)d
-       
+
         #define MY_INFINITY (1./0.)
 
         #define NODE_IN_MB_IDX  threadIdx.x
@@ -585,14 +585,14 @@ class Executor(object):
 
         typedef %(value_type)s value_type;
 
-        __global__ void elwise_max(value_type *field, value_type *field_out, 
+        __global__ void elwise_max(value_type *field, value_type *field_out,
           unsigned mb_count)
         {
           if (MB_NUMBER >= mb_count)
             return;
-        
+
           int idx =  MB_NUMBER * FLOATS_PER_MB + NODE_IN_MB_IDX;
-          int element_base_idx = FLOATS_PER_MB * MB_IN_BLOCK_IDX + 
+          int element_base_idx = FLOATS_PER_MB * MB_IN_BLOCK_IDX +
               (NODE_IN_MB_IDX / DOFS_PER_EL) * DOFS_PER_EL;
 
           __shared__ value_type whole_block[BLOCK_SIZE];
@@ -616,12 +616,13 @@ class Executor(object):
         "value_type": dtype_to_ctype(dtype),
         })
 
-	func = mod.get_function("elwise_max")
-	func.prepare("PPI", block=(floats_per_mb, block_size//floats_per_mb, 1))
+        func = mod.get_function("elwise_max")
+        func.prepare("PPI", block=(floats_per_mb, block_size//floats_per_mb, 1))
 
         from pytools import Record
-        class ElementwiseMaxKernelInfo(Record): pass
-        
+        class ElementwiseMaxKernelInfo(Record):
+            pass
+
         return ElementwiseMaxKernelInfo(
                 func=func,
                 grid_dim=grid_dim,

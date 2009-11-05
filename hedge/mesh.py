@@ -31,26 +31,26 @@ import hedge.tools
 
 
 
-class TAG_NONE(object): 
+class TAG_NONE(object):
     """A boundary or volume tag representing an empty boundary or volume."""
     pass
-class TAG_ALL(object): 
+class TAG_ALL(object):
     """A boundary or volume tag representing the entire boundary or volume.
-    
+
     In the case of the boundary, TAG_ALL does not include rank boundaries,
     or, more generally, anything tagged with TAG_NO_BOUNDARY."""
     pass
-class TAG_REALLY_ALL(object): 
+class TAG_REALLY_ALL(object):
     """A boundary tag representing the entire boundary.
-    
+
     Unlike :class:`TAG_ALL`, this includes rank boundaries,
     or, more generally, everything tagged with :class:`TAG_NO_BOUNDARY`."""
     pass
-class TAG_NO_BOUNDARY(object): 
-    """A boundary tag indicating that this edge should not fall under 
+class TAG_NO_BOUNDARY(object):
+    """A boundary tag indicating that this edge should not fall under
     :class:`TAG_ALL`."""
     pass
-class TAG_RANK_BOUNDARY(object): 
+class TAG_RANK_BOUNDARY(object):
     """A boundary tag indicating the boundary with a neighboring rank."""
     def __init__(self, rank):
         self.rank = rank
@@ -87,7 +87,7 @@ def make_element(class_, id, vertex_indices, all_vertices):
     face_normals, face_jacobians = \
             class_.face_normals_and_jacobians(vertices, map)
 
-    return class_(id, vertex_indices, map, map.inverted(), 
+    return class_(id, vertex_indices, map, map.inverted(),
             face_normals, face_jacobians)
 
 
@@ -166,12 +166,12 @@ class Interval(SimplicialElement):
         """
         if affine_map.jacobian() < 0:
             return [
-                    numpy.array([1], dtype=float), 
+                    numpy.array([1], dtype=float),
                     numpy.array([-1], dtype=float)
                     ], [1, 1]
         else:
             return [
-                    numpy.array([-1], dtype=float), 
+                    numpy.array([-1], dtype=float),
                     numpy.array([1], dtype=float)
                     ], [1, 1]
 
@@ -185,8 +185,8 @@ class Triangle(SimplicialElement):
 
     @staticmethod
     def face_vertices(vertices):
-        return [(vertices[0], vertices[1]), 
-                (vertices[1], vertices[2]), 
+        return [(vertices[0], vertices[1]),
+                (vertices[1], vertices[2]),
                 (vertices[0], vertices[2])
                 ]
 
@@ -209,11 +209,11 @@ class Triangle(SimplicialElement):
 
         m = affine_map.matrix
         orient = sign(affine_map.jacobian())
-        face1 = m[:,1] - m[:,0]
+        face1 = m[:, 1] - m[:, 0]
         raw_normals = [
-                orient*numpy.array([m[1,0], -m[0,0]]),
+                orient*numpy.array([m[1, 0], -m[0, 0]]),
                 orient*numpy.array([face1[1], -face1[0]]),
-                orient*numpy.array([-m[1,1], m[0,1]]),
+                orient*numpy.array([-m[1, 1], m[0, 1]]),
                 ]
 
         face_lengths = [numpy.linalg.norm(fn) for fn in raw_normals]
@@ -229,14 +229,14 @@ class Tetrahedron(SimplicialElement):
     __slots__ = []
 
     def _face_vertices(vertices):
-        return [(vertices[0],vertices[1],vertices[2]), 
-                (vertices[0],vertices[1],vertices[3]),
-                (vertices[0],vertices[2],vertices[3]),
-                (vertices[1],vertices[2],vertices[3]),
+        return [(vertices[0], vertices[1], vertices[2]),
+                (vertices[0], vertices[1], vertices[3]),
+                (vertices[0], vertices[2], vertices[3]),
+                (vertices[1], vertices[2], vertices[3]),
                 ]
     face_vertices = staticmethod(_face_vertices)
 
-    face_vertex_numbers = _face_vertices([0,1,2,3])
+    face_vertex_numbers = _face_vertices([0, 1, 2, 3])
 
     @classmethod
     def _reorder_vertices(cls, vertex_indices, vertices, map):
@@ -275,7 +275,7 @@ class Mesh(pytools.Record):
 
           ((element instance 1, face index 1), (element instance 2, face index 2))
 
-      enumerating elements bordering one another.  The relation "element 1 touches 
+      enumerating elements bordering one another.  The relation "element 1 touches
       element 2" is always reflexive, but this list will only contain one entry
       per element pair.
     :ivar tag_to_boundary: a mapping of the form:
@@ -293,7 +293,7 @@ class Mesh(pytools.Record):
       as periodic. There is one tuple per axis, so that for example
       a 3D mesh has three tuples.
     :ivar periodic_opposite_faces: a mapping of the form:
-          (face_vertex_indices) -> 
+          (face_vertex_indices) ->
             (opposite_face_vertex_indices), axis
 
       This maps a face to its periodicity-induced opposite.
@@ -301,7 +301,7 @@ class Mesh(pytools.Record):
     :ivar periodic_opposite_vertices: a mapping of the form:
           vertex_index -> [(opposite_vertex_index, axis), ...]
 
-      This maps one vertex to a list of its periodicity-induced 
+      This maps one vertex to a list of its periodicity-induced
       opposites.
     """
 
@@ -340,7 +340,7 @@ class Mesh(pytools.Record):
 
 def _build_mesh_data_dict(points, elements, boundary_tagger, periodicity, is_rankbdry_face):
     # create face_map, which is a mapping of
-    # (vertices on a face) -> 
+    # (vertices on a face) ->
     #  [(element, face_idx) for elements bordering that face]
     face_map = {}
     for el in elements:
@@ -350,7 +350,7 @@ def _build_mesh_data_dict(points, elements, boundary_tagger, periodicity, is_ran
     # build non-periodic connectivity structures
     interfaces = []
     tag_to_boundary = {
-            TAG_NONE: [], 
+            TAG_NONE: [],
             TAG_ALL: [],
             TAG_REALLY_ALL: [],
             }
@@ -374,13 +374,13 @@ def _build_mesh_data_dict(points, elements, boundary_tagger, periodicity, is_ran
                         .append(el_face)
 
             if TAG_NO_BOUNDARY not in tags:
-                # TAG_NO_BOUNDARY is used to mark rank interfaces 
+                # TAG_NO_BOUNDARY is used to mark rank interfaces
                 # as not being part of the boundary
                 tag_to_boundary[TAG_ALL].append(el_face)
 
             tag_to_boundary[TAG_REALLY_ALL].append(el_face)
         else:
-            raise RuntimeError, "face can at most border two elements"
+            raise RuntimeError("face can at most border two elements")
 
     # add periodicity-induced connectivity
     from pytools import flatten, reverse_dictionary
@@ -399,9 +399,9 @@ def _build_mesh_data_dict(points, elements, boundary_tagger, periodicity, is_ran
             plus_faces = tag_to_boundary.get(plus_tag, [])
 
             # find vertex indices and points on these faces
-            minus_vertex_indices = list(set(flatten(el.faces[face] 
+            minus_vertex_indices = list(set(flatten(el.faces[face]
                 for el, face in minus_faces)))
-            plus_vertex_indices = list(set(flatten(el.faces[face] 
+            plus_vertex_indices = list(set(flatten(el.faces[face]
                 for el, face in plus_faces)))
 
             minus_z_points = [points[pi] for pi in minus_vertex_indices]
@@ -447,7 +447,7 @@ def _build_mesh_data_dict(points, elements, boundary_tagger, periodicity, is_ran
 
                 # periodic_opposite_faces maps face vertex tuples from
                 # one end of the periodic domain to the other, while
-                # correspondence between each entry 
+                # correspondence between each entry
 
                 periodic_opposite_faces[minus_fvi] = mapped_plus_fvi, axis
                 periodic_opposite_faces[plus_fvi] = mapped_minus_fvi, axis
@@ -469,8 +469,8 @@ def _build_mesh_data_dict(points, elements, boundary_tagger, periodicity, is_ran
 
 
 
-def make_conformal_mesh(points, elements, 
-        boundary_tagger=None, 
+def make_conformal_mesh(points, elements,
+        boundary_tagger=None,
         element_tagger=None,
         periodicity=None,
         _is_rankbdry_face=None,
@@ -492,9 +492,9 @@ def make_conformal_mesh(points, elements,
     :param periodicity: either None or is a list of tuples
       just like the one documented for the `periodicity`
       member of class :class:`Mesh`.
-    :param _is_rankbdry_face: an implementation detail, 
+    :param _is_rankbdry_face: an implementation detail,
       should not be used from user code. It is a function
-      returning whether a given face identified by 
+      returning whether a given face identified by
       *(element instance, face_nr)* is cut by a parallel
       mesh partition.
     """
@@ -511,7 +511,7 @@ def make_conformal_mesh(points, elements,
             return False
 
     if len(points) == 0:
-        raise ValueError, "mesh contains no points"
+        raise ValueError("mesh contains no points")
 
     dim = len(points[0])
     if dim == 1:
@@ -521,12 +521,12 @@ def make_conformal_mesh(points, elements,
     elif dim == 3:
         el_class = Tetrahedron
     else:
-        raise ValueError, "%d-dimensional meshes are unsupported" % dim
+        raise ValueError("%d-dimensional meshes are unsupported" % dim)
 
     # build points and elements
     new_points = numpy.array(points, dtype=float, order="C")
 
-    element_objs = [make_element(el_class, id, vert_indices, new_points) 
+    element_objs = [make_element(el_class, id, vert_indices, new_points)
         for id, vert_indices in enumerate(elements)]
 
     # tag elements
@@ -535,7 +535,7 @@ def make_conformal_mesh(points, elements,
         for el_tag in element_tagger(el, new_points):
             tag_to_elements.setdefault(el_tag, []).append(el)
         tag_to_elements[TAG_ALL].append(el)
-    
+
     # build connectivity
     if periodicity is None:
         periodicity = dim*[None]
@@ -566,7 +566,7 @@ class ConformalMesh(Mesh):
             from hedge.tools import cuthill_mckee
             return cuthill_mckee(self.element_adjacency_graph())
         else:
-            raise ValueError, "invalid mesh reorder method"
+            raise ValueError("invalid mesh reorder method")
 
     def reordered_by(self, method):
         """Return a reordered copy of *self*.
@@ -578,7 +578,7 @@ class ConformalMesh(Mesh):
         return self.reordered(old_numbers)
 
     def reordered(self, old_numbers):
-        """Return a copy of *self* whose elements are 
+        """Return a copy of *self* whose elements are
         reordered using such that for each element *i*,
         *old_numbers[i]* gives the previous number of that
         element.
@@ -588,7 +588,7 @@ class ConformalMesh(Mesh):
                 for i in range(len(self.elements))]
 
         old2new_el = dict(
-                (self.elements[old_numbers[i]], new_el) 
+                (self.elements[old_numbers[i]], new_el)
                 for i, new_el in enumerate(elements)
                 )
 
@@ -598,12 +598,12 @@ class ConformalMesh(Mesh):
             (face2_el1, _), (face2_el2, _) = face2
 
             return cmp(
-                    min(face1_el1.id, face1_el2.id), 
+                    min(face1_el1.id, face1_el2.id),
                     min(face2_el1.id, face2_el2.id))
 
         interfaces = [
                 ((old2new_el[e1], f1), (old2new_el[e2], f2))
-                for (e1,f1), (e2,f2) in self.interfaces]
+                for (e1, f1), (e2, f2) in self.interfaces]
         interfaces.sort(face_cmp)
 
         tag_to_boundary = dict(
@@ -643,8 +643,9 @@ def check_bc_coverage(mesh, bc_tags, incomplete_ok=False):
     for tag in bc_tags:
         for el_face in mesh.tag_to_boundary.get(tag, []):
             if el_face in bdry_to_tag:
-                raise RuntimeError, "Duplicate BCs %s found on (el=%d,face=%d)" % (
-                        [bdry_to_tag[el_face], tag],el_face[0].id, el_face[1])
+                raise RuntimeError("Duplicate BCs %s found on (el=%d,face=%d)"
+                        % ([bdry_to_tag[el_face], tag],
+                            el_face[0].id, el_face[1]))
             else:
                 bdry_to_tag[el_face] = tag
                 bdry_face_countdown -= 1
@@ -682,7 +683,7 @@ class MeshPyFaceMarkerLookup:
 
 
 # mesh producers for simple geometries ----------------------------------------
-def make_1d_mesh(points, left_tag=None, right_tag=None, periodic=False, 
+def make_1d_mesh(points, left_tag=None, right_tag=None, periodic=False,
         boundary_tagger=None, element_tagger=None):
     def force_array(pt):
         if not isinstance(pt, numpy.ndarray):
@@ -705,14 +706,14 @@ def make_1d_mesh(points, left_tag=None, right_tag=None, periodic=False,
         right_tag = "x_plus"
         return make_conformal_mesh(
                 [force_array(pt) for pt in points],
-                [(i,i+1) for i in range(len(points)-1)],
+                [(i, i+1) for i in range(len(points) - 1)],
                 periodicity=[("x_minus", "x_plus")],
                 boundary_tagger=my_boundary_tagger,
                 **kwargs)
     else:
         return make_conformal_mesh(
                 [force_array(pt) for pt in points],
-                [(i,i+1) for i in range(len(points)-1)],
+                [(i, i + 1) for i in range(len(points)-1)],
                 boundary_tagger=boundary_tagger or my_boundary_tagger,
                 **kwargs)
 
@@ -733,7 +734,7 @@ def make_uniform_1d_mesh(a, b, el_count, left_tag=None, right_tag=None, periodic
 
 
 
-def make_single_element_mesh(a=-0.5, b=0.5, 
+def make_single_element_mesh(a=-0.5, b=0.5,
         boundary_tagger=(lambda vertices, face_indices: [])):
     n = 2
     node_dict = {}
@@ -753,7 +754,7 @@ def make_single_element_mesh(a=-0.5, b=0.5,
     boundary_faces = [(3,1), (1,2), (2,3)]
 
     boundary_tags = dict(
-            (frozenset(seg), 
+            (frozenset(seg),
                 boundary_tagger(points, seg))
                 for seg in  boundary_faces)
 
@@ -824,10 +825,14 @@ def make_regular_rect_mesh(a=(0,0), b=(1,1), n=(5,5), periodicity=None,
             elements.append((a,b,c))
             elements.append((d,c,b))
 
-            if i == 0: fvi2fm[frozenset((a,c))] = "minus_x"
-            if i == n[0]-2: fvi2fm[frozenset((b,d))] = "plus_x"
-            if j == 0: fvi2fm[frozenset((a,b))] = "minus_y"
-            if j == n[1]-2: fvi2fm[frozenset((c,d))] = "plus_y"
+            if i == 0:
+                fvi2fm[frozenset((a,c))] = "minus_x"
+            if i == n[0]-2:
+                fvi2fm[frozenset((b,d))] = "plus_x"
+            if j == 0:
+                fvi2fm[frozenset((a,b))] = "minus_y"
+            if j == n[1]-2:
+                fvi2fm[frozenset((c,d))] = "plus_y"
 
     def wrapped_boundary_tagger(fvi, el, fn, all_v):
         btag = fvi2fm[frozenset(fvi)]
@@ -917,10 +922,14 @@ def make_centered_regular_rect_mesh(a=(0,0), b=(1,1), n=(5,5), periodicity=None,
             elements.append((d,c,m))
             elements.append((c,a,m))
 
-            if i == 0: fvi2fm[frozenset((a,c))] = "minus_x"
-            if i == n[0]-2: fvi2fm[frozenset((b,d))] = "plus_x"
-            if j == 0: fvi2fm[frozenset((a,b))] = "minus_y"
-            if j == n[1]-2: fvi2fm[frozenset((c,d))] = "plus_y"
+            if i == 0:
+                fvi2fm[frozenset((a,c))] = "minus_x"
+            if i == n[0]-2:
+                fvi2fm[frozenset((b,d))] = "plus_x"
+            if j == 0:
+                fvi2fm[frozenset((a,b))] = "minus_y"
+            if j == n[1]-2:
+                fvi2fm[frozenset((c,d))] = "plus_y"
 
     def wrapped_boundary_tagger(fvi, el, fn, all_v):
         btag = fvi2fm[frozenset(fvi)]
@@ -935,7 +944,7 @@ def make_centered_regular_rect_mesh(a=(0,0), b=(1,1), n=(5,5), periodicity=None,
                 points, elements, post_refine_factor)
         old_fvi2fm = fvi2fm
         fvi2fm = {}
-        
+
         for fvi, fm in old_fvi2fm.iteritems():
             for new_fvi in of2nf[fvi]:
                 fvi2fm[frozenset(new_fvi)] = fm
@@ -973,7 +982,7 @@ def finish_2d_rect_mesh(points, facets, facet_markers, marker2tag, refine_func,
     mesh_info.set_facets(facets, facet_markers)
 
     #triangle.write_gnuplot_mesh("mesh.dat", mesh_info, True)
-    
+
     if periodicity is None:
         periodicity = (False, False)
 
@@ -990,7 +999,7 @@ def finish_2d_rect_mesh(points, facets, facet_markers, marker2tag, refine_func,
         else:
             mesh_periodicity.append(None)
 
-    generated_mesh = triangle.build(mesh_info, 
+    generated_mesh = triangle.build(mesh_info,
             refinement_func=refine_func,
             allow_boundary_steiner=not (periodicity[0] or periodicity[1]))
 
@@ -1020,7 +1029,7 @@ def _round_trip_connect(start, end):
 
 
 
-def make_rect_mesh(a=(0,0), b=(1,1), max_area=None, 
+def make_rect_mesh(a=(0,0), b=(1,1), max_area=None,
         boundary_tagger=(lambda fvi, el, fn, all_v: []),
         periodicity=None, subdivisions=None,
         refine_func=None):
@@ -1033,22 +1042,22 @@ def make_rect_mesh(a=(0,0), b=(1,1), max_area=None,
       the mesh is to be periodic in x and y.
     :param subdivisions: If not *None*, this is a 2-tuple specifying
       the number of facet subdivisions in X and Y.
-    :param refine_func: A refinement function as taken by 
+    :param refine_func: A refinement function as taken by
       :func:`meshpy.triangle.build`.
     """
     import meshpy.triangle as triangle
 
     if max_area is not None:
         if refine_func is not None:
-            raise ValueError, "cannot specify both refine_func and max_area"
+            raise ValueError("cannot specify both refine_func and max_area")
         def refine_func(vertices, area):
             return area > max_area
 
     marker2tag = {
-            1: "minus_x", 
-            2: "minus_y", 
-            3: "plus_x", 
-            4: "plus_y", 
+            1: "minus_x",
+            2: "minus_y",
+            3: "plus_x",
+            4: "plus_y",
             }
 
     points = [a, (b[0],a[1]), b, (a[0],b[1])]
@@ -1057,18 +1066,18 @@ def make_rect_mesh(a=(0,0), b=(1,1), max_area=None,
 
     if subdivisions is not None:
         points, facets, facet_markers = triangle.subdivide_facets(
-                [subdivisions[0], subdivisions[1], 
+                [subdivisions[0], subdivisions[1],
                     subdivisions[0], subdivisions[1]],
                 points, facets, facet_markers)
-            
-    return finish_2d_rect_mesh(points, facets, facet_markers, marker2tag, 
+
+    return finish_2d_rect_mesh(points, facets, facet_markers, marker2tag,
             refine_func, periodicity, boundary_tagger)
 
 
 
 
 
-def make_rect_mesh_with_corner(a=(0,0), b=(1,1), max_area=None, 
+def make_rect_mesh_with_corner(a=(0,0), b=(1,1), max_area=None,
         boundary_tagger=(lambda fvi, el, fn, all_v: []),
         corner_fraction=(0.3, 0.3),
         refine_func=None):
@@ -1079,37 +1088,39 @@ def make_rect_mesh_with_corner(a=(0,0), b=(1,1), max_area=None,
     :param b: the upper right hand point of the rectangle
     :param max_area: maximum area of each triangle.
     :param refine_func: A refinement function as taken by :func:`meshpy.triangle.build`.
-    :param corner_fraction: Tuple of fraction of the width taken up by 
+    :param corner_fraction: Tuple of fraction of the width taken up by
       the rentrant corner.
     """
     import meshpy.triangle as triangle
 
     if max_area is not None:
         if refine_func is not None:
-            raise ValueError, "cannot specify both refine_func and max_area"
+            raise ValueError("cannot specify both refine_func and max_area")
         def refine_func(vertices, area):
             return area > max_area
 
     marker2tag = {
-            1: "minus_x", 
-            2: "minus_y", 
-            3: "plus_x", 
-            4: "plus_y", 
-            4: "plus_y", 
-            5: "corner_plus_y", 
-            6: "corner_plus_x", 
+            1: "minus_x",
+            2: "minus_y",
+            3: "plus_x",
+            4: "plus_y",
+            4: "plus_y",
+            5: "corner_plus_y",
+            6: "corner_plus_x",
             }
 
     a = numpy.asarray(a)
     b = numpy.asarray(b)
-    diag =  b-a
-    w = diag.copy(); w[1] = 0
-    h = diag.copy(); h[0] = 0
+    diag = b-a
+    w = diag.copy()
+    w[1] = 0
+    h = diag.copy()
+    h[0] = 0
 
     points = [
-            a+h*corner_fraction[1], 
-            a+h*corner_fraction[1]+w*corner_fraction[0], 
-            a+w*corner_fraction[0], 
+            a+h*corner_fraction[1],
+            a+h*corner_fraction[1]+w*corner_fraction[0],
+            a+w*corner_fraction[0],
             a+w,
             a+w+h,
             a+h,
@@ -1122,7 +1133,7 @@ def make_rect_mesh_with_corner(a=(0,0), b=(1,1), max_area=None,
     mesh_info.set_points(points)
     mesh_info.set_facets(facets, facet_markers)
 
-    generated_mesh = triangle.build(mesh_info, 
+    generated_mesh = triangle.build(mesh_info,
             refinement_func=refine_func)
 
     return make_conformal_mesh(
@@ -1134,7 +1145,7 @@ def make_rect_mesh_with_corner(a=(0,0), b=(1,1), max_area=None,
 
 
 
-def make_square_mesh(a=-0.5, b=0.5, max_area=4e-3, 
+def make_square_mesh(a=-0.5, b=0.5, max_area=4e-3,
         boundary_tagger=(lambda fvi, el, fn, all_v: [])):
     """Create an unstructured square mesh.
 
@@ -1147,7 +1158,7 @@ def make_square_mesh(a=-0.5, b=0.5, max_area=4e-3,
 
 
 
-def make_disk_mesh(r=0.5, faces=50, max_area=4e-3, 
+def make_disk_mesh(r=0.5, faces=50, max_area=4e-3,
         boundary_tagger=(lambda fvi, el, fn, all_v: [])):
     from math import cos, sin, pi
 
@@ -1156,7 +1167,7 @@ def make_disk_mesh(r=0.5, faces=50, max_area=4e-3,
 
     points = [(r*cos(angle), r*sin(angle))
             for angle in numpy.linspace(0, 2*pi, faces, endpoint=False)]
-            
+
     import meshpy.triangle as triangle
 
     mesh_info = triangle.MeshInfo()
@@ -1202,7 +1213,7 @@ def make_ball_mesh(r=0.5, subdivisions=10, max_volume=None,
 
 
 
-def _make_z_periodic_mesh(points, facets, facet_holestarts, facet_markers, height, 
+def _make_z_periodic_mesh(points, facets, facet_holestarts, facet_markers, height,
         max_volume, boundary_tagger):
     from meshpy.tet import MeshInfo, build
     from meshpy.geometry import Marker
@@ -1238,7 +1249,7 @@ def _make_z_periodic_mesh(points, facets, facet_holestarts, facet_markers, heigh
 
     generated_mesh = build(mesh_info, max_volume=max_volume)
     fvi2fm = generated_mesh.face_vertex_indices_to_face_marker
-        
+
     return make_conformal_mesh(
             generated_mesh.points,
             generated_mesh.elements,
@@ -1248,22 +1259,22 @@ def _make_z_periodic_mesh(points, facets, facet_holestarts, facet_markers, heigh
 
 
 
-def make_cylinder_mesh(radius=0.5, height=1, radial_subdivisions=10, 
+def make_cylinder_mesh(radius=0.5, height=1, radial_subdivisions=10,
         height_subdivisions=1, max_volume=None, periodic=False,
         boundary_tagger=(lambda fvi, el, fn, all_v: [])):
     from meshpy.tet import MeshInfo, build
     from meshpy.geometry import make_cylinder
 
     points, facets, facet_holestarts, facet_markers = \
-            make_cylinder(radius, height, radial_subdivisions, 
+            make_cylinder(radius, height, radial_subdivisions,
                     height_subdivisions)
 
     assert len(facets) == len(facet_markers)
 
     if periodic:
         return _make_z_periodic_mesh(
-                points, facets, facet_holestarts, facet_markers, 
-                height=height, 
+                points, facets, facet_holestarts, facet_markers,
+                height=height,
                 max_volume=max_volume,
                 boundary_tagger=boundary_tagger)
     else:
@@ -1281,7 +1292,7 @@ def make_cylinder_mesh(radius=0.5, height=1, radial_subdivisions=10,
 
 
 
-def make_box_mesh(a=(0,0,0),b=(1,1,1), 
+def make_box_mesh(a=(0,0,0),b=(1,1,1),
         max_volume=None, periodicity=None,
         boundary_tagger=(lambda fvi, el, fn, all_v: []),
         return_meshpy_mesh=False):
@@ -1307,7 +1318,7 @@ def make_box_mesh(a=(0,0,0),b=(1,1,1),
     from meshpy.geometry import make_box
 
     points, facets, facet_markers = make_box(a, b)
-            
+
     mesh_info = MeshInfo()
     mesh_info.set_points(points)
     mesh_info.set_facets(facets, facet_markers)
@@ -1374,4 +1385,3 @@ def make_box_mesh(a=(0,0,0),b=(1,1,1),
         return result, generated_mesh
     else:
         return result
-

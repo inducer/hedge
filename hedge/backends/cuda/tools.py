@@ -72,7 +72,8 @@ def make_blocks(devdata, data):
     blocks = ["".join(b) for b in data]
     block_size = devdata.align(max(len(b) for b in blocks))
 
-    class BlockedDataStructure(Record): pass
+    class BlockedDataStructure(Record):
+        pass
 
     return BlockedDataStructure(
             blocks=cuda.to_device(pad_and_join(blocks, block_size)),
@@ -127,7 +128,8 @@ def make_superblocks(devdata, struct_name, single_item, multi_item, extra_fields
     data = pad_and_join(superblocks, superblock_size)
     assert len(data) == superblock_size*block_count
 
-    class SuperblockedDataStructure(Record): pass
+    class SuperblockedDataStructure(Record):
+        pass
 
     return SuperblockedDataStructure(
             struct=Struct(struct_name, struct_members),
@@ -323,4 +325,3 @@ def mpi_get_default_device(comm, dev_filter=lambda dev: True):
         rank_to_device = None
 
     return cuda.Device(scatter(comm, rank_to_device, 0).index)
-

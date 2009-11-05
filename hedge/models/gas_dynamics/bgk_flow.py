@@ -217,7 +217,8 @@ class BGKFlowOperator(TimeDependentOperator):
         w = make_vector_field("w", 2*d+2)
 
         from pytools import Record
-        class BGKField(Record): pass
+        class BGKField(Record):
+            pass
 
         return BGKField(
             # names follow [1], with vectors named after their

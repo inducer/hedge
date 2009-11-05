@@ -39,7 +39,7 @@ DiffJacobiFunction = hedge._internal.DiffJacobiPolynomial
 class LegendreFunction(JacobiFunction):
     def __init__(self, N):
         JacobiFunction.__init__(self, 0, 0, N)
-        
+
 class DiffLegendreFunction(DiffJacobiFunction):
     def __init__(self, N):
         DiffJacobiFunction.__init__(self, 0, 0, N)
@@ -51,7 +51,7 @@ def generic_vandermonde(points, functions):
     """Return a Vandermonde matrix.
 
     The Vandermonde Matrix is given by :math:`V_{i,j} := f_j(x_i)`
-    where *functions* is the list of :math:`f_j` and points is 
+    where *functions* is the list of :math:`f_j` and points is
     the list of :math:`x_i`.
     """
     v = numpy.zeros((len(points), len(functions)))
@@ -67,10 +67,10 @@ def generic_multi_vandermonde(points, functions):
     """Return multiple Vandermonde matrices.
 
     The Vandermonde Matrix is given by :math:`V_{i,j} := f_j(x_i)`
-    where *functions* is the list of :math:`f_j` and points is 
+    where *functions* is the list of :math:`f_j` and points is
     the list of :math:`x_i`.
 
-    The functions :math:`f_j` are multi-valued (i.e. return iterables), and one 
+    The functions :math:`f_j` are multi-valued (i.e. return iterables), and one
     matrix is returned for each return value.
     """
     count = len(functions[0](points[0]))
@@ -86,7 +86,7 @@ def generic_multi_vandermonde(points, functions):
 
 
 def legendre_vandermonde(points, N):
-    return generic_vandermonde(points, 
+    return generic_vandermonde(points,
             [LegendreFunction(i) for i in range(N+1)])
 
 
@@ -99,15 +99,12 @@ def monomial_vdm(levels):
         def __call__(self, x):
             return x**self.expt
 
-    return generic_vandermonde(levels, 
+    return generic_vandermonde(levels,
             [Monomial(i) for i in range(len(levels))])
 
 
 
 
 def make_interpolation_coefficients(levels, tap):
-    point_eval_vec = numpy.array([ tap**n for n in range(len(levels))])
+    point_eval_vec = numpy.array([tap**n for n in range(len(levels))])
     return la.solve(monomial_vdm(levels).T, point_eval_vec)
-
-
-

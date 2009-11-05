@@ -728,8 +728,8 @@ class EOCRecorder(object):
         self.history.append((abscissa, error))
 
     def estimate_order_of_convergence(self, gliding_mean = None):
-        abscissae = numpy.array([ a for a,e in self.history ])
-        errors = numpy.array([ e for a,e in self.history ])
+        abscissae = numpy.array([a for a,e in self.history ])
+        errors = numpy.array([e for a,e in self.history ])
 
         size = len(abscissae)
         if gliding_mean is None:
@@ -1231,27 +1231,18 @@ def get_spherical_coord(x_vec):
     return join_fields(r,phi,theta)
 
 def heaviside(x):
-    '''
+    """
     :param x: a list of numbers
 
     :returns: Heaviside step function where H(0)=0
-    '''
+    """
     return (x>0).astype(numpy.float64)
-    #H = 0.5*numpy.sign(x)*(1.0+numpy.sign(x))
-    #
-    #return H
 
 def heaviside_a(x,a):
-    '''
+    """
     :param x: a list of numbers
     :param a: real number such that H(0)=a
 
     :returns: Heaviside step function where H(0)=a
-    '''
-
-
-    from hedge.tools import heaviside
-
+    """
     return a*(1.0 - heaviside(-x)) + (1.0 - a)*heaviside(x)
-
-

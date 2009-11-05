@@ -152,8 +152,8 @@ class CGStateContainer:
         delta_old = self.delta
         self.delta = self.inner(self.residual, s)
 
-        beta = self.delta / delta_old;
-        self.d = s + beta * self.d;
+        beta = self.delta / delta_old
+        self.d = s + beta * self.d
 
         return self.delta
 
@@ -180,7 +180,7 @@ class CGStateContainer:
                 else:
                     what = "it"
 
-                debug_callback(what, iterations, self.x, 
+                debug_callback(what, iterations, self.x,
                         self.residual, self.d, delta)
 
             if compute_real_residual and abs(delta) < tol*tol * abs(delta_0):

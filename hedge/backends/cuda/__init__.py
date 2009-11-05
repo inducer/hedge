@@ -46,11 +46,11 @@ class GPUBlock(object):
     @ivar el_number_map: A dictionary mapping L{hedge.mesh.Element} instances
       to their number within this block.
     """
-    __slots__ = ["number", "local_discretization", "cpu_slices", "microblocks", 
+    __slots__ = ["number", "local_discretization", "cpu_slices", "microblocks",
             "el_offsets_list", "el_number_map", "el_number_map"
             ]
 
-    def __init__(self, number, local_discretization, cpu_slices, microblocks, 
+    def __init__(self, number, local_discretization, cpu_slices, microblocks,
             el_offsets_list, el_number_map):
         self.number = number
         self.local_discretization = local_discretization
@@ -85,16 +85,16 @@ class GPUInteriorFaceStorage(GPUFaceStorage):
 
     :ivar el_face: a tuple *(element, face_number)*.
     :ivar cpu_slice: the base index of the element in CPU numbering.
-    :ivar native_index_list_id: 
+    :ivar native_index_list_id:
     :ivar opp_write_index_list_id:
     :ivar native_block: block in which element is to be found.
     :ivar face_pair_side:
     """
     __slots__ = [
-            "el_face", "cpu_slice", 
+            "el_face", "cpu_slice",
             "native_index_list_id", "opp_write_index_list_id",
             "global_int_flux_index_list_id", "global_ext_flux_index_list_id",
-            "native_block", 
+            "native_block",
             "face_pair_side"]
 
     def __init__(self, el_face, cpu_slice, native_index_list_id,
@@ -109,19 +109,19 @@ class GPUInteriorFaceStorage(GPUFaceStorage):
 class GPUBoundaryFaceStorage(GPUFaceStorage):
     """Describes storage locations for a boundary face.
 
-    @ivar cpu_bdry_index_in_floats: this face's starting index 
+    @ivar cpu_bdry_index_in_floats: this face's starting index
       in the CPU-based TAG_ALL boundary array [floats].
-    @ivar gpu_bdry_index_in_floats: this face's starting index 
+    @ivar gpu_bdry_index_in_floats: this face's starting index
       in the GPU-based TAG_ALL boundary array [floats].
     @ivar face_pair_side:
     """
     __slots__ = [
-            "cpu_bdry_index_in_floats", 
-            "gpu_bdry_index_in_floats", 
+            "cpu_bdry_index_in_floats",
+            "gpu_bdry_index_in_floats",
             "face_pair_side",
             ]
 
-    def __init__(self, 
+    def __init__(self,
             cpu_bdry_index_in_floats,
             gpu_bdry_index_in_floats,
             face_pair_side
@@ -160,7 +160,7 @@ def make_gpu_partition_greedy(adjgraph, max_block_size):
 
             curr_node = queue.pop(curr_node_idx)
 
-            if curr_node in avail_nodes: 
+            if curr_node in avail_nodes:
                 avail_nodes.remove(curr_node)
                 result.add(curr_node)
                 if len(result) == max_block_size:
@@ -346,8 +346,8 @@ class Discretization(hedge.discretization.Discretization):
         self.partition_cache[max_block_size] = result
         return result
 
-    def __init__(self, mesh, local_discretization=None, 
-            order=None, init_cuda=True, debug=set(), 
+    def __init__(self, mesh, local_discretization=None,
+            order=None, init_cuda=True, debug=set(),
             device=None, default_scalar_type=numpy.float32,
             tune_for=None, run_context=None,
             mpi_cuda_dev_filter=lambda dev: True):
@@ -417,8 +417,9 @@ class Discretization(hedge.discretization.Discretization):
         self.partition_cache = {}
 
         from pytools import Record
-        class OverallPlan(Record):pass
-        
+        class OverallPlan(Record):
+            pass
+
         def generate_overall_plans():
             if "cuda_no_microblock" in self.debug:
                 allow_mb_values = [False]
@@ -430,7 +431,7 @@ class Discretization(hedge.discretization.Discretization):
             for allow_mb in allow_mb_values:
                 from hedge.backends.cuda.plan import PlanGivenData
                 given = PlanGivenData(
-                        DeviceData(device), ldis, 
+                        DeviceData(device), ldis,
                         allow_microblocking=allow_mb,
                         float_type=default_scalar_type)
 
@@ -518,7 +519,7 @@ class Discretization(hedge.discretization.Discretization):
             current_microblock = []
             el_offsets_list = []
             el_number_map = {}
-            elements = [self.mesh.elements[ben] 
+            elements = [self.mesh.elements[ben]
                     for ben in block_el_numbers.get(block_num, [])]
             for block_el_nr, el in enumerate(elements):
                 el_offset = (
@@ -538,16 +539,16 @@ class Discretization(hedge.discretization.Discretization):
             assert len(microblocks) <= self.flux_plan.microblocks_per_block()
 
             eg, = self.element_groups
-            return GPUBlock(block_num, 
+            return GPUBlock(block_num,
                     local_discretization=eg.local_discretization,
-                    cpu_slices=[self.find_el_range(el.id) for el in elements], 
+                    cpu_slices=[self.find_el_range(el.id) for el in elements],
                     microblocks=microblocks,
                     el_offsets_list=el_offsets_list,
                     el_number_map=el_number_map)
 
         return [make_block(block_num) for block_num in range(block_count)]
 
-    
+
 
 
     def _build_face_storage_map(self):
@@ -569,10 +570,10 @@ class Discretization(hedge.discretization.Discretization):
                     lambda: ldis.face_indices()[face_pair_side.face_id]
                     )
             result = GPUInteriorFaceStorage(
-                elface, 
-                cpu_slice=self.find_el_range(el.id), 
+                elface,
+                cpu_slice=self.find_el_range(el.id),
                 native_index_list_id=iln,
-                native_block=block, 
+                native_block=block,
                 face_pair_side=face_pair_side
                 )
 
@@ -585,7 +586,7 @@ class Discretization(hedge.discretization.Discretization):
         assert ldis == int_fg.ldis_opp
 
         id_face_index_list_number = fil_registry.register(
-                None, 
+                None,
                 lambda: tuple(xrange(ldis.face_node_count()))
                 )
         assert id_face_index_list_number == 0
@@ -609,14 +610,14 @@ class Discretization(hedge.discretization.Discretization):
                 return tuple(int_fg.index_lists[
                     fp.loc.face_index_list_number])
 
-            def face2_in_el_ilist(): 
+            def face2_in_el_ilist():
                 return tuple(int_fg.index_lists[
                     fp.opp.face_index_list_number])
 
-            def opp_write_map(): 
+            def opp_write_map():
                 return tuple(
                         int_fg.index_lists[fp.opp_native_write_map])
-                
+
             face1.global_int_flux_index_list_id = fil_registry.register(
                     (int_fg, fp.loc.face_index_list_number),
                     face1_in_el_ilist)
@@ -645,7 +646,7 @@ class Discretization(hedge.discretization.Discretization):
                     lambda: gwtm(face2_in_el_ilist(), f_ind[fp.opp.face_id])
                     )
             face2.opp_write_index_list_id = fil_registry.register(
-                    (int_fg, "wtm", 
+                    (int_fg, "wtm",
                         fp.opp_native_write_map,
                         fp.loc.face_index_list_number,
                         fp.loc.face_id),
@@ -664,11 +665,11 @@ class Discretization(hedge.discretization.Discretization):
 
             assert ldis == bdry_fg.ldis_loc
 
-            aligned_fnc = self.given.devdata.align_dtype(ldis.face_node_count(), 
+            aligned_fnc = self.given.devdata.align_dtype(ldis.face_node_count(),
                     self.given.float_size())
             for fp in bdry_fg.face_pairs:
                 assert fp.opp.element_id == hedge._internal.INVALID_ELEMENT
-                #assert (tuple(bdry_fg.index_lists[fp.opp.face_index_list_number]) 
+                #assert (tuple(bdry_fg.index_lists[fp.opp.face_index_list_number])
                         #== id_face_index_list)
 
                 face1 = make_int_face(fp.loc)
@@ -721,15 +722,15 @@ class Discretization(hedge.discretization.Discretization):
 
         from pytools.log import EventCounter
 
-        self.gmem_bytes_gather = EventCounter("gmem_bytes_gather", 
+        self.gmem_bytes_gather = EventCounter("gmem_bytes_gather",
                 "Bytes of gmem traffic during gather")
-        self.gmem_bytes_el_local = EventCounter("gmem_bytes_el_local", 
+        self.gmem_bytes_el_local = EventCounter("gmem_bytes_el_local",
                 "Bytes of gmem traffic during element-local matrix application")
-        self.gmem_bytes_diff = EventCounter("gmem_bytes_diff", 
+        self.gmem_bytes_diff = EventCounter("gmem_bytes_diff",
                 "Bytes of gmem traffic during lift")
-        self.gmem_bytes_vector_math = EventCounter("gmem_bytes_vector_math", 
+        self.gmem_bytes_vector_math = EventCounter("gmem_bytes_vector_math",
                 "Bytes of gmem traffic during vector math")
-        self.gmem_bytes_rk4 = EventCounter("gmem_bytes_rk4", 
+        self.gmem_bytes_rk4 = EventCounter("gmem_bytes_rk4",
                 "Bytes of gmem traffic during RK4")
 
         mgr.add_quantity(self.gmem_bytes_gather)
@@ -743,16 +744,16 @@ class Discretization(hedge.discretization.Discretization):
     def create_op_timers(self):
         from hedge.backends.cuda.tools import CallableCollectionTimer
 
-        self.flux_gather_timer = CallableCollectionTimer("t_gather", 
+        self.flux_gather_timer = CallableCollectionTimer("t_gather",
                 "Time spent gathering fluxes")
-        self.el_local_timer = CallableCollectionTimer("t_el_local", 
+        self.el_local_timer = CallableCollectionTimer("t_el_local",
                 "Time spent applying element-local matrices (lift, mass)")
         self.diff_op_timer = CallableCollectionTimer("t_diff",
                 "Time spent applying applying differentiation operators")
         self.vector_math_timer = CallableCollectionTimer("t_vector_math",
                 "Time spent doing vector math")
 
-        return [self.flux_gather_timer, 
+        return [self.flux_gather_timer,
                 self.el_local_timer,
                 self.diff_op_timer,
                 self.vector_math_timer ]
@@ -767,7 +768,7 @@ class Discretization(hedge.discretization.Discretization):
 
         mb_nr, in_mb_nr = divmod(block.el_number_map[el], given.microblock.elements)
 
-        return (block.number * self.flux_plan.dofs_per_block() 
+        return (block.number * self.flux_plan.dofs_per_block()
                 + mb_nr*given.microblock.aligned_floats
                 + in_mb_nr*given.dofs_per_el())
 
@@ -782,7 +783,7 @@ class Discretization(hedge.discretization.Discretization):
         fplan = self.flux_plan
         return int_ceiling(
                 int_ceiling(
-                    fplan.dofs_per_block() * len(self.blocks),     
+                    fplan.dofs_per_block() * len(self.blocks),
                     self.diff_plan.dofs_per_macroblock()),
                 self.fluxlocal_plan.dofs_per_macroblock())
 
@@ -907,7 +908,7 @@ class Discretization(hedge.discretization.Discretization):
             except cuda.LogicError:
                 # buf is not pagelocked
                 self.buf_gpu = buf_gpu = gpuarray.to_gpu(buf, discr.pool.allocate)
-            
+
             from hedge.tools import make_obj_array
             out = make_obj_array([
                     discr.boundary_empty(tag) for i in range(n)])
@@ -916,7 +917,7 @@ class Discretization(hedge.discretization.Discretization):
                 if read_map is None:
                     gpuarray.multi_put(
                             arrays=[
-                                buf_gpu[i*one_field_size:(i+1)*one_field_size] 
+                                buf_gpu[i*one_field_size:(i+1)*one_field_size]
                                 for i in range(n)],
                             dest_indices=discr._gpu_boundary_embedding_on_gpu(tag),
                             out=out, stream=self.stream)
@@ -924,7 +925,7 @@ class Discretization(hedge.discretization.Discretization):
                     gpuarray.multi_take_put(
                             arrays=[buf_gpu for i in range(n)],
                             dest_indices=discr._gpu_boundary_embedding_on_gpu(tag),
-                            src_indices=read_map, 
+                            src_indices=read_map,
                             src_offsets=[i*one_field_size for i in range(n)],
                             out=out, stream=self.stream)
 
@@ -1009,7 +1010,7 @@ class Discretization(hedge.discretization.Discretization):
         for i in indices_in_shape(shape):
             result[i] = create_func((base_size,), dtype=dtype)
         return result
-    
+
 
     # vector construction -----------------------------------------------------
     compute_kind = "gpu"
@@ -1020,7 +1021,7 @@ class Discretization(hedge.discretization.Discretization):
 
         from hedge.tools import log_shape
         from pytools import indices_in_shape
-        
+
         first_field = field[iter(indices_in_shape(log_shape(field))).next()]
         if isinstance(first_field, numpy.ndarray):
             return "numpy"
@@ -1051,7 +1052,7 @@ class Discretization(hedge.discretization.Discretization):
                     self.aligned_boundary_floats)
         elif kind == "numpy-mpi-recv":
             return self.pagelocked_pool.allocate(
-                    shape+(len(self.get_boundary(tag).nodes),), 
+                    shape+(len(self.get_boundary(tag).nodes),),
                     dtype)
         else:
             return hedge.discretization.Discretization.boundary_empty(
@@ -1064,7 +1065,7 @@ class Discretization(hedge.discretization.Discretization):
                     self.aligned_boundary_floats)
         elif kind == "numpy-mpi-recv":
             result = self.pagelocked_pool.allocate(
-                    shape+(len(self.get_boundary(tag).nodes),), 
+                    shape+(len(self.get_boundary(tag).nodes),),
                     dtype)
             result.fill(0)
             return result
@@ -1119,25 +1120,25 @@ class Discretization(hedge.discretization.Discretization):
         result = temp_tgt[self._gpu_boundary_embedding(tag)]
 
         return gpuarray.to_gpu(result)
-        
+
     class _BoundarizeGPUToNumpyFuture(Future):
         def __init__(self, discr, field, log_shape, tag):
             self.discr = discr
 
             base_size = len(discr.get_boundary(tag).nodes)
-            self.result = result =  discr.pagelocked_pool.allocate(
-                    log_shape+(base_size,), 
+            self.result = result = discr.pagelocked_pool.allocate(
+                    log_shape+(base_size,),
                     dtype=discr.default_scalar_type)
             self.result_gpu = gpuarray.empty((result.size,), result.dtype,
                     allocator=discr.pool.allocate)
 
             # FIXME Technically, we're missing a sync primitive here.
-            # We would need to make sure that 'field' is completely 
+            # We would need to make sure that 'field' is completely
             # written, but CUDA doesn't quite allow that without a
             # full cuda.Context.synchronize() as of version 2.2.
             # For now we're ok omitting the sync primitive since in a
-            # typical DG operator, what we're using here is not 
-            # computed just before--it's data from the last 
+            # typical DG operator, what we're using here is not
+            # computed just before--it's data from the last
             # timestep, and that's guaranteed to be there.
 
             self.stream = discr._get_stream()
@@ -1174,7 +1175,7 @@ class Discretization(hedge.discretization.Discretization):
 
                 if ls != ():
                     from pytools import single_valued
-                    out = result = make_new(tag, shape=ls, 
+                    out = result = make_new(tag, shape=ls,
                             dtype=single_valued(f.dtype for f in field))
                     src = field
                 else:
@@ -1182,7 +1183,7 @@ class Discretization(hedge.discretization.Discretization):
                     out = [result]
                     src = [field]
 
-                gpuarray.multi_take_put(src, 
+                gpuarray.multi_take_put(src,
                         to_indices, from_indices, out=out)
                 if kind is None:
                     return result
@@ -1233,7 +1234,7 @@ class Discretization(hedge.discretization.Discretization):
     # scalar reduction --------------------------------------------------------
     def nodewise_dot_product(self, a, b):
         return gpuarray.subset_dot(
-                self._meaningful_volume_indices(), 
+                self._meaningful_volume_indices(),
                 a, b, dtype=numpy.float64).get()
 
     def nodewise_max(self, a):
@@ -1262,8 +1263,8 @@ class Discretization(hedge.discretization.Discretization):
         elgroup_indices = numpy.zeros((el_count,), dtype=numpy.intp)
 
         for block in self.blocks:
-            block_elgroup_indices = [ get_el_index_in_el_group(el) 
-                    for mb in block.microblocks 
+            block_elgroup_indices = [get_el_index_in_el_group(el)
+                    for mb in block.microblocks
                     for el in mb]
             offset = block.number * given.elements_per_block()
             elgroup_indices[offset:offset+len(block_elgroup_indices)] = \
@@ -1285,7 +1286,7 @@ class Discretization(hedge.discretization.Discretization):
 
         def f(subfield):
             subresult = self.volume_zeros(dtype=subfield.dtype)
-            
+
             for eg in self.element_groups:
                 if prepared_data_store is not None:
                     try:

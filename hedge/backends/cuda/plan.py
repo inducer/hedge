@@ -242,7 +242,8 @@ class PlanGivenData(object):
         align_size = self.devdata.align_words(self.float_size())
 
         from pytools import Record
-        class MicroblockInfo(Record): pass
+        class MicroblockInfo(Record):
+            pass
 
         if not allow_microblocking:
             return MicroblockInfo(

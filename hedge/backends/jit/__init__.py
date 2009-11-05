@@ -57,9 +57,12 @@ class ExecutionMapper(CPUExecutionMapperBase):
 
         from pymbolic.primitives import is_zero
 
-        class ZeroSpec: pass
-        class BoundaryZeros(ZeroSpec): pass
-        class VolumeZeros(ZeroSpec): pass
+        class ZeroSpec:
+            pass
+        class BoundaryZeros(ZeroSpec):
+            pass
+        class VolumeZeros(ZeroSpec):
+            pass
 
         def eval_arg(arg_spec):
             arg_expr, is_int = arg_spec
@@ -72,7 +75,7 @@ class ExecutionMapper(CPUExecutionMapperBase):
             else:
                 return arg
 
-        args = [eval_arg(arg_expr) 
+        args = [eval_arg(arg_expr)
                 for arg_expr in insn.flux_var_info.arg_specs]
 
         from pytools import common_dtype
@@ -112,8 +115,8 @@ class ExecutionMapper(CPUExecutionMapperBase):
             for arg_name, arg in zip(insn.flux_var_info.arg_names, args):
                 setattr(arg_struct, arg_name, arg)
             for arg_num, scalar_arg_expr in enumerate(insn.flux_var_info.scalar_parameters):
-                setattr(arg_struct, 
-                        "_scalar_arg_%d" % arg_num, 
+                setattr(arg_struct,
+                        "_scalar_arg_%d" % arg_num,
                         self.rec(scalar_arg_expr))
 
             fof_shape = (fg.face_count*fg.face_length()*fg.element_count(),)
@@ -201,11 +204,11 @@ class Executor(CPUExecutorBase):
                 print self.code
                 raw_input()
 
-	if "print_op_code" in discr.debug:
-	    from hedge.tools import get_rank
-	    if get_rank(discr) == 0:
-		print self.code
-		raw_input()
+        if "print_op_code" in discr.debug:
+            from hedge.tools import get_rank
+            if get_rank(discr) == 0:
+                print self.code
+                raw_input()
 
         def bench_diff(f):
             test_field = discr.volume_zeros()
@@ -333,4 +336,3 @@ class Discretization(hedge.discretization.Discretization):
         add_hedge(toolchain)
 
         self.toolchain = toolchain
-

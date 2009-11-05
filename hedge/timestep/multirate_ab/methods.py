@@ -30,14 +30,20 @@ from pymbolic import var
 
 # symbols ---------------------------------------------------------------------
 # components
-class CO_FAST: pass
-class CO_SLOW: pass
+class CO_FAST:
+    pass
+class CO_SLOW:
+    pass
 
 # histories:
-class HIST_F2F: pass
-class HIST_F2S: pass
-class HIST_S2F: pass
-class HIST_S2S: pass
+class HIST_F2F:
+    pass
+class HIST_F2S:
+    pass
+class HIST_S2F:
+    pass
+class HIST_S2S:
+    pass
 
 HIST_NAMES = [HIST_F2F, HIST_S2F, HIST_F2S, HIST_S2S]
 
@@ -320,4 +326,3 @@ def _add_slowest_first_variants(methods):
 
 
 methods = _add_slowest_first_variants(methods)
-

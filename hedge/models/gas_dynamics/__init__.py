@@ -47,16 +47,16 @@ class GasDynamicsOperator(TimeDependentOperator):
     q = (rho, rho_u_x, rho_u_y, E)
     F = (rho_u_x, rho_u_x^2 + p, rho_u_x * rho_u_y / rho, u_x * (E + p))
     G = (rho_u_y, rho_u_x * rho_u_y / rho, rho_u_y^2 + p, u_y * (E + p))
-    
+
     tau_11 = mu * (2 * du/dx - 2/3 * (du/dx + dv/dy))
     tau_12 = mu * (du/dy + dv/dx)
     tau_21 = tau_12
     tau_22 = mu * (2 * dv/dy - 2/3 * (du/dx + dv/dy))
     tau_31 = u * tau_11 + v * tau_12
     tau_32 = u * tau_21 + v * tau_22
-    
+
     For Euler: mu = 0
-    
+
     For the heat flux:
 
     q = -k * nabla * T
@@ -73,13 +73,13 @@ class GasDynamicsOperator(TimeDependentOperator):
             source=None,
             euler=False):
         """
-        :param source: should implement 
+        :param source: should implement
         :class:`hedge.data.IFieldDependentGivenFunction`
         or be None.
         """
 
         self.dimensions = dimensions
-        
+
         self.gamma = gamma
         self.prandtl = prandtl
         self.spec_gas_const = spec_gas_const
@@ -96,7 +96,7 @@ class GasDynamicsOperator(TimeDependentOperator):
         self.source = source
 
         self.euler = euler
-        
+
     def rho(self, q):
         return q[0]
 
@@ -131,7 +131,7 @@ class GasDynamicsOperator(TimeDependentOperator):
             return cse(self.rho_u(q), "rho_u")
 
         def p(q):
-            return cse((self.gamma-1)*(self.e(q) - 
+            return cse((self.gamma-1)*(self.e(q) -
                        0.5*numpy.dot(self.rho_u(q), u(q))), "p")
 
         def t(q):
@@ -238,8 +238,8 @@ class GasDynamicsOperator(TimeDependentOperator):
                         self.rho_u(q)[i],
 
                         # flux E
-                        cse(self.e(q)+p(q))*u(q)[i] - 
-                        tau(q)[self.dimensions,i] #+ 
+                        cse(self.e(q)+p(q))*u(q)[i] -
+                        tau(q)[self.dimensions,i] #+
                         #heat_flux(q)[i]
                         ,
 
@@ -262,16 +262,16 @@ class GasDynamicsOperator(TimeDependentOperator):
                         self.rho_u(q_bdry)[i],
 
                         # flux E
-                        cse(self.e(q_bdry)+p(q_bdry))*u(q_bdry)[i] - 
+                        cse(self.e(q_bdry)+p(q_bdry))*u(q_bdry)[i] -
                         BoundarizeOperator(tag)(
-                            tau(q_vol)[self.dimensions,i] #+ 
+                            tau(q_vol)[self.dimensions,i] #+
                             #heat_flux(q_vol)[i]
                             ),
 
                         # flux rho_u
                         make_obj_array([
-                            self.rho_u(q_bdry)[i]*self.u(q_bdry)[j] + 
-                            delta(i,j) * p(q_bdry) - 
+                            self.rho_u(q_bdry)[i]*self.u(q_bdry)[j] +
+                            delta(i,j) * p(q_bdry) -
                             BoundarizeOperator(tag)(tau(q_vol)[i,j])
                             for j in range(self.dimensions)
                             ])
@@ -292,7 +292,8 @@ class GasDynamicsOperator(TimeDependentOperator):
 
         # boundary conditions -------------------------------------------------
 
-        class BCInfo(Record): pass
+        class BCInfo(Record):
+            pass
 
         def make_bc_info(bc_name, tag, state, set_velocity_to_zero=False):
             if set_velocity_to_zero:
@@ -402,7 +403,7 @@ class GasDynamicsOperator(TimeDependentOperator):
             #need extra slot for speed, will set to zero in source class
             source_ph = make_vector_field("source_vect", self.dimensions+2+1)
             result = join_fields(result + source_ph)
-        
+
         return result
 
     def bind(self, discr):
@@ -433,10 +434,10 @@ class GasDynamicsOperator(TimeDependentOperator):
 
             max_speed = opt_result[-1]
             ode_rhs = opt_result[:-1]
-	    return ode_rhs, discr.nodewise_max(max_speed)
+            return ode_rhs, discr.nodewise_max(max_speed)
 
         return rhs
-       
+
 
 
 class SlopeLimiter1NEuler:
@@ -460,7 +461,7 @@ class SlopeLimiter1NEuler:
             massMatrix = ldis.mass_matrix()
             #compute area of the element
             self.standard_el_vol= numpy.sum(numpy.dot(massMatrix,numpy.ones(massMatrix.shape[0])))
-            
+
             from numpy import size, zeros, sum
             AVEt = sum(massMatrix,0)
             AVEt = AVEt/self.standard_el_vol
@@ -483,14 +484,14 @@ class SlopeLimiter1NEuler:
         for i in indices_in_shape(ls):
             from hedge._internal import perform_elwise_operator
             for eg in self.discr.element_groups:
-                perform_elwise_operator(eg.ranges, eg.ranges, 
+                perform_elwise_operator(eg.ranges, eg.ranges,
                         self.AVE_map[eg], vec[i], result[i])
-		
+
                 return result
 
     def __call__(self, fields):
 
-        #join fields 
+        #join fields
         from hedge.tools import join_fields
 
         #get conserved fields
@@ -498,7 +499,7 @@ class SlopeLimiter1NEuler:
         e=self.op.e(fields)
         rho_velocity=self.op.rho_u(fields)
 
-        #get primative fields 
+        #get primitive fields
         #to do
 
         #reset field values to cell average
@@ -507,9 +508,6 @@ class SlopeLimiter1NEuler:
         temp=join_fields([self.get_average(rho_vel)
                 for rho_vel in rho_velocity])
 
-        #should do for primative fields too
+        #should do for primitive fields too
 
- 
         return join_fields(rhoLim, eLim, temp)
-
-

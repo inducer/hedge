@@ -38,7 +38,7 @@ def get_flux_dependencies(flux, field, bdry="all"):
     assert not [in_field
         for in_field in in_fields
         if not isinstance(in_field, FieldComponent)]
-        
+
     def maybe_index(fld, index):
         from hedge.tools import is_obj_array
         if is_obj_array(fld):
@@ -84,7 +84,7 @@ class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
                         if hasattr(self, fld)))
 
     class InteriorInfo(FluxInfo):
-        # attributes: flux_expr, field_expr, 
+        # attributes: flux_expr, field_expr,
 
         @property
         @memoize_method
@@ -106,7 +106,7 @@ class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
         def ext_dependencies(self):
             return set(get_flux_dependencies(
                     self.flux_expr, self.bpair, bdry="ext"))
-                
+
 
     def __init__(self, is_lift, interiors, boundaries):
         self.is_lift = is_lift
@@ -154,7 +154,7 @@ class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
         from pymbolic.primitives import flattened_sum
         return flattened_sum(summands)
 
-    # infrastructure interaction 
+    # infrastructure interaction
     def get_hash(self):
         return hash((self.__class__, self.rebuild_optemplate()))
 
@@ -164,25 +164,25 @@ class WholeDomainFluxOperator(pymbolic.primitives.Leaf):
 
     def __getinitargs__(self):
         return self.is_lift, self.interiors, self.boundaries
-        
+
     def stringifier(self):
         return hedge.optemplate.StringifyMapper
 
-    def get_mapper_method(self, mapper): 
+    def get_mapper_method(self, mapper):
         return mapper.map_whole_domain_flux
 
 
 
 
 class BoundaryCombiner(CSECachingMapperMixin, hedge.optemplate.IdentityMapper):
-    """Combines inner fluxes and boundary fluxes into a 
-    single, whole-domain operator of type 
+    """Combines inner fluxes and boundary fluxes into a
+    single, whole-domain operator of type
     L{hedge.backends.cuda.execute.WholeDomainFluxOperator}.
     """
     def __init__(self, mesh):
         self.mesh = mesh
 
-    flux_op_types = (hedge.optemplate.FluxOperator, 
+    flux_op_types = (hedge.optemplate.FluxOperator,
             hedge.optemplate.LiftingFluxOperator)
 
     map_common_subexpression_uncached = \
@@ -191,7 +191,7 @@ class BoundaryCombiner(CSECachingMapperMixin, hedge.optemplate.IdentityMapper):
     def gather_one_wdflux(self, expressions):
         from hedge.optemplate import OperatorBinding, \
                 LiftingFluxOperator, BoundaryPair
-        
+
         interiors = []
         boundaries = []
         is_lift = None
@@ -199,7 +199,7 @@ class BoundaryCombiner(CSECachingMapperMixin, hedge.optemplate.IdentityMapper):
         rest = []
 
         for ch in expressions:
-            if (isinstance(ch, OperatorBinding) 
+            if (isinstance(ch, OperatorBinding)
                     and isinstance(ch.op, self.flux_op_types)):
                 my_is_lift = isinstance(ch.op, LiftingFluxOperator)
 
@@ -264,7 +264,7 @@ class FluxCollector(CSECachingMapperMixin,
             hedge.optemplate.CombineMapper.map_common_subexpression
 
     def map_whole_domain_flux(self, wdflux):
-        result = set([wdflux]) 
+        result = set([wdflux])
 
         for intr in wdflux.interiors:
             result |= self.rec(intr.field_expr)

@@ -42,7 +42,7 @@ from hedge.models import Operator, TimeDependentOperator
 
 
 class StrongWaveOperator:
-    """This operator discretizes the wave equation 
+    """This operator discretizes the wave equation
     :math:`\\partial_t^2 u = c^2 \\Delta u`.
 
     To be precise, we discretize the hyperbolic system
@@ -103,7 +103,7 @@ class StrongWaveOperator:
                     0.5*(u.int-u.ext),
                     0.5*(normal * numpy.dot(normal, v.int-v.ext)))
         else:
-            raise ValueError, "invalid flux type '%s'" % self.flux_type
+            raise ValueError("invalid flux type '%s'" % self.flux_type)
 
         flux_strong = join_fields(
                 numpy.dot(v.int, normal),
@@ -197,7 +197,7 @@ class StrongWaveOperator:
 
 
 class VariableVelocityStrongWaveOperator:
-    """This operator discretizes the wave equation 
+    """This operator discretizes the wave equation
     :math:`\\partial_t^2 u = c^2 \\Delta u`.
 
     To be precise, we discretize the hyperbolic system
@@ -259,7 +259,7 @@ class VariableVelocityStrongWaveOperator:
                     - c.int*normal*numpy.dot(normal, v.int)
                     )
         else:
-            raise ValueError, "invalid flux type '%s'" % self.flux_type
+            raise ValueError("invalid flux type '%s'" % self.flux_type)
 
         return flux
 

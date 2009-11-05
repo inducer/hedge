@@ -73,8 +73,8 @@ class Quadrature(object):
 
 class JacobiGaussQuadrature(Quadrature):
     """An M{N}th order Gauss quadrature associated with the Jacobi
-    polynomials of type M{(alpha,beta) > -1} 
-    
+    polynomials of type M{(alpha,beta) > -1}
+
     *alpha* and *beta* may not be -0.5.
 
     Integrates on the interval (-1,1).
@@ -88,8 +88,8 @@ class JacobiGaussQuadrature(Quadrature):
         """Return (nodes, weights) for an n-th order Gauss quadrature
         with the Jacobi polynomials of type (alpha, beta).
         """
-        # follows 
-        # Gene H. Golub, John H. Welsch, Calculation of Gauss Quadrature Rules, 
+        # follows
+        # Gene H. Golub, John H. Welsch, Calculation of Gauss Quadrature Rules,
         # Mathematics of Computation, Vol. 23, No. 106 (Apr., 1969), pp. 221-230
         # doi:10.2307/2004418
 
@@ -141,7 +141,7 @@ class JacobiGaussQuadrature(Quadrature):
         eigval, eigvec = numpy.linalg.eigh(T)
 
         from numpy import dot, diag
-        assert numpy.linalg.norm(dot(T, eigvec) -  dot(eigvec, diag(eigval))) < 1e-12
+        assert numpy.linalg.norm(dot(T, eigvec) - dot(eigvec, diag(eigval))) < 1e-12
 
         from hedge.polynomial import JacobiFunction
         p0 = JacobiFunction(alpha, beta, 0)
@@ -151,7 +151,7 @@ class JacobiGaussQuadrature(Quadrature):
         return nodes, weights
 
 
-            
+
 
 class LegendreGaussQuadrature(JacobiGaussQuadrature):
     """An M{N}th order Gauss quadrature associated with the Legendre polynomials.
@@ -183,7 +183,7 @@ class TransformedQuadrature(Quadrature):
 
 
 def _extended_euclidean(q, r):
-    """Return a tuple (p, a, b) such that p = aq + br, 
+    """Return a tuple (p, a, b) such that p = aq + br,
     where p is the greatest common divisor.
     """
 
@@ -192,16 +192,16 @@ def _extended_euclidean(q, r):
     if abs(q) < abs(r):
         p, a, b = _extended_euclidean(r, q)
         return p, b, a
-  
+
     Q = 1, 0
     R = 0, 1
-  
+
     while r:
         quot, t = divmod(q, r)
         T = Q[0] - quot*R[0], Q[1] - quot*R[1]
         q, r = r, t
         Q, R = R, T
-  
+
     return q, Q[0], Q[1]
 
 
@@ -224,8 +224,8 @@ class SimplexCubature(object):
     """Cubature on an M{n}-simplex.
 
     cf.
-    A. Grundmann and H.M. Moeller,  
-    Invariant integration formulas for the n-simplex by combinatorial methods, 
+    A. Grundmann and H.M. Moeller,
+    Invariant integration formulas for the n-simplex by combinatorial methods,
     SIAM J. Numer. Anal.  15 (1978), 282--290.
 
     This cubature rule has both negative and positive weights.
