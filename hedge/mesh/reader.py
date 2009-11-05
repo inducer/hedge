@@ -43,13 +43,9 @@ def _get_gmsh_element_type_to_info_map():
             25: ElementTypeInfo(ele_type=TriangularElement(5)),
             29: ElementTypeInfo(ele_type=TetrahedralElement(3)),
             30: ElementTypeInfo(ele_type=TetrahedralElement(4)),
-            31: ElementTypeInfo(ele_type=TetrahedralElement(5)),
-            15: 'nothing', # temporary for testing
-            1:  'nothing',
-            3: 'nothing',
-            26: 'nothing'
-            }
-
+            31: ElementTypeInfo(ele_type=TetrahedralElement(5))
+           }
+   
 def make_read_mesh(nodes,elements, elements_info, phy_tags,
             boundary_tagger=(lambda fvi, el, fn, all_v: [])):
     from hedge.mesh import make_conformal_mesh
@@ -65,22 +61,24 @@ def read_gmsh(filename):
     """
     mesh reader for gmsh file
     """
-
+    from hedge.element import TriangularElement,TetrahedralElement
     # open target file
     mesh_file = open(filename, 'r')
     lines     = mesh_file.readlines()
 
     # get the element type map
     element_type_map = _get_gmsh_element_type_to_info_map()
+    # collect the mesh information
     nodes            = []
-    elements         = []
+    elements_2D      = []
+    elements_3D      = []
     elements_info    = []
     phy_tags         = []
     i = 0
     while i < len(lines):
         l = lines[i].strip()
         i += 1  
-        if l == "$MeshFormat" :
+        if l == "$MeshFormat":
             while True:
                 i+=1
                 l = lines[i].strip()
@@ -109,15 +107,22 @@ def read_gmsh(filename):
                     break
                 l_str = l.split()    
                 lvalue = [int(x) for x in l_str] 
-                type = lvalue[1]
-                elements.append(lvalue[3+lvalue[2]:])
+                type = "unsupported"
+                # store the element table for supported elements
+                if lvalue[1] in element_type_map.keys():
+                    type = element_type_map[lvalue[1]]
+                    if isinstance(type.ele_type,TriangularElement):
+                        elements_2D.append([x-1 for x in lvalue[3+lvalue[2]:]])
+                    elif isinstance(type.ele_type,TetrahedralElement):
+                        elements_3D.append([x-1 for x in lvalue[3+lvalue[2]:]])
+                # store information for all kinds of elements
                 elements_info.append(
                                      dict(
-                                         ele_indices = lvalue[0],
-                                         el_type     = element_type_map[type],
-                                         ele_number_of_tags =lvalue[2],
-                                         el_tags = lvalue[3:3+lvalue[2]],
-                                         nodes   = lvalue[3+lvalue[2]:] 
+                                          ele_indices = lvalue[0],
+                                          el_type     = type,
+                                          ele_number_of_tags =lvalue[2],
+                                          el_tags = lvalue[3:3+lvalue[2]],
+                                          nodes   = lvalue[3+lvalue[2]:] 
                                          )
                                      )
             i+=1
@@ -144,8 +149,16 @@ def read_gmsh(filename):
             # unrecognized section, skip 
             pass
 
-    # initialize Mesh class,need to figure out the mapping for making element
-    input_mesh = make_read_mesh(nodes,elements,elements_info,phy_tags)   
+    # initialize Mesh class,need to figure out the mapping 
+    # for making higher order element
+    # extracting computational elements for 2D/3D 
+    elements = elements_2D
+    points   = [ x[0:2] for x in nodes ]
+    if elements_3D!=[]:
+        elements = elements_3D
+        points   = nodes
+
+    input_mesh = make_read_mesh(points,elements,elements_info,phy_tags)   
     #close the file explicitly
     mesh_file.close
     return input_mesh
@@ -154,4 +167,3 @@ def read_gmsh(filename):
 
 
 
-    
