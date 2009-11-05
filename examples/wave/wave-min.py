@@ -65,7 +65,7 @@ def main(write_output=True):
 
     from hedge.timestep import RK4TimeStepper
     stepper = RK4TimeStepper()
-    dt = discr.dt_factor(op.max_eigenvalue(), RK4TimeStepper)
+    dt = discr.dt_factor(op.max_eigenvalue())
 
     nsteps = int(1/dt)
     print "dt=%g nsteps=%d" % (dt, nsteps)
