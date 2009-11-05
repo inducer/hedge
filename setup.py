@@ -127,6 +127,7 @@ def main():
                     "hedge.backends.cuda",
                     "hedge.timestep",
                     "hedge.timestep.multirate_ab",
+                    "hedge.tools",
                     ],
 
             ext_package="hedge",
