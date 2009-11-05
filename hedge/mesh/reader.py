@@ -142,7 +142,7 @@ def read_gmsh(filename):
             i+=1
         else: 
             # unrecognized section, skip 
-            i+=1
+            pass
 
     # initialize Mesh class,need to figure out the mapping for making element
     input_mesh = make_read_mesh(nodes,elements,elements_info,phy_tags)   
