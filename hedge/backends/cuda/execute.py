@@ -539,15 +539,14 @@ class Executor(object):
 	dofs_per_el = discr.given.dofs_per_el()
 	floats_per_mb = discr.given.microblock.aligned_floats
 
-        # round block_size up to nearest multiple of floats_per_mb
-        block_size = 128
-
-        mbs_per_block = (block_size + floats_per_mb - 1) // floats_per_mb
+        # set block_size to floats_per_mb (best result of benchmarking 
+        # orders 3-6)
+        mbs_per_block = 1 
         block_size = floats_per_mb * mbs_per_block
 
 	if block_size > discr.given.devdata.max_threads:
-            # rounding up took us beyond the max block size,
-            # round down instead
+            # block size is to big,
+            # round down
 	    block_size = block_size - floats_per_mb
 
         if block_size > discr.given.devdata.max_threads or block_size == 0:
