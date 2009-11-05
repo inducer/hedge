@@ -84,23 +84,14 @@ def test_ab_coefficients():
 
 
 
-from math import sqrt, log, sin, cos, exp
-from hedge.tools import EOCRecorder
-class CheckMultirateTimesteperAccuracy:
+class MultirateTimesteperAccuracyChecker:
     """Check that the multirate timestepper has the advertised accuracy
     """
-    def __init__(self,
-            method,
-            order,
-            step_ratio,
-            #outfile,
-            ode):
-
-        self.method      = method
-        self.order       = order
+    def __init__(self, method, order, step_ratio, ode):
+        self.method = method
+        self.order = order
         self.step_ratio  = step_ratio
-        #self.out = outfile
-        self.ode         = ode()
+        self.ode = ode
 
     def get_error(self, stepper, dt, name=None):
         t = self.ode.t_start
@@ -109,10 +100,6 @@ class CheckMultirateTimesteperAccuracy:
 
         nsteps = int((final_t-t)/dt)
 
-        if name is not None:
-            outf = open(name, "w")
-            format = "%g\t%g\t" + "%g\t" * len(y)
-
         times = []
         hist = []
         for i in range(nsteps):
@@ -120,37 +107,30 @@ class CheckMultirateTimesteperAccuracy:
             t += dt
             hist.append(y)
 
-        if False:
-            times.append(t)
-            from matplotlib.pyplot import plot, show
-            plot(times, [h[0] for h in hist], "o", hold=True)
-            plot(times, [self.soln_0(t) for t in times], hold=True)
-            show()
-
         from ode_systems import Basic, Tria
 
         if isinstance(self.ode, Basic) or isinstance(self.ode, Tria):
+            # AK: why?
             return abs(y[0]-self.ode.soln_0(t))
         else:
-            return abs(
-                    sqrt(y[0]**2 + y[1]**2)
+            from math import sqrt
+            return abs(sqrt(y[0]**2 + y[1]**2)
                     - sqrt(self.ode.soln_0(t)**2 + self.ode.soln_1(t)**2)
                     )
 
     def __call__(self):
-        import fpformat as fpf
+        from hedge.tools import EOCRecorder
         eocrec = EOCRecorder()
-        for n in range(4,9):
+        for n in range(4,7):
             dt = 2**(-n)
 
-            from hedge.timestep.multirate_ab import \
-                     TwoRateAdamsBashforthTimeStepper
+            from hedge.timestep.multirate_ab import TwoRateAdamsBashforthTimeStepper
 
             stepper = TwoRateAdamsBashforthTimeStepper(
                     self.method, dt, self.step_ratio, self.order)
 
             error = self.get_error(stepper, dt, "mrab-%d.dat" % self.order)
-            #self.out.write("& %s" % fpf.sci(error,2))
+
             eocrec.add_data_point(1/dt, error)
 
         print "------------------------------------------------------"
@@ -159,10 +139,7 @@ class CheckMultirateTimesteperAccuracy:
         print eocrec.pretty_print()
 
         orderest = eocrec.estimate_order_of_convergence()[0,1]
-        print orderest, self.order
         assert orderest > self.order*0.70
-
-        #self.out.write("& %s" % fpf.fix(orderest,2))
 
 
 
@@ -170,49 +147,17 @@ def test_multirate_timestep_accuracy():
     """Check that the multirate timestepper has the advertised accuracy"""
 
     from hedge.timestep.multirate_ab.methods import methods
-
-
     import ode_systems
 
-    system_names = ["Basic", "Full","Comp", "Tria"]
-
-    min_order = 1
-    max_order = 6
     step_ratio = 2
 
-    for sys_name in system_names:
+    for sys_name in ["Basic", "Full","Comp", "Tria"]:
         system = getattr(ode_systems, sys_name)
-        order_list =  range(min_order, max_order)
 
         for method in methods:
-            print sys_name
-            print method
-
-        # outputfile setup: ---------------------------------------------
-        #outfilename = "mrab-out/mrab-EOC-%s.tex" % str(method)
-        #outfile = open(outfilename, "w")
-        #outfile.write("\\begin{tabular}{l")
-        #for i in order_list:
-        #    outfile.write("c")
-        #outfile.write("}" + "\n")
-        #outfile.write("N & h & h/2 & h/4 & Rate")
-        #outfile.write("\\""\\" + "\n")
-        #outfile.write("\\hline" + "\n")
-
-            for order in order_list:
-                #outfile.write("%s" %order)
-                checkup = CheckMultirateTimesteperAccuracy(
-                        method,
-                        order,
-                       step_ratio,
-                        ode = system)
-                        #outfile,
-                checkup()
-            #outfile.write("\\""\\" + "\n")
-            #outfile.write("\\hline" + "\n")
-
-        #outfile.write("\\hline" + "\n")
-        #outfile.write("\\end{tabular}" + "\n")
+            for order in [1, 4, 6]:
+                MultirateTimesteperAccuracyChecker(
+                        method, order, step_ratio, ode = system())()
 
 
 
