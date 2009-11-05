@@ -1,9 +1,9 @@
 # -*- coding: utf8 -*-
-"""Canned operators for several PDEs, such as Maxwell's, heat, Poisson, etc. (deprecated module)"""
+"""Wave equation operators."""
 
 from __future__ import division
 
-__copyright__ = "Copyright (C) 2007 Andreas Kloeckner"
+__copyright__ = "Copyright (C) 2009 Andreas Kloeckner"
 
 __license__ = """
 This program is free software: you can redistribute it and/or modify
@@ -23,25 +23,14 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 
-# THIS FILE HAS GROWN TOO LARGE AND IS BEING DEPRECATED. DON'T ADD STUFF HERE.
-# ADD IT TO A NEW OR EXISTING FILE UNDER hedge.models INSTEAD.
-
-
-
-
-
 import numpy
-import numpy.linalg as la
-import hedge.tools
 import hedge.mesh
-import hedge.data
-from pytools import memoize_method
 from hedge.models import Operator, TimeDependentOperator
 
 
 
 
-class StrongWaveOperator:
+class StrongWaveOperator(TimeDependentOperator):
     """This operator discretizes the wave equation
     :math:`\\partial_t^2 u = c^2 \\Delta u`.
 

@@ -50,7 +50,7 @@ def main(write_output=True):
         from math import sin
         return source_u_vec*sin(10*t)
 
-    from hedge.pde import StrongWaveOperator
+    from hedge.models.wave import StrongWaveOperator
     from hedge.mesh import TAG_ALL, TAG_NONE
     op = StrongWaveOperator(-1, discr.dimensions, 
             source_vec_getter,

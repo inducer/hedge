@@ -965,7 +965,10 @@ class TetrahedralElement(SimplicialElement):
         # Set optimized parameter alpha, depending on order N
         alpha_opt = [0, 0, 0, 0.1002, 1.1332, 1.5608, 1.3413, 1.2577, 1.1603,
                 1.10153, 0.6080, 0.4523, 0.8856, 0.8717, 0.9655]
-        alpha = alpha_opt.get(self.order-1, 1)
+        if self.order-1 < len(alpha_opt):
+            alpha = alpha_opt[self.order-1]
+        else:
+            alpha = 1
 
         from pytools import wandering_element
 
