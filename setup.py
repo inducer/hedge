@@ -121,6 +121,7 @@ def main():
             packages=[
                     "hedge",
                     "hedge.models",
+                    "hedge.models.gas_dynamics",
                     "hedge.backends",
                     "hedge.backends.jit",
                     "hedge.backends.mpi",
