@@ -35,7 +35,7 @@ class Visualizer(object):
 # gnuplot mesh vis ------------------------------------------------------------
 def write_gnuplot_mesh(filename, mesh):
     gp_file = open(filename, "w")
-    
+
     for el in mesh.elements:
         assert el.dimensions == 2
         for pt in el.vertex_indices:
@@ -105,7 +105,8 @@ class LegacyVtkVisualizer(Visualizer):
     def make_file(self, pathname, pcontext=None):
         if pcontext is not None:
             if len(pcontext.ranks) > 1:
-                raise RuntimeError, "Legacy VTK does not suport parallel visualization"
+                raise RuntimeError("Legacy VTK does not suport "
+                        "parallel visualization")
         return LegacyVtkFile(pathname+".vtk", self.structure)
 
     def add_data(self, vtkfile, scalars=[], vectors=[], scale_factor=1):
@@ -226,7 +227,8 @@ class VtkVisualizer(Visualizer, hedge.tools.Closable):
             elif ldis.geometry is Tetrahedron:
                 vtk_eltype = VTK_TETRA
             else:
-                raise RuntimeError, "unsupported element type: %s" % ldis.geometry
+                raise RuntimeError("unsupported element type: %s" 
+                        % ldis.geometry)
 
             cell_types.extend([vtk_eltype] * len(smi) * len(eg.members))
 
@@ -477,10 +479,10 @@ class SiloVisualizer(Visualizer):
                 if is_obj_array(field):
                     AXES = ["x", "y", "z", "w"]
                     for i, f_i in enumerate(field):
-                        silo.put_curve(name+AXES[i], self.xvals, 
+                        silo.put_curve(name+AXES[i], self.xvals,
                                 scale_factor*f_i, mesh_opts)
                 else:
-                    silo.put_curve(name, self.xvals, 
+                    silo.put_curve(name, self.xvals,
                             scale_factor*field, mesh_opts)
         else:
             self.fine_mesh.put_mesh(silo, "finezonelist", "finemesh", mesh_opts)

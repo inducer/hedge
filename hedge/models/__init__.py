@@ -44,8 +44,3 @@ class TimeDependentOperator(Operator):
     tree.
     """
     pass
-
-
-
-
-

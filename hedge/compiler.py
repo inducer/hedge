@@ -55,7 +55,7 @@ class Instruction(Record):
 
 class Assign(Instruction):
     # attributes: names, exprs, do_not_return, priority
-    # 
+    #
     # do_not_return is a list of bools indicating whether the corresponding
     # entry in names and exprs describes an expression that is not needed
     # beyond this assignment
@@ -84,11 +84,11 @@ class Assign(Instruction):
                 return self._dependencies
         except:
             # arg is include_subscripts
-            dep_mapper = self.dep_mapper_factory(each_vector) 
+            dep_mapper = self.dep_mapper_factory(each_vector)
 
             from operator import or_
             deps = reduce(
-                    or_, (dep_mapper(expr) 
+                    or_, (dep_mapper(expr)
                     for expr in self.exprs))
 
             from pymbolic.primitives import Variable
@@ -111,7 +111,7 @@ class Assign(Instruction):
                 comment = " /* %s */" % comment
 
             lines = []
-            lines.append("{"+comment)
+            lines.append("{" + comment)
             for n, e, dnr  in zip(self.names, self.exprs, self.do_not_return):
                 if dnr:
                     dnr_indicator = "-#"
@@ -203,7 +203,10 @@ class MassAssign(Instruction):
 
 
 class FluxExchangeBatchAssign(Instruction):
-    __slots__ = ["names", "indices_and_ranks", "rank_to_index_and_name", "field"]
+    __slots__ = [
+            "names", "indices_and_ranks",
+            "rank_to_index_and_name", "field"]
+
     priority = 1
 
     def __init__(self, names, indices_and_ranks, field, dep_mapper_factory):
@@ -250,13 +253,12 @@ def dot_dataflow_graph(code, max_node_label_length=30):
 
     result = [
             "initial [label=\"initial\"]"
-            "result [label=\"result\"]"
-            ]
+            "result [label=\"result\"]"]
 
     for num, insn in enumerate(code.instructions):
         node_name = "node%d" % num
         node_names[insn] = node_name
-        node_label = str(insn).replace("\n", "\\l")+"\\l"
+        node_label = str(insn).replace("\n", "\\l") + "\\l"
 
         if max_node_label_length is not None:
             node_label = node_label[:max_node_label_length]
@@ -327,7 +329,7 @@ class Code(object):
         discardable_vars = set(available_names) - set(flatten(
             [dep.name for dep in insn.get_dependencies()]
             for insn in self.instructions
-            if insn not in done_insns ))
+            if insn not in done_insns))
 
         from hedge.tools import with_object_array_or_scalar
         with_object_array_or_scalar(
@@ -492,7 +494,8 @@ class OperatorCompilerBase(IdentityMapper):
                 batches_by_kind = {}
                 for fr in present_batch:
                     batches_by_kind[fr.kind] = \
-                            batches_by_kind.get(fr.kind, set()) | set([fr.flux_expr])
+                            batches_by_kind.get(fr.kind, set()) \
+                            | set([fr.flux_expr])
 
                 for kind, batch in batches_by_kind.iteritems():
                     self.flux_batches.append(
@@ -500,7 +503,7 @@ class OperatorCompilerBase(IdentityMapper):
 
                 admissible_deps |= set(fr.flux_expr for fr in present_batch)
             else:
-                raise RuntimeError, "cannot resolve flux evaluation order"
+                raise RuntimeError("cannot resolve flux evaluation order")
 
         # Once flux batching is figured out, we also need to know which
         # derivatives are going to be needed, because once the
@@ -533,7 +536,7 @@ class OperatorCompilerBase(IdentityMapper):
         def generate_plain_names():
             i = 0
             while True:
-                yield self.prefix+str(i)
+                yield self.prefix + str(i)
                 i += 1
 
         if prefix is None:
@@ -602,7 +605,8 @@ class OperatorCompilerBase(IdentityMapper):
                         op_class=single_valued(
                             d.op.__class__ for d in all_diffs),
                         operators=[d.op for d in all_diffs],
-                        field=self.rec(single_valued(d.field for d in all_diffs)),
+                        field=self.rec(
+                            single_valued(d.field for d in all_diffs)),
                         dep_mapper_factory=self.dep_mapper_factory))
 
             from pymbolic import var
@@ -644,7 +648,8 @@ class OperatorCompilerBase(IdentityMapper):
                     FluxExchangeBatchAssign(
                         names=names,
                         indices_and_ranks=[
-                            (fe.op.index, fe.op.rank) for fe in all_flux_xchgs],
+                            (fe.op.index, fe.op.rank)
+                            for fe in all_flux_xchgs],
                         field=self.rec(
                             single_valued(
                                 (fe.field for fe in all_flux_xchgs),
@@ -668,11 +673,14 @@ class OperatorCompilerBase(IdentityMapper):
                     pass
                 else:
                     # found at idx
-                    mapped_fluxes = [self.internal_map_flux(f) for f in fb.flux_exprs]
+                    mapped_fluxes = [
+                            self.internal_map_flux(f)
+                            for f in fb.flux_exprs]
 
                     names = [self.get_var_name() for f in mapped_fluxes]
                     self.code.append(
-                            self.make_flux_batch_assign(names, mapped_fluxes, fb.kind))
+                            self.make_flux_batch_assign(
+                                names, mapped_fluxes, fb.kind))
 
                     from pymbolic import var
                     for n, f in zip(names, fb.flux_exprs):
@@ -694,7 +702,7 @@ class OperatorCompilerBase(IdentityMapper):
 
     # instruction producers ---------------------------------------------------
     def make_assign(self, name, expr, priority):
-        return Assign(names=[name], exprs=[expr], 
+        return Assign(names=[name], exprs=[expr],
                 dep_mapper_factory=self.dep_mapper_factory,
                 priority=priority)
 
@@ -717,7 +725,8 @@ class OperatorCompilerBase(IdentityMapper):
                     if dep_origin is not None:
                         if skip_levels <= 0:
                             result.add(dep_origin)
-                        result |= get_complete_origins_set(dep_origin, skip_levels-1)
+                        result |= get_complete_origins_set(
+                                dep_origin, skip_levels-1)
 
             return result
 
@@ -726,20 +735,20 @@ class OperatorCompilerBase(IdentityMapper):
             try:
                 return var_assignees_cache[insn]
             except KeyError:
-                result = set(Variable(assignee) 
+                result = set(Variable(assignee)
                         for assignee in insn.get_assignees())
                 var_assignees_cache[insn] = result
                 return result
 
         def aggregate_two_assignments(ass_1, ass_2):
-            names = ass_1.names+ass_2.names
+            names = ass_1.names + ass_2.names
 
             from pymbolic.primitives import Variable
             deps = (ass_1.get_dependencies() | ass_2.get_dependencies()) \
                     - set(Variable(name) for name in names)
 
             return Assign(
-                    names=names, exprs=ass_1.exprs+ass_2.exprs,
+                    names=names, exprs=ass_1.exprs + ass_2.exprs,
                     _dependencies=deps,
                     dep_mapper_factory=self.dep_mapper_factory,
                     priority=max(ass_1.priority, ass_2.priority))
@@ -790,8 +799,10 @@ class OperatorCompilerBase(IdentityMapper):
                                 set(my_assign.get_assignees())
                                 | set(other_assign.get_assignees()))
                         new_dep_count = len(
-                                my_assign.get_dependencies(each_vector=True)
-                                | other_assign.get_dependencies(each_vector=True))
+                                my_assign.get_dependencies(
+                                    each_vector=True)
+                                | other_assign.get_dependencies(
+                                    each_vector=True))
 
                         if (new_assignee_count + new_dep_count \
                                 > self.max_vectors_in_batch_expr):
@@ -805,7 +816,8 @@ class OperatorCompilerBase(IdentityMapper):
                         did_work = True
 
                         # aggregate the two assignments
-                        new_assignment = aggregate_two_assignments(my_assign, other_assign)
+                        new_assignment = aggregate_two_assignments(
+                                my_assign, other_assign)
                         del unprocessed_assigns[other_assign_index]
                         unprocessed_assigns.append(new_assignment)
                         for assignee in new_assignment.get_assignees():
@@ -818,7 +830,7 @@ class OperatorCompilerBase(IdentityMapper):
 
         externally_used_names = set(
                 expr
-                for insn in processed_assigns+other_insns
+                for insn in processed_assigns + other_insns
                 for expr in insn.get_dependencies())
 
         from hedge.tools import is_obj_array
@@ -834,7 +846,7 @@ class OperatorCompilerBase(IdentityMapper):
 
             my_assignees = set(name for name, expr in names_exprs)
             names_exprs_deps = [
-                    (name, expr, 
+                    (name, expr,
                         set(dep.name for dep in dep_mapper(expr) if
                             isinstance(dep, Variable)) & my_assignees)
                     for name, expr in names_exprs]
@@ -865,7 +877,8 @@ class OperatorCompilerBase(IdentityMapper):
                         ordered_names_exprs.append((name, expr))
                         available_names.add(name)
                 else:
-                    raise RuntimeError("aggregation resulted in an impossible assignment")
+                    raise RuntimeError("aggregation resulted in an "
+                            "impossible assignment")
 
             return self.finalize_multi_assign(
                     names=[name for name, expr in ordered_names_exprs],

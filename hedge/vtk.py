@@ -104,7 +104,7 @@ class XMLElement(XMLElementBase):
 
     def write(self, file):
         attr_string = "".join(
-                " %s=\"%s\"" % (key,value) 
+                " %s=\"%s\"" % (key,value)
                 for key,value in self.attributes.iteritems())
         if self.children:
             file.write("<%s%s>\n" % (self.tag, attr_string))
@@ -250,7 +250,7 @@ class Base64ZLibEncodedBuffer:
 
 
 class DataArray(object):
-    def __init__(self, name, container, vector_padding=3, 
+    def __init__(self, name, container, vector_padding=3,
             vector_format=VF_LIST_OF_COMPONENTS, components=None):
         self.name = name
 
@@ -261,16 +261,26 @@ class DataArray(object):
             return
 
         def vec_type(vec):
-            if vec.dtype == numpy.int8: return VTK_INT8
-            elif vec.dtype == numpy.uint8: return VTK_UINT8
-            elif vec.dtype == numpy.int16: return VTK_INT16
-            elif vec.dtype == numpy.uint16: return VTK_UINT16
-            elif vec.dtype == numpy.int32: return VTK_INT32
-            elif vec.dtype == numpy.uint32: return VTK_UINT32
-            elif vec.dtype == numpy.int64: return VTK_INT64
-            elif vec.dtype == numpy.uint64: return VTK_UINT64
-            elif vec.dtype == numpy.float32: return VTK_FLOAT32
-            elif vec.dtype == numpy.float64: return VTK_FLOAT64
+            if vec.dtype == numpy.int8:
+                return VTK_INT8
+            elif vec.dtype == numpy.uint8:
+                return VTK_UINT8
+            elif vec.dtype == numpy.int16:
+                return VTK_INT16
+            elif vec.dtype == numpy.uint16:
+                return VTK_UINT16
+            elif vec.dtype == numpy.int32:
+                return VTK_INT32
+            elif vec.dtype == numpy.uint32:
+                return VTK_UINT32
+            elif vec.dtype == numpy.int64:
+                return VTK_INT64
+            elif vec.dtype == numpy.uint64:
+                return VTK_UINT64
+            elif vec.dtype == numpy.float32:
+                return VTK_FLOAT32
+            elif vec.dtype == numpy.float64:
+                return VTK_FLOAT64
             else:
                 raise TypeError, "Unsupported vector type '%s' in VTK writer" % (vec.dtype)
 
@@ -289,9 +299,9 @@ class DataArray(object):
             assert container.strides[1] == container.itemsize, "2D numpy arrays must be row-major"
             if vector_padding > container.shape[1]:
                 container = numpy.asarray(numpy.hstack((
-                        container, 
+                        container,
                         numpy.zeros((
-                            container.shape[0], 
+                            container.shape[0],
                             vector_padding-container.shape[1],
                             ),
                             container.dtype))), order="C")
@@ -371,7 +381,7 @@ class UnstructuredGrid(object):
         return UnstructuredGrid(
                 (self.point_count, self.points),
                 (self.cell_count, self.cell_connectivity,
-                    self.cell_offsets), 
+                    self.cell_offsets),
                 self.cell_types)
 
     def vtk_extension(self):
@@ -433,7 +443,7 @@ class XMLGenerator(object):
 class InlineXMLGenerator(XMLGenerator):
     def gen_unstructured_grid(self, ugrid):
         el = XMLElement("UnstructuredGrid")
-        piece = XMLElement("Piece", 
+        piece = XMLElement("Piece",
                 NumberOfPoints=ugrid.point_count, NumberOfCells=ugrid.cell_count)
         el.add_child(piece)
 
@@ -455,7 +465,7 @@ class InlineXMLGenerator(XMLGenerator):
         return el
 
     def gen_data_array(self, data):
-        el = XMLElement("DataArray", type=data.type, Name=data.name, 
+        el = XMLElement("DataArray", type=data.type, Name=data.name,
                 NumberOfComponents=data.components, format="binary")
         data.encode(self.compressor, el)
         el.add_child("\n")
@@ -479,8 +489,8 @@ class AppendedDataXMLGenerator(InlineXMLGenerator):
         return xmlroot
 
     def gen_data_array(self, data):
-        el = XMLElement("DataArray", type=data.type, Name=data.name, 
-                NumberOfComponents=data.components, format="appended", 
+        el = XMLElement("DataArray", type=data.type, Name=data.name,
+                NumberOfComponents=data.components, format="appended",
                 offset=self.base64_len)
 
         self.base64_len += data.encode(self.compressor, self.app_data)
@@ -520,6 +530,6 @@ class ParallelXMLGenerator(XMLGenerator):
         return el
 
     def gen_data_array(self, data):
-        el = XMLElement("PDataArray", type=data.type, Name=data.name, 
+        el = XMLElement("PDataArray", type=data.type, Name=data.name,
                 NumberOfComponents=data.components)
         return el

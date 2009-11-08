@@ -57,9 +57,12 @@ class ExecutionMapper(CPUExecutionMapperBase):
 
         from pymbolic.primitives import is_zero
 
-        class ZeroSpec: pass
-        class BoundaryZeros(ZeroSpec): pass
-        class VolumeZeros(ZeroSpec): pass
+        class ZeroSpec:
+            pass
+        class BoundaryZeros(ZeroSpec):
+            pass
+        class VolumeZeros(ZeroSpec):
+            pass
 
         def eval_arg(arg_spec):
             arg_expr, is_int = arg_spec
@@ -333,4 +336,3 @@ class Discretization(hedge.discretization.Discretization):
         add_hedge(toolchain)
 
         self.toolchain = toolchain
-

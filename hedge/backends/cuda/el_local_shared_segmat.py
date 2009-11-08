@@ -27,7 +27,7 @@ import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
 from pycuda.compiler import SourceModule
 from hedge.backends.cuda.tools import FakeGPUArray
-import hedge.backends.cuda.plan 
+import hedge.backends.cuda.plan
 
 
 
@@ -62,7 +62,7 @@ class ExecutionPlan(hedge.backends.cuda.plan.SegmentedMatrixLocalOpExecutionPlan
     @memoize_method
     def gpu_matrix_block_floats(self):
         return self.given.devdata.align_dtype(
-                self.gpu_matrix_columns()*self.segment_size, 
+                self.gpu_matrix_columns()*self.segment_size,
                 self.given.float_size())
 
     def registers(self):
@@ -79,10 +79,10 @@ class ExecutionPlan(hedge.backends.cuda.plan.SegmentedMatrixLocalOpExecutionPlan
     @staticmethod
     def feature_columns():
         return ("type text",
-                "parallel integer", 
-                "inline integer", 
-                "serial integer", 
-                "segment_size integer", 
+                "parallel integer",
+                "inline integer",
+                "serial integer",
+                "segment_size integer",
                 "max_unroll integer",
                 "mb_elements integer",
                 "lmem integer",
@@ -118,7 +118,7 @@ class Kernel:
         self.with_index_check = with_index_check
 
         from hedge.backends.cuda.tools import int_ceiling
-        self.grid = (plan.segments_per_microblock(), 
+        self.grid = (plan.segments_per_microblock(),
                 int_ceiling(
                     self.plan.given.total_dofs()
                     / plan.dofs_per_macroblock())
@@ -145,7 +145,7 @@ class Kernel:
 
         out_vector = vol_empty()
         in_vector = gpuarray.empty(
-                given.matmul_preimage_shape(self.plan), 
+                given.matmul_preimage_shape(self.plan),
                 dtype=given.float_type,
                 allocator=discr.pool.allocate)
         in_vector.bind_to_texref_ext(in_vector_texref, allow_double_hack=True)
@@ -172,7 +172,7 @@ class Kernel:
                 estimated_mb_count = given.block_count*given.microblocks_per_block
                 kernel.prepared_call(
                         self.grid,
-                        out_vector.gpudata, 
+                        out_vector.gpudata,
                         fake_matrix,
                         0,
                         estimated_mb_count)
@@ -195,7 +195,7 @@ class Kernel:
                 self.get_kernel(prepped_scaling is not None)
 
         if out_vector is None:
-            out_vector = discr.volume_empty() 
+            out_vector = discr.volume_empty()
 
         in_vector.bind_to_texref_ext(in_vector_texref, allow_double_hack=True)
         if prepped_scaling is not None:
@@ -211,7 +211,7 @@ class Kernel:
             discr.el_local_timer.add_timer_callable(
                     kernel.prepared_timed_call(
                         self.grid,
-                        out_vector.gpudata, 
+                        out_vector.gpudata,
                         prepped_mat,
                         debugbuf.gpudata,
                         len(discr.blocks)*given.microblocks_per_block,
@@ -233,7 +233,7 @@ class Kernel:
         else:
             kernel.prepared_call(
                     self.grid,
-                    out_vector.gpudata, 
+                    out_vector.gpudata,
                     prepped_mat,
                     debugbuf.gpudata,
                     len(discr.blocks)*given.microblocks_per_block,
@@ -270,7 +270,7 @@ class Kernel:
 
         float_type = given.float_type
 
-        f_decl = CudaGlobal(FunctionDeclaration(Value("void", "apply_el_local_mat_smem_mat"), 
+        f_decl = CudaGlobal(FunctionDeclaration(Value("void", "apply_el_local_mat_smem_mat"),
             [
                 Pointer(POD(float_type, "out_vector")),
                 Pointer(POD(numpy.uint8, "gmem_matrix")),
@@ -283,13 +283,13 @@ class Kernel:
                 Include("pycuda-helpers.hpp"),
                 Line(),
                 Value("texture<fp_tex_%s, 1, cudaReadModeElementType>"
-                    % dtype_to_ctype(float_type), 
+                    % dtype_to_ctype(float_type),
                     "in_vector_tex"),
                 ])
         if with_scaling:
             cmod.append(
                 Value("texture<fp_tex_%s, 1, cudaReadModeElementType>"
-                    % dtype_to_ctype(float_type), 
+                    % dtype_to_ctype(float_type),
                     "scaling_tex"),
                 )
 
@@ -310,7 +310,7 @@ class Kernel:
                 Define("DOFS_PER_SEGMENT", self.plan.segment_size),
                 Define("SEGMENTS_PER_MB", self.plan.segments_per_microblock()),
                 Define("ALIGNED_DOFS_PER_MB", given.microblock.aligned_floats),
-                Define("ALIGNED_PREIMAGE_DOFS_PER_MB", 
+                Define("ALIGNED_PREIMAGE_DOFS_PER_MB",
                     self.plan.aligned_preimage_dofs_per_microblock),
                 Define("MB_EL_COUNT", given.microblock.elements),
                 Line(),
@@ -323,9 +323,9 @@ class Kernel:
                 Line(),
                 Define("MB_DOF_BASE", "(MB_SEGMENT*DOFS_PER_SEGMENT)"),
                 Define("MB_DOF", "(MB_DOF_BASE+SEGMENT_DOF)"),
-                Define("GLOBAL_MB_NR_BASE", 
+                Define("GLOBAL_MB_NR_BASE",
                     "(MACROBLOCK_NR*PAR_MB_COUNT*INLINE_MB_COUNT*SEQ_MB_COUNT)"),
-                Define("GLOBAL_MB_NR", 
+                Define("GLOBAL_MB_NR",
                     "(GLOBAL_MB_NR_BASE"
                     "+ (seq_mb_number*PAR_MB_COUNT + PAR_MB_NR)*INLINE_MB_COUNT)"),
                 Define("GLOBAL_MB_DOF_BASE", "(GLOBAL_MB_NR*ALIGNED_DOFS_PER_MB)"),
@@ -333,17 +333,17 @@ class Kernel:
                 Line(),
                 Define("MATRIX_COLUMNS", self.plan.gpu_matrix_columns()),
                 Define("MATRIX_SEGMENT_FLOATS", self.plan.gpu_matrix_block_floats()),
-                Define("MATRIX_SEGMENT_BYTES", 
+                Define("MATRIX_SEGMENT_BYTES",
                     "(MATRIX_SEGMENT_FLOATS*%d)" % given.float_size()),
 
                 Line(),
-                CudaShared(ArrayOf(POD(float_type, "smem_matrix"), 
+                CudaShared(ArrayOf(POD(float_type, "smem_matrix"),
                     "MATRIX_SEGMENT_FLOATS")),
                 CudaShared(
                     ArrayOf(
                         ArrayOf(
                             ArrayOf(
-                                POD(float_type, "dof_buffer"), 
+                                POD(float_type, "dof_buffer"),
                                 "PAR_MB_COUNT"),
                             "INLINE_MB_COUNT"),
                         "DOFS_PER_SEGMENT"),
@@ -365,7 +365,7 @@ class Kernel:
                             ArrayOf(
                                 POD(numpy.uint32, "segment_stop_el_lookup"),
                             "SEGMENTS_PER_MB")),
-                        [min(given.microblock.elements, 
+                        [min(given.microblock.elements,
                             (chk*self.plan.segment_size+self.plan.segment_size-1)
                                 //given.dofs_per_el()+1)
                             for chk in range(self.plan.segments_per_microblock())]
@@ -374,7 +374,7 @@ class Kernel:
 
         S = Statement
         f_body = Block()
-            
+
         f_body.extend_log_block("calculate this dof's element", [
             Initializer(POD(numpy.uint8, "mb_el"),
                 "MB_DOF/DOFS_PER_EL") ])
@@ -460,8 +460,8 @@ class Kernel:
                         for inl in range(par.inline)
                         ],
                         total_number=self.plan.preimage_dofs_per_el,
-                        max_unroll=self.plan.max_unroll) 
-                    + [ Line(), ])
+                        max_unroll=self.plan.max_unroll)
+                    + [Line()])
 
         def get_mat_mul_code(el_fetch_count):
             if el_fetch_count == 1:
@@ -485,7 +485,7 @@ class Kernel:
                 Block([
                     Initializer(POD(float_type, "result%d" % inl), 0)
                     for inl in range(par.inline)
-                    ]+[ Line() ]
+                    ]+[Line()]
                     +get_mat_mul_code(fetch_count)
                     +[
                     If(write_condition,
@@ -507,7 +507,7 @@ class Kernel:
             f_body.append(make_multiple_ifs([
                     ("segment_el_count == %d" % fetch_count,
                         mat_mul_outer_loop(fetch_count))
-                    for fetch_count in 
+                    for fetch_count in
                     range(1, self.plan.max_elements_touched_by_segment()+1)]
                     ))
         else:
@@ -520,8 +520,8 @@ class Kernel:
             from hedge.tools import open_unique_debug_file
             open_unique_debug_file(self.plan.debug_name, ".cu").write(str(cmod))
 
-        mod = SourceModule(cmod, 
-                keep="cuda_keep_kernels" in discr.debug, 
+        mod = SourceModule(cmod,
+                keep="cuda_keep_kernels" in discr.debug,
                 #options=["--maxrregcount=12"]
                 )
 
@@ -529,9 +529,9 @@ class Kernel:
 
         if self.plan.debug_name in discr.debug:
             print "%s: lmem=%d smem=%d regs=%d" % (
-                    self.plan.debug_name, 
-                    func.local_size_bytes, 
-                    func.shared_size_bytes, 
+                    self.plan.debug_name,
+                    func.local_size_bytes,
+                    func.shared_size_bytes,
                     func.num_regs)
 
         in_vector_texref = mod.get_texref("in_vector_tex")
@@ -544,7 +544,7 @@ class Kernel:
             scaling_texref = None
 
         func.prepare(
-                "PPPI", 
+                "PPPI",
                 block=(self.plan.segment_size, self.plan.parallelism.parallel, 1),
                 texrefs=texrefs)
 
@@ -561,8 +561,7 @@ class Kernel:
         block_floats = self.plan.gpu_matrix_block_floats()
 
         vstacked_matrix = numpy.vstack(
-                given.microblock.elements*(matrix,)
-                )
+                given.microblock.elements*(matrix,))
 
         if vstacked_matrix.shape[1] < columns:
             vstacked_matrix = numpy.hstack((
@@ -572,7 +571,7 @@ class Kernel:
                     columns-vstacked_matrix.shape[1]
                     ))
                 ))
-                
+
         segments = [
                 buffer(numpy.asarray(
                     vstacked_matrix[
@@ -580,10 +579,10 @@ class Kernel:
                     dtype=given.float_type,
                     order="C"))
                 for segment_start in range(
-                    0, given.microblock.elements*given.dofs_per_el(), 
+                    0, given.microblock.elements*given.dofs_per_el(),
                     self.plan.segment_size)
                 ]
-        
+
         from hedge.backends.cuda.tools import pad_and_join
 
         return cuda.to_device(
@@ -593,4 +592,3 @@ class Kernel:
         ij = scaling[self.discr.elgroup_microblock_indices(elgroup)]
         return gpuarray.to_gpu(
                 ij.astype(self.plan.given.float_type))
-

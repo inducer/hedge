@@ -78,7 +78,7 @@ def main(write_output=True,
             return 0*source_u_vec
 
 
-    from hedge.pde import StrongWaveOperator
+    from hedge.models.wave import StrongWaveOperator
     from hedge.mesh import TAG_ALL, TAG_NONE
     op = StrongWaveOperator(-1, discr.dimensions, 
             source_vec_getter,

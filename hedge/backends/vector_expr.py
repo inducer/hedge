@@ -147,10 +147,9 @@ class CompiledVectorExpressionBase(object):
                     for vecname in self.vector_dep_names]))
                 +list(zip(self.scalar_deps,
                     [var(scaname) for scaname in self.scalar_dep_names]))
-                +[(var(vei.name), var(vei.name)[var_i]) 
+                +[(var(vei.name), var(vei.name)[var_i])
                     for vei in vec_expr_info_list
-                    if not vei.do_not_return]
-                )
+                    if not vei.do_not_return])
 
         def subst_func(expr):
             try:

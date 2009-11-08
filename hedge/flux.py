@@ -58,7 +58,7 @@ class FieldComponent(Flux):
         self.is_interior = is_interior
 
     def is_equal(self, other):
-        return (isinstance(other, FieldComponent) 
+        return (isinstance(other, FieldComponent)
                 and self.index == other.index
                 and self.is_interior == other.is_interior
                 )
@@ -193,14 +193,15 @@ class FluxScalarPlaceholder(object):
 class FluxVectorPlaceholder(object):
     def __init__(self, components=None, scalars=None):
         if not (components is not None or scalars is not None):
-            raise ValueError, "either components or scalars must be specified"
+            raise ValueError("either components or scalars must be specified")
         if components is not None and scalars is not None:
-            raise ValueError, "only one of components and scalars may be specified"
+            raise ValueError("only one of components and scalars "
+                    "may be specified")
 
         # make them arrays for the better indexing
         if components:
             self.scalars = numpy.array([
-                    FluxScalarPlaceholder(i) 
+                    FluxScalarPlaceholder(i)
                     for i in range(components)])
         else:
             self.scalars = numpy.array(scalars)
@@ -250,7 +251,7 @@ class FluxIdentityMapperMixin(object):
 
 
 class FluxIdentityMapper(
-        pymbolic.mapper.IdentityMapper, 
+        pymbolic.mapper.IdentityMapper,
         FluxIdentityMapperMixin):
     pass
 

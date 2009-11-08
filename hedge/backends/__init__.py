@@ -125,17 +125,12 @@ FEAT_CUDA = "cuda"
 
 def generate_features(allowed_features):
     if FEAT_MPI in allowed_features:
-        import pytools.prefork
-        pytools.prefork.enable_prefork()
+        import pytools.mpiwrap as mpi
+        if not mpi.Is_initialized():
+            mpi.Init()
 
-        try:
-            import boostmpi.autoinit
-        except ImportError:
-            pass
-        else:
-            import boostmpi as mpi
-            if mpi.size > 1:
-                yield FEAT_MPI
+        if mpi.COMM_WORLD.Get_size() > 1:
+            yield FEAT_MPI
 
     if FEAT_CUDA in allowed_features:
         try:
@@ -182,7 +177,7 @@ def guess_run_context(allow=None):
 
     if FEAT_MPI in feat:
         from hedge.backends.mpi import MPIRunContext
-        import boostmpi as mpi
-        return MPIRunContext(mpi.world, discr_class)
+        import pytools.mpiwrap as mpi
+        return MPIRunContext(mpi.COMM_WORLD, discr_class)
     else:
         return SerialRunContext(discr_class)

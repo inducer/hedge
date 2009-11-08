@@ -201,4 +201,3 @@ class JitDifferentiator:
                 diff_routine(*args)
 
         return [result[i] for i in xyz_needed]
-

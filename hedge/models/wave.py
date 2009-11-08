@@ -1,9 +1,9 @@
 # -*- coding: utf8 -*-
-"""Canned operators for several PDEs, such as Maxwell's, heat, Poisson, etc. (deprecated module)"""
+"""Wave equation operators."""
 
 from __future__ import division
 
-__copyright__ = "Copyright (C) 2007 Andreas Kloeckner"
+__copyright__ = "Copyright (C) 2009 Andreas Kloeckner"
 
 __license__ = """
 This program is free software: you can redistribute it and/or modify
@@ -23,26 +23,15 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 
-# THIS FILE HAS GROWN TOO LARGE AND IS BEING DEPRECATED. DON'T ADD STUFF HERE.
-# ADD IT TO A NEW OR EXISTING FILE UNDER hedge.models INSTEAD.
-
-
-
-
-
 import numpy
-import numpy.linalg as la
-import hedge.tools
 import hedge.mesh
-import hedge.data
-from pytools import memoize_method
 from hedge.models import Operator, TimeDependentOperator
 
 
 
 
-class StrongWaveOperator:
-    """This operator discretizes the wave equation 
+class StrongWaveOperator(TimeDependentOperator):
+    """This operator discretizes the wave equation
     :math:`\\partial_t^2 u = c^2 \\Delta u`.
 
     To be precise, we discretize the hyperbolic system
@@ -103,7 +92,7 @@ class StrongWaveOperator:
                     0.5*(u.int-u.ext),
                     0.5*(normal * numpy.dot(normal, v.int-v.ext)))
         else:
-            raise ValueError, "invalid flux type '%s'" % self.flux_type
+            raise ValueError("invalid flux type '%s'" % self.flux_type)
 
         flux_strong = join_fields(
                 numpy.dot(v.int, normal),
@@ -197,7 +186,7 @@ class StrongWaveOperator:
 
 
 class VariableVelocityStrongWaveOperator:
-    """This operator discretizes the wave equation 
+    """This operator discretizes the wave equation
     :math:`\\partial_t^2 u = c^2 \\Delta u`.
 
     To be precise, we discretize the hyperbolic system
@@ -259,7 +248,7 @@ class VariableVelocityStrongWaveOperator:
                     - c.int*normal*numpy.dot(normal, v.int)
                     )
         else:
-            raise ValueError, "invalid flux type '%s'" % self.flux_type
+            raise ValueError("invalid flux type '%s'" % self.flux_type)
 
         return flux
 

@@ -44,7 +44,7 @@ class DiffKernelBase(object):
 
         return self.RstToXyzInfo(
                 gpu_data=gpuarray.to_gpu(
-                    numpy.ones((channels, d, el_count), 
+                    numpy.ones((channels, d, el_count),
                         dtype=given.float_type, order="F")),
                 channels=channels)
 

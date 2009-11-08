@@ -51,7 +51,7 @@ class FluxConcretizer(FluxIdentityMapper):
 
     def map_scalar_parameter(self, expr):
         from pymbolic import var
-        return var("args._scalar_arg_%d" 
+        return var("args._scalar_arg_%d"
                 % self.flux_var_info.scalar_parameters.index(expr))
 
 
@@ -242,7 +242,7 @@ def get_interior_flux_mod(fluxes, fvi, discr, dtype):
         Value("numpy_array<value_type>", arg_name)
         for arg_name in fvi.arg_names
         ]+[
-        Value("value_type" if scalar_par.is_complex else "uncomplex_type", 
+        Value("value_type" if scalar_par.is_complex else "uncomplex_type",
             "_scalar_arg_%d" % i)
         for i, scalar_par in enumerate(fvi.scalar_parameters)
         ])
@@ -325,7 +325,7 @@ def get_interior_flux_mod(fluxes, fvi, discr, dtype):
     #print mod.generate()
     #raw_input("[Enter]")
 
-    return mod.compile(get_flux_toolchain(discr, fluxes), 
+    return mod.compile(get_flux_toolchain(discr, fluxes),
             wait_on_error="jit_wait_on_compile_error" in discr.debug)
 
 
@@ -350,7 +350,7 @@ def get_boundary_flux_mod(fluxes, fvi, discr, dtype):
         Include("boost/foreach.hpp"),
         Line(),
         Include("hedge/face_operators.hpp"),
-	])
+        ])
 
     S = Statement
     mod.add_to_module([
@@ -446,5 +446,5 @@ def get_boundary_flux_mod(fluxes, fvi, discr, dtype):
     #print mod.generate()
     #raw_input("[Enter]")
 
-    return mod.compile(get_flux_toolchain(discr, fluxes), 
+    return mod.compile(get_flux_toolchain(discr, fluxes),
             wait_on_error="jit_wait_on_compile_error" in discr.debug)

@@ -70,7 +70,8 @@ class _PointEvaluator(object):
 
 
 class TimestepCalculator(object):
-    def dt_factor(self, max_system_ev, order=1, stepper_class=None, *stepper_args):
+    def dt_factor(self, max_system_ev, order=1,
+            stepper_class=None, *stepper_args):
         u"""Calculate the largest stable timestep, given a time stepper
         `stepper_class`. If none is given, RK4 is assumed.
         """
@@ -82,13 +83,13 @@ class TimestepCalculator(object):
         # calculation here is based upon this chapter.
         #
         # For a spatially continuous problem, the timestep can be calculated by
-        # the following relation: 
+        # the following relation:
         #
         #           max|λop| * Δt =  C_TimeStepper,
         #
         # where max|λop| is the maximum eigenvalue of the operator and
         # C_TimeStepper represents the maximum size of the stability region of
-        # the timestepper along the imaginary axis. 
+        # the timestepper along the imaginary axis.
         #
         # For a DG-discretized problem another factor has to be added:
         #
@@ -120,16 +121,16 @@ class TimestepCalculator(object):
         # timestepper.
 
 
-        rk4_dt = 1/max_system_ev \
+        rk4_dt = 1 / max_system_ev \
                 * (self.dt_non_geometric_factor()
-                * self.dt_geometric_factor())**order
-        
+                * self.dt_geometric_factor()) ** order
+
         from hedge.timestep import RK4TimeStepper
         from hedge.timestep import SSPRK3TimeStepper
         if stepper_class is None or stepper_class == RK4TimeStepper:
             return rk4_dt
-        elif stepper_class == SSPRK3TimeStepper: 
-            return rk4_dt*SSPRK3TimeStepper.dt_fudge_factor
+        elif stepper_class == SSPRK3TimeStepper:
+            return rk4_dt * SSPRK3TimeStepper.dt_fudge_factor
         else:
             assert isinstance(stepper_class, type)
 
@@ -147,16 +148,16 @@ class TimestepCalculator(object):
 class Discretization(TimestepCalculator):
     """The global approximation space.
 
-    Instances of this class tie together a local discretization (i.e. polynomials
-    on an elemnent) into a function space on a mesh. They provide creation
-    functions such as interpolating given functions, differential operators and
-    flux lifting operators.
+    Instances of this class tie together a local discretization (i.e.
+    polynomials on an elemnent) into a function space on a mesh. They
+    provide creation functions such as interpolating given functions,
+    differential operators and flux lifting operators.
     """
 
     @classmethod
     def all_debug_flags(cls):
         return set([
-            "ilist_generation", 
+            "ilist_generation",
             "node_permutation",
             "print_op_code",
             "dump_dataflow_graph",
@@ -169,16 +170,18 @@ class Discretization(TimestepCalculator):
         (such as key presses or console output).
         """
         return set([
-            "ilist_generation", 
+            "ilist_generation",
             "node_permutation",
             ])
 
     @staticmethod
     def get_local_discretization(mesh, local_discretization=None, order=None):
         if local_discretization is None and order is None:
-            raise ValueError, "must supply either local_discretization or order"
+            raise ValueError("must supply either local_discretization "
+                    "or order")
         if local_discretization is not None and order is not None:
-            raise ValueError, "must supply only one of local_discretization and order"
+            raise ValueError("must supply only one of local_discretization "
+                    "and order")
         if local_discretization is None:
             from hedge.element import ELEMENTS
             from pytools import one
@@ -189,7 +192,7 @@ class Discretization(TimestepCalculator):
         else:
             return local_discretization
 
-    def __init__(self, mesh, local_discretization=None, 
+    def __init__(self, mesh, local_discretization=None,
             order=None, debug=set(), default_scalar_type=numpy.float64,
             run_context=None):
         """
@@ -201,7 +204,7 @@ class Discretization(TimestepCalculator):
 
         if not isinstance(mesh, hedge.mesh.Mesh):
             raise TypeError("mesh must be of type hedge.mesh.Mesh")
-          
+
         self.mesh = mesh
 
         local_discretization = self.get_local_discretization(
@@ -210,7 +213,8 @@ class Discretization(TimestepCalculator):
         self.dimensions = local_discretization.dimensions
 
         debug = set(debug)
-        assert not debug.difference(self.all_debug_flags()), "Invalid debug flag specified"
+        assert not debug.difference(self.all_debug_flags()), \
+                "Invalid debug flag specified"
         self.debug = debug
 
         self._build_element_groups_and_nodes(local_discretization)
@@ -230,18 +234,18 @@ class Discretization(TimestepCalculator):
     def create_op_timers(self):
         from pytools.log import IntervalTimer
 
-        self.gather_timer = IntervalTimer("t_gather", 
+        self.gather_timer = IntervalTimer("t_gather",
                 "Time spent gathering fluxes")
-        self.lift_timer = IntervalTimer("t_lift", 
+        self.lift_timer = IntervalTimer("t_lift",
                 "Time spent lifting fluxes")
-        self.mass_timer = IntervalTimer("t_mass", 
+        self.mass_timer = IntervalTimer("t_mass",
                 "Time spent applying mass operators")
         self.diff_timer = IntervalTimer("t_diff",
                 "Time spent applying applying differentiation operators")
         self.vector_math_timer = IntervalTimer("t_vector_math",
                 "Time spent doing vector math")
 
-        return [self.gather_timer, 
+        return [self.gather_timer,
                 self.lift_timer,
                 self.mass_timer,
                 self.diff_timer,
@@ -250,11 +254,11 @@ class Discretization(TimestepCalculator):
     def add_instrumentation(self, mgr):
         from pytools.log import IntervalTimer, EventCounter
 
-        self.gather_counter = EventCounter("n_gather", 
+        self.gather_counter = EventCounter("n_gather",
                 "Number of flux gather invocations")
-        self.lift_counter = EventCounter("n_lift", 
+        self.lift_counter = EventCounter("n_lift",
                 "Number of flux lift invocations")
-        self.mass_counter = EventCounter("n_mass_op", 
+        self.mass_counter = EventCounter("n_mass_op",
                 "Number of mass operator applications")
         self.diff_counter = EventCounter("n_diff",
                 "Number of differentiation operator applications")
@@ -270,10 +274,10 @@ class Discretization(TimestepCalculator):
         self.vector_math_flop_counter = EventCounter("n_flops_vector_math",
                 "Number of floating point operations in vector math")
 
-        self.interpolant_counter = EventCounter("n_interp", 
+        self.interpolant_counter = EventCounter("n_interp",
                 "Number of interpolant evaluations")
 
-        self.interpolant_timer = IntervalTimer("t_interp", 
+        self.interpolant_timer = IntervalTimer("t_interp",
                 "Time spent evaluating interpolants")
 
         for op in self.create_op_timers():
@@ -331,11 +335,12 @@ class Discretization(TimestepCalculator):
 
         eg = StraightElementGroup()
         eg.members = self.mesh.elements
-        eg.member_nrs = numpy.fromiter((el.id for el in eg.members), dtype=numpy.uint32)
+        eg.member_nrs = numpy.fromiter((el.id for el in eg.members),
+                dtype=numpy.uint32)
         eg.local_discretization = ldis = local_discretization
         eg.ranges = UniformElementRanges(
-                0, 
-                len(ldis.unit_nodes()), 
+                0,
+                len(ldis.unit_nodes()),
                 len(self.mesh.elements))
 
         nodes_per_el = ldis.node_count()
@@ -350,10 +355,10 @@ class Discretization(TimestepCalculator):
         # "element number" dimension: this would break once
         # p-adaptivity is implemented
         self.nodes = numpy.empty(
-                (len(self.mesh.elements)*nodes_per_el, self.dimensions),
+                (len(self.mesh.elements) * nodes_per_el, self.dimensions),
                 dtype=float, order="C")
 
-        unit_nodes = numpy.empty( (nodes_per_el, self.dimensions),
+        unit_nodes = numpy.empty((nodes_per_el, self.dimensions),
                 dtype=float, order="C")
 
         for i_node, node in enumerate(ldis.unit_nodes()):
@@ -364,7 +369,7 @@ class Discretization(TimestepCalculator):
         for el in self.mesh.elements:
             map_element_nodes(
                     self.nodes,
-                    el.id*nodes_per_el*self.dimensions,
+                    el.id * nodes_per_el * self.dimensions,
                     el.map,
                     unit_nodes,
                     self.dimensions)
@@ -385,13 +390,13 @@ class Discretization(TimestepCalculator):
             smats = eg.stiffness_t_matrices = \
                     [numpy.dot(d.T, mmat.T) for d in dmats]
             eg.minv_st = \
-                    [numpy.dot(numpy.dot(immat,d.T), mmat) for d in dmats]
+                    [numpy.dot(numpy.dot(immat, d.T), mmat) for d in dmats]
 
             eg.jacobians = numpy.array([
-                abs(el.map.jacobian()) 
+                abs(el.map.jacobian())
                 for el in eg.members])
             eg.inverse_jacobians = numpy.array([
-                abs(el.inverse_map.jacobian()) 
+                abs(el.inverse_map.jacobian())
                 for el in eg.members])
 
             eg.diff_coefficients = numpy.array([
@@ -399,24 +404,18 @@ class Discretization(TimestepCalculator):
                         [
                             el.inverse_map
                             .matrix[loc_coord, glob_coord]
-                            for el in eg.members
-                            ]
-                        for loc_coord in range(ldis.dimensions)
-                        ]
-                    for glob_coord in range(ldis.dimensions)
-                    ])
+                            for el in eg.members]
+                        for loc_coord in range(ldis.dimensions)]
+                    for glob_coord in range(ldis.dimensions)])
 
             eg.stiffness_coefficients = numpy.array([
                     [
                         [
-                            abs(el.map.jacobian())*el.inverse_map
+                            abs(el.map.jacobian()) * el.inverse_map
                             .matrix[loc_coord, glob_coord]
-                            for el in eg.members
-                            ]
-                        for loc_coord in range(ldis.dimensions)
-                        ]
-                    for glob_coord in range(ldis.dimensions)
-                    ])
+                            for el in eg.members]
+                        for loc_coord in range(ldis.dimensions)]
+                    for glob_coord in range(ldis.dimensions)])
 
     def _set_flux_face_data(self, f, ldis, (el, fi)):
         f.face_jacobian = el.face_jacobians[fi]
@@ -431,7 +430,7 @@ class Discretization(TimestepCalculator):
         # h on both sides of an interface must be the same, otherwise
         # the penalty term will behave very oddly.
         # This unification happens below.
-        f.h = abs(el.map.jacobian()/f.face_jacobian)
+        f.h = abs(el.map.jacobian() / f.face_jacobian)
 
     def _build_interior_face_groups(self):
         from hedge.element import FaceVertexMismatch
@@ -467,28 +466,37 @@ class Discretization(TimestepCalculator):
                         ldis_l.get_face_index_shuffle_to_match(
                         vertices_l, vertices_n)
 
-                if debug_node_perm and ldis_l.has_facial_nodes and ldis_n.has_facial_nodes:
+                if (debug_node_perm
+                        and ldis_l.has_facial_nodes
+                        and ldis_n.has_facial_nodes):
                     findices_shuffled_n = findices_shuffle_op_n(findices_n)
 
                     for i, j in zip(findices_l, findices_shuffled_n):
-                        dist = self.nodes[eslice_l.start+i]-self.nodes[eslice_n.start+j]
+                        dist = self.nodes[eslice_l.start + i] \
+                                - self.nodes[eslice_n.start + j]
                         assert la.norm(dist) < 1e-14
 
             except FaceVertexMismatch:
-                # this happens if vertices_l is not a permutation of vertices_n.
-                # periodicity is the only reason why that would be so.
+                # this happens if vertices_l is not a permutation
+                # of vertices_n. periodicity is the only reason why
+                # that would be so.
 
-                vertices_n, axis = self.mesh.periodic_opposite_faces[vertices_n]
+                vertices_n, axis = self.mesh.periodic_opposite_faces[
+                        vertices_n]
 
                 findices_shuffle_op_n = \
-                        ldis_l.get_face_index_shuffle_to_match(vertices_l, vertices_n)
+                        ldis_l.get_face_index_shuffle_to_match(
+                                vertices_l, vertices_n)
 
-                if debug_node_perm and ldis_l.has_facial_nodes and ldis_n.has_facial_nodes:
+                if (debug_node_perm
+                        and ldis_l.has_facial_nodes
+                        and ldis_n.has_facial_nodes):
                     findices_shuffled_n = findices_shuffle_op_n(findices_n)
 
                     for i, j in zip(findices_l, findices_shuffled_n):
-                        dist = self.nodes[eslice_l.start+i]-self.nodes[eslice_n.start+j]
-                        dist[axis] = 0 
+                        dist = self.nodes[eslice_l.start + i]\
+                                - self.nodes[eslice_n.start + j]
+                        dist[axis] = 0
                         assert la.norm(dist) < 1e-14
 
             # create and fill the face pair
@@ -498,15 +506,15 @@ class Discretization(TimestepCalculator):
             fp.ext_side.el_base_index = eslice_n.start
 
             fp.int_side.face_index_list_number = fg.register_face_index_list(
-                    identifier=fi_l, 
+                    identifier=fi_l,
                     generator=lambda: findices_l)
             fp.ext_side.face_index_list_number = fg.register_face_index_list(
                     identifier=(fi_n, findices_shuffle_op_n),
-                    generator=lambda : findices_shuffle_op_n(findices_n))
+                    generator=lambda: findices_shuffle_op_n(findices_n))
             from pytools import get_write_to_map_from_permutation
             fp.ext_native_write_map = fg.register_face_index_list(
                     identifier=(fi_n, findices_shuffle_op_n, "wtm"),
-                    generator=lambda : 
+                    generator=lambda:
                     get_write_to_map_from_permutation(
                     findices_shuffle_op_n(findices_n), findices_n))
 
@@ -532,7 +540,7 @@ class Discretization(TimestepCalculator):
             self.face_groups = [fg]
         else:
             self.face_groups = []
-        
+
     def is_boundary_tag_nonempty(self, tag):
         return bool(self.mesh.tag_to_boundary.get(tag, []))
 
@@ -541,8 +549,8 @@ class Discretization(TimestepCalculator):
         """Get a Boundary instance for a given `tag'.
 
         If there is no boundary tagged with `tag', an empty Boundary instance
-        is returned. Asking for a nonexistant boundary is not an error. 
-        (Otherwise get_boundary would unnecessarily become non-local when run 
+        is returned. Asking for a nonexistant boundary is not an error.
+        (Otherwise get_boundary would unnecessarily become non-local when run
         in parallel.)
         """
         from hedge.discretization.data  import StraightFaceGroup
@@ -562,9 +570,9 @@ class Discretization(TimestepCalculator):
             face_indices = ldis.face_indices()[face_nr]
 
             f_start = len(nodes)
-            nodes += [self.nodes[el_slice.start+i] for i in face_indices]
+            nodes += [self.nodes[el_slice.start + i] for i in face_indices]
             face_ranges[ef] = (f_start, len(nodes))
-            vol_indices.extend(el_slice.start+i for i in face_indices)
+            vol_indices.extend(el_slice.start + i for i in face_indices)
 
             # create the face pair
             fp = face_group.FacePair()
@@ -620,8 +628,9 @@ class Discretization(TimestepCalculator):
         orig_kind = self.get_kind(field)
 
         if orig_kind != "numpy":
-            raise ValueError, "unable to perform kind conversion: %s -> %s" % (
-                    orig_kind, kind)
+            raise ValueError(
+                    "unable to perform kind conversion: %s -> %s"
+                    % (orig_kind, kind))
 
         if dtype is not None:
             from hedge.tools import cast_field
@@ -633,8 +642,9 @@ class Discretization(TimestepCalculator):
         orig_kind = self.get_kind(field)
 
         if orig_kind != "numpy":
-            raise ValueError, "unable to perform kind conversion: %s -> %s" % (
-                    orig_kind, kind)
+            raise ValueError(
+                    "unable to perform kind conversion: %s -> %s"
+                    % (orig_kind, kind))
 
         if dtype is not None:
             from hedge.tools import cast_field
@@ -662,19 +672,19 @@ class Discretization(TimestepCalculator):
 
     def volume_empty(self, shape=(), dtype=None, kind="numpy"):
         if kind != "numpy":
-            raise ValueError, "invalid vector kind requested"
+            raise ValueError("invalid vector kind requested")
 
         if dtype is None:
             dtype = self.default_scalar_type
-        return numpy.empty(shape+(len(self.nodes),), dtype)
+        return numpy.empty(shape + (len(self.nodes),), dtype)
 
     def volume_zeros(self, shape=(), dtype=None, kind="numpy"):
         if kind != "numpy":
-            raise ValueError, "invalid vector kind requested"
+            raise ValueError("invalid vector kind requested")
 
         if dtype is None:
             dtype = self.default_scalar_type
-        return numpy.zeros(shape+(len(self.nodes),), dtype)
+        return numpy.zeros(shape + (len(self.nodes),), dtype)
 
     def interpolate_volume_function(self, f, dtype=None, kind=None):
         if kind is None:
@@ -687,7 +697,7 @@ class Discretization(TimestepCalculator):
             # no, just one
             shape = ()
 
-        slice_pfx = (slice(None),)*len(shape)
+        slice_pfx = (slice(None),) * len(shape)
         out = self.volume_empty(shape, dtype, kind="numpy")
         for eg in self.element_groups:
             for el, el_slice in zip(eg.members, eg.ranges):
@@ -698,19 +708,19 @@ class Discretization(TimestepCalculator):
 
     def boundary_empty(self, tag, shape=(), dtype=None, kind="numpy"):
         if kind not in ["numpy", "numpy-mpi-recv"]:
-            raise ValueError, "invalid vector kind requested"
+            raise ValueError("invalid vector kind requested")
 
         if dtype is None:
             dtype = self.default_scalar_type
-        return numpy.empty(shape+(len(self.get_boundary(tag).nodes),), dtype)
+        return numpy.empty(shape + (len(self.get_boundary(tag).nodes),), dtype)
 
     def boundary_zeros(self, tag, shape=(), dtype=None, kind="numpy"):
         if kind not in ["numpy", "numpy-mpi-recv"]:
-            raise ValueError, "invalid vector kind requested"
+            raise ValueError("invalid vector kind requested")
         if dtype is None:
             dtype = self.default_scalar_type
 
-        return numpy.zeros(shape+(len(self.get_boundary(tag).nodes),), dtype)
+        return numpy.zeros(shape + (len(self.get_boundary(tag).nodes),), dtype)
 
     def interpolate_boundary_function(self, f, tag, dtype=None, kind=None):
         if kind is None:
@@ -724,7 +734,7 @@ class Discretization(TimestepCalculator):
             shape = ()
 
         out = self.boundary_zeros(tag, shape, dtype, kind="numpy")
-        slice_pfx = (slice(None),)*len(shape)
+        slice_pfx = (slice(None),) * len(shape)
         for point_nr, x in enumerate(self.get_boundary(tag).nodes):
             out[slice_pfx + (point_nr,)] = f(x, None) # FIXME
 
@@ -735,8 +745,8 @@ class Discretization(TimestepCalculator):
         if kind is None:
             kind = self.compute_kind
 
-        result = self.boundary_zeros(shape=(self.dimensions,), tag=tag, dtype=dtype,
-                kind="numpy")
+        result = self.boundary_zeros(shape=(self.dimensions,),
+                tag=tag, dtype=dtype, kind="numpy")
         for fg in self.get_boundary(tag).face_groups:
             for face_pair in fg.face_pairs:
                 oeb = face_pair.ext_side.el_base_index
@@ -751,7 +761,8 @@ class Discretization(TimestepCalculator):
             kind = self.compute_kind
 
         if kind != "numpy":
-            raise ValueError("invalid target vector kind in volumize_boundary_field")
+            raise ValueError("invalid target vector kind in "
+                    "volumize_boundary_field")
 
         bdry = self.get_boundary(tag)
 
@@ -768,7 +779,8 @@ class Discretization(TimestepCalculator):
             kind = self.compute_kind
 
         if kind != "numpy":
-            raise ValueError("invalid target vector kind in boundarize_volume_field")
+            raise ValueError("invalid target vector kind in "
+                    "boundarize_volume_field")
 
         bdry = self.get_boundary(tag)
 
@@ -786,7 +798,8 @@ class Discretization(TimestepCalculator):
 
             return result
         else:
-            return field[tuple(slice(None) for i in range(len(ls))) + (bdry.vol_indices,)]
+            return field[tuple(slice(None) for i in range(
+                len(ls))) + (bdry.vol_indices,)]
 
     def boundarize_volume_field_async(self, field, tag, kind=None):
         from hedge.tools import ImmediateFuture
@@ -824,7 +837,7 @@ class Discretization(TimestepCalculator):
                     self._mass_ones(), volume_vector)
         else:
             result = numpy.zeros(shape=ls, dtype=float)
-            
+
             from pytools import indices_in_shape
             for i in indices_in_shape(ls):
                 vvi = volume_vector[i]
@@ -849,11 +862,11 @@ class Discretization(TimestepCalculator):
             from hedge.tools import log_shape
 
             if p != 2:
-                volume_vector = numpy.abs(volume_vector)**(p/2)
+                volume_vector = numpy.abs(volume_vector) ** (p / 2)
 
             return self.inner_product(
                     volume_vector,
-                    volume_vector)**(1/p)
+                    volume_vector) ** (1 / p)
 
     def inner_product(self, a, b):
         mass_op = self._compiled_mass_operator()
@@ -869,12 +882,12 @@ class Discretization(TimestepCalculator):
             return float(sum(
                     self.nodewise_dot_product(
                         sub_a, mass_op(sub_b))
-                    for sub_a, sub_b in zip(a,b)))
+                    for sub_a, sub_b in zip(a, b)))
 
-    def nodewise_max(self,a):
+    def nodewise_max(self, a):
         return numpy.max(a)
 
-    def nodewise_min(self,a):
+    def nodewise_min(self, a):
         return numpy.min(a)
 
     # element data retrieval --------------------------------------------------
@@ -893,13 +906,14 @@ class Discretization(TimestepCalculator):
         for i, (start, stop) in enumerate(self.element_group):
             if start <= idx < stop:
                 return i
-        raise ValueError, "not a valid dof index"
-        
+        raise ValueError("not a valid dof index")
+
     # misc stuff --------------------------------------------------------------
     @memoize_method
     def dt_non_geometric_factor(self):
-        distinct_ldis = set(eg.local_discretization for eg in self.element_groups)
-        return min(ldis.dt_non_geometric_factor() 
+        distinct_ldis = set(eg.local_discretization
+                for eg in self.element_groups)
+        return min(ldis.dt_non_geometric_factor()
                 for ldis in distinct_ldis)
 
     @memoize_method
@@ -915,7 +929,7 @@ class Discretization(TimestepCalculator):
                 if el.contains_point(point):
                     ldis = eg.local_discretization
                     basis_values = numpy.array([
-                            phi(el.inverse_map(point)) 
+                            phi(el.inverse_map(point))
                             for phi in ldis.basis_functions()])
                     vdm_t = ldis.vandermonde().T
                     return _PointEvaluator(
@@ -923,7 +937,7 @@ class Discretization(TimestepCalculator):
                             el_range=rng,
                             interp_coeff=la.solve(vdm_t, basis_values))
 
-        raise RuntimeError, "point %s not found" % point
+        raise RuntimeError("point %s not found" % point)
 
     # op template execution ---------------------------------------------------
     def compile(self, optemplate, post_bind_mapper=lambda x: x):
@@ -940,13 +954,13 @@ class Discretization(TimestepCalculator):
         self.exec_functions[name] = func
 
     # element-local stuff -----------------------------------------------------
-    def apply_element_local_matrix(self, eg_to_matrix, field, eg_to_scaling=None,
-            prepared_data_store=None):
+    def apply_element_local_matrix(self, eg_to_matrix, field,
+            eg_to_scaling=None, prepared_data_store=None):
         """
         :param eg_to_matrix: a function that, given an element group, returns
             the (numpy) matrix to be applied to elements in that group.
         :param eg_to_scaling: a function that, given an element group, returns
-            the (numpy) array of scaling factors to be applied to elements 
+            the (numpy) array of scaling factors to be applied to elements
             in that group.
         :param prepared_data_store: if not None, this is a mapping in which
           prepared versions of the results of eg_to_matrix and eg_to_scaling
@@ -961,7 +975,7 @@ class Discretization(TimestepCalculator):
 
         def f(subfield):
             subresult = self.volume_zeros(dtype=subfield.dtype)
-            
+
             for eg in self.element_groups:
                 if prepared_data_store is not None:
                     try:
@@ -982,10 +996,10 @@ class Discretization(TimestepCalculator):
                         scaling = eg_to_scaling(eg)
 
                 if eg_to_scaling is None:
-                    perform_elwise_operator(eg.ranges, eg.ranges, 
+                    perform_elwise_operator(eg.ranges, eg.ranges,
                             matrix, subfield, subresult)
                 else:
-                    perform_elwise_operator(eg.ranges, eg.ranges, 
+                    perform_elwise_operator(eg.ranges, eg.ranges,
                             scaling, matrix, subfield, subresult)
 
             return subresult
@@ -1023,14 +1037,16 @@ class SymmetryMap(object):
                     pt = discr.nodes[i_pt]
                     mapped_pt = sym_map(pt)
                     for m_i_pt in range(mapped_slice.start, mapped_slice.stop):
-                        if la.norm(discr.nodes[m_i_pt] - mapped_pt) < threshold:
+                        if (la.norm(discr.nodes[m_i_pt] - mapped_pt)
+                                < threshold):
                             self.map[i_pt] = m_i_pt
                             break
 
                     if i_pt not in self.map:
-                        for m_i_pt in range(mapped_slice.start, mapped_slice.stop):
+                        for m_i_pt in range(
+                                mapped_slice.start, mapped_slice.stop):
                             print la.norm_2(discr.nodes[m_i_pt] - mapped_pt)
-                        raise RuntimeError, "no symmetry match found"
+                        raise RuntimeError("no symmetry match found")
 
     def __call__(self, vec):
         result = self.discretization.volume_zeros()
@@ -1102,33 +1118,31 @@ class Projector:
 
             from hedge.tools import permutation_matrix
 
-            # assemble the from->to mode permutation matrix, guided by 
+            # assemble the from->to mode permutation matrix, guided by
             # mode identifiers
             if to_count > from_count:
                 to_node_ids_to_idx = dict(
-                        (nid, i) for i, nid in 
+                        (nid, i) for i, nid in
                         enumerate(to_ldis.generate_mode_identifiers()))
 
                 to_indices = [
                     to_node_ids_to_idx[from_nid]
-                    for from_nid in from_ldis.generate_mode_identifiers()
-                    ]
+                    for from_nid in from_ldis.generate_mode_identifiers()]
 
                 pmat = permutation_matrix(
-                    to_indices=to_indices, 
+                    to_indices=to_indices,
                     h=to_count, w=from_count)
             else:
                 from_node_ids_to_idx = dict(
-                        (nid, i) for i, nid in 
+                        (nid, i) for i, nid in
                         enumerate(from_ldis.generate_mode_identifiers()))
 
                 from_indices = [
                     from_node_ids_to_idx[to_nid]
-                    for to_nid in to_ldis.generate_mode_identifiers()
-                    ]
+                    for to_nid in to_ldis.generate_mode_identifiers()]
 
                 pmat = permutation_matrix(
-                    from_indices=from_indices, 
+                    from_indices=from_indices,
                     h=to_count, w=from_count)
 
             # build interpolation matrix
@@ -1152,11 +1166,11 @@ class Projector:
         from pytools import indices_in_shape
         for i in indices_in_shape(ls):
             for from_eg, to_eg, imat in zip(
-                    self.from_discr.element_groups, 
-                    self.to_discr.element_groups, 
+                    self.from_discr.element_groups,
+                    self.to_discr.element_groups,
                     self.interp_matrices):
                 perform_elwise_operator(
-                        from_eg.ranges, to_eg.ranges, 
+                        from_eg.ranges, to_eg.ranges,
                         imat, from_vec[i], result[i])
 
         return result
@@ -1173,21 +1187,23 @@ class ExponentialFilterResponseFunction:
     def __init__(self, min_amplification=0.1, order=6):
         """Construct the filter function.
 
-        The amplification factor of the lowest-order (constant) mode is always 1.
+        The amplification factor of the lowest-order (constant) mode is
+        always 1.
 
-        :param min_amplification: The amplification factor applied to the highest mode.
-        :param order: The order of the filter. This controls how fast (or slowly) the
-          *min_amplification* is reached.
+        :param min_amplification: The amplification factor applied to
+            the highest mode.
+        :param order: The order of the filter. This controls how fast
+          (or slowly) the *min_amplification* is reached.
         """
         from math import log
-        self.alpha = -log(min_amplification)
+        self.alpha = - log(min_amplification)
         self.order = order
 
     def __call__(self, mode_idx, ldis):
-        eta = sum(mode_idx)/ldis.order
+        eta = sum(mode_idx) / ldis.order
 
         from math import exp
-        return exp(-self.alpha * eta**self.order)
+        return exp(- self.alpha * eta ** self.order)
 
 
 
@@ -1198,10 +1214,11 @@ class Filter:
 
         :param discr: The :class:`Discretization` for which the filter is to be
           constructed.
-        :param mode_response_func: A function mapping 
+        :param mode_response_func: A function mapping
           ``(mode_tuple, local_discretization)`` to a float indicating the
           factor by which this mode is to be multiplied after filtering.
-          (For example an instance of :class:`ExponentialFilterResponseFunction`.
+          (For example an instance of 
+          :class:`ExponentialFilterResponseFunction`.
         """
         self.discr = discr
         self.mode_response_func = mode_response_func
@@ -1209,7 +1226,7 @@ class Filter:
 
     def __call__(self, vec):
         return self.discr.apply_element_local_matrix(
-                self.get_filter_matrix, vec, 
+                self.get_filter_matrix, vec,
                 prepared_data_store=self.prepared_data_store)
 
     def get_filter_matrix(self, eg):
@@ -1218,7 +1235,7 @@ class Filter:
         node_count = ldis.node_count()
 
         filter_coeffs = [self.mode_response_func(mid, ldis)
-            for mid in ldis.generate_mode_identifiers()] 
+            for mid in ldis.generate_mode_identifiers()]
 
         # build filter matrix
         vdm = ldis.vandermonde()
@@ -1230,8 +1247,3 @@ class Filter:
             order="C")
 
         return mat
-
-
-
-
-

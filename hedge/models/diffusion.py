@@ -49,7 +49,8 @@ class StrongHeatOperator(TimeDependentOperator):
 
     # fluxes ------------------------------------------------------------------
     def get_weak_flux_set(self, ldg):
-        class FluxSet: pass
+        class FluxSet:
+            pass
         fs = FluxSet()
 
         from hedge.flux import FluxVectorPlaceholder, make_normal
@@ -235,7 +236,3 @@ class StrongHeatOperator(TimeDependentOperator):
             neu_bc_w = join_fields(neu_bc_u, neu_bc_v)
 
             return self.div_c(w=w, dir_bc_w=dir_bc_w, neu_bc_w=neu_bc_w)
-
-
-
-

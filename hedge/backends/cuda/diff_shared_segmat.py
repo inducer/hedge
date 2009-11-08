@@ -46,10 +46,10 @@ class ExecutionPlan(hedge.backends.cuda.plan.SegmentedMatrixLocalOpExecutionPlan
     @staticmethod
     def feature_columns():
         return ("type text",
-                "parallel integer", 
-                "inline integer", 
-                "serial integer", 
-                "segment_size integer", 
+                "parallel integer",
+                "inline integer",
+                "serial integer",
+                "segment_size integer",
                 "max_unroll integer",
                 "mb_elements integer",
                 "lmem integer",
@@ -88,7 +88,7 @@ class Kernel(DiffKernelBase):
         from hedge.backends.cuda.tools import int_ceiling
 
         given = self.plan.given
-        self.grid = (plan.segments_per_microblock(), 
+        self.grid = (plan.segments_per_microblock(),
                     int_ceiling(given.total_dofs()/plan.dofs_per_macroblock()))
 
     def benchmark(self):
@@ -117,7 +117,7 @@ class Kernel(DiffKernelBase):
 
         field.bind_to_texref_ext(field_texref, allow_double_hack=True)
         xyz_diff = [vol_empty() for axis in range(discr.dimensions)]
-        xyz_diff_gpudata = [subarray.gpudata for subarray in xyz_diff] 
+        xyz_diff_gpudata = [subarray.gpudata for subarray in xyz_diff]
 
         if "cuda_fastbench" in self.discr.debug:
             count = 1
@@ -157,13 +157,13 @@ class Kernel(DiffKernelBase):
         field.bind_to_texref_ext(field_texref, allow_double_hack=True)
 
         xyz_diff = [discr.volume_empty() for axis in range(d)]
-        xyz_diff_gpudata = [subarray.gpudata for subarray in xyz_diff] 
+        xyz_diff_gpudata = [subarray.gpudata for subarray in xyz_diff]
 
         gpu_diffmats = self.gpu_diffmats(op_class, elgroup)
 
         if discr.instrumented:
             discr.diff_op_timer.add_timer_callable(func.prepared_timed_call(
-                    self.grid, gpu_diffmats.device_memory, 
+                    self.grid, gpu_diffmats.device_memory,
                     *xyz_diff_gpudata))
 
             from pytools import product
@@ -180,7 +180,7 @@ class Kernel(DiffKernelBase):
                         + len(discr.nodes)
                         ))
         else:
-            func.prepared_call(self.grid, gpu_diffmats.device_memory, 
+            func.prepared_call(self.grid, gpu_diffmats.device_memory,
                     *xyz_diff_gpudata)
 
         if False:
@@ -202,7 +202,7 @@ class Kernel(DiffKernelBase):
 
         from codepy.cgen import dtype_to_ctype
         from codepy.cgen.cuda import CudaShared, CudaGlobal
-                
+
         discr = self.discr
         d = discr.dimensions
         dims = range(d)
@@ -215,9 +215,9 @@ class Kernel(DiffKernelBase):
 
         float_type = given.float_type
 
-        f_decl = CudaGlobal(FunctionDeclaration(Value("void", "apply_diff_mat"), 
+        f_decl = CudaGlobal(FunctionDeclaration(Value("void", "apply_diff_mat"),
             [Pointer(POD(numpy.uint8, "gmem_diff_rst_mat")),
-                #Pointer(POD(float_type, "debugbuf")), 
+                #Pointer(POD(float_type, "debugbuf")),
                 ] + [Pointer(POD(float_type, "dxyz%d" % i)) for i in dims]
             ))
 
@@ -226,10 +226,10 @@ class Kernel(DiffKernelBase):
                 Include("pycuda-helpers.hpp"),
                 Line(),
                 Value("texture<fp_tex_%s, 1, cudaReadModeElementType>"
-                    % dtype_to_ctype(float_type), 
+                    % dtype_to_ctype(float_type),
                     "rst_to_xyz_tex"),
                 Value("texture<fp_tex_%s, 1, cudaReadModeElementType>"
-                    % dtype_to_ctype(float_type), 
+                    % dtype_to_ctype(float_type),
                     "field_tex"),
                 Line(),
                 Define("DIMENSIONS", discr.dimensions),
@@ -255,9 +255,9 @@ class Kernel(DiffKernelBase):
                 Line(),
                 Define("MB_DOF_BASE", "(MB_SEGMENT*DOFS_PER_SEGMENT)"),
                 Define("MB_DOF", "(MB_DOF_BASE+SEGMENT_DOF)"),
-                Define("GLOBAL_MB_NR_BASE", 
+                Define("GLOBAL_MB_NR_BASE",
                     "(MACROBLOCK_NR*PAR_MB_COUNT*INLINE_MB_COUNT*SEQ_MB_COUNT)"),
-                Define("GLOBAL_MB_NR", 
+                Define("GLOBAL_MB_NR",
                     "(GLOBAL_MB_NR_BASE"
                     "+ (seq_mb_number*PAR_MB_COUNT + PAR_MB_NR)*INLINE_MB_COUNT)"),
                 Define("GLOBAL_MB_DOF_BASE", "(GLOBAL_MB_NR*ALIGNED_DOFS_PER_MB)"),
@@ -267,14 +267,14 @@ class Kernel(DiffKernelBase):
                      % given.float_size()),
                 Define("DIFFMAT_COLUMNS", diffmat_data.matrix_columns),
                 Line(),
-                CudaShared(ArrayOf(POD(float_type, "smem_diff_rst_mat"), 
+                CudaShared(ArrayOf(POD(float_type, "smem_diff_rst_mat"),
                     "DIFFMAT_COLUMNS*DOFS_PER_SEGMENT")),
                 Line(),
                 ])
 
         S = Statement
         f_body = Block()
-            
+
         f_body.extend_log_block("calculate responsibility data", [
             Initializer(POD(numpy.uint16, "mb_el"),
                 "MB_DOF/DOFS_PER_EL"),
@@ -313,13 +313,13 @@ class Kernel(DiffKernelBase):
                         for inl in range(par.inline)]
                     +[Line()]
                     +unroll(lambda j: [
-                        Assign("field_value%d" % inl, 
+                        Assign("field_value%d" % inl,
                             "fp_tex1Dfetch(field_tex, GLOBAL_MB_DOF_BASE + %d*ALIGNED_DOFS_PER_MB "
                             "+ mb_el*DOFS_PER_EL + %s)" % (inl, j)
                             )
                         for inl in range(par.inline)]
                         +[Line()]
-                        +[S("d%drst%d += %s * field_value%d" 
+                        +[S("d%drst%d += %s * field_value%d"
                             % (inl, axis, get_mat_entry("SEGMENT_DOF", j, axis), inl))
                         for axis in dims
                         for inl in range(par.inline)]
@@ -331,14 +331,14 @@ class Kernel(DiffKernelBase):
             for inl in range(par.inline):
                 for glob_axis in dims:
                     store_code.append(Assign(
-                        "dxyz%d[GLOBAL_MB_DOF_BASE + %d*ALIGNED_DOFS_PER_MB + MB_DOF]" 
+                        "dxyz%d[GLOBAL_MB_DOF_BASE + %d*ALIGNED_DOFS_PER_MB + MB_DOF]"
                         % (glob_axis, inl),
                         " + ".join(
                             "fp_tex1Dfetch(rst_to_xyz_tex, %(loc_axis)d + "
                             "DIMENSIONS*(%(glob_axis)d + DIMENSIONS*("
-                            "(GLOBAL_MB_NR+%(inl)d)*ELS_PER_MB + mb_el)))" 
+                            "(GLOBAL_MB_NR+%(inl)d)*ELS_PER_MB + mb_el)))"
                             "* d%(inl)drst%(loc_axis)d" % {
-                                "loc_axis": loc_axis, 
+                                "loc_axis": loc_axis,
                                 "glob_axis": glob_axis,
                                 "inl": inl
                             }
@@ -364,8 +364,8 @@ class Kernel(DiffKernelBase):
             from hedge.tools import open_unique_debug_file
             open_unique_debug_file("diff", ".cu").write(str(cmod))
 
-        mod = SourceModule(cmod, 
-                keep="cuda_keep_kernels" in discr.debug, 
+        mod = SourceModule(cmod,
+                keep="cuda_keep_kernels" in discr.debug,
                 #options=["--maxrregcount=10"]
                 )
 
@@ -388,8 +388,8 @@ class Kernel(DiffKernelBase):
 
         if "cuda_diff" in discr.debug:
             print "diff: lmem=%d smem=%d regs=%d" % (
-                    func.local_size_bytes, 
-                    func.shared_size_bytes, 
+                    func.local_size_bytes,
+                    func.shared_size_bytes,
                     func.num_regs)
 
         return func, field_texref
@@ -420,11 +420,11 @@ class Kernel(DiffKernelBase):
         from pytools import single_valued
         for segment_start in range(0, given.microblock.elements*given.dofs_per_el(), self.plan.segment_size):
             matrices = [
-                m[segment_start:segment_start+self.plan.segment_size] 
+                m[segment_start:segment_start+self.plan.segment_size]
                 for m in vstacked_matrices]
 
             matrices.append(
-                numpy.zeros((single_valued(m.shape[0] for m in matrices), 
+                numpy.zeros((single_valued(m.shape[0] for m in matrices),
                     additional_columns))
                 )
 
@@ -433,11 +433,12 @@ class Kernel(DiffKernelBase):
                     dtype=given.float_type,
                     order="C")
             segments.append(buffer(diffmats))
-        
+
         from hedge.backends.cuda.tools import pad_and_join
 
         from pytools import Record
-        class GPUDifferentiationMatrices(Record): pass
+        class GPUDifferentiationMatrices(Record):
+            pass
 
         return GPUDifferentiationMatrices(
                 device_memory=cuda.to_device(

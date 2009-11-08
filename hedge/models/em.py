@@ -60,11 +60,11 @@ class MaxwellOperator(TimeDependentOperator):
         from hedge.tools import SubsettableCrossProduct
         self.space_cross_e = SubsettableCrossProduct(
                 op1_subset=space_subset,
-                op2_subset=e_subset, 
+                op2_subset=e_subset,
                 result_subset=h_subset)
         self.space_cross_h = SubsettableCrossProduct(
                 op1_subset=space_subset,
-                op2_subset=h_subset, 
+                op2_subset=h_subset,
                 result_subset=e_subset)
 
         from math import sqrt
@@ -198,7 +198,7 @@ class MaxwellOperator(TimeDependentOperator):
                     absorb_normal, absorb_e))
                 - self.Z*self.space_cross_h(absorb_normal, absorb_h),
                 self.space_cross_e(absorb_normal, self.space_cross_h(
-                    absorb_normal, absorb_h)) 
+                    absorb_normal, absorb_h))
                 + self.Y*self.space_cross_e(absorb_normal, absorb_e)
                 )
 
@@ -266,9 +266,11 @@ class MaxwellOperator(TimeDependentOperator):
 
     def assemble_eh(self, e=None, h=None, discr=None):
         if discr is None:
-            def zero(): return 0
+            def zero():
+                return 0
         else:
-            def zero(): return discr.volume_zeros()
+            def zero():
+                return discr.volume_zeros()
 
         from hedge.tools import count_subset
         e_components = count_subset(self.get_eh_subset()[0:3])

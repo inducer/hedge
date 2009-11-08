@@ -121,6 +121,7 @@ def main():
             packages=[
                     "hedge",
                     "hedge.models",
+                    "hedge.models.gas_dynamics",
                     "hedge.backends",
                     "hedge.backends.jit",
                     "hedge.backends.mpi",
@@ -129,6 +130,7 @@ def main():
                     "hedge.timestep.multirate_ab",
                     "hedge.mesh",
                     "hedge.discretization",
+                    "hedge.tools",
                     ],
 
             ext_package="hedge",

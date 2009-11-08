@@ -42,20 +42,20 @@ class ExecutionPlan(hedge.backends.cuda.plan.SMemFieldLocalOpExecutionPlan):
     @memoize_method
     def shared_mem_use(self):
         given = self.given
-        
+
         return (64 # parameters, block header, small extra stuff
                + given.float_size() * (
-                   self.parallelism.parallel 
+                   self.parallelism.parallel
                    * self.parallelism.inline
                    * self.given.microblock.aligned_floats))
 
     @staticmethod
     def feature_columns():
         return ("type text",
-                "parallel integer", 
-                "inline integer", 
-                "serial integer", 
-                "segment_size integer", 
+                "parallel integer",
+                "inline integer",
+                "serial integer",
+                "segment_size integer",
                 "max_unroll integer",
                 "mb_elements integer",
                 "lmem integer",
@@ -123,7 +123,7 @@ class Kernel(DiffKernelBase):
         field.fill(0)
 
         xyz_diff = [vol_empty() for axis in range(discr.dimensions)]
-        xyz_diff_gpudata = [subarray.gpudata for subarray in xyz_diff] 
+        xyz_diff_gpudata = [subarray.gpudata for subarray in xyz_diff]
 
         if "cuda_fastbench" in discr.debug:
             count = 1
@@ -135,7 +135,7 @@ class Kernel(DiffKernelBase):
         cuda.Context.synchronize()
         for i in range(count):
             try:
-                func.prepared_call(self.grid, 
+                func.prepared_call(self.grid,
                         0, # debugbuf
                         field.gpudata,
                         *xyz_diff_gpudata)
@@ -168,16 +168,16 @@ class Kernel(DiffKernelBase):
             debugbuf = FakeGPUArray()
 
         xyz_diff = [discr.volume_empty() for axis in range(d)]
-        xyz_diff_gpudata = [subarray.gpudata for subarray in xyz_diff] 
+        xyz_diff_gpudata = [subarray.gpudata for subarray in xyz_diff]
 
         if discr.instrumented:
             discr.diff_op_timer.add_timer_callable(
-                    func.prepared_timed_call(self.grid, 
+                    func.prepared_timed_call(self.grid,
                         debugbuf.gpudata, field.gpudata, *xyz_diff_gpudata))
 
             block_gmem_floats = (
                     # matrix fetch
-                    given.microblock.aligned_floats 
+                    given.microblock.aligned_floats
                     * discr.dimensions
                     * given.dofs_per_el()
                     * self.plan.parallelism.serial
@@ -187,14 +187,14 @@ class Kernel(DiffKernelBase):
                     * self.plan.parallelism.total()
                     )
 
-            gmem_bytes = given.float_size() * ( 
-                    self.grid[0] * block_gmem_floats 
+            gmem_bytes = given.float_size() * (
+                    self.grid[0] * block_gmem_floats
                     # field store
                     + len(discr.nodes))
 
             discr.gmem_bytes_diff.add(gmem_bytes)
         else:
-            func.prepared_call(self.grid, 
+            func.prepared_call(self.grid,
                     debugbuf.gpudata, field.gpudata, *xyz_diff_gpudata)
 
         if use_debugbuf:
@@ -217,7 +217,7 @@ class Kernel(DiffKernelBase):
 
         from pycuda.tools import dtype_to_ctype
         from codepy.cgen.cuda import CudaShared, CudaGlobal
-                
+
         discr = self.discr
         d = discr.dimensions
         dims = range(d)
@@ -226,27 +226,27 @@ class Kernel(DiffKernelBase):
         elgroup, = discr.element_groups
         float_type = given.float_type
 
-        f_decl = CudaGlobal(FunctionDeclaration(Value("void", "apply_diff_mat_smem"), 
+        f_decl = CudaGlobal(FunctionDeclaration(Value("void", "apply_diff_mat_smem"),
             [Pointer(POD(float_type, "debugbuf")), Pointer(POD(float_type, "field")), ]
             + [Pointer(POD(float_type, "dxyz%d" % i)) for i in dims]
             ))
 
         par = self.plan.parallelism
-        
+
         cmod = Module([
                 Include("pycuda-helpers.hpp"),
                 Line(),
                 Value("texture<%s, 1, cudaReadModeElementType>"
-                    % dtype_to_ctype(float_type, with_fp_tex_hack=True), 
+                    % dtype_to_ctype(float_type, with_fp_tex_hack=True),
                     "rst_to_xyz_tex"),
                 ])
 
         if float_type == numpy.float64:
-            cmod.append(Value("texture<fp_tex_double, 1, cudaReadModeElementType>", 
+            cmod.append(Value("texture<fp_tex_double, 1, cudaReadModeElementType>",
                     "diff_rst_mat_tex"))
         elif float_type == numpy.float32:
             rst_channels = given.devdata.make_valid_tex_channel_count(d)
-            cmod.append(Value("texture<float%d, 1, cudaReadModeElementType>" 
+            cmod.append(Value("texture<float%d, 1, cudaReadModeElementType>"
                     % rst_channels, "diff_rst_mat_tex"))
         else:
             raise ValueError("unsupported float type: %s" % float_type)
@@ -272,9 +272,9 @@ class Kernel(DiffKernelBase):
                 Define("INLINE_MB_COUNT", par.inline),
                 Define("SEQ_MB_COUNT", par.serial),
                 Line(),
-                Define("GLOBAL_MB_NR_BASE", 
+                Define("GLOBAL_MB_NR_BASE",
                     "(MACROBLOCK_NR*PAR_MB_COUNT*INLINE_MB_COUNT*SEQ_MB_COUNT)"),
-                Define("GLOBAL_MB_NR", 
+                Define("GLOBAL_MB_NR",
                     "(GLOBAL_MB_NR_BASE"
                     "+ (seq_mb_number*PAR_MB_COUNT + PAR_MB_NR)*INLINE_MB_COUNT)"),
                 Define("GLOBAL_MB_DOF_BASE", "(GLOBAL_MB_NR*ALIGNED_DOFS_PER_MB)"),
@@ -283,7 +283,7 @@ class Kernel(DiffKernelBase):
                     ArrayOf(
                         ArrayOf(
                             ArrayOf(
-                                POD(float_type, "smem_field"), 
+                                POD(float_type, "smem_field"),
                                 "PAR_MB_COUNT"),
                             "INLINE_MB_COUNT"),
                         "ALIGNED_DOFS_PER_MB")),
@@ -296,7 +296,7 @@ class Kernel(DiffKernelBase):
                 "MB_DOF / DOFS_PER_EL"),
             Line(),
             ])
-            
+
         # ---------------------------------------------------------------------
         def get_scalar_diff_code():
             code = []
@@ -313,14 +313,14 @@ class Kernel(DiffKernelBase):
             for inl in range(par.inline):
                 for glob_axis in dims:
                     store_code.append(Assign(
-                        "dxyz%d[GLOBAL_MB_DOF_BASE + %d*ALIGNED_DOFS_PER_MB + MB_DOF]" 
+                        "dxyz%d[GLOBAL_MB_DOF_BASE + %d*ALIGNED_DOFS_PER_MB + MB_DOF]"
                         % (glob_axis, inl),
                         " + ".join(
                             "fp_tex1Dfetch(rst_to_xyz_tex, %(loc_axis)d + "
                             "DIMENSIONS*(%(glob_axis)d + DIMENSIONS*("
-                            "(GLOBAL_MB_NR+%(inl)d)*ELS_PER_MB + mb_el)))" 
+                            "(GLOBAL_MB_NR+%(inl)d)*ELS_PER_MB + mb_el)))"
                             "* d%(inl)drst%(loc_axis)d" % {
-                                "loc_axis": loc_axis, 
+                                "loc_axis": loc_axis,
                                 "glob_axis": glob_axis,
                                 "inl": inl
                             }
@@ -354,7 +354,7 @@ class Kernel(DiffKernelBase):
 
             def unroll_body(j):
                 result = [
-                    Assign("field_value%d" % inl, 
+                    Assign("field_value%d" % inl,
                         "smem_field[PAR_MB_NR][%d][mb_el*DOFS_PER_EL+%s]" % (inl, j))
                     for inl in range(par.inline)
                     ]
@@ -363,7 +363,7 @@ class Kernel(DiffKernelBase):
                     result.append(Assign("dmat_entries",
                         "tex1Dfetch(diff_rst_mat_tex, EL_DOF + %s*DOFS_PER_EL)" % j))
                     result.extend(
-                        S("d%drst%d += dmat_entries.%s * field_value%d" 
+                        S("d%drst%d += dmat_entries.%s * field_value%d"
                             % (inl, axis, tex_channels[axis], inl))
                         for inl in range(par.inline)
                         for axis in dims)
@@ -384,7 +384,7 @@ class Kernel(DiffKernelBase):
                 return result
 
             code.append(If("MB_DOF < DOFS_PER_MB", Block(unroll(unroll_body,
-                    total_number=given.dofs_per_el(), 
+                    total_number=given.dofs_per_el(),
                     max_unroll=self.plan.max_unroll)
                     +[store_code])))
 
@@ -405,8 +405,8 @@ class Kernel(DiffKernelBase):
             from hedge.tools import open_unique_debug_file
             open_unique_debug_file("diff", ".cu").write(str(cmod))
 
-        mod = SourceModule(cmod, 
-                keep="cuda_keep_kernels" in discr.debug, 
+        mod = SourceModule(cmod,
+                keep="cuda_keep_kernels" in discr.debug,
                 #options=["--maxrregcount=16"]
                 )
 
@@ -414,8 +414,8 @@ class Kernel(DiffKernelBase):
 
         if "cuda_diff" in discr.debug:
             print "diff: lmem=%d smem=%d regs=%d" % (
-                    func.local_size_bytes, 
-                    func.shared_size_bytes, 
+                    func.local_size_bytes,
+                    func.shared_size_bytes,
                     func.registers)
 
         if for_benchmark:
@@ -429,7 +429,7 @@ class Kernel(DiffKernelBase):
 
         diff_rst_mat_texref = mod.get_texref("diff_rst_mat_tex")
         gpu_diffmats = self.gpu_diffmats(diff_op_cls, elgroup)
-        
+
         if given.float_type == numpy.float32:
             gpu_diffmats.bind_to_texref_ext(diff_rst_mat_texref, rst_channels)
         elif given.float_type == numpy.float64:
@@ -441,8 +441,8 @@ class Kernel(DiffKernelBase):
         func.prepare(
                 ["PP"] + discr.dimensions*[float_type],
                 block=(
-                    given.devdata.smem_granularity, 
-                    self.plan.parallelism.parallel, 
+                    given.devdata.smem_granularity,
+                    self.plan.parallelism.parallel,
                     given.microblock.aligned_floats//given.devdata.smem_granularity),
                 texrefs=[rst_to_xyz_texref, diff_rst_mat_texref])
         return func
@@ -467,4 +467,3 @@ class Kernel(DiffKernelBase):
             result[i] = dm
 
         return gpuarray.to_gpu(result)
-

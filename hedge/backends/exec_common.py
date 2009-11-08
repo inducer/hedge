@@ -72,8 +72,8 @@ class CPUExecutorBase(object):
     def lift_flux(self, fgroup, matrix, scaling, field, out):
         from hedge._internal import lift_flux
         from pytools import to_uncomplex_dtype
-        lift_flux(fgroup, 
-                matrix.astype(to_uncomplex_dtype(field.dtype)), 
+        lift_flux(fgroup,
+                matrix.astype(to_uncomplex_dtype(field.dtype)),
                 scaling, field, out)
 
     def diff_rst(self, op, rst_axis, field):
@@ -81,8 +81,8 @@ class CPUExecutorBase(object):
 
         from hedge._internal import perform_elwise_operator
         for eg in self.discr.element_groups:
-            perform_elwise_operator(eg.ranges, eg.ranges, 
-                    op.matrices(eg)[rst_axis].astype(field.dtype), 
+            perform_elwise_operator(eg.ranges, eg.ranges,
+                    op.matrices(eg)[rst_axis].astype(field.dtype),
                     field, result)
 
         return result
@@ -112,7 +112,7 @@ class CPUExecutorBase(object):
 
 
 class ExecutionMapperBase(hedge.optemplate.Evaluator,
-        hedge.optemplate.BoundOpMapperMixin, 
+        hedge.optemplate.BoundOpMapperMixin,
         hedge.optemplate.LocalOpReducerMixin):
     def __init__(self, context, executor):
         hedge.optemplate.Evaluator.__init__(self, context)
