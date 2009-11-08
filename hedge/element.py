@@ -796,7 +796,7 @@ class TetrahedralElement(SimplicialElement):
 
     Points in equilateral coordinates (x,y,z)::
 
-        O = (0,0)
+        O = (0,0,0)
         A = (-1,-1/sqrt(3),-1/sqrt(6))
         B = ( 1,-1/sqrt(3),-1/sqrt(6))
         C = ( 0, 2/sqrt(3),-1/sqrt(6))

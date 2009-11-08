@@ -20,36 +20,378 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 """
 
 import numpy
-from pytools import memoize
+import numpy.linalg as la
+from pytools import memoize, memoize_method, Record
+from hedge.element import \
+        IntervalElement, \
+        TriangularElement, \
+        TetrahedralElement
 
 
-# gmsh nodes-per-elements
-@memoize
-def _get_gmsh_element_type_to_info_map():
-    from pytools import Record
-    class ElementTypeInfo(Record):
-        __slots__ = ['ele_type']
+
+class Point:
+    dimensions = 0
+
+    def node_count(self):
+        return 1
+
+
+
+# tools -----------------------------------------------------------------------
+def generate_triangle_vertex_tuples(order):
+    yield (0, 0)
+    yield (order, 0)
+    yield (0, order)
+
+def generate_triangle_edge_tuples(order):
+    for i in range(1, order):
+        yield (i, 0)
+    for i in range(1, order):
+        yield (order-i, i)
+    for i in range(1, order):
+        yield (0, order-i)
+
+def generate_triangle_volume_tuples(order):
+    for i in range(1, order):
+        for j in range(1, order-i):
+            yield (j, i)
+
+
+
+
+
+# element info ----------------------------------------------------------------
+class GmshElementBase(object):
+    @memoize_method
+    def hedge_to_gmsh_index_map(self):
+        gmsh_tup_to_index = dict(
+                (tup, i) 
+                for i, tup in enumerate(self.gmsh_node_tuples()))
+
+        return [gmsh_tup_to_index[tup] 
+                for tup in self.node_tuples()]
+
+
+
+
+
+class GmshIntervalElement(IntervalElement, GmshElementBase):
+    @memoize_method
+    def gmsh_node_tuples(self):
+        yield (0,)
+        yield (self.order,)
+
+        for i in range(1, self.order):
+            yield (i,)
+
+
+
+
+class GmshTriangularElement(TriangularElement, GmshElementBase):
+    @memoize_method
+    def gmsh_node_tuples(self):
+        for tup in generate_triangle_vertex_tuples(self.order):
+            yield tup
+        for tup in generate_triangle_edge_tuples(self.order):
+            yield tup
+        for tup in generate_triangle_volume_tuples(self.order):
+            yield tup
+
+
+
+
+class GmshTetrahedralElement(TetrahedralElement, GmshElementBase):
+    @memoize_method
+    def gmsh_node_tuples(self):
+        result = []
+        result_set = set()
+
+        def add_without_duplicating(tup):
+            if tup not in result_set:
+                result.append(tup)
+                result_set.add(tup)
+
+        o = self.order
+
+        for f in [
+                generate_triangle_vertex_tuples,
+                generate_triangle_edge_tuples,
+                generate_triangle_volume_tuples]:
+            for i, j in f(o):
+                add_without_duplicating((i, j, 0)) # u-v
+            for i, j in f(o):
+                add_without_duplicating((0, i, j)) # v-w
+            for i, j in f(o):
+                add_without_duplicating((j, 0, i)) # w-u
+            for i, j in f(o):
+                add_without_duplicating((o-i-j, i, j))
+
+        # volume
+        for i in range(1, o):
+            for j in range(1, o-i):
+                for k in range(1, o-j-i):
+                    result.append((k, j, i))
+
+        return result
+
+
+
+
+GMSH_ELEMENT_TYPE_TO_INFO_MAP = {
+        1:  GmshIntervalElement(1),
+        2:  GmshTriangularElement(1),
+        4:  GmshTetrahedralElement(1),
+        8:  GmshIntervalElement(2),
+        9:  GmshTriangularElement(2),
+        11: GmshTetrahedralElement(2),
+        15: Point(),
+        21: GmshTriangularElement(3),
+        23: GmshTriangularElement(4),
+        25: GmshTriangularElement(5),
+        26: GmshIntervalElement(4),
+        27: GmshIntervalElement(5),
+        28: GmshIntervalElement(6),
+        29: GmshTetrahedralElement(3),
+        30: GmshTetrahedralElement(4),
+        31: GmshTetrahedralElement(5)
+        }
+
+
+
+
+# file reader -----------------------------------------------------------------
+class GmshFileFormatError(RuntimeError):
+    pass
+
+
+
+
+class LineFeeder:
+    def __init__(self, line_list):
+        self.line_list = line_list
+        self.i = 0
+
+    def has_next_line(self):
+        return self.i < len(self.line_list)
+
+    def get_next_line(self):
+        if self.i >= len(self.line_list):
+            raise GmshFileFormatError("unexpected end of file")
+
+        result = self.line_list[self.i].strip()
+        self.i += 1
+        return result
+
+
+
+
+class LocalToGlobalMap(object):
+    def __init__(self, nodes, ldis):
+        self.nodes = nodes
+        self.ldis  = ldis
+
+        node_src_indices = numpy.array(
+                ldis.hedge_to_gmsh_index_map(),
+                dtype=numpy.intp)
+        
+        nodes = numpy.array(nodes, dtype=numpy.float64)
+        reordered_nodes = nodes[node_src_indices, :]
+
+        self.modal_coeff = la.solve(ldis.vandermonde(), reordered_nodes)
+        # axis 0: node number, axis 1: xyz axis
+
+    def __call__(self, r):
+        """Given a point *r* on the reference element, return the
+        corresponding point *x* in global coordinates.
+        """
+        mc = self.modal_coeff
+
+        return numpy.array([sum([
+            mc[i, axis] * mbf(r)
+            for i, mbf in enumerate(self.ldis.basis_functions())])
+            for axis in range(self.ldis.dimensions)])
+
+
+def read_gmsh(filename, force_dimension=None):
+    """
+    :param force_dimension: if not None, truncate point coordinates to this many dimensions.
+    """
+    import string
     from hedge.element import TriangularElement,TetrahedralElement
-    return {
-            2:  ElementTypeInfo(ele_type=TriangularElement(1)),
-            4:  ElementTypeInfo(ele_type=TetrahedralElement(1)),
-            9:  ElementTypeInfo(ele_type=TriangularElement(2)),
-            11: ElementTypeInfo(ele_type=TetrahedralElement(2)), 
-            20: ElementTypeInfo(ele_type=TriangularElement(3)),
-            21: ElementTypeInfo(ele_type=TriangularElement(3)),
-            22: ElementTypeInfo(ele_type=TriangularElement(4)),
-            23: ElementTypeInfo(ele_type=TriangularElement(4)),
-            24: ElementTypeInfo(ele_type=TriangularElement(5)),
-            25: ElementTypeInfo(ele_type=TriangularElement(5)),
-            29: ElementTypeInfo(ele_type=TetrahedralElement(3)),
-            30: ElementTypeInfo(ele_type=TetrahedralElement(4)),
-            31: ElementTypeInfo(ele_type=TetrahedralElement(5))
-           }
-   
-def make_read_mesh(nodes,elements, elements_info, phy_tags,
-            boundary_tagger=(lambda fvi, el, fn, all_v: [])):
+    # open target file
+    mesh_file = open(filename, 'r')
+    feeder = LineFeeder(mesh_file.readlines())
+    mesh_file.close()
+
+    element_type_map = GMSH_ELEMENT_TYPE_TO_INFO_MAP 
+
+    # collect the mesh information
+    nodes = []
+    elements = []
+    tag_number_map = {}
+    tag_name_map = {}
+
+    class ElementInfo(Record):
+        pass
+
+    class TagInfo(Record):
+        pass
+
+    while feeder.has_next_line():
+        next_line = feeder.get_next_line()
+        if not next_line.startswith("$"):
+            raise GmshFileFormatError("expected start of section, '%s' found instead" % l)
+
+        section_name = next_line[1:]
+
+        if section_name == "MeshFormat":
+            line_count = 0
+            while True:
+                next_line = feeder.get_next_line()
+                if next_line == "$End"+section_name:
+                    break
+
+                if line_count == 0:
+                    version_number, file_type, data_size = next_line.split()
+
+                if line_count > 0:
+                    raise GmshFileFormatError("more than one line found in MeshFormat section")
+
+                if version_number != "2.1":
+                    from warnings import warn
+                    warn("mesh version 2.1 expected, '%s' found instead" % version_number)
+
+                if file_type != "0":
+                    raise GmshFileFormatError("only ASCII gmsh file type is supported")
+
+                line_count += 1
+
+        elif section_name == "Nodes":
+            node_count = int(feeder.get_next_line())
+            node_idx = 1
+
+            while True:
+                next_line = feeder.get_next_line()
+                if next_line == "$End"+section_name:
+                    break
+
+                parts = next_line.split()
+                if len(parts) != 4:
+                    raise GmshFileFormatError("expected four-component line in $Nodes section")
+
+                read_node_idx = int(parts[0])
+                if read_node_idx != node_idx:
+                    raise GmshFileFormatError("out-of-order node index found")
+
+                nodes.append(numpy.array(
+                        [float(x) for x in parts[1:force_dimension+1]],
+                        dtype=numpy.float64))
+
+                node_idx += 1
+
+            if node_count+1 != node_idx:
+                raise GmshFileFormatError("unexpected number of nodes found")
+
+        elif section_name == "Elements":
+            element_count = int(feeder.get_next_line())
+            element_idx = 1
+            while True:
+                next_line = feeder.get_next_line()
+                if next_line == "$End"+section_name:
+                    break
+
+                parts = [int(x) for x in next_line.split()]
+
+                if len(parts) < 4:
+                    raise GmshFileFormatError("too few entries in element line")
+
+                read_element_idx = parts[0]
+                if read_element_idx != element_idx:
+                    raise GmshFileFormatError("out-of-order node index found")
+
+                el_type_num = parts[1]
+                try:
+                    element_type = element_type_map[el_type_num]
+                except KeyError:
+                    raise GmshFileFormatError("unexpected element type %d"
+                            % el_type_num)
+
+                tag_count = parts[2]
+                tags = parts[3:3+tag_count]
+
+                # convert to zero-based
+                node_indices = [x-1 for x in parts[3+tag_count:]]
+
+                if element_type.node_count()!= len(node_indices):
+                    raise GmshFileFormatError("unexpected number of nodes in element")
+
+                zero_based_idx = element_idx - 1
+                el_info = ElementInfo(
+                    index=zero_based_idx,
+                    el_type=element_type,
+                    node_indices=node_indices)
+                elements.append(el_info)
+                for tag in tags:
+                    tag_number_map.setdefault((tag, el_type.dimensions), []).append(el_info)
+
+                element_idx +=1
+            if element_count+1 != element_idx:
+                raise GmshFileFormatError("unexpected number of elements found")
+
+        elif section_name == "PhysicalNames":
+            name_count = int(feeder.get_next_line())
+            name_idx = 1
+
+            while True:
+                next_line = feeder.get_next_line()
+                if next_line == "$End"+section_name:
+                    break
+
+                parts = next_line.split()
+                if len(parts) != 3:
+                    raise GmshFileFormatError("unexpected number of entries "
+                            "in phys name line")
+
+                phy_number = int(parts[1])
+                tag_info = TagInfo(
+                        name=parts[2],
+                        number=int(parts[1]),
+                        dimension=int(parts[0]))
+
+                tag_name_map.setdefault(tag_info.name,[]).append(tag_info)
+
+                name_idx +=1
+
+            if name_count+1 != name_idx:
+                raise GmshFileFormatError("unexpected number of physical names found")
+        else:
+            # unrecognized section, skip
+            while True:
+                next_line = feeder.get_next_line()
+                if next_line == "$End"+section_name:
+                    break
+
+    # check all tags refer to elements of same dimension
+    tag_number_to_dim = {}
+
+    # figure out dimensionalities
+    node_dim = single_valued(len(node) for node in nodes)
+    vol_dim = max(el.el_type.dimensions for el in elements)
+    bdry_dim = vol_dim - 1
+
+    vol_elements = [el for el in elements
+            if el.el_type.dimensions == vol_dim]
+    bdry_elements = [el for el in elements
+            if el.el_type.dimensions == bdry_dim]
+
+
+
+
+    # initialize Mesh class,need to figure out the mapping
+    # for making higher order element
+
+    boundary_tagger=(lambda fvi, el, fn, all_v: [])
     from hedge.mesh import make_conformal_mesh
-    
     return make_conformal_mesh(
             nodes,
             elements,
@@ -57,113 +399,49 @@ def make_read_mesh(nodes,elements, elements_info, phy_tags,
 
 
 
-def read_gmsh(filename):
-    """
-    mesh reader for gmsh file
-    """
-    from hedge.element import TriangularElement,TetrahedralElement
-    # open target file
-    mesh_file = open(filename, 'r')
-    lines     = mesh_file.readlines()
-
-    # get the element type map
-    element_type_map = _get_gmsh_element_type_to_info_map()
-    # collect the mesh information
-    nodes            = []
-    elements_2D      = []
-    elements_3D      = []
-    elements_info    = []
-    phy_tags         = []
-    i = 0
-    while i < len(lines):
-        l = lines[i].strip()
-        i += 1  
-        if l == "$MeshFormat":
-            while True:
-                i+=1
-                l = lines[i].strip()
-                if l == "$EndMeshFormat":
-                    break 
-            i+=1
-        elif l == "$Nodes":
-            l = lines[i].strip()
-            Nv = numpy.int(l)
-            while True:
-                i +=1
-                l = lines[i].strip()
-                lvalue = l.split()
-                if l == "$EndNodes":
-                    break
-                nodes.append([float(x) for x in lvalue[1:]])
-            i+=1
-        elif l == "$Elements":
-            l = lines[i].strip()
-            K = numpy.int(l)
-            EToV = []
-            while True:
-                i +=1
-                l = lines[i].strip() 
-                if l == "$EndElements":
-                    break
-                l_str = l.split()    
-                lvalue = [int(x) for x in l_str] 
-                type = "unsupported"
-                # store the element table for supported elements
-                if lvalue[1] in element_type_map.keys():
-                    type = element_type_map[lvalue[1]]
-                    if isinstance(type.ele_type,TriangularElement):
-                        elements_2D.append([x-1 for x in lvalue[3+lvalue[2]:]])
-                    elif isinstance(type.ele_type,TetrahedralElement):
-                        elements_3D.append([x-1 for x in lvalue[3+lvalue[2]:]])
-                # store information for all kinds of elements
-                elements_info.append(
-                                     dict(
-                                          ele_indices = lvalue[0],
-                                          el_type     = type,
-                                          ele_number_of_tags =lvalue[2],
-                                          el_tags = lvalue[3:3+lvalue[2]],
-                                          nodes   = lvalue[3+lvalue[2]:] 
-                                         )
-                                     )
-            i+=1
-        elif l == "$PhysicalNames":
-            l = lines[i].strip()
-            no_tags = numpy.int(l)
-            phy_tags = []
-            while True:
-                i +=1
-                l = lines[i].strip() 
-                if l == "$EndPhysicalNames":
-                    break
-                l_str = l.split()    
-                lvalue = [int(x) for x in l_str[:-1]] 
-                phy_tags.append(
-                                dict(
-                                     phy_dimension = lvalue[0],
-                                     tag_index = lvalue[1],
-                                     tag_name  = l_str[-1].replace('\"',' ')
-                                     )
-                                )                                
-            i+=1
-        else: 
-            # unrecognized section, skip 
-            pass
-
-    # initialize Mesh class,need to figure out the mapping 
-    # for making higher order element
-    # extracting computational elements for 2D/3D 
-    elements = elements_2D
-    points   = [ x[0:2] for x in nodes ]
-    if elements_3D!=[]:
-        elements = elements_3D
-        points   = nodes
-
-    input_mesh = make_read_mesh(points,elements,elements_info,phy_tags)   
-    #close the file explicitly
-    mesh_file.close
-    return input_mesh
 
 
+
+if __name__ == "__main__":
+    if False:
+        z = GmshTriangularElement(5)
+        print list(z.gmsh_node_tuples())
+        print z.node_tuples()
+
+        print
+
+    z = GmshTriangularElement(2)
+    #print list(z.gmsh_node_tuples())
+    #print z.gmsh_node_tuples().next()
+    #print
+    #print set(z.gmsh_node_tuples())
+    #print
+    #print set(z.node_tuples()) - set(z.gmsh_node_tuples())
+    #print "gmsh",list(z.gmsh_node_tuples())
+    #print        list(z.gmsh_node_tuples())
+    #print "hedge",[ x for x in z.node_tuples()]
+    #map = z.hedge_to_gmsh_index_map()
+    #print map
+    print '------------------------------triangular------------------------------------------------'
+    print z.unit_nodes()
+    nodes =[numpy.array([0,0]),numpy.array([1,0]),numpy.array([1.0/2,numpy.sqrt(3.0)/2.0]),numpy.array([1.0/2,0]),numpy.array([3.0/4.0,numpy.sqrt(3)/4]),numpy.array([1.0/4,numpy.sqrt(3)/4.0])]
+    print nodes
+    p = numpy.array([0.5,0])
+    print "f:", [ f(p)  for i,f in enumerate(list(z.basis_functions()))]
+    print p,f
+    print f(p),"----------------------here-------------------"
+    print 
+    l_to_g = LocalToGlobalMap(nodes,z)
+    print l_to_g(numpy.array([0.0,0.0]))
+    print "-------------------tetrahedral------------------"
+    z = GmshTetrahedralElement(1)
+    node = [[-1,-1/numpy.sqrt(3),-1/numpy.sqrt(6)],[1,-1/numpy.sqrt(3),-1/numpy.sqrt(6)],[0,-2/numpy.sqrt(3),-1/numpy.sqrt(6)],[0,0,3/numpy.sqrt(6)]]
+    nodes =[numpy.array(x) for x in node]
+    print nodes
+    p = numpy.array([-1,-1.0,-1.0])
+    print "f:", [ f(p)  for i,f in enumerate(list(z.basis_functions()))]
+    l_to_g = LocalToGlobalMap(nodes,z)
+    print l_to_g(p)
 
 
 
