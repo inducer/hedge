@@ -245,7 +245,7 @@ def main(write_output=True):
         try:
             from hedge.timestep import times_and_steps
             step_it = times_and_steps(
-                    final_time=200,
+                    final_time=1,
                     #max_steps=500,
                     logmgr=logmgr,
                     max_dt_getter=lambda t: 0.4*op.estimate_timestep(discr,
@@ -330,4 +330,4 @@ if __name__ == "__main__":
 from pytools.test import mark_test
 @mark_test.long
 def test_euler_vortex():
-    main(write_output=True)
+    main(write_output=False)
