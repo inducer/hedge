@@ -24,7 +24,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 import numpy
 from pytools import memoize_method
-from hedge.models import TimeDependentOperator
+from hedge.models import HyperbolicOperator
 from pymbolic.mapper.stringifier import PREC_NONE
 from hedge.optemplate import StringifyMapper
 
@@ -67,7 +67,7 @@ class LongMaximaStringifyMapper(MaximaStringifyMapper):
 
 
 
-class BGKFlowOperator(TimeDependentOperator):
+class BGKFlowOperator(HyperbolicOperator):
     """A discretization of (moments) of the Boltzmann equation,
     following [1].
 
@@ -315,7 +315,7 @@ class BGKFlowOperator(TimeDependentOperator):
                             PREC_NONE),
                         lmapper(op, PREC_NONE))
 
-    def max_eigenvalue(self):
+    def max_eigenvalue(self, t, fields=None, discr=None):
         return numpy.sqrt(3)*self.sqrt_rt
 
     def from_primitive(self, x_vec, rho, u=None, sigma=None):

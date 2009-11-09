@@ -133,6 +133,12 @@ class AdamsBashforthTimeStepper(TimeStepper):
             from hedge.timestep.rk4 import RK4TimeStepper
             self.startup_stepper = RK4TimeStepper()
 
+    def get_stability_relevant_init_args(self):
+        return (self.order, self.startup_stepper)
+
+    def __getinitargs__(self):
+        return (self.order, self.startup_stepper)
+
     def __call__(self, y, t, dt, rhs):
         if len(self.f_history) == 0:
             # insert IC

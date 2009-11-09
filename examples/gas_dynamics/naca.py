@@ -25,37 +25,35 @@ import numpy.linalg as la
 
 
 def make_nacamesh():
-    def airfoil_from_generator():
-        import meshpy.naca as naca
-        # parameters for the airfoil generator
-        naca_digits = "2412"
-        number_of_points = 40
-        sharp_trailing_edge = True
-        uniform_distribution = False
-        verbose = True
-        return naca.generate_naca(naca_digits=naca_digits,
-                number_of_points=number_of_points,
-                sharp_trailing_edge=sharp_trailing_edge,
-                uniform_distribution=uniform_distribution,
-                verbose=verbose)
-
     def round_trip_connect(seq):
         result = []
         for i in range(len(seq)):
             result.append((i, (i+1)%len(seq)))
         return result
 
+    pt_back = numpy.array([1,0])
+
+    #def max_area(pt):
+        #max_area_front = 1e-2*la.norm(pt)**2 + 1e-5
+        #max_area_back = 1e-2*la.norm(pt-pt_back)**2 + 1e-4
+        #return min(max_area_front, max_area_back)
+
+    def max_area(pt):
+        x = pt[0]
+
+        if x < 0:
+            return 1e-2*la.norm(pt)**2 + 1e-5
+        elif x > 1:
+            return 1e-2*la.norm(pt-pt_back)**2 + 1e-5
+        else:
+            return 1e-2*pt[1]**2 + 1e-5
+
     def needs_refinement(vertices, area):
         barycenter =  sum(numpy.array(v) for v in vertices)/3
+        return bool(area > max_area(barycenter))
 
-        pt_back = numpy.array([1,0])
-
-        max_area_front = 0.02*la.norm(barycenter)**2 + 1e-3
-        max_area_back = 0.06*la.norm(barycenter-pt_back)**2 + 1e-3
-        return bool(area > min(max_area_front, max_area_back))
-
-    import sys
-    points = airfoil_from_generator()
+    from meshpy.naca import get_naca_points
+    points = get_naca_points(naca_digits="2412", number_of_points=80)
 
     from meshpy.geometry import GeometryBuilder, Marker
     from meshpy.triangle import write_gnuplot_mesh
@@ -65,7 +63,7 @@ def make_nacamesh():
     builder.add_geometry(points=points,
             facets=round_trip_connect(points),
             facet_markers=profile_marker)
-    builder.wrap_in_box(8, (10, 8))
+    builder.wrap_in_box(4, (10, 8))
 
     from meshpy.triangle import MeshInfo, build
     mi = MeshInfo()
@@ -73,7 +71,7 @@ def make_nacamesh():
     mi.set_holes([builder.center()])
 
     mesh = build(mi, refinement_func=needs_refinement,
-            allow_boundary_steiner=False,
+            #allow_boundary_steiner=False,
             generate_faces=True)
 
     write_gnuplot_mesh("mesh.dat", mesh)
@@ -86,8 +84,10 @@ def make_nacamesh():
             profile_marker: "noslip",
             Marker.MINUS_X: "inflow",
             Marker.PLUS_X: "outflow",
-            Marker.MINUS_Y: "minus_y",
-            Marker.PLUS_Y: "plus_y"
+            Marker.MINUS_Y: "inflow",
+            Marker.PLUS_Y: "inflow"
+            #Marker.MINUS_Y: "minus_y",
+            #Marker.PLUS_Y: "plus_y"
             }
 
     def bdry_tagger(fvi, el, fn, all_v):
@@ -97,16 +97,15 @@ def make_nacamesh():
     from hedge.mesh import make_conformal_mesh
     return make_conformal_mesh(
             mesh.points, mesh.elements, bdry_tagger,
-            periodicity=[None, ("minus_y", "plus_y")])
+            #periodicity=[None, ("minus_y", "plus_y")]
+            )
 
 
 
 
 def main():
     from hedge.backends import guess_run_context
-    rcon = guess_run_context(
-    ["cuda"]
-    )
+    rcon = guess_run_context(["cuda"])
 
     if rcon.is_head_rank:
         mesh = make_nacamesh()
@@ -119,32 +118,31 @@ def main():
         add_python_path_relative_to_script("..")
 
         from gas_dynamics_initials import UniformMachFlow
-        naca = UniformMachFlow()
+        uniform_flow = UniformMachFlow()
 
         from hedge.models.gas_dynamics import GasDynamicsOperator
         op = GasDynamicsOperator(dimensions=2,
-                gamma=naca.gamma, prandtl=naca.prandtl, 
-                spec_gas_const=naca.spec_gas_const, mu=naca.mu,
-                bc_inflow=naca, bc_outflow=naca, bc_noslip=naca,
-                inflow_tag="inflow", outflow_tag="outflow", noslip_tag="noslip",
-                euler=False)
+                gamma=uniform_flow.gamma, prandtl=uniform_flow.prandtl,
+                spec_gas_const=uniform_flow.spec_gas_const, mu=uniform_flow.mu,
+                bc_inflow=uniform_flow, bc_outflow=uniform_flow, bc_noslip=uniform_flow,
+                inflow_tag="inflow", outflow_tag="outflow", noslip_tag="noslip")
 
         discr = rcon.make_discretization(mesh_data, order=order,
-			debug=[
-                            #"cuda_no_plan",
+                        debug=[
+                            "cuda_no_plan",
                             #"cuda_dump_kernels",
                             #"dump_optemplate_stages",
                             #"dump_dataflow_graph",
                             #"print_op_code"
                             ],
-			default_scalar_type=numpy.float32,
+                        default_scalar_type=numpy.float32,
                         tune_for=op.op_template())
 
         from hedge.visualization import SiloVisualizer, VtkVisualizer
         #vis = VtkVisualizer(discr, rcon, "shearflow-%d" % order)
         vis = SiloVisualizer(discr, rcon)
 
-        fields = naca.volume_interpolant(0, discr)
+        fields = uniform_flow.volume_interpolant(0, discr)
 
         navierstokes_ex = op.bind(discr)
 
@@ -155,17 +153,10 @@ def main():
             return ode_rhs
         rhs(0, fields)
 
-        dt = discr.dt_factor(max_eigval[0], order=2)
-        final_time = 50
-        nsteps = int(final_time/dt)+1
-        dt = final_time/nsteps
-
         if rcon.is_head_rank:
             print "---------------------------------------------"
             print "order %d" % order
             print "---------------------------------------------"
-            print "dt", dt
-            print "nsteps", nsteps
             print "#elements=", len(mesh.elements)
 
         from hedge.timestep import RK4TimeStepper
@@ -178,7 +169,7 @@ def main():
         logmgr = LogManager("navierstokes-%d.dat" % order, "w", rcon.communicator)
         add_run_info(logmgr)
         add_general_quantities(logmgr)
-        add_simulation_quantities(logmgr, dt)
+        add_simulation_quantities(logmgr)
         discr.add_instrumentation(logmgr)
         stepper.add_instrumentation(logmgr)
 
@@ -201,51 +192,59 @@ def main():
 
         logmgr.add_quantity(ChangeSinceLastStep())
 
+        # filter setup-------------------------------------------------------------
+        from hedge.discretization import Filter, ExponentialFilterResponseFunction
+        mode_filter = Filter(discr,
+                ExponentialFilterResponseFunction(min_amplification=0.9,order=4))
         # timestep loop -------------------------------------------------------
-        t = 0
+        try:
+            from hedge.timestep import times_and_steps
+            step_it = times_and_steps(
+                    final_time=200,
+                    #max_steps=500,
+                    logmgr=logmgr,
+                    max_dt_getter=lambda t: op.estimate_timestep(discr,
+                        stepper=stepper, t=t, max_eigenvalue=max_eigval[0]))
 
-        for step in range(nsteps):
-            logmgr.tick()
+            for step, t, dt in step_it:
+                if step % 1000 == 0:
+                    visf = vis.make_file("naca-%d-%06d" % (order, step))
 
-            if step % 10000 == 0:
-            #if False:
-                visf = vis.make_file("naca-%d-%06d" % (order, step))
+                    from pylo import DB_VARTYPE_VECTOR
+                    vis.add_data(visf,
+                            [
+                                ("rho", discr.convert_volume(op.rho(fields), kind="numpy")),
+                                ("e", discr.convert_volume(op.e(fields), kind="numpy")),
+                                ("rho_u", discr.convert_volume(op.rho_u(fields), kind="numpy")),
+                                ("u", discr.convert_volume(op.u(fields), kind="numpy")),
 
-                from pylo import DB_VARTYPE_VECTOR
-                vis.add_data(visf,
-                        [
-                            ("rho", discr.convert_volume(op.rho(fields), kind="numpy")),
-                            ("e", discr.convert_volume(op.e(fields), kind="numpy")),
-                            ("rho_u", discr.convert_volume(op.rho_u(fields), kind="numpy")),
-                            ("u", discr.convert_volume(op.u(fields), kind="numpy")),
+                                #("true_rho", op.rho(true_fields)),
+                                #("true_e", op.e(true_fields)),
+                                #("true_rho_u", op.rho_u(true_fields)),
+                                #("true_u", op.u(true_fields)),
 
-                            #("true_rho", op.rho(true_fields)),
-                            #("true_e", op.e(true_fields)),
-                            #("true_rho_u", op.rho_u(true_fields)),
-                            #("true_u", op.u(true_fields)),
+                                #("rhs_rho", discr.convert_volume(op.rho(rhs_fields), kind="numpy")),
+                                #("rhs_e", discr.convert_volume(op.e(rhs_fields), kind="numpy")),
+                                #("rhs_rho_u", discr.convert_volume(op.rho_u(rhs_fields), kind="numpy")),
+                                ],
+                            expressions=[
+                                #("diff_rho", "rho-true_rho"),
+                                #("diff_e", "e-true_e"),
+                                #("diff_rho_u", "rho_u-true_rho_u", DB_VARTYPE_VECTOR),
 
-                            #("rhs_rho", discr.convert_volume(op.rho(rhs_fields), kind="numpy")),
-                            #("rhs_e", discr.convert_volume(op.e(rhs_fields), kind="numpy")),
-                            #("rhs_rho_u", discr.convert_volume(op.rho_u(rhs_fields), kind="numpy")),
-                            ],
-                        expressions=[
-                            #("diff_rho", "rho-true_rho"),
-                            #("diff_e", "e-true_e"),
-                            #("diff_rho_u", "rho_u-true_rho_u", DB_VARTYPE_VECTOR),
+                                ("p", "(0.4)*(e- 0.5*(rho_u*u))"),
+                                ],
+                            time=t, step=step
+                            )
+                    visf.close()
 
-                            ("p", "(0.4)*(e- 0.5*(rho_u*u))"),
-                            ],
-                        time=t, step=step
-                        )
-                visf.close()
+                fields = stepper(fields, t, dt, rhs)
+                fields = mode_filter(fields)
 
-            fields = stepper(fields, t, dt, rhs)
-            t += dt
-
-            dt = discr.dt_factor(max_eigval[0], order=2)
-
-        logmgr.tick()
-        logmgr.save()
+        finally:
+            vis.close()
+            logmgr.save()
+            discr.close()
 
 if __name__ == "__main__":
     main()

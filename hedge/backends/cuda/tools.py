@@ -160,10 +160,10 @@ def get_load_code(dest, base, bytes, word_type=numpy.uint32,
 
     code.extend([
         Block([
-            Constant(Pointer(POD(copy_dtype, "load_base")), 
+            Constant(Pointer(POD(copy_dtype, "load_base")),
                 ("(%s *) (%s)" % (copy_dtype_str, base))),
-            For("unsigned word_nr = THREAD_NUM", 
-                "word_nr*sizeof(int) < (%s)" % bytes, 
+            For("unsigned word_nr = THREAD_NUM",
+                "word_nr*sizeof(int) < (%s)" % bytes,
                 "word_nr += COALESCING_THREAD_COUNT",
                 Statement("((%s *) (%s))[word_nr] = load_base[word_nr]"
                     % (copy_dtype_str, dest))
@@ -183,14 +183,14 @@ def unroll(body_gen, total_number, max_unroll=None, start=0):
 
     if max_unroll is None:
         max_unroll = total_number
-            
+
     result = []
 
     if total_number > max_unroll:
         loop_items = (total_number // max_unroll) * max_unroll
 
         result.extend([
-                For("unsigned j = 0", 
+                For("unsigned j = 0",
                     "j < %d" % loop_items,
                     "j += %d" % max_unroll,
                     Block(list(flatten(
@@ -207,7 +207,7 @@ def unroll(body_gen, total_number, max_unroll=None, start=0):
     return result
 
 
-        
+
 
 class RK4TimeStepper(hedge.timestep.base.TimeStepper):
     def __init__(self):
@@ -215,6 +215,13 @@ class RK4TimeStepper(hedge.timestep.base.TimeStepper):
         self.coeffs = zip(_RK4A, _RK4B, _RK4C)
 
         self.instrumented = False
+
+    def get_stability_relevant_stepper_class(self):
+        from hedge.timestep.rk4 import RK4TimeStepper
+        return RK4TimeStepper
+
+    def get_stability_relevant_init_args(self):
+        return ()
 
     def add_instrumentation(self, logmgr):
         self.timer = CallableCollectionTimer(
@@ -248,7 +255,7 @@ class RK4TimeStepper(hedge.timestep.base.TimeStepper):
         for a, b, c in self.coeffs:
             this_rhs = rhs(t + c*dt, y)
 
-            self.residual = mul_add(a, self.residual, dt, this_rhs, 
+            self.residual = mul_add(a, self.residual, dt, this_rhs,
                     add_timer=add_timer)
             del this_rhs
             y = mul_add(1, y, b, self.residual,

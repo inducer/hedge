@@ -234,17 +234,10 @@ def main(write_output=True):
 
         rhs = op.bind(discr)
 
-        dt = discr.dt_factor(op.max_eigenvalue()) * 0.6
-        final_time = 2.0
-        nsteps = int(final_time/dt)+1
-        dt = final_time/nsteps
-
         if rcon.is_head_rank:
             print "---------------------------------------------"
             print "order %d" % order
             print "---------------------------------------------"
-            print "dt", dt
-            print "nsteps", nsteps
             print "#elements=", len(mesh.elements)
 
         from hedge.timestep import RK4TimeStepper
@@ -262,15 +255,13 @@ def main(write_output=True):
         logmgr = LogManager(log_file_name, "w", rcon.communicator)
         add_run_info(logmgr)
         add_general_quantities(logmgr)
-        add_simulation_quantities(logmgr, dt)
+        add_simulation_quantities(logmgr)
         discr.add_instrumentation(logmgr)
         stepper.add_instrumentation(logmgr)
 
         logmgr.add_watches(["step.max", "t_sim.max", "t_step.max"])
 
         # timestep loop -------------------------------------------------------
-        t = 0
-
         ic = problem.InitialCondition()
         ic.op = op
         fields = ic.volume_interpolant(0, discr)
@@ -280,9 +271,13 @@ def main(write_output=True):
                 ExponentialFilterResponseFunction(min_amplification=0.9,order=4))
 
         try:
-            for step in range(nsteps):
-                logmgr.tick()
+            from hedge.timestep import times_and_steps
+            step_it = times_and_steps(
+                    final_time=2, logmgr=logmgr,
+                    max_dt_getter=lambda t: 0.6*op.estimate_timestep(discr,
+                        stepper=stepper, t=t, fields=fields))
 
+            for step, t, dt in step_it:
                 prim_f = op.to_primitive(discr.nodes.T, fields)
 
                 if step % 5 == 0 and write_output:
@@ -305,18 +300,13 @@ def main(write_output=True):
                     visf.close()
 
                 fields = stepper(fields, t, dt, rhs)
-                t += dt
 
-                #fields = antialiasing(fields)
-
-            logmgr.tick()
 
         finally:
             if write_output:
                 vis.close()
 
-            logmgr.save()
-
+            logmgr.close()
             discr.close()
 
 

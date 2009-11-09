@@ -785,7 +785,7 @@ def test_symmetry_preservation_2d():
                 inflow_u=TimeDependentGivenFunction(u_analytic),
                 flux_type=flux_type)
 
-        dt = discr.dt_factor(op.max_eigenvalue())
+        dt = op.estimate_timestep(discr, stepper=stepper)
         nsteps = int(1/dt)
         rhs = op.bind(discr)
         #test_comp = [ "bflux"]
@@ -868,10 +868,10 @@ def test_convergence_advec_2d():
 
                 u = discr.interpolate_volume_function(
                         lambda x, el: u_analytic(x, el, 0))
-                dt = discr.dt_factor(norm_a)
-                nsteps = int(1/dt)
 
                 stepper = RK4TimeStepper()
+                dt = op.estimate_timestep(discr, stepper=stepper)
+                nsteps = int(1/dt)
                 rhs = op.bind(discr)
                 for step in range(nsteps):
                     u = stepper(u, step*dt, dt, rhs)

@@ -112,10 +112,8 @@ def run_convergence_test_advec(dtype, debug_output=False):
                             lambda x, el: u_analytic(x, el, 0))
                     ic = u.copy()
 
-                    dt = discr.dt_factor(op.max_eigenvalue())
-                    nsteps = int(1/dt)
                     if debug_output and rcon.is_head_rank:
-                        print "#steps=%d #elements=%d" % (nsteps, len(mesh.elements))
+                        print "#elements=%d" % len(mesh.elements)
 
                     test_name = "test-%s-o%d-m%d-r%s" % (
                             flux_type, order, i_mesh, random_partition)
@@ -123,13 +121,20 @@ def run_convergence_test_advec(dtype, debug_output=False):
                     rhs = op.bind(discr)
 
                     stepper = RK4TimeStepper()
-                    for step in range(nsteps):
-                        u = stepper(u, step*dt, dt, rhs)
+                    from hedge.timestep import times_and_steps
+                    final_time = 1
+                    step_it = times_and_steps(
+                            final_time=final_time,
+                            max_dt_getter=lambda t: op.estimate_timestep(discr,
+                                stepper=stepper, t=t, fields=u))
+
+                    for step, t, dt in step_it:
+                        u = stepper(u, t, dt, rhs)
 
                     assert u.dtype == dtype
 
                     u_true = discr.interpolate_volume_function(
-                            lambda x, el: u_analytic(x, el, nsteps*dt))
+                            lambda x, el: u_analytic(x, el, final_time))
                     error = u-u_true
                     l2_error = discr.norm(error)
 

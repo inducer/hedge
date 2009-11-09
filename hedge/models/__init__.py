@@ -44,3 +44,26 @@ class TimeDependentOperator(Operator):
     tree.
     """
     pass
+
+
+
+
+class HyperbolicOperator(Operator):
+    """A base class for hyperbolic Discontinuous Galerkin operators."""
+
+    def estimate_timestep(self, discr, 
+            stepper=None, stepper_class=None, stepper_args=None,
+            t=None, fields=None):
+        u"""Estimate the largest stable timestep, given a time stepper
+        `stepper_class`. If none is given, RK4 is assumed.
+        """
+
+        rk4_dt = 1 / self.max_eigenvalue(t, fields, discr) \
+                * (discr.dt_non_geometric_factor()
+                * discr.dt_geometric_factor())
+
+        from hedge.timestep.stability import \
+                approximate_rk4_relative_imag_stability_region
+        return rk4_dt * approximate_rk4_relative_imag_stability_region(
+                stepper, stepper_class, stepper_args)
+

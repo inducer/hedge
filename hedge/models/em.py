@@ -25,12 +25,12 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 from pytools import memoize_method
 
 import hedge.mesh
-from hedge.models import TimeDependentOperator
+from hedge.models import HyperbolicOperator
 
 
 
 
-class MaxwellOperator(TimeDependentOperator):
+class MaxwellOperator(HyperbolicOperator):
     """A 3D Maxwell operator.
 
     Field order is [Ex Ey Ez Hx Hy Hz].
@@ -317,10 +317,10 @@ class MaxwellOperator(TimeDependentOperator):
         """
         return 6*(True,)
 
-    def max_eigenvalue(self):
+    def max_eigenvalue(self, t, fields=None, discr=None):
         """Return the largest eigenvalue of Maxwell's equations as a hyperbolic system."""
         from math import sqrt
-        return 1/sqrt(self.mu*self.epsilon)
+        return self.c
 
 
 

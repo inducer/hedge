@@ -221,27 +221,19 @@ class TimestepCalculator(object):
         # C_TimeStepper gets calculated by a bisection method for every kind of
         # timestepper.
 
+        from warnings import warn
+        warn("Discretization.dt_factor() is deprecated and will be removed. "
+                "Use the operator's estimate_timestep() method instead.",
+                stacklevel=2)
 
         rk4_dt = 1 / max_system_ev \
                 * (self.dt_non_geometric_factor()
                 * self.dt_geometric_factor()) ** order
 
-        from hedge.timestep import RK4TimeStepper
-        from hedge.timestep import SSPRK3TimeStepper
-        if stepper_class is None or stepper_class == RK4TimeStepper:
-            return rk4_dt
-        elif stepper_class == SSPRK3TimeStepper:
-            return rk4_dt * SSPRK3TimeStepper.dt_fudge_factor
-        else:
-            assert isinstance(stepper_class, type)
-
-            from hedge.timestep.stability import \
-                    calculate_fudged_stability_region
-
-            return rk4_dt \
-                    * calculate_fudged_stability_region(
-                            stepper_class, *stepper_args) \
-                    / calculate_fudged_stability_region(RK4TimeStepper)
+        from hedge.timestep.stability import \
+                approximate_rk4_relative_imag_stability_region
+        return rk4_dt * approximate_rk4_relative_imag_stability_region(
+                None, stepper_class, stepper_args)
 
 
 
@@ -314,8 +306,11 @@ class Discretization(TimestepCalculator):
         self.dimensions = local_discretization.dimensions
 
         debug = set(debug)
-        assert not debug.difference(self.all_debug_flags()), \
-                "Invalid debug flag specified"
+        unknown_debug_flags = debug.difference(self.all_debug_flags())
+        if unknown_debug_flags:
+            from warnings import warn
+            warn("Unrecognized debug flags specified: " 
+                    + ", ".join(unknown_debug_flags))
         self.debug = debug
 
         self._build_element_groups_and_nodes(local_discretization)

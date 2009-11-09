@@ -26,13 +26,13 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 import numpy
 import numpy.linalg as la
 
-from hedge.models import TimeDependentOperator
+from hedge.models import HyperbolicOperator
 import hedge.data
 
 
 
 
-class AdvectionOperatorBase(TimeDependentOperator):
+class AdvectionOperatorBase(HyperbolicOperator):
     flux_types = [
             "central",
             "upwind",
@@ -65,7 +65,6 @@ class AdvectionOperatorBase(TimeDependentOperator):
             return u.avg*numpy.dot(normal, self.v) \
                     + 0.5*la.norm(self.v)*(u.int - u.ext)
         elif self.flux_type == "upwind":
-            print IfPositive(numpy.dot(normal, self.v),u.int, u.ext)
             return (numpy.dot(normal, self.v)*
                     IfPositive(numpy.dot(normal, self.v),
                         u.int, # outflow
@@ -74,7 +73,7 @@ class AdvectionOperatorBase(TimeDependentOperator):
         else:
             raise ValueError, "invalid flux type"
 
-    def max_eigenvalue(self):
+    def max_eigenvalue(self, t=None, fields=None, discr=None):
         return la.norm(self.v)
 
     def bind(self, discr):
@@ -182,7 +181,7 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
 
 
 
-class VariableCoefficientAdvectionOperator(TimeDependentOperator):
+class VariableCoefficientAdvectionOperator(HyperbolicOperator):
     """A class for space- and time-dependent DG-advection operators.
 
     `advec_v` is a callable expecting two arguments `(x, t)` representing space and time,
@@ -305,7 +304,7 @@ class VariableCoefficientAdvectionOperator(TimeDependentOperator):
 
         return rhs
 
-    def max_eigenvalue(self, t, discr):
+    def max_eigenvalue(self, t, fields=None, discr=None):
         # Gives the max eigenvalue of a vector of eigenvalues.
         # As the velocities of each node is stored in the velocity-vector-field
         # a pointwise dot product of this vector has to be taken to get the

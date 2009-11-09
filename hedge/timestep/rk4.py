@@ -78,6 +78,12 @@ class RK4TimeStepper(TimeStepper):
 
         self.allow_jit = allow_jit
 
+    def get_stability_relevant_init_args(self):
+        return ()
+
+    def __getinitargs__(self):
+        return (self.allow_jit,)
+
     def add_instrumentation(self, logmgr):
         logmgr.add_quantity(self.timer)
         logmgr.add_quantity(self.flop_counter)

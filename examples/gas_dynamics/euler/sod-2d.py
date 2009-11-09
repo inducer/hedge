@@ -33,13 +33,13 @@ class Sod:
 
     def volume_interpolant(self, t, discr):
         return discr.convert_volume(
-			self(t, discr.nodes.T),
-			kind=discr.compute_kind)
+                        self(t, discr.nodes.T),
+                        kind=discr.compute_kind)
 
     def boundary_interpolant(self, t, discr, tag):
         return discr.convert_boundary(
-			self(t, discr.get_boundary(tag).nodes.T),
-			 tag=tag, kind=discr.compute_kind)
+                        self(t, discr.get_boundary(tag).nodes.T),
+                         tag=tag, kind=discr.compute_kind)
 
 
 
@@ -48,10 +48,8 @@ def main():
     from hedge.backends import guess_run_context
     rcon = guess_run_context()
 
-    gamma = 1.4
-
     from hedge.tools import to_obj_array
-    
+
     if rcon.is_head_rank:
         from hedge.mesh import make_rect_mesh
         mesh = make_rect_mesh((-5,-5), (5,5), max_area=0.01)
@@ -61,22 +59,23 @@ def main():
 
     for order in [1]:
         discr = rcon.make_discretization(mesh_data, order=order,
-			default_scalar_type=numpy.float64)
+                        default_scalar_type=numpy.float64)
 
         from hedge.visualization import SiloVisualizer, VtkVisualizer
         vis = VtkVisualizer(discr, rcon, "Sod2D-%d" % order)
         #vis = SiloVisualizer(discr, rcon)
 
-        sodfield = Sod(gamma=gamma)
-        fields = sodfield.volume_interpolant(0, discr)
+        sod_field = Sod(gamma=1.4)
+        fields = sod_field.volume_interpolant(0, discr)
 
         from hedge.models.gas_dynamics import GasDynamicsOperator
         from hedge.mesh import TAG_ALL
-        op = GasDynamicsOperator(dimensions=2, gamma=1.4, mu=0.0,
-                bc_inflow=sodfield,
-                bc_outflow=sodfield,bc_noslip=sodfield,inflow_tag=TAG_ALL,
-                euler=True,source=None)
-
+        op = GasDynamicsOperator(dimensions=2, gamma=sod_field.gamma, mu=0.0,
+                bc_inflow=sod_field,
+                bc_outflow=sod_field,
+                bc_noslip=sod_field,
+                inflow_tag=TAG_ALL,
+                source=None)
 
         euler_ex = op.bind(discr)
 
@@ -87,110 +86,96 @@ def main():
             return ode_rhs
         rhs(0, fields)
 
-        dt = discr.dt_factor(max_eigval[0])
-        final_time = 2.5
-        nsteps = int(final_time/dt)+1
-        dt = final_time/nsteps
-
         if rcon.is_head_rank:
             print "---------------------------------------------"
             print "order %d" % order
             print "---------------------------------------------"
-            print "dt", dt
-            print "nsteps", nsteps
             print "#elements=", len(mesh.elements)
 
+        # limiter setup ------------------------------------------------------------
+        from hedge.models.gas_dynamics import SlopeLimiter1NEuler
+        limiter =  SlopeLimiter1NEuler(discr, sod_field.gamma, 2, op)
+
+        # integrator setup---------------------------------------------------------
+        from hedge.timestep import SSPRK3TimeStepper
+        from hedge.timestep import RK4TimeStepper
+        #stepper = SSPRK3TimeStepper(limit_stages=True,limiter=limiter)
+        stepper = SSPRK3TimeStepper()
+        #stepper = RK4TimeStepper()
 
         # diagnostics setup ---------------------------------------------------
         from pytools.log import LogManager, add_general_quantities, \
                 add_simulation_quantities, add_run_info
 
-        # limiter setup-------------------------------------------------------------
-        from hedge.models.gas_dynamics import SlopeLimiter1NEuler
-        limiter =  SlopeLimiter1NEuler(discr,gamma, 2, op)
-        
-
-        # integrator setup---------------------------------------------------------
-        from hedge.timestep import SSPRK3TimeStepper
-        from hedge.timestep import RK4TimeStepper
-        stepper = SSPRK3TimeStepper(limit_stages=True,limiter=limiter)
-        #stepper = RK4TimeStepper()
-
         logmgr = LogManager("euler-%d.dat" % order, "w", rcon.communicator)
         add_run_info(logmgr)
         add_general_quantities(logmgr)
-        add_simulation_quantities(logmgr, dt)
+        add_simulation_quantities(logmgr)
         discr.add_instrumentation(logmgr)
         stepper.add_instrumentation(logmgr)
 
         logmgr.add_watches(["step.max", "t_sim.max", "t_step.max"])
 
-
         # filter setup-------------------------------------------------------------
         from hedge.discretization import Filter, ExponentialFilterResponseFunction
-        antialiasing = Filter(discr,
+        mode_filter = Filter(discr,
                 ExponentialFilterResponseFunction(min_amplification=0.9,order=4))
 
-
         # timestep loop -------------------------------------------------------
-        t = 0
+        try:
+            from hedge.timestep import times_and_steps
+            step_it = times_and_steps(
+                    final_time=2.5, logmgr=logmgr,
+                    max_dt_getter=lambda t: op.estimate_timestep(discr,
+                        stepper=stepper, t=t, max_eigenvalue=max_eigval[0]))
 
-        from numpy import shape
+            for step, t, dt in step_it:
+                if step % 5 == 0:
+                #if False:
+                    visf = vis.make_file("vortex-%d-%04d" % (order, step))
 
-        #limit IC...appears to result in a problem (no idea why)
-        #fields = limiter(fields)
+                    #true_fields = vortex.volume_interpolant(t, discr)
 
-        for step in range(nsteps):
-            logmgr.tick()
+                    from pylo import DB_VARTYPE_VECTOR
+                    vis.add_data(visf,
+                            [
+                                ("rho", discr.convert_volume(op.rho(fields), kind="numpy")),
+                                ("e", discr.convert_volume(op.e(fields), kind="numpy")),
+                                ("rho_u", discr.convert_volume(op.rho_u(fields), kind="numpy")),
+                                ("u", discr.convert_volume(op.u(fields), kind="numpy")),
 
-            if step % 5 == 0:
-            #if False:
-                visf = vis.make_file("vortex-%d-%04d" % (order, step))
+                                #("true_rho", op.rho(true_fields)),
+                                #("true_e", op.e(true_fields)),
+                                #("true_rho_u", op.rho_u(true_fields)),
+                                #("true_u", op.u(true_fields)),
 
-                #true_fields = vortex.volume_interpolant(t, discr)
+                                #("rhs_rho", op.rho(rhs_fields)),
+                                #("rhs_e", op.e(rhs_fields)),
+                                #("rhs_rho_u", op.rho_u(rhs_fields)),
+                                ],
+                            #expressions=[
+                                #("diff_rho", "rho-true_rho"),
+                                #("diff_e", "e-true_e"),
+                                #("diff_rho_u", "rho_u-true_rho_u", DB_VARTYPE_VECTOR),
 
-                from pylo import DB_VARTYPE_VECTOR
-                vis.add_data(visf,
-                        [
-                            ("rho", discr.convert_volume(op.rho(fields), kind="numpy")),
-                            ("e", discr.convert_volume(op.e(fields), kind="numpy")),
-                            ("rho_u", discr.convert_volume(op.rho_u(fields), kind="numpy")),
-                            ("u", discr.convert_volume(op.u(fields), kind="numpy")),
+                                #("p", "0.4*(e- 0.5*(rho_u*u))"),
+                                #],
+                            time=t, step=step
+                            )
+                    visf.close()
 
-                            #("true_rho", op.rho(true_fields)),
-                            #("true_e", op.e(true_fields)),
-                            #("true_rho_u", op.rho_u(true_fields)),
-                            #("true_u", op.u(true_fields)),
+                fields = stepper(fields, t, dt, rhs)
+                # fields = limiter(fields)
+                # fields = mode_filter(fields)
 
-                            #("rhs_rho", op.rho(rhs_fields)),
-                            #("rhs_e", op.e(rhs_fields)),
-                            #("rhs_rho_u", op.rho_u(rhs_fields)),
-                            ],
-                        #expressions=[
-                            #("diff_rho", "rho-true_rho"),
-                            #("diff_e", "e-true_e"),
-                            #("diff_rho_u", "rho_u-true_rho_u", DB_VARTYPE_VECTOR),
+                assert not numpy.isnan(numpy.sum(fields[0]))
+        finally:
+            vis.close()
+            logmgr.close()
+            discr.close()
 
-                            #("p", "0.4*(e- 0.5*(rho_u*u))"),
-                            #],
-                        time=t, step=step
-                        )
-                visf.close()
-
-            fields = stepper(fields, t, dt, rhs)
-            #apply slope limiter
-            fields = limiter(fields)
-            #fields = antialiasing(fields)
-            t += dt
-
-            dt = discr.dt_factor(max_eigval[0])
-            assert not numpy.isnan(numpy.sum(fields[0]))
-
-        logmgr.tick()
-        logmgr.save()
-
-        #not solution, just to check against when making code changes
-        true_fields = sodfield.volume_interpolant(t, discr)
+        # not solution, just to check against when making code changes
+        true_fields = sod_field.volume_interpolant(t, discr)
         print discr.norm(fields-true_fields)
 
 if __name__ == "__main__":

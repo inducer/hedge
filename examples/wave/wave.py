@@ -92,12 +92,6 @@ def main(write_output=True,
     fields = join_fields(discr.volume_zeros(dtype=dtype),
             [discr.volume_zeros(dtype=dtype) for i in range(discr.dimensions)])
 
-    dt = discr.dt_factor(op.max_eigenvalue())
-    nsteps = int(4.0/dt)
-    if rcon.is_head_rank:
-        print "dt", dt
-        print "nsteps", nsteps
-
     # diagnostics setup -------------------------------------------------------
     from pytools.log import LogManager, \
             add_general_quantities, \
@@ -112,7 +106,7 @@ def main(write_output=True,
     logmgr = LogManager(log_file_name, "w", rcon.communicator)
     add_run_info(logmgr)
     add_general_quantities(logmgr)
-    add_simulation_quantities(logmgr, dt)
+    add_simulation_quantities(logmgr)
     discr.add_instrumentation(logmgr)
 
     from pytools.log import IntervalTimer
@@ -130,11 +124,13 @@ def main(write_output=True,
     # timestep loop -----------------------------------------------------------
     rhs = op.bind(discr)
     try:
-        for step in range(nsteps):
-            logmgr.tick()
+        from hedge.timestep import times_and_steps
+        step_it = times_and_steps(
+                final_time=4, logmgr=logmgr,
+                max_dt_getter=lambda t: op.estimate_timestep(discr,
+                    stepper=stepper, t=t, fields=fields))
 
-            t = step*dt
-
+        for step, t, dt in step_it:
             if step % 10 == 0 and write_output:
                 visf = vis.make_file("fld-%04d" % step)
 

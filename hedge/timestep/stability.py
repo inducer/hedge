@@ -24,20 +24,44 @@ from pytools import memoize
 
 
 
+@memoize
+def approximate_rk4_relative_imag_stability_region(
+        stepper=None, stepper_class=None, stepper_args=[]):
+    if stepper is not None and stepper_class is not None:
+        raise ValueError("only one of 'stepper' and 'stepper_class' "
+                "may be specified")
 
-def calculate_fudged_stability_region(stepper_class, *stepper_args):
-    """
-    bisection based method to find bounds of stability region on Imaginary 
-    axis only
-    """
-    return calculate_stability_region(stepper_class, *stepper_args) \
-            * stepper_class.dt_fudge_factor
+    if stepper is not None:
+        try:
+            method = stepper.get_stability_relevant_stepper_class
+        except AttributeError:
+            stepper_class = type(stepper)
+        else:
+            stepper_class = method()
+
+        stepper_args = stepper.get_stability_relevant_init_args()
+        stepper = None
+
+    from hedge.timestep import RK4TimeStepper
+    if stepper_class is None or stepper_class == RK4TimeStepper:
+        return 1
+    else:
+        assert isinstance(stepper_class, type)
+
+        from hedge.timestep.stability import \
+                approximate_imag_stability_region
+
+        return (approximate_imag_stability_region(
+                    stepper_class, *stepper_args)
+                / approximate_imag_stability_region(RK4TimeStepper)
+                * stepper_class.dt_fudge_factor
+                / RK4TimeStepper.dt_fudge_factor)
 
 
 
 
 @memoize
-def calculate_stability_region(stepper_class, *stepper_args):
+def approximate_imag_stability_region(stepper_class, *stepper_args):
     def stepper_maker():
         return stepper_class(*stepper_args)
 

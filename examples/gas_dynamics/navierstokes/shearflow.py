@@ -32,7 +32,7 @@ class SteadyShearFlow:
         self.spec_gas_const = 287.1
 
     def __call__(self, t, x_vec):
-        # JSH/TW Nodal DG Methods, p.326 
+        # JSH/TW Nodal DG Methods, p.326
 
         rho = numpy.ones_like(x_vec[0])
         rho_u = x_vec[1] * x_vec[1]
@@ -47,13 +47,13 @@ class SteadyShearFlow:
 
     def volume_interpolant(self, t, discr):
         return discr.convert_volume(
-			self(t, discr.nodes.T
+                        self(t, discr.nodes.T
                             .astype(discr.default_scalar_type)),
-			kind=discr.compute_kind)
+                        kind=discr.compute_kind)
 
     def boundary_interpolant(self, t, discr, tag):
         result = discr.convert_boundary(
-			self(t, discr.get_boundary(tag).nodes.T
+                        self(t, discr.get_boundary(tag).nodes.T
                             .astype(discr.default_scalar_type)),
                         tag=tag, kind=discr.compute_kind)
         return result
@@ -72,7 +72,7 @@ def main():
 
     def boundary_tagger(vertices, el, face_nr, all_v):
         return ["inflow"]
-    
+
     if rcon.is_head_rank:
         from hedge.mesh import make_rect_mesh, \
                                make_centered_regular_rect_mesh
@@ -88,7 +88,7 @@ def main():
 
     for order in [3]:
         discr = rcon.make_discretization(mesh_data, order=order,
-			default_scalar_type=numpy.float64)
+                        default_scalar_type=numpy.float64)
 
         from hedge.visualization import SiloVisualizer, VtkVisualizer
         #vis = VtkVisualizer(discr, rcon, "shearflow-%d" % order)
@@ -102,8 +102,7 @@ def main():
         op = GasDynamicsOperator(dimensions=2, gamma=gamma, mu=mu,
                 prandtl=prandtl, spec_gas_const=spec_gas_const,
                 bc_inflow=shearflow, bc_outflow=shearflow, bc_noslip=shearflow,
-                inflow_tag="inflow", outflow_tag="outflow", noslip_tag="noslip",
-                euler=False)
+                inflow_tag="inflow", outflow_tag="outflow", noslip_tag="noslip")
 
         navierstokes_ex = op.bind(discr)
 
@@ -116,17 +115,10 @@ def main():
         # needed to get first estimate of maximum eigenvalue
         rhs(0, fields)
 
-        dt = discr.dt_factor(max_eigval[0], order=2)
-        final_time = 0.02
-        nsteps = int(final_time/dt)+1
-        dt = final_time/nsteps
-
         if rcon.is_head_rank:
             print "---------------------------------------------"
             print "order %d" % order
             print "---------------------------------------------"
-            print "dt", dt
-            print "nsteps", nsteps
             print "#elements=", len(mesh.elements)
 
         from hedge.timestep import RK4TimeStepper
@@ -136,70 +128,71 @@ def main():
         from pytools.log import LogManager, add_general_quantities, \
                 add_simulation_quantities, add_run_info
 
-        logmgr = LogManager("navierstokes-cpu-%d-%d.dat" % (order, refine), 
+        logmgr = LogManager("navierstokes-cpu-%d-%d.dat" % (order, refine),
                             "w", rcon.communicator)
         add_run_info(logmgr)
         add_general_quantities(logmgr)
-        add_simulation_quantities(logmgr, dt)
+        add_simulation_quantities(logmgr)
         discr.add_instrumentation(logmgr)
         stepper.add_instrumentation(logmgr)
 
         logmgr.add_watches(["step.max", "t_sim.max", "t_step.max"])
 
         # timestep loop -------------------------------------------------------
-        t = 0
+        try:
+            from hedge.timestep import times_and_steps
+            step_it = times_and_steps(
+                    final_time=0.3,
+                    #max_steps=500,
+                    logmgr=logmgr,
+                    max_dt_getter=lambda t: op.estimate_timestep(discr,
+                        stepper=stepper, t=t, max_eigenvalue=max_eigval[0]))
 
-        for step in range(nsteps):
-            logmgr.tick()
+            for step, t, dt in step_it:
+                if step % 10 == 0:
+                #if False:
+                    visf = vis.make_file("shearflow-%d-%04d" % (order, step))
 
-            if step % 10 == 0:
-            #if False:
-                visf = vis.make_file("shearflow-%d-%04d" % (order, step))
+                    #true_fields = shearflow.volume_interpolant(t, discr)
 
-                #true_fields = shearflow.volume_interpolant(t, discr)
+                    from pylo import DB_VARTYPE_VECTOR
+                    vis.add_data(visf,
+                            [
+                                ("rho", discr.convert_volume(op.rho(fields), kind="numpy")),
+                                ("e", discr.convert_volume(op.e(fields), kind="numpy")),
+                                ("rho_u", discr.convert_volume(op.rho_u(fields), kind="numpy")),
+                                ("u", discr.convert_volume(op.u(fields), kind="numpy")),
 
-                from pylo import DB_VARTYPE_VECTOR
-                vis.add_data(visf,
-                        [
-                            ("rho", discr.convert_volume(op.rho(fields), kind="numpy")),
-                            ("e", discr.convert_volume(op.e(fields), kind="numpy")),
-                            ("rho_u", discr.convert_volume(op.rho_u(fields), kind="numpy")),
-                            ("u", discr.convert_volume(op.u(fields), kind="numpy")),
+                                #("true_rho", discr.convert_volume(op.rho(true_fields), kind="numpy")),
+                                #("true_e", discr.convert_volume(op.e(true_fields), kind="numpy")),
+                                #("true_rho_u", discr.convert_volume(op.rho_u(true_fields), kind="numpy")),
+                                #("true_u", discr.convert_volume(op.u(true_fields), kind="numpy")),
+                                ],
+                            expressions=[
+                                #("diff_rho", "rho-true_rho"),
+                                #("diff_e", "e-true_e"),
+                                #("diff_rho_u", "rho_u-true_rho_u", DB_VARTYPE_VECTOR),
 
-                            #("true_rho", discr.convert_volume(op.rho(true_fields), kind="numpy")),
-                            #("true_e", discr.convert_volume(op.e(true_fields), kind="numpy")),
-                            #("true_rho_u", discr.convert_volume(op.rho_u(true_fields), kind="numpy")),
-                            #("true_u", discr.convert_volume(op.u(true_fields), kind="numpy")),
-                            ],
-                        expressions=[
-                            #("diff_rho", "rho-true_rho"),
-                            #("diff_e", "e-true_e"),
-                            #("diff_rho_u", "rho_u-true_rho_u", DB_VARTYPE_VECTOR),
+                                ("p", "0.4*(e- 0.5*(rho_u*u))"),
+                                ],
+                            time=t, step=step
+                            )
+                    visf.close()
 
-                            ("p", "0.4*(e- 0.5*(rho_u*u))"),
-                            ],
-                        time=t, step=step
-                        )
-                visf.close()
+                fields = stepper(fields, t, dt, rhs)
 
-            fields = stepper(fields, t, dt, rhs)
-            t += dt
+            true_fields = shearflow.volume_interpolant(t, discr)
+            l2_error = discr.norm(op.u(fields)-op.u(true_fields))
+            eoc_rec.add_data_point(order, l2_error)
+            print
+            print eoc_rec.pretty_print("P.Deg.", "L2 Error")
 
-            dt = discr.dt_factor(max_eigval[0], order=2)
+            logmgr.set_constant("l2_error", l2_error)
 
-        logmgr.tick()
-
-        true_fields = shearflow.volume_interpolant(t, discr)
-        l2_error = discr.norm(op.u(fields)-op.u(true_fields))
-        eoc_rec.add_data_point(order, l2_error)
-        print
-        print eoc_rec.pretty_print("P.Deg.", "L2 Error")
-
-        logmgr.set_constant("l2_error", l2_error)
-
-        logmgr.close()
-
-        discr.close()
+        finally:
+            vis.close()
+            logmgr.save()
+            discr.close()
 
 if __name__ == "__main__":
     main()

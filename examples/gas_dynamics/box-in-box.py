@@ -42,14 +42,14 @@ def make_boxmesh():
     # make small "separator box" for region attribute
     points, facets, _ = \
             make_box(
-                    -extent_small*4, 
+                    -extent_small*4,
                     numpy.array([4,0.4,0.4], dtype=numpy.float64))
 
     geob.add_geometry(points, facets)
 
     points, facets, facet_markers = \
             make_box(
-                    numpy.array([-1,-1,-1], dtype=numpy.float64), 
+                    numpy.array([-1,-1,-1], dtype=numpy.float64),
                     numpy.array([5,1,1], dtype=numpy.float64))
 
     geob.add_geometry(points, facets, facet_markers=facet_markers)
@@ -66,7 +66,9 @@ def make_boxmesh():
             # region number
             1,
             # max volume in region
-            0.0001])
+            #0.0001
+            0.005
+            ])
 
     mesh = build(mesh_info, max_volume=0.02, volume_constraints=True, attributes=True)
     print "%d elements" % len(mesh.elements)
@@ -91,8 +93,7 @@ def make_boxmesh():
 
     from hedge.mesh import make_conformal_mesh
     return make_conformal_mesh(
-            mesh.points, mesh.elements, bdry_tagger
-            )
+            mesh.points, mesh.elements, bdry_tagger)
 
 
 
@@ -120,15 +121,14 @@ def main():
         box = UniformMachFlow(angle_of_attack=0)
 
         from hedge.models.gas_dynamics import GasDynamicsOperator
-        op = GasDynamicsOperator(dimensions=3, 
+        op = GasDynamicsOperator(dimensions=3,
                 gamma=box.gamma, mu=box.mu,
-                prandtl=box.prandtl, spec_gas_const=box.spec_gas_const, 
+                prandtl=box.prandtl, spec_gas_const=box.spec_gas_const,
                 bc_inflow=box, bc_outflow=box, bc_noslip=box,
-                inflow_tag="inflow", outflow_tag="outflow", noslip_tag="noslip",
-                euler=False)
+                inflow_tag="inflow", outflow_tag="outflow", noslip_tag="noslip")
 
         discr = rcon.make_discretization(mesh_data, order=order,
-			debug=[#"cuda_no_plan",
+                        debug=[#"cuda_no_plan",
                             #"cuda_dump_kernels",
                             #"dump_dataflow_graph",
                             #"dump_optemplate_stages",
@@ -136,7 +136,7 @@ def main():
                             #"print_op_code",
                             "cuda_no_plan_el_local",
                             ],
-			default_scalar_type=numpy.float32,
+                        default_scalar_type=numpy.float32,
                         tune_for=op.op_template())
 
         from hedge.visualization import SiloVisualizer, VtkVisualizer
@@ -154,17 +154,10 @@ def main():
             return ode_rhs
         rhs(0, fields)
 
-        dt = discr.dt_factor(max_eigval[0], order=2)
-        final_time = 200
-        nsteps = int(final_time/dt)+1
-        dt = final_time/nsteps
-
         if rcon.is_head_rank:
             print "---------------------------------------------"
             print "order %d" % order
             print "---------------------------------------------"
-            print "dt", dt
-            print "nsteps", nsteps
             print "#elements=", len(mesh.elements)
 
         from hedge.timestep import RK4TimeStepper
@@ -177,7 +170,7 @@ def main():
         logmgr = LogManager("navierstokes-%d.dat" % order, "w", rcon.communicator)
         add_run_info(logmgr)
         add_general_quantities(logmgr)
-        add_simulation_quantities(logmgr, dt)
+        add_simulation_quantities(logmgr)
         discr.add_instrumentation(logmgr)
         stepper.add_instrumentation(logmgr)
 
@@ -201,44 +194,48 @@ def main():
         logmgr.add_quantity(ChangeSinceLastStep())
 
         # timestep loop -------------------------------------------------------
-        t = 0
+        try:
+            from hedge.timestep import times_and_steps
+            step_it = times_and_steps(
+                    final_time=200,
+                    #max_steps=500,
+                    logmgr=logmgr,
+                    max_dt_getter=lambda t: op.estimate_timestep(discr,
+                        stepper=stepper, t=t, max_eigenvalue=max_eigval[0]))
 
-        for step in range(nsteps):
-            logmgr.tick()
+            for step, t, dt in step_it:
+                if step % 200 == 0:
+                #if False:
+                    visf = vis.make_file("box-%d-%06d" % (order, step))
 
-            if (step % 10000 == 0): #and step < 950000) or (step % 500 == 0 and step > 950000):
-            #if False:
-                visf = vis.make_file("box-%d-%06d" % (order, step))
+                    #rhs_fields = rhs(t, fields)
 
-                #rhs_fields = rhs(t, fields)
+                    from pylo import DB_VARTYPE_VECTOR
+                    from hedge.discretization import ones_on_boundary
+                    vis.add_data(visf,
+                            [
+                                ("rho", discr.convert_volume(op.rho(fields), kind="numpy")),
+                                ("e", discr.convert_volume(op.e(fields), kind="numpy")),
+                                ("rho_u", discr.convert_volume(op.rho_u(fields), kind="numpy")),
+                                ("u", discr.convert_volume(op.u(fields), kind="numpy")),
 
-                from pylo import DB_VARTYPE_VECTOR
-                from hedge.discretization import ones_on_boundary
-                vis.add_data(visf,
-                        [
-                            ("rho", discr.convert_volume(op.rho(fields), kind="numpy")),
-                            ("e", discr.convert_volume(op.e(fields), kind="numpy")),
-                            ("rho_u", discr.convert_volume(op.rho_u(fields), kind="numpy")),
-                            ("u", discr.convert_volume(op.u(fields), kind="numpy")),
+                                #("rhs_rho", discr.convert_volume(op.rho(rhs_fields), kind="numpy")),
+                                #("rhs_e", discr.convert_volume(op.e(rhs_fields), kind="numpy")),
+                                #("rhs_rho_u", discr.convert_volume(op.rho_u(rhs_fields), kind="numpy")),
+                                ],
+                            expressions=[
+                                ("p", "(0.4)*(e- 0.5*(rho_u*u))"),
+                                ],
+                            time=t, step=step
+                            )
+                    visf.close()
 
-                            #("rhs_rho", discr.convert_volume(op.rho(rhs_fields), kind="numpy")),
-                            #("rhs_e", discr.convert_volume(op.e(rhs_fields), kind="numpy")),
-                            #("rhs_rho_u", discr.convert_volume(op.rho_u(rhs_fields), kind="numpy")),
-                            ],
-                        expressions=[
-                            ("p", "(0.4)*(e- 0.5*(rho_u*u))"),
-                            ],
-                        time=t, step=step
-                        )
-                visf.close()
+                fields = stepper(fields, t, dt, rhs)
 
-            fields = stepper(fields, t, dt, rhs)
-            t += dt
-
-            dt = discr.dt_factor(max_eigval[0], order=2)
-
-        logmgr.tick()
-        logmgr.save()
+        finally:
+            vis.close()
+            logmgr.save()
+            discr.close()
 
 if __name__ == "__main__":
     main()

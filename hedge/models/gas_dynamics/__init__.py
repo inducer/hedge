@@ -55,8 +55,6 @@ class GasDynamicsOperator(TimeDependentOperator):
     tau_31 = u * tau_11 + v * tau_12
     tau_32 = u * tau_21 + v * tau_22
 
-    For Euler: mu = 0
-
     For the heat flux:
 
     q = -k * nabla * T
@@ -70,8 +68,7 @@ class GasDynamicsOperator(TimeDependentOperator):
             inflow_tag="inflow",
             outflow_tag="outflow",
             noslip_tag="noslip",
-            source=None,
-            euler=False):
+            source=None):
         """
         :param source: should implement
         :class:`hedge.data.IFieldDependentGivenFunction`
@@ -94,8 +91,6 @@ class GasDynamicsOperator(TimeDependentOperator):
         self.noslip_tag = noslip_tag
 
         self.source = source
-
-        self.euler = euler
 
     def rho(self, q):
         return q[0]
@@ -140,15 +135,13 @@ class GasDynamicsOperator(TimeDependentOperator):
                     "t")
 
         def mu(q):
-            mu = self.mu
-            if self.euler == True:
-                assert mu == 0.
-            elif mu == "sutherland":
+            if self.mu == "sutherland":
                 # Sutherland's law: !!!not tested!!!
                 t_s = 110.4
                 mu_inf = 1.735e-5
                 mu = cse(mu_inf * t(q) ** 1.5 * (1 + t_s) / (t(q) + t_s))
-            return mu
+            else:
+                return self.mu
 
         def heat_flux(q):
             # !!!not tested!!!
@@ -437,6 +430,25 @@ class GasDynamicsOperator(TimeDependentOperator):
             return ode_rhs, discr.nodewise_max(max_speed)
 
         return rhs
+
+    def estimate_timestep(self, discr, 
+            stepper=None, stepper_class=None, stepper_args=None,
+            t=None, max_eigenvalue=None):
+        u"""Estimate the largest stable timestep, given a time stepper
+        `stepper_class`. If none is given, RK4 is assumed.
+        """
+
+        dg_factor = (discr.dt_non_geometric_factor()
+                * discr.dt_geometric_factor())
+
+        # see JSH/TW, eq. (7.32)
+        rk4_dt = dg_factor / (max_eigenvalue + self.mu / dg_factor)
+
+        from hedge.timestep.stability import \
+                approximate_rk4_relative_imag_stability_region
+        return rk4_dt * approximate_rk4_relative_imag_stability_region(
+                stepper, stepper_class, stepper_args)
+
 
 
 

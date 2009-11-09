@@ -68,13 +68,6 @@ def main(write_output=True) :
         from hedge.visualization import  VtkVisualizer
         vis = VtkVisualizer(discr, rcon, "fld")
 
-    dt = discr.dt_factor(1, order=2)*0.2
-    nsteps = int(1/dt)
-
-    if rcon.is_head_rank:
-        print "dt", dt
-        print "nsteps", nsteps
-
     def u0(x, el):
         if la.norm(x) < 0.2:
             return 1
@@ -117,7 +110,7 @@ def main(write_output=True) :
     logmgr = LogManager(log_file_name, "w", rcon.communicator)
     add_run_info(logmgr)
     add_general_quantities(logmgr)
-    add_simulation_quantities(logmgr, dt)
+    add_simulation_quantities(logmgr)
     discr.add_instrumentation(logmgr)
 
     stepper.add_instrumentation(logmgr)
@@ -132,10 +125,13 @@ def main(write_output=True) :
     # timestep loop -----------------------------------------------------------
     rhs = op.bind(discr)
     try:
-        for step in range(nsteps):
-            logmgr.tick()
-            t = step*dt
+        from hedge.timestep import times_and_steps
+        step_it = times_and_steps(
+                final_time=0.1, logmgr=logmgr,
+                max_dt_getter=lambda t: op.estimate_timestep(discr,
+                    stepper=stepper, t=t, fields=u))
 
+        for step, t, dt in step_it:
             if step % 10 == 0 and write_output:
                 visf = vis.make_file("fld-%04d" % step)
                 vis.add_data(visf, [("u", u), ], time=t, step=step)
@@ -147,6 +143,9 @@ def main(write_output=True) :
     finally:
         if write_output:
             vis.close()
+
+        logmgr.close()
+        discr.close()
 
 
 

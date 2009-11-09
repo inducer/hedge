@@ -101,17 +101,10 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
                 flux_type=flux_type_arg, \
                 bdry_flux_type=bdry_flux_type_arg)
 
-        dt = discr.dt_factor(op.max_eigenvalue())
-        final_time = 0.5e-9
-        nsteps = int(final_time/dt)+1
-        dt = final_time/nsteps
-
         if rcon.is_head_rank:
             print "---------------------------------------------"
             print "order %d" % order
             print "---------------------------------------------"
-            print "dt", dt
-            print "nsteps", nsteps
             print "#elements=", len(mesh.elements)
 
         stepper = RK4TimeStepper()
@@ -129,7 +122,7 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
 
         add_run_info(logmgr)
         add_general_quantities(logmgr)
-        add_simulation_quantities(logmgr, dt)
+        add_simulation_quantities(logmgr)
         discr.add_instrumentation(logmgr)
         stepper.add_instrumentation(logmgr)
 
@@ -152,9 +145,13 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
         rhs = op.bind(discr)
 
         try:
-            for step in range(nsteps):
-                logmgr.tick()
+            from hedge.timestep import times_and_steps
+            step_it = times_and_steps(
+                    final_time=0.5e-9, logmgr=logmgr,
+                    max_dt_getter=lambda t: op.estimate_timestep(discr,
+                        stepper=stepper, t=t, fields=fields))
 
+            for step, t, dt in step_it:
                 if step % 10 == 0 and write_output:
                     sub_timer = vis_timer.start_sub_timer()
                     e, h = op.split_eh(fields)
@@ -171,7 +168,7 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
                     sub_timer.stop().submit()
 
                 fields = stepper(fields, t, dt, rhs)
-                t += dt
+
         finally:
             if write_output:
                 vis.close()

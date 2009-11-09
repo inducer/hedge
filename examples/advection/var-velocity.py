@@ -150,15 +150,9 @@ def main(write_output=True, flux_type_arg="lf"):
     # timestep setup ----------------------------------------------------------
     from hedge.timestep import RK4TimeStepper
     stepper = RK4TimeStepper()
-    t = 0
-    dt = discr.dt_factor(op.max_eigenvalue(t, discr))
-    nsteps = int(3/dt)
 
     if rcon.is_head_rank:
-        print "%d elements, dt=%g, nsteps=%d" % (
-                len(discr.mesh.elements),
-                dt,
-                nsteps)
+        print "%d elements" % len(discr.mesh.elements)
 
     # filter setup-------------------------------------------------------------
     from hedge.discretization import Filter, ExponentialFilterResponseFunction
@@ -179,7 +173,7 @@ def main(write_output=True, flux_type_arg="lf"):
     logmgr = LogManager(log_file_name, "w", rcon.communicator)
     add_run_info(logmgr)
     add_general_quantities(logmgr)
-    add_simulation_quantities(logmgr, dt)
+    add_simulation_quantities(logmgr)
     discr.add_instrumentation(logmgr)
 
     stepper.add_instrumentation(logmgr)
@@ -193,16 +187,18 @@ def main(write_output=True, flux_type_arg="lf"):
     logmgr.add_watches(["step.max", "t_sim.max", "l2_u", "t_step.max"])
 
     # Initialize v for data output:
-    v = op.advec_v.volume_interpolant(t, discr)
+    v = op.advec_v.volume_interpolant(0, discr)
 
     # timestep loop -----------------------------------------------------------
     rhs = op.bind(discr)
     try:
-        for step in xrange(nsteps):
-            logmgr.tick()
+        from hedge.timestep import times_and_steps
+        step_it = times_and_steps(
+                final_time=3, logmgr=logmgr,
+                max_dt_getter=lambda t: op.estimate_timestep(discr,
+                    stepper=stepper, t=t, fields=u))
 
-            t = step*dt
-
+        for step, t, dt in step_it:
             if step % 10 == 0 and write_output:
                 visf = vis.make_file("fld-%04d" % step)
                 vis.add_data(visf, [ 
@@ -222,8 +218,8 @@ def main(write_output=True, flux_type_arg="lf"):
         if write_output:
             vis.close()
 
-        logmgr.tick()
-        logmgr.save()
+        logmgr.close()
+        discr.close()
 
 
 

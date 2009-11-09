@@ -25,12 +25,12 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 import numpy
 import hedge.mesh
-from hedge.models import Operator, TimeDependentOperator
+from hedge.models import Operator, HyperbolicOperator
 
 
 
 
-class StrongWaveOperator(TimeDependentOperator):
+class StrongWaveOperator(HyperbolicOperator):
     """This operator discretizes the wave equation
     :math:`\\partial_t^2 u = c^2 \\Delta u`.
 
@@ -179,13 +179,13 @@ class StrongWaveOperator(TimeDependentOperator):
 
         return rhs
 
-    def max_eigenvalue(self):
+    def max_eigenvalue(self, t, fields=None, discr=None):
         return abs(self.c)
 
 
 
 
-class VariableVelocityStrongWaveOperator:
+class VariableVelocityStrongWaveOperator(HyperbolicOperator):
     """This operator discretizes the wave equation
     :math:`\\partial_t^2 u = c^2 \\Delta u`.
 
@@ -343,5 +343,12 @@ class VariableVelocityStrongWaveOperator:
 
         return rhs
 
-    #def max_eigenvalue(self):
-        #return abs(self.c)
+    def max_eigenvalue(self, t, fields=None, discr=None):
+        # Gives the max eigenvalue of a vector of eigenvalues.
+        # As the velocities of each node is stored in the velocity-vector-field
+        # a pointwise dot product of this vector has to be taken to get the
+        # magnitude of the velocity at each node. From this vector the maximum
+        # values limits the timestep.
+
+        c = self.c.volume_interpolant(t, discr)
+        return discr.nodewise_max(c)

@@ -117,14 +117,7 @@ def main(write_output=True, allow_features=None):
 
     fields = op.assemble_eh(discr=discr)
 
-    dt = discr.dt_factor(op.max_eigenvalue())
-    final_time = 1e-8
-    nsteps = int(final_time/dt)+1
-    dt = final_time/nsteps
-
     if rcon.is_head_rank:
-        print "dt", dt
-        print "nsteps", nsteps
         print "#elements=", len(mesh.elements)
 
     stepper = RK4TimeStepper()
@@ -141,7 +134,7 @@ def main(write_output=True, allow_features=None):
     logmgr = LogManager(log_file_name, "w", rcon.communicator)
     add_run_info(logmgr)
     add_general_quantities(logmgr)
-    add_simulation_quantities(logmgr, dt)
+    add_simulation_quantities(logmgr)
     discr.add_instrumentation(logmgr)
     stepper.add_instrumentation(logmgr)
 
@@ -189,7 +182,13 @@ def main(write_output=True, allow_features=None):
 
     t = 0
     try:
-        for step in range(nsteps):
+        from hedge.timestep import times_and_steps
+        step_it = times_and_steps(
+                final_time=1e-8, logmgr=logmgr,
+                max_dt_getter=lambda t: op.estimate_timestep(discr,
+                    stepper=stepper, t=t, fields=fields))
+
+        for step, t, dt in step_it:
             if write_output and step % 10 == 0:
                 sub_timer = vis_timer.start_sub_timer()
                 e, h = op.split_eh(fields)
@@ -213,14 +212,8 @@ def main(write_output=True, allow_features=None):
                             ("mask_e", mask_e), 
                             ("mask_h", mask_h), 
                             ("mask_true_e", mask_true_e), 
-                            ("mask_true_h", mask_true_h), 
-                            ],
-                        expressions=[
-                            ("diff_e", "mask_e-mask_true_e", DB_VARTYPE_VECTOR),
-                            ("diff_h", "mask_h-mask_true_h", DB_VARTYPE_VECTOR),
-                            ],
-                        time=t, step=step
-                        )
+                            ("mask_true_h", mask_true_h)],
+                        time=t, step=step)
                 visf.close()
                 sub_timer.stop().submit()
 
@@ -241,16 +234,14 @@ def main(write_output=True, allow_features=None):
                             outf.write("%g\t%g\n" % (t, op.mu*evaluator(ev_h[1])))
                             outf.flush()
 
-            logmgr.tick()
-
             fields = stepper(fields, t, dt, rhs)
-            t += dt
+
     finally:
         if write_output:
             vis.close()
 
-    logmgr.tick()
-    logmgr.save()
+        logmgr.save()
+        discr.close()
 
 
 

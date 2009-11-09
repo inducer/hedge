@@ -32,12 +32,9 @@ class SSPRK3TimeStepper(TimeStepper):
 
     See JSH, TW: Nodal Discontinuous Galerkin Methods p.158
 
-
     :param limit_stages: bool indicating whether to limit after each stage.
-
     """
-    # SSP stability region = FE region.  along imaginary axis is 1/3 of RK4.
-    dt_fudge_factor = 1/(3.0)
+    dt_fudge_factor = 1
 
     def __init__(self, allow_jit=False, limit_stages=False, limiter=None):
         from pytools.log import IntervalTimer, EventCounter
@@ -46,10 +43,15 @@ class SSPRK3TimeStepper(TimeStepper):
         self.flop_counter = EventCounter(
                 "n_flops_ssprk3", "Floating point operations performed in SSPRK3")
 
-
         self.allow_jit = allow_jit
         self.limit_stages = limit_stages
         self.limiter = limiter
+
+    def get_stability_relevant_init_args(self):
+        return ()
+
+    def __getinitargs__(self):
+        return (self.allow_jit, self.limit_stages, self.limiter)
 
     def add_instrumentation(self, logmgr):
         logmgr.add_quantity(self.timer)
@@ -84,11 +86,8 @@ class SSPRK3TimeStepper(TimeStepper):
                 v2 = (3*y + v1 + dt*rhs(t+dt,v1))/4
                 y = (y + 2*v2 + 2*dt*rhs(t+dt/2,v2))/3
 
-
             sub_timer.stop().submit()
-        
+
         self.flop_counter.add(3*self.dof_count*5)
-
-
 
         return y

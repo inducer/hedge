@@ -26,7 +26,6 @@ import pycuda.autoinit
 
 
 def make_squaremesh():
-
     def round_trip_connect(seq):
         result = []
         for i in range(len(seq)):
@@ -41,7 +40,7 @@ def make_squaremesh():
         max_area_corners = 1e-3 + 0.001*max(
                 la.norm(x-corner)**4 for corner in obstacle_corners)
 
-        return bool(area > min(max_area_volume, max_area_corners))
+        return bool(area > 10*min(max_area_volume, max_area_corners))
 
     import sys
 
@@ -118,23 +117,23 @@ def main():
         mesh_data = rcon.receive_mesh()
 
     from pytools import add_python_path_relative_to_script
-    add_python_path_relative_to_script("..")
+    add_python_path_relative_to_script(".")
 
     for order in [3]:
         from gas_dynamics_initials import UniformMachFlow
-        square = UniformMachFlow(reynolds=float("inf"))
+        square = UniformMachFlow()
 
         from hedge.models.gas_dynamics import GasDynamicsOperator
         op = GasDynamicsOperator(dimensions=2,
                 gamma=square.gamma, mu=square.mu,
                 prandtl=square.prandtl, spec_gas_const=square.spec_gas_const,
                 bc_inflow=square, bc_outflow=square, bc_noslip=square,
-                inflow_tag="inflow", outflow_tag="outflow", noslip_tag="noslip",
-                euler=True)
+                inflow_tag="inflow", outflow_tag="outflow", noslip_tag="noslip")
 
-        if is_cpu == False:
+        if not is_cpu:
             discr = rcon.make_discretization(mesh_data, order=order,
-                        debug=["cuda_no_plan",
+                        debug=[
+                            "cuda_no_plan",
                             #"cuda_dump_kernels",
                             #"dump_dataflow_graph",
                             #"dump_optemplate_stages",
@@ -142,20 +141,19 @@ def main():
                             #"print_op_code"
                             #"cuda_no_plan_el_local"
                             ],
-                        default_scalar_type=numpy.float64,
+                        default_scalar_type=numpy.float32,
                         tune_for=op.op_template(),
                         init_cuda=False)
         else:
             discr = rcon.make_discretization(mesh_data, order=order,
-                        default_scalar_type=numpy.float32,
-                        tune_for=op.op_template()
-                        )
+                        default_scalar_type=numpy.float64,
+                        tune_for=op.op_template())
 
         from hedge.visualization import SiloVisualizer, VtkVisualizer
         #vis = VtkVisualizer(discr, rcon, "shearflow-%d" % order)
         vis = SiloVisualizer(discr, rcon)
 
-        if is_cpu == False:
+        if not is_cpu:
             from hedge.backends.cuda.tools import RK4TimeStepper
         else:
             from hedge.timestep import RK4TimeStepper
@@ -165,7 +163,7 @@ def main():
         from pytools.log import LogManager, add_general_quantities, \
                 add_simulation_quantities, add_run_info
 
-        if is_cpu == False:
+        if not is_cpu:
             logmgr = LogManager("cns-square-gpu-dp-%d.dat" % order, "w", rcon.communicator)
         else:
             logmgr = LogManager("cns-square-cpu-dp-%d.dat" % order, "w", rcon.communicator)
@@ -173,7 +171,6 @@ def main():
         add_general_quantities(logmgr)
         discr.add_instrumentation(logmgr)
         stepper.add_instrumentation(logmgr)
-
 
         from pytools.log import LogQuantity
         class ChangeSinceLastStep(LogQuantity):
@@ -192,6 +189,17 @@ def main():
 
         #logmgr.add_quantity(ChangeSinceLastStep())
 
+
+        add_simulation_quantities(logmgr)
+        logmgr.add_watches(["step.max", "t_sim.max", "t_step.max"])
+        logmgr.set_constant("is_cpu", is_cpu)
+
+        # filter setup ------------------------------------------------------------
+        from hedge.discretization import Filter, ExponentialFilterResponseFunction
+        mode_filter = Filter(discr,
+                ExponentialFilterResponseFunction(min_amplification=0.95, order=4))
+
+        # timestep loop -------------------------------------------------------
         fields = square.volume_interpolant(0, discr)
 
         navierstokes_ex = op.bind(discr)
@@ -203,35 +211,25 @@ def main():
             return ode_rhs
         rhs(0, fields)
 
-        dt = discr.dt_factor(max_eigval[0], order=2)
-        final_time = 200
-        nsteps = int(final_time/dt)+1
-        #nsteps = 500
-        #final_time = nsteps * dt
-        #dt = final_time/nsteps
-
         if rcon.is_head_rank:
             print "---------------------------------------------"
             print "order %d" % order
             print "---------------------------------------------"
-            print "dt", dt
-            print "nsteps", nsteps
             print "#elements=", len(mesh.elements)
 
-        add_simulation_quantities(logmgr, dt)
-        logmgr.add_watches(["step.max", "t_sim.max", "t_step.max"])
-
-
-        # timestep loop -------------------------------------------------------
-        t = 0
-
         try:
-            for step in range(nsteps):
-                logmgr.tick()
+            from hedge.timestep import times_and_steps
+            step_it = times_and_steps(
+                    final_time=200,
+                    #max_steps=500,
+                    logmgr=logmgr,
+                    max_dt_getter=lambda t: op.estimate_timestep(discr,
+                        stepper=stepper, t=t, max_eigenvalue=max_eigval[0]))
 
+            for step, t, dt in step_it:
                 #if (step % 10000 == 0): #and step < 950000) or (step % 500 == 0 and step > 950000):
                 #if False:
-                if step % 1000 == 0:
+                if (step % 100 == 0):
                     visf = vis.make_file("square-%d-%06d" % (order, step))
 
                     #rhs_fields = rhs(t, fields)
@@ -257,13 +255,10 @@ def main():
                     visf.close()
 
                 fields = stepper(fields, t, dt, rhs)
-                t += dt
+                #fields = mode_filter(fields)
 
-                dt = discr.dt_factor(max_eigval[0], order=1)
-
-            logmgr.tick()
-            logmgr.set_constant("is_cpu", is_cpu)
         finally:
+            vis.close()
             logmgr.save()
             discr.close()
 
