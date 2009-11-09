@@ -697,10 +697,59 @@ def test_all_periodic_no_boundary():
 
 
 
-if __name__ == "__main__":
-    from py.test.cmdline import main
-    main([__file__])
+def test_dumka3():
+    from math import sqrt, log, sin, cos
+    from hedge.tools import EOCRecorder
 
+    def rhs(t, y):
+        u = y[0]
+        v = y[1]
+        return numpy.array([v, -u/t**2], dtype=numpy.float64)
+
+    def soln(t):
+        inner = sqrt(3)/2*log(t)
+        return sqrt(t)*(
+                5*sqrt(3)/3*sin(inner)
+                + cos(inner)
+                )
+
+    def get_error(stepper, dt):
+        t = 1
+        y = soln(0)
+        final_t = 10
+        nsteps = int((final_t-t)/dt)
+
+        hist = []
+        for i in range(nsteps):
+            y = stepper(y, t, dt, rhs)
+            t += dt
+            hist.append(y)
+
+        return abs(y[0]-soln(t))
+
+    from hedge.timestep.dumka3 import Dumka3Timestepper
+    eocrec = EOCRecorder()
+    for n in range(4,15):
+        tol = 2**(-n)
+        dt = 2**(-n)
+        stepper = Dumka3Timestepper()
+        y_final = stepper(1, 10, h0=1, atol=tol, rtol=tol, rhs=rhs, 
+                estimate_dt=lambda t, y: 0.03, y=numpy.array([1, 3]))
+        print n, tol, la.norm(y_final[0]-soln(10))
+
+    #print stepper
+    #print "------------------------------------------------------"
+    #print "ORDER %d" % o
+    #print "------------------------------------------------------"
+    #print eocrec.pretty_print()
+
+    #orderest = eocrec.estimate_order_of_convergence()[0,1]
+    #print orderest, order
+    #assert orderest > order*0.95
+
+
+
+# main program ----------------------------------------------------------------
 if __name__ == "__main__":
     import sys
     if len(sys.argv) > 1:
