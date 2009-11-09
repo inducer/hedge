@@ -97,10 +97,9 @@ def main():
         limiter =  SlopeLimiter1NEuler(discr, sod_field.gamma, 2, op)
 
         # integrator setup---------------------------------------------------------
-        from hedge.timestep import SSPRK3TimeStepper
-        from hedge.timestep import RK4TimeStepper
-        #stepper = SSPRK3TimeStepper(limit_stages=True,limiter=limiter)
-        stepper = SSPRK3TimeStepper()
+        from hedge.timestep import SSPRK3TimeStepper, RK4TimeStepper
+        stepper = SSPRK3TimeStepper(limit_stages=True,limiter=limiter)
+        #stepper = SSPRK3TimeStepper()
         #stepper = RK4TimeStepper()
 
         # diagnostics setup ---------------------------------------------------
@@ -126,7 +125,7 @@ def main():
             from hedge.timestep import times_and_steps
             step_it = times_and_steps(
                     final_time=2.5, logmgr=logmgr,
-                    max_dt_getter=lambda t: op.estimate_timestep(discr,
+                    max_dt_getter=lambda t: 0.1*op.estimate_timestep(discr,
                         stepper=stepper, t=t, max_eigenvalue=max_eigval[0]))
 
             for step, t, dt in step_it:

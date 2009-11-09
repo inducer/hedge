@@ -209,18 +209,19 @@ def main(write_output=True):
             print "---------------------------------------------"
             print "#elements=", len(mesh.elements)
 
-        from hedge.timestep import RK4TimeStepper
-        #from hedge.backends.cuda.tools import RK4TimeStepper
-        stepper = RK4TimeStepper()
-
-        # diagnostics setup ---------------------------------------------------
-        from pytools.log import LogManager, add_general_quantities, \
-                add_simulation_quantities, add_run_info
-
         # limiter setup -------------------------------------------------------
         from hedge.models.gas_dynamics import SlopeLimiter1NEuler
         limiter = SlopeLimiter1NEuler(discr, gamma, 2, op)
 
+        # time stepper --------------------------------------------------------
+        from hedge.timestep import SSPRK3TimeStepper, RK4TimeStepper
+        stepper = SSPRK3TimeStepper(limit_stages=True,limiter=limiter)
+        #stepper = SSPRK3TimeStepper()
+        #stepper = RK4TimeStepper()
+
+        # diagnostics setup ---------------------------------------------------
+        from pytools.log import LogManager, add_general_quantities, \
+                add_simulation_quantities, add_run_info
 
         if write_output:
             log_file_name = "euler-%d.dat" % order
