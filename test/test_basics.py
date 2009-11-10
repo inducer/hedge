@@ -193,19 +193,22 @@ def test_timestep_accuracy():
 
         return abs(y[0]-soln(t))
 
-    def verify_timestep_order(stepper_getter, order):
+    def verify_timestep_order(stepper_getter, order, setup=None):
         eocrec = EOCRecorder()
         for n in range(4,9):
             dt = 2**(-n)
             stepper = stepper_getter()
+            if setup is not None:
+                setup(stepper, dt)
+
             error = get_error(stepper,dt)
             eocrec.add_data_point(1/dt, error)
 
-        #print stepper
-        #print "------------------------------------------------------"
-        #print "ORDER %d" % o
-        #print "------------------------------------------------------"
-        #print eocrec.pretty_print()
+        print stepper
+        print "------------------------------------------------------"
+        print "ORDER %d" % order
+        print "------------------------------------------------------"
+        print eocrec.pretty_print()
 
         orderest = eocrec.estimate_order_of_convergence()[0,1]
         #print orderest, order
@@ -214,11 +217,19 @@ def test_timestep_accuracy():
     from hedge.timestep.rk4 import RK4TimeStepper
     from hedge.timestep.ab import AdamsBashforthTimeStepper
     from hedge.timestep.ssprk3 import SSPRK3TimeStepper
+    from hedge.timestep.dumka3 import Dumka3Timestepper
 
     for o in range(1,5):
         verify_timestep_order(lambda : AdamsBashforthTimeStepper(o), o)
     verify_timestep_order(RK4TimeStepper, 4)
     verify_timestep_order(SSPRK3TimeStepper, 3)
+
+    for pol_index in range(Dumka3Timestepper.POLYNOMIAL_COUNT):
+        print pol_index
+        def setup_dumka(stepper, dt):
+            stepper.setup(eigenvalue_estimate=1, dt=dt, pol_index=pol_index)
+
+        verify_timestep_order(Dumka3Timestepper, 3, setup_dumka)
 
 
 def test_face_vertex_order():
@@ -694,58 +705,6 @@ def test_all_periodic_no_boundary():
 
     assert count(mesh.tag_to_boundary[TAG_ALL]) == 0
 
-
-
-
-def test_dumka3():
-    from math import sqrt, log, sin, cos
-    from hedge.tools import EOCRecorder
-
-    def rhs(t, y):
-        u = y[0]
-        v = y[1]
-        return numpy.array([v, -u/t**2], dtype=numpy.float64)
-
-    def soln(t):
-        inner = sqrt(3)/2*log(t)
-        return sqrt(t)*(
-                5*sqrt(3)/3*sin(inner)
-                + cos(inner)
-                )
-
-    def get_error(stepper, dt):
-        t = 1
-        y = soln(0)
-        final_t = 10
-        nsteps = int((final_t-t)/dt)
-
-        hist = []
-        for i in range(nsteps):
-            y = stepper(y, t, dt, rhs)
-            t += dt
-            hist.append(y)
-
-        return abs(y[0]-soln(t))
-
-    from hedge.timestep.dumka3 import Dumka3Timestepper
-    eocrec = EOCRecorder()
-    for n in range(4,15):
-        tol = 2**(-n)
-        dt = 2**(-n)
-        stepper = Dumka3Timestepper()
-        y_final = stepper(1, 10, h0=1, atol=tol, rtol=tol, rhs=rhs, 
-                estimate_dt=lambda t, y: 0.03, y=numpy.array([1, 3]))
-        print n, tol, la.norm(y_final[0]-soln(10))
-
-    #print stepper
-    #print "------------------------------------------------------"
-    #print "ORDER %d" % o
-    #print "------------------------------------------------------"
-    #print eocrec.pretty_print()
-
-    #orderest = eocrec.estimate_order_of_convergence()[0,1]
-    #print orderest, order
-    #assert orderest > order*0.95
 
 
 

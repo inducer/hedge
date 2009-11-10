@@ -13,239 +13,91 @@ import numpy
 
 
 class Dumka3Timestepper(object):
-    def __init__(self, debug=False):
+    def __init__(self, debug=True):
         self.debug = debug
 
-    def __call__(self, t, t_end, h0, atol, rtol, rhs, estimate_dt, y):
-        """
-        :param t: initial time
-        :param t_end: end of the integration interval
-        :param h0: initial step-size (this value can be override by the program)
-        :param atol: tolerance of the computation (should be strictly positive)
-        :param rtol: relative tolerance (should be strictly positive)
-        :param rhs: function(t, y), calculates right hand side
-        :param estimate_dt: function(t, y), calculate h_{euler} - step which you 
-          would use in explicit Euler method
-        :param y: solution of the ODE y'=f(y,t)
-        """
+    POLYNOMIAL_COUNT = 13 
+    # 14 polynomials are available, but polynomial 13 fails 
+    # accuracy test?
 
-        _n_p=14
-        _sz2=6
-        numOfRejectedSteps=0
-        minimumValue = 1.e-15
-        err_n=0.
-        h_n=0
-        numOfSteps=0
-        maxCou = 0.
-        meanCou = 0.
-        timeInterval = t_end - t
+    def setup(self, eigenvalue_estimate, dt, pol_index=None):
+        # find degree of the polynomials to be used
+        if pol_index is None:
+            pol_index = 0
+            while (pol_index!=self.POLYNOMIAL_COUNT-1) \
+                    and 2*dt/eigenvalue_estimate > _STAB_REG[pol_index]:
+                pol_index += 1
 
-        if timeInterval<h0:
-            raise RuntimeError("Initial step size h0 is too small: t+h0>t_end")
-        if atol < minimumValue:
-            raise RuntimeError("atol must be positive")
-        if rtol < minimumValue:
-            raise RuntimeError("rtol must be positive")
+            if pol_index > 0 and (
+                (_STAB_REG[pol_index-1]/_N_DEG[pol_index-1])*_N_DEG[pol_index] 
+                > 2*dt/eigenvalue_estimate):
+                pol_index -= 1
+        else:
+            if pol_index > self.POLYNOMIAL_COUNT:
+                raise ValueError("invalid polynomial index specified")
 
-        numOfRHSEvaluations=0
+        n_pol_degree = _N_DEG[pol_index]
 
-        lambdaOld = 0.
+        if dt > _STAB_REG[pol_index]*eigenvalue_estimate/2:
+            from warnings import warn
+            warn("timestep too big")
 
-        if h0 < 1.e-14:
-          raise RuntimeError("Initial step h0 is too small")
+        self.pol_index = pol_index
 
-        if t_end <= t:
-            raise RuntimeError("End-time t_end is less than initial time")
+    def __call__(self, y, t, dt, rhs):
+        _sz2 = 6
 
-        h_new=h0
+        pol_index = self.pol_index
+        n_pol = 0
         z0 = rhs(t, y)
 
-        isComputeEigenValue = False
+        end_index = _INDEX_LAST[pol_index]
+        for k in range(_INDEX_FIRST[pol_index]-1, end_index):
+            n_pol = n_pol+3
+            idx = _sz2*k
+            a_21 = dt*_COEF[idx]
+            c_2 = a_21
+            a_31 = dt*_COEF[idx+1]
+            a_32 = dt*_COEF[idx+2]
+            c_3 = a_31+a_32
+            a_41 = dt*_COEF[idx+3]
+            a_42 = dt*_COEF[idx+4]
+            a_43 = dt*_COEF[idx+5]
+            c_4 = a_41+a_42+a_43
 
-        if isComputeEigenValue:
-            oldEigenVector = rhs(t, z0)
-            numOfRHSEvaluations += 1
+            y = y + a_21*z0
 
-        numOfRHSEvaluations += 1
-        stepId=0
-        stepOK = True
+            t2 = t+c_2
 
-        while True:
-            if isComputeEigenValue:
-                # calculate eigenvalue only every 20th step
-                if stepId%20 == 0 or not stepOK:
-                  ev = abs(eigenvalue(y, z0, t, f, oldEigenVector, z1, lambdaOld,
-                      numOfRHSEvaluations,minimumValue))
-                  if ev < minimumValue:
-                      ev = minimumValue
+            z1 = rhs(t2, y)
 
-                  cou = 2./ (ev*1.2)
+            if n_pol==_N_DEG[pol_index]:
+                r = dt*(_COEF[idx+1]-_COEF[idx])
+                y = y + r*z0 + a_32*z1
             else:
-                cou = estimate_dt(t, y)
+                y=y+a_32*z1
 
-            if maxCou < cou:
-              maxCou=cou
+            t3 = t+c_3
+            if n_pol == _N_DEG[pol_index]:
+                tmp_1 = c_3/2.e+0
+                tmp_2 = (c_4-c_2)/2
 
-            meanCou += cou
-            numOfSteps += 1
-            h=min(h_new,(t_end-t))
+                z1 = tmp_1*z1 - tmp_2*z0
 
-            # find degree of the polynomials to be used
-            index = 0
-            while (index!=_n_p-1) and ((2.e+0*h/cou)>_STAB_REG[index]):
-                index += 1
+            z0 = rhs(t3, y)
 
-            if index > 0 and (
-                (_STAB_REG[index-1]/_N_DEG[index-1])*_N_DEG[index] > 2*h/cou):
-                index -= 1
+            if n_pol==_N_DEG[pol_index]:
+               z1 = tmp_2*z0 + z1
 
-            n_pol_degree=_N_DEG[index]
-            if self.debug:
-                print "time: %g, degree of polynomial: %d" % (t, n_pol_degree)
+            y = y + a_43*z0
 
-            h=min((_STAB_REG[index]*cou/2.e+0),h)
+            t4 = t+c_4
+            t = t4
 
-            n_pol=0
-
-            numOfRHSEvaluations0 = numOfRHSEvaluations
-            for k in range(_INDEX_FIRST[index]-1, _INDEX_LAST[index]):
-                # save initial conditions (solution, right hand side, time)
-                # that will be needed if time step will be rejected
-                if k == _INDEX_FIRST[index]-1:
-                    z2 = z0.copy()
-                    z3 = y.copy()
-                    t_en=t
-
-                n_pol=n_pol+3
-                _idx=_sz2*k
-                a_21=h*_COEF[_idx]
-                c_2=a_21
-                a_31=h*_COEF[_idx+1]
-                a_32=h*_COEF[_idx+2]
-                c_3=a_31+a_32
-                a_41=h*_COEF[_idx+3]
-                a_42=h*_COEF[_idx+4]
-                a_43=h*_COEF[_idx+5]
-                c_4=a_41+a_42+a_43
-
-                y = y + a_21*z0
-
-                t2=t+c_2
-
-                z1 = rhs(t2, y)
-                numOfRHSEvaluations += 1
-
-                if n_pol==_N_DEG[index]:
-                    r = h*(_COEF[_idx+1]-_COEF[_idx])
-                    y = y + r*z0 + a_32*z1
-                else:
-                    y=y+a_32*z1
-
-                t3=t+c_3
-                if n_pol==_N_DEG[index]:
-                    tmp_1=c_3/2.e+0
-                    tmp_2=(c_4-c_2)/2.e+0
-
-                    z1 = tmp_1*z1 - tmp_2*z0
-
-                z0 = rhs(t3, y)
-
-                numOfRHSEvaluations += 1
-                if n_pol==_N_DEG[index]:
-                   z1 = tmp_2*z0 + z1
-
-                y = y + a_43*z0
-
-                t4=t+c_4
-                t=t4
-
+            if k+1 != end_index:
                 z0 = rhs(t, y)
-                numOfRHSEvaluations += 1
-
-            z1 = (1/(
-                rtol*numpy.maximum(
-                    numpy.sqrt(y*y),
-                    numpy.sqrt(z3*z3))+atol)
-                )*((-tmp_1)*z0+z1)
-
-            h_new=h
-
-            # check error and return new recommended step size in variable h_new
-            accepted, h_new = self.is_step_accepted(t,y,z1,h_new,
-                    n_pol_degree,err_n, h_n, stepId)
-
-            if not accepted:
-                numOfRejectedSteps = numOfRejectedSteps + (numOfRHSEvaluations - numOfRHSEvaluations0)
-                stepOK = False
-
-                z0 = z2
-                y = z3
-
-                t=t_en
-                if self.debug:
-                    print "Step is rejected. Used degree of polynomial: ",  n_pol_degree, " Time= ", t
-            else:
-                stepOK = True
-
-            stepId += 1
-
-            if t >= t_end:
-                break
-
-        if self.debug:
-            meanCou = meanCou/numOfSteps
-
-            print "Number of RHS evaluations = ", numOfRHSEvaluations
-            print "Mean step-size = ", timeInterval/numOfRHSEvaluations
-            print "Mean value of cou = ", meanCou
-            # print "Maximum value of cou = ", maxCou
-            print "Last value of cou = ", cou
-            print "Number of rejected RHS evaluations = ", numOfRejectedSteps
 
         return y
-
-    def is_step_accepted(self, t, y, z, h_new, n_pol_degree, err_n, h_n, stepId):
-        """Return True if step can be accepted, and at the same time this 
-        function calculates and return h_new.
-        """
-
-        isnotreject = False
-
-        eps = numpy.sqrt(numpy.dot(z, z)/len(z))
-
-        fracmin=0.1e0
-        if eps==0.e0:
-            eps = 1.e-14
-
-        frac = pow(1.e0/eps, 1/3)
-
-        if eps <= 1:
-            if err_n>0.e0 and h_n > 0.e0:
-                frac2=pow(err_n,(1.e0/3.e0))*frac*frac*(h_new/h_n)
-                frac=min(frac,frac2)
-
-            isnotreject = True
-            fracmax=2.e0
-            frac = min(fracmax,max(fracmin,0.8e0*frac))
-            h_old = h_new
-            h_new=frac*h_new
-            h_n=h_old
-            err_n=eps
-        else:
-            isnotreject = False
-            fracmax = 1
-
-            frac=0.8*min(fracmax,max(fracmin,0.8e0*frac))
-
-            if stepId==0:
-                h_new=fracmin*h_new
-            else:
-                h_new=frac*h_new
-
-            if self.debug:
-                print eps, t, n_pol_degree, h_new, h_n
-
-        return isnotreject, h_new
 
 
 
