@@ -217,19 +217,19 @@ def test_timestep_accuracy():
     from hedge.timestep.rk4 import RK4TimeStepper
     from hedge.timestep.ab import AdamsBashforthTimeStepper
     from hedge.timestep.ssprk3 import SSPRK3TimeStepper
-    from hedge.timestep.dumka3 import Dumka3Timestepper
+    from hedge.timestep.dumka3 import Dumka3TimeStepper
 
     for o in range(1,5):
         verify_timestep_order(lambda : AdamsBashforthTimeStepper(o), o)
     verify_timestep_order(RK4TimeStepper, 4)
     verify_timestep_order(SSPRK3TimeStepper, 3)
 
-    for pol_index in range(Dumka3Timestepper.POLYNOMIAL_COUNT):
+    for pol_index in range(Dumka3TimeStepper.POLYNOMIAL_COUNT):
         print pol_index
         def setup_dumka(stepper, dt):
             stepper.setup(eigenvalue_estimate=1, dt=dt, pol_index=pol_index)
 
-        verify_timestep_order(Dumka3Timestepper, 3, setup_dumka)
+        verify_timestep_order(Dumka3TimeStepper, 3, setup_dumka)
 
 
 def test_face_vertex_order():

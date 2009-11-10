@@ -1,8 +1,18 @@
+# -*- coding: utf8 -*-
+
+"""DUMKA3 timestepper."""
+
 from __future__ import division
 
-# DUMKA3 by Alexei Medovikov,
-# based on code retrieved 11/9/2009 from http://www.math.tulane.edu/~amedovik/
-# ported by Andreas Kloeckner <kloeckner@dam.brown.edu>
+__copyright__ = "Copyright (C) 2009 Alexei Medovikov, Andreas Kloeckner"
+
+__license__ = """(unclear)
+
+DUMKA3 by Alexei Medovikov,
+based on C++ code retrieved 11/9/2009 from http://www.math.tulane.edu/~amedovik/
+ported by Andreas Kloeckner <kloeckner@dam.brown.edu>
+"""
+
 
 
 
@@ -12,9 +22,17 @@ import numpy
 
 
 
-class Dumka3Timestepper(object):
-    def __init__(self, debug=True):
-        self.debug = debug
+class Dumka3TimeStepper(object):
+    """Third-order "DUMKA" timesteppers.
+
+    Alexei A. Medovikov, "High order explicit methods for parabolic equations" 
+    BIT1998, Vol. 38, No.2, pp.372-390
+    """
+
+    def __init__(self, pol_index=None):
+        if pol_index > self.POLYNOMIAL_COUNT:
+            raise ValueError("invalid polynomial index specified")
+        self.pol_index=pol_index
 
     POLYNOMIAL_COUNT = 13 
     # 14 polynomials are available, but polynomial 13 fails 
@@ -38,7 +56,8 @@ class Dumka3Timestepper(object):
 
         n_pol_degree = _N_DEG[pol_index]
 
-        if dt > _STAB_REG[pol_index]*eigenvalue_estimate/2:
+        if (dt is not None and eigenvalue_estimate is not None) and \
+                dt > _STAB_REG[pol_index]*eigenvalue_estimate/2:
             from warnings import warn
             warn("timestep too big")
 
@@ -48,6 +67,9 @@ class Dumka3Timestepper(object):
         _sz2 = 6
 
         pol_index = self.pol_index
+        if pol_index is None:
+            raise RuntimeError("must call setup() or set pol_index before timestepping")
+
         n_pol = 0
         z0 = rhs(t, y)
 
@@ -71,11 +93,11 @@ class Dumka3Timestepper(object):
 
             z1 = rhs(t2, y)
 
-            if n_pol==_N_DEG[pol_index]:
+            if n_pol == _N_DEG[pol_index]:
                 r = dt*(_COEF[idx+1]-_COEF[idx])
                 y = y + r*z0 + a_32*z1
             else:
-                y=y+a_32*z1
+                y = y + a_32 * z1
 
             t3 = t+c_3
             if n_pol == _N_DEG[pol_index]:

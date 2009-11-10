@@ -124,6 +124,7 @@ def main():
         square = UniformMachFlow()
 
         from hedge.models.gas_dynamics import GasDynamicsOperator
+        print "mu", square.mu
         op = GasDynamicsOperator(dimensions=2,
                 gamma=square.gamma, mu=square.mu,
                 prandtl=square.prandtl, spec_gas_const=square.spec_gas_const,
@@ -159,6 +160,9 @@ def main():
             from hedge.timestep import RK4TimeStepper
         stepper = RK4TimeStepper()
 
+        #from hedge.timestep.dumka3 import Dumka3TimeStepper
+        #stepper = Dumka3TimeStepper(3)
+
         # diagnostics setup ---------------------------------------------------
         from pytools.log import LogManager, add_general_quantities, \
                 add_simulation_quantities, add_run_info
@@ -188,7 +192,6 @@ def main():
                 return result
 
         #logmgr.add_quantity(ChangeSinceLastStep())
-
 
         add_simulation_quantities(logmgr)
         logmgr.add_watches(["step.max", "t_sim.max", "t_step.max"])
@@ -224,7 +227,7 @@ def main():
                     #max_steps=500,
                     logmgr=logmgr,
                     max_dt_getter=lambda t: op.estimate_timestep(discr,
-                        stepper=stepper, t=t, max_eigenvalue=max_eigval[0]))
+                        stepper=RK4TimeStepper(), t=t, max_eigenvalue=max_eigval[0]))
 
             for step, t, dt in step_it:
                 #if (step % 10000 == 0): #and step < 950000) or (step % 500 == 0 and step > 950000):
