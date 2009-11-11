@@ -141,13 +141,13 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
                 )
 
         # timestep loop -------------------------------------------------------
-        t = 0
         rhs = op.bind(discr)
+        final_time = 0.5e-9
 
         try:
             from hedge.timestep import times_and_steps
             step_it = times_and_steps(
-                    final_time=0.5e-9, logmgr=logmgr,
+                    final_time=final_time, logmgr=logmgr,
                     max_dt_getter=lambda t: op.estimate_timestep(discr,
                         stepper=stepper, t=t, fields=fields))
 
@@ -176,7 +176,7 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
             logmgr.close()
             discr.close()
 
-        mode.set_time(t)
+        mode.set_time(final_time)
 
         eoc_rec.add_data_point(order, 
                 discr.norm(fields-get_true_field()))
