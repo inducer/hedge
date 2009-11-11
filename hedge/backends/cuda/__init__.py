@@ -742,15 +742,15 @@ class Discretization(hedge.discretization.Discretization):
         hedge.discretization.Discretization.add_instrumentation(self, mgr)
 
     def create_op_timers(self):
-        from hedge.backends.cuda.tools import CallableCollectionTimer
+        from pytools.log import IntervalTimer
 
-        self.flux_gather_timer = CallableCollectionTimer("t_gather",
+        self.flux_gather_timer = IntervalTimer("t_gather",
                 "Time spent gathering fluxes")
-        self.el_local_timer = CallableCollectionTimer("t_el_local",
+        self.el_local_timer = IntervalTimer("t_el_local",
                 "Time spent applying element-local matrices (lift, mass)")
-        self.diff_op_timer = CallableCollectionTimer("t_diff",
+        self.diff_op_timer = IntervalTimer("t_diff",
                 "Time spent applying applying differentiation operators")
-        self.vector_math_timer = CallableCollectionTimer("t_vector_math",
+        self.vector_math_timer = IntervalTimer("t_vector_math",
                 "Time spent doing vector math")
 
         return [self.flux_gather_timer,
