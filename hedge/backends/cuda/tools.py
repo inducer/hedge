@@ -265,26 +265,6 @@ class RK4TimeStepper(hedge.timestep.base.TimeStepper):
 
 
 
-# instrumentation -------------------------------------------------------------
-class CallableCollectionTimer(LogQuantity):
-    """Records the elapsed time returned by a number of callables added
-    via L{add_timer_callable}."""
-    def __init__(self, name="interval", description=None):
-        LogQuantity.__init__(self, name, "s", description)
-
-        self.callables = []
-
-    def add_timer_callable(self, clbl):
-        self.callables.append(clbl)
-
-    def __call__(self):
-        result = sum(clbl() for clbl in self.callables)
-        self.callables = []
-        return result
-
-
-
-
 # MPI interaction -------------------------------------------------------------
 class CudaDevInfo(Record):
     pass
