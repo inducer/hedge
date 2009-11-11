@@ -23,6 +23,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import pycuda.driver as cuda
+import pycuda.gpuarray as gpuarray
 import numpy
 from pytools import Record
 from pytools.log import LogQuantity
@@ -142,6 +143,42 @@ def make_superblocks(devdata, struct_name, single_item, multi_item, extra_fields
 
 
 
+class CUDALinearCombiner:
+    def __init__(self, result_dtype, scalar_dtype, sample_vec, arg_count):
+        from pycuda.elementwise import get_linear_combination_kernel
+        self.vector_dtype = sample_vec.dtype
+        self.result_dtype = result_dtype
+        self.shape = sample_vec.shape
+        self.block = sample_vec._block
+        self.grid = sample_vec._grid
+        self.mem_size = sample_vec.mem_size
+
+        self.kernel, _ = get_linear_combination_kernel(
+                arg_count*((False, scalar_dtype, self.vector_dtype),),
+                result_dtype)
+
+    def __call__(self, *args):
+        result = gpuarray.empty(self.shape, self.result_dtype)
+
+        knl_args = []
+        for fac, vec in args:
+            if vec.dtype != self.vector_dtype:
+                raise TypeError("unexpected vector type in CUDA linear combination")
+
+            knl_args.append(fac)
+            knl_args.append(vec.gpudata)
+
+        knl_args.append(result.gpudata)
+        knl_args.append(self.mem_size)
+
+        self.kernel.set_block_shape(*self.block)
+        self.kernel.prepared_async_call(self.grid, None, *knl_args)
+
+        return result
+
+
+
+
 # code generation -------------------------------------------------------------
 def get_load_code(dest, base, bytes, word_type=numpy.uint32,
         descr=None):
@@ -209,59 +246,42 @@ def unroll(body_gen, total_number, max_unroll=None, start=0):
 
 
 
-class RK4TimeStepper(hedge.timestep.base.TimeStepper):
-    def __init__(self):
-        from hedge.timestep.rk4 import _RK4A, _RK4B, _RK4C
-        self.coeffs = zip(_RK4A, _RK4B, _RK4C)
+# CUDA timer ------------------------------------------------------------------
+class CUDAIntervalTimer(LogQuantity):
+    """Records elapsed times."""
 
-        self.instrumented = False
+    class _SubTimer:
+        def __init__(self, itimer, stream):
+            self.itimer = itimer
+            self.stream = stream
+            self.start_event = cuda.Event().record(self.stream)
 
-    def get_stability_relevant_stepper_class(self):
-        from hedge.timestep.rk4 import RK4TimeStepper
-        return RK4TimeStepper
+        def stop(self):
+            self.stop_event = cuda.Event().record(self.stream)
+            return self
 
-    def get_stability_relevant_init_args(self):
-        return ()
+        def submit(self):
+            self.itimer.callables.append(self.elapsed)
 
-    def add_instrumentation(self, logmgr):
-        self.timer = CallableCollectionTimer(
-                "t_rk4", "Time spent doing algebra in RK4")
+        def elapsed(self):
+            return 1e-3*(self.stop_event.time_since(self.start_event))
 
-        from pytools.log import EventCounter
-        self.flop_counter = EventCounter(
-                "n_flops_rk4",
-                "Number of floating point operations in RK4")
+    def __init__(self, name, description=None, stream=None):
+        LogQuantity.__init__(self, name, "s", description)
+        self.stream = stream
+        self.callables = []
 
-        logmgr.add_quantity(self.timer)
-        logmgr.add_quantity(self.flop_counter)
+    def start_sub_timer(self):
+        return self._SubTimer(self, self.stream)
 
-        self.instrumented = True
+    def add_timer_callable(self, f):
+        self.callables.append(f)
 
-    def __call__(self, y, t, dt, rhs):
-        try:
-            self.residual
-        except AttributeError:
-            self.residual = 0*rhs(t, y)
+    def __call__(self):
+        result = sum(clbl() for clbl in self.callables)
+        self.callables = []
+        return result
 
-        if self.instrumented:
-            def add_timer(n_flops, t_func):
-                self.timer.add_timer_callable(t_func)
-                self.flop_counter.add(n_flops)
-        else:
-            add_timer = None
-
-        from hedge.tools import mul_add
-
-        for a, b, c in self.coeffs:
-            this_rhs = rhs(t + c*dt, y)
-
-            self.residual = mul_add(a, self.residual, dt, this_rhs,
-                    add_timer=add_timer)
-            del this_rhs
-            y = mul_add(1, y, b, self.residual,
-                    add_timer=add_timer)
-
-        return y
 
 
 
@@ -280,8 +300,7 @@ def mpi_get_default_device(comm, dev_filter=lambda dev: True):
         for i, d in enumerate(cuda_devices)
         if dev_filter(d)]
 
-    from boostmpi import gather, scatter
-    all_devprops = gather(comm, (gethostname(), cuda_devprops), 0)
+    all_devprops = comm.gather((gethostname(), cuda_devprops), root=0)
 
     if comm.rank == 0:
         host_to_devs = {}
@@ -311,4 +330,4 @@ def mpi_get_default_device(comm, dev_filter=lambda dev: True):
     else:
         rank_to_device = None
 
-    return cuda.Device(scatter(comm, rank_to_device, 0).index)
+    return cuda.Device(comm.scatter(rank_to_device, root=0).index)

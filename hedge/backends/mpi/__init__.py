@@ -61,9 +61,9 @@ class RankData(pytools.Record):
 
 
 class MPIRunContext(RunContext):
-    def __init__(self, communicator, discr_class):
+    def __init__(self, communicator, serial_context):
         self.communicator = communicator
-        self.discr_class = discr_class
+        self.serial_context = serial_context
 
     @property
     def rank(self):
@@ -117,7 +117,15 @@ class MPIRunContext(RunContext):
         print "receive end rank", self.rank
 
     def make_discretization(self, mesh_data, *args, **kwargs):
-        return ParallelDiscretization(self, self.discr_class, mesh_data, *args, **kwargs)
+        return ParallelDiscretization(self, 
+                self.serial_context.discr_class, mesh_data, 
+                *args, **kwargs)
+
+    def make_timer(self, name, description=None):
+        return self.serial_context.make_timer(name, description)
+
+    def make_linear_combiner(self, *args, **kwags):
+        return self.serial_context.make_linear_combiner(*args, **kwargs)
 
 
 

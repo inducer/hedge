@@ -109,7 +109,7 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
             print "---------------------------------------------"
             print "#elements=", len(mesh.elements)
 
-        stepper = RK4TimeStepper()
+        stepper = RK4TimeStepper(discr.default_scalar_type, rcon=rcon)
 
         # diagnostics setup ---------------------------------------------------
         from pytools.log import LogManager, add_general_quantities, \

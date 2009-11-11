@@ -49,34 +49,41 @@ _RK4C = [0.0,
         2526269341429/6820363962896,
         2006345519317/3224310063776,
         2802321613138/2924317926251,
-        1,
+        #1,
         ]
 
 
 
 
 class RK4TimeStepper(TimeStepper):
-    '''A low storage fourth-order Runge-Kutta method
+    """A low storage fourth-order Runge-Kutta method
 
     See JSH, TW: Nodal Discontinuous Galerkin Methods p.64
     or 
     Carpenter, M.H., and Kennedy, C.A., Fourth-order-2N-storage 
     Runge-Kutta schemes, NASA Langley Tech Report TM 109112, 1994
-
-    '''
-
+    """
 
     dt_fudge_factor = 1
 
-    def __init__(self, allow_jit=True):
+    def __init__(self, dtype=numpy.float64, rcon=None):
         from pytools.log import IntervalTimer, EventCounter
-        self.timer = IntervalTimer(
+
+        timer_factory = IntervalTimer
+        if rcon is not None:
+            timer_factory = rcon.make_timer
+
+        self.timer = timer_factory(
                 "t_rk4", "Time spent doing algebra in RK4")
         self.flop_counter = EventCounter(
                 "n_flops_rk4", "Floating point operations performed in RK4")
-        self.coeffs = zip(_RK4A, _RK4B, _RK4C)
 
-        self.allow_jit = allow_jit
+        from pytools import match_precision
+        self.dtype = numpy.dtype(dtype)
+        self.scalar_dtype = match_precision(
+                numpy.dtype(numpy.float64), self.dtype)
+        self.coeffs = numpy.array([_RK4A, _RK4B, _RK4C], dtype=self.scalar_dtype).T
+        self.rcon = rcon
 
     def get_stability_relevant_init_args(self):
         return ()
@@ -93,32 +100,24 @@ class RK4TimeStepper(TimeStepper):
             self.residual
         except AttributeError:
             self.residual = 0*rhs(t, y)
-            from hedge.tools import count_dofs, has_data_in_numpy_arrays
+            from hedge.tools import count_dofs
             self.dof_count = count_dofs(self.residual)
 
-            self.use_jit = self.allow_jit and has_data_in_numpy_arrays(
-                    y, allow_objarray_levels=1)
+            from hedge.tools.linear_combination import make_linear_combiner
+            self.linear_combiner = make_linear_combiner(
+                    self.dtype, self.scalar_dtype, self.residual,
+                    arg_count=2, rcon=self.rcon)
 
-        if self.use_jit:
-            from hedge.tools import numpy_linear_comb
+        lc = self.linear_combiner
 
-            for a, b, c in self.coeffs:
-                this_rhs = rhs(t + c*dt, y)
+        for a, b, c in self.coeffs:
+            this_rhs = rhs(t + c*dt, y)
 
-                sub_timer = self.timer.start_sub_timer()
-                self.residual = numpy_linear_comb([(a, self.residual), (dt, this_rhs)])
-                del this_rhs
-                y = numpy_linear_comb([(1, y), (b, self.residual)])
-                sub_timer.stop().submit()
-        else:
-            for a, b, c in self.coeffs:
-                this_rhs = rhs(t + c*dt, y)
-
-                sub_timer = self.timer.start_sub_timer()
-                self.residual = a*self.residual + dt*this_rhs
-                del this_rhs
-                y = y + b * self.residual
-                sub_timer.stop().submit()
+            sub_timer = self.timer.start_sub_timer()
+            self.residual = lc((a, self.residual), (dt, this_rhs))
+            del this_rhs
+            y = lc((1, y), (b, self.residual))
+            sub_timer.stop().submit()
 
         # 5 is the number of flops above, *NOT* the number of stages,
         # which is already captured in len(self.coeffs)

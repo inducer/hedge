@@ -94,9 +94,6 @@ class RunContext(object):
 class SerialRunContext(RunContext):
     communicator = None
 
-    def __init__(self, discr_class):
-        self.discr_class = discr_class
-
     @property
     def rank(self):
         return 0
@@ -113,8 +110,41 @@ class SerialRunContext(RunContext):
         return mesh
 
     def make_discretization(self, mesh_data, *args, **kwargs):
+        kwargs["run_context"] = self
         return self.discr_class(mesh_data, *args, **kwargs)
 
+    def make_linear_combiner(self, result_dtype, scalar_dtype, sample_vec, 
+            arg_count):
+        return None
+
+
+
+
+
+class CPURunContext(SerialRunContext):
+    from hedge.backends.jit import Discretization as discr_class
+
+    def make_timer(self, name, description=None):
+        from pytools.log import IntervalTimer
+        return IntervalTimer(name, description)
+
+
+
+
+
+class CUDARunContext(SerialRunContext):
+    @property
+    def discr_class(self):
+        from hedge.backends.cuda import Discretization
+        return Discretization
+
+    def make_timer(self, name, description=None):
+        from hedge.backends.cuda.tools import CUDAIntervalTimer
+        return CUDAIntervalTimer(name, description)
+
+    def make_linear_combiner(self, *args, **kwargs):
+        from hedge.backends.cuda.tools import CUDALinearCombiner
+        return CUDALinearCombiner(*args, **kwargs)
 
 
 
@@ -172,13 +202,13 @@ def guess_run_context(allow=None):
     feat = list(generate_features(allow))
 
     if FEAT_CUDA in feat:
-        from hedge.backends.cuda import Discretization as discr_class
+        serial_context = CUDARunContext()
     else:
-        from hedge.backends.jit import Discretization as discr_class
+        serial_context = CPURunContext()
 
     if FEAT_MPI in feat:
         from hedge.backends.mpi import MPIRunContext
         import pytools.mpiwrap as mpi
-        return MPIRunContext(mpi.COMM_WORLD, discr_class)
+        return MPIRunContext(mpi.COMM_WORLD, serial_context)
     else:
-        return SerialRunContext(discr_class)
+        return serial_context

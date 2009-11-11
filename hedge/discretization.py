@@ -295,6 +295,8 @@ class Discretization(TimestepCalculator):
           set of debug flags.
         """
 
+        self.run_context = run_context
+
         if not isinstance(mesh, hedge.mesh.Mesh):
             raise TypeError("mesh must be of type hedge.mesh.Mesh")
 
@@ -307,7 +309,7 @@ class Discretization(TimestepCalculator):
 
         debug = set(debug)
         unknown_debug_flags = debug.difference(self.all_debug_flags())
-        if unknown_debug_flags:
+        if unknown_debug_flags and run_context.is_head_rank:
             from warnings import warn
             warn("Unrecognized debug flags specified: " 
                     + ", ".join(unknown_debug_flags))
@@ -328,17 +330,20 @@ class Discretization(TimestepCalculator):
 
     # instrumentation ---------------------------------------------------------
     def create_op_timers(self):
-        from pytools.log import IntervalTimer
-
-        self.gather_timer = IntervalTimer("t_gather",
+        self.gather_timer = self.run_context.make_timer(
+                "t_gather",
                 "Time spent gathering fluxes")
-        self.lift_timer = IntervalTimer("t_lift",
+        self.lift_timer = self.run_context.make_timer(
+                "t_lift",
                 "Time spent lifting fluxes")
-        self.mass_timer = IntervalTimer("t_mass",
+        self.mass_timer = self.run_context.make_timer(
+                "t_mass",
                 "Time spent applying mass operators")
-        self.diff_timer = IntervalTimer("t_diff",
+        self.diff_timer = self.run_context.make_timer(
+                "t_diff",
                 "Time spent applying applying differentiation operators")
-        self.vector_math_timer = IntervalTimer("t_vector_math",
+        self.vector_math_timer = self.run_context.make_timer(
+                "t_vector_math",
                 "Time spent doing vector math")
 
         return [self.gather_timer,

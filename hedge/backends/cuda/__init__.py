@@ -369,14 +369,15 @@ class Discretization(hedge.discretization.Discretization):
         ldis = self.get_local_discretization(mesh, local_discretization, order)
 
         hedge.discretization.Discretization.__init__(self, mesh, ldis, debug=debug,
-                default_scalar_type=default_scalar_type)
+                default_scalar_type=default_scalar_type,
+                run_context=run_context)
 
         # cuda init
         if init_cuda:
             cuda.init()
 
         if device is None:
-            if run_context is None:
+            if len(run_context.ranks) == 1:
                 from pycuda.tools import get_default_device
                 device = get_default_device()
             else:
@@ -742,15 +743,17 @@ class Discretization(hedge.discretization.Discretization):
         hedge.discretization.Discretization.add_instrumentation(self, mgr)
 
     def create_op_timers(self):
-        from pytools.log import IntervalTimer
-
-        self.flux_gather_timer = IntervalTimer("t_gather",
+        self.flux_gather_timer = self.run_context.make_timer(
+                "t_gather",
                 "Time spent gathering fluxes")
-        self.el_local_timer = IntervalTimer("t_el_local",
+        self.el_local_timer = self.run_context.make_timer(
+                "t_el_local",
                 "Time spent applying element-local matrices (lift, mass)")
-        self.diff_op_timer = IntervalTimer("t_diff",
+        self.diff_op_timer = self.run_context.make_timer(
+                "t_diff",
                 "Time spent applying applying differentiation operators")
-        self.vector_math_timer = IntervalTimer("t_vector_math",
+        self.vector_math_timer = self.run_context.make_timer(
+                "t_vector_math", 
                 "Time spent doing vector math")
 
         return [self.flux_gather_timer,
