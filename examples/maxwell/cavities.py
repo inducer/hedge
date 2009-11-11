@@ -82,6 +82,8 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
         mesh_data = rcon.receive_mesh()
 
     for order in [1,2,3,4,5,6]:
+        extra_discr_args.setdefault("debug", []).append("cuda_no_plan")
+
         discr = rcon.make_discretization(mesh_data, order=order,
                 **extra_discr_args)
 
@@ -169,17 +171,17 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
 
                 fields = stepper(fields, t, dt, rhs)
 
+            mode.set_time(final_time)
+
+            eoc_rec.add_data_point(order, 
+                    discr.norm(fields-get_true_field()))
+
         finally:
             if write_output:
                 vis.close()
 
             logmgr.close()
             discr.close()
-
-        mode.set_time(final_time)
-
-        eoc_rec.add_data_point(order, 
-                discr.norm(fields-get_true_field()))
 
         if rcon.is_head_rank:
             print
