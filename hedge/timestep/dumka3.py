@@ -29,14 +29,37 @@ class Dumka3TimeStepper(object):
     BIT1998, Vol. 38, No.2, pp.372-390
     """
 
-    def __init__(self, pol_index=None):
-        if pol_index > self.POLYNOMIAL_COUNT:
-            raise ValueError("invalid polynomial index specified")
-        self.pol_index=pol_index
+    dt_fudge_factor = 3
 
     POLYNOMIAL_COUNT = 13 
     # 14 polynomials are available, but polynomial 13 fails 
     # accuracy test?
+
+    def __init__(self, pol_index=None, dtype=numpy.float64, rcon=None):
+        if pol_index > self.POLYNOMIAL_COUNT:
+            raise ValueError("invalid polynomial index specified")
+        self.pol_index=pol_index
+
+        self.dtype = numpy.dtype(dtype)
+        self.rcon = rcon
+        from pytools import match_precision
+        self.scalar_type = match_precision(
+                numpy.dtype(numpy.float64), self.dtype).type
+
+        self.coeff = numpy.array(_COEF, dtype=self.scalar_type)
+
+        from pytools.log import IntervalTimer, EventCounter
+        timer_factory = IntervalTimer
+        if rcon is not None:
+            timer_factory = rcon.make_timer
+
+        self.timer = timer_factory(
+                "t_dumka3", "Time spent doing algebra in Dumka3")
+        self.flop_counter = EventCounter(
+                "n_flops_dumka3", "Floating point operations performed in Dumka3")
+
+    def get_stability_relevant_init_args(self):
+        return (self.pol_index,)
 
     def setup(self, eigenvalue_estimate, dt, pol_index=None):
         # find degree of the polynomials to be used
@@ -63,8 +86,27 @@ class Dumka3TimeStepper(object):
 
         self.pol_index = pol_index
 
+    def add_instrumentation(self, logmgr):
+        logmgr.add_quantity(self.timer)
+        logmgr.add_quantity(self.flop_counter)
+
     def __call__(self, y, t, dt, rhs):
+        try:
+            lc2 = self.linear_combiner_2
+            lc3 = self.linear_combiner_3
+        except AttributeError:
+            from hedge.tools import count_dofs
+            self.dof_count = count_dofs(y)
+
+            from hedge.tools.linear_combination import make_linear_combiner
+            lc2 = self.linear_combiner_2 = make_linear_combiner(
+                    self.dtype, self.scalar_type, y, arg_count=2, rcon=self.rcon)
+            lc3 = self.linear_combiner_3 = make_linear_combiner(
+                    self.dtype, self.scalar_type, y, arg_count=3, rcon=self.rcon)
+
         _sz2 = 6
+
+        dt = self.scalar_type(dt)
 
         pol_index = self.pol_index
         if pol_index is None:
@@ -73,51 +115,61 @@ class Dumka3TimeStepper(object):
         n_pol = 0
         z0 = rhs(t, y)
 
+        coeff = self.coeff
+
+        start_index = _INDEX_FIRST[pol_index]-1
         end_index = _INDEX_LAST[pol_index]
-        for k in range(_INDEX_FIRST[pol_index]-1, end_index):
+        for k in range(start_index, end_index):
+            sub_timer = self.timer.start_sub_timer()
+
             n_pol = n_pol+3
             idx = _sz2*k
-            a_21 = dt*_COEF[idx]
+            a_21 = dt*coeff[idx]
             c_2 = a_21
-            a_31 = dt*_COEF[idx+1]
-            a_32 = dt*_COEF[idx+2]
+            a_31 = dt*coeff[idx+1]
+            a_32 = dt*coeff[idx+2]
             c_3 = a_31+a_32
-            a_41 = dt*_COEF[idx+3]
-            a_42 = dt*_COEF[idx+4]
-            a_43 = dt*_COEF[idx+5]
+            a_41 = dt*coeff[idx+3]
+            a_42 = dt*coeff[idx+4]
+            a_43 = dt*coeff[idx+5]
             c_4 = a_41+a_42+a_43
 
-            y = y + a_21*z0
+            # y = y + a_21*z0
+            y = lc2((1, y), (a_21, z0))
 
             t2 = t+c_2
 
+            sub_timer.stop().submit()
+
             z1 = rhs(t2, y)
 
+            sub_timer = self.timer.start_sub_timer()
             if n_pol == _N_DEG[pol_index]:
-                r = dt*(_COEF[idx+1]-_COEF[idx])
-                y = y + r*z0 + a_32*z1
+                r = dt*(coeff[idx+1]-coeff[idx])
+
+                # y = y + r*z0 + a_32*z1
+                y = lc3((1, y), (r, z0), (a_32, z1))
+
             else:
-                y = y + a_32 * z1
+                # y = y + a_32 * z1
+                y = lc2((1, y), (a_32, z1))
+            sub_timer.stop().submit()
 
             t3 = t+c_3
-            if n_pol == _N_DEG[pol_index]:
-                tmp_1 = c_3/2.e+0
-                tmp_2 = (c_4-c_2)/2
-
-                z1 = tmp_1*z1 - tmp_2*z0
-
             z0 = rhs(t3, y)
 
-            if n_pol==_N_DEG[pol_index]:
-               z1 = tmp_2*z0 + z1
-
-            y = y + a_43*z0
+            sub_timer = self.timer.start_sub_timer()
+            # y = y + a_43*z0
+            y = lc2((1, y), (a_43, z0))
 
             t4 = t+c_4
             t = t4
+            sub_timer.stop().submit()
 
             if k+1 != end_index:
                 z0 = rhs(t, y)
+
+        self.flop_counter.add((end_index-start_index)*self.dof_count*9)
 
         return y
 

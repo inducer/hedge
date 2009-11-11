@@ -282,9 +282,15 @@ class EMFieldDivergenceB(MultiLogQuantity):
 
 
 
-def add_em_quantities(mgr, maxwell_op, fields):
+def add_em_energies(mgr, maxwell_op, fields):
     mgr.add_quantity(ElectricFieldEnergy(fields))
     mgr.add_quantity(MagneticFieldEnergy(fields))
+
+
+
+
+def add_em_quantities(mgr, maxwell_op, fields):
+    add_em_energies(mgr, maxwell_op, fields)
     mgr.add_quantity(EMFieldMomentum(fields, maxwell_op.c))
     mgr.add_quantity(EMFieldDivergenceD(maxwell_op, fields))
     mgr.add_quantity(EMFieldDivergenceB(maxwell_op, fields))

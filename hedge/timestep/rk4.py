@@ -68,7 +68,6 @@ class RK4TimeStepper(TimeStepper):
 
     def __init__(self, dtype=numpy.float64, rcon=None):
         from pytools.log import IntervalTimer, EventCounter
-
         timer_factory = IntervalTimer
         if rcon is not None:
             timer_factory = rcon.make_timer
@@ -80,10 +79,10 @@ class RK4TimeStepper(TimeStepper):
 
         from pytools import match_precision
         self.dtype = numpy.dtype(dtype)
+        self.rcon = rcon
         self.scalar_dtype = match_precision(
                 numpy.dtype(numpy.float64), self.dtype)
         self.coeffs = numpy.array([_RK4A, _RK4B, _RK4C], dtype=self.scalar_dtype).T
-        self.rcon = rcon
 
     def get_stability_relevant_init_args(self):
         return ()

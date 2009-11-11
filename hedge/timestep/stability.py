@@ -32,13 +32,7 @@ def approximate_rk4_relative_imag_stability_region(
                 "may be specified")
 
     if stepper is not None:
-        try:
-            method = stepper.get_stability_relevant_stepper_class
-        except AttributeError:
-            stepper_class = type(stepper)
-        else:
-            stepper_class = method()
-
+        stepper_class = type(stepper)
         stepper_args = stepper.get_stability_relevant_init_args()
         stepper = None
 
@@ -63,7 +57,7 @@ def approximate_rk4_relative_imag_stability_region(
 @memoize
 def approximate_imag_stability_region(stepper_class, *stepper_args):
     def stepper_maker():
-        return stepper_class(*stepper_args)
+        return stepper_class(*stepper_args, **{"dtype": numpy.complex128})
 
     prec = 1e-5
 
@@ -79,7 +73,7 @@ def approximate_imag_stability_region(stepper_class, *stepper_args):
         from cmath import exp
         return -prec+mag*exp(1j*angle)
 
-    def refine(stepper_maker, angle, stable, unstable):
+    def refine(angle, stable, unstable):
         assert is_stable(stepper_maker(), make_k(angle, stable))
         assert not is_stable(stepper_maker(), make_k(angle, unstable))
         while abs(stable-unstable) > prec:
@@ -91,7 +85,7 @@ def approximate_imag_stability_region(stepper_class, *stepper_args):
         else:
             return stable
 
-    def find_stable_k(stepper_maker, angle):
+    def find_stable_k(angle):
         mag = 1
 
         if is_stable(stepper_maker(), make_k(angle, mag)):
@@ -101,7 +95,7 @@ def approximate_imag_stability_region(stepper_class, *stepper_args):
 
                 if mag > 2**8:
                     return mag
-            return refine(stepper_maker, angle, mag/2, mag)
+            return refine(angle, mag/2, mag)
         else:
             mag /= 2
             while not is_stable(stepper_maker(), make_k(angle, mag)):
@@ -109,13 +103,8 @@ def approximate_imag_stability_region(stepper_class, *stepper_args):
 
                 if mag < prec:
                     return mag
-            return refine(stepper_maker, angle, mag, mag*2)
+            return refine(angle, mag, mag*2)
 
-    points = []
     from cmath import pi
-    for angle in numpy.array([pi/2, 3/2*pi]):
-        points.append(make_k(angle, find_stable_k(stepper_maker, angle)))
-
-    points = numpy.array(points)
-
-    return abs(points[0])
+    angle = pi/2
+    return abs(make_k(angle, find_stable_k(angle)))

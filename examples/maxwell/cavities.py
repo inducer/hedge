@@ -27,7 +27,6 @@ import numpy.linalg as la
 def main(write_output=True, allow_features=None, flux_type_arg=1,
         bdry_flux_type_arg=None, extra_discr_args={}):
     from hedge.element import TetrahedralElement
-    from hedge.timestep import RK4TimeStepper
     from hedge.mesh import make_ball_mesh, make_cylinder_mesh, make_box_mesh
     from hedge.tools import EOCRecorder, to_obj_array
     from math import sqrt, pi
@@ -109,7 +108,10 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
             print "---------------------------------------------"
             print "#elements=", len(mesh.elements)
 
-        stepper = RK4TimeStepper(discr.default_scalar_type, rcon=rcon)
+        from hedge.timestep import RK4TimeStepper
+        from hedge.timestep.dumka3 import Dumka3TimeStepper
+        stepper = RK4TimeStepper(dtype=discr.default_scalar_type, rcon=rcon)
+        #stepper = Dumka3TimeStepper(3, dtype=discr.default_scalar_type, rcon=rcon)
 
         # diagnostics setup ---------------------------------------------------
         from pytools.log import LogManager, add_general_quantities, \
@@ -154,7 +156,7 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
                         stepper=stepper, t=t, fields=fields))
 
             for step, t, dt in step_it:
-                if step % 10 == 0 and write_output:
+                if step % 50 == 0 and write_output:
                     sub_timer = vis_timer.start_sub_timer()
                     e, h = op.split_eh(fields)
                     visf = vis.make_file("em-%d-%04d" % (order, step))
