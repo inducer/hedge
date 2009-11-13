@@ -31,12 +31,12 @@ import pytools.test
 def test_1d_mass_mat_trig():
     """Check the integral of some trig functions on an interval using the mass matrix"""
     from hedge.mesh import make_uniform_1d_mesh
-    from hedge.element import IntervalElement
+    from hedge.discretization.local import IntervalDiscretization
     from math import sqrt, pi, cos, sin
     from numpy import dot
 
     mesh = make_uniform_1d_mesh(-4*pi, 9*pi, 17, periodic=True)
-    discr = discr_class(mesh, IntervalElement(8),
+    discr = discr_class(mesh, IntervalDiscretization(8),
             debug=discr_class.noninteractive_debug_flags())
 
     f = discr.interpolate_volume_function(
@@ -68,11 +68,11 @@ def test_tri_mass_mat_trig():
     """Check the integral of some trig functions on a square using the mass matrix"""
 
     from hedge.mesh import make_square_mesh
-    from hedge.element import TriangularElement
+    from hedge.discretization.local import TriangleDiscretization
     from math import sqrt, pi, cos, sin
 
     mesh = make_square_mesh(a=-pi, b=pi, max_area=(2*pi/10)**2/2)
-    discr = discr_class(mesh, TriangularElement(8),
+    discr = discr_class(mesh, TriangleDiscretization(8),
             debug=discr_class.noninteractive_debug_flags())
 
     f = discr.interpolate_volume_function(
@@ -101,7 +101,7 @@ def test_tri_diff_mat():
     Uses sines as the function to differentiate.
     """
     from hedge.mesh import make_disk_mesh
-    from hedge.element import TriangularElement
+    from hedge.discretization.local import TriangleDiscretization
     from math import sin, cos, sqrt
 
     from hedge.optemplate import make_nabla
@@ -109,7 +109,7 @@ def test_tri_diff_mat():
 
     for coord in [0, 1]:
         mesh = make_disk_mesh()
-        discr = discr_class(make_disk_mesh(), TriangularElement(4),
+        discr = discr_class(make_disk_mesh(), TriangleDiscretization(4),
             debug=discr_class.noninteractive_debug_flags())
         f = discr.interpolate_volume_function(
                 lambda x, el: sin(3*x[coord]))
@@ -130,7 +130,7 @@ def test_tri_diff_mat():
 def test_2d_gauss_theorem():
     """Verify Gauss's theorem explicitly on a mesh"""
 
-    from hedge.element import TriangularElement
+    from hedge.discretization.local import TriangleDiscretization
     from hedge.mesh import make_disk_mesh
     from math import sin, cos, sqrt, exp, pi
     from numpy import dot
@@ -227,10 +227,10 @@ def test_simp_cubature():
 def test_simp_mass_and_diff_matrices_by_monomial():
     """Verify simplicial mass and differentiation matrices using monomials"""
 
-    from hedge.element import \
-            IntervalElement, \
-            TriangularElement, \
-            TetrahedralElement
+    from hedge.discretization.local import \
+            IntervalDiscretization, \
+            TriangleDiscretization, \
+            TetrahedronDiscretization
     from pytools import generate_nonnegative_integer_tuples_summing_to_at_most
 
     from operator import add, mul
@@ -239,9 +239,9 @@ def test_simp_mass_and_diff_matrices_by_monomial():
 
     from numpy import dot
     for el in [
-            IntervalElement(5),
-            TriangularElement(3),
-            TetrahedralElement(5),
+            IntervalDiscretization(5),
+            TriangleDiscretization(3),
+            TetrahedronDiscretization(5),
             ]:
         for comb in generate_nonnegative_integer_tuples_summing_to_at_most(
                 el.order, el.dimensions):
@@ -272,10 +272,10 @@ def test_simp_mass_and_diff_matrices_by_monomial():
 def test_simp_gauss_theorem():
     """Verify Gauss's theorem explicitly on simplicial elements"""
 
-    from hedge.element import \
-            IntervalElement, \
-            TriangularElement, \
-            TetrahedralElement
+    from hedge.discretization.local import \
+            IntervalDiscretization, \
+            TriangleDiscretization, \
+            TetrahedronDiscretization
     from operator import add
     from math import sin, cos, sqrt, exp, pi
 
@@ -343,9 +343,9 @@ def test_simp_gauss_theorem():
             ]
 
     for el_geoms, el, f in [
-            (intervals, IntervalElement(9), [f1_1d]),
-            (triangles, TriangularElement(9), [f1_2d, f2_2d]),
-            (tets, TetrahedralElement(1), [f1_3d, f2_3d, f3_3d]),
+            (intervals, IntervalDiscretization(9), [f1_1d]),
+            (triangles, TriangleDiscretization(9), [f1_2d, f2_2d]),
+            (tets, TetrahedronDiscretization(1), [f1_3d, f2_3d, f3_3d]),
             ]:
         for vertices in el_geoms:
             ones = numpy.ones((el.node_count(),))
@@ -422,7 +422,7 @@ def test_1d_mass_matrix_vs_quadrature():
 def test_mapping_differences_tri():
     """Check that triangle interpolation is independent of mapping to reference
     """
-    from hedge.element import TriangularElement
+    from hedge.discretization.local import TriangleDiscretization
     from random import random
     from pytools import generate_permutations
 
@@ -448,7 +448,7 @@ def test_mapping_differences_tri():
         coords.append(remain)
         return coords
 
-    tri = TriangularElement(5)
+    tri = TriangleDiscretization(5)
 
     for trial_number in range(10):
         vertices = [numpy.random.randn(2) for vi in range(3)]
@@ -553,9 +553,9 @@ def test_interior_fluxes_tri():
             generated_mesh.points,
             generated_mesh.elements)
 
-    from hedge.element import TriangularElement
+    from hedge.discretization.local import TriangleDiscretization
     from hedge.discretization import ones_on_volume
-    discr = discr_class(mesh, TriangularElement(4),
+    discr = discr_class(mesh, TriangleDiscretization(4),
             debug=discr_class.noninteractive_debug_flags())
 
     def f_u(x, el):
@@ -652,9 +652,9 @@ def test_interior_fluxes_tet():
             generated_mesh.points,
             generated_mesh.elements)
 
-    from hedge.element import TetrahedralElement
+    from hedge.discretization.local import TetrahedronDiscretization
     from hedge.discretization import ones_on_volume
-    discr = discr_class(mesh, TetrahedralElement(4),
+    discr = discr_class(mesh, TetrahedronDiscretization(4),
             debug=discr_class.noninteractive_debug_flags())
 
     def f_u(x, el):
@@ -749,7 +749,7 @@ def test_symmetry_preservation_2d():
         return make_conformal_mesh(points, elements, boundary_tagger)
 
     from hedge.discretization import SymmetryMap
-    from hedge.element import TriangularElement
+    from hedge.discretization.local import TriangleDiscretization
     from hedge.timestep import RK4TimeStepper
     from math import sqrt, sin
     from hedge.models.advection import StrongAdvectionOperator
@@ -823,7 +823,7 @@ def test_convergence_advec_2d():
 
     import pyublas
     from hedge.mesh import make_disk_mesh, make_regular_rect_mesh
-    from hedge.element import TriangularElement
+    from hedge.discretization.local import TriangleDiscretization
     from hedge.timestep import RK4TimeStepper
     from hedge.tools import EOCRecorder
     from math import sin, pi, sqrt
@@ -860,7 +860,7 @@ def test_convergence_advec_2d():
             eoc_rec = EOCRecorder()
 
             for order in [1,2,3,4,5,6]:
-                discr = discr_class(mesh, TriangularElement(order),
+                discr = discr_class(mesh, TriangleDiscretization(order),
                         debug=discr_class.noninteractive_debug_flags())
                 op = StrongAdvectionOperator(v,
                         inflow_u=TimeDependentGivenFunction(u_analytic),
@@ -954,8 +954,8 @@ def test_elliptic():
     eocrec = EOCRecorder()
     for order in [1,2,3,4,5]:
         for flux in ["ldg", "ip"]:
-            from hedge.element import TriangularElement
-            discr = discr_class(mesh, TriangularElement(order),
+            from hedge.discretization.local import TriangleDiscretization
+            discr = discr_class(mesh, TriangleDiscretization(order),
                     debug=discr_class.noninteractive_debug_flags())
 
             from hedge.data import GivenFunction
@@ -997,7 +997,7 @@ def test_projection():
 
     from hedge.mesh import make_disk_mesh
     from hedge.discretization import Projector
-    from hedge.element import TriangularElement
+    from hedge.discretization.local import TriangleDiscretization
     from hedge.tools import EOCRecorder
     from math import sin, pi, sqrt
 
@@ -1010,9 +1010,9 @@ def test_projection():
 
     mesh = make_disk_mesh(r=pi, max_area=0.5)
 
-    discr2 = discr_class(mesh, TriangularElement(2),
+    discr2 = discr_class(mesh, TriangleDiscretization(2),
             debug=discr_class.noninteractive_debug_flags())
-    discr5 = discr_class(mesh, TriangularElement(5),
+    discr5 = discr_class(mesh, TriangleDiscretization(5),
             debug=discr_class.noninteractive_debug_flags())
     p2to5 = Projector(discr2, discr5)
     p5to2 = Projector(discr5, discr2)
@@ -1028,11 +1028,11 @@ def test_filter():
     """Exercise mode-based filtering."""
 
     from hedge.mesh import make_disk_mesh
-    from hedge.element import TriangularElement
+    from hedge.discretization.local import TriangleDiscretization
     from math import sin
 
     mesh = make_disk_mesh(r=3.4, max_area=0.5)
-    discr = discr_class(mesh, TriangularElement(5),
+    discr = discr_class(mesh, TriangleDiscretization(5),
             debug=discr_class.noninteractive_debug_flags())
 
     from hedge.discretization import Filter, ExponentialFilterResponseFunction
@@ -1075,13 +1075,13 @@ def no_test_tri_mass_mat_gauss(self):
     # and this *does* matter numerically.
 
     from hedge.mesh import make_disk_mesh
-    from hedge.element import TriangularElement
+    from hedge.discretization.local import TriangleDiscretization
     from math import sqrt, exp, pi
 
     sigma_squared = 1/219.3
 
     mesh = make_disk_mesh()
-    discr = self.discr_class(make_disk_mesh(), TriangularElement(4), 
+    discr = self.discr_class(make_disk_mesh(), TriangleDiscretization(4), 
             debug=self.discr_class.noninteractive_debug_flags())
     f = discr.interpolate_volume_function(
             lambda x, el: exp(-x*x/(2*sigma_squared)))

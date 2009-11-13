@@ -34,8 +34,8 @@ class GPUBlock(object):
     """Describes what data is local to each thread block on the GPU.
 
     @ivar number: The global number of this block.
-    @ivar local_discretization: The L{hedge.element.Element} instance used
-      for elements in this block.
+    @ivar local_discretization: The L{hedge.discretization.local.LocalDiscretization} 
+      instance used for elements in this block.
     @ivar cpu_slices: A list of slices describing the CPU-side
       storage locations for the block's elements.
     @ivar microblocks: A list of lists of L{hedge.mesh.Element} instances,

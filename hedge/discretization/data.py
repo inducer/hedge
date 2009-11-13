@@ -41,13 +41,14 @@ class ElementGroupBase(object):
 class StraightElementGroup(ElementGroupBase):
     """Once fully filled, this structure has the following data members:
 
-    :ivar members: a list of L{hedge.mesh.Element} instances in this group.
+    :ivar members: a list of :class:`hedge.mesh.Element` instances in this group.
     :ivar member_nrs: a list of the element ID numbers in this group.
-    :ivar local_discretization: an instance of L{hedge.element.Element}.
+    :ivar local_discretization: an instance of 
+      :class:`hedge.discretization.local.LocalDiscretization`.
     :ivar ranges: a list of :class:`slice` objects indicating the DOF numbers for
       each element. Note: This is actually a C++ ElementRanges object.
     :ivar mass_matrix: The element-local mass matrix :math:`M`.
-    :ivar inverse_mass_matrix: the element-local inverese mass matrix M{M^{-1}}.
+    :ivar inverse_mass_matrix: the element-local inverese mass matrix :math:`M^{-1}`.
     :ivar differentiation_matrices: local differentiation matrices :math:`D_r, D_s, D_t`, 
       i.e.  differentiation by :math:`r, s, t, \dots`.
     :ivar stiffness_matrices: the element-local stiffness matrices :math:`MD_r, MD_s,\dots`.

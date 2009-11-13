@@ -12,7 +12,7 @@ def plot_order_3_tri_poly_components():
 def plot_tri_polynomials_hi_res():
     import numpy
     import pylinear.array as num
-    from hedge.element import TriangularElement
+    from hedge.discretization.local import TriangleDiscretization
     from hedge.polynomial import generic_vandermonde
     from pyvtk import PolyData, PointData, VtkData, Scalars, Vectors
 
@@ -45,7 +45,7 @@ def plot_tri_polynomials_hi_res():
 def plot_tri_quad_weights():
     import numpy
     import pylinear.array as num
-    from hedge.element import TriangularElement
+    from hedge.discretization.local import TriangleDiscretization
     from hedge.polynomial import generic_vandermonde
     from pyvtk import PolyData, PointData, VtkData, Scalars, Vectors
 
@@ -81,7 +81,7 @@ def plot_real_tri_quad_weights():
 
 def visualize_single_tet():
     from hedge.mesh import ConformalMesh
-    from hedge.element import TetrahedralElement
+    from hedge.discretization.local import TetrahedronDiscretization
     from hedge.discretization import Discretization
     from hedge.visualization import SiloVisualizer
 

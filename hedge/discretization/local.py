@@ -34,11 +34,6 @@ import hedge.mesh
 
 
 
-__all__ = ["TriangularElement", "TetrahedralElement"]
-
-
-
-
 class WarpFactorCalculator:
     """Calculator for Warburton's warp factor.
 
@@ -126,7 +121,7 @@ GradTetrahedronBasisFunction = hedge._internal.GradTetrahedronBasisFunction
 
 
 
-class Element(object):
+class LocalDiscretization(object):
     def basis_functions(self):
         """Get a sequence of functions that form a basis of the
         approximation space.
@@ -263,7 +258,7 @@ class Element(object):
 
 
 
-class SimplicialElement(Element):
+class SimplexDiscretization(LocalDiscretization):
     # queries -----------------------------------------------------------------
     @property
     def has_facial_nodes(self):
@@ -384,10 +379,14 @@ class SimplicialElement(Element):
 
 
 
-class IntervalElementBase(SimplicialElement):
+class IntervalDiscretizationBase(SimplexDiscretization):
+    """Base class with all features of an element's discretization that
+    are independent of the function space basis.
+    """
     dimensions = 1
     has_local_jacobians = False
-    geometry = hedge.mesh.Interval
+    from hedge.mesh.element import Interval
+    geometry = Interval
 
     # numbering ---------------------------------------------------------------
     @memoize_method
@@ -451,7 +450,7 @@ class IntervalElementBase(SimplicialElement):
 
 
 
-class IntervalElement(IntervalElementBase):
+class IntervalDiscretization(IntervalDiscretizationBase):
     """An arbitrary-order polynomial finite interval element.
 
     Coordinate systems used:
@@ -532,7 +531,7 @@ class IntervalElement(IntervalElementBase):
 
 
 
-class TriangularElement(SimplicialElement):
+class TriangleDiscretization(SimplexDiscretization):
     """An arbitrary-order triangular finite element.
 
     Coordinate systems used:
@@ -584,7 +583,7 @@ class TriangularElement(SimplicialElement):
 
     dimensions = 2
     has_local_jacobians = False
-    geometry = hedge.mesh.Triangle
+    geometry = hedge.mesh.element.Triangle
 
     def __init__(self, order, fancy_node_ordering=True):
         self.order = order
@@ -785,7 +784,7 @@ class TriangularElement(SimplicialElement):
 
 
 
-class TetrahedralElement(SimplicialElement):
+class TetrahedronDiscretization(SimplexDiscretization):
     """An arbitrary-order tetrahedral finite element.
 
     Coordinate systems used:
@@ -837,7 +836,7 @@ class TetrahedralElement(SimplicialElement):
 
     dimensions = 3
     has_local_jacobians = False
-    geometry = hedge.mesh.Tetrahedron
+    geometry = hedge.mesh.element.Tetrahedron
 
     def __init__(self, order):
         self.order = order
@@ -1192,4 +1191,8 @@ class TetrahedralElement(SimplicialElement):
 
 
 
-ELEMENTS = [IntervalElement, TriangularElement, TetrahedralElement]
+LDIS_CLASSES = [
+        IntervalDiscretization, 
+        TriangleDiscretization, 
+        TetrahedronDiscretization,
+        ]

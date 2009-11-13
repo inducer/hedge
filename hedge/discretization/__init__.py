@@ -30,7 +30,6 @@ import hedge.tools
 import hedge.mesh
 import hedge.optemplate
 import hedge._internal
-import hedge.discretization
 from pytools import memoize_method
 
 
@@ -183,10 +182,10 @@ class Discretization(TimestepCalculator):
             raise ValueError("must supply only one of local_discretization "
                     "and order")
         if local_discretization is None:
-            from hedge.element import ELEMENTS
+            from hedge.discretization.local import LDIS_CLASSES
             from pytools import one
             ldis_class = one(
-                    ldis_class for ldis_class in ELEMENTS
+                    ldis_class for ldis_class in LDIS_CLASSES
                     if isinstance(mesh.elements[0], ldis_class.geometry))
             return ldis_class(order)
         else:
@@ -433,8 +432,8 @@ class Discretization(TimestepCalculator):
         f.h = abs(el.map.jacobian() / f.face_jacobian)
 
     def _build_interior_face_groups(self):
-        from hedge.element import FaceVertexMismatch
-        from hedge.discretization.data import  StraightFaceGroup
+        from hedge.discretization.local import FaceVertexMismatch
+        from hedge.discretization.data import StraightFaceGroup
         fg_type = StraightFaceGroup
         fg = fg_type(double_sided=True,
                 debug="ilist_generation" in self.debug)
