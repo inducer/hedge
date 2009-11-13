@@ -30,6 +30,11 @@ import hedge.tools
 
 
 
+class MeshOrientationError(ValueError):
+    pass
+
+
+
 class TAG_NONE(object):
     """A boundary or volume tag representing an empty boundary or volume."""
     pass
@@ -67,198 +72,6 @@ class TAG_RANK_BOUNDARY(object):
         return 0xaffe ^ hash(self.rank)
 
 
-
-
-
-
-def make_element(class_, id, vertex_indices, all_vertices):
-    vertices = [all_vertices[v] for v in vertex_indices]
-    map = class_.get_map_unit_to_global(vertices)
-    new_vertex_indices = \
-            class_._reorder_vertices(vertex_indices, vertices, map)
-    if new_vertex_indices:
-        vertex_indices = new_vertex_indices
-        vertices = [all_vertices[v] for v in vertex_indices]
-        map = class_.get_map_unit_to_global(vertices)
-
-    vertex_indices = numpy.array(vertex_indices, dtype=numpy.intp)
-
-    face_normals, face_jacobians = \
-            class_.face_normals_and_jacobians(vertices, map)
-
-    return class_(id, vertex_indices, map, map.inverted(),
-            face_normals, face_jacobians)
-
-
-
-
-class Element(pytools.Record):
-    __slots__ = ["id", "vertex_indices", "map", "inverse_map", "face_normals",
-            "face_jacobians"]
-
-    def __init__(self, id, vertex_indices, map, inverse_map, face_normals,
-            face_jacobians):
-        pytools.Record.__init__(self, locals())
-
-    @staticmethod
-    def _reorder_vertices(vertex_indices, vertices):
-        return vertex_indices
-
-    def bounding_box(self, vertices):
-        my_verts = numpy.array([vertices[vi] for vi in self.vertex_indices])
-        return numpy.min(my_verts, axis=0), numpy.max(my_verts, axis=0)
-
-    def centroid(self, vertices):
-        my_verts = numpy.array([vertices[vi] for vi in self.vertex_indices])
-        return numpy.average(my_verts, axis=0)
-
-
-
-
-
-
-class SimplicialElement(Element):
-    __slots__ = []
-
-    @property
-    def faces(self):
-        return self.face_vertices(self.vertex_indices)
-
-    @classmethod
-    def get_map_unit_to_global(cls, vertices):
-        """Return an affine map that maps the unit coordinates of the reference
-        element to a global element at a location given by its `vertices'.
-        """
-        from hedge._internal import get_simplex_map_unit_to_global
-        return get_simplex_map_unit_to_global(cls.dimensions, vertices)
-
-    def contains_point(self, x):
-        unit_coords = self.inverse_map(x)
-        for xi in unit_coords:
-            if xi < -1:
-                return False
-        return sum(unit_coords) <= -(self.dimensions-2)
-
-
-
-
-class Interval(SimplicialElement):
-    dimensions = 1
-    @staticmethod
-    def face_vertices(vertices):
-        return [(vertices[0],), (vertices[1],) ]
-
-    @classmethod
-    def _reorder_vertices(cls, vertex_indices, vertices, map):
-        vi = vertex_indices
-        if vertices[0][0] > vertices[1][0]: # make sure we're ordered left-right
-            return (vi[1], vi[0])
-        else:
-            return None
-
-    @staticmethod
-    def face_normals_and_jacobians(vertices, affine_map):
-        """Compute the normals and face jacobians of the unit element
-        transformed according to `affine_map'.
-
-        Returns a pair of lists [normals], [jacobians].
-        """
-        if affine_map.jacobian() < 0:
-            return [
-                    numpy.array([1], dtype=float),
-                    numpy.array([-1], dtype=float)
-                    ], [1, 1]
-        else:
-            return [
-                    numpy.array([-1], dtype=float),
-                    numpy.array([1], dtype=float)
-                    ], [1, 1]
-
-
-
-
-class Triangle(SimplicialElement):
-    dimensions = 2
-
-    __slots__ = []
-
-    @staticmethod
-    def face_vertices(vertices):
-        return [(vertices[0], vertices[1]),
-                (vertices[1], vertices[2]),
-                (vertices[0], vertices[2])
-                ]
-
-    @classmethod
-    def _reorder_vertices(cls, vertex_indices, vertices, map):
-        vi = vertex_indices
-        if map.jacobian() > 0:
-            return (vi[0], vi[2], vi[1])
-        else:
-            return None
-
-    @staticmethod
-    def face_normals_and_jacobians(vertices, affine_map):
-        """Compute the normals and face jacobians of the unit element
-        transformed according to `affine_map'.
-
-        Returns a pair of lists [normals], [jacobians].
-        """
-        from hedge.tools import sign
-
-        m = affine_map.matrix
-        orient = sign(affine_map.jacobian())
-        face1 = m[:, 1] - m[:, 0]
-        raw_normals = [
-                orient*numpy.array([m[1, 0], -m[0, 0]]),
-                orient*numpy.array([face1[1], -face1[0]]),
-                orient*numpy.array([-m[1, 1], m[0, 1]]),
-                ]
-
-        face_lengths = [numpy.linalg.norm(fn) for fn in raw_normals]
-        return [n/fl for n, fl in zip(raw_normals, face_lengths)], \
-                face_lengths
-
-
-
-
-class Tetrahedron(SimplicialElement):
-    dimensions = 3
-
-    __slots__ = []
-
-    def _face_vertices(vertices):
-        return [(vertices[0], vertices[1], vertices[2]),
-                (vertices[0], vertices[1], vertices[3]),
-                (vertices[0], vertices[2], vertices[3]),
-                (vertices[1], vertices[2], vertices[3]),
-                ]
-    face_vertices = staticmethod(_face_vertices)
-
-    face_vertex_numbers = _face_vertices([0, 1, 2, 3])
-
-    @classmethod
-    def _reorder_vertices(cls, vertex_indices, vertices, map):
-        vi = vertex_indices
-        if map.jacobian() > 0:
-            return (vi[0], vi[1], vi[3], vi[2])
-        else:
-            return None
-
-    @classmethod
-    def face_normals_and_jacobians(cls, vertices, affine_map):
-        """Compute the normals and face jacobians of the unit element
-        transformed according to `affine_map'.
-
-        Returns a pair of lists [normals], [jacobians].
-        """
-        from hedge._internal import tetrahedron_fj_and_normal
-        from hedge.tools import sign
-
-        return tetrahedron_fj_and_normal(
-                sign(affine_map.jacobian()),
-                cls.face_vertex_numbers,
-                vertices)
 
 
 
@@ -337,7 +150,55 @@ class Mesh(pytools.Record):
 
 
 
-def _build_mesh_data_dict(points, elements, boundary_tagger, periodicity, is_rankbdry_face):
+def make_conformal_mesh_ext(points, elements,
+        volume_tagger=None,
+        boundary_tagger=None,
+        periodicity=None,
+        _is_rankbdry_face=None,
+        ):
+    """Construct a simplical mesh.
+
+    Face indices follow the convention for the respective element,
+    such as Triangle or Tetrahedron, in this module.
+
+    :param points: a iterable of vertex coordinates, given as vectors.
+    :param elements: an iterable of :class:`hedge.mesh.element.Element`
+      instances.
+    :param boundary_tags: a dictionary from tags to lists of tuples
+      *(el, face_idx)*.
+      :class:`TAG_ALL` and :class:`TAG_NONE` will be added by this routine.
+    :param volume_tags: a dictionary from tags to lists of 
+      element instances. 
+      :class:`TAG_ALL` and :class:`TAG_NONE` will be added by this routine.
+    :param periodicity: either None or is a list of tuples
+      just like the one documented for the `periodicity`
+      member of class :class:`Mesh`.
+    :param _is_rankbdry_face: an implementation detail,
+      should not be used from user code. It is a function
+      returning whether a given face identified by
+      *(element instance, face_nr)* is cut by a parallel
+      mesh partition.
+    """
+    if boundary_tagger is None:
+        def boundary_tagger(fvi, el, fn, all_v):
+            return []
+
+    if volume_tagger is None:
+        def volume_tagger(el, all_v):
+            return []
+
+    if _is_rankbdry_face is None:
+        def _is_rankbdry_face(el_face):
+            return False
+
+
+    # tag elements
+    tag_to_elements = {TAG_NONE: [], TAG_ALL: []}
+    for el in element_objs:
+        for el_tag in element_tagger(el, new_points):
+            tag_to_elements.setdefault(el_tag, []).append(el)
+        tag_to_elements[TAG_ALL].append(el)
+
     # create face_map, which is a mapping of
     # (vertices on a face) ->
     #  [(element, face_idx) for elements bordering that face]
@@ -460,6 +321,7 @@ def _build_mesh_data_dict(points, elements, boundary_tagger, periodicity, is_ran
     return {
             "interfaces": interfaces,
             "tag_to_boundary": tag_to_boundary,
+            "tag_to_elements": tag_to_elements
             "periodicity": periodicity,
             "periodic_opposite_faces": periodic_opposite_faces,
             "periodic_opposite_vertices": periodic_opposite_vertices,
@@ -497,21 +359,14 @@ def make_conformal_mesh(points, elements,
       *(element instance, face_nr)* is cut by a parallel
       mesh partition.
     """
-    if boundary_tagger is None:
-        def boundary_tagger(fvi, el, fn, all_v):
-            return []
-
-    if element_tagger is None:
-        def element_tagger(el, all_v):
-            return []
-
-    if _is_rankbdry_face is None:
-        def _is_rankbdry_face(el_face):
-            return False
+    from warnings import warn
+    warn("make_conformal_mesh is deprecated. "
+            "Use make_conformal_mesh_ext instead.")
 
     if len(points) == 0:
         raise ValueError("mesh contains no points")
 
+    from hedge.mesh.element import Interval, Triangle, Tetrahedron
     dim = len(points[0])
     if dim == 1:
         el_class = Interval
@@ -525,24 +380,16 @@ def make_conformal_mesh(points, elements,
     # build points and elements
     new_points = numpy.array(points, dtype=float, order="C")
 
-    element_objs = [make_element(el_class, id, vert_indices, new_points)
+    element_objs = [el_class(id, vert_indices, new_points)
         for id, vert_indices in enumerate(elements)]
 
-    # tag elements
-    tag_to_elements = {TAG_NONE: [], TAG_ALL: []}
-    for el in element_objs:
-        for el_tag in element_tagger(el, new_points):
-            tag_to_elements.setdefault(el_tag, []).append(el)
-        tag_to_elements[TAG_ALL].append(el)
-
-    # build connectivity
+    # call into new interface
     if periodicity is None:
         periodicity = dim*[None]
     assert len(periodicity) == dim
 
     mdd = _build_mesh_data_dict(
             new_points, element_objs, boundary_tagger, periodicity, _is_rankbdry_face)
-    mdd["tag_to_elements"] = tag_to_elements
     return ConformalMesh(new_points, element_objs, **mdd)
 
 
@@ -560,13 +407,6 @@ class ConformalMesh(Mesh):
         """
         Mesh.__init__(self, locals())
 
-    def get_reorder_oldnumbers(self, method):
-        if method == "cuthill":
-            from hedge.tools import cuthill_mckee
-            return cuthill_mckee(self.element_adjacency_graph())
-        else:
-            raise ValueError("invalid mesh reorder method")
-
     def reordered_by(self, method):
         """Return a reordered copy of *self*.
 
@@ -583,7 +423,8 @@ class ConformalMesh(Mesh):
         element.
         """
 
-        elements = [self.elements[old_numbers[i]].copy(id=i)
+        elements = [self.elements[old_numbers[i]].copy(
+            id=i, all_vertices=self.points)
                 for i in range(len(self.elements))]
 
         old2new_el = dict(

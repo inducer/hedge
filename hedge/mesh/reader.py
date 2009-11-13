@@ -21,11 +21,11 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 import numpy
 import numpy.linalg as la
-from pytools import memoize, memoize_method, Record
-from hedge.element import \
-        IntervalElement, \
-        TriangularElement, \
-        TetrahedralElement
+from pytools import memoize, memoize_method, Record, single_valued
+from hedge.discretization.local import \
+        IntervalDiscretization, \
+        TriangleDiscretization, \
+        TetrahedronDiscretization
 
 
 
@@ -65,17 +65,19 @@ class GmshElementBase(object):
     @memoize_method
     def hedge_to_gmsh_index_map(self):
         gmsh_tup_to_index = dict(
-                (tup, i) 
+                (tup, i)
                 for i, tup in enumerate(self.gmsh_node_tuples()))
 
-        return [gmsh_tup_to_index[tup] 
+        return [gmsh_tup_to_index[tup]
                 for tup in self.node_tuples()]
 
 
 
 
 
-class GmshIntervalElement(IntervalElement, GmshElementBase):
+class GmshIntervalElement(IntervalDiscretization, GmshElementBase):
+    vertex_count = 2
+
     @memoize_method
     def gmsh_node_tuples(self):
         yield (0,)
@@ -87,7 +89,9 @@ class GmshIntervalElement(IntervalElement, GmshElementBase):
 
 
 
-class GmshTriangularElement(TriangularElement, GmshElementBase):
+class GmshTriangularElement(TriangleDiscretization, GmshElementBase):
+    vertex_count = 3
+
     @memoize_method
     def gmsh_node_tuples(self):
         for tup in generate_triangle_vertex_tuples(self.order):
@@ -100,7 +104,9 @@ class GmshTriangularElement(TriangularElement, GmshElementBase):
 
 
 
-class GmshTetrahedralElement(TetrahedralElement, GmshElementBase):
+class GmshTetrahedralElement(TetrahedronDiscretization, GmshElementBase):
+    vertex_count = 4
+
     @memoize_method
     def gmsh_node_tuples(self):
         result = []
@@ -193,7 +199,7 @@ class LocalToGlobalMap(object):
         node_src_indices = numpy.array(
                 ldis.hedge_to_gmsh_index_map(),
                 dtype=numpy.intp)
-        
+
         nodes = numpy.array(nodes, dtype=numpy.float64)
         reordered_nodes = nodes[node_src_indices, :]
 
@@ -211,30 +217,38 @@ class LocalToGlobalMap(object):
             for i, mbf in enumerate(self.ldis.basis_functions())])
             for axis in range(self.ldis.dimensions)])
 
+    def is_affine(self):
+        from pytools import any
+        return any(
+                max(mid) >= 2 and abs(mc) >= 1e-13
+                for mid, mc in zip(
+                    self.ldis.generate_mode_identifiers(),
+                    self.modal_coeff)
 
-def read_gmsh(filename, force_dimension=None):
+
+
+def read_gmsh(filename, force_dimension=None, periodicity=None):
     """
     :param force_dimension: if not None, truncate point coordinates to this many dimensions.
     """
     import string
-    from hedge.element import TriangularElement,TetrahedralElement
     # open target file
     mesh_file = open(filename, 'r')
     feeder = LineFeeder(mesh_file.readlines())
     mesh_file.close()
 
-    element_type_map = GMSH_ELEMENT_TYPE_TO_INFO_MAP 
+    element_type_map = GMSH_ELEMENT_TYPE_TO_INFO_MAP
 
     # collect the mesh information
     nodes = []
     elements = []
-    tag_number_map = {}
+
+    # maps (tag_number, dimension) -> tag_name
     tag_name_map = {}
 
-    class ElementInfo(Record):
-        pass
+    gmsh_vertex_nrs_to_element = {}
 
-    class TagInfo(Record):
+    class ElementInfo(Record):
         pass
 
     while feeder.has_next_line():
@@ -325,14 +339,16 @@ def read_gmsh(filename, force_dimension=None):
                 if element_type.node_count()!= len(node_indices):
                     raise GmshFileFormatError("unexpected number of nodes in element")
 
+                gmsh_vertex_nrs = el.node_indices[:el.element_type.vertex_count]
                 zero_based_idx = element_idx - 1
                 el_info = ElementInfo(
                     index=zero_based_idx,
                     el_type=element_type,
-                    node_indices=node_indices)
-                elements.append(el_info)
-                for tag in tags:
-                    tag_number_map.setdefault((tag, el_type.dimensions), []).append(el_info)
+                    node_indices=node_indices,
+                    gmsh_vertex_indices=gmsh_vertex_nrs,
+                    tag_numbers=tags)
+
+                gmsh_vertex_nrs_to_element[set(gmsh_vertex_nrs] = el_info
 
                 element_idx +=1
             if element_count+1 != element_idx:
@@ -347,18 +363,11 @@ def read_gmsh(filename, force_dimension=None):
                 if next_line == "$End"+section_name:
                     break
 
-                parts = next_line.split()
-                if len(parts) != 3:
-                    raise GmshFileFormatError("unexpected number of entries "
-                            "in phys name line")
+                dimension, number, name = next_line.split()
+                dimension = int(dimension)
+                number = int(number)
 
-                phy_number = int(parts[1])
-                tag_info = TagInfo(
-                        name=parts[2],
-                        number=int(parts[1]),
-                        dimension=int(parts[0]))
-
-                tag_name_map.setdefault(tag_info.name,[]).append(tag_info)
+                tag_name_map.setdefault((number, dimension)).append(name)
 
                 name_idx +=1
 
@@ -384,18 +393,79 @@ def read_gmsh(filename, force_dimension=None):
     bdry_elements = [el for el in elements
             if el.el_type.dimensions == bdry_dim]
 
+    # build hedge-compatible elements
+    from hedge.mesh.element import TO_CURVED_CLASS
+    hedge_vertices = []
+    hedge_elements = []
 
+    gmsh_node_nr_to_hedge_vertex_nr = {}
+    hedge_el_to_gmsh_element = {}
 
+    def get_vertex_nr(gmsh_node_nr):
+        try:
+            return gmsh_node_nr_to_hedge_vertex_nr[gmsh_node_nr]
+        except KeyError:
+            hedge_vertex_nr = len(hedge_vertices)
+            hedge_vertices.append(nodes[gmsh_node_nr])
+            gmsh_node_nr_to_hedge_vertex_nr[gmsh_node_nr] = hedge_vertex_nr
+            return hedge_vertex_nr
 
-    # initialize Mesh class,need to figure out the mapping
-    # for making higher order element
+    for el_nr, gmsh_el in enumerate(vol_elements):
+        el_map = LocalToGlobalMap(
+                [nodes[ni] for ni gmsh_el.node_indices],
+                gmsh_el.element_type)
+        is_affine = gmsh_el.map.is_affine()
 
-    boundary_tagger=(lambda fvi, el, fn, all_v: [])
-    from hedge.mesh import make_conformal_mesh
-    return make_conformal_mesh(
-            nodes,
-            elements,
-            boundary_tagger)
+        el_class = gmsh_el.element_type.geometry
+        if not is_affine:
+            try:
+                el_class = TO_CURVED_CLASS[el_class]
+            except KeyError:
+                pass
+            else:
+                raise GmshFileFormatError("unsupported curved element type")
+
+        vertex_indices = [get_vertex_nr(gmsh_node_nr)
+                for gmsh_node_nr in gmsh_el.gmsh_vertex_indices]
+
+        if is_affine:
+            hedge_el = el_class(el_nr, hedge_vertices, vertex_indices)
+        else:
+            hedge_el = el_class(el_nr, vertex_indices, el_map)
+
+        hedge_elements.append(hedge_el)
+        hedge_el_to_gmsh_el[hedge_el] = gmsh_el
+
+    from pytools import reverse_dictionary
+    hedge_vertex_nr_to_gmsh_node_nr = reverse_dictionary(
+            gmsh_node_nr_to_hedge_vertex_nr)
+
+    del gmsh_node_nr_to_hedge_vertex_nr
+    del nodes
+    del vol_elements
+
+    def volume_tagger(el, all_v):
+        return [tag_name_map[tag_nr, el.dimensions]
+                for tag_nr in hedge_el_to_gmsh_element[el].tags
+                if (tag_nr, el.dimensions) in tag_name_map]
+
+    def boundary_tagger(fvi, el, fn, all_v):
+        gmsh_vertex_nrs = set(
+                hedge_vertex_nr_to_gmsh_node_nr[face_vertex_index]
+                for face_vertex_index in fvi)
+        gmsh_element = gmsh_vertex_nrs_to_element[gmsh_vertex_nrs]
+
+        return [tag_name_map[tag_nr, el.dimensions]
+                for tag_nr in gmsh_element.tags
+                if (tag_nr, el.dimensions) in tag_name_map]
+
+    from hedge.mesh import make_conformal_mesh_ext
+    return make_conformal_mesh_ext(
+            hedge_vertices,
+            hege_elements,
+            volume_tagger,
+            boundary_tagger
+            periodicity)
 
 
 
@@ -430,7 +500,7 @@ if __name__ == "__main__":
     print "f:", [ f(p)  for i,f in enumerate(list(z.basis_functions()))]
     print p,f
     print f(p),"----------------------here-------------------"
-    print 
+    print
     l_to_g = LocalToGlobalMap(nodes,z)
     print l_to_g(numpy.array([0.0,0.0]))
     print "-------------------tetrahedral------------------"
