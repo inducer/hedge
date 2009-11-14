@@ -6,13 +6,31 @@ from __future__ import division
 
 __copyright__ = "Copyright (C) 2009 Alexei Medovikov, Andreas Kloeckner"
 
-__license__ = """(unclear)
+__license__ = """
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 DUMKA3 by Alexei Medovikov,
 based on C++ code retrieved 11/9/2009 from http://www.math.tulane.edu/~amedovik/
 ported by Andreas Kloeckner <kloeckner@dam.brown.edu>
-"""
+released under GPL3 by permission from Dr. Medovikov 11/13/2009.
 
+Note: If you use this code for published results, Dr. Medovikov expects (but
+does not require) a citation of his paper
+
+Alexei A. Medovikov, "High order explicit methods for parabolic equations" 
+BIT1998, Vol. 38, No.2, pp.372-390
+"""
 
 
 
@@ -27,6 +45,9 @@ class Dumka3TimeStepper(object):
 
     Alexei A. Medovikov, "High order explicit methods for parabolic equations" 
     BIT1998, Vol. 38, No.2, pp.372-390
+
+    Note: If you use this code for published results, Dr. Medovikov expects (but
+    does not require) a citation of the publication above.
     """
 
     dt_fudge_factor = 3
