@@ -179,6 +179,8 @@ def make_conformal_mesh_ext(points, elements,
       *(element instance, face_nr)* is cut by a parallel
       mesh partition.
     """
+
+    # input validation 
     if boundary_tagger is None:
         def boundary_tagger(fvi, el, fn, all_v):
             return []
@@ -191,11 +193,15 @@ def make_conformal_mesh_ext(points, elements,
         def _is_rankbdry_face(el_face):
             return False
 
+    dim = max(el.dimensions for el in elements)
+    if periodicity is None:
+        periodicity = dim*[None]
+    assert len(periodicity) == dim
 
     # tag elements
     tag_to_elements = {TAG_NONE: [], TAG_ALL: []}
-    for el in element_objs:
-        for el_tag in element_tagger(el, new_points):
+    for el in elements:
+        for el_tag in volume_tagger(el, points):
             tag_to_elements.setdefault(el_tag, []).append(el)
         tag_to_elements[TAG_ALL].append(el)
 
@@ -318,14 +324,16 @@ def make_conformal_mesh_ext(points, elements,
                 tag_to_boundary[TAG_REALLY_ALL].remove(plus_face)
                 tag_to_boundary[TAG_REALLY_ALL].remove(minus_face)
 
-    return {
-            "interfaces": interfaces,
-            "tag_to_boundary": tag_to_boundary,
-            "tag_to_elements": tag_to_elements
-            "periodicity": periodicity,
-            "periodic_opposite_faces": periodic_opposite_faces,
-            "periodic_opposite_vertices": periodic_opposite_vertices,
-            }
+    return ConformalMesh(
+            points=points,
+            elements=elements,
+            interfaces=interfaces,
+            tag_to_boundary=tag_to_boundary,
+            tag_to_elements=tag_to_elements,
+            periodicity=periodicity,
+            periodic_opposite_faces=periodic_opposite_faces,
+            periodic_opposite_vertices=periodic_opposite_vertices,
+            )
 
 
 
@@ -384,13 +392,8 @@ def make_conformal_mesh(points, elements,
         for id, vert_indices in enumerate(elements)]
 
     # call into new interface
-    if periodicity is None:
-        periodicity = dim*[None]
-    assert len(periodicity) == dim
-
-    mdd = _build_mesh_data_dict(
+    return make_conformal_mesh_ext(
             new_points, element_objs, boundary_tagger, periodicity, _is_rankbdry_face)
-    return ConformalMesh(new_points, element_objs, **mdd)
 
 
 

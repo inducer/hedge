@@ -31,7 +31,7 @@ from hedge.discretization.local import \
 
 class Point:
     dimensions = 0
-
+    vertex_count = 1
     def node_count(self):
         return 1
 
@@ -219,11 +219,14 @@ class LocalToGlobalMap(object):
 
     def is_affine(self):
         from pytools import any
-        return any(
+        has_high_order_geometry = any(
                 max(mid) >= 2 and abs(mc) >= 1e-13
                 for mid, mc in zip(
                     self.ldis.generate_mode_identifiers(),
                     self.modal_coeff)
+                )
+
+        return not has_high_order_geometry
 
 
 
@@ -339,7 +342,7 @@ def read_gmsh(filename, force_dimension=None, periodicity=None):
                 if element_type.node_count()!= len(node_indices):
                     raise GmshFileFormatError("unexpected number of nodes in element")
 
-                gmsh_vertex_nrs = el.node_indices[:el.element_type.vertex_count]
+                gmsh_vertex_nrs = node_indices[:element_type.vertex_count]
                 zero_based_idx = element_idx - 1
                 el_info = ElementInfo(
                     index=zero_based_idx,
@@ -348,8 +351,7 @@ def read_gmsh(filename, force_dimension=None, periodicity=None):
                     gmsh_vertex_indices=gmsh_vertex_nrs,
                     tag_numbers=tags)
 
-                gmsh_vertex_nrs_to_element[set(gmsh_vertex_nrs] = el_info
-
+                gmsh_vertex_nrs_to_element[frozenset(gmsh_vertex_nrs)] = el_info
                 element_idx +=1
             if element_count+1 != element_idx:
                 raise GmshFileFormatError("unexpected number of elements found")
@@ -385,16 +387,19 @@ def read_gmsh(filename, force_dimension=None, periodicity=None):
 
     # figure out dimensionalities
     node_dim = single_valued(len(node) for node in nodes)
-    vol_dim = max(el.el_type.dimensions for el in elements)
+    vol_dim = max(el.el_type.dimensions for key, el in
+            gmsh_vertex_nrs_to_element.iteritems() )
     bdry_dim = vol_dim - 1
 
-    vol_elements = [el for el in elements
+    vol_elements = [el for key, el in gmsh_vertex_nrs_to_element.iteritems()
             if el.el_type.dimensions == vol_dim]
-    bdry_elements = [el for el in elements
+    bdry_elements = [el for key, el in gmsh_vertex_nrs_to_element.iteritems()
             if el.el_type.dimensions == bdry_dim]
 
     # build hedge-compatible elements
-    from hedge.mesh.element import TO_CURVED_CLASS
+    from hedge.mesh.element import TO_CURVED_CLASS,\
+                                   CurvedTriangle,\
+                                   CurvedTetrahedron
     hedge_vertices = []
     hedge_elements = []
 
@@ -412,11 +417,11 @@ def read_gmsh(filename, force_dimension=None, periodicity=None):
 
     for el_nr, gmsh_el in enumerate(vol_elements):
         el_map = LocalToGlobalMap(
-                [nodes[ni] for ni gmsh_el.node_indices],
-                gmsh_el.element_type)
-        is_affine = gmsh_el.map.is_affine()
+                [nodes[ni] for ni in  gmsh_el.node_indices],
+                gmsh_el.el_type)
+        is_affine = el_map.is_affine()
 
-        el_class = gmsh_el.element_type.geometry
+        el_class = gmsh_el.el_type.geometry
         if not is_affine:
             try:
                 el_class = TO_CURVED_CLASS[el_class]
@@ -434,37 +439,39 @@ def read_gmsh(filename, force_dimension=None, periodicity=None):
             hedge_el = el_class(el_nr, vertex_indices, el_map)
 
         hedge_elements.append(hedge_el)
-        hedge_el_to_gmsh_el[hedge_el] = gmsh_el
+        hedge_el_to_gmsh_element[hedge_el] = gmsh_el
 
     from pytools import reverse_dictionary
     hedge_vertex_nr_to_gmsh_node_nr = reverse_dictionary(
             gmsh_node_nr_to_hedge_vertex_nr)
 
-    del gmsh_node_nr_to_hedge_vertex_nr
-    del nodes
     del vol_elements
 
     def volume_tagger(el, all_v):
         return [tag_name_map[tag_nr, el.dimensions]
-                for tag_nr in hedge_el_to_gmsh_element[el].tags
+                for tag_nr in hedge_el_to_gmsh_element[el].tag_numbers
                 if (tag_nr, el.dimensions) in tag_name_map]
 
     def boundary_tagger(fvi, el, fn, all_v):
-        gmsh_vertex_nrs = set(
+        gmsh_vertex_nrs = frozenset(
                 hedge_vertex_nr_to_gmsh_node_nr[face_vertex_index]
                 for face_vertex_index in fvi)
-        gmsh_element = gmsh_vertex_nrs_to_element[gmsh_vertex_nrs]
 
-        return [tag_name_map[tag_nr, el.dimensions]
-                for tag_nr in gmsh_element.tags
-                if (tag_nr, el.dimensions) in tag_name_map]
+        try:
+            gmsh_element = gmsh_vertex_nrs_to_element[gmsh_vertex_nrs]
+        except KeyError:
+            return []
+        else:
+            return [tag_name_map[tag_nr, el.dimensions]
+                    for tag_nr in gmsh_element.tag_numbers
+                    if (tag_nr, el.dimensions) in tag_name_map]
 
     from hedge.mesh import make_conformal_mesh_ext
     return make_conformal_mesh_ext(
             hedge_vertices,
-            hege_elements,
+            hedge_elements,
             volume_tagger,
-            boundary_tagger
+            boundary_tagger,
             periodicity)
 
 

@@ -192,13 +192,14 @@ class CurvedTriangle(TriangleBase, CurvedElement):
 class TetrahedronBase(SimplicialElement):
     dimensions = 3
 
-    @staticmethod
+    #@staticmethod
     def _face_vertices(vertices):
         return [(vertices[0], vertices[1], vertices[2]),
                 (vertices[0], vertices[1], vertices[3]),
                 (vertices[0], vertices[2], vertices[3]),
                 (vertices[1], vertices[2], vertices[3]),
                 ]
+    face_vertices = staticmethod(_face_vertices)
 
     face_vertex_numbers = _face_vertices([0, 1, 2, 3])
 

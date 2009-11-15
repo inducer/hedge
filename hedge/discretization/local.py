@@ -75,10 +75,10 @@ class TriangleWarper:
         self.alpha = alpha
         self.warp = WarpFactorCalculator(order)
 
-        cls = TriangularElement
+        cls = TriangleDiscretization
 
         from pytools import wandering_element
-        from tools import normalize
+        from hedge.tools import normalize
 
         vertices = [cls.barycentric_to_equilateral(bary)
                 for bary in wandering_element(cls.dimensions + 1)]
@@ -583,7 +583,8 @@ class TriangleDiscretization(SimplexDiscretization):
 
     dimensions = 2
     has_local_jacobians = False
-    geometry = hedge.mesh.element.Triangle
+    from hedge.mesh.element import Triangle
+    geometry = Triangle
 
     def __init__(self, order, fancy_node_ordering=True):
         self.order = order
@@ -836,7 +837,8 @@ class TetrahedronDiscretization(SimplexDiscretization):
 
     dimensions = 3
     has_local_jacobians = False
-    geometry = hedge.mesh.element.Tetrahedron
+    from hedge.mesh.element import Tetrahedron
+    geometry = Tetrahedron
 
     def __init__(self, order):
         self.order = order
@@ -983,7 +985,7 @@ class TetrahedronDiscretization(SimplexDiscretization):
         equi_points = [self.barycentric_to_equilateral(bp)
                 for bp in bary_points]
 
-        from tools import normalize
+        from hedge.tools import normalize
         from operator import add, mul
 
         tri_warp = TriangleWarper(alpha, self.order)
