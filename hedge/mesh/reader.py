@@ -80,11 +80,31 @@ class GmshIntervalElement(IntervalDiscretization, GmshElementBase):
 
     @memoize_method
     def gmsh_node_tuples(self):
-        yield (0,)
-        yield (self.order,)
+        return [(0,), (self.order,),] + [
+                (i,) for i in range(1, self.order)]
 
-        for i in range(1, self.order):
-            yield (i,)
+
+
+
+class GmshIncompleteTriangularElement(GmshElementBase):
+    vertex_count = 3
+    dimensions = 2
+
+    def __init__(self, order):
+        self.order = order
+
+    def node_count(self):
+        return len(self.gmsh_node_tuples())
+
+    @memoize_method
+    def gmsh_node_tuples(self):
+        result = []
+        for tup in generate_triangle_vertex_tuples(self.order):
+            result.append(tup)
+        for tup in generate_triangle_edge_tuples(self.order):
+            result.append(tup)
+        return result
+
 
 
 
@@ -94,12 +114,14 @@ class GmshTriangularElement(TriangleDiscretization, GmshElementBase):
 
     @memoize_method
     def gmsh_node_tuples(self):
+        result = []
         for tup in generate_triangle_vertex_tuples(self.order):
-            yield tup
+            result.append(tup)
         for tup in generate_triangle_edge_tuples(self.order):
-            yield tup
+            result.append(tup)
         for tup in generate_triangle_volume_tuples(self.order):
-            yield tup
+            result.append(tup)
+        return result
 
 
 
@@ -151,12 +173,15 @@ GMSH_ELEMENT_TYPE_TO_INFO_MAP = {
         9:  GmshTriangularElement(2),
         11: GmshTetrahedralElement(2),
         15: Point(),
+        20: GmshIncompleteTriangularElement(3),
         21: GmshTriangularElement(3),
+        22: GmshIncompleteTriangularElement(4),
         23: GmshTriangularElement(4),
+        24: GmshIncompleteTriangularElement(5),
         25: GmshTriangularElement(5),
-        26: GmshIntervalElement(4),
-        27: GmshIntervalElement(5),
-        28: GmshIntervalElement(6),
+        26: GmshIntervalElement(3),
+        27: GmshIntervalElement(4),
+        28: GmshIntervalElement(5),
         29: GmshTetrahedralElement(3),
         30: GmshTetrahedralElement(4),
         31: GmshTetrahedralElement(5)
@@ -219,11 +244,20 @@ class LocalToGlobalMap(object):
 
     def is_affine(self):
         from pytools import any
-        has_high_order_geometry = any(
-                max(mid) >= 2 and abs(mc) >= 1e-13
+        print [
+                (mid, abs(mc))
+                for mc_along_axis in self.modal_coeff.T
                 for mid, mc in zip(
                     self.ldis.generate_mode_identifiers(),
-                    self.modal_coeff)
+                    mc_along_axis)
+                if max(mid) >= 2
+                ]
+        has_high_order_geometry = any(
+                max(mid) >= 2 and abs(mc) >= 1e-13
+                for mc_along_axis in self.modal_coeff.T
+                for mid, mc in zip(
+                    self.ldis.generate_mode_identifiers(),
+                    mc_along_axis)
                 )
 
         return not has_high_order_geometry
@@ -426,9 +460,7 @@ def read_gmsh(filename, force_dimension=None, periodicity=None):
             try:
                 el_class = TO_CURVED_CLASS[el_class]
             except KeyError:
-                pass
-            else:
-                raise GmshFileFormatError("unsupported curved element type")
+                raise GmshFileFormatError("unsupported curved element type %s" % el_class)
 
         vertex_indices = [get_vertex_nr(gmsh_node_nr)
                 for gmsh_node_nr in gmsh_el.gmsh_vertex_indices]

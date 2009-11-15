@@ -32,10 +32,15 @@ class Element(object):
         self.vertex_indices = vertex_indices
         self.map = map
 
+    @property
+    def faces(self):
+        return self.face_vertices(self.vertex_indices)
 
 
 
-class CurvedElement(object):
+
+
+class CurvedElement(Element):
     pass
 
 
@@ -79,10 +84,6 @@ class SimplicialElement(Element):
         if self.map.jacobian > 0:
             raise MeshOrientationError("element %d is positively oriented"
                     % self.id)
-
-    @property
-    def faces(self):
-        return self.face_vertices(self.vertex_indices)
 
     @classmethod
     def get_map_unit_to_global(cls, vertices):
@@ -136,7 +137,7 @@ class Interval(SimplicialElement):
 
 
 # triangles -------------------------------------------------------------------
-class TriangleBase(SimplicialElement):
+class TriangleBase(object):
     dimensions = 2
 
     @staticmethod
@@ -154,9 +155,12 @@ class TriangleBase(SimplicialElement):
         else:
             return None
 
-class Triangle(TriangleBase):
+
+
+
+class Triangle(TriangleBase, SimplicialElement):
     __slots__ = []
-    
+
     @staticmethod
     def face_normals_and_jacobians(vertices, affine_map):
         """Compute the normals and face jacobians of the unit element
@@ -189,7 +193,7 @@ class CurvedTriangle(TriangleBase, CurvedElement):
 
 
 # tetrahedra ------------------------------------------------------------------
-class TetrahedronBase(SimplicialElement):
+class TetrahedronBase(object):
     dimensions = 3
 
     #@staticmethod
@@ -206,7 +210,7 @@ class TetrahedronBase(SimplicialElement):
 
 
 
-class Tetrahedron(TetrahedronBase):
+class Tetrahedron(TetrahedronBase, SimplicialElement):
     __slots__ = []
 
     @classmethod
