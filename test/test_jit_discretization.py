@@ -30,7 +30,7 @@ import pytools.test
 
 def test_1d_mass_mat_trig():
     """Check the integral of some trig functions on an interval using the mass matrix"""
-    from hedge.mesh import make_uniform_1d_mesh
+    from hedge.mesh.generator import make_uniform_1d_mesh
     from hedge.discretization.local import IntervalDiscretization
     from math import sqrt, pi, cos, sin
     from numpy import dot
@@ -67,7 +67,7 @@ def test_1d_mass_mat_trig():
 def test_tri_mass_mat_trig():
     """Check the integral of some trig functions on a square using the mass matrix"""
 
-    from hedge.mesh import make_square_mesh
+    from hedge.mesh.generator import make_square_mesh
     from hedge.discretization.local import TriangleDiscretization
     from math import sqrt, pi, cos, sin
 
@@ -100,7 +100,7 @@ def test_tri_diff_mat():
 
     Uses sines as the function to differentiate.
     """
-    from hedge.mesh import make_disk_mesh
+    from hedge.mesh.generator import make_disk_mesh
     from hedge.discretization.local import TriangleDiscretization
     from math import sin, cos, sqrt
 
@@ -131,7 +131,7 @@ def test_2d_gauss_theorem():
     """Verify Gauss's theorem explicitly on a mesh"""
 
     from hedge.discretization.local import TriangleDiscretization
-    from hedge.mesh import make_disk_mesh
+    from hedge.mesh.generator import make_disk_mesh
     from math import sin, cos, sqrt, exp, pi
     from numpy import dot
 
@@ -822,7 +822,7 @@ def test_convergence_advec_2d():
     """Test whether 2D advection actually converges"""
 
     import pyublas
-    from hedge.mesh import make_disk_mesh, make_regular_rect_mesh
+    from hedge.mesh.generator import make_disk_mesh, make_regular_rect_mesh
     from hedge.discretization.local import TriangleDiscretization
     from hedge.timestep import RK4TimeStepper
     from hedge.tools import EOCRecorder
@@ -943,19 +943,20 @@ def test_elliptic():
     rhs = pymbolic.simplify(pymbolic.laplace(truesol, [v_x[0], v_x[1]]))
     rhs_c = pymbolic.compile(rhs, variables=["x", "el"])
 
-    from hedge.mesh import make_disk_mesh, TAG_ALL, TAG_NONE
+    from hedge.mesh import TAG_ALL, TAG_NONE
+    from hedge.mesh.generator import make_disk_mesh
     mesh = make_disk_mesh(r=0.5, max_area=0.1, faces=20)
     mesh = mesh.reordered_by("cuthill")
 
-    from hedge.backends import SerialRunContext
-    rcon = SerialRunContext(discr_class)
+    from hedge.backends import CPURunContext
+    rcon = CPURunContext()
 
     from hedge.tools import EOCRecorder
     eocrec = EOCRecorder()
     for order in [1,2,3,4,5]:
         for flux in ["ldg", "ip"]:
             from hedge.discretization.local import TriangleDiscretization
-            discr = discr_class(mesh, TriangleDiscretization(order),
+            discr = rcon.make_discretization(mesh, TriangleDiscretization(order),
                     debug=discr_class.noninteractive_debug_flags())
 
             from hedge.data import GivenFunction
@@ -995,7 +996,7 @@ def test_elliptic():
 def test_projection():
     """Test whether projection between different orders works"""
 
-    from hedge.mesh import make_disk_mesh
+    from hedge.mesh.generator import make_disk_mesh
     from hedge.discretization import Projector
     from hedge.discretization.local import TriangleDiscretization
     from hedge.tools import EOCRecorder
@@ -1027,7 +1028,7 @@ def test_projection():
 def test_filter():
     """Exercise mode-based filtering."""
 
-    from hedge.mesh import make_disk_mesh
+    from hedge.mesh.generator import make_disk_mesh
     from hedge.discretization.local import TriangleDiscretization
     from math import sin
 
@@ -1074,7 +1075,7 @@ def no_test_tri_mass_mat_gauss(self):
     # This is a bad test, since it's never exact. The Gaussian has infinite support,
     # and this *does* matter numerically.
 
-    from hedge.mesh import make_disk_mesh
+    from hedge.mesh.generator import make_disk_mesh
     from hedge.discretization.local import TriangleDiscretization
     from math import sqrt, exp, pi
 
