@@ -1026,7 +1026,7 @@ class Kernel:
                     if b_face.native_block == a_face.native_block:
                         # same block
                         faces_todo.remove(b_face.el_face)
-                        b_write_index_list = a_face.opp_write_index_list_id
+                        b_write_index_list = a_face.ext_write_index_list_id
                         b_dest = find_elface_dest(b_face.el_face)
 
                         fp_structs = same_fp_structs

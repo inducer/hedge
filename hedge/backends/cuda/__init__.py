@@ -86,13 +86,13 @@ class GPUInteriorFaceStorage(GPUFaceStorage):
     :ivar el_face: a tuple *(element, face_number)*.
     :ivar cpu_slice: the base index of the element in CPU numbering.
     :ivar native_index_list_id:
-    :ivar opp_write_index_list_id:
+    :ivar ext_write_index_list_id:
     :ivar native_block: block in which element is to be found.
     :ivar face_pair_side:
     """
     __slots__ = [
             "el_face", "cpu_slice",
-            "native_index_list_id", "opp_write_index_list_id",
+            "native_index_list_id", "ext_write_index_list_id",
             "global_int_flux_index_list_id", "global_ext_flux_index_list_id",
             "native_block",
             "face_pair_side"]
@@ -377,7 +377,7 @@ class Discretization(hedge.discretization.Discretization):
             cuda.init()
 
         if device is None:
-            if len(run_context.ranks) == 1:
+            if run_context is None or len(run_context.ranks) == 1:
                 from pycuda.tools import get_default_device
                 device = get_default_device()
             else:
@@ -593,8 +593,8 @@ class Discretization(hedge.discretization.Discretization):
         assert id_face_index_list_number == 0
 
         for fp in int_fg.face_pairs:
-            face1 = make_int_face(fp.loc)
-            face2 = make_int_face(fp.opp)
+            face1 = make_int_face(fp.int_side)
+            face2 = make_int_face(fp.ext_side)
             face1.opposite = face2
             face2.opposite = face1
 
@@ -609,51 +609,51 @@ class Discretization(hedge.discretization.Discretization):
 
             def face1_in_el_ilist():
                 return tuple(int_fg.index_lists[
-                    fp.loc.face_index_list_number])
+                    fp.int_side.face_index_list_number])
 
             def face2_in_el_ilist():
                 return tuple(int_fg.index_lists[
-                    fp.opp.face_index_list_number])
+                    fp.ext_side.face_index_list_number])
 
-            def opp_write_map():
+            def ext_write_map():
                 return tuple(
-                        int_fg.index_lists[fp.opp_native_write_map])
+                        int_fg.index_lists[fp.ext_native_write_map])
 
             face1.global_int_flux_index_list_id = fil_registry.register(
-                    (int_fg, fp.loc.face_index_list_number),
+                    (int_fg, fp.int_side.face_index_list_number),
                     face1_in_el_ilist)
             face1.global_ext_flux_index_list_id = fil_registry.register(
-                    (int_fg, fp.opp.face_index_list_number),
+                    (int_fg, fp.ext_side.face_index_list_number),
                     face2_in_el_ilist)
 
             face2.global_int_flux_index_list_id = fil_registry.register(
-                    (int_fg, fp.opp_native_write_map,
-                        fp.opp.face_index_list_number),
+                    (int_fg, fp.ext_native_write_map,
+                        fp.ext_side.face_index_list_number),
                     lambda: apply_write_map(
-                        opp_write_map(), face2_in_el_ilist())
+                        ext_write_map(), face2_in_el_ilist())
                     )
             face2.global_ext_flux_index_list_id = fil_registry.register(
-                    (int_fg, fp.opp_native_write_map,
-                        fp.loc.face_index_list_number),
+                    (int_fg, fp.ext_native_write_map,
+                        fp.int_side.face_index_list_number),
                     lambda: apply_write_map(
-                        opp_write_map(), face1_in_el_ilist())
+                        ext_write_map(), face1_in_el_ilist())
                     )
 
             from pytools import get_write_to_map_from_permutation as gwtm
-            #assert gwtm(face2_in_el_ilist, f_ind[fp.opp.face_id]) == opp_write_map
-            face1.opp_write_index_list_id = fil_registry.register(
-                    (int_fg, "wtm", fp.opp.face_index_list_number,
-                        fp.opp.face_id),
-                    lambda: gwtm(face2_in_el_ilist(), f_ind[fp.opp.face_id])
+            #assert gwtm(face2_in_el_ilist, f_ind[fp.ext_side.face_id]) == ext_write_map
+            face1.ext_write_index_list_id = fil_registry.register(
+                    (int_fg, "wtm", fp.ext_side.face_index_list_number,
+                        fp.ext_side.face_id),
+                    lambda: gwtm(face2_in_el_ilist(), f_ind[fp.ext_side.face_id])
                     )
-            face2.opp_write_index_list_id = fil_registry.register(
+            face2.ext_write_index_list_id = fil_registry.register(
                     (int_fg, "wtm",
-                        fp.opp_native_write_map,
-                        fp.loc.face_index_list_number,
-                        fp.loc.face_id),
+                        fp.ext_native_write_map,
+                        fp.int_side.face_index_list_number,
+                        fp.int_side.face_id),
                     lambda: gwtm(
-                        apply_write_map(opp_write_map(), face1_in_el_ilist()),
-                        f_ind[fp.loc.face_id])
+                        apply_write_map(ext_write_map(), face1_in_el_ilist()),
+                        f_ind[fp.int_side.face_id])
                     )
 
         self.aligned_boundary_floats = 0
@@ -669,29 +669,29 @@ class Discretization(hedge.discretization.Discretization):
             aligned_fnc = self.given.devdata.align_dtype(ldis.face_node_count(),
                     self.given.float_size())
             for fp in bdry_fg.face_pairs:
-                assert fp.opp.element_id == hedge._internal.INVALID_ELEMENT
-                #assert (tuple(bdry_fg.index_lists[fp.opp.face_index_list_number])
+                assert fp.ext_side.element_id == hedge._internal.INVALID_ELEMENT
+                #assert (tuple(bdry_fg.index_lists[fp.ext_side.face_index_list_number])
                         #== id_face_index_list)
 
-                face1 = make_int_face(fp.loc)
+                face1 = make_int_face(fp.int_side)
                 face2 = GPUBoundaryFaceStorage(
-                        fp.opp.el_base_index,
+                        fp.ext_side.el_base_index,
                         self.aligned_boundary_floats,
-                        fp.opp
+                        fp.ext_side
                         )
                 self.aligned_boundary_floats += aligned_fnc
                 face1.opposite = face2
                 face2.opposite = face1
 
                 face1.global_int_flux_index_list_id = fil_registry.register(
-                        (bdry_fg,fp.loc.face_index_list_number),
+                        (bdry_fg,fp.int_side.face_index_list_number),
                         lambda: tuple(bdry_fg.index_lists[
-                            fp.loc.face_index_list_number])
+                            fp.int_side.face_index_list_number])
                         )
                 face1.global_ext_flux_index_list_id = fil_registry.register(
-                        (bdry_fg, fp.opp.face_index_list_number),
+                        (bdry_fg, fp.ext_side.face_index_list_number),
                         lambda: tuple(bdry_fg.index_lists[
-                            fp.opp.face_index_list_number])
+                            fp.ext_side.face_index_list_number])
                         )
 
         self.index_lists = fil_registry.index_lists
