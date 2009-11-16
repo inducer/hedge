@@ -928,11 +928,16 @@ class OperatorBinder(CSECachingMapperMixin, IdentityMapper):
         if len(expr.children) == 0:
             return expr
 
-        from pymbolic.primitives import flattened_product
+        from pymbolic.primitives import flattened_product, Product
         first = expr.children[0]
         if isinstance(first, Operator):
-            return OperatorBinding(first,
-                    self.rec(flattened_product(expr.children[1:])))
+            prod = flattened_product(expr.children[1:])
+            if isinstance(prod, Product) and len(prod.children) > 1:
+                from warnings import warn
+                warn("binding an operator to more than one "
+                        "operand in a product is ambiguous - "
+                        "use the parenthesized pre-bound form instead")
+            return OperatorBinding(first, self.rec(prod))
         else:
             return first * self.rec(flattened_product(expr.children[1:]))
 
