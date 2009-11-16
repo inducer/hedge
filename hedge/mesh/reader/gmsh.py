@@ -475,7 +475,6 @@ def read_gmsh(filename, force_dimension=None, periodicity=None):
                 for gmsh_node_nr in gmsh_el.gmsh_vertex_indices]
 
         if is_affine:
-            print "BARF"
             hedge_el = el_class(el_nr, vertex_indices, hedge_vertices)
         else:
             hedge_el = el_class(el_nr, vertex_indices, el_map)

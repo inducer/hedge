@@ -182,11 +182,11 @@ class Discretization(TimestepCalculator):
             raise ValueError("must supply only one of local_discretization "
                     "and order")
         if local_discretization is None:
-            from hedge.discretization.local import LDIS_CLASSES
-            from pytools import one
-            ldis_class = one(
-                    ldis_class for ldis_class in LDIS_CLASSES
-                    if isinstance(mesh.elements[0], ldis_class.geometry))
+            from hedge.discretization.local import GEOMETRY_TO_LDIS
+            from pytools import single_valued
+            ldis_class = single_valued(
+                    GEOMETRY_TO_LDIS[type(el)]
+                    for el in mesh.elements)
             return ldis_class(order)
         else:
             return local_discretization
@@ -329,52 +329,70 @@ class Discretization(TimestepCalculator):
 
     # initialization ----------------------------------------------------------
     def _build_element_groups_and_nodes(self, local_discretization):
+        from pytools import any
+        from hedge.mesh.element import CurvedElement
+        from hedge.mesh.element import SimplicialElement
+
+        straight_elements = [el
+                for el in self.mesh.elements
+                if isinstance(el, SimplicialElement)]
+        curved_elements = [el
+                for el in self.mesh.elements
+                if isinstance(el, CurvedElement)]
+
+        self.element_groups = []
+
         from hedge._internal import UniformElementRanges
-        from hedge.discretization.data import StraightElementGroup
+        if straight_elements:
+            from hedge.discretization.data import StraightElementGroup
 
-        eg = StraightElementGroup()
-        eg.members = self.mesh.elements
-        eg.member_nrs = numpy.fromiter((el.id for el in eg.members),
-                dtype=numpy.uint32)
-        eg.local_discretization = ldis = local_discretization
-        eg.ranges = UniformElementRanges(
-                0,
-                len(ldis.unit_nodes()),
-                len(self.mesh.elements))
+            eg = StraightElementGroup()
+            self.element_groups.append(eg)
 
-        nodes_per_el = ldis.node_count()
-        # mem layout:
-        # [....element....][...element...]
-        #  |    \
-        #  [node.]
-        #   | | |
-        #   x y z
+            eg.members = straight_elements
+            eg.member_nrs = numpy.fromiter((el.id for el in eg.members),
+                    dtype=numpy.uint32)
+            eg.local_discretization = ldis = local_discretization
+            eg.ranges = UniformElementRanges(
+                    0,
+                    len(ldis.unit_nodes()),
+                    len(self.mesh.elements))
 
-        # while it seems convenient, nodes should not have an
-        # "element number" dimension: this would break once
-        # p-adaptivity is implemented
-        self.nodes = numpy.empty(
-                (len(self.mesh.elements) * nodes_per_el, self.dimensions),
-                dtype=float, order="C")
+            nodes_per_el = ldis.node_count()
+            # mem layout:
+            # [....element....][...element...]
+            #  |    \
+            #  [node.]
+            #   | | |
+            #   x y z
 
-        unit_nodes = numpy.empty((nodes_per_el, self.dimensions),
-                dtype=float, order="C")
+            # while it seems convenient, nodes should not have an
+            # "element number" dimension: this would break once
+            # p-adaptivity is implemented
+            self.nodes = numpy.empty(
+                    (len(self.mesh.elements) * nodes_per_el, self.dimensions),
+                    dtype=float, order="C")
 
-        for i_node, node in enumerate(ldis.unit_nodes()):
-            unit_nodes[i_node] = node
+            unit_nodes = numpy.empty((nodes_per_el, self.dimensions),
+                    dtype=float, order="C")
 
-        from hedge._internal import map_element_nodes
+            for i_node, node in enumerate(ldis.unit_nodes()):
+                unit_nodes[i_node] = node
 
-        for el in self.mesh.elements:
-            map_element_nodes(
-                    self.nodes,
-                    el.id * nodes_per_el * self.dimensions,
-                    el.map,
-                    unit_nodes,
-                    self.dimensions)
+            from hedge._internal import map_element_nodes
 
-        self.group_map = [(eg, i) for i in range(len(self.mesh.elements))]
-        self.element_groups = [eg]
+            for el in eg.members:
+                map_element_nodes(
+                        self.nodes,
+                        el.id * nodes_per_el * self.dimensions,
+                        el.map,
+                        unit_nodes,
+                        self.dimensions)
+
+            self.group_map = [(eg, i) for i in range(len(self.mesh.elements))]
+
+        if curved_elements:
+            raise NotImplementedError
 
     def _calculate_local_matrices(self):
         for eg in self.element_groups:

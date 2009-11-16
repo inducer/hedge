@@ -29,7 +29,7 @@ from hedge.tools import AffineMap
 import hedge._internal
 from math import sqrt
 from pytools import memoize_method
-import hedge.mesh
+import hedge.mesh.element
 
 
 
@@ -385,8 +385,7 @@ class IntervalDiscretizationBase(SimplexDiscretization):
     """
     dimensions = 1
     has_local_jacobians = False
-    from hedge.mesh.element import Interval
-    geometry = Interval
+    geometry = hedge.mesh.element.Interval
 
     # numbering ---------------------------------------------------------------
     @memoize_method
@@ -583,8 +582,7 @@ class TriangleDiscretization(SimplexDiscretization):
 
     dimensions = 2
     has_local_jacobians = False
-    from hedge.mesh.element import Triangle
-    geometry = Triangle
+    geometry = hedge.mesh.element.Triangle
 
     def __init__(self, order, fancy_node_ordering=True):
         self.order = order
@@ -837,8 +835,7 @@ class TetrahedronDiscretization(SimplexDiscretization):
 
     dimensions = 3
     has_local_jacobians = False
-    from hedge.mesh.element import Tetrahedron
-    geometry = Tetrahedron
+    geometry = hedge.mesh.element.Tetrahedron
 
     def __init__(self, order):
         self.order = order
@@ -1193,8 +1190,10 @@ class TetrahedronDiscretization(SimplexDiscretization):
 
 
 
-LDIS_CLASSES = [
-        IntervalDiscretization, 
-        TriangleDiscretization, 
-        TetrahedronDiscretization,
-        ]
+GEOMETRY_TO_LDIS = {
+        hedge.mesh.element.Interval: IntervalDiscretization,
+        hedge.mesh.element.Triangle: TriangleDiscretization,
+        hedge.mesh.element.CurvedTriangle: TriangleDiscretization,
+        hedge.mesh.element.Tetrahedron: TetrahedronDiscretization,
+        hedge.mesh.element.CurvedTetrahedron: TetrahedronDiscretization,
+        }
