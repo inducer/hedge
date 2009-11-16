@@ -56,47 +56,55 @@ namespace
 
 
 
-void hedge_expose_fluxes()
+template <class FaceType>
+void expose_face_pair_side(std::string const &face_type_name)
 {
   {
-    typedef fluxes::face cl;
-    class_<cl>("FluxFace")
-      .DEF_SIMPLE_RW_MEMBER(h)
-      .DEF_SIMPLE_RW_MEMBER(face_jacobian)
-      .DEF_SIMPLE_RW_MEMBER(element_id)
-      .DEF_SIMPLE_RW_MEMBER(face_id)
-      .DEF_SIMPLE_RW_MEMBER(order)
-      .def(pyublas::by_value_rw_member("normal", &cl::normal))
-      ;
-  }
-  {
-    typedef face_pair::side cl;
-    class_<cl, bases<fluxes::face> >("FacePairSide")
+    typedef face_pair_side<FaceType> cl;
+    class_<cl, bases<FaceType> >((face_type_name + "FacePairSide" ).c_str())
       .DEF_SIMPLE_RW_MEMBER(el_base_index)
       .DEF_SIMPLE_RW_MEMBER(face_index_list_number)
       .DEF_SIMPLE_RW_MEMBER(local_el_number)
       ;
   }
+}
+
+
+
+
+template <class IntFaceType, class ExtFaceType>
+void expose_face_pair(std::string const &face_pair_type_name)
+{
+  typedef face_pair<IntFaceType, ExtFaceType> face_pair_type;
+  typedef face_group<face_pair_type> face_group_type;
+  
+  // FaceGroup name is composed here from type of face pair
+  // and "FaceGroup" suffix.
+  class_<face_group_type, boost::shared_ptr<face_group_type> > fg_wrap(
+      (face_pair_type_name + "FaceGroup" ).c_str(),
+      init<bool>(args("double_sided")));
+
+  scope fg_scope = fg_wrap;
+
   {
-    typedef face_pair cl;
+    typedef face_pair_type cl;
     class_<cl>("FacePair")
-      .add_static_property("INVALID_INDEX", &cl::get_INVALID_INDEX)
-      .DEF_SIMPLE_RW_MEMBER(loc)
-      .DEF_SIMPLE_RW_MEMBER(opp)
-      .DEF_SIMPLE_RW_MEMBER(opp_native_write_map)
+      .DEF_SIMPLE_RW_MEMBER(int_side)
+      .DEF_SIMPLE_RW_MEMBER(ext_side)
+      .DEF_SIMPLE_RW_MEMBER(ext_native_write_map)
       ;
   }
 
   {
-    typedef face_group::face_pair_vector cl;
+    typedef typename face_group_type::face_pair_vector cl;
     class_<cl>("FacePairVector")
       .def(no_compare_indexing_suite<cl>())
       ;
   }
 
   {
-    typedef face_group cl;
-    class_<cl, boost::shared_ptr<cl> >("FaceGroup", init<bool>(args("double_sided")))
+    typedef face_group_type cl;
+    fg_wrap
       .DEF_SIMPLE_RW_MEMBER(face_pairs)
       .DEF_SIMPLE_RW_MEMBER(face_count)
       .DEF_BYVAL_RW_MEMBER(local_el_to_global_el_base)
@@ -105,6 +113,43 @@ void hedge_expose_fluxes()
       .DEF_SIMPLE_METHOD(face_length)
       ;
   }
+}
+
+
+
+
+void hedge_expose_fluxes()
+{
+  {
+    typedef face_base cl;
+    class_<cl>("FaceBase")
+      .DEF_SIMPLE_RW_MEMBER(h)
+      .DEF_SIMPLE_RW_MEMBER(element_id)
+      .DEF_SIMPLE_RW_MEMBER(face_id)
+      .DEF_SIMPLE_RW_MEMBER(order)
+      ;
+  }
+
+  {
+    typedef straight_face cl;
+    class_<cl, bases<face_base> >("StraightFace")
+      .DEF_SIMPLE_RW_MEMBER(face_jacobian)
+      .def(pyublas::by_value_rw_member("normal", &cl::normal))
+      ;
+  }
+
+  {
+    typedef curved_face cl;
+    class_<cl, bases<face_base> >("CurvedFace")
+      ;
+  }
+
+  expose_face_pair_side<straight_face>("Straight");
+  expose_face_pair_side<curved_face>("Curved");
+
+  expose_face_pair<straight_face, straight_face>("Straight");
+  expose_face_pair<straight_face, curved_face>("StraightCurved");
+  expose_face_pair<curved_face, curved_face>("Curved");
 
   expose_lift_flux<float, float>();
   expose_lift_flux<double, double>();

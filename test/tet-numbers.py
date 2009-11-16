@@ -1,4 +1,4 @@
-from hedge.element import TetrahedralElement as Tet
+from hedge.discretization.local import TetrahedronDiscretization as Tet
 from pytools import Table
 
 tbl = Table()

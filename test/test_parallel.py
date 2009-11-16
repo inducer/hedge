@@ -29,7 +29,6 @@ def run_convergence_test_advec(dtype, debug_output=False):
     """Test whether 2/3D advection actually converges"""
 
     from hedge.mesh import make_ball_mesh, make_box_mesh, make_rect_mesh
-    from hedge.element import TetrahedralElement, TriangularElement
     from hedge.timestep import RK4TimeStepper
     from hedge.tools import EOCRecorder
     from math import sin, pi, sqrt
@@ -94,10 +93,6 @@ def run_convergence_test_advec(dtype, debug_output=False):
                         mesh_data = rcon.receive_mesh()
 
                     dims = mesh.points.shape[1]
-                    if dims == 2:
-                        el_class = TriangularElement
-                    else:
-                        el_class = TetrahedralElement
 
                     discr = rcon.make_discretization(mesh_data, order=order,
                             default_scalar_type=dtype)

@@ -46,3 +46,4 @@ doc/manual/source/.static
 doc/manual/.templates
 distribute-*.tar.gz
 setuptools.pth
+*.sess

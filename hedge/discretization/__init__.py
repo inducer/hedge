@@ -35,108 +35,6 @@ from pytools import memoize_method
 
 
 
-class _FaceGroup(hedge._internal.FaceGroup):
-    def __init__(self, double_sided, debug):
-        hedge._internal.FaceGroup.__init__(self, double_sided)
-        from hedge.tools import IndexListRegistry
-        self.fil_registry = IndexListRegistry(debug)
-
-    def register_face_index_list(self, identifier, generator):
-        return self.fil_registry.register(identifier, generator)
-
-    def commit(self, discr, ldis_loc, ldis_opp):
-        if self.fil_registry.index_lists:
-            self.index_lists = numpy.array(
-                    self.fil_registry.index_lists,
-                    dtype=numpy.uint32, order="C")
-            del self.fil_registry
-
-        if ldis_loc is None:
-            self.face_count = 0
-        else:
-            self.face_count = ldis_loc.face_count()
-
-        # number elements locally
-        used_bases_and_els = list(set(
-                (side.el_base_index, side.element_id)
-                for fp in self.face_pairs
-                for side in [fp.loc, fp.opp]
-                if side.element_id != hedge._internal.INVALID_ELEMENT))
-
-        used_bases_and_els.sort()
-        el_id_to_local_number = dict(
-                (bae[1], i) for i, bae in enumerate(used_bases_and_els))
-        self.local_el_to_global_el_base = numpy.fromiter(
-                (bae[0] for bae in used_bases_and_els), dtype=numpy.uint32)
-
-        for fp in self.face_pairs:
-            for side in [fp.loc, fp.opp]:
-                if side.element_id != hedge._internal.INVALID_ELEMENT:
-                    side.local_el_number = \
-                            el_id_to_local_number[side.element_id]
-
-        # transfer inverse jacobians
-        self.local_el_inverse_jacobians = numpy.fromiter(
-                (abs(discr.mesh.elements[bae[1]].inverse_map.jacobian())
-                    for bae in used_bases_and_els),
-                dtype=float)
-
-        self.ldis_loc = ldis_loc
-        self.ldis_opp = ldis_opp
-
-
-
-
-class _ElementGroup(object):
-    """Once fully filled, this structure has the following data members:
-
-    :ivar members: a list of L{hedge.mesh.Element} instances in this group.
-    :ivar member_nrs: a list of the element ID numbers in this group.
-    :ivar local_discretization: an instance of L{hedge.element.Element}.
-    :ivar ranges: a list of :class:`slice` objects indicating the DOF numbers for
-      each element. Note: This is actually a C++ ElementRanges object.
-    :ivar mass_matrix: The element-local mass matrix :math:`M`.
-    :ivar inverse_mass_matrix: the element-local inverese mass matrix M{M^{-1}}.
-    :ivar differentiation_matrices: local differentiation matrices :math:`D_r, D_s, D_t`,
-      i.e.  differentiation by :math:`r, s, t, \dots`.
-    :ivar stiffness_matrices: the element-local stiffness matrices :math:`MD_r, MD_s,\dots`.
-    :ivar jacobians: list of jacobians over all elements
-    :ivar inverse_jacobians: inverses of L{jacobians}.
-    :ivar diff_coefficients: a :math:`d\\times d`-matrix of coefficient vectors to turn
-      :math:`(r,s,t)`-differentiation into :math:`(x,y,z)`.
-    """
-    pass
-
-
-
-
-class _Boundary(object):
-    def __init__(self, nodes, ranges, vol_indices, face_groups,
-            el_face_to_face_group_and_face_pair={}):
-        self.nodes = nodes
-        self.ranges = ranges
-        self.vol_indices = vol_indices
-        self.face_groups = face_groups
-        self.el_face_to_face_group_and_face_pair = \
-                el_face_to_face_group_and_face_pair
-
-    def find_facepair(self, el_face):
-        fg, fp_idx = self.el_face_to_face_group_and_face_pair[el_face]
-
-        return fg.face_pairs[fp_idx]
-
-    def find_facepair_side(self, el_face):
-        fp = self.find_facepair(el_face)
-        el, face_nbr = el_face
-
-        for flux_face in [fp.loc, fp.opp]:
-            if flux_face.element_id == el.id and flux_face.face_id == face_nbr:
-                return flux_face
-        raise KeyError("flux face not found in boundary")
-
-
-
-
 class OpTemplateFunction:
     def __init__(self, discr, pp_optemplate):
         self.discr = discr
@@ -276,11 +174,11 @@ class Discretization(TimestepCalculator):
             raise ValueError("must supply only one of local_discretization "
                     "and order")
         if local_discretization is None:
-            from hedge.element import ELEMENTS
-            from pytools import one
-            ldis_class = one(
-                    ldis_class for ldis_class in ELEMENTS
-                    if isinstance(mesh.elements[0], ldis_class.geometry))
+            from hedge.discretization.local import GEOMETRY_TO_LDIS
+            from pytools import single_valued
+            ldis_class = single_valued(
+                    GEOMETRY_TO_LDIS[type(el)]
+                    for el in mesh.elements)
             return ldis_class(order)
         else:
             return local_discretization
@@ -431,51 +329,70 @@ class Discretization(TimestepCalculator):
 
     # initialization ----------------------------------------------------------
     def _build_element_groups_and_nodes(self, local_discretization):
+        from pytools import any
+        from hedge.mesh.element import CurvedElement
+        from hedge.mesh.element import SimplicialElement
+
+        straight_elements = [el
+                for el in self.mesh.elements
+                if isinstance(el, SimplicialElement)]
+        curved_elements = [el
+                for el in self.mesh.elements
+                if isinstance(el, CurvedElement)]
+
+        self.element_groups = []
+
         from hedge._internal import UniformElementRanges
+        if straight_elements:
+            from hedge.discretization.data import StraightElementGroup
 
-        eg = _ElementGroup()
-        eg.members = self.mesh.elements
-        eg.member_nrs = numpy.fromiter((el.id for el in eg.members),
-                dtype=numpy.uint32)
-        eg.local_discretization = ldis = local_discretization
-        eg.ranges = UniformElementRanges(
-                0,
-                len(ldis.unit_nodes()),
-                len(self.mesh.elements))
+            eg = StraightElementGroup()
+            self.element_groups.append(eg)
 
-        nodes_per_el = ldis.node_count()
-        # mem layout:
-        # [....element....][...element...]
-        #  |    \
-        #  [node.]
-        #   | | |
-        #   x y z
+            eg.members = straight_elements
+            eg.member_nrs = numpy.fromiter((el.id for el in eg.members),
+                    dtype=numpy.uint32)
+            eg.local_discretization = ldis = local_discretization
+            eg.ranges = UniformElementRanges(
+                    0,
+                    len(ldis.unit_nodes()),
+                    len(self.mesh.elements))
 
-        # while it seems convenient, nodes should not have an
-        # "element number" dimension: this would break once
-        # p-adaptivity is implemented
-        self.nodes = numpy.empty(
-                (len(self.mesh.elements) * nodes_per_el, self.dimensions),
-                dtype=float, order="C")
+            nodes_per_el = ldis.node_count()
+            # mem layout:
+            # [....element....][...element...]
+            #  |    \
+            #  [node.]
+            #   | | |
+            #   x y z
 
-        unit_nodes = numpy.empty((nodes_per_el, self.dimensions),
-                dtype=float, order="C")
+            # while it seems convenient, nodes should not have an
+            # "element number" dimension: this would break once
+            # p-adaptivity is implemented
+            self.nodes = numpy.empty(
+                    (len(self.mesh.elements) * nodes_per_el, self.dimensions),
+                    dtype=float, order="C")
 
-        for i_node, node in enumerate(ldis.unit_nodes()):
-            unit_nodes[i_node] = node
+            unit_nodes = numpy.empty((nodes_per_el, self.dimensions),
+                    dtype=float, order="C")
 
-        from hedge._internal import map_element_nodes
+            for i_node, node in enumerate(ldis.unit_nodes()):
+                unit_nodes[i_node] = node
 
-        for el in self.mesh.elements:
-            map_element_nodes(
-                    self.nodes,
-                    el.id * nodes_per_el * self.dimensions,
-                    el.map,
-                    unit_nodes,
-                    self.dimensions)
+            from hedge._internal import map_element_nodes
 
-        self.group_map = [(eg, i) for i in range(len(self.mesh.elements))]
-        self.element_groups = [eg]
+            for el in eg.members:
+                map_element_nodes(
+                        self.nodes,
+                        el.id * nodes_per_el * self.dimensions,
+                        el.map,
+                        unit_nodes,
+                        self.dimensions)
+
+            self.group_map = [(eg, i) for i in range(len(self.mesh.elements))]
+
+        if curved_elements:
+            raise NotImplementedError
 
     def _calculate_local_matrices(self):
         for eg in self.element_groups:
@@ -533,10 +450,10 @@ class Discretization(TimestepCalculator):
         f.h = abs(el.map.jacobian() / f.face_jacobian)
 
     def _build_interior_face_groups(self):
-        from hedge._internal import FacePair
-        from hedge.element import FaceVertexMismatch
-
-        fg = _FaceGroup(double_sided=True,
+        from hedge.discretization.local import FaceVertexMismatch
+        from hedge.discretization.data import StraightFaceGroup
+        fg_type = StraightFaceGroup
+        fg = fg_type(double_sided=True,
                 debug="ilist_generation" in self.debug)
 
         all_ldis_l = []
@@ -600,33 +517,33 @@ class Discretization(TimestepCalculator):
                         assert la.norm(dist) < 1e-14
 
             # create and fill the face pair
-            fp = FacePair()
+            fp = fg_type.FacePair()
 
-            fp.loc.el_base_index = eslice_l.start
-            fp.opp.el_base_index = eslice_n.start
+            fp.int_side.el_base_index = eslice_l.start
+            fp.ext_side.el_base_index = eslice_n.start
 
-            fp.loc.face_index_list_number = fg.register_face_index_list(
+            fp.int_side.face_index_list_number = fg.register_face_index_list(
                     identifier=fi_l,
                     generator=lambda: findices_l)
-            fp.opp.face_index_list_number = fg.register_face_index_list(
+            fp.ext_side.face_index_list_number = fg.register_face_index_list(
                     identifier=(fi_n, findices_shuffle_op_n),
                     generator=lambda: findices_shuffle_op_n(findices_n))
             from pytools import get_write_to_map_from_permutation
-            fp.opp_native_write_map = fg.register_face_index_list(
+            fp.ext_native_write_map = fg.register_face_index_list(
                     identifier=(fi_n, findices_shuffle_op_n, "wtm"),
                     generator=lambda:
                     get_write_to_map_from_permutation(
                     findices_shuffle_op_n(findices_n), findices_n))
 
-            self._set_flux_face_data(fp.loc, ldis_l, local_face)
-            self._set_flux_face_data(fp.opp, ldis_n, neigh_face)
+            self._set_flux_face_data(fp.int_side, ldis_l, local_face)
+            self._set_flux_face_data(fp.ext_side, ldis_n, neigh_face)
 
             # unify h across the faces
-            fp.loc.h = fp.opp.h = max(fp.loc.h, fp.opp.h)
+            fp.int_side.h = fp.ext_side.h = max(fp.int_side.h, fp.ext_side.h)
 
             assert len(fp.__dict__) == 0
-            assert len(fp.loc.__dict__) == 0
-            assert len(fp.opp.__dict__) == 0
+            assert len(fp.int_side.__dict__) == 0
+            assert len(fp.ext_side.__dict__) == 0
 
             fg.face_pairs.append(fp)
 
@@ -646,19 +563,19 @@ class Discretization(TimestepCalculator):
 
     @memoize_method
     def get_boundary(self, tag):
-        """Get a _Boundary instance for a given `tag'.
+        """Get a Boundary instance for a given `tag'.
 
-        If there is no boundary tagged with `tag', an empty _Boundary instance
+        If there is no boundary tagged with `tag', an empty Boundary instance
         is returned. Asking for a nonexistant boundary is not an error.
         (Otherwise get_boundary would unnecessarily become non-local when run
         in parallel.)
         """
-        from hedge._internal import FacePair
-
+        from hedge.discretization.data  import StraightFaceGroup
         nodes = []
         face_ranges = {}
         vol_indices = []
-        face_group = _FaceGroup(double_sided=False,
+        fg_type = StraightFaceGroup
+        face_group = fg_type(double_sided=False,
                 debug="ilist_generation" in self.debug)
         ldis = None # if this boundary is empty, we might as well have no ldis
         el_face_to_face_group_and_face_pair = {}
@@ -675,21 +592,19 @@ class Discretization(TimestepCalculator):
             vol_indices.extend(el_slice.start + i for i in face_indices)
 
             # create the face pair
-            fp = FacePair()
-            fp.loc.el_base_index = el_slice.start
-            fp.opp.el_base_index = f_start
-            fp.loc.face_index_list_number = \
-                    face_group.register_face_index_list(
-                            identifier=face_nr,
-                            generator=lambda: face_indices)
-            fp.opp.face_index_list_number = \
-                    face_group.register_face_index_list(
-                            identifier=(),
-                            generator=lambda: tuple(xrange(len(face_indices))))
-            self._set_flux_face_data(fp.loc, ldis, ef)
+            fp = face_group.FacePair()
+            fp.int_side.el_base_index = el_slice.start
+            fp.ext_side.el_base_index = f_start
+            fp.int_side.face_index_list_number = face_group.register_face_index_list(
+                    identifier=face_nr,
+                    generator=lambda: face_indices)
+            fp.ext_side.face_index_list_number = face_group.register_face_index_list(
+                    identifier=(),
+                    generator=lambda: tuple(xrange(len(face_indices))))
+            self._set_flux_face_data(fp.int_side, ldis, ef)
             assert len(fp.__dict__) == 0
-            assert len(fp.loc.__dict__) == 0
-            assert len(fp.opp.__dict__) == 0
+            assert len(fp.int_side.__dict__) == 0
+            assert len(fp.ext_side.__dict__) == 0
 
             face_group.face_pairs.append(fp)
 
@@ -701,8 +616,9 @@ class Discretization(TimestepCalculator):
 
         nodes_ary = numpy.array(nodes)
         nodes_ary.shape = (len(nodes), self.dimensions)
-
-        bdry = _Boundary(
+        
+        from hedge.discretization.data import Boundary
+        bdry = Boundary(
                 nodes=nodes_ary,
                 ranges=face_ranges,
                 vol_indices=numpy.asarray(vol_indices, dtype=numpy.intp),
@@ -850,11 +766,10 @@ class Discretization(TimestepCalculator):
                 tag=tag, dtype=dtype, kind="numpy")
         for fg in self.get_boundary(tag).face_groups:
             for face_pair in fg.face_pairs:
-                oeb = face_pair.opp.el_base_index
-                opp_index_list = fg.index_lists[
-                        face_pair.opp.face_index_list_number]
+                oeb = face_pair.ext_side.el_base_index
+                opp_index_list = fg.index_lists[face_pair.ext_side.face_index_list_number]
                 for i in opp_index_list:
-                    result[:, oeb + i] = face_pair.loc.normal
+                    result[:,oeb+i] = face_pair.int_side.normal
 
         return self.convert_boundary(result, tag, kind)
 

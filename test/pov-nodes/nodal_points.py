@@ -1,4 +1,4 @@
-from hedge.element import TetrahedralElement as Tet
+from hedge.discretization.local import TetrahedronDiscretization as Tet
 from pov import Sphere, Cylinder, File, Union, Texture, Pigment, \
         Camera, LightSource, Plane, Background, Finish
 from numpy import array, ones
