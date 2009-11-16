@@ -30,7 +30,7 @@ import numpy.linalg as la
 def main(write_output=True):
     from math import sin, exp, sqrt
 
-    from hedge.mesh import make_rect_mesh
+    from hedge.mesh.generator import make_rect_mesh
     mesh = make_rect_mesh(a=(-0.5,-0.5),b=(0.5,0.5),max_area=0.008)
 
     from hedge.backends.jit import Discretization
@@ -44,16 +44,18 @@ def main(write_output=True):
         x = x - numpy.array([0.1,0.22])
         return exp(-numpy.dot(x, x)*128)
 
-    source_u_vec = discr.interpolate_volume_function(source_u)
-
-    def source_vec_getter(t):
-        from math import sin
-        return source_u_vec*sin(10*t)
+    from hedge.data import \
+            make_tdep_given, \
+            TimeHarmonicGivenFunction, \
+            TimeIntervalGivenFunction
 
     from hedge.models.wave import StrongWaveOperator
     from hedge.mesh import TAG_ALL, TAG_NONE
     op = StrongWaveOperator(-1, discr.dimensions, 
-            source_vec_getter,
+            source_f=TimeIntervalGivenFunction(
+                TimeHarmonicGivenFunction(
+                    make_tdep_given(source_u), omega=10),
+                0, 1),
             dirichlet_tag=TAG_NONE,
             neumann_tag=TAG_NONE,
             radiation_tag=TAG_ALL,
