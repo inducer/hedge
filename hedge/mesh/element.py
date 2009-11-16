@@ -49,7 +49,7 @@ class CurvedElement(Element):
 class SimplicialElement(Element):
     __slots__ = ["inverse_map", "face_normals", "face_jacobians"]
 
-    def __init__(self, id, all_vertices, vertex_indices):
+    def __init__(self, id, vertex_indices, all_vertices):
         vertex_indices = numpy.asarray(vertex_indices, dtype=numpy.intp)
         vertices = [all_vertices[v] for v in vertex_indices]
 

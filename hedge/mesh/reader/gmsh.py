@@ -240,6 +240,10 @@ class LocalToGlobalMap(object):
                 ldis.equidistant_vandermonde(), reordered_nodes)
         # axis 0: node number, axis 1: xyz axis
 
+        if False:
+            for i, c in zip(ldis.generate_mode_identifiers(), self.modal_coeff):
+                print i, c
+
     def __call__(self, r):
         """Given a point *r* on the reference element, return the
         corresponding point *x* in global coordinates.
@@ -336,9 +340,12 @@ def read_gmsh(filename, force_dimension=None, periodicity=None):
                 if read_node_idx != node_idx:
                     raise GmshFileFormatError("out-of-order node index found")
 
-                nodes.append(numpy.array(
-                        [float(x) for x in parts[1:force_dimension+1]],
-                        dtype=numpy.float64))
+                if force_dimension is not None:
+                    point = [float(x) for x in parts[1:force_dimension+1]]
+                else:
+                    point = [float(x) for x in parts[1:]]
+
+                nodes.append(numpy.array(point, dtype=numpy.float64))
 
                 node_idx += 1
 
@@ -468,7 +475,8 @@ def read_gmsh(filename, force_dimension=None, periodicity=None):
                 for gmsh_node_nr in gmsh_el.gmsh_vertex_indices]
 
         if is_affine:
-            hedge_el = el_class(el_nr, hedge_vertices, vertex_indices)
+            print "BARF"
+            hedge_el = el_class(el_nr, vertex_indices, hedge_vertices)
         else:
             hedge_el = el_class(el_nr, vertex_indices, el_map)
 
@@ -504,9 +512,9 @@ def read_gmsh(filename, force_dimension=None, periodicity=None):
     return make_conformal_mesh_ext(
             hedge_vertices,
             hedge_elements,
-            volume_tagger,
-            boundary_tagger,
-            periodicity)
+            boundary_tagger=boundary_tagger,
+            volume_tagger=volume_tagger,
+            periodicity=periodicity)
 
 
 

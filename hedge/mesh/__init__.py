@@ -151,8 +151,8 @@ class Mesh(pytools.Record):
 
 
 def make_conformal_mesh_ext(points, elements,
-        volume_tagger=None,
         boundary_tagger=None,
+        volume_tagger=None,
         periodicity=None,
         _is_rankbdry_face=None,
         ):
@@ -340,7 +340,7 @@ def make_conformal_mesh_ext(points, elements,
 
 def make_conformal_mesh(points, elements,
         boundary_tagger=None,
-        element_tagger=None,
+        volume_tagger=None,
         periodicity=None,
         _is_rankbdry_face=None,
         ):
@@ -355,7 +355,7 @@ def make_conformal_mesh(points, elements,
     :param boundary_tagger: a function that takes the arguments
       *(set_of_face_vertex_indices, element, face_number, all_vertices)*
       It returns a list of tags that apply to this surface.
-    :param element_tagger: a function that takes the arguments
+    :param volume_tagger: a function that takes the arguments
       (element, all_vertices) and returns the a list of tags that apply
       to that element.
     :param periodicity: either None or is a list of tuples
@@ -393,7 +393,10 @@ def make_conformal_mesh(points, elements,
 
     # call into new interface
     return make_conformal_mesh_ext(
-            new_points, element_objs, boundary_tagger, periodicity, _is_rankbdry_face)
+            new_points, element_objs, 
+            boundary_tagger=boundary_tagger, 
+            periodicity=periodicity, 
+            _is_rankbdry_face=_is_rankbdry_face)
 
 
 
