@@ -48,10 +48,10 @@ class ObjectArrayLinearCombinationWrapper(object):
 
 class UnoptimizedLinearCombiner(object):
     def __init__(self, result_dtype, scalar_dtype):
-        self.result_dtype = result_dtype
+        self.result_type = result_dtype.type
 
     def __call__(self, *args):
-        return sum(fac*vec for fac, vec in args).astype(self.result_dtype)
+        return sum(self.result_type(fac)*vec for fac, vec in args)
 
 
 
