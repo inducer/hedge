@@ -71,6 +71,13 @@ class GmshElementBase(object):
         return [gmsh_tup_to_index[tup]
                 for tup in self.node_tuples()]
 
+    @memoize_method
+    def equidistant_vandermonde(self):
+        from hedge.polynomial import generic_vandermonde
+
+        return generic_vandermonde(
+                list(self.equidistant_unit_nodes()),
+                list(self.basis_functions()))
 
 
 
@@ -131,36 +138,37 @@ class GmshTetrahedralElement(TetrahedronDiscretization, GmshElementBase):
 
     @memoize_method
     def gmsh_node_tuples(self):
-        result = []
-        result_set = set()
+        # gmsh's node ordering is on crack
+        return {
+                1: [(0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 1)],
+                2: [
+                    (0, 0, 0), (2, 0, 0), (0, 2, 0), (0, 0, 2), (1, 0, 0), (1, 1, 0),
+                    (0, 1, 0), (0, 0, 1), (0, 1, 1), (1, 0, 1)],
+                3: [
+                    (0, 0, 0), (3, 0, 0), (0, 3, 0), (0, 0, 3), (1, 0, 0), (2, 0, 0),
+                    (2, 1, 0), (1, 2, 0), (0, 2, 0), (0, 1, 0), (0, 0, 2), (0, 0, 1),
+                    (0, 1, 2), (0, 2, 1), (1, 0, 2), (2, 0, 1), (1, 1, 0), (1, 0, 1),
+                    (0, 1, 1), (1, 1, 1)],
+                4: [
+                    (0, 0, 0), (4, 0, 0), (0, 4, 0), (0, 0, 4), (1, 0, 0), (2, 0, 0),
+                    (3, 0, 0), (3, 1, 0), (2, 2, 0), (1, 3, 0), (0, 3, 0), (0, 2, 0),
+                    (0, 1, 0), (0, 0, 3), (0, 0, 2), (0, 0, 1), (0, 1, 3), (0, 2, 2),
+                    (0, 3, 1), (1, 0, 3), (2, 0, 2), (3, 0, 1), (1, 1, 0), (1, 2, 0),
+                    (2, 1, 0), (1, 0, 1), (2, 0, 1), (1, 0, 2), (0, 1, 1), (0, 1, 2),
+                    (0, 2, 1), (1, 1, 2), (2, 1, 1), (1, 2, 1), (1, 1, 1)],
+                5: [
+                    (0, 0, 0), (5, 0, 0), (0, 5, 0), (0, 0, 5), (1, 0, 0), (2, 0, 0),
+                    (3, 0, 0), (4, 0, 0), (4, 1, 0), (3, 2, 0), (2, 3, 0), (1, 4, 0),
+                    (0, 4, 0), (0, 3, 0), (0, 2, 0), (0, 1, 0), (0, 0, 4), (0, 0, 3),
+                    (0, 0, 2), (0, 0, 1), (0, 1, 4), (0, 2, 3), (0, 3, 2), (0, 4, 1),
+                    (1, 0, 4), (2, 0, 3), (3, 0, 2), (4, 0, 1), (1, 1, 0), (1, 3, 0),
+                    (3, 1, 0), (1, 2, 0), (2, 2, 0), (2, 1, 0), (1, 0, 1), (3, 0, 1),
+                    (1, 0, 3), (2, 0, 1), (2, 0, 2), (1, 0, 2), (0, 1, 1), (0, 1, 3),
+                    (0, 3, 1), (0, 1, 2), (0, 2, 2), (0, 2, 1), (1, 1, 3), (3, 1, 1),
+                    (1, 3, 1), (2, 1, 2), (2, 2, 1), (1, 2, 2), (1, 1, 1), (2, 1, 1),
+                    (1, 2, 1), (1, 1, 2)],
+                }[self.order]
 
-        def add_without_duplicating(tup):
-            if tup not in result_set:
-                result.append(tup)
-                result_set.add(tup)
-
-        o = self.order
-
-        for f in [
-                generate_triangle_vertex_tuples,
-                generate_triangle_edge_tuples,
-                generate_triangle_volume_tuples]:
-            for i, j in f(o):
-                add_without_duplicating((i, j, 0)) # u-v
-            for i, j in f(o):
-                add_without_duplicating((0, i, j)) # v-w
-            for i, j in f(o):
-                add_without_duplicating((j, 0, i)) # w-u
-            for i, j in f(o):
-                add_without_duplicating((o-i-j, i, j))
-
-        # volume
-        for i in range(1, o):
-            for j in range(1, o-i):
-                for k in range(1, o-j-i):
-                    result.append((k, j, i))
-
-        return result
 
 
 
@@ -228,7 +236,8 @@ class LocalToGlobalMap(object):
         nodes = numpy.array(nodes, dtype=numpy.float64)
         reordered_nodes = nodes[node_src_indices, :]
 
-        self.modal_coeff = la.solve(ldis.vandermonde(), reordered_nodes)
+        self.modal_coeff = la.solve(
+                ldis.equidistant_vandermonde(), reordered_nodes)
         # axis 0: node number, axis 1: xyz axis
 
     def __call__(self, r):
@@ -244,16 +253,9 @@ class LocalToGlobalMap(object):
 
     def is_affine(self):
         from pytools import any
-        print [
-                (mid, abs(mc))
-                for mc_along_axis in self.modal_coeff.T
-                for mid, mc in zip(
-                    self.ldis.generate_mode_identifiers(),
-                    mc_along_axis)
-                if max(mid) >= 2
-                ]
+
         has_high_order_geometry = any(
-                max(mid) >= 2 and abs(mc) >= 1e-13
+                sum(mid) >= 2 and abs(mc) >= 1e-13
                 for mc_along_axis in self.modal_coeff.T
                 for mid, mc in zip(
                     self.ldis.generate_mode_identifiers(),
@@ -543,7 +545,8 @@ if __name__ == "__main__":
     l_to_g = LocalToGlobalMap(nodes,z)
     print l_to_g(numpy.array([0.0,0.0]))
     print "-------------------tetrahedral------------------"
-    z = GmshTetrahedralElement(1)
+    z = GmshTetrahedralElement(3)
+    print z.gmsh_node_tuples()
     node = [[-1,-1/numpy.sqrt(3),-1/numpy.sqrt(6)],[1,-1/numpy.sqrt(3),-1/numpy.sqrt(6)],[0,-2/numpy.sqrt(3),-1/numpy.sqrt(6)],[0,0,3/numpy.sqrt(6)]]
     nodes =[numpy.array(x) for x in node]
     print nodes

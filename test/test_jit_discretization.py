@@ -22,7 +22,7 @@ from __future__ import division
 import numpy
 import numpy.linalg as la
 from hedge.backends.jit import Discretization as discr_class
-from hedge_test_util import Monomial
+from hedge.tools import Monomial
 import pytools.test
 
 
