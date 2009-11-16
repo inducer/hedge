@@ -75,15 +75,13 @@ class Vortex:
 
 def main(write_output=True):
     from hedge.backends import guess_run_context
-    rcon = guess_run_context(
-                    #["cuda"]
-                    )
+    rcon = guess_run_context()
 
     from hedge.tools import EOCRecorder, to_obj_array
     eoc_rec = EOCRecorder()
 
     if rcon.is_head_rank:
-        from hedge.mesh import \
+        from hedge.mesh.generator import \
                 make_rect_mesh, \
                 make_centered_regular_rect_mesh
 
@@ -92,7 +90,6 @@ def main(write_output=True):
                 post_refine_factor=refine)
         mesh_data = rcon.distribute_mesh(mesh)
         from hedge.visualization import write_gnuplot_mesh
-        write_gnuplot_mesh("mesh.dat", mesh)
     else:
         mesh_data = rcon.receive_mesh()
 
@@ -101,8 +98,8 @@ def main(write_output=True):
                         default_scalar_type=numpy.float64)
 
         from hedge.visualization import SiloVisualizer, VtkVisualizer
-        #vis = VtkVisualizer(discr, rcon, "vortex-%d" % order)
-        vis = SiloVisualizer(discr, rcon)
+        vis = VtkVisualizer(discr, rcon, "vortex-%d" % order)
+        #vis = SiloVisualizer(discr, rcon)
 
         vortex = Vortex()
         fields = vortex.volume_interpolant(0, discr)
