@@ -51,6 +51,7 @@ class StrongWaveOperator(HyperbolicOperator):
     def __init__(self, c, dimensions, source_f=None,
             flux_type="upwind",
             dirichlet_tag=hedge.mesh.TAG_ALL,
+            dirichlet_bc_f=None,
             neumann_tag=hedge.mesh.TAG_NONE,
             radiation_tag=hedge.mesh.TAG_NONE):
         assert isinstance(dimensions, int)
@@ -67,6 +68,8 @@ class StrongWaveOperator(HyperbolicOperator):
         self.dirichlet_tag = dirichlet_tag
         self.neumann_tag = neumann_tag
         self.radiation_tag = radiation_tag
+
+        self.dirichlet_bc_f = dirichlet_bc_f
 
         self.flux_type = flux_type
 
@@ -119,17 +122,30 @@ class StrongWaveOperator(HyperbolicOperator):
         from hedge.tools import join_fields
 
 
-        # dirichlet BC's ------------------------------------------------------
+        # dirichlet BCs -------------------------------------------------------
+        from hedge.optemplate import make_normal, Field
+
+        dir_normal = make_normal(self.dirichlet_tag, d)
+
         dir_u = BoundarizeOperator(self.dirichlet_tag) * u
         dir_v = BoundarizeOperator(self.dirichlet_tag) * v
-        dir_bc = join_fields(-dir_u, dir_v)
+        if self.dirichlet_bc_f:
+            # FIXME
+            from warnings import warn
+            warn("Inhomogeneous Dirichlet conditions on the wave equation "
+                    "are still having issues.")
 
-        # neumann BC's --------------------------------------------------------
+            dir_g = Field("dir_bc_u")
+            dir_bc = join_fields(2*dir_g - dir_u, dir_v)
+        else:
+            dir_bc = join_fields(-dir_u, dir_v)
+
+        # neumann BCs ---------------------------------------------------------
         neu_u = BoundarizeOperator(self.neumann_tag) * u
         neu_v = BoundarizeOperator(self.neumann_tag) * v
         neu_bc = join_fields(neu_u, -neu_v)
 
-        # radiation BC's ------------------------------------------------------
+        # radiation BCs -------------------------------------------------------
         from hedge.optemplate import make_normal
         rad_normal = make_normal(self.radiation_tag, d)
 
@@ -146,7 +162,7 @@ class StrongWaveOperator(HyperbolicOperator):
         flux_op = get_flux_operator(self.flux())
 
         from hedge.tools import join_fields
-        return (
+        result = (
                 - join_fields(
                     -self.c*numpy.dot(nabla, v),
                     -self.c*(nabla*u)
@@ -159,6 +175,10 @@ class StrongWaveOperator(HyperbolicOperator):
                     + flux_op * BoundaryPair(w, rad_bc, self.radiation_tag)
                     ))
 
+        if self.source_f is not None:
+            result[0] += Field("source_u")
+
+        return result
 
     def bind(self, discr):
         from hedge.mesh import check_bc_coverage
@@ -170,12 +190,17 @@ class StrongWaveOperator(HyperbolicOperator):
         compiled_op_template = discr.compile(self.op_template())
 
         def rhs(t, w):
-            rhs = compiled_op_template(w=w)
+            from hedge.tools import join_fields, ptwise_dot
+
+            kwargs = {"w": w}
+            if self.dirichlet_bc_f:
+                kwargs["dir_bc_u"] = self.dirichlet_bc_f.boundary_interpolant(
+                        t, discr, self.dirichlet_tag)
 
             if self.source_f is not None:
-                rhs[0] += self.source_f(t)
+                kwargs["source_u"] = self.source_f.volume_interpolant(t, discr)
 
-            return rhs
+            return compiled_op_template(**kwargs)
 
         return rhs
 
