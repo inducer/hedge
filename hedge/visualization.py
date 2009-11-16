@@ -201,7 +201,7 @@ class VtkVisualizer(Visualizer, hedge.tools.Closable):
 
         from hedge.vtk import UnstructuredGrid, DataArray, \
                 VTK_LINE, VTK_TRIANGLE, VTK_TETRA, VF_LIST_OF_VECTORS
-        from hedge.mesh import Interval, Triangle, Tetrahedron
+        from hedge.mesh.element import Interval, Triangle, Tetrahedron
 
         # For now, we use IntVector here because the Python allocator
         # is somewhat reluctant to return allocated chunks of memory
@@ -354,7 +354,7 @@ class SiloMeshData(object):
                 except ImportError:
                     pass
                 else:
-                    from hedge.mesh import Triangle, Tetrahedron
+                    from hedge.mesh.element import Triangle, Tetrahedron
                     if ldis.geometry is Triangle:
                         self.shapetypes.append(DB_ZONETYPE_TRIANGLE)
                     elif ldis.geometry is Tetrahedron:
