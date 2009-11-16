@@ -20,72 +20,66 @@
 from __future__ import division
 import numpy
 import numpy.linalg as la
-try:
-    import pycuda.autoinit
-except ImportError:
-    pass
 
 
 
-def make_boxmesh():
-    import numpy
-    from math import pi, cos, sin
-    from meshpy.tet import MeshInfo, build
-    from meshpy.geometry import GeometryBuilder, Marker, make_box
 
-    geob = GeometryBuilder()
+def make_squaremesh():
+    def round_trip_connect(seq):
+        result = []
+        for i in range(len(seq)):
+            result.append((i, (i+1)%len(seq)))
+        return result
 
-    box_marker = Marker.FIRST_USER_MARKER
-    extent_small = 0.1*numpy.ones(3, dtype=numpy.float64)
-    points, facets, _ = \
-            make_box(-extent_small, extent_small)
+    def needs_refinement(vertices, area):
+        x =  sum(numpy.array(v) for v in vertices)/3
 
-    geob.add_geometry(points, facets, facet_markers=box_marker)
+        max_area_volume = 0.7e-2 + 0.03*(0.05*x[1]**2 + 0.3*min(x[0]+1,0)**2)
 
-    # make small "separator box" for region attribute
-    points, facets, _ = \
-            make_box(
-                    -extent_small*4, 
-                    numpy.array([4,0.4,0.4], dtype=numpy.float64))
+        max_area_corners = 1e-3 + 0.001*max(
+                la.norm(x-corner)**4 for corner in obstacle_corners)
 
-    geob.add_geometry(points, facets)
+        return bool(area > 10*min(max_area_volume, max_area_corners))
 
-    points, facets, facet_markers = \
-            make_box(
-                    numpy.array([-1,-1,-1], dtype=numpy.float64), 
-                    numpy.array([5,1,1], dtype=numpy.float64))
+    import sys
 
-    geob.add_geometry(points, facets, facet_markers=facet_markers)
+    from meshpy.geometry import make_box
+    points, facets, _ = make_box((-0.5,-0.5), (0.5,0.5))
+    obstacle_corners = points[:]
 
-    mesh_info = MeshInfo()
-    geob.set(mesh_info)
-    mesh_info.set_holes([(0,0,0)])
+    from meshpy.geometry import GeometryBuilder, Marker
+    from meshpy.triangle import write_gnuplot_mesh
 
-    # region attributes
-    mesh_info.regions.resize(1)
-    mesh_info.regions[0] = (
-            # point in region
-            list(extent_small*2) + [
-            # region number
-            1,
-            # max volume in region
-            0.0001])
+    profile_marker = Marker.FIRST_USER_MARKER
+    builder = GeometryBuilder()
+    builder.add_geometry(points=points, facets=facets,
+            facet_markers=profile_marker)
 
-    mesh = build(mesh_info, max_volume=0.02, volume_constraints=True, attributes=True)
+    points, facets, facet_markers = make_box((-16, -22), (25, 22))
+    builder.add_geometry(points=points, facets=facets,
+            facet_markers=facet_markers)
+
+    from meshpy.triangle import MeshInfo, build
+    mi = MeshInfo()
+    builder.set(mi)
+    mi.set_holes([(0,0)])
+
+    mesh = build(mi, refinement_func=needs_refinement,
+            allow_boundary_steiner=True,
+            generate_faces=True)
+
     print "%d elements" % len(mesh.elements)
-    #mesh.write_vtk("box-in-box.vtk")
-    #print "done writing"
+
+    write_gnuplot_mesh("mesh.dat", mesh)
 
     fvi2fm = mesh.face_vertex_indices_to_face_marker
 
     face_marker_to_tag = {
-            box_marker: "noslip",
+            profile_marker: "noslip",
             Marker.MINUS_X: "inflow",
             Marker.PLUS_X: "outflow",
             Marker.MINUS_Y: "inflow",
-            Marker.PLUS_Y: "inflow",
-            Marker.PLUS_Z: "inflow",
-            Marker.MINUS_Z: "inflow"
+            Marker.PLUS_Y: "inflow"
             }
 
     def bdry_tagger(fvi, el, fn, all_v):
@@ -94,7 +88,7 @@ def make_boxmesh():
 
     from hedge.mesh import make_conformal_mesh
     return make_conformal_mesh(
-            mesh.points, mesh.elements, bdry_tagger
+            mesh.points, mesh.elements, bdry_tagger,
             )
 
 
@@ -102,69 +96,64 @@ def make_boxmesh():
 
 def main():
     from hedge.backends import guess_run_context
-    is_cpu = True
-    if is_cpu == False:
-        rcon = guess_run_context(["cuda"])
-    else:
-        rcon = guess_run_context()
+    rcon = guess_run_context()
 
     if rcon.is_head_rank:
-        mesh = make_boxmesh()
+        if True:
+            mesh = make_squaremesh()
+        else:
+            from hedge.mesh import make_rect_mesh
+            mesh = make_rect_mesh(
+                   boundary_tagger=lambda fvi, el, fn, all_v: ["inflow"],
+                   max_area=0.1)
+
         mesh_data = rcon.distribute_mesh(mesh)
     else:
         mesh_data = rcon.receive_mesh()
 
     from pytools import add_python_path_relative_to_script
-    add_python_path_relative_to_script("..")
+    add_python_path_relative_to_script(".")
 
-    for order in [1, 2, 3, 4, 5, 6, 7, 8]:
+    for order in [3]:
         from gas_dynamics_initials import UniformMachFlow
-        box = UniformMachFlow(angle_of_attack=0, char_length=0.1)
+        square = UniformMachFlow()
 
         from hedge.models.gas_dynamics import GasDynamicsOperator
-        op = GasDynamicsOperator(dimensions=3, 
-                gamma=box.gamma, mu=box.mu,
-                prandtl=box.prandtl, spec_gas_const=box.spec_gas_const, 
-                bc_inflow=box, bc_outflow=box, bc_noslip=box,
-                inflow_tag="inflow", outflow_tag="outflow", noslip_tag="noslip",
-                euler=False)
+        print "mu", square.mu
+        op = GasDynamicsOperator(dimensions=2,
+                gamma=square.gamma, mu=square.mu,
+                prandtl=square.prandtl, spec_gas_const=square.spec_gas_const,
+                bc_inflow=square, bc_outflow=square, bc_noslip=square,
+                inflow_tag="inflow", outflow_tag="outflow", noslip_tag="noslip")
 
-        if is_cpu == False:
-            discr = rcon.make_discretization(mesh_data, order=order,
-			debug=[#"cuda_no_plan",
+        discr = rcon.make_discretization(mesh_data, order=order,
+                        debug=["cuda_no_plan",
                             #"cuda_dump_kernels",
                             #"dump_dataflow_graph",
                             #"dump_optemplate_stages",
                             #"dump_dataflow_graph",
-                            #"print_op_code",
-                            #"cuda_no_plan_el_local",
+                            #"print_op_code"
+                            #"cuda_no_plan_el_local"
                             ],
-			default_scalar_type=numpy.float32,
-                        tune_for=op.op_template(),
-                        init_cuda=False)
-        else:
-            discr = rcon.make_discretization(mesh_data, order=order,
-			default_scalar_type=numpy.float32,
+                        default_scalar_type=numpy.float32,
                         tune_for=op.op_template())
 
         from hedge.visualization import SiloVisualizer, VtkVisualizer
         #vis = VtkVisualizer(discr, rcon, "shearflow-%d" % order)
         vis = SiloVisualizer(discr, rcon)
 
-        if is_cpu == False:
-            from hedge.backends.cuda.tools import RK4TimeStepper
-        else:
-            from hedge.timestep import RK4TimeStepper
+        from hedge.timestep import RK4TimeStepper
         stepper = RK4TimeStepper()
+
+        #from hedge.timestep.dumka3 import Dumka3TimeStepper
+        #stepper = Dumka3TimeStepper(3)
 
         # diagnostics setup ---------------------------------------------------
         from pytools.log import LogManager, add_general_quantities, \
                 add_simulation_quantities, add_run_info
 
-        if is_cpu == False:
-            logmgr = LogManager("cns-box-gpu-sp-%d.dat" % order, "w", rcon.communicator)
-        else:
-            logmgr = LogManager("cns-box-cpu-sp-%d.dat" % order, "w", rcon.communicator)
+        logmgr = LogManager("cns-square-sp-%d.dat" % order, "w", rcon.communicator)
+
         add_run_info(logmgr)
         add_general_quantities(logmgr)
         discr.add_instrumentation(logmgr)
@@ -187,7 +176,17 @@ def main():
 
         #logmgr.add_quantity(ChangeSinceLastStep())
 
-        fields = box.volume_interpolant(0, discr)
+        add_simulation_quantities(logmgr)
+        logmgr.add_watches(["step.max", "t_sim.max", "t_step.max"])
+        logmgr.set_constant("is_cpu", is_cpu)
+
+        # filter setup ------------------------------------------------------------
+        from hedge.discretization import Filter, ExponentialFilterResponseFunction
+        mode_filter = Filter(discr,
+                ExponentialFilterResponseFunction(min_amplification=0.95, order=4))
+
+        # timestep loop -------------------------------------------------------
+        fields = square.volume_interpolant(0, discr)
 
         navierstokes_ex = op.bind(discr)
 
@@ -198,35 +197,26 @@ def main():
             return ode_rhs
         rhs(0, fields)
 
-        dt = discr.dt_factor(max_eigval[0], order=2)
-        #final_time = 200
-        #nsteps = int(final_time/dt)+1
-        #dt = final_time/nsteps
-        nsteps = 200
-        final_time = nsteps * dt
-
         if rcon.is_head_rank:
             print "---------------------------------------------"
             print "order %d" % order
             print "---------------------------------------------"
-            print "dt", dt
-            print "nsteps", nsteps
             print "#elements=", len(mesh.elements)
 
-        add_simulation_quantities(logmgr, dt)
-        logmgr.add_watches(["step.max", "t_sim.max", "t_step.max"])
-
-
-        # timestep loop -------------------------------------------------------
-        t = 0
-
         try:
-            for step in range(nsteps):
-                logmgr.tick()
+            from hedge.timestep import times_and_steps
+            step_it = times_and_steps(
+                    final_time=200,
+                    #max_steps=500,
+                    logmgr=logmgr,
+                    max_dt_getter=lambda t: op.estimate_timestep(discr,
+                        stepper=RK4TimeStepper(), t=t, max_eigenvalue=max_eigval[0]))
 
-                #if step % 10000 == 0:
-                if False:
-                    visf = vis.make_file("box-%d-%06d" % (order, step))
+            for step, t, dt in step_it:
+                #if (step % 10000 == 0): #and step < 950000) or (step % 500 == 0 and step > 950000):
+                #if False:
+                if (step % 100 == 0):
+                    visf = vis.make_file("square-%d-%06d" % (order, step))
 
                     from pylo import DB_VARTYPE_VECTOR
                     vis.add_data(visf,
@@ -244,13 +234,10 @@ def main():
                     visf.close()
 
                 fields = stepper(fields, t, dt, rhs)
-                t += dt
+                #fields = mode_filter(fields)
 
-                dt = discr.dt_factor(max_eigval[0], order=2)
-
-            logmgr.tick()
-            logmgr.set_constant("is_cpu", is_cpu)
         finally:
+            vis.close()
             logmgr.save()
             discr.close()
 

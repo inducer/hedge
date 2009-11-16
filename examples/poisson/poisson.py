@@ -26,13 +26,12 @@ from hedge.tools import Reflection, Rotation
 
 
 def main(write_output=True):
-    from hedge.element import TriangularElement, TetrahedralElement
     from hedge.data import GivenFunction, ConstantGivenFunction
 
     from hedge.backends import guess_run_context
     rcon = guess_run_context()
 
-    dim = 3
+    dim = 2
 
     def boundary_tagger(fvi, el, fn, points):
         from math import atan2, pi
@@ -47,14 +46,12 @@ def main(write_output=True):
             from hedge.mesh import make_disk_mesh
             mesh = make_disk_mesh(r=0.5, boundary_tagger=boundary_tagger,
                     max_area=1e-2)
-        el_class = TriangularElement
     elif dim == 3:
         if rcon.is_head_rank:
             from hedge.mesh import make_ball_mesh
             mesh = make_ball_mesh(max_volume=0.0001,
                     boundary_tagger=lambda fvi, el, fn, points:
                     ["dirichlet"])
-        el_class = TetrahedralElement
     else:
         raise RuntimeError, "bad number of dimensions"
 
@@ -64,7 +61,7 @@ def main(write_output=True):
     else:
         mesh_data = rcon.receive_mesh()
 
-    discr = rcon.make_discretization(mesh_data, el_class(5))
+    discr = rcon.make_discretization(mesh_data, order=5, debug=[])
 
     def dirichlet_bc(x, el):
         from math import sin
@@ -81,31 +78,34 @@ def main(write_output=True):
         result[0,0] = 0.1
         return result
 
-    from hedge.models.poisson import WeakPoissonOperator
-    op = WeakPoissonOperator(discr.dimensions, 
-            diffusion_tensor=ConstantGivenFunction(my_diff_tensor()),
+    try:
+        from hedge.models.poisson import WeakPoissonOperator
+        op = WeakPoissonOperator(discr.dimensions, 
+                diffusion_tensor=ConstantGivenFunction(my_diff_tensor()),
 
-            dirichlet_tag="dirichlet",
-            neumann_tag="neumann", 
+                dirichlet_tag="dirichlet",
+                neumann_tag="neumann", 
 
-            dirichlet_bc=GivenFunction(dirichlet_bc),
-            neumann_bc=ConstantGivenFunction(-10),
-            )
-    bound_op = op.bind(discr)
+                dirichlet_bc=GivenFunction(dirichlet_bc),
+                neumann_bc=ConstantGivenFunction(-10),
+                )
+        bound_op = op.bind(discr)
 
-    from hedge.iterative import parallel_cg
-    u = -parallel_cg(rcon, -bound_op, 
-            bound_op.prepare_rhs(GivenFunction(rhs_c)), 
-            debug=20, tol=5e-4,
-            dot=discr.nodewise_dot_product,
-            x=discr.volume_zeros())
+        from hedge.iterative import parallel_cg
+        u = -parallel_cg(rcon, -bound_op, 
+                bound_op.prepare_rhs(GivenFunction(rhs_c)), 
+                debug=20, tol=5e-4,
+                dot=discr.nodewise_dot_product,
+                x=discr.volume_zeros())
 
-    if write_output:
-        from hedge.visualization import SiloVisualizer, VtkVisualizer
-        vis = VtkVisualizer(discr, rcon)
-        visf = vis.make_file("fld")
-        vis.add_data(visf, [ ("sol", u), ])
-        visf.close()
+        if write_output:
+            from hedge.visualization import SiloVisualizer, VtkVisualizer
+            vis = VtkVisualizer(discr, rcon)
+            visf = vis.make_file("fld")
+            vis.add_data(visf, [ ("sol", discr.convert_volume(u, kind="numpy")), ])
+            visf.close()
+    finally:
+        discr.close()
 
 
 

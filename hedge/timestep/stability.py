@@ -24,22 +24,40 @@ from pytools import memoize
 
 
 
+@memoize
+def approximate_rk4_relative_imag_stability_region(
+        stepper=None, stepper_class=None, stepper_args=[]):
+    if stepper is not None and stepper_class is not None:
+        raise ValueError("only one of 'stepper' and 'stepper_class' "
+                "may be specified")
 
-def calculate_fudged_stability_region(stepper_class, *stepper_args):
-    """
-    bisection based method to find bounds of stability region on Imaginary 
-    axis only
-    """
-    return calculate_stability_region(stepper_class, *stepper_args) \
-            * stepper_class.dt_fudge_factor
+    if stepper is not None:
+        stepper_class = type(stepper)
+        stepper_args = stepper.get_stability_relevant_init_args()
+        stepper = None
+
+    from hedge.timestep import RK4TimeStepper
+    if stepper_class is None or stepper_class == RK4TimeStepper:
+        return 1
+    else:
+        assert isinstance(stepper_class, type)
+
+        from hedge.timestep.stability import \
+                approximate_imag_stability_region
+
+        return (approximate_imag_stability_region(
+                    stepper_class, *stepper_args)
+                / approximate_imag_stability_region(RK4TimeStepper)
+                * stepper_class.dt_fudge_factor
+                / RK4TimeStepper.dt_fudge_factor)
 
 
 
 
 @memoize
-def calculate_stability_region(stepper_class, *stepper_args):
+def approximate_imag_stability_region(stepper_class, *stepper_args):
     def stepper_maker():
-        return stepper_class(*stepper_args)
+        return stepper_class(*stepper_args, **{"dtype": numpy.complex128})
 
     prec = 1e-5
 
@@ -55,7 +73,7 @@ def calculate_stability_region(stepper_class, *stepper_args):
         from cmath import exp
         return -prec+mag*exp(1j*angle)
 
-    def refine(stepper_maker, angle, stable, unstable):
+    def refine(angle, stable, unstable):
         assert is_stable(stepper_maker(), make_k(angle, stable))
         assert not is_stable(stepper_maker(), make_k(angle, unstable))
         while abs(stable-unstable) > prec:
@@ -67,7 +85,7 @@ def calculate_stability_region(stepper_class, *stepper_args):
         else:
             return stable
 
-    def find_stable_k(stepper_maker, angle):
+    def find_stable_k(angle):
         mag = 1
 
         if is_stable(stepper_maker(), make_k(angle, mag)):
@@ -77,7 +95,7 @@ def calculate_stability_region(stepper_class, *stepper_args):
 
                 if mag > 2**8:
                     return mag
-            return refine(stepper_maker, angle, mag/2, mag)
+            return refine(angle, mag/2, mag)
         else:
             mag /= 2
             while not is_stable(stepper_maker(), make_k(angle, mag)):
@@ -85,13 +103,8 @@ def calculate_stability_region(stepper_class, *stepper_args):
 
                 if mag < prec:
                     return mag
-            return refine(stepper_maker, angle, mag, mag*2)
+            return refine(angle, mag, mag*2)
 
-    points = []
     from cmath import pi
-    for angle in numpy.array([pi/2, 3/2*pi]):
-        points.append(make_k(angle, find_stable_k(stepper_maker, angle)))
-
-    points = numpy.array(points)
-
-    return abs(points[0])
+    angle = pi/2
+    return abs(make_k(angle, find_stable_k(angle)))

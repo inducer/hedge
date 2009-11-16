@@ -1,4 +1,4 @@
-"""Representations for given data, such as initial and boundary 
+"""Representations for given data, such as initial and boundary
 conditions and source terms."""
 
 __copyright__ = "Copyright (C) 2007 Andreas Kloeckner"
@@ -44,7 +44,7 @@ class _ConstantFunctionContainer:
 
 # abstract interfaces ---------------------------------------------------------
 class IGivenFunction(object):
-    """Abstract interface for obtaining interpolants of I{time-independent} 
+    """Abstract interface for obtaining interpolants of I{time-independent}
     functions.
     """
 
@@ -56,7 +56,8 @@ class IGivenFunction(object):
 
     def boundary_interpolant(self, discr, tag):
         """Return the boundary interpolant of this function with respect to
-        the :class:`hedge.discretization.Discretization` *discr* at the boundary tagged with *tag*.
+        the :class:`hedge.discretization.Discretization` *discr* at the
+        boundary tagged with *tag*.
         """
         raise NotImplementedError
 
@@ -64,7 +65,7 @@ class IGivenFunction(object):
 
 
 class ITimeDependentGivenFunction(object):
-    """Abstract interface for obtaining interpolants of time-dependent 
+    """Abstract interface for obtaining interpolants of time-dependent
     functions.
     """
 
@@ -76,8 +77,8 @@ class ITimeDependentGivenFunction(object):
 
     def boundary_interpolant(self, t, discr, tag):
         """Return the boundary interpolant of this function with respect to
-        the :class:`hedge.discretization.Discretization` *discr* at time *t* at the boundary tagged with
-        *tag*.
+        the :class:`hedge.discretization.Discretization` *discr* at time *t*
+        at the boundary tagged with *tag*.
         """
         raise NotImplementedError
 
@@ -97,8 +98,8 @@ class IFieldDependentGivenFunction(object):
 
     def boundary_interpolant(self, t, fields, discr, tag):
         """Return the boundary interpolant of this function with respect to
-        the :class:`hedge.discretization.Discretization` *discr* at time *t* at the boundary tagged with
-        *tag*.
+        the :class:`hedge.discretization.Discretization` *discr* at time *t*
+        at the boundary tagged with *tag*.
         """
         raise NotImplementedError
 
@@ -113,8 +114,8 @@ class GivenFunction(IGivenFunction):
         """Initialize the caches and store the function :math:`f`.
 
         :param f: a function mapping space to a scalar value.
-          If f.target_dimensions exists and equals :math:`n`, then f maps into an
-          :math:`n`-dimensional vector space instead.
+          If f.target_dimensions exists and equals :math:`n`, then
+          f maps into an :math:`n`-dimensional vector space instead.
         """
         from weakref import WeakKeyDictionary
 
@@ -163,12 +164,14 @@ class GivenVolumeInterpolant(IGivenFunction):
 
     def volume_interpolant(self, discr):
         if discr != self.discr:
-            raise ValueError, "cross-interpolation between discretizations not supported"
+            raise ValueError("cross-interpolation between discretizations "
+                    "not supported")
         return self.interpolant
 
     def boundary_interpolant(self, discr, tag):
         if discr != self.discr:
-            raise ValueError, "cross-interpolation between discretizations not supported"
+            raise ValueError("cross-interpolation between discretizations "
+                    "not supported")
         return discr.boundarize_volume_field(self.interpolant, tag)
 
 
@@ -176,8 +179,8 @@ class GivenVolumeInterpolant(IGivenFunction):
 
 
 class TimeConstantGivenFunction(ITimeDependentGivenFunction):
-    """Adapts a :class:`GivenFunction` to have a (formal) time-dependency, being constant
-    over all time.
+    """Adapts a :class:`GivenFunction` to have a (formal) time-dependency,
+    being constant over all time.
     """
     def __init__(self, gf):
         self.gf = gf
@@ -198,8 +201,15 @@ def make_tdep_constant(x):
 
 
 
+def make_tdep_given(x):
+    return TimeConstantGivenFunction(GivenFunction(x))
+
+
+
+
 class TimeHarmonicGivenFunction(ITimeDependentGivenFunction):
-    """Adapts an :class:`IGivenFunction` to have a harmonic time-dependency.
+    """Modulates an :class:`ITimeDependentGivenFunction` by a sine
+    in time.
     """
     def __init__(self, gf, omega, phase=0):
         self.gf = gf
@@ -208,22 +218,22 @@ class TimeHarmonicGivenFunction(ITimeDependentGivenFunction):
 
     def volume_interpolant(self, t, discr):
         from math import sin
-        return sin(self.omega*t+self.phase)\
-                *self.gf.volume_interpolant(discr)
+        return sin(self.omega * t + self.phase) \
+                * self.gf.volume_interpolant(t, discr)
 
     def boundary_interpolant(self, t, discr, tag):
         from math import sin
-        return sin(self.omega*t+self.phase)\
-                *self.gf.boundary_interpolant(discr, tag)
+        return sin(self.omega * t + self.phase)\
+                * self.gf.boundary_interpolant(t, discr, tag)
 
 
 
 
 
 class TimeIntervalGivenFunction(ITimeDependentGivenFunction):
-    """Adapts an :class:`IGivenFunction` to depend on time by "turning it on"
-    for the time interval :math:`[\\text{on\\_time}, \\text{off\\_time})`, and 
-    having it be zero the rest of the time.
+    """Adapts an :class:`ITimeDependentGivenFunction` to depend on time by 
+    "turning it on" for the time interval :math:`[\\text{on\\_time}, \\text{off\\_time})`, 
+    and having it be zero the rest of the time.
     """
 
     def __init__(self, gf, on_time=0, off_time=1):
@@ -232,41 +242,41 @@ class TimeIntervalGivenFunction(ITimeDependentGivenFunction):
         self.off_time = off_time
         assert on_time <= off_time
 
-
-
     def volume_interpolant(self, t, discr):
         if self.on_time <= t < self.off_time:
-            return self.gf.volume_interpolant(discr)
+            return self.gf.volume_interpolant(t, discr)
         else:
             # FIXME: not optimal
             # difficult part here is to match shape
-            return 0*self.gf.volume_interpolant(discr)
+            return 0 * self.gf.volume_interpolant(t, discr)
 
     def boundary_interpolant(self, t, discr, tag):
         if self.on_time <= t < self.off_time:
-            return self.gf.boundary_interpolant(discr, tag)
+            return self.gf.boundary_interpolant(t, discr, tag)
         else:
             # FIXME: not optimal
             # difficult part here is to match shape
-            return 0*self.gf.boundary_interpolant(discr, tag)
+            return 0 * self.gf.boundary_interpolant(t, discr, tag)
 
 
 
 
 class TimeDependentGivenFunction(ITimeDependentGivenFunction):
-    """Adapts a function :math:`f(x,t)` into the :class:`GivenFunction` framework.
+    """Adapts a function :math:`f(x,t)` into the
+    :class:`GivenFunction` framework.
     """
     def __init__(self, f):
         self.f = f
-    
+
     class ConstantWrapper:
         def __init__(self, f, t):
-            """Adapt a function :math:`f(x, el, t)` in such a way that it can be fed to 
-            `interpolate_*_function()`. In particular, preserve the `shape` attribute.
+            """Adapt a function :math:`f(x, el, t)` in such a way that
+            it can be fed to `interpolate_*_function()`. In particular,
+            preserve the `shape` attribute.
             """
             self.f = f
             self.t = t
-        
+
         @property
         def shape(self):
             return self.f.shape
@@ -275,7 +285,9 @@ class TimeDependentGivenFunction(ITimeDependentGivenFunction):
             return self.f(x, el, self.t)
 
     def volume_interpolant(self, t, discr):
-        return discr.interpolate_volume_function(self.ConstantWrapper(self.f, t))
+        return discr.interpolate_volume_function(
+                self.ConstantWrapper(self.f, t))
 
     def boundary_interpolant(self, t, discr, tag):
-        return discr.interpolate_boundary_function(self.ConstantWrapper(self.f, t), tag)
+        return discr.interpolate_boundary_function(
+                self.ConstantWrapper(self.f, t), tag)

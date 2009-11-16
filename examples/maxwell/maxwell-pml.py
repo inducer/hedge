@@ -53,7 +53,6 @@ def make_mesh(a, b, pml_width=0.25, **kwargs):
 
 
 def main(write_output=True):
-    from hedge.element import TriangularElement
     from hedge.timestep import RK4TimeStepper
     from hedge.mesh import make_disk_mesh
     from pylo import DB_VARTYPE_VECTOR
@@ -103,7 +102,6 @@ def main(write_output=True):
 
             return make_obj_array([-result, result, result])
 
-    final_time = 4/c
     order = 3
     discr = rcon.make_discretization(mesh_data, order=order)
 
@@ -130,14 +128,8 @@ def main(write_output=True):
 
     stepper = RK4TimeStepper()
 
-    dt = discr.dt_factor(op.max_eigenvalue())
-    nsteps = int(final_time/dt)+1
-    dt = final_time/nsteps
-
     if rcon.is_head_rank:
         print "order %d" % order
-        print "dt", dt
-        print "nsteps", nsteps
         print "#elements=", len(mesh.elements)
 
     # diagnostics setup ---------------------------------------------------
@@ -152,7 +144,7 @@ def main(write_output=True):
     logmgr = LogManager(log_file_name, "w", rcon.communicator)
     add_run_info(logmgr)
     add_general_quantities(logmgr)
-    add_simulation_quantities(logmgr, dt)
+    add_simulation_quantities(logmgr)
     discr.add_instrumentation(logmgr)
     stepper.add_instrumentation(logmgr)
 
@@ -182,9 +174,13 @@ def main(write_output=True):
     rhs = op.bind(discr, pml_coeff)
 
     try:
-        for step in range(nsteps):
-            logmgr.tick()
+        from hedge.timestep import times_and_steps
+        step_it = times_and_steps(
+                final_time=4/c, logmgr=logmgr,
+                max_dt_getter=lambda t: op.estimate_timestep(discr,
+                    stepper=stepper, t=t, fields=fields))
 
+        for step, t, dt in step_it:
             if step % 10 == 0 and write_output:
                 e, h, p, q = op.split_ehpq(fields)
                 visf = vis.make_file("em-%d-%04d" % (order, step))
@@ -210,7 +206,6 @@ def main(write_output=True):
                 visf.close()
 
             fields = stepper(fields, t, dt, rhs)
-            t += dt
 
         _, _, energies_data = logmgr.get_expr_dataset("W_el+W_mag")
         energies = [value for tick_nbr, value in energies_data]

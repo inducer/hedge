@@ -53,21 +53,15 @@ def main(write_output=True):
             return [0,0,exp(-80*la.norm(x))]
 
     order = 3
+    final_time = 1e-8
     discr = rcon.make_discretization(mesh_data, order=order)
 
     from hedge.visualization import VtkVisualizer
     if write_output:
         vis = VtkVisualizer(discr, rcon, "em-%d" % order)
 
-    dt = discr.dt_factor(1/sqrt(mu*epsilon))
-    final_time = dt*200
-    nsteps = int(final_time/dt)+1
-    dt = final_time/nsteps
-
     if rcon.is_head_rank:
         print "order %d" % order
-        print "dt", dt
-        print "nsteps", nsteps
         print "#elements=", len(mesh.elements)
 
     from hedge.mesh import TAG_ALL, TAG_NONE
@@ -97,7 +91,7 @@ def main(write_output=True):
     logmgr = LogManager(log_file_name, "w", rcon.communicator)
     add_run_info(logmgr)
     add_general_quantities(logmgr)
-    add_simulation_quantities(logmgr, dt)
+    add_simulation_quantities(logmgr)
     discr.add_instrumentation(logmgr)
     stepper.add_instrumentation(logmgr)
 
@@ -116,9 +110,13 @@ def main(write_output=True):
     rhs = op.bind(discr)
 
     try:
-        for step in range(nsteps):
-            logmgr.tick()
+        from hedge.timestep import times_and_steps
+        step_it = times_and_steps(
+                final_time=final_time, logmgr=logmgr,
+                max_dt_getter=lambda t: op.estimate_timestep(discr,
+                    stepper=stepper, t=t, fields=fields))
 
+        for step, t, dt in step_it:
             if step % 10 == 0 and write_output:
                 e, h = op.split_eh(fields)
                 visf = vis.make_file("em-%d-%04d" % (order, step))
@@ -129,7 +127,6 @@ def main(write_output=True):
                 visf.close()
 
             fields = stepper(fields, t, dt, rhs)
-            t += dt
 
         assert discr.norm(fields) < 0.03
     finally:

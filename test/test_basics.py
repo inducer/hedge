@@ -29,7 +29,7 @@ import numpy.linalg as la
 def test_simp_orthogonality():
     """Test orthogonality of simplicial bases using Grundmann-Moeller cubature"""
     from hedge.quadrature import SimplexCubature
-    from hedge.element import TriangularElement, TetrahedralElement
+    from hedge.discretization.local import TriangularElement, TetrahedralElement
 
     from numpy import dot
 
@@ -84,23 +84,14 @@ def test_ab_coefficients():
 
 
 
-from math import sqrt, log, sin, cos, exp
-from hedge.tools import EOCRecorder
-class CheckMultirateTimesteperAccuracy:
+class MultirateTimesteperAccuracyChecker:
     """Check that the multirate timestepper has the advertised accuracy
     """
-    def __init__(self,
-            method,
-            order,
-            step_ratio,
-            #outfile,
-            ode):
-
-        self.method      = method
-        self.order       = order
+    def __init__(self, method, order, step_ratio, ode):
+        self.method = method
+        self.order = order
         self.step_ratio  = step_ratio
-        #self.out = outfile
-        self.ode         = ode()
+        self.ode = ode
 
     def get_error(self, stepper, dt, name=None):
         t = self.ode.t_start
@@ -109,10 +100,6 @@ class CheckMultirateTimesteperAccuracy:
 
         nsteps = int((final_t-t)/dt)
 
-        if name is not None:
-            outf = open(name, "w")
-            format = "%g\t%g\t" + "%g\t" * len(y)
-
         times = []
         hist = []
         for i in range(nsteps):
@@ -120,37 +107,30 @@ class CheckMultirateTimesteperAccuracy:
             t += dt
             hist.append(y)
 
-        if False:
-            times.append(t)
-            from matplotlib.pyplot import plot, show
-            plot(times, [h[0] for h in hist], "o", hold=True)
-            plot(times, [self.soln_0(t) for t in times], hold=True)
-            show()
-
         from ode_systems import Basic, Tria
 
         if isinstance(self.ode, Basic) or isinstance(self.ode, Tria):
+            # AK: why?
             return abs(y[0]-self.ode.soln_0(t))
         else:
-            return abs(
-                    sqrt(y[0]**2 + y[1]**2)
+            from math import sqrt
+            return abs(sqrt(y[0]**2 + y[1]**2)
                     - sqrt(self.ode.soln_0(t)**2 + self.ode.soln_1(t)**2)
                     )
 
     def __call__(self):
-        import fpformat as fpf
+        from hedge.tools import EOCRecorder
         eocrec = EOCRecorder()
-        for n in range(4,9):
+        for n in range(4,7):
             dt = 2**(-n)
 
-            from hedge.timestep.multirate_ab import \
-                     TwoRateAdamsBashforthTimeStepper
+            from hedge.timestep.multirate_ab import TwoRateAdamsBashforthTimeStepper
 
             stepper = TwoRateAdamsBashforthTimeStepper(
                     self.method, dt, self.step_ratio, self.order)
 
             error = self.get_error(stepper, dt, "mrab-%d.dat" % self.order)
-            #self.out.write("& %s" % fpf.sci(error,2))
+
             eocrec.add_data_point(1/dt, error)
 
         print "------------------------------------------------------"
@@ -159,10 +139,7 @@ class CheckMultirateTimesteperAccuracy:
         print eocrec.pretty_print()
 
         orderest = eocrec.estimate_order_of_convergence()[0,1]
-        print orderest, self.order
         assert orderest > self.order*0.70
-
-        #self.out.write("& %s" % fpf.fix(orderest,2))
 
 
 
@@ -170,49 +147,17 @@ def test_multirate_timestep_accuracy():
     """Check that the multirate timestepper has the advertised accuracy"""
 
     from hedge.timestep.multirate_ab.methods import methods
-
-
     import ode_systems
 
-    system_names = ["Basic", "Full","Comp", "Tria"]
-
-    min_order = 1
-    max_order = 6
     step_ratio = 2
 
-    for sys_name in system_names:
+    for sys_name in ["Basic", "Full","Comp", "Tria"]:
         system = getattr(ode_systems, sys_name)
-        order_list =  range(min_order, max_order)
 
         for method in methods:
-            print sys_name
-            print method
-
-        # outputfile setup: ---------------------------------------------
-        #outfilename = "mrab-out/mrab-EOC-%s.tex" % str(method)
-        #outfile = open(outfilename, "w")
-        #outfile.write("\\begin{tabular}{l")
-        #for i in order_list:
-        #    outfile.write("c")
-        #outfile.write("}" + "\n")
-        #outfile.write("N & h & h/2 & h/4 & Rate")
-        #outfile.write("\\""\\" + "\n")
-        #outfile.write("\\hline" + "\n")
-
-            for order in order_list:
-                #outfile.write("%s" %order)
-                checkup = CheckMultirateTimesteperAccuracy(
-                        method,
-                        order,
-                       step_ratio,
-                        ode = system)
-                        #outfile,
-                checkup()
-            #outfile.write("\\""\\" + "\n")
-            #outfile.write("\\hline" + "\n")
-
-        #outfile.write("\\hline" + "\n")
-        #outfile.write("\\end{tabular}" + "\n")
+            for order in [1, 4, 6]:
+                MultirateTimesteperAccuracyChecker(
+                        method, order, step_ratio, ode = system())()
 
 
 
@@ -248,19 +193,22 @@ def test_timestep_accuracy():
 
         return abs(y[0]-soln(t))
 
-    def verify_timestep_order(stepper_getter, order):
+    def verify_timestep_order(stepper_getter, order, setup=None):
         eocrec = EOCRecorder()
         for n in range(4,9):
             dt = 2**(-n)
             stepper = stepper_getter()
+            if setup is not None:
+                setup(stepper, dt)
+
             error = get_error(stepper,dt)
             eocrec.add_data_point(1/dt, error)
 
-        #print stepper
-        #print "------------------------------------------------------"
-        #print "ORDER %d" % o
-        #print "------------------------------------------------------"
-        #print eocrec.pretty_print()
+        print stepper
+        print "------------------------------------------------------"
+        print "ORDER %d" % order
+        print "------------------------------------------------------"
+        print eocrec.pretty_print()
 
         orderest = eocrec.estimate_order_of_convergence()[0,1]
         #print orderest, order
@@ -268,18 +216,25 @@ def test_timestep_accuracy():
 
     from hedge.timestep.rk4 import RK4TimeStepper
     from hedge.timestep.ab import AdamsBashforthTimeStepper
+    from hedge.timestep.ssprk3 import SSPRK3TimeStepper
+    from hedge.timestep.dumka3 import Dumka3TimeStepper
 
     for o in range(1,5):
         verify_timestep_order(lambda : AdamsBashforthTimeStepper(o), o)
     verify_timestep_order(RK4TimeStepper, 4)
+    verify_timestep_order(SSPRK3TimeStepper, 3)
 
+    for pol_index in range(Dumka3TimeStepper.POLYNOMIAL_COUNT):
+        print pol_index
+        def setup_dumka(stepper, dt):
+            stepper.setup(eigenvalue_estimate=1, dt=dt, pol_index=pol_index)
 
-
+        verify_timestep_order(Dumka3TimeStepper, 3, setup_dumka)
 
 
 def test_face_vertex_order():
     """Verify that face_indices() emits face vertex indices in the right order"""
-    from hedge.element import \
+    from hedge.discretization.local import \
             IntervalElement, \
             TriangularElement, \
             TetrahedralElement
@@ -388,7 +343,7 @@ def test_transformed_quadrature():
 def test_warp():
     """Check some assumptions on the node warp factor calculator"""
     n = 17
-    from hedge.element import WarpFactorCalculator
+    from hedge.discretization.local import WarpFactorCalculator
     wfc = WarpFactorCalculator(n)
 
     assert abs(wfc.int_f(-1)) < 1e-12
@@ -404,7 +359,7 @@ def test_warp():
 
 def test_simp_nodes():
     """Verify basic assumptions on simplex interpolation nodes"""
-    from hedge.element import \
+    from hedge.discretization.local import \
             IntervalElement, \
             TriangularElement, \
             TetrahedralElement
@@ -446,7 +401,7 @@ def test_simp_nodes():
 
 def test_tri_nodes_against_known_values():
     """Check triangle nodes against a previous implementation"""
-    from hedge.element import TriangularElement, TetrahedralElement
+    from hedge.discretization.local import TriangularElement, TetrahedralElement
     triorder = 8
     tri = TriangularElement(triorder)
 
@@ -463,7 +418,7 @@ def test_tri_nodes_against_known_values():
         except IndexError:
             alpha = 5/3
 
-        from hedge.element import WarpFactorCalculator
+        from hedge.discretization.local import WarpFactorCalculator
         from math import sin, cos, pi
 
         warp = WarpFactorCalculator(self.order)
@@ -516,7 +471,7 @@ def test_tri_nodes_against_known_values():
 def test_simp_basis_grad():
     """Do a simplistic FD-style check on the differentiation matrix"""
     from itertools import izip
-    from hedge.element import \
+    from hedge.discretization.local import \
             IntervalElement, \
             TriangularElement, \
             TetrahedralElement
@@ -563,7 +518,7 @@ def test_tri_face_node_distribution():
     for each face would be invalid.
     """
 
-    from hedge.element import TriangularElement
+    from hedge.discretization.local import TriangularElement
 
     tri = TriangularElement(8)
     unodes = tri.unit_nodes()
@@ -587,7 +542,7 @@ def test_tri_face_node_distribution():
 def test_simp_face_normals_and_jacobians():
     """Check computed face normals and face jacobians on simplicial elements
     """
-    from hedge.element import \
+    from hedge.discretization.local import \
             IntervalElement, \
             TriangularElement, \
             TetrahedralElement
@@ -666,7 +621,7 @@ def test_simp_face_normals_and_jacobians():
 
 def test_tri_map():
     """Verify that the mapping and node-building operations maintain triangle vertices"""
-    from hedge.element import TriangularElement
+    from hedge.discretization.local import TriangularElement
 
     n = 8
     tri = TriangularElement(n)
@@ -688,7 +643,7 @@ def test_tri_map():
 
 def test_tri_map_jacobian_and_mass_matrix():
     """Verify whether tri map jacobians recover known values of triangle area"""
-    from hedge.element import TriangularElement
+    from hedge.discretization.local import TriangularElement
     from math import sqrt, exp, pi
 
     for i in range(1,10):
@@ -753,10 +708,7 @@ def test_all_periodic_no_boundary():
 
 
 
-if __name__ == "__main__":
-    from py.test.cmdline import main
-    main([__file__])
-
+# main program ----------------------------------------------------------------
 if __name__ == "__main__":
     import sys
     if len(sys.argv) > 1:

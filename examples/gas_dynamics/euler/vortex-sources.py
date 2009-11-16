@@ -21,9 +21,9 @@ from __future__ import division
 import numpy
 import numpy.linalg as la
 
-#modifies isentropic vortex solution so that rho->Arho, P->A^gamma rho^gamma
-#this will be analytic solution if appropriate source terms are added
-#to the RHS. coded for vel_x=1, vel_y=0
+# modifies isentropic vortex solution so that rho->Arho, P->A^gamma rho^gamma
+# this will be analytic solution if appropriate source terms are added
+# to the RHS. coded for vel_x=1, vel_y=0
 
 
 class Vortex:
@@ -59,20 +59,19 @@ class Vortex:
 
     def volume_interpolant(self, t, discr):
         return discr.convert_volume(
-			self(t, discr.nodes.T
+                        self(t, discr.nodes.T
                             .astype(discr.default_scalar_type)),
-			kind=discr.compute_kind)
+                        kind=discr.compute_kind)
 
     def boundary_interpolant(self, t, discr, tag):
         return discr.convert_boundary(
-			self(t, discr.get_boundary(tag).nodes.T
+                        self(t, discr.get_boundary(tag).nodes.T
                             .astype(discr.default_scalar_type)),
-			 tag=tag, kind=discr.compute_kind)
+                         tag=tag, kind=discr.compute_kind)
 
 
 
 class SourceTerms:
-
     def __init__(self, beta, gamma, center, velocity, densityA):
         self.beta = beta
         self.gamma = gamma
@@ -83,14 +82,15 @@ class SourceTerms:
 
 
     def __call__(self,t,x_vec,q):
-        
+
         vortex_loc = self.center + t*self.velocity
 
         # coordinates relative to vortex center
         x_rel = x_vec[0] - vortex_loc[0]
         y_rel = x_vec[1] - vortex_loc[1]
 
-        # Sources written in terms of A=1.0 solution (standard isentropic vortex)
+        # sources written in terms of A=1.0 solution 
+        # (standard isentropic vortex)
 
         from math import pi
         r = numpy.sqrt(x_rel**2+y_rel**2)
@@ -99,7 +99,7 @@ class SourceTerms:
         v = self.velocity[1] + expterm*x_rel/(2*pi)
         rho = (1-(self.gamma-1)/(16*self.gamma*pi**2)*expterm**2)**(1/(self.gamma-1))
         p = rho**self.gamma
-        
+
         #computed necessary derivatives
         expterm_t = 2*expterm*x_rel
         expterm_x = -2*expterm*x_rel
@@ -109,9 +109,12 @@ class SourceTerms:
 
         #derivatives for rho (A=1)
         facG=self.gamma-1
-        rho_t = (1/facG)*(1-(facG)/(16*self.gamma*pi**2)*expterm**2)**(1/facG-1)*(-facG/(16*self.gamma*pi**2)*2*expterm*expterm_t)
-        rho_x = (1/facG)*(1-(facG)/(16*self.gamma*pi**2)*expterm**2)**(1/facG-1)*(-facG/(16*self.gamma*pi**2)*2*expterm*expterm_x)
-        rho_y = (1/facG)*(1-(facG)/(16*self.gamma*pi**2)*expterm**2)**(1/facG-1)*(-facG/(16*self.gamma*pi**2)*2*expterm*expterm_y)
+        rho_t = (1/facG)*(1-(facG)/(16*self.gamma*pi**2)*expterm**2)**(1/facG-1)* \
+                (-facG/(16*self.gamma*pi**2)*2*expterm*expterm_t)
+        rho_x = (1/facG)*(1-(facG)/(16*self.gamma*pi**2)*expterm**2)**(1/facG-1)* \
+                (-facG/(16*self.gamma*pi**2)*2*expterm*expterm_x)
+        rho_y = (1/facG)*(1-(facG)/(16*self.gamma*pi**2)*expterm**2)**(1/facG-1)* \
+                (-facG/(16*self.gamma*pi**2)*2*expterm*expterm_y)
 
         #derivatives for rho (A=1) to the power of gamma
         rho_gamma_t = self.gamma*rho**(self.gamma-1)*rho_t
@@ -122,35 +125,31 @@ class SourceTerms:
         factorA=self.densityA**self.gamma-self.densityA
         #construct source terms
         source_rho = x_vec[0]-x_vec[0]
-        source_e = (factorA/(self.gamma-1))*(rho_gamma_t + self.gamma*(u_x*rho**self.gamma+u*rho_gamma_x)+self.gamma*(v_y*rho**self.gamma+v*rho_gamma_y))
+        source_e = (factorA/(self.gamma-1))*(rho_gamma_t + self.gamma*(u_x*rho**self.gamma+u*rho_gamma_x)+ \
+                self.gamma*(v_y*rho**self.gamma+v*rho_gamma_y))
         source_rhou = factorA*rho_gamma_x
         source_rhov = factorA*rho_gamma_y
 
         from hedge.tools import join_fields
         return join_fields(source_rho, source_e, source_rhou, source_rhov, x_vec[0]-x_vec[0])
-        
-        #return join_fields(q[0]-q[0], q[1]-q[1], q[2]-q[2], q[3]-q[3], x_vec[0]-x_vec[0])
-
-    
 
     def volume_interpolant(self,t,q,discr):
-    #    return self(t,discr.nodes.T,q)
-
-    #    return discr.convert_volume(
-    #            self(t,discr.nodes.T.astype(discr.default_scalar_type),q),
-    #            kind=discr.compute_kind)
         return discr.convert_volume(
-                self(t,discr.nodes.T,q), 
+                self(t,discr.nodes.T,q),
                 kind=discr.compute_kind)
 
 
 def main(write_output=True):
     from hedge.backends import guess_run_context
     rcon = guess_run_context(
-		    #["cuda"]
-		    )
+                    #["cuda"]
+                    )
 
     gamma = 1.4
+
+    # at A=1 we have case of isentropic vortex, source terms 
+    # arise for other values
+    densityA = 2.0
 
     from hedge.tools import EOCRecorder, to_obj_array
     eoc_rec = EOCRecorder()
@@ -169,29 +168,31 @@ def main(write_output=True):
 
     for order in [4]:
         discr = rcon.make_discretization(mesh_data, order=order,
-			debug=[#"cuda_no_plan",
-			#"print_op_code"
-			],
-			default_scalar_type=numpy.float64)
+                        debug=[#"cuda_no_plan",
+                        #"print_op_code"
+                        ],
+                        default_scalar_type=numpy.float64)
 
         from hedge.visualization import SiloVisualizer, VtkVisualizer
         #vis = VtkVisualizer(discr, rcon, "vortex-%d" % order)
         vis = SiloVisualizer(discr, rcon)
 
-        vortex = Vortex(beta=5, gamma=gamma, 
-                center=[5,0], 
-                velocity=[1,0], densityA=1.0)
+        vortex = Vortex(beta=5, gamma=gamma,
+                center=[5,0],
+                velocity=[1,0], densityA=densityA)
         fields = vortex.volume_interpolant(0, discr)
         sources=SourceTerms(beta=5, gamma=gamma,
                 center=[5,0],
-                velocity=[1,0], densityA=1.0)
+                velocity=[1,0], densityA=densityA)
 
-        from hedge.models.gasdynamics import GasDynamicsOperator
-        from hedge.mesh import TAG_ALL
-        op = GasDynamicsOperator(dimensions=2, discr= discr,
-                gamma=gamma, prandtl=0.72, spec_gas_const=287.1,
+        from hedge.models.gas_dynamics import GasDynamicsOperator
+        from hedge.mesh import TAG_ALL, TAG_NONE
+
+        op = GasDynamicsOperator(dimensions=2,
+                gamma=gamma, mu=0,
                 bc_inflow=vortex, bc_outflow=vortex, bc_noslip=vortex,
-                inflow_tag=TAG_ALL, euler=True,source=sources)
+                inflow_tag=TAG_ALL,
+                source=sources)
 
         euler_ex = op.bind(discr)
 
@@ -202,22 +203,21 @@ def main(write_output=True):
             return ode_rhs
         rhs(0, fields)
 
-        dt = discr.dt_factor(max_eigval[0])
-        final_time = 0.6
-        nsteps = int(final_time/dt)+1
-        dt = final_time/nsteps
-
         if rcon.is_head_rank:
             print "---------------------------------------------"
             print "order %d" % order
             print "---------------------------------------------"
-            print "dt", dt
-            print "nsteps", nsteps
             print "#elements=", len(mesh.elements)
 
-        from hedge.timestep import RK4TimeStepper
-        #from hedge.backends.cuda.tools import RK4TimeStepper
-        stepper = RK4TimeStepper()
+        # limiter setup -------------------------------------------------------
+        from hedge.models.gas_dynamics import SlopeLimiter1NEuler
+        limiter = SlopeLimiter1NEuler(discr, gamma, 2, op)
+
+        # time stepper --------------------------------------------------------
+        from hedge.timestep import SSPRK3TimeStepper, RK4TimeStepper
+        stepper = SSPRK3TimeStepper(limit_stages=True,limiter=limiter)
+        #stepper = SSPRK3TimeStepper()
+        #stepper = RK4TimeStepper()
 
         # diagnostics setup ---------------------------------------------------
         from pytools.log import LogManager, add_general_quantities, \
@@ -231,7 +231,7 @@ def main(write_output=True):
         logmgr = LogManager(log_file_name, "w", rcon.communicator)
         add_run_info(logmgr)
         add_general_quantities(logmgr)
-        add_simulation_quantities(logmgr, dt)
+        add_simulation_quantities(logmgr)
         discr.add_instrumentation(logmgr)
         stepper.add_instrumentation(logmgr)
 
@@ -240,10 +240,18 @@ def main(write_output=True):
         # timestep loop -------------------------------------------------------
         t = 0
 
-        try:
-            for step in range(nsteps):
-                logmgr.tick()
+        fields = limiter(fields)
 
+        try:
+            from hedge.timestep import times_and_steps
+            step_it = times_and_steps(
+                    final_time=1,
+                    #max_steps=500,
+                    logmgr=logmgr,
+                    max_dt_getter=lambda t: 0.4*op.estimate_timestep(discr,
+                        stepper=stepper, t=t, max_eigenvalue=max_eigval[0]))
+
+            for step, t, dt in step_it:
                 if step % 1 == 0 and write_output:
                 #if False:
                     visf = vis.make_file("vortex-%d-%04d" % (order, step))
@@ -281,10 +289,6 @@ def main(write_output=True):
                     visf.close()
 
                 fields = stepper(fields, t, dt, rhs)
-                t += dt
-
-                dt = discr.dt_factor(max_eigval[0])
-            logmgr.tick()
 
             true_fields = vortex.volume_interpolant(t, discr)
             l2_error = discr.norm(fields-true_fields)
@@ -308,8 +312,7 @@ def main(write_output=True):
             if write_output:
                 vis.close()
 
-            logmgr.save()
-
+            logmgr.close()
             discr.close()
 
     # after order loop
@@ -327,4 +330,4 @@ if __name__ == "__main__":
 from pytools.test import mark_test
 @mark_test.long
 def test_euler_vortex():
-    main(write_output=True)
+    main(write_output=False)

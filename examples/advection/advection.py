@@ -97,14 +97,8 @@ def main(write_output=True, flux_type_arg="upwind"):
     # timestep setup ----------------------------------------------------------
     stepper = RK4TimeStepper()
 
-    dt = discr.dt_factor(op.max_eigenvalue())
-    nsteps = int(3/dt)
-
     if rcon.is_head_rank:
-        print "%d elements, dt=%g, nsteps=%d" % (
-                len(discr.mesh.elements),
-                dt,
-                nsteps)
+        print "%d elements" % len(discr.mesh.elements)
 
     # diagnostics setup -------------------------------------------------------
     from pytools.log import LogManager, \
@@ -120,7 +114,7 @@ def main(write_output=True, flux_type_arg="upwind"):
     logmgr = LogManager(log_file_name, "w", rcon.communicator)
     add_run_info(logmgr)
     add_general_quantities(logmgr)
-    add_simulation_quantities(logmgr, dt)
+    add_simulation_quantities(logmgr)
     discr.add_instrumentation(logmgr)
 
     stepper.add_instrumentation(logmgr)
@@ -137,11 +131,13 @@ def main(write_output=True, flux_type_arg="upwind"):
     rhs = op.bind(discr)
 
     try:
-        for step in xrange(nsteps):
-            logmgr.tick()
+        from hedge.timestep import times_and_steps
+        step_it = times_and_steps(
+                final_time=3, logmgr=logmgr,
+                max_dt_getter=lambda t: op.estimate_timestep(discr,
+                    stepper=stepper, t=t, fields=u))
 
-            t = step*dt
-
+        for step, t, dt in step_it:
             if step % 5 == 0 and write_output:
                 visf = vis.make_file("fld-%04d" % step)
                 vis.add_data(visf, [ ("u", u), ],
@@ -150,13 +146,12 @@ def main(write_output=True, flux_type_arg="upwind"):
                             )
                 visf.close()
 
-
             u = stepper(u, t, dt, rhs)
+
     finally:
         if write_output:
             vis.close()
 
-        logmgr.tick()
         logmgr.save()
 
     true_u = discr.interpolate_volume_function(lambda x, el: u_analytic(x, el, t))

@@ -26,8 +26,6 @@ import numpy.linalg as la
 
 def main(write_output=True, allow_features=None, flux_type_arg=1,
         bdry_flux_type_arg=None, extra_discr_args={}):
-    from hedge.element import TetrahedralElement
-    from hedge.timestep import RK4TimeStepper
     from hedge.mesh import make_ball_mesh, make_cylinder_mesh, make_box_mesh
     from hedge.tools import EOCRecorder, to_obj_array
     from math import sqrt, pi
@@ -82,6 +80,8 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
         mesh_data = rcon.receive_mesh()
 
     for order in [1,2,3,4,5,6]:
+        extra_discr_args.setdefault("debug", []).append("cuda_no_plan")
+
         discr = rcon.make_discretization(mesh_data, order=order,
                 **extra_discr_args)
 
@@ -101,20 +101,16 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
                 flux_type=flux_type_arg, \
                 bdry_flux_type=bdry_flux_type_arg)
 
-        dt = discr.dt_factor(op.max_eigenvalue())
-        final_time = 0.5e-9
-        nsteps = int(final_time/dt)+1
-        dt = final_time/nsteps
-
         if rcon.is_head_rank:
             print "---------------------------------------------"
             print "order %d" % order
             print "---------------------------------------------"
-            print "dt", dt
-            print "nsteps", nsteps
             print "#elements=", len(mesh.elements)
 
-        stepper = RK4TimeStepper()
+        from hedge.timestep import RK4TimeStepper
+        from hedge.timestep.dumka3 import Dumka3TimeStepper
+        stepper = RK4TimeStepper(dtype=discr.default_scalar_type, rcon=rcon)
+        #stepper = Dumka3TimeStepper(3, dtype=discr.default_scalar_type, rcon=rcon)
 
         # diagnostics setup ---------------------------------------------------
         from pytools.log import LogManager, add_general_quantities, \
@@ -129,7 +125,7 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
 
         add_run_info(logmgr)
         add_general_quantities(logmgr)
-        add_simulation_quantities(logmgr, dt)
+        add_simulation_quantities(logmgr)
         discr.add_instrumentation(logmgr)
         stepper.add_instrumentation(logmgr)
 
@@ -148,14 +144,18 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
                 )
 
         # timestep loop -------------------------------------------------------
-        t = 0
         rhs = op.bind(discr)
+        final_time = 0.5e-9
 
         try:
-            for step in range(nsteps):
-                logmgr.tick()
+            from hedge.timestep import times_and_steps
+            step_it = times_and_steps(
+                    final_time=final_time, logmgr=logmgr,
+                    max_dt_getter=lambda t: op.estimate_timestep(discr,
+                        stepper=stepper, t=t, fields=fields))
 
-                if step % 10 == 0 and write_output:
+            for step, t, dt in step_it:
+                if step % 50 == 0 and write_output:
                     sub_timer = vis_timer.start_sub_timer()
                     e, h = op.split_eh(fields)
                     visf = vis.make_file("em-%d-%04d" % (order, step))
@@ -171,18 +171,18 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
                     sub_timer.stop().submit()
 
                 fields = stepper(fields, t, dt, rhs)
-                t += dt
+
+            mode.set_time(final_time)
+
+            eoc_rec.add_data_point(order, 
+                    discr.norm(fields-get_true_field()))
+
         finally:
             if write_output:
                 vis.close()
 
             logmgr.close()
             discr.close()
-
-        mode.set_time(t)
-
-        eoc_rec.add_data_point(order, 
-                discr.norm(fields-get_true_field()))
 
         if rcon.is_head_rank:
             print
@@ -225,14 +225,8 @@ def test_cuda():
 def do_test_maxwell_cavities_cuda(dtype):
     import py.test
 
-    try:
-        import pycuda.autoinit
-    except ImportError:
-        py.test.skip()
-
     main(write_output=False, allow_features=["cuda"], 
             extra_discr_args=dict(
-                init_cuda=False,
                 debug=["cuda_no_plan"],
                 default_scalar_type=dtype,
                 ))

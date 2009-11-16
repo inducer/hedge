@@ -71,7 +71,9 @@ class WeakPoissonOperator(Operator):
 
     # fluxes ------------------------------------------------------------------
     def get_weak_flux_set(self, flux):
-        class FluxSet: pass
+        class FluxSet:
+            pass
+
         fs = FluxSet()
 
         if flux == "ldg":
@@ -359,6 +361,3 @@ class BoundPoissonOperator(hedge.iterative.OperatorBase):
         return (MassOperator().apply(self.discr,
             rhs.volume_interpolant(self.discr))
             - self.div_c(w=w, dir_bc_w=dir_bc_w, neu_bc_w=neu_bc_w))
-
-
-

@@ -36,9 +36,9 @@ import hedge.optemplate
 
 
 class PartitionData(pytools.Record):
-    def __init__(self, 
+    def __init__(self,
             part_nr,
-            mesh, 
+            mesh,
             global2local_elements,
             global2local_vertex_indices,
             neighbor_parts,
@@ -63,7 +63,7 @@ def partition_from_tags(mesh, tag_to_number):
 
 
 def partition_mesh(mesh, partition, part_bdry_tag_factory):
-    """*partition* is a mapping that maps element id to 
+    """*partition* is a mapping that maps element id to
     integers that represent different pieces of the mesh.
 
     For historical reasons, the values in partition are called
@@ -94,7 +94,7 @@ def partition_mesh(mesh, partition, part_bdry_tag_factory):
 
     # prepare a mapping from (el, face_nr) to the part
     # at the other end of the interface, if different from
-    # current. concurrently, prepare a mapping 
+    # current. concurrently, prepare a mapping
     #  part -> set([parts that border me])
     elface2part = {}
     neighboring_parts = {}
@@ -116,34 +116,34 @@ def partition_mesh(mesh, partition, part_bdry_tag_factory):
     from hedge.mesh import TAG_NO_BOUNDARY
 
     for part in all_parts:
-        part_global_elements = [el 
+        part_global_elements = [el
                 for el in mesh.elements
-                if partition [el.id] == part]
+                if partition[el.id] == part]
 
         # pick out this part's vertices
         from pytools import flatten
         part_global_vertex_indices = set(flatten(
                 el.vertex_indices for el in part_global_elements))
 
-        part_local_vertices = [mesh.points[vi] 
+        part_local_vertices = [mesh.points[vi]
                 for vi in part_global_vertex_indices]
 
         # find global-to-local maps
         part_global2local_vertex_indices = dict(
-                (gvi, lvi) for lvi, gvi in 
+                (gvi, lvi) for lvi, gvi in
                 enumerate(part_global_vertex_indices))
 
         part_global2local_elements = dict(
-                (el.id, i) for i, el in 
+                (el.id, i) for i, el in
                 enumerate(part_global_elements))
 
         # find elements in local numbering
         part_local_elements = [
-                [part_global2local_vertex_indices[vi] 
+                [part_global2local_vertex_indices[vi]
                     for vi in el.vertex_indices]
                 for el in part_global_elements]
 
-        # make new local Mesh object, including 
+        # make new local Mesh object, including
         # boundary and element tagging
         def partition_bdry_tagger(fvi, local_el, fn, all_vertices):
             el = part_global_elements[local_el.id]
@@ -181,7 +181,7 @@ def partition_mesh(mesh, partition, part_bdry_tag_factory):
         my_nb_parts = neighboring_parts.get(part, [])
         yield PartitionData(
                 part,
-                part_mesh, 
+                part_mesh,
                 part_global2local_elements,
                 part_global2local_vertex_indices,
                 my_nb_parts,
@@ -196,8 +196,8 @@ def partition_mesh(mesh, partition, part_bdry_tag_factory):
 
 
 def find_neighbor_vol_indices(
-        my_discr, my_part_data, 
-        nb_discr, nb_part_data, 
+        my_discr, my_part_data,
+        nb_discr, nb_part_data,
         debug=False):
 
     from pytools import reverse_dictionary
@@ -217,7 +217,7 @@ def find_neighbor_vol_indices(
 
     nb_vertices_to_face = dict(
             (frozenset(el.faces[face_nr]), (el, face_nr))
-            for el, face_nr 
+            for el, face_nr
             in nb_mesh_bdry)
 
     from_indices = []
@@ -247,8 +247,8 @@ def find_neighbor_vol_indices(
                     for vi in my_global_vertices)
             # continue below in else part
         except KeyError:
-            # this happens if my_global_vertices is not a permutation 
-            # of the neighbor's face vertices. Periodicity is the only 
+            # this happens if my_global_vertices is not a permutation
+            # of the neighbor's face vertices. Periodicity is the only
             # reason why that would be so.
             my_global_vertices_there, axis = my_part_data.global_periodic_opposite_faces[
                     my_global_vertices]
@@ -266,7 +266,7 @@ def find_neighbor_vol_indices(
                     nb_global_vertices_there]
 
             assert axis == axis2
-            
+
             nb_face_start = nb_discr_bdry \
                     .find_facepair((nb_el, nb_face_nr)) \
                     .opp.el_base_index
@@ -274,9 +274,9 @@ def find_neighbor_vol_indices(
             shuffle_op = \
                     ldis.get_face_index_shuffle_to_match(
                             my_global_vertices,
-                            nb_global_vertices) 
+                            nb_global_vertices)
 
-            shuffled_nb_node_indices = [nb_face_start+i 
+            shuffled_nb_node_indices = [nb_face_start+i
                     for i in get_shuffled_indices(face_node_count, shuffle_op)]
 
             from_indices.extend(shuffled_nb_node_indices)
@@ -305,14 +305,14 @@ def find_neighbor_vol_indices(
                             my_global_vertices,
                             nb_global_vertices)
 
-            shuffled_nb_node_indices = [nb_face_start+i 
+            shuffled_nb_node_indices = [nb_face_start+i
                     for i in get_shuffled_indices(face_node_count, shuffle_op)]
 
             from_indices.extend(shuffled_nb_node_indices)
 
             # Check if the nodes really match up
             if debug and ldis.has_facial_nodes:
-                my_node_indices = [eslice.start+i 
+                my_node_indices = [eslice.start+i
                         for i in ldis.face_indices()[my_face_nr]]
 
                 for my_i, nb_i in zip(my_node_indices, shuffled_nb_node_indices):
@@ -338,9 +338,9 @@ def find_neighbor_vol_indices(
 class StupidInterdomainFluxMapper(hedge.optemplate.IdentityMapper):
     """Attempts to map a regular optemplate into one that is
     suitable for inter-domain flux computation.
-    
-    Maps everything to zero that is not an interior flux or 
-    inverse mass operator. Interior fluxes on the other hand are 
+
+    Maps everything to zero that is not an interior flux or
+    inverse mass operator. Interior fluxes on the other hand are
     mapped to boundary fluxes on the specified tag.
     """
 
@@ -391,11 +391,11 @@ class StupidInterdomainFluxMapper(hedge.optemplate.IdentityMapper):
 
 
 def compile_interdomain_flux(optemplate, vol_var, bdry_var,
-        my_discr, my_part_data, 
+        my_discr, my_part_data,
         nb_discr, nb_part_data,
         use_stupid_substitution=False):
     """
-    `use_stupid_substitution` uses `StupidInterdomainFluxMapper` to 
+    `use_stupid_substitution` uses `StupidInterdomainFluxMapper` to
     try to pare down a full optemplate to one that is suitable for
     interdomain flux computation. While technique is stupid, it
     will work for many common DG operators. See the description of

@@ -44,7 +44,8 @@ from pymbolic.mapper.stringifier import PREC_NONE
 
 
 
-class GPUIndexLists(Record): pass
+class GPUIndexLists(Record):
+    pass
 
 
 
@@ -63,16 +64,16 @@ def face_pair_struct(float_type, dims):
         POD(numpy.uint32, "b_base"),
 
         POD(numpy.uint16, "a_ilist_index"),
-        POD(numpy.uint16, "b_ilist_index"), 
-        POD(numpy.uint16, "b_write_ilist_index"), 
+        POD(numpy.uint16, "b_ilist_index"),
+        POD(numpy.uint16, "b_write_ilist_index"),
         POD(numpy.uint16, "boundary_bitmap"),
-        POD(numpy.uint16, "a_dest"), 
-        POD(numpy.uint16, "b_dest"), 
-        ], 
+        POD(numpy.uint16, "a_dest"),
+        POD(numpy.uint16, "b_dest"),
+        ],
 
-        # ensure that adjacent face_pair instances can be accessed 
+        # ensure that adjacent face_pair instances can be accessed
         # without bank conflicts.
-        aligned_prime_to=[2], 
+        aligned_prime_to=[2],
         )
 
 @memoize
@@ -135,7 +136,7 @@ class FluxToCodeMapper(CCodeMapper):
         return "fpair->normal[%d]" % expr.axis
 
     def map_penalty_term(self, expr, enclosing_prec):
-        return ("pow(fpair->order*fpair->order/fpair->h, %r)" 
+        return ("pow(fpair->order*fpair->order/fpair->h, %r)"
                 % expr.power)
 
     def map_function_symbol(self, expr, enclosing_prec):
@@ -161,7 +162,7 @@ class FluxToCodeMapper(CCodeMapper):
 
 
 
-def flux_to_code(f2cm, is_flipped, int_field_expr, ext_field_expr, 
+def flux_to_code(f2cm, is_flipped, int_field_expr, ext_field_expr,
         dep_to_index, flux, prec):
     if is_flipped:
         from hedge.flux import FluxFlipper
@@ -174,7 +175,7 @@ def flux_to_code(f2cm, is_flipped, int_field_expr, ext_field_expr,
 
 # plan ------------------------------------------------------------------------
 class ExecutionPlan(hedge.backends.cuda.plan.ExecutionPlan):
-    def __init__(self, given, 
+    def __init__(self, given,
             parallel_faces, mbs_per_block, flux_count,
             direct_store, partition_data):
         hedge.backends.cuda.plan.ExecutionPlan.__init__(self, given)
@@ -277,8 +278,8 @@ def make_plan(discr, given, tune_for):
         for direct_store in [False, True]:
             for parallel_faces in range(1, 32):
                 for mbs_per_block in range(1, 8):
-                    flux_plan = ExecutionPlan(given, parallel_faces, 
-                            mbs_per_block, flux_count, 
+                    flux_plan = ExecutionPlan(given, parallel_faces,
+                            mbs_per_block, flux_count,
                             direct_store=direct_store,
                             partition_data=discr._get_partition_data(
                                 mbs_per_block*given.microblock.elements))
@@ -356,7 +357,7 @@ class Kernel:
                 for i in range(len(self.fluxes))]
 
         field = gpuarray.empty(
-                (self.plan.dofs_per_block() * block_count,), 
+                (self.plan.dofs_per_block() * block_count,),
                 dtype=given.float_type,
                 allocator=discr.pool.allocate)
 
@@ -384,7 +385,7 @@ class Kernel:
             try:
                 gather.prepared_call(
                         (block_count, 1),
-                        0, 
+                        0,
                         fdata.device_memory,
                         *tuple(fof.gpudata for fof in all_fluxes_on_faces)
                         )
@@ -437,7 +438,7 @@ class Kernel:
         if discr.instrumented:
             discr.flux_gather_timer.add_timer_callable(gather.prepared_timed_call(
                     (len(discr.blocks), 1),
-                    debugbuf.gpudata, 
+                    debugbuf.gpudata,
                     fdata.device_memory,
                     *tuple(fof.gpudata for fof in all_fluxes_on_faces)
                     ))
@@ -453,15 +454,15 @@ class Kernel:
                         * given.dofs_per_face()
 
                         # store
-                        + len(discr.blocks) 
-                        * len(self.fluxes) 
+                        + len(discr.blocks)
+                        * len(self.fluxes)
                         * self.plan.microblocks_per_block()
                         * given.aligned_face_dofs_per_microblock()
                         ))
         else:
             gather.prepared_call(
                     (len(discr.blocks), 1),
-                    debugbuf.gpudata, 
+                    debugbuf.gpudata,
                     fdata.device_memory,
                     *tuple(fof.gpudata for fof in all_fluxes_on_faces)
                     )
@@ -558,8 +559,8 @@ class Kernel:
             return ("val_%s_field%d" % (prefix, self.dep_to_index[flux_rec.field_expr]))
 
         flux_write_code = Block([])
-        
-        flux_var_decl = [Initializer( POD(given.float_type, "a_flux"), 0)]
+
+        flux_var_decl = [Initializer(POD(given.float_type, "a_flux"), 0)]
 
         if is_twosided:
             flux_var_decl.append(Initializer(POD(given.float_type, "b_flux"), 0))
@@ -577,7 +578,7 @@ class Kernel:
             for side in ["a", "b"]:
                 flux_write_code.append(
                         Initializer(
-                            MaybeUnused(POD(given.float_type, "val_%s_field%d" 
+                            MaybeUnused(POD(given.float_type, "val_%s_field%d"
                                 % (side, self.dep_to_index[dep]))),
                             "fp_tex1Dfetch(field%d_tex, %s_index)"
                             % (self.dep_to_index[dep], side)))
@@ -592,10 +593,10 @@ class Kernel:
                 for prefix, is_flipped in zip(prefixes, flip_values):
                     my_flux_block.append(
                             Statement("%s_flux += %s"
-                                % (prefix, 
+                                % (prefix,
                                     flux_to_code(f2cm, is_flipped,
-                                        int_rec.field_expr, 
-                                        int_rec.field_expr, 
+                                        int_rec.field_expr,
+                                        int_rec.field_expr,
                                         self.dep_to_index,
                                         int_rec.flux_expr, PREC_NONE),
                                     )))
@@ -612,7 +613,7 @@ class Kernel:
 
             if is_twosided:
                 my_flux_block.append(
-                        self.gen_store(flux_nr, 
+                        self.gen_store(flux_nr,
                             "fpair->b_dest+tex1Dfetch(tex_index_lists, "
                             "fpair->b_write_ilist_index + FACEDOF_NR)",
                             "fpair->face_jacobian*b_flux"))
@@ -671,7 +672,7 @@ class Kernel:
                 bblock.extend([
                     Comment(str(dep)),
                     Initializer(
-                        MaybeUnused(POD(given.float_type, "val_a_field%d" 
+                        MaybeUnused(POD(given.float_type, "val_a_field%d"
                             % self.dep_to_index[dep])),
                         "fp_tex1Dfetch(field%d_tex, a_index)" % self.dep_to_index[dep])
                     ])
@@ -679,7 +680,7 @@ class Kernel:
                 bblock.extend([
                     Comment(str(dep)),
                     Initializer(
-                        MaybeUnused(POD(given.float_type, "val_b_field%d" 
+                        MaybeUnused(POD(given.float_type, "val_b_field%d"
                             % self.dep_to_index[dep])),
                         "fp_tex1Dfetch(field%s_tex, b_index)" % self.dep_to_index[dep])
                     ])
@@ -693,7 +694,7 @@ class Kernel:
                             flux_to_code(f2cm, is_flipped=False,
                                 int_field_expr=flux_rec.bpair.field,
                                 ext_field_expr=flux_rec.bpair.bfield,
-                                dep_to_index=self.dep_to_index, 
+                                dep_to_index=self.dep_to_index,
                                 flux=flux_rec.flux_expr, prec=PREC_NONE)))
 
             if f2cm.cse_name_list:
@@ -737,7 +738,7 @@ class Kernel:
 
         float_type = given.float_type
 
-        f_decl = CudaGlobal(FunctionDeclaration(Value("void", "apply_flux"), 
+        f_decl = CudaGlobal(FunctionDeclaration(Value("void", "apply_flux"),
             [
                 Pointer(POD(float_type, "debugbuf")),
                 Pointer(POD(numpy.uint8, "gmem_facedata")),
@@ -753,7 +754,7 @@ class Kernel:
         for dep_expr in self.all_deps:
             cmod.extend([
                 Value("texture<%s, 1, cudaReadModeElementType>"
-                    % dtype_to_ctype(float_type, with_fp_tex_hack=True), 
+                    % dtype_to_ctype(float_type, with_fp_tex_hack=True),
                     "field%d_tex" % self.dep_to_index[dep_expr])
                 ])
 
@@ -786,19 +787,19 @@ class Kernel:
             Line(),
             Define("THREAD_NUM", "(FACEDOF_NR + BLOCK_FACE*THREADS_PER_FACE)"),
             Define("THREAD_COUNT", "(THREADS_PER_FACE*CONCURRENT_FACES)"),
-            Define("COALESCING_THREAD_COUNT", 
+            Define("COALESCING_THREAD_COUNT",
                 "(THREAD_COUNT < 0x10 ? THREAD_COUNT : THREAD_COUNT & ~0xf)"),
             Line(),
             Define("DATA_BLOCK_SIZE", fdata.block_bytes),
             Define("ALIGNED_FACE_DOFS_PER_MB", given.aligned_face_dofs_per_microblock()),
-            Define("ALIGNED_FACE_DOFS_PER_BLOCK", 
+            Define("ALIGNED_FACE_DOFS_PER_BLOCK",
                 "(ALIGNED_FACE_DOFS_PER_MB*BLOCK_MB_COUNT)"),
             Line(),
             Define("FOF_BLOCK_BASE", "(blockIdx.x*ALIGNED_FACE_DOFS_PER_BLOCK)"),
             Line(),
             ] + ilist_data.code + [
             Line(),
-            Value("texture<index_list_entry_t, 1, cudaReadModeElementType>", 
+            Value("texture<index_list_entry_t, 1, cudaReadModeElementType>",
                 "tex_index_lists"),
             Line(),
             fdata.struct,
@@ -820,7 +821,7 @@ class Kernel:
 
         S = Statement
         f_body = Block()
-            
+
         from hedge.backends.cuda.tools import get_load_code
 
         f_body.extend(get_load_code(
@@ -828,7 +829,7 @@ class Kernel:
             base="gmem_facedata + blockIdx.x*DATA_BLOCK_SIZE",
             bytes="sizeof(flux_data)",
             descr="load face_pair data")
-            +[ S("__syncthreads()"), Line() ])
+            +[S("__syncthreads()"), Line() ])
 
 
         def get_flux_code(flux_writer):
@@ -857,7 +858,7 @@ class Kernel:
         flux_computation = Block([
             Comment("fluxes for dual-sided (intra-block) interior face pairs"),
             While("fpair_nr < data.header.same_facepairs_end",
-                get_flux_code(lambda: 
+                get_flux_code(lambda:
                     self.write_interior_flux_code(True))
                 ),
             Line(),
@@ -867,7 +868,7 @@ class Kernel:
             Line(),
             Comment("fluxes for single-sided (inter-block) interior face pairs"),
             While("fpair_nr < data.header.diff_facepairs_end",
-                get_flux_code(lambda: 
+                get_flux_code(lambda:
                     self.write_interior_flux_code(False))
                 ),
             Line(),
@@ -894,8 +895,8 @@ class Kernel:
                     #Assign("debugbuf[blockIdx.x]", "FOF_BLOCK_BASE"),
                     #Assign("debugbuf[0]", "FOF_BLOCK_BASE"),
                     #Assign("debugbuf[0]", "sizeof(face_pair)"),
-                    For("unsigned word_nr = THREAD_NUM", 
-                        "word_nr < ALIGNED_FACE_DOFS_PER_MB*BLOCK_MB_COUNT", 
+                    For("unsigned word_nr = THREAD_NUM",
+                        "word_nr < ALIGNED_FACE_DOFS_PER_MB*BLOCK_MB_COUNT",
                         "word_nr += COALESCING_THREAD_COUNT",
                         Block([Assign(
                             "gmem_fluxes_on_faces%d[FOF_BLOCK_BASE+word_nr]" % flux_nr,
@@ -928,9 +929,9 @@ class Kernel:
 
         #from pycuda.tools import allow_user_edit
         mod = SourceModule(
-                #allow_user_edit(cmod, "kernel.cu", "the flux kernel"), 
+                #allow_user_edit(cmod, "kernel.cu", "the flux kernel"),
                 cmod,
-                keep="cuda_keep_kernels" in discr.debug, 
+                keep="cuda_keep_kernels" in discr.debug,
                 options=["--maxrregcount=%d" % self.plan.max_registers()]
                 )
         expr_to_texture_map = dict(
@@ -949,15 +950,15 @@ class Kernel:
         func = mod.get_function("apply_flux")
         func.prepare(
                 (2+len(self.fluxes))*"P",
-                block=(fplan.threads_per_face(), 
+                block=(fplan.threads_per_face(),
                     fplan.parallel_faces, 1),
                 texrefs=expr_to_texture_map.values()
                 + [index_list_texref])
 
         if "cuda_flux" in discr.debug:
             print "flux: lmem=%d smem=%d regs=%d" % (
-                    func.local_size_bytes, 
-                    func.shared_size_bytes, 
+                    func.local_size_bytes,
+                    func.shared_size_bytes,
                     func.num_regs)
 
         return func, expr_to_texture_map
@@ -1161,11 +1162,11 @@ class Kernel:
                             a_dest=draw_dest(), b_dest=draw_dest()
                             ))
 
-            total_ext_face_count = bound_int(0, 
-                pdata.ext_face_avg + randrange(-1,2), 
+            total_ext_face_count = bound_int(0,
+                pdata.ext_face_avg + randrange(-1,2),
                 fp_count)
 
-            bdry_count = min(total_ext_face_count, 
+            bdry_count = min(total_ext_face_count,
                     randrange(1+int(round(total_ext_face_count/6))))
             diff_count = total_ext_face_count-bdry_count
 
@@ -1230,4 +1231,3 @@ class Kernel:
                 device_memory=cuda.to_device(flat_ilists),
                 bytes=flat_ilists.size*flat_ilists.itemsize,
                 )
-

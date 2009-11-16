@@ -58,21 +58,17 @@ class Vortex:
         from hedge.tools import join_fields
         return join_fields(rho, e, rho*u, rho*v)
 
-    def properties(self):
-        return(self.gamma, self.mu, self.prandtl, self.spec_gas_const)
-
-
     def volume_interpolant(self, t, discr):
         return discr.convert_volume(
-			self(t, discr.nodes.T
+                        self(t, discr.nodes.T
                             .astype(discr.default_scalar_type)),
-			kind=discr.compute_kind)
+                        kind=discr.compute_kind)
 
     def boundary_interpolant(self, t, discr, tag):
         return discr.convert_boundary(
-			self(t, discr.get_boundary(tag).nodes.T
+                        self(t, discr.get_boundary(tag).nodes.T
                             .astype(discr.default_scalar_type)),
-			 tag=tag, kind=discr.compute_kind)
+                         tag=tag, kind=discr.compute_kind)
 
 
 
@@ -80,8 +76,8 @@ class Vortex:
 def main(write_output=True):
     from hedge.backends import guess_run_context
     rcon = guess_run_context(
-		    #["cuda"]
-		    )
+                    #["cuda"]
+                    )
 
     from hedge.tools import EOCRecorder, to_obj_array
     eoc_rec = EOCRecorder()
@@ -102,7 +98,7 @@ def main(write_output=True):
 
     for order in [3, 4, 5]:
         discr = rcon.make_discretization(mesh_data, order=order,
-			default_scalar_type=numpy.float64)
+                        default_scalar_type=numpy.float64)
 
         from hedge.visualization import SiloVisualizer, VtkVisualizer
         #vis = VtkVisualizer(discr, rcon, "vortex-%d" % order)
@@ -110,14 +106,16 @@ def main(write_output=True):
 
         vortex = Vortex()
         fields = vortex.volume_interpolant(0, discr)
-        gamma, mu, prandtl, spec_gas_const = vortex.properties()
 
         from hedge.models.gas_dynamics import GasDynamicsOperator
         from hedge.mesh import TAG_ALL
-        op = GasDynamicsOperator(dimensions=2, gamma=gamma, mu=mu,
-                prandtl=prandtl, spec_gas_const=spec_gas_const,
+        op = GasDynamicsOperator(dimensions=2, 
+                gamma=vortex.gamma, 
+                mu=vortex.mu,
+                prandtl=vortex.prandtl, 
+                spec_gas_const=vortex.spec_gas_const,
                 bc_inflow=vortex, bc_outflow=vortex, bc_noslip=vortex,
-                inflow_tag=TAG_ALL, euler=True,source=None)
+                inflow_tag=TAG_ALL, source=None)
 
         euler_ex = op.bind(discr)
 
@@ -128,21 +126,22 @@ def main(write_output=True):
             return ode_rhs
         rhs(0, fields)
 
-        dt = discr.dt_factor(max_eigval[0])
-        final_time = 0.6
-        nsteps = int(final_time/dt)+1
-        dt = final_time/nsteps
-
         if rcon.is_head_rank:
             print "---------------------------------------------"
             print "order %d" % order
             print "---------------------------------------------"
-            print "dt", dt
-            print "nsteps", nsteps
             print "#elements=", len(mesh.elements)
 
+
+        # limiter ------------------------------------------------------------
+        from hedge.models.gas_dynamics import SlopeLimiter1NEuler
+        limiter = SlopeLimiter1NEuler(discr, vortex.gamma, 2, op)
+
+        from hedge.timestep import SSPRK3TimeStepper
         from hedge.timestep import RK4TimeStepper
-        stepper = RK4TimeStepper()
+        #stepper = SSPRK3TimeStepper(limit_stages=True, limiter=limiter)
+        stepper = SSPRK3TimeStepper()
+        #stepper = RK4TimeStepper()
 
         # diagnostics setup ---------------------------------------------------
         from pytools.log import LogManager, add_general_quantities, \
@@ -156,24 +155,27 @@ def main(write_output=True):
         logmgr = LogManager(log_file_name, "w", rcon.communicator)
         add_run_info(logmgr)
         add_general_quantities(logmgr)
-        add_simulation_quantities(logmgr, dt)
+        add_simulation_quantities(logmgr)
         discr.add_instrumentation(logmgr)
         stepper.add_instrumentation(logmgr)
 
         logmgr.add_watches(["step.max", "t_sim.max", "t_step.max"])
 
         # timestep loop -------------------------------------------------------
-        t = 0
-
         try:
-            for step in range(nsteps):
-                logmgr.tick()
+            final_time = 0.5
+            from hedge.timestep import times_and_steps
+            step_it = times_and_steps(
+                    final_time=final_time, logmgr=logmgr,
+                    max_dt_getter=lambda t: op.estimate_timestep(discr,
+                        stepper=stepper, t=t, max_eigenvalue=max_eigval[0]))
 
-                if step % 1 == 0 and write_output:
+            for step, t, dt in step_it:
+                if step % 10 == 0 and write_output:
                 #if False:
                     visf = vis.make_file("vortex-%d-%04d" % (order, step))
 
-                    true_fields = vortex.volume_interpolant(t, discr)
+                    #true_fields = vortex.volume_interpolant(t, discr)
 
                     from pylo import DB_VARTYPE_VECTOR
                     vis.add_data(visf,
@@ -204,12 +206,11 @@ def main(write_output=True):
                     visf.close()
 
                 fields = stepper(fields, t, dt, rhs)
-                t += dt
+                #fields = limiter(fields)
 
-                dt = discr.dt_factor(max_eigval[0])
-            logmgr.tick()
+                assert not numpy.isnan(numpy.sum(fields[0]))
 
-            true_fields = vortex.volume_interpolant(t, discr)
+            true_fields = vortex.volume_interpolant(final_time, discr)
             l2_error = discr.norm(fields-true_fields)
             l2_error_rho = discr.norm(op.rho(fields)-op.rho(true_fields))
             l2_error_e = discr.norm(op.e(fields)-op.e(true_fields))
@@ -231,8 +232,7 @@ def main(write_output=True):
             if write_output:
                 vis.close()
 
-            logmgr.save()
-
+            logmgr.close()
             discr.close()
 
     # after order loop
@@ -250,4 +250,4 @@ if __name__ == "__main__":
 from pytools.test import mark_test
 @mark_test.long
 def test_euler_vortex():
-    main()
+    main(write_output=False)

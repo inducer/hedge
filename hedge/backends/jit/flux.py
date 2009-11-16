@@ -36,9 +36,9 @@ class FluxConcretizer(FluxIdentityMapper):
 
     def map_field_component(self, expr):
         if expr.is_interior:
-            where = "loc"
+            where = "int_side"
         else:
-            where = "opp"
+            where = "ext_side"
 
         arg_name = self.flux_var_info.flux_idx_and_dep_to_arg_name[
                 self.flux_idx, expr]
@@ -51,7 +51,7 @@ class FluxConcretizer(FluxIdentityMapper):
 
     def map_scalar_parameter(self, expr):
         from pymbolic import var
-        return var("args._scalar_arg_%d" 
+        return var("args._scalar_arg_%d"
                 % self.flux_var_info.scalar_parameters.index(expr))
 
 
@@ -59,10 +59,10 @@ class FluxConcretizer(FluxIdentityMapper):
 
 class FluxToCodeMapper(CCodeMapper):
     def map_normal(self, expr, enclosing_prec):
-        return "uncomplex_type(fp.loc.normal[%d])" % (expr.axis)
+        return "uncomplex_type(fp.int_side.normal[%d])" % (expr.axis)
 
     def map_penalty_term(self, expr, enclosing_prec):
-        return ("uncomplex_type(pow(fp.loc.order*fp.loc.order/fp.loc.h, %(pwr)r))"
+        return ("uncomplex_type(pow(fp.int_side.order*fp.int_side.order/fp.int_side.h, %(pwr)r))"
                 % {"pwr": expr.power})
 
     def map_function_symbol(self, expr, enclosing_prec):
@@ -242,7 +242,7 @@ def get_interior_flux_mod(fluxes, fvi, discr, dtype):
         Value("numpy_array<value_type>", arg_name)
         for arg_name in fvi.arg_names
         ]+[
-        Value("value_type" if scalar_par.is_complex else "uncomplex_type", 
+        Value("value_type" if scalar_par.is_complex else "uncomplex_type",
             "_scalar_arg_%d" % i)
         for i, scalar_par in enumerate(fvi.scalar_parameters)
         ])
@@ -253,7 +253,7 @@ def get_interior_flux_mod(fluxes, fvi, discr, dtype):
     fdecl = FunctionDeclaration(
             Value("void", "gather_flux"),
             [
-                Const(Reference(Value("face_group", "fg"))),
+                Const(Reference(Value("face_group<face_pair<straight_face> >", "fg"))),
                 Reference(Value("arg_struct", "args"))
                 ])
 
@@ -264,12 +264,12 @@ def get_interior_flux_mod(fluxes, fvi, discr, dtype):
 
         result = [
                 Assign("fof%d_it[%s_fof_base+%s]" % (flux_idx, where, tgt_idx),
-                    "uncomplex_type(fp.loc.face_jacobian) * " +
+                    "uncomplex_type(fp.int_side.face_jacobian) * " +
                     flux_to_code(f2cm, is_flipped, flux_idx, fvi, flux.op.flux, PREC_PRODUCT))
                 for flux_idx, flux in enumerate(fluxes)
                 for where, is_flipped, tgt_idx in [
-                    ("loc", False, "i"),
-                    ("opp", True, "opp_write_map[i]")
+                    ("int_side", False, "i"),
+                    ("ext_side", True, "ext_native_write_map[i]")
                     ]]
 
         return [
@@ -288,7 +288,7 @@ def get_interior_flux_mod(fluxes, fvi, discr, dtype):
         for arg_name in fvi.arg_names
         ]+[
         Line(),
-        CustomLoop("BOOST_FOREACH(const face_pair &fp, fg.face_pairs)", Block(
+        CustomLoop("BOOST_FOREACH(const face_pair<straight_face> &fp, fg.face_pairs)", Block(
             list(flatten([
             Initializer(Value("node_number_t", "%s_ebi" % where),
                 "fp.%s.el_base_index" % where),
@@ -299,10 +299,10 @@ def get_interior_flux_mod(fluxes, fvi, discr, dtype):
                 " + fp.%(where)s.face_id)" % {"where": where}),
             Line(),
             ]
-            for where in ["loc", "opp"]
+            for where in ["int_side", "ext_side"]
             ))+[
-            Initializer(Value("index_lists_t::const_iterator", "opp_write_map"),
-                "fg.index_list(fp.opp_native_write_map)"),
+            Initializer(Value("index_lists_t::const_iterator", "ext_native_write_map"),
+                "fg.index_list(fp.ext_native_write_map)"),
             Line(),
             For(
                 "unsigned i = 0",
@@ -313,7 +313,7 @@ def get_interior_flux_mod(fluxes, fvi, discr, dtype):
                     Initializer(MaybeUnused(Value("node_number_t", "%s_idx" % where)),
                         "%(where)s_ebi + %(where)s_idx_list[i]"
                         % {"where": where})
-                    for where in ["loc", "opp"]
+                    for where in ["int_side", "ext_side"]
                     ]+gen_flux_code()
                     )
                 )
@@ -325,7 +325,7 @@ def get_interior_flux_mod(fluxes, fvi, discr, dtype):
     #print mod.generate()
     #raw_input("[Enter]")
 
-    return mod.compile(get_flux_toolchain(discr, fluxes), 
+    return mod.compile(get_flux_toolchain(discr, fluxes),
             wait_on_error="jit_wait_on_compile_error" in discr.debug)
 
 
@@ -350,7 +350,7 @@ def get_boundary_flux_mod(fluxes, fvi, discr, dtype):
         Include("boost/foreach.hpp"),
         Line(),
         Include("hedge/face_operators.hpp"),
-	])
+        ])
 
     S = Statement
     mod.add_to_module([
@@ -375,7 +375,7 @@ def get_boundary_flux_mod(fluxes, fvi, discr, dtype):
     fdecl = FunctionDeclaration(
                 Value("void", "gather_flux"),
                 [
-                    Const(Reference(Value("face_group", "fg"))),
+                    Const(Reference(Value("face_group<face_pair<straight_face> >" , "fg"))),
                     Reference(Value("arg_struct", "args"))
                     ])
 
@@ -386,7 +386,7 @@ def get_boundary_flux_mod(fluxes, fvi, discr, dtype):
 
         result = [
                 Assign("fof%d_it[loc_fof_base+i]" % flux_idx,
-                    "uncomplex_type(fp.loc.face_jacobian) * " +
+                    "uncomplex_type(fp.int_side.face_jacobian) * " +
                     flux_to_code(f2cm, False, flux_idx, fvi, flux.op.flux, PREC_PRODUCT))
                 for flux_idx, flux in enumerate(fluxes)
                 ]
@@ -408,7 +408,7 @@ def get_boundary_flux_mod(fluxes, fvi, discr, dtype):
         for arg_name in fvi.arg_names
         ]+[
         Line(),
-        CustomLoop("BOOST_FOREACH(const face_pair &fp, fg.face_pairs)", Block(
+        CustomLoop("BOOST_FOREACH(const face_pair<straight_face> &fp, fg.face_pairs)", Block(
             list(flatten([
             Initializer(Value("node_number_t", "%s_ebi" % where),
                 "fp.%s.el_base_index" % where),
@@ -416,12 +416,12 @@ def get_boundary_flux_mod(fluxes, fvi, discr, dtype):
                 "fg.index_list(fp.%s.face_index_list_number)" % where),
             Line(),
             ]
-            for where in ["loc", "opp"]
+            for where in ["int_side", "ext_side"]
             ))+[
             Line(),
             Initializer(Value("node_number_t", "loc_fof_base"),
                 "fg.face_length()*(fp.%(where)s.local_el_number*fg.face_count"
-                " + fp.%(where)s.face_id)" % {"where": "loc"}),
+                " + fp.%(where)s.face_id)" % {"where": "int_side"}),
             Line(),
             For(
                 "unsigned i = 0",
@@ -433,7 +433,7 @@ def get_boundary_flux_mod(fluxes, fvi, discr, dtype):
                         Value("node_number_t", "%s_idx" % where)),
                         "%(where)s_ebi + %(where)s_idx_list[i]"
                         % {"where": where})
-                    for where in ["loc", "opp"]
+                    for where in ["int_side", "ext_side"]
                     ]+gen_flux_code()
                     )
                 )
@@ -446,5 +446,5 @@ def get_boundary_flux_mod(fluxes, fvi, discr, dtype):
     #print mod.generate()
     #raw_input("[Enter]")
 
-    return mod.compile(get_flux_toolchain(discr, fluxes), 
+    return mod.compile(get_flux_toolchain(discr, fluxes),
             wait_on_error="jit_wait_on_compile_error" in discr.debug)

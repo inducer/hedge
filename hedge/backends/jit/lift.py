@@ -79,7 +79,7 @@ class JitLifter:
         fdecl = FunctionDeclaration(
                     Value("void", "lift"),
                     [
-                    Const(Reference(Value("face_group", "fg"))),
+                    Const(Reference(Value("face_group<face_pair<straight_face> >", "fg"))),
                     Value("ublas::matrix<uncomplex_type>", "matrix"),
                     Value("numpy_array<value_type>", "field"),
                     Value("numpy_array<value_type>", "result")

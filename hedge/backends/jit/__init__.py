@@ -24,16 +24,14 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 import hedge.discretization
 import hedge.optemplate
-from hedge.backends.exec_common import \
-        CPUExecutorBase, \
-        CPUExecutionMapperBase
+from hedge.backends.exec_common import ExecutionMapperBase
 import numpy
 
 
 
 
 # exec mapper -----------------------------------------------------------------
-class ExecutionMapper(CPUExecutionMapperBase):
+class ExecutionMapper(ExecutionMapperBase):
     # code execution functions ------------------------------------------------
     def exec_vector_expr_assign(self, insn):
         if self.discr.instrumented:
@@ -57,9 +55,12 @@ class ExecutionMapper(CPUExecutionMapperBase):
 
         from pymbolic.primitives import is_zero
 
-        class ZeroSpec: pass
-        class BoundaryZeros(ZeroSpec): pass
-        class VolumeZeros(ZeroSpec): pass
+        class ZeroSpec:
+            pass
+        class BoundaryZeros(ZeroSpec):
+            pass
+        class VolumeZeros(ZeroSpec):
+            pass
 
         def eval_arg(arg_spec):
             arg_expr, is_int = arg_spec
@@ -72,7 +73,7 @@ class ExecutionMapper(CPUExecutionMapperBase):
             else:
                 return arg
 
-        args = [eval_arg(arg_expr) 
+        args = [eval_arg(arg_expr)
                 for arg_expr in insn.flux_var_info.arg_specs]
 
         from pytools import common_dtype
@@ -112,8 +113,8 @@ class ExecutionMapper(CPUExecutionMapperBase):
             for arg_name, arg in zip(insn.flux_var_info.arg_names, args):
                 setattr(arg_struct, arg_name, arg)
             for arg_num, scalar_arg_expr in enumerate(insn.flux_var_info.scalar_parameters):
-                setattr(arg_struct, 
-                        "_scalar_arg_%d" % arg_num, 
+                setattr(arg_struct,
+                        "_scalar_arg_%d" % arg_num,
                         self.rec(scalar_arg_expr))
 
             fof_shape = (fg.face_count*fg.face_length()*fg.element_count(),)
@@ -186,10 +187,49 @@ class ExecutionMapper(CPUExecutionMapperBase):
         result[false_indices] = else_[false_indices]
         return result
 
+    def map_diff_base(self, op, field_expr):
+        field = self.rec(field_expr)
+
+        out = self.discr.volume_zeros()
+        self.executor.diff_xyz(self, op, field_expr, field, out)
+        return out
+
+    def map_mass_base(self, op, field_expr):
+        field = self.rec(field_expr)
+
+        if isinstance(field, (float, int)) and field == 0:
+            return 0
+
+        out = self.discr.volume_zeros()
+        self.executor.do_mass(op, field, out)
+        return out
+
+    def map_elementwise_max(self, op, field_expr):
+        from hedge._internal import perform_elwise_max
+        field = self.rec(field_expr)
+
+        out = self.discr.volume_zeros(dtype=field.dtype)
+        for eg in self.discr.element_groups:
+            perform_elwise_max(eg.ranges, field, out)
+
+        return out
+
+    def map_call(self, expr):
+        from pymbolic.primitives import Variable
+        assert isinstance(expr.function, Variable)
+        func_name = expr.function.name
+
+        try:
+            func = self.discr.exec_functions[func_name]
+        except KeyError:
+            func = getattr(numpy, expr.function.name)
+
+        return func(*[self.rec(p) for p in expr.parameters])
 
 
 
-class Executor(CPUExecutorBase):
+
+class Executor(object):
     def __init__(self, discr, optemplate, post_bind_mapper):
         self.discr = discr
 
@@ -201,11 +241,11 @@ class Executor(CPUExecutorBase):
                 print self.code
                 raw_input()
 
-	if "print_op_code" in discr.debug:
-	    from hedge.tools import get_rank
-	    if get_rank(discr) == 0:
-		print self.code
-		raw_input()
+        if "print_op_code" in discr.debug:
+            from hedge.tools import get_rank
+            if get_rank(discr) == 0:
+                print self.code
+                raw_input()
 
         def bench_diff(f):
             test_field = discr.volume_zeros()
@@ -281,6 +321,88 @@ class Executor(CPUExecutorBase):
         from hedge.backends.jit.compiler import OperatorCompiler
         return OperatorCompiler(discr)(optemplate)
 
+    def instrument(self):
+        discr = self.discr
+        assert discr.instrumented
+
+        from pytools.log import time_and_count_function
+        from hedge.tools import time_count_flop
+
+        from hedge.tools import \
+                diff_rst_flops, diff_rescale_one_flops, mass_flops
+
+        self.diff_rst = \
+                time_count_flop(
+                        self.diff_rst,
+                        discr.diff_timer,
+                        discr.diff_counter,
+                        discr.diff_flop_counter,
+                        diff_rst_flops(discr))
+
+        self.diff_rst_to_xyz = \
+                time_count_flop(
+                        self.diff_rst_to_xyz,
+                        discr.diff_timer,
+                        discr.diff_counter,
+                        discr.diff_flop_counter,
+                        diff_rescale_one_flops(discr))
+
+        self.do_mass = \
+                time_count_flop(
+                        self.do_mass,
+                        discr.mass_timer,
+                        discr.mass_counter,
+                        discr.mass_flop_counter,
+                        mass_flops(discr))
+
+        self.lift_flux = \
+                time_and_count_function(
+                        self.lift_flux,
+                        discr.lift_timer,
+                        discr.lift_counter)
+
+    def lift_flux(self, fgroup, matrix, scaling, field, out):
+        from hedge._internal import lift_flux
+        from pytools import to_uncomplex_dtype
+        lift_flux(fgroup,
+                matrix.astype(to_uncomplex_dtype(field.dtype)),
+                scaling, field, out)
+
+    def diff_rst(self, op, rst_axis, field):
+        result = self.discr.volume_zeros(dtype=field.dtype)
+
+        from hedge._internal import perform_elwise_operator
+        for eg in self.discr.element_groups:
+            perform_elwise_operator(eg.ranges, eg.ranges,
+                    op.matrices(eg)[rst_axis].astype(field.dtype),
+                    field, result)
+
+        return result
+
+    def diff_rst_to_xyz(self, op, rst, result=None):
+        from hedge._internal import perform_elwise_scale
+
+        if result is None:
+            result = self.discr.volume_zeros(dtype=rst[0].dtype)
+
+        for rst_axis in range(self.discr.dimensions):
+            for eg in self.discr.element_groups:
+                perform_elwise_scale(eg.ranges,
+                        op.coefficients(eg)[op.xyz_axis][rst_axis],
+                        rst[rst_axis], result)
+
+        return result
+
+    def do_mass(self, op, field, out):
+        for eg in self.discr.element_groups:
+            from hedge._internal import perform_elwise_scaled_operator
+            perform_elwise_scaled_operator(eg.ranges, eg.ranges,
+                   op.coefficients(eg), numpy.asarray(op.matrix(eg), dtype=field.dtype),
+                   field, out)
+
+
+
+
     def diff_builtin(self, op_class, field, xyz_needed):
         rst_derivatives = [
                 self.diff_rst(op_class, i, field)
@@ -333,4 +455,3 @@ class Discretization(hedge.discretization.Discretization):
         add_hedge(toolchain)
 
         self.toolchain = toolchain
-

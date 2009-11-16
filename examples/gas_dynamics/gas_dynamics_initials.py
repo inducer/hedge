@@ -30,8 +30,8 @@ class UniformMachFlow:
             angle_of_attack=None, direction=None):
         """
         :param direction: is a vector indicating the direction of the
-          flow. Only one of angle_of_attack and direction may be 
-          specified. Only the direction, not the magnitude, of 
+          flow. Only one of angle_of_attack and direction may be
+          specified. Only the direction, not the magnitude, of
           direction is taken into account.
 
         :param angle_of_attack: if not None, specifies the angle of
@@ -46,12 +46,14 @@ class UniformMachFlow:
             angle_of_attack = 0
 
         if direction is not None:
-            direction = direction/la.norm(direction)
+            self.direction = direction/la.norm(direction)
+        else:
+            self.direction = None
 
         self.mach = mach
         self.p = p
         self.rho = rho
-        
+
         self.gamma = gamma
         self.prandtl = prandtl
         self.reynolds = reynolds
@@ -59,28 +61,38 @@ class UniformMachFlow:
         self.spec_gas_const = spec_gas_const
 
         self.angle_of_attack = angle_of_attack
-        self.direction = direction
 
         self.c = (self.gamma * p / rho)**0.5
         u = self.velocity = mach * self.c
         self.e = p / (self.gamma - 1) + rho / 2 * u**2
-        self.mu = u * self.length * rho / self.reynolds
 
-    def __call__(self, t, x_vec):
-        ones = numpy.ones_like(x_vec[0])
-        rho_field = ones*self.rho
-        # Gaussian Pulse to support assymetry
-        rho_field = (ones + 0.1 * numpy.exp(- ((x_vec[0] - 2) ** 2 + (x_vec[1] - 1) ** 2) /2)) * self.rho
-
-        if self.direction is not None:
-            direction = self.direction
+        if numpy.isinf(self.reynolds):
+            self.mu = 0
         else:
-            # angle_of_attack is not None:
-            direction = numpy.zeros(x_vec.shape[0], dtype=numpy.float64)
+            self.mu = u * self.length * rho / self.reynolds
+
+    def direction_vector(self, dimensions):
+        # this must be done here because dimensions is not known above
+        if self.direction is None:
+            assert self.angle_of_attack is not None
+            direction = numpy.zeros(dimensions, dtype=numpy.float64)
             direction[0] = numpy.cos(
                     self.angle_of_attack / 180. * numpy.pi)
             direction[1] = numpy.sin(
                     self.angle_of_attack / 180. * numpy.pi)
+            return direction
+        else:
+            return self.direction
+
+    def __call__(self, t, x_vec):
+        ones = numpy.ones_like(x_vec[0])
+        rho_field = ones*self.rho
+
+        # gaussian pulse:
+        # rho_field = (ones + 0.1 * numpy.exp(
+            #- ((x_vec[0] - 2) ** 2 + (x_vec[1] - 1) ** 2) /2)) * self.rho
+
+        direction = self.direction_vector(x_vec.shape[0])
 
         from hedge.tools import make_obj_array
         u_field = make_obj_array([ones*self.velocity*dir_i

@@ -34,9 +34,9 @@ def get_config_schema():
         LibraryDir("BLAS", []),
         Libraries("BLAS", ["blas"]),
 
-        StringListOption("CXXFLAGS", [], 
+        StringListOption("CXXFLAGS", [],
             help="Any extra C++ compiler options to include"),
-        StringListOption("LDFLAGS", [], 
+        StringListOption("LDFLAGS", [],
             help="Any extra linker options to include"),
         ])
 
@@ -84,8 +84,8 @@ def main():
             long_description="""
             hedge is an unstructured, high-order, parallel
             Discontinuous Galerkin solver for partial differential
-            equations.   
-            
+            equations.
+
             Features:
 
             * Supports simplicial unstructured meshes in two and
@@ -93,7 +93,7 @@ def main():
             * Approximates using orthogonal polynomials of any degree
               (and therefore to any order of accuracy) you specify at
               runtime
-            * Solves PDEs in parallel using MPI 
+            * Solves PDEs in parallel using MPI
             * Easy to use
             * Powerful Parallel Visualization
             """,
@@ -121,25 +121,28 @@ def main():
             packages=[
                     "hedge",
                     "hedge.models",
+                    "hedge.models.gas_dynamics",
                     "hedge.backends",
                     "hedge.backends.jit",
                     "hedge.backends.mpi",
                     "hedge.backends.cuda",
                     "hedge.timestep",
                     "hedge.timestep.multirate_ab",
+                    "hedge.mesh",
+                    "hedge.discretization",
+                    "hedge.tools",
                     ],
-            zip_safe=False,
 
             ext_package="hedge",
 
             ext_modules=[
-                PyUblasExtension("_internal", 
-                    ["src/wrapper/wrap_main.cpp", 
-                        "src/wrapper/wrap_base.cpp", 
-                        "src/wrapper/wrap_mesh.cpp", 
-                        "src/wrapper/wrap_special_function.cpp", 
-                        "src/wrapper/wrap_flux.cpp", 
-                        "src/wrapper/wrap_volume_operators.cpp", 
+                PyUblasExtension("_internal",
+                    ["src/wrapper/wrap_main.cpp",
+                        "src/wrapper/wrap_base.cpp",
+                        "src/wrapper/wrap_mesh.cpp",
+                        "src/wrapper/wrap_special_function.cpp",
+                        "src/wrapper/wrap_flux.cpp",
+                        "src/wrapper/wrap_volume_operators.cpp",
                         ],
                     include_dirs=INCLUDE_DIRS + EXTRA_INCLUDE_DIRS,
                     library_dirs=LIBRARY_DIRS + EXTRA_LIBRARY_DIRS,

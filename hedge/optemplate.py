@@ -36,7 +36,7 @@ from pymbolic.mapper import CSECachingMapperMixin
 
 
 
-def make_common_subexpression(field, prefix=None): 
+def make_common_subexpression(field, prefix=None):
     from hedge.tools import log_shape
 
     from hedge.tools import is_zero
@@ -57,7 +57,7 @@ def make_common_subexpression(field, prefix=None):
                 result[i] = 0
             else:
                 result[i] = CommonSubexpression(field[i], component_prefix)
-            
+
         return result
     else:
         if is_zero(field):
@@ -107,7 +107,7 @@ class BoundaryNormalComponent(pymbolic.primitives.AlgebraicLeaf):
                 and other.tag == self.tag
                 and other.axis == self.axis)
 
-    def get_mapper_method(self, mapper): 
+    def get_mapper_method(self, mapper):
         return mapper.map_normal_component
 
     def __getinitargs__(self):
@@ -117,7 +117,7 @@ class BoundaryNormalComponent(pymbolic.primitives.AlgebraicLeaf):
 
 
 def make_normal(tag, dimensions):
-    return numpy.array([BoundaryNormalComponent(tag, i) 
+    return numpy.array([BoundaryNormalComponent(tag, i)
         for i in range(dimensions)], dtype=object)
 
 
@@ -126,10 +126,10 @@ def make_normal(tag, dimensions):
 
 class PrioritizedSubexpression(pymbolic.primitives.CommonSubexpression):
     """When the optemplate-to-code transformation is performed,
-    prioritized subexpressions  work like common subexpression in 
+    prioritized subexpressions  work like common subexpression in
     that they are assigned their own separate identifier/register
     location. In addition to this behavior, prioritized subexpressions
-    are evaluated with a settable priority, allowing the user to 
+    are evaluated with a settable priority, allowing the user to
     expedite or delay the evaluation of the subexpression.
     """
 
@@ -184,7 +184,7 @@ class OperatorBinding(pymbolic.primitives.AlgebraicLeaf):
     def stringifier(self):
         return StringifyMapper
 
-    def get_mapper_method(self, mapper): 
+    def get_mapper_method(self, mapper):
         return mapper.map_operator_binding
 
     def __getinitargs__(self):
@@ -222,50 +222,50 @@ class DiffOperatorBase(Operator):
 
 class DifferentiationOperator(DiffOperatorBase):
     @staticmethod
-    def matrices(element_group): 
+    def matrices(element_group):
         return element_group.differentiation_matrices
 
     @staticmethod
-    def coefficients(element_group): 
+    def coefficients(element_group):
         return element_group.diff_coefficients
 
-    def get_mapper_method(self, mapper): 
+    def get_mapper_method(self, mapper):
         return mapper.map_diff
 
 class MInvSTOperator(DiffOperatorBase):
     @staticmethod
-    def matrices(element_group): 
+    def matrices(element_group):
         return element_group.minv_st
 
     @staticmethod
-    def coefficients(element_group): 
+    def coefficients(element_group):
         return element_group.diff_coefficients
 
-    def get_mapper_method(self, mapper): 
+    def get_mapper_method(self, mapper):
         return mapper.map_minv_st
 
 class StiffnessOperator(DiffOperatorBase):
     @staticmethod
-    def matrices(element_group): 
+    def matrices(element_group):
         return element_group.stiffness_matrices
 
     @staticmethod
-    def coefficients(element_group): 
+    def coefficients(element_group):
         return element_group.stiffness_coefficients
 
-    def get_mapper_method(self, mapper): 
+    def get_mapper_method(self, mapper):
         return mapper.map_stiffness
 
 class StiffnessTOperator(DiffOperatorBase):
     @staticmethod
-    def matrices(element_group): 
+    def matrices(element_group):
         return element_group.stiffness_t_matrices
 
     @staticmethod
-    def coefficients(element_group): 
+    def coefficients(element_group):
         return element_group.stiffness_coefficients
 
-    def get_mapper_method(self, mapper): 
+    def get_mapper_method(self, mapper):
         return mapper.map_stiffness_t
 
 
@@ -275,9 +275,9 @@ class StiffnessTOperator(DiffOperatorBase):
 def DiffOperatorVector(els):
     from hedge.tools import join_fields
     return join_fields(*els)
-    
 
-    
+
+
 
 # mass operators --------------------------------------------------------------
 class MassOperatorBase(StatelessOperator):
@@ -288,26 +288,26 @@ class MassOperatorBase(StatelessOperator):
 
 class MassOperator(MassOperatorBase):
     @staticmethod
-    def matrix(element_group): 
+    def matrix(element_group):
         return element_group.mass_matrix
 
     @staticmethod
-    def coefficients(element_group): 
+    def coefficients(element_group):
         return element_group.jacobians
 
-    def get_mapper_method(self, mapper): 
+    def get_mapper_method(self, mapper):
         return mapper.map_mass
 
 class InverseMassOperator(MassOperatorBase):
     @staticmethod
-    def matrix(element_group): 
+    def matrix(element_group):
         return element_group.inverse_mass_matrix
 
     @staticmethod
-    def coefficients(element_group): 
+    def coefficients(element_group):
         return element_group.inverse_jacobians
 
-    def get_mapper_method(self, mapper): 
+    def get_mapper_method(self, mapper):
         return mapper.map_inverse_mass
 
 
@@ -333,7 +333,7 @@ class BoundarizeOperator(Operator):
         return (other.__class__ == self.__class__
                 and other.tag == self.tag)
 
-    def get_mapper_method(self, mapper): 
+    def get_mapper_method(self, mapper):
         return mapper.map_boundarize
 
     def __getinitargs__(self):
@@ -343,7 +343,7 @@ class BoundarizeOperator(Operator):
 
 
 class FluxExchangeOperator(Operator):
-    """An operator that results in the sending and receiving of 
+    """An operator that results in the sending and receiving of
     boundary information for its argument fields.
     """
 
@@ -362,7 +362,7 @@ class FluxExchangeOperator(Operator):
                 and other.index == self.index
                 and other.rank == self.rank)
 
-    def get_mapper_method(self, mapper): 
+    def get_mapper_method(self, mapper):
         return mapper.map_flux_exchange
 
 
@@ -384,16 +384,16 @@ class BoundaryPair(pymbolic.primitives.AlgebraicLeaf):
 
     def stringifier(self):
         return StringifyMapper
-    
+
     def __getinitargs__(self):
         return (self.field, self.bfield, self.tag)
 
     def get_hash(self):
         from hedge.tools import hashable_field
 
-        return hash((self.__class__, 
-            hashable_field(self.field), 
-            hashable_field(self.bfield), 
+        return hash((self.__class__,
+            hashable_field(self.field),
+            hashable_field(self.bfield),
             self.tag))
 
     def is_equal(self, other):
@@ -433,13 +433,13 @@ class FluxOperatorBase(Operator):
 
 
 class FluxOperator(FluxOperatorBase):
-    def get_mapper_method(self, mapper): 
+    def get_mapper_method(self, mapper):
         return mapper.map_flux
 
 
 
 class LiftingFluxOperator(FluxOperatorBase):
-    def get_mapper_method(self, mapper): 
+    def get_mapper_method(self, mapper):
         return mapper.map_lift
 
 
@@ -455,14 +455,14 @@ class VectorFluxOperator(object):
         return make_obj_array(
                 [OperatorBinding(FluxOperator(f), arg)
                     for f in self.fluxes])
-                
+
 
 
 
 
 # convenience functions -------------------------------------------------------
 def make_vector_field(name, components):
-    """Return an object array of *components* subscripted 
+    """Return an object array of *components* subscripted
     :class:`Field` instances.
 
     :param components: The number of components in the vector.
@@ -519,7 +519,7 @@ def make_stiffness_t(dim):
 # mappers ---------------------------------------------------------------------
 class LocalOpReducerMixin(object):
     """Reduces calls to mapper methods for all local differentiation
-    operators to a single mapper method, and likewise for mass 
+    operators to a single mapper method, and likewise for mass
     operators.
     """
     def map_diff(self, expr, *args, **kwargs):
@@ -544,7 +544,7 @@ class LocalOpReducerMixin(object):
 
 
 class FluxOpReducerMixin(object):
-    """Reduces calls to mapper methods for all flux 
+    """Reduces calls to mapper methods for all flux
     operators to a smaller number of mapper methods.
     """
     def map_flux(self, expr, *args, **kwargs):
@@ -630,10 +630,10 @@ class IdentityMapperMixin(LocalOpReducerMixin, FluxOpReducerMixin):
 
 
 class DependencyMapper(
-        CombineMapperMixin, 
-        pymbolic.mapper.dependency.DependencyMapper, 
+        CombineMapperMixin,
+        pymbolic.mapper.dependency.DependencyMapper,
         OperatorReducerMixin):
-    def __init__(self, 
+    def __init__(self,
             include_operator_bindings=True,
             composite_leaves=None,
             **kwargs):
@@ -691,7 +691,7 @@ class CommutativeConstantFoldingMapper(
 
 
 class IdentityMapper(
-        IdentityMapperMixin, 
+        IdentityMapperMixin,
         pymbolic.mapper.IdentityMapper):
     pass
 
@@ -758,7 +758,7 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
             opname = "WFlux"
 
         from pymbolic.mapper.stringifier import PREC_NONE
-        return "%s(%s)" % (opname, 
+        return "%s(%s)" % (opname,
                 self.rec(expr.rebuild_optemplate(), PREC_NONE))
 
     def map_elementwise_max(self, expr, enclosing_prec):
@@ -776,7 +776,7 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
     def map_operator_binding(self, expr, enclosing_prec):
         from pymbolic.mapper.stringifier import PREC_NONE
         return "<%s>(%s)" % (
-                self.rec(expr.op, PREC_NONE), 
+                self.rec(expr.op, PREC_NONE),
                 self.rec(expr.field, PREC_NONE))
 
     def map_scalar_parameter(self, expr, enclosing_prec):
@@ -839,11 +839,11 @@ class PrettyStringifyMapper(
                     self, expr, enclosing_prec)
 
     def get_bc_strings(self):
-        return [ "BC%d : %s" % (i, bc_str)
+        return ["BC%d : %s" % (i, bc_str)
                 for i, bc_str in enumerate(self.bc_string_list)]
 
     def get_flux_strings(self):
-        return [ "Flux%d : %s" % (i, flux_str)
+        return ["Flux%d : %s" % (i, flux_str)
                 for i, flux_str in enumerate(self.flux_string_list)]
 
     def map_flux(self, expr, enclosing_prec):
@@ -908,8 +908,8 @@ class EmptyFluxKiller(CSECachingMapperMixin, IdentityMapper):
     def map_operator_binding(self, expr):
         if (isinstance(expr.op, (
             FluxOperatorBase,
-            LiftingFluxOperator)) 
-            and 
+            LiftingFluxOperator))
+            and
             isinstance(expr.field, BoundaryPair)
             and
             len(self.discr.get_boundary(expr.field.tag).nodes) == 0):
@@ -919,7 +919,7 @@ class EmptyFluxKiller(CSECachingMapperMixin, IdentityMapper):
 
 
 
-        
+
 class OperatorBinder(CSECachingMapperMixin, IdentityMapper):
     map_common_subexpression_uncached = \
             IdentityMapper.map_common_subexpression
@@ -928,11 +928,16 @@ class OperatorBinder(CSECachingMapperMixin, IdentityMapper):
         if len(expr.children) == 0:
             return expr
 
-        from pymbolic.primitives import flattened_product
+        from pymbolic.primitives import flattened_product, Product
         first = expr.children[0]
         if isinstance(first, Operator):
-            return OperatorBinding(first, 
-                    self.rec(flattened_product(expr.children[1:])))
+            prod = flattened_product(expr.children[1:])
+            if isinstance(prod, Product) and len(prod.children) > 1:
+                from warnings import warn
+                warn("binding an operator to more than one "
+                        "operand in a product is ambiguous - "
+                        "use the parenthesized pre-bound form instead")
+            return OperatorBinding(first, self.rec(prod))
         else:
             return first * self.rec(flattened_product(expr.children[1:]))
 
@@ -981,7 +986,7 @@ class _InnerInverseMassContractor(pymbolic.mapper.RecursiveMapper):
             return isinstance(expr, (int, float, complex))
 
         from pytools import len_iterable
-        nonscalar_count = len_iterable(ch 
+        nonscalar_count = len_iterable(ch
                 for ch in expr.children
                 if not is_scalar(ch))
 
@@ -1002,7 +1007,7 @@ class _InnerInverseMassContractor(pymbolic.mapper.RecursiveMapper):
 
 
 
-        
+
 class InverseMassContractor(CSECachingMapperMixin, IdentityMapper):
     # assumes all operators to be bound
     map_common_subexpression_uncached = \
@@ -1028,7 +1033,7 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
     boundary pair's *bfield* is an expression of what's available in the
     *field*, we can avoid fetching the data for the explicit boundary
     condition and just substitute the *bfield* expression into the flux. This
-    mapper does exactly that.  
+    mapper does exactly that.
     """
 
     map_common_subexpression_uncached = \
@@ -1047,16 +1052,16 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
         bdry_dependencies = DependencyMapper(
                     include_calls="descend_args",
                     include_operator_bindings=True)(bdry_field)
-        
+
         vol_dependencies = DependencyMapper(
                 include_operator_bindings=True)(vol_field)
 
         vol_bdry_intersection = bdry_dependencies & vol_dependencies
         if vol_bdry_intersection:
             raise RuntimeError("Variables are being used as both "
-                    "boundary and volume quantities: %s" 
+                    "boundary and volume quantities: %s"
                     % ", ".join(str(v) for v in vol_bdry_intersection))
-  
+
         # Step 1: Find maximal flux-evaluable subexpression of boundary field
         # in given BoundaryPair.
 
@@ -1064,7 +1069,7 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
                 IdentityMapper, OperatorReducerMixin):
             def __init__(self, vol_expr_list):
                 self.vol_expr_list = vol_expr_list
-                self.vol_expr_to_idx = dict((vol_expr, idx) 
+                self.vol_expr_to_idx = dict((vol_expr, idx)
                         for idx, vol_expr in enumerate(vol_expr_list))
 
                 self.bdry_expr_list = []
@@ -1098,7 +1103,7 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
             def map_normal_component(self, expr):
                 if expr.tag != bpair.tag:
                     raise RuntimeError("BoundaryNormalComponent and BoundaryPair "
-                            "do not agree about boundary tag: %s vs %s" 
+                            "do not agree about boundary tag: %s vs %s"
                             % (expr.tag, bpair.tag))
 
                 from hedge.flux import Normal
@@ -1107,7 +1112,7 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
             def map_variable(self, expr):
                 from hedge.flux import FieldComponent
                 return FieldComponent(
-                        self.register_boundary_expr(expr), 
+                        self.register_boundary_expr(expr),
                         is_interior=False)
 
             map_subscript = map_variable
@@ -1117,21 +1122,21 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
                 if isinstance(expr.op, BoundarizeOperator):
                     if expr.op.tag != bpair.tag:
                         raise RuntimeError("BoundarizeOperator and BoundaryPair "
-                                "do not agree about boundary tag: %s vs %s" 
+                                "do not agree about boundary tag: %s vs %s"
                                 % (expr.op.tag, bpair.tag))
 
                     return FieldComponent(
-                            self.register_volume_expr(expr.field), 
+                            self.register_volume_expr(expr.field),
                             is_interior=True)
                 elif isinstance(expr.op, FluxExchangeOperator):
                     from hedge.mesh import TAG_RANK_BOUNDARY
                     op_tag = TAG_RANK_BOUNDARY(expr.op.rank)
                     if bpair.tag != op_tag:
                         raise RuntimeError("BoundarizeOperator and FluxExchangeOperator "
-                                "do not agree about boundary tag: %s vs %s" 
+                                "do not agree about boundary tag: %s vs %s"
                                 % (op_tag, bpair.tag))
                     return FieldComponent(
-                            self.register_boundary_expr(expr), 
+                            self.register_boundary_expr(expr),
                             is_interior=False)
                 else:
                     raise RuntimeError("Found '%s' in a boundary term. "
@@ -1167,8 +1172,8 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
         else:
             return OperatorBinding(
                     FluxOperator(new_flux), BoundaryPair(
-                        make_obj_array([self.rec(e) for e in mbfeef.vol_expr_list]), 
-                        make_obj_array([self.rec(e) for e in mbfeef.bdry_expr_list]), 
+                        make_obj_array([self.rec(e) for e in mbfeef.vol_expr_list]),
+                        make_obj_array([self.rec(e) for e in mbfeef.bdry_expr_list]),
                         bpair.tag))
 
 
@@ -1244,7 +1249,7 @@ class Evaluator(pymbolic.mapper.evaluator.EvaluationMapper):
 
 
 # optemplate tools ------------------------------------------------------------
-def split_optemplate_for_multirate(state_vector, op_template, 
+def split_optemplate_for_multirate(state_vector, op_template,
         index_groups):
     class IndexGroupKillerSubstMap:
         def __init__(self, kill_set):

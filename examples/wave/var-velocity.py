@@ -87,7 +87,7 @@ def main(write_output=True, \
             return 0*source_u_vec
 
 
-    from hedge.pde import VariableVelocityStrongWaveOperator
+    from hedge.models.wave import VariableVelocityStrongWaveOperator
     from hedge.data import \
             TimeIntervalGivenFunction, \
             TimeConstantGivenFunction, \
@@ -110,12 +110,6 @@ def main(write_output=True, \
     fields = join_fields(discr.volume_zeros(),
             [discr.volume_zeros() for i in range(discr.dimensions)])
 
-    dt = discr.dt_factor(1) / 2
-    nsteps = int(1/dt)
-    if rcon.is_head_rank:
-        print "dt", dt
-        print "nsteps", nsteps
-
     # diagnostics setup -------------------------------------------------------
     from pytools.log import LogManager, \
             add_general_quantities, \
@@ -130,7 +124,7 @@ def main(write_output=True, \
     logmgr = LogManager(log_file_name, "w", rcon.communicator)
     add_run_info(logmgr)
     add_general_quantities(logmgr)
-    add_simulation_quantities(logmgr, dt)
+    add_simulation_quantities(logmgr)
     discr.add_instrumentation(logmgr)
 
     from pytools.log import IntervalTimer
@@ -148,11 +142,13 @@ def main(write_output=True, \
     # timestep loop -----------------------------------------------------------
     rhs = op.bind(discr)
     try:
-        for step in range(nsteps):
-            logmgr.tick()
+        dt = op.estimate_timestep(discr, stepper=stepper, fields=fields)
 
-            t = step*dt
+        from hedge.timestep import times_and_steps
+        step_it = times_and_steps(final_time=3, logmgr=logmgr,
+                max_dt_getter=lambda t: dt)
 
+        for step, t, dt in step_it:
             if step % 10 == 0 and write_output:
                 visf = vis.make_file("fld-%04d" % step)
 

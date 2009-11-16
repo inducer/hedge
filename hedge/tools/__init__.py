@@ -28,6 +28,7 @@ import numpy.linalg as la
 import pyublas
 import hedge._internal
 from pytools import memoize
+from pytools.obj_array import *
 
 
 
@@ -210,134 +211,6 @@ def plot_1d(f, a, b, steps=100, driver=None):
 
 
 # obj array helpers -----------------------------------------------------------
-def is_obj_array(val):
-    try:
-        return isinstance(val, numpy.ndarray) and val.dtype == object
-    except AttributeError:
-        return False
-
-
-
-
-def to_obj_array(ary):
-    ls = log_shape(ary)
-    result = numpy.empty(ls, dtype=object)
-
-    from pytools import indices_in_shape
-    for i in indices_in_shape(ls):
-        result[i] = ary[i]
-
-    return result
-
-
-
-
-def is_field_equal(a, b):
-    if is_obj_array(a):
-        return is_obj_array(b) and (a.shape == b.shape) and (a == b).all()
-    else:
-        return not is_obj_array(b) and a == b
-
-
-
-
-def make_obj_array(res_list):
-    result = numpy.empty((len(res_list),), dtype=object)
-    for i, v in enumerate(res_list):
-        result[i] = v
-
-    return result
-
-
-
-
-def setify_field(f):
-    from hedge.tools import is_obj_array
-    if is_obj_array(f):
-        return set(f)
-    else:
-        return set([f])
-
-
-
-
-def hashable_field(f):
-    if is_obj_array(f):
-        return tuple(f)
-    else:
-        return f
-
-
-
-
-def field_equal(a, b):
-    a_is_oa = is_obj_array(a)
-    assert a_is_oa == is_obj_array(b)
-
-    if a_is_oa:
-        return (a == b).all()
-    else:
-        return a == b
-
-
-
-
-def join_fields(*args):
-    res_list = []
-    for arg in args:
-        if isinstance(arg, list):
-            res_list.extend(arg)
-        elif isinstance(arg, numpy.ndarray):
-            if log_shape(arg) == ():
-                res_list.append(arg)
-            else:
-                res_list.extend(arg)
-        else:
-            res_list.append(arg)
-
-    return make_obj_array(res_list)
-
-
-
-
-def log_shape(array):
-    """Returns the "logical shape" of the array.
-
-    The "logical shape" is the shape that's left when the node-depending
-    dimension has been eliminated."""
-
-    try:
-        if array.dtype.char == "O":
-            return array.shape
-        else:
-            return array.shape[:-1]
-    except AttributeError:
-        return ()
-
-
-
-
-def with_object_array_or_scalar(f, field):
-    ls = log_shape(field)
-    if ls != ():
-        from pytools import indices_in_shape
-        result = numpy.zeros(ls, dtype=object)
-        for i in indices_in_shape(ls):
-            result[i] = f(field[i])
-        return result
-    else:
-        return f(field)
-
-
-
-
-def cast_field(field, dtype):
-    return with_object_array_or_scalar(
-            lambda f: f.astype(dtype), field)
-
-
-
-
 def make_common_subexpression(fields): 
     """Wrap each component of a vector field in a CSE."""
 
@@ -728,8 +601,8 @@ class EOCRecorder(object):
         self.history.append((abscissa, error))
 
     def estimate_order_of_convergence(self, gliding_mean = None):
-        abscissae = numpy.array([ a for a,e in self.history ])
-        errors = numpy.array([ e for a,e in self.history ])
+        abscissae = numpy.array([a for a,e in self.history ])
+        errors = numpy.array([e for a,e in self.history ])
 
         size = len(abscissae)
         if gliding_mean is None:
@@ -1205,8 +1078,8 @@ class NestedFuture(Future):
 def get_spherical_coord(x_vec):
     """
     :param x_vec: is an array whose leading dimension iterates over
-    the X, Y, Z axes, and whose further dimensions may iterate over
-    a number of points.
+        the X, Y, Z axes, and whose further dimensions may iterate over
+        a number of points.
 
     :returns: object array of [r, phi, theta].
         phi is the angle in (x,y) in :math:`(-\\pi,\\pi)`.
@@ -1229,4 +1102,57 @@ def get_spherical_coord(x_vec):
     theta = numpy.arccos(z/r)
 
     return join_fields(r,phi,theta)
- 
+
+def heaviside(x):
+    """
+    :param x: a list of numbers
+
+    :returns: Heaviside step function where H(0)=0
+    """
+    return (x>0).astype(numpy.float64)
+
+def heaviside_a(x,a):
+    """
+    :param x: a list of numbers
+    :param a: real number such that H(0)=a
+
+    :returns: Heaviside step function where H(0)=a
+    """
+    return a*(1.0 - heaviside(-x)) + (1.0 - a)*heaviside(x)
+
+
+
+
+class Monomial:
+    def __init__(self, exponents, factor=1):
+        self.exponents = exponents
+        self.ones = numpy.ones((len(self.exponents),))
+        self.factor = factor
+
+    def __call__(self, x):
+        from operator import mul
+
+        eps = 1e-15
+        x = (x+self.ones)/2
+        for xi in x:
+            assert -eps <= xi <= 1+eps
+        return self.factor* \
+                reduce(mul, (x[i]**alpha 
+                    for i, alpha in enumerate(self.exponents)))
+
+    def theoretical_integral(self):
+        from pytools import factorial
+        from operator import mul
+
+        return (self.factor*2**len(self.exponents)*
+            reduce(mul, (factorial(alpha) for alpha in self.exponents))
+            /
+            factorial(len(self.exponents)+sum(self.exponents)))
+
+    def diff(self, coordinate):
+        diff_exp = list(self.exponents)
+        orig_exp = diff_exp[coordinate]
+        if orig_exp == 0:
+            return Monomial(diff_exp, 0)
+        diff_exp[coordinate] = orig_exp-1
+        return Monomial(diff_exp, self.factor*orig_exp)

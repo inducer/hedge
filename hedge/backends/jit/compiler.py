@@ -81,7 +81,7 @@ class CompiledFluxBatchAssign(FluxBatchAssign):
         for f in self.fluxes:
             assert isinstance(f, OperatorBinding)
             if isinstance(f.field, BoundaryPair):
-                deps |= setify(f.field.field) |  setify(f.field.bfield)
+                deps |= setify(f.field.field) | setify(f.field.bfield)
             else:
                 deps |= setify(f.field)
 

@@ -29,7 +29,7 @@ class MRABProcessor:
         self.substep_loop_start = 0
 
     def integrate_in_time(self, insn):
-       self.insn_counter += 1
+        self.insn_counter += 1
 
     def history_update(self, insn):
         self.insn_counter += 1

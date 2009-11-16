@@ -143,9 +143,11 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
 
     def assemble_ehpq(self, e=None, h=None, p=None, q=None, discr=None):
         if discr is None:
-            def zero(): return 0
+            def zero():
+                return 0
         else:
-            def zero(): return discr.volume_zeros()
+            def zero():
+                return discr.volume_zeros()
 
         from hedge.tools import count_subset
         e_components = count_subset(self.get_eh_subset()[0:3])

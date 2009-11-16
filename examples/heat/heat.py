@@ -25,7 +25,6 @@ from hedge.tools import Rotation
 
 
 def main(write_output=True) :
-    from hedge.element import TriangularElement, TetrahedralElement
     from hedge.timestep import RK4TimeStepper
     from math import sin, cos, pi, exp, sqrt
     from hedge.data import TimeConstantGivenFunction, \
@@ -46,12 +45,10 @@ def main(write_output=True) :
         if rcon.is_head_rank:
             from hedge.mesh import make_disk_mesh
             mesh = make_disk_mesh(r=0.5, boundary_tagger=boundary_tagger)
-        el_class = TriangularElement
     elif dim == 3:
         if rcon.is_head_rank:
             from hedge.mesh import make_ball_mesh
             mesh = make_ball_mesh(max_volume=0.001)
-        el_class = TetrahedralElement
     else:
         raise RuntimeError, "bad number of dimensions"
 
@@ -61,19 +58,12 @@ def main(write_output=True) :
     else:
         mesh_data = rcon.receive_mesh()
 
-    discr = rcon.make_discretization(mesh_data, el_class(3))
+    discr = rcon.make_discretization(mesh_data, order=3)
     stepper = RK4TimeStepper()
 
     if write_output:
         from hedge.visualization import  VtkVisualizer
         vis = VtkVisualizer(discr, rcon, "fld")
-
-    dt = discr.dt_factor(1, order=2)
-    nsteps = int(1/dt)
-
-    if rcon.is_head_rank:
-        print "dt", dt
-        print "nsteps", nsteps
 
     def u0(x, el):
         if la.norm(x) < 0.2:
@@ -117,7 +107,7 @@ def main(write_output=True) :
     logmgr = LogManager(log_file_name, "w", rcon.communicator)
     add_run_info(logmgr)
     add_general_quantities(logmgr)
-    add_simulation_quantities(logmgr, dt)
+    add_simulation_quantities(logmgr)
     discr.add_instrumentation(logmgr)
 
     stepper.add_instrumentation(logmgr)
@@ -132,10 +122,13 @@ def main(write_output=True) :
     # timestep loop -----------------------------------------------------------
     rhs = op.bind(discr)
     try:
-        for step in range(nsteps):
-            logmgr.tick()
-            t = step*dt
+        from hedge.timestep import times_and_steps
+        step_it = times_and_steps(
+                final_time=0.1, logmgr=logmgr,
+                max_dt_getter=lambda t: op.estimate_timestep(discr,
+                    stepper=stepper, t=t, fields=u))
 
+        for step, t, dt in step_it:
             if step % 10 == 0 and write_output:
                 visf = vis.make_file("fld-%04d" % step)
                 vis.add_data(visf, [("u", u), ], time=t, step=step)
@@ -147,6 +140,9 @@ def main(write_output=True) :
     finally:
         if write_output:
             vis.close()
+
+        logmgr.close()
+        discr.close()
 
 
 

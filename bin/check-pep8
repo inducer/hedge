@@ -1,0 +1,9 @@
+#! /bin/sh
+
+PEP8CHECK="pep8 --repeat --ignore=E301,E302,E303 "
+
+if test "$1" = ""; then
+  $PEP8CHECK hedge
+else
+  $PEP8CHECK hedge "$@"
+fi
