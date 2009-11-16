@@ -70,7 +70,7 @@ class SimplicialElement(Element):
     def copy(self, id, all_vertices):
         """Return a copy of self with id *id*."""
 
-        return self.__class__(id, all_vertices, self.vertex_indices)
+        return self.__class__(id, self.vertex_indices, all_vertices)
 
     def bounding_box(self, vertices):
         my_verts = numpy.array([vertices[vi] for vi in self.vertex_indices])

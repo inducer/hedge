@@ -731,10 +731,13 @@ def make_box_mesh(a=(0,0,0),b=(1,1,1),
         else:
             return [face_tag] + boundary_tagger(fvi, el, fn, all_v)
 
-    from hedge.mesh import make_conformal_mesh
-    result = make_conformal_mesh(
-            generated_mesh.points,
-            generated_mesh.elements,
+    from hedge.mesh import make_conformal_mesh_ext
+    from hedge.mesh.element import Tetrahedron
+    vertices = numpy.asarray(generated_mesh.points, dtype=float, order="C")
+    result = make_conformal_mesh_ext(
+            vertices,
+            [Tetrahedron(i, el_idx, vertices)
+                for i, el_idx in enumerate(generated_mesh.elements)],
             wrapped_boundary_tagger,
             periodicity=mesh_periodicity)
 

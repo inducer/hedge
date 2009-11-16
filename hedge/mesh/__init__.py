@@ -369,7 +369,8 @@ def make_conformal_mesh(points, elements,
     """
     from warnings import warn
     warn("make_conformal_mesh is deprecated. "
-            "Use make_conformal_mesh_ext instead.")
+            "Use make_conformal_mesh_ext instead.",
+            stacklevel=2)
 
     if len(points) == 0:
         raise ValueError("mesh contains no points")
@@ -386,7 +387,7 @@ def make_conformal_mesh(points, elements,
         raise ValueError("%d-dimensional meshes are unsupported" % dim)
 
     # build points and elements
-    new_points = numpy.array(points, dtype=float, order="C")
+    new_points = numpy.asarray(points, dtype=float, order="C")
 
     element_objs = [el_class(id, vert_indices, new_points)
         for id, vert_indices in enumerate(elements)]
@@ -412,6 +413,13 @@ class ConformalMesh(Mesh):
         """This constructor is for internal use only. Use :func:`make_conformal_mesh` instead.
         """
         Mesh.__init__(self, locals())
+
+    def get_reorder_oldnumbers(self, method):
+        if method == "cuthill":
+            from hedge.tools import cuthill_mckee
+            return cuthill_mckee(self.element_adjacency_graph())
+        else:
+            raise ValueError("invalid mesh reorder method")
 
     def reordered_by(self, method):
         """Return a reordered copy of *self*.
