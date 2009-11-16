@@ -158,7 +158,7 @@ def generate_features(allowed_features):
     if FEAT_MPI in allowed_features:
         import pytools.mpiwrap as mpi
         if not mpi.Is_initialized():
-            mpi.Init()
+            mpi.InitWithAutoFinalize()
 
         if mpi.COMM_WORLD.Get_size() > 1:
             yield FEAT_MPI
