@@ -134,7 +134,7 @@ class GasDynamicsOperator(TimeDependentOperator):
                     "t")
 
         def get_mu(q):
-            elif self.mu == "sutherland":
+            if self.mu == "sutherland":
                 # Sutherland's law: !!!not tested!!!
                 t_s = 110.4
                 mu_inf = 1.735e-5
@@ -195,7 +195,6 @@ class GasDynamicsOperator(TimeDependentOperator):
             return (nabla_func - InverseMassOperator() * flux_part)
 
         def tau(q):
-            from hedge.optemplate import make_nabla
             from pytools import delta
 
             dimensions = self.dimensions
