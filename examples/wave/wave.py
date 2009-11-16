@@ -39,15 +39,15 @@ def main(write_output=True,
 
     if dim == 1:
         if rcon.is_head_rank:
-            from hedge.mesh import make_uniform_1d_mesh
+            from hedge.mesh.generator import make_uniform_1d_mesh
             mesh = make_uniform_1d_mesh(-10, 10, 500)
     elif dim == 2:
-        from hedge.mesh import make_rect_mesh
+        from hedge.mesh.generator import make_rect_mesh
         if rcon.is_head_rank:
             mesh = make_rect_mesh(a=(-0.5,-0.5),b=(0.5,0.5),max_area=0.008)
     elif dim == 3:
         if rcon.is_head_rank:
-            from hedge.mesh import make_ball_mesh
+            from hedge.mesh.generator import make_ball_mesh
             mesh = make_ball_mesh(max_volume=0.0005)
     else:
         raise RuntimeError, "bad number of dimensions"
@@ -68,20 +68,18 @@ def main(write_output=True,
     def source_u(x, el):
         return exp(-numpy.dot(x, x)*128)
 
-    source_u_vec = discr.interpolate_volume_function(source_u)
-
-    def source_vec_getter(t):
-        from math import sin
-        if t < 1:
-            return source_u_vec*sin(10*t)
-        else:
-            return 0*source_u_vec
-
-
     from hedge.models.wave import StrongWaveOperator
     from hedge.mesh import TAG_ALL, TAG_NONE
+    from hedge.data import \
+            make_tdep_given, \
+            TimeHarmonicGivenFunction, \
+            TimeIntervalGivenFunction
+
     op = StrongWaveOperator(-1, discr.dimensions, 
-            source_vec_getter,
+            source_f=TimeIntervalGivenFunction(
+                TimeHarmonicGivenFunction(
+                    make_tdep_given(source_u), omega=10),
+                0, 1),
             dirichlet_tag=dir_tag,
             neumann_tag=neu_tag,
             radiation_tag=rad_tag,
