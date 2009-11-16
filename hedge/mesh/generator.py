@@ -748,12 +748,12 @@ def make_box_mesh(a=(0,0,0),b=(1,1,1),
 
 # poke generator bits into hedge.mesh for backwards compatibility -------------
 def _add_depr_generator_functions():
-    from pytools import DeprecatedFunctionWrapper
+    from pytools import MovedFunctionDeprecationWrapper
 
     import hedge.mesh
     for name in globals():
         if name.startswith("make_") or name.startswith("finish"):
             setattr(hedge.mesh, name, 
-                    DeprecatedFunctionWrapper(globals()[name]))
+                    MovedFunctionDeprecationWrapper(globals()[name]))
 
 _add_depr_generator_functions()
