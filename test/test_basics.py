@@ -29,7 +29,7 @@ import numpy.linalg as la
 def test_simp_orthogonality():
     """Test orthogonality of simplicial bases using Grundmann-Moeller cubature"""
     from hedge.quadrature import SimplexCubature
-    from hedge.element import TriangularElement, TetrahedralElement
+    from hedge.discretization.local import TriangularElement, TetrahedralElement
 
     from numpy import dot
 
@@ -234,7 +234,7 @@ def test_timestep_accuracy():
 
 def test_face_vertex_order():
     """Verify that face_indices() emits face vertex indices in the right order"""
-    from hedge.element import \
+    from hedge.discretization.local import \
             IntervalElement, \
             TriangularElement, \
             TetrahedralElement
@@ -343,7 +343,7 @@ def test_transformed_quadrature():
 def test_warp():
     """Check some assumptions on the node warp factor calculator"""
     n = 17
-    from hedge.element import WarpFactorCalculator
+    from hedge.discretization.local import WarpFactorCalculator
     wfc = WarpFactorCalculator(n)
 
     assert abs(wfc.int_f(-1)) < 1e-12
@@ -359,7 +359,7 @@ def test_warp():
 
 def test_simp_nodes():
     """Verify basic assumptions on simplex interpolation nodes"""
-    from hedge.element import \
+    from hedge.discretization.local import \
             IntervalElement, \
             TriangularElement, \
             TetrahedralElement
@@ -401,7 +401,7 @@ def test_simp_nodes():
 
 def test_tri_nodes_against_known_values():
     """Check triangle nodes against a previous implementation"""
-    from hedge.element import TriangularElement, TetrahedralElement
+    from hedge.discretization.local import TriangularElement, TetrahedralElement
     triorder = 8
     tri = TriangularElement(triorder)
 
@@ -418,7 +418,7 @@ def test_tri_nodes_against_known_values():
         except IndexError:
             alpha = 5/3
 
-        from hedge.element import WarpFactorCalculator
+        from hedge.discretization.local import WarpFactorCalculator
         from math import sin, cos, pi
 
         warp = WarpFactorCalculator(self.order)
@@ -471,7 +471,7 @@ def test_tri_nodes_against_known_values():
 def test_simp_basis_grad():
     """Do a simplistic FD-style check on the differentiation matrix"""
     from itertools import izip
-    from hedge.element import \
+    from hedge.discretization.local import \
             IntervalElement, \
             TriangularElement, \
             TetrahedralElement
@@ -518,7 +518,7 @@ def test_tri_face_node_distribution():
     for each face would be invalid.
     """
 
-    from hedge.element import TriangularElement
+    from hedge.discretization.local import TriangularElement
 
     tri = TriangularElement(8)
     unodes = tri.unit_nodes()
@@ -542,7 +542,7 @@ def test_tri_face_node_distribution():
 def test_simp_face_normals_and_jacobians():
     """Check computed face normals and face jacobians on simplicial elements
     """
-    from hedge.element import \
+    from hedge.discretization.local import \
             IntervalElement, \
             TriangularElement, \
             TetrahedralElement
@@ -621,7 +621,7 @@ def test_simp_face_normals_and_jacobians():
 
 def test_tri_map():
     """Verify that the mapping and node-building operations maintain triangle vertices"""
-    from hedge.element import TriangularElement
+    from hedge.discretization.local import TriangularElement
 
     n = 8
     tri = TriangularElement(n)
@@ -643,7 +643,7 @@ def test_tri_map():
 
 def test_tri_map_jacobian_and_mass_matrix():
     """Verify whether tri map jacobians recover known values of triangle area"""
-    from hedge.element import TriangularElement
+    from hedge.discretization.local import TriangularElement
     from math import sqrt, exp, pi
 
     for i in range(1,10):

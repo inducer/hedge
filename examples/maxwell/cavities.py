@@ -26,7 +26,6 @@ import numpy.linalg as la
 
 def main(write_output=True, allow_features=None, flux_type_arg=1,
         bdry_flux_type_arg=None, extra_discr_args={}):
-    from hedge.element import TetrahedralElement
     from hedge.mesh import make_ball_mesh, make_cylinder_mesh, make_box_mesh
     from hedge.tools import EOCRecorder, to_obj_array
     from math import sqrt, pi

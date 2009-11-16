@@ -33,11 +33,6 @@ import pymbolic.mapper.flop_counter
 
 
 
-FluxFace = _internal.FluxFace
-
-
-
-
 # python fluxes ---------------------------------------------------------------
 class Flux(pymbolic.primitives.AlgebraicLeaf):
     def stringifier(self):

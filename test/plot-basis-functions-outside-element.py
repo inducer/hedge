@@ -1,7 +1,7 @@
 from __future__ import division
-from hedge.element import TriangularElement
+from hedge.discretization.local import TriangleDiscretization
 
-tri = TriangularElement(5)
+tri = TriangleDiscretization(5)
 
 import Gnuplot
 gp = Gnuplot.Gnuplot()

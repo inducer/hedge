@@ -25,7 +25,6 @@ from hedge.tools import Rotation
 
 
 def main(write_output=True) :
-    from hedge.element import TriangularElement, TetrahedralElement
     from hedge.timestep import RK4TimeStepper
     from math import sin, cos, pi, exp, sqrt
     from hedge.data import TimeConstantGivenFunction, \
@@ -46,12 +45,10 @@ def main(write_output=True) :
         if rcon.is_head_rank:
             from hedge.mesh import make_disk_mesh
             mesh = make_disk_mesh(r=0.5, boundary_tagger=boundary_tagger)
-        el_class = TriangularElement
     elif dim == 3:
         if rcon.is_head_rank:
             from hedge.mesh import make_ball_mesh
             mesh = make_ball_mesh(max_volume=0.001)
-        el_class = TetrahedralElement
     else:
         raise RuntimeError, "bad number of dimensions"
 
@@ -61,7 +58,7 @@ def main(write_output=True) :
     else:
         mesh_data = rcon.receive_mesh()
 
-    discr = rcon.make_discretization(mesh_data, el_class(3))
+    discr = rcon.make_discretization(mesh_data, order=3)
     stepper = RK4TimeStepper()
 
     if write_output:

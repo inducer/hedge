@@ -53,7 +53,6 @@ def make_mesh(a, b, pml_width=0.25, **kwargs):
 
 
 def main(write_output=True):
-    from hedge.element import TriangularElement
     from hedge.timestep import RK4TimeStepper
     from hedge.mesh import make_disk_mesh
     from pylo import DB_VARTYPE_VECTOR
