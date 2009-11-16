@@ -27,6 +27,17 @@ import numpy
 
 
 
+class MeshPyFaceMarkerLookup:
+    def __init__(self, meshpy_output):
+        self.fvi2fm = dict((frozenset(fvi), marker) for fvi, marker in
+                zip(meshpy_output.facets, meshpy_output.facet_markers))
+
+    def __call__(self, fvi):
+        return self.fvi2fm[frozenset(fvi)]
+
+
+
+
 def make_1d_mesh(points, left_tag=None, right_tag=None, periodic=False,
         boundary_tagger=None, element_tagger=None):
     def force_array(pt):

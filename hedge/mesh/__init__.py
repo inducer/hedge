@@ -513,14 +513,3 @@ def check_bc_coverage(mesh, bc_tags, incomplete_ok=False):
     elif bdry_face_countdown < 0:
         raise RuntimeError("More BCs were assigned than boundary faces are present "
                 "(did something screw up your periodicity?)")
-
-
-
-
-class MeshPyFaceMarkerLookup:
-    def __init__(self, meshpy_output):
-        self.fvi2fm = dict((frozenset(fvi), marker) for fvi, marker in
-                zip(meshpy_output.facets, meshpy_output.facet_markers))
-
-    def __call__(self, fvi):
-        return self.fvi2fm[frozenset(fvi)]
