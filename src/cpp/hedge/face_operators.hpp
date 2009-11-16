@@ -101,8 +101,11 @@ namespace hedge
     typedef IntFaceType int_face_type;
     typedef ExtFaceType ext_face_type;
 
-    face_pair_side<int_face_type> int_side;
-    face_pair_side<ext_face_type> ext_side;
+    typedef face_pair_side<int_face_type> int_side_type;
+    typedef face_pair_side<ext_face_type> ext_side_type;
+
+    int_side_type int_side;
+    ext_side_type ext_side;
 
     index_list_number_t ext_native_write_map;
 
