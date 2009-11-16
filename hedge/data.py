@@ -201,8 +201,15 @@ def make_tdep_constant(x):
 
 
 
+def make_tdep_given(x):
+    return TimeConstantGivenFunction(GivenFunction(x))
+
+
+
+
 class TimeHarmonicGivenFunction(ITimeDependentGivenFunction):
-    """Adapts an :class:`IGivenFunction` to have a harmonic time-dependency.
+    """Modulates an :class:`ITimeDependentGivenFunction` by a sine
+    in time.
     """
     def __init__(self, gf, omega, phase=0):
         self.gf = gf
@@ -212,21 +219,21 @@ class TimeHarmonicGivenFunction(ITimeDependentGivenFunction):
     def volume_interpolant(self, t, discr):
         from math import sin
         return sin(self.omega * t + self.phase) \
-                * self.gf.volume_interpolant(discr)
+                * self.gf.volume_interpolant(t, discr)
 
     def boundary_interpolant(self, t, discr, tag):
         from math import sin
         return sin(self.omega * t + self.phase)\
-                * self.gf.boundary_interpolant(discr, tag)
+                * self.gf.boundary_interpolant(t, discr, tag)
 
 
 
 
 
 class TimeIntervalGivenFunction(ITimeDependentGivenFunction):
-    """Adapts an :class:`IGivenFunction` to depend on time by "turning it on"
-    for the time interval :math:`[\\text{on\\_time}, \\text{off\\_time})`, and
-    having it be zero the rest of the time.
+    """Adapts an :class:`ITimeDependentGivenFunction` to depend on time by 
+    "turning it on" for the time interval :math:`[\\text{on\\_time}, \\text{off\\_time})`, 
+    and having it be zero the rest of the time.
     """
 
     def __init__(self, gf, on_time=0, off_time=1):
@@ -235,23 +242,21 @@ class TimeIntervalGivenFunction(ITimeDependentGivenFunction):
         self.off_time = off_time
         assert on_time <= off_time
 
-
-
     def volume_interpolant(self, t, discr):
         if self.on_time <= t < self.off_time:
-            return self.gf.volume_interpolant(discr)
+            return self.gf.volume_interpolant(t, discr)
         else:
             # FIXME: not optimal
             # difficult part here is to match shape
-            return 0 * self.gf.volume_interpolant(discr)
+            return 0 * self.gf.volume_interpolant(t, discr)
 
     def boundary_interpolant(self, t, discr, tag):
         if self.on_time <= t < self.off_time:
-            return self.gf.boundary_interpolant(discr, tag)
+            return self.gf.boundary_interpolant(t, discr, tag)
         else:
             # FIXME: not optimal
             # difficult part here is to match shape
-            return 0 * self.gf.boundary_interpolant(discr, tag)
+            return 0 * self.gf.boundary_interpolant(t, discr, tag)
 
 
 
