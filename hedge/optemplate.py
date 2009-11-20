@@ -966,9 +966,13 @@ class _InnerInverseMassContractor(pymbolic.mapper.RecursiveMapper):
         self.outer_mass_contractor = outer_mass_contractor
 
     def map_constant(self, expr):
-        return OperatorBinding(
-                InverseMassOperator(),
-                self.outer_mass_contractor(expr))
+        from hedge.tools import is_zero
+        if is_zero(expr):
+            return 0
+        else:
+            return OperatorBinding(
+                    InverseMassOperator(),
+                    self.outer_mass_contractor(expr))
 
     def map_algebraic_leaf(self, expr):
         return OperatorBinding(
