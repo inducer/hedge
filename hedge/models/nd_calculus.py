@@ -224,8 +224,11 @@ class SecondDerivativeBase(object):
 
 
 class LDGSecondDerivative(SecondDerivativeBase):
+    def __init__(self, beta_value=0.5):
+        self.beta_value = beta_value
+
     def beta(self, tgt):
-        return numpy.array([0.5]*tgt.dimensions, dtype=numpy.float64)
+        return numpy.array([self.beta_value]*tgt.dimensions, dtype=numpy.float64)
 
     def first_grad(self, tgt,
             dirichlet_tags_and_bcs=[],
@@ -236,25 +239,31 @@ class LDGSecondDerivative(SecondDerivativeBase):
         from hedge.flux import FluxScalarPlaceholder, make_normal
         normal = make_normal(tgt.dimensions)
 
+        if tgt.strong_form:
+            def adjust_flux(f):
+                return u.int*normal - f
+        else:
+            def adjust_flux(f):
+                return f
+
         u = FluxScalarPlaceholder()
 
         flux = normal*(
                 cse(u.avg, "u_avg") 
                 - (u.int-u.ext)*dot(normal, self.beta(tgt)))
 
-        if tgt.strong_form:
-            flux = u.int*normal - flux
-
         tgt.add_grad()
-        tgt.add_inner_fluxes(flux, tgt.operand)
+        tgt.add_inner_fluxes(adjust_flux(flux), tgt.operand)
 
         for tag, bc in dirichlet_tags_and_bcs:
-            # FIXME: Adjust for strong form
-            tgt.add_boundary_flux(normal * u.ext, tgt.operand, bc, tag)
+            tgt.add_boundary_flux(
+                    adjust_flux(normal * u.ext),
+                    tgt.operand, bc, tag)
 
         for tag, bc in neumann_tags_and_bcs:
-            # FIXME: Adjust for strong form
-            tgt.add_boundary_flux(normal * u.int, tgt.operand, 0, tag)
+            tgt.add_boundary_flux(
+                    adjust_flux(normal * u.int), 
+                    tgt.operand, 0, tag)
 
     def second_div(self, tgt, 
             dirichlet_tags_and_bcs=[],
@@ -265,6 +274,13 @@ class LDGSecondDerivative(SecondDerivativeBase):
         from hedge.flux import FluxVectorPlaceholder, make_normal, PenaltyTerm
         normal = make_normal(tgt.dimensions)
 
+        if tgt.strong_form:
+            def adjust_flux(f):
+                return dot(v.int, normal) - f
+        else:
+            def adjust_flux(f):
+                return f
+
         vec = FluxVectorPlaceholder(1+tgt.dimensions)
         u = vec[0]
         v = vec[1:]
@@ -273,18 +289,16 @@ class LDGSecondDerivative(SecondDerivativeBase):
         flux = dot(v.avg + cse(dot(v.int - v.ext, normal), "jump_v")*self.beta(tgt),
             normal) - stab_term
 
-        if tgt.strong_form:
-            flux = dot(v.int, normal) - flux
-
         from pytools.obj_array import join_fields
         op_w = join_fields(tgt.lower_order_operand, tgt.operand)
 
         tgt.add_div()
-        tgt.add_inner_fluxes(flux, op_w)
+        tgt.add_inner_fluxes(adjust_flux(flux), op_w)
 
         for tag, bc in dirichlet_tags_and_bcs:
             dir_bc_w = join_fields(bc, [0]*tgt.dimensions)
-            tgt.add_boundary_flux(dot(v.int, normal) - stab_term,
+            tgt.add_boundary_flux(
+                    adjust_flux(dot(v.int, normal) - stab_term),
                     op_w, dir_bc_w, tag)
 
         from hedge.optemplate import make_normal as make_op_normal
@@ -296,4 +310,13 @@ class LDGSecondDerivative(SecondDerivativeBase):
             # FIXME add post-treatment
             # FIXME vector BC may not be like this in CNS
             neu_bc_w = join_fields(0, make_op_normal(tag, tgt.dimensions)*bc)
-            tgt.add_boundary_flux(dot(normal, v.ext), loc_bc_vec, neu_bc_w, tag)
+            tgt.add_boundary_flux(
+                    adjust_flux(dot(normal, v.ext)),
+                    loc_bc_vec, neu_bc_w, tag)
+
+
+
+
+class StabilizedCentralSecondDerivative(LDGSecondDerivative):
+    def __init__(self):
+        LDGSecondDerivative.__init__(0)

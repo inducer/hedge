@@ -168,20 +168,14 @@ class BoundPoissonOperator(hedge.iterative.OperatorBase):
           in :meth:`prepare_rhs`.
         """
 
-        from hedge.tools import ptwise_dot
+        result = self.compiled_op(u=u)
 
-        # Check if poincare mean value method has to be applied.
         if self.poincare_mean_value_hack:
-            # ∫(Ω) u dΩ
             state_int = self.discr.integral(u)
-            # calculate mean value:  (1/|Ω|) * ∫(Ω) u dΩ
             mean_state = state_int / self.discr.mesh_volume()
-            m_mean_state = mean_state * self.discr._mass_ones()
-            #m_mean_state = mean_state * m
+            return result - mean_state * self.discr._mass_ones()
         else:
-            m_mean_state = 0
-
-        return self.compiled_op(u=u) - m_mean_state
+            return result
 
     __call__ = op
 
