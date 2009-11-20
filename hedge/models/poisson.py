@@ -27,6 +27,7 @@ import numpy
 import numpy.linalg as la
 
 from hedge.models import Operator
+from hedge.models.nd_calculus import LDGSecondDerivative
 import hedge.data
 import hedge.iterative
 from pytools import memoize_method
@@ -34,7 +35,7 @@ from pytools import memoize_method
 
 
 
-class WeakPoissonOperator(Operator):
+class PoissonOperator(Operator):
     """Implements the Local Discontinuous Galerkin (LDG) Method for elliptic
     operators.
 
@@ -46,18 +47,12 @@ class WeakPoissonOperator(Operator):
     def __init__(self, dimensions, diffusion_tensor=None,
             dirichlet_bc=hedge.data.ConstantGivenFunction(), dirichlet_tag="dirichlet",
             neumann_bc=hedge.data.ConstantGivenFunction(), neumann_tag="neumann",
-            flux="ip"):
-        """Initialize the weak Poisson operator.
-
-        :param flux: Either *"ip"* or *"ldg"* to indicate which type of flux is
-            to be used. IP tends to be faster, and is therefore the default.
-        """
+            scheme=LDGSecondDerivative()):
         self.dimensions = dimensions
-        assert isinstance(dimensions, int)
 
-        self.flux_type = flux
+        self.scheme = scheme
 
-        # treat diffusion tensor
+        # default diffusion tensor
         if diffusion_tensor is None:
             diffusion_tensor = hedge.data.ConstantGivenFunction(
                     numpy.eye(dimensions))
@@ -69,119 +64,42 @@ class WeakPoissonOperator(Operator):
         self.neumann_bc = neumann_bc
         self.neumann_tag = neumann_tag
 
-    # fluxes ------------------------------------------------------------------
-    def get_weak_flux_set(self, flux):
-        class FluxSet:
-            pass
-
-        fs = FluxSet()
-
-        if flux == "ldg":
-            ldg_terms = True
-        elif flux == "ip":
-            ldg_terms = False
-        else:
-            raise "Invalid flux type '%s'" % flux
-
-        from hedge.flux import FluxVectorPlaceholder, \
-                make_normal, PenaltyTerm
-        from numpy import dot
-
-        dim = self.dimensions
-        vec = FluxVectorPlaceholder(1+dim)
-        fs.u = u = vec[0]
-        fs.v = v = vec[1:]
-        normal = make_normal(dim)
-
-        # central flux
-        fs.flux_u = u.avg*normal
-        fs.flux_v = dot(v.avg, normal)
-
-        if ldg_terms:
-            # ldg terms
-            ldg_beta = numpy.array([1]*dim)
-
-            fs.flux_u = fs.flux_u - (u.int-u.ext)*0.5*ldg_beta
-            fs.flux_v = fs.flux_v + dot((v.int-v.ext)*0.5, ldg_beta)
-
-        # penalty term
-        stab_term = 10 * PenaltyTerm() * (u.int - u.ext)
-        fs.flux_v -= stab_term
-
-        # boundary fluxes
-        fs.flux_u_dbdry = normal * u.ext
-        fs.flux_v_dbdry = dot(v.int, normal) - stab_term
-
-        fs.flux_u_nbdry = normal * u.int
-        fs.flux_v_nbdry = dot(normal, v.ext)
-
-        return fs
-
     # operator application, rhs prep ------------------------------------------
-    def grad_op_template(self):
-        from hedge.optemplate import Field, BoundaryPair, get_flux_operator, \
-                make_stiffness_t, InverseMassOperator
+    def laplace_op_template(self, apply_minv, u=None, dir_bc=None, neu_bc=None):
+        from hedge.optemplate import InverseMassOperator, Field
+        from hedge.models.nd_calculus import SecondDerivativeTarget
 
-        stiff_t = make_stiffness_t(self.dimensions)
-        m_inv = InverseMassOperator()
+        if u is None: u = Field("u")
+        if dir_bc is None: dir_bc = Field("dir_bc")
+        if neu_bc is None: neu_bc = Field("neu_bc")
 
-        u = Field("u")
+        grad_tgt = SecondDerivativeTarget(
+                self.dimensions, strong_form=False,
+                operand=u)
 
-        fs = self.get_weak_flux_set(self.flux_type)
+        self.scheme.first_grad(grad_tgt,
+                [(self.dirichlet_tag, dir_bc)],
+                [(self.neumann_tag, neu_bc)])
 
-        flux_u = get_flux_operator(fs.flux_u)
-        flux_u_dbdry = get_flux_operator(fs.flux_u_dbdry)
-        flux_u_nbdry = get_flux_operator(fs.flux_u_nbdry)
+        from hedge.optemplate import make_common_subexpression as cse
+        grad_u_local = cse(InverseMassOperator()(grad_tgt.local_derivatives))
+        v = cse(grad_u_local
+                + InverseMassOperator()(grad_tgt.fluxes))
 
-        return m_inv * (
-                - (stiff_t * u)
-                + flux_u*u
-                + flux_u_dbdry*BoundaryPair(u, 0, self.dirichlet_tag)
-                + flux_u_nbdry*BoundaryPair(u, 0, self.neumann_tag)
-                )
+        div_tgt = SecondDerivativeTarget(
+                self.dimensions, strong_form=False,
+                operand=v,
+                unflux_operand=grad_u_local,
+                lower_order_operand=u)
 
-    def div_op_template(self, apply_minv):
-        from hedge.optemplate import make_vector_field, BoundaryPair, \
-                make_stiffness_t, InverseMassOperator, get_flux_operator
-
-        d = self.dimensions
-        w = make_vector_field("w", 1+d)
-        v = w[1:]
-        dir_bc_w = make_vector_field("dir_bc_w", 1+d)
-        neu_bc_w = make_vector_field("neu_bc_w", 1+d)
-
-        stiff_t = make_stiffness_t(d)
-        m_inv = InverseMassOperator()
-
-        fs = self.get_weak_flux_set(self.flux_type)
-
-        flux_v = get_flux_operator(fs.flux_v)
-        flux_v_dbdry = get_flux_operator(fs.flux_v_dbdry)
-        flux_v_nbdry = get_flux_operator(fs.flux_v_nbdry)
-
-        result = (
-                -numpy.dot(stiff_t, v)
-                + flux_v * w
-                + flux_v_dbdry * BoundaryPair(w, dir_bc_w, self.dirichlet_tag)
-                + flux_v_nbdry * BoundaryPair(w, neu_bc_w, self.neumann_tag)
-                )
+        self.scheme.second_div(div_tgt,
+                [(self.dirichlet_tag, dir_bc)],
+                [(self.neumann_tag, neu_bc)])
 
         if apply_minv:
-            return InverseMassOperator() * result
+            return InverseMassOperator()(div_tgt.all)
         else:
-            return result
-
-    @memoize_method
-    def grad_bc_op_template(self):
-        from hedge.optemplate import Field, BoundaryPair, \
-                InverseMassOperator, get_flux_operator
-
-        flux_u_dbdry = get_flux_operator(
-                self.get_weak_flux_set(self.flux_type).flux_u_dbdry)
-
-        return InverseMassOperator() * (
-                flux_u_dbdry*BoundaryPair(0, Field("dir_bc_u"),
-                    self.dirichlet_tag))
+            return div_tgt.all
 
     # bound operator ----------------------------------------------------------
     def bind(self, discr):
@@ -206,12 +124,12 @@ class BoundPoissonOperator(hedge.iterative.OperatorBase):
 
         pop = self.poisson_op = poisson_op
 
-        self.grad_c = discr.compile(pop.grad_op_template())
-        self.div_c = discr.compile(pop.div_op_template(False))
-        self.minv_div_c = discr.compile(pop.div_op_template(True))
-        self.grad_bc_c = discr.compile(pop.grad_bc_op_template())
-
-        self.neumann_normals = discr.boundary_normals(poisson_op.neumann_tag)
+        op = pop.laplace_op_template(
+            apply_minv=False, dir_bc=0, neu_bc=0)
+        bc_op = pop.laplace_op_template(
+            apply_minv=False, u=0)
+        self.compiled_op = discr.compile(op)
+        self.compiled_bc_op = discr.compile(bc_op)
 
         if isinstance(pop.diffusion_tensor, hedge.data.ConstantGivenFunction):
             self.diffusion = self.neu_diff = pop.diffusion_tensor.value
@@ -240,15 +158,8 @@ class BoundPoissonOperator(hedge.iterative.OperatorBase):
         return nodes, nodes
 
     # actual functionality
-    def grad(self, u):
-        return self.grad_c(u=u)
-
-    def div(self, v, u=None, apply_minv=True):
-        """Compute the divergence of v using an LDG operator.
-
-        The divergence computation is unaffected by the scaling
-        effected by the diffusion tensor.
-
+    def op(self, u, apply_minv=False):
+        """
         :param apply_minv: :class:`bool` specifying whether to compute a complete
           divergence operator. If False, the final application of the inverse
           mass operator is skipped. This is used in :meth:`op` in order to reduce
@@ -256,25 +167,7 @@ class BoundPoissonOperator(hedge.iterative.OperatorBase):
           only needs to be applied once, when preparing the right hand side
           in :meth:`prepare_rhs`.
         """
-        from hedge.tools import join_fields
 
-        dim = self.discr.dimensions
-
-        if u is None:
-            u = self.discr.volume_zeros()
-        w = join_fields(u, v)
-
-        dir_bc_w = join_fields(0, [0]*dim)
-        neu_bc_w = join_fields(0, [0]*dim)
-
-        if apply_minv:
-            div_tpl = self.minv_div_c
-        else:
-            div_tpl = self.div_c
-
-        return div_tpl(w=w, dir_bc_w=dir_bc_w, neu_bc_w=neu_bc_w)
-
-    def op(self, u, apply_minv=False):
         from hedge.tools import ptwise_dot
 
         # Check if poincare mean value method has to be applied.
@@ -288,10 +181,7 @@ class BoundPoissonOperator(hedge.iterative.OperatorBase):
         else:
             m_mean_state = 0
 
-        return self.div(
-                ptwise_dot(2, 1, self.diffusion, self.grad(u)),
-                u, apply_minv=apply_minv) \
-                        - m_mean_state
+        return self.compiled_op(u=u) - m_mean_state
 
     __call__ = op
 
@@ -333,31 +223,13 @@ class BoundPoissonOperator(hedge.iterative.OperatorBase):
             \\text{rhs} = f - M^{-1}( A M^{-1} g + h)
 
         """
-        dim = self.discr.dimensions
-
         pop = self.poisson_op
 
-        dtag = pop.dirichlet_tag
-        ntag = pop.neumann_tag
-
-        dir_bc_u = pop.dirichlet_bc.boundary_interpolant(self.discr, dtag)
-        vpart = self.grad_bc_c(dir_bc_u=dir_bc_u)
-
-        from hedge.tools import ptwise_dot
-        diff_v = ptwise_dot(2, 1, self.diffusion, vpart)
-
-        def neu_bc_v():
-            return ptwise_dot(2, 1, self.neu_diff,
-                    self.neumann_normals*
-                        pop.neumann_bc.boundary_interpolant(self.discr, ntag))
-
-        from hedge.tools import join_fields
-        w = join_fields(0, diff_v)
-        dir_bc_w = join_fields(dir_bc_u, [0]*dim)
-        neu_bc_w = join_fields(0, neu_bc_v())
-
         from hedge.optemplate import MassOperator
-
         return (MassOperator().apply(self.discr,
             rhs.volume_interpolant(self.discr))
-            - self.div_c(w=w, dir_bc_w=dir_bc_w, neu_bc_w=neu_bc_w))
+            - self.compiled_bc_op(
+                dir_bc=pop.dirichlet_bc.boundary_interpolant(
+                    self.discr, pop.dirichlet_tag), 
+                neu_bc=pop.neumann_bc.boundary_interpolant(
+                    self.discr, pop.neumann_tag)))
