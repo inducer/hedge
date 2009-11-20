@@ -769,6 +769,19 @@ class OperatorCompilerBase(IdentityMapper):
                 lambda ass: ass.flop_count() == 0,
                 unprocessed_assigns)
 
+        # filter out zero assignments
+        from pytools import any
+        from hedge.tools import is_zero
+
+        i = 0
+
+        while i < len(unprocessed_assigns):
+            my_assign = unprocessed_assigns[i]
+            if any(is_zero(expr) for expr in my_assign.exprs):
+                processed_assigns.append(unprocessed_assigns.pop())
+            else:
+                i += 1
+
         # greedy aggregation
         while unprocessed_assigns:
             my_assign = unprocessed_assigns.pop()
