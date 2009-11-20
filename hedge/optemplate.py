@@ -426,13 +426,19 @@ class FluxOperatorBase(Operator):
         return (self.__class__ == other.__class__
                 and self.flux == other.flux)
 
-    def __mul__(self, arg):
+    def __call__(self, arg):
         from hedge.tools import is_obj_array
         if isinstance(arg, Field) or is_obj_array(arg):
             return OperatorBinding(self, arg)
         else:
             return Operator.__mul__(self, arg)
 
+    def __mul__(self, arg):
+        from warnings import warn
+        warn("Multiplying by a flux operator is deprecated. "
+                "Use the less ambiguous parenthesized syntax instead.",
+                DeprecationWarning, stacklevel=2)
+        return self.__call__(arg)
 
 
 
@@ -452,13 +458,20 @@ class VectorFluxOperator(object):
     def __init__(self, fluxes):
         self.fluxes = fluxes
 
-    def __mul__(self, arg):
+    def __call__(self, arg):
         if isinstance(arg, int) and arg == 0:
             return 0
         from hedge.tools import make_obj_array
         return make_obj_array(
                 [OperatorBinding(FluxOperator(f), arg)
                     for f in self.fluxes])
+
+    def __mul__(self, arg):
+        from warnings import warn
+        warn("Multiplying by a vector flux operator is deprecated. "
+                "Use the less ambiguous parenthesized syntax instead.",
+                DeprecationWarning, stacklevel=2)
+        return self.__call__(arg)
 
 
 
@@ -938,9 +951,9 @@ class OperatorBinder(CSECachingMapperMixin, IdentityMapper):
             prod = flattened_product(expr.children[1:])
             if isinstance(prod, Product) and len(prod.children) > 1:
                 from warnings import warn
-                warn("binding an operator to more than one "
+                warn("Binding an operator to more than one "
                         "operand in a product is ambiguous - "
-                        "use the parenthesized pre-bound form instead")
+                        "use the parenthesized form instead.")
             return OperatorBinding(first, self.rec(prod))
         else:
             return first * self.rec(flattened_product(expr.children[1:]))
@@ -1167,8 +1180,7 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
             else:
                 return None
 
-        new_flux = FluxSubstitutionMapper(
-                sub_bdry_into_flux)(flux)
+        new_flux = FluxSubstitutionMapper(sub_bdry_into_flux)(flux)
 
         from hedge.tools import is_zero, make_obj_array
         if is_zero(new_flux):
