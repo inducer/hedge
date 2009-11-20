@@ -232,12 +232,15 @@ class LDGSecondDerivative(SecondDerivativeBase):
             neumann_tags_and_bcs=[]):
 
         from numpy import dot
+        from hedge.optemplate import make_common_subexpression as cse
         from hedge.flux import FluxScalarPlaceholder, make_normal
         normal = make_normal(tgt.dimensions)
 
         u = FluxScalarPlaceholder()
 
-        flux = normal*(u.avg - (u.int-u.ext)*dot(normal, self.beta(tgt)))
+        flux = normal*(
+                cse(u.avg, "u_avg") 
+                - (u.int-u.ext)*dot(normal, self.beta(tgt)))
 
         if tgt.strong_form:
             flux = u.int*normal - flux
@@ -280,8 +283,9 @@ class LDGSecondDerivative(SecondDerivativeBase):
         tgt.add_inner_fluxes(flux, op_w)
 
         for tag, bc in dirichlet_tags_and_bcs:
+            dir_bc_w = join_fields(bc, [0]*tgt.dimensions)
             tgt.add_boundary_flux(dot(v.int, normal) - stab_term,
-                    op_w, 0, tag)
+                    op_w, dir_bc_w, tag)
 
         from hedge.optemplate import make_normal as make_op_normal
 
