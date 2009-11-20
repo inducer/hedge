@@ -319,4 +319,4 @@ class LDGSecondDerivative(SecondDerivativeBase):
 
 class StabilizedCentralSecondDerivative(LDGSecondDerivative):
     def __init__(self):
-        LDGSecondDerivative.__init__(0)
+        LDGSecondDerivative.__init__(self, 0)
