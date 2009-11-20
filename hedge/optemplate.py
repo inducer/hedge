@@ -152,10 +152,14 @@ class Operator(pymbolic.primitives.Leaf):
         return StringifyMapper
 
     def __call__(self, expr):
-        from hedge.tools import with_object_array_or_scalar
-        return with_object_array_or_scalar(
-                lambda subexpr: OperatorBinding(self, subexpr),
-                expr)
+        from hedge.tools import with_object_array_or_scalar, is_zero
+        def bind_one(subexpr):
+            if is_zero(subexpr):
+                return subexpr
+            else:
+                return OperatorBinding(self, subexpr)
+
+        return with_object_array_or_scalar(bind_one, expr)
 
     def apply(self, discr, field):
         return discr.compile(self * Field("f"))(f=field)
