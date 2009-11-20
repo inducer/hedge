@@ -227,7 +227,22 @@ class OperatorCompiler(OperatorCompilerBase):
 
     # vector math -------------------------------------------------------------
     def finalize_multi_assign(self, names, exprs, do_not_return, priority):
-        return VectorExprAssign(names=names, exprs=exprs, 
-                do_not_return=do_not_return,
-                dep_mapper_factory=self.dep_mapper_factory,
-                priority=priority)
+        from pytools import any
+        from hedge.tools import is_zero
+
+        has_zero_assignees = any(is_zero(expr) for expr in exprs)
+        if has_zero_assignees:
+            if len(exprs) > 1:
+                raise RuntimeError("found aggregated zero constant assignment")
+
+        from hedge.optemplate import FlopCounter
+        flop_count = sum(FlopCounter()(expr) for expr in exprs)
+
+        if has_zero_assignees or flop_count == 0:
+            return Assign(names, exprs, priority=priority,
+                    dep_mapper_factory=self.dep_mapper_factory)
+        else:
+            return VectorExprAssign(names=names, exprs=exprs, 
+                    do_not_return=do_not_return,
+                    dep_mapper_factory=self.dep_mapper_factory,
+                    priority=priority)
