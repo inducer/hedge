@@ -33,6 +33,10 @@ import numpy
 # exec mapper -----------------------------------------------------------------
 class ExecutionMapper(ExecutionMapperBase):
     # code execution functions ------------------------------------------------
+    def exec_assign(self, insn):
+        return [(name, self.rec(expr))
+                for name, expr in zip(insn.names, insn.exprs)], []
+
     def exec_vector_expr_assign(self, insn):
         if self.discr.instrumented:
             def stats_callback(n, vec_expr):
@@ -316,7 +320,9 @@ class Executor(object):
         optemplate = EmptyFluxKiller(discr)(optemplate)
         dump_optemplate("05-before-imass", optemplate)
         optemplate = InverseMassContractor()(optemplate)
-        dump_optemplate("06-final", optemplate)
+        dump_optemplate("06-before-cfold-2", optemplate)
+        optemplate = CommutativeConstantFoldingMapper()(optemplate)
+        dump_optemplate("07-final", optemplate)
 
         from hedge.backends.jit.compiler import OperatorCompiler
         return OperatorCompiler(discr)(optemplate)
