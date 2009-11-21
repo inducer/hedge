@@ -90,15 +90,13 @@ def main(write_output=True, \
     from hedge.models.wave import VariableVelocityStrongWaveOperator
     from hedge.data import \
             TimeIntervalGivenFunction, \
-            TimeConstantGivenFunction, \
-            GivenFunction
+            make_tdep_given
     from hedge.mesh import TAG_ALL, TAG_NONE
     op = VariableVelocityStrongWaveOperator(
-            TimeConstantGivenFunction(
-                GivenFunction(c_speed)), 
+            make_tdep_given(c_speed),
             discr.dimensions, 
             source=TimeIntervalGivenFunction(
-                GivenFunction(source_u),
+                make_tdep_given(source_u),
                 0, 0.1),
             dirichlet_tag=dir_tag,
             neumann_tag=neu_tag,
