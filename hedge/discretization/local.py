@@ -122,17 +122,14 @@ GradTetrahedronBasisFunction = hedge._internal.GradTetrahedronBasisFunction
 
 
 class LocalDiscretization(object):
-    def basis_functions(self):
-        """Get a sequence of functions that form a basis of the
-        approximation space.
-        """
-        raise NotImplementedError
+    # numbering ---------------------------------------------------------------
+    @memoize_method
+    def face_count(self):
+        return len(self.face_indices())
 
-    def grad_basis_functions(self):
-        """Get the gradient functions of the basis_functions(),
-        in the same order.
-        """
-        raise NotImplementedError
+    @memoize_method
+    def face_node_count(self):
+        return len(self.face_indices()[0])
 
     # matrices ----------------------------------------------------------------
     @memoize_method
@@ -144,26 +141,6 @@ class LocalDiscretization(object):
                 list(self.basis_functions()))
 
     @memoize_method
-    def inverse_mass_matrix(self):
-        """Return the inverse of the mass matrix of the unit element
-        with respect to the nodal coefficients. Divide by the Jacobian
-        to obtain the global mass matrix.
-        """
-
-        # see doc/hedge-notes.tm
-        v = self.vandermonde()
-        return numpy.dot(v, v.T)
-
-    @memoize_method
-    def mass_matrix(self):
-        """Return the mass matrix of the unit element with respect
-        to the nodal coefficients. Multiply by the Jacobian to obtain
-        the global mass matrix.
-        """
-
-        return numpy.asarray(la.inv(self.inverse_mass_matrix()), order="C")
-
-    @memoize_method
     def grad_vandermonde(self):
         """Compute the Vandermonde matrices of the grad_basis_functions().
         Return a list of these matrices."""
@@ -173,18 +150,6 @@ class LocalDiscretization(object):
         return generic_multi_vandermonde(
                 list(self.unit_nodes()),
                 list(self.grad_basis_functions()))
-
-    @memoize_method
-    def differentiation_matrices(self):
-        """Return matrices that map the nodal values of a function
-        to the nodal values of its derivative in each of the unit
-        coordinate directions.
-        """
-
-        from hedge.tools import leftsolve
-        # see doc/hedge-notes.tm
-        v = self.vandermonde()
-        return [leftsolve(v, vdiff) for vdiff in self.grad_vandermonde()]
 
     @memoize_method
     def multi_face_mass_matrix(self):
@@ -256,9 +221,44 @@ class LocalDiscretization(object):
 
 
 
+class OrthonormalLocalDiscretization(LocalDiscretization):
+    @memoize_method
+    def inverse_mass_matrix(self):
+        """Return the inverse of the mass matrix of the unit element
+        with respect to the nodal coefficients. Divide by the Jacobian
+        to obtain the global mass matrix.
+        """
+
+        # see doc/hedge-notes.tm
+        v = self.vandermonde()
+        return numpy.dot(v, v.T)
+
+    @memoize_method
+    def mass_matrix(self):
+        """Return the mass matrix of the unit element with respect
+        to the nodal coefficients. Multiply by the Jacobian to obtain
+        the global mass matrix.
+        """
+
+        return numpy.asarray(la.inv(self.inverse_mass_matrix()), order="C")
+
+    @memoize_method
+    def differentiation_matrices(self):
+        """Return matrices that map the nodal values of a function
+        to the nodal values of its derivative in each of the unit
+        coordinate directions.
+        """
+
+        from hedge.tools import leftsolve
+        # see doc/hedge-notes.tm
+        v = self.vandermonde()
+        return [leftsolve(v, vdiff) for vdiff in self.grad_vandermonde()]
 
 
-class SimplexDiscretization(LocalDiscretization):
+
+
+
+class PkSimplexDiscretization(OrthonormalLocalDiscretization):
     # queries -----------------------------------------------------------------
     @property
     def has_facial_nodes(self):
@@ -273,14 +273,6 @@ class SimplexDiscretization(LocalDiscretization):
         from operator import mul
         from pytools import factorial
         return int(reduce(mul, (o + 1 + i for i in range(d))) / factorial(d))
-
-    @memoize_method
-    def face_count(self):
-        return len(self.face_indices())
-
-    @memoize_method
-    def face_node_count(self):
-        return len(self.face_indices()[0])
 
     @memoize_method
     def vertex_indices(self):
@@ -379,13 +371,25 @@ class SimplexDiscretization(LocalDiscretization):
 
 
 
-class IntervalDiscretizationBase(SimplexDiscretization):
-    """Base class with all features of an element's discretization that
-    are independent of the function space basis.
+
+class IntervalDiscretization(PkSimplexDiscretization):
+    """An arbitrary-order polynomial finite interval element.
+
+    Coordinate systems used:
+    ========================
+
+    unit coordinates (r)::
+
+        ---[--------0--------]--->
+           -1                1
     """
+
     dimensions = 1
     has_local_jacobians = False
     geometry = hedge.mesh.element.Interval
+
+    def __init__(self, order):
+        self.order = order
 
     # numbering ---------------------------------------------------------------
     @memoize_method
@@ -416,55 +420,6 @@ class IntervalDiscretizationBase(SimplexDiscretization):
             return []
 
     # node wrangling ----------------------------------------------------------
-    @memoize_method
-    def get_submesh_indices(self):
-        """Return a list of tuples of indices into the node list that
-        generate a tesselation of the reference element."""
-
-        return [(i, i + 1) for i in range(self.order)]
-
-    # face operations ---------------------------------------------------------
-    @memoize_method
-    def face_mass_matrix(self):
-        return numpy.array([[1]], dtype=float)
-
-    @staticmethod
-    def get_face_index_shuffle_to_match(face_1_vertices, face_2_vertices):
-        if set(face_1_vertices) != set(face_2_vertices):
-            raise FaceVertexMismatch("face vertices do not match")
-
-        class IntervalFaceIndexShuffle:
-            def __hash__(self):
-                return 0x3472477
-
-            def __eq__(self, other):
-                return True
-
-            def __call__(self, indices):
-                return indices
-
-        return IntervalFaceIndexShuffle()
-
-
-
-
-
-class IntervalDiscretization(IntervalDiscretizationBase):
-    """An arbitrary-order polynomial finite interval element.
-
-    Coordinate systems used:
-    ========================
-
-    unit coordinates (r)::
-
-        ---[--------0--------]--->
-           -1                1
-    """
-
-    def __init__(self, order):
-        self.order = order
-
-    # node wrangling ----------------------------------------------------------
     def nodes(self):
         """Generate warped nodes in unit coordinates (r,)."""
 
@@ -477,6 +432,13 @@ class IntervalDiscretization(IntervalDiscretizationBase):
 
     equilateral_nodes = nodes
     unit_nodes = nodes
+
+    @memoize_method
+    def get_submesh_indices(self):
+        """Return a list of tuples of indices into the node list that
+        generate a tesselation of the reference element."""
+
+        return [(i, i + 1) for i in range(self.order)]
 
     # basis functions ---------------------------------------------------------
     @memoize_method
@@ -516,6 +478,28 @@ class IntervalDiscretization(IntervalDiscretizationBase):
         return [DiffVectorLF(idx[0])
             for idx in self.generate_mode_identifiers()]
 
+    # face operations ---------------------------------------------------------
+    @memoize_method
+    def face_mass_matrix(self):
+        return numpy.array([[1]], dtype=float)
+
+    @staticmethod
+    def get_face_index_shuffle_to_match(face_1_vertices, face_2_vertices):
+        if set(face_1_vertices) != set(face_2_vertices):
+            raise FaceVertexMismatch("face vertices do not match")
+
+        class IntervalFaceIndexShuffle:
+            def __hash__(self):
+                return 0x3472477
+
+            def __eq__(self, other):
+                return True
+
+            def __call__(self, indices):
+                return indices
+
+        return IntervalFaceIndexShuffle()
+
     # time step scaling -------------------------------------------------------
     def dt_non_geometric_factor(self):
         if self.order == 0:
@@ -530,7 +514,7 @@ class IntervalDiscretization(IntervalDiscretizationBase):
 
 
 
-class TriangleDiscretization(SimplexDiscretization):
+class TriangleDiscretization(PkSimplexDiscretization):
     """An arbitrary-order triangular finite element.
 
     Coordinate systems used:
@@ -783,7 +767,7 @@ class TriangleDiscretization(SimplexDiscretization):
 
 
 
-class TetrahedronDiscretization(SimplexDiscretization):
+class TetrahedronDiscretization(PkSimplexDiscretization):
     """An arbitrary-order tetrahedral finite element.
 
     Coordinate systems used:
