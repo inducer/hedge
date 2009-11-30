@@ -80,11 +80,10 @@ def main(write_output=True, \
     from hedge.models.wave import VariableVelocityStrongWaveOperator
     from hedge.data import \
             TimeIntervalGivenFunction, \
-            TimeConstantGivenFunction, \
             make_tdep_given
     from hedge.mesh import TAG_ALL, TAG_NONE
     op = VariableVelocityStrongWaveOperator(
-            make_tdep_given(c_speed), 
+            make_tdep_given(c_speed),
             discr.dimensions, 
             source=TimeIntervalGivenFunction(
                 make_tdep_given(source_u),

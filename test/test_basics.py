@@ -29,7 +29,7 @@ import numpy.linalg as la
 def test_simp_orthogonality():
     """Test orthogonality of simplicial bases using Grundmann-Moeller cubature"""
     from hedge.quadrature import SimplexCubature
-    from hedge.discretization.local import TriangularElement, TetrahedralElement
+    from hedge.discretization.local import TriangleDiscretization, TetrahedronDiscretization
 
     from numpy import dot
 
@@ -41,7 +41,7 @@ def test_simp_orthogonality():
             #(7, 3e-14),
             #(9, 2e-13),
             ]:
-        for ldis in [TriangularElement(order), TetrahedralElement(order)]:
+        for ldis in [TriangleDiscretization(order), TetrahedronDiscretization(order)]:
             cub = SimplexCubature(order, ldis.dimensions)
             basis = ldis.basis_functions()
 
@@ -235,14 +235,14 @@ def test_timestep_accuracy():
 def test_face_vertex_order():
     """Verify that face_indices() emits face vertex indices in the right order"""
     from hedge.discretization.local import \
-            IntervalElement, \
-            TriangularElement, \
-            TetrahedralElement
+            IntervalDiscretization, \
+            TriangleDiscretization, \
+            TetrahedronDiscretization
 
     for el in [
-            IntervalElement(5),
-            TriangularElement(5),
-            TetrahedralElement(5)]:
+            IntervalDiscretization(5),
+            TriangleDiscretization(5),
+            TetrahedronDiscretization(5)]:
         vertex_indices = el.vertex_indices()
         for fn, (face_vertices, face_indices) in enumerate(zip(
                 el.geometry.face_vertices(vertex_indices),
@@ -360,15 +360,15 @@ def test_warp():
 def test_simp_nodes():
     """Verify basic assumptions on simplex interpolation nodes"""
     from hedge.discretization.local import \
-            IntervalElement, \
-            TriangularElement, \
-            TetrahedralElement
+            IntervalDiscretization, \
+            TriangleDiscretization, \
+            TetrahedronDiscretization
 
     els = [
-            IntervalElement(19),
-            TriangularElement(8),
-            TriangularElement(17),
-            TetrahedralElement(13)]
+            IntervalDiscretization(19),
+            TriangleDiscretization(8),
+            TriangleDiscretization(17),
+            TetrahedronDiscretization(13)]
 
     for el in els:
         eps = 1e-10
@@ -383,7 +383,7 @@ def test_simp_nodes():
         try:
             equnodes = list(el.equidistant_unit_nodes())
         except AttributeError:
-            assert isinstance(el, IntervalElement)
+            assert isinstance(el, IntervalDiscretization)
         else:
             assert len(equnodes) == el.node_count()
             for ux in equnodes:
@@ -401,9 +401,9 @@ def test_simp_nodes():
 
 def test_tri_nodes_against_known_values():
     """Check triangle nodes against a previous implementation"""
-    from hedge.discretization.local import TriangularElement, TetrahedralElement
+    from hedge.discretization.local import TriangleDiscretization, TetrahedronDiscretization
     triorder = 8
-    tri = TriangularElement(triorder)
+    tri = TriangleDiscretization(triorder)
 
     def tri_equilateral_nodes_reference(self):
         # This is the old, more explicit, less general way of computing
@@ -472,15 +472,15 @@ def test_simp_basis_grad():
     """Do a simplistic FD-style check on the differentiation matrix"""
     from itertools import izip
     from hedge.discretization.local import \
-            IntervalElement, \
-            TriangularElement, \
-            TetrahedralElement
+            IntervalDiscretization, \
+            TriangleDiscretization, \
+            TetrahedronDiscretization
     from random import uniform
 
     els = [
-            (1, IntervalElement(5)),
-            (1, TriangularElement(8)),
-            (3,TetrahedralElement(7))]
+            (1, IntervalDiscretization(5)),
+            (1, TriangleDiscretization(8)),
+            (3,TetrahedronDiscretization(7))]
 
     for err_factor, el in els:
         d = el.dimensions
@@ -518,9 +518,9 @@ def test_tri_face_node_distribution():
     for each face would be invalid.
     """
 
-    from hedge.discretization.local import TriangularElement
+    from hedge.discretization.local import TriangleDiscretization
 
-    tri = TriangularElement(8)
+    tri = TriangleDiscretization(8)
     unodes = tri.unit_nodes()
     projected_face_points = []
     for face_i in tri.face_indices():
@@ -543,16 +543,16 @@ def test_simp_face_normals_and_jacobians():
     """Check computed face normals and face jacobians on simplicial elements
     """
     from hedge.discretization.local import \
-            IntervalElement, \
-            TriangularElement, \
-            TetrahedralElement
-    from hedge.mesh import Triangle
+            IntervalDiscretization, \
+            TriangleDiscretization, \
+            TetrahedronDiscretization
+    from hedge.mesh.element import Triangle
     from numpy import dot
 
     for el in [
-            IntervalElement(3),
-            TetrahedralElement(1),
-            TriangularElement(4),
+            IntervalDiscretization(3),
+            TetrahedronDiscretization(1),
+            TriangleDiscretization(4),
             ]:
         for i in range(50):
             geo = el.geometry
@@ -621,10 +621,10 @@ def test_simp_face_normals_and_jacobians():
 
 def test_tri_map():
     """Verify that the mapping and node-building operations maintain triangle vertices"""
-    from hedge.discretization.local import TriangularElement
+    from hedge.discretization.local import TriangleDiscretization
 
     n = 8
-    tri = TriangularElement(n)
+    tri = TriangleDiscretization(n)
 
     node_dict = dict((ituple, idx) for idx, ituple in enumerate(tri.node_tuples()))
     corner_indices = [node_dict[0,0], node_dict[n,0], node_dict[0,n]]
@@ -643,11 +643,11 @@ def test_tri_map():
 
 def test_tri_map_jacobian_and_mass_matrix():
     """Verify whether tri map jacobians recover known values of triangle area"""
-    from hedge.discretization.local import TriangularElement
+    from hedge.discretization.local import TriangleDiscretization
     from math import sqrt, exp, pi
 
     for i in range(1,10):
-        edata = TriangularElement(i)
+        edata = TriangleDiscretization(i)
         ones = numpy.ones((edata.node_count(),))
         unit_tri_area = 2
         error = la.norm(
