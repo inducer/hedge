@@ -169,10 +169,10 @@ class StrongWaveOperator(HyperbolicOperator):
                     )
                 +
                 InverseMassOperator() * (
-                    flux_op*w
-                    + flux_op * BoundaryPair(w, dir_bc, self.dirichlet_tag)
-                    + flux_op * BoundaryPair(w, neu_bc, self.neumann_tag)
-                    + flux_op * BoundaryPair(w, rad_bc, self.radiation_tag)
+                    flux_op(w)
+                    + flux_op(BoundaryPair(w, dir_bc, self.dirichlet_tag))
+                    + flux_op(BoundaryPair(w, neu_bc, self.neumann_tag))
+                    + flux_op(BoundaryPair(w, rad_bc, self.radiation_tag))
                     ))
 
         if self.source_f is not None:
@@ -336,15 +336,15 @@ class VariableVelocityStrongWaveOperator(HyperbolicOperator):
 
         return (
                 - join_fields(
-                    -numpy.dot(nabla, self.time_sign*c*v),
-                    -(nabla*(self.time_sign*c*u))
+                    -self.time_sign*c*numpy.dot(nabla, v),
+                    -self.time_sign*c*(nabla*u)
                     )
                 +
                 InverseMassOperator() * (
-                    flux_op*flux_w
-                    + flux_op * BoundaryPair(flux_w, dir_bc, self.dirichlet_tag)
-                    + flux_op * BoundaryPair(flux_w, neu_bc, self.neumann_tag)
-                    + flux_op * BoundaryPair(flux_w, rad_bc, self.radiation_tag)
+                    flux_op(flux_w)
+                    + flux_op(BoundaryPair(flux_w, dir_bc, self.dirichlet_tag))
+                    + flux_op(BoundaryPair(flux_w, neu_bc, self.neumann_tag))
+                    + flux_op(BoundaryPair(flux_w, rad_bc, self.radiation_tag))
                     ))
 
 

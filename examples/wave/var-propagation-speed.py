@@ -39,15 +39,15 @@ def main(write_output=True, \
 
     if dim == 1:
         if rcon.is_head_rank:
-            from hedge.mesh import make_uniform_1d_mesh
+            from hedge.mesh.generator import make_uniform_1d_mesh
             mesh = make_uniform_1d_mesh(-10, 10, 500)
     elif dim == 2:
-        from hedge.mesh import make_rect_mesh
+        from hedge.mesh.generator import make_rect_mesh
         if rcon.is_head_rank:
             mesh = make_rect_mesh(a=(-1,-1),b=(1,1),max_area=0.003)
     elif dim == 3:
         if rcon.is_head_rank:
-            from hedge.mesh import make_ball_mesh
+            from hedge.mesh.generator import make_ball_mesh
             mesh = make_ball_mesh(max_volume=0.0005)
     else:
         raise RuntimeError, "bad number of dimensions"
@@ -77,28 +77,17 @@ def main(write_output=True, \
         else:
             return 0.5
 
-    source_u_vec = discr.interpolate_volume_function(source_u)
-
-    def source_vec_getter(t):
-        from math import sin
-        if t < 1:
-            return source_u_vec*sin(10*t)
-        else:
-            return 0*source_u_vec
-
-
     from hedge.models.wave import VariableVelocityStrongWaveOperator
     from hedge.data import \
             TimeIntervalGivenFunction, \
             TimeConstantGivenFunction, \
-            GivenFunction
+            make_tdep_given
     from hedge.mesh import TAG_ALL, TAG_NONE
     op = VariableVelocityStrongWaveOperator(
-            TimeConstantGivenFunction(
-                GivenFunction(c_speed)), 
+            make_tdep_given(c_speed), 
             discr.dimensions, 
             source=TimeIntervalGivenFunction(
-                GivenFunction(source_u),
+                make_tdep_given(source_u),
                 0, 0.1),
             dirichlet_tag=dir_tag,
             neumann_tag=neu_tag,
@@ -143,6 +132,8 @@ def main(write_output=True, \
     rhs = op.bind(discr)
     try:
         dt = op.estimate_timestep(discr, stepper=stepper, fields=fields)
+        if flux_type_arg == "central":
+            dt *= 0.25
 
         from hedge.timestep import times_and_steps
         step_it = times_and_steps(final_time=3, logmgr=logmgr,
@@ -173,7 +164,7 @@ def main(write_output=True, \
         discr.close()
 
 if __name__ == "__main__":
-    main()
+    main(flux_type_arg="central")
 
 
 

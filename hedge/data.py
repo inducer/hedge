@@ -128,7 +128,8 @@ class GivenFunction(IGivenFunction):
         try:
             return self.volume_cache[discr]
         except KeyError:
-            result = discr.interpolate_volume_function(self.f)
+            result = discr.interpolate_volume_function(self.f, 
+                    dtype=discr.default_scalar_type)
             self.volume_cache[discr] = result
             return result
 
@@ -137,7 +138,8 @@ class GivenFunction(IGivenFunction):
             return self.boundary_cache[discr][tag]
         except KeyError:
             tag_cache = self.boundary_cache.setdefault(discr, {})
-            result = discr.interpolate_boundary_function(self.f, tag)
+            result = discr.interpolate_boundary_function(self.f, tag,
+                    dtype=discr.default_scalar_type)
             tag_cache[tag] = result
             return result
 
