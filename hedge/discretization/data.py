@@ -48,7 +48,7 @@ class StraightElementGroup(ElementGroupBase):
     :ivar ranges: a list of :class:`slice` objects indicating the DOF numbers for
       each element. Note: This is actually a C++ ElementRanges object.
     :ivar mass_matrix: The element-local mass matrix :math:`M`.
-    :ivar inverse_mass_matrix: the element-local inverese mass matrix :math:`M^{-1}`.
+    :ivar inverse_mass_matrix: the element-local inverse mass matrix :math:`M^{-1}`.
     :ivar differentiation_matrices: local differentiation matrices :math:`D_r, D_s, D_t`, 
       i.e.  differentiation by :math:`r, s, t, \dots`.
     :ivar stiffness_matrices: the element-local stiffness matrices :math:`MD_r, MD_s,\dots`.

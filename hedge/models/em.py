@@ -227,13 +227,13 @@ class MaxwellOperator(HyperbolicOperator):
 
         return - self.local_derivatives(w) \
                 + InverseMassOperator()*(
-                    flux_op * w
-                    +bdry_flux_op * BoundaryPair(
-                        w, self.pec_bc(w), self.pec_tag)
-                    +bdry_flux_op * BoundaryPair(
-                        w, self.absorbing_bc(w), self.absorb_tag)
-                    +bdry_flux_op * BoundaryPair(
-                        w, self.incident_bc(w), self.incident_tag)
+                    flux_op(w)
+                    +bdry_flux_op(BoundaryPair(
+                        w, self.pec_bc(w), self.pec_tag))
+                    +bdry_flux_op(BoundaryPair(
+                        w, self.absorbing_bc(w), self.absorb_tag))
+                    +bdry_flux_op(BoundaryPair(
+                        w, self.incident_bc(w), self.incident_tag))
                     )
 
     def bind(self, discr, **extra_context):

@@ -951,9 +951,10 @@ class OperatorBinder(CSECachingMapperMixin, IdentityMapper):
             prod = flattened_product(expr.children[1:])
             if isinstance(prod, Product) and len(prod.children) > 1:
                 from warnings import warn
-                warn("Binding an operator to more than one "
+                warn("Binding an %s to more than one "
                         "operand in a product is ambiguous - "
-                        "use the parenthesized form instead.")
+                        "use the parenthesized form instead."
+                        % first)
             return OperatorBinding(first, self.rec(prod))
         else:
             return first * self.rec(flattened_product(expr.children[1:]))

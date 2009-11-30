@@ -57,7 +57,8 @@ def main(write_output=True,
     else:
         mesh_data = rcon.receive_mesh()
 
-    discr = rcon.make_discretization(mesh_data, order=4, debug=debug)
+    discr = rcon.make_discretization(mesh_data, order=4, debug=debug,
+            default_scalar_type=dtype)
     from hedge.timestep import RK4TimeStepper
     stepper = RK4TimeStepper(dtype=dtype)
 
