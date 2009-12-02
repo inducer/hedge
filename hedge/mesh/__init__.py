@@ -154,6 +154,7 @@ def make_conformal_mesh_ext(points, elements,
         boundary_tagger=None,
         volume_tagger=None,
         periodicity=None,
+        allow_internal_boundaries=False,
         _is_rankbdry_face=None,
         ):
     """Construct a simplical mesh.
@@ -173,6 +174,10 @@ def make_conformal_mesh_ext(points, elements,
     :param periodicity: either None or is a list of tuples
       just like the one documented for the `periodicity`
       member of class :class:`Mesh`.
+    :param allow_internal_boundaries: Calls the boundary tagger
+      for element-element interfaces as well. If the tagger returns
+      an empty list of tags for an internal interface, it remains
+      internal.
     :param _is_rankbdry_face: an implementation detail,
       should not be used from user code. It is a function
       returning whether a given face identified by
@@ -224,16 +229,40 @@ def make_conformal_mesh_ext(points, elements,
     all_tags = set([TAG_ALL, TAG_REALLY_ALL])
 
     for face_vertices, els_faces in face_map.iteritems():
+        boundary_el_faces_tags = []
         if len(els_faces) == 2:
-            interfaces.append(els_faces)
+            if allow_internal_boundaries:
+                el_face_a, el_face_b = els_faces
+                el_a, face_a = el_face_a
+                el_b, face_b = el_face_b
+
+                tags_a = boundary_tagger(face_vertices, el_a, face_a, points)
+                tags_b = boundary_tagger(face_vertices, el_b, face_b, points)
+
+                if not tags_a and not tags_b:
+                    interfaces.append(els_faces)
+                elif tags_a and tags_b:
+                    boundary_el_faces_tags.append((el_face_a, tags_a))
+                    boundary_el_faces_tags.append((el_face_b, tags_b))
+                else:
+                    raise RuntimeError("boundary tagger is inconsistent "
+                            "about boundary-ness of interior interface")
+            else:
+                interfaces.append(els_faces)
         elif len(els_faces) == 1:
             el_face = el, face = els_faces[0]
             tags = boundary_tagger(face_vertices, el, face, points)
+            boundary_el_faces_tags.append((el_face, tags))
+        else:
+            raise RuntimeError("face can at most border two elements")
 
-            if isinstance(tags, str):
-                raise RuntimeError("Received string as tag list")
-
-            tags = set(tags) - all_tags
+        for el_face, tags in boundary_el_faces_tags:
+            el, face = el_face
+            tags = set(tags)
+            assert not isinstance(tags, str), \
+                RuntimeError("Received string as tag list")
+            assert TAG_ALL not in tags
+            assert TAG_REALLY_ALL not in tags
 
             for btag in tags:
                 tag_to_boundary.setdefault(btag, []) \
@@ -245,8 +274,6 @@ def make_conformal_mesh_ext(points, elements,
                 tag_to_boundary[TAG_ALL].append(el_face)
 
             tag_to_boundary[TAG_REALLY_ALL].append(el_face)
-        else:
-            raise RuntimeError("face can at most border two elements")
 
     # add periodicity-induced connectivity
     from pytools import flatten, reverse_dictionary
@@ -333,6 +360,7 @@ def make_conformal_mesh_ext(points, elements,
             periodicity=periodicity,
             periodic_opposite_faces=periodic_opposite_faces,
             periodic_opposite_vertices=periodic_opposite_vertices,
+            has_internal_boundaries=allow_internal_boundaries,
             )
 
 
@@ -409,7 +437,8 @@ class ConformalMesh(Mesh):
     """
 
     def __init__(self, points, elements, interfaces, tag_to_boundary, tag_to_elements,
-            periodicity, periodic_opposite_faces, periodic_opposite_vertices):
+            periodicity, periodic_opposite_faces, periodic_opposite_vertices,
+            has_internal_boundaries):
         """This constructor is for internal use only. Use :func:`make_conformal_mesh` instead.
         """
         Mesh.__init__(self, locals())
