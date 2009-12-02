@@ -1,4 +1,4 @@
-"""Mesh topology/geometry representation."""
+"""Reader for the GMSH file format."""
 
 from __future__ import division
 
@@ -206,20 +206,33 @@ class GmshFileFormatError(RuntimeError):
 
 
 class LineFeeder:
-    def __init__(self, line_list):
-        self.line_list = line_list
-        self.i = 0
+    def __init__(self, line_iterable):
+        self.line_iterable = iter(line_iterable)
+        self.next_line = None
 
     def has_next_line(self):
-        return self.i < len(self.line_list)
+        if self.next_line is not None:
+            return True
+
+        try:
+            self.next_line = self.line_iterable.next()
+        except StopIteration:
+            return False
+        else:
+            return True
 
     def get_next_line(self):
-        if self.i >= len(self.line_list):
-            raise GmshFileFormatError("unexpected end of file")
+        if self.next_line is not None:
+            nl = self.next_line
+            self.next_line = None
+            return nl.strip()
 
-        result = self.line_list[self.i].strip()
-        self.i += 1
-        return result
+        try:
+            nl = self.line_iterable.next()
+        except StopIteration:
+            raise GmshFileFormatError("unexpected end of file")
+        else:
+            return nl.strip()
 
 
 
@@ -270,16 +283,55 @@ class LocalToGlobalMap(object):
 
 
 
-def read_gmsh(filename, force_dimension=None, periodicity=None):
+
+
+def read_gmsh(filename, force_dimension=None, periodicity=None,
+        allow_internal_boundaries=False):
     """
     :param force_dimension: if not None, truncate point coordinates to this many dimensions.
     """
     import string
     # open target file
     mesh_file = open(filename, 'r')
-    feeder = LineFeeder(mesh_file.readlines())
+    result = parse_gmsh(mesh_file, force_dimension, periodicity=None,
+            allow_internal_boundaries=False)
     mesh_file.close()
 
+    return
+
+
+
+
+def generate_gmsh(source, dimensions, order=None, other_options=[],
+            extension="geo", gmsh_executable="gmsh",
+            force_dimension=None, periodicity=None,
+            allow_internal_boundaries=False):
+    from meshpy.gmsh import GmshRunner
+    runner = GmshRunner(source, dimensions, order=order, 
+            other_options=other_options, extension=extension, 
+            gmsh_executable=gmsh_executable)
+
+    runner.__enter__()
+    try:
+        result = parse_gmsh(runner.output_file,
+                force_dimension=force_dimension, 
+                periodicity=periodicity, 
+                allow_internal_boundaries=allow_internal_boundaries)
+    finally:
+        runner.__exit__(None, None, None)
+
+    return result
+
+
+
+
+def parse_gmsh(line_iterable, force_dimension=None, periodicity=None,
+        allow_internal_boundaries=False):
+    """
+    :param force_dimension: if not None, truncate point coordinates to this many dimensions.
+    """
+
+    feeder = LineFeeder(line_iterable)
     element_type_map = GMSH_ELEMENT_TYPE_TO_INFO_MAP
 
     # collect the mesh information
@@ -425,9 +477,6 @@ def read_gmsh(filename, force_dimension=None, periodicity=None):
                 if next_line == "$End"+section_name:
                     break
 
-    # check all tags refer to elements of same dimension
-    tag_number_to_dim = {}
-
     # figure out dimensionalities
     node_dim = single_valued(len(node) for node in nodes)
     vol_dim = max(el.el_type.dimensions for key, el in
@@ -513,7 +562,8 @@ def read_gmsh(filename, force_dimension=None, periodicity=None):
             hedge_elements,
             boundary_tagger=boundary_tagger,
             volume_tagger=volume_tagger,
-            periodicity=periodicity)
+            periodicity=periodicity,
+            allow_internal_boundaries=False)
 
 
 
