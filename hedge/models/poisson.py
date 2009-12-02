@@ -52,21 +52,18 @@ class PoissonOperator(Operator):
 
         self.scheme = scheme
 
-        # default diffusion tensor
-        if diffusion_tensor is None:
-            diffusion_tensor = hedge.data.ConstantGivenFunction(
-                    numpy.eye(dimensions))
-
-        self.diffusion_tensor = diffusion_tensor
-
         self.dirichlet_bc = dirichlet_bc
         self.dirichlet_tag = dirichlet_tag
         self.neumann_bc = neumann_bc
         self.neumann_tag = neumann_tag
 
+        if diffusion_tensor is None:
+            diffusion_tensor = numpy.eye(dimensions)
+        self.diffusion_tensor = diffusion_tensor
+
     # operator application, rhs prep ------------------------------------------
-    def laplace_op_template(self, apply_minv, u=None, dir_bc=None, neu_bc=None):
-        from hedge.optemplate import InverseMassOperator, Field
+    def op_template(self, apply_minv, u=None, dir_bc=None, neu_bc=None):
+        from hedge.optemplate import InverseMassOperator, Field, make_vector_field
         from hedge.models.nd_calculus import SecondDerivativeTarget
 
         if u is None: u = Field("u")
@@ -86,11 +83,29 @@ class PoissonOperator(Operator):
         v = cse(grad_u_local
                 + InverseMassOperator()(grad_tgt.fluxes))
 
+        def process_vector(v, tag=None):
+            if tag is None:
+                name = "diff_tensor"
+            elif tag == self.neumann_tag:
+                name = "neumann_diff_tensor"
+            else:
+                raise NotImplementedError
+
+            if isinstance(self.diffusion_tensor, numpy.ndarray):
+                sym_diff_tensor = self.diffusion_tensor
+            else:
+                sym_diff_tensor = (make_vector_field(
+                        name, self.dimensions**2)
+                        .reshape(self.dimensions, self.dimensions))
+
+            return numpy.dot(sym_diff_tensor, v)
+
         div_tgt = SecondDerivativeTarget(
                 self.dimensions, strong_form=False,
                 operand=v,
                 unflux_operand=grad_u_local,
-                lower_order_operand=u)
+                lower_order_operand=u,
+                process_vector=process_vector)
 
         self.scheme.second_div(div_tgt,
                 [(self.dirichlet_tag, dir_bc)],
@@ -124,24 +139,21 @@ class BoundPoissonOperator(hedge.iterative.OperatorBase):
 
         pop = self.poisson_op = poisson_op
 
-        op = pop.laplace_op_template(
+        op = pop.op_template(
             apply_minv=False, dir_bc=0, neu_bc=0)
-        bc_op = pop.laplace_op_template(
+
+        bc_op = pop.op_template(
             apply_minv=False, u=0)
         self.compiled_op = discr.compile(op)
         self.compiled_bc_op = discr.compile(bc_op)
 
-        if isinstance(pop.diffusion_tensor, hedge.data.ConstantGivenFunction):
-            self.diffusion = self.neu_diff = pop.diffusion_tensor.value
-        else:
+        if not isinstance(pop.diffusion_tensor, numpy.ndarray):
             self.diffusion = pop.diffusion_tensor.volume_interpolant(discr)
             self.neu_diff = pop.diffusion_tensor.boundary_interpolant(discr,
                     poisson_op.neumann_tag)
 
         # Check whether use of Poincaré mean-value method is required.
-        # This only is requested for periodic BC's over the entire domain.
-        # Partial periodic BC mixed with other BC's does not need the
-        # special treatment.
+        # (for pure Neumann or pure periodic)
 
         from hedge.mesh import TAG_ALL
         self.poincare_mean_value_hack = (
@@ -157,7 +169,6 @@ class BoundPoissonOperator(hedge.iterative.OperatorBase):
         nodes = len(self.discr)
         return nodes, nodes
 
-    # actual functionality
     def op(self, u, apply_minv=False):
         """
         :param apply_minv: :class:`bool` specifying whether to compute a complete
@@ -168,7 +179,12 @@ class BoundPoissonOperator(hedge.iterative.OperatorBase):
           in :meth:`prepare_rhs`.
         """
 
-        result = self.compiled_op(u=u)
+        context = {"u": u}
+        if not isinstance(self.poisson_op.diffusion_tensor, numpy.ndarray):
+            context["diffusion"] = self.diffusion
+            context["neumann_diffusion"] = self.neu_diff
+
+        result = self.compiled_op(**context)
 
         if self.poincare_mean_value_hack:
             state_int = self.discr.integral(u)

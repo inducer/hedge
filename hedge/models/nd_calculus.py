@@ -142,7 +142,8 @@ class DivergenceOperator(Operator):
 class SecondDerivativeTarget(object):
     def __init__(self, dimensions, strong_form,
             operand, unflux_operand=None,
-            lower_order_operand=None):
+            lower_order_operand=None,
+            process_vector=None):
         self.dimensions = dimensions
         self.operand = operand
         self.unflux_operand = unflux_operand
@@ -158,6 +159,11 @@ class SecondDerivativeTarget(object):
         self.inner_fluxes = 0
         self.boundary_fluxes = 0
 
+        if process_vector is None:
+            self.process_vector = lambda x: x
+        else:
+            self.process_vector = process_vector
+
     def add_local_derivatives(self, expr):
         self.local_derivatives = self.local_derivatives \
                 + (-self.strong_neg)*expr
@@ -170,29 +176,24 @@ class SecondDerivativeTarget(object):
             from hedge.optemplate import make_stiffness_t
             return make_stiffness_t(self.dimensions)
 
-    def add_grad(self, operand=None):
+    def add_derivative(self, operand=None):
         nabla = self._local_nabla()
 
         if operand is None:
             operand = self.operand
 
-        from pytools.obj_array import make_obj_array
-        self.add_local_derivatives(make_obj_array(
-            [nabla[i](self.operand) for i in range(self.dimensions)]))
+        from pytools.obj_array import make_obj_array, is_obj_array
+        if is_obj_array(operand):
+            if len(operand) != self.dimensions:
+                raise ValueError("operand of divergence must have %d dimensions"
+                        % self.dimensions)
 
-    def add_div(self, operand=None):
-        nabla = self._local_nabla()
-
-        if operand is None:
-            operand = self.operand
-
-        if len(operand) != self.dimensions:
-            raise ValueError("operand of divergence must have %d dimensions"
-                    % self.dimensions)
-
-        from pytools.obj_array import make_obj_array
-        self.add_local_derivatives(
-                sum(nabla[i](self.operand[i]) for i in range(self.dimensions)))
+            from pytools.obj_array import make_obj_array
+            self.add_local_derivatives(
+                    sum(nabla[i](operand[i]) for i in range(self.dimensions)))
+        else:
+            self.add_local_derivatives(make_obj_array(
+                [nabla[i](operand) for i in range(self.dimensions)]))
 
     def add_inner_fluxes(self, flux, expr):
         from hedge.optemplate import get_flux_operator
@@ -252,7 +253,7 @@ class LDGSecondDerivative(SecondDerivativeBase):
                 cse(u.avg, "u_avg") 
                 - (u.int-u.ext)*dot(normal, self.beta(tgt)))
 
-        tgt.add_grad()
+        tgt.add_derivative()
         tgt.add_inner_fluxes(adjust_flux(flux), tgt.operand)
 
         for tag, bc in dirichlet_tags_and_bcs:
@@ -289,10 +290,11 @@ class LDGSecondDerivative(SecondDerivativeBase):
         flux = dot(v.avg + cse(dot(v.int - v.ext, normal), "jump_v")*self.beta(tgt),
             normal) - stab_term
 
+        processed_v = cse(tgt.process_vector(tgt.operand))
         from pytools.obj_array import join_fields
-        op_w = join_fields(tgt.lower_order_operand, tgt.operand)
+        op_w = join_fields(tgt.lower_order_operand, processed_v)
 
-        tgt.add_div()
+        tgt.add_derivative(processed_v)
         tgt.add_inner_fluxes(adjust_flux(flux), op_w)
 
         for tag, bc in dirichlet_tags_and_bcs:
@@ -309,7 +311,11 @@ class LDGSecondDerivative(SecondDerivativeBase):
         for tag, bc in neumann_tags_and_bcs:
             # FIXME add post-treatment
             # FIXME vector BC may not be like this in CNS
-            neu_bc_w = join_fields(0, make_op_normal(tag, tgt.dimensions)*bc)
+            neu_bc_w = join_fields(0, 
+                    tgt.process_vector(
+                        make_op_normal(tag, tgt.dimensions)*bc, 
+                        tag=tag))
+
             tgt.add_boundary_flux(
                     adjust_flux(dot(normal, v.ext)),
                     loc_bc_vec, neu_bc_w, tag)

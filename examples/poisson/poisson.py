@@ -36,19 +36,19 @@ def main(write_output=True):
     def boundary_tagger(fvi, el, fn, points):
         from math import atan2, pi
         normal = el.face_normals[fn]
-        if -10/180*pi < atan2(normal[1], normal[0]) < 10/180*pi:
+        if -90/180*pi < atan2(normal[1], normal[0]) < 90/180*pi:
             return ["neumann"]
         else:
             return ["dirichlet"]
 
     if dim == 2:
         if rcon.is_head_rank:
-            from hedge.mesh import make_disk_mesh
+            from hedge.mesh.generator import make_disk_mesh
             mesh = make_disk_mesh(r=0.5, boundary_tagger=boundary_tagger,
                     max_area=1e-2)
     elif dim == 3:
         if rcon.is_head_rank:
-            from hedge.mesh import make_ball_mesh
+            from hedge.mesh.generator import make_ball_mesh
             mesh = make_ball_mesh(max_volume=0.0001,
                     boundary_tagger=lambda fvi, el, fn, points:
                     ["dirichlet"])
@@ -79,12 +79,16 @@ def main(write_output=True):
         return result
 
     try:
-        from hedge.models.poisson import WeakPoissonOperator
-        op = WeakPoissonOperator(discr.dimensions, 
-                diffusion_tensor=ConstantGivenFunction(my_diff_tensor()),
+        from hedge.models.poisson import PoissonOperator
+        from hedge.mesh import TAG_NONE, TAG_ALL
+        op = PoissonOperator(discr.dimensions, 
+                #diffusion_tensor=my_diff_tensor(),
 
-                dirichlet_tag="dirichlet",
-                neumann_tag="neumann", 
+                #dirichlet_tag="dirichlet",
+                #neumann_tag="neumann", 
+
+                dirichlet_tag=TAG_NONE,
+                neumann_tag=TAG_ALL, 
 
                 dirichlet_bc=GivenFunction(dirichlet_bc),
                 neumann_bc=ConstantGivenFunction(-10),
