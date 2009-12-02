@@ -26,7 +26,6 @@ from hedge.mesh import TAG_ALL, TAG_NONE
 
 
 def main(write_output=True, 
-        dir_tag=TAG_NONE, neu_tag=TAG_NONE, rad_tag=TAG_ALL, 
         flux_type_arg="upwind", dtype=numpy.float64, debug=[]):
     from pytools.stopwatch import Job
     from math import sin, cos, pi, exp, sqrt
@@ -68,9 +67,9 @@ def main(write_output=True,
                 TimeHarmonicGivenFunction(
                     make_tdep_given(source_u), omega=10),
                 0, 1),
-            dirichlet_tag=dir_tag,
-            neumann_tag=neu_tag,
-            radiation_tag=rad_tag,
+            dirichlet_tag=TAG_ALL,
+            neumann_tag=TAG_NONE,
+            radiation_tag=TAG_NONE,
             flux_type=flux_type_arg
             )
 
@@ -152,7 +151,7 @@ left_pts[] = { };
 emb_lines[] = {};
 
 For row In {1:rows}
-  If (row % 2)
+  If (row % 2 == 0)
     // left
     rp = newp; Point(rp) = {w,dx*row, 0};
     right_pts[] += {rp};
@@ -161,7 +160,7 @@ For row In {1:rows}
     emb_line = newl; Line(emb_line) = {mp,rp};
     emb_lines[] += {emb_line};
   EndIf
-  If (row % 2 == 0)
+  If (row % 2)
     // right
     lp = newp; Point(lp) = {0,dx*row, 0};
     left_pts[] += {lp};
@@ -205,9 +204,9 @@ EndFor
 boundary_lines[] = {};
 boundary_lines[] += lines[];
 boundary_lines[] += emb_lines[];
-Physical Line ("boundary") = boundary_lines;
+Physical Line ("boundary") = boundary_lines[];
 
-Mesh.CharacteristicLengthFactor = 0.2;
+Mesh.CharacteristicLengthFactor = 0.4;
 """
 
 if __name__ == "__main__":
