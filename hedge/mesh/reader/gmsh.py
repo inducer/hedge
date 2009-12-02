@@ -552,9 +552,9 @@ def parse_gmsh(line_iterable, force_dimension=None, periodicity=None,
         except KeyError:
             return []
         else:
-            return [tag_name_map[tag_nr, el.dimensions]
+            return [tag_name_map[tag_nr, el.dimensions-1]
                     for tag_nr in gmsh_element.tag_numbers
-                    if (tag_nr, el.dimensions) in tag_name_map]
+                    if (tag_nr, el.dimensions-1) in tag_name_map]
 
     from hedge.mesh import make_conformal_mesh_ext
     return make_conformal_mesh_ext(
@@ -563,7 +563,7 @@ def parse_gmsh(line_iterable, force_dimension=None, periodicity=None,
             boundary_tagger=boundary_tagger,
             volume_tagger=volume_tagger,
             periodicity=periodicity,
-            allow_internal_boundaries=False)
+            allow_internal_boundaries=allow_internal_boundaries)
 
 
 
@@ -611,6 +611,3 @@ if __name__ == "__main__":
     print "f:", [ f(p)  for i,f in enumerate(list(z.basis_functions()))]
     l_to_g = LocalToGlobalMap(nodes,z)
     print l_to_g(p)
-
-
-

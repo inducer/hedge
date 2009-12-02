@@ -226,8 +226,6 @@ def make_conformal_mesh_ext(points, elements,
             TAG_REALLY_ALL: [],
             }
 
-    all_tags = set([TAG_ALL, TAG_REALLY_ALL])
-
     for face_vertices, els_faces in face_map.iteritems():
         boundary_el_faces_tags = []
         if len(els_faces) == 2:
