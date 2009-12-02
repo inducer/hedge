@@ -33,11 +33,11 @@ def main(write_output=True,
     from hedge.backends import guess_run_context
     rcon = guess_run_context()
 
-    from hedge.mesh.reader.gmsh import generate_gmsh
-    mesh = generate_gmsh(GEOMETRY, 2,
-            allow_internal_boundaries=True)
-
     if rcon.is_head_rank:
+        from hedge.mesh.reader.gmsh import generate_gmsh
+        mesh = generate_gmsh(GEOMETRY, 2,
+                allow_internal_boundaries=True)
+
         print "%d elements" % len(mesh.elements)
         mesh_data = rcon.distribute_mesh(mesh)
     else:

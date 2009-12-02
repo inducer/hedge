@@ -54,6 +54,9 @@ class TAG_NO_BOUNDARY(object):
     """A boundary tag indicating that this edge should not fall under
     :class:`TAG_ALL`."""
     pass
+
+SYSTEM_TAGS = set([TAG_NONE, TAG_ALL, TAG_REALLY_ALL, TAG_NO_BOUNDARY])
+
 class TAG_RANK_BOUNDARY(object):
     """A boundary tag indicating the boundary with a neighboring rank."""
     def __init__(self, rank):
@@ -256,7 +259,7 @@ def make_conformal_mesh_ext(points, elements,
 
         for el_face, tags in boundary_el_faces_tags:
             el, face = el_face
-            tags = set(tags)
+            tags = set(tags) - SYSTEM_TAGS
             assert not isinstance(tags, str), \
                 RuntimeError("Received string as tag list")
             assert TAG_ALL not in tags
