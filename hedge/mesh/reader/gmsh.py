@@ -412,7 +412,7 @@ def read_gmsh(filename, force_dimension=None, periodicity=None):
                 dimension = int(dimension)
                 number = int(number)
 
-                tag_name_map.setdefault((number, dimension)).append(name)
+                tag_name_map[number, dimension] = name
 
                 name_idx +=1
 
