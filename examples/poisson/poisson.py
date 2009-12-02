@@ -82,7 +82,7 @@ def main(write_output=True):
         from hedge.models.poisson import PoissonOperator
         from hedge.mesh import TAG_NONE, TAG_ALL
         op = PoissonOperator(discr.dimensions, 
-                #diffusion_tensor=my_diff_tensor(),
+                diffusion_tensor=my_diff_tensor(),
 
                 #dirichlet_tag="dirichlet",
                 #neumann_tag="neumann", 

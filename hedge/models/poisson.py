@@ -74,7 +74,7 @@ class PoissonOperator(Operator):
                 self.dimensions, strong_form=False,
                 operand=u)
 
-        self.scheme.first_grad(grad_tgt,
+        self.scheme.first_derivative(grad_tgt,
                 [(self.dirichlet_tag, dir_bc)],
                 [(self.neumann_tag, neu_bc)])
 
@@ -107,7 +107,7 @@ class PoissonOperator(Operator):
                 lower_order_operand=u,
                 process_vector=process_vector)
 
-        self.scheme.second_div(div_tgt,
+        self.scheme.second_derivative(div_tgt,
                 [(self.dirichlet_tag, dir_bc)],
                 [(self.neumann_tag, neu_bc)])
 
@@ -141,6 +141,9 @@ class BoundPoissonOperator(hedge.iterative.OperatorBase):
 
         op = pop.op_template(
             apply_minv=False, dir_bc=0, neu_bc=0)
+
+        from hedge.optemplate import pretty_print_optemplate
+        print pretty_print_optemplate(op)
 
         bc_op = pop.op_template(
             apply_minv=False, u=0)
