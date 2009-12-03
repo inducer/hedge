@@ -141,12 +141,10 @@ class DivergenceOperator(Operator):
 # second derivative targets ---------------------------------------------------
 class SecondDerivativeTarget(object):
     def __init__(self, dimensions, strong_form,
-            operand, unflux_operand=None,
-            lower_order_operand=None,
+            operand, lower_order_operand=None,
             process_vector=None):
         self.dimensions = dimensions
         self.operand = operand
-        self.unflux_operand = unflux_operand
         self.lower_order_operand = lower_order_operand
 
         self.strong_form = strong_form
@@ -168,6 +166,35 @@ class SecondDerivativeTarget(object):
         self.local_derivatives = self.local_derivatives \
                 + (-self.strong_neg)*expr
 
+    def vec_times(self, vec, operand):
+        from pytools.obj_array import is_obj_array
+
+        if is_obj_array(operand):
+            if len(operand) != self.dimensions:
+                raise ValueError("operand of vec_times must have %d dimensions"
+                        % self.dimensions)
+
+            return numpy.dot(vec, operand)
+        else:
+            return vec*operand
+
+    def normal_times_flux(self, flux):
+        from hedge.flux import make_normal
+        return self.vec_times(make_normal(self.dimensions), flux)
+
+    def apply_diff(self, nabla, operand):
+        from pytools.obj_array import make_obj_array, is_obj_array
+        if is_obj_array(operand):
+            if len(operand) != self.dimensions:
+                raise ValueError("operand of apply_diff must have %d dimensions"
+                        % self.dimensions)
+
+            from pytools.obj_array import make_obj_array
+            return sum(nabla[i](operand[i]) for i in range(self.dimensions))
+        else:
+            return make_obj_array(
+                [nabla[i](operand) for i in range(self.dimensions)])
+
     def _local_nabla(self):
         if self.strong_form:
             from hedge.optemplate import make_stiffness
@@ -176,36 +203,13 @@ class SecondDerivativeTarget(object):
             from hedge.optemplate import make_stiffness_t
             return make_stiffness_t(self.dimensions)
 
-    def flux_times_vec(self, flux, vec):
-        from pytools.obj_array import is_obj_array
-
-        if is_obj_array(flux):
-            return numpy.dot(flux, vec)
-        else:
-            return flux*vec
-
-    def flux_times_normal(self, flux):
-        from hedge.flux import make_normal
-        return self.flux_times_vec(flux, make_normal(self.dimensions))
-
     def add_derivative(self, operand=None):
-        nabla = self._local_nabla()
-
         if operand is None:
             operand = self.operand
 
         from pytools.obj_array import make_obj_array, is_obj_array
-        if is_obj_array(operand):
-            if len(operand) != self.dimensions:
-                raise ValueError("operand of divergence must have %d dimensions"
-                        % self.dimensions)
-
-            from pytools.obj_array import make_obj_array
-            self.add_local_derivatives(
-                    sum(nabla[i](operand[i]) for i in range(self.dimensions)))
-        else:
-            self.add_local_derivatives(make_obj_array(
-                [nabla[i](operand) for i in range(self.dimensions)]))
+        self.add_local_derivatives(
+                self.apply_diff(self._local_nabla(), operand))
 
     def add_inner_fluxes(self, flux, expr):
         from hedge.optemplate import get_flux_operator
@@ -252,8 +256,8 @@ class LDGSecondDerivative(SecondDerivativeBase):
         from hedge.flux import FluxScalarPlaceholder, make_normal
         normal = make_normal(tgt.dimensions)
 
-        n_times = tgt.flux_times_normal
-        v_times = tgt.flux_times_vec
+        n_times = tgt.normal_times_flux
+        v_times = tgt.vec_times
 
         if tgt.strong_form:
             def adjust_flux(f):
@@ -266,7 +270,7 @@ class LDGSecondDerivative(SecondDerivativeBase):
 
         flux = n_times(
                 cse(u.avg, "u_avg") 
-                - v_times(n_times(u.int-u.ext), self.beta(tgt)))
+                - v_times(self.beta(tgt), n_times(u.int-u.ext)))
 
         tgt.add_derivative()
         tgt.add_inner_fluxes(adjust_flux(flux), tgt.operand)
@@ -290,12 +294,12 @@ class LDGSecondDerivative(SecondDerivativeBase):
         from hedge.flux import FluxVectorPlaceholder, make_normal, PenaltyTerm
         normal = make_normal(tgt.dimensions)
 
-        n_times = tgt.flux_times_normal
-        v_times = tgt.flux_times_vec
+        n_times = tgt.normal_times_flux
+        v_times = tgt.vec_times
 
         if tgt.strong_form:
             def adjust_flux(f):
-                return tgt.flux_times_normal(v.int) - f
+                return tgt.normal_times_flux(v.int) - f
         else:
             def adjust_flux(f):
                 return f
@@ -345,3 +349,103 @@ class LDGSecondDerivative(SecondDerivativeBase):
 class StabilizedCentralSecondDerivative(LDGSecondDerivative):
     def __init__(self):
         LDGSecondDerivative.__init__(self, 0)
+
+
+
+
+class IPDGSecondDerivative(SecondDerivativeBase):
+    def first_derivative(self, tgt,
+            dirichlet_tags_and_bcs=[],
+            neumann_tags_and_bcs=[]):
+
+        from numpy import dot
+        from hedge.optemplate import make_common_subexpression as cse
+        from hedge.flux import FluxScalarPlaceholder, make_normal
+        normal = make_normal(tgt.dimensions)
+
+        n_times = tgt.normal_times_flux
+
+        if tgt.strong_form:
+            def adjust_flux(f):
+                return n_times(u.int) - f
+        else:
+            def adjust_flux(f):
+                return f
+
+        u = FluxScalarPlaceholder()
+
+        flux = n_times(cse(u.avg, "u_avg"))
+
+        tgt.add_derivative()
+        tgt.add_inner_fluxes(adjust_flux(flux), tgt.operand)
+
+        for tag, bc in dirichlet_tags_and_bcs:
+            tgt.add_boundary_flux(
+                    adjust_flux(n_times(u.ext)),
+                    tgt.operand, bc, tag)
+
+        for tag, bc in neumann_tags_and_bcs:
+            tgt.add_boundary_flux(
+                    adjust_flux(n_times(u.int)), 
+                    tgt.operand, 0, tag)
+
+    def second_derivative(self, tgt, 
+            dirichlet_tags_and_bcs=[],
+            neumann_tags_and_bcs=[]):
+
+        from numpy import dot
+        from hedge.optemplate import make_common_subexpression as cse
+        from hedge.flux import FluxVectorPlaceholder, make_normal, PenaltyTerm
+        normal = make_normal(tgt.dimensions)
+
+        n_times = tgt.normal_times_flux
+
+        if tgt.strong_form:
+            def adjust_flux(f):
+                return tgt.normal_times_flux(v.int) - f
+        else:
+            def adjust_flux(f):
+                return f
+
+        from pytools.obj_array import gen_len, gen_slice, make_obj_array
+
+        vec = FluxVectorPlaceholder(1+tgt.dimensions)
+        low_order_len = gen_len(tgt.lower_order_operand)
+        u = gen_slice(vec, slice(low_order_len))
+        v = gen_slice(vec, slice(low_order_len, None))
+
+        stab_term = cse(10 * PenaltyTerm() * (u.int - u.ext), "stab")
+        flux = n_times(v.avg - n_times(stab_term))
+
+        from hedge.optemplate import make_nabla
+        processed_unflux_v = cse(tgt.process_vector(
+            tgt.apply_diff(
+                make_nabla(tgt.dimensions), 
+                tgt.lower_order_operand)), "diff_v")
+
+        from pytools.obj_array import join_fields
+        op_w = join_fields(tgt.lower_order_operand, processed_unflux_v)
+
+        processed_v = cse(tgt.process_vector(tgt.operand))
+        tgt.add_derivative(processed_v)
+        tgt.add_inner_fluxes(adjust_flux(flux), op_w)
+
+        for tag, bc in dirichlet_tags_and_bcs:
+            dir_bc_w = join_fields(bc, [0]*tgt.dimensions)
+            tgt.add_boundary_flux(
+                    adjust_flux(n_times(v.int- n_times(stab_term))),
+                    op_w, dir_bc_w, tag)
+
+        from hedge.optemplate import make_normal as make_op_normal
+        loc_bc_vec = make_obj_array([0]*(tgt.dimensions+1))
+
+        for tag, bc in neumann_tags_and_bcs:
+            # FIXME vector BC may not be like this in CNS
+            neu_bc_w = join_fields(0, 
+                    tgt.process_vector(
+                        make_op_normal(tag, tgt.dimensions)*bc, 
+                        tag=tag))
+
+            tgt.add_boundary_flux(
+                    adjust_flux(n_times(v.ext)),
+                    loc_bc_vec, neu_bc_w, tag)

@@ -70,8 +70,9 @@ class PoissonOperator(Operator):
         if dir_bc is None: dir_bc = Field("dir_bc")
         if neu_bc is None: neu_bc = Field("neu_bc")
 
+        # strong_form here allows LDG to reuse the value of grad u.
         grad_tgt = SecondDerivativeTarget(
-                self.dimensions, strong_form=False,
+                self.dimensions, strong_form=True,
                 operand=u)
 
         self.scheme.first_derivative(grad_tgt,
@@ -102,9 +103,7 @@ class PoissonOperator(Operator):
 
         div_tgt = SecondDerivativeTarget(
                 self.dimensions, strong_form=False,
-                operand=v,
-                unflux_operand=grad_u_local,
-                lower_order_operand=u,
+                operand=v, lower_order_operand=u,
                 process_vector=process_vector)
 
         self.scheme.second_derivative(div_tgt,
@@ -141,9 +140,6 @@ class BoundPoissonOperator(hedge.iterative.OperatorBase):
 
         op = pop.op_template(
             apply_minv=False, dir_bc=0, neu_bc=0)
-
-        from hedge.optemplate import pretty_print_optemplate
-        print pretty_print_optemplate(op)
 
         bc_op = pop.op_template(
             apply_minv=False, u=0)
