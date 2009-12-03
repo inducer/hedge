@@ -83,8 +83,8 @@ def main(write_output=True) :
     def neumann_bc(t, x):
         return 2
 
-    from hedge.models.diffusion import StrongHeatOperator
-    op = StrongHeatOperator(discr.dimensions,
+    from hedge.models.diffusion import DiffusionOperator
+    op = DiffusionOperator(discr.dimensions,
             #coeff=coeff,
             dirichlet_tag="dirichlet",
             dirichlet_bc=TimeConstantGivenFunction(ConstantGivenFunction(0)),

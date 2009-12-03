@@ -450,6 +450,11 @@ class Executor(object):
         self.fluxlocal_kernel = self.discr.fluxlocal_plan.make_kernel(discr,
                 with_index_check=False)
 
+        if "dump_op_code" in discr.debug:
+            from hedge.tools import open_unique_debug_file
+            open_unique_debug_file("op-code", ".txt").write(
+                    str(self.code))
+
     @staticmethod
     def prepare_optemplate_stage2(mesh, optemplate, debug_flags=set()):
         from hedge.optemplate import InverseMassContractor, \

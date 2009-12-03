@@ -150,9 +150,10 @@ class Discretization(TimestepCalculator):
         return set([
             "ilist_generation",
             "node_permutation",
-            "print_op_code",
+            "dump_op_code",
             "dump_dataflow_graph",
             "dump_optemplate_stages",
+            "help",
             ])
 
     @classmethod
@@ -212,6 +213,11 @@ class Discretization(TimestepCalculator):
             warn("Unrecognized debug flags specified: " 
                     + ", ".join(unknown_debug_flags))
         self.debug = debug
+
+        if "help" in self.debug:
+            print "available debug flags:"
+            for df in sorted(self.all_debug_flags()):
+                print "    %s" % df
 
         self._build_element_groups_and_nodes(local_discretization)
         self._calculate_local_matrices()
