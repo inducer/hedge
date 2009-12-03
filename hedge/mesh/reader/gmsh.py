@@ -558,7 +558,7 @@ def parse_gmsh(line_iterable, force_dimension=None, periodicity=None,
 
     from hedge.mesh import make_conformal_mesh_ext
     return make_conformal_mesh_ext(
-            hedge_vertices,
+            numpy.array(hedge_vertices, dtype=numpy.float64),
             hedge_elements,
             boundary_tagger=boundary_tagger,
             volume_tagger=volume_tagger,

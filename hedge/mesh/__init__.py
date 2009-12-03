@@ -165,7 +165,7 @@ def make_conformal_mesh_ext(points, elements,
     Face indices follow the convention for the respective element,
     such as Triangle or Tetrahedron, in this module.
 
-    :param points: a iterable of vertex coordinates, given as vectors.
+    :param points: an array of vertex coordinates, given as vectors.
     :param elements: an iterable of :class:`hedge.mesh.element.Element`
       instances.
     :param boundary_tags: a dictionary from tags to lists of tuples
@@ -189,6 +189,10 @@ def make_conformal_mesh_ext(points, elements,
     """
 
     # input validation 
+    if (not isinstance(points, numpy.ndarray) 
+            or not points.dtype == numpy.float64):
+        raise TypeError("points must be a float64 array")
+
     if boundary_tagger is None:
         def boundary_tagger(fvi, el, fn, all_v):
             return []
