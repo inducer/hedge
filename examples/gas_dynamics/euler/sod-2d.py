@@ -51,7 +51,7 @@ def main():
     from hedge.tools import to_obj_array
 
     if rcon.is_head_rank:
-        from hedge.mesh import make_rect_mesh
+        from hedge.mesh.generator import make_rect_mesh
         mesh = make_rect_mesh((-5,-5), (5,5), max_area=0.01)
         mesh_data = rcon.distribute_mesh(mesh)
     else:
@@ -98,7 +98,7 @@ def main():
 
         # integrator setup---------------------------------------------------------
         from hedge.timestep import SSPRK3TimeStepper, RK4TimeStepper
-        stepper = SSPRK3TimeStepper(limit_stages=True,limiter=limiter)
+        stepper = SSPRK3TimeStepper(limiter=limiter)
         #stepper = SSPRK3TimeStepper()
         #stepper = RK4TimeStepper()
 

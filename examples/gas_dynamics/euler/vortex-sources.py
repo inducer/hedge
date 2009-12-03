@@ -215,7 +215,7 @@ def main(write_output=True):
 
         # time stepper --------------------------------------------------------
         from hedge.timestep import SSPRK3TimeStepper, RK4TimeStepper
-        stepper = SSPRK3TimeStepper(limit_stages=True,limiter=limiter)
+        stepper = SSPRK3TimeStepper(limiter=limiter)
         #stepper = SSPRK3TimeStepper()
         #stepper = RK4TimeStepper()
 
