@@ -433,6 +433,18 @@ class IntervalDiscretization(PkSimplexDiscretization):
     equilateral_nodes = nodes
     unit_nodes = nodes
 
+    @staticmethod
+    def barycentric_to_equilateral((lambda1, lambda2)):
+        """Return the equilateral (x,y) coordinate corresponding
+        to the barycentric coordinates (lambda1..lambdaN)."""
+
+        # reflects vertices in equilateral coordinates
+        return numpy.array([2*lambda1-1], dtype=numpy.float64)
+
+    equilateral_to_unit = AffineMap(
+            numpy.array([[1]], dtype=numpy.float64),
+            numpy.array([0], dtype=numpy.float64))
+
     @memoize_method
     def get_submesh_indices(self):
         """Return a list of tuples of indices into the node list that
