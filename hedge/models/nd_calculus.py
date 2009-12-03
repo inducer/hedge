@@ -241,8 +241,9 @@ class SecondDerivativeBase(object):
 
 
 class LDGSecondDerivative(SecondDerivativeBase):
-    def __init__(self, beta_value=0.5):
+    def __init__(self, beta_value=0.5, stab_coefficient=10):
         self.beta_value = beta_value
+        self.stab_coefficient = stab_coefficient
 
     def beta(self, tgt):
         return numpy.array([self.beta_value]*tgt.dimensions, dtype=numpy.float64)
@@ -311,7 +312,8 @@ class LDGSecondDerivative(SecondDerivativeBase):
         u = gen_slice(vec, slice(low_order_len))
         v = gen_slice(vec, slice(low_order_len, None))
 
-        stab_term = cse(10 * PenaltyTerm() * (u.int - u.ext), "stab")
+        stab_term = cse(
+                self.stab_coefficient * PenaltyTerm() * (u.int - u.ext), "stab")
         flux = n_times(v.avg 
                 + v_times(self.beta(tgt), cse(n_times(v.int - v.ext), "jump_v"))
                 - n_times(stab_term))
@@ -353,7 +355,17 @@ class StabilizedCentralSecondDerivative(LDGSecondDerivative):
 
 
 
+class CentralSecondDerivative(LDGSecondDerivative):
+    def __init__(self):
+        LDGSecondDerivative.__init__(self, 0, 0)
+
+
+
+
 class IPDGSecondDerivative(SecondDerivativeBase):
+    def __init__(self, stab_coefficient=10):
+        self.stab_coefficient = stab_coefficient
+
     def first_derivative(self, tgt,
             dirichlet_tags_and_bcs=[],
             neumann_tags_and_bcs=[]):
@@ -414,7 +426,8 @@ class IPDGSecondDerivative(SecondDerivativeBase):
         u = gen_slice(vec, slice(low_order_len))
         v = gen_slice(vec, slice(low_order_len, None))
 
-        stab_term = cse(10 * PenaltyTerm() * (u.int - u.ext), "stab")
+        stab_term = cse(
+                self.stab_coefficient * PenaltyTerm() * (u.int - u.ext), "stab")
         flux = n_times(v.avg - n_times(stab_term))
 
         from hedge.optemplate import make_nabla

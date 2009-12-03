@@ -35,34 +35,19 @@ from pytools import memoize_method
 
 
 
-class PoissonOperator(Operator):
-    """Implements the Local Discontinuous Galerkin (LDG) Method for elliptic
-    operators.
-
-    See P. Castillo et al.,
-    Local discontinuous Galerkin methods for elliptic problems",
-    Communications in Numerical Methods in Engineering 18, no. 1 (2002): 69-75.
-    """
-
-    def __init__(self, dimensions, diffusion_tensor=None,
-            dirichlet_bc=hedge.data.ConstantGivenFunction(), dirichlet_tag="dirichlet",
-            neumann_bc=hedge.data.ConstantGivenFunction(), neumann_tag="neumann",
-            scheme=LDGSecondDerivative()):
-        self.dimensions = dimensions
-
-        self.scheme = scheme
-
-        self.dirichlet_bc = dirichlet_bc
-        self.dirichlet_tag = dirichlet_tag
-        self.neumann_bc = neumann_bc
-        self.neumann_tag = neumann_tag
-
-        if diffusion_tensor is None:
-            diffusion_tensor = numpy.eye(dimensions)
-        self.diffusion_tensor = diffusion_tensor
-
-    # operator application, rhs prep ------------------------------------------
+class LaplacianOperatorBase(object):
     def op_template(self, apply_minv, u=None, dir_bc=None, neu_bc=None):
+        """
+        :param apply_minv: :class:`bool` specifying whether to compute a complete
+          divergence operator. If False, the final application of the inverse
+          mass operator is skipped. This is used in :meth:`op` in order to reduce
+          the scheme :math:`M^{-1} S u = f` to :math:`S u = M f`, so that the mass operator
+          only needs to be applied once, when preparing the right hand side
+          in :meth:`prepare_rhs`.
+
+          :class:`hedge.models.diffusion.DiffusionOperator` needs this.
+        """
+
         from hedge.optemplate import InverseMassOperator, Field, make_vector_field
         from hedge.models.nd_calculus import SecondDerivativeTarget
 
@@ -115,6 +100,35 @@ class PoissonOperator(Operator):
         else:
             return div_tgt.all
 
+
+
+
+class PoissonOperator(Operator, LaplacianOperatorBase):
+    """Implements the Local Discontinuous Galerkin (LDG) Method for elliptic
+    operators.
+
+    See P. Castillo et al.,
+    Local discontinuous Galerkin methods for elliptic problems",
+    Communications in Numerical Methods in Engineering 18, no. 1 (2002): 69-75.
+    """
+
+    def __init__(self, dimensions, diffusion_tensor=None,
+            dirichlet_bc=hedge.data.ConstantGivenFunction(), dirichlet_tag="dirichlet",
+            neumann_bc=hedge.data.ConstantGivenFunction(), neumann_tag="neumann",
+            scheme=LDGSecondDerivative()):
+        self.dimensions = dimensions
+
+        self.scheme = scheme
+
+        self.dirichlet_bc = dirichlet_bc
+        self.dirichlet_tag = dirichlet_tag
+        self.neumann_bc = neumann_bc
+        self.neumann_tag = neumann_tag
+
+        if diffusion_tensor is None:
+            diffusion_tensor = numpy.eye(dimensions)
+        self.diffusion_tensor = diffusion_tensor
+
     # bound operator ----------------------------------------------------------
     def bind(self, discr):
         """Return a :class:`BoundPoissonOperator`."""
@@ -130,7 +144,7 @@ class PoissonOperator(Operator):
 
 
 class BoundPoissonOperator(hedge.iterative.OperatorBase):
-    """Returned by :meth:`WeakPoissonOperator.bind`."""
+    """Returned by :meth:`PoissonOperator.bind`."""
 
     def __init__(self, poisson_op, discr):
         hedge.iterative.OperatorBase.__init__(self)
@@ -168,16 +182,7 @@ class BoundPoissonOperator(hedge.iterative.OperatorBase):
         nodes = len(self.discr)
         return nodes, nodes
 
-    def op(self, u, apply_minv=False):
-        """
-        :param apply_minv: :class:`bool` specifying whether to compute a complete
-          divergence operator. If False, the final application of the inverse
-          mass operator is skipped. This is used in :meth:`op` in order to reduce
-          the scheme :math:`M^{-1} S u = f` to :math:`S u = M f`, so that the mass operator
-          only needs to be applied once, when preparing the right hand side
-          in :meth:`prepare_rhs`.
-        """
-
+    def op(self, u):
         context = {"u": u}
         if not isinstance(self.poisson_op.diffusion_tensor, numpy.ndarray):
             context["diffusion"] = self.diffusion

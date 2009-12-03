@@ -929,7 +929,7 @@ class EmptyFluxKiller(CSECachingMapperMixin, IdentityMapper):
             and
             isinstance(expr.field, BoundaryPair)
             and
-            len(self.discr.get_boundary(expr.field.tag).nodes) == 0):
+            self.discr.get_boundary(expr.field.tag).is_empty()):
             return 0
         else:
             return IdentityMapper.map_operator_binding(self, expr)
