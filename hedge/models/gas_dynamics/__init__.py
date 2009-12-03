@@ -184,10 +184,9 @@ class GasDynamicsOperator(TimeDependentOperator):
             from hedge.optemplate import BoundaryPair
             flux_part = numpy.zeros((d, dimensions), dtype=object)
             for i in range(dimensions):
-                flux_part[:,i] = (flux_op[i]*q
+                flux_part[:,i] = (flux_op[i](q)
                                 + sum(
-                                flux_op[i]*
-                                BoundaryPair(q, bc, tag)
+                                flux_op[i](BoundaryPair(q, bc, tag))
                                 for tag, bc in all_tags_and_bcs)
                                 )
 
@@ -270,6 +269,7 @@ class GasDynamicsOperator(TimeDependentOperator):
                         ), "%s_bflux" % AXES[i])
                     for i in range(self.dimensions)]
 
+        from hedge.optemplate import IfPositive
         from pymbolic import var
         sqrt = var("sqrt")
 
@@ -390,7 +390,7 @@ class GasDynamicsOperator(TimeDependentOperator):
         result = join_fields(
                 (- numpy.dot(make_nabla(self.dimensions), flux_state)
                  + InverseMassOperator()*make_lax_friedrichs_flux(
-                        wave_speed=cse(ElementwiseMaxOperator()*speed, "emax_c"),
+                        wave_speed=cse(ElementwiseMaxOperator()(speed), "emax_c"),
                         state=state, fluxes=flux_state,
                         bdry_tags_states_and_fluxes=[
                             (tag, bc, bdry_flux(bc, state, tag))
