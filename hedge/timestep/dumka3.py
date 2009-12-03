@@ -69,6 +69,7 @@ class Dumka3TimeStepper(object):
 
         self.coeff = numpy.array(_COEF, dtype=self.scalar_type)
 
+        # diagnostics init
         from pytools.log import IntervalTimer, EventCounter
         timer_factory = IntervalTimer
         if rcon is not None:

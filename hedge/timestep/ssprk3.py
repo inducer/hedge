@@ -31,27 +31,35 @@ class SSPRK3TimeStepper(TimeStepper):
     """A third-order strong stability preserving Runge-Kutta method
 
     See JSH, TW: Nodal Discontinuous Galerkin Methods p.158
-
-    :param limit_stages: bool indicating whether to limit after each stage.
     """
     dt_fudge_factor = 1
 
-    def __init__(self, allow_jit=False, limit_stages=False, limiter=None):
+    def __init__(self, dtype=numpy.float64, rcon=None, limiter=None):
+        self.dtype = numpy.dtype(dtype)
+        self.rcon = rcon
+        from pytools import match_precision
+        self.scalar_type = match_precision(
+                numpy.dtype(numpy.float64), self.dtype).type
+
+        if limiter is None:
+            self.limiter = lambda x: x
+        else:
+            self.limiter = limiter
+
+        # diagnostics init
         from pytools.log import IntervalTimer, EventCounter
+
+        timer_factory = IntervalTimer
+        if rcon is not None:
+            timer_factory = rcon.make_timer
+
         self.timer = IntervalTimer(
                 "t_ssprk3", "Time spent doing algebra in SSPRK3")
         self.flop_counter = EventCounter(
                 "n_flops_ssprk3", "Floating point operations performed in SSPRK3")
 
-        self.allow_jit = allow_jit
-        self.limit_stages = limit_stages
-        self.limiter = limiter
-
     def get_stability_relevant_init_args(self):
         return ()
-
-    def __getinitargs__(self):
-        return (self.allow_jit, self.limit_stages, self.limiter)
 
     def add_instrumentation(self, logmgr):
         logmgr.add_quantity(self.timer)
@@ -59,34 +67,26 @@ class SSPRK3TimeStepper(TimeStepper):
 
     def __call__(self, y, t, dt, rhs):
         try:
-            self.residual
+            lc2 = self.linear_combiner_2
+            lc3 = self.linear_combiner_3
         except AttributeError:
-            from hedge.tools import join_fields
-            self.residual = 0*rhs(t, y)
-            from hedge.tools import count_dofs, has_data_in_numpy_arrays
-            self.dof_count = count_dofs(self.residual)
+            from hedge.tools import count_dofs
+            self.dof_count = count_dofs(y)
 
-            self.use_jit = self.allow_jit and has_data_in_numpy_arrays(
-                    y, allow_objarray_levels=1)
+            from hedge.tools.linear_combination import make_linear_combiner
+            lc2 = self.linear_combiner_2 = make_linear_combiner(
+                    self.dtype, self.scalar_type, y, arg_count=2, rcon=self.rcon)
+            lc3 = self.linear_combiner_3 = make_linear_combiner(
+                    self.dtype, self.scalar_type, y, arg_count=3, rcon=self.rcon)
 
-        if self.use_jit:
-            raise NotImplementedError
+            from hedge.tools import count_dofs
+            self.dof_count = count_dofs(0*rhs(t, y))
 
-        else:
-            sub_timer = self.timer.start_sub_timer()
-            if self.limit_stages:
-                v1 = y + dt*rhs(t, y)
-                v1=self.limiter(v1)
-                v2 = (3*y + v1 + dt*rhs(t+dt,v1))/4
-                v2=self.limiter(v2)
-                y = (y + 2*v2 + 2*dt*rhs(t+dt/2,v2))/3
-                y=self.limiter(y)
-            else:
-                v1 = y + dt*rhs(t, y)
-                v2 = (3*y + v1 + dt*rhs(t+dt,v1))/4
-                y = (y + 2*v2 + 2*dt*rhs(t+dt/2,v2))/3
-
-            sub_timer.stop().submit()
+        sub_timer = self.timer.start_sub_timer()
+        v1 = self.limiter(lc2((1, y), (dt, rhs(t, y))))
+        v2 = self.limiter(lc3((3/4, y), (1/4, v1), (dt/4, rhs(t+dt,v1))))
+        y = self.limiter(lc3((1/3, y), (2/3, v2), (2*dt/3, rhs(t+dt/2,v2))))
+        sub_timer.stop().submit()
 
         self.flop_counter.add(3*self.dof_count*5)
 
