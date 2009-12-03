@@ -929,10 +929,10 @@ def make_lax_friedrichs_flux(wave_speed, state, fluxes, bdry_tags_states_and_flu
     int_operand = join_fields(wave_speed, state, *fluxes)
 
     from hedge.optemplate import BoundaryPair
-    return (flux_op*int_operand
+    return (flux_op(int_operand)
             + sum(
-                flux_op*BoundaryPair(int_operand,
-                    join_fields(0, bdry_state, *bdry_fluxes), tag)
+                flux_op(BoundaryPair(int_operand,
+                    join_fields(0, bdry_state, *bdry_fluxes), tag))
                 for tag, bdry_state, bdry_fluxes in bdry_tags_states_and_fluxes))
 
 
