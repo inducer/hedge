@@ -212,6 +212,10 @@ class StraightCurvedFaceGroup(hedge._internal.StraightCurvedFaceGroup):
 
         self.ldis_loc = ldis_loc
         self.ldis_opp = ldis_opp
+
+
+
+
 # boundary --------------------------------------------------------------------
 class Boundary(object):
     def __init__(self, nodes, ranges, vol_indices, face_groups,
@@ -237,7 +241,5 @@ class Boundary(object):
                 return flux_face
         raise KeyError, "flux face not found in boundary"
 
-
-
-
-
+    def is_empty(self):
+        return len(self.nodes) == 0
