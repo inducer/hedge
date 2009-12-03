@@ -239,17 +239,10 @@ class Executor(object):
 
         self.code = self.compile_optemplate(discr, optemplate, post_bind_mapper)
 
-        if "print_op_code" in discr.debug:
-            from hedge.tools import get_rank
-            if get_rank(discr) == 0:
-                print self.code
-                raw_input()
-
-        if "print_op_code" in discr.debug:
-            from hedge.tools import get_rank
-            if get_rank(discr) == 0:
-                print self.code
-                raw_input()
+        if "dump_op_code" in discr.debug:
+            from hedge.tools import open_unique_debug_file
+            open_unique_debug_file("op-code", ".txt").write(
+                    str(self.code))
 
         def bench_diff(f):
             test_field = discr.volume_zeros()
