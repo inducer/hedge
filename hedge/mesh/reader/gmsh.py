@@ -286,18 +286,20 @@ class LocalToGlobalMap(object):
 
 
 def read_gmsh(filename, force_dimension=None, periodicity=None,
-        allow_internal_boundaries=False):
+        allow_internal_boundaries=False,
+        tag_mapper=lambda tag: tag):
     """
     :param force_dimension: if not None, truncate point coordinates to this many dimensions.
     """
     import string
     # open target file
     mesh_file = open(filename, 'r')
-    result = parse_gmsh(mesh_file, force_dimension, periodicity=None,
-            allow_internal_boundaries=False)
+    result = parse_gmsh(mesh_file, force_dimension=force_dimension, periodicity=periodicity,
+            allow_internal_boundaries=allow_internal_boundaries,
+            tag_mapper=tag_mapper)
     mesh_file.close()
 
-    return
+    return result
 
 
 
@@ -305,7 +307,8 @@ def read_gmsh(filename, force_dimension=None, periodicity=None,
 def generate_gmsh(source, dimensions, order=None, other_options=[],
             extension="geo", gmsh_executable="gmsh",
             force_dimension=None, periodicity=None,
-            allow_internal_boundaries=False):
+            allow_internal_boundaries=False,
+            tag_mapper=lambda tag: tag):
     from meshpy.gmsh import GmshRunner
     runner = GmshRunner(source, dimensions, order=order, 
             other_options=other_options, extension=extension, 
@@ -316,7 +319,8 @@ def generate_gmsh(source, dimensions, order=None, other_options=[],
         result = parse_gmsh(runner.output_file,
                 force_dimension=force_dimension, 
                 periodicity=periodicity, 
-                allow_internal_boundaries=allow_internal_boundaries)
+                allow_internal_boundaries=allow_internal_boundaries,
+                tag_mapper=tag_mapper)
     finally:
         runner.__exit__(None, None, None)
 
@@ -326,7 +330,7 @@ def generate_gmsh(source, dimensions, order=None, other_options=[],
 
 
 def parse_gmsh(line_iterable, force_dimension=None, periodicity=None,
-        allow_internal_boundaries=False):
+        allow_internal_boundaries=False, tag_mapper=lambda tag: tag):
     """
     :param force_dimension: if not None, truncate point coordinates to this many dimensions.
     """
@@ -444,7 +448,7 @@ def parse_gmsh(line_iterable, force_dimension=None, periodicity=None,
                     el_type=element_type,
                     node_indices=node_indices,
                     gmsh_vertex_indices=gmsh_vertex_nrs,
-                    tag_numbers=tags)
+                    tag_numbers=[tag for tag in tags[:1] if tag != 0])
 
                 gmsh_vertex_nrs_to_element[frozenset(gmsh_vertex_nrs)] = el_info
                 element_idx +=1
@@ -467,7 +471,7 @@ def parse_gmsh(line_iterable, force_dimension=None, periodicity=None,
                 if not name[0] == '"' or not name[-1] == '"':
                     raise GmshFileFormatError("expected quotes around physical name")
 
-                tag_name_map[number, dimension] = name[1:-1]
+                tag_name_map[number, dimension] = tag_mapper(name[1:-1])
 
                 name_idx +=1
 
@@ -555,9 +559,12 @@ def parse_gmsh(line_iterable, force_dimension=None, periodicity=None,
         except KeyError:
             return []
         else:
-            return [tag_name_map[tag_nr, el.dimensions-1]
+            x = [tag_name_map[tag_nr, el.dimensions-1]
                     for tag_nr in gmsh_element.tag_numbers
                     if (tag_nr, el.dimensions-1) in tag_name_map]
+            if len(x) > 1:
+                from pudb import set_trace; set_trace()
+            return x
 
     from hedge.mesh import make_conformal_mesh_ext
     return make_conformal_mesh_ext(
