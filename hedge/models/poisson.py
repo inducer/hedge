@@ -88,7 +88,7 @@ class LaplacianOperatorBase(object):
 
         div_tgt = SecondDerivativeTarget(
                 self.dimensions, strong_form=False,
-                operand=v, lower_order_operand=u,
+                operand=v, lower_order_operand=grad_tgt.operand,
                 process_vector=process_vector)
 
         self.scheme.second_derivative(div_tgt,
