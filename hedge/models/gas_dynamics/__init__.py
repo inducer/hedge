@@ -32,6 +32,9 @@ from pytools import memoize_method
 from hedge.models import TimeDependentOperator
 from pytools import Record
 from hedge.tools import is_zero
+from hedge.models.nd_calculus import (
+        StabilizedCentralSecondDerivative,
+        CentralSecondDerivative)
 
 
 
@@ -69,7 +72,10 @@ class GasDynamicsOperator(TimeDependentOperator):
             inflow_tag="inflow",
             outflow_tag="outflow",
             noslip_tag="noslip",
-            source=None):
+            source=None,
+            second_order_scheme=CentralSecondDerivative(),
+            #second_order_scheme=StabilizedCentralSecondDerivative(1)
+            ):
         """
         :param source: should implement
         :class:`hedge.data.IFieldDependentGivenFunction`
@@ -92,6 +98,8 @@ class GasDynamicsOperator(TimeDependentOperator):
         self.noslip_tag = noslip_tag
 
         self.source = source
+
+        self.second_order_scheme = second_order_scheme
 
     def rho(self, q):
         return q[0]
@@ -187,11 +195,11 @@ class GasDynamicsOperator(TimeDependentOperator):
                 flux_part[:,i] = (flux_op[i](q)
                                 + sum(
                                 flux_op[i](BoundaryPair(q, bc, tag))
-                                for tag, bc in all_tags_and_bcs)
+                                for tag, bc in all_tags_and_conservative_bcs)
                                 )
 
             from hedge.optemplate import InverseMassOperator
-            return (nabla_func - InverseMassOperator() * flux_part)
+            return nabla_func - InverseMassOperator()(flux_part)
 
         def tau(q):
             from pytools import delta
@@ -200,6 +208,9 @@ class GasDynamicsOperator(TimeDependentOperator):
 
             dq = make_gradient(q)
 
+            # use the product rule to compute the primitive derivatives
+            # from the conservative derivatives. this makes sure we don't
+            # compute the derivatives twice.
             du = numpy.zeros((dimensions, dimensions), dtype=object)
             for i in range(dimensions):
                 for j in range(dimensions):
@@ -217,7 +228,69 @@ class GasDynamicsOperator(TimeDependentOperator):
             for j in range(dimensions):
                 tau[dimensions,j] = cse(numpy.dot(u(q), tau[j]),
                                     "tau_%d%d" % (dimensions, j))
+
+            # only do energy flux through tau stuff. Momentum bits below.
+            for i in range(dimensions):
+                for j in range(dimensions):
+                    tau[i,j] = 0
+
             return tau
+
+        def make_vector_laplacian_part(q):
+            from hedge.models.nd_calculus import SecondDerivativeTarget
+
+            vec_lap_result = numpy.zeros(self.dimensions, dtype=object)
+
+            for i in range(self.dimensions):
+                grad_tgt = SecondDerivativeTarget(
+                        self.dimensions, strong_form=False,
+                        operand=u(q)[i])
+
+                dir_bcs = [(tag, bc[2+i])
+                        for tag, bc in all_tags_and_primitive_bcs]
+
+                self.second_order_scheme.first_derivative(grad_tgt,
+                        dirichlet_tags_and_bcs=dir_bcs)
+
+                div_tgt = SecondDerivativeTarget(
+                        self.dimensions, strong_form=False,
+                        operand=grad_tgt.minv_all,
+                        lower_order_operand=grad_tgt.operand)
+
+                self.second_order_scheme.second_derivative(div_tgt,
+                        dirichlet_tags_and_bcs=dir_bcs)
+
+                vec_lap_result[i] = div_tgt.minv_all
+
+            return get_mu(q)*vec_lap_result
+
+        def make_grad_div_part(q):
+            from hedge.models.nd_calculus import SecondDerivativeTarget
+
+            div_tgt = SecondDerivativeTarget(
+                    self.dimensions, strong_form=False,
+                    operand=u(q))
+
+            dir_bcs = [(tag, bc[2:])
+                    for tag, bc in all_tags_and_primitive_bcs]
+
+            self.second_order_scheme.first_derivative(div_tgt,
+                    dirichlet_tags_and_bcs=dir_bcs)
+
+            grad_tgt = SecondDerivativeTarget(
+                    self.dimensions, strong_form=False,
+                    operand=div_tgt.minv_all,
+                    lower_order_operand=div_tgt.operand)
+
+            self.second_order_scheme.second_derivative(grad_tgt,
+                    dirichlet_tags_and_bcs=dir_bcs)
+
+            return 1/3*get_mu(q)*grad_tgt.minv_all
+
+        def make_second_order_part(q):
+            return join_fields(
+                    0, 0,
+                    make_vector_laplacian_part(q) + make_grad_div_part(q))
 
         def flux(q):
             from pytools import delta
@@ -236,8 +309,7 @@ class GasDynamicsOperator(TimeDependentOperator):
 
                         # flux rho_u
                         make_obj_array([
-                            self.rho_u(q)[i]*self.u(q)[j] + delta(i,j) * p(q) -
-                            tau(q)[i,j]
+                            self.rho_u(q)[i]*self.u(q)[j] + delta(i,j) * p(q)
                             for j in range(self.dimensions)
                             ])
                         ), "%s_flux" % AXES[i])
@@ -269,7 +341,6 @@ class GasDynamicsOperator(TimeDependentOperator):
                         ), "%s_bflux" % AXES[i])
                     for i in range(self.dimensions)]
 
-        from hedge.optemplate import IfPositive
         from pymbolic import var
         sqrt = var("sqrt")
 
@@ -331,7 +402,7 @@ class GasDynamicsOperator(TimeDependentOperator):
             bc = make_bc_info("bc_q_out", self.outflow_tag, state)
 
             # see hedge/doc/maxima/euler.mac
-            return primitive_to_conservative(join_fields(
+            return join_fields(
                 # bc rho
                 cse(bc.rho0
                 + bc.drhom + numpy.dot(normal, bc.dumvec)*bc.rho0/(2*bc.c0)
@@ -344,11 +415,11 @@ class GasDynamicsOperator(TimeDependentOperator):
                 # bc u
                 cse(bc.u0
                 + bc.dumvec - normal*numpy.dot(normal, bc.dumvec)/2
-                + bc.dpm*normal/(2*bc.c0*bc.rho0), "bc_u_outflow")))
+                + bc.dpm*normal/(2*bc.c0*bc.rho0), "bc_u_outflow"))
 
         def inflow_state_inner(normal, bc, name):
             # see hedge/doc/maxima/euler.mac
-            return primitive_to_conservative(join_fields(
+            return join_fields(
                 # bc rho
                 cse(bc.rho0
                 + numpy.dot(normal, bc.dumvec)*bc.rho0/(2*bc.c0) + bc.dpm/(2*bc.c0*bc.c0), "bc_rho_"+name),
@@ -359,7 +430,7 @@ class GasDynamicsOperator(TimeDependentOperator):
 
                 # bc u
                 cse(bc.u0
-                + normal*numpy.dot(normal, bc.dumvec)/2 + bc.dpm*normal/(2*bc.c0*bc.rho0), "bc_u_"+name)))
+                + normal*numpy.dot(normal, bc.dumvec)/2 + bc.dpm*normal/(2*bc.c0*bc.rho0), "bc_u_"+name))
 
         def inflow_state(state):
             from hedge.optemplate import make_normal
@@ -374,11 +445,14 @@ class GasDynamicsOperator(TimeDependentOperator):
                     set_normal_velocity_to_zero=True)
             return inflow_state_inner(normal, bc, "noslip")
 
-        all_tags_and_bcs = [
+        all_tags_and_primitive_bcs = [
                 (self.outflow_tag, outflow_state(state)),
                 (self.inflow_tag, inflow_state(state)),
                 (self.noslip_tag, noslip_state(state))
                     ]
+        all_tags_and_conservative_bcs = [
+                (tag, primitive_to_conservative(bc))
+                for tag, bc in all_tags_and_primitive_bcs]
 
         flux_state = flux(state)
 
@@ -394,16 +468,17 @@ class GasDynamicsOperator(TimeDependentOperator):
                         state=state, fluxes=flux_state,
                         bdry_tags_states_and_fluxes=[
                             (tag, bc, bdry_flux(bc, state, tag))
-                            for tag, bc in all_tags_and_bcs
+                            for tag, bc in all_tags_and_conservative_bcs
                             ],
                         strong=True
-                        )),
-                 speed)
+                        )) + make_second_order_part(state),
+                 speed) 
 
         if self.source is not None:
-            #need extra slot for speed, will set to zero in source class
-            source_ph = make_vector_field("source_vect", self.dimensions+2+1)
-            result = join_fields(result + source_ph)
+            result = result + join_fields(
+                    make_vector_field("source_vect", self.dimensions+2),
+                    # extra field for speed
+                    0)
 
         return result
 
