@@ -224,7 +224,13 @@ class DiffOperatorBase(Operator):
         return (other.__class__ == self.__class__
                 and other.xyz_axis == self.xyz_axis)
 
-class DifferentiationOperator(DiffOperatorBase):
+class StrongFormDiffOperatorBase(DiffOperatorBase):
+    pass
+
+class WeakFormDiffOperatorBase(DiffOperatorBase):
+    pass
+
+class DifferentiationOperator(StrongFormDiffOperatorBase):
     @staticmethod
     def matrices(element_group):
         return element_group.differentiation_matrices
@@ -236,7 +242,7 @@ class DifferentiationOperator(DiffOperatorBase):
     def get_mapper_method(self, mapper):
         return mapper.map_diff
 
-class MInvSTOperator(DiffOperatorBase):
+class MInvSTOperator(WeakFormDiffOperatorBase):
     @staticmethod
     def matrices(element_group):
         return element_group.minv_st
@@ -248,7 +254,7 @@ class MInvSTOperator(DiffOperatorBase):
     def get_mapper_method(self, mapper):
         return mapper.map_minv_st
 
-class StiffnessOperator(DiffOperatorBase):
+class StiffnessOperator(StrongFormDiffOperatorBase):
     @staticmethod
     def matrices(element_group):
         return element_group.stiffness_matrices
@@ -260,7 +266,7 @@ class StiffnessOperator(DiffOperatorBase):
     def get_mapper_method(self, mapper):
         return mapper.map_stiffness
 
-class StiffnessTOperator(DiffOperatorBase):
+class StiffnessTOperator(WeakFormDiffOperatorBase):
     @staticmethod
     def matrices(element_group):
         return element_group.stiffness_t_matrices

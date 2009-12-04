@@ -46,9 +46,22 @@ class StabilizationTermGenerator(hedge.optemplate.IdentityMapper):
                 self.flux_arg_lookup[expr.field] = flux_arg_idx
                 self.flux_args.append(expr.field)
 
+            from hedge.optemplate import \
+                    WeakFormDiffOperatorBase, \
+                    StrongFormDiffOperatorBase
+            if isinstance(expr.op, WeakFormDiffOperatorBase):
+                factor = -1
+            elif isinstance(expr.op, StrongFormDiffOperatorBase):
+                factor = 1
+            else:
+                raise RuntimeError("unknown type of differentiation "
+                        "operator encountered by stab term generator")
+
             from hedge.flux import Normal, FluxScalarPlaceholder
             sph = FluxScalarPlaceholder(flux_arg_idx)
-            return Normal(expr.op.xyz_axis) * (sph.int - sph.ext)
+            return (factor
+                    * Normal(expr.op.xyz_axis)
+                    * (sph.int - sph.ext))
 
         elif isinstance(expr.op, hedge.optemplate.FluxOperatorBase):
             return 0
@@ -250,7 +263,7 @@ class LDGSecondDerivative(SecondDerivativeBase):
 
         stab_term_generator = StabilizationTermGenerator(
                 list(tgt.operand))
-        stab_term = - (self.stab_coefficient * PenaltyTerm() 
+        stab_term = (self.stab_coefficient * PenaltyTerm() 
                 * stab_term_generator(tgt.operand))
         flux = n_times(v.avg 
                 + v_times(self.beta(tgt), cse(n_times(v.int - v.ext), "jump_v"))
