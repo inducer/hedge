@@ -52,10 +52,9 @@ class GradientOperator(Operator):
         nabla = make_nabla(self.dimensions)
         flux_op = get_flux_operator(self.flux())
 
-        return nabla*u - InverseMassOperator()*(
-                flux_op * u +
-                flux_op * BoundaryPair(u, bc, TAG_ALL)
-                )
+        return nabla*u - InverseMassOperator()(
+                flux_op(u) +
+                flux_op(BoundaryPair(u, bc, TAG_ALL)))
 
     def bind(self, discr):
         compiled_op_template = discr.compile(self.op_template())
@@ -121,9 +120,9 @@ class DivergenceOperator(Operator):
 
         flux_op = get_flux_operator(self.flux())
 
-        return local_op_result - m_inv*(
-                flux_op * v +
-                flux_op * BoundaryPair(v, bc, TAG_ALL))
+        return local_op_result - m_inv(
+                flux_op(v) +
+                flux_op(BoundaryPair(v, bc, TAG_ALL)))
 
     def bind(self, discr):
         compiled_op_template = discr.compile(self.op_template())
