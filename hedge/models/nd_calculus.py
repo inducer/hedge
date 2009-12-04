@@ -259,8 +259,6 @@ class LDGSecondDerivative(SecondDerivativeBase):
 
         from numpy import dot
         from hedge.optemplate import make_common_subexpression as cse
-        from hedge.flux import FluxScalarPlaceholder, make_normal
-        normal = make_normal(tgt.dimensions)
 
         n_times = tgt.normal_times_flux
         v_times = tgt.vec_times
@@ -272,7 +270,13 @@ class LDGSecondDerivative(SecondDerivativeBase):
             def adjust_flux(f):
                 return f
 
-        u = FluxScalarPlaceholder()
+        from pytools.obj_array import is_obj_array
+        if is_obj_array(tgt.operand):
+            from hedge.flux import FluxVectorPlaceholder
+            u = FluxVectorPlaceholder(tgt.dimensions)
+        else:
+            from hedge.flux import FluxScalarPlaceholder
+            u = FluxScalarPlaceholder()
 
         flux = n_times(
                 cse(u.avg, "u_avg") 
@@ -412,8 +416,7 @@ class IPDGSecondDerivative(SecondDerivativeBase):
 
         from numpy import dot
         from hedge.optemplate import make_common_subexpression as cse
-        from hedge.flux import FluxVectorPlaceholder, make_normal, PenaltyTerm
-        normal = make_normal(tgt.dimensions)
+        from hedge.flux import FluxVectorPlaceholder, PenaltyTerm
 
         n_times = tgt.normal_times_flux
 
