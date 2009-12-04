@@ -230,6 +230,11 @@ class SecondDerivativeTarget(object):
     def all(self):
         return self.local_derivatives + self.fluxes
 
+    @property
+    def minv_all(self):
+        from hedge.optemplate import InverseMassOperator
+        return InverseMassOperator()(self.local_derivatives + self.fluxes)
+
 
 
 
