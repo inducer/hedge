@@ -191,13 +191,13 @@ def main(write_output=True):
                                 #("rhs_e", discr.convert_volume(op.e(rhs_fields), kind="numpy")),
                                 #("rhs_rho_u", discr.convert_volume(op.rho_u(rhs_fields), kind="numpy")),
                                 ],
-                            expressions=[
+                            #expressions=[
                                 #("diff_rho", "rho-true_rho"),
                                 #("diff_e", "e-true_e"),
                                 #("diff_rho_u", "rho_u-true_rho_u", DB_VARTYPE_VECTOR),
 
-                                ("p", "0.4*(e- 0.5*(rho_u*u))"),
-                                ],
+                                #("p", "0.4*(e- 0.5*(rho_u*u))"),
+                                #],
                             time=t, step=step
                             )
                     visf.close()
