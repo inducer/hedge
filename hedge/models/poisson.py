@@ -27,7 +27,7 @@ import numpy
 import numpy.linalg as la
 
 from hedge.models import Operator
-from hedge.models.nd_calculus import LDGSecondDerivative
+from hedge.tools.second_order import LDGSecondDerivative
 import hedge.data
 import hedge.iterative
 from pytools import memoize_method
@@ -49,7 +49,7 @@ class LaplacianOperatorBase(object):
         """
 
         from hedge.optemplate import InverseMassOperator, Field, make_vector_field
-        from hedge.models.nd_calculus import SecondDerivativeTarget
+        from hedge.tools.second_order import SecondDerivativeTarget
 
         if u is None: u = Field("u")
         if dir_bc is None: dir_bc = Field("dir_bc")
@@ -57,26 +57,18 @@ class LaplacianOperatorBase(object):
 
         # strong_form here allows LDG to reuse the value of grad u.
         grad_tgt = SecondDerivativeTarget(
-                self.dimensions, strong_form=True,
+                self.dimensions, strong_form=False,
                 operand=u)
 
-        self.scheme.first_derivative(grad_tgt,
-                [(self.dirichlet_tag, dir_bc)],
-                [(self.neumann_tag, neu_bc)])
+        def grad_bc_getter(tag, expr):
+            assert tag == self.dirichlet_tag
+            return dir_bc
+        self.scheme.grad(grad_tgt,
+                bc_getter=grad_bc_getter,
+                dirichlet_tags=[self.dirichlet_tag],
+                neumann_tags=[self.neumann_tag])
 
-        from hedge.optemplate import make_common_subexpression as cse
-        grad_u_local = cse(InverseMassOperator()(grad_tgt.local_derivatives))
-        v = cse(grad_u_local
-                + InverseMassOperator()(grad_tgt.fluxes))
-
-        def process_vector(v, tag=None):
-            if tag is None:
-                name = "diff_tensor"
-            elif tag == self.neumann_tag:
-                name = "neumann_diff_tensor"
-            else:
-                raise NotImplementedError
-
+        def apply_diff_tensor(v):
             if isinstance(self.diffusion_tensor, numpy.ndarray):
                 sym_diff_tensor = self.diffusion_tensor
             else:
@@ -88,12 +80,21 @@ class LaplacianOperatorBase(object):
 
         div_tgt = SecondDerivativeTarget(
                 self.dimensions, strong_form=False,
-                operand=v, lower_order_operand=grad_tgt.operand,
-                process_vector=process_vector)
+                operand=apply_diff_tensor(grad_tgt.minv_all))
 
-        self.scheme.second_derivative(div_tgt,
-                [(self.dirichlet_tag, dir_bc)],
-                [(self.neumann_tag, neu_bc)])
+        def div_bc_getter(tag, expr):
+            if tag == self.dirichlet_tag:
+                return dir_bc
+            elif tag == self.neumann_tag:
+                return neu_bc
+            else:
+                assert False, "divergence bc getter " \
+                        "asked for '%s' BC for '%s'" % (tag, expr)
+
+        self.scheme.div(div_tgt,
+                div_bc_getter,
+                dirichlet_tags=[self.dirichlet_tag],
+                neumann_tags=[self.neumann_tag])
 
         if apply_minv:
             return InverseMassOperator()(div_tgt.all)
@@ -154,16 +155,16 @@ class BoundPoissonOperator(hedge.iterative.OperatorBase):
 
         op = pop.op_template(
             apply_minv=False, dir_bc=0, neu_bc=0)
+        bc_op = pop.op_template(apply_minv=False)
 
-        bc_op = pop.op_template(
-            apply_minv=False, u=0)
+        from hedge.optemplate import pretty_print_optemplate
+        print pretty_print_optemplate(op)
+
         self.compiled_op = discr.compile(op)
         self.compiled_bc_op = discr.compile(bc_op)
 
         if not isinstance(pop.diffusion_tensor, numpy.ndarray):
             self.diffusion = pop.diffusion_tensor.volume_interpolant(discr)
-            self.neu_diff = pop.diffusion_tensor.boundary_interpolant(discr,
-                    poisson_op.neumann_tag)
 
         # Check whether use of Poincaré mean-value method is required.
         # (for pure Neumann or pure periodic)
@@ -186,7 +187,6 @@ class BoundPoissonOperator(hedge.iterative.OperatorBase):
         context = {"u": u}
         if not isinstance(self.poisson_op.diffusion_tensor, numpy.ndarray):
             context["diffusion"] = self.diffusion
-            context["neumann_diffusion"] = self.neu_diff
 
         result = self.compiled_op(**context)
 
@@ -243,6 +243,7 @@ class BoundPoissonOperator(hedge.iterative.OperatorBase):
         return (MassOperator().apply(self.discr,
             rhs.volume_interpolant(self.discr))
             - self.compiled_bc_op(
+                u=self.discr.volume_zeros(),
                 dir_bc=pop.dirichlet_bc.boundary_interpolant(
                     self.discr, pop.dirichlet_tag), 
                 neu_bc=pop.neumann_bc.boundary_interpolant(
