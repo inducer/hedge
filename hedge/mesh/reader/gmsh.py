@@ -293,11 +293,11 @@ def read_gmsh(filename, force_dimension=None, periodicity=None,
     import string
     # open target file
     mesh_file = open(filename, 'r')
-    result = parse_gmsh(mesh_file, force_dimension, periodicity=None,
-            allow_internal_boundaries=False)
+    result = parse_gmsh(mesh_file, force_dimension=force_dimension, periodicity=periodicity,
+            allow_internal_boundaries=allow_internal_boundaries)
     mesh_file.close()
 
-    return
+    return result
 
 
 
