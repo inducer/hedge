@@ -67,7 +67,7 @@ def main(write_output=True,
                 TimeHarmonicGivenFunction(
                     make_tdep_given(source_u), omega=10),
                 0, 1),
-            dirichlet_tag=TAG_ALL,
+            dirichlet_tag="boundary",
             neumann_tag=TAG_NONE,
             radiation_tag=TAG_NONE,
             flux_type=flux_type_arg

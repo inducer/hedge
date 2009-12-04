@@ -464,7 +464,10 @@ def parse_gmsh(line_iterable, force_dimension=None, periodicity=None,
                 dimension = int(dimension)
                 number = int(number)
 
-                tag_name_map[number, dimension] = name
+                if not name[0] == '"' or not name[-1] == '"':
+                    raise GmshFileFormatError("expected quotes around physical name")
+
+                tag_name_map[number, dimension] = name[1:-1]
 
                 name_idx +=1
 
