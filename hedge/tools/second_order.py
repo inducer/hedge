@@ -79,6 +79,11 @@ class StabilizationTermGenerator(hedge.optemplate.IdentityMapper):
         from hedge.flux import FieldComponent
         return FieldComponent(self.get_flux_arg_idx(expr), is_interior=True)
 
+    def map_subscript(self, expr):
+        from pymbolic.primitives import Variable
+        assert isinstance(expr.aggregate, Variable)
+        from hedge.flux import FieldComponent
+        return FieldComponent(self.get_flux_arg_idx(expr), is_interior=True)
 
 
 
@@ -282,15 +287,16 @@ class SecondDerivativeBase(object):
                     tgt.operand, 0, tag)
 
     def add_div_bcs(self, tgt, bc_getter, dirichlet_tags, neumann_tags,
-            stab_term_generator, stab_term, adjust_flux, flux_v, flux_arg_int):
+            stab_term_generator, stab_term, adjust_flux, flux_v, flux_arg_int,
+            grad_flux_arg_count):
         from pytools.obj_array import make_obj_array, join_fields
         n_times = tgt.normal_times_flux
 
         for tag in dirichlet_tags:
             dir_bc_w = join_fields(
-                    [0]*tgt.dimensions,
+                    [0]*grad_flux_arg_count,
                     [bc_getter(tag, vol_expr) for vol_expr in 
-                        stab_term_generator.flux_args[tgt.dimensions:]])
+                        stab_term_generator.flux_args[grad_flux_arg_count:]])
             tgt.add_boundary_flux(
                     adjust_flux(n_times(flux_v.int-stab_term)),
                     flux_arg_int, dir_bc_w, tag)
@@ -365,7 +371,8 @@ class LDGSecondDerivative(SecondDerivativeBase):
         tgt.add_inner_fluxes(adjust_flux(flux), flux_arg_int)
 
         self.add_div_bcs(tgt, bc_getter, dirichlet_tags, neumann_tags,
-                stab_term_generator, stab_term, adjust_flux, flux_v, flux_arg_int)
+                stab_term_generator, stab_term, adjust_flux, flux_v, flux_arg_int,
+                tgt.dimensions)
 
 
 
@@ -435,5 +442,6 @@ class IPDGSecondDerivative(SecondDerivativeBase):
         tgt.add_inner_fluxes(adjust_flux(flux), flux_arg_int)
 
         self.add_div_bcs(tgt, bc_getter, dirichlet_tags, neumann_tags,
-                stab_term_generator, stab_term, adjust_flux, flux_v, flux_arg_int)
+                stab_term_generator, stab_term, adjust_flux, flux_v, flux_arg_int,
+                2*tgt.dimensions)
 

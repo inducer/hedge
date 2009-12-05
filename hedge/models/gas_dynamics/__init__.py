@@ -32,9 +32,10 @@ from pytools import memoize_method
 from hedge.models import TimeDependentOperator
 from pytools import Record
 from hedge.tools import is_zero
-from hedge.models.nd_calculus import (
+from hedge.tools.second_order import (
         StabilizedCentralSecondDerivative,
-        CentralSecondDerivative)
+        CentralSecondDerivative,
+        IPDGSecondDerivative)
 
 
 
@@ -74,7 +75,6 @@ class GasDynamicsOperator(TimeDependentOperator):
             noslip_tag="noslip",
             source=None,
             second_order_scheme=CentralSecondDerivative(),
-            #second_order_scheme=StabilizedCentralSecondDerivative(1)
             ):
         """
         :param source: should implement
@@ -150,67 +150,36 @@ class GasDynamicsOperator(TimeDependentOperator):
             else:
                 return self.mu
 
-        def heat_flux(q):
-            # !!!not tested!!!
-            from hedge.tools import make_obj_array
-            from hedge.optemplate import make_nabla
-
-            c_p = self.gamma / (self.gamma - 1) * self.spec_gas_const
-            nabla = make_nabla(self.dimensions)
-            k = c_p * get_mu(q) / self.prandtl
-
-            result = numpy.empty((self.dimensions,1), dtype=object)
-            for i in range(len(result)):
-                result[i] = -k * nabla[i] * t(q)
-            return result
-
-        def make_gradient(q):
-
-            dimensions = self.dimensions
-            d = len(q)
-
-            from hedge.optemplate import make_nabla
-            nabla = make_nabla(dimensions)
-
-            nabla_func = numpy.zeros((d, dimensions), dtype=object)
-            for i in range(dimensions):
-                nabla_func[:,i] = nabla[i] * q
-
-            from hedge.flux import make_normal, FluxVectorPlaceholder
-            normal = make_normal(d)
-            fluxes_ph = FluxVectorPlaceholder(d)
-
-            flux = numpy.zeros((d, dimensions), dtype=object)
-            for i in range(dimensions):
-                flux[:,i] = 0.5 * normal[i] * (fluxes_ph.int - fluxes_ph.ext)
-
-            from hedge.optemplate import get_flux_operator
-            flux_op = numpy.zeros((dimensions), dtype=object)
-            for i in range(dimensions):
-                flux_op[i] = get_flux_operator(flux[:,i])
-
-            from hedge.optemplate import BoundaryPair
-            flux_part = numpy.zeros((d, dimensions), dtype=object)
-            for i in range(dimensions):
-                flux_part[:,i] = (flux_op[i](q)
-                                + sum(
-                                flux_op[i](BoundaryPair(q, bc, tag))
-                                for tag, bc in all_tags_and_conservative_bcs)
-                                )
-
-            from hedge.optemplate import InverseMassOperator
-            return nabla_func - InverseMassOperator()(flux_part)
-
         def tau(q):
-            from pytools import delta
-
             dimensions = self.dimensions
 
-            dq = make_gradient(q)
+            # compute gradient of q -------------------------------------------
+            dq = numpy.zeros((dimensions+2, dimensions), dtype=object)
 
-            # use the product rule to compute the primitive derivatives
-            # from the conservative derivatives. this makes sure we don't
+            from hedge.tools.second_order import SecondDerivativeTarget
+            for i in range(self.dimensions+2):
+                grad_tgt = SecondDerivativeTarget(
+                        self.dimensions, strong_form=True,
+                        operand=q[i])
+
+                dir_bcs = dict((tag, bc[i])
+                        for tag, bc in all_tags_and_conservative_bcs)
+
+                def grad_bc_getter(tag, expr):
+                    return dir_bcs[tag]
+
+                self.second_order_scheme.grad(grad_tgt,
+                        bc_getter=grad_bc_getter,
+                        dirichlet_tags=dir_bcs.keys(),
+                        neumann_tags=[])
+
+                dq[i,:] = grad_tgt.minv_all
+
+            # compute gradient of u -------------------------------------------
+            # Use the product rule to compute the gradient of
+            # u from the gradient of (rho u). This ensures we don't
             # compute the derivatives twice.
+
             du = numpy.zeros((dimensions, dimensions), dtype=object)
             for i in range(dimensions):
                 for j in range(dimensions):
@@ -218,79 +187,51 @@ class GasDynamicsOperator(TimeDependentOperator):
                             (dq[i+2,j] - u(q)[i] * dq[0,j]) / self.rho(q),
                             "du%d_d%s" % (i, AXES[j]))
 
-            tau = numpy.zeros((dimensions+1, dimensions), dtype=object)
+            # put together viscous stress tau ---------------------------------
+            from pytools import delta
+
+            tau = numpy.zeros((dimensions, dimensions), dtype=object)
             for i in range(dimensions):
                 for j in range(dimensions):
                     tau[i,j] = cse(get_mu(q) * (du[i,j] + du[j,i] -
                                2/3 * delta(i,j) * numpy.trace(du)),
                                "tau_%d%d" % (i, j))
 
-            for j in range(dimensions):
-                tau[dimensions,j] = cse(numpy.dot(u(q), tau[j]),
-                                    "tau_%d%d" % (dimensions, j))
-
-            # only do energy flux through tau stuff. Momentum bits below.
-            for i in range(dimensions):
-                for j in range(dimensions):
-                    tau[i,j] = 0
-
             return tau
 
-        def make_vector_laplacian_part(q):
-            from hedge.models.nd_calculus import SecondDerivativeTarget
-
-            vec_lap_result = numpy.zeros(self.dimensions, dtype=object)
-
-            for i in range(self.dimensions):
-                grad_tgt = SecondDerivativeTarget(
-                        self.dimensions, strong_form=False,
-                        operand=u(q)[i])
-
-                dir_bcs = [(tag, bc[2+i])
-                        for tag, bc in all_tags_and_primitive_bcs]
-
-                self.second_order_scheme.first_derivative(grad_tgt,
-                        dirichlet_tags_and_bcs=dir_bcs)
-
-                div_tgt = SecondDerivativeTarget(
-                        self.dimensions, strong_form=False,
-                        operand=grad_tgt.minv_all,
-                        lower_order_operand=grad_tgt.operand)
-
-                self.second_order_scheme.second_derivative(div_tgt,
-                        dirichlet_tags_and_bcs=dir_bcs)
-
-                vec_lap_result[i] = div_tgt.minv_all
-
-            return get_mu(q)*vec_lap_result
-
-        def make_grad_div_part(q):
-            from hedge.models.nd_calculus import SecondDerivativeTarget
-
-            div_tgt = SecondDerivativeTarget(
-                    self.dimensions, strong_form=False,
-                    operand=u(q))
-
-            dir_bcs = [(tag, bc[2:])
-                    for tag, bc in all_tags_and_primitive_bcs]
-
-            self.second_order_scheme.first_derivative(div_tgt,
-                    dirichlet_tags_and_bcs=dir_bcs)
-
-            grad_tgt = SecondDerivativeTarget(
-                    self.dimensions, strong_form=False,
-                    operand=div_tgt.minv_all,
-                    lower_order_operand=div_tgt.operand)
-
-            self.second_order_scheme.second_derivative(grad_tgt,
-                    dirichlet_tags_and_bcs=dir_bcs)
-
-            return 1/3*get_mu(q)*grad_tgt.minv_all
-
         def make_second_order_part(q):
+            def div(operand):
+                from hedge.tools.second_order import SecondDerivativeTarget
+                div_tgt = SecondDerivativeTarget(
+                        self.dimensions, strong_form=True,
+                        operand=operand)
+
+                dir_bcs = dict((tag, bc)
+                        for tag, bc in all_tags_and_conservative_bcs)
+
+                def div_bc_getter(tag, expr):
+                    from pymbolic.primitives import Subscript, Variable
+                    if (isinstance(expr, Subscript) 
+                            and isinstance(expr.aggregate, Variable) 
+                            and expr.aggregate.name == "q"):
+                        return dir_bcs[tag][expr.index]
+                    else:
+                        print expr
+                        raise NotImplementedError
+
+                self.second_order_scheme.div(div_tgt,
+                        bc_getter=div_bc_getter,
+                        dirichlet_tags=
+                        [tag for tag, bc in all_tags_and_conservative_bcs],
+                        neumann_tags=[])
+
+                return div_tgt.minv_all
+
+            tau_mat = tau(q)
             return join_fields(
-                    0, 0,
-                    make_vector_laplacian_part(q) + make_grad_div_part(q))
+                    0, 
+                    div(numpy.sum(tau_mat*u(q), axis=1)),
+                    [div(tau_mat[i]) for i in range(self.dimensions)]) 
 
         def flux(q):
             from pytools import delta
@@ -302,10 +243,7 @@ class GasDynamicsOperator(TimeDependentOperator):
                         self.rho_u(q)[i],
 
                         # flux E
-                        cse(self.e(q)+p(q))*u(q)[i] -
-                        tau(q)[self.dimensions,i] #+
-                        #heat_flux(q)[i]
-                        ,
+                        cse(self.e(q)+p(q))*u(q)[i],
 
                         # flux rho_u
                         make_obj_array([
@@ -325,17 +263,12 @@ class GasDynamicsOperator(TimeDependentOperator):
                         self.rho_u(q_bdry)[i],
 
                         # flux E
-                        cse(self.e(q_bdry)+p(q_bdry))*u(q_bdry)[i] -
-                        BoundarizeOperator(tag)(
-                            tau(q_vol)[self.dimensions,i] #+
-                            #heat_flux(q_vol)[i]
-                            ),
+                        cse(self.e(q_bdry)+p(q_bdry))*u(q_bdry)[i],
 
                         # flux rho_u
                         make_obj_array([
                             self.rho_u(q_bdry)[i]*self.u(q_bdry)[j] +
-                            delta(i,j) * p(q_bdry) -
-                            BoundarizeOperator(tag)(tau(q_vol)[i,j])
+                            delta(i,j) * p(q_bdry)
                             for j in range(self.dimensions)
                             ])
                         ), "%s_bflux" % AXES[i])
