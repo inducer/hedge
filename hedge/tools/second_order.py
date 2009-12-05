@@ -37,14 +37,18 @@ class StabilizationTermGenerator(hedge.optemplate.IdentityMapper):
         self.flux_arg_lookup = dict(
                 (flux_arg, i) for i, flux_arg in enumerate(flux_args))
 
+    def get_flux_arg_idx(self, expr):
+        try:
+            return self.flux_arg_lookup[expr]
+        except KeyError:
+            flux_arg_idx = len(self.flux_args)
+            self.flux_arg_lookup[expr] = flux_arg_idx
+            self.flux_args.append(expr)
+            return flux_arg_idx
+
     def map_operator_binding(self, expr):
         if isinstance(expr.op, hedge.optemplate.DiffOperatorBase):
-            try:
-                flux_arg_idx = self.flux_arg_lookup[expr.field]
-            except KeyError:
-                flux_arg_idx = len(self.flux_args)
-                self.flux_arg_lookup[expr.field] = flux_arg_idx
-                self.flux_args.append(expr.field)
+            flux_arg_idx = self.get_flux_arg_idx(expr.field)
 
             from hedge.optemplate import \
                     WeakFormDiffOperatorBase, \
@@ -72,15 +76,42 @@ class StabilizationTermGenerator(hedge.optemplate.IdentityMapper):
                     "what to do with '%s'" % expr)
 
     def map_variable(self, expr):
-        try:
-            flux_arg_idx = self.flux_arg_lookup[expr]
-        except KeyError:
-            flux_arg_idx = len(self.flux_args)
-            self.flux_arg_lookup[expr] = flux_arg_idx
-            self.flux_args.append(expr)
-
         from hedge.flux import FieldComponent
-        return FieldComponent(flux_arg_idx, is_interior=True)
+        return FieldComponent(self.get_flux_arg_idx(expr), is_interior=True)
+
+
+
+
+class NeumannBCGenerator(hedge.optemplate.IdentityMapper):
+    def __init__(self, tag, bc):
+        hedge.optemplate.IdentityMapper.__init__(self)
+        self.tag = tag
+        self.bc = bc
+
+    def map_operator_binding(self, expr):
+        if isinstance(expr.op, hedge.optemplate.DiffOperatorBase):
+            from hedge.optemplate import \
+                    WeakFormDiffOperatorBase, \
+                    StrongFormDiffOperatorBase
+            if isinstance(expr.op, WeakFormDiffOperatorBase):
+                factor = -1
+            elif isinstance(expr.op, StrongFormDiffOperatorBase):
+                factor = 1
+            else:
+                raise RuntimeError("unknown type of differentiation "
+                        "operator encountered by stab term generator")
+
+            from hedge.optemplate import BoundaryNormalComponent
+            return (self.bc * factor * 
+                    BoundaryNormalComponent(self.tag, expr.op.xyz_axis))
+
+        elif isinstance(expr.op, hedge.optemplate.FluxOperatorBase):
+            return 0
+        elif isinstance(expr.op, hedge.optemplate.InverseMassOperator):
+            return self.rec(expr.field)
+        else:
+            raise ValueError("neumann normal direction generator doesn't know "
+                    "what to do with '%s'" % expr)
 
 
 
@@ -287,17 +318,14 @@ class LDGSecondDerivative(SecondDerivativeBase):
         from hedge.optemplate import make_normal as make_op_normal
         loc_bc_vec = make_obj_array([0]*len(stab_term_generator.flux_args))
 
-        if False:
-            # FIXME
-            for tag, bc in neumann_tags_and_bcs:
-                neu_bc_w = join_fields(0, 
-                        tgt.process_vector(
-                            make_op_normal(tag, tgt.dimensions)*bc, 
-                            tag=tag))
+        for tag in neumann_tags:
+            neu_bc_w = join_fields(
+                    NeumannBCGenerator(tag, bc_getter(tag, None))(tgt.operand),
+                    [0]*len(flux_arg_int))
 
-                tgt.add_boundary_flux(
-                        adjust_flux(n_times(v.ext)),
-                        loc_bc_vec, bc_getter(tag, None), tag)
+            tgt.add_boundary_flux(
+                    adjust_flux(n_times(v.ext)),
+                    loc_bc_vec, neu_bc_w, tag)
 
 
 
