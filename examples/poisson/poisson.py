@@ -101,6 +101,8 @@ def main(write_output=True):
                 neumann_bc=ConstantGivenFunction(-10),
 
                 scheme=StabilizedCentralSecondDerivative(),
+                #scheme=LDGSecondDerivative(),
+                #scheme=IPDGSecondDerivative(),
                 )
         bound_op = op.bind(discr)
 
