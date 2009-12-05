@@ -43,11 +43,11 @@ def main(write_output=True) :
 
     if dim == 2:
         if rcon.is_head_rank:
-            from hedge.mesh import make_disk_mesh
+            from hedge.mesh.generator import make_disk_mesh
             mesh = make_disk_mesh(r=0.5, boundary_tagger=boundary_tagger)
     elif dim == 3:
         if rcon.is_head_rank:
-            from hedge.mesh import make_ball_mesh
+            from hedge.mesh.generator import make_ball_mesh
             mesh = make_ball_mesh(max_volume=0.001)
     else:
         raise RuntimeError, "bad number of dimensions"
