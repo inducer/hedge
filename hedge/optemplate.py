@@ -791,7 +791,7 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
         return "Boundarize<tag=%s>" % expr.tag
 
     def map_flux_exchange(self, expr, enclosing_prec):
-        return "FExch<idx=%d,rank=%d>" % (expr.index, expr.rank)
+        return "FExch<idx=%s,rank=%d>" % (expr.index, expr.rank)
 
     def map_normal_component(self, expr, enclosing_prec):
         return "Normal<tag=%s>[%d]" % (expr.tag, expr.axis)
