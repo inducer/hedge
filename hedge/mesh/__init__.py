@@ -56,6 +56,8 @@ class TAG_NO_BOUNDARY(object):
     pass
 
 SYSTEM_TAGS = set([TAG_NONE, TAG_ALL, TAG_REALLY_ALL, TAG_NO_BOUNDARY])
+# tags that are automatically signed upon mesh creation
+MESH_CREATION_TAGS = set([ TAG_ALL, TAG_REALLY_ALL])
 
 class TAG_RANK_BOUNDARY(object):
     """A boundary tag indicating the boundary with a neighboring rank."""
@@ -263,7 +265,7 @@ def make_conformal_mesh_ext(points, elements,
 
         for el_face, tags in boundary_el_faces_tags:
             el, face = el_face
-            tags = set(tags) - SYSTEM_TAGS
+            tags = set(tags) - MESH_CREATION_TAGS
             assert not isinstance(tags, str), \
                 RuntimeError("Received string as tag list")
             assert TAG_ALL not in tags
@@ -505,8 +507,8 @@ class ConformalMesh(Mesh):
         return ConformalMesh(
                 self.points, elements, interfaces,
                 tag_to_boundary, tag_to_elements, self.periodicity,
-                self.periodic_opposite_faces, self.periodic_opposite_vertices
-                )
+                self.periodic_opposite_faces, self.periodic_opposite_vertices,
+                self.has_internal_boundaries)
 
 
 
