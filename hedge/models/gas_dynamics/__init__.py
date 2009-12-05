@@ -241,16 +241,14 @@ class GasDynamicsOperator(TimeDependentOperator):
                         self.dimensions, strong_form=True,
                         operand=operand)
 
-                dir_bcs = dict((tag, bc)
-                        for tag, bc in all_tags_and_conservative_bcs)
+                dir_bcs = dict(((tag, q[i]), bc[i])
+                        for tag, bc in all_tags_and_conservative_bcs
+                        for i in range(len(q)))
 
                 def div_bc_getter(tag, expr):
-                    from pymbolic.primitives import Subscript, Variable
-                    if (isinstance(expr, Subscript) 
-                            and isinstance(expr.aggregate, Variable) 
-                            and expr.aggregate.name == "q"):
-                        return dir_bcs[tag][expr.index]
-                    else:
+                    try:
+                        return dir_bcs[tag, expr]
+                    except KeyError:
                         print expr
                         raise NotImplementedError
 
