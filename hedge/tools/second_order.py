@@ -317,7 +317,7 @@ class SecondDerivativeBase(object):
 
 
 class LDGSecondDerivative(SecondDerivativeBase):
-    def __init__(self, beta_value=0.5, stab_coefficient=10):
+    def __init__(self, beta_value=0.5, stab_coefficient=1):
         self.beta_value = beta_value
         self.stab_coefficient = stab_coefficient
 
@@ -378,7 +378,7 @@ class LDGSecondDerivative(SecondDerivativeBase):
 
 
 class StabilizedCentralSecondDerivative(LDGSecondDerivative):
-    def __init__(self, stab_coefficient=10):
+    def __init__(self, stab_coefficient=1):
         LDGSecondDerivative.__init__(self, 0, stab_coefficient=stab_coefficient)
 
 
@@ -392,7 +392,7 @@ class CentralSecondDerivative(LDGSecondDerivative):
 
 
 class IPDGSecondDerivative(SecondDerivativeBase):
-    def __init__(self, stab_coefficient=10):
+    def __init__(self, stab_coefficient=1):
         self.stab_coefficient = stab_coefficient
 
     def grad_interior_flux(self, tgt, u):
