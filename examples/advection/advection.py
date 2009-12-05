@@ -48,17 +48,17 @@ def main(write_output=True, flux_type_arg="upwind"):
     if dim == 1:
         v = numpy.array([1])
         if rcon.is_head_rank:
-            from hedge.mesh import make_uniform_1d_mesh
+            from hedge.mesh.generator import make_uniform_1d_mesh
             mesh = make_uniform_1d_mesh(0, 2, 10, periodic=True)
     elif dim == 2:
         v = numpy.array([2,0])
         if rcon.is_head_rank:
-            from hedge.mesh import make_disk_mesh
+            from hedge.mesh.generator import make_disk_mesh
             mesh = make_disk_mesh(boundary_tagger=boundary_tagger)
     elif dim == 3:
         v = numpy.array([0,0,1])
         if rcon.is_head_rank:
-            from hedge.mesh import make_cylinder_mesh, make_ball_mesh, make_box_mesh
+            from hedge.mesh.generator import make_cylinder_mesh, make_ball_mesh, make_box_mesh
 
             mesh = make_cylinder_mesh(max_volume=0.04, height=2, boundary_tagger=boundary_tagger,
                     periodic=False, radial_subdivisions=32)
