@@ -116,6 +116,42 @@ class GasDynamicsOperator(TimeDependentOperator):
                 rho_u_i/self.rho(q)
                 for rho_u_i in self.rho_u(q)])
 
+    def p(self, q):
+        return (self.gamma-1)*(
+                self.e(q) - 0.5*numpy.dot(self.rho_u(q), self.u(q)))
+
+    def temperature(q):
+        c_v = 1 / (self.gamma - 1) *self.spec_gas_const
+        return (self.e(q)/self.rho(q) - 0.5 * numpy.dot(u(q),u(q))) / c_v
+
+    def primitive_to_conservative(self, prims, use_cses=True):
+        if use_cses:
+            from hedge.optemplate import make_common_subexpression as cse
+        else:
+            def cse(x, name): return x
+
+        rho = prims[0]
+        p = prims[1]
+        u = prims[2:]
+
+        from hedge.tools import join_fields
+        return join_fields(
+               rho,
+               cse(p / (self.gamma - 1) + rho / 2 * numpy.dot(u, u), "e"),
+               cse(rho * u, "rho_u"))
+
+    def conservative_to_primitive(self, q, use_cses=True):
+        if use_cses:
+            from hedge.optemplate import make_common_subexpression as cse
+        else:
+            def cse(x, name): return x
+
+        from hedge.tools import join_fields
+        return join_fields(
+               self.rho(q),
+               self.p(q),
+               self.u(q))
+
     def op_template(self):
         from hedge.optemplate import make_vector_field, \
                 make_common_subexpression as cse
@@ -132,21 +168,20 @@ class GasDynamicsOperator(TimeDependentOperator):
             return cse(self.rho_u(q), "rho_u")
 
         def p(q):
-            return cse((self.gamma-1)*(self.e(q) -
-                       0.5*numpy.dot(self.rho_u(q), u(q))), "p")
+            return cse(self.p(q), "p")
 
-        def t(q):
-            c_v = 1 / (self.gamma - 1) *self.spec_gas_const
-            return cse(
-                    (self.e(q)/self.rho(q) - 0.5 * numpy.dot(u(q),u(q))) / c_v,
-                    "t")
+        def temperature(q):
+            return cse(self.temperature(q), "temperature")
 
         def get_mu(q):
             if self.mu == "sutherland":
                 # Sutherland's law: !!!not tested!!!
                 t_s = 110.4
                 mu_inf = 1.735e-5
-                return cse(mu_inf * t(q) ** 1.5 * (1 + t_s) / (t(q) + t_s))
+                return cse(
+                        mu_inf * temperature(q) ** 1.5 * (1 + t_s) 
+                        / (temperature(q) + t_s),
+                        "sutherland_mu")
             else:
                 return self.mu
 
@@ -320,15 +355,6 @@ class GasDynamicsOperator(TimeDependentOperator):
                 dumvec=cse(bdrize_op(u(state)) - u0, "dumvec"),
                 dpm=cse(bdrize_op(p(state)) - p0, "dpm"))
 
-        def primitive_to_conservative(prims):
-            rho = prims[0]
-            p = prims[1]
-            u = prims[2:]
-            return join_fields(
-                   rho,
-                   cse(p / (self.gamma - 1) + rho / 2 * numpy.dot(u, u), "e"),
-                   rho * u)
-
         def outflow_state(state):
             from hedge.optemplate import make_normal
             normal = make_normal(self.outflow_tag, self.dimensions)
@@ -384,7 +410,7 @@ class GasDynamicsOperator(TimeDependentOperator):
                 (self.noslip_tag, noslip_state(state))
                     ]
         all_tags_and_conservative_bcs = [
-                (tag, primitive_to_conservative(bc))
+                (tag, self.primitive_to_conservative(bc))
                 for tag, bc in all_tags_and_primitive_bcs]
 
         flux_state = flux(state)
@@ -518,8 +544,6 @@ class SlopeLimiter1NEuler:
                 return result
 
     def __call__(self, fields):
-
-        #join fields
         from hedge.tools import join_fields
 
         #get conserved fields
