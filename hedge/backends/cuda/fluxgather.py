@@ -135,9 +135,11 @@ class FluxToCodeMapper(CCodeMapper):
     def map_normal(self, expr, enclosing_prec):
         return "fpair->normal[%d]" % expr.axis
 
-    def map_penalty_term(self, expr, enclosing_prec):
-        return ("pow(fpair->order*fpair->order/fpair->h, %r)"
-                % expr.power)
+    def map_element_order(self, expr, enclosing_prec):
+        return "fpair->order"
+
+    def map_local_mesh_size(self, expr, enclosing_prec):
+        return "fpair->h"
 
     def map_function_symbol(self, expr, enclosing_prec):
         from hedge.flux import FluxFunctionSymbol, \

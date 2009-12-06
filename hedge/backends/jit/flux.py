@@ -61,9 +61,11 @@ class FluxToCodeMapper(CCodeMapper):
     def map_normal(self, expr, enclosing_prec):
         return "uncomplex_type(fp.int_side.normal[%d])" % (expr.axis)
 
-    def map_penalty_term(self, expr, enclosing_prec):
-        return ("uncomplex_type(pow(fp.int_side.order*fp.int_side.order/fp.int_side.h, %(pwr)r))"
-                % {"pwr": expr.power})
+    def map_element_order(self, expr, enclosing_prec):
+        return "uncomplex_type(fp.int_side.order)"
+
+    def map_local_mesh_size(self, expr, enclosing_prec):
+        return "uncomplex_type(fp.int_side.h)"
 
     def map_function_symbol(self, expr, enclosing_prec):
         from hedge.flux import FluxFunctionSymbol, \
