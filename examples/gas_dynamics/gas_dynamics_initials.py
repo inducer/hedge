@@ -27,7 +27,8 @@ import numpy.linalg as la
 class UniformMachFlow:
     def __init__(self, mach=0.1, p=1, rho=1, reynolds=100,
             gamma=1.4, prandtl=0.72, char_length=1, spec_gas_const=287.1,
-            angle_of_attack=None, direction=None):
+            angle_of_attack=None, direction=None, gaussian_pulse_at=None,
+            pulse_magnitude=0.1):
         """
         :param direction: is a vector indicating the direction of the
           flow. Only one of angle_of_attack and direction may be
@@ -62,6 +63,9 @@ class UniformMachFlow:
 
         self.angle_of_attack = angle_of_attack
 
+        self.gaussian_pulse_at = gaussian_pulse_at
+        self.pulse_magnitude = pulse_magnitude
+
         self.c = (self.gamma * p / rho)**0.5
         u = self.velocity = mach * self.c
         self.e = p / (self.gamma - 1) + rho / 2 * u**2
@@ -88,9 +92,11 @@ class UniformMachFlow:
         ones = numpy.ones_like(x_vec[0])
         rho_field = ones*self.rho
 
-        # gaussian pulse:
-        # rho_field = (ones + 0.1 * numpy.exp(
-            #- ((x_vec[0] - 2) ** 2 + (x_vec[1] - 1) ** 2) /2)) * self.rho
+        if self.gaussian_pulse_at is not None:
+            rel_to_pulse = [x_vec[i] - self.gaussian_pulse_at[i]
+                    for i in range(len(x_vec))]
+            rho_field +=  self.pulse_magnitude * self.rho * numpy.exp(
+                - sum(rtp_i**2 for rtp_i in rel_to_pulse)/2)
 
         direction = self.direction_vector(x_vec.shape[0])
 

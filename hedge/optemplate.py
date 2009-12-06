@@ -224,7 +224,13 @@ class DiffOperatorBase(Operator):
         return (other.__class__ == self.__class__
                 and other.xyz_axis == self.xyz_axis)
 
-class DifferentiationOperator(DiffOperatorBase):
+class StrongFormDiffOperatorBase(DiffOperatorBase):
+    pass
+
+class WeakFormDiffOperatorBase(DiffOperatorBase):
+    pass
+
+class DifferentiationOperator(StrongFormDiffOperatorBase):
     @staticmethod
     def matrices(element_group):
         return element_group.differentiation_matrices
@@ -236,7 +242,7 @@ class DifferentiationOperator(DiffOperatorBase):
     def get_mapper_method(self, mapper):
         return mapper.map_diff
 
-class MInvSTOperator(DiffOperatorBase):
+class MInvSTOperator(WeakFormDiffOperatorBase):
     @staticmethod
     def matrices(element_group):
         return element_group.minv_st
@@ -248,7 +254,7 @@ class MInvSTOperator(DiffOperatorBase):
     def get_mapper_method(self, mapper):
         return mapper.map_minv_st
 
-class StiffnessOperator(DiffOperatorBase):
+class StiffnessOperator(StrongFormDiffOperatorBase):
     @staticmethod
     def matrices(element_group):
         return element_group.stiffness_matrices
@@ -260,7 +266,7 @@ class StiffnessOperator(DiffOperatorBase):
     def get_mapper_method(self, mapper):
         return mapper.map_stiffness
 
-class StiffnessTOperator(DiffOperatorBase):
+class StiffnessTOperator(WeakFormDiffOperatorBase):
     @staticmethod
     def matrices(element_group):
         return element_group.stiffness_t_matrices
@@ -693,20 +699,6 @@ class FlopCounter(
 
 
 
-class CommutativeConstantFoldingMapper(
-        pymbolic.mapper.constant_folder.CommutativeConstantFoldingMapper,
-        IdentityMapperMixin):
-
-    def __init__(self):
-        pymbolic.mapper.constant_folder.CommutativeConstantFoldingMapper.__init__(self)
-        self.dep_mapper = DependencyMapper()
-
-    def is_constant(self, expr):
-        return not bool(self.dep_mapper(expr))
-
-
-
-
 class IdentityMapper(
         IdentityMapperMixin,
         pymbolic.mapper.IdentityMapper):
@@ -785,7 +777,7 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
         return "Boundarize<tag=%s>" % expr.tag
 
     def map_flux_exchange(self, expr, enclosing_prec):
-        return "FExch<idx=%d,rank=%d>" % (expr.index, expr.rank)
+        return "FExch<idx=%s,rank=%d>" % (expr.index, expr.rank)
 
     def map_normal_component(self, expr, enclosing_prec):
         return "Normal<tag=%s>[%d]" % (expr.tag, expr.axis)
@@ -913,30 +905,6 @@ class BoundOpMapperMixin(object):
 
 
 
-
-class EmptyFluxKiller(CSECachingMapperMixin, IdentityMapper):
-    def __init__(self, discr):
-        IdentityMapper.__init__(self)
-        self.discr = discr
-
-    map_common_subexpression_uncached = \
-            IdentityMapper.map_common_subexpression
-
-    def map_operator_binding(self, expr):
-        if (isinstance(expr.op, (
-            FluxOperatorBase,
-            LiftingFluxOperator))
-            and
-            isinstance(expr.field, BoundaryPair)
-            and
-            self.discr.get_boundary(expr.field.tag).is_empty()):
-            return 0
-        else:
-            return IdentityMapper.map_operator_binding(self, expr)
-
-
-
-
 class OperatorBinder(CSECachingMapperMixin, IdentityMapper):
     map_common_subexpression_uncached = \
             IdentityMapper.map_common_subexpression
@@ -958,6 +926,129 @@ class OperatorBinder(CSECachingMapperMixin, IdentityMapper):
             return OperatorBinding(first, self.rec(prod))
         else:
             return first * self.rec(flattened_product(expr.children[1:]))
+
+
+
+
+# simplifications / optimizations ---------------------------------------------
+class CommutativeConstantFoldingMapper(
+        pymbolic.mapper.constant_folder.CommutativeConstantFoldingMapper,
+        IdentityMapperMixin):
+
+    def __init__(self):
+        pymbolic.mapper.constant_folder.CommutativeConstantFoldingMapper.__init__(self)
+        self.dep_mapper = DependencyMapper()
+
+    def is_constant(self, expr):
+        return not bool(self.dep_mapper(expr))
+
+
+
+
+class EmptyFluxKiller(CSECachingMapperMixin, IdentityMapper):
+    def __init__(self, mesh):
+        IdentityMapper.__init__(self)
+        self.mesh = mesh
+
+    map_common_subexpression_uncached = \
+            IdentityMapper.map_common_subexpression
+
+    def map_operator_binding(self, expr):
+        if (isinstance(expr.op, (
+            FluxOperatorBase,
+            LiftingFluxOperator))
+            and
+            isinstance(expr.field, BoundaryPair)
+            and
+            len(self.mesh.tag_to_boundary.get(expr.field.tag, [])) == 0):
+            return 0
+        else:
+            return IdentityMapper.map_operator_binding(self, expr)
+
+
+
+
+class _InnerDerivativeJoiner(pymbolic.mapper.RecursiveMapper):
+    def map_operator_binding(self, expr, derivatives):
+        if isinstance(expr.op, DifferentiationOperator):
+            derivatives.setdefault(expr.op, []).append(expr.field)
+            return 0
+        else:
+            return DerivativeJoiner()(expr)
+
+    def map_common_subexpression(self, expr, derivatives):
+        # no use preserving these if we're moving derivatives around
+        return self.rec(expr.child, derivatives)
+
+    def map_sum(self, expr, derivatives):
+        from pymbolic.primitives import flattened_sum
+        return flattened_sum(tuple(
+            self.rec(child, derivatives) for child in expr.children))
+
+    def map_product(self, expr, derivatives):
+        def is_scalar(expr):
+            return isinstance(expr, (int, float, complex, ScalarParameter))
+
+        from pytools import partition
+        scalars, nonscalars = partition(is_scalar, expr.children)
+
+        if len(nonscalars) != 1:
+            return DerivativeJoiner()(expr)
+        else:
+            from pymbolic import flattened_product
+            factor = flattened_product(scalars)
+            nonscalar, = nonscalars
+
+            sub_derivatives = {}
+            nonscalar = self.rec(nonscalar, sub_derivatives)
+            def do_map(expr):
+                if is_scalar(expr):
+                    return expr
+                else:
+                    return self.rec(expr, derivatives)
+
+            for operator, operands in sub_derivatives.iteritems():
+                for operand in operands:
+                    derivatives.setdefault(operator, []).append(
+                            factor*operand)
+
+            return factor*nonscalar
+
+    # these two are necessary because they're forwarding targets
+    def map_algebraic_leaf(self, expr, *args):
+        return DerivativeJoiner()(expr)
+
+    def map_quotient(self, expr, *args):
+        return DerivativeJoiner()(expr)
+
+
+
+
+class DerivativeJoiner(CSECachingMapperMixin, IdentityMapper):
+    """Joins derivatives:
+
+    .. math::
+
+        \frac{\partial A}{\partial x} + \frac{\partial B}{\partial x} 
+        \rightarrow
+        \frac{\partial (A+B)}{\partial x}.
+    """
+    map_common_subexpression_uncached = \
+            IdentityMapper.map_common_subexpression
+
+    def map_sum(self, expr):
+        idj = _InnerDerivativeJoiner()
+
+        derivatives = {}
+        new_children = [idj(child, derivatives)
+                for child in expr.children]
+
+        for operator, operands in derivatives.iteritems():
+            new_children.insert(0, operator(
+                sum(self.rec(operand) for operand in operands)))
+
+        from pymbolic.primitives import flattened_sum
+        return flattened_sum(new_children)
 
 
 
@@ -1005,7 +1096,7 @@ class _InnerInverseMassContractor(pymbolic.mapper.RecursiveMapper):
 
     def map_product(self, expr):
         def is_scalar(expr):
-            return isinstance(expr, (int, float, complex))
+            return isinstance(expr, (int, float, complex, ScalarParameter))
 
         from pytools import len_iterable
         nonscalar_count = len_iterable(ch
@@ -1303,3 +1394,34 @@ def split_optemplate_for_multirate(state_vector, op_template,
                     op_template[ig]))
             for ig in index_groups
             for killer in killers]
+
+
+
+# process optemplate ----------------------------------------------------------
+def process_optemplate(optemplate, post_bind_mapper=None,
+        dumper=lambda name, optemplate: None, mesh=None):
+
+    dumper("before-bind", optemplate)
+    optemplate = OperatorBinder()(optemplate)
+
+    if post_bind_mapper is not None:
+        dumper("before-postbind", optemplate)
+        optemplate = post_bind_mapper(optemplate)
+
+    dumper("before-bc2flux", optemplate)
+    optemplate = BCToFluxRewriter()(optemplate)
+    dumper("before-cfold", optemplate)
+    optemplate = CommutativeConstantFoldingMapper()(optemplate)
+    if mesh is not None:
+        dumper("before-empty-flux-killer", optemplate)
+        optemplate = EmptyFluxKiller(mesh)(optemplate)
+    dumper("before-imass", optemplate)
+    optemplate = InverseMassContractor()(optemplate)
+    dumper("before-cfold-2", optemplate)
+    optemplate = CommutativeConstantFoldingMapper()(optemplate)
+    dumper("before-derivative-join", optemplate)
+    optemplate = DerivativeJoiner()(optemplate)
+    dumper("process-optemplate-finished", optemplate)
+
+    return optemplate
+

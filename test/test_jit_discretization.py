@@ -960,13 +960,12 @@ def test_elliptic():
                     debug=discr_class.noninteractive_debug_flags())
 
             from hedge.data import GivenFunction
-            from hedge.models.poisson import WeakPoissonOperator
-            op = WeakPoissonOperator(discr.dimensions,
+            from hedge.models.poisson import PoissonOperator
+            op = PoissonOperator(discr.dimensions,
                     dirichlet_tag=TAG_ALL,
                     dirichlet_bc=GivenFunction(
                         lambda x, el: truesol_c(x)),
-                    neumann_tag=TAG_NONE,
-                    flux=flux)
+                    neumann_tag=TAG_NONE)
 
             bound_op = op.bind(discr)
 

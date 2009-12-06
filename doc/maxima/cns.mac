@@ -1,0 +1,45 @@
+/* compare formulation in JSH/TW with 
+ * http://en.wikipedia.org/wiki/Navier%E2%80%93Stokes_equations#Compressible_flow_of_Newtonian_fluids
+ */
+
+kill(all);
+d:2;
+
+div(vec):=sum(diff(vec[i], coords[i]), i, 1, length(vec));
+grad(f):=makelist(diff(f, coords[i]), i, 1, d);
+vlaplace(vec):=makelist(div(grad(vec[i])), i, 1, length(vec));
+
+uvec:makelist([u,v,w][i], i, 1, d);
+coords:makelist([x,y,z][i], i, 1, d);
+
+depends(uvec, coords);
+
+dudx:genmatrix(
+  lambda([i,j], diff(uvec[i], coords[j])),
+  d, d);
+
+delta(i, j):=if i = j then 1 else 0;
+
+tau:mu*genmatrix(
+  lambda([i,j], 
+    dudx[i,j] + dudx[j,i] - 2/3 * delta(i,j) * mat_trace(dudx)),
+  d, d);
+
+rhou_rhs:makelist(div(tau[i]), i, 1, d);
+
+muv:0;
+rhou_rhs2:(1/3*mu+muv)*grad(div(uvec)) + mu*vlaplace(uvec);
+
+/*
+print(rhou_rhs);
+print(rhou_rhs2);
+*/
+print(ratsimp(rhou_rhs-rhou_rhs2));
+
+e_rhs:div(uvec.tau);
+
+e_rhs2:(1/3*mu+muv)*grad(div(uvec)) + mu*makelist(div(uvec*grad(vec[i])), i, 1, d);
+
+print(e_rhs);
+print(e_rhs2);
+print(ratsimp(e_rhs-e_rhs2));

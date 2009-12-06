@@ -28,7 +28,7 @@ import numpy.linalg as la
 import hedge.data
 from hedge.models import TimeDependentOperator
 from hedge.models.poisson import LaplacianOperatorBase
-from hedge.models.nd_calculus import CentralSecondDerivative
+from hedge.tools.second_order import CentralSecondDerivative
 
 
 

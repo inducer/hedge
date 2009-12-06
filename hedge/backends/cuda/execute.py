@@ -457,30 +457,26 @@ class Executor(object):
 
     @staticmethod
     def prepare_optemplate_stage2(mesh, optemplate, debug_flags=set()):
-        from hedge.optemplate import InverseMassContractor, \
-                BCToFluxRewriter, CommutativeConstantFoldingMapper
-        from hedge.backends.cuda.optemplate import BoundaryCombiner
+        stage = [0]
 
         def dump_optemplate(name, optemplate):
             if "dump_optemplate_stages" in debug_flags:
                 from hedge.tools import open_unique_debug_file
                 from hedge.optemplate import pretty_print_optemplate
-                open_unique_debug_file(name, ".txt").write(
+                open_unique_debug_file("%02d-%s" % (stage[0], name), ".txt").write(
                         pretty_print_optemplate(optemplate))
+                stage[0] += 1
 
-        dump_optemplate("01-before-bc2flux", optemplate)
-        optemplate = BCToFluxRewriter()(optemplate)
+        from hedge.backends.cuda.optemplate import BoundaryCombiner
+        from hedge.optemplate import process_optemplate
 
-        dump_optemplate("02-before-cfold", optemplate)
-        optemplate = CommutativeConstantFoldingMapper()(optemplate)
+        optemplate = process_optemplate(optemplate, 
+                post_bind_mapper=None, # we've already applied it in stage 1
+                dumper=dump_optemplate,
+                mesh=mesh)
 
-        dump_optemplate("03-before-imass", optemplate)
-        optemplate = InverseMassContractor()(optemplate)
-
-        dump_optemplate("04-before-bcomb", optemplate)
         optemplate = BoundaryCombiner(mesh)(optemplate)
-
-        dump_optemplate("05-final", optemplate)
+        dump_optemplate("final", optemplate)
 
         return optemplate
 

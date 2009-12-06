@@ -171,10 +171,10 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
 
         flux_op = get_flux_operator(self.flux())
 
-        return numpy.dot(self.v, minv_st*u) - m_inv*(
-                    flux_op*u
-                    + flux_op * BoundaryPair(u, bc_in, self.inflow_tag)
-                    + flux_op * BoundaryPair(u, bc_out, self.outflow_tag)
+        return numpy.dot(self.v, minv_st*u) - m_inv(
+                    flux_op(u)
+                    + flux_op(BoundaryPair(u, bc_in, self.inflow_tag))
+                    + flux_op(BoundaryPair(u, bc_out, self.outflow_tag))
                     )
 
 

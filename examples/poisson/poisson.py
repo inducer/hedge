@@ -81,17 +81,18 @@ def main(write_output=True):
 
     try:
         from hedge.models.poisson import PoissonOperator
-        from hedge.models.nd_calculus import \
-                IPDGSecondDerivative, LDGSecondDerivative
+        from hedge.tools.second_order import \
+                IPDGSecondDerivative, LDGSecondDerivative, \
+                StabilizedCentralSecondDerivative
         from hedge.mesh import TAG_NONE, TAG_ALL
         op = PoissonOperator(discr.dimensions, 
                 diffusion_tensor=my_diff_tensor(),
 
-                dirichlet_tag="dirichlet",
-                neumann_tag="neumann", 
+                #dirichlet_tag="dirichlet",
+                #neumann_tag="neumann", 
 
-                #dirichlet_tag=TAG_NONE,
-                #neumann_tag=TAG_ALL, 
+                dirichlet_tag=TAG_ALL,
+                neumann_tag=TAG_NONE, 
 
                 #dirichlet_tag=TAG_ALL,
                 #neumann_tag=TAG_NONE, 
@@ -99,7 +100,9 @@ def main(write_output=True):
                 dirichlet_bc=GivenFunction(dirichlet_bc),
                 neumann_bc=ConstantGivenFunction(-10),
 
-                scheme=LDGSecondDerivative(),
+                scheme=StabilizedCentralSecondDerivative(),
+                #scheme=LDGSecondDerivative(),
+                #scheme=IPDGSecondDerivative(),
                 )
         bound_op = op.bind(discr)
 

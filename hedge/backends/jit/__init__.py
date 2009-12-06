@@ -286,36 +286,22 @@ class Executor(object):
                 [self.lift_flux, JitLifter(discr)])
 
     def compile_optemplate(self, discr, optemplate, post_bind_mapper):
-        from hedge.optemplate import \
-                OperatorBinder, \
-                InverseMassContractor, \
-                BCToFluxRewriter, \
-                EmptyFluxKiller
+        from hedge.optemplate import process_optemplate
 
-        from hedge.optemplate import CommutativeConstantFoldingMapper
+        stage = [0]
 
         def dump_optemplate(name, optemplate):
             if "dump_optemplate_stages" in discr.debug:
                 from hedge.tools import open_unique_debug_file
                 from hedge.optemplate import pretty_print_optemplate
-                open_unique_debug_file(name, ".txt").write(
+                open_unique_debug_file("%02d-%s" % (stage[0], name), ".txt").write(
                         pretty_print_optemplate(optemplate))
+                stage[0] += 1
 
-        dump_optemplate("01-before-bind", optemplate)
-        optemplate = OperatorBinder()(optemplate)
-        dump_optemplate("02-before-postbind", optemplate)
-        optemplate = post_bind_mapper(optemplate)
-        dump_optemplate("03-before-bc2flux", optemplate)
-        optemplate = BCToFluxRewriter()(optemplate)
-        dump_optemplate("04-before-cfold", optemplate)
-        optemplate = CommutativeConstantFoldingMapper()(optemplate)
-        dump_optemplate("05-before-empty-flux-killer", optemplate)
-        optemplate = EmptyFluxKiller(discr)(optemplate)
-        dump_optemplate("05-before-imass", optemplate)
-        optemplate = InverseMassContractor()(optemplate)
-        dump_optemplate("06-before-cfold-2", optemplate)
-        optemplate = CommutativeConstantFoldingMapper()(optemplate)
-        dump_optemplate("07-final", optemplate)
+        optemplate = process_optemplate(optemplate, 
+                post_bind_mapper=post_bind_mapper,
+                dumper=dump_optemplate,
+                mesh=discr.mesh)
 
         from hedge.backends.jit.compiler import OperatorCompiler
         return OperatorCompiler(discr)(optemplate)
