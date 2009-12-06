@@ -755,7 +755,8 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
 
             def map_operator_binding(self, expr):
                 from hedge.flux import FieldComponent
-                from hedge.optemplate import BoundarizeOperator
+                from hedge.optemplate import (BoundarizeOperator,
+                        FluxExchangeOperator)
 
                 if isinstance(expr.op, BoundarizeOperator):
                     if expr.op.tag != bpair.tag:
