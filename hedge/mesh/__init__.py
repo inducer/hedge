@@ -330,7 +330,7 @@ def make_conformal_mesh_ext(points, elements,
                     assert len(plus_faces) == 1
                 except KeyError:
                     # is our periodic counterpart is in a different mesh clump?
-                    if is_rankbdry_face(minus_face):
+                    if _is_rankbdry_face(minus_face):
                         # if so, cool. parallel handler will take care of it.
                         continue
                     else:
