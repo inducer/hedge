@@ -28,7 +28,7 @@ import numpy.linalg as la
 def run_convergence_test_advec(dtype, debug_output=False):
     """Test whether 2/3D advection actually converges"""
 
-    from hedge.mesh import make_ball_mesh, make_box_mesh, make_rect_mesh
+    from hedge.mesh.generator import make_ball_mesh, make_box_mesh, make_rect_mesh
     from hedge.timestep import RK4TimeStepper
     from hedge.tools import EOCRecorder
     from math import sin, pi, sqrt
@@ -115,7 +115,7 @@ def run_convergence_test_advec(dtype, debug_output=False):
 
                     rhs = op.bind(discr)
 
-                    stepper = RK4TimeStepper()
+                    stepper = RK4TimeStepper(dtype=dtype)
                     from hedge.timestep import times_and_steps
                     final_time = 1
                     step_it = times_and_steps(
