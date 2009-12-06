@@ -41,8 +41,6 @@ def make_squaremesh():
 
         return bool(area > 10*min(max_area_volume, max_area_corners))
 
-    import sys
-
     from meshpy.geometry import make_box
     points, facets, _ = make_box((-0.5,-0.5), (0.5,0.5))
     obstacle_corners = points[:]
@@ -116,10 +114,10 @@ def main():
 
     for order in [3]:
         from gas_dynamics_initials import UniformMachFlow
-        square = UniformMachFlow()
+        square = UniformMachFlow(gaussian_pulse_at=numpy.array([-2, 2]),
+                pulse_magnitude=0.003)
 
         from hedge.models.gas_dynamics import GasDynamicsOperator
-        print "mu", square.mu
         op = GasDynamicsOperator(dimensions=2,
                 gamma=square.gamma, mu=square.mu,
                 prandtl=square.prandtl, spec_gas_const=square.spec_gas_const,
@@ -130,12 +128,12 @@ def main():
                         debug=["cuda_no_plan",
                             #"cuda_dump_kernels",
                             #"dump_dataflow_graph",
-                            #"dump_optemplate_stages",
+                            "dump_optemplate_stages",
                             #"dump_dataflow_graph",
-                            #"print_op_code"
+                            "dump_op_code"
                             #"cuda_no_plan_el_local"
                             ],
-                        default_scalar_type=numpy.float32,
+                        default_scalar_type=numpy.float64,
                         tune_for=op.op_template())
 
         from hedge.visualization import SiloVisualizer, VtkVisualizer
@@ -143,7 +141,7 @@ def main():
         vis = SiloVisualizer(discr, rcon)
 
         from hedge.timestep import RK4TimeStepper
-        stepper = RK4TimeStepper()
+        stepper = RK4TimeStepper(dtype=discr.default_scalar_type)
 
         #from hedge.timestep.dumka3 import Dumka3TimeStepper
         #stepper = Dumka3TimeStepper(3)
@@ -178,12 +176,11 @@ def main():
 
         add_simulation_quantities(logmgr)
         logmgr.add_watches(["step.max", "t_sim.max", "t_step.max"])
-        logmgr.set_constant("is_cpu", is_cpu)
 
         # filter setup ------------------------------------------------------------
         from hedge.discretization import Filter, ExponentialFilterResponseFunction
         mode_filter = Filter(discr,
-                ExponentialFilterResponseFunction(min_amplification=0.95, order=4))
+                ExponentialFilterResponseFunction(min_amplification=0.95, order=6))
 
         # timestep loop -------------------------------------------------------
         fields = square.volume_interpolant(0, discr)
@@ -206,7 +203,7 @@ def main():
         try:
             from hedge.timestep import times_and_steps
             step_it = times_and_steps(
-                    final_time=200,
+                    final_time=1000,
                     #max_steps=500,
                     logmgr=logmgr,
                     max_dt_getter=lambda t: op.estimate_timestep(discr,
@@ -215,7 +212,7 @@ def main():
             for step, t, dt in step_it:
                 #if (step % 10000 == 0): #and step < 950000) or (step % 500 == 0 and step > 950000):
                 #if False:
-                if (step % 100 == 0):
+                if step % 100 == 0:
                     visf = vis.make_file("square-%d-%06d" % (order, step))
 
                     from pylo import DB_VARTYPE_VECTOR
@@ -234,7 +231,7 @@ def main():
                     visf.close()
 
                 fields = stepper(fields, t, dt, rhs)
-                #fields = mode_filter(fields)
+                fields = mode_filter(fields)
 
         finally:
             vis.close()
