@@ -137,11 +137,9 @@ class StrongAdvectionOperator(AdvectionOperatorBase):
 
         return (
                 -numpy.dot(self.v, nabla*u)
-                + m_inv*(
-                flux_op * u
-                + flux_op * BoundaryPair(u, bc_in, self.inflow_tag)
-                )
-                )
+                + m_inv(
+                flux_op(u)
+                + flux_op(BoundaryPair(u, bc_in, self.inflow_tag))))
 
 
 
