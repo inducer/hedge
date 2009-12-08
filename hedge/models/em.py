@@ -210,6 +210,7 @@ class MaxwellOperator(HyperbolicOperator):
 
         if self.incident_bc_data is not None:
             from hedge.tools import make_common_subexpression
+            from hedge.optemplate import make_vector_field
             return make_common_subexpression(
                     -make_vector_field("incident_bc", fld_cnt))
         else:
