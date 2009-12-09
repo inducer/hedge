@@ -211,7 +211,7 @@ def plot_1d(f, a, b, steps=100, driver=None):
 
 
 # obj array helpers -----------------------------------------------------------
-def make_common_subexpression(fields): 
+def make_common_subexpression(fields):
     """Wrap each component of a vector field in a CSE."""
 
     from pymbolic.primitives import CommonSubexpression
@@ -902,7 +902,7 @@ def count_dofs(vec):
 
 
 # flux creation ---------------------------------------------------------------
-def make_lax_friedrichs_flux(wave_speed, state, fluxes, bdry_tags_states_and_fluxes, 
+def make_lax_friedrichs_flux(wave_speed, state, fluxes, bdry_tags_states_and_fluxes,
         strong):
     from hedge.flux import make_normal, FluxVectorPlaceholder, flux_max
 
@@ -934,6 +934,92 @@ def make_lax_friedrichs_flux(wave_speed, state, fluxes, bdry_tags_states_and_flu
                 flux_op(BoundaryPair(int_operand,
                     join_fields(0, bdry_state, *bdry_fluxes), tag))
                 for tag, bdry_state, bdry_fluxes in bdry_tags_states_and_fluxes))
+
+
+
+
+# bad-cell indicators ---------------------------------------------------------
+def persson_peraire_filter_response_function(mode_idx, ldis):
+    if sum(mode_idx) == ldis.order - 1:
+        return 0
+    else:
+        return 1
+
+
+
+class PerssonPeraireDiscontinuitySensor(object):
+    """
+    see
+    [1] P. Persson und J. Peraire,
+    "Sub-Cell Shock Capturing for Discontinuous Galerkin Methods,"
+    Proc. of the 44th AIAA Aerospace Sciences Meeting and Exhibit, 2006.
+    """
+
+    def __init__(self, discr, kappa, eps0, s_0):
+        from pytools import match_precision
+        scalar_type = match_precision(
+                numpy.dtype(numpy.float64),
+                discr.default_scalar_type).type
+        self.discr = discr
+        self.kappa = scalar_type(kappa)
+        self.eps0 = scalar_type(eps0)
+        self.s_0 = scalar_type(s_0)
+
+        from hedge.discretization import Filter
+        self.mode_truncator = Filter(discr,
+                persson_peraire_filter_response_function)
+        self.ones_data_store = {}
+
+        from hedge.optemplate import MassOperator, Field
+        self.mass_op = discr.compile(MassOperator() * Field("f"))
+
+        self.threshold_op = discr.compile(
+                self.threshold_op_template())
+
+    def threshold_op_template(self):
+        from pymbolic.primitives import IfPositive, Variable
+        from hedge.optemplate import Field, ScalarParameter
+        from hedge.optemplate import make_common_subexpression as cse
+        from math import pi
+
+        sin = Variable("sin")
+        log10 = Variable("log10")
+
+        capital_s_e = Field("S_e")
+        s_e = cse(log10(capital_s_e), "s_e")
+        kappa = ScalarParameter("kappa")
+        eps0 = ScalarParameter("eps0")
+        s_0 = ScalarParameter("s_0")
+
+        return IfPositive(s_0-self.kappa-s_e,
+                0,
+                IfPositive(s_0+self.kappa-s_e,
+                    eps0,
+                    eps0/2*(1+sin(pi*(s_e-s_0)/self.kappa))))
+
+    def __call__(self, u):
+        truncated_u = self.mode_truncator(u)
+        diff = u - truncated_u
+
+        mass_diff = self.mass_op(f=diff)
+        mass_u = self.mass_op(f=u)
+
+        def ones(eg):
+            return numpy.ones(
+                    (eg.local_discretization.node_count(), 
+                        eg.local_discretization.node_count()),
+                    dtype=self.discr.default_scalar_type)
+
+        el_norm_squared_mass_diff_u = self.discr.apply_element_local_matrix(
+                eg_to_matrix=ones, field=mass_diff*diff,
+                prepared_data_store=self.ones_data_store)
+        el_norm_squared_mass_u = self.discr.apply_element_local_matrix(
+                eg_to_matrix=ones, field=mass_u*u,
+                prepared_data_store=self.ones_data_store)
+
+        return self.threshold_op(
+                S_e=el_norm_squared_mass_diff_u / el_norm_squared_mass_u,
+                kappa=self.kappa, eps0=self.eps0, s_0=self.s_0)
 
 
 
@@ -1137,7 +1223,7 @@ class Monomial:
         for xi in x:
             assert -eps <= xi <= 1+eps
         return self.factor* \
-                reduce(mul, (x[i]**alpha 
+                reduce(mul, (x[i]**alpha
                     for i, alpha in enumerate(self.exponents)))
 
     def theoretical_integral(self):

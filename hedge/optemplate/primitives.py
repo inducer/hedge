@@ -76,6 +76,7 @@ class ScalarParameter(pymbolic.primitives.Variable):
     """A placeholder for a user-supplied scalar variable."""
 
     def stringifier(self):
+        from hedge.optemplate import StringifyMapper
         return StringifyMapper
 
     def get_mapper_method(self, mapper):
