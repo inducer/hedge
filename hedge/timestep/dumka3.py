@@ -195,6 +195,41 @@ class Dumka3TimeStepper(object):
 
         return y
 
+    def accept_step(self, z, h_new, err_n, h_n, stepId):
+        accepted = False
+
+        eps1 = 0
+        eps = numpy.sqrt(numpy.dot(z, z)/len(z))
+
+        fracmin = 0.1
+        if eps == 0:
+           eps = 1.e-14
+
+        frac = (1/eps)**(1/3)
+
+        if eps <= 1.e0:
+            if err_n>0 and h_n > 0:
+                frac2 = pow(err_n,(1/3))*frac*frac*(h_new/h_n);
+                frac = min(frac,frac2)
+
+            accepted = true
+            fracmax = 2.
+            frac = min(fracmax, max(fracmin,0.8*frac))
+            h_old = h_new
+            h_new = frac*h_new
+            h_n = h_old
+            err_n = eps    
+        else:
+            accepted = False
+            fracmax = 1.e0
+            frac = 0.8*min(fracmax,max(fracmin,0.8e0*frac));
+            if stepId==0:
+                h_new = fracmin*h_new
+            else:
+                h_new = frac*h_new
+            
+        return accepted
+
 
 
 
