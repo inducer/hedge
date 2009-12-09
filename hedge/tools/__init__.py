@@ -993,11 +993,11 @@ class PerssonPeraireDiscontinuitySensor(object):
 
         return IfPositive(s_0-self.kappa-s_e,
                 0,
-                IfPositive(s_0+self.kappa-s_e,
+                IfPositive(s_e-self.kappa-s_0,
                     eps0,
                     eps0/2*(1+sin(pi*(s_e-s_0)/self.kappa))))
 
-    def __call__(self, u):
+    def capital_s_e(self, u):
         truncated_u = self.mode_truncator(u)
         diff = u - truncated_u
 
@@ -1017,8 +1017,11 @@ class PerssonPeraireDiscontinuitySensor(object):
                 eg_to_matrix=ones, field=mass_u*u,
                 prepared_data_store=self.ones_data_store)
 
+        return el_norm_squared_mass_diff_u / el_norm_squared_mass_u
+
+    def __call__(self, u):
         return self.threshold_op(
-                S_e=el_norm_squared_mass_diff_u / el_norm_squared_mass_u,
+                S_e=self.capital_s_e(u),
                 kappa=self.kappa, eps0=self.eps0, s_0=self.s_0)
 
 
