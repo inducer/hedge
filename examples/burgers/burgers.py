@@ -45,16 +45,16 @@ def main(write_output=True, flux_type_arg="upwind"):
         mesh_data = rcon.receive_mesh()
 
     discr = rcon.make_discretization(mesh_data, order=order)
-    #vis_discr = rcon.make_discretization(mesh_data, order=30)
-    vis_discr = discr
+    vis_discr = rcon.make_discretization(mesh_data, order=30)
+    #vis_discr = discr
 
     from hedge.discretization import Projector
     vis_proj = Projector(discr, vis_discr)
 
     from hedge.visualization import VtkVisualizer, SiloVisualizer
     if write_output:
-        vis = SiloVisualizer(vis_discr, rcon)
-        #vis = VtkVisualizer(vis_discr, rcon, "fld")
+        #vis = SiloVisualizer(vis_discr, rcon)
+        vis = VtkVisualizer(vis_discr, rcon, "fld")
 
     # operator setup ----------------------------------------------------------
     from hedge.data import \
@@ -101,8 +101,56 @@ def main(write_output=True, flux_type_arg="upwind"):
     # timestep loop -----------------------------------------------------------
     h = 2/el_count
     from hedge.tools import PerssonPeraireDiscontinuitySensor
-    sensor = PerssonPeraireDiscontinuitySensor(discr, kappa=5,
-            eps0=h/order, s_0=1/order**4)
+    sensor = PerssonPeraireDiscontinuitySensor(discr, kappa=2,
+            eps0=h/order, s_0=numpy.log10(1/order**4))
+
+    from pytools.log import LogQuantity
+    class S_eMonitor(LogQuantity):
+        """A source of loggable scalars."""
+        def __init__(self):
+            LogQuantity.__init__(self, "max_S_e", "1")
+
+        def __call__(self):
+            return discr.nodewise_max(sensor.capital_s_e(u))
+
+    class SensorMonitor(LogQuantity):
+        """A source of loggable scalars."""
+        def __init__(self):
+            LogQuantity.__init__(self, "max_viscosity", "1")
+
+        def __call__(self):
+            return discr.nodewise_max(sensor(u))
+
+    class Smoothness(LogQuantity):
+        """A source of loggable scalars."""
+        def __init__(self):
+            LogQuantity.__init__(self, "smoothness_fit", "1")
+
+        def __call__(self):
+            mode_coeff_histogram = {}
+            for eg in discr.element_groups:
+                ldis = eg.local_discretization
+                vdm = ldis.vandermonde()
+                for slc in eg.ranges:
+                    modes = la.solve(vdm, u[slc])
+                    for mid, mode_coeff in zip(
+                            ldis.generate_mode_identifiers(), modes):
+                        msum = sum(mid)
+                        mode_coeff_histogram[msum] = (
+                                mode_coeff_histogram.get(msum, 0) 
+                                + mode_coeff**2)
+
+            max_mode = max(mode_coeff_histogram.keys())+1
+            mode_coeffs = numpy.sqrt(numpy.array([
+                mode_coeff_histogram[msum]
+                for msum in range(max_mode)]))
+            return -numpy.polyfit(
+                    numpy.log10(1+numpy.arange(max_mode)), 
+                    numpy.log10(mode_coeffs), 1)[-2]
+
+    logmgr.add_quantity(S_eMonitor())
+    logmgr.add_quantity(SensorMonitor())
+    logmgr.add_quantity(Smoothness())
 
     rhs = op.bind(discr, sensor=sensor)
 
@@ -118,11 +166,11 @@ def main(write_output=True, flux_type_arg="upwind"):
         from hedge.timestep import times_and_steps
         # for visc=0.01
         #stab_fac = 0.1 # RK4
-        stab_fac = 1.6 # dumka3(3), central
+        #stab_fac = 1.6 # dumka3(3), central
         #stab_fac = 3 # dumka3(4), central
 
         #stab_fac = 0.01 # RK4
-        stab_fac = 0.5 # dumka3(3), central
+        stab_fac = 0.1 # dumka3(3), central
         #stab_fac = 3 # dumka3(4), central
 
         dt = stab_fac*op.estimate_timestep(discr,
@@ -132,12 +180,14 @@ def main(write_output=True, flux_type_arg="upwind"):
                 final_time=5, logmgr=logmgr, max_dt_getter=lambda t: dt)
 
         for step, t, dt in step_it:
-            if step % 100 == 0 and write_output:
+            if step % 25 == 0 and write_output:
                 visf = vis.make_file("fld-%04d" % step)
-                vis.add_data(visf, [ ("u", vis_proj(u)), ],
-                            time=t,
-                            step=step
-                            )
+                vis.add_data(visf, [ 
+                    ("u", vis_proj(u)), 
+                    ("sensor", vis_proj(sensor(u))), 
+                    ],
+                    time=t,
+                    step=step)
                 visf.close()
 
             u = stepper(u, t, dt, rhs)
