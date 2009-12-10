@@ -117,8 +117,10 @@ class BurgersOperator(HyperbolicOperator):
         check_bc_coverage(discr.mesh, [])
 
         def rhs(t, u):
-            return compiled_op_template(u=u,
-                    sensor=sensor(u))
+            kwargs = {}
+            if sensor is not None:
+                kwargs["sensor"] = sensor(u)
+            return compiled_op_template(u=u, **kwargs)
 
         return rhs
 
