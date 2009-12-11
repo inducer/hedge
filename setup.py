@@ -121,6 +121,7 @@ def main():
             packages=[
                     "hedge",
                     "hedge.optemplate",
+                    "hedge.optemplate.mappers",
                     "hedge.models",
                     "hedge.models.gas_dynamics",
                     "hedge.backends",
