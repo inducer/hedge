@@ -120,6 +120,7 @@ def main():
             # build info
             packages=[
                     "hedge",
+                    "hedge.optemplate",
                     "hedge.models",
                     "hedge.models.gas_dynamics",
                     "hedge.backends",
