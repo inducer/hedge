@@ -452,7 +452,7 @@ class ConformalMesh(Mesh):
 
     def get_reorder_oldnumbers(self, method):
         if method == "cuthill":
-            from hedge.tools import cuthill_mckee
+            from hedge.mesh.tools import cuthill_mckee
             return cuthill_mckee(self.element_adjacency_graph())
         else:
             raise ValueError("invalid mesh reorder method")

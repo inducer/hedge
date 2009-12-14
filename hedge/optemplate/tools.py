@@ -126,6 +126,62 @@ def split_optemplate_for_multirate(state_vector, op_template,
 
 
 
+def make_common_subexpression(fields):
+    """Wrap each component of a vector field in a CSE."""
+
+    from pymbolic.primitives import CommonSubexpression
+    return with_object_array_or_scalar(CommonSubexpression, fields)
+
+
+
+
+def ptwise_mul(a, b):
+    a_log_shape = log_shape(a)
+    b_log_shape = log_shape(b)
+
+    from pytools import indices_in_shape
+
+    if a_log_shape == ():
+        result = numpy.empty(b_log_shape, dtype=object)
+        for i in indices_in_shape(b_log_shape):
+            result[i] = a*b[i]
+    elif b_log_shape == ():
+        result = numpy.empty(a_log_shape, dtype=object)
+        for i in indices_in_shape(a_log_shape):
+            result[i] = a[i]*b
+    else:
+        raise ValueError, "ptwise_mul can't handle two non-scalars"
+
+    return result
+
+
+
+
+def ptwise_dot(logdims1, logdims2, a1, a2):
+    a1_log_shape = a1.shape[:logdims1]
+    a2_log_shape = a1.shape[:logdims2]
+
+    assert a1_log_shape[-1] == a2_log_shape[0]
+    len_k = a2_log_shape[0]
+
+    result = numpy.empty(a1_log_shape[:-1]+a2_log_shape[1:], dtype=object)
+
+    from pytools import indices_in_shape
+    for a1_i in indices_in_shape(a1_log_shape[:-1]):
+        for a2_i in indices_in_shape(a2_log_shape[1:]):
+            result[a1_i+a2_i] = sum(
+                    a1[a1_i+(k,)] * a2[(k,)+a2_i]
+                    for k in xrange(len_k)
+                    )
+
+    if result.shape == ():
+        return result[()]
+    else:
+        return result
+
+
+
+
 # process optemplate ----------------------------------------------------------
 def process_optemplate(optemplate, post_bind_mapper=None,
         dumper=lambda name, optemplate: None, mesh=None):

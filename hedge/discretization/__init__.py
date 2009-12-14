@@ -676,7 +676,7 @@ class Discretization(TimestepCalculator):
         return field
 
     def convert_boundary_async(self, field, tag, kind, read_map=None):
-        from hedge.tools import ImmediateFuture
+        from hedge.tools.futures import ImmediateFuture
 
         if read_map is not None:
             from hedge.tools import log_shape
@@ -825,7 +825,7 @@ class Discretization(TimestepCalculator):
                 len(ls))) + (bdry.vol_indices,)]
 
     def boundarize_volume_field_async(self, field, tag, kind=None):
-        from hedge.tools import ImmediateFuture
+        from hedge.tools.futures import ImmediateFuture
         return ImmediateFuture(
                 self.boundarize_volume_field(field, tag, kind))
 
@@ -1233,40 +1233,4 @@ class ExponentialFilterResponseFunction:
 
 class Filter:
     def __init__(self, discr, mode_response_func):
-        """Construct a filter.
-
-        :param discr: The :class:`Discretization` for which the filter is to be
-          constructed.
-        :param mode_response_func: A function mapping
-          ``(mode_tuple, local_discretization)`` to a float indicating the
-          factor by which this mode is to be multiplied after filtering.
-          (For example an instance of 
-          :class:`ExponentialFilterResponseFunction`.
-        """
-        self.discr = discr
-        self.mode_response_func = mode_response_func
-        self.prepared_data_store = {}
-
-    def __call__(self, vec):
-        return self.discr.apply_element_local_matrix(
-                self.get_filter_matrix, vec,
-                prepared_data_store=self.prepared_data_store)
-
-    def get_filter_matrix(self, eg):
-        ldis = eg.local_discretization
-
-        node_count = ldis.node_count()
-
-        filter_coeffs = [self.mode_response_func(mid, ldis)
-            for mid in ldis.generate_mode_identifiers()]
-
-        # build filter matrix
-        vdm = ldis.vandermonde()
-        from hedge.tools import leftsolve
-        from numpy import dot
-        mat = numpy.asarray(
-            leftsolve(vdm,
-                dot(vdm, numpy.diag(filter_coeffs))),
-            order="C")
-
-        return mat
+        pass

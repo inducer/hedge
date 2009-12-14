@@ -20,5 +20,8 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 # make sure numpy-to-C++ converters are available
 import pyublas
 
+# break dependency cycle by importing this first
+import hedge.tools
+
 # make sure hedge.mesh.generators -> hedge.mesh monkeypatch happens
 import hedge.mesh.generator

@@ -30,7 +30,7 @@ import hedge.mesh
 from hedge.optemplate import \
         IdentityMapper, \
         FluxOpReducerMixin
-from hedge.tools import Future
+from hedge.tools.futures import Future
 from hedge.backends import RunContext
 import pytools.mpiwrap as mpi
 from pymbolic.mapper import CSECachingMapperMixin

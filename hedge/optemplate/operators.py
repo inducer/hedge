@@ -174,8 +174,24 @@ def DiffOperatorVector(els):
 
 
 
+# elementwise operators -------------------------------------------------------
+class ElementwiseOperator(Operator):
+    @staticmethod
+    def matrix(element_group):
+        raise NotImplementedError
+
+    @staticmethod
+    def coefficients(element_group):
+        raise NotImplementedError
+
+    def get_mapper_method(self, mapper):
+        return mapper.map_elementwise
+
+
+
+
 # mass operators --------------------------------------------------------------
-class MassOperatorBase(StatelessOperator):
+class MassOperatorBase(ElementwiseOperator, StatelessOperator):
     pass
 
 
@@ -205,6 +221,49 @@ class InverseMassOperator(MassOperatorBase):
     def get_mapper_method(self, mapper):
         return mapper.map_inverse_mass
 
+
+
+
+
+# filter operator -------------------------------------------------------------
+class FilterOperator:
+    def __init__(self, mode_response_func):
+        """Construct a filter.
+
+        :param discr: The :class:`Discretization` for which the filter is to be
+          constructed.
+        :param mode_response_func: A function mapping
+          ``(mode_tuple, local_discretization)`` to a float indicating the
+          factor by which this mode is to be multiplied after filtering.
+          (For example an instance of 
+          :class:`ExponentialFilterResponseFunction`.
+        """
+        self.discr = discr
+        self.mode_response_func = mode_response_func
+
+    def __call__(self, vec):
+        return self.discr.apply_element_local_matrix(
+                self.get_filter_matrix, vec,
+                prepared_data_store=self.prepared_data_store)
+
+    def get_filter_matrix(self, eg):
+        ldis = eg.local_discretization
+
+        node_count = ldis.node_count()
+
+        filter_coeffs = [self.mode_response_func(mid, ldis)
+            for mid in ldis.generate_mode_identifiers()]
+
+        # build filter matrix
+        vdm = ldis.vandermonde()
+        from hedge.tools import leftsolve
+        from numpy import dot
+        mat = numpy.asarray(
+            leftsolve(vdm,
+                dot(vdm, numpy.diag(filter_coeffs))),
+            order="C")
+
+        return mat
 
 
 

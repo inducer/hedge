@@ -16,7 +16,6 @@ Operator Expression Helpers
 
 .. autofunction:: ptwise_mul
 .. autofunction:: ptwise_dot
-.. autofunction:: make_common_subexpression
 
 Operator Subsetting
 -------------------

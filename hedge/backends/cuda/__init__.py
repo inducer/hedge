@@ -24,7 +24,7 @@ import hedge.discretization
 import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
 from pytools import memoize_method, Record
-from hedge.tools import Future
+from hedge.tools.futures import Future
 
 
 
