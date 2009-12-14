@@ -126,7 +126,7 @@ class GasDynamicsOperator(TimeDependentOperator):
 
     def primitive_to_conservative(self, prims, use_cses=True):
         if use_cses:
-            from hedge.optemplate import make_common_subexpression as cse
+            from hedge.tools.symbolic import make_common_subexpression as cse
         else:
             def cse(x, name): return x
 
@@ -142,7 +142,7 @@ class GasDynamicsOperator(TimeDependentOperator):
 
     def conservative_to_primitive(self, q, use_cses=True):
         if use_cses:
-            from hedge.optemplate import make_common_subexpression as cse
+            from hedge.tools.symbolic import make_common_subexpression as cse
         else:
             def cse(x, name): return x
 
@@ -153,8 +153,8 @@ class GasDynamicsOperator(TimeDependentOperator):
                self.u(q))
 
     def op_template(self):
-        from hedge.optemplate import make_vector_field, \
-                make_common_subexpression as cse
+        from hedge.optemplate import make_vector_field
+        from hedge.tools.symbolic import make_common_subexpression as cse
 
         AXES = ["x", "y", "z", "w"]
 
@@ -413,7 +413,8 @@ class GasDynamicsOperator(TimeDependentOperator):
 
         flux_state = flux(state)
 
-        from hedge.tools import make_lax_friedrichs_flux, join_fields
+        from hedge.flux.tools import make_lax_friedrichs_flux
+        from pytools.obj_array import join_fields
         from hedge.optemplate import make_nabla, InverseMassOperator, \
                 ElementwiseMaxOperator
 

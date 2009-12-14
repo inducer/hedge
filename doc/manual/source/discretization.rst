@@ -16,7 +16,7 @@ DG Discretizations and related services
 Vector Kinds
 ------------
 
-When computing on GPU hardware, the :class`Discretization` operates
+When computing on GPU hardware, the :class:`Discretization` operates
 on fields that are not represented by :mod:`numpy` arrays.
 Vector kinds make this explicit. Every discretization is
 guaranteed to support converting its preferred vector kind,

@@ -64,7 +64,7 @@ class BurgersOperator(HyperbolicOperator):
             return u**2/2
 
         emax_u = ElementwiseMaxOperator()(u**2)**0.5
-        from hedge.tools import make_lax_friedrichs_flux
+        from hedge.flux.tools import make_lax_friedrichs_flux
         from pytools.obj_array import make_obj_array
         lf_flux = make_lax_friedrichs_flux(
                 emax_u, 

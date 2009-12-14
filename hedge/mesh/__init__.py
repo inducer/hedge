@@ -155,6 +155,27 @@ class Mesh(pytools.Record):
 
 
 
+def find_matching_vertices_along_axis(axis, points_a, points_b, numbers_a, numbers_b):
+    a_to_b = {}
+    not_found = []
+
+    for i, pi in enumerate(points_a):
+        found = False
+        for j, pj in enumerate(points_b):
+            dist = pi-pj
+            dist[axis] = 0
+            if la.norm(dist) < 1e-12:
+                a_to_b[numbers_a[i]] = numbers_b[j]
+                found = True
+                break
+        if not found:
+            not_found.append(numbers_a[i])
+
+    return a_to_b, not_found
+
+
+
+
 def make_conformal_mesh_ext(points, elements,
         boundary_tagger=None,
         volume_tagger=None,

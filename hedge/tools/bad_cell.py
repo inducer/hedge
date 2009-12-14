@@ -68,7 +68,7 @@ class PerssonPeraireDiscontinuitySensor(object):
     def threshold_op_template(self):
         from pymbolic.primitives import IfPositive, Variable
         from hedge.optemplate import Field, ScalarParameter
-        from hedge.optemplate import make_common_subexpression as cse
+        from hedge.tools.symbolic import make_common_subexpression as cse
         from math import pi
 
         sin = Variable("sin")
@@ -227,7 +227,7 @@ class DecayGatingDiscontinuitySensorBase(
     def threshold_op_template(self):
         from pymbolic.primitives import IfPositive, Variable
         from hedge.optemplate import Field, ScalarParameter
-        from hedge.optemplate import make_common_subexpression as cse
+        from hedge.tools.symbolic import make_common_subexpression as cse
         from math import pi
 
         alpha = Field("alpha")

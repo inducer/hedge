@@ -70,8 +70,8 @@ used to build flux expressions in :mod:`hedge`:
   when the flux expression tree is walked to evaluate
   the operator.
 
-  Use :func:`make_common_subexpression` to wrap each component
-  of an object array in a CSE.
+  Use :func:`hedge.tools.symbolic.make_common_subexpression` 
+  to wrap each component of an object array in a CSE.
 
 * :class:`hedge.flux.FluxScalarParameter`: A placeholder for a
   user-supplied scalar value, drawn from the same namespace
@@ -171,3 +171,11 @@ Predefined Flux Function Symbols
 .. data:: flux_max
 
     Two arguments, returns the larger of the two.
+
+Flux Helpers
+------------
+
+.. module:: hedge.flux.tools
+
+.. autofunction:: make_lax_friedrichs_flux
+

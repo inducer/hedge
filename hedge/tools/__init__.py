@@ -42,12 +42,6 @@ from hedge.flux.tools import *
 
 
 
-def is_zero(x):
-    return isinstance(x, (int, float)) and x == 0
-
-
-
-
 AffineMap = hedge._internal.AffineMap
 def _affine_map___getinitargs__(self):
     return self.matrix, self.vector
@@ -79,29 +73,13 @@ class Reflection(AffineMap):
 
 
 
-# obj array helpers -----------------------------------------------------------
-def find_matching_vertices_along_axis(axis, points_a, points_b, numbers_a, numbers_b):
-    a_to_b = {}
-    not_found = []
-
-    for i, pi in enumerate(points_a):
-        found = False
-        for j, pj in enumerate(points_b):
-            dist = pi-pj
-            dist[axis] = 0
-            if la.norm(dist) < 1e-12:
-                a_to_b[numbers_a[i]] = numbers_b[j]
-                found = True
-                break
-        if not found:
-            not_found.append(numbers_a[i])
-
-    return a_to_b, not_found
-
-
-
-
 # small utilities -------------------------------------------------------------
+def is_zero(x):
+    return isinstance(x, (int, float)) and x == 0
+
+
+
+
 class Closable(object):
     def __init__(self):
         self.is_closed = False

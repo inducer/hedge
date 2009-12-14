@@ -241,8 +241,8 @@ class SecondDerivativeTarget(object):
 
     @property
     def minv_all(self):
-        from hedge.optemplate import make_common_subexpression as cse
-        from hedge.optemplate import InverseMassOperator
+        from hedge.tools.symbolic import make_common_subexpression as cse
+        from hedge.optemplate.operators import InverseMassOperator
         return (cse(InverseMassOperator()(self.local_derivatives), "grad_loc") 
                 + cse(InverseMassOperator()(self.fluxes), "grad_flux"))
 
@@ -257,7 +257,7 @@ class SecondDerivativeBase(object):
           *volume_expr* will be None to query the Neumann condition.
         """
         from numpy import dot
-        from hedge.optemplate import make_common_subexpression as cse
+        from hedge.tools.symbolic import make_common_subexpression as cse
 
         n_times = tgt.normal_times_flux
 
@@ -325,7 +325,7 @@ class LDGSecondDerivative(SecondDerivativeBase):
         return numpy.array([self.beta_value]*tgt.dimensions, dtype=numpy.float64)
 
     def grad_interior_flux(self, tgt, u):
-        from hedge.optemplate import make_common_subexpression as cse
+        from hedge.tools.symbolic import make_common_subexpression as cse
         n_times = tgt.normal_times_flux
         v_times = tgt.vec_times
 
@@ -340,7 +340,7 @@ class LDGSecondDerivative(SecondDerivativeBase):
         """
 
         from numpy import dot
-        from hedge.optemplate import make_common_subexpression as cse
+        from hedge.tools.symbolic import make_common_subexpression as cse
         from hedge.flux import FluxVectorPlaceholder, make_normal, PenaltyTerm
         normal = make_normal(tgt.dimensions)
 
@@ -396,7 +396,7 @@ class IPDGSecondDerivative(SecondDerivativeBase):
         self.stab_coefficient = stab_coefficient
 
     def grad_interior_flux(self, tgt, u):
-        from hedge.optemplate import make_common_subexpression as cse
+        from hedge.tools.symbolic import make_common_subexpression as cse
         n_times = tgt.normal_times_flux
         return n_times(cse(u.avg, "u_avg"))
 
@@ -407,7 +407,7 @@ class IPDGSecondDerivative(SecondDerivativeBase):
         """
 
         from numpy import dot
-        from hedge.optemplate import make_common_subexpression as cse
+        from hedge.tools.symbolic import make_common_subexpression as cse
         from hedge.flux import FluxVectorPlaceholder, make_normal, PenaltyTerm
         normal = make_normal(tgt.dimensions)
 

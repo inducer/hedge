@@ -3,22 +3,10 @@ Useful Helper Routines
 
 .. module:: hedge.tools
 
-Object Arrays
--------------
-
-.. autofunction:: is_obj_array
-.. autofunction:: to_obj_array
-.. autofunction:: join_fields
-.. autofunction:: log_shape
-
-Operator Expression Helpers
----------------------------
-
-.. autofunction:: ptwise_mul
-.. autofunction:: ptwise_dot
-
 Operator Subsetting
 -------------------
+
+.. module:: hedge.tools.indexing
 
 .. autofunction:: count_subset
 .. autofunction:: full_to_subset_indices
@@ -28,6 +16,8 @@ Operator Subsetting
 Mathematical Helpers
 --------------------
 
+.. module:: hedge.tools.math
+
 .. autoclass:: SubsettableCrossProduct
 .. autofunction:: normalize
 .. autofunction:: sign
@@ -36,25 +26,16 @@ Mathematical Helpers
 .. autofunction:: leftsolve
 .. autofunction:: unit_vector
 .. autofunction:: relative_error
-.. autoclass:: AffineMap
+.. autofunction:: get_spherical_coord
 
 Convergence Tests
 -----------------
 
+.. module:: hedge.tools.convergence
+
 .. autofunction:: estimate_order_of_convergence
 .. autoclass:: EOCRecorder
-
-Mesh Helpers
-------------
-
-.. autofunction:: cuthill_mckee
-
-Flux Helpers
-------------
-
-.. autofunction:: make_lax_friedrichs_flux
 
 Miscellaneous
 -------------
 
-.. autofunction:: get_spherical_coord

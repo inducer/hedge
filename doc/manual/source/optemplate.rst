@@ -16,11 +16,11 @@ one in :mod:`hedge`:
   expression tree. :func:`pymbolic.primitives.is_constant`
   is a predicate to test for constant-ness.
 
-* :class:`numpy.ndarray` with *dtype=:class:`object`* (called
+* :class:`numpy.ndarray` with dtype=:class:`object` (called
   "object array" in :mod:`numpy`-speak). These evaluate to the
   same-shape array with each component evaluated.
 
-  Use :func:`hedge.tools.join_fields` to easily create
+  Use :func:`pytools.obj_array.join_fields` to easily create
   object arrays from scalars and other arrays.
 
 * :class:`hedge.optemplate.Field`: A placeholder for a 
@@ -50,8 +50,8 @@ one in :mod:`hedge`:
   when the operator expression tree is walked to evaluate
   the operator.
 
-  Use :func:`hedge.tools.make_common_subexpression` to wrap each component
-  of an object array in a CSE.
+  Use :func:`hedge.tools.symbolic.make_common_subexpression` to wrap 
+  each component of an object array in a CSE.
 
 * :class:`pymbolic.primitives.Call`: The function attribute must
   evaluate to a name that was registered by calling
@@ -66,11 +66,11 @@ Detailed Documentation
 Leaf Nodes
 ^^^^^^^^^^
 
-.. module:: hedge.optemplate
+.. module:: hedge.optemplate.primitives
 
 .. autoclass:: Field
 
-.. autofunction:: make_vector_field
+.. autofunction:: hedge.optemplate.tools.make_vector_field
 
 .. autoclass:: ScalarParameter
 
@@ -83,6 +83,9 @@ Leaf Nodes
 
 Operators
 ^^^^^^^^^
+
+.. module:: hedge.optemplate.operators
+
 .. autoclass:: OperatorBinding
 .. autoclass:: ElementwiseMaxOperator
 
@@ -94,10 +97,10 @@ Differentiation Operators
 .. autoclass:: DifferentiationOperator
 .. autoclass:: MInvSTOperator
 
-.. autofunction:: make_stiffness
-.. autofunction:: make_stiffness_t
-.. autofunction:: make_nabla
-.. autofunction:: make_minv_stiffness_t
+.. autofunction:: hedge.optemplate.tools.make_stiffness
+.. autofunction:: hedge.optemplate.tools.make_stiffness_t
+.. autofunction:: hedge.optemplate.tools.make_nabla
+.. autofunction:: hedge.optemplate.tools.make_minv_stiffness_t
 
 Mass Operators
 """"""""""""""
@@ -108,9 +111,9 @@ Mass Operators
 Flux Operators and Related Functionality
 """"""""""""""""""""""""""""""""""""""""
 
-.. autoclass:: BoundaryPair
+.. autoclass:: hedge.optemplate.primitives.BoundaryPair
 
-.. autofunction:: get_flux_operator
+.. autofunction:: hedge.optemplate.tools.get_flux_operator
 
     See :ref:`fluxspec` for more details on how numerical fluxes
     are specified  language.
@@ -123,5 +126,13 @@ argument of :class:`BoundaryPair`, because they
 evaluate to boundary vectors of the given *tag*.
 
 .. autoclass:: BoundarizeOperator
-.. autofunction:: make_normal
+.. autofunction:: hedge.optemplate.primitives.make_normal
+
+Helpers
+"""""""
+
+.. module:: hedge.optemplate.tools
+
+.. autofunction:: ptwise_mul
+.. autofunction:: ptwise_dot
 

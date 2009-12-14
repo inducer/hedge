@@ -29,38 +29,6 @@ import hedge.mesh
 
 
 
-def make_common_subexpression(field, prefix=None):
-    from hedge.tools import log_shape
-
-    from hedge.tools import is_zero
-    from pymbolic.primitives import CommonSubexpression
-
-    ls = log_shape(field)
-    if ls != ():
-        from pytools import indices_in_shape
-        result = numpy.zeros(ls, dtype=object)
-
-        for i in indices_in_shape(ls):
-            if prefix is not None:
-                component_prefix = prefix+"_".join(str(i_i) for i_i in i)
-            else:
-                component_prefix = None
-
-            if is_zero(field[i]):
-                result[i] = 0
-            else:
-                result[i] = CommonSubexpression(field[i], component_prefix)
-
-        return result
-    else:
-        if is_zero(field):
-            return 0
-        else:
-            return CommonSubexpression(field, prefix)
-
-
-
-
 Field = pymbolic.primitives.Variable
 
 def make_field(var_or_string):

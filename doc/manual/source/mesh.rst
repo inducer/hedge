@@ -45,8 +45,18 @@ Meshes
 .. autofunction:: make_conformal_mesh
 .. autofunction:: check_bc_coverage
 
+Mesh Helpers
+------------
+
+.. module:: hedge.mesh.tools
+
+.. autofunction:: cuthill_mckee
+
+
 Mesh Generation
 ===============
+
+.. module:: hedge.mesh.generator
 
 1D Meshes
 ---------

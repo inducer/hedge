@@ -51,7 +51,7 @@ Advection
 Waves
 -----
 
-.. module:: hedge.pde
+.. module:: hedge.models.wave
 
 .. autoclass:: StrongWaveOperator
     :show-inheritance:
@@ -119,7 +119,7 @@ Diffusion
 
 .. module:: hedge.models.diffusion
 
-.. autoclass:: StrongHeatOperator
+.. autoclass:: DiffusionOperator
     :show-inheritance:
 
     .. automethod:: __init__
@@ -130,7 +130,7 @@ Poisson
 
 .. module:: hedge.models.poisson
 
-.. autoclass:: WeakPoissonOperator
+.. autoclass:: PoissonOperator
     :show-inheritance:
 
     .. automethod:: __init__
@@ -138,9 +138,7 @@ Poisson
 
 .. autoclass:: BoundPoissonOperator
 
-    .. automethod:: grad
-    .. automethod:: div
-    .. automethod:: op
+    .. automethod:: __call__
     .. automethod:: prepare_rhs
 
 
