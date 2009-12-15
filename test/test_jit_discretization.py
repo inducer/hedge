@@ -1035,10 +1035,11 @@ def test_filter():
     discr = discr_class(mesh, TriangleDiscretization(5),
             debug=discr_class.noninteractive_debug_flags())
 
-    from hedge.discretization import Filter, ExponentialFilterResponseFunction
-    half_filter = Filter(discr, lambda mid, ldis: 0.5)
+    from hedge.optemplate.operators import FilterOperator
+    from hedge.discretization import  ExponentialFilterResponseFunction
+    half_filter = FilterOperator(lambda mid, ldis: 0.5)
     for eg in discr.element_groups:
-        fmat = half_filter.get_filter_matrix(eg)
+        fmat = half_filter.matrix(eg)
         n,m = fmat.shape
         assert la.norm(fmat - 0.5*numpy.eye(n, m)) < 2e-15
 
@@ -1050,7 +1051,8 @@ def test_filter():
         def u_analytic(x, el):
             return sin(dot(a, x))
 
-        exp_filter = Filter(discr, ExponentialFilterResponseFunction(0.9, 3))
+        exp_filter = FilterOperator(ExponentialFilterResponseFunction(0.9, 3)) \
+                .bind(discr)
 
         u = discr.interpolate_volume_function(u_analytic)
         filt_u = exp_filter(u)
