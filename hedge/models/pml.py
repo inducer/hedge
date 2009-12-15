@@ -105,7 +105,7 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
             my = (mx+1) % 3
             mz = (mx+2) % 3
 
-            from hedge.tools import levi_civita
+            from hedge.tools.math import levi_civita
             assert levi_civita((mx,my,mz)) == 1
 
             rhs[mx] += -sig[my]/self.epsilon*(2*e[mx]+p[mx]) - 2*tau[my]/self.epsilon*e[mx]
@@ -251,10 +251,14 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
             exponent)
             for i in range(discr.dimensions)])
 
+        def conv(f):
+            return discr.convert_volume(f, kind=discr.compute_kind,
+                    dtype=discr.default_scalar_type)
+
         return self.PMLCoefficients(
-                sigma=magnitude*make_obj_array(sigma),
-                sigma_prime=magnitude*make_obj_array(sigma_prime),
-                tau=tau_magnitude*make_obj_array(tau))
+                sigma=conv(magnitude*make_obj_array(sigma)),
+                sigma_prime=conv(magnitude*make_obj_array(sigma_prime)),
+                tau=conv(tau_magnitude*make_obj_array(tau)))
 
     def coefficients_from_width(self, discr, width,
             magnitude=None, tau_magnitude=None, exponent=None,

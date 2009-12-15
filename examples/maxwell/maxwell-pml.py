@@ -38,8 +38,6 @@ def make_mesh(a, b, pml_width=0.25, **kwargs):
 
     built_mi = mesh_mod.build(mi, **kwargs)
 
-    print "%d elements" % len(built_mi.elements)
-
     def boundary_tagger(fvi, el, fn, points):
         return []
 
@@ -87,7 +85,7 @@ def main(write_output=True):
         def volume_interpolant(self, t, discr):
             from hedge.tools import make_obj_array
 
-            result = discr.volume_zeros()
+            result = discr.volume_zeros(kind="numpy", dtype=numpy.float64)
 
             omega = 6*c
             if omega*t > 2*pi:
@@ -100,10 +98,13 @@ def main(write_output=True):
             result[idx] = (1+numpy.cos(pi*r/0.3))[idx] \
                     *numpy.sin(omega*t)**3
 
+            result = discr.convert_volume(result, kind=discr.compute_kind,
+                    dtype=discr.default_scalar_type)
             return make_obj_array([-result, result, result])
 
     order = 3
-    discr = rcon.make_discretization(mesh_data, order=order)
+    discr = rcon.make_discretization(mesh_data, order=order,
+            debug=["cuda_no_plan"])
 
     from hedge.visualization import VtkVisualizer
     if write_output:
@@ -187,12 +188,13 @@ def main(write_output=True):
                 #pml_rhs_e, pml_rhs_h, pml_rhs_p, pml_rhs_q = \
                         #op.split_ehpq(rhs(t, fields))
                 from pylo import DB_VARTYPE_VECTOR, DB_VARTYPE_SCALAR
+                j = Current().volume_interpolant(t, discr)
                 vis.add_data(visf, [ 
-                    ("e", e), 
-                    ("h", h), 
-                    ("p", p), 
-                    ("q", q), 
-                    ("j", Current().volume_interpolant(t, discr)), 
+                    ("e", discr.convert_volume(e, "numpy")), 
+                    ("h", discr.convert_volume(h, "numpy")), 
+                    ("p", discr.convert_volume(p, "numpy")), 
+                    ("q", discr.convert_volume(q, "numpy")), 
+                    ("j", discr.convert_volume(j, "numpy")), 
                     #("pml_rhs_e", pml_rhs_e),
                     #("pml_rhs_h", pml_rhs_h),
                     #("pml_rhs_p", pml_rhs_p),
