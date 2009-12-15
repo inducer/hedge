@@ -116,6 +116,7 @@ class SubsettableCrossProduct:
           used in place of the product *sign*xj*yk*. Defaults to just this
           product if not given.
         """
+        from pytools.obj_array import join_fields
         if three_mult is None:
             return join_fields(*[f(x, y) for f in self.functions])
         else:
@@ -211,6 +212,7 @@ def get_spherical_coord(x_vec):
     phi = numpy.arctan2(y,x)
     theta = numpy.arccos(z/r)
 
+    from pytools.obj_array import join_fields
     return join_fields(r,phi,theta)
 
 def heaviside(x):
