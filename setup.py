@@ -120,6 +120,7 @@ def main():
             # build info
             packages=[
                     "hedge",
+                    "hedge.flux",
                     "hedge.optemplate",
                     "hedge.optemplate.mappers",
                     "hedge.models",
