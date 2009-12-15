@@ -1233,4 +1233,12 @@ class ExponentialFilterResponseFunction:
 
 class Filter:
     def __init__(self, discr, mode_response_func):
-        pass
+        from warnings import warn
+        warn("hedge.discretization.Filter is deprecated. "
+                "Use hedge.optemplate.FilterOperator directly.")
+
+        from hedge.optemplate.operators import FilterOperator
+        self.bound_filter_op = FilterOperator(mode_response_func).bind(discr)
+
+    def __call__(self, f):
+        return self.bound_filter_op(f)

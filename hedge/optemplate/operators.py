@@ -44,9 +44,19 @@ class Operator(pymbolic.primitives.Leaf):
 
         return with_object_array_or_scalar(bind_one, expr)
 
-    def apply(self, discr, field):
+    def bind(self, discr):
         from hedge.optemplate import Field
-        return discr.compile(self * Field("f"))(f=field)
+        bound_op = discr.compile(self(Field("f")))
+
+        def apply_op(field):
+            from hedge.tools import with_object_array_or_scalar
+            return with_object_array_or_scalar(lambda f: bound_op(f=f), field)
+
+        return apply_op
+
+    def apply(self, discr, field):
+        return self.bind(discr)(field)
+
 
 
 
@@ -226,27 +236,18 @@ class InverseMassOperator(MassOperatorBase):
 
 
 # filter operator -------------------------------------------------------------
-class FilterOperator:
+class FilterOperator(ElementwiseOperator):
     def __init__(self, mode_response_func):
-        """Construct a filter.
-
-        :param discr: The :class:`Discretization` for which the filter is to be
-          constructed.
+        """
         :param mode_response_func: A function mapping
           ``(mode_tuple, local_discretization)`` to a float indicating the
           factor by which this mode is to be multiplied after filtering.
           (For example an instance of 
           :class:`ExponentialFilterResponseFunction`.
         """
-        self.discr = discr
         self.mode_response_func = mode_response_func
 
-    def __call__(self, vec):
-        return self.discr.apply_element_local_matrix(
-                self.get_filter_matrix, vec,
-                prepared_data_store=self.prepared_data_store)
-
-    def get_filter_matrix(self, eg):
+    def matrix(self, eg):
         ldis = eg.local_discretization
 
         node_count = ldis.node_count()
