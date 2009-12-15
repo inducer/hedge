@@ -835,7 +835,6 @@ class ErrorChecker(CSECachingMapperMixin, IdentityMapper):
     def map_operator_binding(self, expr):
         from hedge.optemplate import DiffOperatorBase
 
-        print "ME", self.mesh is not None
         if isinstance(expr.op, DiffOperatorBase):
             if (self.mesh is not None 
                     and expr.op.xyz_axis >= self.mesh.dimensions):
