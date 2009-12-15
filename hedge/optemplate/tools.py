@@ -179,10 +179,13 @@ def process_optemplate(optemplate, post_bind_mapper=None,
 
     from hedge.optemplate import (
             OperatorBinder, BCToFluxRewriter, CommutativeConstantFoldingMapper,
-            EmptyFluxKiller, InverseMassContractor, DerivativeJoiner)
+            EmptyFluxKiller, InverseMassContractor, DerivativeJoiner,
+            ErrorChecker)
 
     dumper("before-bind", optemplate)
     optemplate = OperatorBinder()(optemplate)
+
+    ErrorChecker(mesh)(optemplate)
 
     if post_bind_mapper is not None:
         dumper("before-postbind", optemplate)

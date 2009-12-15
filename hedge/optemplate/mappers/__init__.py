@@ -824,6 +824,37 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
 
 
 
+# error checker ---------------------------------------------------------------
+class ErrorChecker(CSECachingMapperMixin, IdentityMapper):
+    map_common_subexpression_uncached = \
+            IdentityMapper.map_common_subexpression
+
+    def __init__(self, mesh):
+        self.mesh = mesh
+
+    def map_operator_binding(self, expr):
+        from hedge.optemplate import DiffOperatorBase
+
+        print "ME", self.mesh is not None
+        if isinstance(expr.op, DiffOperatorBase):
+            if (self.mesh is not None 
+                    and expr.op.xyz_axis >= self.mesh.dimensions):
+                raise ValueError("optemplate tries to differentiate along a "
+                        "non-existent axis (e.g. Z in 2D)")
+
+        # FIXME: Also check fluxes
+        return IdentityMapper.map_operator_binding(self, expr)
+
+    def map_normal(self, expr):
+        if self.mesh is not None and expr.axis >= self.mesh.dimensions:
+            raise ValueError("optemplate tries to differentiate along a "
+                    "non-existent axis (e.g. Z in 2D)")
+
+        return expr
+
+
+
+
 # collecting ------------------------------------------------------------------
 class CollectorMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     def combine(self, values):
