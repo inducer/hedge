@@ -330,8 +330,6 @@ def make_conformal_mesh_ext(points, elements,
             plus_z_points = [points[pi] for pi in plus_vertex_indices]
 
             # find a mapping from -axis to +axis vertices
-            from hedge.tools import find_matching_vertices_along_axis
-
             minus_to_plus, not_found = find_matching_vertices_along_axis(
                     axis, minus_z_points, plus_z_points,
                     minus_vertex_indices, plus_vertex_indices)
