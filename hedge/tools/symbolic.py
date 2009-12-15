@@ -22,9 +22,13 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 
-def make_common_subexpression(field, prefix=None):
-    from hedge.tools import log_shape
+import numpy
 
+
+
+
+def make_common_subexpression(field, prefix=None):
+    from pytools.obj_array import log_shape
     from hedge.tools import is_zero
     from pymbolic.primitives import CommonSubexpression
 

@@ -128,7 +128,6 @@ class DecayFitDiscontinuitySensorBase(object):
     """
 
     def __init__(self, discr):
-        from pytools import match_precision
         self.discr = discr
 
         self.ones_data_store = {}
@@ -226,8 +225,7 @@ class DecayGatingDiscontinuitySensorBase(
 
     def threshold_op_template(self):
         from pymbolic.primitives import IfPositive, Variable
-        from hedge.optemplate import Field, ScalarParameter
-        from hedge.tools.symbolic import make_common_subexpression as cse
+        from hedge.optemplate import Field
         from math import pi
 
         alpha = Field("alpha")

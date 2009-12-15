@@ -948,7 +948,7 @@ class Discretization(hedge.discretization.Discretization):
     def _boundary_from_gpu(self, field, tag, dtype):
         def f(field):
             if dtype is not None:
-                subfld = subfld.astype(dtype)
+                field = field.astype(dtype)
 
             return field.get()[self._gpu_boundary_embedding(tag)]
 

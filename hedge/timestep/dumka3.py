@@ -212,7 +212,7 @@ class Dumka3TimeStepper(object):
                 frac2 = pow(err_n,(1/3))*frac*frac*(h_new/h_n);
                 frac = min(frac,frac2)
 
-            accepted = true
+            accepted = True
             fracmax = 2.
             frac = min(fracmax, max(fracmin,0.8*frac))
             h_old = h_new

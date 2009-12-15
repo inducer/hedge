@@ -59,7 +59,6 @@ class CompiledVectorExpression(CompiledVectorExpressionBase):
                 tuple(v.dtype for v in vectors),
                 tuple(s.dtype for s in scalars))
 
-        from hedge.tools import make_obj_array
         results = [gpuarray.empty(
             shape, kernel_rec.result_dtype, self.allocator)
             for expr in self.result_vec_expr_info_list]

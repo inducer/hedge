@@ -25,7 +25,6 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import numpy
-import numpy.linalg as la
 from pytools import memoize, memoize_method
 from hedge.timestep.base import TimeStepper
 from hedge.timestep.rk4 import RK4TimeStepper
@@ -211,7 +210,7 @@ class _MRABEvaluator(MRABProcessor):
         self.hist_head_time_level = dict((hn, 0) for hn in HIST_NAMES)
 
     def integrate_in_time(self, insn):
-        from hedge.timestep.multirate_ab.methods import CO_FAST, CO_SLOW
+        from hedge.timestep.multirate_ab.methods import CO_FAST
         from hedge.timestep.multirate_ab.methods import \
                 HIST_F2F, HIST_S2F, HIST_F2S, HIST_S2S
 

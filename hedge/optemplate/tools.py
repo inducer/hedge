@@ -127,6 +127,7 @@ def split_optemplate_for_multirate(state_vector, op_template,
 
 
 def ptwise_mul(a, b):
+    from pytools.obj_array import log_shape
     a_log_shape = log_shape(a)
     b_log_shape = log_shape(b)
 

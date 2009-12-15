@@ -149,18 +149,17 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
         return self.weak_flux()
 
     def op_template(self):
-        from hedge.optemplate import \
+        from hedge.optemplate import (
                 Field, \
                 BoundaryPair, \
                 get_flux_operator, \
                 make_minv_stiffness_t, \
                 InverseMassOperator, \
-                BoundarizeOperator
+                BoundarizeOperator)
 
         u = Field("u")
 
         # boundary conditions -------------------------------------------------
-        from hedge.optemplate import BoundarizeOperator
         bc_in = Field("bc_in")
         bc_out = BoundarizeOperator(self.outflow_tag)*u
 
@@ -207,12 +206,11 @@ class VariableCoefficientAdvectionOperator(HyperbolicOperator):
         self.bc_u_f = bc_u_f
         self.flux_type = flux_type
 
-    def flux(self, ):
-        from hedge.flux import \
-                make_normal, \
-                FluxScalarPlaceholder, \
-                FluxVectorPlaceholder, \
-                flux_max, norm
+    def flux(self):
+        from hedge.flux import (
+                make_normal,
+                FluxVectorPlaceholder,
+                flux_max)
         from pymbolic.primitives import IfPositive
 
         d = self.dimensions
@@ -240,7 +238,6 @@ class VariableCoefficientAdvectionOperator(HyperbolicOperator):
                         numpy.dot(normal, v.int) * u.int, # outflow
                         numpy.dot(normal, v.ext) * u.ext, # inflow
                         ))
-            return f
         else:
             raise ValueError, "invalid flux type"
 

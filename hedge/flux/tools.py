@@ -25,6 +25,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 def make_lax_friedrichs_flux(wave_speed, state, fluxes, bdry_tags_states_and_fluxes,
         strong):
+    from pytools.obj_array import join_fields
     from hedge.flux import make_normal, FluxVectorPlaceholder, flux_max
 
     n = len(state)

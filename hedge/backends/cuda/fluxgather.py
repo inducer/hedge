@@ -53,7 +53,7 @@ class GPUIndexLists(Record):
 # structures ------------------------------------------------------------------
 @memoize
 def face_pair_struct(float_type, dims):
-    from codepy.cgen import GenerableStruct, POD, ArrayOf
+    from codepy.cgen import GenerableStruct
     return GenerableStruct("face_pair", [
         POD(float_type, "h", ),
         POD(float_type, "order"),
@@ -78,7 +78,7 @@ def face_pair_struct(float_type, dims):
 
 @memoize
 def flux_header_struct(float_type, dims):
-    from codepy.cgen import GenerableStruct, POD
+    from codepy.cgen import GenerableStruct
 
     return GenerableStruct("flux_header", [
         POD(numpy.uint16, "same_facepairs_end"),

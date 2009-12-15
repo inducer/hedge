@@ -24,9 +24,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import numpy
-import numpy.linalg as la
 import hedge._internal
-from pytools import memoize
 
 # don't import stuff from here--this is purely for backward-compatibility
 from pytools.obj_array import *

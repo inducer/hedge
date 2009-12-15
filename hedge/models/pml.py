@@ -24,7 +24,6 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import numpy
-import numpy.linalg as la
 
 from pytools import memoize_method, Record
 from hedge.models.em import \

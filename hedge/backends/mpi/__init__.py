@@ -124,7 +124,7 @@ class MPIRunContext(RunContext):
     def make_timer(self, name, description=None):
         return self.serial_context.make_timer(name, description)
 
-    def make_linear_combiner(self, *args, **kwags):
+    def make_linear_combiner(self, *args, **kwargs):
         return self.serial_context.make_linear_combiner(*args, **kwargs)
 
 

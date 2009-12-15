@@ -444,8 +444,6 @@ def make_rect_mesh_with_corner(a=(0,0), b=(1,1), max_area=None,
     :param corner_fraction: Tuple of fraction of the width taken up by
       the rentrant corner.
     """
-    import meshpy.triangle as triangle
-
     if max_area is not None:
         if refine_func is not None:
             raise ValueError, "cannot specify both refine_func and max_area"

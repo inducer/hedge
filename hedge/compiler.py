@@ -563,14 +563,13 @@ class OperatorCompilerBase(IdentityMapper):
             return cse_var
 
     def map_operator_binding(self, expr):
-        from hedge.optemplate import \
+        from hedge.optemplate import (
                 DiffOperatorBase, \
                 MassOperatorBase, \
                 FluxExchangeOperator, \
                 FluxOperator, \
                 LiftingFluxOperator, \
-                OperatorBinding, \
-                Field
+                OperatorBinding)
 
         if isinstance(expr.op, DiffOperatorBase):
             return self.map_diff_op_binding(expr)

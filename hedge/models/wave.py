@@ -25,7 +25,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 import numpy
 import hedge.mesh
-from hedge.models import Operator, HyperbolicOperator
+from hedge.models import HyperbolicOperator
 
 
 
@@ -190,8 +190,6 @@ class StrongWaveOperator(HyperbolicOperator):
         compiled_op_template = discr.compile(self.op_template())
 
         def rhs(t, w):
-            from hedge.tools import join_fields, ptwise_dot
-
             kwargs = {"w": w}
             if self.dirichlet_bc_f:
                 kwargs["dir_bc_u"] = self.dirichlet_bc_f.boundary_interpolant(

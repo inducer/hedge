@@ -24,6 +24,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 import numpy
 import numpy.linalg as la
+import pyublas
 
 
 
@@ -113,7 +114,7 @@ def permutation_matrix(to_indices=None, from_indices=None, h=None, w=None,
             for i, j in enumerate(from_indices):
                 result[i,j] = 1
     else:
-        result = pyublas.zeros((h,w), dtype=dtype, flavor=flavor)
+        result = numpy.zeros((h,w), dtype=dtype, flavor=flavor)
 
         if to_indices is not None:
             for j, i in enumerate(to_indices):

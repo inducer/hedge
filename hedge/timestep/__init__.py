@@ -23,13 +23,6 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 
-import numpy
-import numpy.linalg as la
-from pytools import memoize
-
-
-
-
 from hedge.timestep.rk4 import RK4TimeStepper
 from hedge.timestep.ab import AdamsBashforthTimeStepper
 from hedge.timestep.ssprk3 import SSPRK3TimeStepper

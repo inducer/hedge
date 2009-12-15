@@ -23,7 +23,6 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 
-import numpy
 import pymbolic.primitives
 import pymbolic.mapper.stringifier
 import pymbolic.mapper.evaluator
@@ -592,7 +591,7 @@ class _InnerInverseMassContractor(pymbolic.mapper.RecursiveMapper):
         from hedge.optemplate import (
                 MassOperator, StiffnessOperator, StiffnessTOperator,
                 FluxOperator, OperatorBinding, DifferentiationOperator,
-                MInvSTOperator, LiftingFluxOperator)
+                MInvSTOperator, LiftingFluxOperator, InverseMassOperator)
 
         if isinstance(binding.op, MassOperator):
             return binding.field
@@ -752,7 +751,6 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
                 return Normal(expr.axis)
 
             def map_variable(self, expr):
-                from hedge.flux import FieldComponent
                 return FieldComponent(
                         self.register_boundary_expr(expr),
                         is_interior=False)
@@ -760,7 +758,6 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
             map_subscript = map_variable
 
             def map_operator_binding(self, expr):
-                from hedge.flux import FieldComponent
                 from hedge.optemplate import (BoundarizeOperator,
                         FluxExchangeOperator)
 
@@ -920,4 +917,5 @@ class BoundOperatorCollector(CSECachingMapperMixin, CollectorMixin, CombineMappe
 # evaluation ------------------------------------------------------------------
 class Evaluator(pymbolic.mapper.evaluator.EvaluationMapper):
     def map_boundary_pair(self, bp):
+        from hedge.optemplate.primitives import BoundaryPair
         return BoundaryPair(self.rec(bp.field), self.rec(bp.bfield), bp.tag)

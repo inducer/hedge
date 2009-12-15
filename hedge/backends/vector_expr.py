@@ -180,7 +180,6 @@ class CompiledVectorExpressionBase(object):
                 dict(zip(self.scalar_deps, scalar_dtypes)),
                 self.constant_dtypes)
 
-        from hedge.tools import is_obj_array
         args = [elwise.VectorArg(result_dtype, vei.name)
                 for vei in self.vec_expr_info_list
                 if not vei.do_not_return]

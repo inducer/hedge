@@ -21,7 +21,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 import numpy
 import numpy.linalg as la
-from pytools import memoize, memoize_method, Record, single_valued
+from pytools import memoize_method, Record, single_valued
 from hedge.discretization.local import \
         IntervalDiscretization, \
         TriangleDiscretization, \
@@ -291,8 +291,6 @@ def read_gmsh(filename, force_dimension=None, periodicity=None,
     """
     :param force_dimension: if not None, truncate point coordinates to this many dimensions.
     """
-    import string
-    # open target file
     mesh_file = open(filename, 'r')
     result = parse_gmsh(mesh_file, force_dimension=force_dimension, periodicity=periodicity,
             allow_internal_boundaries=allow_internal_boundaries,
@@ -353,7 +351,7 @@ def parse_gmsh(line_iterable, force_dimension=None, periodicity=None,
     while feeder.has_next_line():
         next_line = feeder.get_next_line()
         if not next_line.startswith("$"):
-            raise GmshFileFormatError("expected start of section, '%s' found instead" % l)
+            raise GmshFileFormatError("expected start of section, '%s' found instead" % next_line)
 
         section_name = next_line[1:]
 
@@ -496,9 +494,8 @@ def parse_gmsh(line_iterable, force_dimension=None, periodicity=None,
             if el.el_type.dimensions == bdry_dim]
 
     # build hedge-compatible elements
-    from hedge.mesh.element import TO_CURVED_CLASS,\
-                                   CurvedTriangle,\
-                                   CurvedTetrahedron
+    from hedge.mesh.element import TO_CURVED_CLASS
+
     hedge_vertices = []
     hedge_elements = []
 

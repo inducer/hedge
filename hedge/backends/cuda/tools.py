@@ -182,10 +182,10 @@ class CUDALinearCombiner:
 # code generation -------------------------------------------------------------
 def get_load_code(dest, base, bytes, word_type=numpy.uint32,
         descr=None):
-    from codepy.cgen import \
-            Pointer, POD, Value, \
+    from codepy.cgen import (
+            Pointer, POD, 
             Comment, Block, Line, \
-            Constant, For, Statement
+            Constant, For, Statement)
 
     from codepy.cgen import dtype_to_ctype
     copy_dtype = numpy.dtype(word_type)

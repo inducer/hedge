@@ -24,11 +24,9 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import numpy
-import numpy.linalg as la
 import hedge.tools
 import hedge.mesh
 import hedge.data
-from pytools import memoize_method
 from hedge.models import TimeDependentOperator
 from pytools import Record
 from hedge.tools import is_zero
@@ -120,9 +118,9 @@ class GasDynamicsOperator(TimeDependentOperator):
         return (self.gamma-1)*(
                 self.e(q) - 0.5*numpy.dot(self.rho_u(q), self.u(q)))
 
-    def temperature(q):
+    def temperature(self, q):
         c_v = 1 / (self.gamma - 1) *self.spec_gas_const
-        return (self.e(q)/self.rho(q) - 0.5 * numpy.dot(u(q),u(q))) / c_v
+        return (self.e(q)/self.rho(q) - 0.5 * numpy.dot(self.u(q), self.u(q))) / c_v
 
     def primitive_to_conservative(self, prims, use_cses=True):
         if use_cses:
@@ -268,7 +266,6 @@ class GasDynamicsOperator(TimeDependentOperator):
 
         def flux(q):
             from pytools import delta
-            from hedge.tools import make_obj_array, join_fields
 
             return [ # one entry for each flux direction
                     cse(join_fields(
@@ -288,8 +285,6 @@ class GasDynamicsOperator(TimeDependentOperator):
 
         def bdry_flux(q_bdry, q_vol, tag):
             from pytools import delta
-            from hedge.tools import make_obj_array, join_fields
-            from hedge.optemplate import BoundarizeOperator
             return [ # one entry for each flux direction
                     cse(join_fields(
                         # flux rho
@@ -414,7 +409,6 @@ class GasDynamicsOperator(TimeDependentOperator):
         flux_state = flux(state)
 
         from hedge.flux.tools import make_lax_friedrichs_flux
-        from pytools.obj_array import join_fields
         from hedge.optemplate import make_nabla, InverseMassOperator, \
                 ElementwiseMaxOperator
 
@@ -524,18 +518,14 @@ class SlopeLimiter1NEuler:
             self.AVE_map[eg] = AVE
 
     def get_average(self,vec):
-
         from hedge.tools import log_shape
         from pytools import indices_in_shape
         from hedge._internal import perform_elwise_operator
 
-
         ls = log_shape(vec)
         result = self.discr.volume_zeros(ls)
 
-        from pytools import indices_in_shape
         for i in indices_in_shape(ls):
-            from hedge._internal import perform_elwise_operator
             for eg in self.discr.element_groups:
                 perform_elwise_operator(eg.ranges, eg.ranges,
                         self.AVE_map[eg], vec[i], result[i])

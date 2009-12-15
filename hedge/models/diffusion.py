@@ -23,7 +23,6 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import numpy
-import numpy.linalg as la
 
 import hedge.data
 from hedge.models import TimeDependentOperator
@@ -107,9 +106,9 @@ class BoundDiffusionOperator(hedge.iterative.OperatorBase):
         context = {"u": u}
 
         if not isinstance(self.diffusion_op.diffusion_tensor, numpy.ndarray):
-            self.diffusion = dop.diffusion_tensor.volume_interpolant(t, discr)
+            self.diffusion = dop.diffusion_tensor.volume_interpolant(t, self.discr)
             self.neu_diff = dop.diffusion_tensor.boundary_interpolant(
-                    t, discr, diffusion_op.neumann_tag)
+                    t, self.discr, dop.neumann_tag)
 
             context["diffusion"] = self.diffusion
             context["neumann_diffusion"] = self.neu_diff

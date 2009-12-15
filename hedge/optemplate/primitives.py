@@ -59,6 +59,7 @@ class BoundaryNormalComponent(pymbolic.primitives.AlgebraicLeaf):
         self.axis = axis
 
     def stringifier(self):
+        from hedge.optemplate.mappers import StringifyMapper
         return StringifyMapper
 
     def get_hash(self):
@@ -123,6 +124,7 @@ class BoundaryPair(pymbolic.primitives.AlgebraicLeaf):
         return mapper.map_boundary_pair
 
     def stringifier(self):
+        from hedge.optemplate.mappers import StringifyMapper
         return StringifyMapper
 
     def __getinitargs__(self):

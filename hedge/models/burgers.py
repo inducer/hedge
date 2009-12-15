@@ -23,9 +23,6 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 
-import numpy
-import numpy.linalg as la
-
 from hedge.models import HyperbolicOperator
 import hedge.data
 from hedge.tools.second_order import CentralSecondDerivative
@@ -43,15 +40,12 @@ class BurgersOperator(HyperbolicOperator):
         self.viscosity_scheme = viscosity_scheme
 
     def op_template(self, with_sensor):
-        from hedge.optemplate import \
+        from hedge.optemplate import (
                 Field, \
-                BoundaryPair, \
-                get_flux_operator, \
                 make_minv_stiffness_t, \
                 make_nabla, \
                 InverseMassOperator, \
-                ElementwiseMaxOperator, \
-                ScalarParameter
+                ElementwiseMaxOperator)
 
         u = Field("u")
 

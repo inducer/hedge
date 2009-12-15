@@ -80,7 +80,6 @@ class FluxToCodeMapper(CCodeMapper):
                 }[expr]
 
     def map_constant(self, x, enclosing_prec):
-        import numpy
         if isinstance(x, complex):
             return "std::complex<uncomplex_type>(%s, %s)" % (
                     repr(x.real), repr(x.imag))

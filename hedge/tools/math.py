@@ -23,7 +23,6 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 import hedge._internal
 import numpy
-import numpy.linalg as la
 
 
 

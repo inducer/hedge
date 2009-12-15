@@ -224,7 +224,6 @@ class BoundaryCombiner(CSECachingMapperMixin, hedge.optemplate.IdentityMapper):
                 rest.append(ch)
 
         if interiors or boundaries:
-            from pymbolic.primitives import flattened_sum
             wdf = WholeDomainFluxOperator(
                     is_lift=is_lift,
                     interiors=interiors,

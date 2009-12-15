@@ -335,7 +335,6 @@ class Discretization(TimestepCalculator):
 
     # initialization ----------------------------------------------------------
     def _build_element_groups_and_nodes(self, local_discretization):
-        from pytools import any
         from hedge.mesh.element import CurvedElement
         from hedge.mesh.element import SimplicialElement
 
@@ -882,8 +881,6 @@ class Discretization(TimestepCalculator):
         if p == numpy.Inf:
             return numpy.abs(volume_vector).max()
         else:
-            from hedge.tools import log_shape
-
             if p != 2:
                 volume_vector = numpy.abs(volume_vector) ** (p / 2)
 
@@ -992,9 +989,7 @@ class Discretization(TimestepCalculator):
         MATRIX = intern("matrix")
         SCALING = intern("scaling")
 
-        from hedge._internal import \
-                perform_elwise_operator, \
-                perform_elwise_scaled_operator
+        from hedge._internal import perform_elwise_operator
 
         def f(subfield):
             subresult = self.volume_zeros(dtype=subfield.dtype)

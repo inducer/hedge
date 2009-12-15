@@ -198,7 +198,6 @@ class SecondDerivativeTarget(object):
                 raise ValueError("operand of apply_diff must have %d dimensions"
                         % self.dimensions)
 
-            from pytools.obj_array import make_obj_array
             return sum(nabla[i](operand[i]) for i in range(self.dimensions))
         else:
             return make_obj_array(
@@ -216,7 +215,6 @@ class SecondDerivativeTarget(object):
         if operand is None:
             operand = self.operand
 
-        from pytools.obj_array import make_obj_array, is_obj_array
         self.add_local_derivatives(
                 self.apply_diff(self._local_nabla(), operand))
 
@@ -256,9 +254,6 @@ class SecondDerivativeBase(object):
         :param bc_getter: a function (tag, volume_expr) -> boundary expr.
           *volume_expr* will be None to query the Neumann condition.
         """
-        from numpy import dot
-        from hedge.tools.symbolic import make_common_subexpression as cse
-
         n_times = tgt.normal_times_flux
 
         if tgt.strong_form:
@@ -301,7 +296,6 @@ class SecondDerivativeBase(object):
                     adjust_flux(n_times(flux_v.int-stab_term)),
                     flux_arg_int, dir_bc_w, tag)
 
-        from hedge.optemplate import make_normal as make_op_normal
         loc_bc_vec = make_obj_array([0]*len(stab_term_generator.flux_args))
 
         for tag in neumann_tags:
@@ -339,7 +333,6 @@ class LDGSecondDerivative(SecondDerivativeBase):
           *volume_expr* will be None to query the Neumann condition.
         """
 
-        from numpy import dot
         from hedge.tools.symbolic import make_common_subexpression as cse
         from hedge.flux import FluxVectorPlaceholder, make_normal, PenaltyTerm
         normal = make_normal(tgt.dimensions)
@@ -364,7 +357,7 @@ class LDGSecondDerivative(SecondDerivativeBase):
                 + v_times(self.beta(tgt), cse(n_times(flux_v.int - flux_v.ext), "jump_v"))
                 - stab_term)
 
-        from pytools.obj_array import make_obj_array, join_fields
+        from pytools.obj_array import make_obj_array
         flux_arg_int = cse(make_obj_array(stab_term_generator.flux_args))
 
         tgt.add_derivative(cse(tgt.operand))
@@ -406,7 +399,6 @@ class IPDGSecondDerivative(SecondDerivativeBase):
           *volume_expr* will be None to query the Neumann condition.
         """
 
-        from numpy import dot
         from hedge.tools.symbolic import make_common_subexpression as cse
         from hedge.flux import FluxVectorPlaceholder, make_normal, PenaltyTerm
         normal = make_normal(tgt.dimensions)
@@ -435,7 +427,7 @@ class IPDGSecondDerivative(SecondDerivativeBase):
                 * stab_term_generator(tgt.operand))
         flux = n_times(pure_diff_v.avg - stab_term)
 
-        from pytools.obj_array import make_obj_array, join_fields
+        from pytools.obj_array import make_obj_array
         flux_arg_int = cse(make_obj_array(stab_term_generator.flux_args))
 
         tgt.add_derivative(cse(tgt.operand))

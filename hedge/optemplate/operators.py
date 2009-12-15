@@ -186,13 +186,11 @@ def DiffOperatorVector(els):
 
 # elementwise operators -------------------------------------------------------
 class ElementwiseOperator(Operator):
-    @staticmethod
-    def matrix(element_group):
+    def matrix(self, element_group):
         raise NotImplementedError
 
-    @staticmethod
-    def coefficients(element_group):
-        raise NotImplementedError
+    def coefficients(self, element_group):
+        return None
 
     def get_mapper_method(self, mapper):
         return mapper.map_elementwise

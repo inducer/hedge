@@ -24,13 +24,11 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import numpy
-import numpy.linalg as la
 
 from hedge.models import Operator
 from hedge.tools.second_order import LDGSecondDerivative
 import hedge.data
 import hedge.iterative
-from pytools import memoize_method
 
 
 
@@ -73,7 +71,7 @@ class LaplacianOperatorBase(object):
                 sym_diff_tensor = self.diffusion_tensor
             else:
                 sym_diff_tensor = (make_vector_field(
-                        name, self.dimensions**2)
+                        "diffusion", self.dimensions**2)
                         .reshape(self.dimensions, self.dimensions))
 
             return numpy.dot(sym_diff_tensor, v)

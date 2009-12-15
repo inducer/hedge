@@ -159,10 +159,6 @@ class MaxwellOperator(HyperbolicOperator):
                 1/self.mu * e_curl(e),
                 )
 
-        from hedge.optemplate import BoundaryPair, \
-                InverseMassOperator, get_flux_operator, \
-                BoundarizeOperator
-
     def field_placeholder(self, w=None):
         from hedge.tools import count_subset
         fld_cnt = count_subset(self.get_eh_subset())
@@ -320,7 +316,6 @@ class MaxwellOperator(HyperbolicOperator):
 
     def max_eigenvalue(self, t, fields=None, discr=None):
         """Return the largest eigenvalue of Maxwell's equations as a hyperbolic system."""
-        from math import sqrt
         return self.c
 
 
