@@ -297,8 +297,33 @@ class ExecutionMapper(ExecutionMapperBase):
                 self.rec(insn.field),
                 *self.executor.mass_data(kernel, elgroup, insn.op_class)))], []
 
-    def map_elementwise_max(self, op, field_expr):
+    def map_elementwise_linear(self, op, expr):
+        field = self.rec(expr)
 
+        kernel = self.executor.discr.element_local_kernel()
+        result = self.discr.volume_zeros(dtype=field.dtype)
+
+        for eg in self.discr.element_groups:
+            try:
+                prepared_matrix, prepared_coeffs = \
+                        self.executor.elwise_linear_cache[eg, op, field.dtype]
+            except KeyError:
+                prepared_matrix = kernel.prepare_matrix(op.matrix(eg))
+                coeffs = op.coefficients(eg)
+
+                if coeffs is None:
+                    prepared_coeffs = None
+                else:
+                    prepared_coeffs = kernel.prepare_scaling(eg_to_scaling(eg))
+
+                self.executor.elwise_linear_cache[eg, op, field.dtype] = (
+                        prepared_matrix, prepared_coeffs)
+
+            kernel(field, prepared_matrix, prepared_coeffs, out_vector=result)
+
+        return result
+
+    def map_elementwise_max(self, op, field_expr):
         field = self.rec(field_expr)
         field_out = gpuarray.zeros_like(field)
 
@@ -412,6 +437,7 @@ class Executor(object):
 
     def __init__(self, discr, optemplate, post_bind_mapper):
         self.discr = discr
+        self.elwise_linear_cache = {}
 
         from hedge.tools import diff_rst_flops, diff_rescale_one_flops, \
                 mass_flops, lift_flops

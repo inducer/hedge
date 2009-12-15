@@ -1275,52 +1275,6 @@ class Discretization(hedge.discretization.Discretization):
 
         return elgroup_indices
 
-    # element-local stuff -----------------------------------------------------
-    def apply_element_local_matrix(self, eg_to_matrix, field, eg_to_scaling=None,
-            prepared_data_store=None):
-        if self.get_kind(field) != self.compute_kind:
-            return hedge.discretization.Discretization.apply_element_local_matrix(
-                    self, eg_to_matrix, field, eg_to_scaling)
-
-        MATRIX = intern("matrix")
-        SCALING = intern("scaling")
-
-        kernel = self.element_local_kernel()
-
-        def f(subfield):
-            subresult = self.volume_zeros(dtype=subfield.dtype)
-
-            for eg in self.element_groups:
-                if prepared_data_store is not None:
-                    try:
-                        matrix = prepared_data_store[(MATRIX, eg)]
-                    except KeyError:
-                        prepared_data_store[(MATRIX, eg)] = \
-                                matrix = kernel.prepare_matrix(eg_to_matrix(eg))
-
-                    if eg_to_scaling is not None:
-                        try:
-                            scaling = prepared_data_store[(SCALING, eg)]
-                        except KeyError:
-                            prepared_data_store[(SCALING, eg)] = \
-                                    scaling = kernel.prepare_scaling(eg_to_scaling(eg))
-                    else:
-                        scaling = None
-                else:
-                    matrix = kernel.prepare_matrix(eg_to_matrix(eg))
-                    if eg_to_scaling is not None:
-                        scaling = kernel.prepare_scaling(eg_to_scaling(eg))
-                    else:
-                        scaling = None
-
-                kernel(subfield, matrix, scaling, out_vector=subresult)
-
-            return subresult
-
-        from hedge.tools import with_object_array_or_scalar
-        return with_object_array_or_scalar(f, field)
-
-
 
 
 

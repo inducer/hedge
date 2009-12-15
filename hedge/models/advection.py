@@ -263,9 +263,9 @@ class VariableCoefficientAdvectionOperator(HyperbolicOperator):
 
         # boundary conditions -------------------------------------------------
         from hedge.mesh import TAG_ALL
-        bc_c = BoundarizeOperator(TAG_ALL) * c
+        bc_c = BoundarizeOperator(TAG_ALL)(c)
         bc_u = Field("bc_u")
-        bc_v = BoundarizeOperator(TAG_ALL) * v
+        bc_v = BoundarizeOperator(TAG_ALL)(v)
         if self.bc_u_f is "None":
             bc_w = join_fields(0, bc_v, bc_c)
         else:
@@ -276,9 +276,9 @@ class VariableCoefficientAdvectionOperator(HyperbolicOperator):
 
         flux_op = get_flux_operator(self.flux())
 
-        result = numpy.dot(minv_st, v*u) - m_inv*(
-                    flux_op * w
-                    + flux_op * BoundaryPair(w, bc_w, TAG_ALL)
+        result = numpy.dot(minv_st, v*u) - m_inv(
+                    flux_op(w)
+                    + flux_op(BoundaryPair(w, bc_w, TAG_ALL))
                     )
         return result
 

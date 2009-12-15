@@ -185,7 +185,7 @@ def DiffOperatorVector(els):
 
 
 # elementwise operators -------------------------------------------------------
-class ElementwiseOperator(Operator):
+class ElementwiseLinearOperator(Operator):
     def matrix(self, element_group):
         raise NotImplementedError
 
@@ -193,13 +193,13 @@ class ElementwiseOperator(Operator):
         return None
 
     def get_mapper_method(self, mapper):
-        return mapper.map_elementwise
+        return mapper.map_elementwise_linear
 
 
 
 
 # mass operators --------------------------------------------------------------
-class MassOperatorBase(ElementwiseOperator, StatelessOperator):
+class MassOperatorBase(ElementwiseLinearOperator, StatelessOperator):
     pass
 
 
@@ -234,7 +234,7 @@ class InverseMassOperator(MassOperatorBase):
 
 
 # filter operator -------------------------------------------------------------
-class FilterOperator(ElementwiseOperator):
+class FilterOperator(ElementwiseLinearOperator):
     def __init__(self, mode_response_func):
         """
         :param mode_response_func: A function mapping
@@ -244,6 +244,12 @@ class FilterOperator(ElementwiseOperator):
           :class:`ExponentialFilterResponseFunction`.
         """
         self.mode_response_func = mode_response_func
+
+    def get_hash(self):
+        return hash(self.mode_response_func)
+
+    def is_equal(self, other):
+        return self.mode_response_func == other.mode_response_func
 
     def matrix(self, eg):
         ldis = eg.local_discretization

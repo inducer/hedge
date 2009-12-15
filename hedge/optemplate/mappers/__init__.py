@@ -53,6 +53,9 @@ class LocalOpReducerMixin(object):
     def map_stiffness_t(self, expr, *args, **kwargs):
         return self.map_diff_base(expr, *args, **kwargs)
 
+    def map_mass_base(self, expr, *args, **kwargs):
+        return self.map_elementwise_linear(expr, *args, **kwargs)
+
     def map_mass(self, expr, *args, **kwargs):
         return self.map_mass_base(expr, *args, **kwargs)
 
@@ -80,7 +83,7 @@ class OperatorReducerMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     def map_diff_base(self, expr, *args, **kwargs):
         return self.map_operator(expr, *args, **kwargs)
 
-    map_mass_base = map_diff_base
+    map_elementwise_linear = map_diff_base
     map_flux_base = map_diff_base
     map_elementwise_max = map_diff_base
     map_boundarize = map_diff_base
@@ -125,7 +128,7 @@ class IdentityMapperMixin(LocalOpReducerMixin, FluxOpReducerMixin):
                 self.rec(expr.bfield, *args, **kwargs),
                 expr.tag)
 
-    def map_mass_base(self, expr, *args, **kwargs):
+    def map_elementwise_linear(self, expr, *args, **kwargs):
         assert not isinstance(self, BoundOpMapperMixin), \
                 "IdentityMapper instances cannot be combined with " \
                 "the BoundOpMapperMixin"
@@ -137,13 +140,14 @@ class IdentityMapperMixin(LocalOpReducerMixin, FluxOpReducerMixin):
         # it's a leaf--no changing children
         return expr
 
-    map_diff_base = map_mass_base
-    map_flux_base = map_mass_base
-    map_elementwise_max = map_mass_base
-    map_boundarize = map_mass_base
-    map_flux_exchange = map_mass_base
+    map_mass_base = map_elementwise_linear
+    map_diff_base = map_elementwise_linear
+    map_flux_base = map_elementwise_linear
+    map_elementwise_max = map_elementwise_linear
+    map_boundarize = map_elementwise_linear
+    map_flux_exchange = map_elementwise_linear
 
-    map_normal_component = map_mass_base
+    map_normal_component = map_elementwise_linear
 
 
 
@@ -240,6 +244,9 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
 
     def map_stiffness_t(self, expr, enclosing_prec):
         return "StiffT%d" % expr.xyz_axis
+
+    def map_elementwise_linear(self, expr, enclosing_prec):
+        return "<ElWLin:%s>" % expr.__class__.__name__
 
     def map_mass(self, expr, enclosing_prec):
         return "M"
@@ -418,7 +425,7 @@ class OperatorBinder(CSECachingMapperMixin, IdentityMapper):
             prod = flattened_product(expr.children[1:])
             if isinstance(prod, Product) and len(prod.children) > 1:
                 from warnings import warn
-                warn("Binding an %s to more than one "
+                warn("Binding '%s' to more than one "
                         "operand in a product is ambiguous - "
                         "use the parenthesized form instead."
                         % first)
@@ -681,6 +688,8 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
 
     def map_operator_binding(self, expr):
         from hedge.optemplate import FluxOperator, BoundaryPair
+        from hedge.flux import FluxSubstitutionMapper, FieldComponent
+
         if not (isinstance(expr.op, FluxOperator)
                 and isinstance(expr.field, BoundaryPair)):
             return IdentityMapper.map_operator_binding(self, expr)
@@ -794,8 +803,6 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
         new_bdry_field = mbfeef(bdry_field)
 
         # Step II: Substitute the new_bdry_field into the flux.
-        from hedge.flux import FluxSubstitutionMapper, FieldComponent
-
         def sub_bdry_into_flux(expr):
             if isinstance(expr, FieldComponent) and not expr.is_interior:
                 if expr.index == 0 and not is_obj_array(bdry_field):
@@ -860,7 +867,7 @@ class CollectorMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     def map_constant(self, bpair):
         return set()
 
-    map_mass_base = map_constant
+    map_elementwise_linear = map_constant
     map_diff_base = map_constant
     map_flux_base = map_constant
     map_variable = map_constant

@@ -240,9 +240,9 @@ class Discretization(TimestepCalculator):
         self.lift_timer = self.run_context.make_timer(
                 "t_lift",
                 "Time spent lifting fluxes")
-        self.mass_timer = self.run_context.make_timer(
-                "t_mass",
-                "Time spent applying mass operators")
+        self.el_local_timer = self.run_context.make_timer(
+                "t_el_local",
+                "Time spent applying element-local operators (without lift)")
         self.diff_timer = self.run_context.make_timer(
                 "t_diff",
                 "Time spent applying applying differentiation operators")
@@ -252,7 +252,7 @@ class Discretization(TimestepCalculator):
 
         return [self.gather_timer,
                 self.lift_timer,
-                self.mass_timer,
+                self.el_local_timer,
                 self.diff_timer,
                 self.vector_math_timer]
 
@@ -263,8 +263,8 @@ class Discretization(TimestepCalculator):
                 "Number of flux gather invocations")
         self.lift_counter = EventCounter("n_lift",
                 "Number of flux lift invocations")
-        self.mass_counter = EventCounter("n_mass_op",
-                "Number of mass operator applications")
+        self.el_local_counter = EventCounter("n_el_local_op",
+                "Number of element-local operator applications (without lift)")
         self.diff_counter = EventCounter("n_diff",
                 "Number of differentiation operator applications")
 
@@ -272,8 +272,9 @@ class Discretization(TimestepCalculator):
                 "Number of floating point operations in gather")
         self.lift_flop_counter = EventCounter("n_flops_lift",
                 "Number of floating point operations in lift")
-        self.mass_flop_counter = EventCounter("n_flops_mass",
-                "Number of floating point operations in mass operator")
+        self.el_local_flop_counter = EventCounter("n_flops_el_local",
+                "Number of floating point operations in element-local operator "
+                "(without lift)")
         self.diff_flop_counter = EventCounter("n_flops_diff",
                 "Number of floating point operations in diff operator")
         self.vector_math_flop_counter = EventCounter("n_flops_vector_math",
@@ -290,12 +291,12 @@ class Discretization(TimestepCalculator):
 
         mgr.add_quantity(self.gather_counter)
         mgr.add_quantity(self.lift_counter)
-        mgr.add_quantity(self.mass_counter)
+        mgr.add_quantity(self.el_local_counter)
         mgr.add_quantity(self.diff_counter)
 
         mgr.add_quantity(self.gather_flop_counter)
         mgr.add_quantity(self.lift_flop_counter)
-        mgr.add_quantity(self.mass_flop_counter)
+        mgr.add_quantity(self.el_local_flop_counter)
         mgr.add_quantity(self.diff_flop_counter)
         mgr.add_quantity(self.vector_math_flop_counter)
 
@@ -972,58 +973,6 @@ class Discretization(TimestepCalculator):
 
     def add_function(self, name, func):
         self.exec_functions[name] = func
-
-    # element-local stuff -----------------------------------------------------
-    def apply_element_local_matrix(self, eg_to_matrix, field,
-            eg_to_scaling=None, prepared_data_store=None):
-        """
-        :param eg_to_matrix: a function that, given an element group, returns
-            the (numpy) matrix to be applied to elements in that group.
-        :param eg_to_scaling: a function that, given an element group, returns
-            the (numpy) array of scaling factors to be applied to elements
-            in that group.
-        :param prepared_data_store: if not None, this is a mapping in which
-          prepared versions of the results of eg_to_matrix and eg_to_scaling
-          may be stored.
-        """
-        MATRIX = intern("matrix")
-        SCALING = intern("scaling")
-
-        from hedge._internal import perform_elwise_operator
-
-        def f(subfield):
-            subresult = self.volume_zeros(dtype=subfield.dtype)
-
-            for eg in self.element_groups:
-                if prepared_data_store is not None:
-                    try:
-                        matrix = prepared_data_store[(MATRIX, eg)]
-                    except KeyError:
-                        prepared_data_store[(MATRIX, eg)] = \
-                                matrix = eg_to_matrix(eg)
-
-                    if eg_to_scaling is not None:
-                        try:
-                            scaling = prepared_data_store[(SCALING, eg)]
-                        except KeyError:
-                            prepared_data_store[(SCALING, eg)] = \
-                                    scaling = eg_to_scaling(eg)
-                else:
-                    matrix = eg_to_matrix(eg)
-                    if eg_to_scaling is not None:
-                        scaling = eg_to_scaling(eg)
-
-                if eg_to_scaling is None:
-                    perform_elwise_operator(eg.ranges, eg.ranges,
-                            matrix, subfield, subresult)
-                else:
-                    perform_elwise_operator(eg.ranges, eg.ranges,
-                            scaling, matrix, subfield, subresult)
-
-            return subresult
-
-        from hedge.tools import with_object_array_or_scalar
-        return with_object_array_or_scalar(f, field)
 
 
 

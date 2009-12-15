@@ -22,6 +22,7 @@ import numpy
 import numpy.linalg as la
 
 
+
 def main(write_output=True, flux_type_arg="lf"):
     from hedge.tools import mem_checkpoint
     from math import sin, cos, pi, sqrt, tanh
@@ -32,9 +33,9 @@ def main(write_output=True, flux_type_arg="lf"):
 
     # mesh setup --------------------------------------------------------------
     if rcon.is_head_rank:
-        #from hedge.mesh import make_disk_mesh
+        #from hedge.mesh.generator import make_disk_mesh
         #mesh = make_disk_mesh()
-        from hedge.mesh import make_rect_mesh
+        from hedge.mesh.generator import make_rect_mesh
         mesh = make_rect_mesh(a=(-1,-1),b=(1,1),max_area=0.008)
 
     if rcon.is_head_rank:
@@ -44,7 +45,7 @@ def main(write_output=True, flux_type_arg="lf"):
 
     # discretization setup ----------------------------------------------------
     discr = rcon.make_discretization(mesh_data, order=4,
-            default_scalar_type=numpy.float64)
+            default_scalar_type=numpy.float64, debug=["cuda_no_plan"])
     vis_discr = discr
 
     # space-time-dependent-velocity-field -------------------------------------
@@ -129,7 +130,7 @@ def main(write_output=True, flux_type_arg="lf"):
         flux_type=flux_type_arg)
 
     # initial condition -------------------------------------------------------
-    # Gauss-Pulse
+    # Gauss pulse
     if True:
         def initial(pt, el):
             from math import exp
@@ -155,7 +156,7 @@ def main(write_output=True, flux_type_arg="lf"):
 
     # filter setup-------------------------------------------------------------
     from hedge.discretization import Filter, ExponentialFilterResponseFunction
-    antialiasing = Filter(discr,
+    mode_filter = Filter(discr,
             ExponentialFilterResponseFunction(min_amplification=0.9,order=4))
 
     # diagnostics setup -------------------------------------------------------
@@ -208,8 +209,7 @@ def main(write_output=True, flux_type_arg="lf"):
 
             u = stepper(u, t, dt, rhs)
 
-            # Use Filter:
-            u = antialiasing(u)
+            u = mode_filter(u)
 
         assert discr.norm(u) < 10
 

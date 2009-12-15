@@ -174,7 +174,7 @@ class ExecutionMapper(ExecutionMapperBase):
             return [(insn.name, 0)], []
 
         out = self.discr.volume_zeros(dtype=field.dtype)
-        self.executor.do_mass(insn.op_class, field, out)
+        self.executor.do_elementwise_linear(insn.op_class, field, out)
 
         return [(insn.name, out)], []
 
@@ -198,14 +198,14 @@ class ExecutionMapper(ExecutionMapperBase):
         self.executor.diff_xyz(self, op, field_expr, field, out)
         return out
 
-    def map_mass_base(self, op, field_expr):
+    def map_elementwise_linear(self, op, field_expr):
         field = self.rec(field_expr)
 
         if isinstance(field, (float, int)) and field == 0:
             return 0
 
         out = self.discr.volume_zeros()
-        self.executor.do_mass(op, field, out)
+        self.executor.do_elementwise_linear(op, field, out)
         return out
 
     def map_elementwise_max(self, op, field_expr):
@@ -236,8 +236,8 @@ class ExecutionMapper(ExecutionMapperBase):
 class Executor(object):
     def __init__(self, discr, optemplate, post_bind_mapper):
         self.discr = discr
-
         self.code = self.compile_optemplate(discr, optemplate, post_bind_mapper)
+        self.elwise_linear_cache = {}
 
         if "dump_op_code" in discr.debug:
             from hedge.tools import open_unique_debug_file
@@ -332,12 +332,12 @@ class Executor(object):
                         discr.diff_flop_counter,
                         diff_rescale_one_flops(discr))
 
-        self.do_mass = \
+        self.do_elementwise_linear = \
                 time_count_flop(
-                        self.do_mass,
-                        discr.mass_timer,
-                        discr.mass_counter,
-                        discr.mass_flop_counter,
+                        self.do_elementwise_linear,
+                        discr.el_local_timer,
+                        discr.el_local_counter,
+                        discr.el_local_flop_counter,
                         mass_flops(discr))
 
         self.lift_flux = \
@@ -378,12 +378,25 @@ class Executor(object):
 
         return result
 
-    def do_mass(self, op, field, out):
+    def do_elementwise_linear(self, op, field, out):
         for eg in self.discr.element_groups:
-            from hedge._internal import perform_elwise_scaled_operator
-            perform_elwise_scaled_operator(eg.ranges, eg.ranges,
-                   op.coefficients(eg), numpy.asarray(op.matrix(eg), dtype=field.dtype),
-                   field, out)
+            try:
+                matrix, coeffs = self.elwise_linear_cache[eg, op, field.dtype]
+            except KeyError:
+                matrix = numpy.asarray(op.matrix(eg), dtype=field.dtype)
+                coeffs = op.coefficients(eg)
+                self.elwise_linear_cache[eg, op, field.dtype] = matrix, coeffs
+
+            from hedge._internal import (
+                    perform_elwise_scaled_operator,
+                    perform_elwise_operator)
+
+            if coeffs is None:
+                perform_elwise_operator(eg.ranges, eg.ranges,
+                        matrix, field, out)
+            else:
+                perform_elwise_scaled_operator(eg.ranges, eg.ranges,
+                        coeffs, matrix, field, out)
 
 
 
