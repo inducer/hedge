@@ -18,23 +18,96 @@
 from __future__ import division
 import numpy
 import numpy.linalg as la
+from math import sin, cos, pi, sqrt
 
+
+
+
+class ExactTestCase:
+    a = 0
+    b = 150
+    final_time = 5000
+
+    def u0(self, x):
+        return self.u_exact(x, 0)
+
+    def u_exact(self, x, t):
+        # CAUTION: This gets the shock speed wrong as soon as the pulse
+        # starts interacting with itself.
+
+        def f(x, shock_loc):
+            if x < (t-40)/4:
+                return 1/4
+            else:
+                if t < 40:
+                    if x < (3*t)/4:
+                        return (x+15)/(t+20)
+                    elif x < (t+80)/4:
+                        return (x-30)/(t-40)
+                    else:
+                        return 1/4
+                else:
+                    if x < shock_loc:
+                        return (x+15)/(t+20)
+                    else:
+                        return 1/4
+
+        from math import sqrt
+
+        shock_loc = 30*sqrt(2*t+40)/sqrt(120) + t/4 - 10
+        shock_win = (shock_loc + 20) // self.b
+        x += shock_win * 150 
+
+        x -= 20
+
+        return max(f(x, shock_loc), f(x-self.b, shock_loc-self.b))
+
+class OffCenterMigratingTestCase:
+    a = -pi
+    b = pi
+    final_time = 10
+
+    def u0(self, x):
+        return -0.4+sin(x+0.1)
+
+
+class CenteredStationaryTestCase:
+    # does funny things to P-P
+    a = -pi
+    b = pi
+    final_time = 10
+
+    def u0(self, x):
+        return -sin(x)
+
+class OffCenterStationaryTestCase:
+    # does funny things to P-P
+    a = -pi
+    b = pi
+    final_time = 10
+
+    def u0(self, x):
+        return -sin(x+0.3)
 
 
 
 def main(write_output=True, flux_type_arg="upwind"):
     from hedge.tools import mem_checkpoint
-    from math import sin, cos, pi, sqrt
     from math import floor
+
+    #case = CenteredStationaryTestCase()
+    #case = OffCenterStationaryTestCase()
+    case = OffCenterMigratingTestCase()
+    #case = ExactTestCase()
 
     from hedge.backends import guess_run_context
     rcon = guess_run_context()
 
-    order = 4
+    order = 3
     if rcon.is_head_rank:
-        if False:
+        if True:
             from hedge.mesh.generator import make_uniform_1d_mesh
-            mesh = make_uniform_1d_mesh(-pi, pi, 11, periodic=True)
+            mesh = make_uniform_1d_mesh(case.a, case.b, 20, periodic=True)
         else:
             from hedge.mesh.generator import make_rect_mesh
             print (pi*2)/(11*5*2)
@@ -80,19 +153,7 @@ def main(write_output=True, flux_type_arg="upwind"):
     import pymbolic
     var = pymbolic.var
 
-    #u0_expr = pymbolic.parse("-0.4+math.sin(x+0.1)")
-    #u0_expr = pymbolic.parse("-math.sin(x)")
-    #u0_fun = pymbolic.compile(u0_expr)
-
-    def u0_fun(x):
-        return -0.4+sin(x+0.1)
-
-    #f_expr = var("u")**2/2
-    #f = pymbolic.compile(f_expr)
-    #from exact import CLawNoShockExactSolution
-    #u_exact = CLawNoShockExactSolution(u0_expr, f_expr)
-
-    u = discr.interpolate_volume_function(lambda x, el: u0_fun(x[0]))
+    u = discr.interpolate_volume_function(lambda x, el: case.u0(x[0]))
 
     # diagnostics setup -------------------------------------------------------
     from pytools.log import LogManager, \
@@ -113,11 +174,9 @@ def main(write_output=True, flux_type_arg="upwind"):
 
     from hedge.log import Integral, LpNorm
     u_getter = lambda: u
-    logmgr.add_quantity(Integral(u_getter, discr, name="int_u"))
     logmgr.add_quantity(LpNorm(u_getter, discr, p=1, name="l1_u"))
-    logmgr.add_quantity(LpNorm(u_getter, discr, name="l2_u"))
 
-    logmgr.add_watches(["step.max", "t_sim.max", "l2_u", "t_step.max"])
+    logmgr.add_watches(["step.max", "t_sim.max", "l1_u", "t_step.max"])
 
     # timestep loop -----------------------------------------------------------
     mesh_a, mesh_b = mesh.bounding_box()
@@ -126,64 +185,17 @@ def main(write_output=True, flux_type_arg="upwind"):
     h = sqrt(area/len(mesh.elements))
     from hedge.tools.bad_cell import (
             PerssonPeraireDiscontinuitySensor,
-            ErrorEstimatingDiscontinuitySensorBase,
             DecayGatingDiscontinuitySensorBase)
-    sensor = ErrorEstimatingDiscontinuitySensorBase(discr) 
-    sensor2 = DecayGatingDiscontinuitySensorBase(discr, h/(order))
-    #sensor = PerssonPeraireDiscontinuitySensor(discr, kappa=2,
-            #eps0=h/order, s_0=numpy.log10(1/order**4))
-
-    from pytools.log import LogQuantity
-    class S_eMonitor(LogQuantity):
-        """A source of loggable scalars."""
-        def __init__(self):
-            LogQuantity.__init__(self, "max_S_e", "1")
-
-        def __call__(self):
-            return discr.nodewise_max(sensor.capital_s_e(u))
-
-    class SensorMonitor(LogQuantity):
-        """A source of loggable scalars."""
-        def __init__(self):
-            LogQuantity.__init__(self, "max_viscosity", "1")
-
-        def __call__(self):
-            return discr.nodewise_max(sensor(u))
-
-    class Smoothness(LogQuantity):
-        """A source of loggable scalars."""
-        def __init__(self):
-            LogQuantity.__init__(self, "smoothness_fit", "1")
-
-        def __call__(self):
-            mode_coeff_histogram = {}
-            for eg in discr.element_groups:
-                ldis = eg.local_discretization
-                vdm = ldis.vandermonde()
-                for slc in eg.ranges:
-                    modes = la.solve(vdm, u[slc])
-                    for mid, mode_coeff in zip(
-                            ldis.generate_mode_identifiers(), modes):
-                        msum = sum(mid)
-                        mode_coeff_histogram[msum] = (
-                                mode_coeff_histogram.get(msum, 0) 
-                                + mode_coeff**2)
-
-            max_mode = max(mode_coeff_histogram.keys())+1
-            mode_coeffs = numpy.sqrt(numpy.array([
-                mode_coeff_histogram[msum]
-                for msum in range(max_mode)]))
-            return -numpy.polyfit(
-                    numpy.log10(1+numpy.arange(max_mode)), 
-                    numpy.log10(mode_coeffs), 1)[-2]
-
-    #logmgr.add_quantity(S_eMonitor())
-    #logmgr.add_quantity(SensorMonitor())
-    #logmgr.add_quantity(Smoothness())
+    sensor = DecayGatingDiscontinuitySensorBase(5*h/(order)).bind(discr)
+    sensor2 = PerssonPeraireDiscontinuitySensor(kappa=2,
+            eps0=h/order, s_0=numpy.log10(1/order**4)).bind(discr)
+    decay_alpha = DecayGatingDiscontinuitySensorBase(h/(order)) \
+            .bind_alpha(discr)
+    decay_lmc = DecayGatingDiscontinuitySensorBase(h/(order)) \
+            .bind_lmc(discr)
 
     rhs = op.bind(discr, sensor=sensor)
     rhs2 = op.bind(discr, sensor=sensor2)
-    rhs3 = op.bind(discr)
 
     from hedge.timestep import RK4TimeStepper
     from hedge.timestep.dumka3 import Dumka3TimeStepper
@@ -194,7 +206,6 @@ def main(write_output=True, flux_type_arg="upwind"):
     stepper.add_instrumentation(logmgr)
 
     u2 = u.copy()
-    u3 = u.copy()
 
     try:
         from hedge.timestep import times_and_steps
@@ -204,43 +215,43 @@ def main(write_output=True, flux_type_arg="upwind"):
         #stab_fac = 3 # dumka3(4), central
 
         #stab_fac = 0.01 # RK4
-        stab_fac = 0.1 # dumka3(3), central
+        stab_fac = 0.2 # dumka3(3), central
         #stab_fac = 3 # dumka3(4), central
 
         dt = stab_fac*op.estimate_timestep(discr,
                 stepper=RK4TimeStepper(), t=0, fields=u)
 
         step_it = times_and_steps(
-                final_time=10, logmgr=logmgr, max_dt_getter=lambda t: dt)
+                final_time=case.final_time, logmgr=logmgr, max_dt_getter=lambda t: dt)
+        from hedge.optemplate import  InverseVandermondeOperator
+        inv_vdm = InverseVandermondeOperator().bind(discr)
 
         for step, t, dt in step_it:
-            #if step == 129:
-                #sensor.estimate_decay(u, debug=True)
-            if step % 50 == 0 and write_output:
-                def catchy_u_exact(x, el):
-                    try:
-                        return u_exact(x[0], t)
-                    except RuntimeError:
-                        return 1
-                #u_exact_fld =  vis_discr.interpolate_volume_function(catchy_u_exact)
+            if step % 3 == 0 and write_output:
+                if hasattr(case, "u_exact"):
+                    extra_fields = [
+                            ("u_exact", 
+                                vis_discr.interpolate_volume_function(
+                                    lambda x, el: case.u_exact(x[0], t)))]
+                else:
+                    extra_fields = []
 
                 visf = vis.make_file("fld-%04d" % step)
                 vis.add_data(visf, [ 
-                    ("u", vis_proj(u)), 
-                    ("u2", vis_proj(u2)), 
-                    #("u3", vis_proj(u3)), 
-                    #("u_exact", u_exact_fld), 
-                    #("alpha", vis_proj(sensor.estimate_decay(u)[0])), 
-                    ("sensor", vis_proj(sensor(u))), 
-                    ("sensor2", vis_proj(sensor2(u2))), 
-                    ],
+                    ("u_dg", vis_proj(u)), 
+                    #("u_pp", vis_proj(u2)), 
+                    ("sensor_dg", vis_proj(sensor(u))), 
+                    #("sensor_pp", vis_proj(sensor2(u2))), 
+                    ("alpha_u_dg", vis_proj(decay_alpha(u))), 
+                    ("lmc_u_dg", vis_proj(decay_lmc(u))), 
+                    ("modes", 1+numpy.abs(vis_proj(inv_vdm(u)))), 
+                    ] + extra_fields,
                     time=t,
                     step=step)
                 visf.close()
 
-            #u = stepper(u, t, dt, rhs)
-            u2 = stepper(u2, t, dt, rhs2)
-            #u3 = stepper(u3, t, dt, rhs3)
+            u = stepper(u, t, dt, rhs)
+            #u2 = stepper(u2, t, dt, rhs2)
 
     finally:
         if write_output:
