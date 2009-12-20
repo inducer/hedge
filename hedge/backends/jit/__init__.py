@@ -445,7 +445,7 @@ class Discretization(hedge.discretization.Discretization):
         hedge.discretization.Discretization.__init__(self, *args, **kwargs)
 
         if toolchain is None:
-            from codepy.jit import guess_toolchain
+            from codepy.toolchain import guess_toolchain
             toolchain = guess_toolchain()
             toolchain = toolchain.with_optimization_level(3)
 
