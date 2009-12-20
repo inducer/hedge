@@ -53,7 +53,6 @@ def make_mesh(a, b, pml_width=0.25, **kwargs):
 def main(write_output=True):
     from hedge.timestep import RK4TimeStepper
     from hedge.mesh import make_disk_mesh
-    from pylo import DB_VARTYPE_VECTOR
     from math import sqrt, pi, exp
 
     from hedge.backends import guess_run_context, FEAT_CUDA
@@ -187,7 +186,6 @@ def main(write_output=True):
                 visf = vis.make_file("em-%d-%04d" % (order, step))
                 #pml_rhs_e, pml_rhs_h, pml_rhs_p, pml_rhs_q = \
                         #op.split_ehpq(rhs(t, fields))
-                from pylo import DB_VARTYPE_VECTOR, DB_VARTYPE_SCALAR
                 j = Current().volume_interpolant(t, discr)
                 vis.add_data(visf, [ 
                     ("e", discr.convert_volume(e, "numpy")), 

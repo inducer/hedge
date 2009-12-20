@@ -143,7 +143,7 @@ def main():
                 if False:
                     visf = vis.make_file("sinewave-%d-%04d" % (order, step))
 
-                    from pylo import DB_VARTYPE_VECTOR
+                    #from pylo import DB_VARTYPE_VECTOR
                     vis.add_data(visf,
                             [
                                 ("rho", discr.convert_volume(op.rho(fields), kind="numpy")),
