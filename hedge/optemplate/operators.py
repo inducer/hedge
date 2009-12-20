@@ -23,6 +23,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import numpy
+import numpy.linalg as la
 import pymbolic.primitives
 
 
@@ -233,7 +234,7 @@ class InverseMassOperator(MassOperatorBase):
 
 
 
-# filter operator -------------------------------------------------------------
+# various elementwise linear operators ----------------------------------------
 class FilterOperator(ElementwiseLinearOperator):
     def __init__(self, mode_response_func):
         """
@@ -269,6 +270,25 @@ class FilterOperator(ElementwiseLinearOperator):
             order="C")
 
         return mat
+
+
+
+
+class OnesOperator(ElementwiseLinearOperator, StatelessOperator):
+    def matrix(self, eg):
+        ldis = eg.local_discretization
+
+        node_count = ldis.node_count()
+        return numpy.ones((node_count, node_count), dtype=numpy.float64)
+
+
+
+
+class InverseVandermondeOperator(ElementwiseLinearOperator, StatelessOperator):
+    def matrix(self, eg):
+        return numpy.asarray(
+                la.inv(eg.local_discretization.vandermonde()),
+                order="C")
 
 
 
