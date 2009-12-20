@@ -118,6 +118,7 @@ void hedge_expose_base()
       .def("__call__", 
           &cl::apply<cl::vector_t, cl::vector_t>)
       .DEF_SIMPLE_METHOD(inverted)
+      .DEF_SIMPLE_METHOD(post_compose)
       .DEF_SIMPLE_METHOD(jacobian)
 
       .enable_pickling()

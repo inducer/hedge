@@ -212,6 +212,13 @@ namespace hedge {
         return affine_map(inv, -prod(inv, m_vector));
       }
 
+      affine_map post_compose(affine_map const &inner) const
+      {
+        return affine_map(
+            prod(m_matrix, inner.m_matrix),
+            prod(m_matrix, inner.m_vector) + m_vector);
+      }
+
       ValueType jacobian() const
       {
         if (m_have_jacobian)
