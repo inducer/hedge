@@ -445,6 +445,10 @@ class IntervalDiscretization(PkSimplexDiscretization):
             numpy.array([[1]], dtype=numpy.float64),
             numpy.array([0], dtype=numpy.float64))
 
+    unit_to_barycentric = AffineMap(
+            numpy.array([[1/2], [-1/2]], dtype=numpy.float64),
+            numpy.array([1/2, 1/2]))
+
     @memoize_method
     def get_submesh_indices(self):
         """Return a list of tuples of indices into the node list that
@@ -657,6 +661,13 @@ class TriangleDiscretization(PkSimplexDiscretization):
     equilateral_to_unit = AffineMap(
             numpy.array([[1, -1 / sqrt(3)], [0, 2 / sqrt(3)]]),
                 numpy.array([-1/3, -1/3]))
+
+    unit_to_barycentric = AffineMap(
+            numpy.array([
+                [1/2, 0],
+                [0, 1/2],
+                [-1/2, -1/2]], dtype=numpy.float64),
+            numpy.array([1/2, 1/2, 0]))
 
     def equilateral_nodes(self):
         """Generate warped nodes in equilateral coordinates (x,y)."""
@@ -950,6 +961,14 @@ class TetrahedronDiscretization(PkSimplexDiscretization):
                 [0,         0,  sqrt(6)/2]
                 ]),
                 numpy.array([-1/2, -1/2, -1/2]))
+
+    unit_to_barycentric = AffineMap(
+            numpy.array([
+                [1/2, 0, 0],
+                [0, 1/2, 0],
+                [0, 0, 1/2],
+                [-1/2, -1/2, -1/2]], dtype=numpy.float64),
+            numpy.array([1/2, 1/2, -1/2]))
 
     def equilateral_nodes(self):
         """Generate warped nodes in equilateral coordinates (x,y)."""
