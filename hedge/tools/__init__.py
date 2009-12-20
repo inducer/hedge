@@ -29,7 +29,7 @@ import hedge._internal
 # don't import stuff from here--this is purely for backward-compatibility
 from pytools.obj_array import *
 from hedge.optemplate.tools import *
-from hedge.tools.math import *
+from hedge.tools.mathematics import *
 from hedge.tools.linalg import *
 from hedge.tools.convergence import *
 from hedge.tools.flops import *
