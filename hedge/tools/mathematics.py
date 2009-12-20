@@ -19,6 +19,9 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 """
 
+# If you were wondering: this module is called "mathematical" because
+# "math" can erroneously pick up package-local "import math" statements.
+
 
 
 import hedge._internal
