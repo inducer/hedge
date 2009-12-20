@@ -23,13 +23,15 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 import numpy
 import numpy.linalg as la
+from hedge.optemplate.operators import (
+        ElementwiseLinearOperator, StatelessOperator)
 
 
 
 
 # Persson-Peraire -------------------------------------------------------------
 def persson_peraire_filter_response_function(mode_idx, ldis):
-    if sum(mode_idx) == ldis.order - 1:
+    if sum(mode_idx) == ldis.order:
         return 0
     else:
         return 1
@@ -44,37 +46,38 @@ class PerssonPeraireDiscontinuitySensor(object):
     Proc. of the 44th AIAA Aerospace Sciences Meeting and Exhibit, 2006.
     """
 
-    def __init__(self, discr, kappa, eps0, s_0):
-        from pytools import match_precision
-        scalar_type = match_precision(
-                numpy.dtype(numpy.float64),
-                discr.default_scalar_type).type
-        self.discr = discr
-        self.kappa = scalar_type(kappa)
-        self.eps0 = scalar_type(eps0)
-        self.s_0 = scalar_type(s_0)
+    def __init__(self, kappa, eps0, s_0):
+        self.kappa = kappa
+        self.eps0 = eps0
+        self.s_0 = s_0
 
-        from hedge.discretization import Filter
-        self.mode_truncator = Filter(discr,
-                persson_peraire_filter_response_function)
-        self.ones_data_store = {}
-
-        from hedge.optemplate import MassOperator, Field
-        self.mass_op = discr.compile(MassOperator() * Field("f"))
-
-        self.threshold_op = discr.compile(
-                self.threshold_op_template())
-
-    def threshold_op_template(self):
+    def op_template(self, u=None):
         from pymbolic.primitives import IfPositive, Variable
-        from hedge.optemplate import Field, ScalarParameter
+        from hedge.optemplate.primitives import Field, ScalarParameter
         from hedge.tools.symbolic import make_common_subexpression as cse
         from math import pi
+
+        if u is None:
+            u = Field("u")
+
+        from hedge.optemplate.operators import (
+                MassOperator, FilterOperator, OnesOperator)
+
+        mode_truncator = FilterOperator(
+                persson_peraire_filter_response_function)
+
+        truncated_u = mode_truncator(u)
+        diff = u - truncated_u
+
+        el_norm_squared_mass_diff_u = OnesOperator()(MassOperator()(diff)*diff)
+        el_norm_squared_mass_u = OnesOperator()(MassOperator()(u)*u)
+
+        capital_s_e = cse(el_norm_squared_mass_diff_u / el_norm_squared_mass_u,
+                "S_e")
 
         sin = Variable("sin")
         log10 = Variable("log10")
 
-        capital_s_e = Field("S_e")
         s_e = cse(log10(capital_s_e), "s_e")
         kappa = ScalarParameter("kappa")
         eps0 = ScalarParameter("eps0")
@@ -86,38 +89,110 @@ class PerssonPeraireDiscontinuitySensor(object):
                     eps0,
                     eps0/2*(1+sin(pi*(s_e-s_0)/self.kappa))))
 
-    def capital_s_e(self, u):
-        truncated_u = self.mode_truncator(u)
-        diff = u - truncated_u
+    def bind(self, discr):
+        compiled = discr.compile(self.op_template())
 
-        mass_diff = self.mass_op(f=diff)
-        mass_u = self.mass_op(f=u)
+        from pytools import match_precision
+        scalar_type = match_precision(
+                numpy.dtype(numpy.float64),
+                discr.default_scalar_type).type
 
-        def ones(eg):
-            return numpy.ones(
-                    (eg.local_discretization.node_count(), 
-                        eg.local_discretization.node_count()),
-                    dtype=self.discr.default_scalar_type)
+        kappa = scalar_type(self.kappa)
+        eps0 = scalar_type(self.eps0)
+        s_0 = scalar_type(self.s_0)
 
-        el_norm_squared_mass_diff_u = self.discr.apply_element_local_matrix(
-                eg_to_matrix=ones, field=mass_diff*diff,
-                prepared_data_store=self.ones_data_store)
-        el_norm_squared_mass_u = self.discr.apply_element_local_matrix(
-                eg_to_matrix=ones, field=mass_u*u,
-                prepared_data_store=self.ones_data_store)
+        def apply(u):
+            return compiled(u=u, kappa=kappa, eps0=eps0, s_0=s_0)
 
-        return el_norm_squared_mass_diff_u / el_norm_squared_mass_u
-
-    def __call__(self, u):
-        return self.threshold_op(
-                S_e=self.capital_s_e(u),
-                kappa=self.kappa, eps0=self.eps0, s_0=self.s_0)
+        return apply
 
 
 
 
 
 # exponential fit -------------------------------------------------------------
+class DecayEstimateOperatorBase(ElementwiseLinearOperator):
+    def __init__(self, ignored_modes):
+        self.ignored_modes = ignored_modes
+
+    def get_hash(self):
+        return hash((self.__class__, self.ignored_modes))
+
+    def is_equal(self, other):
+        return (self.__class__ == other.__class__
+                and self.ignored_modes == other.ignored_modes)
+
+    def decay_fit_mat(self, ldis):
+        im = self.ignored_modes
+        node_cnt = ldis.node_count()
+
+        result = numpy.zeros((2, node_cnt))
+
+        a = numpy.zeros((node_cnt-im, 2))
+        a[:,0] = 1
+        a[:,1] = numpy.log(numpy.arange(im, node_cnt))
+        result[:,im:] = la.pinv(a)
+
+        return result
+
+class DecayExponentOperator(DecayEstimateOperatorBase):
+    def matrix(self, eg):
+        ldis = eg.local_discretization
+        plsm = self.decay_fit_mat(ldis)
+        a = numpy.zeros((ldis.node_count(), ldis.node_count()))
+        for i in range(ldis.node_count()):
+            a[i] = plsm[1]
+
+        return a
+
+class LogDecayConstantOperator(DecayEstimateOperatorBase):
+    def matrix(eg):
+        ldis = eg.local_discretization
+        plsm = self.decay_fit_mat(ldis)
+        a = numpy.zeros((ldis.node_count(), ldis.node_count()))
+        for i in range(ldis.node_count()):
+            a[i] = plsm[0]
+
+        return a
+
+def create_decay_baseline(discr):
+    """Create a vector of modal coefficients that exhibit 'optimal'
+    (:math:`k^{-N}`) decay.
+    """
+    result = discr.volume_zeros(kind="numpy")
+    for eg in discr.element_groups:
+        ldis = eg.local_discretization
+
+        modal_coefficients = numpy.zeros(ldis.node_count(), dtype=result.dtype)
+        for i, mid in enumerate(ldis.generate_mode_identifiers()):
+            msum = sum(mid)
+            if msum != 0:
+                modal_coefficients[i] = msum**(-ldis.order)
+                #modal_coefficients[i] = 1e-7
+            else:
+                modal_coefficients[i] = 1 # irrelevant, just keeps log from NaNing
+
+        for slc in eg.ranges:
+            result[slc] = modal_coefficients
+
+    return result
+
+
+
+
+class BottomChoppingFilterResponseFunction:
+    def __init__(self, ignored_modes):
+        self.ignored_modes = ignored_modes
+
+    def __call__(self, mode_idx, ldis):
+        if sum(mode_idx) < self.ignored_modes:
+            return 0
+        else:
+            return 1
+
+
+
+
 class DecayFitDiscontinuitySensorBase(object):
     """
     sort of (but not quite) like
@@ -127,140 +202,105 @@ class DecayFitDiscontinuitySensorBase(object):
     p. 385-395.
     """
 
-    def __init__(self, discr):
-        self.discr = discr
+    def decay_estimate_op_template(self, u, ignored_modes=0, with_baseline=True):
+        from hedge.optemplate.operators import (FilterOperator,
+                MassOperator, OnesOperator, InverseVandermondeOperator)
+        from hedge.optemplate.primitives import Field
+        from hedge.tools.symbolic import make_common_subexpression as cse
+        from pymbolic.primitives import Variable
 
-        self.ones_data_store = {}
-        self.inverse_vdm_data_store = {}
-        self.exponent_eval_vdm_data_store = {}
-        self.alpha_projection_data_store = {}
-        self.log_c_projection_data_store = {}
+        if u is None:
+            u = Field("u")
 
-        from hedge.optemplate import MassOperator, Field
-        self.mass_op = discr.compile(MassOperator() * Field("f"))
+        baseline_squared = Field("baseline_squared")
 
-        self.order = max(
-                eg.local_discretization.order
-                for eg in discr.element_groups)
+        # calculate norm with bottom ignored_modes chopped off
+        chopped_u = cse(FilterOperator(
+                BottomChoppingFilterResponseFunction(ignored_modes))(u),
+                "chopped_u")
 
-    def estimate_decay(self, u, ignore_modes=0, debug=False):
-        mass_u = self.mass_op(f=u)
+        el_norm_chopped_u_squared = OnesOperator()(MassOperator()(chopped_u)*chopped_u)
+        el_norm_u_squared = OnesOperator()(MassOperator()(u)*u)
 
-        def ones(eg):
-            return numpy.ones(
-                    (eg.local_discretization.node_count(), 
-                        eg.local_discretization.node_count()),
-                    dtype=self.discr.default_scalar_type)
+        modal_coeffs = InverseVandermondeOperator()(u)
 
-        el_norm_u_squared = self.discr.apply_element_local_matrix(
-                eg_to_matrix=ones, field=mass_u*u,
-                prepared_data_store=self.ones_data_store)
-
-        def inverse_vandermonde(eg):
-            return numpy.asarray(
-                    la.inv(eg.local_discretization.vandermonde()),
-                    order="C")
-
-        modal_coeffs = self.discr.apply_element_local_matrix(
-                eg_to_matrix=inverse_vandermonde, field=u,
-                prepared_data_store=self.inverse_vdm_data_store)
-
-        eps = numpy.finfo(u.dtype).eps
-        log_modal_coeffs = numpy.log(modal_coeffs**2+eps*el_norm_u_squared)/2
+        log, exp = Variable("log"), Variable("exp")
+        log_modal_coeffs = log(modal_coeffs**2
+                + baseline_squared*el_norm_u_squared
+                )/2
 
         # find least-squares fit to c*exp(alpha*n)
-        def pinv_least_squares_mat(eg):
-            ldis = eg.local_discretization
-            a = numpy.zeros((ldis.node_count(), 2))
-            a[:,0] = 1
-            a[:,1] = numpy.arange(ldis.node_count())
-            pinv = la.pinv(a)
-            pinv[:, :ignore_modes] = 0
-            return pinv
+        alpha = DecayExponentOperator(ignored_modes)(log_modal_coeffs)
+        c = exp(LogDecayConstantOperator(ignored_modes)(log_modal_coeffs))
 
-        def alpha_projection(eg):
-            ldis = eg.local_discretization
-            plsm = pinv_least_squares_mat(eg)
-            a = numpy.zeros((ldis.node_count(), ldis.node_count()))
-            for i in range(ldis.node_count()):
-                a[i] = plsm[1]
+        from pytools import Record
+        class DecayInformation(Record): pass
 
-            return a
+        return DecayInformation(
+                alpha=alpha, c=c, log_modal_coeffs=log_modal_coeffs)
 
-        alpha = self.discr.apply_element_local_matrix(
-                eg_to_matrix=alpha_projection, field=log_modal_coeffs,
-                prepared_data_store=self.alpha_projection_data_store)
-        if debug:
-            print alpha[::6]
-            print repr(log_modal_coeffs.reshape((11,6)))
-            raw_input()
+    def bind_alpha(self, discr, ignored_modes=1):
+        baseline = create_decay_baseline(discr)
 
-        def log_c_projection(eg):
-            ldis = eg.local_discretization
-            plsm = pinv_least_squares_mat(eg)
-            a = numpy.zeros((ldis.node_count(), ldis.node_count()))
-            for i in range(ldis.node_count()):
-                a[i] = plsm[0]
+        from hedge.optemplate import Field
+        alpha = self.decay_estimate_op_template(Field("u"),
+                ignored_modes).alpha
 
-            return a
+        compiled = discr.compile(alpha)
 
-        c = numpy.exp(self.discr.apply_element_local_matrix(
-                eg_to_matrix=log_c_projection, field=modal_coeffs,
-                prepared_data_store=self.log_c_projection_data_store))
+        def apply(u):
+            return compiled(u=u, baseline_squared=baseline**2)
 
-        return alpha, c, el_norm_u_squared
+        return apply
+
+    def bind_lmc(self, discr, ignored_modes=1):
+        baseline = create_decay_baseline(discr)
+
+        from hedge.optemplate import Field
+        alpha = self.decay_estimate_op_template(Field("u"),
+                ignored_modes).log_modal_coeffs
+
+        compiled = discr.compile(alpha)
+
+        def apply(u):
+            return compiled(u=u, baseline_squared=baseline)
+
+        return apply
+
 
 
 
 
 class DecayGatingDiscontinuitySensorBase(
         DecayFitDiscontinuitySensorBase):
-    def __init__(self, discr, max_viscosity=0.01):
-        DecayFitDiscontinuitySensorBase.__init__(self, discr)
-
+    def __init__(self, max_viscosity=0.01):
         self.max_viscosity = max_viscosity
 
-        self.threshold_op = discr.compile(
-                self.threshold_op_template())
-
-    def threshold_op_template(self):
+    def op_template(self, u=None):
         from pymbolic.primitives import IfPositive, Variable
         from hedge.optemplate import Field
         from math import pi
+        from hedge.tools.symbolic import make_common_subexpression as cse
 
-        alpha = Field("alpha")
+        if u is None:
+            u = Field("u")
+
+        alpha = self.decay_estimate_op_template(u, ignored_modes=1).alpha
+
+        alpha = cse(alpha, "alpha")
         sin = Variable("sin")
 
         def flat_end_sin(x):
             return IfPositive(-pi/2-x,
                     -1, IfPositive(x-pi/2, 1, sin(x)))
 
-        return 0.5*self.max_viscosity*(1+flat_end_sin((alpha+1)*pi/2))
+        return 0.5*self.max_viscosity*(1+flat_end_sin((alpha+2)*pi/2))
 
-    def __call__(self, u):
-        alpha, c, el_norm_u_squared = self.estimate_decay(u, ignore_modes=1)
+    def bind(self, discr):
+        baseline = create_decay_baseline(discr)
+        compiled = discr.compile(self.op_template())
 
-        return self.threshold_op(alpha=alpha)
+        def apply(u):
+            return compiled(u=u, baseline_squared=baseline**2)
 
-
-
-
-class ErrorEstimatingDiscontinuitySensorBase(
-        DecayFitDiscontinuitySensorBase):
-    def __call__(self, u):
-        alpha, c, el_norm_u_squared = self.estimate_decay(u, 
-                ignore_modes=max(1, self.order-4))
-
-        #alpha = numpy.minimum(-0.1, alpha)
-
-        alpha_integral_np1_to_inf = c**2/2*(-numpy.exp(2*alpha*(self.order+1)))
-        alpha_integral_0_to_np1 = c**2/2*(numpy.exp(2*alpha*(self.order+1))-1)
-
-        indicator = 100*numpy.sqrt(numpy.abs(alpha_integral_np1_to_inf)
-                / (numpy.abs(alpha)*el_norm_u_squared 
-                    + numpy.abs(alpha_integral_0_to_np1 + alpha_integral_np1_to_inf)))
-
-        #if numpy.isnan(indicator).any():
-            #from pudb import set_trace; set_trace()
-
-        return indicator
+        return apply
