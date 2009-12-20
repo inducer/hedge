@@ -35,7 +35,3 @@ Convergence Tests
 
 .. autofunction:: estimate_order_of_convergence
 .. autoclass:: EOCRecorder
-
-Miscellaneous
--------------
-

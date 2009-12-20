@@ -235,8 +235,7 @@ class BoundPoissonOperator(hedge.iterative.OperatorBase):
         pop = self.poisson_op
 
         from hedge.optemplate import MassOperator
-        return (MassOperator().apply(self.discr,
-            rhs.volume_interpolant(self.discr))
+        return (MassOperator().apply(self.discr, rhs)
             - self.compiled_bc_op(
                 u=self.discr.volume_zeros(),
                 dir_bc=pop.dirichlet_bc.boundary_interpolant(

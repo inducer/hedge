@@ -108,7 +108,7 @@ def main(write_output=True):
 
         from hedge.iterative import parallel_cg
         u = -parallel_cg(rcon, -bound_op, 
-                bound_op.prepare_rhs(GivenFunction(rhs_c)), 
+                bound_op.prepare_rhs(discr.interpolate_volume_function(rhs_c)), 
                 debug=20, tol=5e-4,
                 dot=discr.nodewise_dot_product,
                 x=discr.volume_zeros())
