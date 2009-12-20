@@ -208,3 +208,34 @@ def process_optemplate(optemplate, post_bind_mapper=None,
     dumper("process-optemplate-finished", optemplate)
 
     return optemplate
+
+
+
+
+# pretty printing -------------------------------------------------------------
+def pretty_print_optemplate(optemplate):
+    from hedge.optemplate.mappers import PrettyStringifyMapper
+
+    stringify_mapper = PrettyStringifyMapper()
+    from pymbolic.mapper.stringifier import PREC_NONE
+    result = stringify_mapper(optemplate, PREC_NONE)
+
+    splitter = "="*75 + "\n"
+
+    bc_strs = stringify_mapper.get_bc_strings()
+    if bc_strs:
+        result = "\n".join(bc_strs)+"\n"+splitter+result
+
+    cse_strs = stringify_mapper.get_cse_strings()
+    if cse_strs:
+        result = "\n".join(cse_strs)+"\n"+splitter+result
+
+    flux_strs = stringify_mapper.get_flux_strings()
+    if flux_strs:
+        result = "\n".join(flux_strs)+"\n"+splitter+result
+
+    flux_cses = stringify_mapper.flux_stringify_mapper.get_cse_strings()
+    if flux_cses:
+        result = "\n".join("flux "+fs for fs in flux_cses)+"\n\n"+result
+
+    return result

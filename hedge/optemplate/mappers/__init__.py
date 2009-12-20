@@ -368,34 +368,6 @@ class PrettyStringifyMapper(
 
 
 
-def pretty_print_optemplate(optemplate):
-    stringify_mapper = PrettyStringifyMapper()
-    from pymbolic.mapper.stringifier import PREC_NONE
-    result = stringify_mapper(optemplate, PREC_NONE)
-
-    splitter = "="*75 + "\n"
-
-    bc_strs = stringify_mapper.get_bc_strings()
-    if bc_strs:
-        result = "\n".join(bc_strs)+"\n"+splitter+result
-
-    cse_strs = stringify_mapper.get_cse_strings()
-    if cse_strs:
-        result = "\n".join(cse_strs)+"\n"+splitter+result
-
-    flux_strs = stringify_mapper.get_flux_strings()
-    if flux_strs:
-        result = "\n".join(flux_strs)+"\n"+splitter+result
-
-    flux_cses = stringify_mapper.flux_stringify_mapper.get_cse_strings()
-    if flux_cses:
-        result = "\n".join("flux "+fs for fs in flux_cses)+"\n\n"+result
-
-    return result
-
-
-
-
 class NoCSEStringifyMapper(StringifyMapper):
     def map_common_subexpression(self, expr, enclosing_prec):
         return self.rec(expr.child, enclosing_prec)
