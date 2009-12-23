@@ -348,7 +348,7 @@ class Discretization(hedge.discretization.Discretization):
 
     def __init__(self, mesh, local_discretization=None,
             order=None, init_cuda=True, debug=set(),
-            device=None, default_scalar_type=numpy.float32,
+            default_scalar_type=numpy.float32,
             tune_for=None, run_context=None,
             mpi_cuda_dev_filter=lambda dev: True):
         """
@@ -373,26 +373,22 @@ class Discretization(hedge.discretization.Discretization):
                 run_context=run_context)
 
         # cuda init
+        self.cleanup_context = None
         if init_cuda:
             cuda.init()
 
-        if device is None:
             if run_context is None or len(run_context.ranks) == 1:
-                from pycuda.tools import get_default_device
-                device = get_default_device()
+                from pycuda.tools import make_default_context
+                self.cleanup_context = make_default_context()
             else:
                 from hedge.backends.cuda.tools import mpi_get_default_device
                 device = mpi_get_default_device(run_context.communicator,
                         dev_filter=mpi_cuda_dev_filter)
+                self.cleanup_context = device.make_context()
 
-        if isinstance(device, int):
-            device = cuda.Device(device)
-        if init_cuda:
-            self.cuda_context = device.make_context()
-        else:
-            self.cuda_context = None
+        # if not init_cuda, assume we're in an active context
+        self.device = cuda.Context.get_device()
 
-        self.device = device
         from pycuda.tools import DeviceData
 
         # initialize memory pool
@@ -432,7 +428,7 @@ class Discretization(hedge.discretization.Discretization):
             for allow_mb in allow_mb_values:
                 from hedge.backends.cuda.plan import PlanGivenData
                 given = PlanGivenData(
-                        DeviceData(device), ldis,
+                        DeviceData(self.device), ldis,
                         allow_microblocking=allow_mb,
                         float_type=default_scalar_type)
 
@@ -503,8 +499,8 @@ class Discretization(hedge.discretization.Discretization):
     def close(self):
         self.pool.stop_holding()
         self.pagelocked_pool.stop_holding()
-        if self.cuda_context is not None:
-            self.cuda_context.pop()
+        if self.cleanup_context is not None:
+            self.cleanup_context.pop()
 
     def _build_blocks(self):
         block_el_numbers = {}
