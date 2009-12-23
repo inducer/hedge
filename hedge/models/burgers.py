@@ -69,22 +69,6 @@ class BurgersOperator(HyperbolicOperator):
         from hedge.tools.second_order import SecondDerivativeTarget
 
         if self.viscosity is not None or with_sensor:
-            # strong_form here allows LDG to reuse the value of grad u.
-            grad_tgt = SecondDerivativeTarget(
-                    self.dimensions, strong_form=True,
-                    operand=u)
-
-            self.viscosity_scheme.grad(grad_tgt, bc_getter=None,
-                    dirichlet_tags=[], neumann_tags=[])
-
-            div_tgt = SecondDerivativeTarget(
-                    self.dimensions, strong_form=False,
-                    operand=grad_tgt.minv_all)
-
-            self.viscosity_scheme.div(div_tgt,
-                    bc_getter=None,
-                    dirichlet_tags=[], neumann_tags=[])
-
             viscosity_coeff = 0
             if with_sensor:
                 viscosity_coeff += Field("sensor")
@@ -96,7 +80,23 @@ class BurgersOperator(HyperbolicOperator):
             else:
                 raise TypeError("unsupported type of viscosity coefficient")
 
-            viscosity_bit = Field("sensor")*div_tgt.minv_all
+            # strong_form here allows LDG to reuse the value of grad u.
+            grad_tgt = SecondDerivativeTarget(
+                    self.dimensions, strong_form=True,
+                    operand=u)
+
+            self.viscosity_scheme.grad(grad_tgt, bc_getter=None,
+                    dirichlet_tags=[], neumann_tags=[])
+
+            div_tgt = SecondDerivativeTarget(
+                    self.dimensions, strong_form=False,
+                    operand=viscosity_coeff*grad_tgt.minv_all)
+
+            self.viscosity_scheme.div(div_tgt,
+                    bc_getter=None,
+                    dirichlet_tags=[], neumann_tags=[])
+
+            viscosity_bit = div_tgt.minv_all
         else:
             viscosity_bit = 0
 
