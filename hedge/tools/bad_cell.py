@@ -126,11 +126,17 @@ class DecayEstimateOperatorBase(ElementwiseLinearOperator):
         im = self.ignored_modes
         node_cnt = ldis.node_count()
 
-        result = numpy.zeros((2, node_cnt))
+        node_number_vector = numpy.zeros(node_cnt-im, dtype=numpy.float64)
+        for i, mid in enumerate(ldis.generate_mode_identifiers()):
+            if i < im:
+                continue
+            node_number_vector[i-im] = sum(mid)
 
-        a = numpy.zeros((node_cnt-im, 2))
+        a = numpy.zeros((node_cnt-im, 2), dtype=numpy.float64)
         a[:,0] = 1
-        a[:,1] = numpy.log(numpy.arange(im, node_cnt))
+        a[:,1] = numpy.log(node_number_vector)
+
+        result = numpy.zeros((2, node_cnt))
         result[:,im:] = la.pinv(a)
 
         return result
@@ -146,7 +152,7 @@ class DecayExponentOperator(DecayEstimateOperatorBase):
         return a
 
 class LogDecayConstantOperator(DecayEstimateOperatorBase):
-    def matrix(eg):
+    def matrix(self, eg):
         ldis = eg.local_discretization
         plsm = self.decay_fit_mat(ldis)
         a = numpy.zeros((ldis.node_count(), ldis.node_count()))
@@ -154,6 +160,27 @@ class LogDecayConstantOperator(DecayEstimateOperatorBase):
             a[i] = plsm[0]
 
         return a
+
+def create_mode_number_vector(discr):
+    """Create a vector of modal coefficients that exhibit 'optimal'
+    (:math:`k^{-N}`) decay.
+    """
+    result = discr.volume_zeros(kind="numpy")
+    for eg in discr.element_groups:
+        ldis = eg.local_discretization
+
+        modal_coefficients = numpy.zeros(ldis.node_count(), dtype=result.dtype)
+        for i, mid in enumerate(ldis.generate_mode_identifiers()):
+            msum = sum(mid)
+            if msum != 0:
+                modal_coefficients[i] = msum
+            else:
+                modal_coefficients[i] = 1
+
+        for slc in eg.ranges:
+            result[slc] = modal_coefficients
+
+    return result
 
 def create_decay_baseline(discr):
     """Create a vector of modal coefficients that exhibit 'optimal'
@@ -194,14 +221,6 @@ class BottomChoppingFilterResponseFunction:
 
 
 class DecayFitDiscontinuitySensorBase(object):
-    """
-    sort of (but not quite) like
-    [1] H. Feng und C. Mavriplis, "Adaptive Spectral Element 
-    Simulations of Thin Premixed Flame Sheet Deformations," 
-    Journal of Scientific Computing,  vol. 17, Dec. 2002, 
-    p. 385-395.
-    """
-
     def decay_estimate_op_template(self, u, ignored_modes=0, with_baseline=True):
         from hedge.optemplate.operators import (FilterOperator,
                 MassOperator, OnesOperator, InverseVandermondeOperator)
@@ -213,57 +232,52 @@ class DecayFitDiscontinuitySensorBase(object):
             u = Field("u")
 
         baseline_squared = Field("baseline_squared")
-
-        # calculate norm with bottom ignored_modes chopped off
-        chopped_u = cse(FilterOperator(
-                BottomChoppingFilterResponseFunction(ignored_modes))(u),
-                "chopped_u")
-
-        el_norm_chopped_u_squared = OnesOperator()(MassOperator()(chopped_u)*chopped_u)
         el_norm_u_squared = OnesOperator()(MassOperator()(u)*u)
 
         modal_coeffs = InverseVandermondeOperator()(u)
 
-        log, exp = Variable("log"), Variable("exp")
-        log_modal_coeffs = log(modal_coeffs**2
-                + baseline_squared*el_norm_u_squared
-                )/2
+        log, exp, sqrt = Variable("log"), Variable("exp"), Variable("sqrt")
+        log_modal_coeffs = cse(
+                log(modal_coeffs**2
+                    + baseline_squared*el_norm_u_squared)/2,
+                "log_modal_coeffs")
 
-        # find least-squares fit to c*exp(alpha*n)
-        alpha = DecayExponentOperator(ignored_modes)(log_modal_coeffs)
+        # fit to c * n**s
+        s = DecayExponentOperator(ignored_modes)(log_modal_coeffs)
+        log_c = LogDecayConstantOperator(ignored_modes)(log_modal_coeffs)
         c = exp(LogDecayConstantOperator(ignored_modes)(log_modal_coeffs))
+
+        log_mode_numbers = Field("log_mode_numbers")
+        estimated_log_modal_coeffs = log_c + s*log_mode_numbers
+        estimate_error = sqrt((estimated_log_modal_coeffs-log_modal_coeffs)**2)
+
+        log_modal_coeffs_corrected = log_modal_coeffs + estimate_error
+        s2 = DecayExponentOperator(ignored_modes)(log_modal_coeffs_corrected)
 
         from pytools import Record
         class DecayInformation(Record): pass
 
         return DecayInformation(
-                alpha=alpha, c=c, log_modal_coeffs=log_modal_coeffs)
+                decay_expt=s, c=c, log_modal_coeffs=log_modal_coeffs,
+                estimated_log_modal_coeffs=estimated_log_modal_coeffs,
+                decay_expt_corrected=s2)
 
-    def bind_alpha(self, discr, ignored_modes=1):
-        baseline = create_decay_baseline(discr)
-
-        from hedge.optemplate import Field
-        alpha = self.decay_estimate_op_template(Field("u"),
-                ignored_modes).alpha
-
-        compiled = discr.compile(alpha)
-
-        def apply(u):
-            return compiled(u=u, baseline_squared=baseline**2)
-
-        return apply
-
-    def bind_lmc(self, discr, ignored_modes=1):
-        baseline = create_decay_baseline(discr)
+    def bind_quantity(self, discr, quantity_name, ignored_modes=1):
+        baseline_squared = create_decay_baseline(discr)**2
+        log_mode_numbers = numpy.log(create_mode_number_vector(discr))
 
         from hedge.optemplate import Field
-        alpha = self.decay_estimate_op_template(Field("u"),
-                ignored_modes).log_modal_coeffs
+        quantity = getattr(
+                self.decay_estimate_op_template(Field("u"),
+                    ignored_modes), quantity_name)
 
-        compiled = discr.compile(alpha)
+        compiled = discr.compile(quantity)
 
         def apply(u):
-            return compiled(u=u, baseline_squared=baseline)
+            return compiled(
+                    u=u, 
+                    baseline_squared=baseline_squared,
+                    log_mode_numbers=log_mode_numbers)
 
         return apply
 
@@ -285,22 +299,27 @@ class DecayGatingDiscontinuitySensorBase(
         if u is None:
             u = Field("u")
 
-        alpha = self.decay_estimate_op_template(u, ignored_modes=1).alpha
+        decay_expt = self.decay_estimate_op_template(u, ignored_modes=1) \
+                .decay_expt_corrected
 
-        alpha = cse(alpha, "alpha")
+        decay_expt = cse(decay_expt, "decay_expt")
         sin = Variable("sin")
 
         def flat_end_sin(x):
             return IfPositive(-pi/2-x,
                     -1, IfPositive(x-pi/2, 1, sin(x)))
 
-        return 0.5*self.max_viscosity*(1+flat_end_sin((alpha+2)*pi/2))
+        return 0.5*self.max_viscosity*(1+flat_end_sin((decay_expt+2)*pi/2))
 
     def bind(self, discr):
-        baseline = create_decay_baseline(discr)
+        baseline_squared = create_decay_baseline(discr)**2
+        log_mode_numbers = numpy.log(create_mode_number_vector(discr))
+
         compiled = discr.compile(self.op_template())
 
         def apply(u):
-            return compiled(u=u, baseline_squared=baseline**2)
+            return compiled(u=u, 
+                    baseline_squared=baseline_squared,
+                    log_mode_numbers=log_mode_numbers)
 
         return apply
