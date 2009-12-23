@@ -104,7 +104,7 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
             my = (mx+1) % 3
             mz = (mx+2) % 3
 
-            from hedge.tools.math import levi_civita
+            from hedge.tools.mathematics import levi_civita
             assert levi_civita((mx,my,mz)) == 1
 
             rhs[mx] += -sig[my]/self.epsilon*(2*e[mx]+p[mx]) - 2*tau[my]/self.epsilon*e[mx]
