@@ -25,9 +25,9 @@ import numpy.linalg as la
 
 
 
-def have_gpu():
+def have_pycuda():
     try:
-        import pycuda.autoinit
+        import pycuda
         return True
     except:
         return False
@@ -35,12 +35,12 @@ def have_gpu():
 
 
 
-class TestGPUThings:
-    disabled = not have_gpu()
+if have_pycuda():
+    from pycuda.tools import mark_cuda_test
 
-    def test_from_to_gpu(self):
+    @mark_cuda_test
+    def test_from_to_gpu():
         import pycuda.driver as cuda
-        import pycuda.autoinit
         from hedge.mesh import make_cylinder_mesh, make_ball_mesh, make_box_mesh
 
         mesh = make_cylinder_mesh(max_volume=0.004, 

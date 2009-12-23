@@ -216,8 +216,15 @@ def test_maxwell_cavities_mpi():
 
 
 def test_cuda():
-    yield "SP CUDA Maxwell", do_test_maxwell_cavities_cuda, numpy.float32
-    yield "DP CUDA Maxwell", do_test_maxwell_cavities_cuda, numpy.float64
+    try:
+        from pycuda.tools import mark_cuda_test
+    except ImportError:
+        pass
+
+    yield "SP CUDA Maxwell", mark_cuda_test(
+            do_test_maxwell_cavities_cuda), numpy.float32
+    yield "DP CUDA Maxwell", mark_cuda_test(
+            do_test_maxwell_cavities_cuda), numpy.float64
 
 
 
