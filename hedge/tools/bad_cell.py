@@ -223,22 +223,40 @@ class BottomChoppingFilterResponseFunction:
 class DecayFitDiscontinuitySensorBase(object):
     def decay_estimate_op_template(self, u, ignored_modes=0, with_baseline=True):
         from hedge.optemplate.operators import (FilterOperator,
-                MassOperator, OnesOperator, InverseVandermondeOperator)
+                MassOperator, OnesOperator, InverseVandermondeOperator,
+                InverseMassOperator)
         from hedge.optemplate.primitives import Field
+        from hedge.optemplate.tools import get_flux_operator
         from hedge.tools.symbolic import make_common_subexpression as cse
         from pymbolic.primitives import Variable
 
         if u is None:
             u = Field("u")
 
+        from hedge.flux import (
+                FluxScalarPlaceholder, ElementOrder,
+                ElementJacobian, FaceJacobian)
+        from pymbolic.primitives import IfPositive
+
+        u_flux = FluxScalarPlaceholder(0)
+
+        # On the whole, this should scale like u.
+        # Columns of lift scale like 1/N^2, compensate for that.
+        # Further compensate for all geometric factors.
+
+        jump_part = InverseMassOperator()(
+                get_flux_operator(
+                    ElementJacobian()**2/(ElementOrder()**2 * FaceJacobian())
+                        *(u_flux.ext - u_flux.int))(u))
+
         baseline_squared = Field("baseline_squared")
         el_norm_u_squared = OnesOperator()(MassOperator()(u)*u)
 
-        modal_coeffs = InverseVandermondeOperator()(u)
+        indicator_modal_coeffs = InverseVandermondeOperator()(u + jump_part)
 
         log, exp, sqrt = Variable("log"), Variable("exp"), Variable("sqrt")
         log_modal_coeffs = cse(
-                log(modal_coeffs**2
+                log(indicator_modal_coeffs**2
                     + baseline_squared*el_norm_u_squared)/2,
                 "log_modal_coeffs")
 
@@ -252,7 +270,7 @@ class DecayFitDiscontinuitySensorBase(object):
         estimate_error = sqrt((estimated_log_modal_coeffs-log_modal_coeffs)**2)
 
         log_modal_coeffs_corrected = log_modal_coeffs + estimate_error
-        s2 = DecayExponentOperator(ignored_modes)(log_modal_coeffs_corrected)
+        s_corrected = DecayExponentOperator(ignored_modes)(log_modal_coeffs_corrected)
 
         from pytools import Record
         class DecayInformation(Record): pass
@@ -260,7 +278,7 @@ class DecayFitDiscontinuitySensorBase(object):
         return DecayInformation(
                 decay_expt=s, c=c, log_modal_coeffs=log_modal_coeffs,
                 estimated_log_modal_coeffs=estimated_log_modal_coeffs,
-                decay_expt_corrected=s2)
+                decay_expt_corrected=s_corrected)
 
     def bind_quantity(self, discr, quantity_name, ignored_modes=1):
         baseline_squared = create_decay_baseline(discr)**2

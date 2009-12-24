@@ -134,6 +134,7 @@ void hedge_expose_fluxes()
     typedef straight_face cl;
     class_<cl, bases<face_base> >("StraightFace")
       .DEF_SIMPLE_RW_MEMBER(face_jacobian)
+      .DEF_SIMPLE_RW_MEMBER(element_jacobian)
       .def(pyublas::by_value_rw_member("normal", &cl::normal))
       ;
   }

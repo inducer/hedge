@@ -441,6 +441,7 @@ class Discretization(TimestepCalculator):
                     for glob_coord in range(ldis.dimensions)])
 
     def _set_flux_face_data(self, f, ldis, (el, fi)):
+        f.element_jacobian = el.map.jacobian()
         f.face_jacobian = el.face_jacobians[fi]
         f.element_id = el.id
         f.face_id = fi

@@ -98,37 +98,34 @@ class Normal(Flux):
 
 
 
-class ElementOrder(Flux):
+class _StatelessFlux(Flux):
     def __getinitargs__(self):
         return ()
 
     def is_equal(self, other):
-        return isinstance(other, PenaltyTerm)
+        return isinstance(other, self.__class__)
 
     def get_hash(self):
         return hash(self.__class__)
 
+
+
+
+class FaceJacobian(_StatelessFlux):
+    def get_mapper_method(self, mapper):
+        return mapper.map_face_jacobian
+
+class ElementJacobian(_StatelessFlux):
+    def get_mapper_method(self, mapper):
+        return mapper.map_element_jacobian
+
+class ElementOrder(_StatelessFlux):
     def get_mapper_method(self, mapper):
         return mapper.map_element_order
 
-
-
-
-class LocalMeshSize(Flux):
-    def __getinitargs__(self):
-        return ()
-
-    def is_equal(self, other):
-        return isinstance(other, LocalMeshSize)
-
-    def get_hash(self):
-        return hash(self.__class__)
-
+class LocalMeshSize(_StatelessFlux):
     def get_mapper_method(self, mapper):
         return mapper.map_local_mesh_size
-
-
-
 
 def make_penalty_term(power=1):
     from pymbolic.primitives import CommonSubexpression
@@ -266,13 +263,10 @@ class FluxIdentityMapperMixin(object):
         # a leaf
         return expr
 
-    def map_element_order(self, expr):
-        # a leaf
-        return expr
-
-    def map_local_mesh_size(self, expr):
-        # a leaf
-        return expr
+    map_element_jacobian = map_normal
+    map_face_jacobian = map_normal
+    map_element_order = map_normal
+    map_local_mesh_size = map_normal
 
     def map_scalar_parameter(self, expr):
         return expr
@@ -308,6 +302,12 @@ class FluxStringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
 
     def map_normal(self, expr, enclosing_prec):
         return "Normal(%d)" % expr.axis
+
+    def map_element_jacobian(self, expr, enclosing_prec):
+        return "ElJac"
+
+    def map_face_jacobian(self, expr, enclosing_prec):
+        return "FJac"
 
     def map_element_order(self, expr, enclosing_prec):
         return "N"
@@ -347,11 +347,10 @@ class FluxDependencyMapper(pymbolic.mapper.dependency.DependencyMapper):
     def map_normal(self, expr):
         return set()
 
-    def map_element_order(self, expr):
-        return set()
-
-    def map_local_mesh_size(self, expr):
-        return set()
+    map_element_jacobian = map_normal
+    map_face_jacobian = map_normal
+    map_element_order = map_normal
+    map_local_mesh_size = map_normal
 
     def map_scalar_parameter(self, expr):
         return set([expr])
@@ -422,14 +421,13 @@ class FluxFlipper(FluxIdentityMapper):
 
 
 class FluxFlopCounter(pymbolic.mapper.flop_counter.FlopCounter):
-    def map_element_order(self, expr):
-        return 0
-
-    def map_local_mesh_size(self, expr):
-        return 0
-
     def map_normal(self, expr):
         return 0
+
+    map_element_jacobian = map_normal
+    map_face_jacobian = map_normal
+    map_element_order = map_normal
+    map_local_mesh_size = map_normal
 
     def map_field_component(self, expr):
         return 0

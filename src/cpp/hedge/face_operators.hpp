@@ -54,6 +54,7 @@ namespace hedge
   struct straight_face : face_base
   {
     double face_jacobian;
+    double element_jacobian;
     bounded_vector<double, max_dims> normal;
 
     straight_face()

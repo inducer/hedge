@@ -61,6 +61,12 @@ class FluxToCodeMapper(CCodeMapper):
     def map_normal(self, expr, enclosing_prec):
         return "uncomplex_type(fp.int_side.normal[%d])" % (expr.axis)
 
+    def map_element_jacobian(self, expr, enclosing_prec):
+        return "uncomplex_type(fp.int_side.element_jacobian)"
+
+    def map_face_jacobian(self, expr, enclosing_prec):
+        return "uncomplex_type(fp.int_side.face_jacobian)"
+
     def map_element_order(self, expr, enclosing_prec):
         return "uncomplex_type(fp.int_side.order)"
 
@@ -95,7 +101,15 @@ def flux_to_code(f2c, is_flipped, flux_idx, fvi, flux, prec):
         from hedge.flux import FluxFlipper
         flux = FluxFlipper()(flux)
 
-    return f2c(FluxConcretizer(flux_idx, fvi)(flux), prec)
+    result = f2c(FluxConcretizer(flux_idx, fvi)(flux), prec)
+
+    if is_flipped:
+        result = (result
+                .replace("fp.int_side", "fp.temp_side")
+                .replace("fp.ext_side", "fp.int_side")
+                .replace("fp.temp_side", "fp.ext_side"))
+
+    return result
 
 
 

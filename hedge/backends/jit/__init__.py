@@ -391,6 +391,7 @@ class Executor(object):
                     perform_elwise_scaled_operator,
                     perform_elwise_operator)
 
+
             if coeffs is None:
                 perform_elwise_operator(eg.ranges, eg.ranges,
                         matrix, field, out)

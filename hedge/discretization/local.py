@@ -584,7 +584,7 @@ class TriangleDiscretization(PkSimplexDiscretization):
     has_local_jacobians = False
     geometry = hedge.mesh.element.Triangle
 
-    def __init__(self, order, fancy_node_ordering=True):
+    def __init__(self, order, fancy_node_ordering=False):
         self.order = order
         self.fancy_node_ordering = fancy_node_ordering
 

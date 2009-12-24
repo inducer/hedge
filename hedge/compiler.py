@@ -490,7 +490,6 @@ class OperatorCompilerBase(IdentityMapper):
                     i += 1
 
             if present_batch:
-
                 batches_by_kind = {}
                 for fr in present_batch:
                     batches_by_kind[fr.kind] = \
