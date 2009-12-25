@@ -246,7 +246,7 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
         return "StiffT%d" % expr.xyz_axis
 
     def map_elementwise_linear(self, expr, enclosing_prec):
-        return "<ElWLin:%s>" % expr.__class__.__name__
+        return "ElWLin:%s" % expr.__class__.__name__
 
     def map_mass(self, expr, enclosing_prec):
         return "M"
