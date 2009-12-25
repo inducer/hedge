@@ -536,8 +536,19 @@ class DerivativeJoiner(CSECachingMapperMixin, IdentityMapper):
     def map_sum(self, expr):
         idj = _InnerDerivativeJoiner()
 
+        def invoke_idj(expr):
+            sub_derivatives = {}
+            result = idj(expr, sub_derivatives)
+            if not sub_derivatives:
+                return expr
+            else:
+                for operator, operands in sub_derivatives.iteritems():
+                    derivatives.setdefault(operator, []).extend(operands)
+
+                return result
+
         derivatives = {}
-        new_children = [idj(child, derivatives)
+        new_children = [invoke_idj(child)
                 for child in expr.children]
 
         for operator, operands in derivatives.iteritems():
