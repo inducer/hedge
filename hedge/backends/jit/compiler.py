@@ -195,12 +195,13 @@ class OperatorCompiler(OperatorCompilerBase):
         from hedge.optemplate import IdentityMapper
         return IdentityMapper.map_operator_binding(self, flux_bind)
 
-    def map_operator_binding(self, expr):
+    def map_operator_binding(self, expr, name_hint=None):
         from hedge.optemplate import FluxOperatorBase
         if isinstance(expr.op, FluxOperatorBase):
             return self.map_planned_flux(expr)
         else:
-            return OperatorCompilerBase.map_operator_binding(self, expr)
+            return OperatorCompilerBase.map_operator_binding(
+                    self, expr, name_hint=name_hint)
 
     # flux compilation --------------------------------------------------------
     def make_flux_batch_assign(self, names, fluxes, kind):

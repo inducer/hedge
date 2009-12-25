@@ -556,12 +556,25 @@ class OperatorCompilerBase(IdentityMapper):
             return self.expr_to_var[expr.child]
         except KeyError:
             priority = getattr(expr, "priority", 0)
-            cse_var = self.assign_to_new_var(self.rec(expr.child),
+
+            from hedge.optemplate import OperatorBinding
+            if isinstance(expr.child, OperatorBinding):
+                # We need to catch operator bindings here and 
+                # treat them specially. They get assigned to their
+                # own variable by default, which would mean the
+                # CSE prefix would be omitted.
+                rec_child = self.map_operator_binding(
+                        expr.child, name_hint=expr.prefix)
+            else:
+                rec_child = self.rec(expr.child)
+
+            cse_var = self.assign_to_new_var(rec_child,
                     priority=priority, prefix=expr.prefix)
+
             self.expr_to_var[expr.child] = cse_var
             return cse_var
 
-    def map_operator_binding(self, expr):
+    def map_operator_binding(self, expr, name_hint=None):
         from hedge.optemplate import (
                 DiffOperatorBase, \
                 MassOperatorBase, \
@@ -583,7 +596,8 @@ class OperatorCompilerBase(IdentityMapper):
             field_var = self.assign_to_new_var(
                     self.rec(expr.field))
             result_var = self.assign_to_new_var(
-                    OperatorBinding(expr.op, field_var))
+                    OperatorBinding(expr.op, field_var),
+                    prefix=name_hint)
             return result_var
 
     def map_diff_op_binding(self, expr):
