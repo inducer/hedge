@@ -410,12 +410,16 @@ class FluxExpandMapper(pymbolic.mapper.expander.ExpandMapper,
 
 
 class FluxFlipper(FluxIdentityMapper):
-    def map_normal(self, expr):
-        return -expr
-
     def map_field_component(self, expr):
         return expr.__class__(expr.index, not expr.is_interior)
 
+
+
+
+
+class FluxAndNormalFlipper(FluxFlipper):
+    def map_normal(self, expr):
+        return -expr
 
 
 
