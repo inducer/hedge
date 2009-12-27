@@ -75,7 +75,7 @@ class BurgersOperator(HyperbolicOperator):
 
             if isinstance(self.viscosity, float):
                 viscosity_coeff += self.viscosity
-            if self.viscosity is None:
+            elif self.viscosity is None:
                 pass
             else:
                 raise TypeError("unsupported type of viscosity coefficient")

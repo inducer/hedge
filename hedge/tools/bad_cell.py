@@ -25,6 +25,7 @@ import numpy
 import numpy.linalg as la
 from hedge.optemplate.operators import (
         ElementwiseLinearOperator, StatelessOperator)
+from pytools import Record
 
 
 
@@ -220,6 +221,13 @@ class BottomChoppingFilterResponseFunction:
 
 
 
+class DecayInformation(Record):
+    def __init__(self, **kwargs):
+        from hedge.tools.symbolic import make_common_subexpression as cse
+
+        Record.__init__(self, dict((name, cse(expr, name))
+            for name, expr in kwargs.iteritems()))
+
 class DecayFitDiscontinuitySensorBase(object):
     def decay_estimate_op_template(self, u, ignored_modes=0, with_baseline=True):
         from hedge.optemplate.operators import (FilterOperator,
@@ -246,13 +254,17 @@ class DecayFitDiscontinuitySensorBase(object):
 
         jump_part = InverseMassOperator()(
                 get_flux_operator(
-                    ElementJacobian()**2/(ElementOrder()**2 * FaceJacobian())
+                    ElementJacobian()/(ElementOrder()**2 * FaceJacobian())
                         *(u_flux.ext - u_flux.int))(u))
 
         baseline_squared = Field("baseline_squared")
-        el_norm_u_squared = OnesOperator()(MassOperator()(u)*u)
+        el_norm_u_squared = cse(
+                OnesOperator()(MassOperator()(u)*u),
+                "l2_norm_u")
 
-        indicator_modal_coeffs = InverseVandermondeOperator()(u + jump_part)
+        indicator_modal_coeffs = cse(
+                InverseVandermondeOperator()(u + jump_part),
+                "u_plus_jump_modes")
 
         log, exp, sqrt = Variable("log"), Variable("exp"), Variable("sqrt")
         log_modal_coeffs = cse(
@@ -261,19 +273,22 @@ class DecayFitDiscontinuitySensorBase(object):
                 "log_modal_coeffs")
 
         # fit to c * n**s
-        s = DecayExponentOperator(ignored_modes)(log_modal_coeffs)
-        log_c = LogDecayConstantOperator(ignored_modes)(log_modal_coeffs)
+        s = cse(DecayExponentOperator(ignored_modes)(log_modal_coeffs),
+                "first_decay_expt")
+        log_c = cse(LogDecayConstantOperator(ignored_modes)(log_modal_coeffs),
+                "first_decay_coeff")
         c = exp(LogDecayConstantOperator(ignored_modes)(log_modal_coeffs))
 
         log_mode_numbers = Field("log_mode_numbers")
-        estimated_log_modal_coeffs = log_c + s*log_mode_numbers
-        estimate_error = sqrt((estimated_log_modal_coeffs-log_modal_coeffs)**2)
+        estimated_log_modal_coeffs = cse(
+                log_c + s*log_mode_numbers,
+                "estimated_log_modal_coeffs")
+        estimate_error = cse(
+                sqrt((estimated_log_modal_coeffs-log_modal_coeffs)**2),
+                "estimate_error")
 
         log_modal_coeffs_corrected = log_modal_coeffs + estimate_error
         s_corrected = DecayExponentOperator(ignored_modes)(log_modal_coeffs_corrected)
-
-        from pytools import Record
-        class DecayInformation(Record): pass
 
         return DecayInformation(
                 decay_expt=s, c=c, log_modal_coeffs=log_modal_coeffs,
