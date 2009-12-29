@@ -167,8 +167,8 @@ class FluxToCodeMapper(CCodeMapper):
 def flux_to_code(f2cm, is_flipped, int_field_expr, ext_field_expr,
         dep_to_index, flux, prec):
     if is_flipped:
-        from hedge.flux import FluxAndNormalFlipper
-        flux = FluxAndNormalFlipper()(flux)
+        from hedge.flux import FluxFlipper
+        flux = FluxFlipper()(flux)
 
     return f2cm(FluxConcretizer(int_field_expr, ext_field_expr, dep_to_index)(flux), prec)
 

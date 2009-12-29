@@ -58,17 +58,26 @@ class FluxConcretizer(FluxIdentityMapper):
 
 
 class FluxToCodeMapper(CCodeMapper):
+    def __init__(self):
+        CCodeMapper.__init__(self, repr, reverse=False)
+
     def map_normal(self, expr, enclosing_prec):
         return "uncomplex_type(fp.int_side.normal[%d])" % (expr.axis)
 
     def map_element_jacobian(self, expr, enclosing_prec):
-        return "uncomplex_type(fp.int_side.element_jacobian)"
+        if expr.is_interior:
+            return "uncomplex_type(fp.int_side.element_jacobian)"
+        else:
+            return "uncomplex_type(fp.ext_side.element_jacobian)"
 
     def map_face_jacobian(self, expr, enclosing_prec):
         return "uncomplex_type(fp.int_side.face_jacobian)"
 
     def map_element_order(self, expr, enclosing_prec):
-        return "uncomplex_type(fp.int_side.order)"
+        if expr.is_interior:
+            return "uncomplex_type(fp.int_side.order)"
+        else:
+            return "uncomplex_type(fp.ext_side.order)"
 
     def map_local_mesh_size(self, expr, enclosing_prec):
         return "uncomplex_type(fp.int_side.h)"
@@ -97,19 +106,18 @@ class FluxToCodeMapper(CCodeMapper):
 
 
 def flux_to_code(f2c, is_flipped, flux_idx, fvi, flux, prec):
+    # If you are intending to modify how flux flipping is done,
+    # consider this: Fluxes may contain CSEs. If you do something
+    # just to the result of this function, you will miss the CSEs,
+    # which become part of state of f2c. Further, CSE-ability
+    # requires that flux reversal be expressible in the flux 
+    # language.
+
     if is_flipped:
         from hedge.flux import FluxFlipper
         flux = FluxFlipper()(flux)
 
-    result = f2c(FluxConcretizer(flux_idx, fvi)(flux), prec)
-
-    if is_flipped:
-        result = (result
-                .replace("fp.int_side", "fp.temp_side")
-                .replace("fp.ext_side", "fp.int_side")
-                .replace("fp.temp_side", "fp.ext_side"))
-
-    return result
+    return f2c(FluxConcretizer(flux_idx, fvi)(flux), prec)
 
 
 
@@ -275,7 +283,7 @@ def get_interior_flux_mod(fluxes, fvi, discr, dtype):
     from pymbolic.mapper.stringifier import PREC_PRODUCT
 
     def gen_flux_code():
-        f2cm = FluxToCodeMapper(repr, reverse=False)
+        f2cm = FluxToCodeMapper()
 
         result = [
                 Assign("fof%d_it[%s_fof_base+%s]" % (flux_idx, where, tgt_idx),
@@ -397,7 +405,7 @@ def get_boundary_flux_mod(fluxes, fvi, discr, dtype):
     from pymbolic.mapper.stringifier import PREC_PRODUCT
 
     def gen_flux_code():
-        f2cm = FluxToCodeMapper(repr, reverse=False)
+        f2cm = FluxToCodeMapper()
 
         result = [
                 Assign("fof%d_it[loc_fof_base+i]" % flux_idx,

@@ -111,15 +111,32 @@ class _StatelessFlux(Flux):
 
 
 
+class _SidedFlux(Flux):
+    def __init__(self, is_interior=True):
+        self.is_interior = is_interior
+
+    def __getinitargs__(self):
+        return (is_interior,)
+
+    def is_equal(self, other):
+        return (isinstance(other, self.__class__)
+                and self.is_interior == other.is_interior)
+
+    def get_hash(self):
+        return hash((self.__class__, self.is_interior))
+
+
+
+
 class FaceJacobian(_StatelessFlux):
     def get_mapper_method(self, mapper):
         return mapper.map_face_jacobian
 
-class ElementJacobian(_StatelessFlux):
+class ElementJacobian(_SidedFlux):
     def get_mapper_method(self, mapper):
         return mapper.map_element_jacobian
 
-class ElementOrder(_StatelessFlux):
+class ElementOrder(_SidedFlux):
     def get_mapper_method(self, mapper):
         return mapper.map_element_order
 
@@ -413,13 +430,15 @@ class FluxFlipper(FluxIdentityMapper):
     def map_field_component(self, expr):
         return expr.__class__(expr.index, not expr.is_interior)
 
-
-
-
-
-class FluxAndNormalFlipper(FluxFlipper):
     def map_normal(self, expr):
         return -expr
+
+    def map_element_jacobian(self, expr):
+        return expr.__class__(not expr.is_interior)
+
+    map_element_order = map_element_jacobian
+
+
 
 
 

@@ -53,7 +53,7 @@ class LaplacianOperatorBase(object):
         if dir_bc is None: dir_bc = Field("dir_bc")
         if neu_bc is None: neu_bc = Field("neu_bc")
 
-        # strong_form here allows LDG to reuse the value of grad u.
+        # strong_form here allows IPDG to reuse the value of grad u.
         grad_tgt = SecondDerivativeTarget(
                 self.dimensions, strong_form=True,
                 operand=u)
@@ -95,7 +95,7 @@ class LaplacianOperatorBase(object):
                 neumann_tags=[self.neumann_tag])
 
         if apply_minv:
-            return InverseMassOperator()(div_tgt.all)
+            return div_tgt.minv_all
         else:
             return div_tgt.all
 

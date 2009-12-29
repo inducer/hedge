@@ -210,7 +210,7 @@ class Discretization(TimestepCalculator):
         unknown_debug_flags = debug.difference(self.all_debug_flags())
         if unknown_debug_flags and run_context.is_head_rank:
             from warnings import warn
-            warn("Unrecognized debug flags specified: " 
+            warn("Unrecognized debug flags specified: "
                     + ", ".join(unknown_debug_flags))
         self.debug = debug
 
@@ -547,6 +547,8 @@ class Discretization(TimestepCalculator):
 
             # unify h across the faces
             fp.int_side.h = fp.ext_side.h = max(fp.int_side.h, fp.ext_side.h)
+            assert (abs(fp.int_side.face_jacobian - fp.ext_side.face_jacobian)
+                    / abs(fp.int_side.face_jacobian)) < 1e-13
 
             assert len(fp.__dict__) == 0
             assert len(fp.int_side.__dict__) == 0
@@ -623,7 +625,7 @@ class Discretization(TimestepCalculator):
 
         nodes_ary = numpy.array(nodes)
         nodes_ary.shape = (len(nodes), self.dimensions)
-        
+
         from hedge.discretization.data import Boundary
         bdry = Boundary(
                 nodes=nodes_ary,
