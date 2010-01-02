@@ -41,15 +41,6 @@ class LinearODESystemsBase():
         self.initial_values = numpy.array([self.soln_0(self.t_start),
             self.soln_1(self.t_start)])
 
-    def initial_values(self):
-        return self.initial_values
-
-    def t_start(self):
-        return self.t_start
-
-    def t_end(self):
-        return self.t_end
-
 
 
 
@@ -266,7 +257,7 @@ class Inh(LinearODESystemsBase):
     """
     ODE-system - inhom
     from: L. Papula, Math for Engineers Part 2, p.592, Vieweg Verlag
-    solve inhomogene system:
+    solve inhomogeneous system:
             ∂w/∂t = A w + f(t)
     A = [[-2,3]
         [-3,-2]]
