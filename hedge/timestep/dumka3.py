@@ -28,7 +28,7 @@ released under GPL3 by permission from Dr. Medovikov 11/13/2009.
 Note: If you use this code for published results, Dr. Medovikov expects (but
 does not require) a citation of his paper
 
-Alexei A. Medovikov, "High order explicit methods for parabolic equations" 
+Alexei A. Medovikov, "High order explicit methods for parabolic equations"
 BIT1998, Vol. 38, No.2, pp.372-390
 """
 
@@ -36,6 +36,7 @@ BIT1998, Vol. 38, No.2, pp.372-390
 
 
 import numpy
+import numpy.linalg as la
 
 
 
@@ -43,7 +44,7 @@ import numpy
 class Dumka3TimeStepper(object):
     """Third-order "DUMKA" timesteppers.
 
-    Alexei A. Medovikov, "High order explicit methods for parabolic equations" 
+    Alexei A. Medovikov, "High order explicit methods for parabolic equations"
     BIT1998, Vol. 38, No.2, pp.372-390
 
     Note: If you use this code for published results, Dr. Medovikov expects (but
@@ -52,11 +53,12 @@ class Dumka3TimeStepper(object):
 
     dt_fudge_factor = 3
 
-    POLYNOMIAL_COUNT = 13 
-    # 14 polynomials are available, but polynomial 13 fails 
+    POLYNOMIAL_COUNT = 13
+    # 14 polynomials are available, but polynomial 13 fails
     # accuracy test?
 
-    def __init__(self, pol_index=None, dtype=numpy.float64, rcon=None):
+    def __init__(self, pol_index=None, dtype=numpy.float64, rcon=None,
+            atol=0, rtol=0):
         if pol_index > self.POLYNOMIAL_COUNT:
             raise ValueError("invalid polynomial index specified")
         self.pol_index=pol_index
@@ -66,6 +68,10 @@ class Dumka3TimeStepper(object):
         from pytools import match_precision
         self.scalar_type = match_precision(
                 numpy.dtype(numpy.float64), self.dtype).type
+
+        self.adaptive = bool(atol or rtol)
+        self.atol = atol
+        self.rtol = rtol
 
         self.coeff = numpy.array(_COEF, dtype=self.scalar_type)
 
@@ -80,6 +86,9 @@ class Dumka3TimeStepper(object):
         self.flop_counter = EventCounter(
                 "n_flops_dumka3", "Floating point operations performed in Dumka3")
 
+        self.last_eps = 0
+        self.last_dt = 0
+
     def get_stability_relevant_init_args(self):
         return (self.pol_index,)
 
@@ -92,7 +101,7 @@ class Dumka3TimeStepper(object):
                 pol_index += 1
 
             if pol_index > 0 and (
-                (_STAB_REG[pol_index-1]/_N_DEG[pol_index-1])*_N_DEG[pol_index] 
+                (_STAB_REG[pol_index-1]/_N_DEG[pol_index-1])*_N_DEG[pol_index]
                 > 2*dt/eigenvalue_estimate):
                 pol_index -= 1
         else:
@@ -112,7 +121,7 @@ class Dumka3TimeStepper(object):
         logmgr.add_quantity(self.timer)
         logmgr.add_quantity(self.flop_counter)
 
-    def __call__(self, y, t, dt, rhs):
+    def __call__(self, y, t, dt, rhs_func):
         try:
             lc2 = self.linear_combiner_2
             lc3 = self.linear_combiner_3
@@ -126,114 +135,143 @@ class Dumka3TimeStepper(object):
             lc3 = self.linear_combiner_3 = make_linear_combiner(
                     self.dtype, self.scalar_type, y, arg_count=3, rcon=self.rcon)
 
-        _sz2 = 6
-
         dt = self.scalar_type(dt)
 
         pol_index = self.pol_index
         if pol_index is None:
             raise RuntimeError("must call setup() or set pol_index before timestepping")
 
-        n_pol = 0
-        z0 = rhs(t, y)
+        rhs = rhs_func(t, y)
 
         coeff = self.coeff
 
         start_index = _INDEX_FIRST[pol_index]-1
         end_index = _INDEX_LAST[pol_index]
-        for k in range(start_index, end_index):
-            sub_timer = self.timer.start_sub_timer()
 
-            n_pol = n_pol+3
-            idx = _sz2*k
-            a_21 = dt*coeff[idx]
-            c_2 = a_21
-            a_31 = dt*coeff[idx+1]
-            a_32 = dt*coeff[idx+2]
-            c_3 = a_31+a_32
-            a_41 = dt*coeff[idx+3]
-            a_42 = dt*coeff[idx+4]
-            a_43 = dt*coeff[idx+5]
-            c_4 = a_41+a_42+a_43
+        start_y = y
+        start_rhs = rhs
+        start_t = t
 
-            # y = y + a_21*z0
-            y = lc2((1, y), (a_21, z0))
+        vec_op_count = 0
 
-            t2 = t+c_2
+        retry_step = True
+        while retry_step:
+            n_pol = 0
 
-            sub_timer.stop().submit()
+            for k in range(start_index, end_index):
+                sub_timer = self.timer.start_sub_timer()
 
-            z1 = rhs(t2, y)
+                n_pol = n_pol+3
+                idx = 6*k
+                a_21 = dt*coeff[idx]
+                c_2 = a_21
+                a_31 = dt*coeff[idx+1]
+                a_32 = dt*coeff[idx+2]
+                c_3 = a_31+a_32
+                a_41 = dt*coeff[idx+3]
+                a_42 = dt*coeff[idx+4]
+                a_43 = dt*coeff[idx+5]
+                c_4 = a_41+a_42+a_43
 
-            sub_timer = self.timer.start_sub_timer()
-            if n_pol == _N_DEG[pol_index]:
-                r = dt*(coeff[idx+1]-coeff[idx])
+                y = lc2((1, y), (a_21, rhs))
 
-                # y = y + r*z0 + a_32*z1
-                y = lc3((1, y), (r, z0), (a_32, z1))
+                t2 = t+c_2
 
+                sub_timer.stop().submit()
+
+                # marker W ******************************
+                # markers correspond to comments in doc/notes/dumka3.cpp
+
+                z1 = rhs_func(t2, y)
+
+                sub_timer = self.timer.start_sub_timer()
+                if n_pol == _N_DEG[pol_index]:
+                    r = dt*(coeff[idx+1]-coeff[idx])
+                    y = lc3((1, y), (r, rhs), (a_32, z1))
+                else:
+                    y = lc2((1, y), (a_32, z1))
+
+                # marker X ******************************
+                if self.adaptive and n_pol == _N_DEG[pol_index]:
+                    tmp_2 = (c_4-c_2)/2
+                    z1 = lc2((c_3/2,z1), (-tmp_2,rhs));
+                sub_timer.stop().submit()
+
+                # marker Y ******************************
+                rhs = rhs_func(t+c_3, y)
+
+                sub_timer = self.timer.start_sub_timer()
+                if self.adaptive and n_pol == _N_DEG[pol_index]:
+                    z1 = lc2((tmp_2, rhs), (1,z1))
+
+                # marker Z ******************************
+                y = lc2((1, y), (a_43, rhs))
+                sub_timer.stop().submit()
+
+                t += c_4
+                if k+1 != end_index or self.adaptive:
+                    rhs = rhs_func(t, y)
+
+            if self.adaptive:
+                sub_timer = self.timer.start_sub_timer()
+                normalization = self.atol + self.rtol*max(
+                            la.norm(y), 
+                            la.norm(start_y))
+
+                z1 = lc2((-c_3/(2*normalization),rhs), (1/normalization,z1)) 
+
+                next_dt, retry_step = self.compute_new_step_size(z1, dt)
+
+                if retry_step:
+                    y = start_y
+                    rhs = start_rhs
+                    dt = next_dt
+                    t = start_t
+
+                sub_timer.stop().submit()
             else:
-                # y = y + a_32 * z1
-                y = lc2((1, y), (a_32, z1))
-            sub_timer.stop().submit()
-
-            t3 = t+c_3
-            z0 = rhs(t3, y)
-
-            sub_timer = self.timer.start_sub_timer()
-            # y = y + a_43*z0
-            y = lc2((1, y), (a_43, z0))
-
-            t4 = t+c_4
-            t = t4
-            sub_timer.stop().submit()
-
-            if k+1 != end_index:
-                z0 = rhs(t, y)
+                retry_step = False
 
         self.flop_counter.add((end_index-start_index)*self.dof_count*9)
 
-        return y
+        if self.adaptive:
+            return y, t, dt, next_dt
+        else:
+            return y
 
-    def accept_step(self, z, h_new, err_n, h_n, stepId):
-        accepted = False
-
-        eps1 = 0
+    def compute_new_step_size(self, z, dt):
         eps = numpy.sqrt(numpy.dot(z, z)/len(z))
 
         fracmin = 0.1
         if eps == 0:
-           eps = 1.e-14
+           eps = 1e-14
 
         frac = (1/eps)**(1/3)
 
-        if eps <= 1.e0:
-            if err_n>0 and h_n > 0:
-                frac2 = pow(err_n,(1/3))*frac*frac*(h_new/h_n);
-                frac = min(frac,frac2)
-
-            accepted = True
-            fracmax = 2.
-            frac = min(fracmax, max(fracmin,0.8*frac))
-            h_old = h_new
-            h_new = frac*h_new
-            h_n = h_old
-            err_n = eps    
-        else:
-            accepted = False
-            fracmax = 1.e0
-            frac = 0.8*min(fracmax,max(fracmin,0.8e0*frac));
-            if stepId==0:
-                h_new = fracmin*h_new
+        rejected = eps > 1
+        if rejected:
+            if self.last_dt == 0:
+                frac = fracmin
             else:
-                h_new = frac*h_new
-            
-        return accepted
+                frac = 0.8*min(1, max(fracmin, 0.8*frac))
+        else:
+            if self.last_eps > 0 and self.last_dt > 0:
+                frac2 = self.last_eps**(1/3)*frac*frac*(dt/self.last_dt)
+                frac = min(frac, frac2)
+
+            frac = min(2, max(fracmin, 0.8*frac))
+
+            self.last_eps = eps
+            self.last_dt = dt
+
+        dt = frac*dt
+
+        return dt, rejected
 
 
 
 
-_STAB_REG = [ 
+_STAB_REG = [
         2.5005127005e+0, 9.784756428464169e+0,
         23.818760475282560e+0, 68.932817124349140e+0, 136.648186730571300e+0,
         226.8897061613812e+0, 404.7232537379578e+0, 720.7401653373073e+0,
