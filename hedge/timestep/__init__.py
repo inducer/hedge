@@ -30,20 +30,23 @@ from hedge.timestep.ssprk3 import SSPRK3TimeStepper
 
 
 
-def times_and_steps(max_dt_getter=None,
+def times_and_steps(max_dt_getter, taken_dt_getter=None,
         start_time=0, final_time=None, max_steps=None, 
         logmgr=None):
-    """Generate tuples *(step, t, next_dt)* to control a timestep loop.
+    """Generate tuples *(step, t, recommended_dt)* to control a timestep loop.
+    The controlled simulation may decide to take a smaller timestep, and
+    indicate so through the use of *taken_dt_getter*.
 
-    :param max_dt_getter: None or a function of time obtaining the maximal
-      admissible timestep.
+    :param max_dt_getter: *None* or a function of time obtaining the maximal
+      admissible timestep. The timestep yielded as *recommended_dt* is
+      less or equal to the value returned by this function.
+    :param taken_dt_getter: if not *None*, this argumentless function is used to
+      obtain the time step actually taken.
     :param logmgr: An instance of :class:`pytools.log.LogManager` (or None).
       This routine will then take care of telling the log manager about
       time step sizes.
     :param max_steps: Maximum number of steps taken. A "step" is one 
       execution of the loop body.
-
-    One of :
     """
     if final_time is None and max_steps is None:
         raise ValueError("at least one of final_time and max_steps "
@@ -72,15 +75,20 @@ def times_and_steps(max_dt_getter=None,
             next_dt = final_time - t
             final_step = True
 
-        from pytools.log import set_dt
         if logmgr is not None:
-            set_dt(logmgr, next_dt)
-            logmgr.tick()
+            logmgr.tick_before()
 
         yield step, t, next_dt
 
-        step += 1
-        t += next_dt
+        if taken_dt_getter is not None:
+            taken_dt = taken_dt_getter()
+        else:
+            taken_dt = next_dt
 
-    if logmgr is not None:
-        logmgr.tick()
+        if logmgr is not None:
+            from pytools.log import set_dt
+            set_dt(logmgr, taken_dt)
+            logmgr.tick_after()
+
+        step += 1
+        t += taken_dt
