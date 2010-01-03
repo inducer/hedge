@@ -981,7 +981,7 @@ def test_elliptic():
                     lambda x, el: truesol_c(x))
             sol_v = -parallel_cg(
                     rcon, -bound_op,
-                    bound_op.prepare_rhs(GivenFunction(rhs_c)),
+                    bound_op.prepare_rhs(discr.interpolate_volume_function(rhs_c)),
                     tol=1e-10, max_iterations=40000)
 
             eocrec.add_data_point(order, discr.norm(sol_v-truesol_v))
