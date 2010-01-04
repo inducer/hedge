@@ -35,7 +35,7 @@ from pymbolic.mapper import CSECachingMapperMixin
 
 
 
-# mappers ---------------------------------------------------------------------
+# {{{ Mixins ------------------------------------------------------------------
 class LocalOpReducerMixin(object):
     """Reduces calls to mapper methods for all local differentiation
     operators to a single mapper method, and likewise for mass
@@ -102,12 +102,6 @@ class CombineMapperMixin(object):
 
 
 
-class CombineMapper(CombineMapperMixin, pymbolic.mapper.CombineMapper):
-    pass
-
-
-
-
 class IdentityMapperMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     def map_operator_binding(self, expr, *args, **kwargs):
         assert not isinstance(self, BoundOpMapperMixin), \
@@ -148,6 +142,20 @@ class IdentityMapperMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     map_flux_exchange = map_elementwise_linear
 
     map_normal_component = map_elementwise_linear
+
+
+
+
+class BoundOpMapperMixin(object):
+    def map_operator_binding(self, expr, *args, **kwargs):
+        return expr.op.get_mapper_method(self)(expr.op, expr.field, *args, **kwargs)
+
+
+
+# }}}
+# {{{ Basic Mappers -----------------------------------------------------------
+class CombineMapper(CombineMapperMixin, pymbolic.mapper.CombineMapper):
+    pass
 
 
 
@@ -215,6 +223,35 @@ class SubstitutionMapper(pymbolic.mapper.substitutor.SubstitutionMapper,
 
 
 
+class OperatorBinder(CSECachingMapperMixin, IdentityMapper):
+    map_common_subexpression_uncached = \
+            IdentityMapper.map_common_subexpression
+
+    def map_product(self, expr):
+        if len(expr.children) == 0:
+            return expr
+
+        from pymbolic.primitives import flattened_product, Product
+        from hedge.optemplate import Operator, OperatorBinding
+
+        first = expr.children[0]
+        if isinstance(first, Operator):
+            prod = flattened_product(expr.children[1:])
+            if isinstance(prod, Product) and len(prod.children) > 1:
+                from warnings import warn
+                warn("Binding '%s' to more than one "
+                        "operand in a product is ambiguous - "
+                        "use the parenthesized form instead."
+                        % first)
+            return OperatorBinding(first, self.rec(prod))
+        else:
+            return first * self.rec(flattened_product(expr.children[1:]))
+
+
+
+
+# }}}
+# {{{ Stringification ---------------------------------------------------------
 class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
     def __init__(self, constant_mapper=str, flux_stringify_mapper=None):
         pymbolic.mapper.stringifier.StringifyMapper.__init__(
@@ -375,40 +412,163 @@ class NoCSEStringifyMapper(StringifyMapper):
 
 
 
-class BoundOpMapperMixin(object):
-    def map_operator_binding(self, expr, *args, **kwargs):
-        return expr.op.get_mapper_method(self)(expr.op, expr.field, *args, **kwargs)
+# }}}
+# {{{ BC-to-flux rewriting ----------------------------------------------------
+class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
+    """Operates on :class:`FluxOperator` instances bound to :class:`BoundaryPair`. If the
+    boundary pair's *bfield* is an expression of what's available in the
+    *field*, we can avoid fetching the data for the explicit boundary
+    condition and just substitute the *bfield* expression into the flux. This
+    mapper does exactly that.
+    """
 
-
-
-class OperatorBinder(CSECachingMapperMixin, IdentityMapper):
     map_common_subexpression_uncached = \
             IdentityMapper.map_common_subexpression
 
-    def map_product(self, expr):
-        if len(expr.children) == 0:
-            return expr
+    def map_operator_binding(self, expr):
+        from hedge.optemplate import FluxOperator, BoundaryPair
+        from hedge.flux import FluxSubstitutionMapper, FieldComponent
 
-        from pymbolic.primitives import flattened_product, Product
-        from hedge.optemplate import Operator, OperatorBinding
+        if not (isinstance(expr.op, FluxOperator)
+                and isinstance(expr.field, BoundaryPair)):
+            return IdentityMapper.map_operator_binding(self, expr)
 
-        first = expr.children[0]
-        if isinstance(first, Operator):
-            prod = flattened_product(expr.children[1:])
-            if isinstance(prod, Product) and len(prod.children) > 1:
-                from warnings import warn
-                warn("Binding '%s' to more than one "
-                        "operand in a product is ambiguous - "
-                        "use the parenthesized form instead."
-                        % first)
-            return OperatorBinding(first, self.rec(prod))
+        bpair = expr.field
+        vol_field = bpair.field
+        bdry_field = bpair.bfield
+        flux = expr.op.flux
+
+        bdry_dependencies = DependencyMapper(
+                    include_calls="descend_args",
+                    include_operator_bindings=True)(bdry_field)
+
+        vol_dependencies = DependencyMapper(
+                include_operator_bindings=True)(vol_field)
+
+        vol_bdry_intersection = bdry_dependencies & vol_dependencies
+        if vol_bdry_intersection:
+            raise RuntimeError("Variables are being used as both "
+                    "boundary and volume quantities: %s"
+                    % ", ".join(str(v) for v in vol_bdry_intersection))
+
+        # Step 1: Find maximal flux-evaluable subexpression of boundary field
+        # in given BoundaryPair.
+
+        class MaxBoundaryFluxEvaluableExpressionFinder(
+                IdentityMapper, OperatorReducerMixin):
+            def __init__(self, vol_expr_list):
+                self.vol_expr_list = vol_expr_list
+                self.vol_expr_to_idx = dict((vol_expr, idx)
+                        for idx, vol_expr in enumerate(vol_expr_list))
+
+                self.bdry_expr_list = []
+                self.bdry_expr_to_idx = {}
+
+            def register_boundary_expr(self, expr):
+                try:
+                    return self.bdry_expr_to_idx[expr]
+                except KeyError:
+                    idx = len(self.bdry_expr_to_idx)
+                    self.bdry_expr_to_idx[expr] = idx
+                    self.bdry_expr_list.append(expr)
+                    return idx
+
+            def register_volume_expr(self, expr):
+                try:
+                    return self.vol_expr_to_idx[expr]
+                except KeyError:
+                    idx = len(self.vol_expr_to_idx)
+                    self.vol_expr_to_idx[expr] = idx
+                    self.vol_expr_list.append(expr)
+                    return idx
+
+            def map_normal(self, expr):
+                raise RuntimeError("Your operator template contains a flux normal. "
+                        "You may find this confusing, but you can't do that. "
+                        "It turns out that you need to use "
+                        "hedge.optemplate.make_normal() for normals in boundary "
+                        "terms of operator templates.")
+
+            def map_normal_component(self, expr):
+                if expr.tag != bpair.tag:
+                    raise RuntimeError("BoundaryNormalComponent and BoundaryPair "
+                            "do not agree about boundary tag: %s vs %s"
+                            % (expr.tag, bpair.tag))
+
+                from hedge.flux import Normal
+                return Normal(expr.axis)
+
+            def map_variable(self, expr):
+                return FieldComponent(
+                        self.register_boundary_expr(expr),
+                        is_interior=False)
+
+            map_subscript = map_variable
+
+            def map_operator_binding(self, expr):
+                from hedge.optemplate import (BoundarizeOperator,
+                        FluxExchangeOperator)
+
+                if isinstance(expr.op, BoundarizeOperator):
+                    if expr.op.tag != bpair.tag:
+                        raise RuntimeError("BoundarizeOperator and BoundaryPair "
+                                "do not agree about boundary tag: %s vs %s"
+                                % (expr.op.tag, bpair.tag))
+
+                    return FieldComponent(
+                            self.register_volume_expr(expr.field),
+                            is_interior=True)
+                elif isinstance(expr.op, FluxExchangeOperator):
+                    from hedge.mesh import TAG_RANK_BOUNDARY
+                    op_tag = TAG_RANK_BOUNDARY(expr.op.rank)
+                    if bpair.tag != op_tag:
+                        raise RuntimeError("BoundarizeOperator and FluxExchangeOperator "
+                                "do not agree about boundary tag: %s vs %s"
+                                % (op_tag, bpair.tag))
+                    return FieldComponent(
+                            self.register_boundary_expr(expr),
+                            is_interior=False)
+                else:
+                    raise RuntimeError("Found '%s' in a boundary term. "
+                            "To the best of my knowledge, no hedge operator applies "
+                            "directly to boundary data, so this is likely in error."
+                            % expr.op)
+
+        from hedge.tools import is_obj_array
+        if not is_obj_array(vol_field):
+            vol_field = [vol_field]
+
+        mbfeef = MaxBoundaryFluxEvaluableExpressionFinder(list(vol_field))
+        new_bdry_field = mbfeef(bdry_field)
+
+        # Step II: Substitute the new_bdry_field into the flux.
+        def sub_bdry_into_flux(expr):
+            if isinstance(expr, FieldComponent) and not expr.is_interior:
+                if expr.index == 0 and not is_obj_array(bdry_field):
+                    return new_bdry_field
+                else:
+                    return new_bdry_field[expr.index]
+            else:
+                return None
+
+        new_flux = FluxSubstitutionMapper(sub_bdry_into_flux)(flux)
+
+        from hedge.tools import is_zero, make_obj_array
+        if is_zero(new_flux):
+            return 0
         else:
-            return first * self.rec(flattened_product(expr.children[1:]))
+            from hedge.optemplate import OperatorBinding
+            return OperatorBinding(
+                    FluxOperator(new_flux), BoundaryPair(
+                        make_obj_array([self.rec(e) for e in mbfeef.vol_expr_list]),
+                        make_obj_array([self.rec(e) for e in mbfeef.bdry_expr_list]),
+                        bpair.tag))
 
 
 
 
-# simplifications / optimizations ---------------------------------------------
+# }}}
+# {{{ Simplification / Optimization -------------------------------------------
 class CommutativeConstantFoldingMapper(
         pymbolic.mapper.constant_folder.CommutativeConstantFoldingMapper,
         IdentityMapperMixin):
@@ -663,161 +823,8 @@ class InverseMassContractor(CSECachingMapperMixin, IdentityMapper):
 
 
 
-# BC-to-flux rewriting --------------------------------------------------------
-class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
-    """Operates on :class:`FluxOperator` instances bound to :class:`BoundaryPair`. If the
-    boundary pair's *bfield* is an expression of what's available in the
-    *field*, we can avoid fetching the data for the explicit boundary
-    condition and just substitute the *bfield* expression into the flux. This
-    mapper does exactly that.
-    """
-
-    map_common_subexpression_uncached = \
-            IdentityMapper.map_common_subexpression
-
-    def map_operator_binding(self, expr):
-        from hedge.optemplate import FluxOperator, BoundaryPair
-        from hedge.flux import FluxSubstitutionMapper, FieldComponent
-
-        if not (isinstance(expr.op, FluxOperator)
-                and isinstance(expr.field, BoundaryPair)):
-            return IdentityMapper.map_operator_binding(self, expr)
-
-        bpair = expr.field
-        vol_field = bpair.field
-        bdry_field = bpair.bfield
-        flux = expr.op.flux
-
-        bdry_dependencies = DependencyMapper(
-                    include_calls="descend_args",
-                    include_operator_bindings=True)(bdry_field)
-
-        vol_dependencies = DependencyMapper(
-                include_operator_bindings=True)(vol_field)
-
-        vol_bdry_intersection = bdry_dependencies & vol_dependencies
-        if vol_bdry_intersection:
-            raise RuntimeError("Variables are being used as both "
-                    "boundary and volume quantities: %s"
-                    % ", ".join(str(v) for v in vol_bdry_intersection))
-
-        # Step 1: Find maximal flux-evaluable subexpression of boundary field
-        # in given BoundaryPair.
-
-        class MaxBoundaryFluxEvaluableExpressionFinder(
-                IdentityMapper, OperatorReducerMixin):
-            def __init__(self, vol_expr_list):
-                self.vol_expr_list = vol_expr_list
-                self.vol_expr_to_idx = dict((vol_expr, idx)
-                        for idx, vol_expr in enumerate(vol_expr_list))
-
-                self.bdry_expr_list = []
-                self.bdry_expr_to_idx = {}
-
-            def register_boundary_expr(self, expr):
-                try:
-                    return self.bdry_expr_to_idx[expr]
-                except KeyError:
-                    idx = len(self.bdry_expr_to_idx)
-                    self.bdry_expr_to_idx[expr] = idx
-                    self.bdry_expr_list.append(expr)
-                    return idx
-
-            def register_volume_expr(self, expr):
-                try:
-                    return self.vol_expr_to_idx[expr]
-                except KeyError:
-                    idx = len(self.vol_expr_to_idx)
-                    self.vol_expr_to_idx[expr] = idx
-                    self.vol_expr_list.append(expr)
-                    return idx
-
-            def map_normal(self, expr):
-                raise RuntimeError("Your operator template contains a flux normal. "
-                        "You may find this confusing, but you can't do that. "
-                        "It turns out that you need to use "
-                        "hedge.optemplate.make_normal() for normals in boundary "
-                        "terms of operator templates.")
-
-            def map_normal_component(self, expr):
-                if expr.tag != bpair.tag:
-                    raise RuntimeError("BoundaryNormalComponent and BoundaryPair "
-                            "do not agree about boundary tag: %s vs %s"
-                            % (expr.tag, bpair.tag))
-
-                from hedge.flux import Normal
-                return Normal(expr.axis)
-
-            def map_variable(self, expr):
-                return FieldComponent(
-                        self.register_boundary_expr(expr),
-                        is_interior=False)
-
-            map_subscript = map_variable
-
-            def map_operator_binding(self, expr):
-                from hedge.optemplate import (BoundarizeOperator,
-                        FluxExchangeOperator)
-
-                if isinstance(expr.op, BoundarizeOperator):
-                    if expr.op.tag != bpair.tag:
-                        raise RuntimeError("BoundarizeOperator and BoundaryPair "
-                                "do not agree about boundary tag: %s vs %s"
-                                % (expr.op.tag, bpair.tag))
-
-                    return FieldComponent(
-                            self.register_volume_expr(expr.field),
-                            is_interior=True)
-                elif isinstance(expr.op, FluxExchangeOperator):
-                    from hedge.mesh import TAG_RANK_BOUNDARY
-                    op_tag = TAG_RANK_BOUNDARY(expr.op.rank)
-                    if bpair.tag != op_tag:
-                        raise RuntimeError("BoundarizeOperator and FluxExchangeOperator "
-                                "do not agree about boundary tag: %s vs %s"
-                                % (op_tag, bpair.tag))
-                    return FieldComponent(
-                            self.register_boundary_expr(expr),
-                            is_interior=False)
-                else:
-                    raise RuntimeError("Found '%s' in a boundary term. "
-                            "To the best of my knowledge, no hedge operator applies "
-                            "directly to boundary data, so this is likely in error."
-                            % expr.op)
-
-        from hedge.tools import is_obj_array
-        if not is_obj_array(vol_field):
-            vol_field = [vol_field]
-
-        mbfeef = MaxBoundaryFluxEvaluableExpressionFinder(list(vol_field))
-        new_bdry_field = mbfeef(bdry_field)
-
-        # Step II: Substitute the new_bdry_field into the flux.
-        def sub_bdry_into_flux(expr):
-            if isinstance(expr, FieldComponent) and not expr.is_interior:
-                if expr.index == 0 and not is_obj_array(bdry_field):
-                    return new_bdry_field
-                else:
-                    return new_bdry_field[expr.index]
-            else:
-                return None
-
-        new_flux = FluxSubstitutionMapper(sub_bdry_into_flux)(flux)
-
-        from hedge.tools import is_zero, make_obj_array
-        if is_zero(new_flux):
-            return 0
-        else:
-            from hedge.optemplate import OperatorBinding
-            return OperatorBinding(
-                    FluxOperator(new_flux), BoundaryPair(
-                        make_obj_array([self.rec(e) for e in mbfeef.vol_expr_list]),
-                        make_obj_array([self.rec(e) for e in mbfeef.bdry_expr_list]),
-                        bpair.tag))
-
-
-
-
-# error checker ---------------------------------------------------------------
+# }}}
+# {{{ Error Checker -----------------------------------------------------------
 class ErrorChecker(CSECachingMapperMixin, IdentityMapper):
     map_common_subexpression_uncached = \
             IdentityMapper.map_common_subexpression
@@ -847,7 +854,8 @@ class ErrorChecker(CSECachingMapperMixin, IdentityMapper):
 
 
 
-# collecting ------------------------------------------------------------------
+# }}}
+# {{{ Collectors for various optemplate components --------------------------------
 class CollectorMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     def combine(self, values):
         from pytools import flatten
@@ -910,8 +918,15 @@ class BoundOperatorCollector(CSECachingMapperMixin, CollectorMixin, CombineMappe
 
 
 
-# evaluation ------------------------------------------------------------------
+# }}}
+# {{{ Evaluation --------------------------------------------------------------
 class Evaluator(pymbolic.mapper.evaluator.EvaluationMapper):
     def map_boundary_pair(self, bp):
         from hedge.optemplate.primitives import BoundaryPair
         return BoundaryPair(self.rec(bp.field), self.rec(bp.bfield), bp.tag)
+# }}}
+
+
+
+
+# vim: foldmethod=marker
