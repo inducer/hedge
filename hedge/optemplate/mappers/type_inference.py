@@ -27,58 +27,224 @@ from pymbolic.mapper import CSECachingMapperMixin
 
 
 
+# {{{ representation tags
+class NodalRepresentation:
+    """A tag representing nodal representation.
+
+    Volume and boundary vectors below are represented either nodally or on a quadrature
+    grid. This tag expresses one of the two.
+    """
+    def __repr__(self):
+        return "Nodal"
+
+    def __eq__(self, other):
+        return type(self) == type(other)
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+class QuadratureRepresentation:
+    """A tag representing representation on a quadrature grid tagged with
+    *quadrature_tag".
+
+    Volume and boundary vectors below are represented either nodally or on a quadrature
+    grid. This tag expresses one of the two.
+    """
+    def __init__(self, quadrature_tag):
+        self.quadrature_tag = quadrature_tag
+
+    def __eq__(self, other):
+        return (type(self) == type(other)
+                and self.quadrature_tag == other.quadrature_tag)
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def __repr__(self):
+        return "Quadrature(%r)" % self.quadrature_tag
+
+
+
+# }}}
+# {{{ type information --------------------------------------------------------
 class type_info:
-    class _TypeInfo:
+    """These classes represent various bits and pieces of information that
+    we may deduce about expressions in our optemplate.
+    """
+
+    # serves only as a namespace, thus lower case
+
+    # {{{ generic type info base classes
+    class TypeInfo(object):
         def unify(self, other):
+            """Return a type that can represent both *self* and *other*.
+            If impossible, raise :exc:`TypeError`. Subtypes should override
+            :meth:`unify_inner`.
             """
-            .. note::
+            # shortcut
+            if self == other:
+                return self
 
-                If no change of type results, unify must return self.
-            """
-            if self != other:
-                raise TypeError("type '%s' and '%s' cannot be unified" 
+            u_s_o = self.unify_inner(other)
+            u_o_s = other.unify_inner(self)
+
+            if u_s_o is NotImplemented:
+                if u_o_s is NotImplemented:
+                    raise TypeError("types '%s' and '%s' cannot be unified" 
+                            % (self, other))
+                else:
+                    return u_o_s
+            elif u_o_s is NotImplemented:
+                return u_s_o
+
+            if u_s_o != u_o_s:
+                raise RuntimeError("types '%s' and '%s' don't agree about their unifier" 
                         % (self, other))
+            return u_s_o
 
-    class _StatelessTypeInfo(_TypeInfo):
+        def unify_inner(self, other):
+            """Actual implementation that tries to unify self and other. 
+            May return *NotImplemented* to indicate that the reverse unification 
+            should be tried. This methods is overriden by derived classes.
+            Derived classes should delegate to base classes if they don't know the
+            answer.
+            """
+            return NotImplemented
+
+        def __eq__(self, other):
+            return (type(self) == type(other)
+                    and self.__getinitargs__() == other.__getinitargs__())
+
+        def __ne__(self, other):
+            return not self.__eq__(other)
+
+    class StatelessTypeInfo(TypeInfo):
         def __getinitargs__(self):
-            return()
+            return ()
 
-    class Scalar(_StatelessTypeInfo):
-        pass
+    class FinalType(TypeInfo):
+        """If a :class:`TypeInfo` instance is also an instance of this class,
+        no more information can be added about this type. As a result, this
+        type only unifies with equal instances.
+        """
+    # }}}
+
+    # {{{ simple types: no type, scalar
+    class NoType(StatelessTypeInfo):
+        """Represents "nothing known about type"."""
+        def unify_inner(self, other):
+            return other
+
+    # this singleton should be the only instance ever created of NoType
+    no_type = NoType()
+
+    class Scalar(StatelessTypeInfo, FinalType):
+        def __repr__(self):
+            return "Scalar"
+    # }}}
+
+    # {{{ tagged type base classes: representation, domain
+    class VectorRepresentationBase(object):
+        def __init__(self, repr_tag):
+            self.repr_tag = repr_tag
+
+        def __getinitargs__(self):
+            return (self.repr_tag,)
 
     class VolumeVectorBase(object):
-        pass
-
-    class QuadratureVectorBase(object):
-        def __init__(self, quadrature_tag):
-            self.quadrature_tag = quadrature_tag
-
-    class VolumeVector(_StatelessTypeInfo, VolumeVectorBase):
-        pass
-
-    class QuadratureVolumeVector(_TypeInfo, VolumeVectorBase,
-            QuadratureVectorBase):
-        pass
-
-    class FaceVector(_StatelessTypeInfo):
-        pass
+        def __getinitargs__(self):
+            return ()
 
     class BoundaryVectorBase(object):
         def __init__(self, boundary_tag):
             self.boundary_tag = boundary_tag
 
-    class BoundaryVector(_TypeInfo, BoundaryVectorBase):
-        pass
+        def __getinitargs__(self):
+            return (self.boundary_tag,)
+    # }}}
 
-    class QuadratureBoundaryVector(_TypeInfo, BoundaryVectorBase,
-            QuadratureVectorBase):
-        def __init__(self, boundary_tag, quadrature_tag):
-            BoundaryVectorBase.__init__(self, boundary_tag)
-            self.quadrature_tag = quadrature_tag
+    # {{{ single-aspect-known unification helper types
+    class KnownVolume(TypeInfo, VolumeVectorBase):
+        """Type information indicating that this must be a volume vector
+        of unknown representation.
+        """
+
+        def __repr__(self):
+            return "KnownAsVolume"
+
+        def unify_inner(self, other):
+            # Unification with KnownRepresentation is handled in KnownRepresentation.
+            # Here, we only need to unify with VolumeVector.
+
+            if isinstance(other, type_info.VolumeVector):
+                return other
+            else:
+                return type_info.TypeInfo.unify_inner(self, other)
+
+    class KnownBoundary(TypeInfo, BoundaryVectorBase):
+        """Type information indicating that this must be a boundary vector."""
+
+        def __repr__(self):
+            return "KnownAsBoundary(%s)" % self.boundary_tag
+
+        def unify_inner(self, other):
+            # Unification with KnownRepresentation is handled in KnownRepresentation.
+            # Here, we only need to unify with VolumeVector.
+
+            if (isinstance(other, type_info.BoundaryVector) 
+                    and self.boundary_tag == other.boundary_tag):
+                return other
+            else:
+                return type_info.TypeInfo.unify_inner(self, other)
+
+    class KnownRepresentation(TypeInfo, VectorRepresentationBase):
+        """Type information indicating that the representation (see
+        representation tags, above) is known, but nothing else (e.g. whether
+        this is a boundary or volume vector).
+        """
+        def __repr__(self):
+            return "KnownRepresentation(%s)" % self.repr_tag
+
+        def unify_inner(self, other):
+            if (isinstance(other, type_info.VolumeVector) 
+                    and self.repr_tag == other.repr_tag):
+                return other
+            elif (isinstance(other, type_info.BoundaryVector) 
+                    and self.repr_tag == other.repr_tag):
+                return other
+            elif isinstance(other, type_info.KnownVolume):
+                return type_info.VolumeVector(self.repr_tag)
+            elif isinstance(other, type_info.KnownBoundary):
+                return type_info.BoundaryVector(other.boundary_tag, self.repr_tag)
+            else:
+                return type_info.TypeInfo.unify_inner(self, other)
+
+    # }}}
+
+    # {{{ fully specified hedge data types
+    class VolumeVector(FinalType, VolumeVectorBase, VectorRepresentationBase):
+        def __repr__(self):
+            return "Volume(%s)" % self.repr_tag
+
+    class BoundaryVector(FinalType, BoundaryVectorBase,
+            VectorRepresentationBase):
+        def __init__(self, boundary_tag, repr_tag):
+            type_info.BoundaryVectorBase.__init__(self, boundary_tag)
+            type_info.VectorRepresentationBase.__init__(self, repr_tag)
+
+        def __repr__(self):
+            return "Boundary(%s, %s)" % (self.boundary_tag, self.repr_tag)
+
+        def __getinitargs__(self):
+            return (self.boundary_tag, self.repr_tag)
+    # }}}
 
 
 
 
+
+# }}}
+# {{{ TypeDict helper type ----------------------------------------------------
 class TypeDict(object):
     def __init__(self):
         self.container = {}
@@ -88,10 +254,12 @@ class TypeDict(object):
         try:
             return self.container[expr]
         except KeyError:
-            return None
+            return type_info.no_type
 
     def __setitem__(self, expr, new_tp):
-        assert new_tp is not None
+        if new_tp is type_info.no_type:
+            return
+
         try:
             old_tp = self.container[expr]
         except KeyError:
@@ -99,13 +267,18 @@ class TypeDict(object):
             self.change_flag = True
         else:
             tp = old_tp.unify(new_tp)
-            if tp is not old_tp:
+            if tp != old_tp:
                 self.change_flag = True
-            self.container[expr] = tp
+                self.container[expr] = tp
+
+    def iteritems(self):
+        return self.container.iteritems()
 
 
 
 
+# }}}
+# {{{ type inference mapper ---------------------------------------------------
 class TypeInferrer(pymbolic.mapper.RecursiveMapper,
         CSECachingMapperMixin):
     def __call__(self, expr):
@@ -113,30 +286,36 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper,
 
         while True:
             typedict.change_flag = False
-            tp = pymbolic.mapper.RecursiveMapper.__call__(self, typedict)
-            if tp is not None:
-                typedict[expr] = tp
+            tp = pymbolic.mapper.RecursiveMapper.__call__(self, expr, typedict)
+            typedict[expr] = tp
 
             if not typedict.change_flag:
                 # nothing has changed any more, type information has 'converged'
                 break
 
-        for tdv in typedict.itervalues:
-            if 
+        # check that type inference completed successfully
+        for expr, tp in typedict.iteritems():
+            print expr, tp
+            if not isinstance(tp, type_info.FinalType):
+                raise RuntimeError("type inference was unable to deduce "
+                        "complete type information for '%s' (only '%s')"
+                        % (expr, tp))
 
         return typedict
 
     def rec(self, expr, typedict):
         tp = pymbolic.mapper.RecursiveMapper.rec(self, expr, typedict)
-        if tp is not None:
-            typedict[expr] = tp
+        typedict[expr] = tp
         return tp
 
+    # Information needs to propagate upward (toward the leaves) *and* 
+    # downward (toward the roots) in the expression tree.
+
     def map_sum(self, expr, typedict):
-        tp = None
+        tp = typedict[expr]
 
         for child in expr.children:
-            if tp is None:
+            if tp is type_info.no_type:
                 tp = self.rec(child, typedict)
             else:
                 typedict[child] = tp
@@ -145,21 +324,22 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper,
         return tp
 
     def map_product(self, expr, typedict):
-        tp = None
+        tp = typedict[expr]
 
+        # Scalars are special because they're not type-changing in multiplication
         non_scalar_exprs = []
 
         for child in expr.children:
-            if tp is None:
+            if tp is type_info.no_type:
                 tp = self.rec(child, typedict)
-                if tp == type_info.Scalar:
-                    tp = None
+                if isinstance(tp, type_info.Scalar):
+                    tp = type_info.no_type
                 else:
                     non_scalar_exprs.append(child)
             else:
-                other_tp = self.rec(expr, typedict)
+                other_tp = self.rec(child, typedict)
 
-                if other_tp != type_info.Scalar:
+                if not isinstance(other_tp, type_info.Scalar):
                     non_scalar_exprs.append(child)
                     tp = tp.unify(other_tp)
 
@@ -169,31 +349,88 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper,
         return tp
 
     def map_operator_binding(self, expr, typedict):
-        from hedge.optemplate.operator import (
+        from hedge.optemplate.operators import (
                 DiffOperatorBase, MassOperatorBase, ElementwiseMaxOperator,
                 BoundarizeOperator, FluxExchangeOperator,
                 FluxOperatorBase)
 
-        if isinstance(expr.op, (DiffOperatorBase, MassOperatorBase, 
-            ElementwiseMaxOperator)):
-            typedict[expr.field] = type_info.VolumeVectorBase()
-            return self.rec(expr, typedict))
+        own_type = typedict[expr]
+
+        if isinstance(expr.op, (DiffOperatorBase, MassOperatorBase)):
+            typedict[expr.field] = type_info.KnownVolume()
+            self.rec(expr.field, typedict)
+            return type_info.VolumeVector(NodalRepresentation())
+
+        elif isinstance(expr.op, ElementwiseMaxOperator):
+            typedict[expr.field] = typedict[expr]
+            self.rec(expr.field, typedict)
+            return typedict[expr.field]
+
         elif isinstance(expr.op, BoundarizeOperator):
-            typedict[expr.field] = type_info.BoundaryVectorBase(expr.op.tag)
-            return self.rec(expr, typedict))
+            # upward propagation: argument has same rep tag as result
+            try:
+                own_repr_tag = own_type.repr_tag
+            except AttributeError:
+                own_repr_type = type_info.no_type
+            else:
+                own_repr_type = KnownRepresentation(own_repr_tag)
+
+            typedict[expr.field] = type_info.KnownBoundary(expr.op.tag).unify(
+                    own_repr_type)
+
+            self.rec(expr.field, typedict)
+
+            # downward propagation: result has same rep tag as argument
+            arg_type = typedict[expr.field]
+            try:
+                arg_repr_tag = arg_type.repr_tag
+            except AttributeError:
+                return type_info.KnownVolume()
+            else:
+                return type_info.VolumeVector(arg_repr_tag)
+
         elif isinstance(expr.op, FluxExchangeOperator):
             raise NotImplementedError
+
         elif isinstance(expr.op, FluxOperatorBase):
-            raise NotImplementedError
+            from pytools.obj_array import with_object_array_or_scalar
+            from hedge.optemplate.primitives import BoundaryPair
+
+            def process_vol_flux_arg(flux_arg):
+                typedict[flux_arg] = type_info.KnownVolume()
+                self.rec(flux_arg, typedict)
+
+            if isinstance(expr.field, BoundaryPair):
+                def process_bdry_flux_arg(flux_arg):
+                    typedict[flux_arg] = type_info.KnownBoundary(bpair.tag)
+                    self.rec(flux_arg, typedict)
+
+                bpair = expr.field
+                with_object_array_or_scalar(process_vol_flux_arg, bpair.field)
+                with_object_array_or_scalar(process_bdry_flux_arg, bpair.bfield)
+            else:
+                with_object_array_or_scalar(process_vol_flux_arg, expr.field)
+
+            return type_info.VolumeVector(NodalRepresentation())
+
+    def map_constant(self, expr, typedict):
+        return type_info.Scalar()
 
     def map_variable(self, expr, typedict):
-        return None
+        # user-facing variables are nodal
+        return type_info.KnownRepresentation(NodalRepresentation())
 
     def map_scalar_parameter(self, expr, typedict):
         return type_info.Scalar()
 
     def map_normal_component(self, expr, typedict):
-        return type_info.BoundaryVectorBase(expr.tag)
+        return type_info.KnownBoundary(expr.tag)
 
     def map_common_subexpression_uncached(self, expr, typedict):
         return typedict[expr.child]
+# }}}
+
+
+
+
+# vim: foldmethod=marker

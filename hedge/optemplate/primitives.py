@@ -109,7 +109,6 @@ class PrioritizedSubexpression(pymbolic.primitives.CommonSubexpression):
 
 
 
-# other parts of an operator template -----------------------------------------
 class BoundaryPair(pymbolic.primitives.AlgebraicLeaf):
     """Represents a pairing of a volume and a boundary field, used for the
     application of boundary fluxes.
