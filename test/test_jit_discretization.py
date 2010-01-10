@@ -206,24 +206,6 @@ def test_2d_gauss_theorem():
 
 
 
-def test_simp_cubature():
-    """Check that Grundmann-Moeller cubature works as advertised"""
-    from pytools import generate_nonnegative_integer_tuples_summing_to_at_most
-    from hedge.quadrature import SimplexCubature
-
-    for dim in range(2,3+1):
-        for s in range(3+1):
-            cub = SimplexCubature(s, dim)
-            for comb in generate_nonnegative_integer_tuples_summing_to_at_most(
-                    2*s+1, dim):
-                f = Monomial(comb)
-                i_f = cub(f)
-                err = abs(i_f - f.theoretical_integral())
-                assert err < 2e-15
-
-
-
-
 def test_simp_mass_and_diff_matrices_by_monomial():
     """Verify simplicial mass and differentiation matrices using monomials"""
 

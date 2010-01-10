@@ -399,6 +399,22 @@ def test_transformed_quadrature():
 
 
 
+def test_gauss_quadrature():
+    from hedge.quadrature import LegendreGaussQuadrature
+
+    for s in range(9+1):
+        cub = LegendreGaussQuadrature(s)
+        for deg in range(2*s+1 + 1):
+            def f(x):
+                return x**deg
+            i_f = cub(f)
+            i_f_true = 1/(deg+1)*(1-(-1)**(deg+1))
+            err = abs(i_f - i_f_true)
+            assert err < 2e-15
+
+
+
+
 def test_warp():
     """Check some assumptions on the node warp factor calculator"""
     n = 17
@@ -762,6 +778,46 @@ def test_all_periodic_no_boundary():
         return result
 
     assert count(mesh.tag_to_boundary[TAG_ALL]) == 0
+
+
+
+
+def test_simp_cubature():
+    """Check that Grundmann-Moeller cubature works as advertised"""
+    from pytools import generate_nonnegative_integer_tuples_summing_to_at_most
+    from hedge.quadrature import SimplexCubature
+
+    for dim in range(2,3+1):
+        for s in range(3+1):
+            cub = SimplexCubature(s, dim)
+            for comb in generate_nonnegative_integer_tuples_summing_to_at_most(
+                    2*s+1, dim):
+                f = Monomial(comb)
+                i_f = cub(f)
+                err = abs(i_f - f.simplex_integral())
+                assert err < 2e-15
+
+
+
+
+def test_identify_affine_map():
+    n = 5
+    randn = numpy.random.randn
+
+    for i in range(10):
+        a = numpy.eye(n) + 0.3*randn(n,n)
+        b = randn(n)
+
+        from hedge.tools.affine import AffineMap, identify_affine_map
+        amap = AffineMap(a, b)
+
+        from_points = [randn(n) for i in range(n+1)]
+        to_points = [amap(fp) for fp in from_points]
+
+        amap2 = identify_affine_map(from_points, to_points)
+
+        assert la.norm(a-amap2.matrix) < 1e-12
+        assert la.norm(b-amap2.vector) < 1e-12
 
 
 
