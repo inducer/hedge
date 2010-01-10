@@ -95,6 +95,53 @@ def test_tri_mass_mat_trig():
 
 
 
+def test_quadrature_tri_mass_mat_monomial():
+    """Check that quadrature integration on triangles is exact as designed."""
+
+    from hedge.mesh.generator import make_square_mesh
+    from math import sqrt, pi, cos, sin
+
+    mesh = make_square_mesh(a=-1, b=1, max_area=4*1/8+0.001)
+    order = 4
+    discr = discr_class(mesh, order=order,
+            debug=discr_class.noninteractive_debug_flags(),
+            quad_min_degrees={"quad":3*order})
+
+    m, n = 2, 1
+    f = Monomial((m,n))
+    f_vec = discr.interpolate_volume_function(lambda x, el: f(x))
+    #ones = discr.interpolate_volume_function(lambda x, el: 1)
+    int_proj = discr._integral_projection()
+
+    if True:
+        from hedge.visualization import SiloVisualizer
+        vis = SiloVisualizer(discr)
+        visf = vis.make_file("test")
+        vis.add_data(visf, [ ("f", f_vec*f_vec)])
+        visf.close()
+
+    from hedge.optemplate import (MassOperator, Field, QuadratureGridUpsampler)
+    f_fld = Field("f")
+    mass_op = discr.compile(MassOperator()(f_fld*f_fld))
+    from hedge.tools.symbolic import make_common_subexpression as cse
+    f_upsamp = cse(QuadratureGridUpsampler("quad")(f_fld))
+    quad_mass_op = discr.compile(
+        MassOperator()(f_upsamp*f_upsamp))
+
+    num_integral_1 = numpy.dot(int_proj, mass_op(f=f_vec))
+    num_integral_2 = numpy.dot(int_proj, quad_mass_op(f=f_vec))
+    true_integral = 4/((2*m+1)*(2*n+1)) 
+    err_1 = abs(num_integral_1-true_integral)
+    err_2 = abs(num_integral_2-true_integral)
+    print num_integral_1, num_integral_2, true_integral
+    print err_1, err_2
+    assert err_1 > 1e-8
+    assert err_2 < 1e-14
+
+
+
+
+
 def test_tri_diff_mat():
     """Check differentiation matrix along the coordinate axes on a disk
 
@@ -232,7 +279,7 @@ def test_simp_mass_and_diff_matrices_by_monomial():
             f = Monomial(comb)
             f_n = numpy.array([f(x) for x in unodes])
             int_f_n = dot(ones, dot(el.mass_matrix(), f_n))
-            int_f = f.theoretical_integral()
+            int_f = f.simplex_integral()
             err = la.norm(int_f - int_f_n)
             if err > thresh:
                 print "bad", el, comb, int_f, int_f_n, err

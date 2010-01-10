@@ -29,7 +29,7 @@ import pymbolic.primitives
 
 
 
-# operators -------------------------------------------------------------------
+# {{{ base classes ------------------------------------------------------------
 class Operator(pymbolic.primitives.Leaf):
     def stringifier(self):
         from hedge.optemplate import StringifyMapper
@@ -41,6 +41,7 @@ class Operator(pymbolic.primitives.Leaf):
             if is_zero(subexpr):
                 return subexpr
             else:
+                from hedge.optemplate.primitives import OperatorBinding
                 return OperatorBinding(self, subexpr)
 
         return with_object_array_or_scalar(bind_one, expr)
@@ -58,6 +59,12 @@ class Operator(pymbolic.primitives.Leaf):
     def apply(self, discr, field):
         return self.bind(discr)(field)
 
+    def get_hash(self):
+        return hash((self.__class__,) + (self.__getinitargs__()))
+
+    def is_equal(self, other):
+        return self.__class__ == other.__class__ and \
+                self.__getinitargs__() == other.__getinitargs__()
 
 
 
@@ -66,44 +73,11 @@ class StatelessOperator(Operator):
     def __getinitargs__(self):
         return ()
 
-    def get_hash(self):
-        return hash(self.__class__)
-
-    def is_equal(self, other):
-        return other.__class__ == self.__class__
 
 
+# }}}
 
-
-class OperatorBinding(pymbolic.primitives.AlgebraicLeaf):
-    def __init__(self, op, field):
-        self.op = op
-        self.field = field
-
-    def stringifier(self):
-        from hedge.optemplate import StringifyMapper
-        return StringifyMapper
-
-    def get_mapper_method(self, mapper):
-        return mapper.map_operator_binding
-
-    def __getinitargs__(self):
-        return self.op, self.field
-
-    def is_equal(self, other):
-        from hedge.tools import field_equal
-        return (other.__class__ == self.__class__
-                and other.op == self.op
-                and field_equal(other.field, self.field))
-
-    def get_hash(self):
-        from hedge.tools import hashable_field
-        return hash((self.__class__, self.op, hashable_field(self.field)))
-
-
-
-
-# diff operators --------------------------------------------------------------
+# {{{ differentiation operators -----------------------------------------------
 class DiffOperatorBase(Operator):
     def __init__(self, xyz_axis):
         Operator.__init__(self)
@@ -113,12 +87,13 @@ class DiffOperatorBase(Operator):
     def __getinitargs__(self):
         return (self.xyz_axis,)
 
-    def get_hash(self):
-        return hash((self.__class__, self.xyz_axis))
+    def preimage_ranges(self, eg):
+        return eg.ranges
 
-    def is_equal(self, other):
-        return (other.__class__ == self.__class__
-                and other.xyz_axis == self.xyz_axis)
+    def equal_except_for_axis(self, other):
+        return (type(self) == type(other)
+                # first argument is always the axis
+                and self.__getinitargs__()[1:] == other.__getinitargs__()[1:])
 
 class StrongFormDiffOperatorBase(DiffOperatorBase):
     pass
@@ -174,6 +149,35 @@ class MInvSTOperator(WeakFormDiffOperatorBase):
     def get_mapper_method(self, mapper):
         return mapper.map_minv_st
 
+class QuadratureStiffnessTOperator(WeakFormDiffOperatorBase):
+    """
+    .. note::
+
+        This operator is purely for internal use. It is inserted
+        by :class:`hedge.optemplate.mappers.QuadratureOperatorSpecializer`
+        when a :class:`StiffnessTOperator` is applied to a quadrature field.
+    """
+
+    def __init__(self, xyz_axis, quadrature_tag):
+        WeakFormDiffOperatorBase.__init__(self, xyz_axis)
+        self.quadrature_tag = quadrature_tag
+
+    def __getinitargs__(self):
+        return (self.xyz_axis, self.quadrature_tag)
+
+    def get_mapper_method(self, mapper):
+        return mapper.map_quad_stiffness_t
+
+    def preimage_ranges(self, eg):
+        return eg.quadrature_info[self.quadrature_tag].ranges
+
+    def matrices(self, element_group):
+        return element_group.quadrature_info[self.quadrature_tag] \
+                .stiffness_t_matrices
+
+    @staticmethod
+    def coefficients(element_group):
+        return element_group.stiffness_coefficients
 
 
 
@@ -184,8 +188,9 @@ def DiffOperatorVector(els):
 
 
 
+# }}}
 
-# elementwise operators -------------------------------------------------------
+# {{{ elementwise operators ---------------------------------------------------
 class ElementwiseLinearOperator(Operator):
     def matrix(self, element_group):
         raise NotImplementedError
@@ -199,42 +204,24 @@ class ElementwiseLinearOperator(Operator):
 
 
 
-# mass operators --------------------------------------------------------------
-class MassOperatorBase(ElementwiseLinearOperator, StatelessOperator):
-    pass
+class ElementwiseMaxOperator(StatelessOperator):
+    def get_mapper_method(self, mapper):
+        return mapper.map_elementwise_max
 
 
 
 
-class MassOperator(MassOperatorBase):
-    @staticmethod
-    def matrix(element_group):
-        return element_group.mass_matrix
+class QuadratureGridUpsampler(Operator):
+    def __init__(self, quadrature_tag):
+        self.quadrature_tag = quadrature_tag
 
-    @staticmethod
-    def coefficients(element_group):
-        return element_group.jacobians
+    def __getinitargs__(self):
+        return (self.quadrature_tag,)
 
     def get_mapper_method(self, mapper):
-        return mapper.map_mass
+        return mapper.map_quadrature_grid_upsampler
 
-class InverseMassOperator(MassOperatorBase):
-    @staticmethod
-    def matrix(element_group):
-        return element_group.inverse_mass_matrix
-
-    @staticmethod
-    def coefficients(element_group):
-        return element_group.inverse_jacobians
-
-    def get_mapper_method(self, mapper):
-        return mapper.map_inverse_mass
-
-
-
-
-
-# various elementwise linear operators ----------------------------------------
+# {{{ various elementwise linear operators -----------------------------------
 class FilterOperator(ElementwiseLinearOperator):
     def __init__(self, mode_response_func):
         """
@@ -246,11 +233,8 @@ class FilterOperator(ElementwiseLinearOperator):
         """
         self.mode_response_func = mode_response_func
 
-    def get_hash(self):
-        return hash(self.mode_response_func)
-
-    def is_equal(self, other):
-        return self.mode_response_func == other.mode_response_func
+    def __getinitargs__(self):
+        return (self.mode_response_func,)
 
     def matrix(self, eg):
         ldis = eg.local_discretization
@@ -291,32 +275,100 @@ class InverseVandermondeOperator(ElementwiseLinearOperator, StatelessOperator):
                 order="C")
 
 
+# }}}
+
+# }}}
+
+# {{{ mass operators ----------------------------------------------------------
+class MassOperatorBase(ElementwiseLinearOperator, StatelessOperator):
+    pass
 
 
-# misc operators --------------------------------------------------------------
-class ElementwiseMaxOperator(StatelessOperator):
+
+
+class MassOperator(MassOperatorBase):
+    @staticmethod
+    def matrix(element_group):
+        return element_group.mass_matrix
+
+    @staticmethod
+    def coefficients(element_group):
+        return element_group.jacobians
+
     def get_mapper_method(self, mapper):
-        return mapper.map_elementwise_max
+        return mapper.map_mass
+
+class InverseMassOperator(MassOperatorBase):
+    @staticmethod
+    def matrix(element_group):
+        return element_group.inverse_mass_matrix
+
+    @staticmethod
+    def coefficients(element_group):
+        return element_group.inverse_jacobians
+
+    def get_mapper_method(self, mapper):
+        return mapper.map_inverse_mass
 
 
 
 
+
+class QuadratureMassOperator(Operator):
+    """
+    .. note::
+
+        This operator is purely for internal use. It is inserted
+        by :class:`hedge.optemplate.mappers.QuadratureOperatorSpecializer`
+        when a :class:`MassOperator` is applied to a quadrature field.
+    """
+
+    def __init__(self, quadrature_tag):
+        self.quadrature_tag = quadrature_tag
+
+    def __getinitargs__(self):
+        return (self.quadrature_tag,)
+
+    def get_mapper_method(self, mapper):
+        return mapper.map_quad_mass
+
+
+
+# }}}
+
+# {{{ boundary-related operators ----------------------------------------------
 class BoundarizeOperator(Operator):
     def __init__(self, tag):
         self.tag = tag
 
-    def get_hash(self):
-        return hash((self.__class__, self.tag))
-
-    def is_equal(self, other):
-        return (other.__class__ == self.__class__
-                and other.tag == self.tag)
+    def __getinitargs__(self):
+        return (self.tag,)
 
     def get_mapper_method(self, mapper):
         return mapper.map_boundarize
 
+
+
+
+
+class QuadratureBoundarizeOperator(Operator):
+    """
+    .. note::
+
+        This operator is purely for internal use. It is inserted
+        by :class:`hedge.optemplate.mappers.QuadratureOperatorSpecializer`
+        when a :class:`QuadratureGridUpsampler` is applied to the immediate
+        result of a :class:`BoundarizeOperator`.
+    """
+    def __init__(self, boundary_tag, quadrature_tag):
+        self.boundary_tag = boundary_tag
+        self.quadrature_tag = quadrature_tag
+
     def __getinitargs__(self):
-        return (self.tag,)
+        return (self.boundary_tag, self.quadrature_tag)
+
+    def get_mapper_method(self, mapper):
+        return mapper.map_quad_boundarize
 
 
 
@@ -333,21 +385,14 @@ class FluxExchangeOperator(Operator):
     def __getinitargs__(self):
         return (self.index, self.rank)
 
-    def get_hash(self):
-        return hash((self.__class__, self.index, self.rank))
-
-    def is_equal(self, other):
-        return (other.__class__ == self.__class__
-                and other.index == self.index
-                and other.rank == self.rank)
-
     def get_mapper_method(self, mapper):
         return mapper.map_flux_exchange
 
 
 
+# }}}
 
-# flux-like operators ---------------------------------------------------------
+# {{{ flux-like operators -----------------------------------------------------
 class FluxOperatorBase(Operator):
     def __init__(self, flux):
         Operator.__init__(self)
@@ -356,20 +401,12 @@ class FluxOperatorBase(Operator):
     def __getinitargs__(self):
         return (self.flux, )
 
-    def get_hash(self):
-        return hash((self.__class__, self.flux))
-
-    def is_equal(self, other):
-        return (self.__class__ == other.__class__
-                and self.flux == other.flux)
-
     def __call__(self, arg):
-        from hedge.tools import is_obj_array
-        from hedge.optemplate import Field
-        if isinstance(arg, Field) or is_obj_array(arg):
-            return OperatorBinding(self, arg)
-        else:
-            return Operator.__mul__(self, arg)
+        # override to suppress apply-operator-to-each-operand 
+        # behavior from superclass
+
+        from hedge.optemplate.primitives import OperatorBinding
+        return OperatorBinding(self, arg)
 
     def __mul__(self, arg):
         from warnings import warn
@@ -380,26 +417,63 @@ class FluxOperatorBase(Operator):
 
 
 
+
 class FluxOperator(FluxOperatorBase):
     def get_mapper_method(self, mapper):
         return mapper.map_flux
 
 
 
+class QuadratureFluxOperator(FluxOperatorBase):
+    """
+    .. note::
+
+        This operator is purely for internal use. It is inserted
+        by :class:`hedge.optemplate.mappers.QuadratureOperatorSpecializer`
+        when a :class:`FluxOperator` is applied to a quadrature field.
+    """
+
+    def __init__(self, flux, quadrature_tag):
+        FluxOperatorBase.__init__(flux)
+
+        self.quadrature_tag = quadrature_tag
+
+    def __getinitargs__(self):
+        return (self.flux, self.quadrature_tag)
+
+    def get_mapper_method(self, mapper):
+        return mapper.map_quad_flux
+
+
+
+
 class LiftingFluxOperator(FluxOperatorBase):
+    """
+    .. note::
+
+        This operator is purely for internal use. It is inserted
+        by :class:`hedge.optemplate.mappers.InverseMassContractor`
+        when an :class:`InverseMassOperator` is applied to the
+        result of a :class:`FluxOperator`.
+    """
     def get_mapper_method(self, mapper):
         return mapper.map_lift
 
 
 
 class VectorFluxOperator(object):
+    """Note that this isn't an actual operator. It's just a placeholder that pops
+    out a vector of FluxOperators when applied to an operand.
+    """
     def __init__(self, fluxes):
         self.fluxes = fluxes
 
     def __call__(self, arg):
         if isinstance(arg, int) and arg == 0:
             return 0
-        from hedge.tools import make_obj_array
+        from pytools.obj_array import make_obj_array
+        from hedge.optemplate.primitives import OperatorBinding
+
         return make_obj_array(
                 [OperatorBinding(FluxOperator(f), arg)
                     for f in self.fluxes])
@@ -410,3 +484,11 @@ class VectorFluxOperator(object):
                 "Use the less ambiguous parenthesized syntax instead.",
                 DeprecationWarning, stacklevel=2)
         return self.__call__(arg)
+
+# }}}
+
+
+
+
+
+# vim: foldmethod=marker

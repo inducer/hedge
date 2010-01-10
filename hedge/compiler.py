@@ -157,7 +157,17 @@ class FluxBatchAssign(Instruction):
         return executor.exec_flux_batch_assign
 
 class DiffBatchAssign(Instruction):
-    # attributes: names, op_class, operators, field
+    """
+    :ivar names:
+    :ivar operators:
+
+        .. note ::
+
+            All operators here are guaranteed to satisfy 
+            :meth:`hedge.optemplate.operators.equal_except_for_axis`.
+
+    :ivar field:
+    """
 
     def get_assignees(self):
         return set(self.names)
@@ -183,24 +193,9 @@ class DiffBatchAssign(Instruction):
     def get_executor_method(self, executor):
         return executor.exec_diff_batch_assign
 
-class MassAssign(Instruction):
-    __slots__ = ["name", "op_class", "field"]
-
-    def get_assignees(self):
-        return set([self.name])
-
-    def get_dependencies(self):
-        return self.dep_mapper_factory()(self.field)
-
-    def __str__(self):
-        return "%s <- %s * %s" % (
-                self.name,
-                str(self.op_class()),
-                self.field)
-
+class QuadratureDiffBatchAssign(DiffBatchAssign):
     def get_executor_method(self, executor):
-        return executor.exec_mass_assign
-
+        return executor.exec_quad_diff_batch_assign
 
 class FluxExchangeBatchAssign(Instruction):
     __slots__ = [
@@ -469,9 +464,16 @@ class OperatorCompilerBase(IdentityMapper):
         from hedge.optemplate import FluxExchangeOperator
         return self.bound_op_collector_class(FluxExchangeOperator)(expr)
 
+    # }}}
+
+    # {{{ top-level driver ----------------------------------------------------
     def __call__(self, expr):
-        # Fluxes can be evaluated faster in batches. Here, we find flux batches
-        # that we can evaluate together.
+        from hedge.optemplate.mappers.type_inference import TypeInferrer
+        self.typedict = TypeInferrer()(expr)
+
+        # {{{ flux batching
+        # Fluxes can be evaluated faster in batches. Here, we find flux 
+        # batches that we can evaluate together.
 
         # For each FluxRecord, find the other fluxes its flux depends on.
         flux_queue = self.get_contained_fluxes(expr)
@@ -508,6 +510,8 @@ class OperatorCompilerBase(IdentityMapper):
                 admissible_deps |= set(fr.flux_expr for fr in present_batch)
             else:
                 raise RuntimeError("cannot resolve flux evaluation order")
+
+        # }}}
 
         # Once flux batching is figured out, we also need to know which
         # derivatives are going to be needed, because once the
@@ -596,28 +600,24 @@ class OperatorCompilerBase(IdentityMapper):
             return cse_var
 
     def map_operator_binding(self, expr, name_hint=None):
-        from hedge.optemplate import (
-                DiffOperatorBase, \
-                MassOperatorBase, \
-                FluxExchangeOperator, \
-                FluxOperator, \
-                LiftingFluxOperator, \
-                OperatorBinding)
+        from hedge.optemplate.operators import (
+                DiffOperatorBase, FluxExchangeOperator,
+                FluxOperator, LiftingFluxOperator)
 
         if isinstance(expr.op, DiffOperatorBase):
             return self.map_diff_op_binding(expr)
-        elif isinstance(expr.op, MassOperatorBase):
-            return self.map_mass_op_binding(expr)
         elif isinstance(expr.op, FluxExchangeOperator):
             return self.map_flux_exchange_op_binding(expr)
         elif isinstance(expr.op, (FluxOperator, LiftingFluxOperator)):
-            raise RuntimeError("Backend-subclassed operator compiler "
-                    "did not take care of flux.")
+            raise RuntimeError("OperatorCompiler encountered a flux operator.\n\n"
+                    "We are expecting flux operators to be converted to custom "
+                    "flux assignment instructions, but the subclassed compiler "
+                    "does not seem to have done this.")
         else:
             field_var = self.assign_to_new_var(
                     self.rec(expr.field))
             result_var = self.assign_to_new_var(
-                    OperatorBinding(expr.op, field_var),
+                    expr.op(field_var),
                     prefix=name_hint)
             return result_var
 
@@ -627,16 +627,24 @@ class OperatorCompilerBase(IdentityMapper):
         except KeyError:
             all_diffs = [diff
                     for diff in self.diff_ops
-                    if diff.op.__class__ == expr.op.__class__
+                    if diff.op.equal_except_for_axis(expr.op)
                     and diff.field == expr.field]
 
             from pytools import single_valued
             names = [self.get_var_name() for d in all_diffs]
+
+            op_class=single_valued(type(d.op) for d in all_diffs)
+
+            from hedge.optemplate.operators import QuadratureStiffnessTOperator
+            if isinstance(op_class, QuadratureStiffnessTOperator):
+                assign_class = QuadratureDiffBatchAssign
+            else:
+                assign_class = DiffBatchAssign
+
             self.code.append(
-                    DiffBatchAssign(
+                    assign_class(
                         names=names,
-                        op_class=single_valued(
-                            d.op.__class__ for d in all_diffs),
+                        op_class=op_class,
                         operators=[d.op for d in all_diffs],
                         field=self.rec(
                             single_valued(d.field for d in all_diffs)),
@@ -647,22 +655,6 @@ class OperatorCompilerBase(IdentityMapper):
                 self.expr_to_var[d] = var(n)
 
             return self.expr_to_var[expr]
-
-    def map_mass_op_binding(self, expr):
-        try:
-            return self.expr_to_var[expr]
-        except KeyError:
-            ma = MassAssign(
-                    name=self.get_var_name(),
-                    op_class=expr.op.__class__,
-                    field=self.rec(expr.field),
-                    dep_mapper_factory=self.dep_mapper_factory)
-            self.code.append(ma)
-
-            from pymbolic import var
-            v = var(ma.name)
-            self.expr_to_var[expr] = v
-            return v
 
     def map_flux_exchange_op_binding(self, expr):
         try:

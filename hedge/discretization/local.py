@@ -24,7 +24,6 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 import numpy
 import numpy.linalg as la
-import pyublas
 from hedge.tools import AffineMap
 import hedge._internal
 from math import sqrt
@@ -170,8 +169,8 @@ class LocalDiscretization(object):
         fmm = self.face_mass_matrix()
 
         for i_face, f_indices in enumerate(self.face_indices()):
-            for i_dof, f_index in enumerate(f_indices):
-                result[f_index, i_face * fnc:(i_face + 1) * fnc] = fmm[i_dof]
+            f_indices = numpy.array(f_indices, dtype=numpy.uintp)
+            result[f_indices, i_face * fnc:(i_face + 1) * fnc] = fmm
 
         return result
 
@@ -315,6 +314,40 @@ class PkSimplexDiscretization(OrthonormalLocalDiscretization):
 
         return [tuple(fi) for fi in faces]
 
+    @memoize_method
+    def face_affine_maps(self):
+        """Return an affine map for each face that maps the (n-1)-dimensional 
+        face unit coordinates to their volume coordintes.
+        """
+        face_vertex_node_index_lists = \
+                self.geometry.face_vertices(self.vertex_indices())
+
+        unit_nodes = self.unit_nodes()
+        sets_of_to_points = [[unit_nodes[fvni] 
+                for fvni in face_vertex_node_indices]
+                for face_vertex_node_indices in face_vertex_node_index_lists]
+        from_points = sets_of_to_points[0]
+
+        # Construct an affine map that promotes face nodes into volume 
+        # by appending -1, this should end up on the first face
+        dim = self.dimensions
+        from hedge.tools.affine import AffineMap
+        from hedge.tools.linalg import unit_vector
+        to_face_1 = AffineMap(
+                numpy.vstack([
+                    numpy.eye(dim-1, dtype=numpy.float64),
+                    numpy.zeros(dim-1)]),
+                unit_vector(dim, dim-1, dtype=numpy.float64))
+
+        def finish_affine_map(amap):
+            return amap.post_compose(to_face_1)
+
+        from hedge.tools.affine import identify_affine_map
+        return [
+                finish_affine_map(
+                    identify_affine_map(from_points, to_points))
+                for to_points in sets_of_to_points]
+
     # node wrangling ----------------------------------------------------------
     def equidistant_barycentric_nodes(self):
         """Generate equidistant nodes in barycentric coordinates."""
@@ -367,6 +400,68 @@ class PkSimplexDiscretization(OrthonormalLocalDiscretization):
                     if vertex_index != face_node_index)
                     for face_node_index in face_indices)
                     for face_indices in self.face_indices())
+
+    # quadrature --------------------------------------------------------------
+    class QuadratureInfo:
+        def __init__(self, ldis, exact_to_degree):
+            self.ldis = ldis
+            self.exact_to_degree = exact_to_degree
+
+            from hedge.quadrature import get_simplex_cubature
+            v_quad = get_simplex_cubature(exact_to_degree, ldis.dimensions)
+            self.volume_nodes = v_quad.points
+            self.volume_weights = v_quad.weights
+
+            f_quad = get_simplex_cubature(exact_to_degree, ldis.dimensions-1)
+            self.facial_nodes = f_quad.points
+            self.facial_weights = f_quad.weights
+
+        def node_count(self):
+            return len(self.volume_nodes)
+
+        @memoize_method
+        def vandermonde(self):
+            from hedge.polynomial import generic_vandermonde
+            return generic_vandermonde(
+                    self.volume_nodes,
+                    list(self.ldis.basis_functions()))
+
+        @memoize_method
+        def volume_up_interpolation_matrix(self):
+            from hedge.tools.linalg import leftsolve
+            return leftsolve(
+                        self.ldis.vandermonde(), 
+                        self.vandermonde())
+
+        @memoize_method
+        def diff_vandermonde_matrices(self):
+            from hedge.polynomial import generic_multi_vandermonde
+            return generic_multi_vandermonde(
+                    self.volume_nodes,
+                    list(self.ldis.grad_basis_functions()))
+
+        @memoize_method
+        def face_up_interpolation_matrix(self):
+            ldis = self.ldis
+
+            face_maps = ldis.face_affine_maps()
+
+            from pytools import flatten
+            face_nodes = flatten(
+                    [face_map[qnode] for qnode in self.facial_nodes]
+                    for face_map in face_maps)
+
+            from hedge.polynomial import generic_vandermonde
+            vdm = generic_vandermonde(
+                    face_nodes,
+                    list(ldis.basis_functions()))
+
+            from hedge.tools.linalg import leftsolve
+            return leftsolve(self.ldis.vandermonde(), vdm)
+
+    def quadrature_info(self, exact_to_degree):
+        return self.QuadratureInfo(self, exact_to_degree)
+
 
 
 

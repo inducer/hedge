@@ -24,7 +24,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 from hedge.models import HyperbolicOperator
-import hedge.data
+import numpy
 from hedge.tools.second_order import CentralSecondDerivative
 
 
@@ -41,13 +41,15 @@ class BurgersOperator(HyperbolicOperator):
 
     def op_template(self, with_sensor):
         from hedge.optemplate import (
-                Field, \
-                make_minv_stiffness_t, \
-                make_nabla, \
-                InverseMassOperator, \
-                ElementwiseMaxOperator)
+                Field,
+                make_minv_stiffness_t,
+                make_nabla,
+                InverseMassOperator,
+                ElementwiseMaxOperator,
+                get_flux_operator)
 
         u = Field("u")
+        u0 = Field("u0")
 
         # boundary conditions -------------------------------------------------
         minv_st = make_minv_stiffness_t(self.dimensions)
@@ -56,15 +58,17 @@ class BurgersOperator(HyperbolicOperator):
 
         def flux(u):
             return u**2/2
+            #return u0*u
 
         emax_u = ElementwiseMaxOperator()(u**2)**0.5
         from hedge.flux.tools import make_lax_friedrichs_flux
         from pytools.obj_array import make_obj_array
-        lf_flux = make_lax_friedrichs_flux(
-                emax_u, 
+        num_flux = make_lax_friedrichs_flux(
+                #u0,
+                emax_u,
                 make_obj_array([u]), 
                 [make_obj_array([flux(u)])], 
-                [], strong=False)
+                [], strong=False)[0]
 
         from hedge.tools.second_order import SecondDerivativeTarget
 
@@ -80,7 +84,7 @@ class BurgersOperator(HyperbolicOperator):
             else:
                 raise TypeError("unsupported type of viscosity coefficient")
 
-            # strong_form here allows LDG to reuse the value of grad u.
+            # strong_form here allows IPDG to reuse the value of grad u.
             grad_tgt = SecondDerivativeTarget(
                     self.dimensions, strong_form=True,
                     operand=u)
@@ -100,10 +104,10 @@ class BurgersOperator(HyperbolicOperator):
         else:
             viscosity_bit = 0
 
-        return (minv_st[0](flux(u))) - m_inv(lf_flux[0]) \
+        return (minv_st[0](flux(u))) - m_inv(num_flux) \
                 + viscosity_bit
 
-    def bind(self, discr, sensor=None):
+    def bind(self, discr, u0=1, sensor=None):
         compiled_op_template = discr.compile(
                 self.op_template(with_sensor=sensor is not None))
 
@@ -114,7 +118,7 @@ class BurgersOperator(HyperbolicOperator):
             kwargs = {}
             if sensor is not None:
                 kwargs["sensor"] = sensor(u)
-            return compiled_op_template(u=u, **kwargs)
+            return compiled_op_template(u=u, u0=u0, **kwargs)
 
         return rhs
 

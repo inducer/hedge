@@ -290,13 +290,6 @@ class ExecutionMapper(ExecutionMapperBase):
 
         return result, []
 
-    def exec_mass_assign(self, insn):
-        elgroup, = self.executor.discr.element_groups
-        kernel = self.executor.discr.element_local_kernel()
-        return [(insn.name, kernel(
-                self.rec(insn.field),
-                *self.executor.mass_data(kernel, elgroup, insn.op_class)))], []
-
     def map_elementwise_linear(self, op, expr):
         field = self.rec(expr)
 

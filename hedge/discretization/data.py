@@ -25,12 +25,22 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import numpy
+import numpy.linalg as la
 import hedge._internal
+from pytools import memoize_method
 
 
 
 
-# element groups --------------------------------------------------------------
+# {{{ quadrature info ---------------------------------------------------------
+class QuadratureInfo(object):
+    """Once fully filled, this structure has the following data members:
+
+    :ivar node_count: number of quadrature nodes across the whole mesh.
+    """
+
+# }}}
+# {{{ element groups ----------------------------------------------------------
 class ElementGroupBase(object):
     pass
 
@@ -55,8 +65,50 @@ class StraightElementGroup(ElementGroupBase):
     :ivar inverse_jacobians: inverses of L{jacobians}.
     :ivar diff_coefficients: a :math:`d\\times d`-matrix of coefficient vectors to turn
       :math:`(r,s,t)`-differentiation into :math:`(x,y,z)`.
+    :ivar quadrature_info: a map from quadrature tag to QuadratureInfo instance.
     """
-    pass
+
+    # {{{ quadrature info
+    class QuadratureInfo:
+        """
+        :ivar ldis_quad_info: an instance of 
+          :class:`hedge.discretization.local.Element.QuadratureInfo`.
+        :ivar ranges: a list of :class:`slice` objects indicating the DOF numbers for
+          each element. Note: This is actually a C++ ElementRanges object.
+        :ivar mass_matrix: The element-local mass matrix :math:`M`.
+        """
+        def __init__(self, start_qnode, el_group, min_degree):
+            ldis = el_group.local_discretization
+
+            ldis_quad_info = self.ldis_quad_info = \
+                    ldis.quadrature_info(min_degree)
+
+            from hedge._internal import UniformElementRanges
+            self.ranges = UniformElementRanges(
+                    start_qnode,
+                    ldis_quad_info.node_count(),
+                    len(el_group.members))
+
+            self.mass_matrix = numpy.asarray(
+                    la.solve(
+                        ldis.vandermonde().T,
+                        numpy.dot(
+                            ldis_quad_info.vandermonde().T,
+                            numpy.diag(ldis_quad_info.volume_weights))),
+                    order="C")
+
+            self.stiffness_t_matrices = [numpy.asarray(
+                    la.solve(
+                        ldis.vandermonde().T,
+                        numpy.dot(
+                            diff_vdm.T,
+                            numpy.diag(ldis_quad_info.volume_weights))),
+                    order="C")
+                    for diff_vdm in ldis_quad_info.diff_vandermonde_matrices()]
+
+    # }}}
+
+
 
 
 
@@ -67,7 +119,8 @@ class CurvedElementGroup(ElementGroupBase):
 
 
 
-# face groups -----------------------------------------------------------------
+# }}}
+# {{{ face groups -------------------------------------------------------------
 class StraightFaceGroup(hedge._internal.StraightFaceGroup):
     def __init__(self, double_sided, debug):
         hedge._internal.StraightFaceGroup.__init__(self, double_sided)
@@ -116,6 +169,9 @@ class StraightFaceGroup(hedge._internal.StraightFaceGroup):
         self.ldis_loc = ldis_loc
         self.ldis_opp = ldis_opp
 
+
+
+
 class CurvedFaceGroup(hedge._internal.CurvedFaceGroup):
     def __init__(self, double_sided, debug):
         hedge._internal.CurvedFaceGroup.__init__(self, double_sided)
@@ -163,6 +219,9 @@ class CurvedFaceGroup(hedge._internal.CurvedFaceGroup):
 
         self.ldis_loc = ldis_loc
         self.ldis_opp = ldis_opp
+
+
+
 
 class StraightCurvedFaceGroup(hedge._internal.StraightCurvedFaceGroup):
     def __init__(self, double_sided, debug):
@@ -215,7 +274,8 @@ class StraightCurvedFaceGroup(hedge._internal.StraightCurvedFaceGroup):
 
 
 
-# boundary --------------------------------------------------------------------
+# }}}
+# {{{ boundary ----------------------------------------------------------------
 class Boundary(object):
     def __init__(self, nodes, ranges, vol_indices, face_groups,
             el_face_to_face_group_and_face_pair={}):
@@ -242,3 +302,9 @@ class Boundary(object):
 
     def is_empty(self):
         return len(self.nodes) == 0
+
+
+
+
+# }}}
+# vim: foldmethod=marker

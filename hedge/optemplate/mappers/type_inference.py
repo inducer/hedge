@@ -22,13 +22,12 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import pymbolic.mapper
-from pymbolic.mapper import CSECachingMapperMixin
 
 
 
 
 # {{{ representation tags
-class NodalRepresentation:
+class NodalRepresentation(object):
     """A tag representing nodal representation.
 
     Volume and boundary vectors below are represented either nodally or on a quadrature
@@ -43,7 +42,7 @@ class NodalRepresentation:
     def __ne__(self, other):
         return not self.__eq__(other)
 
-class QuadratureRepresentation:
+class QuadratureRepresentation(object):
     """A tag representing representation on a quadrature grid tagged with
     *quadrature_tag".
 
@@ -76,7 +75,7 @@ class type_info:
 
     # {{{ generic type info base classes
     class TypeInfo(object):
-        def unify(self, other):
+        def unify(self, other, expr=None):
             """Return a type that can represent both *self* and *other*.
             If impossible, raise :exc:`TypeError`. Subtypes should override
             :meth:`unify_inner`.
@@ -90,8 +89,12 @@ class type_info:
 
             if u_s_o is NotImplemented:
                 if u_o_s is NotImplemented:
-                    raise TypeError("types '%s' and '%s' cannot be unified" 
-                            % (self, other))
+                    if expr is not None:
+                        raise TypeError("types '%s' and '%s' for '%s' "
+                                "cannot be unified" % (self, other, expr))
+                    else:
+                        raise TypeError("types '%s' and '%s' cannot be unified" 
+                                % (self, other))
                 else:
                     return u_o_s
             elif u_o_s is NotImplemented:
@@ -239,6 +242,23 @@ class type_info:
             return (self.boundary_tag, self.repr_tag)
     # }}}
 
+# {{{ aspect extraction functions
+def extract_representation(ti):
+    try:
+        own_repr_tag = ti.repr_tag
+    except AttributeError:
+        return type_info.no_type
+    else:
+        return type_info.KnownRepresentation(own_repr_tag)
+
+def extract_domain(ti):
+    if isinstance(ti, type_info.VolumeVectorBase):
+        return type_info.KnownVolume()
+    elif isinstance(ti, type_info.BoundaryVectorBase):
+        return type_info.KnownBoundary(ti.boundary_tag)
+    else:
+        return type_info.no_type
+# }}}
 
 
 
@@ -279,8 +299,10 @@ class TypeDict(object):
 
 # }}}
 # {{{ type inference mapper ---------------------------------------------------
-class TypeInferrer(pymbolic.mapper.RecursiveMapper,
-        CSECachingMapperMixin):
+class TypeInferrer(pymbolic.mapper.RecursiveMapper):
+    def __init__(self):
+        self.cse_last_results = {}
+
     def __call__(self, expr):
         typedict = TypeDict()
 
@@ -295,7 +317,6 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper,
 
         # check that type inference completed successfully
         for expr, tp in typedict.iteritems():
-            print expr, tp
             if not isinstance(tp, type_info.FinalType):
                 raise RuntimeError("type inference was unable to deduce "
                         "complete type information for '%s' (only '%s')"
@@ -315,11 +336,11 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper,
         tp = typedict[expr]
 
         for child in expr.children:
-            if tp is type_info.no_type:
-                tp = self.rec(child, typedict)
-            else:
-                typedict[child] = tp
-                self.rec(child, typedict)
+            child_tp = self.rec(child, typedict)
+            tp = tp.unify(child_tp, child)
+
+        for child in expr.children:
+            typedict[child] = tp
 
         return tp
 
@@ -341,7 +362,7 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper,
 
                 if not isinstance(other_tp, type_info.Scalar):
                     non_scalar_exprs.append(child)
-                    tp = tp.unify(other_tp)
+                    tp = tp.unify(other_tp, child)
 
         for child in non_scalar_exprs:
             typedict[child] = tp
@@ -352,42 +373,54 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper,
         from hedge.optemplate.operators import (
                 DiffOperatorBase, MassOperatorBase, ElementwiseMaxOperator,
                 BoundarizeOperator, FluxExchangeOperator,
-                FluxOperatorBase)
+                FluxOperatorBase, QuadratureGridUpsampler,
+                MassOperator, QuadratureMassOperator, 
+                StiffnessTOperator, QuadratureStiffnessTOperator,
+                ElementwiseLinearOperator)
 
         own_type = typedict[expr]
 
-        if isinstance(expr.op, (DiffOperatorBase, MassOperatorBase)):
+        if isinstance(expr.op, 
+                (QuadratureStiffnessTOperator, QuadratureMassOperator)):
+            typedict[expr.field] = type_info.VolumeVector(
+                    QuadratureRepresentation(expr.op.quadrature_tag))
+            self.rec(expr.field, typedict)
+            return type_info.VolumeVector(NodalRepresentation())
+
+        elif isinstance(expr.op, (StiffnessTOperator)):
+            # stiffness_T can be specialized by QuadratureOperatorSpecializer
             typedict[expr.field] = type_info.KnownVolume()
             self.rec(expr.field, typedict)
             return type_info.VolumeVector(NodalRepresentation())
 
-        elif isinstance(expr.op, ElementwiseMaxOperator):
-            typedict[expr.field] = typedict[expr]
+        elif isinstance(expr.op, MassOperator):
+            # mass can be specialized by QuadratureOperatorSpecializer
+            typedict[expr.field] = type_info.KnownVolume()
             self.rec(expr.field, typedict)
-            return typedict[expr.field]
+            return type_info.VolumeVector(NodalRepresentation())
+
+        elif isinstance(expr.op, (DiffOperatorBase, MassOperatorBase)):
+            # all other operators are purely nodal
+            typedict[expr.field] = type_info.VolumeVector(NodalRepresentation())
+            self.rec(expr.field, typedict)
+            return type_info.VolumeVector(NodalRepresentation())
+
+
+        elif isinstance(expr.op, ElementwiseMaxOperator):
+            typedict[expr.field] = typedict[expr].unify(
+                    type_info.KnownVolume(), expr.field)
+            return self.rec(expr.field, typedict)
 
         elif isinstance(expr.op, BoundarizeOperator):
             # upward propagation: argument has same rep tag as result
-            try:
-                own_repr_tag = own_type.repr_tag
-            except AttributeError:
-                own_repr_type = type_info.no_type
-            else:
-                own_repr_type = KnownRepresentation(own_repr_tag)
-
             typedict[expr.field] = type_info.KnownBoundary(expr.op.tag).unify(
-                    own_repr_type)
+                    extract_representation(type_info), expr.field)
 
             self.rec(expr.field, typedict)
 
             # downward propagation: result has same rep tag as argument
-            arg_type = typedict[expr.field]
-            try:
-                arg_repr_tag = arg_type.repr_tag
-            except AttributeError:
-                return type_info.KnownVolume()
-            else:
-                return type_info.VolumeVector(arg_repr_tag)
+            return type_info.KnownVolume().unify(
+                    extract_representation(typedict[expr.field]), expr)
 
         elif isinstance(expr.op, FluxExchangeOperator):
             raise NotImplementedError
@@ -413,6 +446,22 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper,
 
             return type_info.VolumeVector(NodalRepresentation())
 
+        elif isinstance(expr.op, QuadratureGridUpsampler):
+            typedict[expr.field] = extract_domain(typedict[expr])
+            self.rec(expr.field, typedict)
+            return type_info.KnownRepresentation(
+                    QuadratureRepresentation(expr.op.quadrature_tag))\
+                            .unify(extract_domain(typedict[expr.field]), expr)
+
+        elif isinstance(expr.op, ElementwiseLinearOperator):
+            typedict[expr.field] = type_info.VolumeVector(NodalRepresentation())
+            self.rec(expr.field, typedict)
+            return type_info.VolumeVector(NodalRepresentation())
+
+        else:
+            raise RuntimeError("TypeInferrer doesn't know how to handle '%s'" 
+                    % expr.op)
+
     def map_constant(self, expr, typedict):
         return type_info.Scalar()
 
@@ -420,14 +469,26 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper,
         # user-facing variables are nodal
         return type_info.KnownRepresentation(NodalRepresentation())
 
+    map_subscript = map_variable
+
     def map_scalar_parameter(self, expr, typedict):
         return type_info.Scalar()
 
     def map_normal_component(self, expr, typedict):
         return type_info.KnownBoundary(expr.tag)
 
-    def map_common_subexpression_uncached(self, expr, typedict):
-        return typedict[expr.child]
+    def map_common_subexpression(self, expr, typedict):
+        outer_tp = typedict[expr]
+
+        last_tp = self.cse_last_results.get(expr, type_info.no_type)
+        if outer_tp != last_tp:
+            # re-run inner type inference with new outer information
+            typedict[expr.child] = outer_tp
+            new_tp = self.rec(expr.child, typedict)
+            self.cse_last_results[expr] = new_tp
+            return new_tp
+        else:
+            return last_tp
 # }}}
 
 

@@ -185,10 +185,11 @@ class Discretization(TimestepCalculator):
             return local_discretization
 
     def __init__(self, mesh, local_discretization=None,
-            order=None, debug=set(), default_scalar_type=numpy.float64,
-            run_context=None):
+            order=None, quad_min_degrees={},
+            debug=set(), default_scalar_type=numpy.float64, run_context=None):
         """
-
+        :param quad_min_degrees: A mapping from quadrature tags to the degrees to
+          which the desired quadrature is supposed to be exact.
         :param debug: A set of strings indicating which debug checks should
           be activated. See validity check below for the currently defined
           set of debug flags.
@@ -225,6 +226,7 @@ class Discretization(TimestepCalculator):
 
         self.instrumented = False
 
+        self.quad_min_degrees = quad_min_degrees
         self.default_scalar_type = default_scalar_type
 
         self.exec_functions = {}
@@ -363,6 +365,7 @@ class Discretization(TimestepCalculator):
                     0,
                     len(ldis.unit_nodes()),
                     len(self.mesh.elements))
+            eg.quadrature_info = {}
 
             nodes_per_el = ldis.node_count()
             # mem layout:
@@ -408,9 +411,9 @@ class Discretization(TimestepCalculator):
             immat = eg.inverse_mass_matrix = ldis.inverse_mass_matrix()
             dmats = eg.differentiation_matrices = \
                     ldis.differentiation_matrices()
-            smats = eg.stiffness_matrices = \
+            eg.stiffness_matrices = \
                     [numpy.dot(mmat, d) for d in dmats]
-            smats = eg.stiffness_t_matrices = \
+            eg.stiffness_t_matrices = \
                     [numpy.dot(d.T, mmat.T) for d in dmats]
             eg.minv_st = \
                     [numpy.dot(numpy.dot(immat, d.T), mmat) for d in dmats]
@@ -636,6 +639,28 @@ class Discretization(TimestepCalculator):
                 el_face_to_face_group_and_face_pair)
 
         return bdry
+
+    @memoize_method
+    def get_quadrature_info(self, quad_tag):
+        from hedge.discretization.data import QuadratureInfo
+
+        try:
+            min_degree = self.quad_min_degrees[quad_tag]
+        except KeyError:
+            raise RuntimeError("minimum degree for quadrature tag '%s' "
+                    "is undefined" % quad_tag)
+
+        q_info = QuadratureInfo()
+        q_info.node_count = 0
+
+        for eg in self.element_groups:
+            eg_q_info = eg.quadrature_info[quad_tag] = eg.QuadratureInfo(
+                    q_info.node_count, eg, min_degree)
+
+            q_info.node_count += eg_q_info.ranges.total_size
+
+        return q_info
+
 
     # vector construction -----------------------------------------------------
     def __len__(self):
@@ -971,6 +996,10 @@ class Discretization(TimestepCalculator):
 
     # op template execution ---------------------------------------------------
     def compile(self, optemplate, post_bind_mapper=lambda x: x):
+        from hedge.optemplate.mappers import QuadratureUpsamplerRemover
+        optemplate = QuadratureUpsamplerRemover(self.quad_min_degrees)(
+                optemplate)
+
         ex = self.executor_class(self, optemplate, post_bind_mapper)
 
         if "dump_dataflow_graph" in self.debug:

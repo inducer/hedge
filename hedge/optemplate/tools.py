@@ -178,10 +178,11 @@ def ptwise_dot(logdims1, logdims2, a1, a2):
 def process_optemplate(optemplate, post_bind_mapper=None,
         dumper=lambda name, optemplate: None, mesh=None):
 
-    from hedge.optemplate import (
+    from hedge.optemplate.mappers import (
             OperatorBinder, BCToFluxRewriter, CommutativeConstantFoldingMapper,
             EmptyFluxKiller, InverseMassContractor, DerivativeJoiner,
-            ErrorChecker)
+            ErrorChecker, QuadratureOperatorSpecializer)
+    from hedge.optemplate.mappers.type_inference import TypeInferrer
 
     dumper("before-bind", optemplate)
     optemplate = OperatorBinder()(optemplate)
@@ -194,17 +195,32 @@ def process_optemplate(optemplate, post_bind_mapper=None,
 
     dumper("before-bc2flux", optemplate)
     optemplate = BCToFluxRewriter()(optemplate)
+
     dumper("before-cfold", optemplate)
     optemplate = CommutativeConstantFoldingMapper()(optemplate)
+
     if mesh is not None:
         dumper("before-empty-flux-killer", optemplate)
         optemplate = EmptyFluxKiller(mesh)(optemplate)
+
+    dumper("before-quad-specializer", optemplate)
+    optemplate = QuadratureOperatorSpecializer(
+            TypeInferrer()(optemplate)
+            )(optemplate)
+
+    # ordering restriction: must specialize quadrature operators before performing
+    # inverse mass contraction, because there are no inverse-mass-contracted variants
+    # of the quadrature operators.
+
     dumper("before-imass", optemplate)
     optemplate = InverseMassContractor()(optemplate)
+
     dumper("before-cfold-2", optemplate)
     optemplate = CommutativeConstantFoldingMapper()(optemplate)
+
     dumper("before-derivative-join", optemplate)
     optemplate = DerivativeJoiner()(optemplate)
+
     dumper("process-optemplate-finished", optemplate)
 
     return optemplate

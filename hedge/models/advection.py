@@ -246,7 +246,7 @@ class VariableCoefficientAdvectionOperator(HyperbolicOperator):
                 Field, \
                 BoundaryPair, \
                 get_flux_operator, \
-                make_minv_stiffness_t, \
+                make_stiffness_t, \
                 InverseMassOperator,\
                 make_vector_field, \
                 ElementwiseMaxOperator, \
@@ -271,15 +271,19 @@ class VariableCoefficientAdvectionOperator(HyperbolicOperator):
         else:
             bc_w = join_fields(bc_u, bc_v, bc_c)
 
-        minv_st = make_minv_stiffness_t(self.dimensions)
+        minv_st = make_stiffness_t(self.dimensions)
         m_inv = InverseMassOperator()
 
         flux_op = get_flux_operator(self.flux())
 
-        result = numpy.dot(minv_st, v*u) - m_inv(
-                    flux_op(w)
-                    + flux_op(BoundaryPair(w, bc_w, TAG_ALL))
-                    )
+        from hedge.optemplate.operators import QuadratureGridUpsampler
+
+        quad_u = QuadratureGridUpsampler("quad")(u)
+        quad_v = QuadratureGridUpsampler("quad")(v)
+
+        from hedge.tools.symbolic import make_common_subexpression as cse
+        result = m_inv(numpy.dot(minv_st, cse(quad_v*quad_u)) 
+                - (flux_op(w) + flux_op(BoundaryPair(w, bc_w, TAG_ALL))))
         return result
 
     def bind(self, discr):

@@ -168,7 +168,8 @@ class Monomial:
                 reduce(mul, (x[i]**alpha
                     for i, alpha in enumerate(self.exponents)))
 
-    def theoretical_integral(self):
+    def simplex_integral(self):
+        """Integral over the unit simplex."""
         from pytools import factorial
         from operator import mul
 

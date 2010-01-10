@@ -19,14 +19,11 @@
 
 from __future__ import division
 import numpy
-import numpy.linalg as la
 
 
 
-def main(write_output=True, flux_type_arg="lf"):
-    from hedge.tools import mem_checkpoint
-    from math import sin, cos, pi, sqrt, tanh
-    from math import floor
+def main(write_output=True, flux_type_arg="central"):
+    from math import sin, cos, pi, sqrt
 
     from hedge.backends import guess_run_context
     rcon = guess_run_context()
@@ -44,8 +41,11 @@ def main(write_output=True, flux_type_arg="lf"):
         mesh_data = rcon.receive_mesh()
 
     # discretization setup ----------------------------------------------------
-    discr = rcon.make_discretization(mesh_data, order=4,
-            default_scalar_type=numpy.float64, debug=["cuda_no_plan"])
+    discr = rcon.make_discretization(mesh_data, order=3,
+            default_scalar_type=numpy.float64, 
+            debug=["cuda_no_plan"],
+            #quad_min_degrees={"quad": 3*4}
+            )
     vis_discr = discr
 
     # space-time-dependent-velocity-field -------------------------------------
@@ -72,8 +72,8 @@ def main(write_output=True, flux_type_arg="lf"):
         def __call__(self, pt, el):
             x, y = pt
             # Correction-Factor to make the speed zero on the on the boundary
-            #fac = (1-x**2)*(1-y**2)
-            fac = 1.
+            fac = (1-x**2)*(1-y**2)
+            #fac = 1.
             return numpy.array([-y*fac, x*fac])
 
     # space-time-dependent State BC (optional)-----------------------------------
@@ -130,15 +130,15 @@ def main(write_output=True, flux_type_arg="lf"):
         flux_type=flux_type_arg)
 
     # initial condition -------------------------------------------------------
-    # Gauss pulse
     if True:
         def initial(pt, el):
+            # Gauss pulse
             from math import exp
-            x = (pt-numpy.array([0.3, 0.7]))*8
+            x = (pt-numpy.array([0.3, 0.5]))*8
             return exp(-numpy.dot(x, x))
-    # Rectangle
-    if False:
+    else:
         def initial(pt, el):
+            # Rectangle
             x, y = pt
             if abs(x) < 0.5 and abs(y) < 0.2:
                 return 2
@@ -194,7 +194,7 @@ def main(write_output=True, flux_type_arg="lf"):
     try:
         from hedge.timestep import times_and_steps
         step_it = times_and_steps(
-                final_time=3, logmgr=logmgr,
+                final_time=20, logmgr=logmgr,
                 max_dt_getter=lambda t: op.estimate_timestep(discr,
                     stepper=stepper, t=t, fields=u))
 
@@ -209,7 +209,7 @@ def main(write_output=True, flux_type_arg="lf"):
 
             u = stepper(u, t, dt, rhs)
 
-            u = mode_filter(u)
+            #u = mode_filter(u)
 
         assert discr.norm(u) < 10
 

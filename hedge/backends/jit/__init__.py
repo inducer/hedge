@@ -160,23 +160,11 @@ class ExecutionMapper(ExecutionMapperBase):
         return result, []
 
     def exec_diff_batch_assign(self, insn):
-        xyz_diff = self.executor.diff(insn.op_class, self.rec(insn.field),
-                xyz_needed=[op.xyz_axis for op in insn.operators])
+        xyz_diff = self.executor.diff(insn.operators, self.rec(insn.field))
 
-        return [(name, diff)
-                for name, op, diff in zip(
-                    insn.names, insn.operators, xyz_diff)], []
+        return [(name, diff) for name, diff in zip(insn.names, xyz_diff)], []
 
-    def exec_mass_assign(self, insn):
-        field = self.rec(insn.field)
-
-        if isinstance(field, (float, int)) and field == 0:
-            return [(insn.name, 0)], []
-
-        out = self.discr.volume_zeros(dtype=field.dtype)
-        self.executor.do_elementwise_linear(insn.op_class, field, out)
-
-        return [(insn.name, out)], []
+    exec_quad_diff_batch_assign = exec_diff_batch_assign
 
     def map_if_positive(self, expr):
         crit = self.rec(expr.criterion)
@@ -208,12 +196,58 @@ class ExecutionMapper(ExecutionMapperBase):
     def map_elementwise_linear(self, op, field_expr):
         field = self.rec(field_expr)
 
-        if isinstance(field, (float, int)) and field == 0:
+        from hedge.tools import is_zero
+        if is_zero(field):
             return 0
 
         out = self.discr.volume_zeros()
         self.executor.do_elementwise_linear(op, field, out)
         return out
+
+    def map_quad_mass(self, op, field_expr):
+        field = self.rec(field_expr)
+
+        from hedge.tools import is_zero
+        if is_zero(field):
+            return 0
+
+        qtag = op.quadrature_tag
+
+        from hedge._internal import perform_elwise_scaled_operator
+
+        out = self.discr.volume_zeros()
+        for eg in self.discr.element_groups:
+            eg_quad_info = eg.quadrature_info[qtag]
+
+            perform_elwise_scaled_operator(eg_quad_info.ranges, eg.ranges,
+                    eg.jacobians, eg_quad_info.mass_matrix, field, out)
+
+        return out
+
+    def map_quadrature_grid_upsampler(self, op, field_expr):
+        field = self.rec(field_expr)
+
+        from hedge.tools import is_zero
+        if is_zero(field):
+            return 0
+
+        qtag = op.quadrature_tag
+
+        from hedge._internal import perform_elwise_operator
+        quad_info = self.discr.get_quadrature_info(qtag)
+
+        out = numpy.zeros(quad_info.node_count, field.dtype)
+        for eg in self.discr.element_groups:
+            eg_quad_info = eg.quadrature_info[qtag]
+
+            perform_elwise_operator(eg.ranges, eg_quad_info.ranges,
+                eg_quad_info.ldis_quad_info.volume_up_interpolation_matrix(), 
+                field, out)
+
+        return out
+
+    def map_quadrature_boundary_grid_upsampler(self, op, field_expr):
+        raise NotImplementedError
 
     def map_elementwise_max(self, op, field_expr):
         from hedge._internal import perform_elwise_max
@@ -256,10 +290,9 @@ class Executor(object):
             from hedge.optemplate import DifferentiationOperator
             from time import time
 
-            xyz_needed = range(discr.dimensions)
-
             start = time()
-            f(DifferentiationOperator, test_field, xyz_needed)
+            f([DifferentiationOperator(i)
+                for i in range(discr.dimensions)], test_field)
             return time() - start
 
         def bench_lift(f):
@@ -360,13 +393,13 @@ class Executor(object):
                 matrix.astype(to_uncomplex_dtype(field.dtype)),
                 scaling, field, out)
 
-    def diff_rst(self, op, rst_axis, field):
+    def diff_rst(self, rep_op, rst_axis, field):
         result = self.discr.volume_zeros(dtype=field.dtype)
 
         from hedge._internal import perform_elwise_operator
         for eg in self.discr.element_groups:
-            perform_elwise_operator(eg.ranges, eg.ranges,
-                    op.matrices(eg)[rst_axis].astype(field.dtype),
+            perform_elwise_operator(rep_op.preimage_ranges(eg), eg.ranges,
+                    rep_op.matrices(eg)[rst_axis].astype(field.dtype),
                     field, result)
 
         return result
@@ -385,6 +418,14 @@ class Executor(object):
 
         return result
 
+    def diff_builtin(self, operators, field):
+        rst_derivatives = [
+                self.diff_rst(operators[0], i, field)
+                for i in range(self.discr.dimensions)]
+
+        return [self.diff_rst_to_xyz(op, rst_derivatives)
+                for op in operators]
+
     def do_elementwise_linear(self, op, field, out):
         for eg in self.discr.element_groups:
             try:
@@ -398,24 +439,12 @@ class Executor(object):
                     perform_elwise_scaled_operator,
                     perform_elwise_operator)
 
-
             if coeffs is None:
                 perform_elwise_operator(eg.ranges, eg.ranges,
                         matrix, field, out)
             else:
                 perform_elwise_scaled_operator(eg.ranges, eg.ranges,
                         coeffs, matrix, field, out)
-
-
-
-
-    def diff_builtin(self, op_class, field, xyz_needed):
-        rst_derivatives = [
-                self.diff_rst(op_class, i, field)
-                for i in range(self.discr.dimensions)]
-
-        return [self.diff_rst_to_xyz(op_class(i), rst_derivatives)
-                for i in xyz_needed]
 
     def __call__(self, **context):
         return self.code.execute(

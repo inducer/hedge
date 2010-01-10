@@ -53,6 +53,34 @@ class ScalarParameter(pymbolic.primitives.Variable):
 
 
 
+class OperatorBinding(pymbolic.primitives.AlgebraicLeaf):
+    def __init__(self, op, field):
+        self.op = op
+        self.field = field
+
+    def stringifier(self):
+        from hedge.optemplate import StringifyMapper
+        return StringifyMapper
+
+    def get_mapper_method(self, mapper):
+        return mapper.map_operator_binding
+
+    def __getinitargs__(self):
+        return self.op, self.field
+
+    def is_equal(self, other):
+        from hedge.tools import field_equal
+        return (other.__class__ == self.__class__
+                and other.op == self.op
+                and field_equal(other.field, self.field))
+
+    def get_hash(self):
+        from hedge.tools import hashable_field
+        return hash((self.__class__, self.op, hashable_field(self.field)))
+
+
+
+
 class BoundaryNormalComponent(pymbolic.primitives.AlgebraicLeaf):
     def __init__(self, tag, axis):
         self.tag = tag
