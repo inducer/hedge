@@ -35,7 +35,7 @@ from pymbolic.mapper import CSECachingMapperMixin
 
 
 
-# {{{ Mixins ------------------------------------------------------------------
+# {{{ mixins ------------------------------------------------------------------
 class LocalOpReducerMixin(object):
     """Reduces calls to mapper methods for all local differentiation
     operators to a single mapper method, and likewise for mass
@@ -153,7 +153,7 @@ class BoundOpMapperMixin(object):
 
 
 # }}}
-# {{{ Basic Mappers -----------------------------------------------------------
+# {{{ basic mappers -----------------------------------------------------------
 class CombineMapper(CombineMapperMixin, pymbolic.mapper.CombineMapper):
     pass
 
@@ -251,7 +251,7 @@ class OperatorBinder(CSECachingMapperMixin, IdentityMapper):
 
 
 # }}}
-# {{{ Stringification ---------------------------------------------------------
+# {{{ stringification ---------------------------------------------------------
 class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
     def __init__(self, constant_mapper=str, flux_stringify_mapper=None):
         pymbolic.mapper.stringifier.StringifyMapper.__init__(
@@ -568,7 +568,7 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
 
 
 # }}}
-# {{{ Simplification / Optimization -------------------------------------------
+# {{{ simplification / optimization -------------------------------------------
 class CommutativeConstantFoldingMapper(
         pymbolic.mapper.constant_folder.CommutativeConstantFoldingMapper,
         IdentityMapperMixin):
@@ -824,7 +824,7 @@ class InverseMassContractor(CSECachingMapperMixin, IdentityMapper):
 
 
 # }}}
-# {{{ Error Checker -----------------------------------------------------------
+# {{{ error checker -----------------------------------------------------------
 class ErrorChecker(CSECachingMapperMixin, IdentityMapper):
     map_common_subexpression_uncached = \
             IdentityMapper.map_common_subexpression
@@ -855,7 +855,7 @@ class ErrorChecker(CSECachingMapperMixin, IdentityMapper):
 
 
 # }}}
-# {{{ Collectors for various optemplate components --------------------------------
+# {{{ collectors for various optemplate components --------------------------------
 class CollectorMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     def combine(self, values):
         from pytools import flatten
@@ -919,7 +919,7 @@ class BoundOperatorCollector(CSECachingMapperMixin, CollectorMixin, CombineMappe
 
 
 # }}}
-# {{{ Evaluation --------------------------------------------------------------
+# {{{ evaluation --------------------------------------------------------------
 class Evaluator(pymbolic.mapper.evaluator.EvaluationMapper):
     def map_boundary_pair(self, bp):
         from hedge.optemplate.primitives import BoundaryPair

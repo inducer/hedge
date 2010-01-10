@@ -36,7 +36,7 @@ from hedge.optemplate import IdentityMapper
 
 
 
-# instructions ----------------------------------------------------------------
+# {{{ instructions ------------------------------------------------------------
 class Instruction(Record):
     __slots__ = ["dep_mapper_factory"]
     priority = 0
@@ -246,7 +246,9 @@ class FluxExchangeBatchAssign(Instruction):
 
 
 
+# }}}
 
+# {{{ graphviz/dot dataflow graph drawing -------------------------------------
 def dot_dataflow_graph(code, max_node_label_length=30):
     origins = {}
     node_names = {}
@@ -296,9 +298,9 @@ def dot_dataflow_graph(code, max_node_label_length=30):
 
 
 
+# }}}
 
-
-# code ------------------------------------------------------------------------
+# {{{ code representation -----------------------------------------------------
 class Code(object):
     def __init__(self, instructions, result):
         self.instructions = instructions
@@ -415,7 +417,9 @@ class Code(object):
 
 
 
-# compiler --------------------------------------------------------------------
+# }}}
+
+# {{{ compiler ----------------------------------------------------------------
 class OperatorCompilerBase(IdentityMapper):
     from hedge.optemplate import BoundOperatorCollector \
             as bound_op_collector_class
@@ -447,6 +451,7 @@ class OperatorCompilerBase(IdentityMapper):
 
         return self.dep_mapper
 
+    # {{{ collecting various optemplate components ----------------------------
     def get_contained_fluxes(self, expr):
         """Recursively enumerate all flux expressions in the expression tree
         `expr`. The returned list consists of `ExecutionPlanner.FluxRecord`
@@ -524,6 +529,9 @@ class OperatorCompilerBase(IdentityMapper):
         result = with_object_array_or_scalar(self.assign_to_new_var, result)
         return Code(self.aggregate_assignments(self.code, result), result)
 
+    # }}}
+
+    # {{{ variables and names -------------------------------------------------
     def get_var_name(self, prefix=None):
         def generate_suffixes():
             yield ""
@@ -551,6 +559,19 @@ class OperatorCompilerBase(IdentityMapper):
         self.assigned_names.add(name)
         return name
 
+    def assign_to_new_var(self, expr, priority=0, prefix=None):
+        from pymbolic.primitives import Variable
+        if isinstance(expr, Variable):
+            return expr
+
+        new_name = self.get_var_name(prefix)
+        self.code.append(self.make_assign(new_name, expr, priority))
+
+        return Variable(new_name)
+
+    # }}}
+
+    # {{{ map_xxx routines ----------------------------------------------------
     def map_common_subexpression(self, expr):
         try:
             return self.expr_to_var[expr.child]
@@ -701,18 +722,9 @@ class OperatorCompilerBase(IdentityMapper):
                     return var(names[idx])
 
             raise RuntimeError("flux '%s' not in any flux batch" % expr)
+    # }}}
 
-    def assign_to_new_var(self, expr, priority=0, prefix=None):
-        from pymbolic.primitives import Variable
-        if isinstance(expr, Variable):
-            return expr
-
-        new_name = self.get_var_name(prefix)
-        self.code.append(self.make_assign(new_name, expr, priority))
-
-        return Variable(new_name)
-
-    # instruction producers ---------------------------------------------------
+    # {{{ instruction producers -----------------------------------------------
     def make_assign(self, name, expr, priority):
         return Assign(names=[name], exprs=[expr],
                 dep_mapper_factory=self.dep_mapper_factory,
@@ -721,7 +733,9 @@ class OperatorCompilerBase(IdentityMapper):
     def make_flux_batch_assign(self, names, fluxes, kind):
         return FluxBatchAssign(names=names, fluxes=fluxes, kind=kind)
 
-    # assignment aggregration pass --------------------------------------------
+    # }}}
+
+    # {{{ assignment aggregration pass ----------------------------------------
     def aggregate_assignments(self, instructions, result):
         from pymbolic.primitives import Variable
 
@@ -914,3 +928,11 @@ class OperatorCompilerBase(IdentityMapper):
 
         return [schedule_and_finalize_assignment(ass)
             for ass in processed_assigns] + other_insns
+    # }}}
+
+# }}}
+
+
+
+
+# vim: foldmethod=marker
