@@ -35,38 +35,8 @@ from hedge.tools.convergence import *
 from hedge.tools.flops import *
 from hedge.tools.debug import *
 from hedge.tools.indexing import *
+from hedge.tools.affine import *
 from hedge.flux.tools import *
-
-
-
-
-AffineMap = hedge._internal.AffineMap
-def _affine_map___getinitargs__(self):
-    return self.matrix, self.vector
-
-AffineMap.__getinitargs__ = _affine_map___getinitargs__
-
-
-
-
-class Rotation(AffineMap):
-    def __init__(self, angle):
-        # FIXME: Add axis, make multidimensional
-        from math import sin, cos
-        AffineMap.__init__(self,
-                numpy.array([
-                    [cos(angle), sin(angle)],
-                    [-sin(angle), cos(angle)]]),
-                numpy.zeros((2,)))
-
-
-
-
-class Reflection(AffineMap):
-    def __init__(self, axis, dim):
-        mat = numpy.identity(dim)
-        mat[axis,axis] = -1
-        AffineMap.__init__(self, mat, numpy.zeros((dim,)))
 
 
 
