@@ -839,10 +839,16 @@ class Discretization(TimestepCalculator):
     def nodewise_dot_product(self, a, b):
         return numpy.dot(a, b)
 
+    def _integral_projection(self):
+        """Find a vector :math:`v` such that
+        :math:`v\cdot M u=\int u`."""
+
+        return ones_on_volume(self)
+
     @memoize_method
-    def _mass_ones(self):
-        from hedge.optemplate import MassOperator
-        return MassOperator().apply(self, ones_on_volume(self))
+    def _mass_integral_projection(self):
+        from hedge.optemplate.operators import MassOperator
+        return MassOperator().apply(self, self._integral_projection())
 
     @memoize_method
     def mesh_volume(self):
@@ -860,7 +866,7 @@ class Discretization(TimestepCalculator):
                 volume_vector = empty
 
             return self.nodewise_dot_product(
-                    self._mass_ones(), volume_vector)
+                    self._mass_integral_projection(), volume_vector)
         else:
             result = numpy.zeros(shape=ls, dtype=float)
 
@@ -871,7 +877,7 @@ class Discretization(TimestepCalculator):
                     result[i] = 0
                 else:
                     result[i] = self.nodewise_dot_product(
-                            self._mass_ones(), volume_vector[i])
+                            self._mass_integral_projection(), volume_vector[i])
 
             return result
 
