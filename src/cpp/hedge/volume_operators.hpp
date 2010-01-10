@@ -91,6 +91,9 @@ namespace hedge {
       unsigned el_size() const
       { return m_el_size; }
 
+      unsigned total_size() const
+      { return m_el_size*m_el_count; }
+
       const element_range operator[](int i) const
       { 
         unsigned el_start = m_start + i*m_el_size;
@@ -276,9 +279,9 @@ namespace hedge {
       throw std::runtime_error("number of matrix columns != size of src element");
     if (matrix.size1() != dest_ers.el_size())
       throw std::runtime_error("number of matrix rows != size of dest element");
-    if (src_ers.size()*src_ers.el_size() != operand.size())
+    if (src_ers.total_size() != operand.size())
       throw std::runtime_error("operand is of wrong size");
-    if (dest_ers.size()*dest_ers.el_size() != result.size())
+    if (dest_ers.total_size() != result.size())
       throw std::runtime_error("result is of wrong size");
 
     using namespace boost::numeric::bindings;

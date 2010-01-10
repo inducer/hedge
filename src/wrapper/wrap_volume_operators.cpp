@@ -111,6 +111,7 @@ void hedge_expose_volume_operators()
       .def("__getitem__", element_ranges_getitem<cl>)
       .add_property("start", &cl::start)
       .add_property("el_size", &cl::el_size)
+      .add_property("total_size", &cl::total_size)
       ;
   }
 
