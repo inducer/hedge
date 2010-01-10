@@ -78,6 +78,7 @@ class JacobiGaussQuadrature(Quadrature):
     *alpha* and *beta* may not be -0.5.
 
     Integrates on the interval (-1,1).
+    The quadrature rule is exact up to degree :math:`2*N+1`.
     """
     def __init__(self, alpha, beta, N):
         x, w = self.compute_weights_and_nodes(N, alpha, beta)
@@ -146,7 +147,7 @@ class JacobiGaussQuadrature(Quadrature):
         from hedge.polynomial import JacobiFunction
         p0 = JacobiFunction(alpha, beta, 0)
         nodes = eigval
-        weights = [eigvec[0,i]**2 / p0(nodes[i])**2 for i in range(N+1)]
+        weights = numpy.array([eigvec[0,i]**2 / p0(nodes[i])**2 for i in range(N+1)])
 
         return nodes, weights
 
@@ -158,6 +159,18 @@ class LegendreGaussQuadrature(JacobiGaussQuadrature):
     """
     def __init__(self, N):
         JacobiGaussQuadrature.__init__(self, 0, 0, N)
+
+
+
+
+class OneDToNDQuadratureAdapter(Quadrature):
+    """Augments the :attr:`points` array of a 1D quadrature by an extra dimension.
+    """
+    def __init__(self, one_d_quad):
+        Quadrature.__init__(self, 
+                one_d_quad.points[:, numpy.newaxis], 
+                one_d_quad.weights)
+
 
 
 
@@ -229,6 +242,13 @@ class SimplexCubature(object):
     SIAM J. Numer. Anal.  15 (1978), 282--290.
 
     This cubature rule has both negative and positive weights.
+    It is exact for polynomials up to order :math:`2s+1`, where
+    :math:`s` is given as *order*.
+    The integration domain is the unit simplex
+
+    .. math::
+
+        T_n:=\{(x_1,\dots,x_n) : x_i\ge -1, \sum_i x_i <=0\}
     """
     def __init__(self, order, dimension):
         s = order
@@ -278,8 +298,16 @@ class SimplexCubature(object):
                 self.neg_points.append(real_p)
                 self.neg_weights.append(dim_factor*w)
 
-        self.points = self.pos_points + self.neg_points
-        self.weights = self.pos_weights + self.neg_weights
+        self.points = numpy.array(self.pos_points + self.neg_points)
+        self.weights = numpy.array(self.pos_weights + self.neg_weights)
+
+        self.pos_points = numpy.array(self.pos_points)
+        self.pos_weights = numpy.array(self.pos_points)
+        self.neg_points = numpy.array(self.neg_points)
+        self.neg_weights = numpy.array(self.neg_points)
+
+        self.points = numpy.array(self.points)
+        self.weights = numpy.array(self.weights)
 
         self.pos_info = zip(self.pos_points, self.pos_weights)
         self.neg_info = zip(self.neg_points, self.neg_weights)
@@ -288,6 +316,30 @@ class SimplexCubature(object):
     def __call__(self, f):
         return sum(f(x)*w for x, w in self.pos_info) \
                 + sum(f(x)*w for x, w in self.neg_info)
+
+
+
+
+def get_simplex_cubature(exact_to_degree, dim):
+    """Return a *dim*-dimensional quadrature satisfying
+    at least the *exact_to_degree* requirement (but may be more 
+    exact by one degree).
+
+    Returns a Gauss quadrature in 1D and a Grundmann-Moeller cubature otherwise.
+    All returned quadratures are nD in the sense that their node coordinates
+    are arrays.
+    """
+
+    from math import ceil
+    s = int(ceil((exact_to_degree-1)/2))
+
+    if dim == 1:
+        return OneDToNDQuadratureAdapter(
+                LegendreGaussQuadrature(s))
+    else:
+        return SimplexCubature(s, dim)
+
+
 
 
 
