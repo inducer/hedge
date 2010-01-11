@@ -32,9 +32,11 @@ from pytools import memoize_method
 
 
 
-# {{{ quadrature info ---------------------------------------------------------
+# {{{ discretization-level quadrature info ------------------------------------
 class QuadratureInfo(object):
-    """Once fully filled, this structure has the following data members:
+    """Discretization-level quadrature info.
+
+    Once fully filled, this structure has the following data members:
 
     :ivar node_count: number of quadrature nodes across the whole mesh.
     """
@@ -81,7 +83,7 @@ class StraightElementGroup(ElementGroupBase):
             ldis = el_group.local_discretization
 
             ldis_quad_info = self.ldis_quad_info = \
-                    ldis.quadrature_info(min_degree)
+                    ldis.get_quadrature_info(min_degree)
 
             from hedge._internal import UniformElementRanges
             self.ranges = UniformElementRanges(
@@ -122,6 +124,37 @@ class CurvedElementGroup(ElementGroupBase):
 # }}}
 # {{{ face groups -------------------------------------------------------------
 class StraightFaceGroup(hedge._internal.StraightFaceGroup):
+    """
+    Each face group has its own element numbering.
+
+    :ivar ldis_loc: An instance of 
+        :hedge.discretization.local.LocalDiscretization`,
+        used for the interior side of each face.
+    :ivar ldis_opp: An instance of 
+        :hedge.discretization.local.LocalDiscretization`,
+        used for the exterior side of each face.
+    :ivar local_el_inverse_jacobians: A list of inverse
+        Jacobians for each element.
+
+    The following attributes are inherited from the C++ level:
+
+    :ivar face_pairs: A list of face pair instances.
+    :ivar double_sided: A :class:`bool` indicating whether this 
+        face group is double-sided, i.e. represents both sides
+        of each face-pair, or only the interior side.
+    :ivar index_lists: A numpy array of shape 
+        *(index_list_count, index_list_length)*.
+    :ivar face_count: The number of faces of each element
+        in :attr:`ldis_loc`.
+    :ivar local_el_to_global_el_base: a list of global volume 
+        element base indices, indexed in local element numbers.
+
+    Further, the following methods are inherited from the C++ level:
+
+    .. method:: element_count()
+    .. method:: face_length()
+    """
+
     def __init__(self, double_sided, debug):
         hedge._internal.StraightFaceGroup.__init__(self, double_sided)
         from hedge.tools import IndexListRegistry
@@ -168,6 +201,7 @@ class StraightFaceGroup(hedge._internal.StraightFaceGroup):
 
         self.ldis_loc = ldis_loc
         self.ldis_opp = ldis_opp
+
 
 
 
@@ -277,12 +311,24 @@ class StraightCurvedFaceGroup(hedge._internal.StraightCurvedFaceGroup):
 # }}}
 # {{{ boundary ----------------------------------------------------------------
 class Boundary(object):
-    def __init__(self, nodes, ranges, vol_indices, face_groups,
+    """
+    :ivar nodes: an array of node coordinates.
+    :ivar vol_indices: a numpy intp of volume indices of all nodes,
+        for quick data extraction from volume data.
+    :ivar face_groups: a list of :class:`FaceGroup` instances.
+    :ivar fg_ranges: a list of lists of :class:`slice` objects indicating the 
+      DOF numbers in the boundary vector for each face. Note: The entries of 
+      this list are actually C++ ElementRanges objects. There is one list per face
+      group object, in the same order.
+    :ivar el_face_to_face_group_and_face_pair:
+    """
+    def __init__(self, discr, nodes, vol_indices, face_groups, fg_ranges,
             el_face_to_face_group_and_face_pair={}):
+        self.discr = discr
         self.nodes = nodes
-        self.ranges = ranges
-        self.vol_indices = vol_indices
+        self.vol_indices = numpy.asarray(vol_indices, dtype=numpy.intp)
         self.face_groups = face_groups
+        self.fg_ranges = fg_ranges
         self.el_face_to_face_group_and_face_pair = \
                 el_face_to_face_group_and_face_pair
 
@@ -302,6 +348,56 @@ class Boundary(object):
 
     def is_empty(self):
         return len(self.nodes) == 0
+
+    class QuadratureInfo:
+        """
+        Unless otherwise noted, attributes have the same meaning as above, but for 
+        the quadrature grid.
+
+        :ivar ldis_quad_info: 
+        :ivar face_groups:
+        :ivar fg_ranges:
+        :ivar fg_ldis_quad_infos: An array of :class:`QuadratureInfo` instances
+            belonging to a :class:`hedge.discretization.local.LocalDiscretization`.
+            There is one instance for each face group object.
+        :ivar node_count:
+        """
+        def __init__(self, face_groups, fg_ranges, fg_ldis_quad_infos, node_count):
+            self.face_groups = face_groups
+            self.fg_ranges = fg_ranges
+            self.fg_ldis_quad_infos = fg_ldis_quad_infos
+            self.node_count = node_count
+
+    @memoize_method
+    def get_quadrature_info(self, quadrature_tag):
+        from hedge._internal import UniformElementRanges
+
+        q_face_groups = []
+        q_fg_ranges = []
+        fg_ldis_quad_infos = []
+
+        fg_start = 0
+        for fg, fg_range in zip(self.face_groups, self.fg_ranges):
+            ldis = fg.ldis_loc
+            ldis_q_info = ldis.get_quadrature_info(
+                    self.discr.quad_min_degrees[quadrature_tag])
+            fg_ldis_quad_infos.append(ldis_q_info)
+
+            q_fg_range = UniformElementRanges(
+                fg_start, # FIXME: need to vary element starts
+                ldis_q_info.face_node_count(), len(fg_range))
+            q_fg_ranges.append(q_fg_range)
+
+            fg_start += q_fg_range.total_size
+
+        return self.QuadratureInfo(
+                face_groups=q_face_groups,
+                fg_ranges=q_fg_ranges,
+                fg_ldis_quad_infos=fg_ldis_quad_infos,
+                node_count=fg_start)
+
+        return q_info
+
 
 
 
