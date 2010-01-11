@@ -32,6 +32,7 @@
 #include <boost/numeric/bindings/traits/matrix_traits.hpp>
 #include <boost/numeric/bindings/traits/ublas_matrix.hpp>
 #include <boost/iterator/iterator_facade.hpp>
+#include <boost/iterator/transform_iterator.hpp>
 #include "base.hpp"
 
 
@@ -46,27 +47,67 @@ namespace hedge {
   struct nonuniform_element_ranges 
   {
     private:
-      typedef std::vector<element_range> container;
-      container m_container;
+      typedef std::vector<node_number_t> container;
+      container m_el_starts;
+      unsigned m_el_size;
 
     public:
-      nonuniform_element_ranges()
+      nonuniform_element_ranges(unsigned el_size)
+        : m_el_size(el_size)
       { }
 
       const unsigned size() const
-      { return m_container.size(); }
+      { return m_el_starts.size(); }
+      unsigned el_size() const
+      { return m_el_size; }
+
       void clear()
-      { m_container.clear(); }
-      void append_range(unsigned start, unsigned end)
-      { m_container.push_back(std::make_pair(start, end)); }
-      const element_range &operator[](unsigned i) const
-      { return m_container[i]; }
+      { m_el_starts.clear(); }
+      void append_el(unsigned el_start)
+      { m_el_starts.push_back(el_start); }
+      const element_range operator[](unsigned i) const
+      {
+        node_number_t el_start = m_el_starts[i];
+        return std::make_pair(el_start, el_start+m_el_size);
+      }
 
-      typedef container::const_iterator const_iterator;
-      const const_iterator begin() const { return m_container.begin(); }
-      const const_iterator end() const { return m_container.end(); }
+      class to_element_range_map
+      {
+        private:
+          typedef nonuniform_element_ranges parent;
+          const parent          &m_parent;
 
-      typedef const_iterator iterator;
+        public:
+          typedef node_number_t argument_type;
+          typedef element_range result_type;
+
+          to_element_range_map(parent const &prt)
+            : m_parent(prt)
+          { }
+
+          result_type operator()(argument_type arg)
+          {
+            return std::make_pair(arg, arg+m_parent.m_el_size);
+          }
+      };
+
+      // iterator functionality
+      typedef boost::transform_iterator<
+        to_element_range_map, container::const_iterator> const_iterator;
+
+      const const_iterator begin() const 
+      {
+        return boost::make_transform_iterator(
+          m_el_starts.begin(),
+          to_element_range_map(*this));
+      }
+
+      const const_iterator end() const
+      {
+        return boost::make_transform_iterator(
+          m_el_starts.end(),
+          to_element_range_map(*this));
+      }
   };
 
 

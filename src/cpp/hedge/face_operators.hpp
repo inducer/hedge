@@ -128,9 +128,6 @@ namespace hedge
     index_lists_t index_lists;
 
     const bool double_sided;
-    /** The number of elements touched by this face group.
-     * Used for sizing a temporary.
-     */
     unsigned face_count;
     numpy_vector<npy_uint> local_el_to_global_el_base;
 

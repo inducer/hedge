@@ -96,10 +96,10 @@ void hedge_expose_volume_operators()
 {
   {
     typedef nonuniform_element_ranges cl;
-    class_<cl>("NonuniformElementRanges")
+    class_<cl>("NonuniformElementRanges", init<unsigned>(arg("el_size")))
       .def("__len__", &cl::size)
       .def("clear", &cl::clear)
-      .def("append_range", &cl::append_range)
+      .def("append_el", &cl::append_el)
       .def("__getitem__", element_ranges_getitem<cl>)
       ;
   }
