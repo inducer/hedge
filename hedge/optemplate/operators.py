@@ -25,6 +25,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 import numpy
 import numpy.linalg as la
 import pymbolic.primitives
+from pytools import Record, memoize_method
 
 
 
@@ -484,6 +485,107 @@ class VectorFluxOperator(object):
                 "Use the less ambiguous parenthesized syntax instead.",
                 DeprecationWarning, stacklevel=2)
         return self.__call__(arg)
+
+
+
+
+
+class WholeDomainFluxOperator(Operator):
+    """Used by the CUDA backend to represent a flux computation on the
+    whole domain--interior and boundary.
+    """
+
+    class FluxInfo(Record):
+        __slots__ = []
+
+        def __repr__(self):
+            # override because we want flux_expr in infix
+            return "%s(%s)" % (
+                    self.__class__.__name__,
+                    ", ".join("%s=%s" % (fld, getattr(self, fld))
+                        for fld in self.__class__.fields
+                        if hasattr(self, fld)))
+
+    class InteriorInfo(FluxInfo):
+        # attributes: flux_expr, field_expr,
+
+        @property
+        @memoize_method
+        def dependencies(self):
+            return set(get_flux_dependencies(
+                self.flux_expr, self.field_expr))
+
+    class BoundaryInfo(FluxInfo):
+        # attributes: flux_expr, bpair
+
+        @property
+        @memoize_method
+        def int_dependencies(self):
+            return set(get_flux_dependencies(
+                    self.flux_expr, self.bpair, bdry="int"))
+
+        @property
+        @memoize_method
+        def ext_dependencies(self):
+            return set(get_flux_dependencies(
+                    self.flux_expr, self.bpair, bdry="ext"))
+
+
+    def __init__(self, is_lift, interiors, boundaries):
+        self.is_lift = is_lift
+
+        self.interiors = tuple(interiors)
+        self.boundaries = tuple(boundaries)
+
+        from pytools import set_sum
+        interior_deps = set_sum(iflux.dependencies
+                for iflux in interiors)
+        boundary_int_deps = set_sum(bflux.int_dependencies
+                for bflux in boundaries)
+        boundary_ext_deps = set_sum(bflux.ext_dependencies
+                for bflux in boundaries)
+
+        self.interior_deps = list(interior_deps)
+        self.boundary_int_deps = list(boundary_int_deps)
+        self.boundary_ext_deps = list(boundary_ext_deps)
+        self.boundary_deps = list(boundary_int_deps | boundary_ext_deps)
+
+        self.dep_to_tag = {}
+        for bflux in boundaries:
+            for dep in get_flux_dependencies(
+                    bflux.flux_expr, bflux.bpair, bdry="ext"):
+                self.dep_to_tag[dep] = bflux.bpair.tag
+
+    @memoize_method
+    def rebuild_optemplate(self):
+        summands = []
+        for i in self.interiors:
+            summands.append(
+                    FluxOperator(i.flux_expr, self.is_lift)(i.field_expr))
+        for b in self.boundaries:
+            summands.append(
+                    BoundaryFluxOperator(b.flux_expr, b.bpair.tag, self.is_lift)
+                    (b.bpair))
+
+        from pymbolic.primitives import flattened_sum
+        return flattened_sum(summands)
+
+    # infrastructure interaction
+    def get_hash(self):
+        return hash((self.__class__, self.rebuild_optemplate()))
+
+    def is_equal(self, other):
+        return (other.__class__ == WholeDomainFluxOperator
+                and self.rebuild_optemplate() == other.rebuild_optemplate())
+
+    def __getinitargs__(self):
+        return self.is_lift, self.interiors, self.boundaries
+
+    def get_mapper_method(self, mapper):
+        return mapper.map_whole_domain_flux
+
+
+
 
 # }}}
 
