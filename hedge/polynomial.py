@@ -40,6 +40,16 @@ class LegendreFunction(JacobiFunction):
     def __init__(self, N):
         JacobiFunction.__init__(self, 0, 0, N)
 
+class VectorLegendreFunction:
+    """Same as :class:`LegendreFunction`, but accepts a single-entry
+    vector as arugment.
+    """
+    def __init__(self, n):
+        self.lf = LegendreFunction(n)
+
+    def __call__(self, x):
+        return self.lf(x[0])
+
 class DiffLegendreFunction(DiffJacobiFunction):
     def __init__(self, N):
         DiffJacobiFunction.__init__(self, 0, 0, N)
