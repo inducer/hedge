@@ -500,8 +500,11 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
     def map_scalar_parameter(self, expr, enclosing_prec):
         return "ScalarPar[%s]" % expr.name
 
-    def map_quadrature_grid_upsampler(self, expr, enclosing_prec):
+    def map_quad_grid_upsampler(self, expr, enclosing_prec):
         return "ToQuad[%s]" % expr.quadrature_tag
+
+    def map_quad_bdry_grid_upsampler(self, expr, enclosing_prec):
+        return "ToBdryQuad[%s,%s]" % (expr.quadrature_tag, expr.boundary_tag)
 
 
 
@@ -729,7 +732,7 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
 
             def map_operator_binding(self, expr):
                 from hedge.optemplate import (BoundarizeOperator,
-                        FluxExchangeOperator)
+                        FluxExchangeOperator, QuadratureBoundaryGridUpsampler)
 
                 if isinstance(expr.op, BoundarizeOperator):
                     if expr.op.tag != bpair.tag:
@@ -751,6 +754,17 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
                     return FieldComponent(
                             self.register_boundary_expr(expr),
                             is_interior=False)
+
+                elif isinstance(expr.op, QuadratureBoundaryGridUpsampler):
+                    if bpair.tag != expr.op.boundary_tag:
+                        raise RuntimeError("BoundarizeOperator "
+                                "and QuadratureBoundaryGridUpsampler "
+                                "do not agree about boundary tag: %s vs %s"
+                                % (expr.op.boundary_tag, bpair.tag))
+                    return FieldComponent(
+                            self.register_boundary_expr(expr),
+                            is_interior=False)
+
                 else:
                     raise RuntimeError("Found '%s' in a boundary term. "
                             "To the best of my knowledge, no hedge operator applies "
@@ -1094,7 +1108,8 @@ class CollectorMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     map_flux_exchange = map_constant
     map_normal_component = map_constant
     map_scalar_parameter = map_constant
-    map_quadrature_grid_upsampler = map_constant
+    map_quad_grid_upsampler = map_constant
+    map_quad_bdry_grid_upsampler = map_constant
 
 
 

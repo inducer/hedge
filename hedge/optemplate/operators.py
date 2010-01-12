@@ -220,7 +220,30 @@ class QuadratureGridUpsampler(Operator):
         return (self.quadrature_tag,)
 
     def get_mapper_method(self, mapper):
-        return mapper.map_quadrature_grid_upsampler
+        return mapper.map_quad_grid_upsampler
+
+
+
+
+
+class QuadratureBoundaryGridUpsampler(Operator):
+    """
+    .. note::
+
+        This operator is purely for internal use. It is inserted
+        by :class:`hedge.optemplate.mappers.OperatorSpecializer`
+        when a :class:`MassOperator` is applied to a quadrature field.
+    """
+    def __init__(self, quadrature_tag, boundary_tag):
+        self.quadrature_tag = quadrature_tag
+        self.boundary_tag = boundary_tag
+
+    def __getinitargs__(self):
+        return (self.quadrature_tag, self.boundary_tag)
+
+    def get_mapper_method(self, mapper):
+        return mapper.map_quad_bdry_grid_upsampler
+
 
 # {{{ various elementwise linear operators -----------------------------------
 class FilterOperator(ElementwiseLinearOperator):
@@ -348,28 +371,6 @@ class BoundarizeOperator(Operator):
     def get_mapper_method(self, mapper):
         return mapper.map_boundarize
 
-
-
-
-
-class QuadratureBoundarizeOperator(Operator):
-    """
-    .. note::
-
-        This operator is purely for internal use. It is inserted
-        by :class:`hedge.optemplate.mappers.QuadratureOperatorSpecializer`
-        when a :class:`QuadratureGridUpsampler` is applied to the immediate
-        result of a :class:`BoundarizeOperator`.
-    """
-    def __init__(self, boundary_tag, quadrature_tag):
-        self.boundary_tag = boundary_tag
-        self.quadrature_tag = quadrature_tag
-
-    def __getinitargs__(self):
-        return (self.boundary_tag, self.quadrature_tag)
-
-    def get_mapper_method(self, mapper):
-        return mapper.map_quad_boundarize
 
 
 

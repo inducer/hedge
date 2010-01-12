@@ -225,7 +225,7 @@ class ExecutionMapper(ExecutionMapperBase):
 
         return out
 
-    def map_quadrature_grid_upsampler(self, op, field_expr):
+    def map_quad_grid_upsampler(self, op, field_expr):
         field = self.rec(field_expr)
 
         from hedge.tools import is_zero
@@ -247,8 +247,29 @@ class ExecutionMapper(ExecutionMapperBase):
 
         return out
 
-    def map_quadrature_boundary_grid_upsampler(self, op, field_expr):
-        raise NotImplementedError
+    def map_quad_bdry_grid_upsampler(self, op, field_expr):
+        field = self.rec(field_expr)
+
+        from hedge.tools import is_zero
+        if is_zero(field):
+            return 0
+
+        bdry = self.discr.get_boundary(op.boundary_tag)
+        bdry_q_info = bdry.get_quadrature_info(op.quadrature_tag)
+
+        out = numpy.zeros(bdry_q_info.node_count, field.dtype)
+
+        from hedge._internal import perform_elwise_operator
+        for fg, from_ranges, to_ranges, ldis_quad_info in zip(
+                bdry.face_groups,
+                bdry.fg_ranges,
+                bdry_q_info.fg_ranges,
+                bdry_q_info.fg_ldis_quad_infos):
+            perform_elwise_operator(from_ranges, to_ranges,
+                ldis_quad_info.face_up_interpolation_matrix(), 
+                field, out)
+
+        return out
 
     def map_elementwise_max(self, op, field_expr):
         from hedge._internal import perform_elwise_max

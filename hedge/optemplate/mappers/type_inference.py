@@ -373,8 +373,9 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
         from hedge.optemplate.operators import (
                 DiffOperatorBase, MassOperatorBase, ElementwiseMaxOperator,
                 BoundarizeOperator, FluxExchangeOperator,
-                FluxOperatorBase, QuadratureGridUpsampler,
-                MassOperator, QuadratureMassOperator, 
+                FluxOperatorBase,
+                QuadratureGridUpsampler, QuadratureBoundaryGridUpsampler,
+                MassOperator, QuadratureMassOperator,
                 StiffnessTOperator, QuadratureStiffnessTOperator,
                 ElementwiseLinearOperator)
 
@@ -388,13 +389,13 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
             return type_info.VolumeVector(NodalRepresentation())
 
         elif isinstance(expr.op, (StiffnessTOperator)):
-            # stiffness_T can be specialized by QuadratureOperatorSpecializer
+            # stiffness_T can be specialized for quadrature by OperatorSpecializer
             typedict[expr.field] = type_info.KnownVolume()
             self.rec(expr.field, typedict)
             return type_info.VolumeVector(NodalRepresentation())
 
         elif isinstance(expr.op, MassOperator):
-            # mass can be specialized by QuadratureOperatorSpecializer
+            # mass can be specialized for quadrature by OperatorSpecializer
             typedict[expr.field] = type_info.KnownVolume()
             self.rec(expr.field, typedict)
             return type_info.VolumeVector(NodalRepresentation())
@@ -404,7 +405,6 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
             typedict[expr.field] = type_info.VolumeVector(NodalRepresentation())
             self.rec(expr.field, typedict)
             return type_info.VolumeVector(NodalRepresentation())
-
 
         elif isinstance(expr.op, ElementwiseMaxOperator):
             typedict[expr.field] = typedict[expr].unify(
@@ -459,6 +459,14 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
             return type_info.KnownRepresentation(
                     QuadratureRepresentation(expr.op.quadrature_tag))\
                             .unify(extract_domain(typedict[expr.field]), expr)
+
+        elif isinstance(expr.op, QuadratureBoundaryGridUpsampler):
+            typedict[expr.field] = type_info.BoundaryVector(
+                    expr.op.boundary_tag, NodalRepresentation())
+            self.rec(expr.field, typedict)
+            return type_info.BoundaryVector(
+                    expr.op.boundary_tag,
+                    QuadratureRepresentation(expr.op.quadrature_tag))
 
         elif isinstance(expr.op, ElementwiseLinearOperator):
             typedict[expr.field] = type_info.VolumeVector(NodalRepresentation())
