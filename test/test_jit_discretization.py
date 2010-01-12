@@ -113,7 +113,7 @@ def test_quadrature_tri_mass_mat_monomial():
     #ones = discr.interpolate_volume_function(lambda x, el: 1)
     int_proj = discr._integral_projection()
 
-    if True:
+    if False:
         from hedge.visualization import SiloVisualizer
         vis = SiloVisualizer(discr)
         visf = vis.make_file("test")
@@ -177,7 +177,6 @@ def test_tri_diff_mat():
 def test_2d_gauss_theorem():
     """Verify Gauss's theorem explicitly on a mesh"""
 
-    from hedge.discretization.local import TriangleDiscretization
     from hedge.mesh.generator import make_disk_mesh
     from math import sin, cos, sqrt, exp, pi
     from numpy import dot
@@ -190,7 +189,6 @@ def test_2d_gauss_theorem():
     ref_discr = discr_class(mesh, order=order)
 
     from hedge.flux import make_normal, FluxScalarPlaceholder
-    from pymbolic.primitives import IfPositive
 
     normal = make_normal(discr.dimensions)
     flux_f_ph = FluxScalarPlaceholder(0)
@@ -216,10 +214,10 @@ def test_2d_gauss_theorem():
     int_div = discr.integral(divergence)
 
     flux_optp = (
-            get_flux_operator(one_sided_x)
-            *BoundaryPair(Field("f1"), Field("fz")) +
-            get_flux_operator(one_sided_y)
-            *BoundaryPair(Field("f2"), Field("fz")))
+            get_flux_operator(one_sided_x)(
+                BoundaryPair(Field("f1"), Field("fz"))) +
+            get_flux_operator(one_sided_y)(
+                BoundaryPair(Field("f2"), Field("fz"))))
 
     from hedge.mesh import TAG_ALL
     bdry_val = discr.compile(flux_optp)(f1=f1_v, f2=f2_v,

@@ -52,6 +52,7 @@ def test_simp_orthogonality():
                         true_result = 0
                     result = cub(lambda x: f(x)*g(x))
                     err = abs(result-true_result)
+                    print maxerr, err
                     maxerr = max(maxerr, err)
                     if err > ebound:
                         print "bad", order,i,j, err
@@ -786,6 +787,7 @@ def test_simp_cubature():
     """Check that Grundmann-Moeller cubature works as advertised"""
     from pytools import generate_nonnegative_integer_tuples_summing_to_at_most
     from hedge.quadrature import SimplexCubature
+    from hedge.tools.mathematics import Monomial
 
     for dim in range(2,3+1):
         for s in range(3+1):
