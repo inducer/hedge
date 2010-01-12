@@ -32,19 +32,16 @@ from hedge.backends.vector_expr import CompiledVectorExpressionBase
 class CompiledVectorExpression(CompiledVectorExpressionBase):
     elementwise_mod = codepy.elementwise
 
-    def __init__(self, vec_expr_info_list, result_dtype_getter,
-            toolchain=None, wait_on_error=False):
+    def __init__(self, vec_expr_info_list, result_dtype_getter, toolchain=None):
         CompiledVectorExpressionBase.__init__(self,
                 vec_expr_info_list, result_dtype_getter)
 
         self.toolchain = toolchain
-        self.wait_on_error = wait_on_error
 
     def make_kernel_internal(self, args, instructions):
         return self.elementwise_mod.ElementwiseKernel(
                 args, instructions, name="vector_expression",
-                toolchain=self.toolchain,
-                wait_on_error=self.wait_on_error)
+                toolchain=self.toolchain)
 
     def __call__(self, evaluate_subexpr, stats_callback=None):
         vectors = [evaluate_subexpr(vec_expr) 

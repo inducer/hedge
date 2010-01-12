@@ -64,8 +64,7 @@ class VectorExprAssign(Assign):
                     for name, expr, dnr in zip(
                         self.names, self.exprs, self.do_not_return)],
                 result_dtype_getter=simple_result_dtype_getter,
-                toolchain=toolchain,
-                wait_on_error="jit_wait_on_compile_error" in discr.debug)
+                toolchain=toolchain)
 
 
 

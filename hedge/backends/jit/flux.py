@@ -348,8 +348,7 @@ def get_interior_flux_mod(fluxes, fvi, discr, dtype):
     #print mod.generate()
     #raw_input("[Enter]")
 
-    return mod.compile(get_flux_toolchain(discr, fluxes),
-            wait_on_error="jit_wait_on_compile_error" in discr.debug)
+    return mod.compile(get_flux_toolchain(discr, fluxes))
 
 
 
@@ -469,5 +468,4 @@ def get_boundary_flux_mod(fluxes, fvi, discr, dtype):
     #print mod.generate()
     #raw_input("[Enter]")
 
-    return mod.compile(get_flux_toolchain(discr, fluxes),
-            wait_on_error="jit_wait_on_compile_error" in discr.debug)
+    return mod.compile(get_flux_toolchain(discr, fluxes))
