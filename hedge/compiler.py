@@ -126,7 +126,22 @@ class Assign(Instruction):
         return executor.exec_assign
 
 class FluxBatchAssign(Instruction):
-    __slots__ = ["names", "fluxes", "kind"]
+    __slots__ = ["names", "expressions", "repr_op"]
+    """
+    :ivar names:
+    :ivar expressions:
+
+        A list of :class:`hedge.optemplate.primitives.OperatorBinding`
+        instances bound to flux operators.
+
+        .. note ::
+
+            All operators in :attr:`expressions` are guaranteed to 
+            yield the same operator from
+            :meth:`hedge.optemplate.operators.FluxOperatorBase.repr_op`.
+
+    :ivar repr_op: The `repr_op` on which all operators agree.
+    """
 
     def get_assignees(self):
         return set(self.names)
@@ -140,10 +155,10 @@ class FluxBatchAssign(Instruction):
         from pymbolic.mapper.stringifier import PREC_NONE
 
         lines = []
-        lines.append("{ /* %s */" % self.kind)
+        lines.append("{ /* %s */" % self.repr_op)
 
         lines_expr = []
-        for n, f in zip(self.names, self.fluxes):
+        for n, f in zip(self.names, self.expressions):
             lines_expr.append("  %s <- %s" % (n, op_strifier(f, PREC_NONE)))
 
         for n, str_f in getattr(flux_strifier, "cse_name_list", []):
@@ -164,7 +179,7 @@ class DiffBatchAssign(Instruction):
         .. note ::
 
             All operators here are guaranteed to satisfy 
-            :meth:`hedge.optemplate.operators.equal_except_for_axis`.
+            :meth:`hedge.optemplate.operators.DiffOperatorBase.equal_except_for_axis`.
 
     :ivar field:
     """
@@ -420,10 +435,10 @@ class OperatorCompilerBase(IdentityMapper):
             as bound_op_collector_class
 
     class FluxRecord(Record):
-        __slots__ = ["flux_expr", "dependencies", "kind"]
+        __slots__ = ["flux_expr", "dependencies", "repr_op"]
 
     class FluxBatch(Record):
-        __slots__ = ["flux_exprs", "kind"]
+        __slots__ = ["flux_exprs", "repr_op"]
 
     def __init__(self, prefix="_expr", max_vectors_in_batch_expr=None):
         IdentityMapper.__init__(self)
@@ -497,15 +512,18 @@ class OperatorCompilerBase(IdentityMapper):
                     i += 1
 
             if present_batch:
-                batches_by_kind = {}
+                # bin batched operators by representative operator
+                batches_by_repr_op = {}
                 for fr in present_batch:
-                    batches_by_kind[fr.kind] = \
-                            batches_by_kind.get(fr.kind, set()) \
+                    batches_by_repr_op[fr.repr_op] = \
+                            batches_by_repr_op.get(fr.repr_op, set()) \
                             | set([fr.flux_expr])
 
-                for kind, batch in batches_by_kind.iteritems():
+                for repr_op, batch in batches_by_repr_op.iteritems():
                     self.flux_batches.append(
-                            self.FluxBatch(kind=kind, flux_exprs=list(batch)))
+                            self.FluxBatch(
+                                repr_op=repr_op, 
+                                flux_exprs=list(batch)))
 
                 admissible_deps |= set(fr.flux_expr for fr in present_batch)
             else:
@@ -602,13 +620,13 @@ class OperatorCompilerBase(IdentityMapper):
     def map_operator_binding(self, expr, name_hint=None):
         from hedge.optemplate.operators import (
                 DiffOperatorBase, FluxExchangeOperator,
-                FluxOperator, LiftingFluxOperator)
+                FluxOperatorBase)
 
         if isinstance(expr.op, DiffOperatorBase):
             return self.map_diff_op_binding(expr)
         elif isinstance(expr.op, FluxExchangeOperator):
             return self.map_flux_exchange_op_binding(expr)
-        elif isinstance(expr.op, (FluxOperator, LiftingFluxOperator)):
+        elif isinstance(expr.op, FluxOperatorBase):
             raise RuntimeError("OperatorCompiler encountered a flux operator.\n\n"
                     "We are expecting flux operators to be converted to custom "
                     "flux assignment instructions, but the subclassed compiler "
@@ -705,7 +723,7 @@ class OperatorCompilerBase(IdentityMapper):
                     names = [self.get_var_name() for f in mapped_fluxes]
                     self.code.append(
                             self.make_flux_batch_assign(
-                                names, mapped_fluxes, fb.kind))
+                                names, mapped_fluxes, fb.repr_op))
 
                     from pymbolic import var
                     for n, f in zip(names, fb.flux_exprs):
@@ -722,8 +740,8 @@ class OperatorCompilerBase(IdentityMapper):
                 dep_mapper_factory=self.dep_mapper_factory,
                 priority=priority)
 
-    def make_flux_batch_assign(self, names, fluxes, kind):
-        return FluxBatchAssign(names=names, fluxes=fluxes, kind=kind)
+    def make_flux_batch_assign(self, names, expressions, repr_op):
+        return FluxBatchAssign(names=names, expressions=expressions, repr_op=repr_op)
 
     # }}}
 

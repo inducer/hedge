@@ -26,6 +26,7 @@ import hedge.discretization
 import hedge.optemplate
 from hedge.backends.exec_common import ExecutionMapperBase
 import numpy
+import numpy.linalg as la
 
 
 
@@ -54,8 +55,8 @@ class ExecutionMapper(ExecutionMapperBase):
                     compiled(self, stats_callback)), []
 
     def exec_flux_batch_assign(self, insn):
-        from hedge.backends.jit.compiler import BoundaryFluxKind
-        is_bdry = isinstance(insn.kind, BoundaryFluxKind)
+        from hedge.optemplate.operators import BoundaryFluxOperatorBase
+        is_bdry = isinstance(insn.repr_op, BoundaryFluxOperatorBase)
 
         from pymbolic.primitives import is_zero
 
@@ -87,8 +88,8 @@ class ExecutionMapper(ExecutionMapperBase):
 
         def cast_arg(arg):
             if isinstance(arg, BoundaryZeros):
-                return self.discr.boundary_zeros(insn.kind.tag,
-                        dtype=max_dtype)
+                return self.discr.boundary_zeros(
+                        insn.repr_op.boundary_tag, dtype=max_dtype)
             elif isinstance(arg, VolumeZeros):
                 return self.discr.volume_zeros(
                         dtype=max_dtype)
@@ -100,7 +101,7 @@ class ExecutionMapper(ExecutionMapperBase):
         args = [cast_arg(arg) for arg in args]
 
         if is_bdry:
-            bdry = self.discr.get_boundary(insn.kind.tag)
+            bdry = self.discr.get_boundary(insn.repr_op.boundary_tag)
             face_groups = bdry.face_groups
         else:
             face_groups = self.discr.face_groups
@@ -124,22 +125,22 @@ class ExecutionMapper(ExecutionMapperBase):
             fof_shape = (fg.face_count*fg.face_length()*fg.element_count(),)
             all_fluxes_on_faces = [
                     numpy.zeros(fof_shape, dtype=max_dtype)
-                    for f in insn.fluxes]
+                    for f in insn.expressions]
             for i, fof in enumerate(all_fluxes_on_faces):
                 setattr(arg_struct, "flux%d_on_faces" % i, fof)
 
+            # make sure everything ended up in Boost.Python attributes 
+            # (i.e. empty __dict__)
             assert not arg_struct.__dict__, arg_struct.__dict__.keys()
 
             # perform gather
             func(fg, arg_struct)
 
             # do lift, produce output
-            for name, flux, fluxes_on_faces in zip(insn.names, insn.fluxes,
+            for name, flux_bdg, fluxes_on_faces in zip(insn.names, insn.expressions,
                     all_fluxes_on_faces):
-                from hedge.optemplate import LiftingFluxOperator
-
                 out = self.discr.volume_zeros(dtype=fluxes_on_faces.dtype)
-                if isinstance(flux.op, LiftingFluxOperator):
+                if flux_bdg.op.is_lift:
                     self.executor.lift_flux(fg, fg.ldis_loc.lifting_matrix(),
                             fg.local_el_inverse_jacobians, fluxes_on_faces, out)
                 else:
@@ -154,7 +155,7 @@ class ExecutionMapper(ExecutionMapperBase):
 
         if not face_groups:
             # No face groups? Still assign context variables.
-            for name, flux in zip(insn.names, insn.fluxes):
+            for name, flux_bdg in zip(insn.names, insn.expressions):
                 result.append((name, self.discr.volume_zeros()))
 
         return result, []

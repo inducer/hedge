@@ -155,7 +155,7 @@ class QuadratureStiffnessTOperator(WeakFormDiffOperatorBase):
     .. note::
 
         This operator is purely for internal use. It is inserted
-        by :class:`hedge.optemplate.mappers.QuadratureOperatorSpecializer`
+        by :class:`hedge.optemplate.mappers.OperatorSpecializer`
         when a :class:`StiffnessTOperator` is applied to a quadrature field.
     """
 
@@ -320,7 +320,7 @@ class QuadratureMassOperator(Operator):
     .. note::
 
         This operator is purely for internal use. It is inserted
-        by :class:`hedge.optemplate.mappers.QuadratureOperatorSpecializer`
+        by :class:`hedge.optemplate.mappers.OperatorSpecializer`
         when a :class:`MassOperator` is applied to a quadrature field.
     """
 
@@ -395,12 +395,20 @@ class FluxExchangeOperator(Operator):
 
 # {{{ flux-like operators -----------------------------------------------------
 class FluxOperatorBase(Operator):
-    def __init__(self, flux):
+    def __init__(self, flux, is_lift=False):
         Operator.__init__(self)
         self.flux = flux
+        self.is_lift = is_lift
 
-    def __getinitargs__(self):
-        return (self.flux, )
+    def get_flux_or_lift_text(self):
+        if self.is_lift:
+            return "Lift"
+        else:
+            return "Flux"
+
+    def repr_op(self):
+        """Return an equivalent operator with the flux expression set to 0."""
+        return type(self)(0, *self.__getinitargs__()[1:])
 
     def __call__(self, arg):
         # override to suppress apply-operator-to-each-operand 
@@ -419,23 +427,55 @@ class FluxOperatorBase(Operator):
 
 
 
+class QuadratureFluxOperatorBase(FluxOperatorBase):
+    pass
+
+class BoundaryFluxOperatorBase(FluxOperatorBase):
+    pass
+
 class FluxOperator(FluxOperatorBase):
+    def __getinitargs__(self):
+        return (self.flux, self.is_lift)
+
     def get_mapper_method(self, mapper):
         return mapper.map_flux
 
 
 
-class QuadratureFluxOperator(FluxOperatorBase):
+
+class BoundaryFluxOperator(BoundaryFluxOperatorBase):
     """
     .. note::
 
         This operator is purely for internal use. It is inserted
-        by :class:`hedge.optemplate.mappers.QuadratureOperatorSpecializer`
+        by :class:`hedge.optemplate.mappers.OperatorSpecializer`
+        when a :class:`FluxOperator` is applied to a boundary field.
+    """
+    def __init__(self, flux, boundary_tag, is_lift=False):
+        FluxOperatorBase.__init__(self, flux, is_lift)
+        self.boundary_tag = boundary_tag
+
+    def __getinitargs__(self):
+        return (self.flux, self.boundary_tag, self.is_lift)
+
+    def get_mapper_method(self, mapper):
+        return mapper.map_bdry_flux
+
+
+
+
+
+class QuadratureFluxOperator(QuadratureFluxOperatorBase):
+    """
+    .. note::
+
+        This operator is purely for internal use. It is inserted
+        by :class:`hedge.optemplate.mappers.OperatorSpecializer`
         when a :class:`FluxOperator` is applied to a quadrature field.
     """
 
     def __init__(self, flux, quadrature_tag):
-        FluxOperatorBase.__init__(flux)
+        FluxOperatorBase.__init__(self, flux, is_lift=False)
 
         self.quadrature_tag = quadrature_tag
 
@@ -448,17 +488,27 @@ class QuadratureFluxOperator(FluxOperatorBase):
 
 
 
-class LiftingFluxOperator(FluxOperatorBase):
+class QuadratureBoundaryFluxOperator(
+        QuadratureFluxOperatorBase, BoundaryFluxOperatorBase):
     """
     .. note::
 
         This operator is purely for internal use. It is inserted
-        by :class:`hedge.optemplate.mappers.InverseMassContractor`
-        when an :class:`InverseMassOperator` is applied to the
-        result of a :class:`FluxOperator`.
+        by :class:`hedge.optemplate.mappers.OperatorSpecializer`
+        when a :class:`FluxOperator` is applied to a quadrature
+        boundary field.
     """
+    def __init__(self, flux, quadrature_tag, boundary_tag):
+        FluxOperatorBase.__init__(self, flux, is_lift=False)
+        self.quadrature_tag = quadrature_tag
+        self.boundary_tag = boundary_tag
+
+    def __getinitargs__(self):
+        return (self.flux, self.quadrature_tag, self.boundary_tag, self.is_lift)
+
     def get_mapper_method(self, mapper):
-        return mapper.map_lift
+        return mapper.map_quad_bdry_flux
+
 
 
 

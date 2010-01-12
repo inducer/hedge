@@ -429,14 +429,21 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
             from pytools.obj_array import with_object_array_or_scalar
             from hedge.optemplate.primitives import BoundaryPair
 
+            repr_tag_cell = [type_info.no_type]
+
             def process_vol_flux_arg(flux_arg):
-                typedict[flux_arg] = type_info.KnownVolume()
-                self.rec(flux_arg, typedict)
+                typedict[flux_arg] = type_info.KnownVolume() \
+                        .unify(repr_tag_cell[0], flux_arg)
+                repr_tag_cell[0] = extract_representation(
+                        self.rec(flux_arg, typedict))
 
             if isinstance(expr.field, BoundaryPair):
                 def process_bdry_flux_arg(flux_arg):
-                    typedict[flux_arg] = type_info.KnownBoundary(bpair.tag)
-                    self.rec(flux_arg, typedict)
+                    typedict[flux_arg] = type_info.KnownBoundary(bpair.tag) \
+                        .unify(repr_tag_cell[0], flux_arg)
+
+                    repr_tag_cell[0] = extract_representation(
+                            self.rec(flux_arg, typedict))
 
                 bpair = expr.field
                 with_object_array_or_scalar(process_vol_flux_arg, bpair.field)

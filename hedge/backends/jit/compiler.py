@@ -31,7 +31,7 @@ from hedge.compiler import OperatorCompilerBase, FluxBatchAssign, \
 
 
 
-# compiler stuff --------------------------------------------------------------
+# {{{ jit instructions --------------------------------------------------------
 class VectorExprAssign(Assign):
     __slots__ = ["toolchain"]
 
@@ -78,7 +78,7 @@ class CompiledFluxBatchAssign(FluxBatchAssign):
 
         from hedge.tools import setify_field as setify
         from hedge.optemplate import OperatorBinding, BoundaryPair
-        for f in self.fluxes:
+        for f in self.expressions:
             assert isinstance(f, OperatorBinding)
             if isinstance(f.field, BoundaryPair):
                 deps |= setify(f.field.field) | setify(f.field.bfield)
@@ -98,7 +98,7 @@ class CompiledFluxBatchAssign(FluxBatchAssign):
 
         if not self.is_boundary:
             mod = get_interior_flux_mod(
-                    self.fluxes, self.flux_var_info, 
+                    self.expressions, self.flux_var_info, 
                     discr, dtype)
 
             if discr.instrumented:
@@ -109,13 +109,13 @@ class CompiledFluxBatchAssign(FluxBatchAssign):
                                 discr.gather_timer,
                                 discr.gather_counter,
                                 discr.gather_flop_counter,
-                                len(self.fluxes)
+                                len(self.expressions)
                                 * gather_flops(discr)
                                 * len(self.flux_var_info.arg_names))
 
         else:
             mod = get_boundary_flux_mod(
-                    self.fluxes, self.flux_var_info, discr, dtype)
+                    self.expressions, self.flux_var_info, discr, dtype)
 
             if discr.instrumented:
                 from pytools.log import time_and_count_function
@@ -128,34 +128,9 @@ class CompiledFluxBatchAssign(FluxBatchAssign):
 
 
 
-# flux kinds ------------------------------------------------------------------
-class InteriorFluxKind(object):
-    def __hash__(self):
-        return hash(self.__class__)
+# }}}
 
-    def __str__(self):
-        return "interior"
-
-    def __eq__(self, other):
-        return (other.__class__ == self.__class__)
-
-class BoundaryFluxKind(object):
-    def __init__(self, tag):
-        self.tag = tag
-
-    def __str__(self):
-        return "boundary(%s)" % self.tag
-
-    def __hash__(self):
-        return hash((self.__class__, self.tag))
-
-    def __eq__(self, other):
-        return (other.__class__ == self.__class__
-                and other.tag == self.tag)
-
-
-
-
+# {{{ subclassed compiler -----------------------------------------------------
 class OperatorCompiler(OperatorCompilerBase):
     def __init__(self, discr):
         OperatorCompilerBase.__init__(self,
@@ -179,15 +154,9 @@ class OperatorCompiler(OperatorCompilerBase):
             else:
                 return get_deps(op_binding.field)
 
-        def get_flux_kind(op_binding):
-            if isinstance(op_binding.field, BoundaryPair):
-                return BoundaryFluxKind(op_binding.field.tag)
-            else:
-                return InteriorFluxKind()
-
         return [self.FluxRecord(
             flux_expr=flux_binding,
-            kind=get_flux_kind(flux_binding),
+            repr_op=flux_binding.op.repr_op(),
             dependencies=get_flux_deps(flux_binding))
             for flux_binding in FluxCollector()(expr)]
 
@@ -203,30 +172,25 @@ class OperatorCompiler(OperatorCompilerBase):
             return OperatorCompilerBase.map_operator_binding(
                     self, expr, name_hint=name_hint)
 
-    # flux compilation --------------------------------------------------------
-    def make_flux_batch_assign(self, names, fluxes, kind):
-        if isinstance(kind, BoundaryFluxKind):
-            return self.make_boundary_flux_batch_assign(names, fluxes, kind)
-        elif isinstance(kind, InteriorFluxKind):
-            return self.make_interior_flux_batch_assign(names, fluxes, kind)
-        else:
-            raise ValueError("invalid flux batch kind: %s" % kind)
+    # {{{ flux compilation
+    def make_flux_batch_assign(self, names, expressions, repr_op):
+        from hedge.optemplate.operators import (
+                QuadratureFluxOperatorBase,
+                BoundaryFluxOperatorBase)
 
-    def make_interior_flux_batch_assign(self, names, fluxes, kind):
+        if isinstance(repr_op, QuadratureFluxOperatorBase):
+            raise NotImplementedError
+
         from hedge.backends.jit.flux import get_flux_var_info
-        return CompiledFluxBatchAssign(is_boundary=False,
-                names=names, fluxes=fluxes, kind=kind,
-                flux_var_info=get_flux_var_info(fluxes),
+        return CompiledFluxBatchAssign(
+                is_boundary=isinstance(repr_op, BoundaryFluxOperatorBase),
+                names=names, expressions=expressions, repr_op=repr_op,
+                flux_var_info=get_flux_var_info(expressions),
                 dep_mapper_factory=self.dep_mapper_factory)
 
-    def make_boundary_flux_batch_assign(self, names, fluxes, kind):
-        from hedge.backends.jit.flux import get_flux_var_info
-        return CompiledFluxBatchAssign(is_boundary=True,
-                names=names, fluxes=fluxes, kind=kind,
-                flux_var_info=get_flux_var_info(fluxes),
-                dep_mapper_factory=self.dep_mapper_factory)
+    # }}}
 
-    # vector math -------------------------------------------------------------
+    # {{{ vector math
     def finalize_multi_assign(self, names, exprs, do_not_return, priority):
         from pytools import any
         from hedge.tools import is_zero
@@ -247,3 +211,10 @@ class OperatorCompiler(OperatorCompilerBase):
                     do_not_return=do_not_return,
                     dep_mapper_factory=self.dep_mapper_factory,
                     priority=priority)
+    # }}}
+# }}}
+
+
+
+
+# vim: foldmethod=marker
