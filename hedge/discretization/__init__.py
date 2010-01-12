@@ -584,7 +584,6 @@ class Discretization(TimestepCalculator):
         """
         from hedge.discretization.data  import StraightFaceGroup
         nodes = []
-        face_ranges = {}
         vol_indices = []
         fg_type = StraightFaceGroup
         face_group = fg_type(double_sided=False,
@@ -597,11 +596,11 @@ class Discretization(TimestepCalculator):
 
             el_slice, ldis = self.find_el_data(el.id)
             face_indices = ldis.face_indices()[face_nr]
+            face_indices_ary = numpy.array(face_indices, dtype=numpy.intp)
 
             f_start = len(nodes)
-            nodes += [self.nodes[el_slice.start + i] for i in face_indices]
-            face_ranges[ef] = (f_start, len(nodes))
-            vol_indices.extend(el_slice.start + i for i in face_indices)
+            nodes.extend(self.nodes[el_slice.start + face_indices_ary])
+            vol_indices.extend(el_slice.start + face_indices_ary)
 
             # create the face pair
             fp = face_group.FacePair()
@@ -624,17 +623,28 @@ class Discretization(TimestepCalculator):
             el_face_to_face_group_and_face_pair[ef] = \
                     face_group, len(face_group.face_pairs)-1
 
-        face_group.commit(self, ldis, ldis)
+        if ldis is not None:
+            face_group.commit(self, ldis, ldis)
+            face_groups = [face_group]
+        else:
+            face_groups = []
+
+        from hedge._internal import UniformElementRanges
+        fg_ranges = [UniformElementRanges(
+            0, # FIXME: need to vary element starts
+            fg.ldis_loc.face_node_count(), len(face_group.face_pairs))
+            for fg in face_groups]
 
         nodes_ary = numpy.array(nodes)
         nodes_ary.shape = (len(nodes), self.dimensions)
 
         from hedge.discretization.data import Boundary
         bdry = Boundary(
+                discr=self,
                 nodes=nodes_ary,
-                ranges=face_ranges,
-                vol_indices=numpy.asarray(vol_indices, dtype=numpy.intp),
-                face_groups=[face_group],
+                vol_indices=vol_indices,
+                face_groups=face_groups,
+                fg_ranges=fg_ranges,
                 el_face_to_face_group_and_face_pair=
                 el_face_to_face_group_and_face_pair)
 
@@ -660,7 +670,6 @@ class Discretization(TimestepCalculator):
             q_info.node_count += eg_q_info.ranges.total_size
 
         return q_info
-
 
     # vector construction -----------------------------------------------------
     def __len__(self):
