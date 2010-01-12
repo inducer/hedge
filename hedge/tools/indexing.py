@@ -98,6 +98,15 @@ def partial_to_all_subset_indices(subsets, base=0):
 
 
 class IndexListRegistry(object):
+    """An index list registry maintains a numbering of index lists.
+    (such as for face indices in a volume element)
+    There needs to exist a one-to-one mapping of identifiers to 
+    index lists. If, upon registration, an index list with a known
+    identifier is registered, its index is returned directly.
+    Otherwise, a generator thunk is called to generate the list,
+    and a new index list number is allocated.
+    """
+
     def __init__(self, debug=False):
         self.index_lists = []
         self.il_id_to_number = {}
