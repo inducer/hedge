@@ -86,8 +86,7 @@ class BoundaryCombiner(CSECachingMapperMixin, hedge.optemplate.IdentityMapper):
             hedge.optemplate.IdentityMapper.map_common_subexpression
 
     def gather_one_wdflux(self, expressions):
-        from hedge.optemplate import OperatorBinding, \
-                LiftingFluxOperator, BoundaryPair
+        from hedge.optemplate import OperatorBinding, BoundaryPair
 
         interiors = []
         boundaries = []
@@ -98,7 +97,7 @@ class BoundaryCombiner(CSECachingMapperMixin, hedge.optemplate.IdentityMapper):
         for ch in expressions:
             if (isinstance(ch, OperatorBinding)
                     and isinstance(ch.op, self.flux_op_types)):
-                my_is_lift = isinstance(ch.op, LiftingFluxOperator)
+                my_is_lift = ch.op.is_lift
 
                 if is_lift is None:
                     is_lift = my_is_lift

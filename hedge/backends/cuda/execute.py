@@ -412,8 +412,8 @@ class OperatorCompiler(OperatorCompilerBase):
     def map_whole_domain_flux(self, wdflux):
         return self.map_planned_flux(wdflux)
 
-    def make_flux_batch_assign(self, names, fluxes, kind):
-        return CUDAFluxBatchAssign(names=names, fluxes=fluxes, kind=kind,
+    def make_flux_batch_assign(self, names, expressions, kind):
+        return CUDAFluxBatchAssign(names=names, expressions=expressions, kind=kind,
                 dep_mapper_factory=self.dep_mapper_factory)
 
     def finalize_multi_assign(self, names, exprs, do_not_return, priority):
