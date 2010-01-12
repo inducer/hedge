@@ -286,7 +286,7 @@ class TypeDict(object):
             self.container[expr] = new_tp
             self.change_flag = True
         else:
-            tp = old_tp.unify(new_tp)
+            tp = old_tp.unify(new_tp, expr)
             if tp != old_tp:
                 self.change_flag = True
                 self.container[expr] = tp
@@ -413,13 +413,13 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
 
         elif isinstance(expr.op, BoundarizeOperator):
             # upward propagation: argument has same rep tag as result
-            typedict[expr.field] = type_info.KnownBoundary(expr.op.tag).unify(
+            typedict[expr.field] = type_info.KnownVolume().unify(
                     extract_representation(type_info), expr.field)
 
             self.rec(expr.field, typedict)
 
             # downward propagation: result has same rep tag as argument
-            return type_info.KnownVolume().unify(
+            return type_info.KnownBoundary(expr.op.tag).unify(
                     extract_representation(typedict[expr.field]), expr)
 
         elif isinstance(expr.op, FluxExchangeOperator):
@@ -496,7 +496,7 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
         outer_tp = typedict[expr]
 
         last_tp = self.cse_last_results.get(expr, type_info.no_type)
-        if outer_tp != last_tp:
+        if outer_tp != last_tp or last_tp == type_info.no_type:
             # re-run inner type inference with new outer information
             typedict[expr.child] = outer_tp
             new_tp = self.rec(expr.child, typedict)
