@@ -302,9 +302,9 @@ class SimplexCubature(object):
         self.weights = numpy.array(self.pos_weights + self.neg_weights)
 
         self.pos_points = numpy.array(self.pos_points)
-        self.pos_weights = numpy.array(self.pos_points)
+        self.pos_weights = numpy.array(self.pos_weights)
         self.neg_points = numpy.array(self.neg_points)
-        self.neg_weights = numpy.array(self.neg_points)
+        self.neg_weights = numpy.array(self.neg_weights)
 
         self.points = numpy.array(self.points)
         self.weights = numpy.array(self.weights)
