@@ -252,6 +252,9 @@ class VariableCoefficientAdvectionOperator(HyperbolicOperator):
                 ElementwiseMaxOperator, \
                 BoundarizeOperator
 
+        from hedge.tools.symbolic import make_common_subexpression as cse
+        from hedge.optemplate.operators import QuadratureGridUpsampler
+        to_quad = QuadratureGridUpsampler("quad")
 
         from hedge.tools import join_fields, \
                                 ptwise_dot
@@ -259,13 +262,19 @@ class VariableCoefficientAdvectionOperator(HyperbolicOperator):
         u = Field("u")
         v = make_vector_field("v", self.dimensions)
         c = ElementwiseMaxOperator()*ptwise_dot(1, 1, v, v)
-        w = join_fields(u, v, c)
+
+        quad_u = cse(to_quad(u))
+        quad_v = cse(to_quad(v))
+
+        quad_w = to_quad(join_fields(u, v, c))
 
         # boundary conditions -------------------------------------------------
+
         from hedge.mesh import TAG_ALL
-        bc_c = BoundarizeOperator(TAG_ALL)(c)
-        bc_u = Field("bc_u")
-        bc_v = BoundarizeOperator(TAG_ALL)(v)
+        bc_c = to_quad(BoundarizeOperator(TAG_ALL)(c))
+        bc_u = to_quad(Field("bc_u"))
+        bc_v = to_quad(BoundarizeOperator(TAG_ALL)(v))
+
         if self.bc_u_f is "None":
             bc_w = join_fields(0, bc_v, bc_c)
         else:
@@ -276,14 +285,8 @@ class VariableCoefficientAdvectionOperator(HyperbolicOperator):
 
         flux_op = get_flux_operator(self.flux())
 
-        from hedge.optemplate.operators import QuadratureGridUpsampler
-
-        quad_u = QuadratureGridUpsampler("quad")(u)
-        quad_v = QuadratureGridUpsampler("quad")(v)
-
-        from hedge.tools.symbolic import make_common_subexpression as cse
         result = m_inv(numpy.dot(minv_st, cse(quad_v*quad_u)) 
-                - (flux_op(w) + flux_op(BoundaryPair(w, bc_w, TAG_ALL))))
+                - (flux_op(quad_w) + flux_op(BoundaryPair(quad_w, bc_w, TAG_ALL))))
         return result
 
     def bind(self, discr):
