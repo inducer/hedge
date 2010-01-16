@@ -212,7 +212,14 @@ class ElementwiseMaxOperator(StatelessOperator):
 
 
 
+# {{{ quadrature upsamplers ---------------------------------------------------
 class QuadratureGridUpsampler(Operator):
+    """In a user-specified optemplate, this operator can be used to interpolate
+    volume and boundary data to their corresponding quadrature grids.
+
+    In pre-processing, the boundary quad interpolation is specialized to
+    a separate operator, :class:`QuadratureBoundaryGridUpsampler`.
+    """
     def __init__(self, quadrature_tag):
         self.quadrature_tag = quadrature_tag
 
@@ -222,6 +229,24 @@ class QuadratureGridUpsampler(Operator):
     def get_mapper_method(self, mapper):
         return mapper.map_quad_grid_upsampler
 
+
+
+
+class QuadratureInteriorFacesGridUpsampler(Operator):
+    """Interpolates nodal volume data to interior face data on a quadrature
+    grid.
+
+    Note that the "interior faces" grid includes faces lying opposite to the
+    boundary.
+    """
+    def __init__(self, quadrature_tag):
+        self.quadrature_tag = quadrature_tag
+
+    def __getinitargs__(self):
+        return (self.quadrature_tag,)
+
+    def get_mapper_method(self, mapper):
+        return mapper.map_quad_int_faces_grid_upsampler
 
 
 
@@ -244,6 +269,10 @@ class QuadratureBoundaryGridUpsampler(Operator):
     def get_mapper_method(self, mapper):
         return mapper.map_quad_bdry_grid_upsampler
 
+
+
+
+# }}}
 
 # {{{ various elementwise linear operators -----------------------------------
 class FilterOperator(ElementwiseLinearOperator):

@@ -253,20 +253,25 @@ class VariableCoefficientAdvectionOperator(HyperbolicOperator):
                 BoundarizeOperator
 
         from hedge.tools.symbolic import make_common_subexpression as cse
-        from hedge.optemplate.operators import QuadratureGridUpsampler
+
+        from hedge.optemplate.operators import (
+                QuadratureGridUpsampler,
+                QuadratureInteriorFacesGridUpsampler)
+
         to_quad = QuadratureGridUpsampler("quad")
+        to_if_quad = QuadratureInteriorFacesGridUpsampler("quad")
 
         from hedge.tools import join_fields, \
                                 ptwise_dot
 
         u = Field("u")
         v = make_vector_field("v", self.dimensions)
-        c = ElementwiseMaxOperator()*ptwise_dot(1, 1, v, v)
+        c = ElementwiseMaxOperator()(ptwise_dot(1, 1, v, v))
 
         quad_u = cse(to_quad(u))
         quad_v = cse(to_quad(v))
 
-        quad_w = to_quad(join_fields(u, v, c))
+        quad_face_w = to_if_quad(join_fields(u, v, c))
 
         # boundary conditions -------------------------------------------------
 
@@ -286,7 +291,8 @@ class VariableCoefficientAdvectionOperator(HyperbolicOperator):
         flux_op = get_flux_operator(self.flux())
 
         result = m_inv(numpy.dot(minv_st, cse(quad_v*quad_u)) 
-                - (flux_op(quad_w) + flux_op(BoundaryPair(quad_w, bc_w, TAG_ALL))))
+                - (flux_op(quad_face_w) 
+                    + flux_op(BoundaryPair(quad_face_w, bc_w, TAG_ALL))))
         return result
 
     def bind(self, discr):

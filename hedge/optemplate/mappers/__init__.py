@@ -154,6 +154,7 @@ class IdentityMapperMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     map_boundarize = map_elementwise_linear
     map_flux_exchange = map_elementwise_linear
     map_quad_grid_upsampler = map_elementwise_linear
+    map_quad_int_faces_grid_upsampler = map_elementwise_linear
     map_quad_bdry_grid_upsampler = map_elementwise_linear
 
     map_normal_component = map_elementwise_linear
@@ -503,6 +504,9 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
     def map_quad_grid_upsampler(self, expr, enclosing_prec):
         return "ToQuad[%s]" % expr.quadrature_tag
 
+    def map_quad_int_faces_grid_upsampler(self, expr, enclosing_prec):
+        return "ToIntFQuad[%s]" % expr.quadrature_tag
+
     def map_quad_bdry_grid_upsampler(self, expr, enclosing_prec):
         return "ToBdryQuad[%s,%s]" % (expr.quadrature_tag, expr.boundary_tag)
 
@@ -615,9 +619,12 @@ class QuadratureUpsamplerRemover(CSECachingMapperMixin, IdentityMapper):
             IdentityMapper.map_common_subexpression
 
     def map_operator_binding(self, expr):
-        from hedge.optemplate.operators import QuadratureGridUpsampler
+        from hedge.optemplate.operators import (
+                QuadratureGridUpsampler,
+                QuadratureInteriorFacesGridUpsampler)
 
-        if isinstance(expr.op, QuadratureGridUpsampler):
+        if isinstance(expr.op, (QuadratureGridUpsampler,
+            QuadratureInteriorFacesGridUpsampler)):
             try:
                 min_degree = self.quad_min_degrees[expr.op.quadrature_tag]
             except KeyError:
@@ -1109,6 +1116,7 @@ class CollectorMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     map_normal_component = map_constant
     map_scalar_parameter = map_constant
     map_quad_grid_upsampler = map_constant
+    map_quad_int_faces_grid_upsampler = map_constant
     map_quad_bdry_grid_upsampler = map_constant
 
 

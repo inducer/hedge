@@ -158,6 +158,10 @@ class type_info:
         def __getinitargs__(self):
             return ()
 
+    class InteriorFacesVectorBase(object):
+        def __getinitargs__(self):
+            return ()
+
     class BoundaryVectorBase(object):
         def __init__(self, boundary_tag):
             self.boundary_tag = boundary_tag
@@ -184,6 +188,28 @@ class type_info:
             else:
                 return type_info.TypeInfo.unify_inner(self, other)
 
+    class KnownInteriorFaces(TypeInfo, InteriorFacesVectorBase):
+        """Type information indicating that this must be a vector
+        of interior face values.
+
+        .. note::
+
+            These vectors are only necessary in a quadrature setting.
+        """
+
+        def __repr__(self):
+            return "KnownAsIntFace"
+
+        def unify_inner(self, other):
+            # Unification with KnownRepresentation is handled in KnownRepresentation.
+            # Here, we only need to unify with InteriorFacesVector.
+
+            if isinstance(other, type_info.InteriorFacesVector):
+                return other
+            else:
+                return type_info.TypeInfo.unify_inner(self, other)
+
+
     class KnownBoundary(TypeInfo, BoundaryVectorBase):
         """Type information indicating that this must be a boundary vector."""
 
@@ -192,7 +218,7 @@ class type_info:
 
         def unify_inner(self, other):
             # Unification with KnownRepresentation is handled in KnownRepresentation.
-            # Here, we only need to unify with VolumeVector.
+            # Here, we only need to unify with BoundaryVector.
 
             if (isinstance(other, type_info.BoundaryVector) 
                     and self.boundary_tag == other.boundary_tag):
@@ -217,17 +243,29 @@ class type_info:
                 return other
             elif isinstance(other, type_info.KnownVolume):
                 return type_info.VolumeVector(self.repr_tag)
+            elif isinstance(other, type_info.KnownInteriorFaces):
+                return type_info.InteriorFacesVector(self.repr_tag)
             elif isinstance(other, type_info.KnownBoundary):
                 return type_info.BoundaryVector(other.boundary_tag, self.repr_tag)
             else:
                 return type_info.TypeInfo.unify_inner(self, other)
-
     # }}}
 
     # {{{ fully specified hedge data types
     class VolumeVector(FinalType, VolumeVectorBase, VectorRepresentationBase):
         def __repr__(self):
             return "Volume(%s)" % self.repr_tag
+
+    class InteriorFacesVector(FinalType, InteriorFacesVectorBase, 
+            VectorRepresentationBase):
+        def __init__(self, repr_tag):
+            if not isinstance(repr_tag, QuadratureRepresentation):
+                raise TypeError("InteriorFacesVector is not usable with non-"
+                        "quadrature representations")
+            type_info.VectorRepresentationBase.__init__(self, repr_tag)
+
+        def __repr__(self):
+            return "InteriorFaces(%s)" % self.repr_tag
 
     class BoundaryVector(FinalType, BoundaryVectorBase,
             VectorRepresentationBase):
@@ -375,6 +413,7 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
                 BoundarizeOperator, FluxExchangeOperator,
                 FluxOperatorBase,
                 QuadratureGridUpsampler, QuadratureBoundaryGridUpsampler,
+                QuadratureInteriorFacesGridUpsampler,
                 MassOperator, QuadratureMassOperator,
                 StiffnessTOperator, QuadratureStiffnessTOperator,
                 ElementwiseLinearOperator)
@@ -432,7 +471,7 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
             repr_tag_cell = [type_info.no_type]
 
             def process_vol_flux_arg(flux_arg):
-                typedict[flux_arg] = type_info.KnownVolume() \
+                typedict[flux_arg] = type_info.KnownInteriorFaces() \
                         .unify(repr_tag_cell[0], flux_arg)
                 repr_tag_cell[0] = extract_representation(
                         self.rec(flux_arg, typedict))
@@ -459,6 +498,13 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
             return type_info.KnownRepresentation(
                     QuadratureRepresentation(expr.op.quadrature_tag))\
                             .unify(extract_domain(typedict[expr.field]), expr)
+
+        elif isinstance(expr.op, QuadratureInteriorFacesGridUpsampler):
+            typedict[expr.field] = type_info.VolumeVector(
+                    NodalRepresentation())
+            self.rec(expr.field, typedict)
+            return type_info.InteriorFacesVector(
+                    QuadratureRepresentation(expr.op.quadrature_tag))
 
         elif isinstance(expr.op, QuadratureBoundaryGridUpsampler):
             typedict[expr.field] = type_info.BoundaryVector(
