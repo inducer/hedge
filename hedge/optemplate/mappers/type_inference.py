@@ -137,6 +137,9 @@ class type_info:
         """Represents "nothing known about type"."""
         def unify_inner(self, other):
             return other
+        
+        def __repr__(self):
+            return "NoType"
 
     # this singleton should be the only instance ever created of NoType
     no_type = NoType()
@@ -546,7 +549,22 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
             # re-run inner type inference with new outer information
             typedict[expr.child] = outer_tp
             new_tp = self.rec(expr.child, typedict)
+
+            # For correct caching, we need to make sure that
+            # information below this level has fully propagated.
+            while True:
+                typedict.change_flag = False
+                new_tp = self.rec(expr.child, typedict)
+
+                if not typedict.change_flag:
+                    # nothing has changed any more
+                    break
+
             self.cse_last_results[expr] = new_tp
+            typedict[expr.child] = new_tp
+
+            # we can be sure we *have* changed something
+            typedict.change_flag = True
             return new_tp
         else:
             return last_tp
