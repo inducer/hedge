@@ -209,6 +209,8 @@ class type_info:
 
             if isinstance(other, type_info.InteriorFacesVector):
                 return other
+            elif other == type_info.VolumeVector(NodalRepresentation()):
+                return other
             else:
                 return type_info.TypeInfo.unify_inner(self, other)
 
@@ -247,7 +249,10 @@ class type_info:
             elif isinstance(other, type_info.KnownVolume):
                 return type_info.VolumeVector(self.repr_tag)
             elif isinstance(other, type_info.KnownInteriorFaces):
-                return type_info.InteriorFacesVector(self.repr_tag)
+                if isinstance(self.repr_tag, NodalRepresentation):
+                    return type_info.VolumeVector(self.repr_tag)
+                else:
+                    return type_info.InteriorFacesVector(self.repr_tag)
             elif isinstance(other, type_info.KnownBoundary):
                 return type_info.BoundaryVector(other.boundary_tag, self.repr_tag)
             else:
