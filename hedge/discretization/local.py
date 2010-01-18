@@ -552,6 +552,7 @@ class PkSimplexDiscretization(OrthonormalLocalDiscretization):
         def face_node_count(self):
             return len(self.face_nodes)
 
+        # {{{ matrices
         @memoize_method
         def vandermonde(self):
             from hedge.polynomial import generic_vandermonde
@@ -587,9 +588,9 @@ class PkSimplexDiscretization(OrthonormalLocalDiscretization):
             face_maps = ldis.face_affine_maps()
 
             from pytools import flatten
-            face_nodes = flatten(
-                    [face_map[qnode] for qnode in self.face_nodes]
-                    for face_map in face_maps)
+            face_nodes = list(flatten(
+                    [face_map(qnode) for qnode in self.face_nodes]
+                    for face_map in face_maps))
 
             from hedge.polynomial import generic_vandermonde
             vdm = generic_vandermonde(
@@ -605,6 +606,58 @@ class PkSimplexDiscretization(OrthonormalLocalDiscretization):
             return leftsolve(
                         self.ldis.face_vandermonde(), 
                         self.face_vandermonde())
+
+        @memoize_method
+        def mass_matrix(self):
+            return numpy.asarray(
+                    la.solve(
+                        self.ldis.vandermonde().T,
+                        numpy.dot(
+                            self.vandermonde().T,
+                            numpy.diag(self.volume_weights))),
+                    order="C")
+
+        @memoize_method
+        def stiffness_t_matrices(self):
+            return [numpy.asarray(
+                la.solve(
+                    self.ldis.vandermonde().T,
+                    numpy.dot(
+                        diff_vdm.T,
+                        numpy.diag(self.volume_weights))),
+                    order="C")
+                    for diff_vdm in self.diff_vandermonde_matrices()]
+
+
+        @memoize_method
+        def face_mass_matrix(self):
+            return numpy.asarray(
+                    la.solve(
+                        self.ldis.face_vandermonde().T,
+                        numpy.dot(
+                            self.face_vandermonde().T,
+                            numpy.diag(self.face_weights))),
+                    order="C")
+
+        @memoize_method
+        def multi_face_mass_matrix(self):
+            z= self.ldis._assemble_multi_face_mass_matrix(
+                    self.face_mass_matrix())
+            return z
+        # }}}
+
+        # {{{ face matching
+        @memoize_method
+        def get_face_index_shuffle_lookup_map(self):
+            return self.ldis.get_face_index_shuffle_lookup_map_for_nodes(
+                    self.face_nodes)
+
+        def get_face_index_shuffle_to_match(self, face_1_vertices, face_2_vertices):
+            return self.ldis.get_face_index_shuffle_backend(
+                    face_1_vertices, face_2_vertices,
+                    self.get_face_index_shuffle_lookup_map())
+        # }}}
+
 
     @memoize_method
     def get_quadrature_info(self, exact_to_degree):
