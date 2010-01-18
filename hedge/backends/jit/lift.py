@@ -33,12 +33,12 @@ class JitLifter:
     @memoize_method
     def make_lift(self, fgroup, with_scale, dtype):
         discr = self.discr
-        from codepy.cgen import \
-                FunctionDeclaration, FunctionBody, Typedef, \
-                Const, Reference, Value, POD, \
-                Statement, Include, Line, Block, Initializer, Assign, \
-                For, \
-                Define
+        from codepy.cgen import (
+                FunctionDeclaration, FunctionBody, Typedef,
+                Const, Reference, Value, POD,
+                Statement, Include, Line, Block, Initializer, Assign,
+                For, If,
+                Define)
 
         from pytools import to_uncomplex_dtype
 
@@ -58,9 +58,7 @@ class JitLifter:
             S("using namespace pyublas"),
             Line(),
             Define("DOFS_PER_EL", fgroup.ldis_loc.node_count()),
-            Define("DOFS_PER_FACE", fgroup.ldis_loc.face_node_count()),
             Define("FACES_PER_EL", fgroup.ldis_loc.face_count()),
-            Define("FACE_DOFS_PER_EL", "(DOFS_PER_FACE*FACES_PER_EL)"),
             Define("DIMENSIONS", discr.dimensions),
             Line(),
             Typedef(POD(dtype, "value_type")),
@@ -112,7 +110,7 @@ class JitLifter:
                         "fg.local_el_to_global_el_base[fg_el_nr]"),
                     Initializer(
                         Value("node_number_t", "src_el_base"),
-                        "FACE_DOFS_PER_EL*fg_el_nr"),
+                        "FACES_PER_EL*fg.face_length()*fg_el_nr"),
                     Line(),
                     For("unsigned i = 0",
                         "i < DOFS_PER_EL",
@@ -121,7 +119,7 @@ class JitLifter:
                             Initializer(Value("value_type", "tmp"), 0),
                             Line(),
                             For("unsigned j = 0",
-                                "j < FACE_DOFS_PER_EL",
+                                "j < FACES_PER_EL*fg.face_length()",
                                 "++j",
                                 S("tmp += matrix(i, j)*field_it[src_el_base+j]")
                                 ),
