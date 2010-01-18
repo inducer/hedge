@@ -174,7 +174,7 @@ class QuadratureStiffnessTOperator(WeakFormDiffOperatorBase):
 
     def matrices(self, element_group):
         return element_group.quadrature_info[self.quadrature_tag] \
-                .stiffness_t_matrices
+                .ldis_quad_info.stiffness_t_matrices()
 
     @staticmethod
     def coefficients(element_group):
@@ -534,7 +534,7 @@ class QuadratureBoundaryFluxOperator(
         self.boundary_tag = boundary_tag
 
     def __getinitargs__(self):
-        return (self.flux, self.quadrature_tag, self.boundary_tag, self.is_lift)
+        return (self.flux, self.quadrature_tag, self.boundary_tag)
 
     def get_mapper_method(self, mapper):
         return mapper.map_quad_bdry_flux

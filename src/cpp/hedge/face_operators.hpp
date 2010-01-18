@@ -129,7 +129,7 @@ namespace hedge
 
     const bool double_sided;
     unsigned face_count;
-    numpy_vector<npy_uint> local_el_to_global_el_base;
+    numpy_vector<npy_uint> local_el_write_base;
 
     face_group(bool d_sided)
       : double_sided(d_sided), 
@@ -137,7 +137,7 @@ namespace hedge
     { }
 
     unsigned element_count() const
-    { return local_el_to_global_el_base.size(); }
+    { return local_el_write_base.size(); }
 
     unsigned face_length() const
     { return index_lists.dims()[1]; }
@@ -172,8 +172,8 @@ namespace hedge
       for (unsigned i_loc_el = 0; i_loc_el < fg.element_count(); ++i_loc_el)
         noalias(
             subrange(result,
-              fg.local_el_to_global_el_base[i_loc_el],
-              fg.local_el_to_global_el_base[i_loc_el]+el_length_result))
+              fg.local_el_write_base[i_loc_el],
+              fg.local_el_write_base[i_loc_el]+el_length_result))
           += MatrixScalar(*el_scale_it++) * prod(matrix,
               subrange(fluxes_on_faces,
                 el_length_temp*i_loc_el,
@@ -185,8 +185,8 @@ namespace hedge
       for (unsigned i_loc_el = 0; i_loc_el < fg.element_count(); ++i_loc_el)
         noalias(
             subrange(result,
-              fg.local_el_to_global_el_base[i_loc_el],
-              fg.local_el_to_global_el_base[i_loc_el]+el_length_result))
+              fg.local_el_write_base[i_loc_el],
+              fg.local_el_write_base[i_loc_el]+el_length_result))
           += prod(matrix,
               subrange(fluxes_on_faces,
                 el_length_temp*i_loc_el,
@@ -237,8 +237,8 @@ namespace hedge
       for (unsigned i_loc_el = 0; i_loc_el < fg.element_count(); ++i_loc_el)
         noalias(
             subrange(result,
-              fg.local_el_to_global_el_base[i_loc_el],
-              fg.local_el_to_global_el_base[i_loc_el]+el_length_result))
+              fg.local_el_write_base[i_loc_el],
+              fg.local_el_write_base[i_loc_el]+el_length_result))
           += MatrixScalar(*el_scale_it++) * subrange(result_temp,
               el_length_result*i_loc_el,
               el_length_result*(i_loc_el+1));
@@ -248,8 +248,8 @@ namespace hedge
       for (unsigned i_loc_el = 0; i_loc_el < fg.element_count(); ++i_loc_el)
         noalias(
             subrange(result,
-              fg.local_el_to_global_el_base[i_loc_el],
-              fg.local_el_to_global_el_base[i_loc_el]+el_length_result))
+              fg.local_el_write_base[i_loc_el],
+              fg.local_el_write_base[i_loc_el]+el_length_result))
           += subrange(result_temp,
               el_length_result*i_loc_el,
               el_length_result*(i_loc_el+1));

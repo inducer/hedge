@@ -68,6 +68,7 @@ class _PointEvaluator(object):
 
 
 
+# {{{ timestep calculator (deprecated)
 class TimestepCalculator(object):
     def dt_factor(self, max_system_ev, order=1,
             stepper_class=None, *stepper_args):
@@ -133,6 +134,8 @@ class TimestepCalculator(object):
         return rk4_dt * approximate_rk4_relative_imag_stability_region(
                 None, stepper_class, stepper_args)
 
+# }}}
+
 
 
 
@@ -145,6 +148,7 @@ class Discretization(TimestepCalculator):
     differential operators and flux lifting operators.
     """
 
+    # {{{ debug flags
     @classmethod
     def all_debug_flags(cls):
         return set([
@@ -166,6 +170,8 @@ class Discretization(TimestepCalculator):
             "node_permutation",
             ])
 
+    # }}}
+
     @staticmethod
     def get_local_discretization(mesh, local_discretization=None, order=None):
         if local_discretization is None and order is None:
@@ -184,6 +190,7 @@ class Discretization(TimestepCalculator):
         else:
             return local_discretization
 
+    # {{{ construction / finalization
     def __init__(self, mesh, local_discretization=None,
             order=None, quad_min_degrees={},
             debug=set(), default_scalar_type=numpy.float64, run_context=None):
@@ -234,7 +241,9 @@ class Discretization(TimestepCalculator):
     def close(self):
         pass
 
-    # instrumentation ---------------------------------------------------------
+    # }}}
+
+    # {{{ instrumentation -----------------------------------------------------
     def create_op_timers(self):
         self.gather_timer = self.run_context.make_timer(
                 "t_gather",
@@ -336,7 +345,9 @@ class Discretization(TimestepCalculator):
 
         self.instrumented = True
 
-    # initialization ----------------------------------------------------------
+    # }}}
+
+    # {{{ initialization ------------------------------------------------------
     def _build_element_groups_and_nodes(self, local_discretization):
         from hedge.mesh.element import CurvedElement
         from hedge.mesh.element import SimplicialElement
@@ -443,6 +454,21 @@ class Discretization(TimestepCalculator):
                         for loc_coord in range(ldis.dimensions)]
                     for glob_coord in range(ldis.dimensions)])
 
+    def _set_face_pair_index_data(self, fg, fp, fi_l, fi_n,
+            findices_l, findices_n, findices_shuffle_op_n):
+        fp.int_side.face_index_list_number = fg.register_face_index_list(
+                identifier=fi_l,
+                generator=lambda: findices_l)
+        fp.ext_side.face_index_list_number = fg.register_face_index_list(
+                identifier=(fi_n, findices_shuffle_op_n),
+                generator=lambda: findices_shuffle_op_n(findices_n))
+        from pytools import get_write_to_map_from_permutation
+        fp.ext_native_write_map = fg.register_face_index_list(
+                identifier=(fi_n, findices_shuffle_op_n, "wtm"),
+                generator=lambda:
+                get_write_to_map_from_permutation(
+                findices_shuffle_op_n(findices_n), findices_n))
+
     def _set_flux_face_data(self, f, ldis, (el, fi)):
         f.element_jacobian = el.map.jacobian()
         f.face_jacobian = el.face_jacobians[fi]
@@ -451,7 +477,7 @@ class Discretization(TimestepCalculator):
         f.order = ldis.order
         f.normal = el.face_normals[fi]
 
-        # This crude approximation is shamelessly stolen from sledge.
+        # This approximation is shamelessly stolen from sledge.
         # There's an important caveat, however (which took me the better
         # part of a week to figure out):
         # h on both sides of an interface must be the same, otherwise
@@ -493,38 +519,19 @@ class Discretization(TimestepCalculator):
                         ldis_l.get_face_index_shuffle_to_match(
                         vertices_l, vertices_n)
 
-                if (debug_node_perm
-                        and ldis_l.has_facial_nodes
-                        and ldis_n.has_facial_nodes):
-                    findices_shuffled_n = findices_shuffle_op_n(findices_n)
-
-                    for i, j in zip(findices_l, findices_shuffled_n):
-                        dist = self.nodes[eslice_l.start + i] \
-                                - self.nodes[eslice_n.start + j]
-                        assert la.norm(dist) < 1e-14
-
             except FaceVertexMismatch:
-                # this happens if vertices_l is not a permutation
-                # of vertices_n. periodicity is the only reason why
+                # This happens if vertices_l is not a permutation
+                # of vertices_n. Periodicity is the only reason why
                 # that would be so.
 
-                vertices_n, axis = self.mesh.periodic_opposite_faces[
+                vertices_n, periodic_axis = self.mesh.periodic_opposite_faces[
                         vertices_n]
 
                 findices_shuffle_op_n = \
                         ldis_l.get_face_index_shuffle_to_match(
                                 vertices_l, vertices_n)
-
-                if (debug_node_perm
-                        and ldis_l.has_facial_nodes
-                        and ldis_n.has_facial_nodes):
-                    findices_shuffled_n = findices_shuffle_op_n(findices_n)
-
-                    for i, j in zip(findices_l, findices_shuffled_n):
-                        dist = self.nodes[eslice_l.start + i]\
-                                - self.nodes[eslice_n.start + j]
-                        dist[axis] = 0
-                        assert la.norm(dist) < 1e-14
+            else:
+                periodic_axis = None
 
             # create and fill the face pair
             fp = fg_type.FacePair()
@@ -532,18 +539,8 @@ class Discretization(TimestepCalculator):
             fp.int_side.el_base_index = eslice_l.start
             fp.ext_side.el_base_index = eslice_n.start
 
-            fp.int_side.face_index_list_number = fg.register_face_index_list(
-                    identifier=fi_l,
-                    generator=lambda: findices_l)
-            fp.ext_side.face_index_list_number = fg.register_face_index_list(
-                    identifier=(fi_n, findices_shuffle_op_n),
-                    generator=lambda: findices_shuffle_op_n(findices_n))
-            from pytools import get_write_to_map_from_permutation
-            fp.ext_native_write_map = fg.register_face_index_list(
-                    identifier=(fi_n, findices_shuffle_op_n, "wtm"),
-                    generator=lambda:
-                    get_write_to_map_from_permutation(
-                    findices_shuffle_op_n(findices_n), findices_n))
+            self._set_face_pair_index_data(fg, fp, fi_l, fi_n,
+                    findices_l, findices_n, findices_shuffle_op_n)
 
             self._set_flux_face_data(fp.int_side, ldis_l, local_face)
             self._set_flux_face_data(fp.ext_side, ldis_n, neigh_face)
@@ -553,11 +550,25 @@ class Discretization(TimestepCalculator):
             assert (abs(fp.int_side.face_jacobian - fp.ext_side.face_jacobian)
                     / abs(fp.int_side.face_jacobian)) < 1e-13
 
+            # check that we set the C++ attrs, not new Python ones
             assert len(fp.__dict__) == 0
             assert len(fp.int_side.__dict__) == 0
             assert len(fp.ext_side.__dict__) == 0
 
             fg.face_pairs.append(fp)
+
+            # check that nodes match up
+            if (debug_node_perm
+                    and ldis_l.has_facial_nodes
+                    and ldis_n.has_facial_nodes):
+                findices_shuffled_n = findices_shuffle_op_n(findices_n)
+
+                for i, j in zip(findices_l, findices_shuffled_n):
+                    dist = self.nodes[eslice_l.start + i] \
+                            - self.nodes[eslice_n.start + j]
+                    if periodic_axis is not None:
+                        dist[periodic_axis] = 0
+                    assert la.norm(dist) < 1e-14
 
         if len(fg.face_pairs):
             from pytools import single_valued
@@ -570,6 +581,9 @@ class Discretization(TimestepCalculator):
         else:
             self.face_groups = []
 
+    # }}}
+
+    # {{{ boundary descriptors ------------------------------------------------
     def is_boundary_tag_nonempty(self, tag):
         return bool(self.mesh.tag_to_boundary.get(tag, []))
 
@@ -613,6 +627,9 @@ class Discretization(TimestepCalculator):
                     identifier=(),
                     generator=lambda: tuple(xrange(len(face_indices))))
             self._set_flux_face_data(fp.int_side, ldis, ef)
+
+            # check that all property assigns found their
+            # C++-side slots
             assert len(fp.__dict__) == 0
             assert len(fp.int_side.__dict__) == 0
             assert len(fp.ext_side.__dict__) == 0
@@ -650,6 +667,9 @@ class Discretization(TimestepCalculator):
 
         return bdry
 
+    # }}}
+
+    # {{{ quadrature descriptors
     @memoize_method
     def get_quadrature_info(self, quad_tag):
         from hedge.discretization.data import QuadratureInfo
@@ -662,16 +682,104 @@ class Discretization(TimestepCalculator):
 
         q_info = QuadratureInfo()
         q_info.node_count = 0
+        q_info.int_faces_node_count = 0
+        q_info.face_groups = []
 
+        # process element groups
         for eg in self.element_groups:
             eg_q_info = eg.quadrature_info[quad_tag] = eg.QuadratureInfo(
-                    q_info.node_count, eg, min_degree)
+                    eg, min_degree, q_info.node_count,
+                    q_info.int_faces_node_count)
 
             q_info.node_count += eg_q_info.ranges.total_size
+            q_info.int_faces_node_count += eg_q_info.el_faces_ranges.total_size
+
+        # process face groups
+        for fg in self.face_groups:
+            fg_q_info = fg.quadrature_info[quad_tag] = fg.QuadratureInfo()
+
+            quad_fg = type(fg)(double_sided=True,
+                    debug="ilist_generation" in self.debug)
+            q_info.face_groups.append(quad_fg)
+
+            ldis_l = fg.ldis_loc
+            ldis_n = fg.ldis_opp
+            ldis_q_info_l = ldis_l.get_quadrature_info(self.quad_min_degrees[quad_tag])
+            ldis_q_info_n = ldis_n.get_quadrature_info(self.quad_min_degrees[quad_tag])
+            fnc_l = ldis_q_info_l.face_node_count()
+            fnc_n = ldis_q_info_n.face_node_count()
+
+            for fp in fg.face_pairs:
+                e_l = self.mesh.elements[fp.int_side.element_id]
+                e_n = self.mesh.elements[fp.ext_side.element_id]
+                fi_l = fp.int_side.face_id
+                fi_n = fp.ext_side.face_id
+
+                vertices_l = e_l.faces[fi_l]
+                vertices_n = e_n.faces[fi_n]
+
+                try:
+                    findices_shuffle_op_n = \
+                            ldis_q_info_l.get_face_index_shuffle_to_match(
+                            vertices_l, vertices_n)
+
+                except FaceVertexMismatch:
+                    # This happens if vertices_l is not a permutation
+                    # of vertices_n. Periodicity is the only reason why
+                    # that would be so.
+
+                    vertices_n, periodic_axis = self.mesh.periodic_opposite_faces[
+                            vertices_n]
+
+                    findices_shuffle_op_n = \
+                            ldis_q_info_l.get_face_index_shuffle_to_match(
+                                    vertices_l, vertices_n)
+                else:
+                    periodic_axis = None
+
+                # create and fill the face pair
+                quad_fp = type(quad_fg).FacePair()
+
+                def find_el_base_index(el):
+                    group, idx = self.group_map[el.id]
+                    return group.quadrature_info[quad_tag].el_faces_ranges[idx].start
+
+                quad_fp.int_side.el_base_index = find_el_base_index(e_l)
+                quad_fp.ext_side.el_base_index = find_el_base_index(e_n)
+
+                findices_l = tuple(range(fnc_l*fi_l, fnc_l*(fi_l+1)))
+                findices_n = tuple(range(fnc_n*fi_n, fnc_n*(fi_n+1)))
+
+                self._set_face_pair_index_data(quad_fg, quad_fp, fi_l, fi_n,
+                        findices_l, findices_n, findices_shuffle_op_n)
+
+                self._set_flux_face_data(quad_fp.int_side, ldis_l, (e_l, fi_l))
+                self._set_flux_face_data(quad_fp.ext_side, ldis_n, (e_n, fi_n))
+
+                quad_fp.int_side.h = quad_fp.ext_side.h = max(
+                        quad_fp.int_side.h, quad_fp.ext_side.h)
+
+                # check that we have set the C++ attrs, not new Python ones
+                assert len(quad_fp.__dict__) == 0
+                assert len(quad_fp.int_side.__dict__) == 0
+                assert len(quad_fp.ext_side.__dict__) == 0
+
+                quad_fg.face_pairs.append(quad_fp)
+
+            if len(fg.face_pairs):
+                def get_write_el_base(read_base, el_id):
+                    return self.find_el_range(el_id).start
+
+                quad_fg.commit(self, ldis_l, ldis_n, get_write_el_base)
+
+                quad_fg.ldis_loc_quad_info = ldis_q_info_l
+                quad_fg.ldis_opp_quad_info = ldis_q_info_n
 
         return q_info
 
-    # vector construction -----------------------------------------------------
+    # }}}
+
+    # {{{ vector construction -------------------------------------------------
     def __len__(self):
         """Return the number of nodes in this discretization."""
         return len(self.nodes)
@@ -869,7 +977,9 @@ class Discretization(TimestepCalculator):
     def prepare_from_neighbor_map(self, indices):
         return numpy.array(indices, dtype=numpy.intp)
 
-    # scalar reduction --------------------------------------------------------
+    # }}}
+
+    # {{{ scalar reduction ----------------------------------------------------
     def nodewise_dot_product(self, a, b):
         return numpy.dot(a, b)
 
@@ -954,7 +1064,9 @@ class Discretization(TimestepCalculator):
     def nodewise_min(self, a):
         return numpy.min(a)
 
-    # element data retrieval --------------------------------------------------
+    # }}}
+
+    # {{{ element data retrieval ----------------------------------------------
     def find_el_range(self, el_id):
         group, idx = self.group_map[el_id]
         return group.ranges[idx]
@@ -972,7 +1084,9 @@ class Discretization(TimestepCalculator):
                 return i
         raise ValueError("not a valid dof index")
 
-    # misc stuff --------------------------------------------------------------
+    # }}}
+
+    # {{{ misc stuff ----------------------------------------------------------
     @memoize_method
     def dt_non_geometric_factor(self):
         distinct_ldis = set(eg.local_discretization
@@ -1002,8 +1116,9 @@ class Discretization(TimestepCalculator):
                             interp_coeff=la.solve(vdm_t, basis_values))
 
         raise RuntimeError("point %s not found" % point)
+    # }}}
 
-    # op template execution ---------------------------------------------------
+    # {{{ op template execution -----------------------------------------------
     def compile(self, optemplate, post_bind_mapper=lambda x: x):
         from hedge.optemplate.mappers import QuadratureUpsamplerRemover
         optemplate = QuadratureUpsamplerRemover(self.quad_min_degrees)(
@@ -1020,11 +1135,12 @@ class Discretization(TimestepCalculator):
 
     def add_function(self, name, func):
         self.exec_functions[name] = func
+    # }}}
 
 
 
 
-# random utilities ------------------------------------------------------------
+# {{{ random utilities --------------------------------------------------------
 class SymmetryMap(object):
     """A symmetry map on global DG functions.
 
@@ -1110,8 +1226,9 @@ def ones_on_volume(discr):
 
 
 
+# }}}
 
-# projection between different discretizations --------------------------------
+# {{{ projection between different discretizations ----------------------------
 class Projector:
     def __init__(self, from_discr, to_discr):
         self.from_discr = from_discr
@@ -1191,6 +1308,7 @@ class Projector:
 
 
 
+# }}}
 
 # filter ----------------------------------------------------------------------
 class ExponentialFilterResponseFunction:
@@ -1233,3 +1351,8 @@ class Filter:
 
     def __call__(self, f):
         return self.bound_filter_op(f)
+
+
+
+
+# vim: foldmethod=marker

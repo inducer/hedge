@@ -38,7 +38,8 @@ class QuadratureInfo(object):
 
     Once fully filled, this structure has the following data members:
 
-    :ivar node_count: number of quadrature nodes across the whole mesh.
+    :ivar node_count: number of volume quadrature nodes.
+    :ivar int_faces_node_count: number of interior-face quadrature nodes.
     """
 
 # }}}
@@ -78,8 +79,14 @@ class StraightElementGroup(ElementGroupBase):
         :ivar ranges: a list of :class:`slice` objects indicating the DOF numbers for
           each element. Note: This is actually a C++ ElementRanges object.
         :ivar mass_matrix: The element-local mass matrix :math:`M`.
+        :ivar el_faces_ranges: a list of :class:`slice` objects
+          indicating the DOF ranges for each element in my
+          segment of the facial quadrature vector.  Notice that
+          each element's range includes all its faces.
+          Note: This is actually a C++ ElementRanges object.
         """
-        def __init__(self, start_qnode, el_group, min_degree):
+        def __init__(self, el_group, min_degree, 
+                start_vol_node, start_int_faces_node):
             ldis = el_group.local_discretization
 
             ldis_quad_info = self.ldis_quad_info = \
@@ -87,26 +94,13 @@ class StraightElementGroup(ElementGroupBase):
 
             from hedge._internal import UniformElementRanges
             self.ranges = UniformElementRanges(
-                    start_qnode,
+                    start_vol_node,
                     ldis_quad_info.node_count(),
                     len(el_group.members))
-
-            self.mass_matrix = numpy.asarray(
-                    la.solve(
-                        ldis.vandermonde().T,
-                        numpy.dot(
-                            ldis_quad_info.vandermonde().T,
-                            numpy.diag(ldis_quad_info.volume_weights))),
-                    order="C")
-
-            self.stiffness_t_matrices = [numpy.asarray(
-                    la.solve(
-                        ldis.vandermonde().T,
-                        numpy.dot(
-                            diff_vdm.T,
-                            numpy.diag(ldis_quad_info.volume_weights))),
-                    order="C")
-                    for diff_vdm in ldis_quad_info.diff_vandermonde_matrices()]
+            self.el_faces_ranges = UniformElementRanges(
+                    start_int_faces_node,
+                    ldis.face_count()*ldis_quad_info.face_node_count(),
+                    len(el_group.members))
 
     # }}}
 
@@ -146,8 +140,9 @@ class StraightFaceGroup(hedge._internal.StraightFaceGroup):
         *(index_list_count, index_list_length)*.
     :ivar face_count: The number of faces of each element
         in :attr:`ldis_loc`.
-    :ivar local_el_to_global_el_base: a list of global volume 
+    :ivar local_el_write_base: a list of global volume 
         element base indices, indexed in local element numbers.
+    :ivar quadrature_info: a map from quadrature tag to QuadratureInfo instance.
 
     Further, the following methods are inherited from the C++ level:
 
@@ -159,11 +154,19 @@ class StraightFaceGroup(hedge._internal.StraightFaceGroup):
         hedge._internal.StraightFaceGroup.__init__(self, double_sided)
         from hedge.tools import IndexListRegistry
         self.fil_registry = IndexListRegistry(debug)
+        self.quadrature_info = {}
 
     def register_face_index_list(self, identifier, generator):
         return self.fil_registry.register(identifier, generator)
 
-    def commit(self, discr, ldis_loc, ldis_opp):
+    def commit(self, discr, ldis_loc, ldis_opp, get_write_el_base=None):
+        """
+        :param get_write_el_base: a function of *(read_el_base, element_id)* 
+          returning the DOF index to which data should be written post-lift.
+          This is needed since on a quadrature grid, element base indices in a
+          face pair refer to interior boundary vectors and are hence only
+          usable for reading.
+        """
         if self.fil_registry.index_lists:
             self.index_lists = numpy.array(
                     self.fil_registry.index_lists,
@@ -182,11 +185,16 @@ class StraightFaceGroup(hedge._internal.StraightFaceGroup):
                 for side in [fp.int_side, fp.ext_side]
                 if side.element_id != hedge._internal.INVALID_ELEMENT))
 
+        if get_write_el_base is None:
+            def get_write_el_base(read_base, el_id):
+                return read_base
+
         used_bases_and_els.sort()
         el_id_to_local_number = dict(
                 (bae[1], i) for i, bae in enumerate(used_bases_and_els))
-        self.local_el_to_global_el_base = numpy.fromiter(
-                (bae[0] for bae in used_bases_and_els), dtype=numpy.uint32)
+        self.local_el_write_base = numpy.fromiter(
+                (get_write_el_base(*bae) 
+                    for bae in used_bases_and_els), dtype=numpy.uint32)
 
         for fp in self.face_pairs:
             for side in [fp.int_side, fp.ext_side]:
@@ -201,6 +209,13 @@ class StraightFaceGroup(hedge._internal.StraightFaceGroup):
 
         self.ldis_loc = ldis_loc
         self.ldis_opp = ldis_opp
+
+    class QuadratureInfo:
+        """
+        """
+        def __init__(self):
+            pass
+
 
 
 
@@ -237,7 +252,7 @@ class CurvedFaceGroup(hedge._internal.CurvedFaceGroup):
         used_bases_and_els.sort()
         el_id_to_local_number = dict(
                 (bae[1], i) for i, bae in enumerate(used_bases_and_els))
-        self.local_el_to_global_el_base = numpy.fromiter(
+        self.local_el_write_base = numpy.fromiter(
                 (bae[0] for bae in used_bases_and_els), dtype=numpy.uint32)
 
         for fp in self.face_pairs:
@@ -288,7 +303,8 @@ class StraightCurvedFaceGroup(hedge._internal.StraightCurvedFaceGroup):
         used_bases_and_els.sort()
         el_id_to_local_number = dict(
                 (bae[1], i) for i, bae in enumerate(used_bases_and_els))
-        self.local_el_to_global_el_base = numpy.fromiter(
+
+        self.local_el_write_base = numpy.fromiter(
                 (bae[0] for bae in used_bases_and_els), dtype=numpy.uint32)
 
         for fp in self.face_pairs:

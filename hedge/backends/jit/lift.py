@@ -107,7 +107,7 @@ class JitLifter:
                 Block([
                     Initializer(
                         Value("node_number_t", "dest_el_base"),
-                        "fg.local_el_to_global_el_base[fg_el_nr]"),
+                        "fg.local_el_write_base[fg_el_nr]"),
                     Initializer(
                         Value("node_number_t", "src_el_base"),
                         "FACES_PER_EL*fg.face_length()*fg_el_nr"),

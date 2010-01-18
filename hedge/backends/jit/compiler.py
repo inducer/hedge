@@ -69,7 +69,7 @@ class VectorExprAssign(Assign):
 
 
 class CompiledFluxBatchAssign(FluxBatchAssign):
-    # members: compiled_func, arg_specs, is_boundary
+    # members: compiled_func, arg_specs, is_boundary, quadrature_tag
 
     @memoize_method
     def get_dependencies(self):
@@ -178,11 +178,14 @@ class OperatorCompiler(OperatorCompilerBase):
                 BoundaryFluxOperatorBase)
 
         if isinstance(repr_op, QuadratureFluxOperatorBase):
-            raise NotImplementedError
+            quad_tag = repr_op.quadrature_tag
+        else:
+            quad_tag = None
 
         from hedge.backends.jit.flux import get_flux_var_info
         return CompiledFluxBatchAssign(
                 is_boundary=isinstance(repr_op, BoundaryFluxOperatorBase),
+                quadrature_tag=quad_tag,
                 names=names, expressions=expressions, repr_op=repr_op,
                 flux_var_info=get_flux_var_info(expressions),
                 dep_mapper_factory=self.dep_mapper_factory)

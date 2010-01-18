@@ -107,7 +107,7 @@ void expose_face_pair(std::string const &face_pair_type_name)
     fg_wrap
       .DEF_SIMPLE_RW_MEMBER(face_pairs)
       .DEF_SIMPLE_RW_MEMBER(face_count)
-      .DEF_BYVAL_RW_MEMBER(local_el_to_global_el_base)
+      .DEF_BYVAL_RW_MEMBER(local_el_write_base)
       .DEF_BYVAL_RW_MEMBER(index_lists)
       .DEF_SIMPLE_METHOD(element_count)
       .DEF_SIMPLE_METHOD(face_length)

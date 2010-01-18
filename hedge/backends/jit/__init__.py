@@ -26,7 +26,6 @@ import hedge.discretization
 import hedge.optemplate
 from hedge.backends.exec_common import ExecutionMapperBase
 import numpy
-import numpy.linalg as la
 
 
 
@@ -55,9 +54,6 @@ class ExecutionMapper(ExecutionMapperBase):
                     compiled(self, stats_callback)), []
 
     def exec_flux_batch_assign(self, insn):
-        from hedge.optemplate.operators import BoundaryFluxOperatorBase
-        is_bdry = isinstance(insn.repr_op, BoundaryFluxOperatorBase)
-
         from pymbolic.primitives import is_zero
 
         class ZeroSpec:
@@ -71,7 +67,7 @@ class ExecutionMapper(ExecutionMapperBase):
             arg_expr, is_int = arg_spec
             arg = self.rec(arg_expr)
             if is_zero(arg):
-                if is_bdry and not is_int:
+                if insn.is_boundary and not is_int:
                     return BoundaryZeros()
                 else:
                     return VolumeZeros()
@@ -100,11 +96,18 @@ class ExecutionMapper(ExecutionMapperBase):
 
         args = [cast_arg(arg) for arg in args]
 
-        if is_bdry:
-            bdry = self.discr.get_boundary(insn.repr_op.boundary_tag)
-            face_groups = bdry.face_groups
+        if insn.quadrature_tag is None:
+            if insn.is_boundary:
+                face_groups = self.discr.get_boundary(insn.repr_op.boundary_tag)\
+                        .face_groups
+            else:
+                face_groups = self.discr.face_groups
         else:
-            face_groups = self.discr.face_groups
+            if insn.is_boundary:
+                raise NotImplementedError
+            else:
+                face_groups = self.discr.get_quadrature_info(insn.quadrature_tag) \
+                        .face_groups
 
         result = []
 
@@ -139,16 +142,26 @@ class ExecutionMapper(ExecutionMapperBase):
             # do lift, produce output
             for name, flux_bdg, fluxes_on_faces in zip(insn.names, insn.expressions,
                     all_fluxes_on_faces):
-                out = self.discr.volume_zeros(dtype=fluxes_on_faces.dtype)
-                if flux_bdg.op.is_lift:
-                    self.executor.lift_flux(fg, fg.ldis_loc.lifting_matrix(),
-                            fg.local_el_inverse_jacobians, fluxes_on_faces, out)
+
+                if insn.quadrature_tag is None:
+                    if flux_bdg.op.is_lift:
+                        mat = fg.ldis_loc.lifting_matrix()
+                        scaling = fg.local_el_inverse_jacobians
+                    else:
+                        mat = fg.ldis_loc.multi_face_mass_matrix()
+                        scaling = None
                 else:
-                    self.executor.lift_flux(fg, fg.ldis_loc.multi_face_mass_matrix(),
-                            None, fluxes_on_faces, out)
+                    assert not flux_bdg.op.is_lift
+                    mat = fg.ldis_loc_quad_info.multi_face_mass_matrix()
+                    scaling = None
+
+                out = self.discr.volume_zeros(dtype=fluxes_on_faces.dtype)
+                self.executor.lift_flux(fg, mat, scaling, fluxes_on_faces, out)
 
                 if self.discr.instrumented:
                     from hedge.tools import lift_flops
+
+                    # correct for quadrature, too.
                     self.discr.lift_flop_counter.add(lift_flops(fg))
 
                 result.append((name, out))
@@ -221,7 +234,8 @@ class ExecutionMapper(ExecutionMapperBase):
             eg_quad_info = eg.quadrature_info[qtag]
 
             perform_elwise_scaled_operator(eg_quad_info.ranges, eg.ranges,
-                    eg.jacobians, eg_quad_info.mass_matrix, field, out)
+                    eg.jacobians, eg_quad_info.ldis_quad_info.mass_matrix(),
+                    field, out)
 
         return out
 
@@ -243,6 +257,28 @@ class ExecutionMapper(ExecutionMapperBase):
 
             perform_elwise_operator(eg.ranges, eg_quad_info.ranges,
                 eg_quad_info.ldis_quad_info.volume_up_interpolation_matrix(), 
+                field, out)
+
+        return out
+
+    def map_quad_int_faces_grid_upsampler(self, op, field_expr):
+        field = self.rec(field_expr)
+
+        from hedge.tools import is_zero
+        if is_zero(field):
+            return 0
+
+        qtag = op.quadrature_tag
+
+        from hedge._internal import perform_elwise_operator
+        quad_info = self.discr.get_quadrature_info(qtag)
+
+        out = numpy.zeros(quad_info.int_faces_node_count, field.dtype)
+        for eg in self.discr.element_groups:
+            eg_quad_info = eg.quadrature_info[qtag]
+
+            perform_elwise_operator(eg.ranges, eg_quad_info.el_faces_ranges,
+                eg_quad_info.ldis_quad_info.volume_to_face_up_interpolation_matrix(), 
                 field, out)
 
         return out
@@ -377,6 +413,10 @@ class Executor(object):
 
         from hedge.tools import \
                 diff_rst_flops, diff_rescale_one_flops, mass_flops
+
+        if discr.quad_min_degrees:
+            from warnings import warn
+            warn("flop counts for quadrature may be wrong")
 
         self.diff_rst = \
                 time_count_flop(

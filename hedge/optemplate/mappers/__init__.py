@@ -100,6 +100,7 @@ class OperatorReducerMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     map_boundarize = map_diff_base
     map_flux_exchange = map_diff_base
     map_quad_grid_upsampler = map_diff_base
+    map_quad_int_faces_grid_upsampler = map_diff_base
     map_quad_bdry_grid_upsampler = map_diff_base
 
 
@@ -390,6 +391,18 @@ class OperatorSpecializer(CSECachingMapperMixin, IdentityMapper):
         else:
             return IdentityMapper.map_operator_binding(self, expr)
 
+    def map_normal_component(self, expr):
+        from hedge.optemplate.mappers.type_inference import (
+                NodalRepresentation)
+
+        if not isinstance(
+                self.typedict[expr].repr_tag,
+                NodalRepresentation):
+            raise NotImplementedError("quadrature-grid nodal components")
+
+        # a leaf, doesn't change
+        return expr
+
 
 
 
@@ -458,7 +471,7 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
         from pymbolic.mapper.stringifier import PREC_NONE
         return "Q[%s]%s(%s)" % (
                 expr.quadrature_tag,
-                what,
+                expr.get_flux_or_lift_text(),
                 self.flux_stringify_mapper(expr.flux, PREC_NONE))
 
     def map_quad_bdry_flux(self, expr, enclosing_prec):

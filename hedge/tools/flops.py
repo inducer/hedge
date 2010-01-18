@@ -91,7 +91,7 @@ def lift_flops(fg):
     ldis = fg.ldis_loc
     return (
             2 # mul+add
-            * ldis.face_node_count()
+            * fg.face_length()
             * ldis.face_count()
             * ldis.node_count()
             * fg.element_count()
