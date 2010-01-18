@@ -353,10 +353,17 @@ class PkSimplexDiscretization(OrthonormalLocalDiscretization):
         """
         face_vertex_node_index_lists = \
                 self.geometry.face_vertices(self.vertex_indices())
+        from pytools import flatten, one
+        vertex_node_indices = set(flatten(face_vertex_node_index_lists))
+
+        def find_missing_node(face_vertex_node_indices):
+            return unit_nodes[one(
+                vertex_node_indices - set(face_vertex_node_indices))]
 
         unit_nodes = self.unit_nodes()
         sets_of_to_points = [[unit_nodes[fvni] 
                 for fvni in face_vertex_node_indices]
+                + [find_missing_node(face_vertex_node_indices)]
                 for face_vertex_node_indices in face_vertex_node_index_lists]
         from_points = sets_of_to_points[0]
 
@@ -369,7 +376,7 @@ class PkSimplexDiscretization(OrthonormalLocalDiscretization):
                 numpy.vstack([
                     numpy.eye(dim-1, dtype=numpy.float64),
                     numpy.zeros(dim-1)]),
-                unit_vector(dim, dim-1, dtype=numpy.float64))
+                -unit_vector(dim, dim-1, dtype=numpy.float64))
 
         def finish_affine_map(amap):
             return amap.post_compose(to_face_1)
