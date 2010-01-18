@@ -387,8 +387,8 @@ class PkSimplexDiscretization(OrthonormalLocalDiscretization):
                     identify_affine_map(from_points, to_points))
                 for to_points in sets_of_to_points]
 
-    @memoize_method
-    def get_face_index_shuffle_lookup_map(self):
+    # {{{ face matching
+    def get_face_index_shuffle_lookup_map_for_nodes(self, face_nodes):
         first_face_vertex_node_index_lists = \
                 self.geometry.face_vertices(self.vertex_indices())[0]
 
@@ -399,10 +399,6 @@ class PkSimplexDiscretization(OrthonormalLocalDiscretization):
         unodes = self.unit_nodes()
         face_unit_vertices = [check_and_chop(unodes[i])
                 for i in first_face_vertex_node_index_lists]
-
-        face_unit_nodes = [
-                check_and_chop(unodes[i]) 
-                for i in self.face_indices()[0]]
 
         class FaceIndexShuffle:
             def __init__(self, vert_perm, idx_map):
@@ -432,14 +428,27 @@ class PkSimplexDiscretization(OrthonormalLocalDiscretization):
 
             from hedge.tools.indexing import find_index_map_from_node_sets
             imap = find_index_map_from_node_sets(
-                    face_unit_nodes, 
-                    [amap(node) for node in face_unit_nodes])
+                    face_nodes, [amap(node) for node in face_nodes])
 
             result[vert_perm] = FaceIndexShuffle(vert_perm, imap)
 
         return result
 
-    def get_face_index_shuffle_to_match(self, face_1_vertices, face_2_vertices):
+    @memoize_method
+    def get_face_index_shuffle_lookup_map(self):
+        def check_and_chop(pt):
+            assert abs(pt[-1] - (-1)) < 1e-13
+            return pt[:-1]
+
+        unodes = self.unit_nodes()
+        face_unit_nodes = [
+                check_and_chop(unodes[i]) 
+                for i in self.face_indices()[0]]
+
+        return self.get_face_index_shuffle_lookup_map_for_nodes(face_unit_nodes)
+
+    def get_face_index_shuffle_backend(self, face_1_vertices, face_2_vertices,
+            lookup_map):
         # First normalize face_2_vertices to 0,1,2,...
         idx_normalize_map = dict(
                 (i_i, i) for i, i_i in enumerate(face_1_vertices))
@@ -454,8 +463,13 @@ class PkSimplexDiscretization(OrthonormalLocalDiscretization):
             raise FaceVertexMismatch("face vertices do not match")
 
         # Then look them up in a hash table.
-        return self.get_face_index_shuffle_lookup_map()[
-                normalized_face_2_vertices]
+        return lookup_map[normalized_face_2_vertices]
+
+    def get_face_index_shuffle_to_match(self, face_1_vertices, face_2_vertices):
+        return self.get_face_index_shuffle_backend(
+                face_1_vertices, face_2_vertices,
+                self.get_face_index_shuffle_lookup_map())
+    # }}}
     # }}}
 
     # {{{ node wrangling ------------------------------------------------------
