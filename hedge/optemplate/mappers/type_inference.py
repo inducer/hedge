@@ -532,19 +532,20 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
                     % expr.op)
 
     def map_constant(self, expr, typedict):
-        return type_info.Scalar()
+        return type_info.Scalar().unify(typedict[expr])
 
     def map_variable(self, expr, typedict):
         # user-facing variables are nodal
-        return type_info.KnownRepresentation(NodalRepresentation())
+        return type_info.KnownRepresentation(NodalRepresentation())\
+                .unify(typedict[expr])
 
     map_subscript = map_variable
 
     def map_scalar_parameter(self, expr, typedict):
-        return type_info.Scalar()
+        return type_info.Scalar().unify(typedict[expr])
 
     def map_normal_component(self, expr, typedict):
-        return type_info.KnownBoundary(expr.tag)
+        return type_info.KnownBoundary(expr.tag).unify(typedict[expr])
 
     def map_common_subexpression(self, expr, typedict):
         outer_tp = typedict[expr]
