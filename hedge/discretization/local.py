@@ -123,7 +123,7 @@ GradTetrahedronBasisFunction = hedge._internal.GradTetrahedronBasisFunction
 # {{{ base classes ------------------------------------------------------------
 # {{{ generic base classes ----------------------------------------------------
 class LocalDiscretization(object):
-    # numbering ---------------------------------------------------------------
+    # {{{ numbering -----------------------------------------------------------
     @memoize_method
     def face_count(self):
         return len(self.face_indices())
@@ -132,7 +132,9 @@ class LocalDiscretization(object):
     def face_node_count(self):
         return len(self.face_indices()[0])
 
-    # matrices ----------------------------------------------------------------
+    # }}}
+
+    # {{{ matrices ------------------------------------------------------------
     @memoize_method
     def vandermonde(self):
         from hedge.polynomial import generic_vandermonde
@@ -152,6 +154,23 @@ class LocalDiscretization(object):
                 list(self.unit_nodes()),
                 list(self.grad_basis_functions()))
 
+    def _assemble_multi_face_mass_matrix(self, face_mass_matrix):
+        """Helper for the function below."""
+
+        fmm_height, fmm_width = face_mass_matrix.shape
+        assert fmm_height == self.face_node_count()
+
+        result = numpy.zeros(
+                (self.node_count(), self.face_count() * fmm_width),
+                dtype=numpy.float)
+
+        for i_face, f_indices in enumerate(self.face_indices()):
+            f_indices = numpy.array(f_indices, dtype=numpy.uintp)
+            result[f_indices, i_face*fmm_width : (i_face + 1)*fmm_width] = \
+                    face_mass_matrix
+
+        return result
+
     @memoize_method
     def multi_face_mass_matrix(self):
         """Return a matrix that combines the effect of multiple face
@@ -162,19 +181,7 @@ class LocalDiscretization(object):
         Observe that this automatically maps this vector to a volume
         contribution.
         """
-        fnc = self.face_node_count()
-
-        result = numpy.zeros(
-                (self.node_count(), self.face_count() * fnc),
-                dtype=numpy.float)
-
-        fmm = self.face_mass_matrix()
-
-        for i_face, f_indices in enumerate(self.face_indices()):
-            f_indices = numpy.array(f_indices, dtype=numpy.uintp)
-            result[f_indices, i_face * fnc:(i_face + 1) * fnc] = fmm
-
-        return result
+        return self._assemble_multi_face_mass_matrix(self.face_mass_matrix())
 
     @memoize_method
     def lifting_matrix(self):
@@ -218,6 +225,7 @@ class LocalDiscretization(object):
         assert la.norm(dmats[0][p][:, p] - dmats[target_idx]) < 1e-12
 
         return p
+    # }}}
 
 
 
