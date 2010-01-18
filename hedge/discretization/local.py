@@ -372,6 +372,75 @@ class PkSimplexDiscretization(OrthonormalLocalDiscretization):
                     identify_affine_map(from_points, to_points))
                 for to_points in sets_of_to_points]
 
+    @memoize_method
+    def get_face_index_shuffle_lookup_map(self):
+        first_face_vertex_node_index_lists = \
+                self.geometry.face_vertices(self.vertex_indices())[0]
+
+        def check_and_chop(pt):
+            assert abs(pt[-1] - (-1)) < 1e-13
+            return pt[:-1]
+
+        unodes = self.unit_nodes()
+        face_unit_vertices = [check_and_chop(unodes[i])
+                for i in first_face_vertex_node_index_lists]
+
+        face_unit_nodes = [
+                check_and_chop(unodes[i]) 
+                for i in self.face_indices()[0]]
+
+        class FaceIndexShuffle:
+            def __init__(self, vert_perm, idx_map):
+                self.vert_perm = vert_perm
+                self.idx_map = idx_map
+
+            def __hash__(self):
+                return hash(self.vert_perm)
+
+            def __eq__(self, other):
+                return self.vert_perm == other.vert_perm
+
+            def __call__(self, indices):
+                return tuple(indices[i] for i in self.idx_map)
+
+        result = {}
+
+        from pytools import generate_unique_permutations
+        for vert_perm in generate_unique_permutations(
+                tuple(range(self.dimensions))):
+            permuted_face_unit_vertices = [
+                    face_unit_vertices[i] for i in vert_perm]
+
+            from hedge.tools.affine import identify_affine_map
+            amap = identify_affine_map(
+                    face_unit_vertices, permuted_face_unit_vertices)
+
+            from hedge.tools.indexing import find_index_map_from_node_sets
+            imap = find_index_map_from_node_sets(
+                    face_unit_nodes, 
+                    [amap(node) for node in face_unit_nodes])
+
+            result[vert_perm] = FaceIndexShuffle(vert_perm, imap)
+
+        return result
+
+    def get_face_index_shuffle_to_match(self, face_1_vertices, face_2_vertices):
+        # First normalize face_2_vertices to 0,1,2,...
+        idx_normalize_map = dict(
+                (i_i, i) for i, i_i in enumerate(face_1_vertices))
+
+        try:
+            normalized_face_2_vertices = tuple(
+                    idx_normalize_map[i] for i in face_2_vertices)
+        except KeyError:
+            # Assuming all vertex indices are distinct, then the
+            # above lookup will already catch non-overlaps.
+            # Hence we don't need to protect the lookup below.
+            raise FaceVertexMismatch("face vertices do not match")
+
+        # Then look them up in a hash table.
+        return self.get_face_index_shuffle_lookup_map()[
+                normalized_face_2_vertices]
     # }}}
 
     # {{{ node wrangling ------------------------------------------------------
@@ -636,23 +705,7 @@ class IntervalDiscretization(PkSimplexDiscretization):
     def face_basis(self):
         return [lambda x: 1]
 
-    # face operations ---------------------------------------------------------
-    @staticmethod
-    def get_face_index_shuffle_to_match(face_1_vertices, face_2_vertices):
-        if set(face_1_vertices) != set(face_2_vertices):
-            raise FaceVertexMismatch("face vertices do not match")
-
-        class IntervalFaceIndexShuffle:
-            def __hash__(self):
-                return 0x3472477
-
-            def __eq__(self, other):
-                return True
-
-            def __call__(self, indices):
-                return indices
-
-        return IntervalFaceIndexShuffle()
+    # }}}
 
     # time step scaling -------------------------------------------------------
     def dt_non_geometric_factor(self):
@@ -880,39 +933,6 @@ class TriangleDiscretization(PkSimplexDiscretization):
     def face_basis(self):
         from hedge.polynomial import VectorLegendreFunction
         return [VectorLegendreFunction(i) for i in range(self.order+1)]
-    # }}}
-
-    # {{{ face operations -----------------------------------------------------
-    @staticmethod
-    def get_face_index_shuffle_to_match(face_1_vertices, face_2_vertices):
-        if set(face_1_vertices) != set(face_2_vertices):
-            raise FaceVertexMismatch("face vertices do not match")
-
-        class TriangleFaceIndexShuffle:
-            def __init__(self, operations):
-                self.operations = operations
-
-            def __hash__(self):
-                return hash(self.operations)
-
-            def __eq__(self, other):
-                return self.operations == other.operations
-
-            def __call__(self, indices):
-                for op in self.operations:
-                    if op == "flip":
-                        indices = indices[::-1]
-                    else:
-                        raise RuntimeError("invalid operation")
-                return indices
-
-
-        if face_1_vertices != face_2_vertices:
-            assert face_1_vertices[::-1] == face_2_vertices
-            return TriangleFaceIndexShuffle(("flip",))
-        else:
-            return TriangleFaceIndexShuffle(())
-
     # }}}
 
     # time step scaling -------------------------------------------------------
@@ -1239,83 +1259,6 @@ class TetrahedronDiscretization(PkSimplexDiscretization):
                 for mode_tup in
                 generate_nonnegative_integer_tuples_summing_to_at_most(
                     self.order, self.dimensions-1)]
-
-
-    # face operations ---------------------------------------------------------
-    def get_face_index_shuffle_to_match(self, face_1_vertices, face_2_vertices):
-        (a, b, c) = face_1_vertices
-        f2_tuple = face_2_vertices
-
-        try:
-            idx_map = self._shuffle_face_idx_map
-        except AttributeError:
-            idx_map = self._shuffle_face_idx_map = {}
-            idx = 0
-            for j in range(0, self.order+1):
-                for i in range(0, self.order+1-j):
-                    self._shuffle_face_idx_map[i, j] = idx
-                    idx += 1
-
-        order = self.order
-
-        class TetrahedronFaceIndexShuffle:
-            def __init__(self, operations):
-                self.operations = operations
-
-            def __hash__(self):
-                return hash(self.operations)
-
-            def __eq__(self, other):
-                return self.operations == other.operations
-
-            def __call__(self, indices):
-                for op in self.operations:
-                    if op == "flip":
-                        indices = self.flip(indices)
-                    elif op == "shift_left":
-                        indices = self.shift_left(indices)
-                    else:
-                        raise RuntimeError("invalid operation")
-                return indices
-
-            # flip and shift_left generate S_3
-            def flip(self, indices):
-                """Flip the indices along the unit hypotenuse."""
-                result = []
-                for j in range(0, order+1):
-                    for i in range(0, order+1-j):
-                        result.append(indices[idx_map[j, i]])
-                return tuple(result)
-
-            def shift_left(self, indices):
-                """Rotate all edges to the left."""
-                result = len(indices)*[0]
-                idx = 0
-                for j in range(0, order+1):
-                    for i in range(0, order+1-j):
-                        result[idx_map[j, order-i-j]] = indices[idx]
-                        idx += 1
-                return tuple(result)
-
-        # yay, enumerate S_3 by hand
-        if f2_tuple == (a, b, c):
-            return TetrahedronFaceIndexShuffle(())
-        elif f2_tuple == (a, c, b):
-            return TetrahedronFaceIndexShuffle(("flip",))
-        elif f2_tuple == (b, c, a):
-            # (b,c,a) -sl-> (c,a,b) -sl-> (a,b,c)
-            return TetrahedronFaceIndexShuffle(("shift_left", "shift_left"))
-        elif f2_tuple == (b, a, c):
-            # (b,a,c) -sl-> (a,c,b) -fl-> (a,b,c)
-            return TetrahedronFaceIndexShuffle(("shift_left", "flip"))
-        elif f2_tuple == (c, a, b):
-            # (c,a,b) -sl-> (a,b,c)
-            return TetrahedronFaceIndexShuffle(("shift_left",))
-        elif f2_tuple == (c, b, a):
-            # (c,b,a) -fl-> (c,a,b) -sl-> (a,b,c)
-            return TetrahedronFaceIndexShuffle(("flip", "shift_left"))
-        else:
-            raise FaceVertexMismatch("face vertices do not match")
 
     # time step scaling -------------------------------------------------------
     def dt_geometric_factor(self, vertices, el):

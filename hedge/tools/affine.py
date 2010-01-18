@@ -71,6 +71,11 @@ def identify_affine_map(from_points, to_points):
         single_valued(len(fp) for fp in from_points),
         single_valued(len(tp) for tp in to_points)])
 
+    if dim == 0:
+        return AffineMap(
+                numpy.zeros((0,0), dtype=numpy.float64),
+                numpy.zeros((0,), dtype=numpy.float64))
+
     if len(from_points) != dim+1 or len(to_points) != dim+1:
         raise ValueError("need dim+1 points to identify an affine map")
 

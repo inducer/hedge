@@ -23,6 +23,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import numpy
+import numpy.linalg as la
 
 
 
@@ -137,3 +138,33 @@ class IndexListRegistry(object):
     def get_list_length(self):
         from pytools import single_valued
         return single_valued(len(il) for il in self.index_lists)
+
+
+
+
+
+def find_index_map_from_node_sets(old_nodes, new_nodes, threshold=1e-12):
+    """Given *old_nodes* and *new_nodes*, which occupy
+    the same spots but may have switched identities,
+    returns an index tuple, which satisfies (in shorthand)
+    `new_nodes[imap] == old_nodes`.
+    """
+    idx_map = []
+
+    # yay O(n^2)
+    for old_node in old_nodes:
+        found = False
+        for new_idx, new_node in enumerate(new_nodes):
+            if la.norm(old_node-new_node) < threshold:
+                idx_map.append(new_idx)
+                found = True
+                break
+
+        if not found:
+            raise ValueError("a corresponding node for %s was not found"
+                    % old_node)
+
+    return tuple(idx_map)
+
+
+
