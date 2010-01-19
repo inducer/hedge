@@ -100,12 +100,19 @@ def lift_flops(fg):
 
 
 
-def gather_flops(discr):
+def gather_flops(discr, quadrature_tag=None):
     result = 0
     for eg in discr.element_groups:
         ldis = eg.local_discretization
+
+        if quadrature_tag is None:
+            fnc = ldis.face_node_count()
+        else:
+            fnc = eg.quadrature_info[quadrature_tag] \
+                    .ldis_quad_info.face_node_count()
+
         result += (
-                ldis.face_node_count()
+                fnc
                 * ldis.face_count()
                 * len(eg.members)
                 * (1 # facejac-mul

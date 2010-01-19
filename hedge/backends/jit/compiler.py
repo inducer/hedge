@@ -109,7 +109,7 @@ class CompiledFluxBatchAssign(FluxBatchAssign):
                                 discr.gather_counter,
                                 discr.gather_flop_counter,
                                 len(self.expressions)
-                                * gather_flops(discr)
+                                * gather_flops(discr, self.quadrature_tag)
                                 * len(self.flux_var_info.arg_names))
 
         else:
