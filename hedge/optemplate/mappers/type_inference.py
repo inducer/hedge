@@ -137,7 +137,7 @@ class type_info:
         """Represents "nothing known about type"."""
         def unify_inner(self, other):
             return other
-        
+
         def __repr__(self):
             return "NoType"
 
@@ -532,20 +532,21 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
                     % expr.op)
 
     def map_constant(self, expr, typedict):
-        return type_info.Scalar().unify(typedict[expr])
+        from hedge.tools import is_zero
+        return type_info.Scalar().unify(typedict[expr], expr)
 
     def map_variable(self, expr, typedict):
         # user-facing variables are nodal
         return type_info.KnownRepresentation(NodalRepresentation())\
-                .unify(typedict[expr])
+                .unify(typedict[expr], expr)
 
     map_subscript = map_variable
 
     def map_scalar_parameter(self, expr, typedict):
-        return type_info.Scalar().unify(typedict[expr])
+        return type_info.Scalar().unify(typedict[expr], expr)
 
     def map_normal_component(self, expr, typedict):
-        return type_info.KnownBoundary(expr.tag).unify(typedict[expr])
+        return type_info.KnownBoundary(expr.tag).unify(typedict[expr], expr)
 
     def map_common_subexpression(self, expr, typedict):
         outer_tp = typedict[expr]
