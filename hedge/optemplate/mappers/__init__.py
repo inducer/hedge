@@ -836,6 +836,80 @@ class CommutativeConstantFoldingMapper(
     def is_constant(self, expr):
         return not bool(self.dep_mapper(expr))
 
+    def map_operator_binding(self, expr):
+        from hedge.tools import is_zero
+        if is_zero(expr.field):
+            return 0
+
+        from hedge.optemplate.operators import FluxOperatorBase
+        from hedge.optemplate.primitives import BoundaryPair
+
+        if not (isinstance(expr.op, FluxOperatorBase)
+                and isinstance(expr.field, BoundaryPair)):
+            return IdentityMapperMixin.map_operator_binding(self, expr)
+
+        # {{{ remove zeros from boundary fluxes
+
+        bpair = expr.field
+        vol_field = bpair.field
+        bdry_field = bpair.bfield
+        from pytools.obj_array import is_obj_array
+        if not is_obj_array(vol_field):
+            vol_field = [vol_field]
+        if not is_obj_array(bdry_field):
+            bdry_field = [bdry_field]
+
+        from hedge.flux import FieldComponent
+        subst_map = {}
+
+        # process volume field
+        new_vol_field = []
+        new_idx = 0
+        for i, flux_arg in enumerate(vol_field):
+            fc = FieldComponent(i, is_interior=True)
+            flux_arg = self.rec(flux_arg)
+
+            if is_zero(flux_arg):
+                subst_map[fc] = 0
+            else:
+                new_vol_field.append(flux_arg)
+                subst_map[fc] = FieldComponent(new_idx, is_interior=True)
+                new_idx += 1
+
+
+        # process boundary field
+        new_bdry_field = []
+        new_idx = 0
+        for i, flux_arg in enumerate(bdry_field):
+            fc = FieldComponent(i, is_interior=False)
+            flux_arg = self.rec(flux_arg)
+
+            if is_zero(flux_arg):
+                subst_map[fc] = 0
+            else:
+                new_bdry_field.append(flux_arg)
+                subst_map[fc] = FieldComponent(new_idx, is_interior=False)
+                new_idx += 1
+
+        # substitute results into flux
+        def sub_flux(expr):
+            return subst_map.get(expr, expr)
+
+        from hedge.flux import FluxSubstitutionMapper
+        new_flux = FluxSubstitutionMapper(sub_flux)(expr.op.flux)
+
+        from hedge.tools import is_zero, make_obj_array
+        if is_zero(new_flux):
+            return 0
+        else:
+            return type(expr.op)(new_flux, *expr.op.__getinitargs__()[1:])(
+                    BoundaryPair(
+                        make_obj_array(new_vol_field),
+                        make_obj_array(new_bdry_field),
+                        bpair.tag))
+
+        # }}}
+
 
 
 
