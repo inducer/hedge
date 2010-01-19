@@ -142,7 +142,16 @@ class StraightFaceGroup(hedge._internal.StraightFaceGroup):
         in :attr:`ldis_loc`.
     :ivar local_el_write_base: a list of global volume 
         element base indices, indexed in local element numbers.
-    :ivar quadrature_info: a map from quadrature tag to QuadratureInfo instance.
+
+    Face groups on quadrature grids additionally have these
+    properties:
+
+    :ivar ldis_loc_quad_info: refer to 
+      :class:`hedge.discretization.local.LocalDiscretization.QuadratureInfo`
+      instance relevant for this face group's :attr:`ldis_loc`.
+    :ivar ldis_opp_quad_info: refer to 
+      :class:`hedge.discretization.local.LocalDiscretization.QuadratureInfo`
+      instance relevant for this face group's :attr:`ldis_opp`.
 
     Further, the following methods are inherited from the C++ level:
 
@@ -209,14 +218,6 @@ class StraightFaceGroup(hedge._internal.StraightFaceGroup):
 
         self.ldis_loc = ldis_loc
         self.ldis_opp = ldis_opp
-
-    class QuadratureInfo:
-        """
-        """
-        def __init__(self):
-            pass
-
-
 
 
 
@@ -386,29 +387,87 @@ class Boundary(object):
 
     @memoize_method
     def get_quadrature_info(self, quadrature_tag):
+        discr = self.discr
+
         from hedge._internal import UniformElementRanges
 
-        q_face_groups = []
-        q_fg_ranges = []
+        quad_face_groups = []
+        quad_fg_ranges = []
         fg_ldis_quad_infos = []
 
         fg_start = 0
+        f_start = 0
+
         for fg, fg_range in zip(self.face_groups, self.fg_ranges):
             ldis = fg.ldis_loc
-            ldis_q_info = ldis.get_quadrature_info(
+
+            # get quadrature info from local discretization
+            ldis_quad_info = ldis.get_quadrature_info(
                     self.discr.quad_min_degrees[quadrature_tag])
-            fg_ldis_quad_infos.append(ldis_q_info)
+            fg_ldis_quad_infos.append(ldis_quad_info)
+            quad_fnc = ldis_quad_info.face_node_count()
 
-            q_fg_range = UniformElementRanges(
-                fg_start, # FIXME: need to vary element starts
-                ldis_q_info.face_node_count(), len(fg_range))
-            q_fg_ranges.append(q_fg_range)
+            # create element ranges
+            quad_fg_range = UniformElementRanges(
+                fg_start,
+                quad_fnc, len(fg_range))
+            quad_fg_ranges.append(quad_fg_range)
 
-            fg_start += q_fg_range.total_size
+            fg_start += quad_fg_range.total_size
+
+            # create the quadrature face group
+            fg_type = StraightFaceGroup
+            quad_fg = type(fg)(double_sided=False,
+                    debug="ilist_generation" in discr.debug)
+            quad_face_groups.append(quad_fg)
+
+            # create quadrature face pairs
+            for fp in fg.face_pairs:
+                el = discr.mesh.elements[fp.int_side.element_id]
+                face_nr = fp.int_side.face_id
+                ef = el, face_nr
+
+                quad_fp = quad_fg.FacePair()
+
+                def find_el_base_index(el):
+                    group, idx = discr.group_map[el.id]
+                    return group.quadrature_info[quadrature_tag].el_faces_ranges[idx].start
+
+                face_indices = tuple(range(quad_fnc*face_nr, quad_fnc*(face_nr+1)))
+
+                quad_fp.int_side.el_base_index = find_el_base_index(el)
+                quad_fp.ext_side.el_base_index = f_start
+                quad_fp.int_side.face_index_list_number = quad_fg.register_face_index_list(
+                        identifier=face_nr,
+                        generator=lambda: face_indices)
+                quad_fp.ext_side.face_index_list_number = quad_fg.register_face_index_list(
+                        identifier=(),
+                        generator=lambda: tuple(xrange(quad_fnc)))
+                self.discr._set_flux_face_data(quad_fp.int_side, ldis, ef)
+
+                # check that all property assigns found their C++-side slots
+                assert len(fp.__dict__) == 0
+                assert len(fp.int_side.__dict__) == 0
+                assert len(fp.ext_side.__dict__) == 0
+
+                quad_fg.face_pairs.append(quad_fp)
+
+                f_start += quad_fnc
+
+            assert f_start == fg_start
+
+            if len(quad_fg.face_pairs):
+                def get_write_el_base(read_base, el_id):
+                    return discr.find_el_range(el_id).start
+
+                quad_fg.commit(discr, ldis, ldis, get_write_el_base)
+
+                quad_fg.ldis_loc_quad_info = ldis_quad_info
+                quad_fg.ldis_opp_quad_info = ldis_quad_info
 
         return self.QuadratureInfo(
-                face_groups=q_face_groups,
-                fg_ranges=q_fg_ranges,
+                face_groups=quad_face_groups,
+                fg_ranges=quad_fg_ranges,
                 fg_ldis_quad_infos=fg_ldis_quad_infos,
                 node_count=fg_start)
 

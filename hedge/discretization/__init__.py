@@ -628,8 +628,7 @@ class Discretization(TimestepCalculator):
                     generator=lambda: tuple(xrange(len(face_indices))))
             self._set_flux_face_data(fp.int_side, ldis, ef)
 
-            # check that all property assigns found their
-            # C++-side slots
+            # check that all property assigns found their C++-side slots
             assert len(fp.__dict__) == 0
             assert len(fp.int_side.__dict__) == 0
             assert len(fp.ext_side.__dict__) == 0
@@ -696,8 +695,6 @@ class Discretization(TimestepCalculator):
 
         # process face groups
         for fg in self.face_groups:
-            fg_q_info = fg.quadrature_info[quad_tag] = fg.QuadratureInfo()
-
             quad_fg = type(fg)(double_sided=True,
                     debug="ilist_generation" in self.debug)
             q_info.face_groups.append(quad_fg)

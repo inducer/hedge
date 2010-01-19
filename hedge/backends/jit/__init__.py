@@ -104,7 +104,8 @@ class ExecutionMapper(ExecutionMapperBase):
                 face_groups = self.discr.face_groups
         else:
             if insn.is_boundary:
-                raise NotImplementedError
+                face_groups = self.discr.get_boundary(insn.repr_op.boundary_tag)\
+                        .get_quadrature_info(insn.quadrature_tag).face_groups
             else:
                 face_groups = self.discr.get_quadrature_info(insn.quadrature_tag) \
                         .face_groups
