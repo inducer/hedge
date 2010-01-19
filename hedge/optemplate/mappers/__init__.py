@@ -752,7 +752,9 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
 
             def map_operator_binding(self, expr):
                 from hedge.optemplate import (BoundarizeOperator,
-                        FluxExchangeOperator, QuadratureBoundaryGridUpsampler)
+                        FluxExchangeOperator,
+                        QuadratureGridUpsampler,
+                        QuadratureBoundaryGridUpsampler)
 
                 if isinstance(expr.op, BoundarizeOperator):
                     if expr.op.tag != bpair.tag:
@@ -781,6 +783,13 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
                                 "and QuadratureBoundaryGridUpsampler "
                                 "do not agree about boundary tag: %s vs %s"
                                 % (expr.op.boundary_tag, bpair.tag))
+                    return FieldComponent(
+                            self.register_boundary_expr(expr),
+                            is_interior=False)
+
+                elif isinstance(expr.op, QuadratureGridUpsampler):
+                    # We're invoked before operator specialization, so we may
+                    # see these instead of QuadratureBoundaryGridUpsampler.
                     return FieldComponent(
                             self.register_boundary_expr(expr),
                             is_interior=False)
