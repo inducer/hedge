@@ -26,7 +26,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 import numpy
 
 from hedge.models import Operator
-from hedge.tools.second_order import LDGSecondDerivative
+from hedge.second_order import LDGSecondDerivative
 import hedge.data
 import hedge.iterative
 
@@ -47,7 +47,7 @@ class LaplacianOperatorBase(object):
         """
 
         from hedge.optemplate import InverseMassOperator, Field, make_vector_field
-        from hedge.tools.second_order import SecondDerivativeTarget
+        from hedge.second_order import SecondDerivativeTarget
 
         if u is None: u = Field("u")
         if dir_bc is None: dir_bc = Field("dir_bc")

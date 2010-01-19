@@ -25,7 +25,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 from hedge.models import HyperbolicOperator
 import numpy
-from hedge.tools.second_order import CentralSecondDerivative
+from hedge.second_order import CentralSecondDerivative
 
 
 
@@ -70,7 +70,7 @@ class BurgersOperator(HyperbolicOperator):
                 [make_obj_array([flux(u)])], 
                 [], strong=False)[0]
 
-        from hedge.tools.second_order import SecondDerivativeTarget
+        from hedge.second_order import SecondDerivativeTarget
 
         if self.viscosity is not None or with_sensor:
             viscosity_coeff = 0

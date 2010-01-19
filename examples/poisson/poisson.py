@@ -81,7 +81,7 @@ def main(write_output=True):
 
     try:
         from hedge.models.poisson import PoissonOperator
-        from hedge.tools.second_order import \
+        from hedge.second_order import \
                 IPDGSecondDerivative, LDGSecondDerivative, \
                 StabilizedCentralSecondDerivative
         from hedge.mesh import TAG_NONE, TAG_ALL

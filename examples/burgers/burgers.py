@@ -139,7 +139,7 @@ def main(write_output=True, flux_type_arg="upwind"):
             ConstantGivenFunction, \
             TimeConstantGivenFunction, \
             TimeDependentGivenFunction
-    from hedge.tools.second_order import \
+    from hedge.second_order import \
             LDGSecondDerivative, \
             CentralSecondDerivative
     from hedge.models.burgers import BurgersOperator

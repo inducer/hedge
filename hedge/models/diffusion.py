@@ -27,7 +27,7 @@ import numpy
 import hedge.data
 from hedge.models import TimeDependentOperator
 from hedge.models.poisson import LaplacianOperatorBase
-from hedge.tools.second_order import CentralSecondDerivative
+from hedge.second_order import CentralSecondDerivative
 
 
 

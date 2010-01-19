@@ -30,7 +30,7 @@ import hedge.data
 from hedge.models import TimeDependentOperator
 from pytools import Record
 from hedge.tools import is_zero
-from hedge.tools.second_order import (
+from hedge.second_order import (
         StabilizedCentralSecondDerivative,
         CentralSecondDerivative,
         IPDGSecondDerivative)
@@ -189,7 +189,7 @@ class GasDynamicsOperator(TimeDependentOperator):
             # compute gradient of q -------------------------------------------
             dq = numpy.zeros((dimensions+2, dimensions), dtype=object)
 
-            from hedge.tools.second_order import SecondDerivativeTarget
+            from hedge.second_order import SecondDerivativeTarget
             for i in range(self.dimensions+2):
                 grad_tgt = SecondDerivativeTarget(
                         self.dimensions, strong_form=True,
@@ -234,7 +234,7 @@ class GasDynamicsOperator(TimeDependentOperator):
 
         def make_second_order_part(q):
             def div(operand):
-                from hedge.tools.second_order import SecondDerivativeTarget
+                from hedge.second_order import SecondDerivativeTarget
                 div_tgt = SecondDerivativeTarget(
                         self.dimensions, strong_form=True,
                         operand=operand)
