@@ -354,8 +354,14 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
 
         while True:
             typedict.change_flag = False
-            tp = pymbolic.mapper.RecursiveMapper.__call__(self, expr, typedict)
-            typedict[expr] = tp
+            def infer_for_expr(expr):
+                tp = pymbolic.mapper.RecursiveMapper.__call__(self, expr, typedict)
+                typedict[expr] = tp
+
+            # Numpy arrays occur either at the top level or in flux
+            # expressions. This code handles the top level case.
+            from pytools.obj_array import with_object_array_or_scalar
+            with_object_array_or_scalar(infer_for_expr, expr)
 
             if not typedict.change_flag:
                 # nothing has changed any more, type information has 'converged'
@@ -532,7 +538,6 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
                     % expr.op)
 
     def map_constant(self, expr, typedict):
-        from hedge.tools import is_zero
         return type_info.Scalar().unify(typedict[expr], expr)
 
     def map_variable(self, expr, typedict):
