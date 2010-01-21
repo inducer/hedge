@@ -57,3 +57,24 @@ def make_lax_friedrichs_flux(wave_speed, state, fluxes, bdry_tags_states_and_flu
                     join_fields(0, bdry_state, *bdry_fluxes), tag))
                 for tag, bdry_state, bdry_fluxes in bdry_tags_states_and_fluxes))
 
+
+
+
+def make_flux_bilinear_form(testee_expr, test_expr):
+    """Create a hedge flux expression for the bilinear form
+
+    .. math::
+
+        \int_{\Gamma} u f(l_i^+,l_i^-),
+
+    where :math:`u` is the (vector or scalar) unknown, given in *testee_epxr*,
+    :math:`f` is a function given by *test_expr* in terms of the Lagrange polynomials
+    :math:`l^_i^{\pm}` against which we are testing. In *test_expr*, :math:`l_i^{\pm}`
+    are represented by :class:`hedge.flux.FieldComponent(-1, True/False)`.
+    :math:`f` is required to be linear in :math:`l_i^{\pm}`.
+    """
+    # keeping this stub to not lose the design work that went into its signature.
+    raise NotImplementedError
+
+
+
