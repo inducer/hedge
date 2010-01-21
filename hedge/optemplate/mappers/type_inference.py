@@ -209,6 +209,8 @@ class type_info:
 
             if isinstance(other, type_info.InteriorFacesVector):
                 return other
+            elif isinstance(other, type_info.KnownVolume):
+                return type_info.VolumeVector(NodalRepresentation())
             elif other == type_info.VolumeVector(NodalRepresentation()):
                 return other
             else:
