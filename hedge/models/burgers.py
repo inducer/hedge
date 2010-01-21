@@ -42,17 +42,24 @@ class BurgersOperator(HyperbolicOperator):
     def op_template(self, with_sensor):
         from hedge.optemplate import (
                 Field,
-                make_minv_stiffness_t,
+                make_stiffness_t,
                 make_nabla,
                 InverseMassOperator,
                 ElementwiseMaxOperator,
                 get_flux_operator)
 
+        from hedge.optemplate.operators import (
+                QuadratureGridUpsampler,
+                QuadratureInteriorFacesGridUpsampler)
+
+        to_quad = QuadratureGridUpsampler("quad")
+        to_if_quad = QuadratureInteriorFacesGridUpsampler("quad")
+
         u = Field("u")
         u0 = Field("u0")
 
         # boundary conditions -------------------------------------------------
-        minv_st = make_minv_stiffness_t(self.dimensions)
+        minv_st = make_stiffness_t(self.dimensions)
         nabla = make_nabla(self.dimensions)
         m_inv = InverseMassOperator()
 
@@ -65,9 +72,9 @@ class BurgersOperator(HyperbolicOperator):
         from pytools.obj_array import make_obj_array
         num_flux = make_lax_friedrichs_flux(
                 #u0,
-                emax_u,
-                make_obj_array([u]), 
-                [make_obj_array([flux(u)])], 
+                to_if_quad(emax_u),
+                make_obj_array([to_if_quad(u)]), 
+                [make_obj_array([flux(to_if_quad(u))])], 
                 [], strong=False)[0]
 
         from hedge.second_order import SecondDerivativeTarget
@@ -104,7 +111,7 @@ class BurgersOperator(HyperbolicOperator):
         else:
             viscosity_bit = 0
 
-        return (minv_st[0](flux(u))) - m_inv(num_flux) \
+        return m_inv((minv_st[0](flux(to_quad(u)))) - num_flux) \
                 + viscosity_bit
 
     def bind(self, discr, u0=1, sensor=None):
