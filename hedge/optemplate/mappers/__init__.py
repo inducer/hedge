@@ -849,20 +849,68 @@ class CommutativeConstantFoldingMapper(
         return not bool(self.dep_mapper(expr))
 
     def map_operator_binding(self, expr):
+        field = self.rec(expr.field)
+
         from hedge.tools import is_zero
-        if is_zero(expr.field):
+        if is_zero(field):
             return 0
 
         from hedge.optemplate.operators import FluxOperatorBase
         from hedge.optemplate.primitives import BoundaryPair
 
-        if not (isinstance(expr.op, FluxOperatorBase)
-                and isinstance(expr.field, BoundaryPair)):
-            return IdentityMapperMixin.map_operator_binding(self, expr)
+        if isinstance(expr.op, FluxOperatorBase):
+            if isinstance(field, BoundaryPair):
+                return self.remove_zeros_from_boundary_flux(expr.op, field)
+            else:
+                return self.remove_zeros_from_interior_flux(expr.op, field)
+        else:
+            return expr.op(field)
 
-        # {{{ remove zeros from boundary fluxes
+    # {{{ remove zeros from interior flux
+    def remove_zeros_from_interior_flux(self, op, vol_field):
+        from pytools.obj_array import is_obj_array
+        if not is_obj_array(vol_field):
+            vol_field = [vol_field]
 
-        bpair = expr.field
+        from hedge.flux import FieldComponent
+        subst_map = {}
+
+        from hedge.tools import is_zero, make_obj_array
+
+        # process volume field
+        new_vol_field = []
+        new_idx = 0
+        for i, flux_arg in enumerate(vol_field):
+            flux_arg = self.rec(flux_arg)
+
+            if is_zero(flux_arg):
+                subst_map[FieldComponent(i, is_interior=True)] = 0
+                subst_map[FieldComponent(i, is_interior=False)] = 0
+            else:
+                new_vol_field.append(flux_arg)
+                subst_map[FieldComponent(i, is_interior=True)] = \
+                        FieldComponent(new_idx, is_interior=True)
+                subst_map[FieldComponent(i, is_interior=False)] = \
+                        FieldComponent(new_idx, is_interior=False)
+                new_idx += 1
+
+        # substitute results into flux
+        def sub_flux(expr):
+            return subst_map.get(expr, expr)
+
+        from hedge.flux import FluxSubstitutionMapper
+        new_flux = FluxSubstitutionMapper(sub_flux)(op.flux)
+
+        if is_zero(new_flux):
+            return 0
+        else:
+            return type(op)(new_flux, *op.__getinitargs__()[1:])(
+                    make_obj_array(new_vol_field))
+
+    # }}}
+
+    # {{{ remove zeros from boundary flux
+    def remove_zeros_from_boundary_flux(self, op, bpair):
         vol_field = bpair.field
         bdry_field = bpair.bfield
         from pytools.obj_array import is_obj_array
@@ -875,6 +923,7 @@ class CommutativeConstantFoldingMapper(
         subst_map = {}
 
         # process volume field
+        from hedge.tools import is_zero, make_obj_array
         new_vol_field = []
         new_idx = 0
         for i, flux_arg in enumerate(vol_field):
@@ -908,19 +957,19 @@ class CommutativeConstantFoldingMapper(
             return subst_map.get(expr, expr)
 
         from hedge.flux import FluxSubstitutionMapper
-        new_flux = FluxSubstitutionMapper(sub_flux)(expr.op.flux)
+        new_flux = FluxSubstitutionMapper(sub_flux)(op.flux)
 
-        from hedge.tools import is_zero, make_obj_array
         if is_zero(new_flux):
             return 0
         else:
-            return type(expr.op)(new_flux, *expr.op.__getinitargs__()[1:])(
+            from hedge.optemplate.primitives import BoundaryPair
+            return type(op)(new_flux, *op.__getinitargs__()[1:])(
                     BoundaryPair(
                         make_obj_array(new_vol_field),
                         make_obj_array(new_bdry_field),
                         bpair.tag))
 
-        # }}}
+    # }}}
 
 
 
