@@ -333,7 +333,11 @@ def get_simplex_cubature(exact_to_degree, dim):
     from math import ceil
     s = int(ceil((exact_to_degree-1)/2))
 
-    if dim == 1:
+    if dim == 0:
+        return Quadrature(
+                points=numpy.array([[]], dtype=numpy.float64),
+                weights=numpy.array([1], dtype=numpy.float64))
+    elif dim == 1:
         return OneDToNDQuadratureAdapter(
                 LegendreGaussQuadrature(s))
     else:
