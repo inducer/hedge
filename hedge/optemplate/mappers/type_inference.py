@@ -384,25 +384,16 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
     # Information needs to propagate upward (toward the leaves) *and* 
     # downward (toward the roots) in the expression tree.
 
-    def map_sum(self, expr, typedict):
+    # {{{ base cases
+    def infer_for_children(self, expr, typedict, children):
+        # This routine alles scalar among children and treats them as
+        # not type-changing
+
         tp = typedict[expr]
 
-        for child in expr.children:
-            child_tp = self.rec(child, typedict)
-            tp = tp.unify(child_tp, child)
-
-        for child in expr.children:
-            typedict[child] = tp
-
-        return tp
-
-    def map_product(self, expr, typedict):
-        tp = typedict[expr]
-
-        # Scalars are special because they're not type-changing in multiplication
         non_scalar_exprs = []
 
-        for child in expr.children:
+        for child in children:
             if tp is type_info.no_type:
                 tp = self.rec(child, typedict)
                 if isinstance(tp, type_info.Scalar):
@@ -420,6 +411,31 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
             typedict[child] = tp
 
         return tp
+
+    # }}}
+
+    def map_sum(self, expr, typedict):
+        return self.infer_for_children(expr, typedict, expr.children)
+
+    def map_product(self, expr, typedict):
+        return self.infer_for_children(expr, typedict, expr.children)
+
+    def map_quotient(self, expr, typedict):
+        return self.infer_for_children(expr, typedict,
+                children=[expr.numerator, expr.denominator])
+
+    def map_power(self, expr, typedict):
+        return self.infer_for_children(expr, typedict,
+                children=[expr.base, expr.exponent])
+
+    def map_if_positive(self, expr, typedict):
+        return self.infer_for_children(expr, typedict,
+                children=[expr.criterion, expr.then, expr.else_])
+
+    def map_call(self, expr, typedict):
+        # assumes functions to be non-type-changing
+        return self.infer_for_children(expr, typedict,
+                children=expr.parameters)
 
     def map_operator_binding(self, expr, typedict):
         from hedge.optemplate.operators import (
@@ -580,6 +596,7 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
             return new_tp
         else:
             return last_tp
+
 # }}}
 
 
