@@ -673,11 +673,11 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
             IdentityMapper.map_common_subexpression
 
     def map_operator_binding(self, expr):
-        from hedge.optemplate.operators import BoundaryFluxOperatorBase
+        from hedge.optemplate.operators import FluxOperatorBase
         from hedge.optemplate.primitives import BoundaryPair
         from hedge.flux import FluxSubstitutionMapper, FieldComponent
 
-        if not (isinstance(expr.op, BoundaryFluxOperatorBase)
+        if not (isinstance(expr.op, FluxOperatorBase)
                 and isinstance(expr.field, BoundaryPair)):
             return IdentityMapper.map_operator_binding(self, expr)
 
