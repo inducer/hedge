@@ -671,6 +671,7 @@ class Discretization(TimestepCalculator):
     # {{{ quadrature descriptors
     @memoize_method
     def get_quadrature_info(self, quad_tag):
+        from hedge.discretization.local import FaceVertexMismatch
         from hedge.discretization.data import QuadratureInfo
 
         try:
