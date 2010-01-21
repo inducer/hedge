@@ -632,12 +632,19 @@ class OperatorCompilerBase(IdentityMapper):
                     "flux assignment instructions, but the subclassed compiler "
                     "does not seem to have done this.")
         else:
+            # make sure operator assignments stand alone and don't get muddled
+            # up in vector math
             field_var = self.assign_to_new_var(
                     self.rec(expr.field))
             result_var = self.assign_to_new_var(
                     expr.op(field_var),
                     prefix=name_hint)
             return result_var
+
+    def map_normal_component(self, expr):
+        # make sure normal component assignments stand alone and don't get 
+        # muddled up in vector math
+        return self.assign_to_new_var(expr)
 
     def map_diff_op_binding(self, expr):
         try:

@@ -28,7 +28,7 @@ def main(write_output=True) :
     from hedge.timestep import RK4TimeStepper
     from math import sin, cos, pi, exp, sqrt
     from hedge.data import TimeConstantGivenFunction, \
-            GivenFunction, ConstantGivenFunction
+            ConstantGivenFunction
 
     from hedge.backends import guess_run_context
     rcon = guess_run_context()
@@ -112,7 +112,7 @@ def main(write_output=True) :
 
     stepper.add_instrumentation(logmgr)
 
-    from hedge.log import Integral, LpNorm
+    from hedge.log import LpNorm
     u_getter = lambda: u
     logmgr.add_quantity(LpNorm(u_getter, discr, 1, name="l1_u"))
     logmgr.add_quantity(LpNorm(u_getter, discr, name="l2_u"))
