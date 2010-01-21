@@ -64,7 +64,19 @@
   For IP, e.g.
 
   <\equation*>
-    <wide|u|^><rsub|h>\<assign\>{u<rsub|h>},<space|2em><wide|\<b-sigma\>|^><rsub|h>\<assign\>{\<nabla\><rsub|h>u<rsub|h>}-<frac|\<eta\>|h<rsub|e>>[u<rsub|h>].
+    <wide|u|^><rsub|h>\<assign\>,<space|2em><wide|\<b-sigma\>|^><rsub|h>\<assign\>{\<nabla\><rsub|h>u<rsub|h>}-<frac|\<eta\>|h<rsub|e>>[u<rsub|h>].
+  </equation*>
+
+  Substitute in:
+
+  <\equation*>
+    <big|int><rsub|\<Omega\>>\<nabla\>u<rsub|h>\<cdot\>\<nabla\>v<rsub|h>+<wide*|<big|int><rsub|\<Gamma\><rsub|0>>{<with|color|blue|{u<rsub|h>}>-u<rsub|h>}[\<nabla\>v<rsub|h>]|\<wide-underbrace\>><rsub|0>+<big|int><rsub|\<Gamma\>>[<with|color|blue|{u<rsub|h>}>-u<rsub|h>]\<cdot\>{\<nabla\>v<rsub|h>}-<big|int><rsub|\<Gamma\>>[v<rsub|h>]\<cdot\>{<with|color|blue|{\<nabla\><rsub|h>u<rsub|h>}-<frac|\<eta\>|h<rsub|e>>[u<rsub|h>]}>-<big|int><rsub|\<Gamma\><rsub|0>>{v<rsub|h>}[<with|color|blue|{\<nabla\><rsub|h>u<rsub|h>}-<frac|\<eta\>|h<rsub|e>>[u<rsub|h>]>]=<big|int><rsub|\<Omega\>>v<rsub|h>f
+  </equation*>
+
+  and obtain:
+
+  <\equation*>
+    <big|int><rsub|\<Omega\>>\<nabla\>u<rsub|h>\<cdot\>\<nabla\>v<rsub|h>-<big|int><rsub|\<Gamma\>>[u<rsub|h>]\<cdot\>{\<nabla\>v<rsub|h>}-<big|int><rsub|\<Gamma\>>[v<rsub|h>]\<cdot\>{\<nabla\><rsub|h>u<rsub|h>}-<big|int><rsub|\<Gamma\>>[v<rsub|h>]<frac|\<eta\>|h<rsub|e>>[u<rsub|h>]=<big|int><rsub|\<Omega\>>v<rsub|h>f.
   </equation*>
 </body>
 
