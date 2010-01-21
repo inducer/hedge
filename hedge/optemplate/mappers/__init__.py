@@ -221,6 +221,9 @@ class FlopCounter(
     def map_scalar_parameter(self, expr):
         return 0
 
+    def map_normal_component(self, expr):
+        return 0
+
 
 
 
