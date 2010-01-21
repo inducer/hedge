@@ -76,14 +76,10 @@ class StabilizationTermGenerator(hedge.optemplate.IdentityMapper):
                     "what to do with '%s'" % expr)
 
     def map_variable(self, expr):
-        from warnings import warn
-        warn("stabilization term only works for continuous viscosity")
         from hedge.flux import FieldComponent
         return FieldComponent(self.get_flux_arg_idx(expr), is_interior=True)
 
     def map_subscript(self, expr):
-        from warnings import warn
-        warn("stabilization term only works for continuous viscosity")
         from pymbolic.primitives import Variable
         assert isinstance(expr.aggregate, Variable)
         from hedge.flux import FieldComponent
