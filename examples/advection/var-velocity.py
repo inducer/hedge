@@ -22,7 +22,7 @@ import numpy
 
 
 
-def main(write_output=True, flux_type_arg="central"):
+def main(write_output=True, flux_type_arg="central", use_quadrature=False):
     from math import sin, cos, pi, sqrt
 
     from hedge.backends import guess_run_context
@@ -41,10 +41,16 @@ def main(write_output=True, flux_type_arg="central"):
         mesh_data = rcon.receive_mesh()
 
     # discretization setup ----------------------------------------------------
-    discr = rcon.make_discretization(mesh_data, order=3,
+    order = 4
+    if use_quadrature:
+        quad_min_degrees = {"quad": 3*order}
+    else:
+        quad_min_degrees = {}
+
+    discr = rcon.make_discretization(mesh_data, order=order,
             default_scalar_type=numpy.float64, 
-            debug=["cuda_no_plan"],
-            #quad_min_degrees={"quad": 3*4}
+            debug=["cuda_no_plan" ],
+            quad_min_degrees=quad_min_degrees
             )
     vis_discr = discr
 
@@ -72,8 +78,8 @@ def main(write_output=True, flux_type_arg="central"):
         def __call__(self, pt, el):
             x, y = pt
             # Correction-Factor to make the speed zero on the on the boundary
-            fac = (1-x**2)*(1-y**2)
-            #fac = 1.
+            #fac = (1-x**2)*(1-y**2)
+            fac = 1.
             return numpy.array([-y*fac, x*fac])
 
     # space-time-dependent State BC (optional)-----------------------------------
@@ -209,7 +215,8 @@ def main(write_output=True, flux_type_arg="central"):
 
             u = stepper(u, t, dt, rhs)
 
-            #u = mode_filter(u)
+            if not use_quadrature:
+                u = mode_filter(u)
 
         assert discr.norm(u) < 10
 
@@ -234,5 +241,9 @@ def test_var_velocity_advection():
     mark_long = mark_test.long
 
     for flux_type in ["upwind", "central", "lf"]:
-        yield "variable-velocity-advection with %s flux" % flux_type, \
-                mark_long(main), False, flux_type
+        for use_quadrature in [False, True]:
+            descr = "variable-velocity-advection with %s flux" % flux_type
+            if use_quadrature:
+                descr += " and quadrature"
+
+            yield descr, mark_long(main), False, flux_type, use_quadrature
