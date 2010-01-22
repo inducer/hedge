@@ -24,7 +24,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 import numpy
 import numpy.linalg as la
 from hedge.optemplate.operators import ElementwiseLinearOperator
-from pytools import Record
+from pytools import Record, memoize_method
 
 
 
@@ -242,13 +242,17 @@ class DecayInformation(Record):
 # }}}
 # {{{ the actual sensor
 class DecayFitDiscontinuitySensorBase(object):
-    def decay_estimate_op_template(self, u, ignored_modes=0, with_baseline=True):
+    def __init__(self, mode_processor):
+        self.mode_processor = mode_processor
+
+    def op_template_struct(self, u, ignored_modes=1, with_baseline=True):
         from hedge.optemplate.operators import (
                 MassOperator, OnesOperator, InverseVandermondeOperator,
                 InverseMassOperator)
         from hedge.optemplate.primitives import Field
         from hedge.optemplate.tools import get_flux_operator
         from hedge.tools.symbolic import make_common_subexpression as cse
+        from hedge.optemplate.primitives import CFunction
         from pymbolic.primitives import Variable
 
         if u is None:
@@ -279,9 +283,14 @@ class DecayFitDiscontinuitySensorBase(object):
                 #InverseVandermondeOperator()(u + 1e2*jump_part),
                 "u_plus_jump_modes")
 
-        log, exp, sqrt = Variable("log"), Variable("exp"), Variable("sqrt")
+        indicator_modal_coeffs_squared = indicator_modal_coeffs**2
+        if self.mode_processor is not None:
+            indicator_modal_coeffs_squared = \
+                    Variable("mode_processor")(indicator_modal_coeffs_squared)
+
+        log, exp, sqrt = CFunction("log"), CFunction("exp"), CFunction("sqrt")
         log_modal_coeffs = cse(
-                log(indicator_modal_coeffs**2
+                log(indicator_modal_coeffs_squared
                     + baseline_squared*el_norm_u_squared)/2,
                 "log_modal_coeffs")
 
@@ -328,10 +337,13 @@ class DecayFitDiscontinuitySensorBase(object):
 
         from hedge.optemplate import Field
         quantity = getattr(
-                self.decay_estimate_op_template(Field("u"),
+                self.op_template_struct(Field("u"),
                     ignored_modes), quantity_name)
 
         compiled = discr.compile(quantity)
+
+        if self.mode_processor is not None:
+            discr.add_function("mode_processor", self.mode_processor.bind(discr))
 
         def apply(u):
             return compiled(
@@ -347,42 +359,45 @@ class DecayFitDiscontinuitySensorBase(object):
 
 class DecayGatingDiscontinuitySensorBase(
         DecayFitDiscontinuitySensorBase):
-    def __init__(self, max_viscosity=0.01):
+    def __init__(self,
+            mode_processor,
+            correct_for_fit_error,
+            max_viscosity):
+        DecayFitDiscontinuitySensorBase.__init__(
+                self, mode_processor=mode_processor)
+        self.correct_for_fit_error = correct_for_fit_error
         self.max_viscosity = max_viscosity
 
-    def op_template(self, u=None):
-        from pymbolic.primitives import IfPositive, Variable
+    def op_template_struct(self, u=None, ignored_modes=1):
         from hedge.optemplate import Field
-        from math import pi
-        from hedge.tools.symbolic import make_common_subexpression as cse
-
         if u is None:
             u = Field("u")
 
-        decay_expt = self.decay_estimate_op_template(u, ignored_modes=1) \
-                .decay_expt_corrected
+        result = DecayFitDiscontinuitySensorBase\
+                .op_template_struct(self, u, ignored_modes)
 
-        decay_expt = cse(decay_expt, "decay_expt")
-        sin = Variable("sin")
+        from pymbolic.primitives import IfPositive
+        from hedge.optemplate.primitives import CFunction
+        from math import pi
+        from hedge.tools.symbolic import make_common_subexpression as cse
+
+        if self.correct_for_fit_error:
+            decay_expt = cse(result.decay_expt_corrected, "decay_expt")
+        else:
+            decay_expt = cse(result.decay_expt, "decay_expt")
+
+        sin = CFunction("sin")
 
         def flat_end_sin(x):
             return IfPositive(-pi/2-x,
                     -1, IfPositive(x-pi/2, 1, sin(x)))
 
-        return 0.5*self.max_viscosity*(1+flat_end_sin((decay_expt+2)*pi/2))
+        result.sensor = \
+                0.5*self.max_viscosity*(1+flat_end_sin((decay_expt+2)*pi/2))
+        return result
 
     def bind(self, discr):
-        baseline_squared = create_decay_baseline(discr)**2
-        log_mode_numbers = numpy.log(create_mode_number_vector(discr))
-
-        compiled = discr.compile(self.op_template())
-
-        def apply(u):
-            return compiled(u=u, 
-                    baseline_squared=baseline_squared,
-                    log_mode_numbers=log_mode_numbers)
-
-        return apply
+        return self.bind_quantity(discr, "sensor")
 # }}}
 # }}}
 
@@ -390,10 +405,131 @@ class DecayGatingDiscontinuitySensorBase(
 
 
 
-# {{{
+# {{{ mode processors
+# {{{ elementwise code executor base class
+class ElementwiseCodeExecutor:
+    @memoize_method
+    def make_codepy_module(self, toolchain, dtype):
+        from codepy.libraries import add_codepy
+        toolchain = toolchain.copy()
+        add_codepy(toolchain)
+
+        from codepy.cgen import (Value, Include, Statement,
+                Typedef, FunctionBody, FunctionDeclaration, Block, Const,
+                Line, POD, Initializer, CustomLoop)
+        S = Statement
+
+        from codepy.bpl import BoostPythonModule
+        mod = BoostPythonModule()
+
+        mod.add_to_preamble([
+            Include("vector"),
+            Include("algorithm"),
+            Include("hedge/base.hpp"),
+            Include("hedge/volume_operators.hpp"),
+            Include("boost/foreach.hpp"),
+            Include("boost/numeric/ublas/io.hpp"),
+            ])
+
+        mod.add_to_module([
+            S("namespace ublas = boost::numeric::ublas"),
+            S("using namespace hedge"),
+            S("using namespace pyublas"),
+            Line(),
+            Typedef(POD(dtype, "value_type")),
+            Line(),
+            ])
+
+        mod.add_function(FunctionBody(
+            FunctionDeclaration(Value("void", "process_elements"), [
+                Const(Value("uniform_element_ranges", "ers")),
+                Const(Value("numpy_vector<value_type>", "field")),
+                Value("numpy_vector<value_type>", "result"),
+                ]),
+            Block([
+                Typedef(Value("numpy_vector<value_type>::iterator", 
+                    "it_type")),
+                Typedef(Value("numpy_vector<value_type>::const_iterator", 
+                    "cit_type")),
+                Line(),
+                Initializer(Value("it_type", "result_it"), 
+                    "result.begin()"),
+                Initializer(Value("cit_type", "field_it"), 
+                    "field.begin()"),
+                Line(),
+                CustomLoop(
+                    "BOOST_FOREACH(const element_range er, ers)",
+                    Block(self.get_per_element_code())
+                    )
+                ])))
+
+        return mod.compile(toolchain)
+
+    def bind(self, discr):
+        def do(field):
+            out = self.discr.volume_empty(dtype=field.dtype)
+            for eg in self.discr.element_groups:
+                ldis = eg.local_discretization
+
+                mod = self.make_codepy_module(self.discr.toolchain, field.dtype)
+                mod.process_elements(eg.ranges, field, out)
+
+            return out
+
+        return do
+
 # }}}
 
 
+
+
+class SkylineModeProcessor(ElementwiseCodeExecutor):
+    def get_per_element_code(self):
+        from codepy.cgen import (Value, Statement, Initializer, While)
+        S = Statement
+        return [
+                # assumes there is more than one coefficient
+                Initializer(Value("cit_type", "start"), "field_it+er.first"),
+                Initializer(Value("cit_type", "end"), "field_it+er.second"),
+                Initializer(Value("it_type", "tgt"), "result_it+er.second"),
+
+                Initializer(Value("value_type", "cur_max"), 
+                    "std::max(*(end-1), *(end-2))"),
+
+                While("end != start",
+                    S("*(--tgt) = std::max(cur_max, *(--end))"),
+                    )
+                ]
+
+
+
+
+class AveragingModeProcessor(ElementwiseCodeExecutor):
+    def get_per_element_code(self):
+        from codepy.cgen import (Value, Statement, Initializer, While, Block)
+        S = Statement
+        return [
+                # assumes there is more than one coefficient
+                Initializer(Value("cit_type", "start"), "field_it+er.first"),
+                Initializer(Value("cit_type", "end"), "field_it+er.second"),
+                Initializer(Value("it_type", "tgt"), "result_it+er.first"),
+
+                Initializer(Value("cit_type", "cur"), "start"),
+                While("cur != end",
+                    Block([
+                        Initializer(Value("cit_type", "avg_start"), 
+                            "std::max(start, cur-1)"),
+                        Initializer(Value("cit_type", "avg_end"), 
+                            "std::min(end, cur+2)"),
+
+                        S("*tgt++ = std::accumulate(avg_start, avg_end, value_type(0))"
+                            "/std::distance(avg_start, avg_end)"),
+                        S("++cur"),
+                        ])
+                    )
+                ]
+
+# }}}
 
 
 # vim: foldmethod=marker
