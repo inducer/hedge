@@ -147,6 +147,7 @@ class IdentityMapperMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     def map_scalar_parameter(self, expr, *args, **kwargs):
         # it's a leaf--no changing children
         return expr
+    map_c_function = map_scalar_parameter
 
     map_mass_base = map_elementwise_linear
     map_diff_base = map_elementwise_linear
@@ -220,6 +221,9 @@ class FlopCounter(
 
     def map_scalar_parameter(self, expr):
         return 0
+
+    def map_c_function(self, expr):
+        return 1
 
     def map_normal_component(self, expr):
         return 0
@@ -513,6 +517,9 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
         return "<%s>(%s)" % (
                 self.rec(expr.op, PREC_NONE),
                 self.rec(expr.field, PREC_NONE))
+
+    def map_c_function(self, expr, enclosing_prec):
+        return expr.name
 
     def map_scalar_parameter(self, expr, enclosing_prec):
         return "ScalarPar[%s]" % expr.name
@@ -1263,6 +1270,7 @@ class CollectorMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     map_flux_exchange = map_constant
     map_normal_component = map_constant
     map_scalar_parameter = map_constant
+    map_c_function = map_constant
     map_quad_grid_upsampler = map_constant
     map_quad_int_faces_grid_upsampler = map_constant
     map_quad_bdry_grid_upsampler = map_constant

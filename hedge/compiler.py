@@ -646,6 +646,20 @@ class OperatorCompilerBase(IdentityMapper):
         # muddled up in vector math
         return self.assign_to_new_var(expr)
 
+    def map_call(self, expr):
+        from hedge.optemplate.primitives import CFunction
+        if isinstance(expr.function, CFunction):
+            return IdentityMapper.map_call(self, expr)
+        else:
+            # If it's not a C-level function, it shouldn't get muddled up into
+            # a vector math expression.
+
+            return self.assign_to_new_var(
+                    type(expr)(
+                        expr.function,
+                        [self.assign_to_new_var(self.rec(par)) 
+                            for par in expr.parameters]))
+
     def map_diff_op_binding(self, expr):
         try:
             return self.expr_to_var[expr]

@@ -40,6 +40,20 @@ def make_field(var_or_string):
 
 
 
+class CFunction(Field):
+    """A symbol representing a C-level function, to be used as the function
+    argument of :class:`pymbolic.primitives.Call`.
+    """
+    def stringifier(self):
+        from hedge.optemplate import StringifyMapper
+        return StringifyMapper
+
+    def get_mapper_method(self, mapper):
+        return mapper.map_c_function
+
+
+
+
 class ScalarParameter(pymbolic.primitives.Variable):
     """A placeholder for a user-supplied scalar variable."""
 
