@@ -23,14 +23,13 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 import numpy
 import numpy.linalg as la
-from hedge.optemplate.operators import (
-        ElementwiseLinearOperator, StatelessOperator)
+from hedge.optemplate.operators import ElementwiseLinearOperator
 from pytools import Record
 
 
 
 
-# Persson-Peraire -------------------------------------------------------------
+# {{{ Persson-Peraire ---------------------------------------------------------
 def persson_peraire_filter_response_function(mode_idx, ldis):
     if sum(mode_idx) == ldis.order:
         return 0
@@ -111,7 +110,9 @@ class PerssonPeraireDiscontinuitySensor(object):
 
 
 
-# exponential fit -------------------------------------------------------------
+# }}}
+# {{{ exponential fit ---------------------------------------------------------
+# {{{ operators for basic fit
 class DecayEstimateOperatorBase(ElementwiseLinearOperator):
     def __init__(self, ignored_modes):
         self.ignored_modes = ignored_modes
@@ -162,6 +163,11 @@ class LogDecayConstantOperator(DecayEstimateOperatorBase):
 
         return a
 
+
+
+
+# }}}
+# {{{ data vector creation
 def create_mode_number_vector(discr):
     """Create a vector of modal coefficients that exhibit 'optimal'
     (:math:`k^{-N}`) decay.
@@ -208,6 +214,8 @@ def create_decay_baseline(discr):
 
 
 
+# }}}
+# {{{ supporting classes
 class BottomChoppingFilterResponseFunction:
     def __init__(self, ignored_modes):
         self.ignored_modes = ignored_modes
@@ -228,9 +236,14 @@ class DecayInformation(Record):
         Record.__init__(self, dict((name, cse(expr, name))
             for name, expr in kwargs.iteritems()))
 
+
+
+
+# }}}
+# {{{ the actual sensor
 class DecayFitDiscontinuitySensorBase(object):
     def decay_estimate_op_template(self, u, ignored_modes=0, with_baseline=True):
-        from hedge.optemplate.operators import (FilterOperator,
+        from hedge.optemplate.operators import (
                 MassOperator, OnesOperator, InverseVandermondeOperator,
                 InverseMassOperator)
         from hedge.optemplate.primitives import Field
@@ -243,8 +256,7 @@ class DecayFitDiscontinuitySensorBase(object):
 
         from hedge.flux import (
                 FluxScalarPlaceholder, ElementOrder,
-                ElementJacobian, FaceJacobian)
-        from pymbolic.primitives import IfPositive
+                ElementJacobian, FaceJacobian, flux_abs)
 
         u_flux = FluxScalarPlaceholder(0)
 
@@ -255,7 +267,7 @@ class DecayFitDiscontinuitySensorBase(object):
         jump_part = InverseMassOperator()(
                 get_flux_operator(
                     ElementJacobian()/(ElementOrder()**2 * FaceJacobian())
-                        *(u_flux.ext - u_flux.int))(u))
+                        *flux_abs(u_flux.ext - u_flux.int))(u))
 
         baseline_squared = Field("baseline_squared")
         el_norm_u_squared = cse(
@@ -263,7 +275,8 @@ class DecayFitDiscontinuitySensorBase(object):
                 "l2_norm_u")
 
         indicator_modal_coeffs = cse(
-                InverseVandermondeOperator()(u + jump_part),
+                InverseVandermondeOperator()(u),
+                #InverseVandermondeOperator()(u + 1e2*jump_part),
                 "u_plus_jump_modes")
 
         log, exp, sqrt = Variable("log"), Variable("exp"), Variable("sqrt")
@@ -271,6 +284,14 @@ class DecayFitDiscontinuitySensorBase(object):
                 log(indicator_modal_coeffs**2
                     + baseline_squared*el_norm_u_squared)/2,
                 "log_modal_coeffs")
+
+        if True:
+            modal_coeffs_jump = cse(
+                    InverseVandermondeOperator()(jump_part),
+                    "jump_modes")
+            log_modal_coeffs_jump = cse(
+                    log(modal_coeffs_jump**2)/2,
+                    "lmc_jump")
 
         # fit to c * n**s
         s = cse(DecayExponentOperator(ignored_modes)(log_modal_coeffs),
@@ -291,9 +312,15 @@ class DecayFitDiscontinuitySensorBase(object):
         s_corrected = DecayExponentOperator(ignored_modes)(log_modal_coeffs_corrected)
 
         return DecayInformation(
-                decay_expt=s, c=c, log_modal_coeffs=log_modal_coeffs,
+                decay_expt=s, c=c, 
+                log_modal_coeffs=log_modal_coeffs,
                 estimated_log_modal_coeffs=estimated_log_modal_coeffs,
-                decay_expt_corrected=s_corrected)
+                decay_expt_corrected=s_corrected,
+
+                jump_part=jump_part,
+                modal_coeffs_jump=modal_coeffs_jump,
+                log_modal_coeffs_jump=log_modal_coeffs_jump,
+                )
 
     def bind_quantity(self, discr, quantity_name, ignored_modes=1):
         baseline_squared = create_decay_baseline(discr)**2
@@ -356,3 +383,17 @@ class DecayGatingDiscontinuitySensorBase(
                     log_mode_numbers=log_mode_numbers)
 
         return apply
+# }}}
+# }}}
+
+
+
+
+
+# {{{
+# }}}
+
+
+
+
+# vim: foldmethod=marker
