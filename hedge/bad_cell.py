@@ -466,12 +466,13 @@ class ElementwiseCodeExecutor:
         return mod.compile(toolchain)
 
     def bind(self, discr):
+        mod = self.make_codepy_module(discr.toolchain, field.dtype)
+
         def do(field):
-            out = self.discr.volume_empty(dtype=field.dtype)
-            for eg in self.discr.element_groups:
+            out = discr.volume_empty(dtype=field.dtype)
+            for eg in discr.element_groups:
                 ldis = eg.local_discretization
 
-                mod = self.make_codepy_module(self.discr.toolchain, field.dtype)
                 mod.process_elements(eg.ranges, field, out)
 
             return out
