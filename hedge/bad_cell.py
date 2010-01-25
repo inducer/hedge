@@ -114,15 +114,12 @@ class PerssonPeraireDiscontinuitySensor(object):
 # {{{ exponential fit ---------------------------------------------------------
 # {{{ operators for basic fit
 class DecayEstimateOperatorBase(ElementwiseLinearOperator):
-    def __init__(self, ignored_modes):
+    def __init__(self, ignored_modes, weight_exponent):
         self.ignored_modes = ignored_modes
+        self.weight_exponent = weight_exponent
 
-    def get_hash(self):
-        return hash((self.__class__, self.ignored_modes))
-
-    def is_equal(self, other):
-        return (self.__class__ == other.__class__
-                and self.ignored_modes == other.ignored_modes)
+    def __getinitargs__(self):
+        return (self.ignored_modes, self.weight_exponent)
 
     def decay_fit_mat(self, ldis):
         im = self.ignored_modes
@@ -135,13 +132,22 @@ class DecayEstimateOperatorBase(ElementwiseLinearOperator):
             node_number_vector[i-im] = sum(mid)
 
         a = numpy.zeros((node_cnt-im, 2), dtype=numpy.float64)
-        a[:,0] = 1
-        a[:,1] = numpy.log(node_number_vector)
+        a[:,0] = node_number_vector**self.weight_exponent
+        a[:,1] = (node_number_vector**self.weight_exponent
+                * numpy.log(node_number_vector))
+
+        if im == 0:
+            assert numpy.isnan(a[0,1])
+            a[0,1] = 0
 
         result = numpy.zeros((2, node_cnt))
         result[:,im:] = la.pinv(a)
 
         return result
+
+
+
+
 
 class DecayExponentOperator(DecayEstimateOperatorBase):
     def matrix(self, eg):
@@ -168,10 +174,7 @@ class LogDecayConstantOperator(DecayEstimateOperatorBase):
 
 # }}}
 # {{{ data vector creation
-def create_mode_number_vector(discr):
-    """Create a vector of modal coefficients that exhibit 'optimal'
-    (:math:`k^{-N}`) decay.
-    """
+def create_mode_number_vector(discr, nonzero):
     result = discr.volume_zeros(kind="numpy")
     for eg in discr.element_groups:
         ldis = eg.local_discretization
@@ -179,10 +182,10 @@ def create_mode_number_vector(discr):
         modal_coefficients = numpy.zeros(ldis.node_count(), dtype=result.dtype)
         for i, mid in enumerate(ldis.generate_mode_identifiers()):
             msum = sum(mid)
-            if msum != 0:
-                modal_coefficients[i] = msum
-            else:
+            if msum == 0 and nonzero:
                 modal_coefficients[i] = 1
+            else:
+                modal_coefficients[i] = msum
 
         for slc in eg.ranges:
             result[slc] = modal_coefficients
@@ -242,10 +245,12 @@ class DecayInformation(Record):
 # }}}
 # {{{ the actual sensor
 class DecayFitDiscontinuitySensorBase(object):
-    def __init__(self, mode_processor):
+    def __init__(self, mode_processor, weight_exponent, ignored_modes):
         self.mode_processor = mode_processor
+        self.weight_exponent = weight_exponent
+        self.ignored_modes = ignored_modes
 
-    def op_template_struct(self, u, ignored_modes=1, with_baseline=True):
+    def op_template_struct(self, u, with_baseline=True):
         from hedge.optemplate.operators import (
                 MassOperator, OnesOperator, InverseVandermondeOperator,
                 InverseMassOperator)
@@ -303,26 +308,36 @@ class DecayFitDiscontinuitySensorBase(object):
                     "lmc_jump")
 
         # fit to c * n**s
-        s = cse(DecayExponentOperator(ignored_modes)(log_modal_coeffs),
+        expt_op = DecayExponentOperator(
+                self.ignored_modes, self.weight_exponent)
+        log_const_op = LogDecayConstantOperator(
+                self.ignored_modes, self.weight_exponent)
+
+        mode_weights = Field("mode_weights")
+
+        weighted_log_modal_coeffs = mode_weights*log_modal_coeffs
+
+        s = cse(expt_op(weighted_log_modal_coeffs),
                 "first_decay_expt")
-        log_c = cse(LogDecayConstantOperator(ignored_modes)(log_modal_coeffs),
+        log_c = cse(log_const_op(weighted_log_modal_coeffs),
                 "first_decay_coeff")
-        c = exp(LogDecayConstantOperator(ignored_modes)(log_modal_coeffs))
+        c = exp(log_const_op(weighted_log_modal_coeffs))
 
         log_mode_numbers = Field("log_mode_numbers")
         estimated_log_modal_coeffs = cse(
                 log_c + s*log_mode_numbers,
                 "estimated_log_modal_coeffs")
         estimate_error = cse(
-                sqrt((estimated_log_modal_coeffs-log_modal_coeffs)**2),
+                sqrt((estimated_log_modal_coeffs-weighted_log_modal_coeffs)**2),
                 "estimate_error")
 
         log_modal_coeffs_corrected = log_modal_coeffs + estimate_error
-        s_corrected = DecayExponentOperator(ignored_modes)(log_modal_coeffs_corrected)
+        s_corrected = expt_op(mode_weights*log_modal_coeffs_corrected)
 
         return DecayInformation(
                 decay_expt=s, c=c, 
                 log_modal_coeffs=log_modal_coeffs,
+                weighted_log_modal_coeffs=weighted_log_modal_coeffs,
                 estimated_log_modal_coeffs=estimated_log_modal_coeffs,
                 decay_expt_corrected=s_corrected,
 
@@ -331,14 +346,16 @@ class DecayFitDiscontinuitySensorBase(object):
                 log_modal_coeffs_jump=log_modal_coeffs_jump,
                 )
 
-    def bind_quantity(self, discr, quantity_name, ignored_modes=1):
+    def bind_quantity(self, discr, quantity_name):
         baseline_squared = create_decay_baseline(discr)**2
-        log_mode_numbers = numpy.log(create_mode_number_vector(discr))
+        log_mode_numbers = numpy.log(create_mode_number_vector(discr, nonzero=True))
+        mode_weights = (
+                create_mode_number_vector(discr, nonzero=False)
+                **self.weight_exponent)
 
         from hedge.optemplate import Field
         quantity = getattr(
-                self.op_template_struct(Field("u"),
-                    ignored_modes), quantity_name)
+                self.op_template_struct(Field("u")), quantity_name)
 
         compiled = discr.compile(quantity)
 
@@ -349,7 +366,8 @@ class DecayFitDiscontinuitySensorBase(object):
             return compiled(
                     u=u, 
                     baseline_squared=baseline_squared,
-                    log_mode_numbers=log_mode_numbers)
+                    log_mode_numbers=log_mode_numbers,
+                    mode_weights=mode_weights)
 
         return apply
 
@@ -361,20 +379,23 @@ class DecayGatingDiscontinuitySensorBase(
         DecayFitDiscontinuitySensorBase):
     def __init__(self,
             mode_processor,
+            weight_exponent,
+            ignored_modes,
             correct_for_fit_error,
             max_viscosity):
         DecayFitDiscontinuitySensorBase.__init__(
-                self, mode_processor=mode_processor)
+                self, mode_processor=mode_processor,
+                weight_exponent=weight_exponent, ignored_modes=ignored_modes)
         self.correct_for_fit_error = correct_for_fit_error
         self.max_viscosity = max_viscosity
 
-    def op_template_struct(self, u=None, ignored_modes=1):
+    def op_template_struct(self, u=None):
         from hedge.optemplate import Field
         if u is None:
             u = Field("u")
 
         result = DecayFitDiscontinuitySensorBase\
-                .op_template_struct(self, u, ignored_modes)
+                .op_template_struct(self, u)
 
         from pymbolic.primitives import IfPositive
         from hedge.optemplate.primitives import CFunction
@@ -466,9 +487,9 @@ class ElementwiseCodeExecutor:
         return mod.compile(toolchain)
 
     def bind(self, discr):
-        mod = self.make_codepy_module(discr.toolchain, field.dtype)
-
         def do(field):
+            mod = self.make_codepy_module(discr.toolchain, field.dtype)
+
             out = discr.volume_empty(dtype=field.dtype)
             for eg in discr.element_groups:
                 ldis = eg.local_discretization
@@ -531,6 +552,8 @@ class AveragingModeProcessor(ElementwiseCodeExecutor):
                 ]
 
 # }}}
+
+
 
 
 # vim: foldmethod=marker
