@@ -555,6 +555,35 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
             raise RuntimeError("TypeInferrer doesn't know how to handle '%s'" 
                     % expr.op)
 
+    def map_whole_domain_flux(self, expr, typedict):
+        repr_tag_cell = [type_info.no_type]
+
+        def process_vol_flux_arg(flux_arg):
+            typedict[flux_arg] = type_info.KnownInteriorFaces() \
+                    .unify(repr_tag_cell[0], flux_arg)
+            repr_tag_cell[0] = extract_representation(
+                    self.rec(flux_arg, typedict))
+
+        def process_bdry_flux_arg(flux_arg):
+            typedict[flux_arg] = type_info.KnownBoundary(bpair.tag) \
+                .unify(repr_tag_cell[0], flux_arg)
+
+            repr_tag_cell[0] = extract_representation(
+                    self.rec(flux_arg, typedict))
+
+        from pytools.obj_array import with_object_array_or_scalar
+        for int_flux_info in expr.interiors:
+            with_object_array_or_scalar(process_vol_flux_arg,
+                    int_flux_info.field_expr)
+
+        for bdry_flux_info in expr.boundaries:
+            bpair = bdry_flux_info.bpair
+            with_object_array_or_scalar(process_vol_flux_arg, bpair.field)
+            with_object_array_or_scalar(process_bdry_flux_arg, bpair.bfield)
+
+        return type_info.VolumeVector(NodalRepresentation())
+        raise NotImplementedError
+
     def map_constant(self, expr, typedict):
         return type_info.Scalar().unify(typedict[expr], expr)
 

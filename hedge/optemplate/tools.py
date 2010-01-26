@@ -88,8 +88,51 @@ def make_stiffness_t(dim):
 
 
 
+# }}}
 
-# optemplate tools ------------------------------------------------------------
+# {{{ optemplate tools --------------------------------------------------------
+def get_flux_dependencies(flux, field, bdry="all"):
+    from hedge.flux import FluxDependencyMapper, FieldComponent
+    in_fields = list(FluxDependencyMapper(
+        include_calls=False)(flux))
+
+    # check that all in_fields are FieldComponent instances
+    assert not [in_field
+        for in_field in in_fields
+        if not isinstance(in_field, FieldComponent)]
+
+    def maybe_index(fld, index):
+        from hedge.tools import is_obj_array
+        if is_obj_array(fld):
+            return fld[inf.index]
+        else:
+            return fld
+
+    from hedge.tools import is_zero
+    from hedge.optemplate import BoundaryPair
+    if isinstance(field, BoundaryPair):
+        for inf in in_fields:
+            if inf.is_interior:
+                if bdry in ["all", "int"]:
+                    value = maybe_index(field.field, inf.index)
+
+                    if not is_zero(value):
+                        yield value
+            else:
+                if bdry in ["all", "ext"]:
+                    value = maybe_index(field.bfield, inf.index)
+
+                    if not is_zero(value):
+                        yield value
+    else:
+        for inf in in_fields:
+            value = maybe_index(field, inf.index)
+            if not is_zero(value):
+                yield value
+
+
+
+
 def split_optemplate_for_multirate(state_vector, op_template,
         index_groups):
     class IndexGroupKillerSubstMap:

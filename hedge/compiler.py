@@ -431,9 +431,6 @@ class Code(object):
 
 # {{{ compiler ----------------------------------------------------------------
 class OperatorCompilerBase(IdentityMapper):
-    from hedge.optemplate import BoundOperatorCollector \
-            as bound_op_collector_class
-
     class FluxRecord(Record):
         __slots__ = ["flux_expr", "dependencies", "repr_op"]
 
@@ -473,11 +470,13 @@ class OperatorCompilerBase(IdentityMapper):
 
     def collect_diff_ops(self, expr):
         from hedge.optemplate import DiffOperatorBase
-        return self.bound_op_collector_class(DiffOperatorBase)(expr)
+        from hedge.optemplate.mappers import BoundOperatorCollector
+        return BoundOperatorCollector(DiffOperatorBase)(expr)
 
     def collect_flux_exchange_ops(self, expr):
         from hedge.optemplate import FluxExchangeOperator
-        return self.bound_op_collector_class(FluxExchangeOperator)(expr)
+        from hedge.optemplate.mappers import BoundOperatorCollector
+        return BoundOperatorCollector(FluxExchangeOperator)(expr)
 
     # }}}
 

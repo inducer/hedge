@@ -137,7 +137,8 @@ class OperatorCompiler(OperatorCompilerBase):
         self.discr = discr
 
     def get_contained_fluxes(self, expr):
-        from hedge.optemplate import FluxCollector, BoundaryPair
+        from hedge.optemplate.mappers import FluxCollector
+        from hedge.optemplate.primitives import BoundaryPair
         from hedge.tools import is_obj_array
 
         def get_deps(field):

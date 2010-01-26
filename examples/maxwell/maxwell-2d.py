@@ -39,7 +39,7 @@ def main(write_output=True):
     periodic = False
 
     from hedge.mesh.generator import make_disk_mesh
-    mesh = make_disk_mesh(r=0.5)
+    mesh = make_disk_mesh(r=0.5, max_area=1e-4)
 
     if rcon.is_head_rank:
         mesh_data = rcon.distribute_mesh(mesh)
@@ -54,7 +54,8 @@ def main(write_output=True):
 
     order = 3
     final_time = 1e-8
-    discr = rcon.make_discretization(mesh_data, order=order)
+    discr = rcon.make_discretization(mesh_data, order=order,
+            debug=["cuda_no_plan"])
 
     from hedge.visualization import VtkVisualizer
     if write_output:
@@ -121,7 +122,10 @@ def main(write_output=True):
                 e, h = op.split_eh(fields)
                 visf = vis.make_file("em-%d-%04d" % (order, step))
                 vis.add_data(visf,
-                        [ ("e", e), ("h", h), ],
+                        [
+                            ("e", discr.convert_volume(e, "numpy")),
+                            ("h", discr.convert_volume(h, "numpy")),
+                            ],
                         time=t, step=step
                         )
                 visf.close()

@@ -216,12 +216,12 @@ class ExecutionMapper(ExecutionMapperBase):
                 *self.executor.flux_local_data(
                     self.executor.fluxlocal_kernel, elgroup, wdflux.is_lift)))
             for name, wdflux, fluxes_on_faces in zip(
-                insn.names, insn.fluxes, all_fofs)]
+                insn.names, insn.expressions, all_fofs)]
 
         if discr.instrumented:
             given = discr.given
 
-            flux_count = len(insn.fluxes)
+            flux_count = len(insn.expressions)
             dep_count = len(kernel.interior_deps)
 
             discr.gather_counter.add(
@@ -293,6 +293,10 @@ class ExecutionMapper(ExecutionMapperBase):
     def map_elementwise_linear(self, op, expr):
         field = self.rec(expr)
 
+        from hedge.tools import is_zero
+        if is_zero(field):
+            return 0
+
         kernel = self.executor.discr.element_local_kernel()
         result = self.discr.volume_zeros(dtype=field.dtype)
 
@@ -307,7 +311,7 @@ class ExecutionMapper(ExecutionMapperBase):
                 if coeffs is None:
                     prepared_coeffs = None
                 else:
-                    prepared_coeffs = kernel.prepare_scaling(eg_to_scaling(eg))
+                    prepared_coeffs = kernel.prepare_scaling(eg, coeffs)
 
                 self.executor.elwise_linear_cache[eg, op, field.dtype] = (
                         prepared_matrix, prepared_coeffs)
@@ -367,7 +371,7 @@ class CUDAFluxBatchAssign(FluxBatchAssign):
     @memoize_method
     def get_dependencies(self):
         deps = set()
-        for wdflux in self.fluxes:
+        for wdflux in self.expressions:
             deps |= set(wdflux.interior_deps)
             deps |= set(wdflux.boundary_deps)
 
@@ -379,25 +383,21 @@ class CUDAFluxBatchAssign(FluxBatchAssign):
     @memoize_method
     def kernel(self, executor):
         return executor.discr.flux_plan.make_kernel(
-                executor.discr, executor, self.fluxes)
+                executor.discr, executor, self.expressions)
 
 
 
 class OperatorCompiler(OperatorCompilerBase):
-    from hedge.backends.cuda.optemplate import \
-            BoundOperatorCollector \
-            as bound_op_collector_class
-
     def get_contained_fluxes(self, expr):
-        from hedge.backends.cuda.optemplate import FluxCollector
+        from hedge.optemplate.mappers import FluxCollector
         return [self.FluxRecord(
             flux_expr=wdflux,
             dependencies=set(wdflux.interior_deps) | set(wdflux.boundary_deps),
-            kind="whole-domain")
+            repr_op=wdflux.repr_op())
             for wdflux in FluxCollector()(expr)]
 
     def internal_map_flux(self, wdflux):
-        from hedge.backends.cuda.optemplate import WholeDomainFluxOperator
+        from hedge.optemplate.operators import WholeDomainFluxOperator
         return WholeDomainFluxOperator(
             wdflux.is_lift,
             [wdflux.InteriorInfo(
@@ -412,8 +412,8 @@ class OperatorCompiler(OperatorCompilerBase):
     def map_whole_domain_flux(self, wdflux):
         return self.map_planned_flux(wdflux)
 
-    def make_flux_batch_assign(self, names, expressions, kind):
-        return CUDAFluxBatchAssign(names=names, expressions=expressions, kind=kind,
+    def make_flux_batch_assign(self, names, expressions, repr_op):
+        return CUDAFluxBatchAssign(names=names, expressions=expressions, repr_op=repr_op,
                 dep_mapper_factory=self.dep_mapper_factory)
 
     def finalize_multi_assign(self, names, exprs, do_not_return, priority):
@@ -486,8 +486,8 @@ class Executor(object):
                         pretty_print_optemplate(optemplate))
                 stage[0] += 1
 
-        from hedge.backends.cuda.optemplate import BoundaryCombiner
-        from hedge.optemplate import process_optemplate
+        from hedge.optemplate.mappers import BoundaryCombiner
+        from hedge.optemplate.tools import process_optemplate
 
         optemplate = process_optemplate(optemplate, 
                 post_bind_mapper=None, # we've already applied it in stage 1

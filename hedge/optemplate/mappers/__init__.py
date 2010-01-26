@@ -1292,6 +1292,15 @@ class FluxCollector(CSECachingMapperMixin, CollectorMixin, CombineMapper):
 
         return result | CombineMapper.map_operator_binding(self, expr)
 
+    def map_whole_domain_flux(self, wdflux):
+        result = set([wdflux])
+
+        for intr in wdflux.interiors:
+            result |= self.rec(intr.field_expr)
+        for bdry in wdflux.boundaries:
+            result |= self.rec(bdry.bpair)
+
+        return result
 
 
 
@@ -1317,7 +1326,17 @@ class BoundOperatorCollector(CSECachingMapperMixin, CollectorMixin, CombineMappe
 
         return result | CombineMapper.map_operator_binding(self, expr)
 
+    def map_whole_domain_flux(self, expr):
+        result = set()
 
+        for ii in expr.interiors:
+            result.update(self.rec(ii.field_expr))
+
+        for bi in expr.boundaries:
+            result.update(self.rec(bi.bpair.field))
+            result.update(self.rec(bi.bpair.bfield))
+
+        return result
 
 # }}}
 # {{{ evaluation --------------------------------------------------------------
@@ -1326,7 +1345,86 @@ class Evaluator(pymbolic.mapper.evaluator.EvaluationMapper):
         from hedge.optemplate.primitives import BoundaryPair
         return BoundaryPair(self.rec(bp.field), self.rec(bp.bfield), bp.tag)
 # }}}
+# {{{ boundary combiner (used by CUDA backend) --------------------------------
+class BoundaryCombiner(CSECachingMapperMixin, IdentityMapper):
+    """Combines inner fluxes and boundary fluxes into a
+    single, whole-domain operator of type
+    :class:`hedge.optemplate.operators.WholeDomainFluxOperator`.
+    """
+    def __init__(self, mesh):
+        self.mesh = mesh
 
+    from hedge.optemplate.operators import (FluxOperator, BoundaryFluxOperator)
+    flux_op_types = (FluxOperator, BoundaryFluxOperator)
+
+    map_common_subexpression_uncached = \
+            IdentityMapper.map_common_subexpression
+
+    def gather_one_wdflux(self, expressions):
+        from hedge.optemplate.primitives import OperatorBinding, BoundaryPair
+        from hedge.optemplate.operators import WholeDomainFluxOperator
+
+        interiors = []
+        boundaries = []
+        is_lift = None
+
+        rest = []
+
+        for ch in expressions:
+            if (isinstance(ch, OperatorBinding)
+                    and isinstance(ch.op, self.flux_op_types)):
+                my_is_lift = ch.op.is_lift
+
+                if is_lift is None:
+                    is_lift = my_is_lift
+                else:
+                    if is_lift != my_is_lift:
+                        rest.append(ch)
+                        continue
+
+                if isinstance(ch.field, BoundaryPair):
+                    bpair = self.rec(ch.field)
+                    if self.mesh.tag_to_boundary.get(bpair.tag, []):
+                        boundaries.append(WholeDomainFluxOperator.BoundaryInfo(
+                            flux_expr=ch.op.flux,
+                            bpair=bpair))
+                else:
+                    interiors.append(WholeDomainFluxOperator.InteriorInfo(
+                            flux_expr=ch.op.flux,
+                            field_expr=self.rec(ch.field)))
+            else:
+                rest.append(ch)
+
+        if interiors or boundaries:
+            wdf = WholeDomainFluxOperator(
+                    is_lift=is_lift,
+                    interiors=interiors,
+                    boundaries=boundaries)
+        else:
+            wdf = None
+        return wdf, rest
+
+    def map_operator_binding(self, expr):
+        if isinstance(expr.op, self.flux_op_types):
+            wdf, rest = self.gather_one_wdflux([expr])
+            assert not rest
+            return wdf
+        else:
+            return IdentityMapper \
+                    .map_operator_binding(self, expr)
+
+    def map_sum(self, expr):
+        from pymbolic.primitives import flattened_sum
+
+        result = 0
+        expressions = expr.children
+        while True:
+            wdf, expressions = self.gather_one_wdflux(expressions)
+            if wdf is not None:
+                result += wdf
+            else:
+                return result + flattened_sum(self.rec(r_i) for r_i in expressions)
+# }}}
 
 
 

@@ -570,9 +570,12 @@ class VectorFluxOperator(object):
 
 
 
-class WholeDomainFluxOperator(Operator):
+class WholeDomainFluxOperator(pymbolic.primitives.AlgebraicLeaf):
     """Used by the CUDA backend to represent a flux computation on the
     whole domain--interior and boundary.
+
+    Unlike other operators, :class:`WholeDomainFluxOperator` instances
+    are not bound.
     """
 
     class FluxInfo(Record):
@@ -592,6 +595,7 @@ class WholeDomainFluxOperator(Operator):
         @property
         @memoize_method
         def dependencies(self):
+            from hedge.optemplate.tools import get_flux_dependencies
             return set(get_flux_dependencies(
                 self.flux_expr, self.field_expr))
 
@@ -601,17 +605,21 @@ class WholeDomainFluxOperator(Operator):
         @property
         @memoize_method
         def int_dependencies(self):
+            from hedge.optemplate.tools import get_flux_dependencies
             return set(get_flux_dependencies(
                     self.flux_expr, self.bpair, bdry="int"))
 
         @property
         @memoize_method
         def ext_dependencies(self):
+            from hedge.optemplate.tools import get_flux_dependencies
             return set(get_flux_dependencies(
                     self.flux_expr, self.bpair, bdry="ext"))
 
 
     def __init__(self, is_lift, interiors, boundaries):
+        from hedge.optemplate.tools import get_flux_dependencies
+
         self.is_lift = is_lift
 
         self.interiors = tuple(interiors)
@@ -635,6 +643,9 @@ class WholeDomainFluxOperator(Operator):
             for dep in get_flux_dependencies(
                     bflux.flux_expr, bflux.bpair, bdry="ext"):
                 self.dep_to_tag[dep] = bflux.bpair.tag
+
+    def repr_op(self):
+        return type(self)(False, [], [])
 
     @memoize_method
     def rebuild_optemplate(self):
