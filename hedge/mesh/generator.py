@@ -529,10 +529,13 @@ def make_disk_mesh(r=0.5, faces=50, max_area=4e-3,
 
     generated_mesh = triangle.build(mesh_info, refinement_func=needs_refinement)
 
-    from hedge.mesh import make_conformal_mesh
-    return make_conformal_mesh(
-            generated_mesh.points,
-            generated_mesh.elements,
+    from hedge.mesh import make_conformal_mesh_ext
+    from hedge.mesh.element import Triangle
+    vertices = numpy.asarray(generated_mesh.points, dtype=float, order="C")
+    return make_conformal_mesh_ext(
+            vertices,
+            [Triangle(i, el_idx, vertices)
+                for i, el_idx in enumerate(generated_mesh.elements)],
             boundary_tagger)
 
 
