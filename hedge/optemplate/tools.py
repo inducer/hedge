@@ -28,7 +28,7 @@ import pymbolic.primitives
 
 
 
-# convenience functions -------------------------------------------------------
+# {{{ convenience functions for optemplate creation ---------------------------
 def make_vector_field(name, components):
     """Return an object array of *components* subscripted
     :class:`Field` instances.
@@ -216,8 +216,9 @@ def ptwise_dot(logdims1, logdims2, a1, a2):
 
 
 
+# }}}
 
-# process optemplate ----------------------------------------------------------
+# {{{ process_optemplate function ---------------------------------------------
 def process_optemplate(optemplate, post_bind_mapper=None,
         dumper=lambda name, optemplate: None, mesh=None):
 
@@ -278,8 +279,9 @@ def process_optemplate(optemplate, post_bind_mapper=None,
 
 
 
+# }}}
 
-# pretty printing -------------------------------------------------------------
+# {{{ pretty printing ---------------------------------------------------------
 def pretty_print_optemplate(optemplate):
     from hedge.optemplate.mappers import PrettyStringifyMapper
 
@@ -306,3 +308,9 @@ def pretty_print_optemplate(optemplate):
         result = "\n".join("flux "+fs for fs in flux_cses)+"\n\n"+result
 
     return result
+# }}}
+
+
+
+
+# vim: foldmethod=marker
