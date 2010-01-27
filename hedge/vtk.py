@@ -287,7 +287,16 @@ class DataArray(object):
         if not isinstance(container, numpy.ndarray):
             raise ValueError, "cannot convert object of type `%s' to DataArray" % type(container)
 
+        if not isinstance(container, numpy.ndarray):
+            raise TypeError("expected numpy array, got '%s' instead" 
+                    % type(container))
+
         if container.dtype == object:
+            for subvec in container:
+                if not isinstance(subvec, numpy.ndarray):
+                    raise TypeError("expected numpy array, got '%s' instead" 
+                            % type(subvec))
+
             container = numpy.array(list(container))
             assert container.dtype != object
 
