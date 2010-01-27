@@ -77,7 +77,7 @@ def main(write_output=True):
     from hedge.backends import guess_run_context
     rcon = guess_run_context()
 
-    from hedge.tools import EOCRecorder, to_obj_array
+    from hedge.tools import EOCRecorder
     eoc_rec = EOCRecorder()
 
     if rcon.is_head_rank:
@@ -89,13 +89,16 @@ def main(write_output=True):
         mesh = make_centered_regular_rect_mesh((0,-5), (10,5), n=(9,9),
                 post_refine_factor=refine)
         mesh_data = rcon.distribute_mesh(mesh)
-        from hedge.visualization import write_gnuplot_mesh
     else:
         mesh_data = rcon.receive_mesh()
 
     for order in [3, 4, 5]:
         discr = rcon.make_discretization(mesh_data, order=order,
-                        default_scalar_type=numpy.float64)
+                        default_scalar_type=numpy.float64,
+                        quad_min_degrees={
+                            "gasdyn_vol": 3*order,
+                            "gasdyn_face": 3*order,
+                            })
 
         from hedge.visualization import SiloVisualizer, VtkVisualizer
         vis = VtkVisualizer(discr, rcon, "vortex-%d" % order)
@@ -135,9 +138,10 @@ def main(write_output=True):
         limiter = SlopeLimiter1NEuler(discr, vortex.gamma, 2, op)
 
         from hedge.timestep import SSPRK3TimeStepper
-        from hedge.timestep import RK4TimeStepper
         #stepper = SSPRK3TimeStepper(limiter=limiter)
         stepper = SSPRK3TimeStepper()
+
+        #from hedge.timestep import RK4TimeStepper
         #stepper = RK4TimeStepper()
 
         # diagnostics setup ---------------------------------------------------

@@ -284,7 +284,7 @@ class GasDynamicsOperator(TimeDependentOperator):
         # }}}
 
         # {{{ volume and boundary flux
-        def flux(q):
+        def flux_func(q):
             from pytools import delta
 
             return [ # one entry for each flux direction
@@ -303,7 +303,7 @@ class GasDynamicsOperator(TimeDependentOperator):
                         ), "%s_flux" % AXES[i])
                     for i in range(self.dimensions)]
 
-        def bdry_flux(q_bdry, q_vol, tag):
+        def bdry_flux_func(q_bdry, q_vol, tag):
             from pytools import delta
             return [ # one entry for each flux direction
                     cse(join_fields(
@@ -325,7 +325,20 @@ class GasDynamicsOperator(TimeDependentOperator):
         # }}}
 
         state = make_vector_field("q", self.dimensions+2)
-        flux_state = flux(state)
+
+        from hedge.optemplate.operators import (
+                QuadratureGridUpsampler,
+                QuadratureInteriorFacesGridUpsampler)
+
+        to_vol_quad = QuadratureGridUpsampler("gasdyn_vol")
+        to_int_face_quad = QuadratureInteriorFacesGridUpsampler("gasdyn_face")
+        to_bdry_quad = QuadratureGridUpsampler("gasdyn_face")
+
+        volq_state = cse(to_vol_quad(state), "vol_quad_state")
+        faceq_state = cse(to_int_face_quad(state), "face_quad_state")
+
+        volq_flux = flux_func(volq_state)
+        faceq_flux = flux_func(faceq_state)
 
         from hedge.optemplate.primitives import CFunction
         sqrt = CFunction("sqrt")
@@ -349,6 +362,8 @@ class GasDynamicsOperator(TimeDependentOperator):
             else:
                 state0 = make_vector_field(bc_name, self.dimensions+2)
 
+            state0 = to_bdry_quad(state0)
+
             from hedge.optemplate import make_normal
 
             rho0 = rho(state0)
@@ -365,9 +380,9 @@ class GasDynamicsOperator(TimeDependentOperator):
                 rho0=rho0, p0=p0, u0=u0, c0=c0,
 
                 # notation: suffix "m" for "minus", i.e. "interior"
-                drhom=cse(bdrize_op(rho(state)) - rho0, "drhom"),
-                dumvec=cse(bdrize_op(u(state)) - u0, "dumvec"),
-                dpm=cse(bdrize_op(p(state)) - p0, "dpm"))
+                drhom=cse(rho(to_bdry_quad(bdrize_op(state))) - rho0, "drhom"),
+                dumvec=cse(u(to_bdry_quad(bdrize_op(state))) - u0, "dumvec"),
+                dpm=cse(p(to_bdry_quad(bdrize_op(state))) - p0, "dpm"))
 
         def outflow_state(state):
             from hedge.optemplate import make_normal
@@ -438,16 +453,27 @@ class GasDynamicsOperator(TimeDependentOperator):
 
         result = join_fields(
                 InverseMassOperator()(
-                numpy.dot(make_stiffness_t(self.dimensions), flux_state)
+                    numpy.dot(make_stiffness_t(self.dimensions), volq_flux)
                     - make_lax_friedrichs_flux(
-                        wave_speed=cse(ElementwiseMaxOperator()(speed), "emax_c"),
-                        state=state, fluxes=flux_state,
+
+                        # This is not quite the right order, but this is
+                        # not really easy to fix. The process to cacluate
+                        # 'speed' is nonlinear, but we can't compute that
+                        # on a quadrature grid, because we need to form both
+                        # the elementwise max *and* then interpolate up.
+                        # The latter requires that we know a basis.
+                        # (Maybe the facewise max is enough?)
+                        wave_speed=to_int_face_quad(
+                            cse(ElementwiseMaxOperator()(speed), "emax_c")),
+
+                        state=faceq_state, fluxes=faceq_flux,
                         bdry_tags_states_and_fluxes=[
-                            (tag, bc, bdry_flux(bc, state, tag))
+                            (tag, bc, bdry_flux_func(bc, faceq_state, tag))
                             for tag, bc in all_tags_and_conservative_bcs
                             ],
                         strong=False
-                        )) + make_second_order_part(state),
+                        )) + make_second_order_part(state)
+                    ,
                  speed)
 
         if self.source is not None:
