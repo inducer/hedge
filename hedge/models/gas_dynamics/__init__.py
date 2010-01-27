@@ -65,6 +65,8 @@ class GasDynamicsOperator(TimeDependentOperator):
 
     Field order is [rho E rho_u_x rho_u_y ...].
     """
+
+    # {{{ initialization ------------------------------------------------------
     def __init__(self, dimensions,
             gamma, mu, bc_inflow, bc_outflow, bc_noslip,
             prandtl=None, spec_gas_const=1.0,
@@ -99,6 +101,9 @@ class GasDynamicsOperator(TimeDependentOperator):
 
         self.second_order_scheme = second_order_scheme
 
+    # }}}
+
+    # {{{ conversions ---------------------------------------------------------
     def rho(self, q):
         return q[0]
 
@@ -150,12 +155,17 @@ class GasDynamicsOperator(TimeDependentOperator):
                self.p(q),
                self.u(q))
 
+    # }}}
+
+    # {{{ operator template ---------------------------------------------------
     def op_template(self):
         from hedge.optemplate import make_vector_field
+        from hedge.tools import make_obj_array, join_fields
         from hedge.tools.symbolic import make_common_subexpression as cse
 
         AXES = ["x", "y", "z", "w"]
 
+        # {{{ cse'd conversions and helpers
         def u(q):
             return cse(self.u(q), "u")
 
@@ -182,6 +192,10 @@ class GasDynamicsOperator(TimeDependentOperator):
                         "sutherland_mu")
             else:
                 return self.mu
+
+        # }}}
+
+        # {{{ viscous stress tensor
 
         def tau(q):
             dimensions = self.dimensions
@@ -232,6 +246,9 @@ class GasDynamicsOperator(TimeDependentOperator):
 
             return tau
 
+        # }}}
+
+        # {{{ second order part
         def make_second_order_part(q):
             def div(operand):
                 from hedge.second_order import SecondDerivativeTarget
@@ -264,6 +281,9 @@ class GasDynamicsOperator(TimeDependentOperator):
                     div(numpy.sum(tau_mat*u(q), axis=1)),
                     [div(tau_mat[i]) for i in range(self.dimensions)]) 
 
+        # }}}
+
+        # {{{ volume and boundary flux
         def flux(q):
             from pytools import delta
 
@@ -302,19 +322,20 @@ class GasDynamicsOperator(TimeDependentOperator):
                         ), "%s_bflux" % AXES[i])
                     for i in range(self.dimensions)]
 
-        from pymbolic import var
-        sqrt = var("sqrt")
+        # }}}
 
         state = make_vector_field("q", self.dimensions+2)
+        flux_state = flux(state)
 
-        c = cse(sqrt(self.gamma*p(state)/self.rho(state)), "c")
+        from hedge.optemplate.primitives import CFunction
+        sqrt = CFunction("sqrt")
 
-        speed = cse(sqrt(numpy.dot(u(state), u(state))), "norm_u") + c
+        sound_speed = cse(sqrt(self.gamma*p(state)/self.rho(state)), "sound_speed")
+        speed = cse(sqrt(numpy.dot(u(state), u(state))), "norm_u") + sound_speed
 
-        from hedge.tools import make_obj_array, join_fields
+        # {{{ boundary conditions ---------------------------------------------
+
         from hedge.optemplate import BoundarizeOperator
-
-        # boundary conditions -------------------------------------------------
 
         class BCInfo(Record):
             pass
@@ -406,9 +427,9 @@ class GasDynamicsOperator(TimeDependentOperator):
                 (tag, self.primitive_to_conservative(bc))
                 for tag, bc in all_tags_and_primitive_bcs]
 
-        flux_state = flux(state)
+        # }}}
 
-        # operator assembly ---------------------------------------------------
+        # {{{ operator assembly -----------------------------------------------
         from hedge.flux.tools import make_lax_friedrichs_flux
         from hedge.optemplate.operators import (InverseMassOperator,
                 ElementwiseMaxOperator)
@@ -437,6 +458,11 @@ class GasDynamicsOperator(TimeDependentOperator):
 
         return result
 
+        # }}}
+
+    # }}}
+
+    # {{{ operator binding ----------------------------------------------------
     def bind(self, discr):
         bound_op = discr.compile(self.op_template())
 
@@ -469,6 +495,10 @@ class GasDynamicsOperator(TimeDependentOperator):
 
         return rhs
 
+    # }}}
+
+    # {{{ timestep estimation -------------------------------------------------
+
     def estimate_timestep(self, discr, 
             stepper=None, stepper_class=None, stepper_args=None,
             t=None, max_eigenvalue=None):
@@ -487,9 +517,12 @@ class GasDynamicsOperator(TimeDependentOperator):
         return rk4_dt * approximate_rk4_relative_imag_stability_region(
                 stepper, stepper_class, stepper_args)
 
+    # }}}
 
 
 
+
+# {{{ limiter (unfinished, deprecated)
 class SlopeLimiter1NEuler:
     def __init__(self, discr,gamma,dimensions,op):
         """Construct a limiter from Jan's book page 225
@@ -555,3 +588,10 @@ class SlopeLimiter1NEuler:
         #should do for primitive fields too
 
         return join_fields(rhoLim, eLim, temp)
+
+# }}}
+
+
+
+
+# vim: foldmethod=marker
