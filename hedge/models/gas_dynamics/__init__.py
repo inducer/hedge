@@ -408,23 +408,26 @@ class GasDynamicsOperator(TimeDependentOperator):
 
         flux_state = flux(state)
 
-        from hedge.flux.tools import make_lax_friedrichs_flux
-        from hedge.optemplate import make_nabla, InverseMassOperator, \
-                ElementwiseMaxOperator
-
         # operator assembly ---------------------------------------------------
+        from hedge.flux.tools import make_lax_friedrichs_flux
+        from hedge.optemplate.operators import (InverseMassOperator,
+                ElementwiseMaxOperator)
+
+        from hedge.optemplate.tools import make_stiffness_t
+
         result = join_fields(
-                (- numpy.dot(make_nabla(self.dimensions), flux_state)
-                 + InverseMassOperator()*make_lax_friedrichs_flux(
+                InverseMassOperator()(
+                numpy.dot(make_stiffness_t(self.dimensions), flux_state)
+                    - make_lax_friedrichs_flux(
                         wave_speed=cse(ElementwiseMaxOperator()(speed), "emax_c"),
                         state=state, fluxes=flux_state,
                         bdry_tags_states_and_fluxes=[
                             (tag, bc, bdry_flux(bc, state, tag))
                             for tag, bc in all_tags_and_conservative_bcs
                             ],
-                        strong=True
+                        strong=False
                         )) + make_second_order_part(state),
-                 speed) 
+                 speed)
 
         if self.source is not None:
             result = result + join_fields(
