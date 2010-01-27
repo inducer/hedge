@@ -300,8 +300,14 @@ def make_centered_regular_rect_mesh(a=(0,0), b=(1,1), n=(5,5), periodicity=None,
             for new_fvi in of2nf[fvi]:
                 fvi2fm[frozenset(new_fvi)] = fm
 
-    from hedge.mesh import make_conformal_mesh
-    return make_conformal_mesh(points, elements, wrapped_boundary_tagger,
+    from hedge.mesh import make_conformal_mesh_ext
+    vertices = numpy.asarray(points, dtype=float, order="C")
+    from hedge.mesh.element import Triangle
+    return make_conformal_mesh_ext(
+            vertices, 
+            [Triangle(i, el_idx, vertices)
+                for i, el_idx in enumerate(elements)],
+            wrapped_boundary_tagger,
             periodicity=mesh_periodicity)
 
 
