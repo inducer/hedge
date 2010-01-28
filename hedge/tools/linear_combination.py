@@ -86,7 +86,7 @@ def make_linear_combiner(result_dtype, scalar_dtype, sample_vec, arg_count, rcon
     :param sample_vec: must match states and right hand sides in shape, object
       array composition, and dtypes.
     :param rcon:
-    :returns: a function that accepts `2*arg_count` arguments
+    :returns: a function that accepts `arg_count` arguments
       *((factor0, vec0), (factor1, vec1), ...)* and returns
       `factor0*vec0 + factor1*vec1`.
     """
