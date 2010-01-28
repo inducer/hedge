@@ -84,10 +84,14 @@ def make_squaremesh():
         face_marker = fvi2fm[fvi]
         return [face_marker_to_tag[face_marker]]
 
-    from hedge.mesh import make_conformal_mesh
-    return make_conformal_mesh(
-            mesh.points, mesh.elements, bdry_tagger,
-            )
+    from hedge.mesh import make_conformal_mesh_ext
+    vertices = numpy.asarray(mesh.points, dtype=float, order="C")
+    from hedge.mesh.element import Triangle
+    return make_conformal_mesh_ext(
+            vertices,
+            [Triangle(i, el_idx, vertices)
+                for i, el_idx in enumerate(mesh.elements)],
+            bdry_tagger)
 
 
 
