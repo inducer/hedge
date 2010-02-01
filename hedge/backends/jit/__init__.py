@@ -390,6 +390,7 @@ class Executor(object):
         stage = [0]
 
         def dump_optemplate(name, optemplate):
+            print name
             if "dump_optemplate_stages" in discr.debug:
                 from hedge.tools import open_unique_debug_file
                 from hedge.optemplate import pretty_print_optemplate

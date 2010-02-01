@@ -267,16 +267,19 @@ class DecayFitDiscontinuitySensorBase(object):
                 FluxScalarPlaceholder, ElementOrder,
                 ElementJacobian, FaceJacobian, flux_abs)
 
-        u_flux = FluxScalarPlaceholder(0)
+        log, exp, sqrt = CFunction("log"), CFunction("exp"), CFunction("sqrt")
 
-        # On the whole, this should scale like u.
-        # Columns of lift scale like 1/N^2, compensate for that.
-        # Further compensate for all geometric factors.
+        if False:
+            # On the whole, this should scale like u.
+            # Columns of lift scale like 1/N^2, compensate for that.
+            # Further compensate for all geometric factors.
 
-        jump_part = InverseMassOperator()(
-                get_flux_operator(
-                    ElementJacobian()/(ElementOrder()**2 * FaceJacobian())
-                        *flux_abs(u_flux.ext - u_flux.int))(u))
+            u_flux = FluxScalarPlaceholder(0)
+
+            jump_part = InverseMassOperator()(
+                    get_flux_operator(
+                        ElementJacobian()/(ElementOrder()**2 * FaceJacobian())
+                            *flux_abs(u_flux.ext - u_flux.int))(u))
 
         baseline_squared = Field("baseline_squared")
         el_norm_u_squared = cse(
@@ -285,21 +288,20 @@ class DecayFitDiscontinuitySensorBase(object):
 
         indicator_modal_coeffs = cse(
                 InverseVandermondeOperator()(u),
-                #InverseVandermondeOperator()(u + 1e2*jump_part),
-                "u_plus_jump_modes")
+                "u_modes")
 
         indicator_modal_coeffs_squared = indicator_modal_coeffs**2
+
         if self.mode_processor is not None:
             indicator_modal_coeffs_squared = \
                     Variable("mode_processor")(indicator_modal_coeffs_squared)
 
-        log, exp, sqrt = CFunction("log"), CFunction("exp"), CFunction("sqrt")
         log_modal_coeffs = cse(
                 log(indicator_modal_coeffs_squared
                     + baseline_squared*el_norm_u_squared)/2,
                 "log_modal_coeffs")
 
-        if True:
+        if False:
             modal_coeffs_jump = cse(
                     InverseVandermondeOperator()(jump_part),
                     "jump_modes")
@@ -340,10 +342,6 @@ class DecayFitDiscontinuitySensorBase(object):
                 weighted_log_modal_coeffs=weighted_log_modal_coeffs,
                 estimated_log_modal_coeffs=estimated_log_modal_coeffs,
                 decay_expt_corrected=s_corrected,
-
-                jump_part=jump_part,
-                modal_coeffs_jump=modal_coeffs_jump,
-                log_modal_coeffs_jump=log_modal_coeffs_jump,
                 )
 
     def bind_quantity(self, discr, quantity_name):

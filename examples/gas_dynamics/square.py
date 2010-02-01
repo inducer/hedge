@@ -138,7 +138,11 @@ def main():
                             #"cuda_no_plan_el_local"
                             ],
                         default_scalar_type=numpy.float64,
-                        tune_for=op.op_template())
+                        tune_for=op.op_template(),
+                        quad_min_degrees={
+                            "gasdyn_vol": 3*order,
+                            "gasdyn_face": 3*order,
+                            })
 
         from hedge.visualization import SiloVisualizer, VtkVisualizer
         #vis = VtkVisualizer(discr, rcon, "shearflow-%d" % order)
@@ -216,7 +220,7 @@ def main():
             for step, t, dt in step_it:
                 #if (step % 10000 == 0): #and step < 950000) or (step % 500 == 0 and step > 950000):
                 #if False:
-                if step % 100 == 0:
+                if step % 5 == 0:
                     visf = vis.make_file("square-%d-%06d" % (order, step))
 
                     from pylo import DB_VARTYPE_VECTOR

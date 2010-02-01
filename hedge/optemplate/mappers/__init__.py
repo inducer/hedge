@@ -644,17 +644,19 @@ class QuadratureUpsamplerRemover(CSECachingMapperMixin, IdentityMapper):
     def map_operator_binding(self, expr):
         from hedge.optemplate.operators import (
                 QuadratureGridUpsampler,
-                QuadratureInteriorFacesGridUpsampler)
+                QuadratureInteriorFacesGridUpsampler,
+                QuadratureBoundaryGridUpsampler)
 
         if isinstance(expr.op, (QuadratureGridUpsampler,
-            QuadratureInteriorFacesGridUpsampler)):
+            QuadratureInteriorFacesGridUpsampler,
+            QuadratureBoundaryGridUpsampler)):
             try:
                 min_degree = self.quad_min_degrees[expr.op.quadrature_tag]
             except KeyError:
                 from warnings import warn
                 warn("No minimum degree for quadrature tag '%s' specified--"
                         "falling back to nodal evaluation" % expr.op.quadrature_tag)
-                return expr.field
+                return self.rec(expr.field)
             else:
                 if min_degree is None:
                     return self.rec(expr.field)
@@ -1021,11 +1023,7 @@ class _InnerDerivativeJoiner(pymbolic.mapper.RecursiveMapper):
             self.rec(child, derivatives) for child in expr.children))
 
     def map_product(self, expr, derivatives):
-        from hedge.optemplate import ScalarParameter
-
-        def is_scalar(expr):
-            return isinstance(expr, (int, float, complex, ScalarParameter))
-
+        from hedge.optemplate.tools import is_scalar
         from pytools import partition
         scalars, nonscalars = partition(is_scalar, expr.children)
 

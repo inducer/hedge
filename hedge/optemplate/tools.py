@@ -91,6 +91,13 @@ def make_stiffness_t(dim):
 # }}}
 
 # {{{ optemplate tools --------------------------------------------------------
+def is_scalar(expr):
+    from hedge.optemplate import ScalarParameter
+    return isinstance(expr, (int, float, complex, ScalarParameter))
+
+
+
+
 def get_flux_dependencies(flux, field, bdry="all"):
     from hedge.flux import FluxDependencyMapper, FieldComponent
     in_fields = list(FluxDependencyMapper(

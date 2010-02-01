@@ -37,7 +37,10 @@ class StabilizationTermGenerator(hedge.optemplate.IdentityMapper):
         self.flux_arg_lookup = dict(
                 (flux_arg, i) for i, flux_arg in enumerate(flux_args))
 
-    def get_flux_arg_idx(self, expr):
+    def get_flux_arg_idx(self, expr, wrap_ops):
+        for wrap_op in wrap_ops:
+            expr = wrap_op(expr)
+
         try:
             return self.flux_arg_lookup[expr]
         except KeyError:
@@ -46,9 +49,14 @@ class StabilizationTermGenerator(hedge.optemplate.IdentityMapper):
             self.flux_args.append(expr)
             return flux_arg_idx
 
-    def map_operator_binding(self, expr):
-        if isinstance(expr.op, hedge.optemplate.DiffOperatorBase):
-            flux_arg_idx = self.get_flux_arg_idx(expr.field)
+    def map_operator_binding(self, expr, wrap_ops=[]):
+        from hedge.optemplate.operators import (
+                DiffOperatorBase, FluxOperatorBase,
+                InverseMassOperator,
+                QuadratureInteriorFacesGridUpsampler)
+
+        if isinstance(expr.op, DiffOperatorBase):
+            flux_arg_idx = self.get_flux_arg_idx(expr.field, wrap_ops=wrap_ops)
 
             from hedge.optemplate import \
                     WeakFormDiffOperatorBase, \
@@ -67,23 +75,29 @@ class StabilizationTermGenerator(hedge.optemplate.IdentityMapper):
                     * Normal(expr.op.xyz_axis)
                     * (sph.int - sph.ext))
 
-        elif isinstance(expr.op, hedge.optemplate.FluxOperatorBase):
+        elif isinstance(expr.op, FluxOperatorBase):
             return 0
-        elif isinstance(expr.op, hedge.optemplate.InverseMassOperator):
-            return self.rec(expr.field)
+        elif isinstance(expr.op, InverseMassOperator):
+            return self.rec(expr.field, wrap_ops)
+        elif isinstance(expr.op, QuadratureInteriorFacesGridUpsampler):
+            return self.rec(expr.field, [expr.op]+wrap_ops)
         else:
             raise ValueError("stabilization term generator doesn't know "
                     "what to do with '%s'" % expr)
 
-    def map_variable(self, expr):
+    def map_variable(self, expr, wrap_ops=[]):
         from hedge.flux import FieldComponent
-        return FieldComponent(self.get_flux_arg_idx(expr), is_interior=True)
+        return FieldComponent(
+                self.get_flux_arg_idx(expr, wrap_ops), 
+                is_interior=True)
 
-    def map_subscript(self, expr):
+    def map_subscript(self, expr, wrap_ops=[]):
         from pymbolic.primitives import Variable
         assert isinstance(expr.aggregate, Variable)
         from hedge.flux import FieldComponent
-        return FieldComponent(self.get_flux_arg_idx(expr), is_interior=True)
+        return FieldComponent(
+                self.get_flux_arg_idx(expr, wrap_ops),
+                is_interior=True)
 
 
 
@@ -151,10 +165,32 @@ class IPDGDerivativeGenerator(hedge.optemplate.IdentityMapper):
 
 # second derivative target ----------------------------------------------------
 class SecondDerivativeTarget(object):
-    def __init__(self, dimensions, strong_form,
-            operand, process_vector=None):
+    def __init__(self, dimensions, strong_form, operand, 
+            int_flux_operand=None,
+            bdry_flux_int_operand=None):
+        """
+        :param int_flux_operand: if not None, is used as the interior
+          argument to the interior fluxes. This is useful e.g. if the boundary 
+          values are on a quadrature grid--in this case, *bdry_flux_int_operand*
+          can be passed to also be on a boundary grid. If it is None, it defaults
+          to *operand*.
+
+        :param bdry_flux_int_operand: if not None, is used as the interior
+          argument to the boundary fluxes. This is useful e.g. if the boundary 
+          values are on a quadrature grid--in this case, *bdry_flux_int_operand*
+          can be passed to also be on a boundary grid. If it is None, it defaults
+          to *int_flux_operand*.
+        """
         self.dimensions = dimensions
         self.operand = operand
+
+        if int_flux_operand is None:
+            int_flux_operand = operand
+        if bdry_flux_int_operand is None:
+            bdry_flux_int_operand = int_flux_operand
+
+        self.int_flux_operand = int_flux_operand
+        self.bdry_flux_int_operand = bdry_flux_int_operand
 
         self.strong_form = strong_form
         if strong_form:
@@ -165,11 +201,6 @@ class SecondDerivativeTarget(object):
         self.local_derivatives = 0
         self.inner_fluxes = 0
         self.boundary_fluxes = 0
-
-        if process_vector is None:
-            self.process_vector = lambda x: x
-        else:
-            self.process_vector = process_vector
 
     def add_local_derivatives(self, expr):
         self.local_derivatives = self.local_derivatives \
@@ -274,12 +305,12 @@ class SecondDerivativeBase(object):
         for tag in dirichlet_tags:
             tgt.add_boundary_flux(
                     adjust_flux(n_times(u.ext)),
-                    tgt.operand, bc_getter(tag, tgt.operand), tag)
+                    tgt.bdry_flux_int_operand, bc_getter(tag, tgt.operand), tag)
 
         for tag in neumann_tags:
             tgt.add_boundary_flux(
                     adjust_flux(n_times(u.int)), 
-                    tgt.operand, 0, tag)
+                    tgt.bdry_flux_int_operand, 0, tag)
 
     def add_div_bcs(self, tgt, bc_getter, dirichlet_tags, neumann_tags,
             stab_term_generator, stab_term, adjust_flux, flux_v, flux_arg_int,
@@ -350,9 +381,10 @@ class LDGSecondDerivative(SecondDerivativeBase):
         flux_v = FluxVectorPlaceholder(tgt.dimensions)
 
         stab_term_generator = StabilizationTermGenerator(
-                list(tgt.operand))
+                list(tgt.int_flux_operand))
         stab_term = (self.stab_coefficient * PenaltyTerm() 
-                * stab_term_generator(tgt.operand))
+                * stab_term_generator(tgt.int_flux_operand))
+
         flux = n_times(flux_v.avg 
                 + v_times(self.beta(tgt), cse(n_times(flux_v.int - flux_v.ext), "jump_v"))
                 - stab_term)

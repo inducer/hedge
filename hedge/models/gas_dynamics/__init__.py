@@ -197,17 +197,18 @@ class GasDynamicsOperator(TimeDependentOperator):
 
         # {{{ viscous stress tensor
 
-        def tau(q):
+        # {{{ compute gradient of state ---------------------------------------
+        def grad_of_state():
             dimensions = self.dimensions
 
-            # compute gradient of q -------------------------------------------
             dq = numpy.zeros((dimensions+2, dimensions), dtype=object)
 
             from hedge.second_order import SecondDerivativeTarget
             for i in range(self.dimensions+2):
                 grad_tgt = SecondDerivativeTarget(
-                        self.dimensions, strong_form=True,
-                        operand=q[i])
+                        self.dimensions, strong_form=False,
+                        operand=state[i],
+                        bdry_flux_int_operand=faceq_state[i])
 
                 dir_bcs = dict((tag, bc[i])
                         for tag, bc in all_tags_and_conservative_bcs)
@@ -222,10 +223,24 @@ class GasDynamicsOperator(TimeDependentOperator):
 
                 dq[i,:] = grad_tgt.minv_all
 
-            # compute gradient of u -------------------------------------------
+            return dq
+
+        # }}}
+
+        def tau(to_quad_op):
+            dimensions = self.dimensions
+
+            # {{{ compute gradient of u ---------------------------------------
             # Use the product rule to compute the gradient of
             # u from the gradient of (rho u). This ensures we don't
             # compute the derivatives twice.
+
+            from pytools.obj_array import with_object_array_or_scalar
+            dq = with_object_array_or_scalar(
+                    to_quad_op,
+                    grad_of_state())
+
+            q = to_quad_op(state)
 
             du = numpy.zeros((dimensions, dimensions), dtype=object)
             for i in range(dimensions):
@@ -234,31 +249,43 @@ class GasDynamicsOperator(TimeDependentOperator):
                             (dq[i+2,j] - u(q)[i] * dq[0,j]) / self.rho(q),
                             "du%d_d%s" % (i, AXES[j]))
 
-            # put together viscous stress tau ---------------------------------
+            # }}}
+
+            # {{{ put together viscous stress tau -----------------------------
             from pytools import delta
+
+            mu = get_mu(q)
+            from hedge.optemplate.tools import is_scalar
+            if not is_scalar(mu):
+                mu = to_quad_op(mu)
 
             tau = numpy.zeros((dimensions, dimensions), dtype=object)
             for i in range(dimensions):
                 for j in range(dimensions):
-                    tau[i,j] = cse(get_mu(q) * (du[i,j] + du[j,i] -
+                    tau[i,j] = cse(mu * (du[i,j] + du[j,i] -
                                2/3 * delta(i,j) * numpy.trace(du)),
                                "tau_%d%d" % (i, j))
 
             return tau
+            # }}}
 
         # }}}
 
         # {{{ second order part
-        def make_second_order_part(q):
-            def div(operand):
+        def make_second_order_part():
+            def div(vol_operand, int_face_operand):
                 from hedge.second_order import SecondDerivativeTarget
                 div_tgt = SecondDerivativeTarget(
-                        self.dimensions, strong_form=True,
-                        operand=operand)
+                        self.dimensions, strong_form=False,
+                        operand=vol_operand,
+                        int_flux_operand=int_face_operand)
 
-                dir_bcs = dict(((tag, q[i]), bc[i])
+                # use face quadrature state (without surrounding CSE)
+                # because that's what the stability term generator will
+                # spit out for internal state
+                dir_bcs = dict(((tag, faceq_state[i].child), bc[i])
                         for tag, bc in all_tags_and_conservative_bcs
-                        for i in range(len(q)))
+                        for i in range(len(faceq_state)))
 
                 def div_bc_getter(tag, expr):
                     try:
@@ -275,11 +302,17 @@ class GasDynamicsOperator(TimeDependentOperator):
 
                 return div_tgt.minv_all
 
-            tau_mat = tau(q)
+            volq_tau_mat = tau(to_vol_quad)
+            faceq_tau_mat = tau(to_int_face_quad)
+
             return join_fields(
                     0, 
-                    div(numpy.sum(tau_mat*u(q), axis=1)),
-                    [div(tau_mat[i]) for i in range(self.dimensions)]) 
+                    div(
+                        numpy.sum(volq_tau_mat*u(volq_state), axis=1),
+                        numpy.sum(faceq_tau_mat*u(faceq_state), axis=1)
+                        ),
+                    [div(volq_tau_mat[i], faceq_tau_mat[i])
+                        for i in range(self.dimensions)]) 
 
         # }}}
 
@@ -347,7 +380,6 @@ class GasDynamicsOperator(TimeDependentOperator):
         speed = cse(sqrt(numpy.dot(u(state), u(state))), "norm_u") + sound_speed
 
         # {{{ boundary conditions ---------------------------------------------
-
         from hedge.optemplate import BoundarizeOperator
 
         class BCInfo(Record):
@@ -472,7 +504,7 @@ class GasDynamicsOperator(TimeDependentOperator):
                             for tag, bc in all_tags_and_conservative_bcs
                             ],
                         strong=False
-                        )) + make_second_order_part(state)
+                        )) + make_second_order_part()
                     ,
                  speed)
 
