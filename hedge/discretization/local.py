@@ -326,15 +326,26 @@ class PkSimplexDiscretization(OrthonormalLocalDiscretization):
 
     # {{{ face operations -----------------------------------------------------
     @memoize_method
-    def face_vandermonde(self):
-        from hedge.polynomial import generic_vandermonde
+    def unit_face_nodes(self):
+        """Return the face node locations in facial unit coordinates, e.g.
+        per-face *(r,s)* coordinates.
 
+        .. note::
+
+            These nodes are identical for each face.
+        """
         unodes = self.unit_nodes()
         face_indices = self.face_indices()
 
         dim = self.dimensions
+        return [unodes[i][:dim-1] for i in face_indices[0]]
+
+    @memoize_method
+    def face_vandermonde(self):
+        from hedge.polynomial import generic_vandermonde
+
         return generic_vandermonde(
-                [unodes[i][:dim-1] for i in face_indices[0]],
+                self.unit_face_nodes(),
                 self.face_basis())
 
     @memoize_method
@@ -583,6 +594,12 @@ class PkSimplexDiscretization(OrthonormalLocalDiscretization):
 
         @memoize_method
         def volume_to_face_up_interpolation_matrix(self):
+            """Generate a matrix that maps volume nodal values to
+            a vector of face nodal values on the quadrature grid, with 
+            faces immediately concatenated, i.e::
+
+                [face 1 nodal data][face 2 nodal data]...
+            """
             ldis = self.ldis
 
             face_maps = ldis.face_affine_maps()
