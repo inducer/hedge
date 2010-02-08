@@ -495,8 +495,8 @@ class GasDynamicsOperator(TimeDependentOperator):
                         # the elementwise max *and* then interpolate up.
                         # The latter requires that we know a basis.
                         # (Maybe the facewise max is enough?)
-                        wave_speed=to_int_face_quad(
-                            cse(ElementwiseMaxOperator()(speed), "emax_c")),
+                        wave_speed=cse(to_int_face_quad(
+                            ElementwiseMaxOperator()(speed)), "emax_c"),
 
                         state=faceq_state, fluxes=faceq_flux,
                         bdry_tags_states_and_fluxes=[
