@@ -721,6 +721,7 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
                 self.bdry_expr_list = []
                 self.bdry_expr_to_idx = {}
 
+            # {{{ expression registration
             def register_boundary_expr(self, expr):
                 try:
                     return self.bdry_expr_to_idx[expr]
@@ -738,6 +739,73 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
                     self.vol_expr_to_idx[expr] = idx
                     self.vol_expr_list.append(expr)
                     return idx
+
+            # }}}
+
+            # {{{ map_xxx routines
+
+            def map_common_subexpression(self, expr):
+                # Here we need to decide whether this CSE should be turned into
+                # a flux CSE or not. This is a good idea if the transformed
+                # expression only contains "bare" volume or boundary
+                # expressions.  However, as soon as an operator is applied
+                # somewhere in the subexpression, the CSE should not be touched
+                # in order to avoid redundant evaluation of that operator.
+                #
+                # Observe that at the time of this writing (Feb 2010), the only
+                # operators that may occur in boundary expressions are 
+                # quadrature-related.
+
+                class ExpensiveOperatorDetector(CombineMapper):
+                    def combine(self, values):
+                        from operator import or_
+                        return reduce(or_, values)
+
+                    def map_operator_binding(self, expr):
+                        from hedge.optemplate import (BoundarizeOperator,
+                                FluxExchangeOperator,
+                                QuadratureGridUpsampler,
+                                QuadratureBoundaryGridUpsampler)
+
+                        if isinstance(expr.op, BoundarizeOperator):
+                            return False
+
+                        elif isinstance(expr.op, FluxExchangeOperator):
+                            # FIXME: Duplication of these is an even bigger problem!
+                            return True
+
+                        elif isinstance(expr.op, (
+                            QuadratureGridUpsampler,
+                            QuadratureBoundaryGridUpsampler)):
+                            return True
+
+                        else:
+                            raise RuntimeError("Found '%s' in a boundary term. "
+                                    "To the best of my knowledge, no hedge operator applies "
+                                    "directly to boundary data, so this is likely in error."
+                                    % expr.op)
+
+                    def map_common_subexpression(self, expr):
+                        # If there are any expensive operators below here, this
+                        # CSE will catch them, so we can easily flux-CSE down to
+                        # here.
+
+                        return False
+
+                    def map_normal_component(self, expr):
+                        return False
+
+                    map_variable = map_normal_component
+                    map_constant = map_normal_component
+
+                has_expensive_operators = ExpensiveOperatorDetector()(expr.child)
+
+                if has_expensive_operators:
+                    return FieldComponent(
+                            self.register_boundary_expr(expr),
+                            is_interior=False)
+                else:
+                    return IdentityMapper.map_common_subexpression(self, expr)
 
             def map_normal(self, expr):
                 raise RuntimeError("Your operator template contains a flux normal. "
@@ -811,6 +879,7 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
                             "To the best of my knowledge, no hedge operator applies "
                             "directly to boundary data, so this is likely in error."
                             % expr.op)
+            # }}}
 
         from hedge.tools import is_obj_array
         if not is_obj_array(vol_field):
