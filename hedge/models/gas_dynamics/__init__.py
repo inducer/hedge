@@ -240,7 +240,7 @@ class GasDynamicsOperator(TimeDependentOperator):
                     to_quad_op,
                     grad_of_state())
 
-            q = to_quad_op(state)
+            q = cse(to_quad_op(state))
 
             du = numpy.zeros((dimensions, dimensions), dtype=object)
             for i in range(dimensions):
@@ -394,7 +394,7 @@ class GasDynamicsOperator(TimeDependentOperator):
             else:
                 state0 = make_vector_field(bc_name, self.dimensions+2)
 
-            state0 = to_bdry_quad(state0)
+            state0 = cse(to_bdry_quad(state0))
 
             from hedge.optemplate import make_normal
 
@@ -412,9 +412,9 @@ class GasDynamicsOperator(TimeDependentOperator):
                 rho0=rho0, p0=p0, u0=u0, c0=c0,
 
                 # notation: suffix "m" for "minus", i.e. "interior"
-                drhom=cse(rho(to_bdry_quad(bdrize_op(state))) - rho0, "drhom"),
-                dumvec=cse(u(to_bdry_quad(bdrize_op(state))) - u0, "dumvec"),
-                dpm=cse(p(to_bdry_quad(bdrize_op(state))) - p0, "dpm"))
+                drhom=cse(rho(cse(to_bdry_quad(bdrize_op(state)))) - rho0, "drhom"),
+                dumvec=cse(u(cse(to_bdry_quad(bdrize_op(state)))) - u0, "dumvec"),
+                dpm=cse(p(cse(to_bdry_quad(bdrize_op(state)))) - p0, "dpm"))
 
         def outflow_state(state):
             from hedge.optemplate import make_normal
