@@ -581,8 +581,12 @@ class OperatorCompilerBase(IdentityMapper):
         return name
 
     def assign_to_new_var(self, expr, priority=0, prefix=None):
-        from pymbolic.primitives import Variable
-        if isinstance(expr, Variable):
+        from pymbolic.primitives import Variable, Subscript
+
+        # Observe that the only things that can be legally subscripted in
+        # hedge are variables. All other expressions are broken down into
+        # their scalar components.
+        if isinstance(expr, (Variable, Subscript)):
             return expr
 
         new_name = self.get_var_name(prefix)
