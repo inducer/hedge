@@ -49,3 +49,6 @@ setuptools.pth
 *.sess
 tags
 TAGS
+*.svg
+*.tmp
+*.vlog
