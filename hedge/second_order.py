@@ -82,8 +82,9 @@ class StabilizationTermGenerator(hedge.optemplate.IdentityMapper):
         elif isinstance(expr.op, QuadratureInteriorFacesGridUpsampler):
             return self.rec(expr.field, [expr.op]+wrap_ops)
         else:
+            from hedge.optemplate.tools import pretty_print_optemplate
             raise ValueError("stabilization term generator doesn't know "
-                    "what to do with '%s'" % expr)
+                    "what to do with '%s'" % pretty_print_optemplate(expr))
 
     def map_variable(self, expr, wrap_ops=[]):
         from hedge.flux import FieldComponent
@@ -138,9 +139,11 @@ class NeumannBCGenerator(hedge.optemplate.IdentityMapper):
 class IPDGDerivativeGenerator(hedge.optemplate.IdentityMapper):
     def map_operator_binding(self, expr):
         if isinstance(expr.op, hedge.optemplate.DiffOperatorBase):
-            from hedge.optemplate import \
-                    WeakFormDiffOperatorBase, \
-                    StrongFormDiffOperatorBase
+            from hedge.optemplate import (
+                    WeakFormDiffOperatorBase,
+                    StrongFormDiffOperatorBase,
+                    QuadratureGridUpsampler)
+
             if isinstance(expr.op, WeakFormDiffOperatorBase):
                 factor = -1
             elif isinstance(expr.op, StrongFormDiffOperatorBase):
@@ -156,9 +159,14 @@ class IPDGDerivativeGenerator(hedge.optemplate.IdentityMapper):
             return 0
         elif isinstance(expr.op, hedge.optemplate.InverseMassOperator):
             return self.rec(expr.field)
+        elif isinstance(expr.op, 
+                hedge.optemplate.QuadratureInteriorFacesGridUpsampler):
+            return hedge.optemplate.IdentityMapper.map_operator_binding(
+                    self, expr)
         else:
+            from hedge.optemplate.tools import pretty_print_optemplate
             raise ValueError("IPDG derivative generator doesn't know "
-                    "what to do with '%s'" % expr)
+                    "what to do with '%s'" % pretty_print_optemplate(expr))
 
 
 
@@ -313,21 +321,28 @@ class SecondDerivativeBase(object):
                     tgt.bdry_flux_int_operand, 0, tag)
 
     def add_div_bcs(self, tgt, bc_getter, dirichlet_tags, neumann_tags,
-            stab_term_generator, stab_term, adjust_flux, flux_v, flux_arg_int,
+            stab_term, adjust_flux, flux_v, flux_arg_int,
             grad_flux_arg_count):
         from pytools.obj_array import make_obj_array, join_fields
         n_times = tgt.normal_times_flux
 
+        def unwrap_cse(expr):
+            from pymbolic.primitives import CommonSubexpression
+            if isinstance(expr, CommonSubexpression):
+                return expr.child
+            else:
+                return expr
+
         for tag in dirichlet_tags:
             dir_bc_w = join_fields(
                     [0]*grad_flux_arg_count,
-                    [bc_getter(tag, vol_expr) for vol_expr in 
-                        stab_term_generator.flux_args[grad_flux_arg_count:]])
+                    [bc_getter(tag, unwrap_cse(vol_expr)) for vol_expr in 
+                        flux_arg_int[grad_flux_arg_count:]])
             tgt.add_boundary_flux(
                     adjust_flux(n_times(flux_v.int-stab_term)),
                     flux_arg_int, dir_bc_w, tag)
 
-        loc_bc_vec = make_obj_array([0]*len(stab_term_generator.flux_args))
+        loc_bc_vec = make_obj_array([0]*len(flux_arg_int))
 
         for tag in neumann_tags:
             neu_bc_w = join_fields(
@@ -396,8 +411,7 @@ class LDGSecondDerivative(SecondDerivativeBase):
         tgt.add_inner_fluxes(adjust_flux(flux), flux_arg_int)
 
         self.add_div_bcs(tgt, bc_getter, dirichlet_tags, neumann_tags,
-                stab_term_generator, stab_term, adjust_flux, flux_v, flux_arg_int,
-                tgt.dimensions)
+                stab_term, adjust_flux, flux_v, flux_arg_int, tgt.dimensions)
 
 
 
@@ -451,12 +465,12 @@ class IPDGSecondDerivative(SecondDerivativeBase):
         flux_v = flux_w[:dim]
         pure_diff_v = flux_w[dim:]
         flux_args = (
-                list(tgt.operand) 
-                + list(IPDGDerivativeGenerator()(tgt.operand)))
+                list(tgt.int_flux_operand) 
+                + list(IPDGDerivativeGenerator()(tgt.int_flux_operand)))
 
         stab_term_generator = StabilizationTermGenerator(flux_args)
         stab_term = (self.stab_coefficient * PenaltyTerm() 
-                * stab_term_generator(tgt.operand))
+                * stab_term_generator(tgt.int_flux_operand))
         flux = n_times(pure_diff_v.avg - stab_term)
 
         from pytools.obj_array import make_obj_array
@@ -466,6 +480,5 @@ class IPDGSecondDerivative(SecondDerivativeBase):
         tgt.add_inner_fluxes(adjust_flux(flux), flux_arg_int)
 
         self.add_div_bcs(tgt, bc_getter, dirichlet_tags, neumann_tags,
-                stab_term_generator, stab_term, adjust_flux, flux_v, flux_arg_int,
-                2*tgt.dimensions)
+                stab_term, adjust_flux, flux_v, flux_arg_int, 2*tgt.dimensions)
 
