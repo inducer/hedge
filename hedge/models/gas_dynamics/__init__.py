@@ -158,9 +158,9 @@ class GasDynamicsOperator(TimeDependentOperator):
     # }}}
 
     # {{{ operator template ---------------------------------------------------
-    def op_template(self):
-        from hedge.optemplate import make_vector_field
-        from hedge.tools import make_obj_array, join_fields
+    def op_template(self, with_sensor=False):
+        from hedge.optemplate.tools import make_vector_field
+        from pytools.obj_array import make_obj_array, join_fields
         from hedge.tools.symbolic import make_common_subexpression as cse
 
         AXES = ["x", "y", "z", "w"]
@@ -181,17 +181,33 @@ class GasDynamicsOperator(TimeDependentOperator):
         def temperature(q):
             return cse(self.temperature(q), "temperature")
 
-        def get_mu(q):
+        def get_mu(q, to_quad_op):
+            """
+            :param to_quad_op: If not *None*, represents an operator which transforms
+              nodal values onto a quadrature grid on which the returned :math:`\mu` 
+              needs to be represented. In that case, *q* is assumed to already be on the
+              same quadrature grid.
+            """
+
+            if to_quad_op is None:
+                def to_quad_op(x):
+                    return x
+
             if self.mu == "sutherland":
                 # Sutherland's law: !!!not tested!!!
                 t_s = 110.4
                 mu_inf = 1.735e-5
-                return cse(
+                result = cse(
                         mu_inf * temperature(q) ** 1.5 * (1 + t_s) 
                         / (temperature(q) + t_s),
                         "sutherland_mu")
             else:
-                return self.mu
+                result = self.mu
+
+            if with_sensor:
+                result = result + cse(to_quad_op(sensor), "quad_sensor")
+
+            return cse(result, "mu")
 
         # }}}
 
@@ -254,10 +270,7 @@ class GasDynamicsOperator(TimeDependentOperator):
             # {{{ put together viscous stress tau -----------------------------
             from pytools import delta
 
-            mu = get_mu(q)
-            from hedge.optemplate.tools import is_scalar
-            if not is_scalar(mu):
-                mu = to_quad_op(mu)
+            mu = get_mu(q, to_quad_op)
 
             tau = numpy.zeros((dimensions, dimensions), dtype=object)
             for i in range(dimensions):
@@ -280,12 +293,23 @@ class GasDynamicsOperator(TimeDependentOperator):
                         operand=vol_operand,
                         int_flux_operand=int_face_operand)
 
-                # use face quadrature state (without surrounding CSE)
-                # because that's what the stability term generator will
-                # spit out for internal state
-                dir_bcs = dict(((tag, faceq_state[i].child), bc[i])
+                def unwrap_cse(expr):
+                    from pymbolic.primitives import CommonSubexpression
+                    if isinstance(expr, CommonSubexpression):
+                        return expr.child
+                    else:
+                        return expr
+
+                dir_bcs = dict(((tag, unwrap_cse(faceq_state[i])), bc[i])
                         for tag, bc in all_tags_and_conservative_bcs
                         for i in range(len(faceq_state)))
+
+                # supply BC for sensor, if necessary
+                if with_sensor:
+                    for tag, bc in all_tags_and_conservative_bcs:
+                        dir_bcs[tag, to_int_face_quad(sensor)] = \
+                                cse(to_bdry_quad(BoundarizeOperator(tag)(sensor)),
+                                        "bdry_sensor")
 
                 def div_bc_getter(tag, expr):
                     try:
@@ -359,6 +383,10 @@ class GasDynamicsOperator(TimeDependentOperator):
 
         state = make_vector_field("q", self.dimensions+2)
 
+        if with_sensor:
+            from hedge.optemplate.primitives import Field
+            sensor = Field("sensor")
+
         from hedge.optemplate.operators import (
                 QuadratureGridUpsampler,
                 QuadratureInteriorFacesGridUpsampler)
@@ -379,6 +407,8 @@ class GasDynamicsOperator(TimeDependentOperator):
         sound_speed = cse(sqrt(self.gamma*p(state)/self.rho(state)), "sound_speed")
         speed = cse(sqrt(numpy.dot(u(state), u(state))), "norm_u") + sound_speed
 
+        has_viscosity = not is_zero(get_mu(state, to_quad_op=None))
+
         # {{{ boundary conditions ---------------------------------------------
         from hedge.optemplate import BoundarizeOperator
 
@@ -387,7 +417,7 @@ class GasDynamicsOperator(TimeDependentOperator):
 
         def make_bc_info(bc_name, tag, state, set_normal_velocity_to_zero=False):
             if set_normal_velocity_to_zero:
-                if not is_zero(self.mu):
+                if has_viscosity:
                     state0 = join_fields(make_vector_field(bc_name, 2), [0]*self.dimensions)
                 else:
                     state0 = join_fields(make_vector_field(bc_name, self.dimensions+2))
@@ -401,7 +431,7 @@ class GasDynamicsOperator(TimeDependentOperator):
             rho0 = rho(state0)
             p0 = p(state0)
             u0 = u(state0)
-            if is_zero(self.mu) and set_normal_velocity_to_zero:
+            if not has_viscosity and set_normal_velocity_to_zero:
                 normal = make_normal(tag, self.dimensions)
                 u0 = u0 - numpy.dot(u0, normal) * normal
 
@@ -521,8 +551,8 @@ class GasDynamicsOperator(TimeDependentOperator):
     # }}}
 
     # {{{ operator binding ----------------------------------------------------
-    def bind(self, discr):
-        bound_op = discr.compile(self.op_template())
+    def bind(self, discr, sensor=None):
+        bound_op = discr.compile(self.op_template(with_sensor=sensor is not None))
 
         from hedge.mesh import check_bc_coverage
         check_bc_coverage(discr.mesh, [
@@ -536,6 +566,9 @@ class GasDynamicsOperator(TimeDependentOperator):
             if self.source is not None:
                 extra_kwargs["source_vect"] = self.source.volume_interpolant(
                         t, q, discr)
+
+            if sensor is not None:
+                extra_kwargs["sensor"] = sensor(q)
 
             opt_result = bound_op(q=q,
                     bc_q_in=self.bc_inflow.boundary_interpolant(
