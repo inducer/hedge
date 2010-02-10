@@ -257,7 +257,7 @@ class Dumka3TimeStepper(object):
 
         frac = (1/eps)**(1/3)
 
-        rejected = eps > 1
+        rejected = numpy.isnan(eps) or eps > 1
         if rejected:
             if self.last_dt == 0:
                 frac = fracmin
