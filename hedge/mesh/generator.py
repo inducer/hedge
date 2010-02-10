@@ -40,11 +40,6 @@ class MeshPyFaceMarkerLookup:
 
 def make_1d_mesh(points, left_tag=None, right_tag=None, periodic=False,
         boundary_tagger=None, element_tagger=None):
-    def force_array(pt):
-        if not isinstance(pt, numpy.ndarray):
-            return numpy.array([pt])
-        else:
-            return pt
 
     def my_boundary_tagger(fvi, el, fn, all_v):
         if el.face_normals[fn][0] < 0:
@@ -59,20 +54,25 @@ def make_1d_mesh(points, left_tag=None, right_tag=None, periodic=False,
     if periodic:
         left_tag = "x_minus"
         right_tag = "x_plus"
-        from hedge.mesh import make_conformal_mesh
-        return make_conformal_mesh(
-                [force_array(pt) for pt in points],
-                [(i,i+1) for i in range(len(points)-1)],
-                periodicity=[("x_minus", "x_plus")],
-                boundary_tagger=my_boundary_tagger,
-                **kwargs)
+
+        kwargs["periodicity"] = [(left_tag, right_tag)]
+        if boundary_tagger is not None:
+            raise ValueError("cannot have both periodicity and a custom "
+                    "boundary tagger")
+
+        boundary_tagger = my_boundary_tagger
     else:
-        from hedge.mesh import make_conformal_mesh
-        return make_conformal_mesh(
-                [force_array(pt) for pt in points],
-                [(i,i+1) for i in range(len(points)-1)],
-                boundary_tagger=boundary_tagger or my_boundary_tagger,
-                **kwargs)
+        boundary_tagger = boundary_tagger or my_boundary_tagger
+
+    from hedge.mesh import make_conformal_mesh_ext
+    vertices = numpy.asarray(points, order="C").reshape((len(points), 1))
+
+    from hedge.mesh.element import Interval
+    return make_conformal_mesh_ext(
+            vertices,
+            [Interval(i, (i, i+1), vertices) for i in xrange(len(points)-1)],
+            boundary_tagger=boundary_tagger,
+            **kwargs)
 
 
 
