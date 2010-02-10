@@ -113,9 +113,8 @@ class GivenFunction(IGivenFunction):
     def __init__(self, f):
         """Initialize the caches and store the function :math:`f`.
 
-        :param f: a function mapping space to a scalar value.
-          If f.target_dimensions exists and equals :math:`n`, then
-          f maps into an :math:`n`-dimensional vector space instead.
+        :param f: a valid argument to 
+          :meth:`hedge.discretization.Discretization.interpolate_volume_function`.
         """
         from weakref import WeakKeyDictionary
 
