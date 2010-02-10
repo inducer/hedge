@@ -125,15 +125,24 @@ class Dumka3TimeStepper(object):
         try:
             lc2 = self.linear_combiner_2
             lc3 = self.linear_combiner_3
+            ip = self.ip
         except AttributeError:
             from hedge.tools import count_dofs
             self.dof_count = count_dofs(y)
 
-            from hedge.tools.linear_combination import make_linear_combiner
+            from hedge.vector_primitives import (
+                    make_linear_combiner, 
+                    make_inner_product)
+
             lc2 = self.linear_combiner_2 = make_linear_combiner(
                     self.dtype, self.scalar_type, y, arg_count=2, rcon=self.rcon)
             lc3 = self.linear_combiner_3 = make_linear_combiner(
                     self.dtype, self.scalar_type, y, arg_count=3, rcon=self.rcon)
+
+            ip = self.ip = make_inner_product(y, rcon=self.rcon)
+
+        def norm(a):
+            return numpy.sqrt(ip(a, a))
 
         dt = self.scalar_type(dt)
 
@@ -215,8 +224,7 @@ class Dumka3TimeStepper(object):
             if self.adaptive:
                 sub_timer = self.timer.start_sub_timer()
                 normalization = self.atol + self.rtol*max(
-                            la.norm(y), 
-                            la.norm(start_y))
+                            norm(y), norm(start_y))
 
                 z1 = lc2((-c_3/(2*normalization),rhs), (1/normalization,z1)) 
 
@@ -240,7 +248,8 @@ class Dumka3TimeStepper(object):
             return y
 
     def compute_new_step_size(self, z, dt):
-        eps = numpy.sqrt(numpy.dot(z, z)/len(z))
+        from hedge.tools import count_dofs
+        eps = numpy.sqrt(self.ip(z, z)/count_dofs(z))
 
         fracmin = 0.1
         if eps == 0:
