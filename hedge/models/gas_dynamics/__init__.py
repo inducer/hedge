@@ -158,7 +158,14 @@ class GasDynamicsOperator(TimeDependentOperator):
     # }}}
 
     # {{{ operator template ---------------------------------------------------
-    def op_template(self, with_sensor=False):
+    def op_template(self, sensor_mode=None):
+        """
+        :param sensor_mode: may be one of 'cns', 'diffusion', None.
+        """
+
+        if sensor_mode not in ["cns", "diffusion", None]:
+            raise ValueError("sensor_mode has an invalid value")
+
         from hedge.optemplate.tools import make_vector_field
         from pytools.obj_array import make_obj_array, join_fields
         from hedge.tools.symbolic import make_common_subexpression as cse
@@ -204,7 +211,7 @@ class GasDynamicsOperator(TimeDependentOperator):
             else:
                 result = self.mu
 
-            if with_sensor:
+            if sensor_mode == "cns":
                 result = result + cse(to_quad_op(sensor), "quad_sensor")
 
             return cse(result, "mu")
@@ -285,46 +292,47 @@ class GasDynamicsOperator(TimeDependentOperator):
         # }}}
 
         # {{{ second order part
+        def div(vol_operand, int_face_operand):
+            from hedge.second_order import SecondDerivativeTarget
+            div_tgt = SecondDerivativeTarget(
+                    self.dimensions, strong_form=False,
+                    operand=vol_operand,
+                    int_flux_operand=int_face_operand)
+
+            def unwrap_cse(expr):
+                from pymbolic.primitives import CommonSubexpression
+                if isinstance(expr, CommonSubexpression):
+                    return expr.child
+                else:
+                    return expr
+
+            dir_bcs = dict(((tag, unwrap_cse(faceq_state[i])), bc[i])
+                    for tag, bc in all_tags_and_conservative_bcs
+                    for i in range(len(faceq_state)))
+
+            # supply BC for sensor, if necessary
+            if sensor_mode is not None:
+                for tag, bc in all_tags_and_conservative_bcs:
+                    dir_bcs[tag, to_int_face_quad(sensor)] = \
+                            cse(to_bdry_quad(BoundarizeOperator(tag)(sensor)),
+                                    "bdry_sensor")
+
+            def div_bc_getter(tag, expr):
+                try:
+                    return dir_bcs[tag, expr]
+                except KeyError:
+                    print expr
+                    raise NotImplementedError
+
+            self.second_order_scheme.div(div_tgt,
+                    bc_getter=div_bc_getter,
+                    dirichlet_tags=
+                    [tag for tag, bc in all_tags_and_conservative_bcs],
+                    neumann_tags=[])
+
+            return div_tgt.minv_all
+
         def make_second_order_part():
-            def div(vol_operand, int_face_operand):
-                from hedge.second_order import SecondDerivativeTarget
-                div_tgt = SecondDerivativeTarget(
-                        self.dimensions, strong_form=False,
-                        operand=vol_operand,
-                        int_flux_operand=int_face_operand)
-
-                def unwrap_cse(expr):
-                    from pymbolic.primitives import CommonSubexpression
-                    if isinstance(expr, CommonSubexpression):
-                        return expr.child
-                    else:
-                        return expr
-
-                dir_bcs = dict(((tag, unwrap_cse(faceq_state[i])), bc[i])
-                        for tag, bc in all_tags_and_conservative_bcs
-                        for i in range(len(faceq_state)))
-
-                # supply BC for sensor, if necessary
-                if with_sensor:
-                    for tag, bc in all_tags_and_conservative_bcs:
-                        dir_bcs[tag, to_int_face_quad(sensor)] = \
-                                cse(to_bdry_quad(BoundarizeOperator(tag)(sensor)),
-                                        "bdry_sensor")
-
-                def div_bc_getter(tag, expr):
-                    try:
-                        return dir_bcs[tag, expr]
-                    except KeyError:
-                        print expr
-                        raise NotImplementedError
-
-                self.second_order_scheme.div(div_tgt,
-                        bc_getter=div_bc_getter,
-                        dirichlet_tags=
-                        [tag for tag, bc in all_tags_and_conservative_bcs],
-                        neumann_tags=[])
-
-                return div_tgt.minv_all
 
             volq_tau_mat = tau(to_vol_quad)
             faceq_tau_mat = tau(to_int_face_quad)
@@ -338,6 +346,21 @@ class GasDynamicsOperator(TimeDependentOperator):
                     [div(volq_tau_mat[i], faceq_tau_mat[i])
                         for i in range(self.dimensions)]) 
 
+        # }}}
+
+        # {{{ artificial diffusion
+        def make_artificial_diffusion():
+            if sensor_mode != "diffusion":
+                return 0
+
+            dq = grad_of_state()
+
+            from pytools.obj_array import make_obj_array
+            return make_obj_array([
+                div(
+                    to_vol_quad(sensor)*to_vol_quad(dq[i]),
+                    to_int_face_quad(sensor)*to_int_face_quad(dq[i])) 
+                for i in range(dq.shape[0])])
         # }}}
 
         # {{{ volume and boundary flux
@@ -383,7 +406,7 @@ class GasDynamicsOperator(TimeDependentOperator):
 
         state = make_vector_field("q", self.dimensions+2)
 
-        if with_sensor:
+        if sensor_mode is not None:
             from hedge.optemplate.primitives import Field
             sensor = Field("sensor")
 
@@ -513,29 +536,31 @@ class GasDynamicsOperator(TimeDependentOperator):
 
         from hedge.optemplate.tools import make_stiffness_t
 
+        first_order_part = InverseMassOperator()(
+                numpy.dot(make_stiffness_t(self.dimensions), volq_flux)
+                - make_lax_friedrichs_flux(
+
+                    # This is not quite the right order, but this is
+                    # not really easy to fix. The process to calculate
+                    # 'speed' is nonlinear, but we can't compute that
+                    # on a quadrature grid, because we need to form both
+                    # the elementwise max *and* then interpolate up.
+                    # The latter requires that we know a basis.
+                    # (Maybe the facewise max is enough?)
+                    wave_speed=cse(to_int_face_quad(
+                        ElementwiseMaxOperator()(speed)), "emax_c"),
+
+                    state=faceq_state, fluxes=faceq_flux,
+                    bdry_tags_states_and_fluxes=[
+                        (tag, bc, bdry_flux_func(bc, faceq_state, tag))
+                        for tag, bc in all_tags_and_conservative_bcs
+                        ],
+                    strong=False))
+
         result = join_fields(
-                InverseMassOperator()(
-                    numpy.dot(make_stiffness_t(self.dimensions), volq_flux)
-                    - make_lax_friedrichs_flux(
-
-                        # This is not quite the right order, but this is
-                        # not really easy to fix. The process to cacluate
-                        # 'speed' is nonlinear, but we can't compute that
-                        # on a quadrature grid, because we need to form both
-                        # the elementwise max *and* then interpolate up.
-                        # The latter requires that we know a basis.
-                        # (Maybe the facewise max is enough?)
-                        wave_speed=cse(to_int_face_quad(
-                            ElementwiseMaxOperator()(speed)), "emax_c"),
-
-                        state=faceq_state, fluxes=faceq_flux,
-                        bdry_tags_states_and_fluxes=[
-                            (tag, bc, bdry_flux_func(bc, faceq_state, tag))
-                            for tag, bc in all_tags_and_conservative_bcs
-                            ],
-                        strong=False
-                        )) + make_second_order_part()
-                    ,
+                first_order_part 
+                + make_second_order_part()
+                + make_artificial_diffusion(),
                  speed)
 
         if self.source is not None:
@@ -551,8 +576,11 @@ class GasDynamicsOperator(TimeDependentOperator):
     # }}}
 
     # {{{ operator binding ----------------------------------------------------
-    def bind(self, discr, sensor=None):
-        bound_op = discr.compile(self.op_template(with_sensor=sensor is not None))
+    def bind(self, discr, sensor=None, sensor_mode="diffusion"):
+        if sensor is None:
+            sensor_mode = None
+
+        bound_op = discr.compile(self.op_template(sensor_mode=sensor_mode))
 
         from hedge.mesh import check_bc_coverage
         check_bc_coverage(discr.mesh, [
