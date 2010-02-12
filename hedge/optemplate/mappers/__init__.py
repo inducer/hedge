@@ -1183,6 +1183,7 @@ class DerivativeJoiner(CSECachingMapperMixin, IdentityMapper):
 class _InnerInverseMassContractor(pymbolic.mapper.RecursiveMapper):
     def __init__(self, outer_mass_contractor):
         self.outer_mass_contractor = outer_mass_contractor
+        self.extra_operator_count = 0
 
     def map_constant(self, expr):
         from hedge.tools import is_zero
@@ -1229,6 +1230,7 @@ class _InnerInverseMassContractor(pymbolic.mapper.RecursiveMapper):
                         binding.op.boundary_tag, is_lift=True)(
                     self.outer_mass_contractor(binding.field))
         else:
+            self.extra_operator_count += 1
             return InverseMassOperator()(
                 self.outer_mass_contractor(binding))
 
@@ -1249,8 +1251,8 @@ class _InnerInverseMassContractor(pymbolic.mapper.RecursiveMapper):
 
         if nonscalar_count > 1:
             # too complicated, don't touch it
-            return OperatorBinding(
-                    InverseMassOperator(),
+            self.extra_operator_count += 1
+            return InverseMassOperator()(
                     self.outer_mass_contractor(expr))
         else:
             def do_map(expr):
@@ -1279,10 +1281,16 @@ class InverseMassContractor(CSECachingMapperMixin, IdentityMapper):
         from hedge.optemplate import InverseMassOperator
 
         if isinstance(binding.op, InverseMassOperator):
-            return _InnerInverseMassContractor(self)(binding.field)
+            iimc = _InnerInverseMassContractor(self)
+            proposed_result = iimc(binding.field)
+            if iimc.extra_operator_count > 1:
+                # We're introducing more work than we're saving.
+                # Don't perform the simplification
+                return binding.op(self.rec(binding.field))
+            else:
+                return proposed_result
         else:
-            return binding.__class__(binding.op,
-                    self.rec(binding.field))
+            return binding.op(self.rec(binding.field))
 
 
 
