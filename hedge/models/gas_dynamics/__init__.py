@@ -158,12 +158,8 @@ class GasDynamicsOperator(TimeDependentOperator):
     # }}}
 
     # {{{ operator template ---------------------------------------------------
-    def op_template(self, sensor_mode=None):
-        """
-        :param sensor_mode: may be one of 'cns', 'diffusion', None.
-        """
-
-        if sensor_mode not in ["cns", "diffusion", None]:
+    def op_template(self, sensor_mode=None, sensor_scaling=None):
+        if sensor_mode not in ["cns", "diffusion", "blended", None]:
             raise ValueError("sensor_mode has an invalid value")
 
         from hedge.optemplate.tools import make_vector_field
@@ -212,7 +208,19 @@ class GasDynamicsOperator(TimeDependentOperator):
                 result = self.mu
 
             if sensor_mode == "cns":
-                result = result + cse(to_quad_op(sensor), "quad_sensor")
+                mapped_sensor = sensor
+            elif sensor_mode == "blended":
+                exp = CFunction("exp")
+                mapped_sensor = cse(
+                        sensor_scaling
+                        * unit_sensor
+                        * exp(-unit_sensor**2), 
+                        "mapped_sensor_cns")
+            else:
+                mapped_sensor = None
+
+            if mapped_sensor is not None:
+                result = result + cse(to_quad_op(mapped_sensor), "quad_sensor")
 
             return cse(result, "mu")
 
@@ -350,16 +358,25 @@ class GasDynamicsOperator(TimeDependentOperator):
 
         # {{{ artificial diffusion
         def make_artificial_diffusion():
-            if sensor_mode != "diffusion":
+            if sensor_mode not in ["diffusion", "blended"]:
                 return 0
+
+            if sensor_mode == "blended":
+                exp = CFunction("exp")
+                mapped_sensor = cse(
+                        sensor_scaling
+                        *unit_sensor*(1-exp(-unit_sensor**2)), 
+                        "mapped_sensor_diff")
+            else:
+                mapped_sensor = sensor
 
             dq = grad_of_state()
 
             from pytools.obj_array import make_obj_array
             return make_obj_array([
                 div(
-                    to_vol_quad(sensor)*to_vol_quad(dq[i]),
-                    to_int_face_quad(sensor)*to_int_face_quad(dq[i])) 
+                    to_vol_quad(mapped_sensor)*to_vol_quad(dq[i]),
+                    to_int_face_quad(mapped_sensor)*to_int_face_quad(dq[i])) 
                 for i in range(dq.shape[0])])
         # }}}
 
@@ -409,6 +426,10 @@ class GasDynamicsOperator(TimeDependentOperator):
         if sensor_mode is not None:
             from hedge.optemplate.primitives import Field
             sensor = Field("sensor")
+
+            if sensor_scaling is not None:
+                assert sensor_mode == "blended"
+                unit_sensor = cse(sensor/sensor_scaling, "unit_sensor")
 
         from hedge.optemplate.operators import (
                 QuadratureGridUpsampler,
@@ -576,11 +597,13 @@ class GasDynamicsOperator(TimeDependentOperator):
     # }}}
 
     # {{{ operator binding ----------------------------------------------------
-    def bind(self, discr, sensor=None, sensor_mode="diffusion"):
+    def bind(self, discr, sensor=None, sensor_mode="diffusion", sensor_scaling=None):
         if sensor is None:
             sensor_mode = None
 
-        bound_op = discr.compile(self.op_template(sensor_mode=sensor_mode))
+        bound_op = discr.compile(self.op_template(
+            sensor_mode=sensor_mode,
+            sensor_scaling=sensor_scaling))
 
         from hedge.mesh import check_bc_coverage
         check_bc_coverage(discr.mesh, [
