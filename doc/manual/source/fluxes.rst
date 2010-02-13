@@ -79,7 +79,8 @@ used to build flux expressions in :mod:`hedge`:
 
 * :class:`pymbolic.primitives.Call`: The *function* attribute
   must evaluate to one of a number of predefined 
-  :class:`pymbolic.primitive.FunctionSymbol` instances.
+  :class:`pymbolic.primitive.FunctionSymbol` instances
+  or be a value of type :class:`hedge.tools.symbolic.CFunction`.
 
   .. seealso:: :ref:`flux-function-symbols`.
 

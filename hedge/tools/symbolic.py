@@ -23,6 +23,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import numpy
+from pymbolic.primitives import Variable
 
 
 
@@ -58,3 +59,14 @@ def make_common_subexpression(field, prefix=None):
 
 
 
+
+class CFunction(Variable):
+    """A symbol representing a C-level function, to be used as the function
+    argument of :class:`pymbolic.primitives.Call`.
+    """
+    def stringifier(self):
+        from hedge.optemplate import StringifyMapper
+        return StringifyMapper
+
+    def get_mapper_method(self, mapper):
+        return mapper.map_c_function

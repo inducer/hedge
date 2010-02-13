@@ -55,7 +55,8 @@ one in :mod:`hedge`:
 
 * :class:`pymbolic.primitives.Call`: The function attribute must
   evaluate to a name that was registered by calling
-  :meth:`hedge.discretization.Discretization.add_function`.
+  :meth:`hedge.discretization.Discretization.add_function`
+  or be a value of type :class:`hedge.tools.symbolic.CFunction`.
 
 * Operators may be left-multiplied with other field expressions.
   See :ref:`optemplate-operators` for an overview.

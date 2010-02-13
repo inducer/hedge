@@ -284,6 +284,7 @@ class FluxIdentityMapperMixin(object):
     map_face_jacobian = map_normal
     map_element_order = map_normal
     map_local_mesh_size = map_normal
+    map_c_function = map_normal
 
     def map_scalar_parameter(self, expr):
         return expr
@@ -368,6 +369,7 @@ class FluxDependencyMapper(pymbolic.mapper.dependency.DependencyMapper):
     map_face_jacobian = map_normal
     map_element_order = map_normal
     map_local_mesh_size = map_normal
+    map_c_function = map_normal
 
     def map_scalar_parameter(self, expr):
         return set([expr])
@@ -456,6 +458,9 @@ class FluxFlopCounter(pymbolic.mapper.flop_counter.FlopCounter):
         return 0
 
     def map_function_symbol(self, expr):
+        return 1
+
+    def map_c_function(self, expr):
         return 1
 
     def map_scalar_parameter(self, expr):
