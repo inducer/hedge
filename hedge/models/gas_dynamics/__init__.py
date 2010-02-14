@@ -68,19 +68,41 @@ class GasDynamicsOperator(TimeDependentOperator):
 
     # {{{ initialization ------------------------------------------------------
     def __init__(self, dimensions,
-            gamma, mu, bc_inflow, bc_outflow, bc_noslip,
+            gamma, mu, 
+            bc_inflow=None,
+            bc_outflow=None,
+            bc_noslip=None,
+            bc_supersonic_inflow=None,
             prandtl=None, spec_gas_const=1.0,
             inflow_tag="inflow",
             outflow_tag="outflow",
             noslip_tag="noslip",
+            supersonic_inflow_tag="supersonic_inflow",
+            supersonic_outflow_tag="supersonic_inflow",
             source=None,
             second_order_scheme=CentralSecondDerivative(),
             ):
         """
         :param source: should implement
-        :class:`hedge.data.IFieldDependentGivenFunction`
-        or be None.
+          :class:`hedge.data.IFieldDependentGivenFunction`
+          or be None.
         """
+        from hedge.data import (
+                TimeConstantGivenFunction,
+                ConstantGivenFunction)
+
+        from pytools.obj_array import make_obj_array
+        dull_bc = TimeConstantGivenFunction(
+                ConstantGivenFunction(make_obj_array(
+                    [1, 1] + [0]*dimensions)))
+        if bc_inflow is None:
+            bc_inflow = dull_bc
+        if bc_outflow is None:
+            bc_outflow = dull_bc
+        if bc_noslip is None:
+            bc_noslip = dull_bc
+        if bc_supersonic_inflow is None:
+            bc_supersonic_inflow = dull_bc
 
         self.dimensions = dimensions
 
@@ -92,10 +114,13 @@ class GasDynamicsOperator(TimeDependentOperator):
         self.bc_inflow = bc_inflow
         self.bc_outflow = bc_outflow
         self.bc_noslip = bc_noslip
+        self.bc_supersonic_inflow = bc_supersonic_inflow
 
         self.inflow_tag = inflow_tag
         self.outflow_tag = outflow_tag
         self.noslip_tag = noslip_tag
+        self.supersonic_inflow_tag = supersonic_inflow_tag
+        self.supersonic_outflow_tag = supersonic_outflow_tag
 
         self.source = source
 
@@ -421,6 +446,8 @@ class GasDynamicsOperator(TimeDependentOperator):
 
         # }}}
 
+        # {{{ state setup
+
         state = make_vector_field("q", self.dimensions+2)
 
         if sensor_mode is not None:
@@ -452,6 +479,7 @@ class GasDynamicsOperator(TimeDependentOperator):
         speed = cse(sqrt(numpy.dot(u(state), u(state))), "norm_u") + sound_speed
 
         has_viscosity = not is_zero(get_mu(state, to_quad_op=None))
+        # }}}
 
         # {{{ boundary conditions ---------------------------------------------
         from hedge.optemplate import BoundarizeOperator
@@ -539,14 +567,28 @@ class GasDynamicsOperator(TimeDependentOperator):
                     set_normal_velocity_to_zero=True)
             return inflow_state_inner(normal, bc, "noslip")
 
-        all_tags_and_primitive_bcs = [
+        subsonic_tags_and_primitive_bcs = [
                 (self.outflow_tag, outflow_state(state)),
                 (self.inflow_tag, inflow_state(state)),
                 (self.noslip_tag, noslip_state(state))
                     ]
+        supersonic_tags_and_conservative_bcs = [
+                (self.supersonic_inflow_tag, 
+                    to_bdry_quad(make_vector_field(
+                        "bc_q_supersonic_in", self.dimensions+2))),
+                (self.supersonic_outflow_tag,
+                    to_bdry_quad(
+                        BoundarizeOperator(self.supersonic_outflow_tag)(
+                            (state))))]
+
+        all_tags_and_primitive_bcs = subsonic_tags_and_primitive_bcs \
+                + [(tag, self.conservative_to_primitive(bc))
+                    for tag, bc in supersonic_tags_and_conservative_bcs]
+
         all_tags_and_conservative_bcs = [
                 (tag, self.primitive_to_conservative(bc))
-                for tag, bc in all_tags_and_primitive_bcs]
+                for tag, bc in subsonic_tags_and_primitive_bcs
+                ] + supersonic_tags_and_conservative_bcs
 
         # }}}
 
@@ -610,6 +652,8 @@ class GasDynamicsOperator(TimeDependentOperator):
             self.inflow_tag,
             self.outflow_tag,
             self.noslip_tag,
+            self.supersonic_inflow_tag,
+            self.supersonic_outflow_tag,
             ])
 
         def rhs(t, q):
@@ -624,10 +668,13 @@ class GasDynamicsOperator(TimeDependentOperator):
             opt_result = bound_op(q=q,
                     bc_q_in=self.bc_inflow.boundary_interpolant(
                         t, discr, self.inflow_tag),
-                    bc_q_out=self.bc_inflow.boundary_interpolant(
+                    bc_q_out=self.bc_outflow.boundary_interpolant(
                         t, discr, self.outflow_tag),
-                    bc_q_noslip=self.bc_inflow.boundary_interpolant(
+                    bc_q_noslip=self.bc_noslip.boundary_interpolant(
                         t, discr, self.noslip_tag),
+                    bc_q_supersonic_in=self.bc_supersonic_inflow
+                    .boundary_interpolant(t, discr, 
+                        self.supersonic_inflow_tag),
                     **extra_kwargs
                     )
 
