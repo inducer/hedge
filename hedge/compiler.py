@@ -315,6 +315,8 @@ class Code(object):
     def __init__(self, instructions, result):
         self.instructions = instructions
         self.result = result
+        self.last_schedule = None
+        self.static_schedule_attempts = 5
 
     def dump_dataflow_graph(self):
         from hedge.tools import open_unique_debug_file
@@ -322,6 +324,15 @@ class Code(object):
         open_unique_debug_file("dataflow", ".dot")\
                 .write(dot_dataflow_graph(self, max_node_label_length=None))
 
+    def __str__(self):
+        lines = []
+        for insn in self.instructions:
+            lines.extend(str(insn).split("\n"))
+        lines.append(str(self.result))
+
+        return "\n".join(lines)
+
+    # {{{ dynamic scheduler (generates static schedules by self-observation)
     class NoInstructionAvailable(Exception):
         pass
 
@@ -350,61 +361,65 @@ class Code(object):
 
         return argmax2(available_insns), discardable_vars
 
-    def __str__(self):
-        lines = []
-        for insn in self.instructions:
-            lines.extend(str(insn).split("\n"))
-        lines.append(str(self.result))
+    def execute_dynamic(self, exec_mapper, pre_assign_check=None):
+        """Execute the instruction stream, make all scheduling decisions
+        dynamically. Record the schedule in *self.last_schedule*.
+        """
+        schedule = []
 
-        return "\n".join(lines)
-
-    def execute(self, exec_mapper, pre_assign_check=None):
         context = exec_mapper.context
 
+        next_future_id = 0
         futures = []
         done_insns = set()
 
-        quit_flag = False
         force_future = False
-        while not quit_flag:
+
+        while True:
+            insn = None
+            discardable_vars = []
+
             # check futures for completion
+
             i = 0
             while i < len(futures):
                 future = futures[i]
                 if force_future or future.is_ready():
-                    assignments, new_futures = future()
-                    for target, value in assignments:
-                        if pre_assign_check is not None:
-                            pre_assign_check(target, value)
-
-                        context[target] = value
-                    futures.extend(new_futures)
                     futures.pop(i)
+
+                    insn = self.EvaluateFuture(future.id)
+
+                    assignments, new_futures = future()
                     force_future = False
+                    break
                 else:
                     i += 1
 
                 del future
 
-            # pick the next insn
-            try:
-                insn, discardable_vars = self.get_next_step(
-                        frozenset(context.keys()),
-                        frozenset(done_insns))
-            except self.NoInstructionAvailable:
-                if futures:
-                    # no insn ready: we need a future to complete to continue
-                    force_future = True
-                else:
-                    # no futures, no available instructions: we're done
-                    quit_flag = True
-            else:
-                for name in discardable_vars:
-                    del context[name]
+            # if no future got processed, pick the next insn
+            if insn is None:
+                try:
+                    insn, discardable_vars = self.get_next_step(
+                            frozenset(context.keys()),
+                            frozenset(done_insns))
 
-                done_insns.add(insn)
-                assignments, new_futures = \
-                        insn.get_executor_method(exec_mapper)(insn)
+                except self.NoInstructionAvailable:
+                    if futures:
+                        # no insn ready: we need a future to complete to continue
+                        force_future = True
+                    else:
+                        # no futures, no available instructions: we're done
+                        break
+                else:
+                    for name in discardable_vars:
+                        del context[name]
+
+                    done_insns.add(insn)
+                    assignments, new_futures = \
+                            insn.get_executor_method(exec_mapper)(insn)
+
+            if insn is not None:
                 for target, value in assignments:
                     if pre_assign_check is not None:
                         pre_assign_check(target, value)
@@ -412,6 +427,12 @@ class Code(object):
                     context[target] = value
 
                 futures.extend(new_futures)
+
+                schedule.append((discardable_vars, insn, len(new_futures)))
+
+                for future in new_futures:
+                    future.id = next_future_id
+                    next_future_id += 1
 
         if len(done_insns) < len(self.instructions):
             print "Unreachable instructions:"
@@ -421,8 +442,70 @@ class Code(object):
             raise RuntimeError("not all instructions are reachable"
                     "--did you forget to pass a value for a placeholder?")
 
+        if self.static_schedule_attempts:
+            self.last_schedule = schedule
+
         from hedge.tools import with_object_array_or_scalar
         return with_object_array_or_scalar(exec_mapper, self.result)
+
+    # }}}
+
+    # {{{ static schedule execution
+    class EvaluateFuture(object):
+        """A fake 'instruction' that represents evaluation of a future."""
+        def __init__(self, future_id):
+            self.future_id = future_id
+
+    def execute(self, exec_mapper, pre_assign_check=None):
+        """If we have a saved, static schedule for this instruction stream,
+        execute it. Otherwise, punt to the dynamic scheduler below.
+        """
+
+        if self.last_schedule is None:
+            return self.execute_dynamic(exec_mapper, pre_assign_check)
+
+        context = exec_mapper.context
+        id_to_future = {}
+        next_future_id = 0
+
+        schedule_is_delay_free = True
+
+        for discardable_vars, insn, new_future_count in self.last_schedule:
+            for name in discardable_vars:
+                del context[name]
+
+            if isinstance(insn, self.EvaluateFuture):
+                future = id_to_future.pop(insn.future_id)
+                if not future.is_ready():
+                    schedule_is_delay_free = False
+                assignments, new_futures = future()
+                del future
+            else:
+                assignments, new_futures = \
+                        insn.get_executor_method(exec_mapper)(insn)
+
+            for target, value in assignments:
+                if pre_assign_check is not None:
+                    pre_assign_check(target, value)
+
+                context[target] = value
+
+            if len(new_futures) != new_future_count:
+                raise RuntimeError("static schedule got an unexpected number "
+                        "of futures")
+
+            for future in new_futures:
+                id_to_future[next_future_id] = future
+                next_future_id += 1
+
+        if not schedule_is_delay_free:
+            self.last_schedule = None
+            self.static_schedule_attempts -= 1
+
+        from hedge.tools import with_object_array_or_scalar
+        return with_object_array_or_scalar(exec_mapper, self.result)
+
+    # }}}
 
 
 
