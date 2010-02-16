@@ -390,11 +390,19 @@ class CUDAFluxBatchAssign(FluxBatchAssign):
 class OperatorCompiler(OperatorCompilerBase):
     def get_contained_fluxes(self, expr):
         from hedge.optemplate.mappers import FluxCollector
+        contained_flux_ops = FluxCollector()(expr)
+
+        from hedge.optemplate.operators import WholeDomainFluxOperator
+        from pytools import all
+        assert all(isinstance(op, WholeDomainFluxOperator)
+                for op in contained_flux_ops), \
+                        "not all flux operators were of the expected type"
+
         return [self.FluxRecord(
             flux_expr=wdflux,
             dependencies=set(wdflux.interior_deps) | set(wdflux.boundary_deps),
             repr_op=wdflux.repr_op())
-            for wdflux in FluxCollector()(expr)]
+            for wdflux in contained_flux_ops]
 
     def internal_map_flux(self, wdflux):
         from hedge.optemplate.operators import WholeDomainFluxOperator

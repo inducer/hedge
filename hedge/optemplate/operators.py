@@ -644,6 +644,10 @@ class WholeDomainFluxOperator(pymbolic.primitives.AlgebraicLeaf):
                     bflux.flux_expr, bflux.bpair, bdry="ext"):
                 self.dep_to_tag[dep] = bflux.bpair.tag
 
+    def stringifier(self):
+        from hedge.optemplate import StringifyMapper
+        return StringifyMapper
+
     def repr_op(self):
         return type(self)(False, [], [])
 

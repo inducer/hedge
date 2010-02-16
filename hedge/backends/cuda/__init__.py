@@ -347,7 +347,8 @@ class Discretization(hedge.discretization.Discretization):
         return result
 
     def __init__(self, mesh, local_discretization=None,
-            order=None, init_cuda=True, debug=set(),
+            order=None, quad_min_degrees={},
+            init_cuda=True, debug=set(),
             default_scalar_type=numpy.float32,
             tune_for=None, run_context=None,
             mpi_cuda_dev_filter=lambda dev: True):
@@ -356,6 +357,9 @@ class Discretization(hedge.discretization.Discretization):
         :param tune_for: An optemplate for whose application this discretization's
         flux plan will be tuned.
         """
+
+        if quad_min_degrees:
+            raise NotImplementedError("CUDA backend doesn't support quadrature yet")
 
         if not isinstance(mesh, hedge.mesh.Mesh):
             raise TypeError("mesh must be of type hedge.mesh.Mesh")
@@ -433,7 +437,10 @@ class Discretization(hedge.discretization.Discretization):
                         float_type=default_scalar_type)
 
                 import hedge.backends.cuda.fluxgather as fluxgather
-                flux_plan, flux_time = fluxgather.make_plan(self, given, tune_for)
+                from hedge.optemplate.mappers import QuadratureUpsamplerRemover
+                flux_plan, flux_time = fluxgather.make_plan(self, given, 
+                        QuadratureUpsamplerRemover(
+                            self.quad_min_degrees)(tune_for))
 
                 # partition mesh, obtain updated plan
                 pdata = self._get_partition_data(
