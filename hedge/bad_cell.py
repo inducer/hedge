@@ -114,30 +114,74 @@ class PerssonPeraireDiscontinuitySensor(object):
 # {{{ exponential fit ---------------------------------------------------------
 # {{{ operators for basic fit
 class DecayEstimateOperatorBase(ElementwiseLinearOperator):
-    def __init__(self, ignored_modes, weight_exponent):
+    def __init__(self, ignored_modes, weight_mode):
         self.ignored_modes = ignored_modes
-        self.weight_exponent = weight_exponent
+        self.weight_mode = weight_mode
 
     def __getinitargs__(self):
-        return (self.ignored_modes, self.weight_exponent)
+        return (self.ignored_modes, self.weight_mode)
+
+    def make_mode_number_vector(self, ldis):
+        im = self.ignored_modes
+        node_cnt = ldis.node_count()
+
+        mode_number_vector = numpy.zeros(node_cnt-im, dtype=numpy.float64)
+        for i, mid in enumerate(ldis.generate_mode_identifiers()):
+            if i < im:
+                continue
+            mode_number_vector[i-im] = sum(mid)
+
+        return mode_number_vector
+
+    def make_weight_vector(self, ldis):
+        node_cnt = ldis.node_count()
+
+        if self.weight_mode == "nd_weight":
+            im = self.ignored_modes
+            node_cnt = ldis.node_count()
+
+            degree_count = {}
+            for i, mid in enumerate(ldis.generate_mode_identifiers()):
+                degree_count[sum(mid)] = \
+                        degree_count.get(sum(mid), 0) + 1
+
+            result = numpy.zeros(node_cnt-im, dtype=numpy.float64)
+            for i, mid in enumerate(ldis.generate_mode_identifiers()):
+                if i < im:
+                    continue
+
+                result[i-im] = 1/degree_count[sum(mid)]
+
+            return result**0.5
+
+        elif (isinstance(self.weight_mode, tuple)
+                and self.weight_mode[0] == "exponential"):
+            assert self.ignored_modes == 0
+
+            weight_exponent = self.weight_mode[1]
+            mode_number_vector = self.make_mode_number_vector(ldis)
+            return mode_number_vector**self.weight_exponent
+
+        elif self.weight_mode is None:
+            return numpy.ones(node_cnt-self.ignored_modes, 
+                    dtype=numpy.float64)
+        else:
+            raise ValueError("invalid weight mode: "
+                    + str(self.weight_mode))
 
     def decay_fit_mat(self, ldis):
         im = self.ignored_modes
         node_cnt = ldis.node_count()
 
-        node_number_vector = numpy.zeros(node_cnt-im, dtype=numpy.float64)
-        for i, mid in enumerate(ldis.generate_mode_identifiers()):
-            if i < im:
-                continue
-            node_number_vector[i-im] = sum(mid)
+        mode_number_vector = self.make_mode_number_vector(ldis)
+        weight_vector = self.make_weight_vector(ldis)
 
         a = numpy.zeros((node_cnt-im, 2), dtype=numpy.float64)
-        a[:,0] = node_number_vector**self.weight_exponent
-        a[:,1] = (node_number_vector**self.weight_exponent
-                * numpy.log(node_number_vector))
+        a[:,0] = weight_vector
+        a[:,1] = weight_vector * numpy.log(mode_number_vector)
 
         if im == 0:
-            assert numpy.isnan(a[0,1])
+            assert not numpy.isfinite(a[0,1])
             a[0,1] = 0
 
         result = numpy.zeros((2, node_cnt))
@@ -189,6 +233,19 @@ def create_mode_number_vector(discr, nonzero):
 
         for slc in eg.ranges:
             result[slc] = modal_coefficients
+
+    return result
+
+def create_mode_weight_vector(discr, expt_op):
+    result = discr.volume_zeros(kind="numpy")
+    for eg in discr.element_groups:
+        ldis = eg.local_discretization
+
+        modal_coefficients = expt_op.make_weight_vector(ldis)
+
+        for slc in eg.ranges:
+            result[slc.start+expt_op.ignored_modes
+                    :slc.stop] = modal_coefficients
 
     return result
 
@@ -245,9 +302,9 @@ class DecayInformation(Record):
 # }}}
 # {{{ the actual sensor
 class DecayFitDiscontinuitySensorBase(object):
-    def __init__(self, mode_processor, weight_exponent, ignored_modes):
+    def __init__(self, mode_processor, weight_mode, ignored_modes):
         self.mode_processor = mode_processor
-        self.weight_exponent = weight_exponent
+        self.weight_mode = weight_mode
         self.ignored_modes = ignored_modes
 
     def op_template_struct(self, u, with_baseline=True):
@@ -311,9 +368,9 @@ class DecayFitDiscontinuitySensorBase(object):
 
         # fit to c * n**s
         expt_op = DecayExponentOperator(
-                self.ignored_modes, self.weight_exponent)
+                self.ignored_modes, self.weight_mode)
         log_const_op = LogDecayConstantOperator(
-                self.ignored_modes, self.weight_exponent)
+                self.ignored_modes, self.weight_mode)
 
         mode_weights = Field("mode_weights")
 
@@ -347,9 +404,10 @@ class DecayFitDiscontinuitySensorBase(object):
     def bind_quantity(self, discr, quantity_name):
         baseline_squared = create_decay_baseline(discr)**2
         log_mode_numbers = numpy.log(create_mode_number_vector(discr, nonzero=True))
-        mode_weights = (
-                create_mode_number_vector(discr, nonzero=False)
-                **self.weight_exponent)
+        mode_weights = create_mode_weight_vector(discr,
+                DecayExponentOperator(
+                    self.ignored_modes, 
+                    self.weight_mode))
 
         from hedge.optemplate import Field
         quantity = getattr(
@@ -377,13 +435,13 @@ class DecayGatingDiscontinuitySensorBase(
         DecayFitDiscontinuitySensorBase):
     def __init__(self,
             mode_processor,
-            weight_exponent,
+            weight_mode,
             ignored_modes,
             correct_for_fit_error,
             max_viscosity):
         DecayFitDiscontinuitySensorBase.__init__(
                 self, mode_processor=mode_processor,
-                weight_exponent=weight_exponent, ignored_modes=ignored_modes)
+                weight_mode=weight_mode, ignored_modes=ignored_modes)
         self.correct_for_fit_error = correct_for_fit_error
         self.max_viscosity = max_viscosity
 
@@ -448,7 +506,7 @@ class ElementwiseCodeExecutor:
             Include("hedge/volume_operators.hpp"),
             Include("boost/foreach.hpp"),
             Include("boost/numeric/ublas/io.hpp"),
-            ])
+            ]+self.get_extra_includes())
 
         mod.add_to_module([
             S("namespace ublas = boost::numeric::ublas"),
@@ -464,7 +522,7 @@ class ElementwiseCodeExecutor:
                 Const(Value("uniform_element_ranges", "ers")),
                 Const(Value("numpy_vector<value_type>", "field")),
                 Value("numpy_vector<value_type>", "result"),
-                ]),
+                ]+self.get_extra_parameter_declarators()),
             Block([
                 Typedef(Value("numpy_vector<value_type>::iterator", 
                     "it_type")),
@@ -475,14 +533,29 @@ class ElementwiseCodeExecutor:
                     "result.begin()"),
                 Initializer(Value("cit_type", "field_it"), 
                     "field.begin()"),
-                Line(),
+                Line() ]+self.get_extra_preamble()+[ Line(),
                 CustomLoop(
                     "BOOST_FOREACH(const element_range er, ers)",
                     Block(self.get_per_element_code())
                     )
                 ])))
 
+        #print mod.generate()
+        #toolchain = toolchain.copy()
+        #toolchain.enable_debugging
         return mod.compile(toolchain)
+
+    def get_extra_includes(self):
+        return []
+
+    def get_extra_parameter_declarators(self):
+        return []
+
+    def get_extra_parameters(self, ldis):
+        return []
+
+    def get_extra_preamble(self):
+        return []
 
     def bind(self, discr):
         def do(field):
@@ -492,7 +565,8 @@ class ElementwiseCodeExecutor:
             for eg in discr.element_groups:
                 ldis = eg.local_discretization
 
-                mod.process_elements(eg.ranges, field, out)
+                mod.process_elements(eg.ranges, field, out,
+                        *self.get_extra_parameters(ldis))
 
             return out
 
@@ -504,21 +578,83 @@ class ElementwiseCodeExecutor:
 
 
 class SkylineModeProcessor(ElementwiseCodeExecutor):
+    def get_extra_includes(self):
+        from codepy.cgen import Include
+        return [Include("boost/scoped_array.hpp")]
+
+    def get_extra_parameter_declarators(self):
+        from codepy.cgen import Value, POD
+        return [
+                Value("numpy_array<npy_uint32>", "mode_degrees"),
+                POD(numpy.uint32, "max_degree")]
+
+    @memoize_method
+    def get_extra_parameters(self, ldis):
+        return [
+            numpy.array(
+                [sum(mode_indices) for mode_indices in
+                    ldis.generate_mode_identifiers()],
+                dtype=numpy.uint32),
+            ldis.order]
+
+    def get_extra_preamble(self):
+        from codepy.cgen import Initializer, Value, POD, Statement
+        return [
+                Initializer(Value("numpy_array<npy_uint32>::const_iterator", 
+                    "mode_degrees_iterator"), 
+                    "mode_degrees.begin()"),
+                Initializer(POD(numpy.uint32, "mode_count"), 
+                    "mode_degrees.size()"),
+                Statement("boost::scoped_array<value_type> reduced_modes"
+                    "(new value_type[max_degree+1])"),
+                ]
+
     def get_per_element_code(self):
-        from codepy.cgen import (Value, Statement, Initializer, While)
+        from codepy.cgen import (Value, Statement, Initializer, While,
+                Comment, Block, For, Line, Pointer)
         S = Statement
         return [
                 # assumes there is more than one coefficient
-                Initializer(Value("cit_type", "start"), "field_it+er.first"),
-                Initializer(Value("cit_type", "end"), "field_it+er.second"),
-                Initializer(Value("it_type", "tgt"), "result_it+er.second"),
+                Initializer(Value("cit_type", "el_modes"), "field_it+er.first"),
 
+                Line(),
+                Comment("zero out reduced_modes"),
+                For("npy_uint32 mode_idx = 0",
+                    "mode_idx < max_degree+1",
+                    "++mode_idx",
+                    S("reduced_modes[mode_idx] = 0")),
+
+                Line(),
+                Comment("gather modes by degree"),
+                For("npy_uint32 mode_idx = 0",
+                    "mode_idx < mode_count",
+                    "++mode_idx",
+                    S("reduced_modes[mode_degrees_iterator[mode_idx]]"
+                        " += el_modes[mode_idx]")),
+
+                Line(),
+                Comment("perform skyline procedure"),
+                Initializer(Pointer(Value("value_type", "start")),
+                    "reduced_modes.get()"),
+                Initializer(Pointer(Value("value_type", "end")),
+                    "start+max_degree+1"),
                 Initializer(Value("value_type", "cur_max"), 
                     "std::max(*(end-1), *(end-2))"),
 
-                While("end != start",
-                    S("*(--tgt) = std::max(cur_max, *(--end))"),
-                    )
+                Line(),
+                While("end != start", Block([
+                    S("--end"),
+                    S("*end = std::max(cur_max, *end)"),
+                    ])),
+
+                Line(),
+                Comment("scatter modes by degree"),
+                Initializer(Value("it_type", "tgt_base"), "result_it+er.first"),
+                For("npy_uint32 mode_idx = 0",
+                    "mode_idx < mode_count",
+                    "++mode_idx",
+                    S("tgt_base[mode_idx] = "
+                        "reduced_modes[mode_degrees_iterator[mode_idx]]")),
                 ]
 
 
