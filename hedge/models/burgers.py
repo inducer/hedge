@@ -39,6 +39,22 @@ class BurgersOperator(HyperbolicOperator):
         self.viscosity = viscosity
         self.viscosity_scheme = viscosity_scheme
 
+    def characteristic_velocity_optemplate(self, field):
+        from hedge.optemplate.operators import (
+                ElementwiseMaxOperator)
+        return ElementwiseMaxOperator()(field**2)**0.5
+
+    def bind_characteristic_velocity(self, discr):
+        from hedge.optemplate import Field
+        compiled = discr.compile(
+                self.characteristic_velocity_optemplate(
+                    Field("u")))
+
+        def do(u):
+            return compiled(u=u)
+
+        return do
+
     def op_template(self, with_sensor):
         from hedge.optemplate import (
                 Field,
@@ -67,7 +83,7 @@ class BurgersOperator(HyperbolicOperator):
             return u**2/2
             #return u0*u
 
-        emax_u = ElementwiseMaxOperator()(u**2)**0.5
+        emax_u = self.characteristic_velocity_optemplate(u)
         from hedge.flux.tools import make_lax_friedrichs_flux
         from pytools.obj_array import make_obj_array
         num_flux = make_lax_friedrichs_flux(

@@ -163,7 +163,7 @@ class DecayEstimateOperatorBase(ElementwiseLinearOperator):
             return mode_number_vector**self.weight_exponent
 
         elif self.weight_mode is None:
-            return numpy.ones(node_cnt-self.ignored_modes, 
+            return numpy.ones(node_cnt-self.ignored_modes,
                     dtype=numpy.float64)
         else:
             raise ValueError("invalid weight mode: "
@@ -355,7 +355,8 @@ class DecayFitDiscontinuitySensorBase(object):
 
         log_modal_coeffs = cse(
                 log(indicator_modal_coeffs_squared
-                    + baseline_squared*el_norm_u_squared)/2,
+                    + baseline_squared*el_norm_u_squared
+                    )/2,
                 "log_modal_coeffs")
 
         if False:
@@ -394,7 +395,8 @@ class DecayFitDiscontinuitySensorBase(object):
         s_corrected = expt_op(mode_weights*log_modal_coeffs_corrected)
 
         return DecayInformation(
-                decay_expt=s, c=c, 
+                indicator_modal_coeffs=indicator_modal_coeffs,
+                decay_expt=s, c=c,
                 log_modal_coeffs=log_modal_coeffs,
                 weighted_log_modal_coeffs=weighted_log_modal_coeffs,
                 estimated_log_modal_coeffs=estimated_log_modal_coeffs,
@@ -406,7 +408,7 @@ class DecayFitDiscontinuitySensorBase(object):
         log_mode_numbers = numpy.log(create_mode_number_vector(discr, nonzero=True))
         mode_weights = create_mode_weight_vector(discr,
                 DecayExponentOperator(
-                    self.ignored_modes, 
+                    self.ignored_modes,
                     self.weight_mode))
 
         from hedge.optemplate import Field
@@ -418,12 +420,17 @@ class DecayFitDiscontinuitySensorBase(object):
         if self.mode_processor is not None:
             discr.add_function("mode_processor", self.mode_processor.bind(discr))
 
-        def apply(u):
+        def apply(u, viscosity_scaling=None):
+            kwargs = {}
+
+            if viscosity_scaling is not None:
+                kwargs["viscosity_scaling"] = viscosity_scaling
+
             return compiled(
-                    u=u, 
+                    u=u,
                     baseline_squared=baseline_squared,
                     log_mode_numbers=log_mode_numbers,
-                    mode_weights=mode_weights)
+                    mode_weights=mode_weights, **kwargs)
 
         return apply
 
@@ -437,13 +444,11 @@ class DecayGatingDiscontinuitySensorBase(
             mode_processor,
             weight_mode,
             ignored_modes,
-            correct_for_fit_error,
-            max_viscosity):
+            correct_for_fit_error):
         DecayFitDiscontinuitySensorBase.__init__(
                 self, mode_processor=mode_processor,
                 weight_mode=weight_mode, ignored_modes=ignored_modes)
         self.correct_for_fit_error = correct_for_fit_error
-        self.max_viscosity = max_viscosity
 
     def op_template_struct(self, u=None):
         from hedge.optemplate import Field
@@ -469,8 +474,9 @@ class DecayGatingDiscontinuitySensorBase(
             return IfPositive(-pi/2-x,
                     -1, IfPositive(x-pi/2, 1, sin(x)))
 
-        result.sensor = \
-                0.5*self.max_viscosity*(1+flat_end_sin((decay_expt+2)*pi/2))
+        result.sensor = (
+                0.5*Field("viscosity_scaling")
+                * (1+flat_end_sin((decay_expt+2)*pi/2)))
         return result
 
     def bind(self, discr):
@@ -524,14 +530,14 @@ class ElementwiseCodeExecutor:
                 Value("numpy_vector<value_type>", "result"),
                 ]+self.get_extra_parameter_declarators()),
             Block([
-                Typedef(Value("numpy_vector<value_type>::iterator", 
+                Typedef(Value("numpy_vector<value_type>::iterator",
                     "it_type")),
-                Typedef(Value("numpy_vector<value_type>::const_iterator", 
+                Typedef(Value("numpy_vector<value_type>::const_iterator",
                     "cit_type")),
                 Line(),
-                Initializer(Value("it_type", "result_it"), 
+                Initializer(Value("it_type", "result_it"),
                     "result.begin()"),
-                Initializer(Value("cit_type", "field_it"), 
+                Initializer(Value("cit_type", "field_it"),
                     "field.begin()"),
                 Line() ]+self.get_extra_preamble()+[ Line(),
                 CustomLoop(
@@ -600,10 +606,10 @@ class SkylineModeProcessor(ElementwiseCodeExecutor):
     def get_extra_preamble(self):
         from codepy.cgen import Initializer, Value, POD, Statement
         return [
-                Initializer(Value("numpy_array<npy_uint32>::const_iterator", 
-                    "mode_degrees_iterator"), 
+                Initializer(Value("numpy_array<npy_uint32>::const_iterator",
+                    "mode_degrees_iterator"),
                     "mode_degrees.begin()"),
-                Initializer(POD(numpy.uint32, "mode_count"), 
+                Initializer(POD(numpy.uint32, "mode_count"),
                     "mode_degrees.size()"),
                 Statement("boost::scoped_array<value_type> reduced_modes"
                     "(new value_type[max_degree+1])"),
@@ -638,7 +644,7 @@ class SkylineModeProcessor(ElementwiseCodeExecutor):
                     "reduced_modes.get()"),
                 Initializer(Pointer(Value("value_type", "end")),
                     "start+max_degree+1"),
-                Initializer(Value("value_type", "cur_max"), 
+                Initializer(Value("value_type", "cur_max"),
                     "std::max(*(end-1), *(end-2))"),
 
                 Line(),
@@ -673,9 +679,9 @@ class AveragingModeProcessor(ElementwiseCodeExecutor):
                 Initializer(Value("cit_type", "cur"), "start"),
                 While("cur != end",
                     Block([
-                        Initializer(Value("cit_type", "avg_start"), 
+                        Initializer(Value("cit_type", "avg_start"),
                             "std::max(start, cur-1)"),
-                        Initializer(Value("cit_type", "avg_end"), 
+                        Initializer(Value("cit_type", "avg_end"),
                             "std::min(end, cur+2)"),
 
                         S("*tgt++ = std::accumulate(avg_start, avg_end, value_type(0))"
@@ -686,6 +692,23 @@ class AveragingModeProcessor(ElementwiseCodeExecutor):
                 ]
 
 # }}}
+
+
+
+
+# {{{ make h/n vector
+def make_h_over_n_vector(discr):
+    result = discr.volume_zeros()
+
+    for eg in discr.element_groups:
+        for el, rng in zip(eg.members, eg.ranges):
+            bbox_min, bbox_max = el.bounding_box(discr.mesh.points)
+            h = numpy.max(bbox_max-bbox_min)
+            result[rng] = h/(eg.local_discretization.order)
+
+    return result
+
+
 
 
 
