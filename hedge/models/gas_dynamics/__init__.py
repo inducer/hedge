@@ -148,6 +148,22 @@ class GasDynamicsOperator(TimeDependentOperator):
         return (self.gamma-1)*(
                 self.e(q) - 0.5*numpy.dot(self.rho_u(q), self.u(q)))
 
+    def cse_u(self, q):
+        from hedge.tools.symbolic import make_common_subexpression as cse
+        return cse(self.u(q), "u")
+
+    def cse_rho(self, q):
+        from hedge.tools.symbolic import make_common_subexpression as cse
+        return cse(self.rho(q), "rho")
+
+    def cse_rho_u(self, q):
+        from hedge.tools.symbolic import make_common_subexpression as cse
+        return cse(self.rho_u(q), "rho_u")
+
+    def cse_p(self, q):
+        from hedge.tools.symbolic import make_common_subexpression as cse
+        return cse(self.p(q), "p")
+
     def temperature(self, q):
         c_v = 1 / (self.gamma - 1) *self.spec_gas_const
         return (self.e(q)/self.rho(q) - 0.5 * numpy.dot(self.u(q), self.u(q))) / c_v
@@ -180,6 +196,33 @@ class GasDynamicsOperator(TimeDependentOperator):
                self.p(q),
                self.u(q))
 
+    def characteristic_velocity_optemplate(self, state):
+        from hedge.optemplate.operators import ElementwiseMaxOperator
+        from hedge.tools.symbolic import make_common_subexpression as cse
+
+        from hedge.optemplate.primitives import CFunction
+        sqrt = CFunction("sqrt")
+
+        sound_speed = cse(sqrt(
+            self.gamma*self.cse_p(state)/self.cse_rho(state)),
+            "sound_speed")
+        u = self.cse_u(state)
+        speed = cse(sqrt(numpy.dot(u, u)), "norm_u") + sound_speed
+        return ElementwiseMaxOperator()(speed)
+
+    def bind_characteristic_velocity(self, discr):
+        from hedge.optemplate.tools import make_vector_field
+        state = make_vector_field("q", self.dimensions+2)
+
+        from hedge.optemplate import Field
+        compiled = discr.compile(
+                self.characteristic_velocity_optemplate(state))
+
+        def do(q):
+            return compiled(q=q)
+
+        return do
+
     # }}}
 
     # {{{ operator template ---------------------------------------------------
@@ -194,17 +237,10 @@ class GasDynamicsOperator(TimeDependentOperator):
         AXES = ["x", "y", "z", "w"]
 
         # {{{ cse'd conversions and helpers
-        def u(q):
-            return cse(self.u(q), "u")
-
-        def rho(q):
-            return cse(self.rho(q), "rho")
-
-        def rho_u(q):
-            return cse(self.rho_u(q), "rho_u")
-
-        def p(q):
-            return cse(self.p(q), "p")
+        u = self.cse_u
+        rho = self.cse_rho
+        rho_u = self.rho_u
+        p = self.p
 
         def temperature(q):
             return cse(self.temperature(q), "temperature")
@@ -475,8 +511,7 @@ class GasDynamicsOperator(TimeDependentOperator):
         from hedge.optemplate.primitives import CFunction
         sqrt = CFunction("sqrt")
 
-        sound_speed = cse(sqrt(self.gamma*p(state)/self.rho(state)), "sound_speed")
-        speed = cse(sqrt(numpy.dot(u(state), u(state))), "norm_u") + sound_speed
+        speed = self.characteristic_velocity_optemplate(state)
 
         has_viscosity = not is_zero(get_mu(state, to_quad_op=None))
         # }}}
