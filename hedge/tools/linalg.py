@@ -143,3 +143,31 @@ def unit_vector(n, i, dtype=None):
 
 
 
+def make_swizzle_matrix(spec):
+    axes = ["x", "y", "z"]
+
+    mapping = dict((axis, axis) for axis in axes)
+    for one_spec in spec.split(","):
+        import_axis, final_axis = one_spec.split(":")
+        mapping[import_axis] = final_axis
+
+    assert set(mapping.keys()) == set(axes), \
+            "axis mapping not complete"
+    assert set(axis.lstrip("-") for axis in mapping.itervalues()) == set(axes), \
+            "Axis mapping not onto"
+
+    n = len(axes)
+    result = numpy.zeros((n, n), dtype=int)
+
+    for imp_axis, final_axis in mapping.iteritems():
+        imp_axis = axes.index(imp_axis)
+
+        sign = 1
+        while final_axis.startswith("-"):
+            sign *= -1
+            final_axis = final_axis[1:]
+        final_axis = axes.index(final_axis)
+
+        result[final_axis, imp_axis] = sign
+
+    return result
