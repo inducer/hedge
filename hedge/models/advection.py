@@ -26,12 +26,14 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 import numpy
 import numpy.linalg as la
 
-from hedge.models import HyperbolicOperator
 import hedge.data
+from hedge.models import HyperbolicOperator
+from hedge.second_order import CentralSecondDerivative
 
 
 
 
+# {{{ constant-coefficient advection ------------------------------------------
 class AdvectionOperatorBase(HyperbolicOperator):
     flux_types = [
             "central",
@@ -174,9 +176,12 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
                     + flux_op(BoundaryPair(u, bc_out, self.outflow_tag))
                     )
 
+# }}}
 
 
 
+
+# {{{ variable-coefficient advection ------------------------------------------
 
 class VariableCoefficientAdvectionOperator(HyperbolicOperator):
     """A class for space- and time-dependent DG-advection operators.
@@ -186,7 +191,9 @@ class VariableCoefficientAdvectionOperator(HyperbolicOperator):
     `bc_u_f` is a callable expecting `(x, t)` representing space and time,
     and returning an 1-dimensional vector representing the state on the boundary.
     Both `advec_v` and `bc_u_f` conform to the
-    `hedge.data.ITimeDependentGivenFunction` interface.
+    :class:`hedge.data.ITimeDependentGivenFunction` interface.
+
+    Optionally allows diffusion.
     """
 
     flux_types = [
@@ -199,13 +206,17 @@ class VariableCoefficientAdvectionOperator(HyperbolicOperator):
             dimensions,
             advec_v,
             bc_u_f="None",
-            flux_type="central"
-            ):
+            flux_type="central",
+            diffusion_coeff=None,
+            diffusion_scheme=CentralSecondDerivative()):
         self.dimensions = dimensions
         self.advec_v = advec_v
         self.bc_u_f = bc_u_f
         self.flux_type = flux_type
+        self.diffusion_coeff = diffusion_coeff
+        self.diffusion_scheme = diffusion_scheme
 
+    # {{{ flux ----------------------------------------------------------------
     def flux(self):
         from hedge.flux import (
                 make_normal,
@@ -240,17 +251,13 @@ class VariableCoefficientAdvectionOperator(HyperbolicOperator):
                         ))
         else:
             raise ValueError, "invalid flux type"
+    # }}}
 
     def op_template(self):
-        from hedge.optemplate import \
-                Field, \
-                BoundaryPair, \
-                get_flux_operator, \
-                make_stiffness_t, \
-                InverseMassOperator,\
-                make_vector_field, \
-                ElementwiseMaxOperator, \
-                BoundarizeOperator
+        # {{{ operator preliminaries ------------------------------------------
+        from hedge.optemplate import (Field, BoundaryPair, get_flux_operator,
+                make_stiffness_t, InverseMassOperator, make_vector_field, 
+                ElementwiseMaxOperator, BoundarizeOperator)
 
         from hedge.tools.symbolic import make_common_subexpression as cse
 
@@ -272,8 +279,9 @@ class VariableCoefficientAdvectionOperator(HyperbolicOperator):
         quad_v = cse(to_quad(v))
 
         quad_face_w = to_if_quad(join_fields(u, v, c))
+        # }}}
 
-        # boundary conditions -------------------------------------------------
+        # {{{ boundary conditions ---------------------------------------------
 
         from hedge.mesh import TAG_ALL
         bc_c = to_quad(BoundarizeOperator(TAG_ALL)(c))
@@ -289,11 +297,38 @@ class VariableCoefficientAdvectionOperator(HyperbolicOperator):
         m_inv = InverseMassOperator()
 
         flux_op = get_flux_operator(self.flux())
+        # }}}
 
-        result = m_inv(numpy.dot(minv_st, cse(quad_v*quad_u)) 
+        # {{{ diffusion -------------------------------------------------------
+        if self.diffusion_coeff is not None and self.diffusion_coeff != 0:
+            from hedge.second_order import SecondDerivativeTarget
+
+            # strong_form here allows IPDG to reuse the value of grad u.
+            grad_tgt = SecondDerivativeTarget(
+                    self.dimensions, strong_form=True,
+                    operand=u)
+
+            self.diffusion_scheme.grad(grad_tgt, bc_getter=None,
+                    dirichlet_tags=[], neumann_tags=[])
+
+            div_tgt = SecondDerivativeTarget(
+                    self.dimensions, strong_form=False,
+                    operand=self.diffusion_coeff*grad_tgt.minv_all)
+
+            self.diffusion_scheme.div(div_tgt,
+                    bc_getter=None,
+                    dirichlet_tags=[], neumann_tags=[])
+
+            diffusion_part = div_tgt.minv_all
+        else:
+            diffusion_part = 0
+
+        # }}}
+
+        return m_inv(numpy.dot(minv_st, cse(quad_v*quad_u)) 
                 - (flux_op(quad_face_w) 
-                    + flux_op(BoundaryPair(quad_face_w, bc_w, TAG_ALL))))
-        return result
+                    + flux_op(BoundaryPair(quad_face_w, bc_w, TAG_ALL)))) \
+                            + diffusion_part
 
     def bind(self, discr):
         compiled_op_template = discr.compile(self.op_template())
@@ -322,3 +357,10 @@ class VariableCoefficientAdvectionOperator(HyperbolicOperator):
         from hedge.tools import ptwise_dot
         v = self.advec_v.volume_interpolant(t, discr)
         return discr.nodewise_max(ptwise_dot(1, 1, v, v)**0.5)
+
+# }}}
+
+
+
+
+# vim: foldmethod=marker
