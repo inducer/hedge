@@ -437,10 +437,15 @@ class Discretization(hedge.discretization.Discretization):
                         float_type=default_scalar_type)
 
                 import hedge.backends.cuda.fluxgather as fluxgather
-                from hedge.optemplate.mappers import QuadratureUpsamplerRemover
-                flux_plan, flux_time = fluxgather.make_plan(self, given, 
-                        QuadratureUpsamplerRemover(
-                            self.quad_min_degrees)(tune_for))
+
+                # copy from enclosing scope
+                my_tune_for = tune_for
+                if my_tune_for is not None:
+                    from hedge.optemplate.mappers import QuadratureUpsamplerRemover
+                    my_tune_for = QuadratureUpsamplerRemover(self.quad_min_degrees) \
+                            (tune_for)
+
+                flux_plan, flux_time = fluxgather.make_plan(self, given, my_tune_for)
 
                 # partition mesh, obtain updated plan
                 pdata = self._get_partition_data(
