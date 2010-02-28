@@ -157,7 +157,7 @@ def make_inner_product(sample_vec, rcon=None):
             kernel = rcon.make_inner_product(sample_vec)
 
         if kernel is None:
-            raise RuntimeError("could not find an inner product routine for"
+            raise RuntimeError("could not find an inner product routine for "
                     "the given sample vector")
 
     if sample_is_obj_array:
