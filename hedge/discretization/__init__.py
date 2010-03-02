@@ -1308,7 +1308,7 @@ class Projector:
 
 # }}}
 
-# filter ----------------------------------------------------------------------
+# {{{ filter ------------------------------------------------------------------
 class ExponentialFilterResponseFunction:
     """A typical exponential-falloff mode response filter function.
 
@@ -1350,7 +1350,49 @@ class Filter:
     def __call__(self, f):
         return self.bound_filter_op(f)
 
+# }}}
 
+# {{{ high-precision projection in 1D -----------------------------------------
+def adaptive_project_function_1d(discr, f, dtype=None, kind=None,
+        epsrel=1e-8, epsabs=1e-8):
+    if kind is None:
+        kind = discr.compute_kind
+
+    try:
+        # are we interpolating many fields at once?
+        shape = f.shape
+    except AttributeError:
+        # no, just one
+        shape = ()
+
+    from scipy.integrate import quad
+
+    slice_pfx = (slice(None),) * len(shape)
+    out = discr.volume_empty(shape, dtype, kind="numpy")
+
+    from pytools import indices_in_shape
+    for idx in indices_in_shape(shape):
+        for eg in discr.element_groups:
+            ldis = eg.local_discretization
+            basis = ldis.basis_functions()
+
+            for el, el_slice in zip(eg.members, eg.ranges):
+                a = discr.nodes[el_slice.start][0]
+                b = discr.nodes[el_slice.stop-1][0]
+                el_result = numpy.dot(
+                        ldis.vandermonde(),
+                        el.inverse_map.jacobian()*numpy.array([
+                            quad(func=lambda x: 
+                                basis_func(el.inverse_map(numpy.array([x])))
+                                * numpy.asarray(f(numpy.array([x]), el))[idx], a=a, b=b,
+                                epsrel=epsrel, epsabs=epsabs)[0]
+                            for i, basis_func in enumerate(basis)]))
+
+                out[idx + (el_slice,)] = el_result
+
+    return discr.convert_volume(out, kind=kind)
+
+# }}}
 
 
 # vim: foldmethod=marker

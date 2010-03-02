@@ -46,7 +46,6 @@ def make_squaremesh():
     obstacle_corners = points[:]
 
     from meshpy.geometry import GeometryBuilder, Marker
-    from meshpy.triangle import write_gnuplot_mesh
 
     profile_marker = Marker.FIRST_USER_MARKER
     builder = GeometryBuilder()
@@ -68,6 +67,7 @@ def make_squaremesh():
 
     print "%d elements" % len(mesh.elements)
 
+    from meshpy.triangle import write_gnuplot_mesh
     write_gnuplot_mesh("mesh.dat", mesh)
 
     fvi2fm = mesh.face_vertex_indices_to_face_marker
