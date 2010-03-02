@@ -28,6 +28,7 @@
 #include <boost/math/special_functions/gamma.hpp>
 #include <vector>
 #include <cmath>
+#include <limits>
 #include <iostream>
 #include "base.hpp"
 
@@ -163,6 +164,10 @@ namespace hedge {
         double r = x[0];
         double s = x[1];
 
+        // yuck
+        if (s >= 1)
+          s = 1-std::numeric_limits<double>::epsilon();
+
         double a;
         if (1-s != 0)
           a = 2*(1+r)/(1-s)-1;
@@ -265,7 +270,7 @@ namespace hedge {
         if ((s+t) != 0)
           a = -2*(1+r)/(s+t) - 1;
         else
-            a = -1;
+          a = -1;
 
         double b;
         if ((1-t) != 0)
@@ -290,38 +295,41 @@ namespace hedge {
 
         double tmp, V3Dr, V3Ds, V3Dt;
 
+        double one_b = 1-b;
+        double one_c = 1-c;
+
         // r-derivative
         V3Dr = dfa*(gb*hc);
         if (id>0)    
-          V3Dr = V3Dr*pow(0.5*(1-b), id-1);
+          V3Dr = V3Dr*pow(0.5*one_b, id-1);
         if (id+jd>0) 
-          V3Dr = V3Dr*pow(0.5*(1-c), id+jd-1);
+          V3Dr = V3Dr*pow(0.5*one_c, id+jd-1);
 
         // s-derivative 
         V3Ds = 0.5*(1+a)*V3Dr;
-        tmp = dgb*pow(0.5*(1-b), id);
+        tmp = dgb*pow(0.5*one_b, id);
         if (id>0)
-          tmp = tmp+(-0.5*id)*(gb*pow(0.5*(1-b), id-1));
+          tmp = tmp+(-0.5*id)*(gb*pow(0.5*one_b, id-1));
         if (id+jd>0) 
-          tmp = tmp*(pow(0.5*(1-c), id+jd-1));
+          tmp = tmp*(pow(0.5*one_c, id+jd-1));
         tmp = fa*(tmp*hc);
         V3Ds = V3Ds+tmp;
 
         // t-derivative 
         V3Dt = 0.5*(1+a)*V3Dr+0.5*(1+b)*tmp;
-        tmp = dhc*pow(0.5*(1-c), id+jd);
+        tmp = dhc*pow(0.5*one_c, id+jd);
         if (id+jd>0)
-            tmp = tmp-0.5*(id+jd)*(hc*pow(0.5*(1-c), id+jd-1));
+            tmp = tmp-0.5*(id+jd)*(hc*pow(0.5*one_c, id+jd-1));
         tmp = fa*(gb*tmp);
-        tmp = tmp*pow(0.5*(1-b), id);
+        tmp = tmp*pow(0.5*one_b, id);
         V3Dt = V3Dt+tmp;
 
         // normalize
         return boost::make_tuple(
-         V3Dr*pow(2, 2*id+jd+1.5),
-         V3Ds*pow(2, 2*id+jd+1.5),
-         V3Dt*pow(2, 2*id+jd+1.5)
-         );
+            V3Dr*pow(2, 2*id+jd+1.5),
+            V3Ds*pow(2, 2*id+jd+1.5),
+            V3Dt*pow(2, 2*id+jd+1.5)
+            );
       }
 
 

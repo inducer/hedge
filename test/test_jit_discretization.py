@@ -168,7 +168,7 @@ def test_tri_diff_mat():
                 #[("f", f), ("df", df), ("df_num", df_num), ("error", error)])
 
         linf_error = la.norm(df_num-df, numpy.Inf)
-        #print linf_error
+        print linf_error
         assert linf_error < 3e-5
 
 

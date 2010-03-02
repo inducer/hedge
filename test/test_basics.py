@@ -22,6 +22,7 @@ from __future__ import division
 
 import numpy
 import numpy.linalg as la
+import pytools.test
 
 
 
@@ -142,6 +143,7 @@ class MultirateTimesteperAccuracyChecker:
 
 
 
+@pytools.test.mark_test.long
 def test_multirate_timestep_accuracy():
     """Check that the multirate timestepper has the advertised accuracy"""
 
@@ -161,6 +163,7 @@ def test_multirate_timestep_accuracy():
 
 
 
+@pytools.test.mark_test.long
 def test_timestep_accuracy():
     """Check that all timesteppers have the advertised accuracy"""
     from math import sqrt, log, sin, cos
