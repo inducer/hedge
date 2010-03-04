@@ -102,15 +102,18 @@ def legendre_vandermonde(points, N):
 
 
 
-def monomial_vdm(levels):
+def monomial_vdm(points, max_degree=None):
     class Monomial:
         def __init__(self, expt):
             self.expt = expt
         def __call__(self, x):
             return x**self.expt
 
-    return generic_vandermonde(levels,
-            [Monomial(i) for i in range(len(levels))])
+    if max_degree is None:
+        max_degree = len(points)-1
+
+    return generic_vandermonde(points,
+            [Monomial(i) for i in range(max_degree+1)])
 
 
 
