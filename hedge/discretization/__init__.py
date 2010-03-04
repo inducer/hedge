@@ -1032,13 +1032,12 @@ class Discretization(TimestepCalculator):
     def norm(self, volume_vector, p=2):
         if p == numpy.Inf:
             return numpy.abs(volume_vector).max()
-        else:
-            if p != 2:
-                volume_vector = numpy.abs(volume_vector) ** (p / 2)
-
+        elif p == 2:
             return self.inner_product(
                     volume_vector,
                     volume_vector) ** (1 / p)
+        else:
+            return self.integral(numpy.abs(volume_vector) ** p)**(1/p)
 
     def inner_product(self, a, b):
         mass_op = self._compiled_mass_operator()
@@ -1290,19 +1289,25 @@ class Projector:
         from hedge.tools import log_shape
 
         ls = log_shape(from_vec)
-        result = self.to_discr.volume_zeros(ls, kind="numpy")
+        result = numpy.empty(shape=ls, dtype=object)
 
         from pytools import indices_in_shape
         for i in indices_in_shape(ls):
+            result_i = self.to_discr.volume_zeros(kind="numpy")
+            result[i] = result_i
+
             for from_eg, to_eg, imat in zip(
                     self.from_discr.element_groups,
                     self.to_discr.element_groups,
                     self.interp_matrices):
                 perform_elwise_operator(
                         from_eg.ranges, to_eg.ranges,
-                        imat, from_vec[i], result[i])
+                        imat, from_vec[i], result_i)
 
-        return result
+        if ls == ():
+            return result[()]
+        else:
+            return result
 
 
 
