@@ -229,6 +229,8 @@ class Dumka3TimeStepper(object):
                 z1 = lc2((-c_3/(2*normalization),rhs), (1/normalization,z1)) 
 
                 next_dt, retry_step = self.compute_new_step_size(z1, dt)
+                if t + next_dt == t:
+                    raise RuntimeError("stepsize underflow")
 
                 if retry_step:
                     y = start_y
@@ -250,11 +252,10 @@ class Dumka3TimeStepper(object):
     def compute_new_step_size(self, z, dt):
         from hedge.tools import count_dofs
         eps = numpy.sqrt(self.ip(z, z)/count_dofs(z))
-
-        fracmin = 0.1
         if eps == 0:
            eps = 1e-14
 
+        fracmin = 0.1
         frac = (1/eps)**(1/3)
 
         rejected = numpy.isnan(eps) or eps > 1
