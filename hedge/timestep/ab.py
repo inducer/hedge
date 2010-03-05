@@ -130,8 +130,8 @@ class AdamsBashforthTimeStepper(TimeStepper):
         if startup_stepper is not None:
             self.startup_stepper = startup_stepper
         else:
-            from hedge.timestep.rk4 import RK4TimeStepper
-            self.startup_stepper = RK4TimeStepper()
+            from hedge.timestep.runge_kutta import LSRK4TimeStepper
+            self.startup_stepper = LSRK4TimeStepper()
 
     def get_stability_relevant_init_args(self):
         return (self.order, self.startup_stepper)

@@ -23,7 +23,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 
-from hedge.timestep.rk4 import RK4TimeStepper
+from hedge.timestep.runge_kutta import RK4TimeStepper, LSRK4TimeStepper
 from hedge.timestep.ab import AdamsBashforthTimeStepper
 from hedge.timestep.ssprk3 import SSPRK3TimeStepper
 

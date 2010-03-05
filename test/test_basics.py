@@ -195,10 +195,10 @@ def test_timestep_accuracy():
 
         return abs(y[0]-soln(t))
 
-    def verify_timestep_order(stepper_getter, order, setup=None):
+    def verify_timestep_order(stepper_getter, order, setup=None, dtmul=1):
         eocrec = EOCRecorder()
         for n in range(4,9):
-            dt = 2**(-n)
+            dt = 2**(-n) * dtmul
             stepper = stepper_getter()
             if setup is not None:
                 setup(stepper, dt)
@@ -206,9 +206,8 @@ def test_timestep_accuracy():
             error = get_error(stepper,dt)
             eocrec.add_data_point(1/dt, error)
 
-        print stepper
         print "------------------------------------------------------"
-        print "ORDER %d" % order
+        print "ORDER %d, %s" % (order, stepper)
         print "------------------------------------------------------"
         print eocrec.pretty_print()
 
@@ -216,19 +215,26 @@ def test_timestep_accuracy():
         #print orderest, order
         assert orderest > order*0.95
 
-    from hedge.timestep.rk4 import RK4TimeStepper
+    from hedge.timestep.runge_kutta import (
+            LSRK4TimeStepper,
+            ODE23TimeStepper,
+            ODE45TimeStepper)
     from hedge.timestep.ab import AdamsBashforthTimeStepper
     from hedge.timestep.ssprk3 import SSPRK3TimeStepper
     from hedge.timestep.dumka3 import Dumka3TimeStepper
 
-    if False:
-        for o in range(1,5):
-            verify_timestep_order(lambda : AdamsBashforthTimeStepper(o), o)
-        verify_timestep_order(RK4TimeStepper, 4)
-        verify_timestep_order(SSPRK3TimeStepper, 3)
+    verify_timestep_order(lambda: ODE45TimeStepper(True), 5, dtmul=2**5)
+    verify_timestep_order(lambda: ODE45TimeStepper(False), 4)
+    verify_timestep_order(lambda: ODE23TimeStepper(True), 3, dtmul=2**3)
+    verify_timestep_order(lambda: ODE23TimeStepper(False), 2)
+    for o in [1,4]:
+        verify_timestep_order(lambda : AdamsBashforthTimeStepper(o), o)
+    verify_timestep_order(LSRK4TimeStepper, 4)
+    verify_timestep_order(SSPRK3TimeStepper, 3)
+    verify_timestep_order(SSPRK3TimeStepper, 3)
 
-    for pol_index in range(Dumka3TimeStepper.POLYNOMIAL_COUNT):
-        print pol_index
+    for pol_index in [2,3,4]:
+        assert pol_index < Dumka3TimeStepper.POLYNOMIAL_COUNT
         def setup_dumka(stepper, dt):
             stepper.setup(eigenvalue_estimate=1, dt=dt, pol_index=pol_index)
 
