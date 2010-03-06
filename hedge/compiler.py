@@ -215,11 +215,11 @@ class QuadratureDiffBatchAssign(DiffBatchAssign):
 class FluxExchangeBatchAssign(Instruction):
     __slots__ = [
             "names", "indices_and_ranks",
-            "rank_to_index_and_name", "field"]
+            "rank_to_index_and_name", "arg_fields"]
 
     priority = 1
 
-    def __init__(self, names, indices_and_ranks, field, dep_mapper_factory):
+    def __init__(self, names, indices_and_ranks, arg_fields, dep_mapper_factory):
         rank_to_index_and_name = {}
         for name, (index, rank) in zip(
                 names, indices_and_ranks):
@@ -230,14 +230,18 @@ class FluxExchangeBatchAssign(Instruction):
                 names=names,
                 indices_and_ranks=indices_and_ranks,
                 rank_to_index_and_name=rank_to_index_and_name,
-                field=field,
+                arg_fields=arg_fields,
                 dep_mapper_factory=dep_mapper_factory)
 
     def get_assignees(self):
         return set(self.names)
 
     def get_dependencies(self):
-        return self.dep_mapper_factory()(self.field)
+        dep_mapper = self.dep_mapper_factory()
+        result = set()
+        for fld in self.arg_fields:
+            result |= dep_mapper(fld)
+        return result
 
     def __str__(self):
         lines = []
@@ -245,7 +249,7 @@ class FluxExchangeBatchAssign(Instruction):
         lines.append("{")
         for n, (index, rank) in zip(self.names, self.indices_and_ranks):
             lines.append("  %s <- receive index %s from rank %d [%s]" % (
-                n, index, rank, self.field))
+                n, index, rank, self.arg_fields))
         lines.append("}")
 
         return "\n".join(lines)
@@ -557,9 +561,8 @@ class OperatorCompilerBase(IdentityMapper):
         return BoundOperatorCollector(DiffOperatorBase)(expr)
 
     def collect_flux_exchange_ops(self, expr):
-        from hedge.optemplate import FluxExchangeOperator
-        from hedge.optemplate.mappers import BoundOperatorCollector
-        return BoundOperatorCollector(FluxExchangeOperator)(expr)
+        from hedge.optemplate.mappers import FluxExchangeCollector
+        return FluxExchangeCollector()(expr)
 
     # }}}
 
@@ -710,8 +713,6 @@ class OperatorCompilerBase(IdentityMapper):
 
         if isinstance(expr.op, DiffOperatorBase):
             return self.map_diff_op_binding(expr)
-        elif isinstance(expr.op, FluxExchangeOperator):
-            return self.map_flux_exchange_op_binding(expr)
         elif isinstance(expr.op, FluxOperatorBase):
             raise RuntimeError("OperatorCompiler encountered a flux operator.\n\n"
                     "We are expecting flux operators to be converted to custom "
@@ -781,14 +782,14 @@ class OperatorCompilerBase(IdentityMapper):
 
             return self.expr_to_var[expr]
 
-    def map_flux_exchange_op_binding(self, expr):
+    def map_flux_exchange(self, expr):
         try:
             return self.expr_to_var[expr]
         except KeyError:
             from hedge.tools import is_field_equal
             all_flux_xchgs = [fe
                     for fe in self.flux_exchange_ops
-                    if is_field_equal(fe.field, expr.field)]
+                    if is_field_equal(fe.arg_fields, expr.arg_fields)]
 
             assert len(all_flux_xchgs) > 0
 
@@ -798,12 +799,9 @@ class OperatorCompilerBase(IdentityMapper):
                     FluxExchangeBatchAssign(
                         names=names,
                         indices_and_ranks=[
-                            (fe.op.index, fe.op.rank)
+                            (fe.index, fe.rank)
                             for fe in all_flux_xchgs],
-                        field=self.rec(
-                            single_valued(
-                                (fe.field for fe in all_flux_xchgs),
-                                equality_pred=is_field_equal)),
+                        arg_fields=[self.rec(arg_field) for arg_field in fe.arg_fields],
                         dep_mapper_factory=self.dep_mapper_factory))
 
             from pymbolic import var

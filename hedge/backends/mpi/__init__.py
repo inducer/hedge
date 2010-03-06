@@ -258,21 +258,17 @@ def make_custom_exec_mapper_class(superclass):
         def exec_flux_exchange_batch_assign(self, insn):
             pdiscr = self.discr.parallel_discr
 
-            from hedge.tools import log_shape
+            from pytools.obj_array import make_obj_array
 
-            field = self.rec(insn.field)
-            shape = log_shape(field)
+            arg_fields = make_obj_array(
+                    [self.rec(fld) for fld in insn.arg_fields])
 
             if self.discr.instrumented:
-                if len(shape):
-                    pdiscr.comm_flux_counter.add(len(pdiscr.neighbor_ranks)*shape[0])
-                else:
-                    pdiscr.comm_flux_counter.add(len(pdiscr.neighbor_ranks))
-
+                pdiscr.comm_flux_counter.add(len(pdiscr.neighbor_ranks)*len(arg_fields))
             return ([],
-                    [BoundarizeSendFuture(pdiscr, rank, field)
+                    [BoundarizeSendFuture(pdiscr, rank, arg_fields)
                         for rank in pdiscr.neighbor_ranks]
-                    + [ReceiveCompletionFuture(pdiscr, shape, rank,
+                    + [ReceiveCompletionFuture(pdiscr, arg_fields.shape, rank,
                         insn.rank_to_index_and_name[rank])
                         for rank in pdiscr.neighbor_ranks])
 
@@ -304,32 +300,31 @@ class FluxCommunicationInserter(
                     return IdentityMapper.map_operator_binding(self, expr)
 
                 # by now we've narrowed it down to a bound interior flux
-                from pymbolic.primitives import \
-                        flattened_sum, \
-                        CommonSubexpression
 
-                def func_and_cse(func, arg_fields):
+                def func_on_scalar_or_vector(func, arg_fields):
+                    # No CSE necessary here--the compiler CSE's these
+                    # automatically.
+
                     from hedge.tools import is_obj_array, make_obj_array
                     if is_obj_array(arg_fields):
+                        # arg_fields (as an object array) isn't hashable
+                        # --make it so by turning it into a tuple
+                        arg_fields = tuple(arg_fields)
+
                         return make_obj_array([
-                            CommonSubexpression(
-                                OperatorBinding(
-                                    func(i),
-                                    arg_fields))
-                                for i in range(len(arg_fields))])
+                            func(i, arg_fields)
+                            for i in range(len(arg_fields))])
                     else:
-                        return CommonSubexpression(
-                                OperatorBinding(
-                                    func(()),
-                                    arg_fields))
+                        return func(0, (arg_fields,))
 
                 from hedge.mesh import TAG_RANK_BOUNDARY
 
                 def exchange_and_cse(rank):
-                    return func_and_cse(
-                            lambda i: FluxExchangeOperator(i, rank),
+                    return func_on_scalar_or_vector(
+                            lambda i, args: FluxExchangeOperator(i, rank, args),
                             expr.field)
 
+                from pymbolic.primitives import flattened_sum
                 return flattened_sum([expr]
                     + [OperatorBinding(expr.op, BoundaryPair(
                         expr.field,
