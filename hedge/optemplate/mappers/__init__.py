@@ -507,7 +507,9 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
         return "Boundarize<tag=%s>" % expr.tag
 
     def map_flux_exchange(self, expr, enclosing_prec):
-        return "FExch<idx=%s,rank=%d>" % (expr.index, expr.rank)
+        from pymbolic.mapper.stringifier import PREC_NONE
+        return "FExch<idx=%s,rank=%d>(%s)" % (expr.index, expr.rank,
+                ", ".join(self.rec(arg, PREC_NONE) for arg in expr.arg_fields))
 
     def map_normal_component(self, expr, enclosing_prec):
         return "Normal<tag=%s>[%d]" % (expr.tag, expr.axis)
@@ -879,6 +881,11 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
                             "To the best of my knowledge, no hedge operator applies "
                             "directly to boundary data, so this is likely in error."
                             % expr.op)
+
+            def map_flux_exchange(self, expr):
+                return FieldComponent(
+                        self.register_boundary_expr(expr),
+                        is_interior=False)
             # }}}
 
         from hedge.tools import is_obj_array
@@ -1412,6 +1419,13 @@ class BoundOperatorCollector(CSECachingMapperMixin, CollectorMixin, CombineMappe
             result.update(self.rec(bi.bpair.bfield))
 
         return result
+
+class FluxExchangeCollector(CSECachingMapperMixin, CollectorMixin, CombineMapper):
+    map_common_subexpression_uncached = \
+            CombineMapper.map_common_subexpression
+
+    def map_flux_exchange(self, expr):
+        return set([expr])
 
 # }}}
 # {{{ evaluation --------------------------------------------------------------

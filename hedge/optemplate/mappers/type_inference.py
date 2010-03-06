@@ -584,7 +584,15 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
             with_object_array_or_scalar(process_bdry_flux_arg, bpair.bfield)
 
         return type_info.VolumeVector(NodalRepresentation())
-        raise NotImplementedError
+
+    def map_flux_exchange(self, expr, typedict):
+        for arg in expr.arg_fields:
+            typedict[arg] = type_info.VolumeVector(NodalRepresentation())
+
+        from hedge.mesh import TAG_RANK_BOUNDARY
+        return type_info.BoundaryVector(
+                TAG_RANK_BOUNDARY(expr.rank),
+                NodalRepresentation())
 
     def map_constant(self, expr, typedict):
         return type_info.Scalar().unify(typedict[expr], expr)

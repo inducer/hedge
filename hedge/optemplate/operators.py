@@ -404,22 +404,32 @@ class BoundarizeOperator(Operator):
 
 
 
-class FluxExchangeOperator(Operator):
+class FluxExchangeOperator(pymbolic.primitives.AlgebraicLeaf):
     """An operator that results in the sending and receiving of
     boundary information for its argument fields.
     """
 
-    def __init__(self, idx, rank):
+    def __init__(self, idx, rank, arg_fields):
         self.index = idx
         self.rank = rank
+        self.arg_fields = arg_fields
+
+        # only tuples are hashable
+        if not isinstance(arg_fields, tuple):
+            raise TypeError("FluxExchangeOperator: arg_fields must be a tuple")
 
     def __getinitargs__(self):
-        return (self.index, self.rank)
+        return (self.index, self.rank, self.arg_fields)
+
+    def get_hash(self):
+        return hash((self.__class__, self.index, self.rank, self.arg_fields))
 
     def get_mapper_method(self, mapper):
         return mapper.map_flux_exchange
 
-
+    def is_equal(self, other):
+        return self.__class__ == other.__class__ and \
+                self.__getinitargs__() == other.__getinitargs__()
 
 # }}}
 
