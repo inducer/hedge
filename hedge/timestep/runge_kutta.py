@@ -243,7 +243,7 @@ class EmbeddedRungeKuttaTimeStepperBase(TimeStepper):
                     y = finish_solution(self.low_order_coeffs)
 
                 self.last_rhs = this_rhs
-                self.flop_counter.add(self.dof_count*flop_count)
+                self.flop_counter.add(self.dof_count*flop_count[0])
                 return y
             else:
                 # {{{ step size adaptation
