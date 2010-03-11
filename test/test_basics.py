@@ -777,7 +777,8 @@ def test_affine_map():
 
 def test_all_periodic_no_boundary():
     """Test that an all-periodic brick has no boundary."""
-    from hedge.mesh import make_box_mesh, TAG_ALL
+    from hedge.mesh import TAG_ALL
+    from hedge.mesh.generator import make_box_mesh
 
     mesh = make_box_mesh(periodicity=(True,True,True))
 
