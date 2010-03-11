@@ -19,6 +19,7 @@ from __future__ import division
 import numpy
 import numpy.linalg as la
 from math import sin, cos, pi, sqrt
+from pytools.test import mark_test
 
 
 
@@ -26,7 +27,7 @@ from math import sin, cos, pi, sqrt
 class ExactTestCase:
     a = 0
     b = 150
-    final_time = 5000
+    final_time = 1000
 
     def u0(self, x):
         return self.u_exact(x, 0)
@@ -56,7 +57,7 @@ class ExactTestCase:
 
         shock_loc = 30*sqrt(2*t+40)/sqrt(120) + t/4 - 10
         shock_win = (shock_loc + 20) // self.b
-        x += shock_win * 150 
+        x += shock_win * 150
 
         x -= 20
 
@@ -91,15 +92,12 @@ class OffCenterStationaryTestCase:
 
 
 
-def main(write_output=True, flux_type_arg="upwind"):
-    from hedge.tools import mem_checkpoint
-    from math import floor
-
-    #case = CenteredStationaryTestCase()
-    #case = OffCenterStationaryTestCase()
-    case = OffCenterMigratingTestCase()
-    #case = ExactTestCase()
-
+def main(write_output=True, flux_type_arg="upwind", 
+        #case = CenteredStationaryTestCase(),
+        #case = OffCenterStationaryTestCase(),
+        #case = OffCenterMigratingTestCase(),
+        case = ExactTestCase(),
+        ):
     from hedge.backends import guess_run_context
     rcon = guess_run_context()
 
@@ -111,8 +109,8 @@ def main(write_output=True, flux_type_arg="upwind"):
         else:
             from hedge.mesh.generator import make_rect_mesh
             print (pi*2)/(11*5*2)
-            mesh = make_rect_mesh((-pi, -1), (pi, 1), 
-                    periodicity=(True, True), 
+            mesh = make_rect_mesh((-pi, -1), (pi, 1),
+                    periodicity=(True, True),
                     subdivisions=(11,5),
                     max_area=(pi*2)/(11*5*2)
                     )
@@ -122,29 +120,19 @@ def main(write_output=True, flux_type_arg="upwind"):
     else:
         mesh_data = rcon.receive_mesh()
 
-    discr = rcon.make_discretization(mesh_data, order=order)
-    vis_discr = rcon.make_discretization(mesh_data, order=30)
-    #vis_discr = discr
+    discr = rcon.make_discretization(mesh_data, order=order,
+            quad_min_degrees={"quad": 3*order})
 
-    from hedge.discretization import Projector
-    vis_proj = Projector(discr, vis_discr)
-
-    from hedge.visualization import VtkVisualizer, SiloVisualizer
     if write_output:
-        vis = SiloVisualizer(vis_discr, rcon)
-        #vis = VtkVisualizer(vis_discr, rcon, "fld")
+        from hedge.visualization import VtkVisualizer
+        vis = VtkVisualizer(discr, rcon, "fld")
 
     # operator setup ----------------------------------------------------------
-    from hedge.data import \
-            ConstantGivenFunction, \
-            TimeConstantGivenFunction, \
-            TimeDependentGivenFunction
-    from hedge.second_order import \
-            LDGSecondDerivative, \
-            CentralSecondDerivative
+    from hedge.second_order import IPDGSecondDerivative
+
     from hedge.models.burgers import BurgersOperator
     op = BurgersOperator(mesh.dimensions,
-            viscosity_scheme=LDGSecondDerivative())
+            viscosity_scheme=IPDGSecondDerivative())
 
     if rcon.is_head_rank:
         print "%d elements" % len(discr.mesh.elements)
@@ -172,40 +160,19 @@ def main(write_output=True, flux_type_arg="upwind"):
     add_simulation_quantities(logmgr)
     discr.add_instrumentation(logmgr)
 
-    from hedge.log import Integral, LpNorm
+    from hedge.log import LpNorm
     u_getter = lambda: u
     logmgr.add_quantity(LpNorm(u_getter, discr, p=1, name="l1_u"))
 
     logmgr.add_watches(["step.max", "t_sim.max", "l1_u", "t_step.max"])
 
     # timestep loop -----------------------------------------------------------
-    mesh_a, mesh_b = mesh.bounding_box()
-    from pytools import product
-    area = product(mesh_b[i] - mesh_a[i] for i in range(mesh.dimensions))
-    h = sqrt(area/len(mesh.elements))
-    from hedge.tools.bad_cell import (
-            PerssonPeraireDiscontinuitySensor,
-            DecayGatingDiscontinuitySensorBase)
-    sensor = DecayGatingDiscontinuitySensorBase(5*h/(order)).bind(discr)
-    sensor2 = PerssonPeraireDiscontinuitySensor(kappa=2,
-            eps0=h/order, s_0=numpy.log10(1/order**4)).bind(discr)
-    decay_alpha = DecayGatingDiscontinuitySensorBase(h/(order)) \
-            .bind_alpha(discr)
-    decay_lmc = DecayGatingDiscontinuitySensorBase(h/(order)) \
-            .bind_lmc(discr)
+    rhs = op.bind(discr)
 
-    rhs = op.bind(discr, sensor=sensor)
-    rhs2 = op.bind(discr, sensor=sensor2)
-
-    from hedge.timestep import RK4TimeStepper
-    from hedge.timestep.dumka3 import Dumka3TimeStepper
-    #stepper = RK4TimeStepper()
-    stepper = Dumka3TimeStepper(3)
-    #stepper = Dumka3TimeStepper(4)
+    from hedge.timestep.runge_kutta import ODE45TimeStepper, LSRK4TimeStepper
+    stepper = ODE45TimeStepper()
 
     stepper.add_instrumentation(logmgr)
-
-    u2 = u.copy()
 
     try:
         from hedge.timestep import times_and_steps
@@ -219,7 +186,7 @@ def main(write_output=True, flux_type_arg="upwind"):
         #stab_fac = 3 # dumka3(4), central
 
         dt = stab_fac*op.estimate_timestep(discr,
-                stepper=RK4TimeStepper(), t=0, fields=u)
+                stepper=LSRK4TimeStepper(), t=0, fields=u)
 
         step_it = times_and_steps(
                 final_time=case.final_time, logmgr=logmgr, max_dt_getter=lambda t: dt)
@@ -230,28 +197,24 @@ def main(write_output=True, flux_type_arg="upwind"):
             if step % 3 == 0 and write_output:
                 if hasattr(case, "u_exact"):
                     extra_fields = [
-                            ("u_exact", 
-                                vis_discr.interpolate_volume_function(
+                            ("u_exact",
+                                discr.interpolate_volume_function(
                                     lambda x, el: case.u_exact(x[0], t)))]
                 else:
                     extra_fields = []
 
                 visf = vis.make_file("fld-%04d" % step)
-                vis.add_data(visf, [ 
-                    ("u_dg", vis_proj(u)), 
-                    #("u_pp", vis_proj(u2)), 
-                    ("sensor_dg", vis_proj(sensor(u))), 
-                    #("sensor_pp", vis_proj(sensor2(u2))), 
-                    ("alpha_u_dg", vis_proj(decay_alpha(u))), 
-                    ("lmc_u_dg", vis_proj(decay_lmc(u))), 
-                    ("modes", 1+numpy.abs(vis_proj(inv_vdm(u)))), 
+                vis.add_data(visf, [
+                    ("u", u),
                     ] + extra_fields,
                     time=t,
                     step=step)
                 visf.close()
 
             u = stepper(u, t, dt, rhs)
-            #u2 = stepper(u2, t, dt, rhs2)
+
+        if isinstance(case, ExactTestCase):
+            assert discr.norm(u, 1) < 50
 
     finally:
         if write_output:
@@ -269,10 +232,7 @@ if __name__ == "__main__":
 
 
 # entry points for py.test ----------------------------------------------------
-def test_advection():
-    from pytools.test import mark_test
-    mark_long = mark_test.long
+@mark_test.long
+def test_stability():
+    main(write_output=False)
 
-    for flux_type in ["upwind", "central", "lf"]:
-        yield "advection with %s flux" % flux_type, \
-                mark_long(main), False, flux_type

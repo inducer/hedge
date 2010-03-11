@@ -216,7 +216,7 @@ class EmbeddedRungeKuttaTimeStepperBase(TimeStepper):
                 else:
                     sub_timer = self.timer.start_sub_timer()
                     args = [(1, y)] + [
-                            (dt*coeff, rhss[i]) for i, coeff in enumerate(coeffs)
+                            (dt*coeff, rhss[j]) for j, coeff in enumerate(coeffs)
                             if coeff]
                     flop_count[0] += len(args)*2
                     sub_y = lcs[len(args)](*args)
@@ -225,6 +225,7 @@ class EmbeddedRungeKuttaTimeStepperBase(TimeStepper):
                     this_rhs = rhs(t + c*dt, sub_y)
 
                 rhss.append(this_rhs)
+
 
             # }}}
 
@@ -242,7 +243,7 @@ class EmbeddedRungeKuttaTimeStepperBase(TimeStepper):
                     y = finish_solution(self.low_order_coeffs)
 
                 self.last_rhs = this_rhs
-                self.flop_counter.add(self.dof_count*flop_count)
+                self.flop_counter.add(self.dof_count*flop_count[0])
                 return y
             else:
                 # {{{ step size adaptation
@@ -266,9 +267,12 @@ class EmbeddedRungeKuttaTimeStepperBase(TimeStepper):
                     # reject step
 
                     last_dt = dt
-                    dt = max(
-                            0.9 * dt * rel_err**(-1/self.low_order),
-                            0.1 * dt)
+                    if not numpy.isnan(rel_err):
+                        dt = max(
+                                0.9 * dt * rel_err**(-1/self.low_order),
+                                0.1 * dt)
+                    else:
+                        dt = 0.1*dt
 
                     if t + dt == t:
                         raise RuntimeError("stepsize underflow")

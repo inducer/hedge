@@ -36,8 +36,8 @@ def approximate_rk4_relative_imag_stability_region(
         stepper_args = stepper.get_stability_relevant_init_args()
         stepper = None
 
-    from hedge.timestep import RK4TimeStepper
-    if stepper_class is None or stepper_class == RK4TimeStepper:
+    from hedge.timestep.runge_kutta import LSRK4TimeStepper
+    if stepper_class is None or stepper_class == LSRK4TimeStepper:
         return 1
     else:
         assert isinstance(stepper_class, type)
@@ -47,9 +47,9 @@ def approximate_rk4_relative_imag_stability_region(
 
         return (approximate_imag_stability_region(
                     stepper_class, *stepper_args)
-                / approximate_imag_stability_region(RK4TimeStepper)
+                / approximate_imag_stability_region(LSRK4TimeStepper)
                 * stepper_class.dt_fudge_factor
-                / RK4TimeStepper.dt_fudge_factor)
+                / LSRK4TimeStepper.dt_fudge_factor)
 
 
 
