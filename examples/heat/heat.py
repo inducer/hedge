@@ -25,7 +25,6 @@ from hedge.tools import Rotation
 
 
 def main(write_output=True) :
-    from hedge.timestep import RK4TimeStepper
     from math import sin, cos, pi, exp, sqrt
     from hedge.data import TimeConstantGivenFunction, \
             ConstantGivenFunction
@@ -59,7 +58,6 @@ def main(write_output=True) :
         mesh_data = rcon.receive_mesh()
 
     discr = rcon.make_discretization(mesh_data, order=3)
-    stepper = RK4TimeStepper()
 
     if write_output:
         from hedge.visualization import  VtkVisualizer
@@ -110,8 +108,6 @@ def main(write_output=True) :
     add_simulation_quantities(logmgr)
     discr.add_instrumentation(logmgr)
 
-    stepper.add_instrumentation(logmgr)
-
     from hedge.log import LpNorm
     u_getter = lambda: u
     logmgr.add_quantity(LpNorm(u_getter, discr, 1, name="l1_u"))
@@ -120,13 +116,23 @@ def main(write_output=True) :
     logmgr.add_watches(["step.max", "t_sim.max", "l2_u", "t_step.max"])
 
     # timestep loop -----------------------------------------------------------
+    from hedge.timestep.runge_kutta import LSRK4TimeStepper, ODE45TimeStepper
+    from hedge.timestep.dumka3 import Dumka3TimeStepper
+    #stepper = LSRK4TimeStepper()
+    stepper = Dumka3TimeStepper(3, rtol=1e-6)
+    #stepper = ODE45TimeStepper(rtol=1e-6)
+    stepper.add_instrumentation(logmgr)
+
     rhs = op.bind(discr)
     try:
+        next_dt = op.estimate_timestep(discr,
+                stepper=LSRK4TimeStepper(), t=0, fields=u)
+
         from hedge.timestep import times_and_steps
         step_it = times_and_steps(
                 final_time=0.1, logmgr=logmgr,
-                max_dt_getter=lambda t: op.estimate_timestep(discr,
-                    stepper=stepper, t=t, fields=u))
+                max_dt_getter=lambda t: next_dt,
+                taken_dt_getter=lambda: taken_dt)
 
         for step, t, dt in step_it:
             if step % 10 == 0 and write_output:
@@ -134,7 +140,8 @@ def main(write_output=True) :
                 vis.add_data(visf, [("u", u), ], time=t, step=step)
                 visf.close()
 
-            u = stepper(u, t, dt, rhs)
+            u, t, taken_dt, next_dt = stepper(u, t, next_dt, rhs)
+            #u = stepper(u, t, dt, rhs)
 
         assert discr.norm(u) < 1
     finally:
