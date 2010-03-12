@@ -82,7 +82,12 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
     for order in [1,2,3,4,5,6]:
         extra_discr_args.setdefault("debug", []).append("cuda_no_plan")
 
+        op = MaxwellOperator(epsilon, mu, \
+                flux_type=flux_type_arg, \
+                bdry_flux_type=bdry_flux_type_arg)
+
         discr = rcon.make_discretization(mesh_data, order=order,
+                tune_for=op.op_template(),
                 **extra_discr_args)
 
         from hedge.visualization import VtkVisualizer
@@ -97,19 +102,15 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
                 kind=discr.compute_kind)
         fields = get_true_field()
 
-        op = MaxwellOperator(epsilon, mu, \
-                flux_type=flux_type_arg, \
-                bdry_flux_type=bdry_flux_type_arg)
-
         if rcon.is_head_rank:
             print "---------------------------------------------"
             print "order %d" % order
             print "---------------------------------------------"
             print "#elements=", len(mesh.elements)
 
-        from hedge.timestep import RK4TimeStepper
-        from hedge.timestep.dumka3 import Dumka3TimeStepper
-        stepper = RK4TimeStepper(dtype=discr.default_scalar_type, rcon=rcon)
+        from hedge.timestep.runge_kutta import LSRK4TimeStepper
+        stepper = LSRK4TimeStepper(dtype=discr.default_scalar_type, rcon=rcon)
+        #from hedge.timestep.dumka3 import Dumka3TimeStepper
         #stepper = Dumka3TimeStepper(3, dtype=discr.default_scalar_type, rcon=rcon)
 
         # diagnostics setup ---------------------------------------------------
