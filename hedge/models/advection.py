@@ -182,16 +182,14 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
 
 
 # {{{ variable-coefficient advection ------------------------------------------
-
 class VariableCoefficientAdvectionOperator(HyperbolicOperator):
-    """A class for space- and time-dependent DG-advection operators.
+    """A class for space- and time-dependent DG advection operators.
 
-    `advec_v` is a callable expecting two arguments `(x, t)` representing space and time,
-    and returning an n-dimensional vector representing the velocity at x.
-    `bc_u_f` is a callable expecting `(x, t)` representing space and time,
-    and returning an 1-dimensional vector representing the state on the boundary.
-    Both `advec_v` and `bc_u_f` conform to the
-    :class:`hedge.data.ITimeDependentGivenFunction` interface.
+    :param advec_v: Adheres to the :class:`hedge.data.ITimeDependentGivenFunction`
+      interfacer and is an n-dimensional vector representing the velocity.
+    :param bc_u_f: Adheres to the :class:`hedge.data.ITimeDependentGivenFunction`
+      interface and is a scalar representing the boundary condition at all
+      boundary faces.
 
     Optionally allows diffusion.
     """
@@ -253,7 +251,23 @@ class VariableCoefficientAdvectionOperator(HyperbolicOperator):
             raise ValueError, "invalid flux type"
     # }}}
 
-    def op_template(self):
+    def bind_characteristic_velocity(self, discr):
+        from hedge.optemplate.operators import (
+                ElementwiseMaxOperator)
+        from hedge.optemplate import make_vector_field
+        velocity_vec = make_vector_field("v", self.dimensions)
+        velocity = ElementwiseMaxOperator()(
+                numpy.dot(velocity_vec, velocity_vec)**0.5)
+
+        from hedge.optemplate import Field
+        compiled = discr.compile(velocity)
+
+        def do(t, u):
+            return compiled(v=self.advec_v.volume_interpolant(t, discr))
+
+        return do
+
+    def op_template(self, with_sensor):
         # {{{ operator preliminaries ------------------------------------------
         from hedge.optemplate import (Field, BoundaryPair, get_flux_operator,
                 make_stiffness_t, InverseMassOperator, make_vector_field, 
@@ -300,7 +314,16 @@ class VariableCoefficientAdvectionOperator(HyperbolicOperator):
         # }}}
 
         # {{{ diffusion -------------------------------------------------------
-        if self.diffusion_coeff is not None and self.diffusion_coeff != 0:
+        if with_sensor or (
+                self.diffusion_coeff is not None and self.diffusion_coeff != 0):
+            if self.diffusion_coeff is None:
+                diffusion_coeff = 0
+            else:
+                diffusion_coeff = self.diffusion_coeff
+
+            if with_sensor:
+                diffusion_coeff += Field("sensor")
+
             from hedge.second_order import SecondDerivativeTarget
 
             # strong_form here allows IPDG to reuse the value of grad u.
@@ -313,7 +336,7 @@ class VariableCoefficientAdvectionOperator(HyperbolicOperator):
 
             div_tgt = SecondDerivativeTarget(
                     self.dimensions, strong_form=False,
-                    operand=self.diffusion_coeff*grad_tgt.minv_all)
+                    operand=diffusion_coeff*grad_tgt.minv_all)
 
             self.diffusion_scheme.div(div_tgt,
                     bc_getter=None,
@@ -330,20 +353,26 @@ class VariableCoefficientAdvectionOperator(HyperbolicOperator):
                     + flux_op(BoundaryPair(quad_face_w, bc_w, TAG_ALL)))) \
                             + diffusion_part
 
-    def bind(self, discr):
-        compiled_op_template = discr.compile(self.op_template())
+    def bind(self, discr, sensor=None):
+        compiled_op_template = discr.compile(
+                self.op_template(with_sensor=sensor is not None))
 
         from hedge.mesh import check_bc_coverage, TAG_ALL
         check_bc_coverage(discr.mesh, [TAG_ALL])
 
         def rhs(t, u):
-            v = self.advec_v.volume_interpolant(t, discr)
+            kwargs = {}
+            if sensor is not None:
+                s = kwargs["sensor"] = sensor(t, u)
 
             if self.bc_u_f is not "None":
-                bc_u = self.bc_u_f.boundary_interpolant(t, discr, tag=TAG_ALL)
-                return compiled_op_template(u=u, v=v, bc_u=bc_u)
-            else:
-                return compiled_op_template(u=u, v=v)
+                kwargs["bc_u"] = \
+                        self.bc_u_f.boundary_interpolant(t, discr, tag=TAG_ALL)
+
+            return compiled_op_template(
+                    u=u,
+                    v=self.advec_v.volume_interpolant(t, discr),
+                    **kwargs)
 
         return rhs
 
