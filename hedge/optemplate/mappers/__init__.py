@@ -1357,6 +1357,18 @@ class CollectorMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     map_quad_int_faces_grid_upsampler = map_constant
     map_quad_bdry_grid_upsampler = map_constant
 
+    def map_whole_domain_flux(self, expr):
+        result = set()
+
+        for ii in expr.interiors:
+            result.update(self.rec(ii.field_expr))
+
+        for bi in expr.boundaries:
+            result.update(self.rec(bi.bpair.field))
+            result.update(self.rec(bi.bpair.bfield))
+
+        return result
+
 
 
 
@@ -1407,18 +1419,6 @@ class BoundOperatorCollector(CSECachingMapperMixin, CollectorMixin, CombineMappe
             result = set()
 
         return result | CombineMapper.map_operator_binding(self, expr)
-
-    def map_whole_domain_flux(self, expr):
-        result = set()
-
-        for ii in expr.interiors:
-            result.update(self.rec(ii.field_expr))
-
-        for bi in expr.boundaries:
-            result.update(self.rec(bi.bpair.field))
-            result.update(self.rec(bi.bpair.bfield))
-
-        return result
 
 class FluxExchangeCollector(CSECachingMapperMixin, CollectorMixin, CombineMapper):
     map_common_subexpression_uncached = \
