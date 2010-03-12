@@ -81,44 +81,39 @@ class NumpyLinearCombiner(object):
 
 
 
-def make_linear_combiner(result_dtype, scalar_dtype, sample_vec, arg_count, rcon=None):
-    """
-    :param result_dtype: dtype of the desired result.
-    :param scalar_dtype: dtype of the scalars.
-    :param sample_vec: must match states and right hand sides in shape, object
-      array composition, and dtypes.
-    :param rcon:
-    :returns: a function that accepts `arg_count` arguments
-      *((factor0, vec0), (factor1, vec1), ...)* and returns
-      `factor0*vec0 + factor1*vec1`.
-    """
-    from hedge.tools import is_obj_array
-    sample_is_obj_array = is_obj_array(sample_vec)
+class CUDALinearCombiner:
+    def __init__(self, result_dtype, scalar_dtype, sample_vec, arg_count):
+        from pycuda.elementwise import get_linear_combination_kernel
+        self.vector_dtype = sample_vec.dtype
+        self.result_dtype = result_dtype
+        self.shape = sample_vec.shape
+        self.block = sample_vec._block
+        self.grid = sample_vec._grid
+        self.mem_size = sample_vec.mem_size
 
-    if sample_is_obj_array:
-        sample_vec = sample_vec[0]
+        self.kernel, _ = get_linear_combination_kernel(
+                arg_count*((False, scalar_dtype, self.vector_dtype),),
+                result_dtype)
 
-    if isinstance(sample_vec, numpy.ndarray) and sample_vec.dtype != object:
-        kernel = NumpyLinearCombiner(result_dtype, scalar_dtype, sample_vec,
-                arg_count)
-    else:
-        kernel = None
-        if rcon is not None:
-            kernel = rcon.make_linear_combiner(result_dtype, scalar_dtype, 
-                    sample_vec, arg_count)
+    def __call__(self, *args):
+        import pycuda.gpuarray as gpuarray
+        result = gpuarray.empty(self.shape, self.result_dtype)
 
-        if kernel is None:
-            from warnings import warn
-            warn("using unoptimized linear combination routine")
-            kernel = UnoptimizedLinearCombiner(result_dtype, scalar_dtype)
+        knl_args = []
+        for fac, vec in args:
+            if vec.dtype != self.vector_dtype:
+                raise TypeError("unexpected vector type in CUDA linear combination")
 
-    if sample_is_obj_array:
-        kernel = ObjectArrayLinearCombinationWrapper(kernel)
+            knl_args.append(fac)
+            knl_args.append(vec.gpudata)
 
-    return kernel
+        knl_args.append(result.gpudata)
+        knl_args.append(self.mem_size)
 
+        self.kernel.set_block_shape(*self.block)
+        self.kernel.prepared_async_call(self.grid, None, *knl_args)
 
-
+        return result
 
 # }}}
 
@@ -141,29 +136,96 @@ class ObjectArrayInnerProductWrapper(object):
 
 
 
-def make_inner_product(sample_vec, rcon=None):
-    from hedge.tools import is_obj_array
-    sample_is_obj_array = is_obj_array(sample_vec)
+# }}}
 
-    if sample_is_obj_array:
-        sample_vec = sample_vec[0]
 
-    if isinstance(sample_vec, numpy.ndarray) and sample_vec.dtype != object:
-        def kernel(a, b):
-            return numpy.dot(a, b)
-    else:
-        kernel = None
-        if rcon is not None:
-            kernel = rcon.make_inner_product(sample_vec)
 
-        if kernel is None:
-            raise RuntimeError("could not find an inner product routine for "
-                    "the given sample vector")
 
-    if sample_is_obj_array:
-        kernel = ObjectArrayInnerProductWrapper(kernel)
+# {{{ backend services --------------------------------------------------------
+class VectorPrimitiveFactory(object):
+    def make_special_linear_combiner(self, result_dtype, scalar_dtype, sample_vec, arg_count):
+        return None
 
-    return kernel
+    def make_linear_combiner(self, result_dtype, scalar_dtype, sample_vec, arg_count):
+        """
+        :param result_dtype: dtype of the desired result.
+        :param scalar_dtype: dtype of the scalars.
+        :param sample_vec: must match states and right hand sides in shape, object
+          array composition, and dtypes.
+        :returns: a function that accepts `arg_count` arguments
+          *((factor0, vec0), (factor1, vec1), ...)* and returns
+          `factor0*vec0 + factor1*vec1`.
+        """
+        from hedge.tools import is_obj_array
+        sample_is_obj_array = is_obj_array(sample_vec)
+
+        if sample_is_obj_array:
+            sample_vec = sample_vec[0]
+
+        if isinstance(sample_vec, numpy.ndarray) and sample_vec.dtype != object:
+            kernel = NumpyLinearCombiner(result_dtype, scalar_dtype, sample_vec,
+                    arg_count)
+        else:
+            kernel = self.make_special_linear_combiner(
+                    result_dtype, scalar_dtype, sample_vec, arg_count)
+
+            if kernel is None:
+                from warnings import warn
+                warn("using unoptimized linear combination routine")
+                kernel = UnoptimizedLinearCombiner(result_dtype, scalar_dtype)
+
+        if sample_is_obj_array:
+            kernel = ObjectArrayLinearCombinationWrapper(kernel)
+
+        return kernel
+
+    def make_special_inner_product(self, sample_vec):
+        return None
+
+    def make_inner_product(self, sample_vec):
+        from hedge.tools import is_obj_array
+        sample_is_obj_array = is_obj_array(sample_vec)
+
+        if sample_is_obj_array:
+            sample_vec = sample_vec[0]
+
+        if isinstance(sample_vec, numpy.ndarray) and sample_vec.dtype != object:
+            return numpy.dot
+        else:
+            kernel = self.make_special_inner_product(sample_vec)
+
+            if kernel is None:
+                raise RuntimeError("could not find an inner product routine for "
+                        "the given sample vector")
+
+        if sample_is_obj_array:
+            kernel = ObjectArrayInnerProductWrapper(kernel)
+
+        return kernel
+
+
+
+
+class CUDAVectorPrimitiveFactory(VectorPrimitiveFactory):
+    def __init__(self, discr=None):
+        self.discr = discr
+
+    def make_special_linear_combiner(self, *args, **kwargs):
+        return CUDALinearCombiner(*args, **kwargs)
+
+    def make_special_inner_product(self, sample_vec):
+        from pycuda.gpuarray import GPUArray
+
+        if isinstance(sample_vec, GPUArray):
+            if self.discr is None:
+                def kernel(a, b):
+                    from pycuda.gpuarray import dot
+                    return dot(a, b).get()
+
+                return kernel
+            else:
+                return self.discr.nodewise_dot_product
+
 # }}}
 
 

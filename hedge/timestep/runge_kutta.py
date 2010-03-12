@@ -62,7 +62,14 @@ class LSRK4TimeStepper(TimeStepper):
 
     dt_fudge_factor = 1
 
-    def __init__(self, dtype=numpy.float64, rcon=None):
+    def __init__(self, dtype=numpy.float64, rcon=None,
+            vector_primitive_factory=None):
+        if vector_primitive_factory is None:
+            from hedge.vector_primitives import VectorPrimitiveFactory
+            self.vector_primitive_factory = VectorPrimitiveFactory()
+        else:
+            self.vector_primitive_factory = vector_primitive_factory
+
         from pytools.log import IntervalTimer, EventCounter
         timer_factory = IntervalTimer
         if rcon is not None:
@@ -75,7 +82,6 @@ class LSRK4TimeStepper(TimeStepper):
 
         from pytools import match_precision
         self.dtype = numpy.dtype(dtype)
-        self.rcon = rcon
         self.scalar_dtype = match_precision(
                 numpy.dtype(numpy.float64), self.dtype)
         self.coeffs = numpy.array([self._RK4A, self._RK4B, self._RK4C], 
@@ -96,10 +102,9 @@ class LSRK4TimeStepper(TimeStepper):
             from hedge.tools import count_dofs
             self.dof_count = count_dofs(self.residual)
 
-            from hedge.vector_primitives import make_linear_combiner
-            self.linear_combiner = make_linear_combiner(
-                    self.dtype, self.scalar_dtype, self.residual,
-                    arg_count=2, rcon=self.rcon)
+            self.linear_combiner = self.vector_primitive_factory\
+                    .make_linear_combiner(self.dtype, self.scalar_dtype, 
+                            self.residual, arg_count=2)
 
         lc = self.linear_combiner
 
@@ -136,7 +141,13 @@ class RK4TimeStepper(LSRK4TimeStepper):
 # {{{ Embedded Runge-Kutta schemes base class ---------------------------------
 class EmbeddedRungeKuttaTimeStepperBase(TimeStepper):
     def __init__(self, use_high_order=True, dtype=numpy.float64, rcon=None,
-            atol=0, rtol=0):
+            vector_primitive_factory=None, atol=0, rtol=0):
+        if vector_primitive_factory is None:
+            from hedge.vector_primitives import VectorPrimitiveFactory
+            self.vector_primitive_factory = VectorPrimitiveFactory()
+        else:
+            self.vector_primitive_factory = vector_primitive_factory
+
         from pytools.log import IntervalTimer, EventCounter
         timer_factory = IntervalTimer
         if rcon is not None:
@@ -150,7 +161,6 @@ class EmbeddedRungeKuttaTimeStepperBase(TimeStepper):
         self.use_high_order = use_high_order
 
         self.dtype = numpy.dtype(dtype)
-        self.rcon = rcon
 
         self.adaptive = bool(atol or rtol)
         self.atol = atol
@@ -177,14 +187,12 @@ class EmbeddedRungeKuttaTimeStepperBase(TimeStepper):
             self.last_rhs = rhs(t, y)
             self.dof_count = count_dofs(self.last_rhs)
 
-            from hedge.vector_primitives import (
-                    make_linear_combiner,
-                    make_inner_product)
+            vpf = self.vector_primitive_factory
 
             self.linear_combiners = dict(
-                    (arg_count, make_linear_combiner(
+                    (arg_count, vpf.make_linear_combiner(
                         self.dtype, self.scalar_dtype, self.last_rhs,
-                        arg_count=arg_count, rcon=self.rcon))
+                        arg_count=arg_count))
                     for arg_count in (
                         set(1+len(coeffs) for t_frac, coeffs 
                             in self.butcher_tableau)
@@ -192,7 +200,7 @@ class EmbeddedRungeKuttaTimeStepperBase(TimeStepper):
                             1+len(self.high_order_coeffs)]))
                     if arg_count)
 
-            self.ip = make_inner_product(self.last_rhs, rcon=self.rcon)
+            self.ip = vpf.make_inner_product(self.last_rhs)
 
         lcs = self.linear_combiners
         ip = self.ip

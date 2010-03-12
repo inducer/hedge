@@ -29,7 +29,7 @@ from hedge.tools.futures import Future
 
 
 
-# gpu data organization -------------------------------------------------------
+# {{{ gpu data organization ---------------------------------------------------
 class GPUBlock(object):
     """Describes what data is local to each thread block on the GPU.
 
@@ -131,10 +131,12 @@ class GPUBoundaryFaceStorage(GPUFaceStorage):
         self.gpu_bdry_index_in_floats = gpu_bdry_index_in_floats
         self.face_pair_side = face_pair_side
 
+# }}}
 
 
 
-# GPU mesh partition ----------------------------------------------------------
+
+# {{{ GPU mesh partition ------------------------------------------------------
 def make_gpu_partition_greedy(adjgraph, max_block_size):
 
     def first(iterable):
@@ -229,13 +231,7 @@ def make_gpu_partition_metis(adjgraph, max_block_size):
 
     return make_gpu_partition_greedy(adjgraph, max_block_size)
 
-
-
-
-
-
-
-
+# }}}
 
 
 
@@ -247,6 +243,7 @@ class Discretization(hedge.discretization.Discretization):
     from hedge.backends.cuda.execute import Executor \
             as executor_class
 
+    # {{{ debug flags ---------------------------------------------------------
     @classmethod
     def all_debug_flags(cls):
         return hedge.discretization.Discretization.all_debug_flags() | set([
@@ -273,6 +270,9 @@ class Discretization(hedge.discretization.Discretization):
             "cuda_no_metis",
             ])
 
+    # }}}
+
+    # {{{ partitioning --------------------------------------------------------
     class PartitionData(Record):
         pass
 
@@ -346,6 +346,9 @@ class Discretization(hedge.discretization.Discretization):
         self.partition_cache[max_block_size] = result
         return result
 
+    # }}}
+
+    # {{{ construction and destruction ----------------------------------------
     def __init__(self, mesh, local_discretization=None,
             order=None, quad_min_degrees={},
             init_cuda=True, debug=set(),
@@ -369,14 +372,15 @@ class Discretization(hedge.discretization.Discretization):
             warn("You can achieve better performance if you pass an optemplate "
                     "in the tune_for= kwarg.")
 
-        # initialize superclass
+        # {{{ initialize superclass
         ldis = self.get_local_discretization(mesh, local_discretization, order)
 
         hedge.discretization.Discretization.__init__(self, mesh, ldis, debug=debug,
                 default_scalar_type=default_scalar_type,
                 run_context=run_context)
+        # }}}
 
-        # cuda init
+        # {{{ cuda init
         self.cleanup_context = None
         if init_cuda:
             cuda.init()
@@ -395,7 +399,9 @@ class Discretization(hedge.discretization.Discretization):
 
         from pycuda.tools import DeviceData
 
-        # initialize memory pool
+        # }}}
+
+        # {{{ initialize memory pool
         if "cuda_memory" in self.debug:
             from pycuda.tools import DebugMemoryPool
             if run_context is not None and run_context.ranks > 1:
@@ -414,7 +420,9 @@ class Discretization(hedge.discretization.Discretization):
         from pycuda.tools import PageLockedMemoryPool
         self.pagelocked_pool = PageLockedMemoryPool()
 
-        # generate flux plan
+        # }}}
+
+        # {{{ generate flux plan
         self.partition_cache = {}
 
         from pytools import Record
@@ -497,23 +505,32 @@ class Discretization(hedge.discretization.Discretization):
         print "actual diff op exec plan:", self.diff_plan
         print "actual flux local exec plan:", self.fluxlocal_plan
 
-        # build data structures
+        # }}}
+
+        # {{{ build data structures
         self.blocks = self._build_blocks()
         self.face_storage_map = self._build_face_storage_map()
+        # }}}
 
-        # make a CPU reference discretization
+        # {{{ make a CPU reference discretization
         if "cuda_compare" in self.debug:
             from hedge.backends.jit import Discretization
             self.test_discr = Discretization(mesh, ldis)
+        # }}}
 
         self.stream_pool = []
 
     def close(self):
+        del self.stream_pool
+
         self.pool.stop_holding()
         self.pagelocked_pool.stop_holding()
         if self.cleanup_context is not None:
             self.cleanup_context.pop()
 
+    # }}}
+
+    # {{{ setup ---------------------------------------------------------------
     def _build_blocks(self):
         block_el_numbers = {}
         for el_id, block in enumerate(self.partition):
@@ -705,10 +722,9 @@ class Discretization(hedge.discretization.Discretization):
         self.index_lists = fil_registry.index_lists
         return fsm
 
+    # }}}
 
-
-
-    # stream pooling ----------------------------------------------------------
+    # {{{ stream pooling ------------------------------------------------------
     # (stupid CUDA isn't smart enough to allocate streams without synchronizing.
     # sigh.)
     def _get_stream(self):
@@ -720,10 +736,9 @@ class Discretization(hedge.discretization.Discretization):
     def _release_stream(self, s):
         self.stream_pool.append(s)
 
+    # }}}
 
-
-
-    # instrumentation ---------------------------------------------------------
+    # {{{ instrumentation -----------------------------------------------------
     def add_instrumentation(self, mgr):
         mgr.set_constant("flux_plan", str(self.flux_plan))
         mgr.set_constant("diff_plan", str(self.diff_plan))
@@ -769,10 +784,9 @@ class Discretization(hedge.discretization.Discretization):
                 self.diff_op_timer,
                 self.vector_math_timer ]
 
+    # }}}
 
-
-
-    # utilities ---------------------------------------------------------------
+    # {{{ utilities -----------------------------------------------------------
     def find_el_gpu_index(self, el):
         given = self.given
         block = self.blocks[self.partition[el.id]]
@@ -998,7 +1012,9 @@ class Discretization(hedge.discretization.Discretization):
             return hedge.discretization.Discretization.convert_boundary_async(
                     self, field, tag, kind, read_map)
 
-    # vector construction tools -----------------------------------------------
+    # }}}
+
+    # {{{ vector construction tools -------------------------------------------
     def _empty_gpuarray(self, shape, dtype):
         return gpuarray.empty(shape, dtype=dtype,
                 allocator=self.pool.allocate)
@@ -1022,8 +1038,9 @@ class Discretization(hedge.discretization.Discretization):
             result[i] = create_func((base_size,), dtype=dtype)
         return result
 
+    # }}}
 
-    # vector construction -----------------------------------------------------
+    # {{{ vector construction -------------------------------------------------
     compute_kind = "gpu"
 
     def get_kind(self, field):
@@ -1229,7 +1246,9 @@ class Discretization(hedge.discretization.Discretization):
     def prepare_from_neighbor_map(self, indices):
         return gpuarray.to_gpu(numpy.asarray(indices, dtype=numpy.uint32))
 
-    # ancillary kernel planning/construction ----------------------------------
+    # }}}
+
+    # {{{ ancillary kernel planning/construction ------------------------------
     @memoize_method
     def element_local_kernel(self):
         from hedge.backends.cuda.plan import make_element_local_plan
@@ -1241,8 +1260,9 @@ class Discretization(hedge.discretization.Discretization):
                 preimage_dofs_per_el=self.given.dofs_per_el(),
                 with_index_check=True)
         return el_local_plan.make_kernel(self, with_index_check=True)
+    # }}}
 
-    # scalar reduction --------------------------------------------------------
+    # {{{ scalar reduction ----------------------------------------------------
     def nodewise_dot_product(self, a, b):
         return gpuarray.subset_dot(
                 self._meaningful_volume_indices(),
@@ -1254,7 +1274,16 @@ class Discretization(hedge.discretization.Discretization):
     def nodewise_min(self, a):
         return gpuarray.subset_min(self._meaningful_volume_indices(), a).get()
 
-    # numbering tools ---------------------------------------------------------
+    # }}}
+
+    # {{{ vector primitives ---------------------------------------------------
+    def get_vector_primitive_factory(self):
+        from hedge.vector_primitives import CUDAVectorPrimitiveFactory
+        return CUDAVectorPrimitiveFactory(discr=self)
+
+    # }}}
+
+    # {{{ numbering tools -----------------------------------------------------
     @memoize_method
     def elgroup_microblock_indices(self, elgroup):
         """For a given :class:`hedge.discretization._ElementGroup` instance
@@ -1283,6 +1312,8 @@ class Discretization(hedge.discretization.Discretization):
 
         return elgroup_indices
 
+    # }}}
+
 
 
 
@@ -1293,3 +1324,8 @@ def make_block_visualization(discr):
             result[cpu_slice] = block.number
 
     return result
+
+
+
+
+# vim: foldmethod=marker

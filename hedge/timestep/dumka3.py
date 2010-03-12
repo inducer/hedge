@@ -57,14 +57,19 @@ class Dumka3TimeStepper(object):
     # 14 polynomials are available, but polynomial 13 fails
     # accuracy test?
 
-    def __init__(self, pol_index=None, dtype=numpy.float64, rcon=None,
-            atol=0, rtol=0):
+    def __init__(self, pol_index=None, dtype=numpy.float64, rcon=None, 
+            vector_primitive_factory=None, atol=0, rtol=0):
         if pol_index > self.POLYNOMIAL_COUNT:
             raise ValueError("invalid polynomial index specified")
         self.pol_index=pol_index
 
         self.dtype = numpy.dtype(dtype)
-        self.rcon = rcon
+        if vector_primitive_factory is None:
+            from hedge.vector_primitives import VectorPrimitiveFactory
+            self.vector_primitive_factory = VectorPrimitiveFactory()
+        else:
+            self.vector_primitive_factory = vector_primitive_factory
+
         from pytools import match_precision
         self.scalar_type = match_precision(
                 numpy.dtype(numpy.float64), self.dtype).type
@@ -130,16 +135,13 @@ class Dumka3TimeStepper(object):
             from hedge.tools import count_dofs
             self.dof_count = count_dofs(y)
 
-            from hedge.vector_primitives import (
-                    make_linear_combiner, 
-                    make_inner_product)
+            vpf = self.vector_primitive_factory
+            lc2 = self.linear_combiner_2 = vpf.make_linear_combiner(
+                    self.dtype, self.scalar_type, y, arg_count=2)
+            lc3 = self.linear_combiner_3 = vpf.make_linear_combiner(
+                    self.dtype, self.scalar_type, y, arg_count=3)
 
-            lc2 = self.linear_combiner_2 = make_linear_combiner(
-                    self.dtype, self.scalar_type, y, arg_count=2, rcon=self.rcon)
-            lc3 = self.linear_combiner_3 = make_linear_combiner(
-                    self.dtype, self.scalar_type, y, arg_count=3, rcon=self.rcon)
-
-            ip = self.ip = make_inner_product(y, rcon=self.rcon)
+            ip = self.ip = vpf.make_inner_product(y)
 
         def norm(a):
             return numpy.sqrt(ip(a, a))
