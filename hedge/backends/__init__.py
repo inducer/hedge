@@ -26,6 +26,7 @@ import hedge.mesh
 
 
 
+# {{{ base run context --------------------------------------------------------
 class RunContext(object):
     @property
     def rank(self):
@@ -90,7 +91,12 @@ class RunContext(object):
 
 
 
+# }}}
 
+
+
+
+# {{{ run context implementations ---------------------------------------------
 class SerialRunContext(RunContext):
     communicator = None
 
@@ -113,10 +119,6 @@ class SerialRunContext(RunContext):
         kwargs["run_context"] = self
         return self.discr_class(mesh_data, *args, **kwargs)
 
-    def make_linear_combiner(self, result_dtype, scalar_dtype, sample_vec, 
-            arg_count):
-        return None
-
 
 
 
@@ -131,7 +133,6 @@ class CPURunContext(SerialRunContext):
 
 
 
-
 class CUDARunContext(SerialRunContext):
     @property
     def discr_class(self):
@@ -142,11 +143,12 @@ class CUDARunContext(SerialRunContext):
         from hedge.backends.cuda.tools import CUDAIntervalTimer
         return CUDAIntervalTimer(name, description)
 
-    def make_linear_combiner(self, *args, **kwargs):
-        from hedge.backends.cuda.tools import CUDALinearCombiner
-        return CUDALinearCombiner(*args, **kwargs)
+# }}}
 
 
+
+
+# {{{ run context guessing ----------------------------------------------------
 
 FEAT_MPI = "mpi"
 FEAT_CUDA = "cuda"
@@ -212,3 +214,10 @@ def guess_run_context(allow=None):
         return MPIRunContext(mpi.COMM_WORLD, serial_context)
     else:
         return serial_context
+
+# }}}
+
+
+
+
+# vim: foldmethod=marker

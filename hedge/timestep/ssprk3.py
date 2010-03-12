@@ -32,9 +32,16 @@ class SSPRK3TimeStepper(TimeStepper):
     """
     dt_fudge_factor = 1
 
-    def __init__(self, dtype=numpy.float64, rcon=None, limiter=None):
+    def __init__(self, dtype=numpy.float64, rcon=None,
+            vector_primitive_factory=None, limiter=None):
         self.dtype = numpy.dtype(dtype)
-        self.rcon = rcon
+        if vector_primitive_factory is None:
+            from hedge.vector_primitives import VectorPrimitiveFactory
+            self.vector_primitive_factory = VectorPrimitiveFactory()
+        else:
+            self.vector_primitive_factory = vector_primitive_factory
+
+        self.dtype = numpy.dtype(dtype)
         from pytools import match_precision
         self.scalar_type = match_precision(
                 numpy.dtype(numpy.float64), self.dtype).type
@@ -71,11 +78,11 @@ class SSPRK3TimeStepper(TimeStepper):
             from hedge.tools import count_dofs
             self.dof_count = count_dofs(y)
 
-            from hedge.tools.linear_combination import make_linear_combiner
-            lc2 = self.linear_combiner_2 = make_linear_combiner(
-                    self.dtype, self.scalar_type, y, arg_count=2, rcon=self.rcon)
-            lc3 = self.linear_combiner_3 = make_linear_combiner(
-                    self.dtype, self.scalar_type, y, arg_count=3, rcon=self.rcon)
+            vpf = self.vector_primitive_factory
+            lc2 = self.linear_combiner_2 = vpf.make_linear_combiner(
+                    self.dtype, self.scalar_type, y, arg_count=2)
+            lc3 = self.linear_combiner_3 = vpf.make_linear_combiner(
+                    self.dtype, self.scalar_type, y, arg_count=3)
 
             from hedge.tools import count_dofs
             self.dof_count = count_dofs(0*rhs(t, y))

@@ -19,7 +19,6 @@
 
 import numpy
 import numpy.linalg as la
-from hedge.tools import Rotation
 
 
 
@@ -57,7 +56,9 @@ def main(write_output=True) :
     else:
         mesh_data = rcon.receive_mesh()
 
-    discr = rcon.make_discretization(mesh_data, order=3)
+    discr = rcon.make_discretization(mesh_data, order=3,
+            debug=["cuda_no_plan"],
+            default_scalar_type=numpy.float64)
 
     if write_output:
         from hedge.visualization import  VtkVisualizer
@@ -119,8 +120,12 @@ def main(write_output=True) :
     from hedge.timestep.runge_kutta import LSRK4TimeStepper, ODE45TimeStepper
     from hedge.timestep.dumka3 import Dumka3TimeStepper
     #stepper = LSRK4TimeStepper()
-    stepper = Dumka3TimeStepper(3, rtol=1e-6)
-    #stepper = ODE45TimeStepper(rtol=1e-6)
+    stepper = Dumka3TimeStepper(3, rtol=1e-6, rcon=rcon,
+            vector_primitive_factory=discr.get_vector_primitive_factory(),
+            dtype=discr.default_scalar_type)
+    #stepper = ODE45TimeStepper(rtol=1e-6, rcon=rcon,
+            #vector_primitive_factory=discr.get_vector_primitive_factory(),
+            #dtype=discr.default_scalar_type)
     stepper.add_instrumentation(logmgr)
 
     rhs = op.bind(discr)
@@ -137,7 +142,9 @@ def main(write_output=True) :
         for step, t, dt in step_it:
             if step % 10 == 0 and write_output:
                 visf = vis.make_file("fld-%04d" % step)
-                vis.add_data(visf, [("u", u), ], time=t, step=step)
+                vis.add_data(visf, [
+                    ("u", discr.convert_volume(u, kind="numpy")), 
+                    ], time=t, step=step)
                 visf.close()
 
             u, t, taken_dt, next_dt = stepper(u, t, next_dt, rhs)

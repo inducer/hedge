@@ -1063,6 +1063,13 @@ class Discretization(TimestepCalculator):
 
     # }}}
 
+    # {{{ vector primitives ---------------------------------------------------
+    def get_vector_primitive_factory(self):
+        from hedge.vector_primitives import VectorPrimitiveFactory
+        return VectorPrimitiveFactory()
+
+    # }}}
+
     # {{{ element data retrieval ----------------------------------------------
     def find_el_range(self, el_id):
         group, idx = self.group_map[el_id]

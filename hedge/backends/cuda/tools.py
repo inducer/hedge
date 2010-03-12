@@ -143,42 +143,6 @@ def make_superblocks(devdata, struct_name, single_item, multi_item, extra_fields
 
 
 
-class CUDALinearCombiner:
-    def __init__(self, result_dtype, scalar_dtype, sample_vec, arg_count):
-        from pycuda.elementwise import get_linear_combination_kernel
-        self.vector_dtype = sample_vec.dtype
-        self.result_dtype = result_dtype
-        self.shape = sample_vec.shape
-        self.block = sample_vec._block
-        self.grid = sample_vec._grid
-        self.mem_size = sample_vec.mem_size
-
-        self.kernel, _ = get_linear_combination_kernel(
-                arg_count*((False, scalar_dtype, self.vector_dtype),),
-                result_dtype)
-
-    def __call__(self, *args):
-        result = gpuarray.empty(self.shape, self.result_dtype)
-
-        knl_args = []
-        for fac, vec in args:
-            if vec.dtype != self.vector_dtype:
-                raise TypeError("unexpected vector type in CUDA linear combination")
-
-            knl_args.append(fac)
-            knl_args.append(vec.gpudata)
-
-        knl_args.append(result.gpudata)
-        knl_args.append(self.mem_size)
-
-        self.kernel.set_block_shape(*self.block)
-        self.kernel.prepared_async_call(self.grid, None, *knl_args)
-
-        return result
-
-
-
-
 # code generation -------------------------------------------------------------
 def get_load_code(dest, base, bytes, word_type=numpy.uint32,
         descr=None):
