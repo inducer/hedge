@@ -27,7 +27,7 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 import numpy
 from pytools import memoize, memoize_method
 from hedge.timestep.base import TimeStepper
-from hedge.timestep.rk4 import RK4TimeStepper
+from hedge.timestep.runge_kutta import LSRK4TimeStepper
 from hedge.timestep.ab import \
         make_generic_ab_coefficients, \
         make_ab_coefficients
