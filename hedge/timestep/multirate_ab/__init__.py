@@ -95,7 +95,7 @@ class TwoRateAdamsBashforthTimeStepper(TimeStepper):
         if startup_stepper is not None:
             self.startup_stepper = startup_stepper
         else:
-            self.startup_stepper = RK4TimeStepper()
+            self.startup_stepper = LSRK4TimeStepper()
 
         self.startup_history = []
 
