@@ -79,27 +79,27 @@ class MRABToTeXProcessor(MRABProcessor):
 
         if insn.component == CO_FAST:
             self_name = "fast"
-            src_self_speed = r"\smallstep"
+            src_self_speed = r"\mrabsmallstep"
             src_self_where = self.f2f_hist_head
 
             if self.method.s2f_hist_is_fast:
-                src_other_speed = r"\smallstep"
+                src_other_speed = r"\mrabsmallstep"
             else:
-                src_other_speed = r"\bigstep"
+                src_other_speed = r"\mrabbigstep"
             src_other_where = self.s2f_hist_head
         else:
             self_name = "slow"
-            src_self_speed = r"\bigstep"
+            src_self_speed = r"\mrabbigstep"
             src_self_where = self.s2s_hist_head
 
-            src_other_speed = r"\bigstep"
+            src_other_speed = r"\mrabbigstep"
             src_other_where = self.f2s_hist_head
 
         self.last_assigned_at[insn.result_name] = len(self.result)
 
         self.result.append(
-                "\integrate {%s}{%f}{%f}{%s} {%f}{%s} {%f}{%s}"
-                % (insn.result_name, 
+                "\mrabintegrate {%s}{%f}{%f}{%s} {%f}{%s} {%f}{%s}"
+                % (insn.result_name.replace("y_", ""), 
                     self.eval_expr(insn.start)/self.substep_count, 
                     self.eval_expr(insn.end)/self.substep_count,
                     self_name,
@@ -134,17 +134,18 @@ class MRABToTeXProcessor(MRABProcessor):
         where += step_size
         setattr(self, hist_head_name, where)
 
-        self.result.append("\histupdate {%s}{%s} {%f} {%s,%s}"
-                % (name.replace("2", "t"), name, where,
-                    insn.slow_arg, insn.fast_arg))
+        self.result.append("\mrabhistupdate {%s}{%s} {%f} {%s,%s}"
+                % (name.replace("2", "t"), name.replace("2", "")[::-1], where,
+                    insn.slow_arg.replace("y_", ""), 
+                    insn.fast_arg.replace("y_", "")))
 
         MRABProcessor.history_update(self, insn)
 
     def get_result(self):
         if self.method.s2f_hist_is_fast:
-            which_hist = "faststfhist"
+            which_hist = "mrabfaststfhist"
         else:
-            which_hist = "slowstfhist"
+            which_hist = "mrabslowstfhist"
 
         result_generators = [
                 self.last_assigned_at[self.method.result_fast],
@@ -153,7 +154,7 @@ class MRABToTeXProcessor(MRABProcessor):
 
         texed_instructions = []
         for i, insn_tex in enumerate(self.result):
-            if insn_tex.startswith("\integrate"):
+            if insn_tex.startswith("\mrabintegrate"):
                 if i in result_generators:
                     insn_tex += " {isresult}"
                 else:
@@ -164,14 +165,14 @@ class MRABToTeXProcessor(MRABProcessor):
         return "\n".join(
                 [
                     "{"
-                    r"\setcounter{step}{0}",
-                    r"\def\smallstepcount{%d}" % self.substep_count,
-                    r"\def\smallstep{%f}" % (1/self.substep_count),
+                    r"\setcounter{mrabstep}{0}",
+                    r"\def\mrabsmallstepcount{%d}" % self.substep_count,
+                    r"\def\mrabsmallstep{%f}" % (1/self.substep_count),
                     r"\begin{tikzpicture}[mrabpic]"
                     r"\%s{0}" % which_hist,
                     ]+texed_instructions+[
                     r"\%s{1}" % which_hist,
-                    r"\colorlegend",
-                    r"\makeaxis",
+                    r"\mrabcolorlegend",
+                    r"\mrabmakeaxis",
                     r"\end{tikzpicture}",
                     "}"])
