@@ -190,7 +190,7 @@ class VectorPrimitiveFactory(object):
             sample_vec = sample_vec[0]
 
         if isinstance(sample_vec, numpy.ndarray) and sample_vec.dtype != object:
-            return numpy.dot
+            kernel = numpy.dot
         else:
             kernel = self.make_special_inner_product(sample_vec)
 
