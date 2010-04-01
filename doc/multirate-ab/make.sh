@@ -1,4 +1,5 @@
 #! /bin/sh
+set -e
 
 rm -Rf out
 mkdir out
