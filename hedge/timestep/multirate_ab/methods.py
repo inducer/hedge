@@ -121,6 +121,54 @@ methods = {
                 ],
             result_slow="y_s",
             result_fast="y_f"),
+        "Frs": # old: -none-
+        MRABMethod(s2f_hist_is_fast=False,
+            steps=[
+                IntegrateInTime(start=0, end=n, component=CO_SLOW,
+                    result_name="\\tilde y_s"),
+                IntegrateInTime(start=0, end=n, component=CO_FAST,
+                    result_name="\\tilde y_f"),
+                HistoryUpdate(slow_arg="\\tilde y_s", fast_arg="\\tilde y_f",
+                    which=HIST_F2S),
+                StartSubstepLoop(),
+                IntegrateInTime(start=0, end=i+1, component=CO_SLOW,
+                    result_name="y_s"),
+                IntegrateInTime(start=i, end=i+1, component=CO_FAST,
+                    result_name="y_f"),
+                HistoryUpdate(slow_arg="y_s", fast_arg="y_f",
+                    which=HIST_F2F),
+                EndSubstepLoop(),
+                HistoryUpdate(slow_arg="y_s", fast_arg="y_f",
+                    which=HIST_S2F),
+                HistoryUpdate(slow_arg="y_s", fast_arg="y_f",
+                    which=HIST_S2S),
+                ],
+            result_slow="y_s",
+            result_fast="y_f"),
+        "Frfs": # old: -none-
+        MRABMethod(s2f_hist_is_fast=False,
+            steps=[
+                IntegrateInTime(start=0, end=n, component=CO_SLOW,
+                    result_name="\\tilde y_s"),
+                IntegrateInTime(start=0, end=n, component=CO_FAST,
+                    result_name="\\tilde y_f"),
+                HistoryUpdate(slow_arg="\\tilde y_s", fast_arg="\\tilde y_f",
+                    which=HIST_F2S),
+                HistoryUpdate(slow_arg="\\tilde y_s", fast_arg="\\tilde y_f",
+                    which=HIST_S2F),
+                StartSubstepLoop(),
+                IntegrateInTime(start=0, end=i+1, component=CO_SLOW,
+                    result_name="y_s"),
+                IntegrateInTime(start=i, end=i+1, component=CO_FAST,
+                    result_name="y_f"),
+                HistoryUpdate(slow_arg="y_s", fast_arg="y_f",
+                    which=HIST_F2F),
+                EndSubstepLoop(),
+                HistoryUpdate(slow_arg="y_s", fast_arg="y_f",
+                    which=HIST_S2S),
+                ],
+            result_slow="y_s",
+            result_fast="y_f"),
         "Fq": # old: fastest_first_s
         MRABMethod(s2f_hist_is_fast=True,
             steps=[
@@ -135,6 +183,30 @@ methods = {
                 EndSubstepLoop(),
                 HistoryUpdate(slow_arg="y_s", fast_arg="y_f",
                     which=HIST_F2S),
+                HistoryUpdate(slow_arg="y_s", fast_arg="y_f",
+                    which=HIST_S2S),
+                ],
+            result_slow="y_s",
+            result_fast="y_f"),
+        "Fqrs": # old: -none-
+        MRABMethod(s2f_hist_is_fast=True,
+            steps=[
+                IntegrateInTime(start=0, end=n, component=CO_SLOW,
+                    result_name="\\tilde y_s"),
+                IntegrateInTime(start=0, end=n, component=CO_FAST,
+                    result_name="\\tilde y_f"),
+                HistoryUpdate(slow_arg="\\tilde y_s", fast_arg="\\tilde y_f",
+                    which=HIST_F2S),
+                StartSubstepLoop(),
+                IntegrateInTime(start=0, end=i+1, component=CO_SLOW,
+                    result_name="y_s"),
+                IntegrateInTime(start=i, end=i+1, component=CO_FAST,
+                    result_name="y_f"),
+                HistoryUpdate(slow_arg="y_s", fast_arg="y_f",
+                    which=HIST_F2F),
+                HistoryUpdate(slow_arg="y_s", fast_arg="y_f",
+                    which=HIST_S2F),
+                EndSubstepLoop(),
                 HistoryUpdate(slow_arg="y_s", fast_arg="y_f",
                     which=HIST_S2S),
                 ],
@@ -327,7 +399,7 @@ def _add_slowest_first_variants(methods):
     result = {}
     for name, method in methods.iteritems():
         result[name] = method
-        if name.startswith("S"):
+        if "r" in name:
             result[name.replace("r", "")] = \
                     _remove_last_yslow_evaluation_from_slowest_first(method)
 
