@@ -139,7 +139,7 @@ def main(write_output=True):
         from hedge.mesh import TAG_ALL
 
         op = GasDynamicsOperator(dimensions=2, gamma=vortex.gamma, mu=vortex.mu,
-                prandtl=vortex.prandtl, spec_gas_const=vortex.spec_gas_const,EOS="Polytrope",
+                prandtl=vortex.prandtl, spec_gas_const=vortex.spec_gas_const,
                 bc_inflow=vortex, bc_outflow=vortex, bc_noslip=vortex,
                 inflow_tag=TAG_ALL, source=None)
 
