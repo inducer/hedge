@@ -119,6 +119,9 @@ def main(write_output=True):
 
         # build a kd tree
         discr.make_kd_tree((0,-5),(10,5))
+        TreeVis = open("kdtree.txt","w")
+        discr.kd_tree.visualize(TreeVis)
+        TreeVis.close()
         
         discr2 = rcon.make_discretization(mesh_data2, order=order,
                         default_scalar_type=numpy.float64,
