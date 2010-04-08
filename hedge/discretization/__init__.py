@@ -1172,7 +1172,7 @@ class Discretization(TimestepCalculator):
 
 
     def make_kd_tree(self,bottom_left,top_right):
-        from pytools import SpatialBinaryTreeBucket
+        from pytools.spatial_btree import SpatialBinaryTreeBucket
         kd_tree = SpatialBinaryTreeBucket(numpy.array(bottom_left),numpy.array(top_right))
 
         for eg in self.element_groups:
