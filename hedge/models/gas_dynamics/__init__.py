@@ -73,7 +73,7 @@ class GasDynamicsOperator(TimeDependentOperator):
             bc_outflow=None,
             bc_noslip=None,
             bc_supersonic_inflow=None,
-            prandtl=None, spec_gas_const=1.0,EOS="GammaLaw",
+            prandtl=None, spec_gas_const=1.0,
             inflow_tag="inflow",
             outflow_tag="outflow",
             noslip_tag="noslip",
