@@ -93,12 +93,12 @@ class SimplicialElement(Element):
         from hedge._internal import get_simplex_map_unit_to_global
         return get_simplex_map_unit_to_global(cls.dimensions, vertices)
 
-    def contains_point(self, x):
+    def contains_point(self, x, thresh=0):
         unit_coords = self.inverse_map(x)
         for xi in unit_coords:
-            if xi < -1:
+            if xi < -1-thresh:
                 return False
-        return sum(unit_coords) <= -(self.dimensions-2)
+        return sum(unit_coords) <= -(self.dimensions-2)+thresh
 
 
 

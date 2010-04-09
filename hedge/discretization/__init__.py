@@ -1105,10 +1105,10 @@ class Discretization(TimestepCalculator):
             for el in eg.members)
             for eg in self.element_groups)
 
-    def get_point_evaluator(self, point):
+    def get_point_evaluator(self, point, thresh=0):
         for eg in self.element_groups:
             for el, rng in zip(eg.members, eg.ranges):
-                if el.contains_point(point):
+                if el.contains_point(point, thresh):
                     ldis = eg.local_discretization
                     basis_values = numpy.array([
                             phi(el.inverse_map(point))
