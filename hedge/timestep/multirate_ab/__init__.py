@@ -66,7 +66,11 @@ class TwoRateAdamsBashforthTimeStepper(TimeStepper):
 
         if isinstance(method, str):
             from hedge.timestep.multirate_ab.methods import methods
+            self.method_name = method
             method = methods[method]
+        else:
+            self.method_name = None
+
         self.method = method
 
         self.large_dt = large_dt
@@ -264,7 +268,9 @@ class _MRABEvaluator(MRABProcessor):
         time_slow = self.var_time_level[insn.slow_arg]
         time_fast = self.var_time_level[insn.fast_arg]
 
-        assert time_slow == time_fast
+        assert abs(time_slow - time_fast) < 1e-10, str((
+                abs(time_slow - time_fast), self.stepper.method_name,
+                self.stepper.substep_count, self.insn_counter))
 
         t = (self.t_start 
                 + self.stepper.large_dt*time_slow/self.stepper.substep_count)

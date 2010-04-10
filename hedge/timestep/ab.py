@@ -123,15 +123,22 @@ def make_ab_coefficients(order):
 class AdamsBashforthTimeStepper(TimeStepper):
     dt_fudge_factor = 0.95
 
-    def __init__(self, order, startup_stepper=None):
-        self.coefficients = make_ab_coefficients(order)
+    def __init__(self, order, startup_stepper=None, dtype=numpy.float64):
         self.f_history = []
+
+        from pytools import match_precision
+        self.dtype = numpy.dtype(dtype)
+        self.scalar_dtype = match_precision(
+                numpy.dtype(numpy.float64), self.dtype)
+        self.coefficients = numpy.asarray(make_ab_coefficients(order),
+                dtype=self.scalar_dtype)
 
         if startup_stepper is not None:
             self.startup_stepper = startup_stepper
         else:
             from hedge.timestep.runge_kutta import LSRK4TimeStepper
-            self.startup_stepper = LSRK4TimeStepper()
+            self.startup_stepper = LSRK4TimeStepper(self.dtype)
+
 
     def get_stability_relevant_init_args(self):
         return (self.order, self.startup_stepper)
