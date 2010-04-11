@@ -115,13 +115,6 @@ def main(write_output=True):
                             "gasdyn_vol": 3*order,
                             "gasdyn_face": 3*order,
                             })
-
-
-        # build a kd tree
-        discr.make_kd_tree((0,-5),(10,5))
-        TreeVis = open("kdtree.txt","w")
-        discr.kd_tree.visualize(TreeVis)
-        TreeVis.close()
         
         discr2 = rcon.make_discretization(mesh_data2, order=order,
                         default_scalar_type=numpy.float64,
@@ -242,7 +235,7 @@ def main(write_output=True):
 
                 if step == 21: #regrid to discr2 at some arbitrary time
                     #get interpolated fields
-                    fields = discr.get_regrid_values(fields,discr2,dtype=None)
+                    fields = discr.get_regrid_values(fields, discr2, dtype=None, use_btree=True, bl=(0,-5), tr=(10,5))
                     #get new stepper (old one has reference to discr
                     stepper = SSPRK3TimeStepper()
                     #new bind

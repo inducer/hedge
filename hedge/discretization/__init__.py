@@ -238,7 +238,7 @@ class Discretization(TimestepCalculator):
 
         self.exec_functions = {}
 
-        self.kd_tree = None #run make_kd_tree
+        self.spatial_btree = None #spatial binary tree for node searches
 
     def close(self):
         pass
@@ -1107,46 +1107,52 @@ class Discretization(TimestepCalculator):
             for el in eg.members)
             for eg in self.element_groups)
 
-    def get_point_evaluator(self, point):
+    def get_point_evaluator(self, point, use_btree = False, bl=None,tr=None):
 
-        if self.kd_tree is None:
+        if (use_btree == True) & (self.spatial_btree == None):
+            # Want to use the spatial binary tree, but it needs to be built first
+            self.spatial_btree = self.get_spatial_btree(bl,tr)
+
+
+        def f(el,eg,rng): #when el containing point is found, get evaluator
+            ldis = eg.local_discretization
+            basis_values = numpy.array([
+                phi(el.inverse_map(point))
+                for phi in ldis.basis_functions()])
+            vdm_t = ldis.vandermonde().T
+            return _PointEvaluator(
+                    discr=self,
+                    el_range=rng,
+                    interp_coeff=la.solve(vdm_t, basis_values))
+        
+
+        if use_btree == False:
             for eg in self.element_groups:
                 for el, rng in zip(eg.members, eg.ranges):
                     if el.contains_point(point):
-                        ldis = eg.local_discretization
-                        basis_values = numpy.array([
-                                phi(el.inverse_map(point))
-                                for phi in ldis.basis_functions()])
-                        vdm_t = ldis.vandermonde().T
-                        return _PointEvaluator(
-                                discr=self,
-                                el_range=rng,
-                                interp_coeff=la.solve(vdm_t, basis_values))
+                        pe = f(el,eg,rng)
+                        return pe
         
-            raise RuntimeError("point %s not found. Consider changing tolerance in 'contains_point'" % point)
-
+            raise RuntimeError("point %s not found. Consider changing threshold." % point)
 
         else:
-            elements_in_bucket = self.kd_tree.generate_matches(point)
+            elements_in_bucket = self.spatial_btree.generate_matches(point)
             for el, rng, eg in elements_in_bucket:
                 if el.contains_point(point):
-                    ldis = eg.local_discretization
-                    basis_values = numpy.array([
-                            phi(el.inverse_map(point))
-                            for phi in ldis.basis_functions()])
-                    vdm_t = ldis.vandermonde().T
-                    return _PointEvaluator(
-                            discr=self,
-                            el_range=rng,
-                            interp_coeff=la.solve(vdm_t, basis_values))
+                    pe = f(el,eg,rng)
+                    return pe
 
-            raise RuntimeError("point %s not found. Consider changing tolerance in 'contains_point'" % point)
+            raise RuntimeError("point %s not found. Consider changing threshold." % point)
 
 
 
-    def get_regrid_values(self, field_in, new_discr, dtype=None):
+    def get_regrid_values(self, field_in, new_discr, dtype=None, use_btree = False, bl=None, tr=None):
         #field_in = nodal values on old grid
         #new_discr = new discretization
+        #use_btree = boolian to decide if a spatial binary tree will be used. 
+        #If use_btree=true and self.spatial_btree=None, we need bl and tr
+        #bl = bottom left point (x,y,z) specifiying box containing the mesh
+        #tr = top right point (x,y,z) specifying box containing the mesh
 
         kind = new_discr.compute_kind
 
@@ -1155,12 +1161,12 @@ class Discretization(TimestepCalculator):
             shape = ()
             field_out = new_discr.volume_empty(shape, dtype=dtype, kind=kind)
             for ii in range(len(new_discr.nodes)): #loop over all nodes in new grid
-                pe = self.get_point_evaluator(new_discr.nodes[ii])
+                pe = self.get_point_evaluator(new_discr.nodes[ii], use_btree,bl,tr)
                 field_out[ii] = pe(field_in)
         else:  #case: field_in's elements are array of nodal values
             field_out = new_discr.volume_empty(shape, dtype=dtype, kind=kind)
             for ii in range(len(new_discr.nodes)):
-                pe = self.get_point_evaluator(new_discr.nodes[ii])
+                pe = self.get_point_evaluator(new_discr.nodes[ii], use_btree,bl,tr)
                 field_out[:,ii] = pe(field_in)
  
 
@@ -1170,16 +1176,16 @@ class Discretization(TimestepCalculator):
 
         return new_discr.convert_volume(field_out, kind=kind)
 
-
-    def make_kd_tree(self,bottom_left,top_right):
+    @memoize_method
+    def get_spatial_btree(self,bottom_left,top_right):
         from pytools.spatial_btree import SpatialBinaryTreeBucket
-        kd_tree = SpatialBinaryTreeBucket(numpy.array(bottom_left),numpy.array(top_right))
+        spatial_btree = SpatialBinaryTreeBucket(numpy.array(bottom_left),numpy.array(top_right))
 
         for eg in self.element_groups:
             for el, rng in zip(eg.members,eg.ranges):
-                kd_tree.insert((el,rng,eg),el.bounding_box(self.mesh.points))
+                spatial_btree.insert((el,rng,eg),el.bounding_box(self.mesh.points))
 
-        self.kd_tree = kd_tree
+        return spatial_btree
 
     # }}}
 
