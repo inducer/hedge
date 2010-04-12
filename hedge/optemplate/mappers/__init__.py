@@ -416,6 +416,13 @@ class OperatorSpecializer(CSECachingMapperMixin, IdentityMapper):
 # }}}
 # {{{ stringification ---------------------------------------------------------
 class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
+    def _format_btag(self, tag):
+        from hedge.mesh import SYSTEM_TAGS
+        if tag in SYSTEM_TAGS:
+            return tag.__name__
+        else:
+            return repr(tag)
+
     def __init__(self, constant_mapper=str, flux_stringify_mapper=None):
         pymbolic.mapper.stringifier.StringifyMapper.__init__(
                 self, constant_mapper=constant_mapper)
@@ -431,7 +438,7 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
         return "BPair(%s, %s, %s)" % (
                 self.rec(expr.field, PREC_NONE),
                 self.rec(expr.bfield, PREC_NONE),
-                repr(expr.tag))
+                self._format_btag(expr.tag))
 
     def map_diff(self, expr, enclosing_prec):
         return "Diff%d" % expr.xyz_axis
@@ -470,7 +477,7 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
     def map_bdry_flux(self, expr, enclosing_prec):
         from pymbolic.mapper.stringifier import PREC_NONE
         return "B[%s]%s(%s)" % (
-                expr.boundary_tag,
+                self._format_btag(expr.boundary_tag),
                 expr.get_flux_or_lift_text(),
                 self.flux_stringify_mapper(expr.flux, PREC_NONE))
 
@@ -485,7 +492,7 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
         from pymbolic.mapper.stringifier import PREC_NONE
         return "Q[%s]B[%s]%s(%s)" % (
                 expr.quadrature_tag,
-                expr.boundary_tag,
+                self._format_btag(expr.boundary_tag),
                 expr.get_flux_or_lift_text(),
                 self.flux_stringify_mapper(expr.flux, PREC_NONE))
 

@@ -197,11 +197,11 @@ class DiffBatchAssign(Instruction):
         if len(self.names) > 1:
             lines.append("{")
             for n, d in zip(self.names, self.operators):
-                lines.append("  %s <- %s * %s" % (n, d, self.field))
+                lines.append("  %s <- %s(%s)" % (n, d, self.field))
             lines.append("}")
         else:
             for n, d in zip(self.names, self.operators):
-                lines.append("%s <- %s * %s" % (n, d, self.field))
+                lines.append("%s <- %s(%s)" % (n, d, self.field))
 
         return "\n".join(lines)
 
@@ -263,7 +263,8 @@ class FluxExchangeBatchAssign(Instruction):
 # }}}
 
 # {{{ graphviz/dot dataflow graph drawing -------------------------------------
-def dot_dataflow_graph(code, max_node_label_length=30):
+def dot_dataflow_graph(code, max_node_label_length=30, 
+        label_wrap_width=50):
     origins = {}
     node_names = {}
 
@@ -274,10 +275,17 @@ def dot_dataflow_graph(code, max_node_label_length=30):
     for num, insn in enumerate(code.instructions):
         node_name = "node%d" % num
         node_names[insn] = node_name
-        node_label = str(insn).replace("\n", "\\l") + "\\l"
+        node_label = str(insn)
 
         if max_node_label_length is not None:
             node_label = node_label[:max_node_label_length]
+
+        if label_wrap_width is not None:
+            from pytools import word_wrap
+            node_label = word_wrap(node_label, label_wrap_width,
+                    wrap_using="\n      ")
+
+        node_label = node_label.replace("\n", "\\l") + "\\l"
 
         result.append("%s [ label=\"p%d: %s\" shape=box ];" % (
             node_name, insn.priority, node_label))
