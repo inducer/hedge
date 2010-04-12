@@ -132,8 +132,4 @@ void hedge_expose_base()
       (arg("dimensions"), arg("vertices")),
       return_value_policy<manage_new_object>());
 
-  {
-    typedef ublas::zero_vector<double> cl;
-    class_<cl>("ZeroVector");
-  }
 }

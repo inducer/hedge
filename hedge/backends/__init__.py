@@ -158,12 +158,16 @@ FEAT_CUDA = "cuda"
 
 def generate_features(allowed_features):
     if FEAT_MPI in allowed_features:
-        import pytools.mpiwrap as mpi
-        if not mpi.Is_initialized():
-            mpi.InitWithAutoFinalize()
+        try:
+            import pytools.mpiwrap as mpi
+        except ImportError:
+            pass
+        else:
+            if not mpi.Is_initialized():
+                mpi.InitWithAutoFinalize()
 
-        if mpi.COMM_WORLD.Get_size() > 1:
-            yield FEAT_MPI
+            if mpi.COMM_WORLD.Get_size() > 1:
+                yield FEAT_MPI
 
     if FEAT_CUDA in allowed_features:
         try:
