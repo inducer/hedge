@@ -363,7 +363,7 @@ class VariableCoefficientAdvectionOperator(HyperbolicOperator):
         def rhs(t, u):
             kwargs = {}
             if sensor is not None:
-                s = kwargs["sensor"] = sensor(t, u)
+                kwargs["sensor"] = sensor(t, u)
 
             if self.bc_u_f is not "None":
                 kwargs["bc_u"] = \

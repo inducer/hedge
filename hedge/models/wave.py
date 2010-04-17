@@ -26,10 +26,12 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 import numpy
 import hedge.mesh
 from hedge.models import HyperbolicOperator
+from hedge.second_order import CentralSecondDerivative
 
 
 
 
+# {{{ constant-velocity -------------------------------------------------------
 class StrongWaveOperator(HyperbolicOperator):
     """This operator discretizes the wave equation
     :math:`\\partial_t^2 u = c^2 \\Delta u`.
@@ -205,9 +207,12 @@ class StrongWaveOperator(HyperbolicOperator):
     def max_eigenvalue(self, t, fields=None, discr=None):
         return abs(self.c)
 
+# }}}
 
 
 
+
+# {{{ variable-velocity -------------------------------------------------------
 class VariableVelocityStrongWaveOperator(HyperbolicOperator):
     """This operator discretizes the wave equation
     :math:`\\partial_t^2 u = c^2 \\Delta u`.
@@ -226,7 +231,10 @@ class VariableVelocityStrongWaveOperator(HyperbolicOperator):
             dirichlet_tag=hedge.mesh.TAG_ALL,
             neumann_tag=hedge.mesh.TAG_NONE,
             radiation_tag=hedge.mesh.TAG_NONE,
-            time_sign=1):
+            time_sign=1,
+            diffusion_coeff=None,
+            diffusion_scheme=CentralSecondDerivative()
+            ):
         """`c` is assumed to be positive and conforms to the
         :class:`hedge.data.ITimeDependentGivenFunction` interface.
 
@@ -246,6 +254,10 @@ class VariableVelocityStrongWaveOperator(HyperbolicOperator):
 
         self.flux_type = flux_type
 
+        self.diffusion_coeff = diffusion_coeff
+        self.diffusion_scheme = diffusion_scheme
+
+    # {{{ flux ----------------------------------------------------------------
     def flux(self):
         from hedge.flux import FluxVectorPlaceholder, make_normal
 
@@ -275,7 +287,23 @@ class VariableVelocityStrongWaveOperator(HyperbolicOperator):
 
         return flux
 
-    def op_template(self):
+    # }}}
+
+    def bind_characteristic_velocity(self, discr):
+        from hedge.optemplate.operators import (
+                ElementwiseMaxOperator)
+        from hedge.optemplate import Field
+        velocity = ElementwiseMaxOperator()(Field("c"))
+
+        from hedge.optemplate import Field
+        compiled = discr.compile(velocity)
+
+        def do(t, w):
+            return compiled(c=self.c.volume_interpolant(t, discr))
+
+        return do
+
+    def op_template(self, with_sensor=False):
         from hedge.optemplate import \
                 Field, \
                 make_vector_field, \
@@ -295,26 +323,27 @@ class VariableVelocityStrongWaveOperator(HyperbolicOperator):
         c = Field("c")
         flux_w = join_fields(c, w)
 
-        # boundary conditions -------------------------------------------------
+        # {{{ boundary conditions
         from hedge.flux import make_normal
         normal = make_normal(d)
 
         from hedge.tools import join_fields
-        # dirichlet BC's ------------------------------------------------------
+
+        # Dirichlet
         dir_c = BoundarizeOperator(self.dirichlet_tag) * c
         dir_u = BoundarizeOperator(self.dirichlet_tag) * u
         dir_v = BoundarizeOperator(self.dirichlet_tag) * v
 
         dir_bc = join_fields(dir_c, -dir_u, dir_v)
 
-        # neumann BC's --------------------------------------------------------
+        # Neumann
         neu_c = BoundarizeOperator(self.neumann_tag) * c
         neu_u = BoundarizeOperator(self.neumann_tag) * u
         neu_v = BoundarizeOperator(self.neumann_tag) * v
 
         neu_bc = join_fields(neu_c, neu_u, -neu_v)
 
-        # radiation BC's ------------------------------------------------------
+        # Radiation
         from hedge.optemplate import make_normal
         rad_normal = make_normal(self.radiation_tag, d)
 
@@ -328,14 +357,55 @@ class VariableVelocityStrongWaveOperator(HyperbolicOperator):
                 0.5*rad_normal*(numpy.dot(rad_normal, rad_v) - self.time_sign*rad_u)
                 )
 
+        # }}}
+
+        # {{{ diffusion -------------------------------------------------------
+        from pytools.obj_array import with_object_array_or_scalar
+
+        def make_diffusion(arg):
+            if with_sensor or (
+                    self.diffusion_coeff is not None and self.diffusion_coeff != 0):
+                if self.diffusion_coeff is None:
+                    diffusion_coeff = 0
+                else:
+                    diffusion_coeff = self.diffusion_coeff
+
+                if with_sensor:
+                    diffusion_coeff += Field("sensor")
+
+                from hedge.second_order import SecondDerivativeTarget
+
+                # strong_form here allows the reuse the value of grad u.
+                grad_tgt = SecondDerivativeTarget(
+                        self.dimensions, strong_form=True,
+                        operand=arg)
+
+                self.diffusion_scheme.grad(grad_tgt, bc_getter=None,
+                        dirichlet_tags=[], neumann_tags=[])
+
+                div_tgt = SecondDerivativeTarget(
+                        self.dimensions, strong_form=False,
+                        operand=diffusion_coeff*grad_tgt.minv_all)
+
+                self.diffusion_scheme.div(div_tgt,
+                        bc_getter=None,
+                        dirichlet_tags=[], neumann_tags=[])
+
+                return div_tgt.minv_all
+            else:
+                return 0
+
+        # }}}
+
         # entire operator -----------------------------------------------------
         nabla = make_nabla(d)
         flux_op = get_flux_operator(self.flux())
 
         return (
                 - join_fields(
-                    -self.time_sign*c*numpy.dot(nabla, v),
-                    -self.time_sign*c*(nabla*u)
+                    -self.time_sign*c*numpy.dot(nabla, v) - make_diffusion(u),
+                    -self.time_sign*c*(nabla*u) - with_object_array_or_scalar(
+                        make_diffusion, v)
                     )
                 +
                 InverseMassOperator() * (
@@ -346,18 +416,24 @@ class VariableVelocityStrongWaveOperator(HyperbolicOperator):
                     ))
 
 
-    def bind(self, discr):
+    def bind(self, discr, sensor=None):
         from hedge.mesh import check_bc_coverage
         check_bc_coverage(discr.mesh, [
             self.dirichlet_tag,
             self.neumann_tag,
             self.radiation_tag])
 
-        compiled_op_template = discr.compile(self.op_template())
+        compiled_op_template = discr.compile(self.op_template(
+            with_sensor=sensor is not None))
 
         def rhs(t, w):
+            kwargs = {}
+            if sensor is not None:
+                kwargs["sensor"] = sensor(t, w)
+
             rhs = compiled_op_template(w=w,
-                    c=self.c.volume_interpolant(t, discr))
+                    c=self.c.volume_interpolant(t, discr),
+                    **kwargs)
 
             if self.source is not None:
                 rhs[0] += self.source.volume_interpolant(t, discr)
@@ -375,3 +451,10 @@ class VariableVelocityStrongWaveOperator(HyperbolicOperator):
 
         c = self.c.volume_interpolant(t, discr)
         return discr.nodewise_max(c)
+
+# }}}
+
+
+
+
+# vim: foldmethod=marker
