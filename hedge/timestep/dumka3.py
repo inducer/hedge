@@ -141,7 +141,8 @@ class Dumka3TimeStepper(object):
             lc3 = self.linear_combiner_3 = vpf.make_linear_combiner(
                     self.dtype, self.scalar_type, y, arg_count=3)
 
-            ip = self.ip = vpf.make_inner_product(y)
+            if self.adaptive:
+                ip = self.ip = vpf.make_inner_product(y)
 
         def norm(a):
             return numpy.sqrt(ip(a, a))
