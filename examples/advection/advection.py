@@ -23,7 +23,6 @@ import numpy.linalg as la
 
 
 def main(write_output=True, flux_type_arg="upwind"):
-    from hedge.timestep import RK4TimeStepper
     from hedge.tools import mem_checkpoint
     from math import sin, cos, pi, sqrt
     from math import floor
@@ -95,7 +94,8 @@ def main(write_output=True, flux_type_arg="upwind"):
     u = discr.interpolate_volume_function(lambda x, el: u_analytic(x, el, 0))
 
     # timestep setup ----------------------------------------------------------
-    stepper = RK4TimeStepper()
+    from hedge.timestep.runge_kutta import LSRK4TimeStepper
+    stepper = LSRK4TimeStepper()
 
     if rcon.is_head_rank:
         print "%d elements" % len(discr.mesh.elements)

@@ -187,6 +187,67 @@ def DiffOperatorVector(els):
     from hedge.tools import join_fields
     return join_fields(*els)
 
+# }}}
+
+# {{{ reference-element differentiation operators -----------------------------
+class ReferenceDiffOperatorBase(Operator):
+    def __init__(self, rst_axis):
+        Operator.__init__(self)
+
+        self.rst_axis = rst_axis
+
+    def __getinitargs__(self):
+        return (self.rst_axis,)
+
+    def preimage_ranges(self, eg):
+        return eg.ranges
+
+    def equal_except_for_axis(self, other):
+        return (type(self) == type(other)
+                # first argument is always the axis
+                and self.__getinitargs__()[1:] == other.__getinitargs__()[1:])
+
+class ReferenceDifferentiationOperator(ReferenceDiffOperatorBase):
+    @staticmethod
+    def matrices(element_group):
+        return element_group.differentiation_matrices
+
+    def get_mapper_method(self, mapper):
+        return mapper.map_ref_diff
+
+class ReferenceStiffnessTOperator(ReferenceDiffOperatorBase):
+    @staticmethod
+    def matrices(element_group):
+        return element_group.stiffness_t_matrices
+
+    def get_mapper_method(self, mapper):
+        return mapper.map_ref_stiffness_t
+
+class QuadratureReferenceStiffnessTOperator(ReferenceDiffOperatorBase):
+    """
+    .. note::
+
+        This operator is purely for internal use. It is inserted
+        by :class:`hedge.optemplate.mappers.OperatorSpecializer`
+        when a :class:`StiffnessTOperator` is applied to a quadrature field.
+    """
+
+    def __init__(self, rst_axis, quadrature_tag):
+        ReferenceDiffOperatorBase.__init__(self, xyz_axis)
+        self.quadrature_tag = quadrature_tag
+
+    def __getinitargs__(self):
+        return (self.rst_axis, self.quadrature_tag)
+
+    def get_mapper_method(self, mapper):
+        return mapper.map_ref_quad_stiffness_t
+
+    def preimage_ranges(self, eg):
+        return eg.quadrature_info[self.quadrature_tag].ranges
+
+    def matrices(self, element_group):
+        return element_group.quadrature_info[self.quadrature_tag] \
+                .ldis_quad_info.stiffness_t_matrices()
 
 
 # }}}
@@ -367,7 +428,7 @@ class InverseMassOperator(MassOperatorBase):
 
 
 
-class QuadratureMassOperator(Operator):
+class ReferenceQuadratureMassOperator(Operator):
     """
     .. note::
 
@@ -383,9 +444,37 @@ class QuadratureMassOperator(Operator):
         return (self.quadrature_tag,)
 
     def get_mapper_method(self, mapper):
-        return mapper.map_quad_mass
+        return mapper.map_ref_quad_mass
 
 
+
+
+class ReferenceMassOperator(MassOperatorBase):
+    @staticmethod
+    def matrix(element_group):
+        return element_group.mass_matrix
+
+    @staticmethod
+    def coefficients(element_group):
+        return None
+
+    def get_mapper_method(self, mapper):
+        return mapper.map_ref_mass
+
+
+
+
+class ReferenceInverseMassOperator(MassOperatorBase):
+    @staticmethod
+    def matrix(element_group):
+        return element_group.inverse_mass_matrix
+
+    @staticmethod
+    def coefficients(element_group):
+        return None
+
+    def get_mapper_method(self, mapper):
+        return mapper.map_ref_inverse_mass
 
 # }}}
 

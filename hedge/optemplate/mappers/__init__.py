@@ -413,7 +413,62 @@ class OperatorSpecializer(CSECachingMapperMixin, IdentityMapper):
 
 
 
+class GlobalToReferenceMapper(CSECachingMapperMixin, IdentityMapper):
+    """Maps operators that apply on the global function space down to operators on
+    reference elements, together with explicit multiplication by geometric factors.
+    """
+
+    def __init__(self, dimensions):
+        CSECachingMapperMixin.__init__(self)
+        IdentityMapper.__init__(self)
+
+        self.dimensions = dimensions
+
+    def map_operator_binding(self, expr):
+        from hedge.optemplate.primitives import (
+                Jacobian, InverseMetricDerivative)
+
+        from hedge.optemplate.operators import (
+                MassOperator, ReferenceMassOperator,
+                StiffnessOperator, ReferenceStiffnessOperator,
+                InverseMassOperator, ReferenceInverseMassOperator,
+                DifferentiationOperator, ReferenceDifferentiationOperator,
+                StiffnessTOperator, ReferenceStiffnessTOperator)
+
+        if isinstance(expr.op, MassOperator): 
+            return ReferenceMassOperator()(Jacobian() * self.rec(expr.field))
+
+        elif isinstance(expr.op, InverseMassOperator) :
+            return ReferenceInverseMassOperator()((
+                1/Jacobian()) * self.rec(expr.field))
+        
+        elif isinstance(expr.op, StiffnessOperator) :
+            return ReferenceMassOperator()(Jacobian() * 
+                    self.rec(
+                        DifferentiationOperator(expr.op.xyz_axis)(expr.field)))
+
+        elif isinstance(expr.op, DifferentiationOperator):
+            rec_field = self.rec(expr.field)
+            return sum(InverseMetricDerivative(rst, expr.op.xyz_axis)*
+                    ReferenceDifferentiationOperator(rst)(rec_field) 
+                    for rst in range(self.dimensions))
+        
+        elif isinstance(expr.op, StiffnessTOperator): 
+            jac_rec_field = Jacobian() * self.rec(expr.field)
+            return sum(InverseMetricDerivative(rst, expr.op.xyz_axis) *
+                    ReferenceStiffnessTOperator(rst)(jac_rec_field) 
+                    for rst in range(self.dimensions))
+      
+        elif isinstance(expr.op, MInvSTOperator): 
+            return self.rec(
+                    InverseMassOperator()(
+                        StiffnessTOperator(expr.op.xyz_axis)(expr.field)))
+
+        else:
+            return IdentityMapper.map_operator_binding(self, expr)
+
 # }}}
+
 # {{{ stringification ---------------------------------------------------------
 class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
     def _format_btag(self, tag):

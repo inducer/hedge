@@ -232,7 +232,7 @@ def process_optemplate(optemplate, post_bind_mapper=None,
     from hedge.optemplate.mappers import (
             OperatorBinder, BCToFluxRewriter, CommutativeConstantFoldingMapper,
             EmptyFluxKiller, InverseMassContractor, DerivativeJoiner,
-            ErrorChecker, OperatorSpecializer)
+            ErrorChecker, OperatorSpecializer, GlobalToReferenceMapper)
     from hedge.optemplate.mappers.type_inference import TypeInferrer
 
     dumper("before-bind", optemplate)
@@ -246,6 +246,10 @@ def process_optemplate(optemplate, post_bind_mapper=None,
 
     dumper("before-cfold", optemplate)
     optemplate = CommutativeConstantFoldingMapper()(optemplate)
+
+    assert mesh is not None
+    dumper("before-global-to-reference", optemplate)
+    optemplate = GlobalToReferenceMapper(mesh.dimensions)(optemplate)
 
     dumper("before-bc2flux", optemplate)
     optemplate = BCToFluxRewriter()(optemplate)
