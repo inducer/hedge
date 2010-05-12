@@ -331,13 +331,19 @@ class ExecutionMapper(ExecutionMapperBase):
         return func(*[self.rec(p) for p in expr.parameters])
 
     def map_jacobian(self, expr):
-        return self.discr.volume_jacobians
+        if expr.quadrature_tag is None:
+            return self.discr.volume_jacobians
+        else:
+            return (self.discr.get_quadrature_info(expr.quadrature_tag)
+                    .volume_jacobians)
 
     def map_forward_metric_derivative(self, expr):
-        return self.discr.forward_metric_derivatives()[expr.xyz_axis][expr.rst_axis]
+        return (self.discr.forward_metric_derivatives(expr.quadrature_tag)
+                    [expr.xyz_axis][expr.rst_axis])
 
     def map_inverse_metric_derivative(self, expr):
-        return self.discr.inverse_metric_derivatives[expr.xyz_axis][expr.rst_axis]
+        return (self.discr.inverse_metric_derivatives(expr.quadrature_tag)
+                    [expr.xyz_axis][expr.rst_axis])
 
     # }}}
 

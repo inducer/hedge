@@ -118,6 +118,27 @@ class MInvSTOperator(WeakFormDiffOperatorBase):
     def get_mapper_method(self, mapper):
         return mapper.map_minv_st
 
+class QuadratureStiffnessTOperator(DiffOperatorBase):
+    """
+    .. note::
+
+        This operator is purely for internal use. It is inserted
+        by :class:`hedge.optemplate.mappers.OperatorSpecializer`
+        when a :class:`StiffnessTOperator` is applied to a quadrature
+        field, and then eliminated by 
+        :class:`hedge.optemplate.mappers.GlobalToReferenceMapper`
+        in favor of operators on the reference element.
+    """
+
+    def __init__(self, xyz_axis, quadrature_tag):
+        DiffOperatorBase.__init__(self, xyz_axis)
+        self.quadrature_tag = quadrature_tag
+
+    def __getinitargs__(self):
+        return (self.xyz_axis, self.quadrature_tag)
+
+    def get_mapper_method(self, mapper):
+        return mapper.map_quad_stiffness_t
 
 
 
@@ -171,7 +192,7 @@ class ReferenceQuadratureStiffnessTOperator(ReferenceDiffOperatorBase):
     """
 
     def __init__(self, rst_axis, quadrature_tag):
-        ReferenceDiffOperatorBase.__init__(self, xyz_axis)
+        ReferenceDiffOperatorBase.__init__(self, rst_axis)
         self.quadrature_tag = quadrature_tag
 
     def __getinitargs__(self):
@@ -361,6 +382,31 @@ class InverseMassOperator(MassOperatorBase):
 
     def get_mapper_method(self, mapper):
         return mapper.map_inverse_mass
+
+
+
+
+
+class QuadratureMassOperator(Operator):
+    """
+    .. note::
+
+        This operator is purely for internal use. It is inserted
+        by :class:`hedge.optemplate.mappers.OperatorSpecializer`
+        when a :class:`StiffnessTOperator` is applied to a quadrature
+        field, and then eliminated by 
+        :class:`hedge.optemplate.mappers.GlobalToReferenceMapper`
+        in favor of operators on the reference element.
+    """
+
+    def __init__(self, quadrature_tag):
+        self.quadrature_tag = quadrature_tag
+
+    def __getinitargs__(self):
+        return (self.quadrature_tag,)
+
+    def get_mapper_method(self, mapper):
+        return mapper.map_quad_mass
 
 
 

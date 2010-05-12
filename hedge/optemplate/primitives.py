@@ -179,27 +179,41 @@ def make_normal(tag, dimensions):
 
 
 
-class Jacobian(pymbolic.primitives.AlgebraicLeaf):
+class GeometricFactorBase(pymbolic.primitives.AlgebraicLeaf):
+    def __init__(self, quadrature_tag):
+        """
+        :param quadrature_tag: quadrature tag for the grid on
+        which this geometric factor is needed, or None for
+        nodal representation.
+        """
+        self.quadrature_tag = quadrature_tag
+
+    def get_hash(self):
+        return hash((self.__class__, self.quadrature_tag))
+
+    def is_equal(self, other): 
+        return (other.__class__ == self.__class__
+                and other.quadrature_tag == self.quadrature_tag)
+
+    def __getinitargs__(self):
+        return (self.quadrature_tag,)
+
+
+
+
+class Jacobian(GeometricFactorBase):
     def stringifier(self):
         from hedge.optemplate.mappers import StringifyMapper
         return StringifyMapper
 
-    def get_hash(self):
-        return hash(self.__class__)
-
-    def is_equal(self, other):
-        return (other.__class__ == self.__class__)
-
     def get_mapper_method(self, mapper):
         return mapper.map_jacobian
 
-    def __getinitargs__(self):
-        return ()
 
 
 
 
-class ForwardMetricDerivative(pymbolic.primitives.AlgebraicLeaf):
+class ForwardMetricDerivative(GeometricFactorBase):
     """
     Pointwise metric derivatives representing
 
@@ -208,7 +222,14 @@ class ForwardMetricDerivative(pymbolic.primitives.AlgebraicLeaf):
         \frac{d x_{\mathtt{xyz\_axis}} }{d r_{\mathtt{rst\_axis}} }
     """
 
-    def __init__(self, xyz_axis, rst_axis):
+    def __init__(self, quadrature_tag, xyz_axis, rst_axis):
+        """
+        :param quadrature_tag: quadrature tag for the grid on
+        which this geometric factor is needed, or None for
+        nodal representation.
+        """
+
+        GeometricFactorBase.__init__(self, quadrature_tag)
         self.xyz_axis = xyz_axis
         self.rst_axis = rst_axis
 
@@ -217,10 +238,12 @@ class ForwardMetricDerivative(pymbolic.primitives.AlgebraicLeaf):
         return StringifyMapper
 
     def get_hash(self):
-        return hash((self.__class__, self.xyz_axis, self.rst_axis))
+        return hash((self.__class__, self.quadrature_tag, 
+            self.xyz_axis, self.rst_axis))
 
     def is_equal(self, other):
         return (other.__class__ == self.__class__
+                and other.quadrature_tag == self.quadrature_tag
                 and other.xyz_axis == self.xyz_axis
                 and other.rst_axis == self.rst_axis
                 )
@@ -229,12 +252,12 @@ class ForwardMetricDerivative(pymbolic.primitives.AlgebraicLeaf):
         return mapper.map_forward_metric_derivative
 
     def __getinitargs__(self):
-        return (self.xyz_axis, self.rst_axis)
+        return (self.quadrature_tag, self.xyz_axis, self.rst_axis)
 
 
 
 
-class InverseMetricDerivative(pymbolic.primitives.AlgebraicLeaf):
+class InverseMetricDerivative(GeometricFactorBase):
     """
     Pointwise metric derivatives representing
 
@@ -243,7 +266,14 @@ class InverseMetricDerivative(pymbolic.primitives.AlgebraicLeaf):
         \frac{d r_{\mathtt{rst\_axis}} }{d x_{\mathtt{xyz\_axis}} }
     """
 
-    def __init__(self, rst_axis, xyz_axis, ):
+    def __init__(self, quadrature_tag, rst_axis, xyz_axis):
+        """
+        :param quadrature_tag: quadrature tag for the grid on
+        which this geometric factor is needed, or None for
+        nodal representation.
+        """
+
+        GeometricFactorBase.__init__(self, quadrature_tag)
         self.rst_axis = rst_axis
         self.xyz_axis = xyz_axis
 
@@ -252,10 +282,11 @@ class InverseMetricDerivative(pymbolic.primitives.AlgebraicLeaf):
         return StringifyMapper
 
     def get_hash(self):
-        return hash((self.__class__, self.rst_axis, self.xyz_axis))
-
+        return hash((self.__class__, self.quadrature_tag, 
+            self.xyz_axis, self.rst_axis))
     def is_equal(self, other):
         return (other.__class__ == self.__class__
+                and other.quadrature_tag == self.quadrature_tag
                 and other.rst_axis == self.rst_axis
                 and other.xyz_axis == self.xyz_axis
                 )
@@ -264,7 +295,7 @@ class InverseMetricDerivative(pymbolic.primitives.AlgebraicLeaf):
         return mapper.map_inverse_metric_derivative
 
     def __getinitargs__(self):
-        return (self.rst_axis, self.xyz_axis)
+        return (self.quadrature_tag, self.rst_axis, self.xyz_axis)
 
 # }}}
 

@@ -146,6 +146,26 @@ class Discretization(TimestepCalculator):
     polynomials on an elemnent) into a function space on a mesh. They
     provide creation functions such as interpolating given functions,
     differential operators and flux lifting operators.
+
+    :ivar dimensions:
+    :ivar run_context:
+    :ivar mesh:
+    :ivar debug: a set of debug flags (which are strings).
+    :ivar default_scalar_type: Default numpy type for :meth:`volume_zeros`
+        and company.
+
+    :ivar quad_min_degrees: A mapping from quadrature tags to the degrees to
+        which the desired quadrature is supposed to be exact.
+
+    :ivar volume_jacobians: Full-volume vector of jacobians on nodal/
+        quadrature grid
+
+    :ivar inverse_metric_derivatives: A list of lists of full-volume vectors,
+        such that the vector *inverse_metric_derivatives[xyz_axis][rst_axis]*
+        gives the metric derivatives on the entire volume.
+
+        .. math::
+            \frac{d r_{\mathtt{rst\_axis}} }{d x_{\mathtt{xyz\_axis}} }
     """
 
     # {{{ debug flags
@@ -417,11 +437,6 @@ class Discretization(TimestepCalculator):
 
     def _calculate_local_matrices(self):
         vol_jac = self.volume_jacobians = self.volume_empty()
-        inv_met = self.inverse_metric_derivatives = [[
-                self.volume_empty()
-                for i in range(self.dimensions)]
-                for i in range(self.dimensions)]
-
 
         for eg in self.element_groups:
             ldis = eg.local_discretization
@@ -437,51 +452,85 @@ class Discretization(TimestepCalculator):
             eg.minv_st = \
                     [numpy.dot(numpy.dot(immat, d.T), mmat) for d in dmats]
 
-            jacobians = numpy.array([
+            (eg.el_array_from_volume(vol_jac).T)[:,:] = numpy.array([
                 abs(el.map.jacobian())
                 for el in eg.members])
 
-            (eg.el_array_from_volume(vol_jac).T)[:,:] = jacobians
+    @memoize_method
+    def inverse_metric_derivatives(self, quadrature_tag=None):
+        """Return a list of lists of full-volume vectors,
+        such that the vector *result[xyz_axis][rst_axis]*
+        gives the metric derivatives on the entire volume.
 
-            inv_map_coeff = numpy.array([
-                    [
-                        [
-                            el.inverse_map.matrix[rst_coord, xyz_coord]
-                            for el in eg.members]
-                        for rst_coord in range(ldis.dimensions)]
-                    for xyz_coord in range(ldis.dimensions)])
+        .. math::
+            \frac{d r_{\mathtt{rst\_axis}} }{d x_{\mathtt{xyz\_axis}} }
+        """
 
-            for xyz_coord in range(ldis.dimensions):
-                for rst_coord in range(ldis.dimensions):
-                    (eg.el_array_from_volume(
-                        inv_met[xyz_coord][rst_coord]).T)[:,:] \
-                                = inv_map_coeff[xyz_coord, rst_coord]
+        if quadrature_tag is None:
+            result = [[
+                    self.volume_empty()
+                    for i in range(self.dimensions)]
+                    for i in range(self.dimensions)]
+
+            for eg in self.element_groups:
+                ldis = eg.local_discretization
+
+                for xyz_coord in range(ldis.dimensions):
+                    for rst_coord in range(ldis.dimensions):
+                        (eg.el_array_from_volume(
+                            result[xyz_coord][rst_coord]).T)[:,:] \
+                                    = [ el.inverse_map.matrix[rst_coord, xyz_coord]
+                                            for el in eg.members]
+
+        else:
+            result = [[
+                    self.volume_empty()
+                    for i in range(self.dimensions)]
+                    for i in range(self.dimensions)]
+
+            for eg in self.element_groups:
+                ldis = eg.local_discretization
+                eg_q_info = eg.quadrature_info
+
+                for xyz_coord in range(ldis.dimensions):
+                    for rst_coord in range(ldis.dimensions):
+                        (eg_q_info.el_array_from_volume(
+                            inv_met[xyz_coord][rst_coord]).T)[:,:] \
+                                    = [el.inverse_map.matrix[rst_coord, xyz_coord]
+                                            for el in eg.members]
+        return result
+
 
     @memoize_method
-    def forward_metric_derivatives(self):
-        result = [[
-                self.volume_empty()
-                for i in range(self.dimensions)]
-                for i in range(self.dimensions)]
+    def forward_metric_derivatives(self, quadrature_tag=None):
+        """Return a list of lists of full-volume vectors,
+        such that the vector *result[xyz_axis][rst_axis]*
+        gives the metric derivatives on the entire volume.
 
-        for eg in self.element_groups:
-            ldis = eg.local_discretization
+        .. math::
+            \frac{d x_{\mathtt{xyz\_axis}} }{d r_{\mathtt{rst\_axis}} }
+        """
 
-            fwd_map_coeff = numpy.array([
-                    [
-                        [
-                            el.map.matrix[rst_coord, xyz_coord]
-                            for el in eg.members]
-                        for rst_coord in range(ldis.dimensions)]
-                    for xyz_coord in range(ldis.dimensions)])
+        if quadrature_tag is None:
+            result = [[
+                    self.volume_empty()
+                    for i in range(self.dimensions)]
+                    for i in range(self.dimensions)]
 
-            for xyz_coord in range(ldis.dimensions):
-                for rst_coord in range(ldis.dimensions):
-                    (eg.el_array_from_volume(
-                        result[xyz_coord][rst_coord]).T)[:,:] \
-                                = fwd_map_coeff[xyz_coord, rst_coord]
+            for eg in self.element_groups:
+                ldis = eg.local_discretization
 
-        return result
+                for xyz_coord in range(ldis.dimensions):
+                    for rst_coord in range(ldis.dimensions):
+                        (eg.el_array_from_volume(
+                            result[xyz_coord][rst_coord]).T)[:,:] \
+                                    = [ el.map.matrix[rst_coord, xyz_coord]
+                                            for el in eg.members]
+
+            return result
+        else:
+            raise NotImplementedError(
+                    "forward_metric_derivatives on quadrature grids")
 
     def _set_face_pair_index_data(self, fg, fp, fi_l, fi_n,
             findices_l, findices_n, findices_shuffle_op_n):
@@ -714,7 +763,7 @@ class Discretization(TimestepCalculator):
         q_info.int_faces_node_count = 0
         q_info.face_groups = []
 
-        # process element groups
+        # {{{ process element groups
         for eg in self.element_groups:
             eg_q_info = eg.quadrature_info[quad_tag] = eg.QuadratureInfo(
                     eg, min_degree, q_info.node_count,
@@ -723,7 +772,31 @@ class Discretization(TimestepCalculator):
             q_info.node_count += eg_q_info.ranges.total_size
             q_info.int_faces_node_count += eg_q_info.el_faces_ranges.total_size
 
-        # process face groups
+        # }}}
+
+        # {{{ fill out metric bits 
+        
+        # We do this in a second pass because further up we do not yet know
+        # the the length of the quadrature volume vector.
+
+        def make_empty_quad_vol_vector():
+            return numpy.empty(q_info.node_count, dtype=numpy.float64)
+
+        vol_jac = q_info.volume_jacobians = \
+                make_empty_quad_vol_vector()
+
+        inv_met = q_info.inverse_metric_derivatives = [[
+                make_empty_quad_vol_vector()
+                for i in range(self.dimensions)]
+                for i in range(self.dimensions)]
+
+        for eg in self.element_groups:
+            (eg_q_info.el_array_from_volume(vol_jac).T)[:,:] \
+                    = numpy.array([abs(el.map.jacobian()) for el in eg.members])
+
+        # }}}
+
+        # {{{ process face groups
         for fg in self.face_groups:
             quad_fg = type(fg)(double_sided=True,
                     debug="ilist_generation" in self.debug)
@@ -801,6 +874,8 @@ class Discretization(TimestepCalculator):
 
                 quad_fg.ldis_loc_quad_info = ldis_q_info_l
                 quad_fg.ldis_opp_quad_info = ldis_q_info_n
+
+        # }}}
 
         return q_info
 

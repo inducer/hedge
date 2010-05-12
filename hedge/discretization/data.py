@@ -40,6 +40,16 @@ class QuadratureInfo(object):
 
     :ivar node_count: number of volume quadrature nodes.
     :ivar int_faces_node_count: number of interior-face quadrature nodes.
+    :ivar volume_jacobians: Full-volume vector of jacobians on this
+      quadrature grid.
+
+    :ivar inverse_metric_derivatives: A list of lists of full-volume 
+        vectors, such that the vector
+        *inverse_metric_derivatives[xyz_axis][rst_axis]* gives the metric
+        derivatives on the entire volume for this quadrature grid
+
+        .. math::
+            \frac{d r_{\mathtt{rst\_axis}} }{d x_{\mathtt{xyz\_axis}} }
     """
 
 # }}}
@@ -66,6 +76,14 @@ class StraightElementGroup(ElementGroupBase):
     :ivar stiffness_matrices: the element-local stiffness matrices :math:`MD_r, MD_s,\dots`.
     :ivar quadrature_info: a map from quadrature tag to QuadratureInfo instance.
     """
+
+    def el_array_from_volume(self, vol_array):
+        """Return a 2-dimensional view of *vol_array* in which the first
+        dimension numbers elements within this element group and the second
+        dimension numbers nodes within each of those elements.
+        """
+        return (vol_array[self.ranges.start:self.ranges.start+self.ranges.total_size]
+                .reshape(len(self.ranges), -1))
 
     # {{{ quadrature info
     class QuadratureInfo:
@@ -98,15 +116,16 @@ class StraightElementGroup(ElementGroupBase):
                     ldis.face_count()*ldis_quad_info.face_node_count(),
                     len(el_group.members))
 
+        def el_array_from_volume(self, vol_array):
+            """Return a 2-dimensional view of *vol_array* in which the first
+            dimension numbers elements within this element group and the second
+            dimension numbers nodes within each of those elements.
+            """
+            return (vol_array[
+                self.ranges.start:self.ranges.start+self.ranges.total_size]
+                .reshape(len(self.ranges), -1))
     # }}}
 
-    def el_array_from_volume(self, vol_array):
-        """Return a 2-dimensional view of *vol_array* in which the first
-        dimension numbers elements within this element group and the second
-        dimension numbers nodes within each of those elements.
-        """
-        return (vol_array[self.ranges.start:self.ranges.start+self.ranges.total_size]
-                .reshape(len(self.ranges), -1))
 
 
 

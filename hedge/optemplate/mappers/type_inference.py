@@ -443,16 +443,26 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
 
     def map_operator_binding(self, expr, typedict):
         from hedge.optemplate.operators import (
+                DiffOperatorBase, 
                 ReferenceDiffOperatorBase, 
+
+                MassOperatorBase, 
                 ReferenceMassOperatorBase, 
+
                 ElementwiseMaxOperator,
                 BoundarizeOperator, FluxExchangeOperator,
                 FluxOperatorBase,
                 QuadratureGridUpsampler, QuadratureBoundaryGridUpsampler,
                 QuadratureInteriorFacesGridUpsampler,
-                ReferenceMassOperator, ReferenceQuadratureMassOperator,
+
+                MassOperator,
+                ReferenceMassOperator, 
+                ReferenceQuadratureMassOperator,
+
+                StiffnessTOperator, 
                 ReferenceStiffnessTOperator, 
                 ReferenceQuadratureStiffnessTOperator,
+
                 ElementwiseLinearOperator)
 
         own_type = typedict[expr]
@@ -465,20 +475,24 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
             self.rec(expr.field, typedict)
             return type_info.VolumeVector(NodalRepresentation())
 
-        elif isinstance(expr.op, (ReferenceStiffnessTOperator)):
+        elif isinstance(expr.op, 
+                (ReferenceStiffnessTOperator, StiffnessTOperator)):
             # stiffness_T can be specialized for quadrature by OperatorSpecializer
             typedict[expr.field] = type_info.KnownVolume()
             self.rec(expr.field, typedict)
             return type_info.VolumeVector(NodalRepresentation())
 
-        elif isinstance(expr.op, ReferenceMassOperator):
+        elif isinstance(expr.op, 
+                (ReferenceMassOperator, MassOperator)):
             # mass can be specialized for quadrature by OperatorSpecializer
             typedict[expr.field] = type_info.KnownVolume()
             self.rec(expr.field, typedict)
             return type_info.VolumeVector(NodalRepresentation())
 
         elif isinstance(expr.op, (
+            DiffOperatorBase,
             ReferenceDiffOperatorBase, 
+            MassOperatorBase,
             ReferenceMassOperatorBase)):
             # all other operators are purely nodal
             typedict[expr.field] = type_info.VolumeVector(NodalRepresentation())
