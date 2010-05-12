@@ -30,9 +30,9 @@ import numpy
 
 
 
-# exec mapper -----------------------------------------------------------------
+# {{{ exec mapper -------------------------------------------------------------
 class ExecutionMapper(ExecutionMapperBase):
-    # code execution functions ------------------------------------------------
+    # {{{ code execution functions --------------------------------------------
     def exec_assign(self, insn):
         return [(name, self.rec(expr))
                 for name, expr in zip(insn.names, insn.exprs)], []
@@ -181,6 +181,9 @@ class ExecutionMapper(ExecutionMapperBase):
 
     exec_quad_diff_batch_assign = exec_diff_batch_assign
 
+    # }}}
+
+    # {{{ expression mappings -------------------------------------------------
     def map_if_positive(self, expr):
         crit = self.rec(expr.criterion)
         bool_crit = crit > 0
@@ -201,12 +204,9 @@ class ExecutionMapper(ExecutionMapperBase):
         result[false_indices] = else_
         return result
 
-    def map_diff_base(self, op, field_expr):
-        field = self.rec(field_expr)
-
-        out = self.discr.volume_zeros()
-        self.executor.diff_xyz(self, op, field_expr, field, out)
-        return out
+    def map_ref_diff_base(self, op, field_expr):
+        raise NotImplementedError(
+                "differentiation should be happening in batched form")
 
     def map_elementwise_linear(self, op, field_expr):
         field = self.rec(field_expr)
@@ -330,9 +330,20 @@ class ExecutionMapper(ExecutionMapperBase):
 
         return func(*[self.rec(p) for p in expr.parameters])
 
+    def map_jacobian(self, expr):
+        return self.discr.volume_jacobians
 
+    def map_forward_metric_derivative(self, expr):
+        return self.discr.forward_metric_derivatives()[expr.xyz_axis][expr.rst_axis]
 
+    def map_inverse_metric_derivative(self, expr):
+        return self.discr.inverse_metric_derivatives[expr.xyz_axis][expr.rst_axis]
 
+    # }}}
+
+# }}}
+
+# {{{ executor ----------------------------------------------------------------
 class Executor(object):
     def __init__(self, discr, optemplate, post_bind_mapper):
         self.discr = discr
@@ -346,11 +357,11 @@ class Executor(object):
 
         def bench_diff(f):
             test_field = discr.volume_zeros()
-            from hedge.optemplate import DifferentiationOperator
+            from hedge.optemplate import ReferenceDifferentiationOperator
             from time import time
 
             start = time()
-            f([DifferentiationOperator(i)
+            f([ReferenceDifferentiationOperator(i)
                 for i in range(discr.dimensions)], test_field)
             return time() - start
 
@@ -427,14 +438,6 @@ class Executor(object):
                         discr.diff_flop_counter,
                         diff_rst_flops(discr))
 
-        self.diff_rst_to_xyz = \
-                time_count_flop(
-                        self.diff_rst_to_xyz,
-                        discr.diff_timer,
-                        discr.diff_counter,
-                        discr.diff_flop_counter,
-                        diff_rescale_one_flops(discr))
-
         self.do_elementwise_linear = \
                 time_count_flop(
                         self.do_elementwise_linear,
@@ -456,38 +459,24 @@ class Executor(object):
                 matrix.astype(to_uncomplex_dtype(field.dtype)),
                 scaling, field, out)
 
-    def diff_rst(self, rep_op, rst_axis, field):
+    def diff_rst(self, op, field):
         result = self.discr.volume_zeros(dtype=field.dtype)
 
         from hedge._internal import perform_elwise_operator
         for eg in self.discr.element_groups:
-            perform_elwise_operator(rep_op.preimage_ranges(eg), eg.ranges,
-                    rep_op.matrices(eg)[rst_axis].astype(field.dtype),
+            perform_elwise_operator(op.preimage_ranges(eg), eg.ranges,
+                    op.matrices(eg)[op.rst_axis].astype(field.dtype),
                     field, result)
 
         return result
 
-    def diff_rst_to_xyz(self, op, rst, result=None):
-        from hedge._internal import perform_elwise_scale
-
-        if result is None:
-            result = self.discr.volume_zeros(dtype=rst[0].dtype)
-
-        for rst_axis in range(self.discr.dimensions):
-            for eg in self.discr.element_groups:
-                perform_elwise_scale(eg.ranges,
-                        op.coefficients(eg)[op.xyz_axis][rst_axis],
-                        rst[rst_axis], result)
-
-        return result
-
     def diff_builtin(self, operators, field):
-        rst_derivatives = [
-                self.diff_rst(operators[0], i, field)
-                for i in range(self.discr.dimensions)]
+        """For the batch of reference differentiation operators in
+        *operators*, return the local corresponding derivatives of 
+        *field*.
+        """
 
-        return [self.diff_rst_to_xyz(op, rst_derivatives)
-                for op in operators]
+        return [self.diff_rst(op, field) for op in operators]
 
     def do_elementwise_linear(self, op, field, out):
         for eg in self.discr.element_groups:
@@ -513,12 +502,9 @@ class Executor(object):
         return self.code.execute(
                 self.discr.exec_mapper_class(context, self))
 
+# }}}
 
-
-
-
-
-# discretization --------------------------------------------------------------
+# {{{ discretization ----------------------------------------------------------
 class Discretization(hedge.discretization.Discretization):
     exec_mapper_class = ExecutionMapper
     executor_class = Executor
@@ -552,3 +538,10 @@ class Discretization(hedge.discretization.Discretization):
         add_hedge(toolchain)
 
         self.toolchain = toolchain
+
+# }}}
+
+
+
+
+# vim: foldmethod=marker

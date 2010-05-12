@@ -226,7 +226,7 @@ class ForwardMetricDerivative(pymbolic.primitives.AlgebraicLeaf):
                 )
 
     def get_mapper_method(self, mapper):
-        return mapper.map_metric_derivative
+        return mapper.map_forward_metric_derivative
 
     def __getinitargs__(self):
         return (self.xyz_axis, self.rst_axis)
@@ -261,7 +261,7 @@ class InverseMetricDerivative(pymbolic.primitives.AlgebraicLeaf):
                 )
 
     def get_mapper_method(self, mapper):
-        return mapper.map_metric_derivative
+        return mapper.map_inverse_metric_derivative
 
     def __getinitargs__(self):
         return (self.rst_axis, self.xyz_axis)

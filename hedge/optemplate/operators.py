@@ -103,82 +103,20 @@ class WeakFormDiffOperatorBase(DiffOperatorBase):
     pass
 
 class StiffnessOperator(StrongFormDiffOperatorBase):
-    @staticmethod
-    def matrices(element_group):
-        return element_group.stiffness_matrices
-
-    @staticmethod
-    def coefficients(element_group):
-        return element_group.stiffness_coefficients
-
     def get_mapper_method(self, mapper):
         return mapper.map_stiffness
 
 class DifferentiationOperator(StrongFormDiffOperatorBase):
-    @staticmethod
-    def matrices(element_group):
-        return element_group.differentiation_matrices
-
-    @staticmethod
-    def coefficients(element_group):
-        return element_group.diff_coefficients
-
     def get_mapper_method(self, mapper):
         return mapper.map_diff
 
 class StiffnessTOperator(WeakFormDiffOperatorBase):
-    @staticmethod
-    def matrices(element_group):
-        return element_group.stiffness_t_matrices
-
-    @staticmethod
-    def coefficients(element_group):
-        return element_group.stiffness_coefficients
-
     def get_mapper_method(self, mapper):
         return mapper.map_stiffness_t
 
 class MInvSTOperator(WeakFormDiffOperatorBase):
-    @staticmethod
-    def matrices(element_group):
-        return element_group.minv_st
-
-    @staticmethod
-    def coefficients(element_group):
-        return element_group.diff_coefficients
-
     def get_mapper_method(self, mapper):
         return mapper.map_minv_st
-
-class QuadratureStiffnessTOperator(WeakFormDiffOperatorBase):
-    """
-    .. note::
-
-        This operator is purely for internal use. It is inserted
-        by :class:`hedge.optemplate.mappers.OperatorSpecializer`
-        when a :class:`StiffnessTOperator` is applied to a quadrature field.
-    """
-
-    def __init__(self, xyz_axis, quadrature_tag):
-        WeakFormDiffOperatorBase.__init__(self, xyz_axis)
-        self.quadrature_tag = quadrature_tag
-
-    def __getinitargs__(self):
-        return (self.xyz_axis, self.quadrature_tag)
-
-    def get_mapper_method(self, mapper):
-        return mapper.map_quad_stiffness_t
-
-    def preimage_ranges(self, eg):
-        return eg.quadrature_info[self.quadrature_tag].ranges
-
-    def matrices(self, element_group):
-        return element_group.quadrature_info[self.quadrature_tag] \
-                .ldis_quad_info.stiffness_t_matrices()
-
-    @staticmethod
-    def coefficients(element_group):
-        return element_group.stiffness_coefficients
 
 
 
@@ -223,7 +161,7 @@ class ReferenceStiffnessTOperator(ReferenceDiffOperatorBase):
     def get_mapper_method(self, mapper):
         return mapper.map_ref_stiffness_t
 
-class QuadratureReferenceStiffnessTOperator(ReferenceDiffOperatorBase):
+class ReferenceQuadratureStiffnessTOperator(ReferenceDiffOperatorBase):
     """
     .. note::
 
@@ -449,7 +387,13 @@ class ReferenceQuadratureMassOperator(Operator):
 
 
 
-class ReferenceMassOperator(MassOperatorBase):
+class ReferenceMassOperatorBase(MassOperatorBase):
+    pass
+
+
+
+
+class ReferenceMassOperator(ReferenceMassOperatorBase):
     @staticmethod
     def matrix(element_group):
         return element_group.mass_matrix
@@ -464,7 +408,7 @@ class ReferenceMassOperator(MassOperatorBase):
 
 
 
-class ReferenceInverseMassOperator(MassOperatorBase):
+class ReferenceInverseMassOperator(ReferenceMassOperatorBase):
     @staticmethod
     def matrix(element_group):
         return element_group.inverse_mass_matrix

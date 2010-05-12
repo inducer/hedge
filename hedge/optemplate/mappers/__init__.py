@@ -42,6 +42,7 @@ class LocalOpReducerMixin(object):
     operators to a single mapper method, and likewise for mass
     operators.
     """
+    # {{{ global differentiation
     def map_diff(self, expr, *args, **kwargs):
         return self.map_diff_base(expr, *args, **kwargs)
 
@@ -56,7 +57,9 @@ class LocalOpReducerMixin(object):
 
     def map_quad_stiffness_t(self, expr, *args, **kwargs):
         return self.map_diff_base(expr, *args, **kwargs)
+    # }}}
 
+    # {{{ global mass
     def map_mass_base(self, expr, *args, **kwargs):
         return self.map_elementwise_linear(expr, *args, **kwargs)
 
@@ -68,6 +71,33 @@ class LocalOpReducerMixin(object):
 
     def map_quad_mass(self, expr, *args, **kwargs):
         return self.map_mass_base(expr, *args, **kwargs)
+    # }}}
+
+    # {{{ reference differentiation
+    def map_ref_diff(self, expr, *args, **kwargs):
+        return self.map_ref_diff_base(expr, *args, **kwargs)
+
+    def map_ref_stiffness_t(self, expr, *args, **kwargs):
+        return self.map_ref_diff_base(expr, *args, **kwargs)
+
+    def map_ref_quad_stiffness_t(self, expr, *args, **kwargs):
+        return self.map_ref_diff_base(expr, *args, **kwargs)
+    # }}}
+
+    # {{{ reference mass
+    def map_ref_mass_base(self, expr, *args, **kwargs):
+        return self.map_elementwise_linear(expr, *args, **kwargs)
+
+    def map_ref_mass(self, expr, *args, **kwargs):
+        return self.map_ref_mass_base(expr, *args, **kwargs)
+
+    def map_ref_inverse_mass(self, expr, *args, **kwargs):
+        return self.map_ref_mass_base(expr, *args, **kwargs)
+
+    def map_ref_quad_mass(self, expr, *args, **kwargs):
+        return self.map_ref_mass_base(expr, *args, **kwargs)
+    # }}}
+
 
 
 
@@ -94,6 +124,7 @@ class OperatorReducerMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     def map_diff_base(self, expr, *args, **kwargs):
         return self.map_operator(expr, *args, **kwargs)
 
+    map_ref_diff_base = map_diff_base
     map_elementwise_linear = map_diff_base
     map_flux_base = map_diff_base
     map_elementwise_max = map_diff_base
@@ -148,9 +179,14 @@ class IdentityMapperMixin(LocalOpReducerMixin, FluxOpReducerMixin):
         # it's a leaf--no changing children
         return expr
     map_c_function = map_scalar_parameter
+    map_jacobian = map_scalar_parameter
+    map_inverse_metric_derivative = map_scalar_parameter
+    map_forward_metric_derivative = map_scalar_parameter
 
     map_mass_base = map_elementwise_linear
+    map_ref_mass_base = map_elementwise_linear
     map_diff_base = map_elementwise_linear
+    map_ref_diff_base = map_elementwise_linear
     map_flux_base = map_elementwise_linear
     map_elementwise_max = map_elementwise_linear
     map_boundarize = map_elementwise_linear
@@ -211,6 +247,9 @@ class DependencyMapper(
     def map_normal_component(self, expr):
         return set()
 
+    map_jacobian = map_normal_component
+    map_forward_metric_derivative = map_normal_component
+    map_inverse_metric_derivative = map_normal_component
 
 
 class FlopCounter(
@@ -227,6 +266,11 @@ class FlopCounter(
 
     def map_normal_component(self, expr):
         return 0
+
+    map_jacobian = map_normal_component
+    map_forward_metric_derivative = map_normal_component
+    map_inverse_metric_derivative = map_normal_component
+
 
 
 
@@ -293,8 +337,10 @@ class OperatorSpecializer(CSECachingMapperMixin, IdentityMapper):
         from hedge.optemplate.primitives import BoundaryPair
 
         from hedge.optemplate.operators import (
-                MassOperator, QuadratureMassOperator,
-                StiffnessTOperator, QuadratureStiffnessTOperator,
+                ReferenceMassOperator, 
+                ReferenceQuadratureMassOperator,
+                ReferenceStiffnessTOperator, 
+                ReferenceQuadratureStiffnessTOperator,
                 QuadratureGridUpsampler, QuadratureBoundaryGridUpsampler,
                 FluxOperatorBase, FluxOperator, QuadratureFluxOperator,
                 BoundaryFluxOperator, QuadratureBoundaryFluxOperator,
@@ -324,12 +370,13 @@ class OperatorSpecializer(CSECachingMapperMixin, IdentityMapper):
         # }}}
 
         # {{{ elementwise operators
-        if isinstance(expr.op, MassOperator) and has_quad_operand:
-            return QuadratureMassOperator(field_repr_tag.quadrature_tag) \
-                    (self.rec(expr.field))
+        if isinstance(expr.op, ReferenceMassOperator) and has_quad_operand:
+            return ReferenceQuadratureMassOperator(
+                    field_repr_tag.quadrature_tag)(self.rec(expr.field))
 
-        elif isinstance(expr.op, StiffnessTOperator) and has_quad_operand:
-            return QuadratureStiffnessTOperator(
+        elif (isinstance(expr.op, ReferenceStiffnessTOperator) 
+                and has_quad_operand):
+            return ReferenceQuadratureStiffnessTOperator(
                     expr.op.xyz_axis, field_repr_tag.quadrature_tag) \
                     (self.rec(expr.field))
 
@@ -424,16 +471,20 @@ class GlobalToReferenceMapper(CSECachingMapperMixin, IdentityMapper):
 
         self.dimensions = dimensions
 
+    map_common_subexpression_uncached = \
+            IdentityMapper.map_common_subexpression
+
     def map_operator_binding(self, expr):
         from hedge.optemplate.primitives import (
                 Jacobian, InverseMetricDerivative)
 
         from hedge.optemplate.operators import (
                 MassOperator, ReferenceMassOperator,
-                StiffnessOperator, ReferenceStiffnessOperator,
+                StiffnessOperator,
                 InverseMassOperator, ReferenceInverseMassOperator,
                 DifferentiationOperator, ReferenceDifferentiationOperator,
-                StiffnessTOperator, ReferenceStiffnessTOperator)
+                StiffnessTOperator, ReferenceStiffnessTOperator,
+                MInvSTOperator)
 
         if isinstance(expr.op, MassOperator): 
             return ReferenceMassOperator()(Jacobian() * self.rec(expr.field))
@@ -495,25 +546,25 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
                 self.rec(expr.bfield, PREC_NONE),
                 self._format_btag(expr.tag))
 
+    # {{{ global differentiation
     def map_diff(self, expr, enclosing_prec):
-        return "Diff%d" % expr.xyz_axis
+        return "Diffx%d" % expr.xyz_axis
 
     def map_minv_st(self, expr, enclosing_prec):
-        return "MInvST%d" % expr.xyz_axis
+        return "MInvSTx%d" % expr.xyz_axis
 
     def map_stiffness(self, expr, enclosing_prec):
-        return "Stiff%d" % expr.xyz_axis
+        return "Stiffx%d" % expr.xyz_axis
 
     def map_stiffness_t(self, expr, enclosing_prec):
-        return "StiffT%d" % expr.xyz_axis
+        return "StiffTx%d" % expr.xyz_axis
 
     def map_quad_stiffness_t(self, expr, enclosing_prec):
-        return "Q[%s]StiffT%d" % (
+        return "Q[%s]StiffTx%d" % (
                 expr.quadrature_tag, expr.xyz_axis)
+    # }}}
 
-    def map_elementwise_linear(self, expr, enclosing_prec):
-        return "ElWLin:%s" % expr.__class__.__name__
-
+    # {{{ global mass
     def map_mass(self, expr, enclosing_prec):
         return "M"
 
@@ -522,7 +573,35 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
 
     def map_quad_mass(self, expr, enclosing_prec):
         return "Q[%s]M" % expr.quadrature_tag
+    # }}}
 
+    # {{{ reference differentiation
+    def map_ref_diff(self, expr, enclosing_prec):
+        return "Diffr%d" % expr.rst_axis
+
+    def map_ref_stiffness_t(self, expr, enclosing_prec):
+        return "StiffTr%d" % expr.rst_axis
+
+    def map_ref_quad_stiffness_t(self, expr, enclosing_prec):
+        return "Q[%s]StiffTr%d" % (
+                expr.quadrature_tag, expr.rst_axis)
+    # }}}
+
+    # {{{ reference mass
+    def map_ref_mass(self, expr, enclosing_prec):
+        return "RefM"
+
+    def map_ref_inverse_mass(self, expr, enclosing_prec):
+        return "RefInvM"
+
+    def map_ref_quad_mass(self, expr, enclosing_prec):
+        return "RefQ[%s]M" % expr.quadrature_tag
+    # }}}
+
+    def map_elementwise_linear(self, expr, enclosing_prec):
+        return "ElWLin:%s" % expr.__class__.__name__
+
+    # {{{ flux
     def map_flux(self, expr, enclosing_prec):
         from pymbolic.mapper.stringifier import PREC_NONE
         return "%s(%s)" % (
@@ -561,6 +640,7 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
         from pymbolic.mapper.stringifier import PREC_NONE
         return "%s(%s)" % (opname,
                 self.rec(expr.rebuild_optemplate(), PREC_NONE))
+    # }}}
 
     def map_elementwise_max(self, expr, enclosing_prec):
         return "ElWMax"
@@ -573,8 +653,19 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
         return "FExch<idx=%s,rank=%d>(%s)" % (expr.index, expr.rank,
                 ", ".join(self.rec(arg, PREC_NONE) for arg in expr.arg_fields))
 
+    # {{{ geometry data
     def map_normal_component(self, expr, enclosing_prec):
         return "Normal<tag=%s>[%d]" % (expr.tag, expr.axis)
+
+    def map_jacobian(self, expr, enclosing_prec):
+        return "Jac"
+
+    def map_forward_metric_derivative(self, expr, enclosing_prec):
+        return "dx%d/dr%d" % (expr.xyz_axis, expr.rst_axis)
+
+    def map_inverse_metric_derivative(self, expr, enclosing_prec):
+        return "dr%d/dx%d" % (expr.rst_axis, expr.xyz_axis)
+    # }}}
 
     def map_operator_binding(self, expr, enclosing_prec):
         from pymbolic.mapper.stringifier import PREC_NONE
@@ -1397,7 +1488,7 @@ class ErrorChecker(CSECachingMapperMixin, IdentityMapper):
 
 # }}}
 # {{{ collectors for various optemplate components --------------------------------
-class CollectorMixin(LocalOpReducerMixin, FluxOpReducerMixin):
+class CollectorMixin(OperatorReducerMixin, LocalOpReducerMixin, FluxOpReducerMixin):
     def combine(self, values):
         from pytools import flatten
         return set(flatten(values))
@@ -1405,19 +1496,14 @@ class CollectorMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     def map_constant(self, bpair):
         return set()
 
-    map_elementwise_linear = map_constant
-    map_diff_base = map_constant
-    map_flux_base = map_constant
+    map_operator = map_constant
     map_variable = map_constant
-    map_elementwise_max = map_constant
-    map_boundarize = map_constant
-    map_flux_exchange = map_constant
     map_normal_component = map_constant
+    map_jacobian = map_constant
+    map_forward_metric_derivative = map_constant
+    map_inverse_metric_derivative = map_constant
     map_scalar_parameter = map_constant
     map_c_function = map_constant
-    map_quad_grid_upsampler = map_constant
-    map_quad_int_faces_grid_upsampler = map_constant
-    map_quad_bdry_grid_upsampler = map_constant
 
     def map_whole_domain_flux(self, expr):
         result = set()
@@ -1460,9 +1546,20 @@ class FluxCollector(CSECachingMapperMixin, CollectorMixin, CombineMapper):
 
 
 
+
 class BoundaryTagCollector(CollectorMixin, CombineMapper):
     def map_boundary_pair(self, bpair):
         return set([bpair.tag])
+
+
+
+
+class GeometricFactorCollector(CollectorMixin, CombineMapper):
+    def map_jacobian(self, expr):
+        return set([expr])
+
+    map_forward_metric_derivative = map_jacobian
+    map_inverse_metric_derivative = map_jacobian
 
 
 

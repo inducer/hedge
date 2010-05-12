@@ -64,10 +64,6 @@ class StraightElementGroup(ElementGroupBase):
     :ivar differentiation_matrices: local differentiation matrices :math:`D_r, D_s, D_t`, 
       i.e.  differentiation by :math:`r, s, t, \dots`.
     :ivar stiffness_matrices: the element-local stiffness matrices :math:`MD_r, MD_s,\dots`.
-    :ivar jacobians: list of jacobians over all elements
-    :ivar inverse_jacobians: inverses of L{jacobians}.
-    :ivar diff_coefficients: a :math:`d\\times d`-matrix of coefficient vectors to turn
-      :math:`(r,s,t)`-differentiation into :math:`(x,y,z)`.
     :ivar quadrature_info: a map from quadrature tag to QuadratureInfo instance.
     """
 
@@ -104,6 +100,13 @@ class StraightElementGroup(ElementGroupBase):
 
     # }}}
 
+    def el_array_from_volume(self, vol_array):
+        """Return a 2-dimensional view of *vol_array* in which the first
+        dimension numbers elements within this element group and the second
+        dimension numbers nodes within each of those elements.
+        """
+        return (vol_array[self.ranges.start:self.ranges.start+self.ranges.total_size]
+                .reshape(len(self.ranges), -1))
 
 
 

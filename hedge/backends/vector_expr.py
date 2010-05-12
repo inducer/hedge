@@ -41,13 +41,16 @@ class DefaultingSubstitutionMapper(
 
         return result
 
-    def handle_unsupported_expression(self, expr):
+    def map_jacobian(self, expr):
         result = self.subst_func(expr)
         if result is not None:
             return result
         else:
             pymbolic.mapper.substitutor.SubstitutionMapper.handle_unsupported_expression(
                     self, expr)
+
+    map_forward_metric_derivative = map_jacobian
+    map_inverse_metric_derivative = map_jacobian
 
     def map_scalar_parameter(self, expr):
         return pymbolic.mapper.substitutor.SubstitutionMapper.map_variable(
@@ -106,8 +109,10 @@ class CompiledVectorExpressionBase(object):
     def __init__(self, vec_expr_info_list, result_dtype_getter):
         self.result_dtype_getter = result_dtype_getter
 
-        from hedge.optemplate import \
-                DependencyMapper, ScalarParameter
+        from hedge.optemplate.primitives import ScalarParameter
+        from hedge.optemplate.mappers import (
+                DependencyMapper, GeometricFactorCollector)
+
         from operator import or_
         from pymbolic import var
 
@@ -115,7 +120,17 @@ class CompiledVectorExpressionBase(object):
                 include_subscripts=True,
                 include_lookups=True,
                 include_calls="descend_args")
-        deps = reduce(or_, (dep_mapper(vei.expr) for vei in vec_expr_info_list))
+        gfc = GeometricFactorCollector()
+
+        # gather all dependencies
+
+        deps = (reduce(or_, (dep_mapper(vei.expr) for vei in vec_expr_info_list))
+                | reduce(or_, (gfc(vei.expr) for vei in vec_expr_info_list)))
+
+        # We're compiling a batch of vector expressions, some of which may
+        # depend on results generated in this same batch. These dependencies
+        # are also captured above, but they're not genuine external dependencies.
+        # Hence we remove them here:
 
         deps -= set(var(vei.name) for vei in vec_expr_info_list)
 

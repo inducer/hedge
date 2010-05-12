@@ -87,10 +87,6 @@ class JitDifferentiator:
                     ]+[
                     Value("numpy_array<value_type>", "result%d" % i)
                     for i in range(discr.dimensions)
-                    ]+[
-                    Value("numpy_array<double>", "coeffs"),
-                    Value("numpy_array<npy_uint32>", "el_nrs"),
-                    POD(numpy.uint32, "total_el_count"),
                     ]
                     )
         # }}}
@@ -129,9 +125,6 @@ class JitDifferentiator:
             for i in range(discr.dimensions)
             ]+[
             Line(),
-            make_it("coeffs", tpname="double"),
-            make_it("el_nrs", tpname="npy_uint32"),
-            Line(),
         # }}}
 
         # {{{ computation
@@ -145,9 +138,6 @@ class JitDifferentiator:
                     Initializer(
                         Value("node_number_t", "to_el_base"),
                         "to_ers.start() + eg_el_nr*ROW_COUNT"),
-                    Initializer(
-                        Value("element_number_t", "el_nr"),
-                        "el_nrs_it[eg_el_nr]"),
                     Line(),
                     For("unsigned i = 0",
                         "i < ROW_COUNT",
@@ -170,17 +160,9 @@ class JitDifferentiator:
                                 ),
                             Line(),
                             ]+[
-                            Assign("result%d_it[to_el_base+i]" % xyz,
-                                " + ".join(
-                                    "uncomplex_type(coeffs_it[total_el_count*("
-                                    "DIMENSIONS*%(xyz)d + %(rst)d) + el_nr])"
-                                    " * drst_%(rst)d"
-                                    % {"xyz":xyz, "rst":rst}
-                                    for rst in range(discr.dimensions)
-                                    )
-                                )
-                            for xyz in range(discr.dimensions)
-
+                            Assign("result%d_it[to_el_base+i]" % rst,
+                                "drst_%d" % rst)
+                            for rst in range(discr.dimensions)
                             ])
                         )
                     ])
@@ -226,21 +208,18 @@ class JitDifferentiator:
         from hedge.tools import is_zero
         if not is_zero(field):
             for eg in self.discr.element_groups:
-                coeffs = rep_op.coefficients(eg)
-
                 from pytools import to_uncomplex_dtype
                 uncomplex_dtype = to_uncomplex_dtype(field.dtype)
                 matrices = rep_op.matrices(eg)
                 args = ([rep_op.preimage_ranges(eg), eg.ranges, field]
                         + [m.astype(uncomplex_dtype) for m in matrices]
-                        + result
-                        + [coeffs, eg.member_nrs, coeffs.shape[2]])
+                        + result)
 
                 diff_routine = self.make_diff(eg, field.dtype,
                         matrices[0].shape)
                 diff_routine(*args)
 
-        return [result[op.xyz_axis] for op in operators]
+        return [result[op.rst_axis] for op in operators]
     # }}}
 
 # vim: foldmethod=marker

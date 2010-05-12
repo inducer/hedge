@@ -227,9 +227,6 @@ class Discretization(TimestepCalculator):
             for df in sorted(self.all_debug_flags()):
                 print "    %s" % df
 
-        self._build_element_groups_and_nodes(local_discretization)
-        self._calculate_local_matrices()
-        self._build_interior_face_groups()
 
         self.instrumented = False
 
@@ -237,6 +234,10 @@ class Discretization(TimestepCalculator):
         self.default_scalar_type = default_scalar_type
 
         self.exec_functions = {}
+
+        self._build_element_groups_and_nodes(local_discretization)
+        self._calculate_local_matrices()
+        self._build_interior_face_groups()
 
     def close(self):
         pass
@@ -415,6 +416,13 @@ class Discretization(TimestepCalculator):
             raise NotImplementedError
 
     def _calculate_local_matrices(self):
+        vol_jac = self.volume_jacobians = self.volume_empty()
+        inv_met = self.inverse_metric_derivatives = [[
+                self.volume_empty()
+                for i in range(self.dimensions)]
+                for i in range(self.dimensions)]
+
+
         for eg in self.element_groups:
             ldis = eg.local_discretization
 
@@ -429,30 +437,51 @@ class Discretization(TimestepCalculator):
             eg.minv_st = \
                     [numpy.dot(numpy.dot(immat, d.T), mmat) for d in dmats]
 
-            eg.jacobians = numpy.array([
+            jacobians = numpy.array([
                 abs(el.map.jacobian())
                 for el in eg.members])
-            eg.inverse_jacobians = numpy.array([
-                abs(el.inverse_map.jacobian())
-                for el in eg.members])
 
-            eg.diff_coefficients = numpy.array([
+            (eg.el_array_from_volume(vol_jac).T)[:,:] = jacobians
+
+            inv_map_coeff = numpy.array([
                     [
                         [
-                            el.inverse_map
-                            .matrix[loc_coord, glob_coord]
+                            el.inverse_map.matrix[rst_coord, xyz_coord]
                             for el in eg.members]
-                        for loc_coord in range(ldis.dimensions)]
-                    for glob_coord in range(ldis.dimensions)])
+                        for rst_coord in range(ldis.dimensions)]
+                    for xyz_coord in range(ldis.dimensions)])
 
-            eg.stiffness_coefficients = numpy.array([
+            for xyz_coord in range(ldis.dimensions):
+                for rst_coord in range(ldis.dimensions):
+                    (eg.el_array_from_volume(
+                        inv_met[xyz_coord][rst_coord]).T)[:,:] \
+                                = inv_map_coeff[xyz_coord, rst_coord]
+
+    @memoize_method
+    def forward_metric_derivatives(self):
+        result = [[
+                self.volume_empty()
+                for i in range(self.dimensions)]
+                for i in range(self.dimensions)]
+
+        for eg in self.element_groups:
+            ldis = eg.local_discretization
+
+            fwd_map_coeff = numpy.array([
                     [
                         [
-                            abs(el.map.jacobian()) * el.inverse_map
-                            .matrix[loc_coord, glob_coord]
+                            el.map.matrix[rst_coord, xyz_coord]
                             for el in eg.members]
-                        for loc_coord in range(ldis.dimensions)]
-                    for glob_coord in range(ldis.dimensions)])
+                        for rst_coord in range(ldis.dimensions)]
+                    for xyz_coord in range(ldis.dimensions)])
+
+            for xyz_coord in range(ldis.dimensions):
+                for rst_coord in range(ldis.dimensions):
+                    (eg.el_array_from_volume(
+                        result[xyz_coord][rst_coord]).T)[:,:] \
+                                = fwd_map_coeff[xyz_coord, rst_coord]
+
+        return result
 
     def _set_face_pair_index_data(self, fg, fp, fi_l, fi_n,
             findices_l, findices_n, findices_shuffle_op_n):
