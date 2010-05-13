@@ -215,8 +215,11 @@ def main(write_output=True, flux_type_arg="central", use_quadrature=False):
 
             u = stepper(u, t, dt, rhs)
 
-            if not use_quadrature:
-                u = mode_filter(u)
+            # We're feeding in a discontinuity through the BCs.
+            # Quadrature does not help with shock capturing--
+            # therefore we do need to filter here, regardless
+            # of whether quadrature is enabled.
+            u = mode_filter(u)
 
         assert discr.norm(u) < 10
 
