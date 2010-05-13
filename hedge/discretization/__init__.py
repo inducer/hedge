@@ -483,10 +483,11 @@ class Discretization(TimestepCalculator):
                                             for el in eg.members]
 
         else:
+            q_info = self.get_quadrature_info(quadrature_tag)
             result = [[
-                    self.volume_empty()
-                    for i in range(self.dimensions)]
-                    for i in range(self.dimensions)]
+                numpy.empty(q_info.node_count)
+                for i in range(self.dimensions)]
+                for i in range(self.dimensions)]
 
             for eg in self.element_groups:
                 ldis = eg.local_discretization
@@ -498,6 +499,7 @@ class Discretization(TimestepCalculator):
                             inv_met[xyz_coord][rst_coord]).T)[:,:] \
                                     = [el.inverse_map.matrix[rst_coord, xyz_coord]
                                             for el in eg.members]
+
         return result
 
 
