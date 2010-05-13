@@ -1107,15 +1107,14 @@ class Discretization(TimestepCalculator):
             for el in eg.members)
             for eg in self.element_groups)
 
-    def get_point_evaluator(self, point, use_btree = False, bl=None, tr=None):
+    def get_point_evaluator(self, point, use_btree = False):
 
         if (use_btree == True) and (self.spatial_btree == None):
-            # Want to use the spatial binary tree, but it needs to be built first
-            if (bl == None) or (tr == None):
-                # Get bounding box from mesh
-                (bl,tr) = self.mesh.bounding_box()
-                bl = tuple(bl)
-                tr = tuple(tr)
+            # Want to use the spatial binary tree, needs to be built first
+            # Get bounding box, bottom left and top right, from mesh class
+            (bl,tr) = self.mesh.bounding_box()
+            bl = tuple(bl)
+            tr = tuple(tr)
             self.spatial_btree = self.get_spatial_btree(bl,tr)
 
 
@@ -1152,12 +1151,10 @@ class Discretization(TimestepCalculator):
 
 
 
-    def get_regrid_values(self, field_in, new_discr, dtype=None, use_btree = False, bl=None, tr=None):
+    def get_regrid_values(self, field_in, new_discr, dtype=None, use_btree = False):
         """:param field_in: nodal values on old grid.
         :param new_discr: new discretization.
         :param use_btree: bool to decide if a spatial binary tree will be used.
-        :param bl = bottom left point (x,y,z) specifiying box containing the mesh.
-        :param tr = top right point (x,y,z) specifying box containing the mesh.
         """
 
         kind = new_discr.compute_kind
@@ -1165,17 +1162,21 @@ class Discretization(TimestepCalculator):
         shape = field_in.shape
         if shape[0] == len(self.nodes): 
             # case: field_in array of nodal values
+            
             shape = ()
             field_out = new_discr.volume_empty(shape, dtype=dtype, kind=kind)
+            
             for ii in range(len(new_discr.nodes)): 
                 #loop over all nodes in new grid
-                pe = self.get_point_evaluator(new_discr.nodes[ii], use_btree,bl,tr)
+                pe = self.get_point_evaluator(new_discr.nodes[ii], use_btree)
                 field_out[ii] = pe(field_in)
         else:  
             #case: field_in's elements are array of nodal values
+            
             field_out = new_discr.volume_empty(shape, dtype=dtype, kind=kind)
+            
             for ii in range(len(new_discr.nodes)):
-                pe = self.get_point_evaluator(new_discr.nodes[ii], use_btree,bl,tr)
+                pe = self.get_point_evaluator(new_discr.nodes[ii], use_btree)
                 field_out[:,ii] = pe(field_in)
  
 
