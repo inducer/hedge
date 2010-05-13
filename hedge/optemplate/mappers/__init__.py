@@ -524,15 +524,18 @@ class GlobalToReferenceMapper(CSECachingMapperMixin, IdentityMapper):
         # if we encounter non-quadrature operators here, we know they
         # must be nodal.
 
-        def rewrite_derivative(ref_class, field, quadrature_tag=None):
+        def rewrite_derivative(ref_class, field, quadrature_tag=None,
+                with_jacobian=True):
             if quadrature_tag is not None:
                 diff_kwargs = dict(quadrature_tag=quadrature_tag)
             else:
                 diff_kwargs = {}
 
-            jac_rec_field = Jacobian(quadrature_tag) * self.rec(field)
+            rec_field = self.rec(field)
+            if with_jacobian:
+                rec_field = Jacobian(quadrature_tag) * rec_field
             return sum(InverseMetricDerivative(None, rst_axis, expr.op.xyz_axis) *
-                    ref_class(rst_axis, **diff_kwargs)(jac_rec_field) 
+                    ref_class(rst_axis, **diff_kwargs)(rec_field) 
                     for rst_axis in range(self.dimensions))
 
         if isinstance(expr.op, MassOperator): 
@@ -555,7 +558,7 @@ class GlobalToReferenceMapper(CSECachingMapperMixin, IdentityMapper):
         elif isinstance(expr.op, DifferentiationOperator):
             return rewrite_derivative(
                     ReferenceDifferentiationOperator,
-                    expr.field)
+                    expr.field, with_jacobian=False)
         
         elif isinstance(expr.op, StiffnessTOperator): 
             return rewrite_derivative(
