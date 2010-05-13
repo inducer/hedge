@@ -233,9 +233,12 @@ def main(write_output=True):
                 fields = stepper(fields, t, dt, rhs)
                 #fields = limiter(fields)
 
-                if step == 21: #regrid to discr2 at some arbitrary time
+                #regrid to discr2 at some arbitrary time
+                if step == 21: 
+
                     #get interpolated fields
-                    fields = discr.get_regrid_values(fields, discr2, dtype=None, use_btree=True, bl=(0,-5), tr=(10,5))
+                    #fields = discr.get_regrid_values(fields, discr2, dtype=None, use_btree=True, bl=(0,-5), tr=(10,5))
+                    fields = discr.get_regrid_values(fields, discr2, dtype=None, use_btree=True)
                     #get new stepper (old one has reference to discr
                     stepper = SSPRK3TimeStepper()
                     #new bind
