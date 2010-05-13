@@ -292,7 +292,8 @@ class VariableCoefficientAdvectionOperator(HyperbolicOperator):
         quad_u = cse(to_quad(u))
         quad_v = cse(to_quad(v))
 
-        quad_face_w = to_if_quad(join_fields(u, v, c))
+        w = join_fields(u, v, c)
+        quad_face_w = to_if_quad(w)
         # }}}
 
         # {{{ boundary conditions ---------------------------------------------
