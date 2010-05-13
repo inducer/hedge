@@ -750,13 +750,13 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
         return "ScalarPar[%s]" % expr.name
 
     def map_quad_grid_upsampler(self, expr, enclosing_prec):
-        return "ToQuad[%s]" % expr.quadrature_tag
+        return "ToVolQ[%s]" % expr.quadrature_tag
 
     def map_quad_int_faces_grid_upsampler(self, expr, enclosing_prec):
-        return "ToIntFQuad[%s]" % expr.quadrature_tag
+        return "ToIntFaceQ[%s]" % expr.quadrature_tag
 
     def map_quad_bdry_grid_upsampler(self, expr, enclosing_prec):
-        return "ToBdryQuad[%s,%s]" % (expr.quadrature_tag, expr.boundary_tag)
+        return "ToBdryQ[%s,%s]" % (expr.quadrature_tag, expr.boundary_tag)
 
 
 
