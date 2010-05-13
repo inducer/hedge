@@ -207,6 +207,7 @@ class BoundOpMapperMixin(object):
 
 
 # }}}
+
 # {{{ basic mappers -----------------------------------------------------------
 class CombineMapper(CombineMapperMixin, pymbolic.mapper.CombineMapper):
     pass
@@ -291,7 +292,8 @@ class SubstitutionMapper(pymbolic.mapper.substitutor.SubstitutionMapper,
 
 
 # }}}
-# {{{ pre-processing ----------------------------------------------------------
+
+# {{{ operator binder ---------------------------------------------------------
 class OperatorBinder(CSECachingMapperMixin, IdentityMapper):
     map_common_subexpression_uncached = \
             IdentityMapper.map_common_subexpression
@@ -316,9 +318,9 @@ class OperatorBinder(CSECachingMapperMixin, IdentityMapper):
         else:
             return first * self.rec(flattened_product(expr.children[1:]))
 
+# }}}
 
-
-
+# {{{ operator specializer ----------------------------------------------------
 class OperatorSpecializer(CSECachingMapperMixin, IdentityMapper):
     """Guided by a typedict obtained through type inference (i.e. by
     :class:`hedge.optemplate.mappers.type_inference.TypeInferrrer`),
@@ -482,8 +484,9 @@ class OperatorSpecializer(CSECachingMapperMixin, IdentityMapper):
         # a leaf, doesn't change
         return expr
 
+# }}}
 
-
+# {{{ global-to-reference mapper ----------------------------------------------
 
 class GlobalToReferenceMapper(CSECachingMapperMixin, IdentityMapper):
     """Maps operators that apply on the global function space down to operators on
@@ -858,6 +861,7 @@ class NoCSEStringifyMapper(StringifyMapper):
 
 
 # }}}
+
 # {{{ quadrature support ------------------------------------------------------
 class QuadratureUpsamplerRemover(CSECachingMapperMixin, IdentityMapper):
     def __init__(self, quad_min_degrees):
@@ -894,6 +898,7 @@ class QuadratureUpsamplerRemover(CSECachingMapperMixin, IdentityMapper):
 
 
 # }}}
+
 # {{{ bc-to-flux rewriting ----------------------------------------------------
 class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
     """Operates on :class:`FluxOperator` instances bound to :class:`BoundaryPair`. If the
@@ -1144,6 +1149,7 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
 
 
 # }}}
+
 # {{{ simplification / optimization -------------------------------------------
 class CommutativeConstantFoldingMapper(
         pymbolic.mapper.constant_folder.CommutativeConstantFoldingMapper,
@@ -1526,6 +1532,7 @@ class InverseMassContractor(CSECachingMapperMixin, IdentityMapper):
 
 
 # }}}
+
 # {{{ error checker -----------------------------------------------------------
 class ErrorChecker(CSECachingMapperMixin, IdentityMapper):
     map_common_subexpression_uncached = \
@@ -1557,6 +1564,7 @@ class ErrorChecker(CSECachingMapperMixin, IdentityMapper):
 
 
 # }}}
+
 # {{{ collectors for various optemplate components --------------------------------
 class CollectorMixin(OperatorReducerMixin, LocalOpReducerMixin, FluxOpReducerMixin):
     def combine(self, values):
@@ -1657,12 +1665,14 @@ class FluxExchangeCollector(CSECachingMapperMixin, CollectorMixin, CombineMapper
         return set([expr])
 
 # }}}
+
 # {{{ evaluation --------------------------------------------------------------
 class Evaluator(pymbolic.mapper.evaluator.EvaluationMapper):
     def map_boundary_pair(self, bp):
         from hedge.optemplate.primitives import BoundaryPair
         return BoundaryPair(self.rec(bp.field), self.rec(bp.bfield), bp.tag)
 # }}}
+
 # {{{ boundary combiner (used by CUDA backend) --------------------------------
 class BoundaryCombiner(CSECachingMapperMixin, IdentityMapper):
     """Combines inner fluxes and boundary fluxes into a

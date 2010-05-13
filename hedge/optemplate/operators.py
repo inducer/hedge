@@ -79,6 +79,8 @@ class StatelessOperator(Operator):
 # }}}
 
 # {{{ differentiation operators -----------------------------------------------
+
+# {{{ global differentiation
 class DiffOperatorBase(Operator):
     def __init__(self, xyz_axis):
         Operator.__init__(self)
@@ -148,7 +150,7 @@ def DiffOperatorVector(els):
 
 # }}}
 
-# {{{ reference-element differentiation operators -----------------------------
+# {{{ reference-element differentiation
 class ReferenceDiffOperatorBase(Operator):
     def __init__(self, rst_axis):
         Operator.__init__(self)
@@ -208,6 +210,7 @@ class ReferenceQuadratureStiffnessTOperator(ReferenceDiffOperatorBase):
         return element_group.quadrature_info[self.quadrature_tag] \
                 .ldis_quad_info.stiffness_t_matrices()
 
+# }}}
 
 # }}}
 
