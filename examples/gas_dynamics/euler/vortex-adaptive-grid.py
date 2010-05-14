@@ -237,7 +237,7 @@ def main(write_output=True):
                 if step == 21: 
 
                     #get interpolated fields
-                    fields = discr.get_regrid_values(fields, discr2, dtype=None, use_btree=True)
+                    fields = discr.get_regrid_values(fields, discr2, dtype=None, use_btree=True, thresh=1e-8)
                     #get new stepper (old one has reference to discr
                     stepper = SSPRK3TimeStepper()
                     #new bind

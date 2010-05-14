@@ -1152,7 +1152,7 @@ class Discretization(TimestepCalculator):
 
 
 
-    def get_regrid_values(self, field_in, new_discr, dtype=None, use_btree = False):
+    def get_regrid_values(self, field_in, new_discr, dtype=None, use_btree = False, thresh = 0):
         """:param field_in: nodal values on old grid.
         :param new_discr: new discretization.
         :param use_btree: bool to decide if a spatial binary tree will be used.
@@ -1169,7 +1169,7 @@ class Discretization(TimestepCalculator):
             
             for ii in range(len(new_discr.nodes)): 
                 #loop over all nodes in new grid
-                pe = self.get_point_evaluator(new_discr.nodes[ii], use_btree)
+                pe = self.get_point_evaluator(new_discr.nodes[ii], use_btree, thresh)
                 field_out[ii] = pe(field_in)
         else:  
             #case: field_in's elements are array of nodal values
@@ -1177,7 +1177,7 @@ class Discretization(TimestepCalculator):
             field_out = new_discr.volume_empty(shape, dtype=dtype, kind=kind)
             
             for ii in range(len(new_discr.nodes)):
-                pe = self.get_point_evaluator(new_discr.nodes[ii], use_btree)
+                pe = self.get_point_evaluator(new_discr.nodes[ii], use_btree, thresh)
                 field_out[:,ii] = pe(field_in)
  
 
