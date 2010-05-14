@@ -1107,7 +1107,8 @@ class Discretization(TimestepCalculator):
             for el in eg.members)
             for eg in self.element_groups)
 
-    def get_point_evaluator(self, point, use_btree = False):
+
+    def get_point_evaluator(self, point, use_btree = False, thresh = 0):
 
         if (use_btree == True) and (self.spatial_btree == None):
             # Want to use the spatial binary tree, needs to be built first
@@ -1134,7 +1135,7 @@ class Discretization(TimestepCalculator):
         if not use_btree:
             for eg in self.element_groups:
                 for el, rng in zip(eg.members, eg.ranges):
-                    if el.contains_point(point):
+                    if el.contains_point(point,thresh):
                         pe = point_evaluator(el,eg,rng)
                         return pe
         
@@ -1143,7 +1144,7 @@ class Discretization(TimestepCalculator):
         else:
             elements_in_bucket = self.spatial_btree.generate_matches(point)
             for el, rng, eg in elements_in_bucket:
-                if el.contains_point(point):
+                if el.contains_point(point,thresh):
                     pe = point_evaluator(el,eg,rng)
                     return pe
 

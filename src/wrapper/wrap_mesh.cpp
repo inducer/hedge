@@ -18,6 +18,8 @@
 
 
 #include <boost/foreach.hpp>
+#include <boost/python.hpp>
+#include <boost/python/stl_iterator.hpp>
 #include <pyublas/numpy.hpp>
 #include "wrap_helpers.hpp"
 #include <hedge/base.hpp>

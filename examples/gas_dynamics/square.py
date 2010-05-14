@@ -148,8 +148,8 @@ def main():
         #vis = VtkVisualizer(discr, rcon, "shearflow-%d" % order)
         vis = SiloVisualizer(discr, rcon)
 
-        from hedge.timestep import RK4TimeStepper
-        stepper = RK4TimeStepper(dtype=discr.default_scalar_type)
+        from hedge.timestep.runge_kutta import LSRK4TimeStepper
+        stepper = LSRK4TimeStepper(dtype=discr.default_scalar_type)
 
         #from hedge.timestep.dumka3 import Dumka3TimeStepper
         #stepper = Dumka3TimeStepper(3)

@@ -19,61 +19,14 @@
 
 from __future__ import division
 import numpy
-import numpy.linalg as la
-
-
-
-
-class Vortex:
-    def __init__(self):
-        self.beta = 5
-        self.gamma = 1.4
-        self.center = numpy.array([5, 0])
-        self.velocity = numpy.array([1, 0])
-
-        self.mu = 0
-        self.prandtl = 0.72
-        self.spec_gas_const = 287.1
-
-    def __call__(self, t, x_vec):
-        vortex_loc = self.center + t*self.velocity
-
-        # coordinates relative to vortex center
-        x_rel = x_vec[0] - vortex_loc[0]
-        y_rel = x_vec[1] - vortex_loc[1]
-
-        # Y.C. Zhou, G.W. Wei / Journal of Computational Physics 189 (2003) 159
-        # also JSH/TW Nodal DG Methods, p. 209
-
-        from math import pi
-        r = numpy.sqrt(x_rel**2+y_rel**2)
-        expterm = self.beta*numpy.exp(1-r**2)
-        u = self.velocity[0] - expterm*y_rel/(2*pi)
-        v = self.velocity[1] + expterm*x_rel/(2*pi)
-        rho = (1-(self.gamma-1)/(16*self.gamma*pi**2)*expterm**2)**(1/(self.gamma-1))
-        p = rho**self.gamma
-
-        e = p/(self.gamma-1) + rho/2*(u**2+v**2)
-
-        from hedge.tools import join_fields
-        return join_fields(rho, e, rho*u, rho*v)
-
-    def volume_interpolant(self, t, discr):
-        return discr.convert_volume(
-                        self(t, discr.nodes.T
-                            .astype(discr.default_scalar_type)),
-                        kind=discr.compute_kind)
-
-    def boundary_interpolant(self, t, discr, tag):
-        return discr.convert_boundary(
-                        self(t, discr.get_boundary(tag).nodes.T
-                            .astype(discr.default_scalar_type)),
-                         tag=tag, kind=discr.compute_kind)
 
 
 
 
 def main(write_output=True):
+    from pytools import add_python_path_relative_to_script
+    add_python_path_relative_to_script("..")
+
     from hedge.backends import guess_run_context
     rcon = guess_run_context()
 
@@ -104,17 +57,18 @@ def main(write_output=True):
         vis = VtkVisualizer(discr, rcon, "vortex-%d" % order)
         #vis = SiloVisualizer(discr, rcon)
 
-        vortex = Vortex()
-        fields = vortex.volume_interpolant(0, discr)
+        from gas_dynamics_initials import Vortex
+        flow = Vortex()
+        fields = flow.volume_interpolant(0, discr)
 
         from hedge.models.gas_dynamics import GasDynamicsOperator
         from hedge.mesh import TAG_ALL
         op = GasDynamicsOperator(dimensions=2, 
-                gamma=vortex.gamma, 
-                mu=vortex.mu,
-                prandtl=vortex.prandtl, 
-                spec_gas_const=vortex.spec_gas_const,
-                bc_inflow=vortex, bc_outflow=vortex, bc_noslip=vortex,
+                gamma=flow.gamma, 
+                mu=flow.mu,
+                prandtl=flow.prandtl, 
+                spec_gas_const=flow.spec_gas_const,
+                bc_inflow=flow, bc_outflow=flow, bc_noslip=flow,
                 inflow_tag=TAG_ALL, source=None)
 
         euler_ex = op.bind(discr)
@@ -135,7 +89,7 @@ def main(write_output=True):
 
         # limiter ------------------------------------------------------------
         from hedge.models.gas_dynamics import SlopeLimiter1NEuler
-        limiter = SlopeLimiter1NEuler(discr, vortex.gamma, 2, op)
+        limiter = SlopeLimiter1NEuler(discr, flow.gamma, 2, op)
 
         from hedge.timestep import SSPRK3TimeStepper
         #stepper = SSPRK3TimeStepper(limiter=limiter)
@@ -164,7 +118,7 @@ def main(write_output=True):
 
         # timestep loop -------------------------------------------------------
         try:
-            final_time = 0.5
+            final_time = flow.final_time
             from hedge.timestep import times_and_steps
             step_it = times_and_steps(
                     final_time=final_time, logmgr=logmgr,
@@ -211,7 +165,7 @@ def main(write_output=True):
 
                 assert not numpy.isnan(numpy.sum(fields[0]))
 
-            true_fields = vortex.volume_interpolant(final_time, discr)
+            true_fields = flow.volume_interpolant(final_time, discr)
             l2_error = discr.norm(fields-true_fields)
             l2_error_rho = discr.norm(op.rho(fields)-op.rho(true_fields))
             l2_error_e = discr.norm(op.e(fields)-op.e(true_fields))

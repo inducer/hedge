@@ -57,7 +57,7 @@ class TAG_NO_BOUNDARY(object):
     pass
 
 SYSTEM_TAGS = set([TAG_NONE, TAG_ALL, TAG_REALLY_ALL, TAG_NO_BOUNDARY])
-# tags that are automatically signed upon mesh creation
+# tags that are automatically assigned upon mesh creation
 MESH_CREATION_TAGS = set([ TAG_ALL, TAG_REALLY_ALL])
 
 class TAG_RANK_BOUNDARY(object):

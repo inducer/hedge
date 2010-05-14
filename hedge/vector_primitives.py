@@ -82,7 +82,8 @@ class NumpyLinearCombiner(object):
 
 
 class CUDALinearCombiner:
-    def __init__(self, result_dtype, scalar_dtype, sample_vec, arg_count):
+    def __init__(self, result_dtype, scalar_dtype, sample_vec, arg_count,
+            pool=None):
         from pycuda.elementwise import get_linear_combination_kernel
         self.vector_dtype = sample_vec.dtype
         self.result_dtype = result_dtype
@@ -95,9 +96,15 @@ class CUDALinearCombiner:
                 arg_count*((False, scalar_dtype, self.vector_dtype),),
                 result_dtype)
 
+        if pool:
+            self.allocator = pool.allocate
+        else:
+            self.allocator = None
+
     def __call__(self, *args):
         import pycuda.gpuarray as gpuarray
-        result = gpuarray.empty(self.shape, self.result_dtype)
+        result = gpuarray.empty(self.shape, self.result_dtype,
+                allocator=self.allocator)
 
         knl_args = []
         for fac, vec in args:
@@ -190,7 +197,7 @@ class VectorPrimitiveFactory(object):
             sample_vec = sample_vec[0]
 
         if isinstance(sample_vec, numpy.ndarray) and sample_vec.dtype != object:
-            return numpy.dot
+            kernel = numpy.dot
         else:
             kernel = self.make_special_inner_product(sample_vec)
 
@@ -211,6 +218,8 @@ class CUDAVectorPrimitiveFactory(VectorPrimitiveFactory):
         self.discr = discr
 
     def make_special_linear_combiner(self, *args, **kwargs):
+        my_kwargs = kwargs.copy()
+        kwargs["pool"] = self.discr.pool
         return CUDALinearCombiner(*args, **kwargs)
 
     def make_special_inner_product(self, sample_vec):

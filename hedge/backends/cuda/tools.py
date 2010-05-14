@@ -26,7 +26,7 @@ import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
 import numpy
 from pytools import Record
-from pytools.log import LogQuantity
+from pytools.log import PostLogQuantity
 import hedge.timestep.base
 
 
@@ -211,7 +211,7 @@ def unroll(body_gen, total_number, max_unroll=None, start=0):
 
 
 # CUDA timer ------------------------------------------------------------------
-class CUDAIntervalTimer(LogQuantity):
+class CUDAIntervalTimer(PostLogQuantity):
     """Records elapsed times."""
 
     class _SubTimer:
@@ -231,7 +231,7 @@ class CUDAIntervalTimer(LogQuantity):
             return 1e-3*(self.stop_event.time_since(self.start_event))
 
     def __init__(self, name, description=None, stream=None):
-        LogQuantity.__init__(self, name, "s", description)
+        PostLogQuantity.__init__(self, name, "s", description)
         self.stream = stream
         self.callables = []
 
