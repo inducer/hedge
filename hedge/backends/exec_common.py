@@ -45,3 +45,15 @@ class ExecutionMapperBase(hedge.optemplate.Evaluator,
 
     def map_scalar_parameter(self, expr):
         return self.context[expr.name]
+
+    def map_jacobian(self, expr):
+        return self.discr.volume_jacobians(expr.quadrature_tag)
+
+    def map_forward_metric_derivative(self, expr):
+        return (self.discr.forward_metric_derivatives(expr.quadrature_tag)
+                    [expr.xyz_axis][expr.rst_axis])
+
+    def map_inverse_metric_derivative(self, expr):
+        return (self.discr.inverse_metric_derivatives(expr.quadrature_tag)
+                    [expr.xyz_axis][expr.rst_axis])
+

@@ -157,9 +157,6 @@ class Discretization(TimestepCalculator):
     :ivar quad_min_degrees: A mapping from quadrature tags to the degrees to
         which the desired quadrature is supposed to be exact.
 
-    :ivar volume_jacobians: Full-volume vector of jacobians on nodal/
-        quadrature grid
-
     :ivar inverse_metric_derivatives: A list of lists of full-volume vectors,
         such that the vector *inverse_metric_derivatives[xyz_axis][rst_axis]*
         gives the metric derivatives on the entire volume.
@@ -436,8 +433,6 @@ class Discretization(TimestepCalculator):
             raise NotImplementedError
 
     def _calculate_local_matrices(self):
-        vol_jac = self.volume_jacobians = self.volume_empty()
-
         for eg in self.element_groups:
             ldis = eg.local_discretization
 
@@ -452,12 +447,43 @@ class Discretization(TimestepCalculator):
             eg.minv_st = \
                     [numpy.dot(numpy.dot(immat, d.T), mmat) for d in dmats]
 
-            (eg.el_array_from_volume(vol_jac).T)[:,:] = numpy.array([
-                abs(el.map.jacobian())
-                for el in eg.members])
+    @memoize_method
+    def volume_jacobians(self, quadrature_tag=None, kind="numpy"):
+        """Return a full-volume vector of jacobians on nodal/
+        quadrature grid.
+        """
+
+        if kind != "numpy":
+            raise ValueError("invalid vector kind requested")
+
+        if quadrature_tag is None:
+            vol_jac = self.volume_empty(kind=kind)
+
+            for eg in self.element_groups:
+                ldis = eg.local_discretization
+
+                (eg.el_array_from_volume(vol_jac).T)[:,:] = numpy.array([
+                    abs(el.map.jacobian())
+                    for el in eg.members])
+
+            return vol_jac
+        else:
+            q_info = self.get_quadrature_info(quadrature_tag)
+
+            def make_empty_quad_vol_vector():
+                return numpy.empty(q_info.node_count, dtype=numpy.float64)
+
+            vol_jac = make_empty_quad_vol_vector()
+
+            for eg in self.element_groups:
+                eg_q_info = eg.quadrature_info[quadrature_tag]
+                (eg_q_info.el_array_from_volume(vol_jac).T)[:,:] \
+                        = numpy.array([abs(el.map.jacobian()) for el in eg.members])
+
+            return vol_jac
 
     @memoize_method
-    def inverse_metric_derivatives(self, quadrature_tag=None):
+    def inverse_metric_derivatives(self, quadrature_tag=None, kind="numpy"):
         """Return a list of lists of full-volume vectors,
         such that the vector *result[xyz_axis][rst_axis]*
         gives the metric derivatives on the entire volume.
@@ -468,7 +494,7 @@ class Discretization(TimestepCalculator):
 
         if quadrature_tag is None:
             result = [[
-                    self.volume_empty()
+                    self.volume_empty(kind="numpy")
                     for i in range(self.dimensions)]
                     for i in range(self.dimensions)]
 
@@ -504,7 +530,7 @@ class Discretization(TimestepCalculator):
 
 
     @memoize_method
-    def forward_metric_derivatives(self, quadrature_tag=None):
+    def forward_metric_derivatives(self, quadrature_tag=None, kind="numpy"):
         """Return a list of lists of full-volume vectors,
         such that the vector *result[xyz_axis][rst_axis]*
         gives the metric derivatives on the entire volume.
@@ -515,7 +541,7 @@ class Discretization(TimestepCalculator):
 
         if quadrature_tag is None:
             result = [[
-                    self.volume_empty()
+                    self.volume_empty(kind="numpy")
                     for i in range(self.dimensions)]
                     for i in range(self.dimensions)]
 
@@ -773,28 +799,6 @@ class Discretization(TimestepCalculator):
 
             q_info.node_count += eg_q_info.ranges.total_size
             q_info.int_faces_node_count += eg_q_info.el_faces_ranges.total_size
-
-        # }}}
-
-        # {{{ fill out metric bits 
-        
-        # We do this in a second pass because further up we do not yet know
-        # the the length of the quadrature volume vector.
-
-        def make_empty_quad_vol_vector():
-            return numpy.empty(q_info.node_count, dtype=numpy.float64)
-
-        vol_jac = q_info.volume_jacobians = \
-                make_empty_quad_vol_vector()
-
-        inv_met = q_info.inverse_metric_derivatives = [[
-                make_empty_quad_vol_vector()
-                for i in range(self.dimensions)]
-                for i in range(self.dimensions)]
-
-        for eg in self.element_groups:
-            (eg_q_info.el_array_from_volume(vol_jac).T)[:,:] \
-                    = numpy.array([abs(el.map.jacobian()) for el in eg.members])
 
         # }}}
 

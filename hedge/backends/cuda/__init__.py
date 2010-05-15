@@ -1248,6 +1248,81 @@ class Discretization(hedge.discretization.Discretization):
 
     # }}}
 
+    # {{{ volume geometry data ------------------------------------------------
+    @memoize_method
+    def volume_jacobians(self, quadrature_tag=None, kind="gpu"):
+        """Return a full-volume vector of jacobians on nodal/
+        quadrature grid.
+        """
+
+        if kind != "gpu":
+            return hedge.discretization.Discretization.volume_jacobians(
+                    self, quadrature_tag, kind)
+
+        if quadrature_tag is None:
+            return self.convert_volume(
+                    self.volume_jacobians(quadrature_tag, kind="numpy"),
+                    kind=self.compute_kind)
+        else:
+            raise NotImplementedError(
+                    "GPU volume_jacobians on quadrature grids")
+
+    @memoize_method
+    def inverse_metric_derivatives(self, quadrature_tag=None, kind="gpu"):
+        """Return a list of lists of full-volume vectors,
+        such that the vector *result[xyz_axis][rst_axis]*
+        gives the metric derivatives on the entire volume.
+
+        .. math::
+            \frac{d r_{\mathtt{rst\_axis}} }{d x_{\mathtt{xyz\_axis}} }
+        """
+
+        if kind != "gpu":
+            return hedge.discretization.Discretization.inverse_metric_derivatives(
+                    self, quadrature_tag, kind)
+
+        if quadrature_tag is None:
+            cpu_value = self.inverse_metric_derivatives(
+                    quadrature_tag, kind="numpy")
+
+            return [[
+                self.convert_volume(entry, kind=self.compute_kind)
+                for entry in row]
+                for row in cpu_value]
+        else:
+            raise NotImplementedError(
+                    "GPU inverse_metric_derivatives on quadrature grids")
+
+        return result
+
+
+    @memoize_method
+    def forward_metric_derivatives(self, quadrature_tag=None, kind="gpu"):
+        """Return a list of lists of full-volume vectors,
+        such that the vector *result[xyz_axis][rst_axis]*
+        gives the metric derivatives on the entire volume.
+
+        .. math::
+            \frac{d x_{\mathtt{xyz\_axis}} }{d r_{\mathtt{rst\_axis}} }
+        """
+
+        if kind != "gpu":
+            return hedge.discretization.Discretization.forward_metric_derivatives(
+                    self, quadrature_tag, kind)
+
+        if quadrature_tag is None:
+            cpu_value = self.forward_metric_derivatives(
+                    quadrature_tag, kind="numpy")
+
+            return [[
+                self.convert_volume(entry, kind=self.compute_kind)
+                for entry in row]
+                for row in cpu_value]
+        else:
+            raise NotImplementedError(
+                    "GPU forward_metric_derivatives on quadrature grids")
+    # }}}
+
     # {{{ ancillary kernel planning/construction ------------------------------
     @memoize_method
     def element_local_kernel(self):

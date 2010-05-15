@@ -390,7 +390,6 @@ def make_diff_plan(discr, given):
                 given.microblock.align_size)
 
         from hedge.backends.cuda.diff_shared_segmat import ExecutionPlan as SSegPlan
-
         if "cuda_no_smem_matrix" not in discr.debug:
             for pe in range(1,32+1):
                 for inline in range(1, MAX_INLINE+1):
@@ -402,7 +401,6 @@ def make_diff_plan(discr, given):
                                     max_unroll=given.dofs_per_el())
 
         from hedge.backends.cuda.diff_shared_fld import ExecutionPlan as SFieldPlan
-
         for pe in range(1,32+1):
             for inline in range(1, MAX_INLINE+1):
                 yield SFieldPlan(given, Parallelism(pe, inline, 1),
