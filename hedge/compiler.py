@@ -340,7 +340,7 @@ class Code(object):
         lines = []
         for insn in self.instructions:
             lines.extend(str(insn).split("\n"))
-        lines.append(str(self.result))
+        lines.append("RESULT: " + str(self.result))
 
         return "\n".join(lines)
 
@@ -564,9 +564,9 @@ class OperatorCompilerBase(IdentityMapper):
         raise NotImplementedError
 
     def collect_diff_ops(self, expr):
-        from hedge.optemplate import DiffOperatorBase
+        from hedge.optemplate.operators import ReferenceDiffOperatorBase
         from hedge.optemplate.mappers import BoundOperatorCollector
-        return BoundOperatorCollector(DiffOperatorBase)(expr)
+        return BoundOperatorCollector(ReferenceDiffOperatorBase)(expr)
 
     def collect_flux_exchange_ops(self, expr):
         from hedge.optemplate.mappers import FluxExchangeCollector
@@ -716,11 +716,12 @@ class OperatorCompilerBase(IdentityMapper):
 
     def map_operator_binding(self, expr, name_hint=None):
         from hedge.optemplate.operators import (
-                DiffOperatorBase, FluxExchangeOperator,
+                ReferenceDiffOperatorBase, 
+                FluxExchangeOperator,
                 FluxOperatorBase)
 
-        if isinstance(expr.op, DiffOperatorBase):
-            return self.map_diff_op_binding(expr)
+        if isinstance(expr.op, ReferenceDiffOperatorBase):
+            return self.map_ref_diff_op_binding(expr)
         elif isinstance(expr.op, FluxOperatorBase):
             raise RuntimeError("OperatorCompiler encountered a flux operator.\n\n"
                     "We are expecting flux operators to be converted to custom "
@@ -755,7 +756,7 @@ class OperatorCompilerBase(IdentityMapper):
                         [self.assign_to_new_var(self.rec(par)) 
                             for par in expr.parameters]))
 
-    def map_diff_op_binding(self, expr):
+    def map_ref_diff_op_binding(self, expr):
         try:
             return self.expr_to_var[expr]
         except KeyError:
@@ -769,8 +770,9 @@ class OperatorCompilerBase(IdentityMapper):
 
             op_class=single_valued(type(d.op) for d in all_diffs)
 
-            from hedge.optemplate.operators import QuadratureStiffnessTOperator
-            if isinstance(op_class, QuadratureStiffnessTOperator):
+            from hedge.optemplate.operators import \
+                    ReferenceQuadratureStiffnessTOperator
+            if isinstance(op_class, ReferenceQuadratureStiffnessTOperator):
                 assign_class = QuadratureDiffBatchAssign
             else:
                 assign_class = DiffBatchAssign

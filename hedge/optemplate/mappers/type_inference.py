@@ -443,37 +443,57 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
 
     def map_operator_binding(self, expr, typedict):
         from hedge.optemplate.operators import (
-                DiffOperatorBase, MassOperatorBase, ElementwiseMaxOperator,
+                DiffOperatorBase, 
+                ReferenceDiffOperatorBase, 
+
+                MassOperatorBase, 
+                ReferenceMassOperatorBase, 
+
+                ElementwiseMaxOperator,
                 BoundarizeOperator, FluxExchangeOperator,
                 FluxOperatorBase,
                 QuadratureGridUpsampler, QuadratureBoundaryGridUpsampler,
                 QuadratureInteriorFacesGridUpsampler,
-                MassOperator, QuadratureMassOperator,
-                StiffnessTOperator, QuadratureStiffnessTOperator,
+
+                MassOperator,
+                ReferenceMassOperator, 
+                ReferenceQuadratureMassOperator,
+
+                StiffnessTOperator, 
+                ReferenceStiffnessTOperator, 
+                ReferenceQuadratureStiffnessTOperator,
+
                 ElementwiseLinearOperator)
 
         own_type = typedict[expr]
 
         if isinstance(expr.op, 
-                (QuadratureStiffnessTOperator, QuadratureMassOperator)):
+                (ReferenceQuadratureStiffnessTOperator,
+                    ReferenceQuadratureMassOperator)):
             typedict[expr.field] = type_info.VolumeVector(
                     QuadratureRepresentation(expr.op.quadrature_tag))
             self.rec(expr.field, typedict)
             return type_info.VolumeVector(NodalRepresentation())
 
-        elif isinstance(expr.op, (StiffnessTOperator)):
+        elif isinstance(expr.op, 
+                (ReferenceStiffnessTOperator, StiffnessTOperator)):
             # stiffness_T can be specialized for quadrature by OperatorSpecializer
             typedict[expr.field] = type_info.KnownVolume()
             self.rec(expr.field, typedict)
             return type_info.VolumeVector(NodalRepresentation())
 
-        elif isinstance(expr.op, MassOperator):
+        elif isinstance(expr.op, 
+                (ReferenceMassOperator, MassOperator)):
             # mass can be specialized for quadrature by OperatorSpecializer
             typedict[expr.field] = type_info.KnownVolume()
             self.rec(expr.field, typedict)
             return type_info.VolumeVector(NodalRepresentation())
 
-        elif isinstance(expr.op, (DiffOperatorBase, MassOperatorBase)):
+        elif isinstance(expr.op, (
+            DiffOperatorBase,
+            ReferenceDiffOperatorBase, 
+            MassOperatorBase,
+            ReferenceMassOperatorBase)):
             # all other operators are purely nodal
             typedict[expr.field] = type_info.VolumeVector(NodalRepresentation())
             self.rec(expr.field, typedict)
@@ -609,6 +629,12 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
 
     def map_normal_component(self, expr, typedict):
         return type_info.KnownBoundary(expr.tag).unify(typedict[expr], expr)
+
+    def map_jacobian(self, expr, typedict):
+        return type_info.VolumeVector(NodalRepresentation())
+
+    map_forward_metric_derivative = map_jacobian
+    map_inverse_metric_derivative = map_jacobian
 
     def map_common_subexpression(self, expr, typedict):
         outer_tp = typedict[expr]

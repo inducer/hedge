@@ -29,64 +29,6 @@ import pycuda.gpuarray as gpuarray
 
 
 
-class DiffKernelBase(object):
-    class RstToXyzInfo(Record):
-        pass
-
-    @memoize_method
-    def fake_localop_rst_to_xyz(self):
-        discr = self.discr
-        given = self.plan.given
-        d = discr.dimensions
-
-        el_count = given.block_count * given.elements_per_block()
-        channels = given.devdata.make_valid_tex_channel_count(d)
-
-        return self.RstToXyzInfo(
-                gpu_data=gpuarray.to_gpu(
-                    numpy.ones((channels, d, el_count),
-                        dtype=given.float_type, order="F")),
-                channels=channels)
-
-    @memoize_method
-    def localop_rst_to_xyz(self, diff_op, elgroup):
-        discr = self.discr
-        given = discr.given
-        d = discr.dimensions
-
-        coeffs = diff_op.coefficients(elgroup)
-
-        elgroup_indices = self.discr.elgroup_microblock_indices(elgroup)
-        el_count = given.block_count * given.elements_per_block()
-
-        # indexed local, el_number, global
-        result_matrix = (coeffs[:,:,elgroup_indices]
-                .transpose(1,0,2)).astype(given.float_type)
-
-        assert result_matrix.shape == (d, d, el_count)
-
-        if "cuda_diff" in discr.debug:
-            def get_el_index_in_el_group(el):
-                mygroup, idx = discr.group_map[el.id]
-                assert mygroup is elgroup
-                return idx
-
-            for block in discr.blocks:
-                i = block.number * given.elements_per_block()
-                for mb in block.microblocks:
-                    for el in mb:
-                        egi = get_el_index_in_el_group(el)
-                        assert egi == elgroup_indices[i]
-                        assert (result_matrix[:d,:,i].T == coeffs[:,:,egi]).all()
-                        i += 1
-
-        return self.RstToXyzInfo(
-                gpu_data=gpuarray.to_gpu(
-                    numpy.asarray(result_matrix, order="F")))
-
-
-
-
 def fake_elwise_scaling(given):
     el_count = given.block_count * given.elements_per_block()
     ij = numpy.ones((el_count,), dtype=given.float_type)

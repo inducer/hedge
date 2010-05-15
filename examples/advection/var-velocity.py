@@ -154,8 +154,8 @@ def main(write_output=True, flux_type_arg="central", use_quadrature=False):
     u = discr.interpolate_volume_function(initial)
 
     # timestep setup ----------------------------------------------------------
-    from hedge.timestep import RK4TimeStepper
-    stepper = RK4TimeStepper()
+    from hedge.timestep.runge_kutta import LSRK4TimeStepper
+    stepper = LSRK4TimeStepper()
 
     if rcon.is_head_rank:
         print "%d elements" % len(discr.mesh.elements)

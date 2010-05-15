@@ -152,29 +152,34 @@ class WeakAdvectionOperator(AdvectionOperatorBase):
 
     def op_template(self):
         from hedge.optemplate import (
-                Field, \
-                BoundaryPair, \
-                get_flux_operator, \
-                make_minv_stiffness_t, \
-                InverseMassOperator, \
-                BoundarizeOperator)
+                Field,
+                BoundaryPair,
+                get_flux_operator,
+                make_stiffness_t,
+                InverseMassOperator,
+                BoundarizeOperator,
+                QuadratureGridUpsampler,
+                QuadratureInteriorFacesGridUpsampler)
 
         u = Field("u")
+
+        to_quad = QuadratureGridUpsampler("quad")
+        to_int_face_quad = QuadratureInteriorFacesGridUpsampler("quad")
 
         # boundary conditions -------------------------------------------------
         bc_in = Field("bc_in")
         bc_out = BoundarizeOperator(self.outflow_tag)*u
 
-        minv_st = make_minv_stiffness_t(self.dimensions)
+        stiff_t = make_stiffness_t(self.dimensions)
         m_inv = InverseMassOperator()
 
         flux_op = get_flux_operator(self.flux())
 
-        return numpy.dot(self.v, minv_st*u) - m_inv(
+        return m_inv(numpy.dot(self.v, stiff_t*u) - (
                     flux_op(u)
                     + flux_op(BoundaryPair(u, bc_in, self.inflow_tag))
                     + flux_op(BoundaryPair(u, bc_out, self.outflow_tag))
-                    )
+                    ))
 
 # }}}
 
