@@ -29,6 +29,8 @@ import hedge.mesh
 
 
 
+
+# {{{ variables ---------------------------------------------------------------
 from hedge.tools.symbolic import CFunction
 
 Field = pymbolic.primitives.Variable
@@ -52,9 +54,9 @@ class ScalarParameter(pymbolic.primitives.Variable):
     def get_mapper_method(self, mapper):
         return mapper.map_scalar_parameter
 
+# }}}
 
-
-
+# {{{ technical helpers -------------------------------------------------------
 class OperatorBinding(pymbolic.primitives.AlgebraicLeaf):
     def __init__(self, op, field):
         self.op = op
@@ -79,40 +81,6 @@ class OperatorBinding(pymbolic.primitives.AlgebraicLeaf):
     def get_hash(self):
         from hedge.tools import hashable_field
         return hash((self.__class__, self.op, hashable_field(self.field)))
-
-
-
-
-class BoundaryNormalComponent(pymbolic.primitives.AlgebraicLeaf):
-    def __init__(self, tag, axis):
-        self.tag = tag
-        self.axis = axis
-
-    def stringifier(self):
-        from hedge.optemplate.mappers import StringifyMapper
-        return StringifyMapper
-
-    def get_hash(self):
-        return hash((self.__class__, self.tag, self.axis))
-
-    def is_equal(self, other):
-        return (other.__class__ == self.__class__
-                and other.tag == self.tag
-                and other.axis == self.axis)
-
-    def get_mapper_method(self, mapper):
-        return mapper.map_normal_component
-
-    def __getinitargs__(self):
-        return (self.tag, self.axis)
-
-
-
-
-def make_normal(tag, dimensions):
-    return numpy.array([BoundaryNormalComponent(tag, i)
-        for i in range(dimensions)], dtype=object)
-
 
 
 
@@ -173,3 +141,165 @@ class BoundaryPair(pymbolic.primitives.AlgebraicLeaf):
                 and field_equal(other.field,  self.field)
                 and field_equal(other.bfield, self.bfield)
                 and other.tag == self.tag)
+
+
+# }}}
+
+# {{{ geometry data -----------------------------------------------------------
+class BoundaryNormalComponent(pymbolic.primitives.AlgebraicLeaf):
+    def __init__(self, tag, axis):
+        self.tag = tag
+        self.axis = axis
+
+    def stringifier(self):
+        from hedge.optemplate.mappers import StringifyMapper
+        return StringifyMapper
+
+    def get_hash(self):
+        return hash((self.__class__, self.tag, self.axis))
+
+    def is_equal(self, other):
+        return (other.__class__ == self.__class__
+                and other.tag == self.tag
+                and other.axis == self.axis)
+
+    def get_mapper_method(self, mapper):
+        return mapper.map_normal_component
+
+    def __getinitargs__(self):
+        return (self.tag, self.axis)
+
+
+
+
+def make_normal(tag, dimensions):
+    return numpy.array([BoundaryNormalComponent(tag, i)
+        for i in range(dimensions)], dtype=object)
+
+
+
+
+class GeometricFactorBase(pymbolic.primitives.AlgebraicLeaf):
+    def __init__(self, quadrature_tag):
+        """
+        :param quadrature_tag: quadrature tag for the grid on
+        which this geometric factor is needed, or None for
+        nodal representation.
+        """
+        self.quadrature_tag = quadrature_tag
+
+    def get_hash(self):
+        return hash((self.__class__, self.quadrature_tag))
+
+    def is_equal(self, other): 
+        return (other.__class__ == self.__class__
+                and other.quadrature_tag == self.quadrature_tag)
+
+    def __getinitargs__(self):
+        return (self.quadrature_tag,)
+
+
+
+
+class Jacobian(GeometricFactorBase):
+    def stringifier(self):
+        from hedge.optemplate.mappers import StringifyMapper
+        return StringifyMapper
+
+    def get_mapper_method(self, mapper):
+        return mapper.map_jacobian
+
+
+
+
+
+class ForwardMetricDerivative(GeometricFactorBase):
+    """
+    Pointwise metric derivatives representing
+
+    .. math::
+    
+        \frac{d x_{\mathtt{xyz\_axis}} }{d r_{\mathtt{rst\_axis}} }
+    """
+
+    def __init__(self, quadrature_tag, xyz_axis, rst_axis):
+        """
+        :param quadrature_tag: quadrature tag for the grid on
+        which this geometric factor is needed, or None for
+        nodal representation.
+        """
+
+        GeometricFactorBase.__init__(self, quadrature_tag)
+        self.xyz_axis = xyz_axis
+        self.rst_axis = rst_axis
+
+    def stringifier(self):
+        from hedge.optemplate.mappers import StringifyMapper
+        return StringifyMapper
+
+    def get_hash(self):
+        return hash((self.__class__, self.quadrature_tag, 
+            self.xyz_axis, self.rst_axis))
+
+    def is_equal(self, other):
+        return (other.__class__ == self.__class__
+                and other.quadrature_tag == self.quadrature_tag
+                and other.xyz_axis == self.xyz_axis
+                and other.rst_axis == self.rst_axis
+                )
+
+    def get_mapper_method(self, mapper):
+        return mapper.map_forward_metric_derivative
+
+    def __getinitargs__(self):
+        return (self.quadrature_tag, self.xyz_axis, self.rst_axis)
+
+
+
+
+class InverseMetricDerivative(GeometricFactorBase):
+    """
+    Pointwise metric derivatives representing
+
+    .. math::
+    
+        \frac{d r_{\mathtt{rst\_axis}} }{d x_{\mathtt{xyz\_axis}} }
+    """
+
+    def __init__(self, quadrature_tag, rst_axis, xyz_axis):
+        """
+        :param quadrature_tag: quadrature tag for the grid on
+        which this geometric factor is needed, or None for
+        nodal representation.
+        """
+
+        GeometricFactorBase.__init__(self, quadrature_tag)
+        self.rst_axis = rst_axis
+        self.xyz_axis = xyz_axis
+
+    def stringifier(self):
+        from hedge.optemplate.mappers import StringifyMapper
+        return StringifyMapper
+
+    def get_hash(self):
+        return hash((self.__class__, self.quadrature_tag, 
+            self.xyz_axis, self.rst_axis))
+    def is_equal(self, other):
+        return (other.__class__ == self.__class__
+                and other.quadrature_tag == self.quadrature_tag
+                and other.rst_axis == self.rst_axis
+                and other.xyz_axis == self.xyz_axis
+                )
+
+    def get_mapper_method(self, mapper):
+        return mapper.map_inverse_metric_derivative
+
+    def __getinitargs__(self):
+        return (self.quadrature_tag, self.rst_axis, self.xyz_axis)
+
+# }}}
+
+
+
+
+# vim: foldmethod=marker

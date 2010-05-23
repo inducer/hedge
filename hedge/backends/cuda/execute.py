@@ -170,9 +170,11 @@ class ExecutionMapper(ExecutionMapperBase):
             discr.diff_flop_counter.add(discr.dimensions*(
                 self.executor.diff_rst_flops + self.executor.diff_rescale_one_flops))
 
-        xyz_diff = self.executor.diff_kernel(insn.op_class, field)
+        rst_diff = self.executor.diff_kernel(insn.op_class, field)
 
         if set(["cuda_diff", "cuda_compare"]) <= discr.debug:
+            assert False, "this debug code was broken in the " \
+                    "global-to-ref-rewriting change"
             field = self.rec(insn.field)
             f = discr.volume_from_gpu(field)
             assert not numpy.isnan(f).any(), "Initial field contained NaNs."
@@ -199,7 +201,7 @@ class ExecutionMapper(ExecutionMapperBase):
 
             assert rel_err_norm < 5e-5
 
-        return [(name, xyz_diff[op.xyz_axis])
+        return [(name, rst_diff[op.rst_axis])
                 for name, op in zip(insn.names, insn.operators)], []
 
 

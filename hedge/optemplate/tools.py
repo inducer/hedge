@@ -232,7 +232,7 @@ def process_optemplate(optemplate, post_bind_mapper=None,
     from hedge.optemplate.mappers import (
             OperatorBinder, BCToFluxRewriter, CommutativeConstantFoldingMapper,
             EmptyFluxKiller, InverseMassContractor, DerivativeJoiner,
-            ErrorChecker, OperatorSpecializer)
+            ErrorChecker, OperatorSpecializer, GlobalToReferenceMapper)
     from hedge.optemplate.mappers.type_inference import TypeInferrer
 
     dumper("before-bind", optemplate)
@@ -251,9 +251,11 @@ def process_optemplate(optemplate, post_bind_mapper=None,
     optemplate = BCToFluxRewriter()(optemplate)
 
     # Ordering restriction:
-    # - Must run constant fold before first type inference pass, because
-    # zeros, while allowed, violate typing constraints, and need to be killed
-    # before the type inferrer sees them.
+    #
+    # - Must run constant fold before first type inference pass, because zeros,
+    # while allowed, violate typing constraints (because they can't be assigned
+    # a unique type), and need to be killed before the type inferrer sees them.
+    #
     # - Must run BC-to-flux before first type inferrer run so that zeros in
     # flux arguments can be removed.
 
@@ -262,7 +264,18 @@ def process_optemplate(optemplate, post_bind_mapper=None,
             TypeInferrer()(optemplate)
             )(optemplate)
 
-    # Ordering restrictions: 
+    # Ordering restriction:
+    #
+    # - Must run OperatorSpecializer before performing the GlobalToReferenceMapper,
+    # because otherwise it won't differentiate the type of grids (node or quadrature
+    # grids) that the operators will apply on.
+
+    assert mesh is not None
+    dumper("before-global-to-reference", optemplate)
+    optemplate = GlobalToReferenceMapper(mesh.dimensions)(optemplate)
+
+    # Ordering restriction: 
+    #
     # - Must specialize quadrature operators before performing inverse mass
     # contraction, because there are no inverse-mass-contracted variants of the
     # quadrature operators.

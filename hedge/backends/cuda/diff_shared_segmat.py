@@ -27,7 +27,6 @@ from pytools import memoize_method
 import pycuda.driver as cuda
 from pycuda.compiler import SourceModule
 import hedge.backends.cuda.plan
-from hedge.backends.cuda.kernelbase import DiffKernelBase
 
 
 
@@ -80,7 +79,7 @@ class ExecutionPlan(hedge.backends.cuda.plan.SegmentedMatrixLocalOpExecutionPlan
 
 
 # kernel ----------------------------------------------------------------------
-class Kernel(DiffKernelBase):
+class Kernel:
     def __init__(self, discr, plan):
         self.discr = discr
         self.plan = plan
@@ -96,7 +95,8 @@ class Kernel(DiffKernelBase):
         given = self.plan.given
         elgroup, = discr.element_groups
 
-        from hedge.optemplate import DifferentiationOperator as op_class
+        from hedge.optemplate \
+                import ReferenceDifferentiationOperator as op_class
         try:
             func, field_texref = self.get_kernel(op_class, elgroup, for_benchmark=True)
         except cuda.CompileError:
@@ -116,8 +116,8 @@ class Kernel(DiffKernelBase):
         field.fill(0)
 
         field.bind_to_texref_ext(field_texref, allow_double_hack=True)
-        xyz_diff = [vol_empty() for axis in range(discr.dimensions)]
-        xyz_diff_gpudata = [subarray.gpudata for subarray in xyz_diff]
+        rst_diff = [vol_empty() for axis in range(discr.dimensions)]
+        rst_diff_gpudata = [subarray.gpudata for subarray in rst_diff]
 
         if "cuda_fastbench" in self.discr.debug:
             count = 1
@@ -132,7 +132,7 @@ class Kernel(DiffKernelBase):
         for i in range(count):
             try:
                 func.prepared_call(self.grid, gpu_diffmats.device_memory,
-                        *xyz_diff_gpudata)
+                        *rst_diff_gpudata)
             except cuda.LaunchError:
                 return None
 
@@ -156,15 +156,15 @@ class Kernel(DiffKernelBase):
 
         field.bind_to_texref_ext(field_texref, allow_double_hack=True)
 
-        xyz_diff = [discr.volume_empty() for axis in range(d)]
-        xyz_diff_gpudata = [subarray.gpudata for subarray in xyz_diff]
+        rst_diff = [discr.volume_empty() for axis in range(d)]
+        rst_diff_gpudata = [subarray.gpudata for subarray in rst_diff]
 
         gpu_diffmats = self.gpu_diffmats(op_class, elgroup)
 
         if discr.instrumented:
             discr.diff_op_timer.add_timer_callable(func.prepared_timed_call(
                     self.grid, gpu_diffmats.device_memory,
-                    *xyz_diff_gpudata))
+                    *rst_diff_gpudata))
 
             from pytools import product
             discr.gmem_bytes_diff.add(
@@ -181,7 +181,7 @@ class Kernel(DiffKernelBase):
                         ))
         else:
             func.prepared_call(self.grid, gpu_diffmats.device_memory,
-                    *xyz_diff_gpudata)
+                    *rst_diff_gpudata)
 
         if False:
             copied_debugbuf = debugbuf.get()
@@ -190,7 +190,7 @@ class Kernel(DiffKernelBase):
             print copied_debugbuf[:100].reshape((10,10))
             raw_input()
 
-        return xyz_diff
+        return rst_diff
 
     @memoize_method
     def get_kernel(self, diff_op_cls, elgroup, for_benchmark=False):
@@ -218,16 +218,13 @@ class Kernel(DiffKernelBase):
         f_decl = CudaGlobal(FunctionDeclaration(Value("void", "apply_diff_mat"),
             [Pointer(POD(numpy.uint8, "gmem_diff_rst_mat")),
                 #Pointer(POD(float_type, "debugbuf")),
-                ] + [Pointer(POD(float_type, "dxyz%d" % i)) for i in dims]
+                ] + [Pointer(POD(float_type, "drst%d_global" % i)) for i in dims]
             ))
 
         rst_channels = given.devdata.make_valid_tex_channel_count(d)
         cmod = Module([
                 Include("pycuda-helpers.hpp"),
                 Line(),
-                Value("texture<fp_tex_%s, 1, cudaReadModeElementType>"
-                    % dtype_to_ctype(float_type),
-                    "rst_to_xyz_tex"),
                 Value("texture<fp_tex_%s, 1, cudaReadModeElementType>"
                     % dtype_to_ctype(float_type),
                     "field_tex"),
@@ -329,21 +326,11 @@ class Kernel(DiffKernelBase):
 
             store_code = Block()
             for inl in range(par.inline):
-                for glob_axis in dims:
+                for rst_axis in dims:
                     store_code.append(Assign(
-                        "dxyz%d[GLOBAL_MB_DOF_BASE + %d*ALIGNED_DOFS_PER_MB + MB_DOF]"
-                        % (glob_axis, inl),
-                        " + ".join(
-                            "fp_tex1Dfetch(rst_to_xyz_tex, %(loc_axis)d + "
-                            "DIMENSIONS*(%(glob_axis)d + DIMENSIONS*("
-                            "(GLOBAL_MB_NR+%(inl)d)*ELS_PER_MB + mb_el)))"
-                            "* d%(inl)drst%(loc_axis)d" % {
-                                "loc_axis": loc_axis,
-                                "glob_axis": glob_axis,
-                                "inl": inl
-                            }
-                            for loc_axis in dims
-                            )
+                        "drst%d_global[GLOBAL_MB_DOF_BASE"
+                        " + %d*ALIGNED_DOFS_PER_MB + MB_DOF]" % (rst_axis, inl),
+                        "d%drst%d" % (inl, rst_axis),
                         ))
 
             code.append(If("MB_DOF < DOFS_PER_EL*ELS_PER_MB", store_code))
@@ -369,22 +356,13 @@ class Kernel(DiffKernelBase):
                 #options=["--maxrregcount=10"]
                 )
 
-        if for_benchmark:
-            rst_to_xyz = self.fake_localop_rst_to_xyz()
-        else:
-            rst_to_xyz = self.localop_rst_to_xyz(diff_op_cls, elgroup)
-
-        rst_to_xyz_texref = mod.get_texref("rst_to_xyz_tex")
-        rst_to_xyz.gpu_data.bind_to_texref_ext(rst_to_xyz_texref,
-                allow_double_hack=True)
-
         field_texref = mod.get_texref("field_tex")
 
         func = mod.get_function("apply_diff_mat")
         func.prepare(
                 discr.dimensions*[float_type] + ["P"],
                 block=(self.plan.segment_size, par.parallel, 1),
-                texrefs=[field_texref, rst_to_xyz_texref])
+                texrefs=[field_texref])
 
         if "cuda_diff" in discr.debug:
             print "diff: lmem=%d smem=%d regs=%d" % (
