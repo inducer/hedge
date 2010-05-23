@@ -616,10 +616,14 @@ def _make_z_periodic_mesh(points, facets, facet_holestarts, facet_markers, heigh
     generated_mesh = build(mesh_info, max_volume=max_volume)
     fvi2fm = generated_mesh.face_vertex_indices_to_face_marker
 
-    from hedge.mesh import make_conformal_mesh
-    return make_conformal_mesh(
-            generated_mesh.points,
-            generated_mesh.elements,
+    from hedge.mesh import make_conformal_mesh_ext
+    from hedge.mesh.element import Tetrahedron
+
+    vertices = numpy.asarray(generated_mesh.points, dtype=float, order="C")
+    return make_conformal_mesh_ext(
+            vertices,
+            [Tetrahedron(i, el_idx, vertices)
+                for i, el_idx in enumerate(generated_mesh.elements)],
             zper_boundary_tagger,
             periodicity=[None, None, ("minus_z", "plus_z")])
 
@@ -651,10 +655,14 @@ def make_cylinder_mesh(radius=0.5, height=1, radial_subdivisions=10,
 
         generated_mesh = build(mesh_info, max_volume=max_volume)
 
-        from hedge.mesh import make_conformal_mesh
-        return make_conformal_mesh(
-                generated_mesh.points,
-                generated_mesh.elements,
+        from hedge.mesh import make_conformal_mesh_ext
+        from hedge.mesh.element import Tetrahedron
+
+        vertices = numpy.asarray(generated_mesh.points, dtype=float, order="C")
+        return make_conformal_mesh_ext(
+                vertices,
+                [Tetrahedron(i, el_idx, vertices)
+                    for i, el_idx in enumerate(generated_mesh.elements)],
                 boundary_tagger)
 
 
