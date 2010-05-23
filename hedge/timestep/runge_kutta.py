@@ -104,7 +104,7 @@ class LSRK4TimeStepper(TimeStepper):
 
             self.linear_combiner = self.vector_primitive_factory\
                     .make_linear_combiner(self.dtype, self.scalar_dtype, 
-                            self.residual, arg_count=2)
+                            y, arg_count=2)
 
         lc = self.linear_combiner
 
