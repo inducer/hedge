@@ -219,7 +219,7 @@ class ExecutionMapper(ExecutionMapperBase):
         self.executor.do_elementwise_linear(op, field, out)
         return out
 
-    def map_quad_mass(self, op, field_expr):
+    def map_ref_quad_mass(self, op, field_expr):
         field = self.rec(field_expr)
 
         from hedge.tools import is_zero
@@ -228,14 +228,14 @@ class ExecutionMapper(ExecutionMapperBase):
 
         qtag = op.quadrature_tag
 
-        from hedge._internal import perform_elwise_scaled_operator
+        from hedge._internal import perform_elwise_operator
 
         out = self.discr.volume_zeros()
         for eg in self.discr.element_groups:
             eg_quad_info = eg.quadrature_info[qtag]
 
-            perform_elwise_scaled_operator(eg_quad_info.ranges, eg.ranges,
-                    eg.jacobians, eg_quad_info.ldis_quad_info.mass_matrix(),
+            perform_elwise_operator(eg_quad_info.ranges, eg.ranges,
+                    eg_quad_info.ldis_quad_info.mass_matrix(),
                     field, out)
 
         return out

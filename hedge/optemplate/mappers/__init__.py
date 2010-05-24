@@ -510,6 +510,7 @@ class GlobalToReferenceMapper(CSECachingMapperMixin, IdentityMapper):
                 MassOperator, 
                 ReferenceMassOperator,
                 QuadratureMassOperator,
+                ReferenceQuadratureMassOperator,
 
                 StiffnessOperator,
 
@@ -546,7 +547,8 @@ class GlobalToReferenceMapper(CSECachingMapperMixin, IdentityMapper):
                     Jacobian(None) * self.rec(expr.field))
 
         elif isinstance(expr.op, QuadratureMassOperator): 
-            return ReferenceQuadratureMassOperator()(
+            return ReferenceQuadratureMassOperator(
+                    expr.op.quadrature_tag)(
                     Jacobian(expr.op.quadrature_tag) * self.rec(expr.field))
 
         elif isinstance(expr.op, InverseMassOperator) :
