@@ -366,10 +366,25 @@ class Code(object):
             for insn in self.instructions
             if insn not in done_insns))
 
+        # {{{ make sure results do not get discarded
         from hedge.tools import with_object_array_or_scalar
-        with_object_array_or_scalar(
-                lambda var: discardable_vars.discard(var.name),
-                self.result)
+
+        from hedge.optemplate.mappers import DependencyMapper
+        dm = DependencyMapper(composite_leaves=False)
+
+        def remove_result_variable(result_expr):
+            # The extra dependency mapper run is necessary
+            # because, for instance, subscripts can make it
+            # into the result expression, which then does
+            # not consist of just variables.
+
+            for var in dm(result_expr):
+                from pymbolic.primitives import Variable
+                assert isinstance(var, Variable)
+                discardable_vars.discard(var.name)
+
+        with_object_array_or_scalar(remove_result_variable, self.result)
+        # }}}
 
         return argmax2(available_insns), discardable_vars
 
