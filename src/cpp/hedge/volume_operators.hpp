@@ -27,6 +27,7 @@
 #include <utility>
 #include <algorithm>
 #include <boost/foreach.hpp>
+#include <boost/format.hpp>
 #include <boost/numeric/bindings/blas/blas3.hpp>
 #include <boost/numeric/bindings/traits/traits.hpp>
 #include <boost/numeric/bindings/traits/matrix_traits.hpp>
@@ -321,7 +322,11 @@ namespace hedge {
     if (matrix.size1() != dest_ers.el_size())
       throw std::runtime_error("number of matrix rows != size of dest element");
     if (src_ers.total_size() != operand.size())
-      throw std::runtime_error("operand is of wrong size");
+      throw std::runtime_error(
+          boost::str(boost::format("operand is of wrong size %d (expected %d)")
+          % operand.size()
+          % src_ers.total_size()).c_str()
+          );
     if (dest_ers.total_size() != result.size())
       throw std::runtime_error("result is of wrong size");
 
