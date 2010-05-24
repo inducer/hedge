@@ -21,7 +21,8 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 
-import hedge.mesh
+import numpy
+from pytools import memoize_method
 
 
 
@@ -42,7 +43,7 @@ class _ConstantFunctionContainer:
 
 
 
-# abstract interfaces ---------------------------------------------------------
+# {{{ abstract interfaces -----------------------------------------------------
 class IGivenFunction(object):
     """Abstract interface for obtaining interpolants of I{time-independent}
     functions.
@@ -103,10 +104,9 @@ class IFieldDependentGivenFunction(object):
         """
         raise NotImplementedError
 
+# }}}
 
-
-
-# actual implementations ------------------------------------------------------
+# {{{ time-independent data ---------------------------------------------------
 class GivenFunction(IGivenFunction):
     """Adapter for a function :math:`f(x)` into an :class:`IGivenFunction`.
     """
@@ -175,9 +175,9 @@ class GivenVolumeInterpolant(IGivenFunction):
                     "not supported")
         return discr.boundarize_volume_field(self.interpolant, tag)
 
+# }}}
 
-
-
+# {{{ time-depedent data ------------------------------------------------------
 
 class TimeConstantGivenFunction(ITimeDependentGivenFunction):
     """Adapts a :class:`GivenFunction` to have a (formal) time-dependency,
@@ -292,3 +292,102 @@ class TimeDependentGivenFunction(ITimeDependentGivenFunction):
     def boundary_interpolant(self, t, discr, tag):
         return discr.interpolate_boundary_function(
                 self.ConstantWrapper(self.f, t), tag)
+
+# }}}
+
+# {{{ compiled initial/boundary data ------------------------------------------
+class CompiledExpressionData(
+        ITimeDependentGivenFunction,
+        IFieldDependentGivenFunction,
+        ):
+    def __init__(self, expressions_getter, arg_count=0):
+        self.expressions_getter = expressions_getter
+        self.arg_count = arg_count
+
+    @memoize_method
+    def make_func(self, discr, boundary_tag=None):
+        from pymbolic import var
+
+        def make_vec(basename):
+            from hedge.tools import make_obj_array
+            return make_obj_array(
+                    [var("%s%d" % (basename, i)) for i in range(self.dimensions)])
+
+        from hedge.optemplate.primitives  import ScalarParameter
+        from hedge.optemplate.tools import make_vector_field
+
+        x = make_vector_field("x", discr.dimensions)
+        fields = make_vector_field("fields", self.arg_count)
+        exprs = self.expressions_getter(
+                t=ScalarParameter("t"), x=x, fields=fields)
+
+        from hedge.optemplate.mappers.type_inference import (
+                type_info, NodalRepresentation)
+        type_hints = {}
+        if boundary_tag is not None:
+            my_vec_type = type_info.BoundaryVector(
+                    boundary_tag, NodalRepresentation())
+        else:
+            my_vec_type = type_info.VolumeVector(
+                    NodalRepresentation())
+
+        for x_i in x:
+            type_hints[x_i] = my_vec_type
+
+        for f_i in fields:
+            type_hints[f_i] = my_vec_type
+
+        return discr.compile(exprs, type_hints=type_hints)
+
+    def __call__(self, discr, t, fields, x):
+        return self.make_func(discr)(
+                t=numpy.float64(t), x=x, fields=fields)
+
+    @memoize_method
+    def get_volume_nodes(self, discr):
+        from hedge.tools import make_obj_array
+        return discr.convert_volume(
+                make_obj_array([
+                    numpy.array(discr.nodes[:,i],
+                        dtype=discr.default_scalar_type)
+                    for i in range(discr.dimensions)]),
+                kind=discr.compute_kind)
+
+    def volume_interpolant(self, *args):
+        if len(args) == 3:
+            t, fields, discr = args
+        elif len(args) == 2:
+            t, discr = args
+            fields = []
+        else:
+            raise TypeError("invalid arguments to "
+                    "CompiledExpressionData.volume_interpolant")
+        return self(discr, t, fields, self.get_volume_nodes(discr))
+
+    def get_boundary_nodes(self, discr, tag):
+        from hedge.tools import make_obj_array
+        bnodes = discr.get_boundary(tag).nodes
+        nodes = discr.convert_boundary(
+                make_obj_array([
+                    numpy.array(bnodes[:,i],
+                        dtype=discr.default_scalar_type)
+                        for i in range(discr.dimensions)]),
+                tag, kind=discr.compute_kind)
+        return nodes
+
+    def boundary_interpolant(self, *args):
+        if len(args) == 4:
+            t, fields, discr, tag = args
+        elif len(args) == 3:
+            t, discr, tag = args
+            fields = []
+        else:
+            raise TypeError("invalid arguments to "
+                    "CompiledExpressionData.boundary_interpolant")
+
+        return self(discr, t, fields, 
+                self.get_boundary_nodes(discr, tag))
+
+# }}}
+
+# vim: foldmethod=marker
