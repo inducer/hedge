@@ -252,7 +252,7 @@ class Discretization(TimestepCalculator):
 
         self.exec_functions = {}
 
-        self.spatial_btree = None #spatial binary tree for node searches
+        self.spatial_btree = None # spatial binary tree for node searches
         self._build_element_groups_and_nodes(local_discretization)
         self._calculate_local_matrices()
         self._build_interior_face_groups()
@@ -1219,10 +1219,10 @@ class Discretization(TimestepCalculator):
 
     def get_point_evaluator(self, point, use_btree = False, thresh = 0):
 
-        if (use_btree == True) and (self.spatial_btree == None):
+        if use_btree and (self.spatial_btree is None):
             # Want to use the spatial binary tree, needs to be built first
             # Get bounding box, bottom left and top right, from mesh class
-            (bl,tr) = self.mesh.bounding_box()
+            bl,tr = self.mesh.bounding_box()
             bl = tuple(bl)
             tr = tuple(tr)
             self.spatial_btree = self.get_spatial_btree(bl,tr)
@@ -1266,25 +1266,18 @@ class Discretization(TimestepCalculator):
         :param new_discr: new discretization.
         :param use_btree: bool to decide if a spatial binary tree will be used.
         """
+	from hedge.tools import log_shape
 
         kind = new_discr.compute_kind
+	ls = log_shape(field_in)
 
-        shape = field_in.shape
-        if shape[0] == len(self.nodes): 
-            # case: field_in array of nodal values
-            
-            shape = ()
-            field_out = new_discr.volume_empty(shape, dtype=dtype, kind=kind)
-            
+	field_out = new_discr.volume_empty(ls, dtype=dtype, kind=kind)
+
+        if ls == (): 
             for ii in range(len(new_discr.nodes)): 
-                #loop over all nodes in new grid
                 pe = self.get_point_evaluator(new_discr.nodes[ii], use_btree, thresh)
                 field_out[ii] = pe(field_in)
         else:  
-            #case: field_in's elements are array of nodal values
-            
-            field_out = new_discr.volume_empty(shape, dtype=dtype, kind=kind)
-            
             for ii in range(len(new_discr.nodes)):
                 pe = self.get_point_evaluator(new_discr.nodes[ii], use_btree, thresh)
                 field_out[:,ii] = pe(field_in)
@@ -1294,7 +1287,7 @@ class Discretization(TimestepCalculator):
             from hedge.tools import join_fields
             field_out = join_fields(field_out)
 
-        return new_discr.convert_volume(field_out, kind=kind)
+        return field_out
 
     @memoize_method
     def get_spatial_btree(self,bottom_left,top_right):
