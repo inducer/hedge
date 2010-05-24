@@ -127,7 +127,7 @@ class QuadratureStiffnessTOperator(DiffOperatorBase):
         This operator is purely for internal use. It is inserted
         by :class:`hedge.optemplate.mappers.OperatorSpecializer`
         when a :class:`StiffnessTOperator` is applied to a quadrature
-        field, and then eliminated by 
+        field, and then eliminated by
         :class:`hedge.optemplate.mappers.GlobalToReferenceMapper`
         in favor of operators on the reference element.
     """
@@ -304,7 +304,7 @@ class FilterOperator(ElementwiseLinearOperator):
         :param mode_response_func: A function mapping
           ``(mode_tuple, local_discretization)`` to a float indicating the
           factor by which this mode is to be multiplied after filtering.
-          (For example an instance of 
+          (For example an instance of
           :class:`ExponentialFilterResponseFunction`.
         """
         self.mode_response_func = mode_response_func
@@ -397,7 +397,7 @@ class QuadratureMassOperator(Operator):
         This operator is purely for internal use. It is inserted
         by :class:`hedge.optemplate.mappers.OperatorSpecializer`
         when a :class:`StiffnessTOperator` is applied to a quadrature
-        field, and then eliminated by 
+        field, and then eliminated by
         :class:`hedge.optemplate.mappers.GlobalToReferenceMapper`
         in favor of operators on the reference element.
     """
@@ -533,7 +533,7 @@ class FluxOperatorBase(Operator):
         return type(self)(0, *self.__getinitargs__()[1:])
 
     def __call__(self, arg):
-        # override to suppress apply-operator-to-each-operand 
+        # override to suppress apply-operator-to-each-operand
         # behavior from superclass
 
         from hedge.optemplate.primitives import OperatorBinding

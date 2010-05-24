@@ -133,7 +133,7 @@ class ExecutionMapper(ExecutionMapperBase):
             for i, fof in enumerate(all_fluxes_on_faces):
                 setattr(arg_struct, "flux%d_on_faces" % i, fof)
 
-            # make sure everything ended up in Boost.Python attributes 
+            # make sure everything ended up in Boost.Python attributes
             # (i.e. empty __dict__)
             assert not arg_struct.__dict__, arg_struct.__dict__.keys()
 
@@ -257,7 +257,7 @@ class ExecutionMapper(ExecutionMapperBase):
             eg_quad_info = eg.quadrature_info[qtag]
 
             perform_elwise_operator(eg.ranges, eg_quad_info.ranges,
-                eg_quad_info.ldis_quad_info.volume_up_interpolation_matrix(), 
+                eg_quad_info.ldis_quad_info.volume_up_interpolation_matrix(),
                 field, out)
 
         return out
@@ -279,7 +279,7 @@ class ExecutionMapper(ExecutionMapperBase):
             eg_quad_info = eg.quadrature_info[qtag]
 
             perform_elwise_operator(eg.ranges, eg_quad_info.el_faces_ranges,
-                eg_quad_info.ldis_quad_info.volume_to_face_up_interpolation_matrix(), 
+                eg_quad_info.ldis_quad_info.volume_to_face_up_interpolation_matrix(),
                 field, out)
 
         return out
@@ -303,7 +303,7 @@ class ExecutionMapper(ExecutionMapperBase):
                 bdry_q_info.fg_ranges,
                 bdry_q_info.fg_ldis_quad_infos):
             perform_elwise_operator(from_ranges, to_ranges,
-                ldis_quad_info.face_up_interpolation_matrix(), 
+                ldis_quad_info.face_up_interpolation_matrix(),
                 field, out)
 
         return out
@@ -399,7 +399,7 @@ class Executor(object):
                         pretty_print_optemplate(optemplate))
                 stage[0] += 1
 
-        optemplate = process_optemplate(optemplate, 
+        optemplate = process_optemplate(optemplate,
                 post_bind_mapper=post_bind_mapper,
                 dumper=dump_optemplate,
                 mesh=discr.mesh)
@@ -463,7 +463,7 @@ class Executor(object):
 
     def diff_builtin(self, operators, field):
         """For the batch of reference differentiation operators in
-        *operators*, return the local corresponding derivatives of 
+        *operators*, return the local corresponding derivatives of
         *field*.
         """
 
