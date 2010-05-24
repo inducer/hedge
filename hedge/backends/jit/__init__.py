@@ -336,9 +336,10 @@ class ExecutionMapper(ExecutionMapperBase):
 
 # {{{ executor ----------------------------------------------------------------
 class Executor(object):
-    def __init__(self, discr, optemplate, post_bind_mapper):
+    def __init__(self, discr, optemplate, post_bind_mapper, type_hints):
         self.discr = discr
-        self.code = self.compile_optemplate(discr, optemplate, post_bind_mapper)
+        self.code = self.compile_optemplate(discr, optemplate, 
+                post_bind_mapper, type_hints)
         self.elwise_linear_cache = {}
 
         if "dump_op_code" in discr.debug:
@@ -386,7 +387,8 @@ class Executor(object):
         self.lift_flux = pick_faster_func(bench_lift,
                 [self.lift_flux, JitLifter(discr)])
 
-    def compile_optemplate(self, discr, optemplate, post_bind_mapper):
+    def compile_optemplate(self, discr, optemplate, post_bind_mapper,
+            type_hints):
         from hedge.optemplate import process_optemplate
 
         stage = [0]
@@ -402,10 +404,11 @@ class Executor(object):
         optemplate = process_optemplate(optemplate,
                 post_bind_mapper=post_bind_mapper,
                 dumper=dump_optemplate,
-                mesh=discr.mesh)
+                mesh=discr.mesh,
+                type_hints=type_hints)
 
         from hedge.backends.jit.compiler import OperatorCompiler
-        return OperatorCompiler(discr)(optemplate)
+        return OperatorCompiler(discr)(optemplate, type_hints)
 
     def instrument(self):
         discr = self.discr

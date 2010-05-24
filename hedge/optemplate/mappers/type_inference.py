@@ -316,8 +316,8 @@ def extract_domain(ti):
 # }}}
 # {{{ TypeDict helper type ----------------------------------------------------
 class TypeDict(object):
-    def __init__(self):
-        self.container = {}
+    def __init__(self, hints):
+        self.container = hints.copy()
         self.change_flag = False
 
     def __getitem__(self, expr):
@@ -353,8 +353,8 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
     def __init__(self):
         self.cse_last_results = {}
 
-    def __call__(self, expr):
-        typedict = TypeDict()
+    def __call__(self, expr, type_hints={}):
+        typedict = TypeDict(type_hints)
 
         while True:
             typedict.change_flag = False

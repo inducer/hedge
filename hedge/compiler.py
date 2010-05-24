@@ -575,9 +575,9 @@ class OperatorCompilerBase(IdentityMapper):
     # }}}
 
     # {{{ top-level driver ----------------------------------------------------
-    def __call__(self, expr):
+    def __call__(self, expr, type_hints={}):
         from hedge.optemplate.mappers.type_inference import TypeInferrer
-        self.typedict = TypeInferrer()(expr)
+        self.typedict = TypeInferrer()(expr, type_hints)
 
         # {{{ flux batching
         # Fluxes can be evaluated faster in batches. Here, we find flux 

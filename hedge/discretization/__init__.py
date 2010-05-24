@@ -1233,12 +1233,14 @@ class Discretization(TimestepCalculator):
     # }}}
 
     # {{{ op template execution -----------------------------------------------
-    def compile(self, optemplate, post_bind_mapper=lambda x: x):
+    def compile(self, optemplate, post_bind_mapper=lambda x: x,
+            type_hints={}):
         from hedge.optemplate.mappers import QuadratureUpsamplerRemover
         optemplate = QuadratureUpsamplerRemover(self.quad_min_degrees)(
                 optemplate)
 
-        ex = self.executor_class(self, optemplate, post_bind_mapper)
+        ex = self.executor_class(self, optemplate, post_bind_mapper,
+                type_hints)
 
         if "dump_dataflow_graph" in self.debug:
             ex.code.dump_dataflow_graph()
