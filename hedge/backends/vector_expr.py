@@ -148,8 +148,8 @@ class CompiledVectorExpressionBase(object):
         self.vector_deps = [vdep for key, vdep in vdeps]
         self.scalar_deps = [sdep for key, sdep in sdeps]
 
-        self.vector_dep_names = ["v%d" % i for i in range(len(self.vector_deps))]
-        self.scalar_dep_names = ["s%d" % i for i in range(len(self.scalar_deps))]
+        self.vector_dep_names = ["hedge_v%d" % i for i in range(len(self.vector_deps))]
+        self.scalar_dep_names = ["hedge_s%d" % i for i in range(len(self.scalar_deps))]
 
         self.constant_dtypes = [
                 numpy.array(const).dtype

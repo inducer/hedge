@@ -227,7 +227,8 @@ def ptwise_dot(logdims1, logdims2, a1, a2):
 
 # {{{ process_optemplate function ---------------------------------------------
 def process_optemplate(optemplate, post_bind_mapper=None,
-        dumper=lambda name, optemplate: None, mesh=None):
+        dumper=lambda name, optemplate: None, mesh=None,
+        type_hints={}):
 
     from hedge.optemplate.mappers import (
             OperatorBinder, BCToFluxRewriter, CommutativeConstantFoldingMapper,
@@ -261,7 +262,7 @@ def process_optemplate(optemplate, post_bind_mapper=None,
 
     dumper("before-specializer", optemplate)
     optemplate = OperatorSpecializer(
-            TypeInferrer()(optemplate)
+            TypeInferrer()(optemplate, type_hints)
             )(optemplate)
 
     # Ordering restriction:

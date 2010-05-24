@@ -23,7 +23,8 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 import numpy
 import numpy.linalg as la
-from hedge.optemplate.operators import ElementwiseLinearOperator
+from hedge.optemplate.operators import (
+        ElementwiseLinearOperator, StatelessOperator)
 from pytools import Record, memoize_method
 
 
@@ -111,6 +112,7 @@ class PerssonPeraireDiscontinuitySensor(object):
 
 
 # }}}
+
 # {{{ exponential fit ---------------------------------------------------------
 # {{{ operators for basic fit
 class DecayEstimateOperatorBase(ElementwiseLinearOperator):
@@ -213,10 +215,8 @@ class LogDecayConstantOperator(DecayEstimateOperatorBase):
 
         return a
 
-
-
-
 # }}}
+
 # {{{ data vector creation
 def create_mode_number_vector(discr, nonzero):
     result = discr.volume_zeros(kind="numpy")
@@ -231,8 +231,7 @@ def create_mode_number_vector(discr, nonzero):
             else:
                 modal_coefficients[i] = msum
 
-        for slc in eg.ranges:
-            result[slc] = modal_coefficients
+        eg.el_array_from_volume(result)[:,:] = modal_coefficients
 
     return result
 
@@ -243,9 +242,8 @@ def create_mode_weight_vector(discr, expt_op):
 
         modal_coefficients = expt_op.make_weight_vector(ldis)
 
-        for slc in eg.ranges:
-            result[slc.start+expt_op.ignored_modes
-                    :slc.stop] = modal_coefficients
+        eg.el_array_from_volume(result)[:,expt_op.ignored_modes:] = \
+                    modal_coefficients
 
     return result
 
@@ -266,8 +264,9 @@ def create_decay_baseline(discr):
             else:
                 modal_coefficients[i] = 1 # irrelevant, just keeps log from NaNing
 
-        for slc in eg.ranges:
-            result[slc] = modal_coefficients
+        modal_coefficients /= la.norm(modal_coefficients[1:])
+
+        eg.el_array_from_volume(result)[:,:] = modal_coefficients
 
     return result
 
@@ -275,6 +274,7 @@ def create_decay_baseline(discr):
 
 
 # }}}
+
 # {{{ supporting classes
 class BottomChoppingFilterResponseFunction:
     def __init__(self, ignored_modes):
@@ -296,10 +296,38 @@ class DecayInformation(Record):
         Record.__init__(self, dict((name, cse(expr, name))
             for name, expr in kwargs.iteritems()))
 
+# }}}
 
+# {{{ supporting operators
 
+class InverseChebyshevVandermondeOperator(ElementwiseLinearOperator, StatelessOperator):
+    def matrix(self, eg):
+        class ChebyshevMode:
+            def __init__(self, n):
+                from math import pi
+                self.n = n
+                if n == 0:
+                    self.normalization = 1/pi
+                else:
+                    self.normalization = 1/(pi/2)
+
+            def __call__(self, x):
+                from math import acos, cos
+                return cos(self.n*acos(x[0]))
+
+        from hedge.discretization.local import IntervalDiscretization
+        assert isinstance(eg.local_discretization, IntervalDiscretization)
+
+        ldis = eg.local_discretization
+        modes = [ChebyshevMode(i) for i in range(ldis.order+1)]
+
+        from hedge.polynomial import generic_vandermonde
+        vdm = generic_vandermonde(ldis.unit_nodes(), modes)
+
+        return numpy.asarray(la.inv(vdm), order="C")
 
 # }}}
+
 # {{{ the actual sensor
 class DecayFitDiscontinuitySensorBase(object):
     def __init__(self, mode_processor, weight_mode, ignored_modes):
@@ -345,6 +373,7 @@ class DecayFitDiscontinuitySensorBase(object):
 
         indicator_modal_coeffs = cse(
                 InverseVandermondeOperator()(u),
+                #InverseChebyshevVandermondeOperator()(u),
                 "u_modes")
 
         indicator_modal_coeffs_squared = indicator_modal_coeffs**2
@@ -483,10 +512,6 @@ class DecayGatingDiscontinuitySensorBase(
         return self.bind_quantity(discr, "sensor")
 # }}}
 # }}}
-
-
-
-
 
 # {{{ mode processors
 # {{{ elementwise code executor base class
@@ -693,9 +718,6 @@ class AveragingModeProcessor(ElementwiseCodeExecutor):
 
 # }}}
 
-
-
-
 # {{{ make h/n vector
 def make_h_over_n_vector(discr):
     result = discr.volume_zeros()
@@ -708,9 +730,6 @@ def make_h_over_n_vector(discr):
 
     return result
 
-
-
-
-
+# }}}
 
 # vim: foldmethod=marker

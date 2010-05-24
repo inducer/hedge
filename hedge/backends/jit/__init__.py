@@ -133,7 +133,7 @@ class ExecutionMapper(ExecutionMapperBase):
             for i, fof in enumerate(all_fluxes_on_faces):
                 setattr(arg_struct, "flux%d_on_faces" % i, fof)
 
-            # make sure everything ended up in Boost.Python attributes 
+            # make sure everything ended up in Boost.Python attributes
             # (i.e. empty __dict__)
             assert not arg_struct.__dict__, arg_struct.__dict__.keys()
 
@@ -219,7 +219,7 @@ class ExecutionMapper(ExecutionMapperBase):
         self.executor.do_elementwise_linear(op, field, out)
         return out
 
-    def map_quad_mass(self, op, field_expr):
+    def map_ref_quad_mass(self, op, field_expr):
         field = self.rec(field_expr)
 
         from hedge.tools import is_zero
@@ -228,14 +228,14 @@ class ExecutionMapper(ExecutionMapperBase):
 
         qtag = op.quadrature_tag
 
-        from hedge._internal import perform_elwise_scaled_operator
+        from hedge._internal import perform_elwise_operator
 
         out = self.discr.volume_zeros()
         for eg in self.discr.element_groups:
             eg_quad_info = eg.quadrature_info[qtag]
 
-            perform_elwise_scaled_operator(eg_quad_info.ranges, eg.ranges,
-                    eg.jacobians, eg_quad_info.ldis_quad_info.mass_matrix(),
+            perform_elwise_operator(eg_quad_info.ranges, eg.ranges,
+                    eg_quad_info.ldis_quad_info.mass_matrix(),
                     field, out)
 
         return out
@@ -257,7 +257,7 @@ class ExecutionMapper(ExecutionMapperBase):
             eg_quad_info = eg.quadrature_info[qtag]
 
             perform_elwise_operator(eg.ranges, eg_quad_info.ranges,
-                eg_quad_info.ldis_quad_info.volume_up_interpolation_matrix(), 
+                eg_quad_info.ldis_quad_info.volume_up_interpolation_matrix(),
                 field, out)
 
         return out
@@ -279,7 +279,7 @@ class ExecutionMapper(ExecutionMapperBase):
             eg_quad_info = eg.quadrature_info[qtag]
 
             perform_elwise_operator(eg.ranges, eg_quad_info.el_faces_ranges,
-                eg_quad_info.ldis_quad_info.volume_to_face_up_interpolation_matrix(), 
+                eg_quad_info.ldis_quad_info.volume_to_face_up_interpolation_matrix(),
                 field, out)
 
         return out
@@ -303,7 +303,7 @@ class ExecutionMapper(ExecutionMapperBase):
                 bdry_q_info.fg_ranges,
                 bdry_q_info.fg_ldis_quad_infos):
             perform_elwise_operator(from_ranges, to_ranges,
-                ldis_quad_info.face_up_interpolation_matrix(), 
+                ldis_quad_info.face_up_interpolation_matrix(),
                 field, out)
 
         return out
@@ -336,9 +336,10 @@ class ExecutionMapper(ExecutionMapperBase):
 
 # {{{ executor ----------------------------------------------------------------
 class Executor(object):
-    def __init__(self, discr, optemplate, post_bind_mapper):
+    def __init__(self, discr, optemplate, post_bind_mapper, type_hints):
         self.discr = discr
-        self.code = self.compile_optemplate(discr, optemplate, post_bind_mapper)
+        self.code = self.compile_optemplate(discr, optemplate, 
+                post_bind_mapper, type_hints)
         self.elwise_linear_cache = {}
 
         if "dump_op_code" in discr.debug:
@@ -386,7 +387,8 @@ class Executor(object):
         self.lift_flux = pick_faster_func(bench_lift,
                 [self.lift_flux, JitLifter(discr)])
 
-    def compile_optemplate(self, discr, optemplate, post_bind_mapper):
+    def compile_optemplate(self, discr, optemplate, post_bind_mapper,
+            type_hints):
         from hedge.optemplate import process_optemplate
 
         stage = [0]
@@ -399,13 +401,14 @@ class Executor(object):
                         pretty_print_optemplate(optemplate))
                 stage[0] += 1
 
-        optemplate = process_optemplate(optemplate, 
+        optemplate = process_optemplate(optemplate,
                 post_bind_mapper=post_bind_mapper,
                 dumper=dump_optemplate,
-                mesh=discr.mesh)
+                mesh=discr.mesh,
+                type_hints=type_hints)
 
         from hedge.backends.jit.compiler import OperatorCompiler
-        return OperatorCompiler(discr)(optemplate)
+        return OperatorCompiler(discr)(optemplate, type_hints)
 
     def instrument(self):
         discr = self.discr
@@ -463,7 +466,7 @@ class Executor(object):
 
     def diff_builtin(self, operators, field):
         """For the batch of reference differentiation operators in
-        *operators*, return the local corresponding derivatives of 
+        *operators*, return the local corresponding derivatives of
         *field*.
         """
 

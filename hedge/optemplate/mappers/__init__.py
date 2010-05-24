@@ -346,14 +346,14 @@ class OperatorSpecializer(CSECachingMapperMixin, IdentityMapper):
         from hedge.optemplate.primitives import BoundaryPair
 
         from hedge.optemplate.operators import (
-                MassOperator, 
+                MassOperator,
                 QuadratureMassOperator,
-                ReferenceMassOperator, 
+                ReferenceMassOperator,
                 ReferenceQuadratureMassOperator,
 
-                StiffnessTOperator, 
-                QuadratureStiffnessTOperator, 
-                ReferenceStiffnessTOperator, 
+                StiffnessTOperator,
+                QuadratureStiffnessTOperator,
+                ReferenceStiffnessTOperator,
                 ReferenceQuadratureStiffnessTOperator,
 
                 QuadratureGridUpsampler, QuadratureBoundaryGridUpsampler,
@@ -401,7 +401,7 @@ class OperatorSpecializer(CSECachingMapperMixin, IdentityMapper):
                     expr.op.xyz_axis, field_repr_tag.quadrature_tag) \
                     (self.rec(expr.field))
 
-        elif (isinstance(expr.op, ReferenceStiffnessTOperator) 
+        elif (isinstance(expr.op, ReferenceStiffnessTOperator)
                 and has_quad_operand):
             return ReferenceQuadratureStiffnessTOperator(
                     expr.op.xyz_axis, field_repr_tag.quadrature_tag) \
@@ -424,7 +424,7 @@ class OperatorSpecializer(CSECachingMapperMixin, IdentityMapper):
             raise TypeError("BoundarizeOperator cannot be applied to "
                     "quadrature-based operands--use QuadUpsample(Boundarize(...))")
 
-        # {{{ flux operator specialization 
+        # {{{ flux operator specialization
         elif isinstance(expr.op, FluxOperatorBase):
             from pytools.obj_array import with_object_array_or_scalar
 
@@ -507,9 +507,10 @@ class GlobalToReferenceMapper(CSECachingMapperMixin, IdentityMapper):
                 Jacobian, InverseMetricDerivative)
 
         from hedge.optemplate.operators import (
-                MassOperator, 
+                MassOperator,
                 ReferenceMassOperator,
                 QuadratureMassOperator,
+                ReferenceQuadratureMassOperator,
 
                 StiffnessOperator,
 
@@ -520,9 +521,9 @@ class GlobalToReferenceMapper(CSECachingMapperMixin, IdentityMapper):
 
                 InverseMassOperator, ReferenceInverseMassOperator,
                 DifferentiationOperator, ReferenceDifferentiationOperator,
-                
+
                 MInvSTOperator)
-        
+
         # Global-to-reference is run after operator specialization, so
         # if we encounter non-quadrature operators here, we know they
         # must be nodal.
@@ -538,15 +539,16 @@ class GlobalToReferenceMapper(CSECachingMapperMixin, IdentityMapper):
             if with_jacobian:
                 rec_field = Jacobian(quadrature_tag) * rec_field
             return sum(InverseMetricDerivative(None, rst_axis, expr.op.xyz_axis) *
-                    ref_class(rst_axis, **diff_kwargs)(rec_field) 
+                    ref_class(rst_axis, **diff_kwargs)(rec_field)
                     for rst_axis in range(self.dimensions))
 
-        if isinstance(expr.op, MassOperator): 
+        if isinstance(expr.op, MassOperator):
             return ReferenceMassOperator()(
                     Jacobian(None) * self.rec(expr.field))
 
-        elif isinstance(expr.op, QuadratureMassOperator): 
-            return ReferenceQuadratureMassOperator()(
+        elif isinstance(expr.op, QuadratureMassOperator):
+            return ReferenceQuadratureMassOperator(
+                    expr.op.quadrature_tag)(
                     Jacobian(expr.op.quadrature_tag) * self.rec(expr.field))
 
         elif isinstance(expr.op, InverseMassOperator) :
@@ -554,7 +556,7 @@ class GlobalToReferenceMapper(CSECachingMapperMixin, IdentityMapper):
                 1/Jacobian(None) * self.rec(expr.field))
 
         elif isinstance(expr.op, StiffnessOperator) :
-            return ReferenceMassOperator()(Jacobian(None) * 
+            return ReferenceMassOperator()(Jacobian(None) *
                     self.rec(
                         DifferentiationOperator(expr.op.xyz_axis)(expr.field)))
 
@@ -562,18 +564,18 @@ class GlobalToReferenceMapper(CSECachingMapperMixin, IdentityMapper):
             return rewrite_derivative(
                     ReferenceDifferentiationOperator,
                     expr.field, with_jacobian=False)
-        
-        elif isinstance(expr.op, StiffnessTOperator): 
+
+        elif isinstance(expr.op, StiffnessTOperator):
             return rewrite_derivative(
                     ReferenceStiffnessTOperator,
                     expr.field)
 
-        elif isinstance(expr.op, QuadratureStiffnessTOperator): 
+        elif isinstance(expr.op, QuadratureStiffnessTOperator):
             return rewrite_derivative(
                     ReferenceQuadratureStiffnessTOperator,
                     expr.field, quadrature_tag=expr.op.quadrature_tag)
-      
-        elif isinstance(expr.op, MInvSTOperator): 
+
+        elif isinstance(expr.op, MInvSTOperator):
             return self.rec(
                     InverseMassOperator()(
                         StiffnessTOperator(expr.op.xyz_axis)(expr.field)))
@@ -983,7 +985,7 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
                 # in order to avoid redundant evaluation of that operator.
                 #
                 # Observe that at the time of this writing (Feb 2010), the only
-                # operators that may occur in boundary expressions are 
+                # operators that may occur in boundary expressions are
                 # quadrature-related.
 
                 class ExpensiveOperatorDetector(CombineMapper):
@@ -1462,7 +1464,7 @@ class _InnerInverseMassContractor(pymbolic.mapper.RecursiveMapper):
         elif isinstance(binding.op, BoundaryFluxOperator):
             assert not binding.op.is_lift
 
-            return BoundaryFluxOperator(binding.op.flux, 
+            return BoundaryFluxOperator(binding.op.flux,
                         binding.op.boundary_tag, is_lift=True)(
                     self.outer_mass_contractor(binding.field))
         else:
