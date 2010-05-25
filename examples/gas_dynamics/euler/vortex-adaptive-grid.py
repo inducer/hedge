@@ -24,56 +24,10 @@ import numpy.linalg as la
 
 
 
-class Vortex:
-    def __init__(self):
-        self.beta = 5
-        self.gamma = 1.4
-        self.center = numpy.array([5, 0])
-        self.velocity = numpy.array([1, 0])
-
-        self.mu = 0
-        self.prandtl = 0.72
-        self.spec_gas_const = 287.1
-
-    def __call__(self, t, x_vec):
-        vortex_loc = self.center + t*self.velocity
-
-        # coordinates relative to vortex center
-        x_rel = x_vec[0] - vortex_loc[0]
-        y_rel = x_vec[1] - vortex_loc[1]
-
-        # Y.C. Zhou, G.W. Wei / Journal of Computational Physics 189 (2003) 159
-        # also JSH/TW Nodal DG Methods, p. 209
-
-        from math import pi
-        r = numpy.sqrt(x_rel**2+y_rel**2)
-        expterm = self.beta*numpy.exp(1-r**2)
-        u = self.velocity[0] - expterm*y_rel/(2*pi)
-        v = self.velocity[1] + expterm*x_rel/(2*pi)
-        rho = (1-(self.gamma-1)/(16*self.gamma*pi**2)*expterm**2)**(1/(self.gamma-1))
-        p = rho**self.gamma
-
-        e = p/(self.gamma-1) + rho/2*(u**2+v**2)
-
-        from hedge.tools import join_fields
-        return join_fields(rho, e, rho*u, rho*v)
-
-    def volume_interpolant(self, t, discr):
-        return discr.convert_volume(
-                        self(t, discr.nodes.T
-                            .astype(discr.default_scalar_type)),
-                        kind=discr.compute_kind)
-
-    def boundary_interpolant(self, t, discr, tag):
-        return discr.convert_boundary(
-                        self(t, discr.get_boundary(tag).nodes.T
-                            .astype(discr.default_scalar_type)),
-                         tag=tag, kind=discr.compute_kind)
-
-
-
-
 def main(write_output=True):
+    from pytools import add_python_path_relative_to_script
+    add_python_path_relative_to_script("..")
+
     from hedge.backends import guess_run_context
     rcon = guess_run_context()
 
@@ -93,7 +47,7 @@ def main(write_output=True):
     else:
         mesh_data = rcon.receive_mesh()
 
-    # a second mesh to regrid to 
+    # a second mesh to regrid to
     if rcon.is_head_rank:
         from hedge.mesh.generator import \
                 make_rect_mesh, \
@@ -115,7 +69,7 @@ def main(write_output=True):
                             "gasdyn_vol": 3*order,
                             "gasdyn_face": 3*order,
                             })
-        
+
         discr2 = rcon.make_discretization(mesh_data2, order=order,
                         default_scalar_type=numpy.float64,
                         quad_min_degrees={
@@ -128,6 +82,7 @@ def main(write_output=True):
         vis = VtkVisualizer(discr, rcon, "vortex-%d" % order)
         #vis = SiloVisualizer(discr, rcon)
 
+        from gas_dynamics_initials import Vortex
         vortex = Vortex()
         fields = vortex.volume_interpolant(0, discr)
 
@@ -234,7 +189,7 @@ def main(write_output=True):
                 #fields = limiter(fields)
 
                 #regrid to discr2 at some arbitrary time
-                if step == 21: 
+                if step == 21:
 
                     #get interpolated fields
                     fields = discr.get_regrid_values(fields, discr2, dtype=None, use_btree=True, thresh=1e-8)
@@ -261,7 +216,7 @@ def main(write_output=True):
                     vis.close()
                     vis = VtkVisualizer(discr2, rcon, "vortexNewGrid-%d" % order)
                     discr=discr2
-                    
+
 
 
                 assert not numpy.isnan(numpy.sum(fields[0]))
@@ -301,11 +256,3 @@ def main(write_output=True):
 
 if __name__ == "__main__":
     main()
-
-
-
-# entry points for py.test ----------------------------------------------------
-from pytools.test import mark_test
-@mark_test.long
-def test_euler_vortex():
-        main(write_output=False)

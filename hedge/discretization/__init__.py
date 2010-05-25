@@ -252,7 +252,6 @@ class Discretization(TimestepCalculator):
 
         self.exec_functions = {}
 
-        self.spatial_btree = None # spatial binary tree for node searches
         self._build_element_groups_and_nodes(local_discretization)
         self._calculate_local_matrices()
         self._build_interior_face_groups()
@@ -1217,19 +1216,13 @@ class Discretization(TimestepCalculator):
             for eg in self.element_groups)
 
 
-    def get_point_evaluator(self, point, use_btree = False, thresh = 0):
+    def get_point_evaluator(self, point, use_btree=False, thresh=0):
+        def make_point_evaluator(el, eg, rng):
+            """For a given element *el*/element group *eg* in which *point*
+            is contained, return a callable that accepts fields an returns
+            an evaluation at *point*.
+            """
 
-        if use_btree and (self.spatial_btree is None):
-            # Want to use the spatial binary tree, needs to be built first
-            # Get bounding box, bottom left and top right, from mesh class
-            bl,tr = self.mesh.bounding_box()
-            bl = tuple(bl)
-            tr = tuple(tr)
-            self.spatial_btree = self.get_spatial_btree(bl,tr)
-
-
-        def point_evaluator(el, eg, rng): 
-            # When el containing point is found, get evaluator
             ldis = eg.local_discretization
             basis_values = numpy.array([
                 phi(el.inverse_map(point))
@@ -1239,60 +1232,49 @@ class Discretization(TimestepCalculator):
                     discr=self,
                     el_range=rng,
                     interp_coeff=la.solve(vdm_t, basis_values))
-        
 
-        if not use_btree:
+        if use_btree:
+            elements_in_bucket = self.get_spatial_btree().generate_matches(point)
+            for el, rng, eg in elements_in_bucket:
+                if el.contains_point(point,thresh):
+                    pe = make_point_evaluator(el, eg, rng)
+                    return pe
+        else:
             for eg in self.element_groups:
                 for el, rng in zip(eg.members, eg.ranges):
                     if el.contains_point(point,thresh):
-                        pe = point_evaluator(el,eg,rng)
+                        pe = make_point_evaluator(el, eg, rng)
                         return pe
-        
-            raise RuntimeError("point %s not found. Consider changing threshold." % point)
 
-        else:
-            elements_in_bucket = self.spatial_btree.generate_matches(point)
-            for el, rng, eg in elements_in_bucket:
-                if el.contains_point(point,thresh):
-                    pe = point_evaluator(el,eg,rng)
-                    return pe
+        raise RuntimeError(
+                "point %s not found. Consider changing threshold."
+                % point)
 
-            raise RuntimeError("point %s not found. Consider changing threshold." % point)
-
-
-
-    def get_regrid_values(self, field_in, new_discr, dtype=None, use_btree = False, thresh = 0):
+    def get_regrid_values(self, field_in, new_discr, dtype=None, 
+            use_btree=True, thresh=0):
         """:param field_in: nodal values on old grid.
         :param new_discr: new discretization.
         :param use_btree: bool to decide if a spatial binary tree will be used.
         """
-	from hedge.tools import log_shape
 
-        kind = new_discr.compute_kind
-	ls = log_shape(field_in)
+        if self.get_kind(field_in)!= "numpy":
+            raise NotImplementedError(
+                    "get_regrid_values needs numpy input field")
 
-	field_out = new_discr.volume_empty(ls, dtype=dtype, kind=kind)
-
-        if ls == (): 
-            for ii in range(len(new_discr.nodes)): 
-                pe = self.get_point_evaluator(new_discr.nodes[ii], use_btree, thresh)
-                field_out[ii] = pe(field_in)
-        else:  
+        def regrid(scalar_field):
+            result = new_discr.volume_empty(dtype=dtype, kind="numpy")
             for ii in range(len(new_discr.nodes)):
                 pe = self.get_point_evaluator(new_discr.nodes[ii], use_btree, thresh)
-                field_out[:,ii] = pe(field_in)
- 
+                result[ii] = pe(scalar_field)
+            return result
 
-        if field_in.dtype == object:
-            from hedge.tools import join_fields
-            field_out = join_fields(field_out)
-
-        return field_out
+        from pytools.obj_array import with_object_array_or_scalar
+        return with_object_array_or_scalar(regrid, field_in)
 
     @memoize_method
-    def get_spatial_btree(self,bottom_left,top_right):
+    def get_spatial_btree(self):
         from pytools.spatial_btree import SpatialBinaryTreeBucket
-        spatial_btree = SpatialBinaryTreeBucket(numpy.array(bottom_left),numpy.array(top_right))
+        spatial_btree = SpatialBinaryTreeBucket(*self.mesh.bounding_box())
 
         for eg in self.element_groups:
             for el, rng in zip(eg.members,eg.ranges):
@@ -1576,7 +1558,7 @@ def adaptive_project_function_1d(discr, f, dtype=None, kind=None,
                 el_result = numpy.dot(
                         ldis.vandermonde(),
                         el.inverse_map.jacobian()*numpy.array([
-                            quad(func=lambda x: 
+                            quad(func=lambda x:
                                 basis_func(el.inverse_map(numpy.array([x])))
                                 * numpy.asarray(f(numpy.array([x]), el))[idx], a=a, b=b,
                                 epsrel=epsrel, epsabs=epsabs)[0]
