@@ -283,7 +283,8 @@ class EmbeddedRungeKuttaTimeStepperBase(TimeStepper):
                         dt = 0.1*dt
 
                     if t + dt == t:
-                        raise RuntimeError("stepsize underflow")
+                        from hedge.timestep import TimeStepUnderflow
+                        raise TimeStepUnderflow()
                     # ... and go back to top of loop
 
                 else:

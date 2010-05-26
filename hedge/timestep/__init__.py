@@ -30,6 +30,12 @@ from hedge.timestep.ssprk3 import SSPRK3TimeStepper
 
 
 
+class TimeStepUnderflow(Exception):
+    pass
+
+
+
+
 def times_and_steps(max_dt_getter, taken_dt_getter=None,
         start_time=0, final_time=None, max_steps=None, 
         logmgr=None):
