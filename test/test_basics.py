@@ -832,6 +832,84 @@ def test_identify_affine_map():
         assert la.norm(b-amap2.vector) < 1e-12
 
 
+def test_mesh_regrid():
+    """Test that we are able to interpolate scalars and vectors between two
+    grids using a spatial binary tree."""
+
+    # Fields are taken from examples/gas_dynamics/euler/vortex.py example 
+    class Vortex:
+        def __init__(self):
+            self.beta = 5
+            self.gamma = 1.4
+            self.center = numpy.array([5, 0])
+            self.velocity = numpy.array([1, 0])
+
+
+        def __call__(self, t, x_vec):
+            vortex_loc = self.center + t*self.velocity
+
+            # coordinates relative to vortex center
+            x_rel = x_vec[0] - vortex_loc[0]
+            y_rel = x_vec[1] - vortex_loc[1]
+
+            from math import pi
+            r = numpy.sqrt(x_rel**2+y_rel**2)
+            expterm = self.beta*numpy.exp(1-r**2)
+            u = self.velocity[0] - expterm*y_rel/(2*pi)
+            v = self.velocity[1] + expterm*x_rel/(2*pi)
+            rho = (1-(self.gamma-1)/(
+                16*self.gamma*pi**2)*expterm**2)**(1/(self.gamma-1))
+            p = rho**self.gamma
+
+            e = p/(self.gamma-1) + rho/2*(u**2+v**2)
+
+            from hedge.tools import join_fields
+            return join_fields(rho, e, rho*u, rho*v)
+
+        def volume_interpolant(self, t, discr):
+            return discr.convert_volume(
+                            self(t, discr.nodes.T
+                                .astype(discr.default_scalar_type)),
+                            kind=discr.compute_kind)
+
+
+    from hedge.backends import guess_run_context
+    rcon = guess_run_context()
+    from hedge.mesh.generator import make_centered_regular_rect_mesh
+    refine = 4
+    from math import sin, pi
+    mesh = make_centered_regular_rect_mesh(
+        (-1, -1), (2, 2),n=(7,7), post_refine_factor=refine)
+    mesh_data = rcon.distribute_mesh(mesh)
+    discr = rcon.make_discretization(mesh_data, order=4)
+    vortex = Vortex()
+    fields_vec = vortex.volume_interpolant(0,discr)
+    u = discr.interpolate_volume_function(lambda x, el: sin(x[0]))
+
+    for ii in range(2,4):
+        for jj in range(2,4):
+
+            mesh2 = make_centered_regular_rect_mesh((-1, -1), (2, 2),
+                            n=(ii,ii), post_refine_factor=refine)
+            mesh_data2 = rcon.distribute_mesh(mesh2)
+            discr2 = rcon.make_discretization(mesh_data2, order=jj)
+
+            u2 = discr2.interpolate_volume_function(lambda x, el: sin(x[0]))
+            fields_vec2 = vortex.volume_interpolant(0,discr2)
+
+            out = discr.get_regrid_values(
+                u, discr2, dtype=None, use_btree=True, thresh=1e-7)
+            out_vec = discr.get_regrid_values(
+                fields_vec,  discr2, dtype=None, use_btree=True, thresh=1e-7)
+
+            diff = u2 - out
+            diff_vec = fields_vec2 - out_vec
+
+            L2_vec=discr2.norm(diff_vec)
+            L2_scalar=discr2.norm(diff)
+
+            assert L2_vec < 1e-9
+            assert L2_scalar < 1e-9
 
 
 # main program ----------------------------------------------------------------
