@@ -836,41 +836,20 @@ def test_mesh_regrid():
     """Test that we are able to interpolate scalars and vectors between two
     grids using a spatial binary tree."""
 
-    # Fields are taken from examples/gas_dynamics/euler/vortex.py example 
-    class Vortex:
-        def __init__(self):
-            self.beta = 5
-            self.gamma = 1.4
-            self.center = numpy.array([5, 0])
-            self.velocity = numpy.array([1, 0])
+    def some_vector(discr):
 
+        x = discr.nodes.T.astype(discr.default_scalar_type)
 
-        def __call__(self, t, x_vec):
-            vortex_loc = self.center + t*self.velocity
+        from math import pi, sin, cos
 
-            # coordinates relative to vortex center
-            x_rel = x_vec[0] - vortex_loc[0]
-            y_rel = x_vec[1] - vortex_loc[1]
+        from hedge.tools import join_fields
 
-            from math import pi
-            r = numpy.sqrt(x_rel**2+y_rel**2)
-            expterm = self.beta*numpy.exp(1-r**2)
-            u = self.velocity[0] - expterm*y_rel/(2*pi)
-            v = self.velocity[1] + expterm*x_rel/(2*pi)
-            rho = (1-(self.gamma-1)/(
-                16*self.gamma*pi**2)*expterm**2)**(1/(self.gamma-1))
-            p = rho**self.gamma
+        u1 = discr.interpolate_volume_function(lambda x, el: sin(pi*x[0]))
+        u2 = discr.interpolate_volume_function(lambda x, el: sin(pi*x[1]))
+        u3 = discr.interpolate_volume_function(lambda x, el: sin(pi*x[0] + pi*x[1]))
+        u4 = discr.interpolate_volume_function(lambda x, el: cos(pi*x[0]))
 
-            e = p/(self.gamma-1) + rho/2*(u**2+v**2)
-
-            from hedge.tools import join_fields
-            return join_fields(rho, e, rho*u, rho*v)
-
-        def volume_interpolant(self, t, discr):
-            return discr.convert_volume(
-                            self(t, discr.nodes.T
-                                .astype(discr.default_scalar_type)),
-                            kind=discr.compute_kind)
+        return join_fields(u1, u2, u3, u4)
 
 
     from hedge.backends import guess_run_context
@@ -881,9 +860,8 @@ def test_mesh_regrid():
     mesh = make_centered_regular_rect_mesh(
         (-1, -1), (2, 2),n=(7,7), post_refine_factor=refine)
     mesh_data = rcon.distribute_mesh(mesh)
-    discr = rcon.make_discretization(mesh_data, order=4)
-    vortex = Vortex()
-    fields_vec = vortex.volume_interpolant(0,discr)
+    discr = rcon.make_discretization(mesh_data, order=6)
+    fields_vec = some_vector(discr)
     u = discr.interpolate_volume_function(lambda x, el: sin(x[0]))
 
     for ii in range(2,4):
@@ -895,7 +873,7 @@ def test_mesh_regrid():
             discr2 = rcon.make_discretization(mesh_data2, order=jj)
 
             u2 = discr2.interpolate_volume_function(lambda x, el: sin(x[0]))
-            fields_vec2 = vortex.volume_interpolant(0,discr2)
+            fields_vec2 = some_vector(discr2)
 
             out = discr.get_regrid_values(
                 u, discr2, dtype=None, use_btree=True, thresh=1e-7)
