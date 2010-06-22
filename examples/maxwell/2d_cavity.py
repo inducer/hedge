@@ -15,12 +15,49 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-"""This example is for maxwell's equations in a 2D rectangular cavity 
+"""This example is for maxwell's equations in a 2D rectangular cavity
 with inhomogeneous dielectric filling"""
 
 from __future__ import division
 import numpy
 #import numpy.linalg as la
+
+
+CAVITY_GEOMETRY = """
+// a rectangular cavity with a dielectric in one region
+
+lc = 10e-3;
+height = 50e-3;
+air_width = 100e-3;
+dielectric_width = 50e-3;
+
+Point(1) = {0, 0, 0, lc};
+Point(2) = {air_width, 0, 0, lc};
+Point(3) = {air_width+dielectric_width, 0, 0, lc};
+Point(4) = {air_width+dielectric_width, height, 0, lc};
+Point(5) = {air_width, height, 0, lc};
+Point(6) = {0, height, 0, lc};
+
+Line(1) = {1, 2};
+Line(2) = {2, 3};
+Line(3) = {3, 4};
+Line(4) = {4, 5};
+Line(5) = {5, 6};
+Line(6) = {6, 1};
+Line(7) = {2, 5};
+
+Line Loop(1) = {1, 7, 5, 6};
+Line Loop(2) = {2, 3, 4, -7};
+
+Plane Surface(1) = {1};
+Plane Surface(2) = {2};
+
+Physical Surface("vacuum") = {1};
+Physical Surface("dielectric") = {2};
+"""
+
+
+
 
 def main(write_output=True, allow_features=None, flux_type_arg=1,
         bdry_flux_type_arg=None, extra_discr_args={}):
@@ -33,8 +70,8 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
     epsilon0 = 8.8541878176e-12 # C**2 / (N m**2)
     mu0 = 4*pi*1e-7 # N/A**2.
     c = 1/sqrt(mu0*epsilon0)
-    
-    materials = {"vacuum" : (epsilon0, mu0), 
+
+    materials = {"vacuum" : (epsilon0, mu0),
                  "dielectric" : (2*epsilon0, mu0)}
 
     output_dir = "."
@@ -55,15 +92,15 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
     # geometry of cavity
     d = 100e-3
     a = 150e-3
-    
+
     # analytical frequency and transverse wavenumbers of resonance
     f0 = 9.0335649907522321e8
     h = 2*pi*f0/c
     l = -h*sqrt(2)
-    
+
     #h = pi/a
     #l =-h
-    
+
     def initial_val(discr):
         # the initial solution for the TE_10-like mode
         def initial_Hz(x, el):
@@ -72,15 +109,15 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
                 return h*cos(h*x[0])
             else:
                 return -l*sin(h*d)/sin(l*(a-d))*cos(l*(a-x[0]))
-                
+
         from hedge.tools import make_obj_array
         result_zero = discr.volume_zeros(kind="numpy", dtype=numpy.float64)
         H_z = make_tdep_given(initial_Hz).volume_interpolant(0, discr)
         return make_obj_array([result_zero, result_zero, H_z])
-        
+
     if rcon.is_head_rank:
-        from hedge.mesh.reader.gmsh import read_gmsh
-        mesh = read_gmsh("2d_cavity.msh", force_dimension = 2)
+        from hedge.mesh.reader.gmsh import generate_gmsh
+        mesh = generate_gmsh(CAVITY_GEOMETRY, 2, force_dimension=2)
         mesh_data = rcon.distribute_mesh(mesh)
     else:
         mesh_data = rcon.receive_mesh()
@@ -92,10 +129,10 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
 
     order = 3
     #extra_discr_args.setdefault("debug", []).append("cuda_no_plan")
+    #extra_discr_args.setdefault("debug", []).append("dump_optemplate_stages")
 
     from hedge.data import make_tdep_given
     from hedge.mesh import TAG_ALL
-
 
     op = TEMaxwellOperator(epsilon=make_tdep_given(eps_val), mu=make_tdep_given(mu_val), \
             flux_type=flux_type_arg, \
@@ -160,8 +197,8 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
     #add_em_quantities(logmgr, op, field_getter)
 
     logmgr.add_watches(
-            ["step.max", "t_sim.max", 
-                #("W_field", "W_el+W_mag"), 
+            ["step.max", "t_sim.max",
+                #("W_field", "W_el+W_mag"),
                 "t_step.max"]
             )
 
@@ -182,15 +219,15 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
                     stepper=stepper, t=t, fields=fields))
 
         for step, t, dt in step_it:
-            if step % 10 == 0 and write_output:
+            if step % 100 == 0 and write_output:
                 sub_timer = vis_timer.start_sub_timer()
                 e, h = op.split_eh(fields)
                 visf = vis.make_file(join(output_dir, "cav-%d-%04d") % (order, step))
                 vis.add_data(visf,
                         [
-                            ("e", 
-                                discr.convert_volume(e, kind="numpy")), 
-                            ("h", 
+                            ("e",
+                                discr.convert_volume(e, kind="numpy")),
+                            ("h",
                                 discr.convert_volume(h, kind="numpy")),],
                         time=t, step=step
                         )
@@ -205,14 +242,14 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
                     pointfile.write("#%g\n" % dt)
                     done_dt = True
                 pointfile.write("%g\n" %val[0])
-                
+
     finally:
         if write_output:
             vis.close()
 
         logmgr.close()
         discr.close()
-        
+
         if point_getter is not None:
             pointfile.close()
 

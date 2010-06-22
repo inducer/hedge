@@ -1,22 +1,9 @@
 # -*- coding: utf8 -*-
-"""Hedge operators modelling electromagnetic phenomena.
-
-Modified by David Powell to allow for spatially variable material constants
-
-Logging functionality and presumably also PML layer don't work with this
-code at the moment.
-
-Lax-Friedrich flux is not implemented for variable coefficients
-
-Code for fixed coefficients is identical, except that division by
-fixed epsilon and mu has been taken outside the flux and spatial
-derivative operators.
-
-"""
+"""Hedge operators modelling electromagnetic phenomena."""
 
 from __future__ import division
 
-__copyright__ = "Copyright (C) 2007 Andreas Kloeckner"
+__copyright__ = "Copyright (C) 2007, 2010 Andreas Kloeckner, David Powell"
 
 __license__ = """
 This program is free software: you can redistribute it and/or modify
@@ -37,6 +24,15 @@ from pytools import memoize_method
 
 import hedge.mesh
 from hedge.models import HyperbolicOperator
+
+# TODO: Fix logging
+# QUESTION: What's broken about it?
+
+# TODO: Check PML
+# TODO: Revive LF (see comment below)
+
+
+
 
 class MaxwellOperator(HyperbolicOperator):
     """A 3D Maxwell operator which supports fixed or variable
@@ -81,30 +77,24 @@ class MaxwellOperator(HyperbolicOperator):
                 op2_subset=h_subset,
                 result_subset=e_subset)
 
-        from math import sqrt, pi
+        from math import sqrt
 
         self.epsilon = epsilon
         self.mu = mu
 
         from hedge.data import TimeConstantGivenFunction
+        from pymbolic.primitives import is_constant
 
-        if (isinstance(epsilon, TimeConstantGivenFunction) and
-            isinstance(mu, TimeConstantGivenFunction)):
-            print "Using spatially variable epsilon and mu"
-            self.fixed_material = False
-        elif isinstance(epsilon, (int, float)) and isinstance(mu, (int, float)):
-            print "Using fixed epsilon and mu"
+        self.fixed_material = is_constant(epsilon)
+
+        if self.fixed_material != is_constant(mu):
+            raise RuntimeError("mu and epsilon must both be "
+                    "either hedge.data quantities or constants")
+
+        if self.fixed_material:
             self.fixed_material = True
             self.Z = sqrt(mu/epsilon)
             self.Y = 1/self.Z
-        else:
-            raise TypeError, "Material constants of invalid type"
-
-        epsilon0 = 8.8541878176e-12 # C**2 / (N m**2)
-        mu0 = 4*pi*1e-7 # N/A**2.
-
-        # hard code c, Y and Z temporarily
-        self.c = 1/sqrt(mu0*epsilon0)
 
         self.flux_type = flux_type
         if bdry_flux_type is None:
@@ -120,81 +110,63 @@ class MaxwellOperator(HyperbolicOperator):
         self.current = current
         self.incident_bc_data = incident_bc
 
-    def fixed_flux(self, flux_type):
-        "Flux operator template for fixed material coefficients"
-        from hedge.flux import make_normal, FluxVectorPlaceholder
-        from hedge.tools import join_fields
+    @property
+    def c(self):
+        from warnings import warn
+        warn("MaxwellOperator.c is deprecated")
+        if not self.fixed_material:
+            raise RuntimeError("Cannot compute speed of light "
+                    "for non-constant material")
 
-        normal = make_normal(self.dimensions)
+        return 1/(self.mu*self.epsilon)**0.5
 
-        from hedge.tools import count_subset
-        w = FluxVectorPlaceholder(count_subset(self.get_eh_subset()))
-        e, h = self.split_eh(w)
-
-        if flux_type == "lf":
-            return join_fields(
-                    # flux e,
-                    1/2*(
-                        -self.space_cross_h(normal, h.int-h.ext)
-                        -self.Y/2*(e.int-e.ext)
-                    ),
-                    # flux h
-                    1/2*(
-                        self.space_cross_e(normal, e.int-e.ext)
-                        -self.Z/2*(h.int-h.ext))
-                    )
-        elif isinstance(flux_type, (int, float)):
-            # see doc/maxima/maxwell.mac
-            return join_fields(
-                    # flux e,
-                    (
-                        -1/2*self.space_cross_h(normal,
-                            h.int-h.ext
-                            -flux_type/self.Z*self.space_cross_e(
-                                normal, e.int-e.ext))
-                        ),
-                    # flux h
-                    (
-                        1/2*self.space_cross_e(normal,
-                            e.int-e.ext
-                            +flux_type/(self.Y)*self.space_cross_h(
-                                normal, h.int-h.ext))
-                        ),
-                    )
-        else:
-            raise ValueError, "maxwell: invalid flux_type (%s)" % self.flux_type
-
-
-    def variable_flux(self, flux_type):
-        """The template for the numerical flux for variable coefficients
+    def flux(self, flux_type):
+        """The template for the numerical flux for variable coefficients.
 
         :param flux_type: can be in [0,1] for anything between central and upwind,
           or "lf" for Lax-Friedrichs (currently disabled).
 
         As per Hesthaven and Warburton page 433
         """
-        from hedge.flux import make_normal, FluxVectorPlaceholder
+        from hedge.flux import (make_normal, FluxVectorPlaceholder,
+                FluxConstantPlaceholder)
         from hedge.tools import join_fields
 
         normal = make_normal(self.dimensions)
 
-        from hedge.tools import count_subset
-        w = FluxVectorPlaceholder(count_subset(self.get_eh_subset())+2)
-        Y, Z, e, h = self.split_yzeh(w)
+        if self.fixed_material:
+            from hedge.tools import count_subset
+            w = FluxVectorPlaceholder(count_subset(self.get_eh_subset()))
 
-#        if flux_type == "lf":
-#            return join_fields(
-#                    # flux e,
-#                    1/2*(
-#                        -self.space_cross_h(normal, h.int-h.ext)
-#                        -self.Y/2*(e.int-e.ext)
-#                    ),
-#                    # flux h
-#                    1/2*(
-#                        self.space_cross_e(normal, e.int-e.ext)
-#                        -self.Z/2*(h.int-h.ext))
-#                    )
-        if isinstance(flux_type, (int, float)):
+            e, h = self.split_eh(w)
+            Y = FluxConstantPlaceholder(self.Y)
+            Z = FluxConstantPlaceholder(self.Z)
+        else:
+            from hedge.tools import count_subset
+            w = FluxVectorPlaceholder(count_subset(self.get_eh_subset())+2)
+
+            Y, Z, e, h = self.split_yzeh(w)
+
+        if flux_type == "lf":
+            if not self.fixed_material:
+                raise RuntimeError("L-F flux doesn't support variable "
+                        "materials yet")
+
+            # PROBLEM: We cannot do L-F properly if we don't have both
+            # epsilon and mu. I think we should be passing that around
+            # instead of Y and Z.
+            return join_fields(
+                    # flux e,
+                    1/2*(
+                        -1/self.epsilon*self.space_cross_h(normal, h.int-h.ext)
+                        -self.c/2*(e.int-e.ext)
+                    ),
+                    # flux h
+                    1/2*(
+                        1/self.mu*self.space_cross_e(normal, e.int-e.ext)
+                        -self.c/2*(h.int-h.ext))
+                    )
+        elif isinstance(flux_type, (int, float)):
             # see doc/maxima/maxwell.mac
             return join_fields(
                     # flux e,
@@ -211,7 +183,8 @@ class MaxwellOperator(HyperbolicOperator):
                         ),
                     )
         else:
-            raise ValueError, "maxwell: invalid flux_type (%s)" % self.flux_type
+            raise ValueError("maxwell: invalid flux_type (%s)"
+                    % self.flux_type)
 
     def local_derivatives(self, w=None):
         """Template for the spatial derivatives of the relevant components of E and H"""
@@ -242,7 +215,7 @@ class MaxwellOperator(HyperbolicOperator):
                 )
 
     def field_placeholder(self, w=None):
-        "A placeholder for E and H"
+        "A placeholder for E and H."
         from hedge.tools import count_subset
         fld_cnt = count_subset(self.get_eh_subset())
         if w is None:
@@ -251,8 +224,9 @@ class MaxwellOperator(HyperbolicOperator):
 
         return w
 
-    def full_placeholder(self, w=None):
-        "A placeholder for Y, Z, E and H"
+    def yz_field_placeholder(self, w=None):
+        "A placeholder for Y, Z, E and H."
+
         from hedge.tools import count_subset
         fld_cnt = count_subset(self.get_eh_subset())
         if w is None:
@@ -266,7 +240,7 @@ class MaxwellOperator(HyperbolicOperator):
         if self.fixed_material:
             e, h = self.split_eh(self.field_placeholder(w))
         else:
-            y, z, e, h = self.split_yzeh(self.full_placeholder(w))
+            y, z, e, h = self.split_yzeh(self.yz_field_placeholder(w))
 
         from hedge.tools import join_fields
         from hedge.optemplate import BoundarizeOperator
@@ -285,61 +259,58 @@ class MaxwellOperator(HyperbolicOperator):
         if self.fixed_material:
             e, h = self.split_eh(self.field_placeholder(w))
         else:
-            y, z, e, h = self.split_yzeh(self.full_placeholder(w))
+            y, z, e, h = self.split_yzeh(self.yz_field_placeholder(w))
 
         from hedge.tools import join_fields
         from hedge.optemplate import BoundarizeOperator
-        pmc_e = BoundarizeOperator(self.pmc_tag) * e
-        pmc_h = BoundarizeOperator(self.pmc_tag) * h
+        pmc_e = BoundarizeOperator(self.pmc_tag)(e)
+        pmc_h = BoundarizeOperator(self.pmc_tag)(h)
 
         if self.fixed_material:
             return join_fields(pmc_e, -pmc_h)
         else:
-            pmc_y = BoundarizeOperator(self.pmc_tag) * y
-            pmc_z = BoundarizeOperator(self.pmc_tag) * z
+            pmc_y = BoundarizeOperator(self.pmc_tag)(y)
+            pmc_z = BoundarizeOperator(self.pmc_tag)(z)
             return join_fields(pmc_y, pmc_z, pmc_e, -pmc_h)
 
     def absorbing_bc(self, w=None):
-        "Construct part of the flux operator template for 1st order absorbing boundary conditions"
-        if self.fixed_material:
-            e, h = self.split_eh(self.field_placeholder(w))
-        else:
-            Y, Z, e, h = self.split_yzeh(self.full_placeholder(w))
+        """Construct part of the flux operator template for 1st order
+        absorbing boundary conditions.
+        """
 
         from hedge.optemplate import make_normal
         absorb_normal = make_normal(self.absorb_tag, self.dimensions)
 
         from hedge.optemplate import BoundarizeOperator
         from hedge.tools import join_fields
-        absorb_e = BoundarizeOperator(self.absorb_tag)(e)
-        absorb_h = BoundarizeOperator(self.absorb_tag)(h)
 
         if self.fixed_material:
-            absorb_w = BoundarizeOperator(self.absorb_tag)(w)
+            e, h = self.split_eh(self.field_placeholder(w))
 
-            return absorb_w + 1/2*join_fields(
-                    self.space_cross_h(absorb_normal, self.space_cross_e(
-                        absorb_normal, absorb_e))
-                    - self.Z*self.space_cross_h(absorb_normal, absorb_h),
-                    self.space_cross_e(absorb_normal, self.space_cross_h(
-                        absorb_normal, absorb_h))
-                    + self.Y*self.space_cross_e(absorb_normal, absorb_e)
-                    )
-            pass
+            absorb_Y = self.Y
+            absorb_Z = self.Z
         else:
+            Y, Z, e, h = self.split_yzeh(self.yz_field_placeholder(w))
 
             absorb_Y = BoundarizeOperator(self.absorb_tag)(Y)
             absorb_Z = BoundarizeOperator(self.absorb_tag)(Z)
 
-            return join_fields(absorb_Y, absorb_Z,
-                    absorb_e + 1/2*(self.space_cross_h(absorb_normal, self.space_cross_e(
-                        absorb_normal, absorb_e))
+        absorb_e = BoundarizeOperator(self.absorb_tag)(e)
+        absorb_h = BoundarizeOperator(self.absorb_tag)(h)
+
+        bc = join_fields(
+                absorb_e + 1/2*(self.space_cross_h(absorb_normal, self.space_cross_e(
+                    absorb_normal, absorb_e))
                     - absorb_Z*self.space_cross_h(absorb_normal, absorb_h)),
-                    absorb_h + 1/2*(
+                absorb_h + 1/2*(
                     self.space_cross_e(absorb_normal, self.space_cross_h(
                         absorb_normal, absorb_h))
-                    + absorb_Y*self.space_cross_e(absorb_normal, absorb_e)
-                    ))
+                    + absorb_Y*self.space_cross_e(absorb_normal, absorb_e)))
+
+        if self.fixed_material:
+            return bc
+        else:
+            return join_fields(absorb_Y, absorb_Z, bc)
 
     def incident_bc(self, w=None):
         "Flux terms for incident boundary conditions, currently untested"
@@ -347,7 +318,7 @@ class MaxwellOperator(HyperbolicOperator):
             e, h = self.split_eh(self.field_placeholder(w))
         else:
             from hedge.optemplate import BoundarizeOperator
-            Y, Z, e, h = self.split_yzeh(self.full_placeholder(w))
+            Y, Z, e, h = self.split_yzeh(self.yz_field_placeholder(w))
             incident_Y = BoundarizeOperator(self.incident_tag)(Y)
             incident_Z = BoundarizeOperator(self.incident_tag)(Z)
 
@@ -374,10 +345,11 @@ class MaxwellOperator(HyperbolicOperator):
                 return join_fields(incident_Y, incident_Z, make_obj_array([0]*fld_cnt))
 
     def op_template(self, w=None):
-        """
-        The full operator template - the high level description of the Maxwell operator
+        """The full operator template - the high level description of 
+        the Maxwell operator.
 
-        Combines the relevant operator templates for spatial derivatives, flux, boundary conditions etc.
+        Combines the relevant operator templates for spatial 
+        derivatives, flux, boundary conditions etc.
         """
         from hedge.optemplate import Field
         from hedge.tools import join_fields
@@ -385,22 +357,25 @@ class MaxwellOperator(HyperbolicOperator):
 
         if self.fixed_material:
             flux_w = w
-            self.flux_template = self.fixed_flux
         else:
             epsilon = Field("epsilon")
             mu = Field("mu")
 
-            Y = (epsilon/mu)**0.5
-            Z = 1/Y
+            from hedge.tools.symbolic import make_common_subexpression as cse
+            Y = cse((epsilon/mu)**0.5, "Y")
+            Z = cse(1/Y, "Z")
+
+            # The above amounts to a volume calculation of Y and Z
+            # --far more computation and mem bandwidth waste than
+            # getting Y and Z from epsilon and mu within the fluxes.
 
             flux_w = join_fields(Y, Z, w)
-            self.flux_template = self.variable_flux
 
         from hedge.optemplate import BoundaryPair, \
                 InverseMassOperator, get_flux_operator
 
-        flux_op = get_flux_operator(self.flux_template(self.flux_type))
-        bdry_flux_op = get_flux_operator(self.flux_template(self.bdry_flux_type))
+        flux_op = get_flux_operator(self.flux(self.flux_type))
+        bdry_flux_op = get_flux_operator(self.flux(self.bdry_flux_type))
 
         from hedge.tools.indexing import count_subset
         elec_components = count_subset(self.get_eh_subset()[0:3])
@@ -426,7 +401,7 @@ class MaxwellOperator(HyperbolicOperator):
                     )) / material_divisor
 
     def bind(self, discr, **extra_context):
-        "Convert the abstract operator template into compiled code"
+        "Convert the abstract operator template into compiled code."
         from hedge.mesh import check_bc_coverage
         check_bc_coverage(discr.mesh, [
             self.pec_tag, self.absorb_tag, self.incident_tag])
@@ -436,7 +411,6 @@ class MaxwellOperator(HyperbolicOperator):
         from hedge.tools import full_to_subset_indices
         e_indices = full_to_subset_indices(self.get_eh_subset()[0:3])
         all_indices = full_to_subset_indices(self.get_eh_subset())
-
 
         def rhs(t, w):
             if self.current is not None:
@@ -450,19 +424,20 @@ class MaxwellOperator(HyperbolicOperator):
             else:
                 incident_bc_data = 0
 
-            if self.fixed_material:
-                return compiled_op_template(
-                        w=w, j=j, incident_bc=incident_bc_data, **extra_context)
-            else:
-                return compiled_op_template(
-                        w=w, j=j, epsilon=self.epsilon.volume_interpolant(t, discr),
-                        mu=self.mu.volume_interpolant(t, discr),
-                        incident_bc=incident_bc_data, **extra_context)
+            kwargs = {}
+            kwargs.update(extra_context)
+            if not self.fixed_material:
+                kwargs["epsilon"] = self.epsilon.volume_interpolant(t, discr)
+                kwargs["mu"] = self.mu.volume_interpolant(t, discr)
+
+            return compiled_op_template(
+                    w=w, j=j, incident_bc=incident_bc_data, 
+                    **kwargs)
 
         return rhs
 
     def assemble_eh(self, e=None, h=None, discr=None):
-        "Combines separate E and H vectors into a single array"
+        "Combines separate E and H vectors into a single array."
         if discr is None:
             def zero():
                 return 0
@@ -491,7 +466,9 @@ class MaxwellOperator(HyperbolicOperator):
     @memoize_method
     def partial_to_eh_subsets(self):
         """Helps find the indices of the E and H components, which can vary
-        depending on number of dimensions and whether we have a full/TE/TM operator"""
+        depending on number of dimensions and whether we have a full/TE/TM 
+        operator.
+        """
 
         e_subset = self.get_eh_subset()[0:3]
         h_subset = self.get_eh_subset()[3:6]
@@ -537,7 +514,9 @@ class MaxwellOperator(HyperbolicOperator):
         if self.fixed_material:
             return 1/sqrt(self.epsilon*self.mu)
         else:
-            return 1/sqrt((self.epsilon.volume_interpolant(t, discr)*self.epsilon.volume_interpolant(t, discr)).min())
+            return discr.nodewise_max(
+                    (self.epsilon.volume_interpolant(t, discr)
+                        *self.epsilon.volume_interpolant(t, discr))**(-0.5))
 
 
 

@@ -190,18 +190,29 @@ def make_normal(dimensions):
 
 
 
-class FluxZeroPlaceholder(object):
+class FluxConstantPlaceholder(object):
+    def __init__(self, constant):
+        self.constant = constant
+
     @property
     def int(self):
-        return 0
+        return self.constant
 
     @property
     def ext(self):
-        return 0
+        return self.constant
 
     @property
     def avg(self):
-        return 0
+        return self.constant
+
+
+
+
+class FluxZeroPlaceholder(FluxConstantPlaceholder):
+    def __init__(self, constant):
+        FluxConstantPlaceholder.__init__(self, 0)
+
 
 
 
