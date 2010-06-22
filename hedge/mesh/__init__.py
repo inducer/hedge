@@ -192,12 +192,20 @@ def make_conformal_mesh_ext(points, elements,
     :param points: an array of vertex coordinates, given as vectors.
     :param elements: an iterable of :class:`hedge.mesh.element.Element`
       instances.
-    :param boundary_tags: a dictionary from tags to lists of tuples
-      *(el, face_idx)*.
-      :class:`TAG_ALL` and :class:`TAG_NONE` will be added by this routine.
-    :param volume_tags: a dictionary from tags to lists of 
-      element instances. 
-      :class:`TAG_ALL` and :class:`TAG_NONE` will be added by this routine.
+    :param boundary_tagger: A function of *(fvi, el, fn, all_v)* 
+      that returns a list of boundary tags for a face identified
+      by the parameters.
+
+      *fvi* is the set of vertex indices of the face
+      in question, *el* is an :class:`Element` instance,
+      *fn* is the face number within *el*, and *all_v* is 
+      a list of all vertices.
+    :param volume_tagger: A function of *(el, all_v)* 
+      returning a list of volume tags for the element identified
+      by the parameters.
+
+      *el* is an :class:`Element` instance and *all_v* is a list of
+      all vertex coordinates.
     :param periodicity: either None or is a list of tuples
       just like the one documented for the `periodicity`
       member of class :class:`Mesh`.
