@@ -77,6 +77,7 @@ class GasDynamicsOperator(TimeDependentOperator):
             inflow_tag="inflow",
             outflow_tag="outflow",
             noslip_tag="noslip",
+            wall_tag="wall",
             supersonic_inflow_tag="supersonic_inflow",
             supersonic_outflow_tag="supersonic_inflow",
             source=None,
@@ -119,6 +120,7 @@ class GasDynamicsOperator(TimeDependentOperator):
         self.inflow_tag = inflow_tag
         self.outflow_tag = outflow_tag
         self.noslip_tag = noslip_tag
+        self.wall_tag = wall_tag
         self.supersonic_inflow_tag = supersonic_inflow_tag
         self.supersonic_outflow_tag = supersonic_outflow_tag
 
@@ -241,6 +243,7 @@ class GasDynamicsOperator(TimeDependentOperator):
         rho = self.cse_rho
         rho_u = self.rho_u
         p = self.p
+        e = self.e
 
         def temperature(q):
             return cse(self.temperature(q), "temperature")
@@ -522,25 +525,16 @@ class GasDynamicsOperator(TimeDependentOperator):
         class BCInfo(Record):
             pass
 
-        def make_bc_info(bc_name, tag, state, set_normal_velocity_to_zero=False):
-            if set_normal_velocity_to_zero:
-                if has_viscosity:
-                    state0 = join_fields(make_vector_field(bc_name, 2), [0]*self.dimensions)
-                else:
-                    state0 = join_fields(make_vector_field(bc_name, self.dimensions+2))
-            else:
-                state0 = make_vector_field(bc_name, self.dimensions+2)
-
-            state0 = cse(to_bdry_quad(state0))
+        def make_bc_info(bc_name, tag, state):
+            state0 = cse(to_bdry_quad(
+                make_vector_field(bc_name, self.dimensions+2)
+                ))
 
             from hedge.optemplate import make_normal
 
             rho0 = rho(state0)
             p0 = p(state0)
             u0 = u(state0)
-            if not has_viscosity and set_normal_velocity_to_zero:
-                normal = make_normal(tag, self.dimensions)
-                u0 = u0 - numpy.dot(u0, normal) * normal
 
             c0 = (self.gamma * p0 / rho0)**0.5
 
@@ -598,32 +592,47 @@ class GasDynamicsOperator(TimeDependentOperator):
         def noslip_state(state):
             from hedge.optemplate import make_normal
             normal = make_normal(self.noslip_tag, self.dimensions)
-            bc = make_bc_info("bc_q_noslip", self.noslip_tag, state,
-                    set_normal_velocity_to_zero=True)
+            bc = make_bc_info("bc_q_noslip", self.noslip_tag, state)
             return inflow_state_inner(normal, bc, "noslip")
 
-        subsonic_tags_and_primitive_bcs = [
+        def wall_state(state):
+            bc = BoundarizeOperator(self.wall_tag)(state)
+            wall_rho = rho(bc)
+            wall_e = e(bc) # <3 eve
+            wall_rho_u = rho_u(bc)
+
+            from hedge.optemplate import make_normal
+            normal = make_normal(self.wall_tag, self.dimensions)
+
+            return to_bdry_quad(join_fields(
+                    wall_rho,
+                    wall_e,
+                    wall_rho_u - 2*numpy.dot(wall_rho_u, normal) * normal))
+
+        primitive_tags_and_bcs = [
                 (self.outflow_tag, outflow_state(state)),
                 (self.inflow_tag, inflow_state(state)),
                 (self.noslip_tag, noslip_state(state))
                     ]
-        supersonic_tags_and_conservative_bcs = [
+        conservative_tags_and_bcs = [
                 (self.supersonic_inflow_tag, 
                     to_bdry_quad(make_vector_field(
                         "bc_q_supersonic_in", self.dimensions+2))),
                 (self.supersonic_outflow_tag,
                     to_bdry_quad(
                         BoundarizeOperator(self.supersonic_outflow_tag)(
-                            (state))))]
+                            (state)))),
+                (self.wall_tag, wall_state(state))
+                ]
 
-        all_tags_and_primitive_bcs = subsonic_tags_and_primitive_bcs \
+        all_tags_and_primitive_bcs = primitive_tags_and_bcs \
                 + [(tag, self.conservative_to_primitive(bc))
-                    for tag, bc in supersonic_tags_and_conservative_bcs]
+                    for tag, bc in conservative_tags_and_bcs]
 
         all_tags_and_conservative_bcs = [
                 (tag, self.primitive_to_conservative(bc))
-                for tag, bc in subsonic_tags_and_primitive_bcs
-                ] + supersonic_tags_and_conservative_bcs
+                for tag, bc in primitive_tags_and_bcs
+                ] + conservative_tags_and_bcs
 
         # }}}
 
@@ -687,9 +696,15 @@ class GasDynamicsOperator(TimeDependentOperator):
             self.inflow_tag,
             self.outflow_tag,
             self.noslip_tag,
+            self.wall_tag,
             self.supersonic_inflow_tag,
             self.supersonic_outflow_tag,
             ])
+
+        from hedge.mesh import TAG_NONE
+        if self.mu == 0 and not discr.get_boundary(self.noslip_tag).is_empty():
+            raise RuntimeError("no-slip BCs only make sense for "
+                    "viscous problems")
 
         def rhs(t, q):
             extra_kwargs = {}

@@ -771,9 +771,6 @@ class WholeDomainFluxOperator(pymbolic.primitives.AlgebraicLeaf):
     def get_mapper_method(self, mapper):
         return mapper.map_whole_domain_flux
 
-
-
-
 # }}}
 
 
