@@ -47,8 +47,8 @@ fullhypsimp(x):=hypsimp(
 /* ------------------------------------------------------------------------- */
 
 hypdiagonalize(A):=block([evA, V, invV,D],
-  evA:hypsimp(eigenvectors(A)),
-  V:transpose(apply(matrix, makelist(evA[i],i,2,length(evA)))),
+  evA:hypsimp(apply(append, eigenvectors(A)[2])),
+  V:transpose(apply(matrix, evA)),
   invV:hypsimp(invert(V)),
   assert(hypsimp(V.invV)=ident(length(A))),
   D:hypsimp(invV.A.V),
