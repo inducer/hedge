@@ -479,7 +479,7 @@ class OperatorSpecializer(CSECachingMapperMixin, IdentityMapper):
         if not isinstance(
                 self.typedict[expr].repr_tag,
                 NodalRepresentation):
-            raise NotImplementedError("quadrature-grid nodal components")
+            raise NotImplementedError("quadrature-grid normal components")
 
         # a leaf, doesn't change
         return expr
