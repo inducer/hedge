@@ -516,7 +516,7 @@ class MaxwellOperator(HyperbolicOperator):
         else:
             return discr.nodewise_max(
                     (self.epsilon.volume_interpolant(t, discr)
-                        *self.epsilon.volume_interpolant(t, discr))**(-0.5))
+                        *self.mu.volume_interpolant(t, discr))**(-0.5))
 
 
 
