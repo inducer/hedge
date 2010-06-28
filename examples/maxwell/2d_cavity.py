@@ -20,8 +20,6 @@ with inhomogeneous dielectric filling"""
 
 from __future__ import division
 import numpy
-#import numpy.linalg as la
-
 
 CAVITY_GEOMETRY = """
 // a rectangular cavity with a dielectric in one region
@@ -57,8 +55,6 @@ Physical Surface("dielectric") = {2};
 """
 
 
-
-
 def main(write_output=True, allow_features=None, flux_type_arg=1,
         bdry_flux_type_arg=None, extra_discr_args={}):
     from math import sqrt, pi
@@ -74,7 +70,11 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
     materials = {"vacuum" : (epsilon0, mu0),
                  "dielectric" : (2*epsilon0, mu0)}
 
-    output_dir = "."
+    output_dir = "2d_cavity"
+   
+    import os
+    if not os.access(output_dir, os.F_OK):
+        os.makedirs(output_dir)
 
     # should no tag raise an error or default to free space?
     def eps_val(x, el):
@@ -98,6 +98,7 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
     h = 2*pi*f0/c
     l = -h*sqrt(2)
 
+    # substitute the following and change materials for a homogeneous cavity
     #h = pi/a
     #l =-h
 
@@ -204,7 +205,7 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
 
     # timestep loop -------------------------------------------------------
     rhs = op.bind(discr)
-    final_time = 50e-10
+    final_time = 10e-9
 
     if point_getter is not None:
         from os.path import join
@@ -219,7 +220,7 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
                     stepper=stepper, t=t, fields=fields))
 
         for step, t, dt in step_it:
-            if step % 100 == 0 and write_output:
+            if step % 10 == 0 and write_output:
                 sub_timer = vis_timer.start_sub_timer()
                 e, h = op.split_eh(fields)
                 visf = vis.make_file(join(output_dir, "cav-%d-%04d") % (order, step))

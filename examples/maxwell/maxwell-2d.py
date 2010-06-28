@@ -18,10 +18,7 @@
 
 
 from __future__ import division
-import numpy
 import numpy.linalg as la
-
-
 
 
 def main(write_output=True):
@@ -36,13 +33,13 @@ def main(write_output=True):
     epsilon = 1*epsilon0
     mu = 1*mu0
 
-    output_dir = "."
+    output_dir = "maxwell-2d"
+    import os
+    if not os.access(output_dir, os.F_OK):
+        os.makedirs(output_dir)
     
-    cylindrical = False
-    periodic = False
-
     from hedge.mesh.generator import make_disk_mesh
-    mesh = make_disk_mesh(r=0.5, max_area=1e-2)
+    mesh = make_disk_mesh(r=0.5, max_area=1e-3)
 
     if rcon.is_head_rank:
         mesh_data = rcon.distribute_mesh(mesh)
@@ -69,8 +66,7 @@ def main(write_output=True):
         print "#elements=", len(mesh.elements)
 
     from hedge.mesh import TAG_ALL, TAG_NONE
-    #from hedge.models.em import TMMaxwellOperator
-    from em import TMMaxwellOperator
+    from hedge.models.em import TMMaxwellOperator
     from hedge.data import make_tdep_given, TimeIntervalGivenFunction
     op = TMMaxwellOperator(epsilon, mu, flux_type=1,
             current=TimeIntervalGivenFunction(
