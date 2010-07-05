@@ -350,6 +350,11 @@ class InverseVandermondeOperator(ElementwiseLinearOperator, StatelessOperator):
                 la.inv(eg.local_discretization.vandermonde()),
                 order="C")
 
+class VandermondeOperator(ElementwiseLinearOperator, StatelessOperator):
+    def matrix(self, eg):
+        return numpy.asarray(
+                eg.local_discretization.vandermonde(),
+                order="C")
 
 # }}}
 

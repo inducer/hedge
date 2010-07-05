@@ -273,6 +273,9 @@ class PkSimplexDiscretization(OrthonormalLocalDiscretization):
         return self.order > 0
 
     # {{{ numbering -----------------------------------------------------------
+    def vertex_count(self):
+        return self.dimensions + 1
+
     @memoize_method
     def node_count(self):
         """Return the number of interpolation nodes in this element."""

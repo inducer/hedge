@@ -245,7 +245,7 @@ def create_mode_weight_vector(discr, expt_op):
         eg.el_array_from_volume(result)[:,expt_op.ignored_modes:] = \
                     modal_coefficients
 
-    return result
+    return discr.convert_volume(result, kind=discr.compute_kind)
 
 def create_decay_baseline(discr):
     """Create a vector of modal coefficients that exhibit 'optimal'
@@ -268,7 +268,7 @@ def create_decay_baseline(discr):
 
         eg.el_array_from_volume(result)[:,:] = modal_coefficients
 
-    return result
+    return discr.convert_volume(result, kind=discr.compute_kind)
 
 
 
@@ -454,6 +454,15 @@ class DecayFitDiscontinuitySensorBase(object):
 
             if viscosity_scaling is not None:
                 kwargs["viscosity_scaling"] = viscosity_scaling
+                if isinstance(viscosity_scaling, numpy.ndarray):
+                    kwargs["max_viscosity_scaling"] = numpy.max(
+                            viscosity_scaling[
+                                ~numpy.isnan(viscosity_scaling)])
+                else:
+                    # FIXME
+                    kwargs["max_viscosity_scaling"] = \
+                            discr.nodewise_max(viscosity_scaling)
+                    assert not numpy.isnan(kwargs["max_viscosity_scaling"])
 
             return compiled(
                     u=u,
@@ -462,7 +471,6 @@ class DecayFitDiscontinuitySensorBase(object):
                     mode_weights=mode_weights, **kwargs)
 
         return apply
-
 
 
 
@@ -488,7 +496,8 @@ class DecayGatingDiscontinuitySensorBase(
                 .op_template_struct(self, u)
 
         from pymbolic.primitives import IfPositive
-        from hedge.optemplate.primitives import CFunction
+        from hedge.optemplate.primitives import (
+                CFunction, ScalarParameter)
         from math import pi
         from hedge.tools.symbolic import make_common_subexpression as cse
 
@@ -497,14 +506,19 @@ class DecayGatingDiscontinuitySensorBase(
         else:
             decay_expt = cse(result.decay_expt, "decay_expt")
 
-        sin = CFunction("sin")
-
         def flat_end_sin(x):
             return IfPositive(-pi/2-x,
                     -1, IfPositive(x-pi/2, 1, sin(x)))
 
-        result.sensor = (
-                0.5*Field("viscosity_scaling")
+        sin = CFunction("sin")
+        isnan = CFunction("isnan")
+        c_abs = CFunction("abs")
+
+        visc_scale = Field("viscosity_scaling")
+
+        result.sensor = IfPositive(c_abs(isnan(visc_scale)), 
+                ScalarParameter("max_viscosity_scaling"),
+                0.5*visc_scale
                 * (1+flat_end_sin((decay_expt+2)*pi/2)))
         return result
 
@@ -515,7 +529,8 @@ class DecayGatingDiscontinuitySensorBase(
 
 # {{{ mode processors
 # {{{ elementwise code executor base class
-class ElementwiseCodeExecutor:
+class ElementwiseCodeExecutor(object):
+    # {{{ CPU side
     @memoize_method
     def make_codepy_module(self, toolchain, dtype):
         from codepy.libraries import add_codepy
@@ -537,7 +552,7 @@ class ElementwiseCodeExecutor:
             Include("hedge/volume_operators.hpp"),
             Include("boost/foreach.hpp"),
             Include("boost/numeric/ublas/io.hpp"),
-            ]+self.get_extra_includes())
+            ]+self.get_cpu_extra_includes())
 
         mod.add_to_module([
             S("namespace ublas = boost::numeric::ublas"),
@@ -553,7 +568,7 @@ class ElementwiseCodeExecutor:
                 Const(Value("uniform_element_ranges", "ers")),
                 Const(Value("numpy_vector<value_type>", "field")),
                 Value("numpy_vector<value_type>", "result"),
-                ]+self.get_extra_parameter_declarators()),
+                ]+self.get_cpu_extra_parameter_declarators()),
             Block([
                 Typedef(Value("numpy_vector<value_type>::iterator",
                     "it_type")),
@@ -564,10 +579,10 @@ class ElementwiseCodeExecutor:
                     "result.begin()"),
                 Initializer(Value("cit_type", "field_it"),
                     "field.begin()"),
-                Line() ]+self.get_extra_preamble()+[ Line(),
+                Line() ]+self.get_cpu_extra_preamble()+[ Line(),
                 CustomLoop(
                     "BOOST_FOREACH(const element_range er, ers)",
-                    Block(self.get_per_element_code())
+                    Block(self.get_cuda_per_element_code())
                     )
                 ])))
 
@@ -576,19 +591,7 @@ class ElementwiseCodeExecutor:
         #toolchain.enable_debugging
         return mod.compile(toolchain)
 
-    def get_extra_includes(self):
-        return []
-
-    def get_extra_parameter_declarators(self):
-        return []
-
-    def get_extra_parameters(self, ldis):
-        return []
-
-    def get_extra_preamble(self):
-        return []
-
-    def bind(self, discr):
+    def bind_cpu(self, discr):
         def do(field):
             mod = self.make_codepy_module(discr.toolchain, field.dtype)
 
@@ -597,11 +600,153 @@ class ElementwiseCodeExecutor:
                 ldis = eg.local_discretization
 
                 mod.process_elements(eg.ranges, field, out,
-                        *self.get_extra_parameters(ldis))
+                        *self.get_cpu_extra_parameters(ldis))
 
             return out
 
         return do
+
+    # }}}
+
+    # {{{ CUDA side
+
+    @memoize_method
+    def make_cuda_kernel(self, discr, dtype, eg):
+        given = discr.given
+        ldis = eg.local_discretization
+
+        microblocks_per_block = 1
+
+        from codepy.cgen.cuda import CudaGlobal
+
+        from codepy.cgen import (Module, Value, Include,
+                Typedef, FunctionBody, FunctionDeclaration, Const,
+                Line, POD, LiteralBlock,
+                Define, Pointer)
+
+        cmod = Module([
+            Include("pycuda-helpers.hpp"),
+            Line(),
+            Typedef(POD(dtype, "value_type")),
+            Line(),
+            Define("DOFS_PER_EL", given.dofs_per_el()),
+            Define("ALIGNED_DOFS_PER_MB", given.microblock.aligned_floats),
+            Define("VERTICES_PER_EL", ldis.vertex_count()),
+            Define("ELS_PER_MB", given.microblock.elements),
+            Define("MBS_PER_BLOCK", microblocks_per_block),
+            Line(),
+            Define("DOF_IN_MB_IDX", "threadIdx.x"),
+            Define("DOF_IN_EL_IDX", "(DOF_IN_MB_IDX-el_idx_in_mb*DOFS_PER_EL)"),
+            Define("MB_IN_BLOCK_IDX", "threadIdx.y"),
+            Define("BLOCK_IDX", "blockIdx.x"),
+            Define("MB_NUMBER", "(BLOCK_IDX * MBS_PER_BLOCK + MB_IN_BLOCK_IDX)"),
+            Define("BLOCK_DATA", "whole_block[MB_IN_BLOCK_IDX]")]
+            + self.get_cuda_extra_preamble(discr, dtype, eg)
+            + [FunctionBody(
+            CudaGlobal(FunctionDeclaration(
+                    Value("void", "elwise_kernel"), [
+                    Pointer(Const(POD(dtype, "field"))),
+                    Pointer(POD(dtype, "result")),
+                    POD(numpy.uint32, "mb_count"),
+                    ])),
+                LiteralBlock("""
+                int el_idx_in_mb = DOF_IN_MB_IDX / DOFS_PER_EL;
+
+                if (MB_NUMBER >= mb_count)
+                  return;
+
+                int idx =  MB_NUMBER * ALIGNED_DOFS_PER_MB + DOF_IN_MB_IDX;
+                int element_base_idx = ALIGNED_DOFS_PER_MB * MB_IN_BLOCK_IDX +
+                    (DOF_IN_MB_IDX / DOFS_PER_EL) * DOFS_PER_EL;
+                int dof_in_element = DOF_IN_MB_IDX-el_idx_in_mb*DOFS_PER_EL;
+
+                __shared__ value_type whole_block[MBS_PER_BLOCK][ALIGNED_DOFS_PER_MB+1];
+                int idx_in_block = ALIGNED_DOFS_PER_MB * MB_IN_BLOCK_IDX + DOF_IN_MB_IDX;
+                BLOCK_DATA[idx_in_block] = field[idx];
+
+                __syncthreads();
+
+                %s
+
+                result[idx] = node_result;
+                """ % self.get_cuda_code(discr, dtype, eg)))
+                ])
+
+
+        if False:
+            for i, l in enumerate(str(cmod).split("\n")):
+                print i+1, l
+            raw_input()
+
+        from pycuda.compiler import SourceModule
+        mod = SourceModule(
+                cmod,
+                keep="cuda_keep_kernels" in discr.debug,
+                )
+        func = mod.get_function("elwise_kernel")
+        func.prepare(
+            "PPI", block=(
+                given.microblock.aligned_floats,
+                microblocks_per_block, 1))
+
+        mb_count = len(discr.blocks) * discr.given.microblocks_per_block
+        grid_dim = (mb_count + microblocks_per_block - 1) \
+                // microblocks_per_block
+
+        from pytools import Record
+        class KernelInfo(Record):
+            pass
+
+        return KernelInfo(
+                func=func,
+                grid_dim=grid_dim,
+                mb_count=mb_count)
+
+    def bind_cuda(self, discr):
+        eg, = discr.element_groups
+        knl_info = self.make_cuda_kernel(
+                discr, discr.default_scalar_type, eg)
+
+        def do(field):
+            print "EL_CODE", type(self)
+            result = discr.volume_empty()
+            knl_info.func.prepared_call((knl_info.grid_dim, 1),
+                    field.gpudata,
+                    result.gpudata,
+                    knl_info.mb_count)
+
+            return result
+
+        return do
+
+    def bind(self, discr):
+        from hedge.backends.cuda import Discretization \
+                as CUDADiscretization
+        if isinstance(discr, CUDADiscretization):
+            return self.bind_cuda(discr)
+        else:
+            return self.bind_cpu(discr)
+
+    # }}}
+
+    # {{{ user-overridable code
+
+    def get_cpu_extra_includes(self):
+        return []
+
+    def get_cpu_extra_parameter_declarators(self):
+        return []
+
+    def get_cpu_extra_parameters(self, ldis):
+        return []
+
+    def get_cpu_extra_preamble(self):
+        return []
+
+    def get_cuda_extra_preamble(self, discr, dtype, eg):
+        return []
+
+    # }}}
 
 # }}}
 
@@ -609,18 +754,18 @@ class ElementwiseCodeExecutor:
 
 
 class SkylineModeProcessor(ElementwiseCodeExecutor):
-    def get_extra_includes(self):
+    def get_cpu_extra_includes(self):
         from codepy.cgen import Include
         return [Include("boost/scoped_array.hpp")]
 
-    def get_extra_parameter_declarators(self):
+    def get_cpu_extra_parameter_declarators(self):
         from codepy.cgen import Value, POD
         return [
                 Value("numpy_array<npy_uint32>", "mode_degrees"),
                 POD(numpy.uint32, "max_degree")]
 
     @memoize_method
-    def get_extra_parameters(self, ldis):
+    def get_cpu_extra_parameters(self, ldis):
         return [
             numpy.array(
                 [sum(mode_indices) for mode_indices in
@@ -628,7 +773,7 @@ class SkylineModeProcessor(ElementwiseCodeExecutor):
                 dtype=numpy.uint32),
             ldis.order]
 
-    def get_extra_preamble(self):
+    def get_cpu_extra_preamble(self):
         from codepy.cgen import Initializer, Value, POD, Statement
         return [
                 Initializer(Value("numpy_array<npy_uint32>::const_iterator",
@@ -640,7 +785,7 @@ class SkylineModeProcessor(ElementwiseCodeExecutor):
                     "(new value_type[max_degree+1])"),
                 ]
 
-    def get_per_element_code(self):
+    def get_cpu_per_element_code(self):
         from codepy.cgen import (Value, Statement, Initializer, While,
                 Comment, Block, For, Line, Pointer)
         S = Statement
@@ -688,11 +833,75 @@ class SkylineModeProcessor(ElementwiseCodeExecutor):
                         "reduced_modes[mode_degrees_iterator[mode_idx]]")),
                 ]
 
+    def get_cuda_extra_preamble(self, discr, dtype, eg):
+        from codepy.cgen import ArrayOf, Value, Initializer
+        from codepy.cgen.cuda import CudaConstant
+
+        ldis = eg.local_discretization
+        mode_degrees = [sum(mode_indices) for mode_indices in
+                ldis.generate_mode_identifiers()]
+
+        return [Initializer(CudaConstant(
+            ArrayOf(Value("unsigned", "mode_degrees"))),
+            "{%s}" % ", ".join(str(i) for i in mode_degrees))
+            ]
+
+    def get_cuda_code(self, discr, dtype, eg):
+        ldis = eg.local_discretization
+
+        if dtype == numpy.float64:
+            max_func = "fmax"
+        elif dtype == numpy.float32:
+            max_func = "fmaxf"
+        else:
+            raise TypeError("Could not find a maximum function"
+                " due to unsupported field.dtype.")
+
+        return """
+                #define NUM_DEGREES %(num_degrees)d
+                #define MAX_FUNC %(max_func)s
+                #define RED_MODE_EL reduced_modes[MB_IN_BLOCK_IDX][el_idx_in_mb]
+
+                __shared__ value_type reduced_modes[MBS_PER_BLOCK][ELS_PER_MB][NUM_DEGREES];
+
+                if (dof_in_element == 0 && el_idx_in_mb < ELS_PER_MB)
+                {
+                  // gather modes by degree
+                  for (int mode_idx = 0; mode_idx < DOFS_PER_EL; ++mode_idx)
+                     RED_MODE_EL[mode_degrees[mode_idx]]
+                       += BLOCK_DATA[
+                         DOFS_PER_EL*el_idx_in_mb
+                         + mode_idx];
+
+                  // perform skyline procedure
+                  value_type running_max = MAX_FUNC(
+                    RED_MODE_EL[NUM_DEGREES-1],
+                    RED_MODE_EL[NUM_DEGREES-2]);
+
+                  int end_idx = NUM_DEGREES+1;
+                  while (end_idx != 0)
+                  {
+                    --end_idx;
+                    RED_MODE_EL[end_idx] = MAX_FUNC(
+                      running_max,
+                      RED_MODE_EL[end_idx]);
+                  }
+                }
+
+                __syncthreads();
+
+                value_type node_result = RED_MODE_EL
+                  [mode_degrees[dof_in_element]];
+                """ % {
+                        "num_degrees": ldis.order+1,
+                        "max_func": max_func,
+                        }
+
 
 
 
 class AveragingModeProcessor(ElementwiseCodeExecutor):
-    def get_per_element_code(self):
+    def get_cpu_per_element_code(self):
         from codepy.cgen import (Value, Statement, Initializer, While, Block)
         S = Statement
         return [
@@ -718,9 +927,23 @@ class AveragingModeProcessor(ElementwiseCodeExecutor):
 
 # }}}
 
-# {{{ make h/n vector
+# {{{ make h, h/n vector
+def make_h_vector(discr):
+    result = discr.volume_zeros(kind="numpy")
+
+    for eg in discr.element_groups:
+        for el, rng in zip(eg.members, eg.ranges):
+            bbox_min, bbox_max = el.bounding_box(discr.mesh.points)
+            h = numpy.max(bbox_max-bbox_min)
+            result[rng] = h
+
+    return discr.convert_volume(result, kind=discr.compute_kind)
+
+
+
+
 def make_h_over_n_vector(discr):
-    result = discr.volume_zeros()
+    result = discr.volume_zeros(kind="numpy")
 
     for eg in discr.element_groups:
         for el, rng in zip(eg.members, eg.ranges):
@@ -728,7 +951,7 @@ def make_h_over_n_vector(discr):
             h = numpy.max(bbox_max-bbox_min)
             result[rng] = h/(eg.local_discretization.order)
 
-    return result
+    return discr.convert_volume(result, kind=discr.compute_kind)
 
 # }}}
 
