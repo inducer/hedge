@@ -228,9 +228,10 @@ class GasDynamicsOperator(TimeDependentOperator):
     # }}}
 
     # {{{ operator template ---------------------------------------------------
-    def op_template(self, sensor_mode=None, sensor_scaling=None):
-        if sensor_mode not in ["cns", "diffusion", "blended", None]:
-            raise ValueError("sensor_mode has an invalid value")
+    def op_template(self, viscosity_mode=None, sensor_scaling=None,
+            viscosity_only=False):
+        if viscosity_mode not in ["cns", "diffusion", "blended", None]:
+            raise ValueError("viscosity_mode has an invalid value")
 
         from hedge.optemplate.tools import make_vector_field
         from pytools.obj_array import make_obj_array, join_fields
@@ -271,9 +272,9 @@ class GasDynamicsOperator(TimeDependentOperator):
             else:
                 result = self.mu
 
-            if sensor_mode == "cns":
+            if viscosity_mode == "cns":
                 mapped_sensor = sensor
-            elif sensor_mode == "blended":
+            elif viscosity_mode == "blended":
                 exp = CFunction("exp")
                 mapped_sensor = cse(
                         sensor_scaling
@@ -383,7 +384,7 @@ class GasDynamicsOperator(TimeDependentOperator):
                     for i in range(len(faceq_state)))
 
             # supply BC for sensor, if necessary
-            if sensor_mode is not None:
+            if viscosity_mode is not None:
                 for tag, bc in all_tags_and_conservative_bcs:
                     dir_bcs[tag, to_int_face_quad(sensor)] = \
                             cse(to_bdry_quad(BoundarizeOperator(tag)(sensor)),
@@ -422,10 +423,10 @@ class GasDynamicsOperator(TimeDependentOperator):
 
         # {{{ artificial diffusion
         def make_artificial_diffusion():
-            if sensor_mode not in ["diffusion", "blended"]:
+            if viscosity_mode not in ["diffusion", "blended"]:
                 return 0
 
-            if sensor_mode == "blended":
+            if viscosity_mode == "blended":
                 exp = CFunction("exp")
                 mapped_sensor = cse(
                         sensor_scaling
@@ -489,12 +490,12 @@ class GasDynamicsOperator(TimeDependentOperator):
 
         state = make_vector_field("q", self.dimensions+2)
 
-        if sensor_mode is not None:
+        if viscosity_mode is not None:
             from hedge.optemplate.primitives import Field
             sensor = Field("sensor")
 
             if sensor_scaling is not None:
-                assert sensor_mode == "blended"
+                assert viscosity_mode == "blended"
                 unit_sensor = cse(sensor/sensor_scaling, "unit_sensor")
 
         from hedge.optemplate.operators import (
@@ -664,6 +665,9 @@ class GasDynamicsOperator(TimeDependentOperator):
                         ],
                     strong=False))
 
+        if viscosity_only:
+            first_order_part = 0*first_order_part
+
         result = join_fields(
                 first_order_part 
                 + make_second_order_part()
@@ -683,13 +687,15 @@ class GasDynamicsOperator(TimeDependentOperator):
     # }}}
 
     # {{{ operator binding ----------------------------------------------------
-    def bind(self, discr, sensor=None, sensor_mode="diffusion", sensor_scaling=None):
+    def bind(self, discr, sensor=None, viscosity_mode="diffusion", sensor_scaling=None,
+            viscosity_only=False):
         if sensor is None:
-            sensor_mode = None
+            viscosity_mode = None
 
         bound_op = discr.compile(self.op_template(
-            sensor_mode=sensor_mode,
-            sensor_scaling=sensor_scaling))
+            viscosity_mode=viscosity_mode,
+            sensor_scaling=sensor_scaling,
+            viscosity_only=False))
 
         from hedge.mesh import check_bc_coverage
         check_bc_coverage(discr.mesh, [
