@@ -141,7 +141,8 @@ class RK4TimeStepper(LSRK4TimeStepper):
 # {{{ Embedded Runge-Kutta schemes base class ---------------------------------
 class EmbeddedRungeKuttaTimeStepperBase(TimeStepper):
     def __init__(self, use_high_order=True, dtype=numpy.float64, rcon=None,
-            vector_primitive_factory=None, atol=0, rtol=0):
+            vector_primitive_factory=None, atol=0, rtol=0,
+            max_dt_growth=5, min_dt_shrinkage=0.1):
         if vector_primitive_factory is None:
             from hedge.vector_primitives import VectorPrimitiveFactory
             self.vector_primitive_factory = VectorPrimitiveFactory()
@@ -170,6 +171,9 @@ class EmbeddedRungeKuttaTimeStepperBase(TimeStepper):
         self.scalar_dtype = match_precision(
                 numpy.dtype(numpy.float64), self.dtype)
 
+        self.max_dt_growth = max_dt_growth
+        self.min_dt_shrinkage = min_dt_shrinkage
+
     def get_stability_relevant_init_args(self):
         return (self.use_high_order,)
 
@@ -177,7 +181,7 @@ class EmbeddedRungeKuttaTimeStepperBase(TimeStepper):
         logmgr.add_quantity(self.timer)
         logmgr.add_quantity(self.flop_counter)
 
-    def __call__(self, y, t, dt, rhs):
+    def __call__(self, y, t, dt, rhs, reject_hook=None):
         from hedge.tools import count_dofs
 
         # {{{ preparation, linear combiners
@@ -234,7 +238,6 @@ class EmbeddedRungeKuttaTimeStepperBase(TimeStepper):
 
                 rhss.append(this_rhs)
 
-
             # }}}
 
             def finish_solution(coeffs):
@@ -273,14 +276,16 @@ class EmbeddedRungeKuttaTimeStepperBase(TimeStepper):
 
                 if rel_err > 1 or numpy.isnan(rel_err):
                     # reject step
+                    if reject_hook:
+                        y = reject_hook(dt, rel_err, t, y)
 
                     last_dt = dt
                     if not numpy.isnan(rel_err):
                         dt = max(
                                 0.9 * dt * rel_err**(-1/self.low_order),
-                                0.1 * dt)
+                                self.min_dt_shrinkage * dt)
                     else:
-                        dt = 0.1*dt
+                        dt = self.min_dt_shrinkage*dt
 
                     if t + dt == t:
                         from hedge.timestep import TimeStepUnderflow
@@ -292,7 +297,7 @@ class EmbeddedRungeKuttaTimeStepperBase(TimeStepper):
 
                     next_dt = min(
                             0.9 * dt * rel_err**(-1/self.high_order),
-                            5*dt)
+                            self.max_dt_growth*dt)
 
                     # finish up
                     self.last_rhs = this_rhs
