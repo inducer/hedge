@@ -170,40 +170,26 @@ class ExecutionMapper(ExecutionMapperBase):
             discr.diff_flop_counter.add(discr.dimensions*(
                 self.executor.diff_rst_flops + self.executor.diff_rescale_one_flops))
 
-        rst_diff = self.executor.diff_kernel(insn.op_class, field)
+        repr_op = insn.operators[0]
 
-        if set(["cuda_diff", "cuda_compare"]) <= discr.debug:
-            assert False, "this debug code was broken in the " \
-                    "global-to-ref-rewriting change"
-            field = self.rec(insn.field)
-            f = discr.volume_from_gpu(field)
-            assert not numpy.isnan(f).any(), "Initial field contained NaNs."
-            cpu_xyz_diff = [discr.volume_from_gpu(xd) for xd in xyz_diff]
-            dx = cpu_xyz_diff[0]
+        from hedge.optemplate.operators import \
+                ReferenceQuadratureStiffnessTOperator
+        if isinstance(repr_op, ReferenceQuadratureStiffnessTOperator):
+            eg, = discr.element_groups
+            from pytools import single_valued
+            q_info = discr.get_cuda_quadrature_info(
+                    eg, single_valued(op.quadrature_tag for op in insn.operators))
 
-            test_discr = discr.test_discr
-            real_dx = test_discr.nabla[0].apply(f.astype(numpy.float64))
+            kernel = discr.diff_kernel(
+                aligned_preimage_dofs_per_microblock=q_info.dofs_per_microblock,
+                preimage_dofs_per_el=q_info.ldis_quad_info.node_count())
 
-            diff = dx - real_dx
-
-            for i, xd in enumerate(cpu_xyz_diff):
-                if numpy.isnan(xd).any():
-                    self.print_error_structure(xd, xd, xd-xd,
-                            eventful_only=False, detail=False)
-                    assert False, "Resulting field %d contained NaNs." % i
-
-            from hedge.tools import relative_error
-            rel_err_norm = relative_error(la.norm(diff), la.norm(real_dx))
-            print "diff", rel_err_norm
-            if not (rel_err_norm < 5e-5):
-                self.print_error_structure(dx, real_dx, diff,
-                        eventful_only=False, detail=False)
-
-            assert rel_err_norm < 5e-5
+            rst_diff = kernel(repr_op, field)
+        else:
+            rst_diff = self.executor.diff_kernel(repr_op, field)
 
         return [(name, rst_diff[op.rst_axis])
                 for name, op in zip(insn.names, insn.operators)], []
-
 
     def exec_flux_batch_assign(self, insn):
         discr = self.executor.discr
@@ -300,25 +286,55 @@ class ExecutionMapper(ExecutionMapperBase):
             return 0
 
         kernel = self.executor.discr.element_local_kernel()
+        # FIXME: wouldn't volume_empty suffice?
         result = self.discr.volume_zeros(dtype=field.dtype)
 
         for eg in self.discr.element_groups:
             try:
-                prepared_matrix, prepared_coeffs = \
+                prepared_matrix = \
                         self.executor.elwise_linear_cache[eg, op, field.dtype]
             except KeyError:
                 prepared_matrix = kernel.prepare_matrix(op.matrix(eg))
-                coeffs = op.coefficients(eg)
+                assert op.coefficients(eg) is None, \
+                        "per-element scaling of elementwise linear ops is no " \
+                        "longer supported"
 
-                if coeffs is None:
-                    prepared_coeffs = None
-                else:
-                    prepared_coeffs = kernel.prepare_scaling(eg, coeffs)
+                self.executor.elwise_linear_cache[eg, op, field.dtype] = \
+                        prepared_matrix
 
-                self.executor.elwise_linear_cache[eg, op, field.dtype] = (
-                        prepared_matrix, prepared_coeffs)
+            kernel(field, prepared_matrix, out_vector=result)
 
-            kernel(field, prepared_matrix, prepared_coeffs, out_vector=result)
+        return result
+
+    def map_quad_grid_upsampler(self, op, expr):
+        field = self.rec(expr)
+        discr = self.executor.discr
+
+        from hedge.tools import is_zero
+        if is_zero(field):
+            return 0
+
+        # FIXME: wouldn't volume_empty suffice?
+        result = self.discr._empty_gpuarray(
+                discr.gpu_volume_quadrature_vector_size(op.quadrature_tag),
+                dtype=field.dtype)
+
+        for eg in self.discr.element_groups:
+            quad_info = discr.get_cuda_quadrature_info(eg, op.quadrature_tag)
+            kernel = discr.element_local_kernel(
+                    image_dofs_per_el=quad_info.ldis_quad_info.node_count(),
+                    aligned_image_dofs_per_microblock=quad_info.dofs_per_microblock)
+            try:
+                prepared_matrix = \
+                        self.executor.elwise_linear_cache[eg, op, field.dtype]
+            except KeyError:
+                prepared_matrix = kernel.prepare_matrix(
+                        quad_info.ldis_quad_info.volume_up_interpolation_matrix())
+
+                self.executor.elwise_linear_cache[eg, op, field.dtype] = \
+                        prepared_matrix
+
+            kernel(field, prepared_matrix, out_vector=result)
 
         return result
 
@@ -476,8 +492,7 @@ class Executor(object):
 
         # build the local kernels
         self.diff_kernel = self.discr.diff_plan.make_kernel(discr)
-        self.fluxlocal_kernel = self.discr.fluxlocal_plan.make_kernel(discr,
-                with_index_check=False)
+        self.fluxlocal_kernel = self.discr.fluxlocal_plan.make_kernel(discr)
 
         if "dump_op_code" in discr.debug:
             from hedge.tools import open_unique_debug_file

@@ -361,9 +361,6 @@ class Discretization(hedge.discretization.Discretization):
         flux plan will be tuned.
         """
 
-        if quad_min_degrees:
-            raise NotImplementedError("CUDA backend doesn't support quadrature yet")
-
         if not isinstance(mesh, hedge.mesh.Mesh):
             raise TypeError("mesh must be of type hedge.mesh.Mesh")
 
@@ -377,6 +374,7 @@ class Discretization(hedge.discretization.Discretization):
 
         hedge.discretization.Discretization.__init__(self, mesh, ldis, debug=debug,
                 default_scalar_type=default_scalar_type,
+                quad_min_degrees=quad_min_degrees,
                 run_context=run_context)
         # }}}
 
@@ -467,14 +465,13 @@ class Discretization(hedge.discretization.Discretization):
                         make_diff_plan, \
                         make_element_local_plan
 
-                diff_plan, diff_time = make_diff_plan(self, given)
+                dpm = given.aligned_face_dofs_per_microblock()
+                dpe = given.face_dofs_per_el()
+                diff_plan, diff_time = make_diff_plan(self, given,
+                        dpm, dpe, dpm, dpe)
                 fluxlocal_plan, fluxlocal_time = make_element_local_plan(
-                        self, given,
-                        op_name="lift",
-                        aligned_preimage_dofs_per_microblock=
-                            given.aligned_face_dofs_per_microblock(),
-                        preimage_dofs_per_el=given.face_dofs_per_el(),
-                        with_index_check=False)
+                        self, given, dpm, dpe, dpm, dpe,
+                        op_name="lift")
 
                 sys_size = flux_plan.flux_count
                 total_time = flux_time + sys_size*(diff_time+fluxlocal_time)
@@ -724,6 +721,23 @@ class Discretization(hedge.discretization.Discretization):
 
     # }}}
 
+    def get_cuda_quadrature_info(self, eg, quadrature_tag):
+        class QuadratureInfo(Record):
+            pass
+
+        # make sure the CPU quad data structures are set up
+        self.get_quadrature_info(quadrature_tag)
+
+        cpu_quad_info = eg.quadrature_info[quadrature_tag]
+
+        return QuadratureInfo(
+                eg_quad_info=cpu_quad_info,
+                ldis_quad_info=cpu_quad_info.ldis_quad_info,
+                dofs_per_microblock=self.given.devdata.align_dtype(
+                    self.given.microblock.elements
+                    * cpu_quad_info.ldis_quad_info.node_count(),
+                    self.eg_given(eg).float_size()))
+
     # {{{ stream pooling ------------------------------------------------------
     # (stupid CUDA isn't smart enough to allocate streams without synchronizing.
     # sigh.)
@@ -810,24 +824,71 @@ class Discretization(hedge.discretization.Discretization):
                 int_ceiling(
                     fplan.dofs_per_block() * len(self.blocks),
                     self.diff_plan.dofs_per_macroblock()),
-                self.fluxlocal_plan.dofs_per_macroblock())
+                self.fluxlocal_plan.image_dofs_per_macroblock())
+
+    def eg_blocks(self, eg):
+        """Return 'given' data for planning for element group 'eg'."""
+        # FIXME
+        return self.blocks
+
+    def eg_given(self, eg):
+        """Return 'given' data for planning for element group 'eg'."""
+        # FIXME
+        return self.given
 
     @memoize_method
-    def _gpu_volume_embedding(self):
-        result = numpy.zeros((len(self.nodes),), dtype=numpy.intp)
-        block_offset = 0
-        block_size = self.flux_plan.dofs_per_block()
-        for block in self.blocks:
-            el_length = block.local_discretization.node_count()
+    def gpu_volume_quadrature_vector_size(self, quadrature_tag):
+        return sum(
+                self.get_cuda_quadrature_info(eg, quadrature_tag).dofs_per_microblock
+                * len(self.eg_blocks(eg))*self.eg_given(eg).microblocks_per_block
+                for eg in self.element_groups)
 
-            for el_offset, cpu_slice in zip(
-                    block.el_offsets_list, block.cpu_slices):
-                result[cpu_slice] = \
-                        block_offset+el_offset+numpy.arange(el_length)
+    @memoize_method
+    def _gpu_volume_embedding(self, quadrature_tag=None):
+        if quadrature_tag is None:
+            result = numpy.zeros((len(self.nodes),), dtype=numpy.intp)
+            block_offset = 0
+            block_size = self.flux_plan.dofs_per_block()
+            for block in self.blocks:
+                el_length = block.local_discretization.node_count()
 
-            block_offset += block_size
+                for el_offset, cpu_slice in zip(
+                        block.el_offsets_list, block.cpu_slices):
+                    result[cpu_slice] = \
+                            block_offset+el_offset+numpy.arange(el_length)
 
-        assert (result <= self.gpu_dof_count()).all()
+                block_offset += block_size
+
+            assert (result <= self.gpu_dof_count()).all()
+        else:
+            cpu_quad_info = self.get_quadrature_info(quadrature_tag)
+            result = numpy.zeros((cpu_quad_info.node_count,), dtype=numpy.intp)
+            block_offset = 0
+            eg, = self.element_groups
+            quad_info = self.get_cuda_quadrature_info(eg, quadrature_tag)
+            eg_quad_info = quad_info.eg_quad_info
+
+            block_size = (quad_info.dofs_per_microblock
+                    * self.given.microblocks_per_block)
+            for block in self.blocks:
+                el_length = quad_info.ldis_quad_info.node_count()
+
+                mb_offset = block_offset
+                for mb in block.microblocks:
+                    for el_idx_in_mb, el in enumerate(mb):
+                        eg2, idx = self.group_map[el.id]
+                        assert eg2 is eg
+
+                        result[eg_quad_info.ranges[idx]] = (
+                                mb_offset
+                                + el_length*el_idx_in_mb
+                                + numpy.arange(el_length))
+
+                    mb_offset += quad_info.dofs_per_microblock
+                block_offset += block_size
+
+            assert (result <= self.gpu_volume_quadrature_vector_size(
+                quadrature_tag)).all()
 
         return result
 
@@ -1264,8 +1325,13 @@ class Discretization(hedge.discretization.Discretization):
                     self.volume_jacobians(quadrature_tag, kind="numpy"),
                     kind=self.compute_kind)
         else:
-            raise NotImplementedError(
-                    "GPU volume_jacobians on quadrature grids")
+            cpu_result = numpy.empty(
+                    self.gpu_volume_quadrature_vector_size(quadrature_tag),
+                    dtype=self.default_scalar_type)
+
+            cpu_value = self.volume_jacobians(quadrature_tag, kind="numpy")
+            cpu_result[self._gpu_volume_embedding(quadrature_tag)] = cpu_value
+            return gpuarray.to_gpu(cpu_result, allocator=self.pool.allocate)
 
     @memoize_method
     def inverse_metric_derivatives(self, quadrature_tag=None, kind="gpu"):
@@ -1292,9 +1358,6 @@ class Discretization(hedge.discretization.Discretization):
         else:
             raise NotImplementedError(
                     "GPU inverse_metric_derivatives on quadrature grids")
-
-        return result
-
 
     @memoize_method
     def forward_metric_derivatives(self, quadrature_tag=None, kind="gpu"):
@@ -1325,16 +1388,59 @@ class Discretization(hedge.discretization.Discretization):
 
     # {{{ ancillary kernel planning/construction ------------------------------
     @memoize_method
-    def element_local_kernel(self):
+    def element_local_kernel(self,
+            aligned_preimage_dofs_per_microblock=None, 
+            preimage_dofs_per_el=None,
+            aligned_image_dofs_per_microblock=None, 
+            image_dofs_per_el=None):
+        # defaults for sizes
+        if preimage_dofs_per_el is None:
+            preimage_dofs_per_el = self.given.dofs_per_el()
+        if aligned_preimage_dofs_per_microblock is None:
+            aligned_preimage_dofs_per_microblock = self.given.microblock.aligned_floats
+        if image_dofs_per_el is None:
+            image_dofs_per_el = self.given.dofs_per_el()
+        if aligned_image_dofs_per_microblock is None:
+            aligned_image_dofs_per_microblock = self.given.microblock.aligned_floats
+
         from hedge.backends.cuda.plan import make_element_local_plan
         el_local_plan, _ = make_element_local_plan(
                 self, self.given,
-                op_name="el_local",
-                aligned_preimage_dofs_per_microblock=
-                    self.given.microblock.aligned_floats,
-                preimage_dofs_per_el=self.given.dofs_per_el(),
-                with_index_check=True)
-        return el_local_plan.make_kernel(self, with_index_check=True)
+
+                aligned_preimage_dofs_per_microblock,
+                preimage_dofs_per_el,
+                aligned_image_dofs_per_microblock,
+                image_dofs_per_el,
+
+                op_name="el_local")
+        return el_local_plan.make_kernel(self)
+
+    @memoize_method
+    def diff_kernel(self,
+            aligned_preimage_dofs_per_microblock=None,
+            preimage_dofs_per_el=None,
+            aligned_image_dofs_per_microblock=None,
+            image_dofs_per_el=None):
+
+        # defaults for sizes
+        if preimage_dofs_per_el is None:
+            preimage_dofs_per_el = self.given.dofs_per_el()
+        if aligned_preimage_dofs_per_microblock is None:
+            aligned_preimage_dofs_per_microblock = self.given.microblock.aligned_floats
+        if image_dofs_per_el is None:
+            image_dofs_per_el = self.given.dofs_per_el()
+        if aligned_image_dofs_per_microblock is None:
+            aligned_image_dofs_per_microblock = self.given.microblock.aligned_floats
+
+        from hedge.backends.cuda.plan import make_diff_plan
+        diff_plan, _ = make_diff_plan(
+                self, self.given,
+
+                aligned_preimage_dofs_per_microblock,
+                preimage_dofs_per_el,
+                aligned_image_dofs_per_microblock,
+                image_dofs_per_el)
+        return diff_plan.make_kernel(self)
     # }}}
 
     # {{{ scalar reduction ----------------------------------------------------

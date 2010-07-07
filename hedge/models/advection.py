@@ -284,8 +284,10 @@ class VariableCoefficientAdvectionOperator(HyperbolicOperator):
                 QuadratureGridUpsampler,
                 QuadratureInteriorFacesGridUpsampler)
 
-        to_quad = QuadratureGridUpsampler("quad")
-        to_if_quad = QuadratureInteriorFacesGridUpsampler("quad")
+        #to_quad = QuadratureGridUpsampler("quad")
+        to_quad = lambda x: x
+        #to_if_quad = QuadratureInteriorFacesGridUpsampler("quad")
+        to_if_quad = lambda x: x
 
         from hedge.tools import join_fields, \
                                 ptwise_dot
@@ -353,6 +355,10 @@ class VariableCoefficientAdvectionOperator(HyperbolicOperator):
             diffusion_part = 0
 
         # }}}
+
+        to_quad = QuadratureGridUpsampler("quad")
+        quad_u = cse(to_quad(u))
+        quad_v = cse(to_quad(v))
 
         return m_inv(numpy.dot(minv_st, cse(quad_v*quad_u)) 
                 - (flux_op(quad_face_w) 

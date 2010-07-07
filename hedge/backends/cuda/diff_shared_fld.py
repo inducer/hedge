@@ -30,11 +30,43 @@ import pycuda.gpuarray as gpuarray
 import hedge.backends.cuda.plan
 from pycuda.compiler import SourceModule
 
+from hedge.backends.cuda.plan import ExecutionPlan as \
+        ExecutionPlanBase
+
 
 
 
 # plan ------------------------------------------------------------------------
-class ExecutionPlan(hedge.backends.cuda.plan.SMemFieldLocalOpExecutionPlan):
+class ExecutionPlan(ExecutionPlanBase):
+    def __init__(self, given, parallelism,
+           aligned_preimage_dofs_per_microblock, preimage_dofs_per_el,
+           aligned_image_dofs_per_microblock, image_dofs_per_el):
+        ExecutionPlanBase.__init__(self, given.devdata)
+        self.given = given
+        self.parallelism = parallelism
+
+        self.aligned_preimage_dofs_per_microblock = \
+                aligned_preimage_dofs_per_microblock
+        self.preimage_dofs_per_el = preimage_dofs_per_el
+        self.aligned_image_dofs_per_microblock = \
+                aligned_image_dofs_per_microblock
+        self.image_dofs_per_el = image_dofs_per_el
+
+    def dofs_per_macroblock(self):
+        return self.parallelism.total() * self.given.microblock.aligned_floats
+
+    def preimage_dofs_per_macroblock(self):
+        return (self.parallelism.total()
+                * self.aligned_preimage_dofs_per_microblock)
+
+    def threads(self):
+        return self.parallelism.parallel * self.given.microblock.aligned_floats
+
+    def __str__(self):
+            return "smem_field %s par=%s" % (
+                ExecutionPlanBase.__str__(self),
+                self.parallelism)
+
     def registers(self):
         return 16
 
@@ -46,7 +78,7 @@ class ExecutionPlan(hedge.backends.cuda.plan.SMemFieldLocalOpExecutionPlan):
                + given.float_size() * (
                    self.parallelism.parallel
                    * self.parallelism.inline
-                   * self.given.microblock.aligned_floats))
+                   * self.aligned_preimage_dofs_per_microblock))
 
     @staticmethod
     def feature_columns():
@@ -55,7 +87,6 @@ class ExecutionPlan(hedge.backends.cuda.plan.SMemFieldLocalOpExecutionPlan):
                 "inline integer",
                 "serial integer",
                 "segment_size integer",
-                "max_unroll integer",
                 "mb_elements integer",
                 "lmem integer",
                 "smem integer",
@@ -69,7 +100,6 @@ class ExecutionPlan(hedge.backends.cuda.plan.SMemFieldLocalOpExecutionPlan):
                 self.parallelism.inline,
                 self.parallelism.serial,
                 None,
-                self.max_unroll,
                 self.given.microblock.elements,
                 lmem,
                 smem,
@@ -208,7 +238,7 @@ class Kernel:
         return rst_diff
 
     @memoize_method
-    def get_kernel(self, diff_op_cls, elgroup, for_benchmark=False):
+    def get_kernel(self, diff_op, elgroup, for_benchmark=False):
         from codepy.cgen import \
                 Pointer, POD, Value, ArrayOf, Const, \
                 Module, FunctionDeclaration, FunctionBody, Block, \
@@ -221,7 +251,8 @@ class Kernel:
         discr = self.discr
         d = discr.dimensions
         dims = range(d)
-        given = self.plan.given
+        plan = self.plan
+        given = plan.given
 
         elgroup, = discr.element_groups
         float_type = given.float_type
@@ -231,7 +262,7 @@ class Kernel:
             + [Pointer(POD(float_type, "drst%d_global" % i)) for i in dims]
             ))
 
-        par = self.plan.parallelism
+        par = plan.parallelism
 
         cmod = Module([
                 Include("pycuda-helpers.hpp"),
@@ -247,20 +278,27 @@ class Kernel:
         else:
             raise ValueError("unsupported float type: %s" % float_type)
 
+        # only preimage size variation is supported here
+        assert plan.image_dofs_per_el == given.dofs_per_el()
+        assert plan.aligned_image_dofs_per_microblock == given.microblock.aligned_floats
+
         cmod.extend([
                 Line(),
                 Define("DIMENSIONS", discr.dimensions),
-                Define("DOFS_PER_EL", given.dofs_per_el()),
-                Define("ALIGNED_DOFS_PER_MB", given.microblock.aligned_floats),
-                Define("ELS_PER_MB", given.microblock.elements),
-                Define("DOFS_PER_MB", "(DOFS_PER_EL*ELS_PER_MB)"),
+
+                Define("IMAGE_DOFS_PER_EL", plan.image_dofs_per_el),
+                Define("PREIMAGE_DOFS_PER_EL", plan.preimage_dofs_per_el),
+                Define("ALIGNED_IMAGE_DOFS_PER_MB", plan.aligned_image_dofs_per_microblock),
+                Define("ALIGNED_PREIMAGE_DOFS_PER_MB", plan.aligned_preimage_dofs_per_microblock),
+                Define("ELS_PER_MB", "(ALIGNED_IMAGE_DOFS_PER_MB/IMAGE_DOFS_PER_EL)"),
+                Define("IMAGE_DOFS_PER_MB", "(IMAGE_DOFS_PER_EL*ELS_PER_MB)"),
                 Line(),
                 Define("CHUNK_SIZE", given.devdata.smem_granularity),
                 Define("CHUNK_DOF", "threadIdx.x"),
                 Define("PAR_MB_NR", "threadIdx.y"),
                 Define("CHUNK_NR", "threadIdx.z"),
-                Define("MB_DOF", "(CHUNK_NR*CHUNK_SIZE+CHUNK_DOF)"),
-                Define("EL_DOF", "(MB_DOF - mb_el*DOFS_PER_EL)"),
+                Define("IMAGE_MB_DOF", "(CHUNK_NR*CHUNK_SIZE+CHUNK_DOF)"),
+                Define("IMAGE_EL_DOF", "(IMAGE_MB_DOF - mb_el*IMAGE_DOFS_PER_EL)"),
                 Line(),
                 Define("MACROBLOCK_NR", "blockIdx.x"),
                 Line(),
@@ -273,7 +311,8 @@ class Kernel:
                 Define("GLOBAL_MB_NR",
                     "(GLOBAL_MB_NR_BASE"
                     "+ (seq_mb_number*PAR_MB_COUNT + PAR_MB_NR)*INLINE_MB_COUNT)"),
-                Define("GLOBAL_MB_DOF_BASE", "(GLOBAL_MB_NR*ALIGNED_DOFS_PER_MB)"),
+                Define("GLOBAL_MB_IMAGE_DOF_BASE", "(GLOBAL_MB_NR*ALIGNED_IMAGE_DOFS_PER_MB)"),
+                Define("GLOBAL_MB_PREIMAGE_DOF_BASE", "(GLOBAL_MB_NR*ALIGNED_PREIMAGE_DOFS_PER_MB)"),
                 Line(),
                 CudaShared(
                     ArrayOf(
@@ -282,18 +321,54 @@ class Kernel:
                                 POD(float_type, "smem_field"),
                                 "PAR_MB_COUNT"),
                             "INLINE_MB_COUNT"),
-                        "ALIGNED_DOFS_PER_MB")),
+                        "ALIGNED_PREIMAGE_DOFS_PER_MB")),
                 Line(),
                 ])
 
         S = Statement
         f_body = Block([
             Initializer(Const(POD(numpy.uint16, "mb_el")),
-                "MB_DOF / DOFS_PER_EL"),
+                "IMAGE_MB_DOF / IMAGE_DOFS_PER_EL"),
             Line(),
             ])
 
         # ---------------------------------------------------------------------
+        def get_load_code():
+            mb_img_dofs = plan.aligned_image_dofs_per_microblock
+            mb_preimg_dofs = plan.aligned_preimage_dofs_per_microblock
+            preimg_dofs_over_dofs = (mb_preimg_dofs+mb_img_dofs-1) // mb_img_dofs
+
+            load_code = []
+            store_code = []
+
+            var_num = 0
+            for load_block in range(preimg_dofs_over_dofs):
+                for inl in range(par.inline):
+                    # load and store are split for better pipelining
+                    # compiler can't figure that out because of branch
+
+                    var = "tmp%d" % var_num
+                    var_num += 1
+                    load_code.append(POD(float_type, var))
+
+                    block_addr = "%d * ALIGNED_IMAGE_DOFS_PER_MB + IMAGE_MB_DOF" % load_block
+                    load_instr = Assign(var,
+                        "field[GLOBAL_MB_PREIMAGE_DOF_BASE"
+                        " + %d*ALIGNED_PREIMAGE_DOFS_PER_MB"
+                        " + %s]" % (inl, block_addr))
+                    store_instr = Assign(
+                            "smem_field[PAR_MB_NR][%d][%s]" % (inl, block_addr),
+                            var
+                            )
+                    if (load_block+1)*mb_img_dofs >= mb_preimg_dofs:
+                        cond = "%s < ALIGNED_PREIMAGE_DOFS_PER_MB" % block_addr
+                        load_instr = If(cond, load_instr)
+                        store_instr = If(cond, store_instr)
+
+                    load_code.append(load_instr)
+                    store_code.append(store_instr)
+            return Block(load_code + [Line()] + store_code)
+
         def get_scalar_diff_code():
             code = []
             for inl in range(par.inline):
@@ -309,8 +384,8 @@ class Kernel:
             for inl in range(par.inline):
                 for rst_axis in dims:
                     store_code.append(Assign(
-                        "drst%d_global[GLOBAL_MB_DOF_BASE + "
-                        "%d*ALIGNED_DOFS_PER_MB + MB_DOF]"
+                        "drst%d_global[GLOBAL_MB_IMAGE_DOF_BASE + "
+                        "%d*ALIGNED_IMAGE_DOFS_PER_MB + IMAGE_MB_DOF]"
                         % (rst_axis, inl),
                         "d%drst%d" % (inl, rst_axis)
                         ))
@@ -320,11 +395,7 @@ class Kernel:
                 Comment("everybody needs to be done with the old data"),
                 S("__syncthreads()"),
                 Line(),
-                ]+[
-                Assign("smem_field[PAR_MB_NR][%d][MB_DOF]" % inl,
-                    "field[(GLOBAL_MB_NR+%d)*ALIGNED_DOFS_PER_MB + MB_DOF]" % inl)
-                for inl in range(par.inline)
-                ]+[
+                get_load_code(),
                 Line(),
                 Comment("all the new data must be loaded"),
                 S("__syncthreads()"),
@@ -342,13 +413,13 @@ class Kernel:
             def unroll_body(j):
                 result = [
                     Assign("field_value%d" % inl,
-                        "smem_field[PAR_MB_NR][%d][mb_el*DOFS_PER_EL+%s]" % (inl, j))
+                        "smem_field[PAR_MB_NR][%d][mb_el*PREIMAGE_DOFS_PER_EL+%s]" % (inl, j))
                     for inl in range(par.inline)
                     ]
 
                 if float_type == numpy.float32:
                     result.append(Assign("dmat_entries",
-                        "tex1Dfetch(diff_rst_mat_tex, EL_DOF + %s*DOFS_PER_EL)" % j))
+                        "tex1Dfetch(diff_rst_mat_tex, IMAGE_EL_DOF + %s*IMAGE_DOFS_PER_EL)" % j))
                     result.extend(
                         S("d%drst%d += dmat_entries.%s * field_value%d"
                             % (inl, axis, tex_channels[axis], inl))
@@ -357,7 +428,8 @@ class Kernel:
                 elif float_type == numpy.float64:
                     result.extend(
                         S("d%(inl)drst%(axis)d += "
-                            "fp_tex1Dfetch(diff_rst_mat_tex, %(axis)d + DIMENSIONS*(EL_DOF + %(j)d*DOFS_PER_EL))"
+                            "fp_tex1Dfetch(diff_rst_mat_tex, %(axis)d "
+                            "+ DIMENSIONS*(IMAGE_EL_DOF + %(j)d*IMAGE_DOFS_PER_EL))"
                             "* field_value%(inl)d" % {
                             "inl": inl,
                             "axis": axis,
@@ -370,9 +442,8 @@ class Kernel:
 
                 return result
 
-            code.append(If("MB_DOF < DOFS_PER_MB", Block(unroll(unroll_body,
-                    total_number=given.dofs_per_el(),
-                    max_unroll=self.plan.max_unroll)
+            code.append(If("IMAGE_MB_DOF < IMAGE_DOFS_PER_MB", Block(unroll(unroll_body,
+                    total_number=plan.preimage_dofs_per_el)
                     +[store_code])))
 
             return code
@@ -406,7 +477,7 @@ class Kernel:
                     func.registers)
 
         diff_rst_mat_texref = mod.get_texref("diff_rst_mat_tex")
-        gpu_diffmats = self.gpu_diffmats(diff_op_cls, elgroup)
+        gpu_diffmats = self.gpu_diffmats(diff_op, elgroup)
 
         if given.float_type == numpy.float32:
             gpu_diffmats.bind_to_texref_ext(diff_rst_mat_texref, rst_channels)
@@ -420,17 +491,19 @@ class Kernel:
                 ["PP"] + discr.dimensions*[float_type],
                 block=(
                     given.devdata.smem_granularity,
-                    self.plan.parallelism.parallel,
+                    plan.parallelism.parallel,
                     given.microblock.aligned_floats//given.devdata.smem_granularity),
                 texrefs=[diff_rst_mat_texref])
         return func
 
     # data blocks -------------------------------------------------------------
     @memoize_method
-    def gpu_diffmats(self, diff_op_cls, elgroup):
+    def gpu_diffmats(self, diff_op, elgroup):
         discr = self.discr
         given = self.plan.given
         d = discr.dimensions
+
+        diff_op.matrices(elgroup)
 
         if given.float_type == numpy.float32:
             first_dim = given.devdata.make_valid_tex_channel_count(d)
@@ -439,9 +512,11 @@ class Kernel:
         else:
             assert False
 
-        result = numpy.zeros((first_dim, given.dofs_per_el(), given.dofs_per_el()),
-                dtype=given.float_type, order="F")
-        for i, dm in enumerate(diff_op_cls.matrices(elgroup)):
+        result = numpy.zeros((first_dim,
+            self.plan.image_dofs_per_el,
+            self.plan.preimage_dofs_per_el),
+            dtype=given.float_type, order="F")
+        for i, dm in enumerate(diff_op.matrices(elgroup)):
             result[i] = dm
 
         return gpuarray.to_gpu(result)
