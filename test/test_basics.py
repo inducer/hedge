@@ -219,6 +219,7 @@ def test_timestep_accuracy():
             LSRK4TimeStepper,
             ODE23TimeStepper,
             ODE45TimeStepper)
+    from hedge.timestep.imex_rk import KennedyCarpenterIMEXARK4
     from hedge.timestep.ab import AdamsBashforthTimeStepper
     from hedge.timestep.ssprk3 import SSPRK3TimeStepper
     from hedge.timestep.dumka3 import Dumka3TimeStepper
@@ -239,6 +240,67 @@ def test_timestep_accuracy():
             stepper.setup(eigenvalue_estimate=1, dt=dt, pol_index=pol_index)
 
         verify_timestep_order(Dumka3TimeStepper, 3, setup_dumka)
+
+
+
+
+def test_imex_timestep_accuracy():
+    """Check that all timesteppers have the advertised accuracy"""
+    from math import sqrt, log, sin, cos
+    from hedge.tools import EOCRecorder
+
+    def rhs_expl(t, y):
+        A = (1-numpy.cos(0*t))*numpy.array([[0,1], [-1/t**2,0]])
+        return numpy.dot(A, y)
+
+    def rhs_impl(t, y0, alpha):
+        A = (numpy.cos(0*t))*numpy.array([[0,1], [-1/t**2,0]])
+        return la.solve(numpy.eye(2)-alpha*A, numpy.dot(A, y0))
+
+    def soln(t):
+        inner = sqrt(3)/2*log(t)
+        return sqrt(t)*(
+                5*sqrt(3)/3*sin(inner)
+                + cos(inner)
+                )
+
+    def get_error(stepper, dt):
+        t = 1
+        y = numpy.array([1, 3], dtype=numpy.float64)
+        final_t = 10
+        nsteps = int((final_t-t)/dt)
+
+        hist = []
+        for i in range(nsteps):
+            y = stepper(y, t, dt, rhs_expl, rhs_impl)
+            t += dt
+            hist.append(y)
+
+        return abs(y[0]-soln(t))
+
+    def verify_timestep_order(stepper_getter, order, setup=None, dtmul=1):
+        eocrec = EOCRecorder()
+        for n in range(4,9):
+            dt = 2**(-n) * dtmul
+            stepper = stepper_getter()
+            if setup is not None:
+                setup(stepper, dt)
+
+            error = get_error(stepper,dt)
+            eocrec.add_data_point(1/dt, error)
+
+        print "------------------------------------------------------"
+        print "ORDER %d, %s" % (order, stepper)
+        print "------------------------------------------------------"
+        print eocrec.pretty_print()
+
+        orderest = eocrec.estimate_order_of_convergence()[0,1]
+        #print orderest, order
+        assert orderest > order*0.95
+
+    from hedge.timestep.imex_rk import KennedyCarpenterIMEXARK4
+
+    verify_timestep_order(lambda: KennedyCarpenterIMEXARK4(True), 4, dtmul=2**3)
 
 
 
