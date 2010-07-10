@@ -101,8 +101,6 @@ class SimplicialElement(Element):
         return sum(unit_coords) <= -(self.dimensions-2)+thresh
 
 
-
-
 class Interval(SimplicialElement):
     dimensions = 1
 

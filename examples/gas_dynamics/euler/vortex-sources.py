@@ -215,9 +215,9 @@ def main(write_output=True):
 
         # time stepper --------------------------------------------------------
         from hedge.timestep import SSPRK3TimeStepper, RK4TimeStepper
-        stepper = SSPRK3TimeStepper(limiter=limiter)
+        #stepper = SSPRK3TimeStepper(limiter=limiter)
         #stepper = SSPRK3TimeStepper()
-        #stepper = RK4TimeStepper()
+        stepper = RK4TimeStepper()
 
         # diagnostics setup ---------------------------------------------------
         from pytools.log import LogManager, add_general_quantities, \
@@ -240,7 +240,7 @@ def main(write_output=True):
         # timestep loop -------------------------------------------------------
         t = 0
 
-        fields = limiter(fields)
+        #fields = limiter(fields)
 
         try:
             from hedge.timestep import times_and_steps

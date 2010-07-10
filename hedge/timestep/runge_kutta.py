@@ -139,6 +139,52 @@ class RK4TimeStepper(LSRK4TimeStepper):
 
 
 # {{{ Embedded Runge-Kutta schemes base class ---------------------------------
+def adapt_step_size(t, dt,
+        start_y, high_order_end_y, low_order_end_y, stepper, lc2, ip):
+    def norm(a):
+        return numpy.sqrt(ip(a, a))
+
+    normalization = stepper.atol + stepper.rtol*max(
+                norm(low_order_end_y), norm(start_y))
+
+    error = lc2(
+        (1/normalization, high_order_end_y),
+        (-1/normalization, low_order_end_y)
+        )
+
+    from hedge.tools import count_dofs
+    rel_err = norm(error)/count_dofs(error)**0.5
+    if rel_err == 0:
+       rel_err = 1e-14
+
+    if rel_err > 1 or numpy.isnan(rel_err):
+        # reject step
+
+        last_dt = dt
+        if not numpy.isnan(rel_err):
+            dt = max(
+                    0.9 * dt * rel_err**(-1/stepper.low_order),
+                    stepper.min_dt_shrinkage * dt)
+        else:
+            dt = stepper.min_dt_shrinkage*dt
+
+        if t + dt == t:
+            from hedge.timestep import TimeStepUnderflow
+            raise TimeStepUnderflow()
+
+        return False, dt, rel_err
+    else:
+        # accept step
+
+        next_dt = min(
+                0.9 * dt * rel_err**(-1/stepper.high_order),
+                stepper.max_dt_growth*dt)
+
+        return True, next_dt, rel_err
+
+
+
+
 class EmbeddedRungeKuttaTimeStepperBase(TimeStepper):
     def __init__(self, use_high_order=True, dtype=numpy.float64, rcon=None,
             vector_primitive_factory=None, atol=0, rtol=0,
@@ -174,12 +220,25 @@ class EmbeddedRungeKuttaTimeStepperBase(TimeStepper):
         self.max_dt_growth = max_dt_growth
         self.min_dt_shrinkage = min_dt_shrinkage
 
+        self.linear_combiner_cache = {}
+
     def get_stability_relevant_init_args(self):
         return (self.use_high_order,)
 
     def add_instrumentation(self, logmgr):
         logmgr.add_quantity(self.timer)
         logmgr.add_quantity(self.flop_counter)
+
+    def get_linear_combiner(self, arg_count, sample_vec):
+        try:
+            return self.linear_combiner_cache[arg_count]
+        except KeyError:
+            lc = self.vector_primitive_factory \
+                    .make_linear_combiner(
+                    self.dtype, self.scalar_dtype, sample_vec,
+                    arg_count=arg_count)
+            self.linear_combiner_cache[arg_count] = lc
+            return lc
 
     def __call__(self, y, t, dt, rhs, reject_hook=None):
         from hedge.tools import count_dofs
@@ -191,26 +250,13 @@ class EmbeddedRungeKuttaTimeStepperBase(TimeStepper):
             self.last_rhs = rhs(t, y)
             self.dof_count = count_dofs(self.last_rhs)
 
-            vpf = self.vector_primitive_factory
+            if self.adaptive:
+                self.ip = self.vector_primitive_factory \
+                        .make_inner_product(self.last_rhs)
+            else:
+                self.ip = None
 
-            self.linear_combiners = dict(
-                    (arg_count, vpf.make_linear_combiner(
-                        self.dtype, self.scalar_dtype, self.last_rhs,
-                        arg_count=arg_count))
-                    for arg_count in (
-                        set(1+len(coeffs) for t_frac, coeffs 
-                            in self.butcher_tableau)
-                        | set([2, 1+len(self.low_order_coeffs),
-                            1+len(self.high_order_coeffs)]))
-                    if arg_count)
-
-            self.ip = vpf.make_inner_product(self.last_rhs)
-
-        lcs = self.linear_combiners
         ip = self.ip
-
-        def norm(a):
-            return numpy.sqrt(ip(a, a))
 
         # }}}
 
@@ -230,8 +276,9 @@ class EmbeddedRungeKuttaTimeStepperBase(TimeStepper):
                     args = [(1, y)] + [
                             (dt*coeff, rhss[j]) for j, coeff in enumerate(coeffs)
                             if coeff]
-                    flop_count[0] += len(args)*2
-                    sub_y = lcs[len(args)](*args)
+                    flop_count[0] += len(args)*2 - 1
+                    sub_y = self.get_linear_combiner(
+                            len(args), self.last_rhs)(*args)
                     sub_timer.stop().submit()
 
                     this_rhs = rhs(t + c*dt, sub_y)
@@ -244,8 +291,9 @@ class EmbeddedRungeKuttaTimeStepperBase(TimeStepper):
                 args = [(1, y)] + [
                         (dt*coeff, rhss[i]) for i, coeff in enumerate(coeffs)
                         if coeff]
-                flop_count[0] += len(args)*2
-                return lcs[len(args)](*args)
+                flop_count[0] += len(args)*2 - 1
+                return self.get_linear_combiner(
+                        len(args), self.last_rhs)(*args)
 
             if not self.adaptive:
                 if self.use_high_order:
@@ -261,50 +309,23 @@ class EmbeddedRungeKuttaTimeStepperBase(TimeStepper):
                 high_order_end_y = finish_solution(self.high_order_coeffs)
                 low_order_end_y = finish_solution(self.low_order_coeffs)
 
-                normalization = self.atol + self.rtol*max(
-                            norm(low_order_end_y), norm(y))
+                flop_count[0] += 3+1 # one two-lincomb, one norm
+                accept_step, next_dt, rel_err = adapt_step_size(
+                        t, dt, y, high_order_end_y, low_order_end_y,
+                        self, lcs[2], ip)
 
-                error = lcs[2](*[
-                    (1/normalization, high_order_end_y),
-                    (-1/normalization, low_order_end_y)
-                    ])
-                flop_count[0] += 1
-
-                rel_err = numpy.sqrt(self.ip(error, error)/count_dofs(error))
-                if rel_err == 0:
-                   rel_err = 1e-14
-
-                if rel_err > 1 or numpy.isnan(rel_err):
-                    # reject step
+                if not accept_step:
                     if reject_hook:
                         y = reject_hook(dt, rel_err, t, y)
 
-                    last_dt = dt
-                    if not numpy.isnan(rel_err):
-                        dt = max(
-                                0.9 * dt * rel_err**(-1/self.low_order),
-                                self.min_dt_shrinkage * dt)
-                    else:
-                        dt = self.min_dt_shrinkage*dt
-
-                    if t + dt == t:
-                        from hedge.timestep import TimeStepUnderflow
-                        raise TimeStepUnderflow()
+                    dt = next_dt
                     # ... and go back to top of loop
-
                 else:
-                    # accept step
-
-                    next_dt = min(
-                            0.9 * dt * rel_err**(-1/self.high_order),
-                            self.max_dt_growth*dt)
-
                     # finish up
                     self.last_rhs = this_rhs
                     self.flop_counter.add(self.dof_count*flop_count[0])
 
                     return high_order_end_y, t+dt, dt, next_dt
-
                 # }}}
 
 # }}}
