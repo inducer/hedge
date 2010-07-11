@@ -469,26 +469,12 @@ class Discretization(hedge.discretization.Discretization):
         diff_plan, _time = make_diff_plan(self, given,
                 dpm, dpe, dpm, dpe)
 
-        fdpm = flux_plan.aligned_face_dofs_per_microblock()
-        fdpe = ldis.face_node_count()*ldis.face_count()
-        fluxlocal_plan, _time  = make_element_local_plan(
-                self, given, fdpm, fdpe, dpm, dpe,
-                given.microblock.elements,
-                microblock_count
-                =given.block_count*given.microblocks_per_block,
-                op_name="lift")
-
         sys_size = flux_plan.flux_count
 
         self.given = given
         self.flux_plan = flux_plan
         self.partition = pdata.partition
         self.diff_plan = diff_plan
-        self.fluxlocal_plan = fluxlocal_plan
-
-        print "actual flux exec plan:", self.flux_plan
-        print "actual diff op exec plan:", self.diff_plan
-        print "actual flux local exec plan:", self.fluxlocal_plan
 
         # }}}
 
@@ -812,7 +798,8 @@ class Discretization(hedge.discretization.Discretization):
     def add_instrumentation(self, mgr):
         mgr.set_constant("flux_plan", str(self.flux_plan))
         mgr.set_constant("diff_plan", str(self.diff_plan))
-        mgr.set_constant("fluxlocal_plan", str(self.fluxlocal_plan))
+        # FIXME?
+        #mgr.set_constant("fluxlocal_plan", str(self.fluxlocal_plan))
 
         from pytools.log import EventCounter
 
@@ -876,11 +863,8 @@ class Discretization(hedge.discretization.Discretization):
         from hedge.backends.cuda.tools import int_ceiling
 
         fplan = self.flux_plan
-        return int_ceiling(
-                int_ceiling(
-                    fplan.dofs_per_block() * len(self.blocks),
-                    self.diff_plan.dofs_per_macroblock()),
-                self.fluxlocal_plan.image_dofs_per_macroblock())
+        return int_ceiling(fplan.dofs_per_block() * len(self.blocks),
+                self.diff_plan.dofs_per_macroblock())
 
     def eg_blocks(self, eg):
         """Return 'given' data for planning for element group 'eg'."""

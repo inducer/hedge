@@ -563,6 +563,9 @@ class PkSimplexDiscretization(OrthonormalLocalDiscretization):
         def node_count(self):
             return len(self.volume_nodes)
 
+        def face_count(self):
+            return self.ldis.face_count()
+
         def face_node_count(self):
             return len(self.face_nodes)
 

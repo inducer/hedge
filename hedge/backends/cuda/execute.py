@@ -194,18 +194,24 @@ class ExecutionMapper(ExecutionMapperBase):
 
     def exec_flux_batch_assign(self, insn):
         discr = self.executor.discr
-
-        kernel = insn.kernel(self.executor)
-        all_fofs = kernel(self.rec, discr.fluxlocal_plan)
         elgroup, = discr.element_groups
+
+        repr_wdflux = insn.expressions[0]
+
+        gather_kernel = insn.kernel(self.executor)
+        flux_plan = gather_kernel.plan
+
+        flux_local_kernel = self.executor.get_flux_local_kernel(flux_plan)
+        flux_local_data = self.executor.get_flux_local_data(
+                flux_local_kernel, elgroup, repr_wdflux.is_lift,
+                flux_plan.quadrature_tag)
+
+        all_fofs = gather_kernel(self.rec, flux_local_kernel.plan)
 
         cuda.Context.synchronize() # FIXME: remove
 
         result = [
-            (name, self.executor.fluxlocal_kernel(
-                fluxes_on_faces,
-                *self.executor.flux_local_data(
-                    self.executor.fluxlocal_kernel, elgroup, wdflux.is_lift)))
+            (name, flux_local_kernel(fluxes_on_faces, *flux_local_data))
             for name, wdflux, fluxes_on_faces in zip(
                 insn.names, insn.expressions, all_fofs)]
 
@@ -215,13 +221,13 @@ class ExecutionMapper(ExecutionMapperBase):
             given = discr.given
 
             flux_count = len(insn.expressions)
-            dep_count = len(kernel.interior_deps)
+            dep_count = len(gather_kernel.interior_deps)
 
             discr.gather_counter.add(
                     flux_count*dep_count)
             discr.gather_flop_counter.add(
                     flux_count
-                    * kernel.plan.face_dofs_per_el()
+                    * flux_plan.face_dofs_per_el()
                     * len(discr.mesh.elements)
                     * (1 # facejac-mul
                         + 2 * # int+ext
@@ -229,6 +235,7 @@ class ExecutionMapper(ExecutionMapperBase):
                         )
                     )
 
+            # FIXME: quadrature flops
             discr.lift_counter.add(flux_count)
             discr.lift_flop_counter.add(flux_count*self.executor.lift_flops)
 
@@ -606,7 +613,6 @@ class Executor(object):
 
         # build the local kernels
         self.diff_kernel = self.discr.diff_plan.make_kernel(discr)
-        self.fluxlocal_kernel = self.discr.fluxlocal_plan.make_kernel(discr)
 
         if "dump_op_code" in discr.debug:
             from hedge.tools import open_unique_debug_file
@@ -678,12 +684,43 @@ class Executor(object):
 
     # data caches for execution -----------------------------------------------
     @memoize_method
-    def flux_local_data(self, kernel, elgroup, is_lift):
+    def get_flux_local_kernel(self, flux_plan):
+        quadrature_tag = flux_plan.quadrature_tag
+
+        eg, = self.discr.element_groups
+
+        if quadrature_tag is None:
+            ldis = eg.local_discretization
+        else:
+            eqi = self.discr.get_cuda_elgroup_quadrature_info(
+                    eg, quadrature_tag)
+            ldis = eqi.ldis_quad_info
+            assert (eqi.aligned_int_face_dofs_per_microblock ==
+                    flux_plan.aligned_face_dofs_per_microblock())
+
+        fdpm = flux_plan.aligned_face_dofs_per_microblock()
+        fdpe = ldis.face_node_count() * ldis.face_count()
+
+        return self.discr.element_local_kernel(
+                aligned_preimage_dofs_per_microblock=fdpm,
+                preimage_dofs_per_el=fdpe)
+
+    @memoize_method
+    def get_flux_local_data(self, kernel, elgroup, is_lift, quadrature_tag):
         if is_lift:
             mat = elgroup.local_discretization.lifting_matrix()
             prep_scaling = kernel.prepare_scaling(elgroup, elgroup.inverse_jacobians)
+            if quadrature_tag is not None:
+                raise NotImplementedError(
+                        "lifting and quadrature not supported together--yet")
         else:
-            mat = elgroup.local_discretization.multi_face_mass_matrix()
+            if quadrature_tag is None:
+                mat = elgroup.local_discretization.multi_face_mass_matrix()
+            else:
+                eqi = self.discr.get_cuda_elgroup_quadrature_info(
+                        elgroup, quadrature_tag)
+                mat = eqi.ldis_quad_info.multi_face_mass_matrix()
+
             prep_scaling = None
 
         prep_mat = kernel.prepare_matrix(mat)
