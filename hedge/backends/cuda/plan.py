@@ -201,10 +201,12 @@ class ExecutionPlan(object):
 
 
 class PlanGivenData(object):
-    def __init__(self, devdata, ldis, allow_microblocking, float_type):
+    def __init__(self, devdata, ldis, allow_microblocking, float_type,
+            max_face_dofs):
         self.devdata = devdata
         self.ldis = ldis
         self.float_type = numpy.dtype(float_type)
+        self.max_face_dofs = max_face_dofs
 
         self.microblock = self._find_microblock_size(allow_microblocking)
 
@@ -218,24 +220,8 @@ class PlanGivenData(object):
     def dofs_per_el(self):
         return self.ldis.node_count()
 
-    @memoize_method
-    def dofs_per_face(self):
-        return self.ldis.face_node_count()
-
     def faces_per_el(self):
         return self.ldis.face_count()
-
-    def face_dofs_per_el(self):
-        return self.ldis.face_node_count()*self.faces_per_el()
-
-    def face_dofs_per_microblock(self):
-        return self.microblock.elements*self.faces_per_el()*self.dofs_per_face()
-
-    @memoize_method
-    def aligned_face_dofs_per_microblock(self):
-        return self.devdata.align_dtype(
-                self.face_dofs_per_microblock(),
-                self.float_size())
 
     def _find_microblock_size(self, allow_microblocking):
         from hedge.backends.cuda.tools import int_ceiling

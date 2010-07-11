@@ -290,7 +290,7 @@ class Kernel:
                 Define("PREIMAGE_DOFS_PER_EL", plan.preimage_dofs_per_el),
                 Define("ALIGNED_IMAGE_DOFS_PER_MB", plan.aligned_image_dofs_per_microblock),
                 Define("ALIGNED_PREIMAGE_DOFS_PER_MB", plan.aligned_preimage_dofs_per_microblock),
-                Define("ELS_PER_MB", "(ALIGNED_IMAGE_DOFS_PER_MB/IMAGE_DOFS_PER_EL)"),
+                Define("ELS_PER_MB", given.microblock.elements),
                 Define("IMAGE_DOFS_PER_MB", "(IMAGE_DOFS_PER_EL*ELS_PER_MB)"),
                 Line(),
                 Define("CHUNK_SIZE", given.devdata.smem_granularity),

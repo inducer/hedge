@@ -264,7 +264,6 @@ class Discretization(hedge.discretization.Discretization):
             "cuda_no_plan",
             "cuda_no_plan_el_local",
             "cuda_keep_kernels",
-            "cuda_try_no_microblock",
             "cuda_plan_log",
             "cuda_plan_no_progress",
             "cuda_no_metis",
@@ -423,80 +422,69 @@ class Discretization(hedge.discretization.Discretization):
         # {{{ generate flux plan
         self.partition_cache = {}
 
-        from pytools import Record
-        class OverallPlan(Record):
-            pass
+        allow_microblocking = "cuda_no_microblock" in self.debug
 
-        def generate_overall_plans():
-            if "cuda_no_microblock" in self.debug:
-                allow_mb_values = [False]
-            elif "cuda_try_no_microblock" in self.debug:
-                allow_mb_values = [True, False]
-            else:
-                allow_mb_values = [True]
+        if quad_min_degrees:
+            max_exact_degree = max(quad_min_degrees.itervalues())
+            max_face_dofs = ldis.get_quadrature_info(
+                    max_exact_degree).face_node_count()
+        else:
+            max_face_dofs = ldis.face_node_count()
 
-            for allow_mb in allow_mb_values:
-                from hedge.backends.cuda.plan import PlanGivenData
-                given = PlanGivenData(
-                        DeviceData(self.device), ldis,
-                        allow_microblocking=allow_mb,
-                        float_type=default_scalar_type)
+        from hedge.backends.cuda.plan import PlanGivenData
+        given = PlanGivenData(
+                DeviceData(self.device), ldis,
+                allow_microblocking=allow_microblocking,
+                float_type=default_scalar_type,
+                max_face_dofs=max_face_dofs)
 
-                import hedge.backends.cuda.fluxgather as fluxgather
+        import hedge.backends.cuda.fluxgather as fluxgather
 
-                # copy from enclosing scope
-                my_tune_for = tune_for
-                if my_tune_for is not None:
-                    from hedge.optemplate.mappers import QuadratureUpsamplerRemover
-                    my_tune_for = QuadratureUpsamplerRemover(self.quad_min_degrees) \
-                            (tune_for)
+        if tune_for is not None:
+            from hedge.optemplate.mappers import QuadratureUpsamplerRemover
+            tune_for = QuadratureUpsamplerRemover(self.quad_min_degrees) \
+                    (tune_for)
 
-                flux_plan, flux_time = fluxgather.make_plan(self, given, my_tune_for)
+        maxdof_flux_plan, _time = fluxgather.make_plan(
+                self, given, tune_for, max_face_dofs)
+        if max_face_dofs > ldis.face_node_count():
+            flux_plan, _time = fluxgather.make_plan(
+                    self, given, tune_for, ldis.face_node_count(),
+                    given_mbs_per_block=maxdof_flux_plan.mbs_per_block)
+        else:
+            flux_plan = maxdof_flux_plan
 
-                # partition mesh, obtain updated plan
-                pdata = self._get_partition_data(
-                        flux_plan.elements_per_block())
-                given.post_decomposition(
-                        block_count=len(pdata.blocks),
-                        microblocks_per_block=flux_plan.microblocks_per_block())
+        # partition mesh, obtain updated plan
+        pdata = self._get_partition_data(
+                flux_plan.elements_per_block())
+        given.post_decomposition(
+                block_count=len(pdata.blocks),
+                microblocks_per_block=flux_plan.microblocks_per_block())
 
-                # plan local operations
-                from hedge.backends.cuda.plan import \
-                        make_diff_plan, \
-                        make_element_local_plan
+        # plan local operations
+        from hedge.backends.cuda.plan import \
+                make_diff_plan, \
+                make_element_local_plan
 
-                dpm = given.aligned_face_dofs_per_microblock()
-                dpe = given.face_dofs_per_el()
-                diff_plan, diff_time = make_diff_plan(self, given,
-                        dpm, dpe, dpm, dpe)
-                fluxlocal_plan, fluxlocal_time = make_element_local_plan(
-                        self, given, dpm, dpe, dpm, dpe,
-                        op_name="lift")
+        dpm = given.microblock.aligned_floats
+        dpe = ldis.node_count()
 
-                sys_size = flux_plan.flux_count
-                total_time = flux_time + sys_size*(diff_time+fluxlocal_time)
+        diff_plan, _time = make_diff_plan(self, given,
+                dpm, dpe, dpm, dpe)
 
-                yield OverallPlan(
-                    given=given,
-                    flux_plan=flux_plan,
-                    partition=pdata.partition,
-                    diff_plan=diff_plan,
-                    fluxlocal_plan=fluxlocal_plan), total_time
+        fdpm = flux_plan.aligned_face_dofs_per_microblock()
+        fdpe = ldis.face_node_count()*ldis.face_count()
+        fluxlocal_plan, _time  = make_element_local_plan(
+                self, given, fdpm, fdpe, dpm, dpe,
+                op_name="lift")
 
-        overall_plans = list(generate_overall_plans())
+        sys_size = flux_plan.flux_count
 
-        for op, total_time in overall_plans:
-            print "microblocking=%s -> time=%g" % (
-                    op.given.microblock.elements != 1, total_time)
-
-        from pytools import argmin2
-        overall_plan = argmin2(overall_plans)
-
-        self.given = overall_plan.given
-        self.flux_plan = overall_plan.flux_plan
-        self.partition = overall_plan.partition
-        self.diff_plan = overall_plan.diff_plan
-        self.fluxlocal_plan = overall_plan.fluxlocal_plan
+        self.given = given
+        self.flux_plan = flux_plan
+        self.partition = pdata.partition
+        self.diff_plan = diff_plan
+        self.fluxlocal_plan = fluxlocal_plan
 
         print "actual flux exec plan:", self.flux_plan
         print "actual diff op exec plan:", self.diff_plan
@@ -506,7 +494,8 @@ class Discretization(hedge.discretization.Discretization):
 
         # {{{ build data structures
         self.blocks = self._build_blocks()
-        self.face_storage_map = self._build_face_storage_map()
+        self.face_storage_map, self.aligned_boundary_floats = \
+                self._build_face_storage_map()
         # }}}
 
         # {{{ make a CPU reference discretization
@@ -577,7 +566,6 @@ class Discretization(hedge.discretization.Discretization):
     def _build_face_storage_map(self):
         # Side effects:
         # - fill in GPUBlock.extfaces
-        # - set self.aligned_boundary_floats
         fsm = {}
 
         from hedge.tools import IndexListRegistry
@@ -678,7 +666,7 @@ class Discretization(hedge.discretization.Discretization):
                         f_ind[fp.int_side.face_id])
                     )
 
-        self.aligned_boundary_floats = 0
+        aligned_boundary_floats = [0]
         from hedge.mesh import TAG_REALLY_ALL
 
         for bdry_fg in self.get_boundary(TAG_REALLY_ALL).face_groups:
@@ -698,10 +686,10 @@ class Discretization(hedge.discretization.Discretization):
                 face1 = make_int_face(fp.int_side)
                 face2 = GPUBoundaryFaceStorage(
                         fp.ext_side.el_base_index,
-                        self.aligned_boundary_floats,
+                        aligned_boundary_floats[0],
                         fp.ext_side
                         )
-                self.aligned_boundary_floats += aligned_fnc
+                aligned_boundary_floats[0] += aligned_fnc
                 face1.opposite = face2
                 face2.opposite = face1
 
@@ -717,7 +705,7 @@ class Discretization(hedge.discretization.Discretization):
                         )
 
         self.index_lists = fil_registry.index_lists
-        return fsm
+        return fsm, aligned_boundary_floats[0]
 
     # }}}
 

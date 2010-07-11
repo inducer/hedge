@@ -179,7 +179,8 @@ def flux_to_code(f2cm, is_flipped, int_field_expr, ext_field_expr,
 class ExecutionPlan(hedge.backends.cuda.plan.ExecutionPlan):
     def __init__(self, given,
             parallel_faces, mbs_per_block, flux_count,
-            direct_store, partition_data):
+            direct_store, partition_data,
+            dofs_per_face):
         hedge.backends.cuda.plan.ExecutionPlan.__init__(self, given)
         self.parallel_faces = parallel_faces
         self.mbs_per_block = mbs_per_block
@@ -187,6 +188,21 @@ class ExecutionPlan(hedge.backends.cuda.plan.ExecutionPlan):
         self.direct_store = direct_store
 
         self.partition_data = partition_data
+        self.dofs_per_face = dofs_per_face
+
+    def face_dofs_per_el(self):
+        return self.given.ldis.face_node_count()*self.given.faces_per_el()
+
+    def face_dofs_per_microblock(self):
+        return (self.given.microblock.elements
+                * self.given.faces_per_el()
+                * self.dofs_per_face)
+
+    @memoize_method
+    def aligned_face_dofs_per_microblock(self):
+        return self.given.devdata.align_dtype(
+                self.face_dofs_per_microblock(),
+                self.given.float_size())
 
     def microblocks_per_block(self):
         return self.mbs_per_block
@@ -206,7 +222,7 @@ class ExecutionPlan(hedge.backends.cuda.plan.ExecutionPlan):
         from hedge.backends.cuda.fluxgather import face_pair_struct
         d = self.given.ldis.dimensions
 
-        if self.given.dofs_per_face() > 255:
+        if self.dofs_per_face > 255:
             index_lists_entry_size = 2
         else:
             index_lists_entry_size = 1
@@ -216,7 +232,7 @@ class ExecutionPlan(hedge.backends.cuda.plan.ExecutionPlan):
                 * self.face_pair_count())
 
         if not self.direct_store:
-            result += (self.given.aligned_face_dofs_per_microblock()
+            result += (self.aligned_face_dofs_per_microblock()
                 * self.flux_count
                 * self.microblocks_per_block()
                 * self.given.float_size())
@@ -224,7 +240,7 @@ class ExecutionPlan(hedge.backends.cuda.plan.ExecutionPlan):
         return result
 
     def threads_per_face(self):
-        dpf = self.given.dofs_per_face()
+        dpf = self.dofs_per_face
 
         devdata = self.given.devdata
         if dpf % devdata.smem_granularity >= devdata.smem_granularity // 2:
@@ -259,7 +275,7 @@ class ExecutionPlan(hedge.backends.cuda.plan.ExecutionPlan):
 
 
 
-def make_plan(discr, given, tune_for):
+def make_plan(discr, given, tune_for, dofs_per_face, given_mbs_per_block=None):
     from hedge.backends.cuda.execute import Executor
     if tune_for is not None:
         fbatch1 = Executor.get_first_flux_batch(discr.mesh, tune_for)
@@ -277,14 +293,20 @@ def make_plan(discr, given, tune_for):
 
     def generate_valid_plans():
         valid_plan_count = 0
+
+        if given_mbs_per_block is not None:
+            mbs_per_block_values = [given_mbs_per_block]
+        else:
+            mbs_per_block_values = xrange(1, 8)
         for direct_store in [False, True]:
             for parallel_faces in range(1, 32):
-                for mbs_per_block in range(1, 8):
+                for mbs_per_block in mbs_per_block_values:
                     flux_plan = ExecutionPlan(given, parallel_faces,
                             mbs_per_block, flux_count,
                             direct_store=direct_store,
                             partition_data=discr._get_partition_data(
-                                mbs_per_block*given.microblock.elements))
+                                mbs_per_block*given.microblock.elements),
+                            dofs_per_face=dofs_per_face)
                     if flux_plan.invalid_reason() is None:
                         valid_plan_count += 1
                         yield flux_plan
@@ -402,7 +424,8 @@ class Kernel:
 
     def __call__(self, eval_dependency, lift_plan):
         discr = self.discr
-        given = self.plan.given
+        fplan = self.plan
+        given = fplan.given
         elgroup, = discr.element_groups
 
         all_fluxes_on_faces = [gpuarray.empty(
@@ -453,13 +476,13 @@ class Kernel:
                         # fetch
                         len(self.fluxes)
                         * 2*fdata.fp_count
-                        * given.dofs_per_face()
+                        * fplan.dofs_per_face
 
                         # store
                         + len(discr.blocks)
                         * len(self.fluxes)
-                        * self.plan.microblocks_per_block()
-                        * given.aligned_face_dofs_per_microblock()
+                        * fplan.microblocks_per_block()
+                        * fplan.aligned_face_dofs_per_microblock()
                         ))
         else:
             gather.prepared_call(
@@ -775,8 +798,7 @@ class Kernel:
             face_pair_struct(float_type, discr.dimensions),
             Line(),
             Define("DIMENSIONS", discr.dimensions),
-            Define("DOFS_PER_EL", given.dofs_per_el()),
-            Define("DOFS_PER_FACE", given.dofs_per_face()),
+            Define("DOFS_PER_FACE", fplan.dofs_per_face),
             Define("THREADS_PER_FACE", fplan.threads_per_face()),
             Line(),
             Define("CONCURRENT_FACES", fplan.parallel_faces),
@@ -793,7 +815,7 @@ class Kernel:
                 "(THREAD_COUNT < 0x10 ? THREAD_COUNT : THREAD_COUNT & ~0xf)"),
             Line(),
             Define("DATA_BLOCK_SIZE", fdata.block_bytes),
-            Define("ALIGNED_FACE_DOFS_PER_MB", given.aligned_face_dofs_per_microblock()),
+            Define("ALIGNED_FACE_DOFS_PER_MB", fplan.aligned_face_dofs_per_microblock()),
             Define("ALIGNED_FACE_DOFS_PER_BLOCK",
                 "(ALIGNED_FACE_DOFS_PER_MB*BLOCK_MB_COUNT)"),
             Line(),
@@ -970,7 +992,7 @@ class Kernel:
     def flux_face_data_block(self, elgroup):
         discr = self.discr
         given = self.plan.given
-        fplan = discr.flux_plan
+        fplan = self.plan
         headers = []
         fp_blocks = []
 
@@ -985,16 +1007,15 @@ class Kernel:
             elface_dofs = face_dofs*ldis.face_count()
             num_in_block = discr.find_number_in_block(el_face[0])
             mb_index, index_in_mb = divmod(num_in_block,  given.microblock.elements)
-            return (mb_index * given.aligned_face_dofs_per_microblock()
+            return (mb_index * fplan.aligned_face_dofs_per_microblock()
                     + index_in_mb * elface_dofs
                     + el_face[1]*face_dofs)
 
         int_fp_count, ext_fp_count, bdry_fp_count = 0, 0, 0
 
-
         for block in discr.blocks:
             ldis = block.local_discretization
-            face_dofs = ldis.face_node_count()
+            face_dofs = fplan.dofs_per_face
 
             faces_todo = set((el,face_nbr)
                     for mb in block.microblocks
@@ -1212,7 +1233,7 @@ class Kernel:
     def index_list_backend(self, ilists):
         from pytools import single_valued
         ilist_length = single_valued(len(il) for il in ilists)
-        assert ilist_length == self.plan.given.dofs_per_face()
+        assert ilist_length == self.plan.dofs_per_face
 
         from codepy.cgen import Typedef, POD
 

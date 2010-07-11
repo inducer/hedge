@@ -284,10 +284,8 @@ class VariableCoefficientAdvectionOperator(HyperbolicOperator):
                 QuadratureGridUpsampler,
                 QuadratureInteriorFacesGridUpsampler)
 
-        #to_quad = QuadratureGridUpsampler("quad")
-        to_quad = lambda x: x
-        #to_if_quad = QuadratureInteriorFacesGridUpsampler("quad")
-        to_if_quad = lambda x: x
+        to_quad = QuadratureGridUpsampler("quad")
+        to_if_quad = QuadratureInteriorFacesGridUpsampler("quad")
 
         from hedge.tools import join_fields, \
                                 ptwise_dot

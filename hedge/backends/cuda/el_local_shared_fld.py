@@ -292,9 +292,6 @@ class Kernel:
         plan = self.plan
         par = plan.parallelism
 
-        assert (given.microblock.aligned_floats // given.dofs_per_el()
-                == given.microblock.elements)
-
         cmod.extend([
                 Line(),
                 Define("DIMENSIONS", discr.dimensions),
@@ -304,12 +301,9 @@ class Kernel:
                 Define("ALIGNED_PREIMAGE_DOFS_PER_MB",
                     plan.aligned_preimage_dofs_per_microblock),
                 Line(),
-                Define("IMAGE_MB_EL_COUNT", 
-                    "(ALIGNED_IMAGE_DOFS_PER_MB/IMAGE_DOFS_PER_EL)"),
-                Define("PREIMAGE_MB_EL_COUNT", 
-                    "(ALIGNED_PREIMAGE_DOFS_PER_MB/PREIMAGE_DOFS_PER_EL)"),
+                Define("MB_EL_COUNT", given.microblock.elements),
                 Line(),
-                Define("IMAGE_DOFS_PER_MB", "(IMAGE_DOFS_PER_EL*IMAGE_MB_EL_COUNT)"),
+                Define("IMAGE_DOFS_PER_MB", "(IMAGE_DOFS_PER_EL*MB_EL_COUNT)"),
                 Line(),
                 Define("CHUNK_SIZE", given.devdata.smem_granularity),
                 Define("CHUNK_DOF", "threadIdx.x"),
