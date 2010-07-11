@@ -37,7 +37,8 @@ from hedge.backends.cuda.plan import ExecutionPlan as \
 class ExecutionPlan(ExecutionPlanBase):
     def __init__(self, given, parallelism, debug_name,
            aligned_preimage_dofs_per_microblock, preimage_dofs_per_el,
-           aligned_image_dofs_per_microblock, image_dofs_per_el):
+           aligned_image_dofs_per_microblock, image_dofs_per_el,
+           elements_per_microblock, microblock_count):
         ExecutionPlanBase.__init__(self, given.devdata)
 
         self.given = given
@@ -51,6 +52,9 @@ class ExecutionPlan(ExecutionPlanBase):
         self.aligned_image_dofs_per_microblock = \
                 aligned_image_dofs_per_microblock
         self.image_dofs_per_el = image_dofs_per_el
+
+        self.elements_per_microblock = elements_per_microblock
+        self.microblock_count = microblock_count
 
     def image_dofs_per_macroblock(self):
         return (self.parallelism.total()
@@ -102,7 +106,7 @@ class ExecutionPlan(ExecutionPlanBase):
                 self.parallelism.inline,
                 self.parallelism.serial,
                 None,
-                self.given.microblock.elements,
+                self.elements_per_microblock,
                 lmem,
                 smem,
                 registers,
@@ -123,8 +127,7 @@ class Kernel:
 
         from hedge.backends.cuda.tools import int_ceiling
         self.grid = (int_ceiling(
-            len(discr.blocks)
-            * self.plan.given.microblocks_per_block
+            plan.microblock_count
             * plan.aligned_image_dofs_per_microblock
             / self.plan.image_dofs_per_macroblock()),
             1)
@@ -174,12 +177,11 @@ class Kernel:
         cuda.Context.synchronize()
         for i in range(count):
             try:
-                estimated_mb_count = given.block_count*given.microblocks_per_block
                 kernel.prepared_call(self.grid,
                         out_vector.gpudata,
                         in_vector.gpudata,
                         0,
-                        estimated_mb_count,
+                        plan.microblock_count,
                         )
             except cuda.LaunchError:
                 return None
@@ -194,6 +196,7 @@ class Kernel:
         discr = self.discr
         elgroup, = discr.element_groups
         given = self.discr.given
+        plan = self.plan
 
         kernel, mat_texref = self.get_kernel()
 
@@ -213,19 +216,19 @@ class Kernel:
                         out_vector.gpudata,
                         in_vector.gpudata,
                         debugbuf.gpudata,
-                        len(discr.blocks)*given.microblocks_per_block,
+                        plan.microblock_count,
                         ))
 
             block_gmem_floats = (
                         # matrix fetch
                         given.microblock.aligned_floats
-                        * self.plan.preimage_dofs_per_el
-                        * self.plan.parallelism.serial
-                        * self.plan.parallelism.parallel
+                        * plan.preimage_dofs_per_el
+                        * plan.parallelism.serial
+                        * plan.parallelism.parallel
                         # field fetch
-                        + self.plan.preimage_dofs_per_el
-                        * given.microblock.elements
-                        * self.plan.parallelism.total()
+                        + plan.preimage_dofs_per_el
+                        * plan.elements_per_microblock
+                        * plan.parallelism.total()
                         )
             gmem_bytes = given.float_size() * (
                     self.grid[0] * block_gmem_floats
@@ -238,7 +241,7 @@ class Kernel:
                     out_vector.gpudata,
                     in_vector.gpudata,
                     debugbuf.gpudata,
-                    len(discr.blocks)*given.microblocks_per_block,
+                    plan.microblock_count,
                     )
 
         if set([self.plan.debug_name, "cuda_debugbuf"]) <= discr.debug:
@@ -301,7 +304,7 @@ class Kernel:
                 Define("ALIGNED_PREIMAGE_DOFS_PER_MB",
                     plan.aligned_preimage_dofs_per_microblock),
                 Line(),
-                Define("MB_EL_COUNT", given.microblock.elements),
+                Define("MB_EL_COUNT", plan.elements_per_microblock),
                 Line(),
                 Define("IMAGE_DOFS_PER_MB", "(IMAGE_DOFS_PER_EL*MB_EL_COUNT)"),
                 Line(),
