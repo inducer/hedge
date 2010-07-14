@@ -215,7 +215,7 @@ def main():
                     #max_steps=500,
                     logmgr=logmgr,
                     max_dt_getter=lambda t: op.estimate_timestep(discr,
-                        stepper=RK4TimeStepper(), t=t, max_eigenvalue=max_eigval[0]))
+                        stepper=LSRK4TimeStepper(), t=t, max_eigenvalue=max_eigval[0]))
 
             for step, t, dt in step_it:
                 #if (step % 10000 == 0): #and step < 950000) or (step % 500 == 0 and step > 950000):
