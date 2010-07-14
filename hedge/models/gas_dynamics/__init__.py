@@ -388,10 +388,15 @@ class GasDynamicsOperator(TimeDependentOperator):
 
     # {{{ boundary conditions ---------------------------------------------
 
-    def make_bc_info(self, bc_name, tag, state):
-        state0 = cse(to_bdry_quad(
-            make_vector_field(bc_name, self.dimensions+2)
-            ))
+    def make_bc_info(self, bc_name, tag, state, state0=None):
+        """
+        :param state0: The boundary 'free-stream' state around which the
+          BC is linearized.
+        """
+        if state0 is None:
+            state0 = make_vector_field(bc_name, self.dimensions+2)
+
+        state0 = cse(to_bdry_quad(state0))
 
         rho0 = self.rho(state0)
         p0 = self.cse_p(state0)
@@ -460,8 +465,11 @@ class GasDynamicsOperator(TimeDependentOperator):
 
     def noslip_state(self, state):
         from hedge.optemplate import make_normal
+        state0 = join_fields(
+            make_vector_field("bc_q_noslip", 2),
+            [0]*self.dimensions)
         normal = make_normal(self.noslip_tag, self.dimensions)
-        bc = self.make_bc_info("bc_q_noslip", self.noslip_tag, state)
+        bc = self.make_bc_info("bc_q_noslip", self.noslip_tag, state, state0)
         return self.inflow_state_inner(normal, bc, "noslip")
 
     def wall_state(self, state):
