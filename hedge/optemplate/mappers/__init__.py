@@ -476,10 +476,19 @@ class OperatorSpecializer(CSECachingMapperMixin, IdentityMapper):
         from hedge.optemplate.mappers.type_inference import (
                 NodalRepresentation)
 
+        expr_type = self.typedict[expr]
         if not isinstance(
-                self.typedict[expr].repr_tag,
+                expr_type.repr_tag,
                 NodalRepresentation):
-            raise NotImplementedError("quadrature-grid normal components")
+            from hedge.optemplate.primitives import (
+                    BoundaryNormalComponent)
+
+            # for now, parts of this are implemented.
+            raise NotImplementedError("normal components on quad. grids")
+
+            return BoundaryNormalComponent(
+                    expr.boundary_tag, expr.axis, 
+                    expr_type.repr_tag.quadrature_tag)
 
         # a leaf, doesn't change
         return expr
@@ -720,7 +729,12 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
 
     # {{{ geometry data
     def map_normal_component(self, expr, enclosing_prec):
-        return "Normal<tag=%s>[%d]" % (expr.tag, expr.axis)
+        if expr.quadrature_tag is None:
+            return ("Normal<tag=%s>[%d]" 
+                    % (expr.boundary_tag, expr.axis))
+        else:
+            return ("Q[%s]Normal<tag=%s>[%d]" 
+                    % (expr.quadrature_tag, expr.boundary_tag, expr.axis))
 
     def map_jacobian(self, expr, enclosing_prec):
         if expr.quadrature_tag is None:
@@ -755,7 +769,7 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
         return "ScalarPar[%s]" % expr.name
 
     def map_quad_grid_upsampler(self, expr, enclosing_prec):
-        return "ToVolQ[%s]" % expr.quadrature_tag
+        return "ToQ[%s]" % expr.quadrature_tag
 
     def map_quad_int_faces_grid_upsampler(self, expr, enclosing_prec):
         return "ToIntFaceQ[%s]" % expr.quadrature_tag

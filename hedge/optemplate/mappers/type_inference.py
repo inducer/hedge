@@ -390,7 +390,7 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
 
     # {{{ base cases
     def infer_for_children(self, expr, typedict, children):
-        # This routine alles scalar among children and treats them as
+        # This routine allows scalar among children and treats them as
         # not type-changing
 
         tp = typedict[expr]
@@ -628,7 +628,18 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
         return type_info.Scalar().unify(typedict[expr], expr)
 
     def map_normal_component(self, expr, typedict):
-        return type_info.KnownBoundary(expr.tag).unify(typedict[expr], expr)
+        # FIXME: This is a bit dumb. If the quadrature_tag is None,
+        # we don't know whether the normal component was specialized
+        # to 'no quadrature' or if it simply does not know yet
+        # whether it will be on a quadrature grid.
+
+        if expr.quadrature_tag is not None:
+            return (type_info.BoundaryVector(expr.boundary_tag,
+                QuadratureRepresentation(expr.quadrature_tag))
+                .unify(typedict[expr], expr))
+        else:
+            return (type_info.KnownBoundary(expr.boundary_tag)
+                    .unify(typedict[expr], expr))
 
     def map_jacobian(self, expr, typedict):
         return type_info.VolumeVector(NodalRepresentation())

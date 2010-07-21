@@ -196,10 +196,10 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
                         "terms of operator templates.")
 
             def map_normal_component(self, expr):
-                if expr.tag != bpair.tag:
+                if expr.boundary_tag != bpair.tag:
                     raise RuntimeError("BoundaryNormalComponent and BoundaryPair "
                             "do not agree about boundary tag: %s vs %s"
-                            % (expr.tag, bpair.tag))
+                            % (expr.boundary_tag, bpair.tag))
 
                 from hedge.flux import Normal
                 return Normal(expr.axis)

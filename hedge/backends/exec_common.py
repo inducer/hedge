@@ -36,7 +36,9 @@ class ExecutionMapperBase(hedge.optemplate.Evaluator,
         self.executor = executor
 
     def map_normal_component(self, expr):
-        return self.discr.boundary_normals(expr.tag)[expr.axis]
+        if expr.quadrature_tag is not None:
+            raise NotImplementedError("normal components on quad. grids")
+        return self.discr.boundary_normals(expr.boundary_tag)[expr.axis]
 
     def map_boundarize(self, op, field_expr):
         return self.discr.boundarize_volume_field(
