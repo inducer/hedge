@@ -312,7 +312,7 @@ class EmbeddedRungeKuttaTimeStepperBase(TimeStepper):
                 flop_count[0] += 3+1 # one two-lincomb, one norm
                 accept_step, next_dt, rel_err = adapt_step_size(
                         t, dt, y, high_order_end_y, low_order_end_y,
-                        self, lcs[2], ip)
+                        self, self.get_linear_combiner(2, self.last_rhs), ip)
 
                 if not accept_step:
                     if reject_hook:
