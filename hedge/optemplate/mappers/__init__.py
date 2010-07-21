@@ -31,6 +31,7 @@ import pymbolic.mapper.dependency
 import pymbolic.mapper.substitutor
 import pymbolic.mapper.constant_folder
 import pymbolic.mapper.flop_counter
+import pymbolic.mapper.nonlinearity
 from pymbolic.mapper import CSECachingMapperMixin
 
 
@@ -290,6 +291,22 @@ class SubstitutionMapper(pymbolic.mapper.substitutor.SubstitutionMapper,
     pass
 
 
+
+
+class CSERemover(IdentityMapper):
+    def map_common_subexpression(self, expr):
+        return self.rec(expr.child)
+
+
+
+class NonlinearityDetector(pymbolic.mapper.nonlinearity.NonlinearityDetector):
+    @staticmethod
+    def make_dep_mapper():
+        return DependencyMapper(composite_leaves=False)
+
+    def map_operator_binding(self, expr):
+        # most things in hedge are linear...
+        return self.rec(expr.field)
 
 # }}}
 
@@ -880,8 +897,11 @@ class NoCSEStringifyMapper(StringifyMapper):
 
 # {{{ quadrature support ------------------------------------------------------
 class QuadratureUpsamplerRemover(CSECachingMapperMixin, IdentityMapper):
-    def __init__(self, quad_min_degrees):
+    def __init__(self, quad_min_degrees, do_warn=True):
+        IdentityMapper.__init__(self)
+        CSECachingMapperMixin.__init__(self)
         self.quad_min_degrees = quad_min_degrees
+        self.do_warn = do_warn
 
     map_common_subexpression_uncached = \
             IdentityMapper.map_common_subexpression
@@ -898,9 +918,10 @@ class QuadratureUpsamplerRemover(CSECachingMapperMixin, IdentityMapper):
             try:
                 min_degree = self.quad_min_degrees[expr.op.quadrature_tag]
             except KeyError:
-                from warnings import warn
-                warn("No minimum degree for quadrature tag '%s' specified--"
-                        "falling back to nodal evaluation" % expr.op.quadrature_tag)
+                if self.do_warn:
+                    from warnings import warn
+                    warn("No minimum degree for quadrature tag '%s' specified--"
+                            "falling back to nodal evaluation" % expr.op.quadrature_tag)
                 return self.rec(expr.field)
             else:
                 if min_degree is None:
@@ -912,6 +933,79 @@ class QuadratureUpsamplerRemover(CSECachingMapperMixin, IdentityMapper):
 
 
 
+
+class QuadratureDetector(CSECachingMapperMixin, CombineMapper):
+    """For a given expression, this mapper returns the upsampling
+    operator in effect at the root of the expression, or *None*
+    if there isn't one.
+    """
+    class QuadStatusNotKnown:
+        pass
+
+    map_common_subexpression_uncached = \
+            CombineMapper.map_common_subexpression
+
+    def combine(self, values):
+        from pytools import single_valued
+        return single_valued([
+            v for v in values if v is not self.QuadStatusNotKnown])
+
+    def map_variable(self, expr):
+        return None
+
+    def map_constant(self, expr):
+        return self.QuadStatusNotKnown
+
+    def map_operator_binding(self, expr):
+        from hedge.optemplate.operators import (
+                DiffOperatorBase, FluxOperatorBase,
+                MassOperatorBase,
+                QuadratureGridUpsampler,
+                QuadratureInteriorFacesGridUpsampler)
+
+        if isinstance(expr.op, (
+            DiffOperatorBase, FluxOperatorBase,
+            MassOperatorBase)):
+            return None
+        elif isinstance(expr.op, (QuadratureGridUpsampler,
+            QuadratureInteriorFacesGridUpsampler)):
+            return expr.op
+        else:
+            return CombineMapper.map_operator_binding(self, expr)
+
+
+
+
+class QuadratureUpsamplerChanger(CSECachingMapperMixin, IdentityMapper):
+    """This mapper descends the expression tree, down to each 
+    quadrature-consuming operator (diff, mass) along each branch.
+    It then change
+    """
+    def __init__(self, desired_quad_op):
+        IdentityMapper.__init__(self)
+        CSECachingMapperMixin.__init__(self)
+
+        self.desired_quad_op = desired_quad_op
+
+    map_common_subexpression_uncached = \
+            IdentityMapper.map_common_subexpression
+
+    def map_operator_binding(self, expr):
+        from hedge.optemplate.operators import (
+                DiffOperatorBase, FluxOperatorBase,
+                MassOperatorBase,
+                QuadratureGridUpsampler,
+                QuadratureInteriorFacesGridUpsampler)
+
+        if isinstance(expr.op, (
+            DiffOperatorBase, FluxOperatorBase,
+            MassOperatorBase)):
+            return expr
+        elif isinstance(expr.op, (QuadratureGridUpsampler,
+            QuadratureInteriorFacesGridUpsampler)):
+            return self.desired_quad_op(expr.field)
+        else:
+            return IdentityMapper.map_operator_binding(self, expr)
 
 # }}}
 

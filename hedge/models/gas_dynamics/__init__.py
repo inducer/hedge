@@ -34,6 +34,7 @@ from hedge.second_order import (
         CentralSecondDerivative,
         IPDGSecondDerivative)
 from hedge.tools.symbolic import make_common_subexpression as cse
+from pytools import memoize_method
 from hedge.tools.symbolic import memoize_method_with_obj_array_args
 from hedge.optemplate.tools import make_vector_field
 from pytools.obj_array import make_obj_array, join_fields
@@ -149,9 +150,27 @@ class GasDynamicsOperator(TimeDependentOperator):
 
         self.artificial_viscosity_mode = artificial_viscosity_mode
 
+
+
     # }}}
 
     # {{{ conversions ---------------------------------------------------------
+    def state(self):
+        return make_vector_field("q", self.dimensions+2)
+
+    @memoize_method
+    def volq_state(self):
+        return cse(to_vol_quad(self.state()), "vol_quad_state")
+
+    @memoize_method
+    def faceq_state(self):
+        return cse(to_int_face_quad(self.state()), "face_quad_state")
+
+    @memoize_method
+    def sensor(self):
+        from hedge.optemplate.primitives import Field
+        sensor = Field("sensor")
+
     def rho(self, q):
         return q[0]
 
@@ -183,7 +202,7 @@ class GasDynamicsOperator(TimeDependentOperator):
         return cse(self.p(q), "p")
 
     def temperature(self, q):
-        c_v = 1 / (self.gamma - 1) *self.spec_gas_const
+        c_v = 1 / (self.gamma - 1) * self.spec_gas_const
         return (self.e(q)/self.rho(q) - 0.5 * numpy.dot(self.u(q), self.u(q))) / c_v
 
     def cse_temperature(self, q):
@@ -213,14 +232,7 @@ class GasDynamicsOperator(TimeDependentOperator):
             result = self.mu
 
         if self.artificial_viscosity_mode == "cns":
-            mapped_sensor = sensor
-        elif self.artificial_viscosity_mode == "blended":
-            exp = CFunction("exp")
-            mapped_sensor = cse(
-                    sensor_scaling
-                    * unit_sensor
-                    * exp(-unit_sensor**2), 
-                    "mapped_sensor_cns")
+            mapped_sensor = self.sensor()
         else:
             mapped_sensor = None
 
@@ -239,7 +251,6 @@ class GasDynamicsOperator(TimeDependentOperator):
         p = prims[1]
         u = prims[2:]
 
-        from hedge.tools import join_fields
         return join_fields(
                rho,
                cse(p / (self.gamma - 1) + rho / 2 * numpy.dot(u, u), "e"),
@@ -251,7 +262,6 @@ class GasDynamicsOperator(TimeDependentOperator):
         else:
             def cse(x, name): return x
 
-        from hedge.tools import join_fields
         return join_fields(
                self.rho(q),
                self.p(q),
@@ -273,7 +283,6 @@ class GasDynamicsOperator(TimeDependentOperator):
     def bind_characteristic_velocity(self, discr):
         state = make_vector_field("q", self.dimensions+2)
 
-        from hedge.optemplate import Field
         compiled = discr.compile(
                 self.characteristic_velocity_optemplate(state))
 
@@ -287,39 +296,46 @@ class GasDynamicsOperator(TimeDependentOperator):
     # {{{ helpers for second-order part ---------------------------------------
 
     # {{{ compute gradient of state ---------------------------------------
-    def grad_of_state(self, state, faceq_state):
+    def grad_of(self, var, faceq_var):
+        from hedge.second_order import SecondDerivativeTarget
+        grad_tgt = SecondDerivativeTarget(
+                self.dimensions, strong_form=False,
+                operand=var,
+                bdry_flux_int_operand=faceq_var)
+
+        self.second_order_scheme.grad(grad_tgt,
+                bc_getter=self.get_boundary_condition_for,
+                dirichlet_tags=self.get_boundary_tags(),
+                neumann_tags=[])
+
+        return grad_tgt.minv_all
+
+    def grad_of_state(self):
         dimensions = self.dimensions
 
-        dq = numpy.zeros((dimensions+2, dimensions), dtype=object)
+        state = self.state()
 
-        from hedge.second_order import SecondDerivativeTarget
-        for i in range(self.dimensions+2):
-            grad_tgt = SecondDerivativeTarget(
-                    self.dimensions, strong_form=False,
-                    operand=state[i],
-                    bdry_flux_int_operand=faceq_state[i])
+        dq = numpy.zeros((len(state), dimensions), dtype=object)
 
-            dir_bcs = dict((tag, bc[i])
-                    for tag, bc in self.get_boundary_conditions(state)
-                    .tags_and_conservative)
-
-            def grad_bc_getter(tag, expr):
-                return dir_bcs[tag]
-
-            self.second_order_scheme.grad(grad_tgt,
-                    bc_getter=grad_bc_getter,
-                    dirichlet_tags=dir_bcs.keys(),
-                    neumann_tags=[])
-
-            dq[i,:] = grad_tgt.minv_all
+        for i in range(len(state)):
+            dq[i,:] = self.grad_of(
+                    state[i], self.faceq_state()[i])
 
         return dq
+
+    def grad_of_state_func(self, func, of_what_descr):
+        return cse(self.grad_of(
+            func(self.volq_state()),
+            func(self.faceq_state())),
+            "grad_"+of_what_descr)
 
     # }}}
 
     # {{{ viscous stress tensor
 
-    def tau(self, to_quad_op, state, faceq_state):
+    def tau(self, to_quad_op, state, mu=None):
+        faceq_state = self.faceq_state()
+
         dimensions = self.dimensions
 
         # {{{ compute gradient of u ---------------------------------------
@@ -329,8 +345,7 @@ class GasDynamicsOperator(TimeDependentOperator):
 
         from pytools.obj_array import with_object_array_or_scalar
         dq = with_object_array_or_scalar(
-                to_quad_op,
-                self.grad_of_state(state, faceq_state))
+                to_quad_op, self.grad_of_state())
 
         q = cse(to_quad_op(state))
 
@@ -346,19 +361,40 @@ class GasDynamicsOperator(TimeDependentOperator):
         # {{{ put together viscous stress tau -----------------------------
         from pytools import delta
 
-        mu = self.get_mu(q, to_quad_op)
+        if mu is None:
+            mu = self.get_mu(q, to_quad_op)
 
         tau = numpy.zeros((dimensions, dimensions), dtype=object)
         for i in range(dimensions):
             for j in range(dimensions):
-                tau[i,j] = cse(mu * (du[i,j] + du[j,i] -
+                tau[i,j] = cse(mu * cse(du[i,j] + du[j,i] -
                            2/3 * delta(i,j) * numpy.trace(du)),
                            "tau_%d%d" % (i, j))
 
         return tau
+
         # }}}
 
     # }}}
+
+    # }}}
+
+    # {{{ heat conduction
+
+    def heat_conduction_coefficient(self, to_quad_op):
+        mu = self.get_mu(self.state(), to_quad_op)
+        if numpy.isinf(self.prandtl) or self.prandtl is None:
+            return 0
+
+        return (mu / self.prandtl) * (self.gamma / (self.gamma-1))
+
+    def heat_conduction_grad(self, to_quad_op):
+        grad_p_over_rho = self.grad_of_state_func(
+                lambda state: self.p(state)/self.rho(state),
+                "p_over_rho")
+
+        return (self.heat_conduction_coefficient(to_quad_op)
+                * to_quad_op(grad_p_over_rho))
 
     # }}}
 
@@ -482,48 +518,145 @@ class GasDynamicsOperator(TimeDependentOperator):
         from hedge.optemplate import make_normal
         normal = make_normal(self.wall_tag, self.dimensions)
 
-        return to_bdry_quad(join_fields(
+        return join_fields(
                 wall_rho,
                 wall_e,
-                wall_rho_u - 2*numpy.dot(wall_rho_u, normal) * normal))
+                wall_rho_u - 2*numpy.dot(wall_rho_u, normal) * normal)
 
-    @memoize_method_with_obj_array_args
-    def get_boundary_conditions(self, state):
+    @memoize_method
+    def get_primitive_boundary_conditions(self):
+        state = self.state()
+
+        return {
+                self.outflow_tag: self.outflow_state(state),
+                self.inflow_tag: self.inflow_state(state),
+                self.noslip_tag: self.noslip_state(state)
+                }
+
+
+    @memoize_method
+    def get_conservative_boundary_conditions(self):
+        state = self.state()
+
         from hedge.optemplate import BoundarizeOperator
+        return {
+                self.supersonic_inflow_tag:
+                make_vector_field("bc_q_supersonic_in", self.dimensions+2),
+                self.supersonic_outflow_tag:
+                BoundarizeOperator(self.supersonic_outflow_tag)(
+                            (state)),
+                self.wall_tag: self.wall_state(state),
+                }
 
-        primitive_tags_and_bcs = [
-                (self.outflow_tag, self.outflow_state(state)),
-                (self.inflow_tag, self.inflow_state(state)),
-                (self.noslip_tag, self.noslip_state(state))
-                    ]
-        conservative_tags_and_bcs = [
-                (self.supersonic_inflow_tag, 
-                    to_bdry_quad(make_vector_field(
-                        "bc_q_supersonic_in", self.dimensions+2))),
-                (self.supersonic_outflow_tag,
-                    to_bdry_quad(
-                        BoundarizeOperator(self.supersonic_outflow_tag)(
-                            (state)))),
-                (self.wall_tag, self.wall_state(state))
+    @memoize_method
+    def get_boundary_tags(self):
+        return (set(self.get_primitive_boundary_conditions().keys())
+                | set(self.get_conservative_boundary_conditions().keys()))
+
+    @memoize_method
+    def _normalize_expr(self, expr):
+        """Normalize expressions for use as hash keys."""
+        from hedge.optemplate.mappers import (
+                QuadratureUpsamplerRemover,
+                CSERemover)
+
+        return CSERemover()(
+                QuadratureUpsamplerRemover({}, do_warn=False)(expr))
+
+    @memoize_method
+    def _get_norm_primitive_exprs(self):
+        return [
+                self._normalize_expr(expr) for expr in
+                self.conservative_to_primitive(self.state())
                 ]
 
-        class AllBCInfo(Record):
-            pass
+    @memoize_method
+    def get_boundary_condition_for(self, tag, expr):
+        prim_bcs = self.get_primitive_boundary_conditions()
+        cons_bcs = self.get_conservative_boundary_conditions()
 
-        return AllBCInfo(
-                tags_and_primitive=primitive_tags_and_bcs
-                + [(tag, self.conservative_to_primitive(bc))
-                    for tag, bc in conservative_tags_and_bcs],
+        if tag in prim_bcs:
+            # BC is given in primitive variables, avoid converting
+            # to conservative and back.
+            try:
+                norm_expr = self._normalize_expr(expr)
+                prim_idx = self._get_norm_primitive_exprs().index(norm_expr)
+            except ValueError:
+                cbstate = self.primitive_to_conservative(
+                        prim_bcs[tag])
+            else:
+                return prim_bcs[tag][prim_idx]
+        else:
+            # BC is given in conservative variables, no potential
+            # for optimization.
 
-                tags_and_conservative=[
-                    (tag, self.primitive_to_conservative(bc))
-                    for tag, bc in primitive_tags_and_bcs
-                    ] + conservative_tags_and_bcs
-                )
+            cbstate = to_bdry_quad(cons_bcs[tag])
+
+        # 'cbstate' is the boundary state in conservative variables.
+
+        from hedge.optemplate.mappers import QuadratureUpsamplerRemover
+        expr = QuadratureUpsamplerRemover({}, do_warn=False)(expr)
+
+        def subst_func(expr):
+            from pymbolic.primitives import Subscript, Variable
+
+            if isinstance(expr, Subscript):
+                assert (isinstance(expr.aggregate, Variable) 
+                        and expr.aggregate.name == "q")
+
+                return cbstate[expr.index]
+            elif isinstance(expr, Variable) and expr.name =="sensor":
+                from hedge.optemplate import BoundarizeOperator
+                result = BoundarizeOperator(tag)(self.sensor())
+                return cse(to_bdry_quad(result), "bdry_sensor")
+
+        from hedge.optemplate import SubstitutionMapper
+        return SubstitutionMapper(subst_func)(expr)
+
+    # }}}
+
+    # {{{ second order part
+    def div(self, vol_operand, int_face_operand):
+        from hedge.second_order import SecondDerivativeTarget
+        div_tgt = SecondDerivativeTarget(
+                self.dimensions, strong_form=False,
+                operand=vol_operand,
+                int_flux_operand=int_face_operand)
+
+        self.second_order_scheme.div(div_tgt,
+                bc_getter=self.get_boundary_condition_for,
+                dirichlet_tags=list(self.get_boundary_tags()),
+                neumann_tags=[])
+
+        return div_tgt.minv_all
+
+    def make_second_order_part(self):
+        state = self.state()
+        faceq_state = self.faceq_state()
+        volq_state = self.volq_state()
+
+        volq_tau_mat = self.tau(to_vol_quad, state)
+        faceq_tau_mat = self.tau(to_int_face_quad, state)
+
+        return join_fields(
+                0, 
+                self.div(
+                    numpy.sum(volq_tau_mat*self.cse_u(volq_state), axis=1)
+                    #+ self.heat_conduction_grad(to_vol_quad)
+                    ,
+                    numpy.sum(faceq_tau_mat*self.cse_u(faceq_state), axis=1)
+                    #+ self.heat_conduction_grad(to_int_face_quad)
+                    ,
+                    ),
+                [self.div(volq_tau_mat[i], faceq_tau_mat[i])
+                    for i in range(self.dimensions)]) 
 
     # }}}
 
     # {{{ operator template ---------------------------------------------------
+    def make_extra_terms(self):
+        return 0
+
     def op_template(self, sensor_scaling=None, viscosity_only=False):
         u = self.cse_u
         rho = self.cse_rho
@@ -531,145 +664,59 @@ class GasDynamicsOperator(TimeDependentOperator):
         p = self.p
         e = self.e
 
-        # {{{ second order part
-        def div(vol_operand, int_face_operand):
-            from hedge.optemplate import BoundarizeOperator
-
-            from hedge.second_order import SecondDerivativeTarget
-            div_tgt = SecondDerivativeTarget(
-                    self.dimensions, strong_form=False,
-                    operand=vol_operand,
-                    int_flux_operand=int_face_operand)
-
-            def unwrap_cse(expr):
-                from pymbolic.primitives import CommonSubexpression
-                if isinstance(expr, CommonSubexpression):
-                    return expr.child
-                else:
-                    return expr
-
-            dir_bcs = dict(((tag, unwrap_cse(faceq_state[i])), bc[i])
-                    for tag, bc in all_tags_and_conservative_bcs
-                    for i in range(len(faceq_state)))
-
-            # supply BC for sensor, if necessary
-            if self.artificial_viscosity_mode is not None:
-                for tag, bc in all_tags_and_conservative_bcs:
-                    dir_bcs[tag, to_int_face_quad(sensor)] = \
-                            cse(to_bdry_quad(BoundarizeOperator(tag)(sensor)),
-                                    "bdry_sensor")
-
-            def div_bc_getter(tag, expr):
-                try:
-                    return dir_bcs[tag, expr]
-                except KeyError:
-                    print expr
-                    raise NotImplementedError
-
-            self.second_order_scheme.div(div_tgt,
-                    bc_getter=div_bc_getter,
-                    dirichlet_tags=
-                    [tag for tag, bc in all_tags_and_conservative_bcs],
-                    neumann_tags=[])
-
-            return div_tgt.minv_all
-
-        def make_second_order_part():
-            volq_tau_mat = self.tau(to_vol_quad, state, faceq_state)
-            faceq_tau_mat = self.tau(to_int_face_quad, state, faceq_state)
-
-            return join_fields(
-                    0, 
-                    div(
-                        numpy.sum(volq_tau_mat*u(volq_state), axis=1),
-                        numpy.sum(faceq_tau_mat*u(faceq_state), axis=1)
-                        ),
-                    [div(volq_tau_mat[i], faceq_tau_mat[i])
-                        for i in range(self.dimensions)]) 
-
-        # }}}
-
         # {{{ artificial diffusion
         def make_artificial_diffusion():
-            if self.artificial_viscosity_mode not in ["diffusion", "blended"]:
+            if self.artificial_viscosity_mode not in ["diffusion"]:
                 return 0
 
-            if self.artificial_viscosity_mode == "blended":
-                exp = CFunction("exp")
-                mapped_sensor = cse(
-                        sensor_scaling
-                        *unit_sensor*(1-exp(-unit_sensor**2)), 
-                        "mapped_sensor_diff")
-            else:
-                mapped_sensor = sensor
+            dq = self.grad_of_state()
 
-            dq = self.grad_of_state(state, faceq_state)
-
-            from pytools.obj_array import make_obj_array
             return make_obj_array([
-                div(
-                    to_vol_quad(mapped_sensor)*to_vol_quad(dq[i]),
-                    to_int_face_quad(mapped_sensor)*to_int_face_quad(dq[i])) 
+                self.div(
+                    to_vol_quad(self.sensor())*to_vol_quad(dq[i]),
+                    to_int_face_quad(self.sensor())*to_int_face_quad(dq[i])) 
                 for i in range(dq.shape[0])])
         # }}}
 
         # {{{ state setup
 
-        state = make_vector_field("q", self.dimensions+2)
-
-        if self.artificial_viscosity_mode is not None:
-            from hedge.optemplate.primitives import Field
-            sensor = Field("sensor")
-
-            if sensor_scaling is not None:
-                assert self.artificial_viscosity_mode == "blended"
-                unit_sensor = cse(sensor/sensor_scaling, "unit_sensor")
-
-        volq_state = cse(to_vol_quad(state), "vol_quad_state")
-        faceq_state = cse(to_int_face_quad(state), "face_quad_state")
-
-        volq_flux = self.flux(volq_state)
-        faceq_flux = self.flux(faceq_state)
+        volq_flux = self.flux(self.volq_state())
+        faceq_flux = self.flux(self.faceq_state())
 
         from hedge.optemplate.primitives import CFunction
         sqrt = CFunction("sqrt")
 
-        speed = self.characteristic_velocity_optemplate(state)
+        speed = self.characteristic_velocity_optemplate(self.state())
 
-        has_viscosity = not is_zero(self.get_mu(state, to_quad_op=None))
-
-        all_tags_and_conservative_bcs = self.get_boundary_conditions(
-                state).tags_and_conservative
+        has_viscosity = not is_zero(self.get_mu(self.state(), to_quad_op=None))
 
         # }}}
 
         # {{{ operator assembly -----------------------------------------------
         from hedge.flux.tools import make_lax_friedrichs_flux
-        from hedge.optemplate.operators import (InverseMassOperator,
-                ElementwiseMaxOperator)
+        from hedge.optemplate.operators import InverseMassOperator
 
         from hedge.optemplate.tools import make_stiffness_t
+
+        primitive_bcs_as_quad_conservative = dict(
+                (tag, self.primitive_to_conservative(to_bdry_quad(bc)))
+                for tag, bc in 
+                self.get_primitive_boundary_conditions().iteritems())
+
+        def get_bc_tuple(tag):
+            state = self.state()
+            bc = make_obj_array([
+                self.get_boundary_condition_for(tag, s_i) for s_i in state])
+            return tag, bc, self.flux(bc)
 
         first_order_part = InverseMassOperator()(
                 numpy.dot(make_stiffness_t(self.dimensions), volq_flux)
                 - make_lax_friedrichs_flux(
+                    wave_speed=cse(to_int_face_quad(speed), "emax_c"),
 
-                    # This is not quite the right order, but this is
-                    # not really easy to fix. The process to calculate
-                    # 'speed' is nonlinear, but we can't compute that
-                    # on a quadrature grid, because we need to form both
-                    # the elementwise max *and* then interpolate up.
-                    # The latter requires that we know a basis.
-                    # (Maybe the facewise max is enough?)
-                    wave_speed=cse(to_int_face_quad(
-                        ElementwiseMaxOperator()(speed)), "emax_c"),
-
-                    state=faceq_state, fluxes=faceq_flux,
+                    state=self.faceq_state(), fluxes=faceq_flux,
                     bdry_tags_states_and_fluxes=[
-                        (tag, bc, self.flux(bc))
-                        for tag, bc in 
-                        self.get_boundary_conditions(state).tags_and_conservative
-                        ],
+                        get_bc_tuple(tag) for tag in self.get_boundary_tags()],
                     strong=False))
 
         if viscosity_only:
@@ -677,13 +724,14 @@ class GasDynamicsOperator(TimeDependentOperator):
 
         result = join_fields(
                 first_order_part 
-                + make_second_order_part()
-                + make_artificial_diffusion(),
+                + self.make_second_order_part()
+                + make_artificial_diffusion()
+                + self.make_extra_terms(),
                  speed)
 
         if self.source is not None:
             result = result + join_fields(
-                    make_vector_field("source_vect", self.dimensions+2),
+                    make_vector_field("source_vect", len(self.state())),
                     # extra field for speed
                     0)
 
