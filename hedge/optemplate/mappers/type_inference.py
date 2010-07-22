@@ -264,12 +264,12 @@ class type_info:
     # }}}
 
     # {{{ fully specified hedge data types
-    class VolumeVector(FinalType, VolumeVectorBase, VectorRepresentationBase):
+    class VolumeVector(FinalType, VectorRepresentationBase, VolumeVectorBase):
         def __repr__(self):
             return "Volume(%s)" % self.repr_tag
 
-    class InteriorFacesVector(FinalType, InteriorFacesVectorBase, 
-            VectorRepresentationBase):
+    class InteriorFacesVector(FinalType, VectorRepresentationBase, 
+            InteriorFacesVectorBase):
         def __init__(self, repr_tag):
             if not isinstance(repr_tag, QuadratureRepresentation):
                 raise TypeError("InteriorFacesVector is not usable with non-"
