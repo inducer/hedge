@@ -301,6 +301,7 @@ class GasDynamicsOperator(TimeDependentOperator):
         grad_tgt = SecondDerivativeTarget(
                 self.dimensions, strong_form=False,
                 operand=var,
+                int_flux_operand=faceq_var,
                 bdry_flux_int_operand=faceq_var)
 
         self.second_order_scheme.grad(grad_tgt,
