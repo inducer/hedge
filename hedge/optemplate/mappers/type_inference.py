@@ -642,7 +642,7 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
                     .unify(typedict[expr], expr))
 
     def map_jacobian(self, expr, typedict):
-        return type_info.VolumeVector(NodalRepresentation())
+        return type_info.KnownVolume()
 
     map_forward_metric_derivative = map_jacobian
     map_inverse_metric_derivative = map_jacobian
