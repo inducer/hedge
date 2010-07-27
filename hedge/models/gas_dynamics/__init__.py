@@ -643,14 +643,16 @@ class GasDynamicsOperator(TimeDependentOperator):
                 0, 
                 self.div(
                     numpy.sum(volq_tau_mat*self.cse_u(volq_state), axis=1)
-                    #+ self.heat_conduction_grad(to_vol_quad)
+                    + self.heat_conduction_grad(to_vol_quad)
                     ,
                     numpy.sum(faceq_tau_mat*self.cse_u(faceq_state), axis=1)
-                    #+ self.heat_conduction_grad(to_int_face_quad)
+                    + self.heat_conduction_grad(to_int_face_quad)
                     ,
                     ),
-                [self.div(volq_tau_mat[i], faceq_tau_mat[i])
-                    for i in range(self.dimensions)]) 
+                [
+                    self.div(volq_tau_mat[i], faceq_tau_mat[i])
+                    for i in range(self.dimensions)]
+                )
 
     # }}}
 
