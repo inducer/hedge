@@ -369,7 +369,7 @@ class GasDynamicsOperator(TimeDependentOperator):
         for i in range(dimensions):
             for j in range(dimensions):
                 tau[i,j] = cse(mu * cse(du[i,j] + du[j,i] -
-                           2/3 * delta(i,j) * numpy.trace(du)),
+                           2/self.dimensions * delta(i,j) * numpy.trace(du)),
                            "tau_%d%d" % (i, j))
 
         return tau
