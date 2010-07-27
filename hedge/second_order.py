@@ -336,7 +336,7 @@ class SecondDerivativeBase(object):
         tgt.add_derivative()
         tgt.add_inner_fluxes(
                 adjust_flux(self.grad_interior_flux(tgt, u)), 
-                tgt.operand)
+                tgt.int_flux_operand)
 
         for tag in dirichlet_tags:
             tgt.add_boundary_flux(
