@@ -41,7 +41,7 @@ class GPUBlock(object):
     @ivar microblocks: A list of lists of L{hedge.mesh.Element} instances,
       each representing the elements in one block, and together representing
       one block.
-    @ivar el_offsets_list: A lsit containing the offsets of the elements in
+    @ivar el_offsets_list: A list containing the offsets of the elements in
       this block, in order.
     @ivar el_number_map: A dictionary mapping L{hedge.mesh.Element} instances
       to their number within this block.

@@ -438,7 +438,7 @@ class OperatorCompiler(OperatorCompilerBase):
 class Executor(object):
     exec_mapper_class = ExecutionMapper
 
-    def __init__(self, discr, optemplate, post_bind_mapper):
+    def __init__(self, discr, optemplate, post_bind_mapper, type_hints={}):
         self.discr = discr
         self.elwise_linear_cache = {}
 
@@ -472,7 +472,7 @@ class Executor(object):
                 max_vectors_in_batch_expr=220 // calcsize("P")
                 )(
                 self.prepare_optemplate_stage2(discr.mesh, optemplate_stage1,
-                    discr.debug))
+                    discr.debug, type_hints=type_hints))
 
         # build the local kernels
         self.diff_kernel = self.discr.diff_plan.make_kernel(discr)
@@ -485,7 +485,8 @@ class Executor(object):
                     str(self.code))
 
     @staticmethod
-    def prepare_optemplate_stage2(mesh, optemplate, debug_flags=set()):
+    def prepare_optemplate_stage2(mesh, optemplate, debug_flags=set(),
+            type_hints={}):
         stage = [0]
 
         def dump_optemplate(name, optemplate):
@@ -502,7 +503,8 @@ class Executor(object):
         optemplate = process_optemplate(optemplate, 
                 post_bind_mapper=None, # we've already applied it in stage 1
                 dumper=dump_optemplate,
-                mesh=mesh)
+                mesh=mesh,
+                type_hints=type_hints)
 
         optemplate = BoundaryCombiner(mesh)(optemplate)
         dump_optemplate("final", optemplate)
@@ -515,14 +517,16 @@ class Executor(object):
         return post_bind_mapper(OperatorBinder()(optemplate))
 
     @classmethod
-    def prepare_optemplate(cls, mesh, optemplate, post_bind_mapper=lambda x: x):
+    def prepare_optemplate(cls, mesh, optemplate, post_bind_mapper=lambda x: x,
+            type_hints={}):
         return cls.prepare_optemplate_stage2(mesh,
-                cls.prepare_optemplate_stage1(optemplate, post_bind_mapper))
+                cls.prepare_optemplate_stage1(optemplate, post_bind_mapper),
+                type_hints=type_hints)
 
     @classmethod
-    def get_first_flux_batch(cls, mesh, optemplate):
+    def get_first_flux_batch(cls, mesh, optemplate, type_hints={}):
         compiler = OperatorCompiler()
-        compiler(cls.prepare_optemplate(mesh, optemplate))
+        compiler(cls.prepare_optemplate(mesh, optemplate, type_hints=type_hints))
 
         if compiler.flux_batches:
             return compiler.flux_batches[0]

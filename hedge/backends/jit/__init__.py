@@ -318,18 +318,6 @@ class ExecutionMapper(ExecutionMapperBase):
 
         return out
 
-    def map_call(self, expr):
-        from pymbolic.primitives import Variable
-        assert isinstance(expr.function, Variable)
-        func_name = expr.function.name
-
-        try:
-            func = self.discr.exec_functions[func_name]
-        except KeyError:
-            func = getattr(numpy, expr.function.name)
-
-        return func(*[self.rec(p) for p in expr.parameters])
-
     # }}}
 
 # }}}

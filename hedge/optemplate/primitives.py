@@ -147,27 +147,29 @@ class BoundaryPair(pymbolic.primitives.AlgebraicLeaf):
 
 # {{{ geometry data -----------------------------------------------------------
 class BoundaryNormalComponent(pymbolic.primitives.AlgebraicLeaf):
-    def __init__(self, tag, axis):
-        self.tag = tag
+    def __init__(self, boundary_tag, axis, quadrature_tag=None):
+        self.boundary_tag = boundary_tag
         self.axis = axis
+        self.quadrature_tag = quadrature_tag
 
     def stringifier(self):
         from hedge.optemplate.mappers import StringifyMapper
         return StringifyMapper
 
     def get_hash(self):
-        return hash((self.__class__, self.tag, self.axis))
+        return hash((self.__class__,)+self.__getinitargs__())
 
     def is_equal(self, other):
         return (other.__class__ == self.__class__
-                and other.tag == self.tag
-                and other.axis == self.axis)
+                and other.boundary_tag == self.boundary_tag
+                and other.axis == self.axis
+                and other.quadrature_tag == self.quadrature_tag)
 
     def get_mapper_method(self, mapper):
         return mapper.map_normal_component
 
     def __getinitargs__(self):
-        return (self.tag, self.axis)
+        return (self.boundary_tag, self.axis, self.quadrature_tag)
 
 
 

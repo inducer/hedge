@@ -25,6 +25,38 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 import numpy
 from pymbolic.primitives import Variable
 
+from decorator import decorator
+
+
+
+
+@decorator
+def memoize_method_with_obj_array_args(method, instance, *args):
+    """This decorator manages to memoize functions that
+    take object arrays (which are mutable, but are assumed
+    to never change) as arguments.
+    """
+    dicname = "_memoize_dic_"+method.__name__
+
+    new_args = []
+    for arg in args:
+        if isinstance(arg, numpy.ndarray) and arg.dtype == object:
+            new_args.append(tuple(arg))
+        else:
+            new_args.append(arg)
+    new_args = tuple(new_args)
+
+    try:
+        return getattr(instance, dicname)[new_args]
+    except AttributeError:
+        result = method(instance, *args)
+        setattr(instance, dicname, {new_args: result})
+        return result
+    except KeyError:
+        result = method(instance, *args)
+        getattr(instance,dicname)[new_args] = result
+        return result
+
 
 
 
@@ -70,3 +102,23 @@ class CFunction(Variable):
 
     def get_mapper_method(self, mapper):
         return mapper.map_c_function
+
+
+
+
+def flat_end_sin(x):
+    from hedge.optemplate.primitives import CFunction
+    from pymbolic.primitives import IfPositive
+    from math import pi
+    return IfPositive(-pi/2-x,
+            -1, IfPositive(x-pi/2, 1, CFunction("sin")(x)))
+
+
+
+
+
+def smooth_ifpos(crit, right, left, width):
+    from math import pi
+    return 0.5*((left+right)
+            +(right-left)*flat_end_sin(
+                pi/2/width * crit))

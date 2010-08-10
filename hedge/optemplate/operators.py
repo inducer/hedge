@@ -350,6 +350,11 @@ class InverseVandermondeOperator(ElementwiseLinearOperator, StatelessOperator):
                 la.inv(eg.local_discretization.vandermonde()),
                 order="C")
 
+class VandermondeOperator(ElementwiseLinearOperator, StatelessOperator):
+    def matrix(self, eg):
+        return numpy.asarray(
+                eg.local_discretization.vandermonde(),
+                order="C")
 
 # }}}
 
@@ -770,9 +775,6 @@ class WholeDomainFluxOperator(pymbolic.primitives.AlgebraicLeaf):
 
     def get_mapper_method(self, mapper):
         return mapper.map_whole_domain_flux
-
-
-
 
 # }}}
 

@@ -26,7 +26,7 @@ from pytools import memoize
 
 @memoize
 def approximate_rk4_relative_imag_stability_region(
-        stepper=None, stepper_class=None, stepper_args=[]):
+        stepper=None, stepper_class=None, stepper_args=()):
     if stepper is not None and stepper_class is not None:
         raise ValueError("only one of 'stepper' and 'stepper_class' "
                 "may be specified")

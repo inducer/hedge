@@ -39,7 +39,7 @@ class MeshPyFaceMarkerLookup:
 
 
 def make_1d_mesh(points, left_tag=None, right_tag=None, periodic=False,
-        boundary_tagger=None, element_tagger=None):
+        boundary_tagger=None, volume_tagger=None):
 
     def my_boundary_tagger(fvi, el, fn, all_v):
         if el.face_normals[fn][0] < 0:
@@ -48,8 +48,8 @@ def make_1d_mesh(points, left_tag=None, right_tag=None, periodic=False,
             return [right_tag]
 
     kwargs = {}
-    if element_tagger is not None:
-        kwargs["element_tagger"] = element_tagger
+    if volume_tagger is not None:
+        kwargs["volume_tagger"] = volume_tagger
 
     if periodic:
         left_tag = "x_minus"

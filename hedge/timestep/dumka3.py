@@ -233,7 +233,8 @@ class Dumka3TimeStepper(object):
 
                 next_dt, retry_step = self.compute_new_step_size(z1, dt)
                 if t + next_dt == t:
-                    raise RuntimeError("stepsize underflow")
+                    from hedge.timestep import TimeStepUnderflow
+                    raise TimeStepUnderflow()
 
                 if retry_step:
                     y = start_y

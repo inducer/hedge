@@ -231,9 +231,10 @@ def process_optemplate(optemplate, post_bind_mapper=None,
         type_hints={}):
 
     from hedge.optemplate.mappers import (
-            OperatorBinder, BCToFluxRewriter, CommutativeConstantFoldingMapper,
+            OperatorBinder, CommutativeConstantFoldingMapper,
             EmptyFluxKiller, InverseMassContractor, DerivativeJoiner,
             ErrorChecker, OperatorSpecializer, GlobalToReferenceMapper)
+    from hedge.optemplate.mappers.bc_to_flux import BCToFluxRewriter
     from hedge.optemplate.mappers.type_inference import TypeInferrer
 
     dumper("before-bind", optemplate)
@@ -244,6 +245,10 @@ def process_optemplate(optemplate, post_bind_mapper=None,
     if post_bind_mapper is not None:
         dumper("before-postbind", optemplate)
         optemplate = post_bind_mapper(optemplate)
+
+    if mesh is not None:
+        dumper("before-empty-flux-killer", optemplate)
+        optemplate = EmptyFluxKiller(mesh)(optemplate)
 
     dumper("before-cfold", optemplate)
     optemplate = CommutativeConstantFoldingMapper()(optemplate)
@@ -280,10 +285,6 @@ def process_optemplate(optemplate, post_bind_mapper=None,
     # - Must specialize quadrature operators before performing inverse mass
     # contraction, because there are no inverse-mass-contracted variants of the
     # quadrature operators.
-
-    if mesh is not None:
-        dumper("before-empty-flux-killer", optemplate)
-        optemplate = EmptyFluxKiller(mesh)(optemplate)
 
     dumper("before-imass", optemplate)
     optemplate = InverseMassContractor()(optemplate)
