@@ -166,7 +166,7 @@ def main(write_output=True):
     else:
         mesh_data = rcon.receive_mesh()
 
-    for order in [4]:
+    for order in [4,5]:
         discr = rcon.make_discretization(mesh_data, order=order,
                         debug=[#"cuda_no_plan",
                         #"print_op_code"
@@ -189,7 +189,7 @@ def main(write_output=True):
         from hedge.mesh import TAG_ALL, TAG_NONE
 
         op = GasDynamicsOperator(dimensions=2,
-                gamma=gamma, mu=0,
+                gamma=gamma, mu=0.0,prandtl=0.72,
                 bc_inflow=vortex, bc_outflow=vortex, bc_noslip=vortex,
                 inflow_tag=TAG_ALL,
                 source=sources)
