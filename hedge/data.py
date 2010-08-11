@@ -339,9 +339,20 @@ class CompiledExpressionData(
 
         return discr.compile(exprs, type_hints=type_hints)
 
-    def __call__(self, discr, t, fields, x):
-        return self.make_func(discr)(
+    def __call__(self, discr, t, fields, x, make_empty):
+        result = self.make_func(discr)(
                 t=numpy.float64(t), x=x, fields=fields)
+
+        # make sure we return no scalars in the result
+        from pytools.obj_array import log_shape, is_obj_array
+        if is_obj_array(result):
+            from pytools import indices_in_shape
+            from hedge.optemplate.tools import is_scalar
+            for i in indices_in_shape(log_shape(result)):
+                if is_scalar(result[i]):
+                    result[i] = make_empty().fill(result[i])
+
+        return result
 
     @memoize_method
     def get_volume_nodes(self, discr):
@@ -362,7 +373,8 @@ class CompiledExpressionData(
         else:
             raise TypeError("invalid arguments to "
                     "CompiledExpressionData.volume_interpolant")
-        return self(discr, t, fields, self.get_volume_nodes(discr))
+        return self(discr, t, fields, self.get_volume_nodes(discr),
+                 discr.volume_empty)
 
     def get_boundary_nodes(self, discr, tag):
         from hedge.tools import make_obj_array
@@ -386,7 +398,8 @@ class CompiledExpressionData(
                     "CompiledExpressionData.boundary_interpolant")
 
         return self(discr, t, fields, 
-                self.get_boundary_nodes(discr, tag))
+                self.get_boundary_nodes(discr, tag),
+                lambda: discr.boundary_empty(tag))
 
 # }}}
 
