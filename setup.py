@@ -138,6 +138,22 @@ def main():
 
             ext_package="hedge",
 
+            setup_requires=[
+                "PyUblas>=0.93.1",
+                ],
+            install_requires=[
+                "PyUblas>=0.93.1",
+                "pytools>=10",
+                "codepy>=0.90",
+                "pymbolic>=0.90",
+                "meshpy>=0.91",
+                "decorator>=3.2.0"
+                ],
+            extras_require = {
+                "silo": ["pylo"],
+                "parallel": ["PyMetis>=0.91"],
+                },
+
             ext_modules=[
                 PyUblasExtension("_internal",
                     ["src/wrapper/wrap_main.cpp",
