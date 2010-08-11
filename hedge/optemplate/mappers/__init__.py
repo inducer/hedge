@@ -31,7 +31,6 @@ import pymbolic.mapper.dependency
 import pymbolic.mapper.substitutor
 import pymbolic.mapper.constant_folder
 import pymbolic.mapper.flop_counter
-import pymbolic.mapper.nonlinearity
 from pymbolic.mapper import CSECachingMapperMixin
 
 
@@ -296,17 +295,6 @@ class SubstitutionMapper(pymbolic.mapper.substitutor.SubstitutionMapper,
 class CSERemover(IdentityMapper):
     def map_common_subexpression(self, expr):
         return self.rec(expr.child)
-
-
-
-class NonlinearityDetector(pymbolic.mapper.nonlinearity.NonlinearityDetector):
-    @staticmethod
-    def make_dep_mapper():
-        return DependencyMapper(composite_leaves=False)
-
-    def map_operator_binding(self, expr):
-        # most things in hedge are linear...
-        return self.rec(expr.field)
 
 # }}}
 
