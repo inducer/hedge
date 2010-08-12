@@ -211,8 +211,6 @@ def main(write_output=True):
         # limiter setup -------------------------------------------------------
         from hedge.models.gas_dynamics import SlopeLimiter1NEuler
         limiter = SlopeLimiter1NEuler(discr, gamma, 2, op)
-        from hedge.models.gas_dynamics import PositivityCheckAndFix
-        make_pos = PositivityCheckAndFix(discr,op,10.0)
 
         # time stepper --------------------------------------------------------
         from hedge.timestep import SSPRK3TimeStepper, RK4TimeStepper

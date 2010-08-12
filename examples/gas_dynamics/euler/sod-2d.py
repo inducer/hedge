@@ -98,13 +98,9 @@ def main():
         from hedge.models.gas_dynamics import SlopeLimiter1NEuler
         limiter =  SlopeLimiter1NEuler(discr, sod_field.gamma, 2, op)
 
-        from hedge.models.gas_dynamics import PositivityCheckAndFix
-        make_pos = PositivityCheckAndFix(discr,op)
-
         # integrator setup---------------------------------------------------------
         from hedge.timestep import SSPRK3TimeStepper, RK4TimeStepper
         stepper = SSPRK3TimeStepper(limiter=limiter)
-        #stepper = SSPRK3TimeStepper(limiter=make_pos)
         #stepper = SSPRK3TimeStepper()
         #stepper = RK4TimeStepper()
 
@@ -172,7 +168,6 @@ def main():
                     visf.close()
 
                 fields = stepper(fields, t, dt, rhs)
-                # fields = make_pos(fields)
                 # fields = limiter(fields)
                 # fields = mode_filter(fields)
 
