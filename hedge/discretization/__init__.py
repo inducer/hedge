@@ -446,6 +446,15 @@ class Discretization(TimestepCalculator):
                     [numpy.dot(d.T, mmat.T) for d in dmats]
             eg.minv_st = \
                     [numpy.dot(numpy.dot(immat, d.T), mmat) for d in dmats]
+            # average matrix, so that AVE*fields = cellaverage(fields)
+            # see Hesthaven and Warburton page 227
+            standard_el_vol = numpy.sum(numpy.dot(mmat,numpy.ones(mmat.shape[0])))
+            AVEt = numpy.sum(mmat,0)/standard_el_vol
+            AVE = numpy.zeros((numpy.size(AVEt),numpy.size(AVEt)))
+            for ii in range(0,numpy.size(AVEt)):
+                AVE[ii]=AVEt
+            eg.AVE = AVE
+
 
     @memoize_method
     def volume_jacobians(self, quadrature_tag=None, kind="numpy"):
@@ -559,15 +568,6 @@ class Discretization(TimestepCalculator):
         else:
             raise NotImplementedError(
                     "forward_metric_derivatives on quadrature grids")
-
-            # average matrix, so that AVE*fields = cellaverage(fields)
-            # see Hesthaven and Warburton page 227
-            standard_el_vol = numpy.sum(numpy.dot(mmat,numpy.ones(mmat.shape[0])))
-            AVEt = numpy.sum(mmat,0)/standard_el_vol
-            AVE = numpy.zeros((numpy.size(AVEt),numpy.size(AVEt)))
-            for ii in range(0,numpy.size(AVEt)):
-                AVE[ii]=AVEt
-            eg.AVE = AVE
 
     def _set_face_pair_index_data(self, fg, fp, fi_l, fi_n,
             findices_l, findices_n, findices_shuffle_op_n):
