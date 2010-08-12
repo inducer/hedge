@@ -854,29 +854,6 @@ class SlopeLimiter1NEuler:
         self.dimensions=dimensions
         self.op=op
 
-        '''
-        #AVE*colVect=average of colVect
-        self.AVE_map = {}
-
-        for eg in discr.element_groups:
-            ldis = eg.local_discretization
-            node_count = ldis.node_count()
-
-
-            # build AVE matrix
-            massMatrix = ldis.mass_matrix()
-            #compute area of the element
-            self.standard_el_vol= numpy.sum(numpy.dot(massMatrix,numpy.ones(massMatrix.shape[0])))
-
-            from numpy import size, zeros, sum
-            AVEt = sum(massMatrix,0)
-            AVEt = AVEt/self.standard_el_vol
-            AVE = zeros((size(AVEt),size(AVEt)))
-            for ii in range(0,size(AVEt)):
-                AVE[ii]=AVEt
-            self.AVE_map[eg] = AVE
-        '''
-
     def get_average(self,vec):
         from hedge.tools import log_shape
         from pytools import indices_in_shape
