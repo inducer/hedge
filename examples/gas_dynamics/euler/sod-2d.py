@@ -122,8 +122,6 @@ def main():
         mode_filter = Filter(discr,
                 ExponentialFilterResponseFunction(min_amplification=0.9,order=4))
 
-        import time
-        tic = time.clock()
         # timestep loop -------------------------------------------------------
         try:
             from hedge.timestep import times_and_steps
@@ -176,8 +174,6 @@ def main():
             vis.close()
             logmgr.close()
             discr.close()
-        toc = time.clock()
-        print toc-tic
 
         # not solution, just to check against when making code changes
         true_fields = sod_field.volume_interpolant(t, discr)

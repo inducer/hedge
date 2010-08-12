@@ -446,15 +446,6 @@ class Discretization(TimestepCalculator):
                     [numpy.dot(d.T, mmat.T) for d in dmats]
             eg.minv_st = \
                     [numpy.dot(numpy.dot(immat, d.T), mmat) for d in dmats]
-            # average matrix, so that AVE*fields = cellaverage(fields)
-            # see Hesthaven and Warburton page 227
-            standard_el_vol = numpy.sum(numpy.dot(mmat,numpy.ones(mmat.shape[0])))
-            AVEt = numpy.sum(mmat,0)/standard_el_vol
-            AVE = numpy.zeros((numpy.size(AVEt),numpy.size(AVEt)))
-            for ii in range(0,numpy.size(AVEt)):
-                AVE[ii]=AVEt
-            eg.AVE = AVE
-
 
     @memoize_method
     def volume_jacobians(self, quadrature_tag=None, kind="numpy"):

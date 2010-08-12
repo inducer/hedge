@@ -52,6 +52,39 @@ to_bdry_quad = QuadratureGridUpsampler("gasdyn_face")
 
 
 
+# {{{ equations of state
+class EquationOfState(object):
+    def q_to_p(self, op, q):
+        raise NotImplementedError
+
+    def p_to_e(self, p, rho, u):
+        raise NotImplementedError
+
+class GammaLawEOS(EquationOfState):
+    # FIXME Shouldn't gamma only occur in the equation of state?
+    # I.e. shouldn't all uses of gamma go through the EOS?
+
+    def __init__(self, gamma):
+        self.gamma = gamma
+
+    def q_to_p(self, op, q):
+        return (self.gamma-1)*(self.e(q)-0.5*numpy.dot(self.rho_u(q),self.u(q)))
+
+    def p_to_e(self, p, rho, u):
+        return p / (self.gamma - 1) + rho / 2 * numpy.dot(u, u)
+
+class PolytropeEOS(GammaLawEOS):
+    # inverse is same as superclass
+
+    def q_to_p(self, op, q):
+        return  op.rho(q)**self.gamma
+
+# }}}
+
+
+
+
+
 class GasDynamicsOperator(TimeDependentOperator):
     """An nD Navier-Stokes and Euler operator.
 
@@ -82,12 +115,13 @@ class GasDynamicsOperator(TimeDependentOperator):
 
     # {{{ initialization ------------------------------------------------------
     def __init__(self, dimensions,
-            gamma, mu, 
+            gamma=None, mu=0,
             bc_inflow=None,
             bc_outflow=None,
             bc_noslip=None,
             bc_supersonic_inflow=None,
-            prandtl=None, spec_gas_const=1.0,EOS="GammaLaw",
+            prandtl=None, spec_gas_const=1.0,
+            equation_of_state=None,
             inflow_tag="inflow",
             outflow_tag="outflow",
             noslip_tag="noslip",
@@ -109,6 +143,15 @@ class GasDynamicsOperator(TimeDependentOperator):
                 TimeConstantGivenFunction,
                 ConstantGivenFunction)
 
+        if gamma is not None:
+            if equation_of_state is not None:
+                raise ValueError("can only specify one of gamma and equation_of_state")
+
+            from warnings import warn
+            warn("argument gamma is deprecated in favor of equation_of_state")
+
+            equation_of_state = GammaLawEOS(gamma)
+
         dull_bc = TimeConstantGivenFunction(
                 ConstantGivenFunction(make_obj_array(
                     [1, 1] + [0]*dimensions)))
@@ -123,7 +166,6 @@ class GasDynamicsOperator(TimeDependentOperator):
 
         self.dimensions = dimensions
 
-        self.gamma = gamma
         self.prandtl = prandtl
         self.spec_gas_const = spec_gas_const
         self.mu = mu
@@ -141,9 +183,8 @@ class GasDynamicsOperator(TimeDependentOperator):
         self.supersonic_outflow_tag = supersonic_outflow_tag
 
         self.source = source
+        self.equation_of_state = equation_of_state
 
-        self.EOS = EOS
-        
         self.second_order_scheme = second_order_scheme
 
         if artificial_viscosity_mode not in [
@@ -188,25 +229,7 @@ class GasDynamicsOperator(TimeDependentOperator):
                 for rho_u_i in self.rho_u(q)])
 
     def p(self,q):
-        if self.EOS == "GammaLaw":
-            return (self.gamma-1)*(self.e(q)-0.5*numpy.dot(self.rho_u(q),self.u(q)))
-        elif self.EOS == "Polytrope":
-            return  self.rho(q)**self.gamma
-        else:
-            raise NotImplimentedError
-    
-    def p_to_e(self,p,rho,u):
-        if self.EOS=="GammaLaw":
-            return p / (self.gamma - 1) + rho / 2 * numpy.dot(u, u)
-        elif self.EOS=="Polytrope":
-            return p / (self.gamma - 1) + rho / 2 * numpy.dot(u, u)
-        else:
-            raise NotImplimentedError
-
-        
-    def op_template(self):
-        from hedge.optemplate import make_vector_field, \
-                make_common_subexpression as cse
+        return self.equation_of_state.q_to_p(self, q)
 
     def cse_u(self, q):
         return cse(self.u(q), "u")
@@ -269,7 +292,7 @@ class GasDynamicsOperator(TimeDependentOperator):
         rho = prims[0]
         p = prims[1]
         u = prims[2:]
-        e = self.p_to_e(p,rho,u)
+        e = self.equation_of_state.p_to_e(p, rho, u)
 
         return join_fields(
                rho,
@@ -294,7 +317,7 @@ class GasDynamicsOperator(TimeDependentOperator):
         sqrt = CFunction("sqrt")
 
         sound_speed = cse(sqrt(
-            self.gamma*self.cse_p(state)/self.cse_rho(state)),
+            self.equation_of_state.gamma*self.cse_p(state)/self.cse_rho(state)),
             "sound_speed")
         u = self.cse_u(state)
         speed = cse(sqrt(numpy.dot(u, u)), "norm_u") + sound_speed
@@ -407,7 +430,8 @@ class GasDynamicsOperator(TimeDependentOperator):
         if numpy.isinf(self.prandtl) or self.prandtl is None:
             return 0
 
-        return (mu / self.prandtl) * (self.gamma / (self.gamma-1))
+        eos = self.equation_of_state
+        return (mu / self.prandtl) * (eos.gamma / (eos.gamma-1))
 
     def heat_conduction_grad(self, to_quad_op):
         grad_p_over_rho = self.grad_of_state_func(
@@ -459,7 +483,7 @@ class GasDynamicsOperator(TimeDependentOperator):
         p0 = self.cse_p(state0)
         u0 = self.cse_u(state0)
 
-        c0 = (self.gamma * p0 / rho0)**0.5
+        c0 = (self.equation_of_state.gamma * p0 / rho0)**0.5
 
         from hedge.optemplate import BoundarizeOperator
         bdrize_op = BoundarizeOperator(tag)
@@ -846,7 +870,7 @@ class GasDynamicsOperator(TimeDependentOperator):
 
 # {{{ limiter (unfinished, deprecated)
 class SlopeLimiter1NEuler:
-    def __init__(self, discr,gamma,dimensions,op):
+    def __init__(self, discr, gamma, dimensions, op):
         """Construct a limiter from Jan's book page 225
         """
         self.discr = discr
@@ -854,20 +878,8 @@ class SlopeLimiter1NEuler:
         self.dimensions=dimensions
         self.op=op
 
-    def get_average(self,vec):
-        from hedge.tools import log_shape
-        from pytools import indices_in_shape
-        from hedge._internal import perform_elwise_operator
-
-        ls = log_shape(vec)
-        result = self.discr.volume_zeros(ls)
-
-        for i in indices_in_shape(ls):
-            for eg in self.discr.element_groups:
-                perform_elwise_operator(eg.ranges, eg.ranges,
-                        eg.AVE, vec[i], result[i])
-
-                return result
+        from hedge.optemplate.operators import AveragingOperator
+        self.get_average = AveragingOperator().bind(discr)
 
     def __call__(self, fields):
         from hedge.tools import join_fields

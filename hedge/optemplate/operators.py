@@ -47,6 +47,7 @@ class Operator(pymbolic.primitives.Leaf):
 
         return with_object_array_or_scalar(bind_one, expr)
 
+    @memoize_method
     def bind(self, discr):
         from hedge.optemplate import Field
         bound_op = discr.compile(self(Field("f")))
@@ -340,6 +341,22 @@ class OnesOperator(ElementwiseLinearOperator, StatelessOperator):
 
         node_count = ldis.node_count()
         return numpy.ones((node_count, node_count), dtype=numpy.float64)
+
+
+
+
+class AveragingOperator(ElementwiseLinearOperator, StatelessOperator):
+    def matrix(self, eg):
+        # average matrix, so that AVE*fields = cellaverage(fields)
+        # see Hesthaven and Warburton page 227
+
+        mmat = eg.local_discretization.mass_matrix()
+        standard_el_vol = numpy.sum(numpy.dot(mmat, numpy.ones(mmat.shape[0])))
+        avg_mat_row = numpy.sum(mmat,0)/standard_el_vol
+
+        avg_mat = numpy.zeros((numpy.size(avg_mat_row), numpy.size(avg_mat_row)))
+        avg_mat[:] = avg_mat_row
+        return avg_mat
 
 
 

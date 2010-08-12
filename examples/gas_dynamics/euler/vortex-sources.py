@@ -185,11 +185,13 @@ def main(write_output=True):
                 center=[5,0],
                 velocity=[1,0], densityA=densityA)
 
-        from hedge.models.gas_dynamics import GasDynamicsOperator
-        from hedge.mesh import TAG_ALL, TAG_NONE
+        from hedge.models.gas_dynamics import (
+                GasDynamicsOperator, GammaLawEOS)
+        from hedge.mesh import TAG_ALL
 
         op = GasDynamicsOperator(dimensions=2,
-                gamma=gamma, mu=0.0, prandtl=0.72, spec_gas_const=287.1, EOS='GammaLaw',
+                mu=0.0, prandtl=0.72, spec_gas_const=287.1, 
+                equation_of_state=GammaLawEOS(vortex.gamma),
                 bc_inflow=vortex, bc_outflow=vortex, bc_noslip=vortex,
                 inflow_tag=TAG_ALL, source=sources)
 
