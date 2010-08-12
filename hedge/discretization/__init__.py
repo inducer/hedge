@@ -454,6 +454,15 @@ class Discretization(TimestepCalculator):
                         for loc_coord in range(ldis.dimensions)]
                     for glob_coord in range(ldis.dimensions)])
 
+            # average matrix, so that AVE*fields = cellaverage(fields)
+            # see Hesthaven and Warburton page 227
+            standard_el_vol = numpy.sum(numpy.dot(mmat,numpy.ones(mmat.shape[0])))
+            AVEt = numpy.sum(mmat,0)/standard_el_vol
+            AVE = numpy.zeros((numpy.size(AVEt),numpy.size(AVEt)))
+            for ii in range(0,numpy.size(AVEt)):
+                AVE[ii]=AVEt
+            eg.AVE = AVE
+
     def _set_face_pair_index_data(self, fg, fp, fi_l, fi_n,
             findices_l, findices_n, findices_shuffle_op_n):
         fp.int_side.face_index_list_number = fg.register_face_index_list(

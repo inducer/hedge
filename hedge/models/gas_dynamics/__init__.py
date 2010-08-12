@@ -73,7 +73,7 @@ class GasDynamicsOperator(TimeDependentOperator):
             bc_outflow=None,
             bc_noslip=None,
             bc_supersonic_inflow=None,
-            prandtl=None, spec_gas_const=1.0,
+            prandtl=None, spec_gas_const=1.0,EOS="GammaLaw",
             inflow_tag="inflow",
             outflow_tag="outflow",
             noslip_tag="noslip",
@@ -124,6 +124,8 @@ class GasDynamicsOperator(TimeDependentOperator):
 
         self.source = source
 
+        self.EOS = EOS
+        
         self.second_order_scheme = second_order_scheme
 
     # }}}
@@ -144,9 +146,26 @@ class GasDynamicsOperator(TimeDependentOperator):
                 rho_u_i/self.rho(q)
                 for rho_u_i in self.rho_u(q)])
 
-    def p(self, q):
-        return (self.gamma-1)*(
-                self.e(q) - 0.5*numpy.dot(self.rho_u(q), self.u(q)))
+    def p(self,q):
+        if self.EOS == "GammaLaw":
+            return (self.gamma-1)*(self.e(q)-0.5*numpy.dot(self.rho_u(q),self.u(q)))
+        elif self.EOS == "Polytrope":
+            return  self.rho(q)**self.gamma
+        else:
+            raise NotImplimentedError
+    
+    def p_to_e(self,p,rho,u):
+        if self.EOS=="GammaLaw":
+            return p / (self.gamma - 1) + rho / 2 * numpy.dot(u, u)
+        elif self.EOS=="Polytrope":
+            return p / (self.gamma - 1) + rho / 2 * numpy.dot(u, u)
+        else:
+            raise NotImplimentedError
+
+        
+    def op_template(self):
+        from hedge.optemplate import make_vector_field, \
+                make_common_subexpression as cse
 
     def cse_u(self, q):
         from hedge.tools.symbolic import make_common_subexpression as cse
@@ -553,6 +572,16 @@ class GasDynamicsOperator(TimeDependentOperator):
                 dumvec=cse(u(cse(to_bdry_quad(bdrize_op(state)))) - u0, "dumvec"),
                 dpm=cse(p(cse(to_bdry_quad(bdrize_op(state)))) - p0, "dpm"))
 
+        def primitive_to_conservative(prims):
+            rho = prims[0]
+            p = prims[1]
+            u = prims[2:]
+            e = p_to_e(p,rho,u) 
+            return join_fields(
+                   rho,
+                   e,
+                   rho * u)
+
         def outflow_state(state):
             from hedge.optemplate import make_normal
             normal = make_normal(self.outflow_tag, self.dimensions)
@@ -563,6 +592,7 @@ class GasDynamicsOperator(TimeDependentOperator):
                 # bc rho
                 cse(bc.rho0
                 + bc.drhom + numpy.dot(normal, bc.dumvec)*bc.rho0/(2*bc.c0)
+
                 - bc.dpm/(2*bc.c0*bc.c0), "bc_rho_outflow"),
 
                 # bc p
@@ -601,12 +631,14 @@ class GasDynamicsOperator(TimeDependentOperator):
             bc = make_bc_info("bc_q_noslip", self.noslip_tag, state,
                     set_normal_velocity_to_zero=True)
             return inflow_state_inner(normal, bc, "noslip")
+        
 
         subsonic_tags_and_primitive_bcs = [
                 (self.outflow_tag, outflow_state(state)),
                 (self.inflow_tag, inflow_state(state)),
                 (self.noslip_tag, noslip_state(state))
                     ]
+
         supersonic_tags_and_conservative_bcs = [
                 (self.supersonic_inflow_tag, 
                     to_bdry_quad(make_vector_field(
@@ -756,6 +788,7 @@ class SlopeLimiter1NEuler:
         self.dimensions=dimensions
         self.op=op
 
+        '''
         #AVE*colVect=average of colVect
         self.AVE_map = {}
 
@@ -776,6 +809,7 @@ class SlopeLimiter1NEuler:
             for ii in range(0,size(AVEt)):
                 AVE[ii]=AVEt
             self.AVE_map[eg] = AVE
+        '''
 
     def get_average(self,vec):
         from hedge.tools import log_shape
@@ -788,7 +822,7 @@ class SlopeLimiter1NEuler:
         for i in indices_in_shape(ls):
             for eg in self.discr.element_groups:
                 perform_elwise_operator(eg.ranges, eg.ranges,
-                        self.AVE_map[eg], vec[i], result[i])
+                        eg.AVE, vec[i], result[i])
 
                 return result
 
@@ -816,6 +850,52 @@ class SlopeLimiter1NEuler:
 # }}}
 
 
+class PositivityCheckAndFix:
+    def __init__(self, discr, op, thresh = 0.0):
+        """determine which cells have a negative density and reset 
+        to cell averages.
+        """
+
+        self.discr = discr
+        self.op = op
+        self.thresh = thresh
+
+    def __call__(self,fields):
+        from hedge.tools import log_shape
+        from hedge.tools import join_fields
+        from hedge._internal import perform_elwise_operator
+        from pytools import indices_in_shape
+
+        rho=self.op.rho(fields)
+        e=self.op.e(fields)
+        rho_u=self.op.rho_u(fields)
+        
+        neg_density_el = list()
+
+        for eg in self.discr.element_groups:
+            for rng in eg.ranges:
+                #cell_avg = numpy.dot(eg.AVE,rho[rng])
+                #cell_avg = cell_avg[0]
+                #if(cell_avg<.01): #slow
+                #if(rho[0]<0): #fastest but still slow compared to nothing
+                if(numpy.any(rho[rng]<self.thresh)): #slowest
+                #if(True == True):
+                    #pass
+                    #neg_density_el.append(rng)
+                    rho[rng] = numpy.dot(eg.AVE,rho[rng])
+                    e[rng] = numpy.dot(eg.AVE,e[rng])
+                    for ii in range(0,self.discr.dimensions):
+                        rho_u[ii][rng] = numpy.dot(eg.AVE,rho_u[ii][rng])
+                    
+            #ls = log_shape(rho)
+            #cellAvg = self.discr.volume_zeros(ls)
+            #for i in indices_in_shape(ls):
+            #    #perform_elwise_operator(neg_density_el,neg_density_el,eg.AVE,rho[i],cellAvg[i])
+            #    perform_elwise_operator(eg.ranges,eg.ranges,eg.AVE,rho[i],cellAvg[i])
+            #    rho = cellAvg
+            #    rho[neg_density_el] = numpy.dot(eg.AVE,rho[neg_density_el])
+
+        return join_fields(rho,e,rho_u)
 
 
 # vim: foldmethod=marker
