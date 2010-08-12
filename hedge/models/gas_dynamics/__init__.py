@@ -259,6 +259,16 @@ class GasDynamicsOperator(TimeDependentOperator):
             result = result + cse(to_quad_op(mapped_sensor), "quad_sensor")
 
         return cse(result, "mu")
+#        def primitive_to_conservative(prims):
+#            rho = prims[0]
+#            p = prims[1]
+#            u = prims[2:]
+#            e = p_to_e(p,rho,u) 
+#            return join_fields(
+#                   rho,
+#                   e,
+#                   rho * u)
+#
 
     def primitive_to_conservative(self, prims, use_cses=True):
         if not use_cses:
@@ -269,10 +279,11 @@ class GasDynamicsOperator(TimeDependentOperator):
         rho = prims[0]
         p = prims[1]
         u = prims[2:]
+        e = self.p_to_e(p,rho,u)
 
         return join_fields(
                rho,
-               cse(p / (self.gamma - 1) + rho / 2 * numpy.dot(u, u), "e"),
+               cse(e, "e"),
                cse(rho * u, "rho_u"))
 
     def conservative_to_primitive(self, q, use_cses=True):
@@ -712,121 +723,121 @@ class GasDynamicsOperator(TimeDependentOperator):
 
         has_viscosity = not is_zero(self.get_mu(self.state(), to_quad_op=None))
 ######HERE next HERE is from CCV branch -- is this code elswhere now?
-        def make_bc_info(bc_name, tag, state, set_normal_velocity_to_zero=False):
-            if set_normal_velocity_to_zero:
-                if has_viscosity:
-                    state0 = join_fields(make_vector_field(bc_name, 2), [0]*self.dimensions)
-                else:
-                    state0 = join_fields(make_vector_field(bc_name, self.dimensions+2))
-            else:
-                state0 = make_vector_field(bc_name, self.dimensions+2)
-
-            state0 = cse(to_bdry_quad(state0))
-
-            from hedge.optemplate import make_normal
-
-            rho0 = rho(state0)
-            p0 = p(state0)
-            u0 = u(state0)
-            if not has_viscosity and set_normal_velocity_to_zero:
-                normal = make_normal(tag, self.dimensions)
-                u0 = u0 - numpy.dot(u0, normal) * normal
-
-            c0 = (self.gamma * p0 / rho0)**0.5
-
-            bdrize_op = BoundarizeOperator(tag)
-            return BCInfo(
-                rho0=rho0, p0=p0, u0=u0, c0=c0,
-
-                # notation: suffix "m" for "minus", i.e. "interior"
-                drhom=cse(rho(cse(to_bdry_quad(bdrize_op(state)))) - rho0, "drhom"),
-                dumvec=cse(u(cse(to_bdry_quad(bdrize_op(state)))) - u0, "dumvec"),
-                dpm=cse(p(cse(to_bdry_quad(bdrize_op(state)))) - p0, "dpm"))
-
-        def primitive_to_conservative(prims):
-            rho = prims[0]
-            p = prims[1]
-            u = prims[2:]
-            e = p_to_e(p,rho,u) 
-            return join_fields(
-                   rho,
-                   e,
-                   rho * u)
-
-        def outflow_state(state):
-            from hedge.optemplate import make_normal
-            normal = make_normal(self.outflow_tag, self.dimensions)
-            bc = make_bc_info("bc_q_out", self.outflow_tag, state)
-
-            # see hedge/doc/maxima/euler.mac
-            return join_fields(
-                # bc rho
-                cse(bc.rho0
-                + bc.drhom + numpy.dot(normal, bc.dumvec)*bc.rho0/(2*bc.c0)
-
-                - bc.dpm/(2*bc.c0*bc.c0), "bc_rho_outflow"),
-
-                # bc p
-                cse(bc.p0
-                + bc.c0*bc.rho0*numpy.dot(normal, bc.dumvec)/2 + bc.dpm/2, "bc_p_outflow"),
-
-                # bc u
-                cse(bc.u0
-                + bc.dumvec - normal*numpy.dot(normal, bc.dumvec)/2
-                + bc.dpm*normal/(2*bc.c0*bc.rho0), "bc_u_outflow"))
-
-        def inflow_state_inner(normal, bc, name):
-            # see hedge/doc/maxima/euler.mac
-            return join_fields(
-                # bc rho
-                cse(bc.rho0
-                + numpy.dot(normal, bc.dumvec)*bc.rho0/(2*bc.c0) + bc.dpm/(2*bc.c0*bc.c0), "bc_rho_"+name),
-
-                # bc p
-                cse(bc.p0
-                + bc.c0*bc.rho0*numpy.dot(normal, bc.dumvec)/2 + bc.dpm/2, "bc_p_"+name),
-
-                # bc u
-                cse(bc.u0
-                + normal*numpy.dot(normal, bc.dumvec)/2 + bc.dpm*normal/(2*bc.c0*bc.rho0), "bc_u_"+name))
-
-        def inflow_state(state):
-            from hedge.optemplate import make_normal
-            normal = make_normal(self.inflow_tag, self.dimensions)
-            bc = make_bc_info("bc_q_in", self.inflow_tag, state)
-            return inflow_state_inner(normal, bc, "inflow")
-
-        def noslip_state(state):
-            from hedge.optemplate import make_normal
-            normal = make_normal(self.noslip_tag, self.dimensions)
-            bc = make_bc_info("bc_q_noslip", self.noslip_tag, state,
-                    set_normal_velocity_to_zero=True)
-            return inflow_state_inner(normal, bc, "noslip")
-        
-
-        subsonic_tags_and_primitive_bcs = [
-                (self.outflow_tag, outflow_state(state)),
-                (self.inflow_tag, inflow_state(state)),
-                (self.noslip_tag, noslip_state(state))
-                    ]
-
-        supersonic_tags_and_conservative_bcs = [
-                (self.supersonic_inflow_tag, 
-                    to_bdry_quad(make_vector_field(
-                        "bc_q_supersonic_in", self.dimensions+2))),
-                (self.supersonic_outflow_tag,
-                    to_bdry_quad(
-                        BoundarizeOperator(self.supersonic_outflow_tag)(
-                            (state))))]
-
-        all_tags_and_primitive_bcs = subsonic_tags_and_primitive_bcs \
-                + [(tag, self.conservative_to_primitive(bc))
-                    for tag, bc in supersonic_tags_and_conservative_bcs]
-
-        all_tags_and_conservative_bcs = [
-                (tag, self.primitive_to_conservative(bc))
-                for tag, bc in subsonic_tags_and_primitive_bcs
-                ] + supersonic_tags_and_conservative_bcs
+#        def make_bc_info(bc_name, tag, state, set_normal_velocity_to_zero=False):
+#            if set_normal_velocity_to_zero:
+#                if has_viscosity:
+#                    state0 = join_fields(make_vector_field(bc_name, 2), [0]*self.dimensions)
+#                else:
+#                    state0 = join_fields(make_vector_field(bc_name, self.dimensions+2))
+#            else:
+#                state0 = make_vector_field(bc_name, self.dimensions+2)
+#
+#            state0 = cse(to_bdry_quad(state0))
+#
+#            from hedge.optemplate import make_normal
+#
+#            rho0 = rho(state0)
+#            p0 = p(state0)
+#            u0 = u(state0)
+#            if not has_viscosity and set_normal_velocity_to_zero:
+#                normal = make_normal(tag, self.dimensions)
+#                u0 = u0 - numpy.dot(u0, normal) * normal
+#
+#            c0 = (self.gamma * p0 / rho0)**0.5
+#
+#            bdrize_op = BoundarizeOperator(tag)
+#            return BCInfo(
+#                rho0=rho0, p0=p0, u0=u0, c0=c0,
+#
+#                # notation: suffix "m" for "minus", i.e. "interior"
+#                drhom=cse(rho(cse(to_bdry_quad(bdrize_op(state)))) - rho0, "drhom"),
+#                dumvec=cse(u(cse(to_bdry_quad(bdrize_op(state)))) - u0, "dumvec"),
+#                dpm=cse(p(cse(to_bdry_quad(bdrize_op(state)))) - p0, "dpm"))
+#
+#        def primitive_to_conservative(prims):
+#            rho = prims[0]
+#            p = prims[1]
+#            u = prims[2:]
+#            e = p_to_e(p,rho,u) 
+#            return join_fields(
+#                   rho,
+#                   e,
+#                   rho * u)
+#
+#        def outflow_state(state):
+#            from hedge.optemplate import make_normal
+#            normal = make_normal(self.outflow_tag, self.dimensions)
+#            bc = make_bc_info("bc_q_out", self.outflow_tag, state)
+#
+#            # see hedge/doc/maxima/euler.mac
+#            return join_fields(
+#                # bc rho
+#                cse(bc.rho0
+#                + bc.drhom + numpy.dot(normal, bc.dumvec)*bc.rho0/(2*bc.c0)
+#
+#                - bc.dpm/(2*bc.c0*bc.c0), "bc_rho_outflow"),
+#
+#                # bc p
+#                cse(bc.p0
+#                + bc.c0*bc.rho0*numpy.dot(normal, bc.dumvec)/2 + bc.dpm/2, "bc_p_outflow"),
+#
+#                # bc u
+#                cse(bc.u0
+#                + bc.dumvec - normal*numpy.dot(normal, bc.dumvec)/2
+#                + bc.dpm*normal/(2*bc.c0*bc.rho0), "bc_u_outflow"))
+#
+#        def inflow_state_inner(normal, bc, name):
+#            # see hedge/doc/maxima/euler.mac
+#            return join_fields(
+#                # bc rho
+#                cse(bc.rho0
+#                + numpy.dot(normal, bc.dumvec)*bc.rho0/(2*bc.c0) + bc.dpm/(2*bc.c0*bc.c0), "bc_rho_"+name),
+#
+#                # bc p
+#                cse(bc.p0
+#                + bc.c0*bc.rho0*numpy.dot(normal, bc.dumvec)/2 + bc.dpm/2, "bc_p_"+name),
+#
+#                # bc u
+#                cse(bc.u0
+#                + normal*numpy.dot(normal, bc.dumvec)/2 + bc.dpm*normal/(2*bc.c0*bc.rho0), "bc_u_"+name))
+#
+#        def inflow_state(state):
+#            from hedge.optemplate import make_normal
+#            normal = make_normal(self.inflow_tag, self.dimensions)
+#            bc = make_bc_info("bc_q_in", self.inflow_tag, state)
+#            return inflow_state_inner(normal, bc, "inflow")
+#
+#        def noslip_state(state):
+#            from hedge.optemplate import make_normal
+#            normal = make_normal(self.noslip_tag, self.dimensions)
+#            bc = make_bc_info("bc_q_noslip", self.noslip_tag, state,
+#                    set_normal_velocity_to_zero=True)
+#            return inflow_state_inner(normal, bc, "noslip")
+#        
+#
+#        subsonic_tags_and_primitive_bcs = [
+#                (self.outflow_tag, outflow_state(state)),
+#                (self.inflow_tag, inflow_state(state)),
+#                (self.noslip_tag, noslip_state(state))
+#                    ]
+#
+#        supersonic_tags_and_conservative_bcs = [
+#                (self.supersonic_inflow_tag, 
+#                    to_bdry_quad(make_vector_field(
+#                        "bc_q_supersonic_in", self.dimensions+2))),
+#                (self.supersonic_outflow_tag,
+#                    to_bdry_quad(
+#                        BoundarizeOperator(self.supersonic_outflow_tag)(
+#                            (state))))]
+#
+#        all_tags_and_primitive_bcs = subsonic_tags_and_primitive_bcs \
+#                + [(tag, self.conservative_to_primitive(bc))
+#                    for tag, bc in supersonic_tags_and_conservative_bcs]
+#
+#        all_tags_and_conservative_bcs = [
+#                (tag, self.primitive_to_conservative(bc))
+#                for tag, bc in subsonic_tags_and_primitive_bcs
+#                ] + supersonic_tags_and_conservative_bcs
 ######TO HERE
 
         # }}}
