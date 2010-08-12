@@ -83,11 +83,11 @@ class GasDynamicsOperator(TimeDependentOperator):
     # {{{ initialization ------------------------------------------------------
     def __init__(self, dimensions,
             gamma, mu, 
-            prandtl=None, spec_gas_const=1.0,
             bc_inflow=None,
             bc_outflow=None,
             bc_noslip=None,
             bc_supersonic_inflow=None,
+            prandtl=None, spec_gas_const=1.0,EOS="GammaLaw",
             inflow_tag="inflow",
             outflow_tag="outflow",
             noslip_tag="noslip",
@@ -142,6 +142,8 @@ class GasDynamicsOperator(TimeDependentOperator):
 
         self.source = source
 
+        self.EOS = EOS
+        
         self.second_order_scheme = second_order_scheme
 
         if artificial_viscosity_mode not in [
@@ -185,9 +187,26 @@ class GasDynamicsOperator(TimeDependentOperator):
                 rho_u_i/self.rho(q)
                 for rho_u_i in self.rho_u(q)])
 
-    def p(self, q):
-        return (self.gamma-1)*(
-                self.e(q) - 0.5*numpy.dot(self.rho_u(q), self.u(q)))
+    def p(self,q):
+        if self.EOS == "GammaLaw":
+            return (self.gamma-1)*(self.e(q)-0.5*numpy.dot(self.rho_u(q),self.u(q)))
+        elif self.EOS == "Polytrope":
+            return  self.rho(q)**self.gamma
+        else:
+            raise NotImplimentedError
+    
+    def p_to_e(self,p,rho,u):
+        if self.EOS=="GammaLaw":
+            return p / (self.gamma - 1) + rho / 2 * numpy.dot(u, u)
+        elif self.EOS=="Polytrope":
+            return p / (self.gamma - 1) + rho / 2 * numpy.dot(u, u)
+        else:
+            raise NotImplimentedError
+
+        
+    def op_template(self):
+        from hedge.optemplate import make_vector_field, \
+                make_common_subexpression as cse
 
     def cse_u(self, q):
         return cse(self.u(q), "u")
@@ -692,6 +711,123 @@ class GasDynamicsOperator(TimeDependentOperator):
         speed = self.characteristic_velocity_optemplate(self.state())
 
         has_viscosity = not is_zero(self.get_mu(self.state(), to_quad_op=None))
+######HERE next HERE is from CCV branch -- is this code elswhere now?
+        def make_bc_info(bc_name, tag, state, set_normal_velocity_to_zero=False):
+            if set_normal_velocity_to_zero:
+                if has_viscosity:
+                    state0 = join_fields(make_vector_field(bc_name, 2), [0]*self.dimensions)
+                else:
+                    state0 = join_fields(make_vector_field(bc_name, self.dimensions+2))
+            else:
+                state0 = make_vector_field(bc_name, self.dimensions+2)
+
+            state0 = cse(to_bdry_quad(state0))
+
+            from hedge.optemplate import make_normal
+
+            rho0 = rho(state0)
+            p0 = p(state0)
+            u0 = u(state0)
+            if not has_viscosity and set_normal_velocity_to_zero:
+                normal = make_normal(tag, self.dimensions)
+                u0 = u0 - numpy.dot(u0, normal) * normal
+
+            c0 = (self.gamma * p0 / rho0)**0.5
+
+            bdrize_op = BoundarizeOperator(tag)
+            return BCInfo(
+                rho0=rho0, p0=p0, u0=u0, c0=c0,
+
+                # notation: suffix "m" for "minus", i.e. "interior"
+                drhom=cse(rho(cse(to_bdry_quad(bdrize_op(state)))) - rho0, "drhom"),
+                dumvec=cse(u(cse(to_bdry_quad(bdrize_op(state)))) - u0, "dumvec"),
+                dpm=cse(p(cse(to_bdry_quad(bdrize_op(state)))) - p0, "dpm"))
+
+        def primitive_to_conservative(prims):
+            rho = prims[0]
+            p = prims[1]
+            u = prims[2:]
+            e = p_to_e(p,rho,u) 
+            return join_fields(
+                   rho,
+                   e,
+                   rho * u)
+
+        def outflow_state(state):
+            from hedge.optemplate import make_normal
+            normal = make_normal(self.outflow_tag, self.dimensions)
+            bc = make_bc_info("bc_q_out", self.outflow_tag, state)
+
+            # see hedge/doc/maxima/euler.mac
+            return join_fields(
+                # bc rho
+                cse(bc.rho0
+                + bc.drhom + numpy.dot(normal, bc.dumvec)*bc.rho0/(2*bc.c0)
+
+                - bc.dpm/(2*bc.c0*bc.c0), "bc_rho_outflow"),
+
+                # bc p
+                cse(bc.p0
+                + bc.c0*bc.rho0*numpy.dot(normal, bc.dumvec)/2 + bc.dpm/2, "bc_p_outflow"),
+
+                # bc u
+                cse(bc.u0
+                + bc.dumvec - normal*numpy.dot(normal, bc.dumvec)/2
+                + bc.dpm*normal/(2*bc.c0*bc.rho0), "bc_u_outflow"))
+
+        def inflow_state_inner(normal, bc, name):
+            # see hedge/doc/maxima/euler.mac
+            return join_fields(
+                # bc rho
+                cse(bc.rho0
+                + numpy.dot(normal, bc.dumvec)*bc.rho0/(2*bc.c0) + bc.dpm/(2*bc.c0*bc.c0), "bc_rho_"+name),
+
+                # bc p
+                cse(bc.p0
+                + bc.c0*bc.rho0*numpy.dot(normal, bc.dumvec)/2 + bc.dpm/2, "bc_p_"+name),
+
+                # bc u
+                cse(bc.u0
+                + normal*numpy.dot(normal, bc.dumvec)/2 + bc.dpm*normal/(2*bc.c0*bc.rho0), "bc_u_"+name))
+
+        def inflow_state(state):
+            from hedge.optemplate import make_normal
+            normal = make_normal(self.inflow_tag, self.dimensions)
+            bc = make_bc_info("bc_q_in", self.inflow_tag, state)
+            return inflow_state_inner(normal, bc, "inflow")
+
+        def noslip_state(state):
+            from hedge.optemplate import make_normal
+            normal = make_normal(self.noslip_tag, self.dimensions)
+            bc = make_bc_info("bc_q_noslip", self.noslip_tag, state,
+                    set_normal_velocity_to_zero=True)
+            return inflow_state_inner(normal, bc, "noslip")
+        
+
+        subsonic_tags_and_primitive_bcs = [
+                (self.outflow_tag, outflow_state(state)),
+                (self.inflow_tag, inflow_state(state)),
+                (self.noslip_tag, noslip_state(state))
+                    ]
+
+        supersonic_tags_and_conservative_bcs = [
+                (self.supersonic_inflow_tag, 
+                    to_bdry_quad(make_vector_field(
+                        "bc_q_supersonic_in", self.dimensions+2))),
+                (self.supersonic_outflow_tag,
+                    to_bdry_quad(
+                        BoundarizeOperator(self.supersonic_outflow_tag)(
+                            (state))))]
+
+        all_tags_and_primitive_bcs = subsonic_tags_and_primitive_bcs \
+                + [(tag, self.conservative_to_primitive(bc))
+                    for tag, bc in supersonic_tags_and_conservative_bcs]
+
+        all_tags_and_conservative_bcs = [
+                (tag, self.primitive_to_conservative(bc))
+                for tag, bc in subsonic_tags_and_primitive_bcs
+                ] + supersonic_tags_and_conservative_bcs
+######TO HERE
 
         # }}}
 
@@ -834,6 +970,7 @@ class SlopeLimiter1NEuler:
         self.dimensions=dimensions
         self.op=op
 
+        '''
         #AVE*colVect=average of colVect
         self.AVE_map = {}
 
@@ -854,6 +991,7 @@ class SlopeLimiter1NEuler:
             for ii in range(0,size(AVEt)):
                 AVE[ii]=AVEt
             self.AVE_map[eg] = AVE
+        '''
 
     def get_average(self,vec):
         from hedge.tools import log_shape
@@ -866,7 +1004,7 @@ class SlopeLimiter1NEuler:
         for i in indices_in_shape(ls):
             for eg in self.discr.element_groups:
                 perform_elwise_operator(eg.ranges, eg.ranges,
-                        self.AVE_map[eg], vec[i], result[i])
+                        eg.AVE, vec[i], result[i])
 
                 return result
 
@@ -894,6 +1032,52 @@ class SlopeLimiter1NEuler:
 # }}}
 
 
+class PositivityCheckAndFix:
+    def __init__(self, discr, op, thresh = 0.0):
+        """determine which cells have a negative density and reset 
+        to cell averages.
+        """
+
+        self.discr = discr
+        self.op = op
+        self.thresh = thresh
+
+    def __call__(self,fields):
+        from hedge.tools import log_shape
+        from hedge.tools import join_fields
+        from hedge._internal import perform_elwise_operator
+        from pytools import indices_in_shape
+
+        rho=self.op.rho(fields)
+        e=self.op.e(fields)
+        rho_u=self.op.rho_u(fields)
+        
+        neg_density_el = list()
+
+        for eg in self.discr.element_groups:
+            for rng in eg.ranges:
+                #cell_avg = numpy.dot(eg.AVE,rho[rng])
+                #cell_avg = cell_avg[0]
+                #if(cell_avg<.01): #slow
+                #if(rho[0]<0): #fastest but still slow compared to nothing
+                if(numpy.any(rho[rng]<self.thresh)): #slowest
+                #if(True == True):
+                    #pass
+                    #neg_density_el.append(rng)
+                    rho[rng] = numpy.dot(eg.AVE,rho[rng])
+                    e[rng] = numpy.dot(eg.AVE,e[rng])
+                    for ii in range(0,self.discr.dimensions):
+                        rho_u[ii][rng] = numpy.dot(eg.AVE,rho_u[ii][rng])
+                    
+            #ls = log_shape(rho)
+            #cellAvg = self.discr.volume_zeros(ls)
+            #for i in indices_in_shape(ls):
+            #    #perform_elwise_operator(neg_density_el,neg_density_el,eg.AVE,rho[i],cellAvg[i])
+            #    perform_elwise_operator(eg.ranges,eg.ranges,eg.AVE,rho[i],cellAvg[i])
+            #    rho = cellAvg
+            #    rho[neg_density_el] = numpy.dot(eg.AVE,rho[neg_density_el])
+
+        return join_fields(rho,e,rho_u)
 
 
 # vim: foldmethod=marker

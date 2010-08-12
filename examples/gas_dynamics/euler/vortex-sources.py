@@ -189,10 +189,9 @@ def main(write_output=True):
         from hedge.mesh import TAG_ALL, TAG_NONE
 
         op = GasDynamicsOperator(dimensions=2,
-                gamma=gamma, mu=0,
+                gamma=gamma, mu=0.0, prandtl=0.72, spec_gas_const=287.1, EOS='GammaLaw',
                 bc_inflow=vortex, bc_outflow=vortex, bc_noslip=vortex,
-                inflow_tag=TAG_ALL,
-                source=sources)
+                inflow_tag=TAG_ALL, source=sources)
 
         euler_ex = op.bind(discr)
 
@@ -212,6 +211,8 @@ def main(write_output=True):
         # limiter setup -------------------------------------------------------
         from hedge.models.gas_dynamics import SlopeLimiter1NEuler
         limiter = SlopeLimiter1NEuler(discr, gamma, 2, op)
+        from hedge.models.gas_dynamics import PositivityCheckAndFix
+        make_pos = PositivityCheckAndFix(discr,op,10.0)
 
         # time stepper --------------------------------------------------------
         from hedge.timestep import SSPRK3TimeStepper, RK4TimeStepper
@@ -245,7 +246,7 @@ def main(write_output=True):
         try:
             from hedge.timestep import times_and_steps
             step_it = times_and_steps(
-                    final_time=1,
+                    final_time=.1,
                     #max_steps=500,
                     logmgr=logmgr,
                     max_dt_getter=lambda t: 0.4*op.estimate_timestep(discr,
@@ -258,7 +259,7 @@ def main(write_output=True):
 
                     true_fields = vortex.volume_interpolant(t, discr)
 
-                    rhs_fields = rhs(t, fields)
+                    #rhs_fields = rhs(t, fields)
 
                     from pylo import DB_VARTYPE_VECTOR
                     vis.add_data(visf,

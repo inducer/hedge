@@ -63,12 +63,9 @@ def main(write_output=True):
 
         from hedge.models.gas_dynamics import GasDynamicsOperator
         from hedge.mesh import TAG_ALL
-        op = GasDynamicsOperator(dimensions=2, 
-                gamma=flow.gamma, 
-                mu=flow.mu,
-                prandtl=flow.prandtl, 
-                spec_gas_const=flow.spec_gas_const,
-                bc_inflow=flow, bc_outflow=flow, bc_noslip=flow,
+        op = GasDynamicsOperator(dimensions=2, gamma=vortex.gamma, mu=vortex.mu,
+                prandtl=vortex.prandtl, spec_gas_const=vortex.spec_gas_const,EOS="Polytrope",
+                bc_inflow=vortex, bc_outflow=vortex, bc_noslip=vortex,
                 inflow_tag=TAG_ALL, source=None)
 
         euler_ex = op.bind(discr)
@@ -205,4 +202,4 @@ if __name__ == "__main__":
 from pytools.test import mark_test
 @mark_test.long
 def test_euler_vortex():
-    main(write_output=False)
+        main(write_output=False)

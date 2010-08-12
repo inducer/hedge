@@ -96,9 +96,13 @@ def main():
         from hedge.models.gas_dynamics import SlopeLimiter1NEuler
         limiter =  SlopeLimiter1NEuler(discr, sod_field.gamma, 2, op)
 
+        from hedge.models.gas_dynamics import PositivityCheckAndFix
+        make_pos = PositivityCheckAndFix(discr,op)
+
         # integrator setup---------------------------------------------------------
         from hedge.timestep import SSPRK3TimeStepper, RK4TimeStepper
         stepper = SSPRK3TimeStepper(limiter=limiter)
+        #stepper = SSPRK3TimeStepper(limiter=make_pos)
         #stepper = SSPRK3TimeStepper()
         #stepper = RK4TimeStepper()
 
@@ -120,16 +124,18 @@ def main():
         mode_filter = Filter(discr,
                 ExponentialFilterResponseFunction(min_amplification=0.9,order=4))
 
+        import time
+        tic = time.clock()
         # timestep loop -------------------------------------------------------
         try:
             from hedge.timestep import times_and_steps
             step_it = times_and_steps(
-                    final_time=2.5, logmgr=logmgr,
+                    final_time=1.0, logmgr=logmgr,
                     max_dt_getter=lambda t: 0.1*op.estimate_timestep(discr,
                         stepper=stepper, t=t, max_eigenvalue=max_eigval[0]))
 
             for step, t, dt in step_it:
-                if step % 5 == 0:
+                if step % 500 == 0:
                 #if False:
                     visf = vis.make_file("vortex-%d-%04d" % (order, step))
 
@@ -164,6 +170,7 @@ def main():
                     visf.close()
 
                 fields = stepper(fields, t, dt, rhs)
+                # fields = make_pos(fields)
                 # fields = limiter(fields)
                 # fields = mode_filter(fields)
 
@@ -172,6 +179,8 @@ def main():
             vis.close()
             logmgr.close()
             discr.close()
+        toc = time.clock()
+        print toc-tic
 
         # not solution, just to check against when making code changes
         true_fields = sod_field.volume_interpolant(t, discr)

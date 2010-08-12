@@ -209,7 +209,7 @@ def get_spherical_coord(x_vec):
     r = numpy.sqrt(x**2+y**2+z**2)
 
     from warnings import warn
-    if(numpy.any(r)<numpy.power(10.0,-10.0)):
+    if(numpy.any(r<numpy.power(10.0,-10.0))):
         warn('spherical coordinate transformation ill-defined at r=0')
 
     phi = numpy.arctan2(y,x)
