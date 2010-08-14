@@ -1130,6 +1130,66 @@ def no_test_tri_mass_mat_gauss(self):
 
 
 
+def test_mesh_regrid():
+    """Test that we are able to interpolate scalars and vectors between two
+    grids using a spatial binary tree."""
+
+    from math import pi, sin, cos
+
+    def some_vector(discr):
+        x = discr.nodes.T.astype(discr.default_scalar_type)
+
+        from hedge.tools import join_fields
+
+        u1 = discr.interpolate_volume_function(lambda x, el: sin(pi*x[0]))
+        u2 = discr.interpolate_volume_function(lambda x, el: sin(pi*x[1]))
+        u3 = discr.interpolate_volume_function(lambda x, el: sin(pi*x[0] + pi*x[1]))
+        u4 = discr.interpolate_volume_function(lambda x, el: cos(pi*x[0]))
+
+        return join_fields(u1, u2, u3, u4)
+
+
+    from hedge.backends import guess_run_context
+    rcon = guess_run_context()
+    from hedge.mesh.generator import make_centered_regular_rect_mesh
+    refine = 4
+
+    mesh = make_centered_regular_rect_mesh(
+        (-1, -1), (2, 2),n=(7,7), post_refine_factor=refine)
+    discr = rcon.make_discretization(mesh, order=6)
+    fields_vec = some_vector(discr)
+    u = discr.interpolate_volume_function(lambda x, el: sin(x[0]))
+
+    for el_per_axis in range(2,4):
+        for order in range(2,4):
+
+            mesh2 = make_centered_regular_rect_mesh((-1, -1), (2, 2),
+                            n=(el_per_axis,el_per_axis), post_refine_factor=refine)
+            mesh_data2 = rcon.distribute_mesh(mesh2)
+            discr2 = rcon.make_discretization(mesh_data2, order=order)
+
+            u2 = discr2.interpolate_volume_function(lambda x, el: sin(x[0]))
+            fields_vec2 = some_vector(discr2)
+
+            out = discr.get_regrid_values(
+                u, discr2, dtype=None, use_btree=True, thresh=1e-7)
+            out_vec = discr.get_regrid_values(
+                fields_vec,  discr2, dtype=None, use_btree=True, thresh=1e-7)
+
+            diff = u2 - out
+            diff_vec = fields_vec2 - out_vec
+
+            L2_vec=discr2.norm(diff_vec)
+            L2_scalar=discr2.norm(diff)
+
+            assert L2_vec < 1e-9
+            assert L2_scalar < 1e-9
+
+    # FIXME: Add EOC test, too.
+
+
+
+
 if __name__ == "__main__":
     import sys
     if len(sys.argv) > 1:

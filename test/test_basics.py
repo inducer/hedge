@@ -895,7 +895,6 @@ def test_identify_affine_map():
 
 
 
-
 # main program ----------------------------------------------------------------
 if __name__ == "__main__":
     import sys
