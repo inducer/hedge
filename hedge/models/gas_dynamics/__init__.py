@@ -68,7 +68,7 @@ class GammaLawEOS(EquationOfState):
         self.gamma = gamma
 
     def q_to_p(self, op, q):
-        return (self.gamma-1)*(self.e(q)-0.5*numpy.dot(self.rho_u(q),self.u(q)))
+        return (self.gamma-1)*(op.e(q)-0.5*numpy.dot(op.rho_u(q), op.u(q)))
 
     def p_to_e(self, p, rho, u):
         return p / (self.gamma - 1) + rho / 2 * numpy.dot(u, u)
