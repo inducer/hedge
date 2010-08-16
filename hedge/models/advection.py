@@ -272,7 +272,7 @@ class VariableCoefficientAdvectionOperator(HyperbolicOperator):
 
         return do
 
-    def op_template(self, with_sensor):
+    def op_template(self, with_sensor=False):
         # {{{ operator preliminaries ------------------------------------------
         from hedge.optemplate import (Field, BoundaryPair, get_flux_operator,
                 make_stiffness_t, InverseMassOperator, make_vector_field, 

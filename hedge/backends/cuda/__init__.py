@@ -424,7 +424,7 @@ class Discretization(hedge.discretization.Discretization):
         # {{{ generate flux plan
         self.partition_cache = {}
 
-        allow_microblocking = "cuda_no_microblock" in self.debug
+        allow_microblocking = "cuda_no_microblock" not in self.debug
 
         if quad_min_degrees:
             from pytools import argmax2
