@@ -46,6 +46,11 @@ from hedge.optemplate.operators import (
         QuadratureInteriorFacesGridUpsampler)
 
 to_vol_quad = QuadratureGridUpsampler("gasdyn_vol")
+
+# It is recommended (though not required) that these two
+# remain the same so that they can be computed together
+# by the CUDA backend
+
 to_int_face_quad = QuadratureInteriorFacesGridUpsampler("gasdyn_face")
 to_bdry_quad = QuadratureGridUpsampler("gasdyn_face")
 

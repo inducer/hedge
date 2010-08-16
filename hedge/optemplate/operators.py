@@ -731,13 +731,15 @@ class WholeDomainFluxOperator(pymbolic.primitives.AlgebraicLeaf):
                     self.flux_expr, self.bpair, bdry="ext"))
 
 
-    def __init__(self, is_lift, interiors, boundaries):
+    def __init__(self, is_lift, interiors, boundaries,
+            quadrature_tag):
         from hedge.optemplate.tools import get_flux_dependencies
 
         self.is_lift = is_lift
 
         self.interiors = tuple(interiors)
         self.boundaries = tuple(boundaries)
+        self.quadrature_tag = quadrature_tag
 
         from pytools import set_sum
         interior_deps = set_sum(iflux.dependencies
@@ -763,21 +765,29 @@ class WholeDomainFluxOperator(pymbolic.primitives.AlgebraicLeaf):
         return StringifyMapper
 
     def repr_op(self):
-        return type(self)(False, [], [])
+        return type(self)(False, [], [], self.quadrature_tag)
 
     @memoize_method
     def rebuild_optemplate(self):
-        summands = []
-        for i in self.interiors:
-            summands.append(
-                    FluxOperator(i.flux_expr, self.is_lift)(i.field_expr))
-        for b in self.boundaries:
-            summands.append(
-                    BoundaryFluxOperator(b.flux_expr, b.bpair.tag, self.is_lift)
-                    (b.bpair))
+        def generate_summands():
+            for i in self.interiors:
+                if self.quadrature_tag is None:
+                    yield FluxOperator(
+                            i.flux_expr, self.is_lift)(i.field_expr)
+                else:
+                    yield QuadratureFluxOperator(
+                            i.flux_expr, self.quadrature_tag)(i.field_expr)
+            for b in self.boundaries:
+                if self.quadrature_tag is None:
+                    yield BoundaryFluxOperator(
+                            b.flux_expr, b.bpair.tag, self.is_lift)(b.bpair)
+                else:
+                    yield QuadratureBoundaryFluxOperator(
+                            b.flux_expr, self.quadrature_tag, 
+                            b.bpair.tag)(b.bpair)
 
         from pymbolic.primitives import flattened_sum
-        return flattened_sum(summands)
+        return flattened_sum(generate_summands())
 
     # infrastructure interaction
     def get_hash(self):
@@ -788,7 +798,8 @@ class WholeDomainFluxOperator(pymbolic.primitives.AlgebraicLeaf):
                 and self.rebuild_optemplate() == other.rebuild_optemplate())
 
     def __getinitargs__(self):
-        return self.is_lift, self.interiors, self.boundaries
+        return (self.is_lift, self.interiors, self.boundaries,
+                self.quadrature_tag)
 
     def get_mapper_method(self, mapper):
         return mapper.map_whole_domain_flux

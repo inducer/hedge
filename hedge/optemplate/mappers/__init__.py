@@ -1529,9 +1529,6 @@ class BoundaryCombiner(CSECachingMapperMixin, IdentityMapper):
     def __init__(self, mesh):
         self.mesh = mesh
 
-    from hedge.optemplate.operators import (FluxOperator, BoundaryFluxOperator)
-    flux_op_types = (FluxOperator, BoundaryFluxOperator)
-
     map_common_subexpression_uncached = \
             IdentityMapper.map_common_subexpression
 
@@ -1542,20 +1539,44 @@ class BoundaryCombiner(CSECachingMapperMixin, IdentityMapper):
         interiors = []
         boundaries = []
         is_lift = None
+        # Since None is a valid value of quadrature tags, use
+        # the empty list to symbolize "not known", and add to
+        # list once something is known.
+        quad_tag = []
 
         rest = []
 
         for ch in expressions:
+            from hedge.optemplate.operators import FluxOperatorBase
             if (isinstance(ch, OperatorBinding)
-                    and isinstance(ch.op, self.flux_op_types)):
+                    and isinstance(ch.op, FluxOperatorBase)):
+                skip = False
+
                 my_is_lift = ch.op.is_lift
 
                 if is_lift is None:
                     is_lift = my_is_lift
                 else:
                     if is_lift != my_is_lift:
-                        rest.append(ch)
-                        continue
+                        skip = True
+
+                from hedge.optemplate.operators import \
+                        QuadratureFluxOperatorBase
+
+                if isinstance(ch.op, QuadratureFluxOperatorBase):
+                    my_quad_tag = ch.op.quadrature_tag
+                else:
+                    my_quad_tag = None
+
+                if quad_tag:
+                    if quad_tag[0] != my_quad_tag:
+                        skip = True
+                else:
+                    quad_tag.append(my_quad_tag)
+
+                if skip:
+                    rest.append(ch)
+                    continue
 
                 if isinstance(ch.field, BoundaryPair):
                     bpair = self.rec(ch.field)
@@ -1574,13 +1595,15 @@ class BoundaryCombiner(CSECachingMapperMixin, IdentityMapper):
             wdf = WholeDomainFluxOperator(
                     is_lift=is_lift,
                     interiors=interiors,
-                    boundaries=boundaries)
+                    boundaries=boundaries,
+                    quadrature_tag=quad_tag[0])
         else:
             wdf = None
         return wdf, rest
 
     def map_operator_binding(self, expr):
-        if isinstance(expr.op, self.flux_op_types):
+        from hedge.optemplate.operators import FluxOperatorBase
+        if isinstance(expr.op, FluxOperatorBase):
             wdf, rest = self.gather_one_wdflux([expr])
             assert not rest
             return wdf
@@ -1589,6 +1612,9 @@ class BoundaryCombiner(CSECachingMapperMixin, IdentityMapper):
                     .map_operator_binding(self, expr)
 
     def map_sum(self, expr):
+        # FIXME: With flux joining now in the compiler, this is
+        # probably now unnecessary.
+
         from pymbolic.primitives import flattened_sum
 
         result = 0

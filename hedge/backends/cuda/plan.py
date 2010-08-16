@@ -201,10 +201,12 @@ class ExecutionPlan(object):
 
 
 class PlanGivenData(object):
-    def __init__(self, devdata, ldis, allow_microblocking, float_type):
+    def __init__(self, devdata, ldis, allow_microblocking, float_type,
+            max_face_dofs):
         self.devdata = devdata
         self.ldis = ldis
         self.float_type = numpy.dtype(float_type)
+        self.max_face_dofs = max_face_dofs
 
         self.microblock = self._find_microblock_size(allow_microblocking)
 
@@ -218,24 +220,8 @@ class PlanGivenData(object):
     def dofs_per_el(self):
         return self.ldis.node_count()
 
-    @memoize_method
-    def dofs_per_face(self):
-        return self.ldis.face_node_count()
-
     def faces_per_el(self):
         return self.ldis.face_count()
-
-    def face_dofs_per_el(self):
-        return self.ldis.face_node_count()*self.faces_per_el()
-
-    def face_dofs_per_microblock(self):
-        return self.microblock.elements*self.faces_per_el()*self.dofs_per_face()
-
-    @memoize_method
-    def aligned_face_dofs_per_microblock(self):
-        return self.devdata.align_dtype(
-                self.face_dofs_per_microblock(),
-                self.float_size())
 
     def _find_microblock_size(self, allow_microblocking):
         from hedge.backends.cuda.tools import int_ceiling
@@ -403,19 +389,22 @@ def make_diff_plan(discr, given,
 def make_element_local_plan(discr, given,
         aligned_preimage_dofs_per_microblock, preimage_dofs_per_el, 
         aligned_image_dofs_per_microblock, image_dofs_per_el,
+        elements_per_microblock, microblock_count,
         op_name):
     def generate_plans():
         if ("cuda_no_smem_matrix" not in discr.debug 
                 and image_dofs_per_el == given.dofs_per_el
                 and aligned_image_dofs_per_microblock 
-                == given.microblock.aligned_floats):
+                == given.microblock.aligned_floats
+                and elements_per_microblock 
+                == given.microblock.elements):
 
             from hedge.backends.cuda.el_local_shared_segmat import ExecutionPlan as SSegPlan
 
             for use_prefetch_branch in [True]:
             #for use_prefetch_branch in [True, False]:
                 segment_sizes = range(given.microblock.align_size,
-                        given.microblock.elements*given.dofs_per_el()+1,
+                        elements_per_microblock*given.dofs_per_el()+1,
                         given.microblock.align_size)
 
                 for pe in range(1,32+1):
@@ -444,7 +433,9 @@ def make_element_local_plan(discr, given,
                         preimage_dofs_per_el=preimage_dofs_per_el,
                         aligned_image_dofs_per_microblock=
                             aligned_image_dofs_per_microblock,
-                        image_dofs_per_el=image_dofs_per_el)
+                        image_dofs_per_el=image_dofs_per_el,
+                        elements_per_microblock=elements_per_microblock,
+                        microblock_count=microblock_count)
 
     def target_func(plan):
         return plan.make_kernel(discr).benchmark()
