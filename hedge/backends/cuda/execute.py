@@ -208,14 +208,10 @@ class ExecutionMapper(ExecutionMapperBase):
 
         all_fofs = gather_kernel(self.rec, flux_local_kernel.plan)
 
-        cuda.Context.synchronize() # FIXME: remove
-
         result = [
             (name, flux_local_kernel(fluxes_on_faces, *flux_local_data))
             for name, wdflux, fluxes_on_faces in zip(
                 insn.names, insn.expressions, all_fofs)]
-
-        cuda.Context.synchronize() # FIXME: remove
 
         if discr.instrumented:
             given = discr.given
@@ -403,7 +399,7 @@ class ExecutionMapper(ExecutionMapperBase):
                 op.quadrature_tag)
 
         result = self.discr._empty_gpuarray(
-                quad_info.int_face_vector_size,
+                quad_info.face_storage_info.aligned_boundary_dof_count,
                 dtype=field.dtype)
 
         for eg in self.discr.element_groups:
@@ -411,21 +407,21 @@ class ExecutionMapper(ExecutionMapperBase):
                     eg, op.quadrature_tag)
             kernel = discr.element_local_kernel(
                     aligned_preimage_dofs_per_microblock
-                    =discr.aligned_bdry_dofs_per_face,
+                    =discr.face_storage_info.aligned_boundary_dofs_per_face,
 
                     preimage_dofs_per_el
                     =eg.local_discretization.face_node_count(),
 
                     aligned_image_dofs_per_microblock
-                    =quad_info.aligned_bdry_dofs_per_face,
+                    =quad_info.face_storage_info.aligned_boundary_dofs_per_face,
 
                     image_dofs_per_el
                     =eqi.ldis_quad_info.face_node_count(),
 
                     elements_per_microblock=1,
                     microblock_count
-                    =quad_info.aligned_boundary_floats//
-                    quad_info.aligned_bdry_dofs_per_face)
+                    =quad_info.face_storage_info.aligned_boundary_dof_count//
+                    quad_info.face_storage_info.aligned_boundary_dofs_per_face)
             try:
                 prepared_matrix = \
                         self.executor.elwise_linear_cache[eg, op, field.dtype]

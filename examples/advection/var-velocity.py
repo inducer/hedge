@@ -22,7 +22,7 @@ import numpy
 
 
 
-def main(write_output=True, flux_type_arg="central", use_quadrature=False):
+def main(write_output=True, flux_type_arg="central", use_quadrature=True):
     from math import sin, cos, pi, sqrt
 
     from hedge.backends import guess_run_context
@@ -49,7 +49,7 @@ def main(write_output=True, flux_type_arg="central", use_quadrature=False):
 
     discr = rcon.make_discretization(mesh_data, order=order,
             default_scalar_type=numpy.float64, 
-            debug=["cuda_no_plan" ],
+            debug=["cuda_no_plan"],
             quad_min_degrees=quad_min_degrees
             )
     vis_discr = discr

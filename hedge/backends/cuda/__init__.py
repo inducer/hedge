@@ -58,6 +58,15 @@ class GPUBlock(object):
 
 
 
+class FaceStorageInfo(Record):
+    __slots__ = ["map", "index_lists", 
+            "aligned_boundary_dofs_per_face",
+            "aligned_boundary_dof_count",
+            ]
+
+
+
+
 class GPUFaceStorage(object):
     """Describes where the dofs of an element face are stored.
 
@@ -441,11 +450,12 @@ class Discretization(hedge.discretization.Discretization):
                     (tune_for)
         self.tune_for = tune_for
 
+        eg, = self.element_groups
         maxdof_flux_plan, _time = fluxgather.make_plan(
-                self, given, tune_for, max_face_dofs, max_quadrature_tag)
+                self, eg, given, tune_for, max_face_dofs, max_quadrature_tag)
         if max_face_dofs > ldis.face_node_count():
             flux_plan, _time = fluxgather.make_plan(
-                    self, given, tune_for, ldis.face_node_count(),
+                    self, eg, given, tune_for, ldis.face_node_count(),
                     quadrature_tag=None,
                     given_mbs_per_block=maxdof_flux_plan.mbs_per_block)
         else:
@@ -480,11 +490,8 @@ class Discretization(hedge.discretization.Discretization):
 
         # {{{ build data structures
         self.blocks = self._build_blocks()
-        (self.face_storage_map, 
-                self.aligned_bdry_dofs_per_face,
-                self.aligned_boundary_floats) = \
-                self._build_face_storage_map(
-                        quadrature_tag=None)
+        self.face_storage_info = self._build_face_storage_info(
+                quadrature_tag=None)
         # }}}
 
         # {{{ make a CPU reference discretization
@@ -552,7 +559,7 @@ class Discretization(hedge.discretization.Discretization):
 
 
 
-    def _build_face_storage_map(self, quadrature_tag):
+    def _build_face_storage_info(self, quadrature_tag):
         fsm = {}
 
         from hedge.tools import IndexListRegistry
@@ -580,17 +587,16 @@ class Discretization(hedge.discretization.Discretization):
 
         if quadrature_tag is None:
             int_fg, = self.face_groups
+            ldis = int_fg.ldis_loc
         else:
             int_fg, = self.get_quadrature_info(quadrature_tag).face_groups
 
-        assert int_fg.ldis_loc == int_fg.ldis_opp
-        if quadrature_tag is None:
-            ldis = int_fg.ldis_loc
-        else:
             # This is the ldis's QuadratureInfo object, so not
             # strictly an ldis, but at least 'ldis-like'.
             ldis = int_fg.ldis_loc.get_quadrature_info(
                     self.quad_min_degrees[quadrature_tag])
+
+        assert int_fg.ldis_loc == int_fg.ldis_opp
 
         id_face_index_list_number = fil_registry.register(
                 None,
@@ -710,8 +716,12 @@ class Discretization(hedge.discretization.Discretization):
                             fp.ext_side.face_index_list_number])
                         )
 
-        self.index_lists = fil_registry.index_lists
-        return fsm, aligned_fnc, aligned_boundary_floats[0]
+        return FaceStorageInfo(
+                map=fsm, 
+                index_lists=fil_registry.index_lists,
+                aligned_boundary_dofs_per_face=aligned_fnc,
+                aligned_boundary_dof_count=aligned_boundary_floats[0],
+                )
 
     # }}}
 
@@ -732,15 +742,10 @@ class Discretization(hedge.discretization.Discretization):
                 * len(self.eg_blocks(eg))*self.eg_given(eg).microblocks_per_block
                 for eg in self.element_groups)
 
-        (face_storage_map, 
-                aligned_bdry_dofs_per_face, 
-                aligned_boundary_floats) = \
-                self._build_face_storage_map(quadrature_tag)
-
         eg, = self.element_groups
         ldis = eg.local_discretization
         flux_plan, _time = fluxgather.make_plan(
-                self, self.given, self.tune_for,
+                self, eg, self.given, self.tune_for,
                 ldis.get_quadrature_info(
                     self.quad_min_degrees[quadrature_tag]).face_node_count(),
                 quadrature_tag=quadrature_tag,
@@ -749,14 +754,13 @@ class Discretization(hedge.discretization.Discretization):
         return QuadratureInfo(
                 volume_vector_size=volume_vector_size,
                 int_face_vector_size=int_face_vector_size,
-                face_storage_map=face_storage_map,
-                aligned_bdry_dofs_per_face=aligned_bdry_dofs_per_face,
-                aligned_boundary_floats=aligned_boundary_floats,
+                face_storage_info
+                =self._build_face_storage_info(quadrature_tag),
                 flux_plan=flux_plan,
                 )
 
     @memoize_method
-    def get_cuda_elgroup_quadrature_info(self, eg, quadrature_tag):
+    def get_cuda_elgroup_quadrature_info(self, eg, quadrature_tag, given=None):
         class QuadratureInfo(Record):
             pass
 
@@ -765,19 +769,22 @@ class Discretization(hedge.discretization.Discretization):
 
         cpu_quad_info = eg.quadrature_info[quadrature_tag]
 
+        if given is None:
+            given = self.eg_given(eg)
+
         return QuadratureInfo(
                 cpu_eg_quad_info=cpu_quad_info,
                 ldis_quad_info=cpu_quad_info.ldis_quad_info,
-                aligned_dofs_per_microblock=self.given.devdata.align_dtype(
-                    self.given.microblock.elements
+                aligned_dofs_per_microblock=given.devdata.align_dtype(
+                    given.microblock.elements
                     * cpu_quad_info.ldis_quad_info.node_count(),
-                    self.eg_given(eg).float_size()),
+                    given.float_size()),
 
-                aligned_int_face_dofs_per_microblock=self.given.devdata.align_dtype(
-                    self.given.microblock.elements
+                aligned_int_face_dofs_per_microblock=given.devdata.align_dtype(
+                    given.microblock.elements
                     * eg.local_discretization.face_count()
                     * cpu_quad_info.ldis_quad_info.face_node_count(),
-                    self.eg_given(eg).float_size()),
+                    given.float_size()),
                 )
 
     # {{{ stream pooling ------------------------------------------------------
@@ -850,7 +857,7 @@ class Discretization(hedge.discretization.Discretization):
 
         mb_nr, in_mb_nr = divmod(block.el_number_map[el], given.microblock.elements)
 
-        return (block.number * self.flux_plan.dofs_per_block()
+        return (block.number * self.flux_plan.input_dofs_per_block()
                 + mb_nr*given.microblock.aligned_floats
                 + in_mb_nr*given.dofs_per_el())
 
@@ -863,7 +870,7 @@ class Discretization(hedge.discretization.Discretization):
         from hedge.backends.cuda.tools import int_ceiling
 
         fplan = self.flux_plan
-        return int_ceiling(fplan.dofs_per_block() * len(self.blocks),
+        return int_ceiling(fplan.input_dofs_per_block() * len(self.blocks),
                 self.diff_plan.dofs_per_macroblock())
 
     def eg_blocks(self, eg):
@@ -881,7 +888,7 @@ class Discretization(hedge.discretization.Discretization):
         if quadrature_tag is None:
             result = numpy.zeros((len(self.nodes),), dtype=numpy.intp)
             block_offset = 0
-            block_size = self.flux_plan.dofs_per_block()
+            block_size = self.flux_plan.input_dofs_per_block()
 
             eg, = self.element_groups
             for block in self.blocks:
@@ -977,9 +984,10 @@ class Discretization(hedge.discretization.Discretization):
                 dtype=numpy.intp)
         result.fill(-1)
 
+        fsm = self.face_storage_info.map
         cpu_base = 0
         for elface in self.mesh.tag_to_boundary.get(tag, []):
-            face_stor = self.face_storage_map[elface]
+            face_stor = fsm[elface]
             bdry_stor = face_stor.opposite
             assert isinstance(bdry_stor, GPUBoundaryFaceStorage)
 
@@ -1180,7 +1188,7 @@ class Discretization(hedge.discretization.Discretization):
     def boundary_empty(self, tag, shape=(), dtype=None, kind="gpu"):
         if kind == "gpu":
             return self._new_vec(shape, self._empty_gpuarray, dtype,
-                    self.aligned_boundary_floats)
+                    self.face_storage_info.aligned_boundary_dof_count)
         elif kind == "numpy-mpi-recv":
             return self.pagelocked_pool.allocate(
                     shape+(len(self.get_boundary(tag).nodes),),
@@ -1193,7 +1201,7 @@ class Discretization(hedge.discretization.Discretization):
     def boundary_zeros(self, tag, shape=(), dtype=None, kind="gpu"):
         if kind == "gpu":
             return self._new_vec(shape, self._zeros_gpuarray, dtype,
-                    self.aligned_boundary_floats)
+                    self.face_storage_info.aligned_boundary_dof_count)
         elif kind == "numpy-mpi-recv":
             result = self.pagelocked_pool.allocate(
                     shape+(len(self.get_boundary(tag).nodes),),
@@ -1215,15 +1223,17 @@ class Discretization(hedge.discretization.Discretization):
     def _boundarize_info(self, tag):
         from_indices = []
         to_indices = []
+        fsm = self.face_storage_info.map
+        ilists = self.face_storage_info.index_lists
 
         for elface in self.mesh.tag_to_boundary.get(tag, []):
-            vol_face = self.face_storage_map[elface]
+            vol_face = fsm[elface]
             bdry_face = vol_face.opposite
             assert isinstance(bdry_face, GPUBoundaryFaceStorage)
 
             vol_el_index = \
                     self.find_el_gpu_index(vol_face.el_face[0])
-            native_ilist = self.index_lists[vol_face.native_index_list_id]
+            native_ilist = ilists[vol_face.native_index_list_id]
             from_indices.extend(vol_el_index+i for i in native_ilist)
             bdry_index = bdry_face.gpu_bdry_index_in_floats
             to_indices.extend(
@@ -1245,7 +1255,9 @@ class Discretization(hedge.discretization.Discretization):
     def _numpy_boundarize_info(self, tag):
         from_indices, to_indices = self._boundarize_info(tag)
 
-        temp_tgt = numpy.zeros((self.aligned_boundary_floats,), dtype=numpy.int32)
+        temp_tgt = numpy.zeros(
+                (self.face_strage_info.aligned_boundary_dof_count,), 
+                dtype=numpy.int32)
         temp_tgt[to_indices] = from_indices
 
         result = temp_tgt[self._gpu_boundary_embedding(tag)]

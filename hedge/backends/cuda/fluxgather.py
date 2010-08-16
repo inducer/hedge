@@ -31,13 +31,13 @@ import hedge.backends.cuda.plan
 from pymbolic.mapper.c_code import CCodeMapper
 from hedge.flux import FluxIdentityMapper
 
-from codepy.cgen import \
-        Pointer, POD, Value, ArrayOf, Typedef, \
-        Module, FunctionDeclaration, FunctionBody, Block, \
-        Comment, Line, Include, \
-        MaybeUnused, \
-        Define, \
-        Initializer, If, For, Statement, Assign, While
+from codepy.cgen import (
+        Pointer, POD, Value, ArrayOf, Typedef,
+        Module, FunctionDeclaration, FunctionBody, Block, LiteralBlock,
+        Comment, Line, Include,
+        MaybeUnused,
+        Define,
+        Initializer, If, For, Statement, Assign, While)
 
 from pymbolic.mapper.stringifier import PREC_NONE
 
@@ -175,11 +175,13 @@ def flux_to_code(f2cm, is_flipped, int_field_expr, ext_field_expr,
 
 # {{{ planning
 class ExecutionPlan(hedge.backends.cuda.plan.ExecutionPlan):
-    def __init__(self, given,
+    def __init__(self, given, element_group,
             parallel_faces, mbs_per_block, flux_count,
             direct_store, partition_data,
-            dofs_per_face, quadrature_tag):
+            dofs_per_face, input_dofs_per_microblock, quadrature_tag):
         hedge.backends.cuda.plan.ExecutionPlan.__init__(self, given)
+
+        self.element_group = element_group
         self.parallel_faces = parallel_faces
         self.mbs_per_block = mbs_per_block
         self.flux_count = flux_count
@@ -187,10 +189,11 @@ class ExecutionPlan(hedge.backends.cuda.plan.ExecutionPlan):
 
         self.partition_data = partition_data
         self.dofs_per_face = dofs_per_face
+        self.input_dofs_per_microblock = input_dofs_per_microblock
         self.quadrature_tag = quadrature_tag
 
     def face_dofs_per_el(self):
-        return self.given.ldis.face_node_count()*self.given.faces_per_el()
+        return self.dofs_per_face*self.given.faces_per_el()
 
     def face_dofs_per_microblock(self):
         return (self.given.microblock.elements
@@ -209,8 +212,8 @@ class ExecutionPlan(hedge.backends.cuda.plan.ExecutionPlan):
     def elements_per_block(self):
         return self.microblocks_per_block()*self.given.microblock.elements
 
-    def dofs_per_block(self):
-        return self.microblocks_per_block()*self.given.microblock.aligned_floats
+    def input_dofs_per_block(self):
+        return self.microblocks_per_block()*self.input_dofs_per_microblock
 
     @memoize_method
     def face_pair_count(self):
@@ -274,7 +277,7 @@ class ExecutionPlan(hedge.backends.cuda.plan.ExecutionPlan):
 
 
 
-def make_plan(discr, given, tune_for, dofs_per_face, quadrature_tag, 
+def make_plan(discr, eg, given, tune_for, dofs_per_face, quadrature_tag, 
         given_mbs_per_block=None):
     from hedge.backends.cuda.execute import Executor
     if tune_for is not None:
@@ -291,6 +294,12 @@ def make_plan(discr, given, tune_for, dofs_per_face, quadrature_tag,
         # a reasonable guess?
         flux_count = discr.dimensions
 
+    if quadrature_tag is None:
+        input_dofs_per_microblock = given.microblock.aligned_floats
+    else:
+        input_dofs_per_microblock = discr.get_cuda_elgroup_quadrature_info(
+                eg, quadrature_tag, given=given).aligned_int_face_dofs_per_microblock
+
     def generate_valid_plans():
         valid_plan_count = 0
 
@@ -301,12 +310,13 @@ def make_plan(discr, given, tune_for, dofs_per_face, quadrature_tag,
         for direct_store in [False, True]:
             for parallel_faces in range(1, 32):
                 for mbs_per_block in mbs_per_block_values:
-                    flux_plan = ExecutionPlan(given, parallel_faces,
+                    flux_plan = ExecutionPlan(given, eg, parallel_faces,
                             mbs_per_block, flux_count,
                             direct_store=direct_store,
                             partition_data=discr._get_partition_data(
                                 mbs_per_block*given.microblock.elements),
                             dofs_per_face=dofs_per_face,
+                            input_dofs_per_microblock=input_dofs_per_microblock,
                             quadrature_tag=quadrature_tag)
                     if flux_plan.invalid_reason() is None:
                         valid_plan_count += 1
@@ -381,7 +391,7 @@ class Kernel:
                 for i in range(len(self.fluxes))]
 
         field = gpuarray.empty(
-                (self.plan.dofs_per_block() * block_count,),
+                (self.plan.input_dofs_per_block() * block_count,),
                 dtype=given.float_type,
                 allocator=discr.pool.allocate)
 
@@ -499,10 +509,10 @@ class Kernel:
                 print "DEBUG", len(discr.blocks)
                 numpy.set_printoptions(linewidth=130)
                 #print numpy.reshape(copied_debugbuf, (32, 16))
-                #print copied_debugbuf[:50]
+                print copied_debugbuf[:50]
 
-                for i in range(len(discr.blocks)*6):
-                    print i, copied_debugbuf[i*16:(i+1)*16]
+                #for i in range(len(discr.blocks)*6):
+                    #print i, copied_debugbuf[i*16:(i+1)*16]
                     #print i, [x-10000 for x in sorted(copied_debugbuf[i*16:(i+1)*16]) if x != 0]
 
                 wait_for_keypress(discr)
@@ -633,7 +643,7 @@ class Kernel:
                         "fpair->face_jacobian*a_flux"))
 
             #my_flux_block.append(
-                    #Assign("debugbuf[blockIdx.x*96+fpair_nr]", "10000+fpair->a_dest"),
+                    #Statement("if(isnan(val_b_field5)) debugbuf[blockIdx.x] = 1"),
                     #)
 
             if is_twosided:
@@ -855,6 +865,12 @@ class Kernel:
             descr="load face_pair data")
             +[S("__syncthreads()"), Line() ])
 
+        f_body.append(LiteralBlock("""
+            for (unsigned i = 0; i < ALIGNED_FACE_DOFS_PER_MB*BLOCK_MB_COUNT; ++i)
+              for (unsigned j = 0; j < FLUX_COUNT; ++j)
+                smem_fluxes_on_faces[j][i] = 17;
+            __syncthreads();
+            """))
 
         def get_flux_code(flux_writer):
             flux_code = Block([])
@@ -1026,21 +1042,21 @@ class Kernel:
                 mb_nr, in_mb_nr = divmod(block.el_number_map[el],
                     given.microblock.elements)
 
-                return (block.number * fplan.dofs_per_block()
+                return (block.number * fplan.input_dofs_per_block()
                         + mb_nr*eg_quad_info.aligned_int_face_dofs_per_microblock
                         + in_mb_nr*ldis_quad_info.face_node_count()
                         * ldis_quad_info.ldis.face_count())
 
-            face_storage_map = quad_info.face_storage_map
+            face_storage_map = quad_info.face_storage_info.map
         else:
             find_el_src_index = discr.find_el_gpu_index
-            face_storage_map = discr.face_storage_map
+            face_storage_map = discr.face_storage_info.map
 
         # }}}
 
         int_fp_count, ext_fp_count, bdry_fp_count = 0, 0, 0
 
-        for block in discr.blocks:
+        for block_nr, block in enumerate(discr.blocks):
             ldis = block.local_discretization
             face_dofs = fplan.dofs_per_face
             elface_dofs = face_dofs*ldis.face_count()
@@ -1090,6 +1106,9 @@ class Kernel:
                         fp_structs = diff_fp_structs
                         ext_fp_count += 1
 
+                a_base = find_el_src_index(a_face.el_face[0])
+                a_dest = find_elface_dest(a_face.el_face)
+
                 fp_structs.append(
                         fp_struct.make(
                             h=a_face.face_pair_side.h,
@@ -1097,7 +1116,7 @@ class Kernel:
                             face_jacobian=a_face.face_pair_side.face_jacobian,
                             normal=a_face.face_pair_side.normal,
 
-                            a_base=find_el_src_index(a_face.el_face[0]),
+                            a_base=a_base,
                             b_base=b_base,
 
                             a_ilist_index= \
@@ -1109,7 +1128,7 @@ class Kernel:
                             b_write_ilist_index= \
                                     b_write_index_list*face_dofs,
 
-                            a_dest=find_elface_dest(a_face.el_face),
+                            a_dest=a_dest,
                             b_dest=b_dest
                             ))
 
@@ -1250,7 +1269,13 @@ class Kernel:
 
     @memoize_method
     def index_list_data(self):
-        return self.index_list_backend(self.discr.index_lists)
+        if self.plan.quadrature_tag is None:
+            return self.index_list_backend(
+                    self.discr.face_storage_info.index_lists)
+        else:
+            return self.index_list_backend(
+                    self.discr.get_cuda_quadrature_info(self.plan.quadrature_tag)
+                    .face_storage_info.index_lists)
 
     @memoize_method
     def fake_index_list_data(self):
