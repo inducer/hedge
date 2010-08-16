@@ -166,7 +166,7 @@ def main(write_output=True):
     else:
         mesh_data = rcon.receive_mesh()
 
-    for order in [4]:
+    for order in [4,5]:
         discr = rcon.make_discretization(mesh_data, order=order,
                         debug=[#"cuda_no_plan",
                         #"print_op_code"
@@ -185,14 +185,15 @@ def main(write_output=True):
                 center=[5,0],
                 velocity=[1,0], densityA=densityA)
 
-        from hedge.models.gas_dynamics import GasDynamicsOperator
-        from hedge.mesh import TAG_ALL, TAG_NONE
+        from hedge.models.gas_dynamics import (
+                GasDynamicsOperator, GammaLawEOS)
+        from hedge.mesh import TAG_ALL
 
         op = GasDynamicsOperator(dimensions=2,
-                gamma=gamma, mu=0,
+                mu=0.0, prandtl=0.72, spec_gas_const=287.1, 
+                equation_of_state=GammaLawEOS(vortex.gamma),
                 bc_inflow=vortex, bc_outflow=vortex, bc_noslip=vortex,
-                inflow_tag=TAG_ALL,
-                source=sources)
+                inflow_tag=TAG_ALL, source=sources)
 
         euler_ex = op.bind(discr)
 
@@ -215,9 +216,9 @@ def main(write_output=True):
 
         # time stepper --------------------------------------------------------
         from hedge.timestep import SSPRK3TimeStepper, RK4TimeStepper
-        stepper = SSPRK3TimeStepper(limiter=limiter)
+        #stepper = SSPRK3TimeStepper(limiter=limiter)
         #stepper = SSPRK3TimeStepper()
-        #stepper = RK4TimeStepper()
+        stepper = RK4TimeStepper()
 
         # diagnostics setup ---------------------------------------------------
         from pytools.log import LogManager, add_general_quantities, \
@@ -240,12 +241,12 @@ def main(write_output=True):
         # timestep loop -------------------------------------------------------
         t = 0
 
-        fields = limiter(fields)
+        #fields = limiter(fields)
 
         try:
             from hedge.timestep import times_and_steps
             step_it = times_and_steps(
-                    final_time=1,
+                    final_time=.1,
                     #max_steps=500,
                     logmgr=logmgr,
                     max_dt_getter=lambda t: 0.4*op.estimate_timestep(discr,
@@ -258,7 +259,7 @@ def main(write_output=True):
 
                     true_fields = vortex.volume_interpolant(t, discr)
 
-                    rhs_fields = rhs(t, fields)
+                    #rhs_fields = rhs(t, fields)
 
                     from pylo import DB_VARTYPE_VECTOR
                     vis.add_data(visf,

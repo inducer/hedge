@@ -19,6 +19,7 @@
 
 from __future__ import division
 import numpy
+import numpy.linalg as la
 
 
 
@@ -33,6 +34,7 @@ def main(write_output=True):
     from hedge.tools import EOCRecorder
     eoc_rec = EOCRecorder()
 
+
     if rcon.is_head_rank:
         from hedge.mesh.generator import \
                 make_rect_mesh, \
@@ -45,7 +47,22 @@ def main(write_output=True):
     else:
         mesh_data = rcon.receive_mesh()
 
-    for order in [3, 4, 5]:
+    # a second mesh to regrid to
+    if rcon.is_head_rank:
+        from hedge.mesh.generator import \
+                make_rect_mesh, \
+                make_centered_regular_rect_mesh
+
+        refine = 4
+        mesh2 = make_centered_regular_rect_mesh((0,-5), (10,5), n=(8,8),
+                post_refine_factor=refine)
+        mesh_data2 = rcon.distribute_mesh(mesh2)
+    else:
+        mesh_data2 = rcon.receive_mesh()
+
+
+
+    for order in [3,4]:
         discr = rcon.make_discretization(mesh_data, order=order,
                         default_scalar_type=numpy.float64,
                         quad_min_degrees={
@@ -53,23 +70,28 @@ def main(write_output=True):
                             "gasdyn_face": 3*order,
                             })
 
+        discr2 = rcon.make_discretization(mesh_data2, order=order,
+                        default_scalar_type=numpy.float64,
+                        quad_min_degrees={
+                            "gasdyn_vol": 3*order,
+                            "gasdyn_face": 3*order,
+                            })
+
+
         from hedge.visualization import SiloVisualizer, VtkVisualizer
         vis = VtkVisualizer(discr, rcon, "vortex-%d" % order)
         #vis = SiloVisualizer(discr, rcon)
 
         from gas_dynamics_initials import Vortex
-        flow = Vortex()
-        fields = flow.volume_interpolant(0, discr)
+        vortex = Vortex()
+        fields = vortex.volume_interpolant(0, discr)
 
-        from hedge.models.gas_dynamics import (
-                GasDynamicsOperator, PolytropeEOS, GammaLawEOS)
-
+        from hedge.models.gas_dynamics import GasDynamicsOperator
         from hedge.mesh import TAG_ALL
-        # works equally well for GammaLawEOS
-        op = GasDynamicsOperator(dimensions=2, mu=flow.mu,
-                prandtl=flow.prandtl, spec_gas_const=flow.spec_gas_const,
-                equation_of_state=PolytropeEOS(flow.gamma),
-                bc_inflow=flow, bc_outflow=flow, bc_noslip=flow,
+
+        op = GasDynamicsOperator(dimensions=2, gamma=vortex.gamma, mu=vortex.mu,
+                prandtl=vortex.prandtl, spec_gas_const=vortex.spec_gas_const,
+                bc_inflow=vortex, bc_outflow=vortex, bc_noslip=vortex,
                 inflow_tag=TAG_ALL, source=None)
 
         euler_ex = op.bind(discr)
@@ -81,16 +103,18 @@ def main(write_output=True):
             return ode_rhs
         rhs(0, fields)
 
+
         if rcon.is_head_rank:
             print "---------------------------------------------"
             print "order %d" % order
             print "---------------------------------------------"
-            print "#elements=", len(mesh.elements)
+            print "#elements for mesh 1 =", len(mesh.elements)
+            print "#elements for mesh 2 =", len(mesh2.elements)
 
 
         # limiter ------------------------------------------------------------
         from hedge.models.gas_dynamics import SlopeLimiter1NEuler
-        limiter = SlopeLimiter1NEuler(discr, flow.gamma, 2, op)
+        limiter = SlopeLimiter1NEuler(discr, vortex.gamma, 2, op)
 
         from hedge.timestep import SSPRK3TimeStepper
         #stepper = SSPRK3TimeStepper(limiter=limiter)
@@ -119,7 +143,7 @@ def main(write_output=True):
 
         # timestep loop -------------------------------------------------------
         try:
-            final_time = flow.final_time
+            final_time = 0.2
             from hedge.timestep import times_and_steps
             step_it = times_and_steps(
                     final_time=final_time, logmgr=logmgr,
@@ -164,9 +188,40 @@ def main(write_output=True):
                 fields = stepper(fields, t, dt, rhs)
                 #fields = limiter(fields)
 
+                #regrid to discr2 at some arbitrary time
+                if step == 21:
+
+                    #get interpolated fields
+                    fields = discr.get_regrid_values(fields, discr2, dtype=None, use_btree=True, thresh=1e-8)
+                    #get new stepper (old one has reference to discr
+                    stepper = SSPRK3TimeStepper()
+                    #new bind
+                    euler_ex = op.bind(discr2)
+                    #new rhs
+                    max_eigval = [0]
+                    def rhs(t, q):
+                        ode_rhs, speed = euler_ex(t, q)
+                        max_eigval[0] = speed
+                        return ode_rhs
+                    rhs(t+dt, fields)
+                    #add logmanager
+                    #discr2.add_instrumentation(logmgr)
+                    #new step_it
+                    step_it = times_and_steps(
+                        final_time=final_time, logmgr=logmgr,
+                        max_dt_getter=lambda t: op.estimate_timestep(discr2,
+                            stepper=stepper, t=t, max_eigenvalue=max_eigval[0]))
+
+                    #new visualization
+                    vis.close()
+                    vis = VtkVisualizer(discr2, rcon, "vortexNewGrid-%d" % order)
+                    discr=discr2
+
+
+
                 assert not numpy.isnan(numpy.sum(fields[0]))
 
-            true_fields = flow.volume_interpolant(final_time, discr)
+            true_fields = vortex.volume_interpolant(final_time, discr)
             l2_error = discr.norm(fields-true_fields)
             l2_error_rho = discr.norm(op.rho(fields)-op.rho(true_fields))
             l2_error_e = discr.norm(op.e(fields)-op.e(true_fields))
@@ -191,19 +246,13 @@ def main(write_output=True):
             logmgr.close()
             discr.close()
 
+
+
     # after order loop
-    assert eoc_rec.estimate_order_of_convergence()[0,1] > 6
+    # assert eoc_rec.estimate_order_of_convergence()[0,1] > 6
 
 
 
 
 if __name__ == "__main__":
     main()
-
-
-
-# entry points for py.test ----------------------------------------------------
-from pytools.test import mark_test
-@mark_test.long
-def test_euler_vortex():
-    main(write_output=False)

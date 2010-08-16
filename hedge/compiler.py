@@ -879,7 +879,7 @@ class OperatorCompilerBase(IdentityMapper):
     def aggregate_assignments(self, instructions, result):
         from pymbolic.primitives import Variable
 
-        # agregation helpers --------------------------------------------------
+        # aggregation helpers -------------------------------------------------
         def get_complete_origins_set(insn, skip_levels=0):
             if skip_levels < 0:
                 skip_levels = 0
