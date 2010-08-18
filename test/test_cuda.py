@@ -53,3 +53,68 @@ if have_pycuda():
         a_copy = discr.convert_volume(a_gpu, "numpy")
         diff = a - a_copy
         assert la.norm(diff) < 1e-10 * la.norm(a)
+
+    @mark_cuda_test
+    def test_cuda_volume_quadrature():
+        from hedge.mesh.generator import make_rect_mesh
+        mesh = make_rect_mesh(a=(-1,-1),b=(1,1),max_area=0.08)
+
+        from hedge.backends import guess_run_context
+        cpu_rcon = guess_run_context(['jit'])
+        gpu_rcon = guess_run_context(['cuda'])
+
+        order = 4
+        quad_min_degrees = {"quad": 3*order}
+
+        cpu_discr, gpu_discr = [
+                rcon.make_discretization(mesh, order=order,
+                    default_scalar_type=numpy.float64, 
+                    debug=["cuda_no_plan", "cuda_no_microblock", ],
+                    quad_min_degrees=quad_min_degrees
+                    )
+                for rcon in [cpu_rcon, gpu_rcon]]
+
+        from math import sin, cos
+        def f(x, el):
+            return sin(x[0])*cos(x[1])
+
+        cpu_field, gpu_field = [
+                discr.interpolate_volume_function(f)
+                for discr in [cpu_discr, gpu_discr]]
+
+        def make_optemplate():
+            from hedge.optemplate.operators import QuadratureGridUpsampler
+            from hedge.optemplate import Field, make_stiffness_t
+
+            u = Field("u")
+            qu = QuadratureGridUpsampler("quad")(u)
+
+            return make_stiffness_t(2)[0](Field("intercept")(qu))
+
+        saved_vectors = []
+        def intercept(x):
+            saved_vectors.append(x)
+            return x
+
+        for discr in [cpu_discr, gpu_discr]:
+            discr.add_function("intercept", intercept)
+
+        opt = make_optemplate()
+        cpu_bound, gpu_bound = [discr.compile(make_optemplate())
+                for discr in [cpu_discr, gpu_discr]]
+
+        cpu_result = cpu_bound(u=cpu_field)
+        gpu_result = gpu_bound(u=gpu_field)
+
+        cpu_ivec, gpu_ivec = saved_vectors
+        gpu_ivec_on_host = gpu_ivec.get()[gpu_discr._gpu_volume_embedding("quad")]
+        ierr = cpu_ivec-gpu_ivec_on_host
+        assert la.norm(ierr) < 5e-15
+
+        gpu_result_on_host = gpu_discr.convert_volume(gpu_result, kind="numpy")
+        err = cpu_result-gpu_result_on_host
+        assert la.norm(err) < 2e-14
+
+        cpu_discr.close()
+        gpu_discr.close()
+

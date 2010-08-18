@@ -273,6 +273,9 @@ class PkSimplexDiscretization(OrthonormalLocalDiscretization):
         return self.order > 0
 
     # {{{ numbering -----------------------------------------------------------
+    def vertex_count(self):
+        return self.dimensions + 1
+
     @memoize_method
     def node_count(self):
         """Return the number of interpolation nodes in this element."""
@@ -560,8 +563,22 @@ class PkSimplexDiscretization(OrthonormalLocalDiscretization):
         def node_count(self):
             return len(self.volume_nodes)
 
+        def face_count(self):
+            return self.ldis.face_count()
+
         def face_node_count(self):
             return len(self.face_nodes)
+
+        @memoize_method
+        def face_indices(self):
+            """Return a list of face index lists. Each face index list contains
+            the local node numbers of the nodes on that face.
+
+            Note: this relates to the facial DOF quadrature vector.
+            """
+            fnc = self.face_node_count()
+            return [tuple(range(fnc*face_idx, fnc*(face_idx+1)))
+                    for face_idx in range(self.ldis.face_count())]
 
         # {{{ matrices
         @memoize_method

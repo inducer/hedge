@@ -8,6 +8,7 @@ import numpy.linalg as la
 class Sod:
     def __init__(self, gamma):
         self.gamma = gamma
+        self.prandtl = 0.72
 
     def __call__(self, t, x_vec):
 
@@ -71,6 +72,7 @@ def main():
         from hedge.models.gas_dynamics import GasDynamicsOperator
         from hedge.mesh import TAG_ALL
         op = GasDynamicsOperator(dimensions=2, gamma=sod_field.gamma, mu=0.0,
+                prandtl=sod_field.prandtl,
                 bc_inflow=sod_field,
                 bc_outflow=sod_field,
                 bc_noslip=sod_field,
@@ -124,8 +126,8 @@ def main():
         try:
             from hedge.timestep import times_and_steps
             step_it = times_and_steps(
-                    final_time=2.5, logmgr=logmgr,
-                    max_dt_getter=lambda t: 0.1*op.estimate_timestep(discr,
+                    final_time=1.0, logmgr=logmgr,
+                    max_dt_getter=lambda t: op.estimate_timestep(discr,
                         stepper=stepper, t=t, max_eigenvalue=max_eigval[0]))
 
             for step, t, dt in step_it:

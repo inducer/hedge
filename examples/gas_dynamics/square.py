@@ -132,9 +132,9 @@ def main():
                         debug=["cuda_no_plan",
                             #"cuda_dump_kernels",
                             #"dump_dataflow_graph",
-                            "dump_optemplate_stages",
+                            #"dump_optemplate_stages",
                             #"dump_dataflow_graph",
-                            "dump_op_code"
+                            #"dump_op_code"
                             #"cuda_no_plan_el_local"
                             ],
                         default_scalar_type=numpy.float64,
@@ -148,11 +148,15 @@ def main():
         #vis = VtkVisualizer(discr, rcon, "shearflow-%d" % order)
         vis = SiloVisualizer(discr, rcon)
 
-        from hedge.timestep.runge_kutta import LSRK4TimeStepper
-        stepper = LSRK4TimeStepper(dtype=discr.default_scalar_type)
+        from hedge.timestep.runge_kutta import (
+                LSRK4TimeStepper, ODE23TimeStepper, ODE45TimeStepper)
+        #stepper = LSRK4TimeStepper(dtype=discr.default_scalar_type)
+
+        stepper = ODE23TimeStepper(dtype=discr.default_scalar_type,
+                rtol=1e-7)
 
         #from hedge.timestep.dumka3 import Dumka3TimeStepper
-        #stepper = Dumka3TimeStepper(3)
+        #stepper = Dumka3TimeStepper(3, rtol=1e-7)
 
         # diagnostics setup ---------------------------------------------------
         from pytools.log import LogManager, add_general_quantities, \
@@ -214,8 +218,12 @@ def main():
                     final_time=1000,
                     #max_steps=500,
                     logmgr=logmgr,
-                    max_dt_getter=lambda t: op.estimate_timestep(discr,
-                        stepper=RK4TimeStepper(), t=t, max_eigenvalue=max_eigval[0]))
+                    max_dt_getter=lambda t: next_dt,
+                    taken_dt_getter=lambda: taken_dt)
+
+            next_dt = 0.01 * op.estimate_timestep(discr,
+                    stepper=LSRK4TimeStepper(), t=0, 
+                    max_eigenvalue=max_eigval[0])
 
             for step, t, dt in step_it:
                 #if (step % 10000 == 0): #and step < 950000) or (step % 500 == 0 and step > 950000):
@@ -223,7 +231,7 @@ def main():
                 if step % 5 == 0:
                     visf = vis.make_file("square-%d-%06d" % (order, step))
 
-                    from pylo import DB_VARTYPE_VECTOR
+                    #from pylo import DB_VARTYPE_VECTOR
                     vis.add_data(visf,
                             [
                                 ("rho", discr.convert_volume(op.rho(fields), kind="numpy")),
@@ -238,7 +246,7 @@ def main():
                             )
                     visf.close()
 
-                fields = stepper(fields, t, dt, rhs)
+                fields, t, taken_dt, next_dt = stepper(fields, t, dt, rhs)
                 fields = mode_filter(fields)
 
         finally:

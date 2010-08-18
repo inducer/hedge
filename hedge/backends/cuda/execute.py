@@ -170,53 +170,46 @@ class ExecutionMapper(ExecutionMapperBase):
             discr.diff_flop_counter.add(discr.dimensions*(
                 self.executor.diff_rst_flops + self.executor.diff_rescale_one_flops))
 
-        rst_diff = self.executor.diff_kernel(insn.op_class, field)
+        repr_op = insn.operators[0]
 
-        if set(["cuda_diff", "cuda_compare"]) <= discr.debug:
-            assert False, "this debug code was broken in the " \
-                    "global-to-ref-rewriting change"
-            field = self.rec(insn.field)
-            f = discr.volume_from_gpu(field)
-            assert not numpy.isnan(f).any(), "Initial field contained NaNs."
-            cpu_xyz_diff = [discr.volume_from_gpu(xd) for xd in xyz_diff]
-            dx = cpu_xyz_diff[0]
+        from hedge.optemplate.operators import \
+                ReferenceQuadratureStiffnessTOperator
+        if isinstance(repr_op, ReferenceQuadratureStiffnessTOperator):
+            eg, = discr.element_groups
+            from pytools import single_valued
+            q_info = discr.get_cuda_elgroup_quadrature_info(
+                    eg, single_valued(op.quadrature_tag for op in insn.operators))
 
-            test_discr = discr.test_discr
-            real_dx = test_discr.nabla[0].apply(f.astype(numpy.float64))
+            kernel = discr.diff_kernel(
+                aligned_preimage_dofs_per_microblock
+                =q_info.aligned_dofs_per_microblock,
+                preimage_dofs_per_el=q_info.ldis_quad_info.node_count())
 
-            diff = dx - real_dx
-
-            for i, xd in enumerate(cpu_xyz_diff):
-                if numpy.isnan(xd).any():
-                    self.print_error_structure(xd, xd, xd-xd,
-                            eventful_only=False, detail=False)
-                    assert False, "Resulting field %d contained NaNs." % i
-
-            from hedge.tools import relative_error
-            rel_err_norm = relative_error(la.norm(diff), la.norm(real_dx))
-            print "diff", rel_err_norm
-            if not (rel_err_norm < 5e-5):
-                self.print_error_structure(dx, real_dx, diff,
-                        eventful_only=False, detail=False)
-
-            assert rel_err_norm < 5e-5
+            rst_diff = kernel(repr_op, field)
+        else:
+            rst_diff = self.executor.diff_kernel(repr_op, field)
 
         return [(name, rst_diff[op.rst_axis])
                 for name, op in zip(insn.names, insn.operators)], []
 
-
     def exec_flux_batch_assign(self, insn):
         discr = self.executor.discr
-
-        kernel = insn.kernel(self.executor)
-        all_fofs = kernel(self.rec, discr.fluxlocal_plan)
         elgroup, = discr.element_groups
 
+        repr_wdflux = insn.expressions[0]
+
+        gather_kernel = insn.kernel(self.executor)
+        flux_plan = gather_kernel.plan
+
+        flux_local_kernel = self.executor.get_flux_local_kernel(flux_plan)
+        flux_local_data = self.executor.get_flux_local_data(
+                flux_local_kernel, elgroup, repr_wdflux.is_lift,
+                flux_plan.quadrature_tag)
+
+        all_fofs = gather_kernel(self.rec, flux_local_kernel.plan)
+
         result = [
-            (name, self.executor.fluxlocal_kernel(
-                fluxes_on_faces,
-                *self.executor.flux_local_data(
-                    self.executor.fluxlocal_kernel, elgroup, wdflux.is_lift)))
+            (name, flux_local_kernel(fluxes_on_faces, *flux_local_data))
             for name, wdflux, fluxes_on_faces in zip(
                 insn.names, insn.expressions, all_fofs)]
 
@@ -224,14 +217,13 @@ class ExecutionMapper(ExecutionMapperBase):
             given = discr.given
 
             flux_count = len(insn.expressions)
-            dep_count = len(kernel.interior_deps)
+            dep_count = len(gather_kernel.interior_deps)
 
             discr.gather_counter.add(
                     flux_count*dep_count)
             discr.gather_flop_counter.add(
                     flux_count
-                    * given.dofs_per_face()
-                    * given.faces_per_el()
+                    * flux_plan.face_dofs_per_el()
                     * len(discr.mesh.elements)
                     * (1 # facejac-mul
                         + 2 * # int+ext
@@ -239,12 +231,12 @@ class ExecutionMapper(ExecutionMapperBase):
                         )
                     )
 
+            # FIXME: quadrature flops
             discr.lift_counter.add(flux_count)
             discr.lift_flop_counter.add(flux_count*self.executor.lift_flops)
 
         # debug ---------------------------------------------------------------
         if discr.debug & set(["cuda_lift", "cuda_flux"]):
-            fplan = discr.flux_plan
 
             for fluxes_on_faces in all_fofs:
                 useful_size = (len(discr.blocks)
@@ -300,27 +292,151 @@ class ExecutionMapper(ExecutionMapperBase):
             return 0
 
         kernel = self.executor.discr.element_local_kernel()
+        # FIXME: wouldn't volume_empty suffice?
         result = self.discr.volume_zeros(dtype=field.dtype)
 
         for eg in self.discr.element_groups:
             try:
-                prepared_matrix, prepared_coeffs = \
+                prepared_matrix = \
                         self.executor.elwise_linear_cache[eg, op, field.dtype]
             except KeyError:
                 prepared_matrix = kernel.prepare_matrix(op.matrix(eg))
-                coeffs = op.coefficients(eg)
+                assert op.coefficients(eg) is None, \
+                        "per-element scaling of elementwise linear ops is no " \
+                        "longer supported"
 
-                if coeffs is None:
-                    prepared_coeffs = None
-                else:
-                    prepared_coeffs = kernel.prepare_scaling(eg, coeffs)
+                self.executor.elwise_linear_cache[eg, op, field.dtype] = \
+                        prepared_matrix
 
-                self.executor.elwise_linear_cache[eg, op, field.dtype] = (
-                        prepared_matrix, prepared_coeffs)
-
-            kernel(field, prepared_matrix, prepared_coeffs, out_vector=result)
+            kernel(field, prepared_matrix, out_vector=result)
 
         return result
+
+    def map_quad_grid_upsampler(self, op, expr):
+        field = self.rec(expr)
+        discr = self.executor.discr
+
+        from hedge.tools import is_zero
+        if is_zero(field):
+            return 0
+
+        quad_info = discr.get_cuda_quadrature_info(
+                op.quadrature_tag)
+
+        result = self.discr._empty_gpuarray(
+                quad_info.volume_vector_size,
+                dtype=field.dtype)
+
+        for eg in self.discr.element_groups:
+            eg_quad_info = discr.get_cuda_elgroup_quadrature_info(
+                    eg, op.quadrature_tag)
+            kernel = discr.element_local_kernel(
+                    image_dofs_per_el=eg_quad_info.ldis_quad_info.node_count(),
+                    aligned_image_dofs_per_microblock
+                    =eg_quad_info.aligned_dofs_per_microblock)
+            try:
+                prepared_matrix = \
+                        self.executor.elwise_linear_cache[eg, op, field.dtype]
+            except KeyError:
+                prepared_matrix = kernel.prepare_matrix(
+                        eg_quad_info.ldis_quad_info.volume_up_interpolation_matrix())
+
+                self.executor.elwise_linear_cache[eg, op, field.dtype] = \
+                        prepared_matrix
+
+            kernel(field, prepared_matrix, out_vector=result)
+
+        return result
+
+    def map_quad_int_faces_grid_upsampler(self, op, expr):
+        field = self.rec(expr)
+        discr = self.executor.discr
+
+        from hedge.tools import is_zero
+        if is_zero(field):
+            return 0
+
+        quad_info = discr.get_cuda_quadrature_info(
+                op.quadrature_tag)
+
+        result = self.discr._empty_gpuarray(
+                quad_info.int_face_vector_size,
+                dtype=field.dtype)
+
+        for eg in self.discr.element_groups:
+            eg_quad_info = discr.get_cuda_elgroup_quadrature_info(
+                    eg, op.quadrature_tag)
+            kernel = discr.element_local_kernel(
+                    image_dofs_per_el
+                    =eg_quad_info.ldis_quad_info.face_node_count()
+                    * eg.local_discretization.face_count(),
+                    aligned_image_dofs_per_microblock
+                    =eg_quad_info.aligned_int_face_dofs_per_microblock)
+            try:
+                prepared_matrix = \
+                        self.executor.elwise_linear_cache[eg, op, field.dtype]
+            except KeyError:
+                prepared_matrix = kernel.prepare_matrix(
+                        eg_quad_info.ldis_quad_info
+                        .volume_to_face_up_interpolation_matrix())
+
+                self.executor.elwise_linear_cache[eg, op, field.dtype] = \
+                        prepared_matrix
+
+            kernel(field, prepared_matrix, out_vector=result)
+
+        return result
+
+    def map_quad_bdry_grid_upsampler(self, op, expr):
+        field = self.rec(expr)
+        discr = self.executor.discr
+
+        from hedge.tools import is_zero
+        if is_zero(field):
+            return 0
+
+        quad_info = discr.get_cuda_quadrature_info(
+                op.quadrature_tag)
+
+        result = self.discr._empty_gpuarray(
+                quad_info.face_storage_info.aligned_boundary_dof_count,
+                dtype=field.dtype)
+
+        for eg in self.discr.element_groups:
+            eqi = discr.get_cuda_elgroup_quadrature_info(
+                    eg, op.quadrature_tag)
+            kernel = discr.element_local_kernel(
+                    aligned_preimage_dofs_per_microblock
+                    =discr.face_storage_info.aligned_boundary_dofs_per_face,
+
+                    preimage_dofs_per_el
+                    =eg.local_discretization.face_node_count(),
+
+                    aligned_image_dofs_per_microblock
+                    =quad_info.face_storage_info.aligned_boundary_dofs_per_face,
+
+                    image_dofs_per_el
+                    =eqi.ldis_quad_info.face_node_count(),
+
+                    elements_per_microblock=1,
+                    microblock_count
+                    =quad_info.face_storage_info.aligned_boundary_dof_count//
+                    quad_info.face_storage_info.aligned_boundary_dofs_per_face)
+            try:
+                prepared_matrix = \
+                        self.executor.elwise_linear_cache[eg, op, field.dtype]
+            except KeyError:
+                prepared_matrix = kernel.prepare_matrix(
+                        eqi.ldis_quad_info
+                        .face_up_interpolation_matrix())
+
+                self.executor.elwise_linear_cache[eg, op, field.dtype] = \
+                        prepared_matrix
+
+            kernel(field, prepared_matrix, out_vector=result)
+
+        return result
+
 
     def map_elementwise_max(self, op, field_expr):
         field = self.rec(field_expr)
@@ -370,6 +486,10 @@ class VectorExprAssign(Assign):
                 allocator=discr.pool.allocate)
 
 class CUDAFluxBatchAssign(FluxBatchAssign):
+    """
+    :ivar quadrature_tag:
+    """
+
     @memoize_method
     def get_dependencies(self):
         deps = set()
@@ -384,7 +504,13 @@ class CUDAFluxBatchAssign(FluxBatchAssign):
 
     @memoize_method
     def kernel(self, executor):
-        return executor.discr.flux_plan.make_kernel(
+        discr = executor.discr
+        if self.quadrature_tag is None:
+            flux_plan = discr.flux_plan
+        else:
+            flux_plan = discr.get_cuda_quadrature_info(self.quadrature_tag).flux_plan
+
+        return flux_plan.make_kernel(
                 executor.discr, executor, self.expressions)
 
 
@@ -417,14 +543,21 @@ class OperatorCompiler(OperatorCompilerBase):
             [wdflux.BoundaryInfo(
                 flux_expr=bi.flux_expr,
                 bpair=self.rec(bi.bpair))
-                for bi in wdflux.boundaries])
+                for bi in wdflux.boundaries],
+            wdflux.quadrature_tag)
 
     def map_whole_domain_flux(self, wdflux):
         return self.map_planned_flux(wdflux)
 
     def make_flux_batch_assign(self, names, expressions, repr_op):
+        from pytools import single_valued
+        quadrature_tag = single_valued(
+                wdflux.quadrature_tag
+                for wdflux in expressions)
+
         return CUDAFluxBatchAssign(names=names, expressions=expressions, repr_op=repr_op,
-                dep_mapper_factory=self.dep_mapper_factory)
+                dep_mapper_factory=self.dep_mapper_factory,
+                quadrature_tag=quadrature_tag)
 
     def finalize_multi_assign(self, names, exprs, do_not_return, priority):
         return VectorExprAssign(names=names, exprs=exprs,
@@ -438,7 +571,7 @@ class OperatorCompiler(OperatorCompilerBase):
 class Executor(object):
     exec_mapper_class = ExecutionMapper
 
-    def __init__(self, discr, optemplate, post_bind_mapper):
+    def __init__(self, discr, optemplate, post_bind_mapper, type_hints={}):
         self.discr = discr
         self.elwise_linear_cache = {}
 
@@ -472,12 +605,10 @@ class Executor(object):
                 max_vectors_in_batch_expr=220 // calcsize("P")
                 )(
                 self.prepare_optemplate_stage2(discr.mesh, optemplate_stage1,
-                    discr.debug))
+                    discr.debug, type_hints=type_hints))
 
         # build the local kernels
         self.diff_kernel = self.discr.diff_plan.make_kernel(discr)
-        self.fluxlocal_kernel = self.discr.fluxlocal_plan.make_kernel(discr,
-                with_index_check=False)
 
         if "dump_op_code" in discr.debug:
             from hedge.tools import open_unique_debug_file
@@ -485,7 +616,8 @@ class Executor(object):
                     str(self.code))
 
     @staticmethod
-    def prepare_optemplate_stage2(mesh, optemplate, debug_flags=set()):
+    def prepare_optemplate_stage2(mesh, optemplate, debug_flags=set(),
+            type_hints={}):
         stage = [0]
 
         def dump_optemplate(name, optemplate):
@@ -502,7 +634,8 @@ class Executor(object):
         optemplate = process_optemplate(optemplate, 
                 post_bind_mapper=None, # we've already applied it in stage 1
                 dumper=dump_optemplate,
-                mesh=mesh)
+                mesh=mesh,
+                type_hints=type_hints)
 
         optemplate = BoundaryCombiner(mesh)(optemplate)
         dump_optemplate("final", optemplate)
@@ -515,14 +648,16 @@ class Executor(object):
         return post_bind_mapper(OperatorBinder()(optemplate))
 
     @classmethod
-    def prepare_optemplate(cls, mesh, optemplate, post_bind_mapper=lambda x: x):
+    def prepare_optemplate(cls, mesh, optemplate, post_bind_mapper=lambda x: x,
+            type_hints={}):
         return cls.prepare_optemplate_stage2(mesh,
-                cls.prepare_optemplate_stage1(optemplate, post_bind_mapper))
+                cls.prepare_optemplate_stage1(optemplate, post_bind_mapper),
+                type_hints=type_hints)
 
     @classmethod
-    def get_first_flux_batch(cls, mesh, optemplate):
+    def get_first_flux_batch(cls, mesh, optemplate, type_hints={}):
         compiler = OperatorCompiler()
-        compiler(cls.prepare_optemplate(mesh, optemplate))
+        compiler(cls.prepare_optemplate(mesh, optemplate, type_hints=type_hints))
 
         if compiler.flux_batches:
             return compiler.flux_batches[0]
@@ -545,12 +680,43 @@ class Executor(object):
 
     # data caches for execution -----------------------------------------------
     @memoize_method
-    def flux_local_data(self, kernel, elgroup, is_lift):
+    def get_flux_local_kernel(self, flux_plan):
+        quadrature_tag = flux_plan.quadrature_tag
+
+        eg, = self.discr.element_groups
+
+        if quadrature_tag is None:
+            ldis = eg.local_discretization
+        else:
+            eqi = self.discr.get_cuda_elgroup_quadrature_info(
+                    eg, quadrature_tag)
+            ldis = eqi.ldis_quad_info
+            assert (eqi.aligned_int_face_dofs_per_microblock ==
+                    flux_plan.aligned_face_dofs_per_microblock())
+
+        fdpm = flux_plan.aligned_face_dofs_per_microblock()
+        fdpe = ldis.face_node_count() * ldis.face_count()
+
+        return self.discr.element_local_kernel(
+                aligned_preimage_dofs_per_microblock=fdpm,
+                preimage_dofs_per_el=fdpe)
+
+    @memoize_method
+    def get_flux_local_data(self, kernel, elgroup, is_lift, quadrature_tag):
         if is_lift:
             mat = elgroup.local_discretization.lifting_matrix()
             prep_scaling = kernel.prepare_scaling(elgroup, elgroup.inverse_jacobians)
+            if quadrature_tag is not None:
+                raise NotImplementedError(
+                        "lifting and quadrature not supported together--yet")
         else:
-            mat = elgroup.local_discretization.multi_face_mass_matrix()
+            if quadrature_tag is None:
+                mat = elgroup.local_discretization.multi_face_mass_matrix()
+            else:
+                eqi = self.discr.get_cuda_elgroup_quadrature_info(
+                        elgroup, quadrature_tag)
+                mat = eqi.ldis_quad_info.multi_face_mass_matrix()
+
             prep_scaling = None
 
         prep_mat = kernel.prepare_matrix(mat)

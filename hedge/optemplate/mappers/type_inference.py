@@ -264,12 +264,12 @@ class type_info:
     # }}}
 
     # {{{ fully specified hedge data types
-    class VolumeVector(FinalType, VolumeVectorBase, VectorRepresentationBase):
+    class VolumeVector(FinalType, VectorRepresentationBase, VolumeVectorBase):
         def __repr__(self):
             return "Volume(%s)" % self.repr_tag
 
-    class InteriorFacesVector(FinalType, InteriorFacesVectorBase, 
-            VectorRepresentationBase):
+    class InteriorFacesVector(FinalType, VectorRepresentationBase, 
+            InteriorFacesVectorBase):
         def __init__(self, repr_tag):
             if not isinstance(repr_tag, QuadratureRepresentation):
                 raise TypeError("InteriorFacesVector is not usable with non-"
@@ -390,7 +390,7 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
 
     # {{{ base cases
     def infer_for_children(self, expr, typedict, children):
-        # This routine alles scalar among children and treats them as
+        # This routine allows scalar among children and treats them as
         # not type-changing
 
         tp = typedict[expr]
@@ -628,10 +628,21 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
         return type_info.Scalar().unify(typedict[expr], expr)
 
     def map_normal_component(self, expr, typedict):
-        return type_info.KnownBoundary(expr.tag).unify(typedict[expr], expr)
+        # FIXME: This is a bit dumb. If the quadrature_tag is None,
+        # we don't know whether the normal component was specialized
+        # to 'no quadrature' or if it simply does not know yet
+        # whether it will be on a quadrature grid.
+
+        if expr.quadrature_tag is not None:
+            return (type_info.BoundaryVector(expr.boundary_tag,
+                QuadratureRepresentation(expr.quadrature_tag))
+                .unify(typedict[expr], expr))
+        else:
+            return (type_info.KnownBoundary(expr.boundary_tag)
+                    .unify(typedict[expr], expr))
 
     def map_jacobian(self, expr, typedict):
-        return type_info.VolumeVector(NodalRepresentation())
+        return type_info.KnownVolume()
 
     map_forward_metric_derivative = map_jacobian
     map_inverse_metric_derivative = map_jacobian

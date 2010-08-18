@@ -175,9 +175,9 @@ class ExecutionMapper(ExecutionMapperBase):
         return result, []
 
     def exec_diff_batch_assign(self, insn):
-        xyz_diff = self.executor.diff(insn.operators, self.rec(insn.field))
+        rst_diff = self.executor.diff(insn.operators, self.rec(insn.field))
 
-        return [(name, diff) for name, diff in zip(insn.names, xyz_diff)], []
+        return [(name, diff) for name, diff in zip(insn.names, rst_diff)], []
 
     exec_quad_diff_batch_assign = exec_diff_batch_assign
 
@@ -317,18 +317,6 @@ class ExecutionMapper(ExecutionMapperBase):
             perform_elwise_max(eg.ranges, field, out)
 
         return out
-
-    def map_call(self, expr):
-        from pymbolic.primitives import Variable
-        assert isinstance(expr.function, Variable)
-        func_name = expr.function.name
-
-        try:
-            func = self.discr.exec_functions[func_name]
-        except KeyError:
-            func = getattr(numpy, expr.function.name)
-
-        return func(*[self.rec(p) for p in expr.parameters])
 
     # }}}
 

@@ -61,13 +61,14 @@ def main(write_output=True):
         flow = Vortex()
         fields = flow.volume_interpolant(0, discr)
 
-        from hedge.models.gas_dynamics import GasDynamicsOperator
+        from hedge.models.gas_dynamics import (
+                GasDynamicsOperator, PolytropeEOS, GammaLawEOS)
+
         from hedge.mesh import TAG_ALL
-        op = GasDynamicsOperator(dimensions=2, 
-                gamma=flow.gamma, 
-                mu=flow.mu,
-                prandtl=flow.prandtl, 
-                spec_gas_const=flow.spec_gas_const,
+        # works equally well for GammaLawEOS
+        op = GasDynamicsOperator(dimensions=2, mu=flow.mu,
+                prandtl=flow.prandtl, spec_gas_const=flow.spec_gas_const,
+                equation_of_state=PolytropeEOS(flow.gamma),
                 bc_inflow=flow, bc_outflow=flow, bc_noslip=flow,
                 inflow_tag=TAG_ALL, source=None)
 

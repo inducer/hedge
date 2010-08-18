@@ -272,7 +272,7 @@ class VariableCoefficientAdvectionOperator(HyperbolicOperator):
 
         return do
 
-    def op_template(self, with_sensor):
+    def op_template(self, with_sensor=False):
         # {{{ operator preliminaries ------------------------------------------
         from hedge.optemplate import (Field, BoundaryPair, get_flux_operator,
                 make_stiffness_t, InverseMassOperator, make_vector_field, 
@@ -353,6 +353,10 @@ class VariableCoefficientAdvectionOperator(HyperbolicOperator):
             diffusion_part = 0
 
         # }}}
+
+        to_quad = QuadratureGridUpsampler("quad")
+        quad_u = cse(to_quad(u))
+        quad_v = cse(to_quad(v))
 
         return m_inv(numpy.dot(minv_st, cse(quad_v*quad_u)) 
                 - (flux_op(quad_face_w) 
