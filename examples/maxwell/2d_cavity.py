@@ -71,7 +71,7 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
                  "dielectric" : (2*epsilon0, mu0)}
 
     output_dir = "2d_cavity"
-   
+
     import os
     if not os.access(output_dir, os.F_OK):
         os.makedirs(output_dir)
@@ -262,8 +262,4 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
 
 # entry point -----------------------------------------------------------------
 if __name__ == "__main__":
-    #from pytools.mpi import in_mpi_relaunch
-    #if in_mpi_relaunch():
-    #    test_maxwell_cavities_mpi()
-    #else:
     main(write_output=True)

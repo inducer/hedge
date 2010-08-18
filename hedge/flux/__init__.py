@@ -210,7 +210,7 @@ class FluxConstantPlaceholder(object):
 
 
 class FluxZeroPlaceholder(FluxConstantPlaceholder):
-    def __init__(self, constant):
+    def __init__(self):
         FluxConstantPlaceholder.__init__(self, 0)
 
 
