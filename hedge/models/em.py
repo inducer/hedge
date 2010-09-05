@@ -351,7 +351,7 @@ class MaxwellOperator(HyperbolicOperator):
                 (self.incident_tag, self.incident_bc(w)),
                 ]
 
-        def make_flux_bc_vector(bc):
+        def make_flux_bc_vector(tag, bc):
             if self.fixed_material:
                 return bc
             else:
@@ -367,7 +367,7 @@ class MaxwellOperator(HyperbolicOperator):
                     flux_op(flux_w)
                     + sum(
                         bdry_flux_op(BoundaryPair(
-                            flux_w, make_flux_bc_vector(bc), tag))
+                            flux_w, make_flux_bc_vector(tag, bc), tag))
                         for tag, bc in tags_and_bcs))
                     ) / material_divisor
 
