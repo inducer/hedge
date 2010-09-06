@@ -68,12 +68,10 @@ class KennedyCarpenterIMEXRungeKuttaBase(EmbeddedRungeKuttaTimeStepperBase):
             self.dof_count = count_dofs(self.last_rhs_expl)
 
             if self.adaptive:
-                self.ip = self.vector_primitive_factory \
-                        .make_inner_product(self.last_rhs)
+                self.norm = self.vector_primitive_factory \
+                        .make_maximum_norm(self.last_rhs)
             else:
-                self.ip = None
-
-        ip = self.ip
+                self.norm = None
 
         # }}}
 
@@ -152,7 +150,7 @@ class KennedyCarpenterIMEXRungeKuttaBase(EmbeddedRungeKuttaTimeStepperBase):
                 from hedge.timestep.runge_kutta import adapt_step_size
                 accept_step, next_dt, rel_err = adapt_step_size(
                         t, dt, y, high_order_end_y, low_order_end_y,
-                        self, self.get_linear_combiner(2, self.last_rhs), ip)
+                        self, self.get_linear_combiner(2, self.last_rhs), self.norm)
 
                 if not accept_step:
                     if reject_hook:

@@ -140,10 +140,7 @@ class RK4TimeStepper(LSRK4TimeStepper):
 
 # {{{ Embedded Runge-Kutta schemes base class ---------------------------------
 def adapt_step_size(t, dt,
-        start_y, high_order_end_y, low_order_end_y, stepper, lc2, ip):
-    def norm(a):
-        return numpy.sqrt(ip(a, a))
-
+        start_y, high_order_end_y, low_order_end_y, stepper, lc2, norm):
     normalization = stepper.atol + stepper.rtol*max(
                 norm(low_order_end_y), norm(start_y))
 
@@ -251,12 +248,10 @@ class EmbeddedRungeKuttaTimeStepperBase(TimeStepper):
             self.dof_count = count_dofs(self.last_rhs)
 
             if self.adaptive:
-                self.ip = self.vector_primitive_factory \
-                        .make_inner_product(self.last_rhs)
+                self.norm = self.vector_primitive_factory \
+                        .make_maximum_norm(self.last_rhs)
             else:
-                self.ip = None
-
-        ip = self.ip
+                self.norm = None
 
         # }}}
 
@@ -312,7 +307,7 @@ class EmbeddedRungeKuttaTimeStepperBase(TimeStepper):
                 flop_count[0] += 3+1 # one two-lincomb, one norm
                 accept_step, next_dt, rel_err = adapt_step_size(
                         t, dt, y, high_order_end_y, low_order_end_y,
-                        self, self.get_linear_combiner(2, self.last_rhs), ip)
+                        self, self.get_linear_combiner(2, self.last_rhs), self.norm)
 
                 if not accept_step:
                     if reject_hook:
