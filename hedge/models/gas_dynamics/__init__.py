@@ -153,7 +153,8 @@ class GasDynamicsOperator(TimeDependentOperator):
                 raise ValueError("can only specify one of gamma and equation_of_state")
 
             from warnings import warn
-            warn("argument gamma is deprecated in favor of equation_of_state")
+            warn("argument gamma is deprecated in favor of equation_of_state",
+                    DeprecationWarning, stacklevel=2)
 
             equation_of_state = GammaLawEOS(gamma)
 
@@ -432,7 +433,7 @@ class GasDynamicsOperator(TimeDependentOperator):
 
     def heat_conduction_coefficient(self, to_quad_op):
         mu = self.get_mu(self.state(), to_quad_op)
-        if numpy.isinf(self.prandtl) or self.prandtl is None:
+        if self.prandtl is None or numpy.isinf(self.prandtl):
             return 0
 
         eos = self.equation_of_state
