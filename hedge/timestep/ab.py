@@ -123,7 +123,7 @@ def make_ab_coefficients(order):
 class AdamsBashforthTimeStepper(TimeStepper):
     dt_fudge_factor = 0.95
 
-    def __init__(self, order, startup_stepper=None, dtype=numpy.float64):
+    def __init__(self, order, startup_stepper=None, dtype=numpy.float64, rcon=None):
         self.f_history = []
 
         from pytools import match_precision
@@ -139,9 +139,26 @@ class AdamsBashforthTimeStepper(TimeStepper):
             from hedge.timestep.runge_kutta import LSRK4TimeStepper
             self.startup_stepper = LSRK4TimeStepper(self.dtype)
 
+        from pytools.log import IntervalTimer, EventCounter
+        timer_factory = IntervalTimer
+        if rcon is not None:
+            timer_factory = rcon.make_timer
+
+        self.timer = timer_factory(
+                "t_ab", "Time spent doing algebra in Adams-Bashforth")
+        self.flop_counter = EventCounter(
+                "n_flops_ab", "Floating point operations performed in AB")
+
+    @property
+    def order(self):
+        return len(self.coefficients)
 
     def get_stability_relevant_init_args(self):
-        return (self.order, self.startup_stepper)
+        return (self.order,)
+
+    def add_instrumentation(self, logmgr):
+        logmgr.add_quantity(self.timer)
+        logmgr.add_quantity(self.flop_counter)
 
     def __getinitargs__(self):
         return (self.order, self.startup_stepper)
@@ -150,6 +167,9 @@ class AdamsBashforthTimeStepper(TimeStepper):
         if len(self.f_history) == 0:
             # insert IC
             self.f_history.append(rhs(t, y))
+
+            from hedge.tools import count_dofs
+            self.dof_count = count_dofs(self.f_history[0])
 
         if len(self.f_history) < len(self.coefficients):
             ynew = self.startup_stepper(y, t, dt, rhs)
@@ -160,6 +180,7 @@ class AdamsBashforthTimeStepper(TimeStepper):
         else:
             from operator import add
 
+            sub_timer = self.timer.start_sub_timer()
             assert len(self.coefficients) == len(self.f_history)
             ynew = y + dt * reduce(add,
                     (coeff * f 
@@ -167,6 +188,9 @@ class AdamsBashforthTimeStepper(TimeStepper):
                         zip(self.coefficients, self.f_history)))
 
             self.f_history.pop()
+            sub_timer.stop().submit()
+
+        self.flop_counter.add((2+2*len(self.coefficients)-1)*self.dof_count)
 
         self.f_history.insert(0, rhs(t+dt, ynew))
         return ynew
