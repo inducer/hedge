@@ -780,9 +780,9 @@ class OperatorCompilerBase(IdentityMapper):
                     if diff.op.equal_except_for_axis(expr.op)
                     and diff.field == expr.field]
 
-            from pytools import single_valued
             names = [self.get_var_name() for d in all_diffs]
 
+            from pytools import single_valued
             op_class=single_valued(type(d.op) for d in all_diffs)
 
             from hedge.optemplate.operators import \
