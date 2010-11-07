@@ -3,7 +3,9 @@
 find . -maxdepth 1 \
   \( -name '*.vtk' \
   -o -name '*.vtu' \
+  -o -name '*.vts' \
   -o -name '*.pvtu' \
+  -o -name '*.pvts' \
   -o -name '*.pvd' \
   -o -name '*.silo' \
   -o -name '*.eps' \
