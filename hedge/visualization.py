@@ -359,7 +359,7 @@ class SiloMeshData(object):
                     elif ldis.geometry is Tetrahedron:
                         self.shapetypes.append(DB_ZONETYPE_TET)
                     else:
-                        raise RuntimeError, "unsupported element type: %s" % ldis.geometry
+                        raise RuntimeError("unsupported element type: %s" % ldis.geometry)
 
                 self.shapesizes.append(poly_length)
                 self.shapecounts.append(poly_count)

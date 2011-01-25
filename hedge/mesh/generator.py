@@ -693,7 +693,7 @@ def make_box_mesh(a=(0,0,0),b=(1,1,1),
     from meshpy.tet import MeshInfo, build
     from meshpy.geometry import make_box
 
-    points, facets, facet_markers = make_box(a, b)
+    points, facets, _, facet_markers = make_box(a, b)
 
     mesh_info = MeshInfo()
     mesh_info.set_points(points)
