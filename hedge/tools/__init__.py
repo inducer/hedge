@@ -43,7 +43,10 @@ from hedge.flux.tools import *
 
 # small utilities -------------------------------------------------------------
 def is_zero(x):
-    return isinstance(x, (int, float)) and x == 0
+    try:
+        return x == 0
+    except:
+        return False
 
 
 
