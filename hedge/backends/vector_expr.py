@@ -200,9 +200,15 @@ class CompiledVectorExpressionBase(object):
                 if not vei.do_not_return]
 
         def real_const_mapper(num):
+            # Make sure we do not generate integers by accident.
+            # Oh, C and your broken division semantics.
+
             r = repr(num)
             if "." not in r:
-                return "double(%s)" % r
+                from pytools import to_uncomplex_dtype
+                from codepy.cgen import dtype_to_ctype
+                return "%s(%s)" % (dtype_to_ctype(
+                        to_uncomplex_dtype(result_dtype)), r)
             else:
                 return r
 
