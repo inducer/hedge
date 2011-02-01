@@ -566,10 +566,14 @@ def make_ball_mesh(r=0.5, subdivisions=10, max_volume=None,
     mesh_info.set_facets_ex(facets, facet_holestarts, facet_markers)
     generated_mesh = build(mesh_info, max_volume=max_volume)
 
-    from hedge.mesh import make_conformal_mesh
-    return make_conformal_mesh(
-            generated_mesh.points,
-            generated_mesh.elements,
+    vertices = numpy.asarray(generated_mesh.points, dtype=float, order="C")
+    from hedge.mesh.element import Tetrahedron
+
+    from hedge.mesh import make_conformal_mesh_ext
+    return make_conformal_mesh_ext(
+            vertices,
+            [Tetrahedron(i, el_idx, vertices)
+                for i, el_idx in enumerate(generated_mesh.elements)],
             boundary_tagger)
 
 
