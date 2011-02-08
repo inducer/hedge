@@ -162,6 +162,10 @@ class ObjectArrayMaximumNormWrapper(object):
 
 # {{{ vector primitive factory
 
+_NO_VPF_SUGGESTION = ("--perhaps you need to pass "
+                        "a vector primitive factory somewhere (for example "
+                        "to a timestepper)?")
+
 class VectorPrimitiveFactory(object):
     def make_special_linear_combiner(self, result_dtype, scalar_dtype, sample_vec, arg_count):
         return None
@@ -191,7 +195,8 @@ class VectorPrimitiveFactory(object):
 
             if kernel is None:
                 from warnings import warn
-                warn("using unoptimized linear combination routine")
+                warn("using unoptimized linear combination routine" + 
+                        _NO_VPF_SUGGESTION)
                 kernel = UnoptimizedLinearCombiner(result_dtype, scalar_dtype)
 
         if sample_is_obj_array:
@@ -216,9 +221,7 @@ class VectorPrimitiveFactory(object):
 
             if kernel is None:
                 raise RuntimeError("could not find an inner product routine for "
-                        "the given sample vector--perhaps you need to pass "
-                        "a vector primitive factory somewhere (for example "
-                        "to a timestepper)?")
+                        "the given sample vector" + _NO_VPF_SUGGESTION)
         if sample_is_obj_array:
             kernel = ObjectArrayInnerProductWrapper(kernel)
 
@@ -243,9 +246,7 @@ class VectorPrimitiveFactory(object):
 
             if kernel is None:
                 raise RuntimeError("could not find a maximum norm routine for "
-                        "the given sample vector--perhaps you need to pass "
-                        "a vector primitive factory somewhere (for example "
-                        "to a timestepper)?")
+                        "the given sample vector" + _NO_VPF_SUGGESTION)
 
         if sample_is_obj_array:
             kernel = ObjectArrayMaximumNormWrapper(kernel)
