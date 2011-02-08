@@ -312,6 +312,8 @@ class Discretization(hedge.discretization.Discretization):
         flux plan will be tuned.
         """
 
+        from logging import info as log_info
+
         if not isinstance(mesh, hedge.mesh.Mesh):
             raise TypeError("mesh must be of type hedge.mesh.Mesh")
 
@@ -321,6 +323,9 @@ class Discretization(hedge.discretization.Discretization):
                     "in the tune_for= kwarg.")
 
         # {{{ initialize superclass
+
+        log_info("cuda discr: init superclass")
+
         ldis = self.get_local_discretization(mesh, local_discretization, order)
 
         hedge.discretization.Discretization.__init__(self, mesh, ldis, debug=debug,
@@ -332,6 +337,8 @@ class Discretization(hedge.discretization.Discretization):
         # {{{ cuda init
         self.cleanup_context = None
         if init_cuda:
+            log_info("cuda discr: setting up cuda context")
+
             cuda.init()
 
             if run_context is None or len(run_context.ranks) == 1:
@@ -372,6 +379,8 @@ class Discretization(hedge.discretization.Discretization):
         # }}}
 
         # {{{ generate flux plan
+        log_info("cuda discr: generating flux plan")
+
         self.partition_cache = {}
 
         allow_microblocking = "cuda_no_microblock" not in self.debug
@@ -412,8 +421,10 @@ class Discretization(hedge.discretization.Discretization):
             flux_plan = maxdof_flux_plan
 
         # partition mesh, obtain updated plan
-        pdata = self._get_partition_data(
-                flux_plan.elements_per_block())
+        log_info("cuda discr: partitioning mesh")
+        pdata = self._get_partition_data(flux_plan.elements_per_block())
+
+        log_info("cuda discr: posting decomposition")
         given.post_decomposition(
                 block_count=len(pdata.blocks),
                 microblocks_per_block=flux_plan.microblocks_per_block())
@@ -426,8 +437,8 @@ class Discretization(hedge.discretization.Discretization):
         dpm = given.microblock.aligned_floats
         dpe = ldis.node_count()
 
-        diff_plan, _time = make_diff_plan(self, given,
-                dpm, dpe, dpm, dpe)
+        log_info("cuda discr: making diff plan")
+        diff_plan, _time = make_diff_plan(self, given, dpm, dpe, dpm, dpe)
 
         sys_size = flux_plan.flux_count
 
@@ -439,7 +450,11 @@ class Discretization(hedge.discretization.Discretization):
         # }}}
 
         # {{{ build data structures
+        log_info("cuda discr: building blocks")
+
         self.blocks = self._build_blocks()
+
+        log_info("cuda discr: building face storage info")
         self.face_storage_info = self._build_face_storage_info(
                 quadrature_tag=None)
         # }}}
