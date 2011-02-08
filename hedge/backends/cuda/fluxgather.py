@@ -865,13 +865,6 @@ class Kernel:
             descr="load face_pair data")
             +[S("__syncthreads()"), Line() ])
 
-        f_body.append(LiteralBlock("""
-            for (unsigned i = 0; i < ALIGNED_FACE_DOFS_PER_MB*BLOCK_MB_COUNT; ++i)
-              for (unsigned j = 0; j < FLUX_COUNT; ++j)
-                smem_fluxes_on_faces[j][i] = 17;
-            __syncthreads();
-            """))
-
         def get_flux_code(flux_writer):
             flux_code = Block([])
 

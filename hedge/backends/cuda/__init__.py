@@ -198,41 +198,6 @@ def make_gpu_partition_greedy(adjgraph, max_block_size):
 
     return partition, blocks
 
-
-
-
-def make_gpu_partition_metis(adjgraph, max_block_size):
-    from pymetis import part_graph
-
-    orig_part_count = part_count = len(adjgraph)//max_block_size+1
-
-    attempt_count = 5
-    for attempt in range(attempt_count):
-        if part_count > 1:
-            cuts, partition = part_graph(part_count,
-                    adjgraph, vweights=[1000]*len(adjgraph))
-        else:
-            # metis bug workaround:
-            # metis returns ones (instead of zeros) if part_count == 1
-            partition = [0]*len(adjgraph)
-
-        blocks = [[] for i in range(part_count)]
-        for el_id, block in enumerate(partition):
-            blocks[block].append(el_id)
-        block_elements = max(len(block_els) for block_els in blocks)
-
-        if block_elements <= max_block_size:
-            return partition, blocks
-
-        part_count += min(5, int(part_count*0.01))
-
-    from warnings import warn
-
-    warn("could not achieve Metis partition after %d attempts, falling back to greedy"
-            % attempt_count)
-
-    return make_gpu_partition_greedy(adjgraph, max_block_size)
-
 # }}}
 
 
@@ -268,7 +233,6 @@ class Discretization(hedge.discretization.Discretization):
             "cuda_keep_kernels",
             "cuda_plan_log",
             "cuda_plan_no_progress",
-            "cuda_no_metis",
             ])
 
     # }}}
@@ -283,23 +247,9 @@ class Discretization(hedge.discretization.Discretization):
         except KeyError:
             pass
 
-        try:
-            import pymetis
-            metis_available = True
-        except ImportError:
-            metis_available = False
-
-        if "cuda_no_metis" in self.debug:
-            metis_available = False
-
-        if max_block_size >= 10 and metis_available:
-            partition, blocks = make_gpu_partition_metis(
-                    self.mesh.element_adjacency_graph(),
-                    max_block_size)
-        else:
-            partition, blocks = make_gpu_partition_greedy(
-                    self.mesh.element_adjacency_graph(),
-                    max_block_size)
+        partition, blocks = make_gpu_partition_greedy(
+                self.mesh.element_adjacency_graph(),
+                max_block_size)
 
         # prepare a mapping:  block# -> # of external interfaces
         block2extifaces = dict((i, 0) for i in range(len(blocks)))
@@ -362,6 +312,8 @@ class Discretization(hedge.discretization.Discretization):
         flux plan will be tuned.
         """
 
+        from logging import info as log_info
+
         if not isinstance(mesh, hedge.mesh.Mesh):
             raise TypeError("mesh must be of type hedge.mesh.Mesh")
 
@@ -371,6 +323,9 @@ class Discretization(hedge.discretization.Discretization):
                     "in the tune_for= kwarg.")
 
         # {{{ initialize superclass
+
+        log_info("cuda discr: init superclass")
+
         ldis = self.get_local_discretization(mesh, local_discretization, order)
 
         hedge.discretization.Discretization.__init__(self, mesh, ldis, debug=debug,
@@ -382,6 +337,8 @@ class Discretization(hedge.discretization.Discretization):
         # {{{ cuda init
         self.cleanup_context = None
         if init_cuda:
+            log_info("cuda discr: setting up cuda context")
+
             cuda.init()
 
             if run_context is None or len(run_context.ranks) == 1:
@@ -422,6 +379,8 @@ class Discretization(hedge.discretization.Discretization):
         # }}}
 
         # {{{ generate flux plan
+        log_info("cuda discr: generating flux plan")
+
         self.partition_cache = {}
 
         allow_microblocking = "cuda_no_microblock" not in self.debug
@@ -462,8 +421,10 @@ class Discretization(hedge.discretization.Discretization):
             flux_plan = maxdof_flux_plan
 
         # partition mesh, obtain updated plan
-        pdata = self._get_partition_data(
-                flux_plan.elements_per_block())
+        log_info("cuda discr: partitioning mesh")
+        pdata = self._get_partition_data(flux_plan.elements_per_block())
+
+        log_info("cuda discr: posting decomposition")
         given.post_decomposition(
                 block_count=len(pdata.blocks),
                 microblocks_per_block=flux_plan.microblocks_per_block())
@@ -476,8 +437,8 @@ class Discretization(hedge.discretization.Discretization):
         dpm = given.microblock.aligned_floats
         dpe = ldis.node_count()
 
-        diff_plan, _time = make_diff_plan(self, given,
-                dpm, dpe, dpm, dpe)
+        log_info("cuda discr: making diff plan")
+        diff_plan, _time = make_diff_plan(self, given, dpm, dpe, dpm, dpe)
 
         sys_size = flux_plan.flux_count
 
@@ -489,7 +450,11 @@ class Discretization(hedge.discretization.Discretization):
         # }}}
 
         # {{{ build data structures
+        log_info("cuda discr: building blocks")
+
         self.blocks = self._build_blocks()
+
+        log_info("cuda discr: building face storage info")
         self.face_storage_info = self._build_face_storage_info(
                 quadrature_tag=None)
         # }}}
