@@ -481,7 +481,6 @@ class EmbeddedShuOsherFormTimeStepperBase(EmbeddedRungeKuttaTimeStepperBase):
                     assert abs(time_fractions[self.high_order_index] - 1) < 1e-15
                     return row_values[self.high_order_index]
                 else:
-                    print abs(time_fractions[self.low_order_index] - 1)
                     assert abs(time_fractions[self.low_order_index] - 1) < 1e-15
                     return row_values[self.low_order_index]
             else:
