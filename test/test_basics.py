@@ -218,11 +218,28 @@ def test_timestep_accuracy():
     from hedge.timestep.runge_kutta import (
             LSRK4TimeStepper,
             ODE23TimeStepper,
-            ODE45TimeStepper)
+            ODE45TimeStepper,
+            SSP2TimeStepper,
+            SSP3TimeStepper,
+            SSP23FewStageTimeStepper,
+            SSP23ManyStageTimeStepper)
+
     from hedge.timestep.imex_rk import KennedyCarpenterIMEXARK4
     from hedge.timestep.ab import AdamsBashforthTimeStepper
     from hedge.timestep.ssprk3 import SSPRK3TimeStepper
     from hedge.timestep.dumka3 import Dumka3TimeStepper
+
+    verify_timestep_order(SSPRK3TimeStepper, 3)
+
+    verify_timestep_order(lambda: SSP2TimeStepper(), 2)
+    verify_timestep_order(lambda: SSP3TimeStepper(), 3)
+
+    # currently broken
+    # verify_timestep_order(lambda: SSP23ManyStageTimeStepper(False), 2)
+    verify_timestep_order(lambda: SSP23ManyStageTimeStepper(True), 3)
+
+    verify_timestep_order(lambda: SSP23FewStageTimeStepper(True), 3)
+    verify_timestep_order(lambda: SSP23FewStageTimeStepper(False), 2)
 
     verify_timestep_order(lambda: ODE45TimeStepper(True), 5, dtmul=2**5)
     verify_timestep_order(lambda: ODE45TimeStepper(False), 4)
@@ -231,8 +248,6 @@ def test_timestep_accuracy():
     for o in [1,4]:
         verify_timestep_order(lambda : AdamsBashforthTimeStepper(o), o)
     verify_timestep_order(LSRK4TimeStepper, 4)
-    verify_timestep_order(SSPRK3TimeStepper, 3)
-    verify_timestep_order(SSPRK3TimeStepper, 3)
 
     for pol_index in [2,3,4]:
         assert pol_index < Dumka3TimeStepper.POLYNOMIAL_COUNT
