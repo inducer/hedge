@@ -216,12 +216,16 @@ class VectorPrimitiveFactory(object):
 
             if kernel is None:
                 raise RuntimeError("could not find an inner product routine for "
-                        "the given sample vector")
-
+                        "the given sample vector--perhaps you need to pass "
+                        "a vector primitive factory somewhere (for example "
+                        "to a timestepper)?")
         if sample_is_obj_array:
             kernel = ObjectArrayInnerProductWrapper(kernel)
 
         return kernel
+
+    def make_special_maximum_norm(self, sample_vec):
+        return None
 
     def make_maximum_norm(self, sample_vec):
         from hedge.tools import is_obj_array
@@ -239,7 +243,9 @@ class VectorPrimitiveFactory(object):
 
             if kernel is None:
                 raise RuntimeError("could not find a maximum norm routine for "
-                        "the given sample vector")
+                        "the given sample vector--perhaps you need to pass "
+                        "a vector primitive factory somewhere (for example "
+                        "to a timestepper)?")
 
         if sample_is_obj_array:
             kernel = ObjectArrayMaximumNormWrapper(kernel)
