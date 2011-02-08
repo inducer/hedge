@@ -198,41 +198,6 @@ def make_gpu_partition_greedy(adjgraph, max_block_size):
 
     return partition, blocks
 
-
-
-
-def make_gpu_partition_metis(adjgraph, max_block_size):
-    from pymetis import part_graph
-
-    orig_part_count = part_count = len(adjgraph)//max_block_size+1
-
-    attempt_count = 5
-    for attempt in range(attempt_count):
-        if part_count > 1:
-            cuts, partition = part_graph(part_count,
-                    adjgraph, vweights=[1000]*len(adjgraph))
-        else:
-            # metis bug workaround:
-            # metis returns ones (instead of zeros) if part_count == 1
-            partition = [0]*len(adjgraph)
-
-        blocks = [[] for i in range(part_count)]
-        for el_id, block in enumerate(partition):
-            blocks[block].append(el_id)
-        block_elements = max(len(block_els) for block_els in blocks)
-
-        if block_elements <= max_block_size:
-            return partition, blocks
-
-        part_count += min(5, int(part_count*0.01))
-
-    from warnings import warn
-
-    warn("could not achieve Metis partition after %d attempts, falling back to greedy"
-            % attempt_count)
-
-    return make_gpu_partition_greedy(adjgraph, max_block_size)
-
 # }}}
 
 
@@ -268,7 +233,6 @@ class Discretization(hedge.discretization.Discretization):
             "cuda_keep_kernels",
             "cuda_plan_log",
             "cuda_plan_no_progress",
-            "cuda_no_metis",
             ])
 
     # }}}
@@ -283,23 +247,9 @@ class Discretization(hedge.discretization.Discretization):
         except KeyError:
             pass
 
-        try:
-            import pymetis
-            metis_available = True
-        except ImportError:
-            metis_available = False
-
-        if "cuda_no_metis" in self.debug:
-            metis_available = False
-
-        if max_block_size >= 10 and metis_available:
-            partition, blocks = make_gpu_partition_metis(
-                    self.mesh.element_adjacency_graph(),
-                    max_block_size)
-        else:
-            partition, blocks = make_gpu_partition_greedy(
-                    self.mesh.element_adjacency_graph(),
-                    max_block_size)
+        partition, blocks = make_gpu_partition_greedy(
+                self.mesh.element_adjacency_graph(),
+                max_block_size)
 
         # prepare a mapping:  block# -> # of external interfaces
         block2extifaces = dict((i, 0) for i in range(len(blocks)))
