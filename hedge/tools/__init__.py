@@ -44,7 +44,11 @@ from hedge.flux.tools import *
 # small utilities -------------------------------------------------------------
 def is_zero(x):
     try:
-        return x == 0
+        result = x == 0
+        if isinstance(result, numpy.ndarray):
+            return result.all()
+        else:
+            return result
     except:
         return False
 
