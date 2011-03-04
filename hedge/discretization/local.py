@@ -981,7 +981,7 @@ class TriangleDiscretization(PkSimplexDiscretization):
     def equilateral_nodes(self):
         """Generate warped nodes in equilateral coordinates (x,y)."""
 
-        # port of Hesthaven/Warburton's Nodes2D routine
+        # port of Warburton's Nodes2D routine
         # note that the order of the barycentric coordinates is changed
         # match the order of the equilateral vertices
 
