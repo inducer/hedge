@@ -426,11 +426,6 @@ class EmbeddedShuOsherFormTimeStepperBase(EmbeddedRungeKuttaTimeStepperBase):
 
 
     def __call__(self, y, t, dt, rhs, reject_hook=None):
-        if self.adaptive:
-            self.norm = self.vector_primitive_factory \
-                    .make_maximum_norm(self.last_rhs)
-        else:
-            self.norm = None
 
         flop_count = 0
 
@@ -492,11 +487,18 @@ class EmbeddedShuOsherFormTimeStepperBase(EmbeddedRungeKuttaTimeStepperBase):
                 high_order_end_y = row_values[self.high_order_index]
                 low_order_end_y = row_values[self.low_order_index]
 
-                flop_count += 3+1 # one two-lincomb, one norm
                 some_rhs = iter(rhss.itervalues()).next()
+
+                try:
+                    norm = self.norm
+                except AttributeError:
+                    norm = self.norm = self.vector_primitive_factory \
+                            .make_maximum_norm(some_rhs)
+
+                flop_count += 3+1 # one two-lincomb, one norm
                 accept_step, next_dt, rel_err = adapt_step_size(
                         t, dt, y, high_order_end_y, low_order_end_y,
-                        self, self.get_linear_combiner(2, some_rhs), self.norm)
+                        self, self.get_linear_combiner(2, some_rhs), norm)
 
                 if not accept_step:
                     if reject_hook:
@@ -506,7 +508,7 @@ class EmbeddedShuOsherFormTimeStepperBase(EmbeddedRungeKuttaTimeStepperBase):
                     # ... and go back to top of loop
                 else:
                     # finish up
-                    self.flop_counter.add(self.dof_count*flop_count[0])
+                    self.flop_counter.add(self.dof_count*flop_count)
 
                     return high_order_end_y, t+dt, dt, next_dt
                 # }}}
@@ -614,4 +616,8 @@ class SSP23ManyStageTimeStepper(EmbeddedShuOsherFormTimeStepperBase):
     high_order_index = -1
 
 # }}}
+
+
+
+
 # vim: foldmethod=marker

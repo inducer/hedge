@@ -22,10 +22,14 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 
 
 import numpy
-from hedge.timestep.runge_kutta import SSP3TimeStepper as SSPRK3TimeStepper
-from warnings import warn
+from hedge.timestep.runge_kutta import SSP3TimeStepper as SSPRK3TimeStepperBase
 
 
 
-warn("hedge.timestep.ssprk3 is deprecated. Use the generic SSP support "
-        "in hedge.timestep.runge_kutta instead.")
+class SSPRK3TimeStepper(SSPRK3TimeStepperBase):
+    def __init__(self, *args, **kwargs):
+        from warnings import warn
+        warn("hedge.timestep.ssprk3 is deprecated. Use the generic SSP support "
+                "in hedge.timestep.runge_kutta instead.")
+
+        SSPRK3TimeStepperBase.__init__(self, *args, **kwargs)

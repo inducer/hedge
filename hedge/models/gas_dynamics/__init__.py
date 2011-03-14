@@ -250,7 +250,7 @@ class GasDynamicsOperator(TimeDependentOperator):
         return cse(self.p(q), "p")
 
     def temperature(self, q):
-        c_v = 1 / (self.gamma - 1) * self.spec_gas_const
+        c_v = 1 / (self.equation_of_state.gamma - 1) * self.spec_gas_const
         return (self.e(q)/self.rho(q) - 0.5 * numpy.dot(self.u(q), self.u(q))) / c_v
 
     def cse_temperature(self, q):
