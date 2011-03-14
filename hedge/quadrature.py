@@ -255,6 +255,8 @@ class SimplexCubature(object):
         n = dimension
         d = 2*s+1
 
+        self.exact_to = d
+
         from pytools import \
                 generate_decreasing_nonnegative_tuples_summing_to, \
                 generate_unique_permutations, \
@@ -316,6 +318,40 @@ class SimplexCubature(object):
     def __call__(self, f):
         return sum(f(x)*w for x, w in self.pos_info) \
                 + sum(f(x)*w for x, w in self.neg_info)
+
+
+
+
+class XiaoGimbutasSimplexCubature(Quadrature):
+    """
+    See
+
+    [1] H. Xiao and Z. Gimbutas, "A numerical algorithm for the construction of
+    efficient quadrature rules in two and higher dimensions," Computers &
+    Mathematics with Applications, vol. 59, no. 2, pp. 663-676, 2010.
+    """
+
+    def __init__(self, order, dimension):
+        if dimension == 2:
+            from hedge.xg_quad_data import triangle_table as table
+            from hedge.discretization.local import TriangleDiscretization
+            e2u = TriangleDiscretization.equilateral_to_unit
+        elif dimension == 3:
+            from hedge.xg_quad_data import tetrahedron_table as table
+            from hedge.discretization.local import TetrahedronDiscretization
+            e2u = TetrahedronDiscretization.equilateral_to_unit
+        else:
+            raise ValueError("invalid dimensionality for XG quadrature")
+
+        pts = numpy.array([
+                e2u(pt) for pt in table[order]["points"]
+                ])
+        wts = table[order]["weights"]*e2u.jacobian()
+
+        Quadrature.__init__(self, pts, wts)
+
+        self.exact_to = order
+
 
 
 
