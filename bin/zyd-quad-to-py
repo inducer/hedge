@@ -1,0 +1,9 @@
+OUTF=../hedge/hg_quad_data.py
+echo "# GENERATED, DO NOT EDIT" > $OUTF
+echo "# Xiao-Gimbutas quadratures" >> $OUTF
+echo "# http://dx.doi.org/10.1016/j.camwa.2009.10.027" >> $OUTF
+echo "import numpy" >> $OUTF
+echo "" >> $OUTF
+python zyd-quad-to-py.py ../../hellskitchen/Gimbutas/triasymq/triasymq_table.txt triangle_table >> $OUTF
+echo "" >> $OUTF
+python zyd-quad-to-py.py ../../hellskitchen/Gimbutas/triasymq/tetraarbq_table.txt tetrahedron_table >> $OUTF
