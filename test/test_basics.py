@@ -874,17 +874,23 @@ def test_simp_cubature():
     """Check that Grundmann-Moeller cubature works as advertised"""
     from pytools import generate_nonnegative_integer_tuples_summing_to_at_most
     from hedge.quadrature import SimplexCubature
+    from hedge.quadrature import (
+            XiaoGimbutasSimplexCubature,
+            SimplexCubature)
     from hedge.tools.mathematics import Monomial
 
-    for dim in range(2,3+1):
-        for s in range(3+1):
-            cub = SimplexCubature(s, dim)
-            for comb in generate_nonnegative_integer_tuples_summing_to_at_most(
-                    2*s+1, dim):
-                f = Monomial(comb)
-                i_f = cub(f)
-                err = abs(i_f - f.simplex_integral())
-                assert err < 2e-15
+    for cub_class in [
+            XiaoGimbutasSimplexCubature,
+            SimplexCubature]:
+        for dim in range(2,3+1):
+            for s in range(1, 3+1):
+                cub = cub_class(s, dim)
+                for comb in generate_nonnegative_integer_tuples_summing_to_at_most(
+                        cub.exact_to, dim):
+                    f = Monomial(comb)
+                    i_f = cub(f)
+                    err = abs(i_f - f.simplex_integral())
+                    assert err < 6e-15
 
 
 
