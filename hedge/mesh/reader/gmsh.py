@@ -368,9 +368,9 @@ def parse_gmsh(line_iterable, force_dimension=None, periodicity=None,
                 if line_count > 0:
                     raise GmshFileFormatError("more than one line found in MeshFormat section")
 
-                if version_number != "2.1":
+                if version_number not in ["2.1", "2.2"]:
                     from warnings import warn
-                    warn("mesh version 2.1 expected, '%s' found instead" % version_number)
+                    warn("unexpected mesh version number '%s' found" % version_number)
 
                 if file_type != "0":
                     raise GmshFileFormatError("only ASCII gmsh file type is supported")
@@ -563,9 +563,18 @@ def parse_gmsh(line_iterable, force_dimension=None, periodicity=None,
                 from pudb import set_trace; set_trace()
             return x
 
+    vertex_array = numpy.array(hedge_vertices, dtype=numpy.float64)
+    pt_dim = vertex_array.shape[-1]
+    if pt_dim != vol_dim:
+        from warnings import warn
+        warn("Found %d-dimensional mesh embedded in %d-dimensional space. "
+                "Hedge only supports meshes of zero codimension (for now). "
+                "Maybe you want to set force_dimension=%d?"
+                % (vol_dim, pt_dim, vol_dim))
+
     from hedge.mesh import make_conformal_mesh_ext
     return make_conformal_mesh_ext(
-            numpy.array(hedge_vertices, dtype=numpy.float64),
+            vertex_array,
             hedge_elements,
             boundary_tagger=boundary_tagger,
             volume_tagger=volume_tagger,
