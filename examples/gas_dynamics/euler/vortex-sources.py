@@ -261,7 +261,7 @@ def main(write_output=True):
 
                     #rhs_fields = rhs(t, fields)
 
-                    from pylo import DB_VARTYPE_VECTOR
+                    from pyvisfile.silo import DB_VARTYPE_VECTOR
                     vis.add_data(visf,
                             [
                                 ("rho", discr.convert_volume(op.rho(fields), kind="numpy")),

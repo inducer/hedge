@@ -197,7 +197,7 @@ def main():
 
                     #rhs_fields = rhs(t, fields)
 
-                    from pylo import DB_VARTYPE_VECTOR
+                    from pyvisfile.silo import DB_VARTYPE_VECTOR
                     from hedge.discretization import ones_on_boundary
                     vis.add_data(visf,
                             [

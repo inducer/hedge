@@ -46,20 +46,8 @@ def main(write_output=True):
         mesh_data = rcon.receive_mesh()
 
     for order in [3, 4, 5]:
-        discr = rcon.make_discretization(mesh_data, order=order,
-                        default_scalar_type=numpy.float64,
-                        quad_min_degrees={
-                            "gasdyn_vol": 3*order,
-                            "gasdyn_face": 3*order,
-                            })
-
-        from hedge.visualization import SiloVisualizer, VtkVisualizer
-        vis = VtkVisualizer(discr, rcon, "vortex-%d" % order)
-        #vis = SiloVisualizer(discr, rcon)
-
         from gas_dynamics_initials import Vortex
         flow = Vortex()
-        fields = flow.volume_interpolant(0, discr)
 
         from hedge.models.gas_dynamics import (
                 GasDynamicsOperator, PolytropeEOS, GammaLawEOS)
@@ -71,6 +59,21 @@ def main(write_output=True):
                 equation_of_state=PolytropeEOS(flow.gamma),
                 bc_inflow=flow, bc_outflow=flow, bc_noslip=flow,
                 inflow_tag=TAG_ALL, source=None)
+
+        discr = rcon.make_discretization(mesh_data, order=order,
+                        default_scalar_type=numpy.float64,
+                        quad_min_degrees={
+                            "gasdyn_vol": 3*order,
+                            "gasdyn_face": 3*order,
+                            },
+                        tune_for=op.op_template(),
+                        debug=["cuda_no_plan"])
+
+        from hedge.visualization import SiloVisualizer, VtkVisualizer
+        vis = VtkVisualizer(discr, rcon, "vortex-%d" % order)
+        #vis = SiloVisualizer(discr, rcon)
+
+        fields = flow.volume_interpolant(0, discr)
 
         euler_ex = op.bind(discr)
 
@@ -92,9 +95,10 @@ def main(write_output=True):
         from hedge.models.gas_dynamics import SlopeLimiter1NEuler
         limiter = SlopeLimiter1NEuler(discr, flow.gamma, 2, op)
 
-        from hedge.timestep import SSPRK3TimeStepper
-        #stepper = SSPRK3TimeStepper(limiter=limiter)
-        stepper = SSPRK3TimeStepper()
+        from hedge.timestep.runge_kutta import SSP3TimeStepper
+        #stepper = SSP3TimeStepper(limiter=limiter)
+        stepper = SSP3TimeStepper(
+                vector_primitive_factory=discr.get_vector_primitive_factory())
 
         #from hedge.timestep import RK4TimeStepper
         #stepper = RK4TimeStepper()
@@ -126,6 +130,7 @@ def main(write_output=True):
                     max_dt_getter=lambda t: op.estimate_timestep(discr,
                         stepper=stepper, t=t, max_eigenvalue=max_eigval[0]))
 
+            print "run until t=%g" % final_time
             for step, t, dt in step_it:
                 if step % 10 == 0 and write_output:
                 #if False:
@@ -133,7 +138,7 @@ def main(write_output=True):
 
                     #true_fields = vortex.volume_interpolant(t, discr)
 
-                    from pylo import DB_VARTYPE_VECTOR
+                    from pyvisfile.silo import DB_VARTYPE_VECTOR
                     vis.add_data(visf,
                             [
                                 ("rho", discr.convert_volume(op.rho(fields), kind="numpy")),

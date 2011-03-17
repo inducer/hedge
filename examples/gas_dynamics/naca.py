@@ -209,7 +209,7 @@ def main():
                 if step % 1000 == 0:
                     visf = vis.make_file("naca-%d-%06d" % (order, step))
 
-                    from pylo import DB_VARTYPE_VECTOR
+                    from pyvisfile.silo import DB_VARTYPE_VECTOR
                     vis.add_data(visf,
                             [
                                 ("rho", discr.convert_volume(op.rho(fields), kind="numpy")),

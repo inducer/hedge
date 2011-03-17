@@ -155,7 +155,7 @@ def main():
 
                     #true_fields = shearflow.volume_interpolant(t, discr)
 
-                    from pylo import DB_VARTYPE_VECTOR
+                    from pyvisfile.silo import DB_VARTYPE_VECTOR
                     vis.add_data(visf,
                             [
                                 ("rho", discr.convert_volume(op.rho(fields), kind="numpy")),
