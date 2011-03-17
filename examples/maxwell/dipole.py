@@ -202,7 +202,7 @@ def main(write_output=True, allow_features=None):
                 mask_true_e = apply_mask(true_e)
                 mask_true_h = apply_mask(true_h)
 
-                from pylo import DB_VARTYPE_VECTOR
+                from pyvisfile.silo import DB_VARTYPE_VECTOR
                 vis.add_data(visf,
                         [ 
                             ("e", e), 

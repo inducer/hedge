@@ -150,7 +150,7 @@ def main():
                 "decorator>=3.2.0"
                 ],
             extras_require = {
-                "silo": ["pylo"],
+                "silo": ["pyvisfile"],
                 "parallel": ["PyMetis>=0.91"],
                 },
 

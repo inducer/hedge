@@ -155,7 +155,7 @@ def main(write_output=True,
         discr.close()
 
 if __name__ == "__main__":
-    main()
+    main(False, TAG_ALL, TAG_NONE, TAG_NONE, "upwind", numpy.complex64)
 
 
 
