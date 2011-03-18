@@ -94,9 +94,15 @@ def make_nacamesh():
         face_marker = fvi2fm[fvi]
         return [face_marker_to_tag[face_marker]]
 
-    from hedge.mesh import make_conformal_mesh
-    return make_conformal_mesh(
-            mesh.points, mesh.elements, bdry_tagger,
+    from hedge.mesh import make_conformal_mesh_ext
+
+    vertices = numpy.asarray(mesh.points, order="C")
+    from hedge.mesh.element import Triangle
+    return make_conformal_mesh_ext(
+            vertices,
+            [Triangle(i, el_idx, vertices)
+                for i, el_idx in enumerate(mesh.elements)],
+            bdry_tagger,
             #periodicity=[None, ("minus_y", "plus_y")]
             )
 
@@ -116,13 +122,14 @@ def main():
     from pytools import add_python_path_relative_to_script
     add_python_path_relative_to_script("..")
 
-    for order in [1, 2, 3, 4, 5, 6, 7, 8, 9]:
+    for order in [4]:
         from gas_dynamics_initials import UniformMachFlow
         uniform_flow = UniformMachFlow()
 
-        from hedge.models.gas_dynamics import GasDynamicsOperator
+        from hedge.models.gas_dynamics import GasDynamicsOperator, GammaLawEOS
         op = GasDynamicsOperator(dimensions=2,
-                gamma=uniform_flow.gamma, prandtl=uniform_flow.prandtl,
+                equation_of_state=GammaLawEOS(uniform_flow.gamma), 
+                prandtl=uniform_flow.prandtl,
                 spec_gas_const=uniform_flow.spec_gas_const, mu=uniform_flow.mu,
                 bc_inflow=uniform_flow, bc_outflow=uniform_flow, bc_noslip=uniform_flow,
                 inflow_tag="inflow", outflow_tag="outflow", noslip_tag="noslip")
@@ -159,8 +166,12 @@ def main():
             print "---------------------------------------------"
             print "#elements=", len(mesh.elements)
 
-        from hedge.timestep import RK4TimeStepper
-        stepper = RK4TimeStepper()
+        from hedge.timestep.runge_kutta import \
+                ODE23TimeStepper, LSRK4TimeStepper
+        stepper = ODE23TimeStepper(dtype=discr.default_scalar_type,
+                rtol=1e-6,
+                vector_primitive_factory=discr.get_vector_primitive_factory())
+        #stepper = LSRK4TimeStepper(dtype=discr.default_scalar_type)
 
         # diagnostics setup ---------------------------------------------------
         from pytools.log import LogManager, add_general_quantities, \
@@ -196,17 +207,25 @@ def main():
         mode_filter = Filter(discr,
                 ExponentialFilterResponseFunction(min_amplification=0.9,order=4))
         # timestep loop -------------------------------------------------------
+
+        logmgr.add_watches(["step.max", "t_sim.max", "t_step.max"])
+
         try:
             from hedge.timestep import times_and_steps
             step_it = times_and_steps(
                     final_time=200,
                     #max_steps=500,
                     logmgr=logmgr,
-                    max_dt_getter=lambda t: op.estimate_timestep(discr,
-                        stepper=stepper, t=t, max_eigenvalue=max_eigval[0]))
+                    max_dt_getter=lambda t: next_dt,
+                    taken_dt_getter=lambda: taken_dt)
+
+            model_stepper = LSRK4TimeStepper()
+            next_dt = op.estimate_timestep(discr,
+                    stepper=model_stepper, t=0, 
+                    max_eigenvalue=max_eigval[0])
 
             for step, t, dt in step_it:
-                if step % 1000 == 0:
+                if step % 10 == 0:
                     visf = vis.make_file("naca-%d-%06d" % (order, step))
 
                     from pyvisfile.silo import DB_VARTYPE_VECTOR
@@ -237,7 +256,7 @@ def main():
                             )
                     visf.close()
 
-                fields = stepper(fields, t, dt, rhs)
+                fields, t, taken_dt, next_dt = stepper(fields, t, dt, rhs)
                 fields = mode_filter(fields)
 
         finally:
