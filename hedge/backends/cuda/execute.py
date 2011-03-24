@@ -605,7 +605,8 @@ class Executor(object):
                 max_vectors_in_batch_expr=220 // calcsize("P")
                 )(
                 self.prepare_optemplate_stage2(discr.mesh, optemplate_stage1,
-                    discr.debug, type_hints=type_hints))
+                    discr.debug, type_hints=type_hints),
+                type_hints=type_hints)
 
         # build the local kernels
         self.diff_kernel = self.discr.diff_plan.make_kernel(discr)
