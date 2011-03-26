@@ -30,15 +30,15 @@ def main(write_output=True, dtype=np.float32):
 
     from hedge.mesh.generator import make_rect_mesh
     if rcon.is_head_rank:
-        mesh = make_rect_mesh(a=(-1,-1),b=(1,1), max_area=0.008/16,
+        mesh = make_rect_mesh(a=(0,0),b=(1,1), max_area=0.008,
                 periodicity=(True,True),
-                subdivisions=(40, 40))
+                subdivisions=(10, 10))
 
     from hedge.models.gas_dynamics.lbm import \
             D2Q9LBMMethod, LatticeBoltzmannOperator
 
     op = LatticeBoltzmannOperator(
-            D2Q9LBMMethod(), lbm_delta_t=0.01, nu=1)
+            D2Q9LBMMethod(), lbm_delta_t=0.01, nu=1e-4)
 
     if rcon.is_head_rank:
         print "%d elements" % len(mesh.elements)
@@ -56,28 +56,46 @@ def main(write_output=True, dtype=np.float32):
     if write_output:
         vis = VtkVisualizer(discr, rcon, "fld")
 
-    from hedge.tools import join_fields
-    f_bar = join_fields(
-            [discr.volume_empty(dtype=dtype) 
-                for i in range(len(op.method))])
     from hedge.data import CompiledExpressionData
     def ic_expr(t, x, fields):
         from hedge.optemplate import CFunction
         from pymbolic.primitives import IfPositive
         from pytools.obj_array import make_obj_array
-        return make_obj_array([
-            1 + 0.5*IfPositive(x[1],
-                CFunction("sin")(np.pi*x[0]),
-                -CFunction("sin")(np.pi*x[0]))
-            ]*len(op.method))
 
-    f_bar = CompiledExpressionData(ic_expr).volume_interpolant(0, discr)
+        tanh = CFunction("tanh")
+        sin = CFunction("tanh")
+
+        rho = 1
+        u0 = 0
+        w = 0.05
+        delta = 0.05
+        u = make_obj_array([
+            IfPositive(x[1]-1/2,
+                u0*tanh(4*(x[1]-1/4))/w,
+                u0*tanh(4*(3/4-x[1]))/w),
+            u0*delta*sin(2*np.pi*(x[0]+1/4))])
+
+        if False:
+            return make_obj_array([
+                1 + 0.5*IfPositive(x[1],
+                    CFunction("sin")(np.pi*x[0]),
+                    -CFunction("sin")(np.pi*x[0]))
+                ]*len(op.method))
+        else:
+            return make_obj_array([
+                op.method.f_equilibrium(rho, alpha, u)
+                for alpha in range(len(op.method))
+                ])
+
 
     # timestep loop -----------------------------------------------------------
     stream_rhs = op.bind_rhs(discr)
     collision_update = op.bind(discr, op.collision_update)
     get_rho = op.bind(discr, op.rho)
     get_rho_u = op.bind(discr, op.rho_u)
+
+    f_bar = CompiledExpressionData(ic_expr).volume_interpolant(0, discr)
+    print get_rho_u(f_bar)[0]
 
     final_time = 10
     try:

@@ -106,7 +106,7 @@ class LatticeBoltzmannOperator(HyperbolicOperator):
                 /
                 (self.lbm_delta_t*self.method.speed_of_sound**2))
 
-    def get_advection_flux(self, q, velocity):
+    def get_advection_flux(self, velocity):
         from hedge.flux import make_normal, FluxScalarPlaceholder
         from pymbolic.primitives import IfPositive
 
@@ -136,7 +136,7 @@ class LatticeBoltzmannOperator(HyperbolicOperator):
 
         stiff_t = make_stiffness_t(self.method.dimensions)
 
-        flux_op = get_flux_operator(self.get_advection_flux(q, velocity))
+        flux_op = get_flux_operator(self.get_advection_flux(velocity))
         return InverseMassOperator()(
                 np.dot(velocity, stiff_t*q) - flux_op(q))
 
