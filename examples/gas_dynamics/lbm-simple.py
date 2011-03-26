@@ -30,15 +30,16 @@ def main(write_output=True, dtype=np.float32):
 
     from hedge.mesh.generator import make_rect_mesh
     if rcon.is_head_rank:
-        mesh = make_rect_mesh(a=(0,0),b=(1,1), max_area=0.008,
+        h_fac = 4
+        mesh = make_rect_mesh(a=(0,0),b=(1,1), max_area=h_fac**2*1e-4,
                 periodicity=(True,True),
-                subdivisions=(10, 10))
+                subdivisions=(int(70/h_fac), int(70/h_fac)))
 
     from hedge.models.gas_dynamics.lbm import \
             D2Q9LBMMethod, LatticeBoltzmannOperator
 
     op = LatticeBoltzmannOperator(
-            D2Q9LBMMethod(), lbm_delta_t=0.01, nu=1e-4)
+            D2Q9LBMMethod(), lbm_delta_t=0.001, nu=1e-4)
 
     if rcon.is_head_rank:
         print "%d elements" % len(mesh.elements)
@@ -46,11 +47,13 @@ def main(write_output=True, dtype=np.float32):
     else:
         mesh_data = rcon.receive_mesh()
 
-    discr = rcon.make_discretization(mesh_data, order=4,
+    discr = rcon.make_discretization(mesh_data, order=3,
             default_scalar_type=dtype,
             debug=["cuda_no_plan"])
     from hedge.timestep.runge_kutta import LSRK4TimeStepper
-    stepper = LSRK4TimeStepper(dtype=dtype)
+    stepper = LSRK4TimeStepper(dtype=dtype,
+            #vector_primitive_factory=discr.get_vector_primitive_factory()
+            )
 
     from hedge.visualization import VtkVisualizer
     if write_output:
@@ -63,29 +66,26 @@ def main(write_output=True, dtype=np.float32):
         from pytools.obj_array import make_obj_array
 
         tanh = CFunction("tanh")
-        sin = CFunction("tanh")
+        sin = CFunction("sin")
 
         rho = 1
         u0 = 0
+        #u0 = 0.05
         w = 0.05
         delta = 0.05
-        u = make_obj_array([
-            IfPositive(x[1]-1/2,
-                u0*tanh(4*(x[1]-1/4))/w,
-                u0*tanh(4*(3/4-x[1]))/w),
-            u0*delta*sin(2*np.pi*(x[0]+1/4))])
 
-        if False:
-            return make_obj_array([
-                1 + 0.5*IfPositive(x[1],
-                    CFunction("sin")(np.pi*x[0]),
-                    -CFunction("sin")(np.pi*x[0]))
-                ]*len(op.method))
-        else:
-            return make_obj_array([
-                op.method.f_equilibrium(rho, alpha, u)
-                for alpha in range(len(op.method))
-                ])
+        from hedge.tools.symbolic import make_common_subexpression as cse
+        u = cse(make_obj_array([
+            0.005+IfPositive(x[1]-1/2,
+                u0*tanh(4*(3/4-x[1])/w),
+                u0*tanh(4*(x[1]-1/4)/w)),
+            u0*delta*sin(2*np.pi*(x[0]+1/4))]),
+            "u")
+
+        return make_obj_array([
+            op.method.f_equilibrium(rho, alpha, u)
+            for alpha in range(len(op.method))
+            ])
 
 
     # timestep loop -----------------------------------------------------------
@@ -95,7 +95,12 @@ def main(write_output=True, dtype=np.float32):
     get_rho_u = op.bind(discr, op.rho_u)
 
     f_bar = CompiledExpressionData(ic_expr).volume_interpolant(0, discr)
-    print get_rho_u(f_bar)[0]
+
+    from hedge.discretization import ExponentialFilterResponseFunction
+    from hedge.optemplate.operators import FilterOperator
+    mode_filter = FilterOperator(
+            ExponentialFilterResponseFunction(min_amplification=0.9, order=4))\
+                    .bind(discr)
 
     final_time = 10
     try:
@@ -127,10 +132,12 @@ def main(write_output=True, dtype=np.float32):
 
             print "step=%d, t=%f" % (step, t)
 
-            for substep in range(dg_steps_per_lbm_step):
-                f_bar = stepper(f_bar, t + substep*dg_dt, dg_dt, stream_rhs)
-
             f_bar = collision_update(f_bar)
+
+            #for substep in range(dg_steps_per_lbm_step):
+                #f_bar = stepper(f_bar, t + substep*dg_dt, dg_dt, stream_rhs)
+
+            #f_bar = mode_filter(f_bar)
 
     finally:
         if write_output:
