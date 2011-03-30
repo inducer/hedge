@@ -224,13 +224,12 @@ class BoundPoissonOperator(hedge.iterative.OperatorBase):
 
             M f - A M^{-1} g - h
 
-        Finally, note that the operator application above implements
-        the equation (*) left-multiplied by Minv, so that the
-        right-hand-side becomes
+        .. note::
 
-        .. math::
-            \\text{rhs} = f - M^{-1}( A M^{-1} g + h)
-
+            Resist the temptation to left-multiply by the inverse
+            mass matrix, as this will result in a non-symmetric
+            matrix, which (e.g.) a conjugate gradient Krylov
+            solver will not take well.
         """
         pop = self.poisson_op
 
@@ -242,3 +241,20 @@ class BoundPoissonOperator(hedge.iterative.OperatorBase):
                     self.discr, pop.dirichlet_tag), 
                 neu_bc=pop.neumann_bc.boundary_interpolant(
                     self.discr, pop.neumann_tag)))
+
+
+
+
+class HelmholtzOperator(PoissonOperator):
+    def __init__(self, k, *args, **kwargs):
+        PoissonOperator.__init__(self, *args, **kwargs)
+        self.k = k
+
+    def op_template(self, apply_minv, u=None, dir_bc=None, neu_bc=None):
+        from hedge.optemplate import Field
+        if u is None: u = Field("u")
+
+        return (
+                PoissonOperator.op_template(self,
+                    apply_minv, u, dir_bc, neu_bc)
+                + self.k**2 * u)
