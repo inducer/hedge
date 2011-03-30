@@ -43,13 +43,13 @@ from hedge.flux.tools import *
 
 # small utilities -------------------------------------------------------------
 def is_zero(x):
-    try:
-        result = x == 0
-        if isinstance(result, numpy.ndarray):
-            return result.all()
-        else:
-            return result
-    except:
+    # DO NOT try to replace this with an attempted '== 0' comparison.
+    # This will become an elementwise numpy operation and not do what
+    # you want.
+
+    if isinstance(x, (int, complex, float, numpy.number)):
+        return x == 0
+    else:
         return False
 
 
