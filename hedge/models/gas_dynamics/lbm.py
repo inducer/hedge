@@ -87,7 +87,7 @@ class D2Q9LBMMethod(LBMMethodBase):
                 1
                 + np.dot(e_alpha, u)/c_s**2
                 + 1/2*np.dot(e_alpha, u)**2/c_s**4
-                - 1/2*np.dot(u, u)**2/c_s**2)
+                - 1/2*np.dot(u, u)/c_s**2)
 
 
 

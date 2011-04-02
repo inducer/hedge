@@ -30,7 +30,7 @@ def main(write_output=True, dtype=np.float32):
 
     from hedge.mesh.generator import make_rect_mesh
     if rcon.is_head_rank:
-        h_fac = 4
+        h_fac = 1
         mesh = make_rect_mesh(a=(0,0),b=(1,1), max_area=h_fac**2*1e-4,
                 periodicity=(True,True),
                 subdivisions=(int(70/h_fac), int(70/h_fac)))
@@ -69,14 +69,13 @@ def main(write_output=True, dtype=np.float32):
         sin = CFunction("sin")
 
         rho = 1
-        u0 = 0
-        #u0 = 0.05
+        u0 = 0.05
         w = 0.05
         delta = 0.05
 
         from hedge.tools.symbolic import make_common_subexpression as cse
         u = cse(make_obj_array([
-            0.005+IfPositive(x[1]-1/2,
+            IfPositive(x[1]-1/2,
                 u0*tanh(4*(3/4-x[1])/w),
                 u0*tanh(4*(x[1]-1/4)/w)),
             u0*delta*sin(2*np.pi*(x[0]+1/4))]),
@@ -94,6 +93,7 @@ def main(write_output=True, dtype=np.float32):
     get_rho = op.bind(discr, op.rho)
     get_rho_u = op.bind(discr, op.rho_u)
 
+
     f_bar = CompiledExpressionData(ic_expr).volume_interpolant(0, discr)
 
     from hedge.discretization import ExponentialFilterResponseFunction
@@ -102,10 +102,11 @@ def main(write_output=True, dtype=np.float32):
             ExponentialFilterResponseFunction(min_amplification=0.9, order=4))\
                     .bind(discr)
 
-    final_time = 10
+    final_time = 1000
     try:
         lbm_dt = op.lbm_delta_t
         dg_dt = op.estimate_timestep(discr, stepper=stepper)
+        print dg_dt
 
         dg_steps_per_lbm_step = int(np.ceil(lbm_dt / dg_dt))
         dg_dt = lbm_dt / dg_steps_per_lbm_step
@@ -114,7 +115,7 @@ def main(write_output=True, dtype=np.float32):
         for step in xrange(lbm_steps):
             t = step*lbm_dt
 
-            if step % 10 == 0 and write_output:
+            if step % 100 == 0 and write_output:
                 visf = vis.make_file("fld-%04d" % step)
 
                 rho = get_rho(f_bar)
@@ -134,8 +135,8 @@ def main(write_output=True, dtype=np.float32):
 
             f_bar = collision_update(f_bar)
 
-            #for substep in range(dg_steps_per_lbm_step):
-                #f_bar = stepper(f_bar, t + substep*dg_dt, dg_dt, stream_rhs)
+            for substep in range(dg_steps_per_lbm_step):
+                f_bar = stepper(f_bar, t + substep*dg_dt, dg_dt, stream_rhs)
 
             #f_bar = mode_filter(f_bar)
 
