@@ -44,9 +44,7 @@ class ResidualPrinter:
 
 
 
-def main():
-    # WARNING: This example does not converge.
-
+def main(write_output=True):
     from hedge.data import GivenFunction, ConstantGivenFunction
 
     from hedge.backends import guess_run_context
@@ -156,11 +154,13 @@ def main():
                         matvec=bound_op, dtype=bound_op.dtype),
                     rhs,
                     callback=ResidualPrinter(compute_resid),
-                    tol=1e-2)
+                    tol=1e-5)
             print
             if info != 0:
                 raise RuntimeError("gmres reported error %d" % info)
             print "finished gmres"
+
+            print la.norm(bound_op(u)-rhs)/la.norm(rhs)
 
         if write_output:
             from hedge.visualization import SiloVisualizer, VtkVisualizer

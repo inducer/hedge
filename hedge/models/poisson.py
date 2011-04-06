@@ -254,7 +254,11 @@ class HelmholtzOperator(PoissonOperator):
         from hedge.optemplate import Field
         if u is None: u = Field("u")
 
-        return (
-                PoissonOperator.op_template(self,
-                    apply_minv, u, dir_bc, neu_bc)
-                + self.k**2 * u)
+        result = PoissonOperator.op_template(self,
+                apply_minv, u, dir_bc, neu_bc)
+
+        if apply_minv:
+            return result + self.k**2 * u
+        else:
+            from hedge.optemplate import MassOperator
+            return result + self.k**2 * MassOperator()(u)
