@@ -1067,10 +1067,23 @@ class Discretization(TimestepCalculator):
             if len(field) == 0:
                 return numpy.zeros(())
 
-            result = self.boundary_empty(tag, shape=ls, dtype=field[0].dtype)
+            dtype = None
+            for field_i in field:
+                try:
+                    dtype = field_i.dtype
+                    break
+                except AttributeError:
+                    pass
+
+            result = self.boundary_empty(tag, shape=ls, dtype=dtype)
             from pytools import indices_in_shape
             for i in indices_in_shape(ls):
-                result[i] = field[i][bdry.vol_indices]
+                field_i = field[i]
+                if isinstance(field_i, numpy.ndarray):
+                    result[i] = field_i[bdry.vol_indices]
+                else:
+                    # a scalar, will be broadcast
+                    result[i] = field_i
 
             return result
         else:

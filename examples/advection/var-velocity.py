@@ -22,7 +22,8 @@ import numpy
 
 
 
-def main(write_output=True, flux_type_arg="central", use_quadrature=True):
+def main(write_output=True, flux_type_arg="central", use_quadrature=True,
+        final_time=20):
     from math import sin, cos, pi, sqrt
 
     from hedge.backends import guess_run_context
@@ -205,7 +206,7 @@ def main(write_output=True, flux_type_arg="central", use_quadrature=True):
     try:
         from hedge.timestep import times_and_steps
         step_it = times_and_steps(
-                final_time=20, logmgr=logmgr,
+                final_time=final_time, logmgr=logmgr,
                 max_dt_getter=lambda t: op.estimate_timestep(discr,
                     stepper=stepper, t=t, fields=u))
 
@@ -254,4 +255,4 @@ def test_var_velocity_advection():
             if use_quadrature:
                 descr += " and quadrature"
 
-            yield descr, mark_long(main), False, flux_type, use_quadrature
+            yield descr, mark_long(main), False, flux_type, use_quadrature, 1
