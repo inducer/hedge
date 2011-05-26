@@ -451,7 +451,7 @@ class ExecutionMapper(ExecutionMapperBase):
 
     def map_if_positive(self, expr):
         crit = self.rec(expr.criterion)
-        then_ = self.rec(expr.then_)
+        then = self.rec(expr.then)
         else_ = self.rec(expr.else_)
 
         return gpuarray.if_positive(crit, then_, else_)
