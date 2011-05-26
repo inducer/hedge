@@ -57,14 +57,9 @@ def main(write_output=True,
     else:
         mesh_data = rcon.receive_mesh()
 
-    discr = rcon.make_discretization(mesh_data, order=4, debug=debug,
-            default_scalar_type=dtype)
     from hedge.timestep.runge_kutta import LSRK4TimeStepper
     stepper = LSRK4TimeStepper(dtype=dtype)
 
-    from hedge.visualization import VtkVisualizer
-    if write_output:
-        vis = VtkVisualizer(discr, rcon, "fld")
 
     def source_u(x, el):
         return exp(-numpy.dot(x, x)*128)
@@ -76,7 +71,7 @@ def main(write_output=True,
             TimeHarmonicGivenFunction, \
             TimeIntervalGivenFunction
 
-    op = StrongWaveOperator(-1, discr.dimensions, 
+    op = StrongWaveOperator(-1, mesh.dimensions, 
             source_f=TimeIntervalGivenFunction(
                 TimeHarmonicGivenFunction(
                     make_tdep_given(source_u), omega=10),
@@ -86,6 +81,14 @@ def main(write_output=True,
             radiation_tag=rad_tag,
             flux_type=flux_type_arg
             )
+
+    discr = rcon.make_discretization(mesh_data, order=4, debug=debug,
+            default_scalar_type=dtype,
+            tune_for=op.op_template())
+
+    from hedge.visualization import VtkVisualizer
+    if write_output:
+        vis = VtkVisualizer(discr, rcon, "fld")
 
     from hedge.tools import join_fields
     fields = join_fields(discr.volume_zeros(dtype=dtype),
@@ -122,6 +125,8 @@ def main(write_output=True,
 
     # timestep loop -----------------------------------------------------------
     rhs = op.bind(discr)
+    from hedge.optemplate.tools import pretty_print_optemplate
+    print pretty_print_optemplate(op.op_template())
     try:
         from hedge.timestep import times_and_steps
         step_it = times_and_steps(
@@ -135,8 +140,8 @@ def main(write_output=True,
 
                 vis.add_data(visf,
                         [
-                            ("u", fields[0]),
-                            ("v", fields[1:]), 
+                            ("u", discr.convert_volume(fields[0], kind="numpy")),
+                            ("v", discr.convert_volume(fields[1:], kind="numpy")), 
                         ],
                         time=t,
                         step=step)
@@ -155,7 +160,8 @@ def main(write_output=True,
         discr.close()
 
 if __name__ == "__main__":
-    main(False, TAG_ALL, TAG_NONE, TAG_NONE, "upwind", numpy.complex64)
+    main(True, TAG_ALL, TAG_NONE, TAG_NONE, "upwind", numpy.float64,
+            debug=["cuda_no_plan", "dump_optemplate_stages"])
 
 
 
