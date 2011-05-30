@@ -43,7 +43,8 @@ class PartitionData(pytools.Record):
             global2local_vertex_indices,
             neighbor_parts,
             global_periodic_opposite_faces,
-            part_boundary_tags
+            part_boundary_tags,
+            tag_to_elements
             ):
         pytools.Record.__init__(self, locals())
 
@@ -172,7 +173,8 @@ def partition_mesh(mesh, partition, part_bdry_tag_factory):
         part_mesh = make_conformal_mesh(
                 part_local_vertices,
                 part_local_elements,
-                partition_bdry_tagger, copy_el_tagger,
+                partition_bdry_tagger,
+                copy_el_tagger,
                 mesh.periodicity,
                 is_partbdry_face)
 
@@ -189,6 +191,7 @@ def partition_mesh(mesh, partition, part_bdry_tag_factory):
                 part_boundary_tags=dict(
                     (nb_part, part_bdry_tag_factory(nb_part))
                     for nb_part in my_nb_parts),
+                tag_to_elements = part_mesh.tag_to_elements
                 )
 
 

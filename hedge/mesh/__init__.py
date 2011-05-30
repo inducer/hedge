@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Mesh topology/geometry representation."""
 
 from __future__ import division
@@ -457,7 +458,8 @@ def make_conformal_mesh(points, elements,
 
     # call into new interface
     return make_conformal_mesh_ext(
-            new_points, element_objs, 
+            new_points, element_objs,
+            volume_tagger = volume_tagger,
             boundary_tagger=boundary_tagger, 
             periodicity=periodicity, 
             _is_rankbdry_face=_is_rankbdry_face)
