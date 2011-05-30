@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# -*- coding: latin-1 -*-
+# -*- coding: utf-8 -*-
 
 # Hedge - the Hybrid'n'Easy DG Environment
 # Copyright (C) 2007 Andreas Kloeckner
@@ -132,6 +132,7 @@ def main():
                     "hedge.timestep",
                     "hedge.timestep.multirate_ab",
                     "hedge.mesh",
+                    "hedge.mesh.reader",
                     "hedge.discretization",
                     "hedge.tools",
                     ],
