@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """MPI-based distributed-memory parallelism support"""
 
 from __future__ import division
@@ -45,7 +46,8 @@ class RankData(pytools.Record):
             global2local_vertex_indices,
             neighbor_ranks,
             global_periodic_opposite_faces,
-            old_el_numbers=None
+            old_el_numbers=None,
+            tag_to_elements=None
             ):
         pytools.Record.__init__(self, locals())
 
@@ -99,7 +101,8 @@ class MPIRunContext(RunContext):
                     global2local_elements=part_data.global2local_elements,
                     global2local_vertex_indices=part_data.global2local_vertex_indices,
                     neighbor_ranks=part_data.neighbor_parts,
-                    global_periodic_opposite_faces=part_data.global_periodic_opposite_faces)
+                    global_periodic_opposite_faces=part_data.global_periodic_opposite_faces,
+                    tag_to_elements=part_data.tag_to_elements)
 
             rank = part_data.part_nr
 
