@@ -99,7 +99,7 @@ def main():
             """,
             author=u"Andreas Kloeckner",
             author_email="inform@tiker.net",
-            license = "GPLv3",
+            license="MIT",
             url="http://mathema.tician.de/software/hedge",
             classifiers=[
               'Environment :: Console',
@@ -107,7 +107,7 @@ def main():
               'Intended Audience :: Developers',
               'Intended Audience :: Other Audience',
               'Intended Audience :: Science/Research',
-              'License :: OSI Approved :: GNU General Public License (GPL)',
+              'License :: OSI Approved :: MIT License',
               'Natural Language :: English',
               'Programming Language :: C++',
               'Programming Language :: Python',
