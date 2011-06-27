@@ -59,6 +59,10 @@ class Dumka3TimeStepper(object):
 
     def __init__(self, pol_index=None, dtype=numpy.float64, rcon=None, 
             vector_primitive_factory=None, atol=0, rtol=0):
+        from warnings import warn
+        warn("The DUMKA3 time stepper, unlike the rest of hedge, is "
+                "provided under the GPLv3 license.")
+
         if pol_index > self.POLYNOMIAL_COUNT:
             raise ValueError("invalid polynomial index specified")
         self.pol_index=pol_index
