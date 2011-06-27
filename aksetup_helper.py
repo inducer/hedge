@@ -452,13 +452,16 @@ class Switch(Option):
         if default is None:
             default = self.default
 
+        option_name = self.as_option()
+
         if default:
+            option_name = "no-" + option_name
             action = "store_false"
         else:
             action = "store_true"
 
         parser.add_option(
-            "--" + self.as_option(),
+            "--" + option_name,
             dest=self.name,
             help=self.get_help(default),
             default=default,
@@ -696,7 +699,7 @@ def check_git_submodules():
         stdout_data, _ = popen.communicate()
         if popen.returncode != 0:
             git_error = "git returned error code %d" % popen.returncode
-    except OSError, e:
+    except OSError as e:
         git_error = e
 
     if git_error is not None:
@@ -715,6 +718,7 @@ def check_git_submodules():
 
     popen = Popen(["git", "submodule", "status"], stdout=PIPE)
     stdout_data, _ = popen.communicate()
+    stdout_data = stdout_data.decode("ascii")
     if popen.returncode != 0:
         git_error = "git returned error code %d" % popen.returncode
 
