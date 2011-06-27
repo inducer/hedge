@@ -59,13 +59,9 @@ class SineWave:
 
 
 
-def main():
+def main(final_time=1, write_output=False):
     from hedge.backends import guess_run_context
-    platform = "cpu"
-    if platform == "gpu":
-        rcon = guess_run_context(["cuda"])
-    else:
-        rcon = guess_run_context()
+    rcon = guess_run_context()
 
     from hedge.tools import EOCRecorder, to_obj_array
     eoc_rec = EOCRecorder()
@@ -118,10 +114,12 @@ def main():
         from pytools.log import LogManager, add_general_quantities, \
                 add_simulation_quantities, add_run_info
 
-        logmgr = LogManager("euler-sinewave-%(order)d-%(els)d-%(platform)s.dat"
-                            % {"order":order, "els":len(mesh.elements),
-                               "platform":platform},
-                            "w", rcon.communicator)
+        if write_output:
+            log_name = ("euler-sinewave-%(order)d-%(els)d.dat"
+                    % {"order":order, "els":len(mesh.elements)})
+        else:
+            log_name = False
+        logmgr = LogManager(log_name, "w", rcon.communicator)
         add_run_info(logmgr)
         add_general_quantities(logmgr)
         add_simulation_quantities(logmgr)
@@ -134,13 +132,13 @@ def main():
         try:
             from hedge.timestep import times_and_steps
             step_it = times_and_steps(
-                    final_time=1, logmgr=logmgr,
+                    final_time=final_time, logmgr=logmgr,
                     max_dt_getter=lambda t: op.estimate_timestep(discr,
                         stepper=stepper, t=t, max_eigenvalue=max_eigval[0]))
 
             for step, t, dt in step_it:
                 #if step % 10 == 0:
-                if False:
+                if write_output:
                     visf = vis.make_file("sinewave-%d-%04d" % (order, step))
 
                     #from pylo import DB_VARTYPE_VECTOR
@@ -196,5 +194,5 @@ if __name__ == "__main__":
 from pytools.test import mark_test
 @mark_test.long
 def test_euler_sine_wave():
-    main()
+    main(final_time=0.1, write_output=False)
 

@@ -51,7 +51,9 @@ def main(write_output=True):
                         quad_min_degrees={
                             "gasdyn_vol": 3*order,
                             "gasdyn_face": 3*order,
-                            })
+                            },
+                        tune_for=op.op_template(),
+                        debug=["cuda_no_plan"])
 
         from hedge.visualization import SiloVisualizer, VtkVisualizer
         vis = VtkVisualizer(discr, rcon, "vortex-%d" % order)
