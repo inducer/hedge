@@ -39,7 +39,7 @@ class MeshPyFaceMarkerLookup:
 
 
 def make_1d_mesh(points, left_tag=None, right_tag=None, periodic=False,
-        boundary_tagger=None, element_tagger=None):
+        boundary_tagger=None, volume_tagger=None):
 
     def my_boundary_tagger(fvi, el, fn, all_v):
         if el.face_normals[fn][0] < 0:
@@ -48,8 +48,8 @@ def make_1d_mesh(points, left_tag=None, right_tag=None, periodic=False,
             return [right_tag]
 
     kwargs = {}
-    if element_tagger is not None:
-        kwargs["element_tagger"] = element_tagger
+    if volume_tagger is not None:
+        kwargs["volume_tagger"] = volume_tagger
 
     if periodic:
         left_tag = "x_minus"
@@ -566,10 +566,14 @@ def make_ball_mesh(r=0.5, subdivisions=10, max_volume=None,
     mesh_info.set_facets_ex(facets, facet_holestarts, facet_markers)
     generated_mesh = build(mesh_info, max_volume=max_volume)
 
-    from hedge.mesh import make_conformal_mesh
-    return make_conformal_mesh(
-            generated_mesh.points,
-            generated_mesh.elements,
+    vertices = numpy.asarray(generated_mesh.points, dtype=float, order="C")
+    from hedge.mesh.element import Tetrahedron
+
+    from hedge.mesh import make_conformal_mesh_ext
+    return make_conformal_mesh_ext(
+            vertices,
+            [Tetrahedron(i, el_idx, vertices)
+                for i, el_idx in enumerate(generated_mesh.elements)],
             boundary_tagger)
 
 
@@ -693,7 +697,7 @@ def make_box_mesh(a=(0,0,0),b=(1,1,1),
     from meshpy.tet import MeshInfo, build
     from meshpy.geometry import make_box
 
-    points, facets, facet_markers = make_box(a, b)
+    points, facets, _, facet_markers = make_box(a, b)
 
     mesh_info = MeshInfo()
     mesh_info.set_points(points)

@@ -140,15 +140,32 @@ class ObjectArrayInnerProductWrapper(object):
 
         return result
 
+# }}}
 
+# {{{ maximum norm ------------------------------------------------------------
 
+class ObjectArrayMaximumNormWrapper(object):
+    def __init__(self, scalar_kernel):
+        self.scalar_kernel = scalar_kernel
+
+    def __call__(self, a):
+        from pytools import indices_in_shape
+
+        # assumes nonempty, which is reasonable
+        return max(
+                abs(self.scalar_kernel(a[i]))
+                for i in indices_in_shape(a.shape))
 
 # }}}
 
 
 
+# {{{ vector primitive factory
 
-# {{{ backend services --------------------------------------------------------
+_NO_VPF_SUGGESTION = ("--perhaps you need to pass "
+                        "a vector primitive factory somewhere (for example "
+                        "to a timestepper)?")
+
 class VectorPrimitiveFactory(object):
     def make_special_linear_combiner(self, result_dtype, scalar_dtype, sample_vec, arg_count):
         return None
@@ -178,7 +195,8 @@ class VectorPrimitiveFactory(object):
 
             if kernel is None:
                 from warnings import warn
-                warn("using unoptimized linear combination routine")
+                warn("using unoptimized linear combination routine" + 
+                        _NO_VPF_SUGGESTION)
                 kernel = UnoptimizedLinearCombiner(result_dtype, scalar_dtype)
 
         if sample_is_obj_array:
@@ -203,12 +221,38 @@ class VectorPrimitiveFactory(object):
 
             if kernel is None:
                 raise RuntimeError("could not find an inner product routine for "
-                        "the given sample vector")
-
+                        "the given sample vector" + _NO_VPF_SUGGESTION)
         if sample_is_obj_array:
             kernel = ObjectArrayInnerProductWrapper(kernel)
 
         return kernel
+
+    def make_special_maximum_norm(self, sample_vec):
+        return None
+
+    def make_maximum_norm(self, sample_vec):
+        from hedge.tools import is_obj_array
+        sample_is_obj_array = is_obj_array(sample_vec)
+
+        if sample_is_obj_array:
+            sample_vec = sample_vec[0]
+
+        if isinstance(sample_vec, numpy.ndarray) and sample_vec.dtype != object:
+            def kernel(vec):
+                return la.norm(vec, numpy.inf)
+            kernel = numpy.max
+        else:
+            kernel = self.make_special_maximum_norm(sample_vec)
+
+            if kernel is None:
+                raise RuntimeError("could not find a maximum norm routine for "
+                        "the given sample vector" + _NO_VPF_SUGGESTION)
+
+        if sample_is_obj_array:
+            kernel = ObjectArrayMaximumNormWrapper(kernel)
+
+        return kernel
+
 
 
 
@@ -234,6 +278,23 @@ class CUDAVectorPrimitiveFactory(VectorPrimitiveFactory):
                 return kernel
             else:
                 return self.discr.nodewise_dot_product
+
+    def make_special_maximum_norm(self, sample_vec):
+        from pycuda.gpuarray import GPUArray
+
+        if isinstance(sample_vec, GPUArray):
+            if self.discr is None:
+                def my_max(vec):
+                    from pycuda.gpuarray import max as my_max
+                    return my_max(vec).get()
+            else:
+                my_max = self.discr.nodewise_max
+
+            def kernel(a):
+                from pycuda.cumath import fabs
+                return my_max(fabs(a))
+
+            return kernel
 
 # }}}
 

@@ -2,7 +2,33 @@
 import distribute_setup
 distribute_setup.use_setuptools()
 
+import setuptools
 from setuptools import Extension
+
+if not hasattr(setuptools, "_distribute"):
+    print("-------------------------------------------------------------------------")
+    print("Setuptools conflict detected.")
+    print("-------------------------------------------------------------------------")
+    print("When I imported setuptools, I did not get the distribute version of")
+    print("setuptools, which is troubling--this package really wants to be used")
+    print("with distribute rather than the old setuptools package. More than likely,")
+    print("you have both distribute and setuptools installed, which is bad.")
+    print("")
+    print("See this page for more information:")
+    print("http://wiki.tiker.net/DistributeVsSetuptools")
+    print("-------------------------------------------------------------------------")
+    print("I will continue after a short while, fingers crossed.")
+    print("-------------------------------------------------------------------------")
+
+    delay = 10
+
+    from time import sleep
+    import sys
+    while delay:
+        sys.stdout.write("Continuing in %d seconds...   \r" % delay)
+        sys.stdout.flush()
+        delay -= 1
+        sleep(1)
 
 def setup(*args, **kwargs):
     from setuptools import setup
@@ -14,16 +40,16 @@ def setup(*args, **kwargs):
     except SystemExit:
         raise
     except:
-        print "----------------------------------------------------------------------------"
-        print "Sorry, your build failed. Try rerunning configure.py with different options."
-        print "----------------------------------------------------------------------------"
+        print ("----------------------------------------------------------------------------")
+        print ("Sorry, your build failed. Try rerunning configure.py with different options.")
+        print ("----------------------------------------------------------------------------")
         raise
 
 
 
 
 class NumpyExtension(Extension):
-    # nicked from 
+    # nicked from
     # http://mail.python.org/pipermail/distutils-sig/2007-September/008253.html
     # solution by Michael Hoffmann
     def __init__(self, *args, **kwargs):
@@ -38,9 +64,14 @@ class NumpyExtension(Extension):
         from os.path import join
         return join(pathname, "core", "include")
 
-    @property
-    def include_dirs(self):
+    def get_include_dirs(self):
         return self._include_dirs + [self.get_numpy_incpath()]
+    def set_include_dirs(self, value):
+        self._include_dirs = value
+    def del_include_dirs(self):
+        pass
+
+    include_dirs = property(get_include_dirs, set_include_dirs, del_include_dirs)
 
 
 
@@ -83,7 +114,7 @@ class HedgeExtension(PyUblasExtension):
 
 # tools -----------------------------------------------------------------------
 def flatten(list):
-    """For an iterable of sub-iterables, generate each member of each 
+    """For an iterable of sub-iterables, generate each member of each
     sub-iterable in turn, i.e. a flattened version of that super-iterable.
 
     Example: Turn [[a,b,c],[d,e,f]] into [a,b,c,d,e,f].
@@ -103,26 +134,27 @@ def humanize(sym_str):
 
 
 # siteconf handling -----------------------------------------------------------
-def get_config(schema=None):
+def get_config(schema=None, warn_about_no_config=True):
     if schema is None:
         from setup import get_config_schema
         schema = get_config_schema()
 
-    if not schema.have_config() and not schema.have_global_config():
-        print "*************************************************************"
-        print "*** I have detected that you have not run configure.py."
-        print "*************************************************************"
-        print "*** Additionally, no global config files were found."
-        print "*** I will go ahead with the default configuration."
-        print "*** In all likelihood, this will not work out."
-        print "*** "
-        print "*** See README_SETUP.txt for more information."
-        print "*** "
-        print "*** If the build does fail, just re-run configure.py with the"
-        print "*** correct arguments, and then retry. Good luck!"
-        print "*************************************************************"
-        print "*** HIT Ctrl-C NOW IF THIS IS NOT WHAT YOU WANT"
-        print "*************************************************************"
+    if (not schema.have_config() and not schema.have_global_config()
+            and warn_about_no_config):
+        print("*************************************************************")
+        print("*** I have detected that you have not run configure.py.")
+        print("*************************************************************")
+        print("*** Additionally, no global config files were found.")
+        print("*** I will go ahead with the default configuration.")
+        print("*** In all likelihood, this will not work out.")
+        print("*** ")
+        print("*** See README_SETUP.txt for more information.")
+        print("*** ")
+        print("*** If the build does fail, just re-run configure.py with the")
+        print("*** correct arguments, and then retry. Good luck!")
+        print("*************************************************************")
+        print("*** HIT Ctrl-C NOW IF THIS IS NOT WHAT YOU WANT")
+        print("*************************************************************")
 
         delay = 10
 
@@ -203,7 +235,7 @@ def expand_str(s, options):
     return re.subn(r"\$\{([a-zA-Z0-9_]+)\}", my_repl, s)[0]
 
 def expand_value(v, options):
-    if isinstance(v, (str, unicode)):
+    if isinstance(v, str):
         return expand_str(v, options)
     elif isinstance(v, list):
         return [expand_value(i, options) for i in v]
@@ -245,15 +277,15 @@ class ConfigSchema:
         self.conf_dir = conf_dir
 
     def get_default_config(self):
-        return dict((opt.name, opt.default) 
+        return dict((opt.name, opt.default)
                 for opt in self.options)
-        
+
     def read_config_from_pyfile(self, filename):
         result = {}
         filevars = {}
-        execfile(filename, filevars)
+        exec(compile(open(filename, "r").read(), filename, "exec"), filevars)
 
-        for key, value in filevars.iteritems():
+        for key, value in filevars.items():
             if key in self.optdict:
                 result[key] = value
 
@@ -264,13 +296,13 @@ class ConfigSchema:
         filevars = {}
 
         try:
-            execfile(filename, filevars)
+            exec(compile(open(filename, "r").read(), filename, "exec"), filevars)
         except IOError:
             pass
 
         del filevars["__builtins__"]
 
-        for key, value in config.iteritems():
+        for key, value in config.items():
             if value is not None:
                 filevars[key] = value
 
@@ -295,7 +327,7 @@ class ConfigSchema:
         result = self.get_default_config()
 
         import os
-        
+
         confignames = []
         if self.global_conf_file is not None:
             confignames.append(self.global_conf_file)
@@ -327,16 +359,16 @@ class ConfigSchema:
         result = self.get_default_config_with_files()
         if os.access(cfile, os.R_OK):
             filevars = {}
-            execfile(cfile, filevars)
+            exec(compile(open(cfile, "r").read(), cfile, "exec"), filevars)
 
-            for key, value in filevars.iteritems():
+            for key, value in filevars.items():
                 if key in self.optdict:
                     result[key] = value
                 elif key == "__builtins__":
                     pass
                 else:
-                    raise KeyError, "invalid config key in %s: %s" % (
-                            cfile, key)
+                    raise KeyError("invalid config key in %s: %s" % (
+                            cfile, key))
 
         expand_options(result)
 
@@ -398,13 +430,13 @@ class Option(object):
         return result
 
     def value_to_str(self, default):
-        return default 
+        return default
 
     def add_to_configparser(self, parser, default=None):
         default = default_or(default, self.default)
         default_str = self.value_to_str(default)
         parser.add_option(
-            "--" + self.as_option(), dest=self.name, 
+            "--" + self.as_option(), dest=self.name,
             default=default_str,
             metavar=self.metavar(), help=self.get_help(default))
 
@@ -416,7 +448,7 @@ class Switch(Option):
         option = self.as_option()
 
         if not isinstance(self.default, bool):
-            raise ValueError, "Switch options must have a default"
+            raise ValueError("Switch options must have a default")
 
         if default is None:
             default = self.default
@@ -425,11 +457,11 @@ class Switch(Option):
             action = "store_false"
         else:
             action = "store_true"
-            
+
         parser.add_option(
-            "--" + self.as_option(), 
-            dest=self.name, 
-            help=self.get_help(default), 
+            "--" + self.as_option(),
+            dest=self.name,
+            help=self.get_help(default),
             default=default,
             action=action)
 
@@ -457,7 +489,7 @@ class StringListOption(Option):
 class IncludeDir(StringListOption):
     def __init__(self, lib_name, default=None, human_name=None, help=None):
         StringListOption.__init__(self, "%s_INC_DIR" % lib_name, default,
-                help=help or ("Include directories for %s" 
+                help=help or ("Include directories for %s"
                 % (human_name or humanize(lib_name))))
 
 class LibraryDir(StringListOption):
@@ -469,21 +501,89 @@ class LibraryDir(StringListOption):
 class Libraries(StringListOption):
     def __init__(self, lib_name, default=None, human_name=None, help=None):
         StringListOption.__init__(self, "%s_LIBNAME" % lib_name, default,
-                help=help or ("Library names for %s (without lib or .so)" 
+                help=help or ("Library names for %s (without lib or .so)"
                 % (human_name or humanize(lib_name))))
 
 class BoostLibraries(Libraries):
     def __init__(self, lib_base_name):
-        Libraries.__init__(self, "BOOST_%s" % lib_base_name.upper(), 
+        Libraries.__init__(self, "BOOST_%s" % lib_base_name.upper(),
                 ["boost_%s-${BOOST_COMPILER}-mt" % lib_base_name],
-                help="Library names for Boost C++ %s library (without lib or .so)" 
+                help="Library names for Boost C++ %s library (without lib or .so)"
                     % humanize(lib_base_name))
+
+def set_up_shipped_boost_if_requested(conf):
+    """Set up the package to use a shipped version of Boost.
+
+    Return a tuple of a list of extra C files to build and extra
+    defines to be used.
+    """
+    from os.path import exists
+    import sys
+
+    if conf["USE_SHIPPED_BOOST"]:
+        if not exists("bpl-subset/bpl_subset/boost/version.hpp"):
+            print("------------------------------------------------------------------------")
+            print("The shipped Boost library was not found, but USE_SHIPPED_BOOST is True.")
+            print("(The files should be under bpl-subset/.)")
+            print("------------------------------------------------------------------------")
+            print("If you got this package from git, you probably want to do")
+            print("")
+            print(" $ git submodule init")
+            print(" $ git submodule update")
+            print("")
+            print("to fetch what you are presently missing. If you got this from")
+            print("a distributed package on the net, that package is broken and")
+            print("should be fixed. For now, I will turn off 'USE_SHIPPED_BOOST'")
+            print("to try and see if the build succeeds that way, but in the long")
+            print("run you might want to either get the missing bits or turn")
+            print("'USE_SHIPPED_BOOST' off.")
+            print("------------------------------------------------------------------------")
+            conf["USE_SHIPPED_BOOST"] = False
+
+            delay = 10
+
+            from time import sleep
+            import sys
+            while delay:
+                sys.stdout.write("Continuing in %d seconds...   \r" % delay)
+                sys.stdout.flush()
+                delay -= 1
+                sleep(1)
+
+    if conf["USE_SHIPPED_BOOST"]:
+        conf["BOOST_INC_DIR"] = ["bpl-subset/bpl_subset"]
+        conf["BOOST_LIB_DIR"] = []
+        conf["BOOST_PYTHON_LIBNAME"] = []
+        conf["BOOST_THREAD_LIBNAME"] = []
+
+        from glob import glob
+        source_files = (glob("bpl-subset/bpl_subset/libs/*/*/*/*.cpp")
+                + glob("bpl-subset/bpl_subset/libs/*/*/*.cpp")
+                + glob("bpl-subset/bpl_subset/libs/*/*.cpp"))
+
+        source_files = [f for f in source_files
+                if not f.startswith("bpl-subset/bpl_subset/libs/thread/src")]
+
+        import sys
+        if sys.platform == "nt":
+            source_files += glob(
+                    "bpl-subset/bpl_subset/libs/thread/src/win32/*.cpp")
+        else:
+            source_files += glob(
+                    "bpl-subset/bpl_subset/libs/thread/src/pthread/*.cpp")
+
+        return (source_files,
+                {"BOOST_MULTI_INDEX_DISABLE_SERIALIZATION": 1}
+                )
+    else:
+        return [], {}
+
 
 def make_boost_base_options():
     return [
         IncludeDir("BOOST", []),
         LibraryDir("BOOST", []),
-        Option("BOOST_COMPILER", default="gcc43", 
+        Option("BOOST_COMPILER", default="gcc43",
             help="The compiler with which Boost C++ was compiled, e.g. gcc43"),
         ]
 
@@ -499,29 +599,29 @@ def configure_frontend():
     from setup import get_config_schema
     schema = get_config_schema()
     if schema.have_config():
-        print "************************************************************"
-        print "*** I have detected that you have already run configure."
-        print "*** I'm taking the configured values as defaults for this"
-        print "*** configure run. If you don't want this, delete the file"
-        print "*** %s." % schema.get_conf_file()
-        print "************************************************************"
+        print("************************************************************")
+        print("*** I have detected that you have already run configure.")
+        print("*** I'm taking the configured values as defaults for this")
+        print("*** configure run. If you don't want this, delete the file")
+        print("*** %s." % schema.get_conf_file())
+        print("************************************************************")
 
     import sys
 
     description = "generate a configuration file for this software package"
     parser = OptionParser(description=description)
     parser.add_option(
-	    "--python-exe", dest="python_exe", default=sys.executable,
-	    help="Which Python interpreter to use", metavar="PATH")
+            "--python-exe", dest="python_exe", default=sys.executable,
+            help="Which Python interpreter to use", metavar="PATH")
 
     parser.add_option("--prefix", default=None,
-	    help="Ignored")
+            help="Ignored")
     parser.add_option("--enable-shared", help="Ignored", action="store_false")
     parser.add_option("--disable-static", help="Ignored", action="store_false")
-    parser.add_option("--update-user", help="Update user config file (%s)" % schema.user_conf_file, 
+    parser.add_option("--update-user", help="Update user config file (%s)" % schema.user_conf_file,
             action="store_true")
-    parser.add_option("--update-global", 
-            help="Update global config file (%s)" % schema.global_conf_file, 
+    parser.add_option("--update-global",
+            help="Update global config file (%s)" % schema.global_conf_file,
             action="store_true")
 
     schema.add_to_configparser(parser, schema.read_config())

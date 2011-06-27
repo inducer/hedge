@@ -582,7 +582,7 @@ class ElementwiseCodeExecutor(object):
                 Line() ]+self.get_cpu_extra_preamble()+[ Line(),
                 CustomLoop(
                     "BOOST_FOREACH(const element_range er, ers)",
-                    Block(self.get_cuda_per_element_code())
+                    Block(self.get_cpu_per_element_code())
                     )
                 ])))
 
@@ -708,7 +708,6 @@ class ElementwiseCodeExecutor(object):
                 discr, discr.default_scalar_type, eg)
 
         def do(field):
-            print "EL_CODE", type(self)
             result = discr.volume_empty()
             knl_info.func.prepared_call((knl_info.grid_dim, 1),
                     field.gpudata,
@@ -863,6 +862,8 @@ class SkylineModeProcessor(ElementwiseCodeExecutor):
                 #define RED_MODE_EL reduced_modes[MB_IN_BLOCK_IDX][el_idx_in_mb]
 
                 __shared__ value_type reduced_modes[MBS_PER_BLOCK][ELS_PER_MB][NUM_DEGREES];
+                if (DOF_IN_EL_IDX < NUM_DEGREES)
+                    reduced_modes[MB_IN_BLOCK_IDX][el_idx_in_mb][DOF_IN_EL_IDX] = 0;
 
                 if (dof_in_element == 0 && el_idx_in_mb < ELS_PER_MB)
                 {

@@ -1,0 +1,39 @@
+
+/*
+From Robert E. Collin, Field Theory of Guided Waves, p. 413, chaper 6
+
+Find the cut-off frequency of a rectangular waveguide partially filled with a dielectric slab,
+in order to find the resonant frequency of an inhomogeneous 2D cavity.
+
+Take (5a), the transcendental equation for h and l, and substitute for their definitions in terms of gamma
+Then solve for the condition that gamma is 0, for the mode with m=0.
+t - width of dielectric section
+d - width of air section
+kappa - relative permittivity
+k_0 - free space wavenumber
+gamma - waveguide wavenumber
+l - transverse wavenumber in dielectric
+h - transverse wavenumber in air
+*/
+
+trans_eq : h*tan(l*t) + l*tan(h*d);
+l_gamma : sqrt(gamma^2 - (m*pi/b)^2 + kappa*k_0^2);
+h_gamma : sqrt(gamma^2 - (m*pi/b)^2 + k_0^2);
+l_simp : l_gamma, gamma=0, m=0;
+h_simp : h_gamma, gamma=0, m=0;
+
+subst(h_gamma, h, trans_eq)$
+subst(l_gamma, l, %)$
+subst(0, m, %)$
+trans_eq2 : subst(0, gamma, %);
+
+c : 2.99792458e8$
+plot2d([trans_eq2], [f,0.1e9,1.4e9], [y, -1000, 1000]), t = 50e-3, d=100e-3, kappa=2, k_0 = 2*%pi*f/c$
+f_sol : find_root(trans_eq2, f, 0.8e9, 1e9), t = 50e-3, d = 100e-3, kappa = 2, k_0 = 2*%pi*f/c;
+h_simp: float(2*%pi*f_sol/c);
+sqrt(kappa)*2*%pi*f_sol/c, kappa=2$
+l_simp: float(%);
+
+%pi*a/(a-d-sqrt(kappa)), a=150e-3, d=100e-3, kappa=2;
+float(%);
+

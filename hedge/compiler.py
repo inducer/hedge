@@ -780,9 +780,9 @@ class OperatorCompilerBase(IdentityMapper):
                     if diff.op.equal_except_for_axis(expr.op)
                     and diff.field == expr.field]
 
-            from pytools import single_valued
             names = [self.get_var_name() for d in all_diffs]
 
+            from pytools import single_valued
             op_class=single_valued(type(d.op) for d in all_diffs)
 
             from hedge.optemplate.operators import \
@@ -879,7 +879,7 @@ class OperatorCompilerBase(IdentityMapper):
     def aggregate_assignments(self, instructions, result):
         from pymbolic.primitives import Variable
 
-        # agregation helpers --------------------------------------------------
+        # aggregation helpers -------------------------------------------------
         def get_complete_origins_set(insn, skip_levels=0):
             if skip_levels < 0:
                 skip_levels = 0

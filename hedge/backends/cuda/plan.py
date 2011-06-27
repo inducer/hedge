@@ -201,10 +201,12 @@ class ExecutionPlan(object):
 
 
 class PlanGivenData(object):
-    def __init__(self, devdata, ldis, allow_microblocking, float_type):
+    def __init__(self, devdata, ldis, allow_microblocking, float_type,
+            max_face_dofs):
         self.devdata = devdata
         self.ldis = ldis
         self.float_type = numpy.dtype(float_type)
+        self.max_face_dofs = max_face_dofs
 
         self.microblock = self._find_microblock_size(allow_microblocking)
 
@@ -218,24 +220,8 @@ class PlanGivenData(object):
     def dofs_per_el(self):
         return self.ldis.node_count()
 
-    @memoize_method
-    def dofs_per_face(self):
-        return self.ldis.face_node_count()
-
     def faces_per_el(self):
         return self.ldis.face_count()
-
-    def face_dofs_per_el(self):
-        return self.ldis.face_node_count()*self.faces_per_el()
-
-    def face_dofs_per_microblock(self):
-        return self.microblock.elements*self.faces_per_el()*self.dofs_per_face()
-
-    @memoize_method
-    def aligned_face_dofs_per_microblock(self):
-        return self.devdata.align_dtype(
-                self.face_dofs_per_microblock(),
-                self.float_size())
 
     def _find_microblock_size(self, allow_microblocking):
         from hedge.backends.cuda.tools import int_ceiling
@@ -351,46 +337,24 @@ class SegmentedMatrixLocalOpExecutionPlan(ExecutionPlan):
 
 
 
-class SMemFieldLocalOpExecutionPlan(ExecutionPlan):
-    def __init__(self, given, parallelism, max_unroll):
-        ExecutionPlan.__init__(self, given.devdata)
-        self.given = given
-        self.parallelism = parallelism
-        self.max_unroll = max_unroll
-
-    def dofs_per_macroblock(self):
-        return self.parallelism.total() * self.given.microblock.aligned_floats
-
-    def preimage_dofs_per_macroblock(self):
-        return (self.parallelism.total()
-                * self.aligned_preimage_dofs_per_microblock)
-
-    def threads(self):
-        return self.parallelism.parallel * self.given.microblock.aligned_floats
-
-    def __str__(self):
-            return "smem_field %s par=%s unroll=%d" % (
-                ExecutionPlan.__str__(self),
-                self.parallelism,
-                self.max_unroll)
-
-
-
-
-
 MAX_INLINE = 6
 
 
 
 
-def make_diff_plan(discr, given):
+def make_diff_plan(discr, given,
+        aligned_preimage_dofs_per_microblock, preimage_dofs_per_el,
+        aligned_image_dofs_per_microblock, image_dofs_per_el):
     def generate_plans():
         segment_sizes = range(given.microblock.align_size,
                 given.microblock.elements*given.dofs_per_el()+1,
                 given.microblock.align_size)
 
         from hedge.backends.cuda.diff_shared_segmat import ExecutionPlan as SSegPlan
-        if "cuda_no_smem_matrix" not in discr.debug:
+        if ("cuda_no_smem_matrix" not in discr.debug
+                and image_dofs_per_el == given.dofs_per_el
+                and aligned_image_dofs_per_microblock 
+                == given.microblock.aligned_floats):
             for pe in range(1,32+1):
                 for inline in range(1, MAX_INLINE+1):
                     for seq in range(1, 4):
@@ -404,7 +368,12 @@ def make_diff_plan(discr, given):
         for pe in range(1,32+1):
             for inline in range(1, MAX_INLINE+1):
                 yield SFieldPlan(given, Parallelism(pe, inline, 1),
-                        max_unroll=given.dofs_per_el())
+                        aligned_preimage_dofs_per_microblock=
+                            aligned_preimage_dofs_per_microblock,
+                        preimage_dofs_per_el=preimage_dofs_per_el,
+                        aligned_image_dofs_per_microblock=
+                            aligned_image_dofs_per_microblock,
+                        image_dofs_per_el=image_dofs_per_el)
 
     def target_func(plan):
         return plan.make_kernel(discr).benchmark()
@@ -418,16 +387,24 @@ def make_diff_plan(discr, given):
 
 
 def make_element_local_plan(discr, given,
-        op_name, aligned_preimage_dofs_per_microblock,
-        preimage_dofs_per_el, with_index_check):
+        aligned_preimage_dofs_per_microblock, preimage_dofs_per_el, 
+        aligned_image_dofs_per_microblock, image_dofs_per_el,
+        elements_per_microblock, microblock_count,
+        op_name):
     def generate_plans():
-        if "cuda_no_smem_matrix" not in discr.debug:
+        if ("cuda_no_smem_matrix" not in discr.debug 
+                and image_dofs_per_el == given.dofs_per_el
+                and aligned_image_dofs_per_microblock 
+                == given.microblock.aligned_floats
+                and elements_per_microblock 
+                == given.microblock.elements):
+
             from hedge.backends.cuda.el_local_shared_segmat import ExecutionPlan as SSegPlan
 
             for use_prefetch_branch in [True]:
             #for use_prefetch_branch in [True, False]:
                 segment_sizes = range(given.microblock.align_size,
-                        given.microblock.elements*given.dofs_per_el()+1,
+                        elements_per_microblock*given.dofs_per_el()+1,
                         given.microblock.align_size)
 
                 for pe in range(1,32+1):
@@ -450,17 +427,18 @@ def make_element_local_plan(discr, given,
         for pe in range(1,32+1):
             for inline in range(1, MAX_INLINE):
                 yield SFieldPlan(given, Parallelism(pe, inline, 1),
-                        max_unroll=preimage_dofs_per_el,
-
                         debug_name="cuda_%s" % op_name,
                         aligned_preimage_dofs_per_microblock=
                             aligned_preimage_dofs_per_microblock,
-                        preimage_dofs_per_el=preimage_dofs_per_el)
+                        preimage_dofs_per_el=preimage_dofs_per_el,
+                        aligned_image_dofs_per_microblock=
+                            aligned_image_dofs_per_microblock,
+                        image_dofs_per_el=image_dofs_per_el,
+                        elements_per_microblock=elements_per_microblock,
+                        microblock_count=microblock_count)
 
     def target_func(plan):
-        return (plan
-                .make_kernel(discr, with_index_check=with_index_check)
-                .benchmark())
+        return plan.make_kernel(discr).benchmark()
 
     from hedge.backends.cuda.plan import optimize_plan
     return optimize_plan(

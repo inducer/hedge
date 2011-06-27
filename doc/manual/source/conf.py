@@ -194,7 +194,7 @@ intersphinx_mapping = {
         'http://docs.scipy.org/doc/numpy/': None,
         'http://documen.tician.de/codepy/': None,
         'http://documen.tician.de/pymbolic/': None,
-        'http://documen.tician.de/pylo/': None,
+        'http://documen.tician.de/pyvisfile/': None,
         'http://documen.tician.de/meshpy/': None,
         }
 

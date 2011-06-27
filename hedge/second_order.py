@@ -37,9 +37,34 @@ class StabilizationTermGenerator(hedge.optemplate.IdentityMapper):
         self.flux_arg_lookup = dict(
                 (flux_arg, i) for i, flux_arg in enumerate(flux_args))
 
-    def get_flux_arg_idx(self, expr, wrap_ops):
-        for wrap_op in wrap_ops:
-            expr = wrap_op(expr)
+    def get_flux_arg_idx(self, expr, quad_above):
+        from hedge.optemplate.mappers import QuadratureDetector
+
+        quad_below = QuadratureDetector()(expr)
+        if quad_above:
+            if quad_below is not None:
+                # Both the part of the expression above and below the
+                # differentiation operator had quadrature upsamplers in it.
+                # Since we're removing the differentiation operator, there are
+                # now two layers of quadrature operators. We need to change the
+                # inner layer to be the only layer.
+
+                from hedge.optemplate.mappers import QuadratureUpsamplerChanger
+                expr = QuadratureUpsamplerChanger(quad_above[0])(expr)
+            else:
+                # Only the part of the expression above the differentiation
+                # operator had quadrature. Insert quadrature here, be done.
+                expr = quad_above[0](expr)
+        else:
+            if quad_below is not None:
+                # Only the part of the expression below the differentiation
+                # operator had quadrature--the stuff above doesn't want it.
+                # Get rid of it.
+                from hedge.optemplate.mappers import QuadratureUpsamplerRemover
+                expr = QuadratureUpsamplerRemover({}, do_warn=False)(expr)
+            else:
+                # No quadrature, no headaches.
+                pass
 
         try:
             return self.flux_arg_lookup[expr]
@@ -49,14 +74,14 @@ class StabilizationTermGenerator(hedge.optemplate.IdentityMapper):
             self.flux_args.append(expr)
             return flux_arg_idx
 
-    def map_operator_binding(self, expr, wrap_ops=[]):
+    def map_operator_binding(self, expr, quad_above=[]):
         from hedge.optemplate.operators import (
                 DiffOperatorBase, FluxOperatorBase,
                 InverseMassOperator,
                 QuadratureInteriorFacesGridUpsampler)
 
         if isinstance(expr.op, DiffOperatorBase):
-            flux_arg_idx = self.get_flux_arg_idx(expr.field, wrap_ops=wrap_ops)
+            flux_arg_idx = self.get_flux_arg_idx(expr.field, quad_above=quad_above)
 
             from hedge.optemplate import \
                     WeakFormDiffOperatorBase, \
@@ -78,26 +103,29 @@ class StabilizationTermGenerator(hedge.optemplate.IdentityMapper):
         elif isinstance(expr.op, FluxOperatorBase):
             return 0
         elif isinstance(expr.op, InverseMassOperator):
-            return self.rec(expr.field, wrap_ops)
+            return self.rec(expr.field, quad_above)
         elif isinstance(expr.op, QuadratureInteriorFacesGridUpsampler):
-            return self.rec(expr.field, [expr.op]+wrap_ops)
+            if quad_above:
+                raise RuntimeError("double quadrature upsampler found "
+                        "when generating stabilization term")
+            return self.rec(expr.field, [expr.op])
         else:
             from hedge.optemplate.tools import pretty_print_optemplate
             raise ValueError("stabilization term generator doesn't know "
                     "what to do with '%s'" % pretty_print_optemplate(expr))
 
-    def map_variable(self, expr, wrap_ops=[]):
+    def map_variable(self, expr, quad_above=[]):
         from hedge.flux import FieldComponent
         return FieldComponent(
-                self.get_flux_arg_idx(expr, wrap_ops), 
+                self.get_flux_arg_idx(expr, quad_above), 
                 is_interior=True)
 
-    def map_subscript(self, expr, wrap_ops=[]):
+    def map_subscript(self, expr, quad_above=[]):
         from pymbolic.primitives import Variable
         assert isinstance(expr.aggregate, Variable)
         from hedge.flux import FieldComponent
         return FieldComponent(
-                self.get_flux_arg_idx(expr, wrap_ops),
+                self.get_flux_arg_idx(expr, quad_above),
                 is_interior=True)
 
 
@@ -308,7 +336,7 @@ class SecondDerivativeBase(object):
         tgt.add_derivative()
         tgt.add_inner_fluxes(
                 adjust_flux(self.grad_interior_flux(tgt, u)), 
-                tgt.operand)
+                tgt.int_flux_operand)
 
         for tag in dirichlet_tags:
             tgt.add_boundary_flux(

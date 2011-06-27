@@ -22,7 +22,8 @@ import numpy
 
 
 
-def main(write_output=True, flux_type_arg="central", use_quadrature=False):
+def main(write_output=True, flux_type_arg="central", use_quadrature=True,
+        final_time=20):
     from math import sin, cos, pi, sqrt
 
     from hedge.backends import guess_run_context
@@ -39,20 +40,6 @@ def main(write_output=True, flux_type_arg="central", use_quadrature=False):
         mesh_data = rcon.distribute_mesh(mesh)
     else:
         mesh_data = rcon.receive_mesh()
-
-    # discretization setup ----------------------------------------------------
-    order = 4
-    if use_quadrature:
-        quad_min_degrees = {"quad": 3*order}
-    else:
-        quad_min_degrees = {}
-
-    discr = rcon.make_discretization(mesh_data, order=order,
-            default_scalar_type=numpy.float64, 
-            debug=["cuda_no_plan" ],
-            quad_min_degrees=quad_min_degrees
-            )
-    vis_discr = discr
 
     # space-time-dependent-velocity-field -------------------------------------
     # simple vortex
@@ -105,11 +92,6 @@ def main(write_output=True, flux_type_arg="central", use_quadrature=False):
                 return 0
 
 
-    # visualization setup -----------------------------------------------------
-    from hedge.visualization import VtkVisualizer
-    if write_output:
-        vis = VtkVisualizer(vis_discr, rcon, "fld")
-
     # operator setup ----------------------------------------------------------
     # In the operator setup it is possible to switch between a only space
     # dependent velocity field `VField` or a time and space dependent
@@ -124,7 +106,7 @@ def main(write_output=True, flux_type_arg="central", use_quadrature=False):
             TimeDependentGivenFunction, \
             GivenFunction
     from hedge.models.advection import VariableCoefficientAdvectionOperator
-    op = VariableCoefficientAdvectionOperator(discr.dimensions,
+    op = VariableCoefficientAdvectionOperator(mesh.dimensions,
         #advec_v=TimeDependentGivenFunction(
         #    TimeDependentVField()),
         advec_v=TimeConstantGivenFunction(
@@ -134,6 +116,27 @@ def main(write_output=True, flux_type_arg="central", use_quadrature=False):
         bc_u_f=TimeConstantGivenFunction(
             GivenFunction(Bc_u())),
         flux_type=flux_type_arg)
+
+    # discretization setup ----------------------------------------------------
+    order = 5
+    if use_quadrature:
+        quad_min_degrees = {"quad": 3*order}
+    else:
+        quad_min_degrees = {}
+
+    discr = rcon.make_discretization(mesh_data, order=order,
+            default_scalar_type=numpy.float64, 
+            debug=["cuda_no_plan"],
+            quad_min_degrees=quad_min_degrees,
+            tune_for=op.op_template(),
+
+            )
+    vis_discr = discr
+
+    # visualization setup -----------------------------------------------------
+    from hedge.visualization import VtkVisualizer
+    if write_output:
+        vis = VtkVisualizer(vis_discr, rcon, "fld")
 
     # initial condition -------------------------------------------------------
     if True:
@@ -155,15 +158,18 @@ def main(write_output=True, flux_type_arg="central", use_quadrature=False):
 
     # timestep setup ----------------------------------------------------------
     from hedge.timestep.runge_kutta import LSRK4TimeStepper
-    stepper = LSRK4TimeStepper()
+    stepper = LSRK4TimeStepper(
+            vector_primitive_factory=discr.get_vector_primitive_factory())
 
     if rcon.is_head_rank:
         print "%d elements" % len(discr.mesh.elements)
 
     # filter setup-------------------------------------------------------------
-    from hedge.discretization import Filter, ExponentialFilterResponseFunction
-    mode_filter = Filter(discr,
-            ExponentialFilterResponseFunction(min_amplification=0.9,order=4))
+    from hedge.discretization import ExponentialFilterResponseFunction
+    from hedge.optemplate.operators import FilterOperator
+    mode_filter = FilterOperator(
+            ExponentialFilterResponseFunction(min_amplification=0.9,order=4))\
+                    .bind(discr)
 
     # diagnostics setup -------------------------------------------------------
     from pytools.log import LogManager, \
@@ -200,7 +206,7 @@ def main(write_output=True, flux_type_arg="central", use_quadrature=False):
     try:
         from hedge.timestep import times_and_steps
         step_it = times_and_steps(
-                final_time=20, logmgr=logmgr,
+                final_time=final_time, logmgr=logmgr,
                 max_dt_getter=lambda t: op.estimate_timestep(discr,
                     stepper=stepper, t=t, fields=u))
 
@@ -249,4 +255,4 @@ def test_var_velocity_advection():
             if use_quadrature:
                 descr += " and quadrature"
 
-            yield descr, mark_long(main), False, flux_type, use_quadrature
+            yield descr, mark_long(main), False, flux_type, use_quadrature, 1

@@ -14,18 +14,16 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-
+"Maxwell's equation example with fixed material coefficients"
 
 
 from __future__ import division
-import numpy
 import numpy.linalg as la
-
-
 
 
 def main(write_output=True):
     from math import sqrt, pi, exp
+    from os.path import join
 
     from hedge.backends import guess_run_context
     rcon = guess_run_context()
@@ -35,11 +33,13 @@ def main(write_output=True):
     epsilon = 1*epsilon0
     mu = 1*mu0
 
-    cylindrical = False
-    periodic = False
-
+    output_dir = "maxwell-2d"
+    import os
+    if not os.access(output_dir, os.F_OK):
+        os.makedirs(output_dir)
+    
     from hedge.mesh.generator import make_disk_mesh
-    mesh = make_disk_mesh(r=0.5, max_area=1e-4)
+    mesh = make_disk_mesh(r=0.5, max_area=1e-3)
 
     if rcon.is_head_rank:
         mesh_data = rcon.distribute_mesh(mesh)
@@ -59,7 +59,7 @@ def main(write_output=True):
 
     from hedge.visualization import VtkVisualizer
     if write_output:
-        vis = VtkVisualizer(discr, rcon, "em-%d" % order)
+        vis = VtkVisualizer(discr, rcon, join(output_dir, "em-%d" % order))
 
     if rcon.is_head_rank:
         print "order %d" % order
@@ -74,8 +74,8 @@ def main(write_output=True):
             absorb_tag=TAG_ALL, pec_tag=TAG_NONE)
     fields = op.assemble_eh(discr=discr)
 
-    from hedge.timestep import RK4TimeStepper
-    stepper = RK4TimeStepper()
+    from hedge.timestep import LSRK4TimeStepper
+    stepper = LSRK4TimeStepper()
     from time import time
     last_tstep = time()
     t = 0
@@ -85,7 +85,7 @@ def main(write_output=True):
             add_simulation_quantities, add_run_info
 
     if write_output:
-        log_file_name = "maxwell-%d.dat" % order
+        log_file_name = join(output_dir, "maxwell-%d.dat" % order)
     else:
         log_file_name = None
 
@@ -120,7 +120,7 @@ def main(write_output=True):
         for step, t, dt in step_it:
             if step % 10 == 0 and write_output:
                 e, h = op.split_eh(fields)
-                visf = vis.make_file("em-%d-%04d" % (order, step))
+                visf = vis.make_file(join(output_dir, "em-%d-%04d" % (order, step)))
                 vis.add_data(visf,
                         [
                             ("e", discr.convert_volume(e, "numpy")),

@@ -563,8 +563,22 @@ class PkSimplexDiscretization(OrthonormalLocalDiscretization):
         def node_count(self):
             return len(self.volume_nodes)
 
+        def face_count(self):
+            return self.ldis.face_count()
+
         def face_node_count(self):
             return len(self.face_nodes)
+
+        @memoize_method
+        def face_indices(self):
+            """Return a list of face index lists. Each face index list contains
+            the local node numbers of the nodes on that face.
+
+            Note: this relates to the facial DOF quadrature vector.
+            """
+            fnc = self.face_node_count()
+            return [tuple(range(fnc*face_idx, fnc*(face_idx+1)))
+                    for face_idx in range(self.ldis.face_count())]
 
         # {{{ matrices
         @memoize_method
@@ -967,7 +981,7 @@ class TriangleDiscretization(PkSimplexDiscretization):
     def equilateral_nodes(self):
         """Generate warped nodes in equilateral coordinates (x,y)."""
 
-        # port of Hesthaven/Warburton's Nodes2D routine
+        # port of Warburton's Nodes2D routine
         # note that the order of the barycentric coordinates is changed
         # match the order of the equilateral vertices
 

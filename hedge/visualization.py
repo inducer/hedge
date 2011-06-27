@@ -127,7 +127,7 @@ class LegacyVtkVisualizer(Visualizer):
 # xml vtk ---------------------------------------------------------------------
 class VtkFile(hedge.tools.Closable):
     def __init__(self, pathname, grid, filenames=None, compressor=None):
-        """`compressor` may be what ever is accepted by L{hedge.vtk.make_vtkfile}."""
+        """`compressor` may be what ever is accepted by :mod:`pyvisfile`."""
         hedge.tools.Closable.__init__(self)
         self.pathname = pathname
         self.grid = grid
@@ -140,13 +140,12 @@ class VtkFile(hedge.tools.Closable):
         from pytools import assert_not_a_file
         assert_not_a_file(self.pathname)
 
-
         outf = file(self.pathname, "w")
 
-        from hedge.vtk import AppendedDataXMLGenerator
+        from pyvisfile.vtk import AppendedDataXMLGenerator
         AppendedDataXMLGenerator(self.compressor)(self.grid).write(outf)
 
-        #from hedge.vtk import InlineXMLGenerator
+        #from pyvisfile.vtk import InlineXMLGenerator
         #InlineXMLGenerator(self.compressor)(self.grid).write(outf)
 
         outf.close()
@@ -168,7 +167,7 @@ class ParallelVtkFile(VtkFile):
     def do_close(self):
         VtkFile.do_close(self)
 
-        from hedge.vtk import ParallelXMLGenerator
+        from pyvisfile.vtk import ParallelXMLGenerator
 
         outf = file(self.index_pathname, "w")
         ParallelXMLGenerator(self.pathnames)(self.grid).write(outf)
@@ -199,7 +198,7 @@ class VtkVisualizer(Visualizer, hedge.tools.Closable):
         else:
             self.timestep_to_pathnames = None
 
-        from hedge.vtk import UnstructuredGrid, DataArray, \
+        from pyvisfile.vtk import UnstructuredGrid, DataArray, \
                 VTK_LINE, VTK_TRIANGLE, VTK_TETRA, VF_LIST_OF_VECTORS
         from hedge.mesh.element import Interval, Triangle, Tetrahedron
 
@@ -241,7 +240,7 @@ class VtkVisualizer(Visualizer, hedge.tools.Closable):
 
     def update_pvd(self):
         if self.pvd_name and self.timestep_to_pathnames:
-            from hedge.vtk import XMLRoot, XMLElement, make_vtkfile
+            from pyvisfile.vtk import XMLRoot, XMLElement, make_vtkfile
 
             collection = XMLElement("Collection")
 
@@ -313,7 +312,7 @@ class VtkVisualizer(Visualizer, hedge.tools.Closable):
                     DeprecationWarning)
             variables = scalars + vectors
 
-        from hedge.vtk import DataArray, VF_LIST_OF_COMPONENTS
+        from pyvisfile.vtk import DataArray, VF_LIST_OF_COMPONENTS
         for name, field in variables:
             visf.grid.add_pointdata(DataArray(name, scale_factor*field,
                 vector_format=VF_LIST_OF_COMPONENTS))
@@ -329,7 +328,7 @@ class SiloMeshData(object):
     def __init__(self, dim, coords, element_groups):
         self.coords = coords
 
-        from pylo import IntVector
+        from pyvisfile.silo import IntVector
         self.ndims = dim
         self.nodelist = IntVector()
         self.shapetypes = IntVector()
@@ -350,7 +349,7 @@ class SiloMeshData(object):
 
             if poly_count:
                 try:
-                    from pylo import DB_ZONETYPE_TRIANGLE, DB_ZONETYPE_TET
+                    from pyvisfile.silo import DB_ZONETYPE_TRIANGLE, DB_ZONETYPE_TET
                 except ImportError:
                     pass
                 else:
@@ -360,7 +359,7 @@ class SiloMeshData(object):
                     elif ldis.geometry is Tetrahedron:
                         self.shapetypes.append(DB_ZONETYPE_TET)
                     else:
-                        raise RuntimeError, "unsupported element type: %s" % ldis.geometry
+                        raise RuntimeError("unsupported element type: %s" % ldis.geometry)
 
                 self.shapesizes.append(poly_length)
                 self.shapecounts.append(poly_count)
@@ -438,8 +437,8 @@ class SiloVisualizer(Visualizer):
         pass
 
     def make_file(self, pathname):
-        """This function returns either a :class:`pylo.SiloFile` or a
-        :class:`pylo.ParallelSiloFile`, depending on the ParallelContext
+        """This function returns either a :class:`pyvisfile.silo.SiloFile` or a
+        :class:`pyvisfile.silo.ParallelSiloFile`, depending on the ParallelContext
         under which we are running
 
         An extension of .silo is automatically appended to *pathname*.
@@ -448,10 +447,10 @@ class SiloVisualizer(Visualizer):
             self._generate()
 
         if self.pcontext is None or len(self.pcontext.ranks) == 1:
-            from pylo import SiloFile
+            from pyvisfile.silo import SiloFile
             return SiloFile(pathname+".silo")
         else:
-            from pylo import ParallelSiloFile
+            from pyvisfile.silo import ParallelSiloFile
             return ParallelSiloFile(
                     pathname,
                     self.pcontext.rank, self.pcontext.ranks)
@@ -464,7 +463,7 @@ class SiloVisualizer(Visualizer):
                     DeprecationWarning)
             variables = scalars + vectors
 
-        from pylo import DB_NODECENT, DBOPT_DTIME, DBOPT_CYCLE
+        from pyvisfile.silo import DB_NODECENT, DBOPT_DTIME, DBOPT_CYCLE
 
         # put mesh coordinates
         mesh_opts = {}

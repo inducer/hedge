@@ -25,6 +25,38 @@ along with this program.  If not, see U{http://www.gnu.org/licenses/}.
 import numpy
 from pymbolic.primitives import Variable
 
+from decorator import decorator
+
+
+
+
+@decorator
+def memoize_method_with_obj_array_args(method, instance, *args):
+    """This decorator manages to memoize functions that
+    take object arrays (which are mutable, but are assumed
+    to never change) as arguments.
+    """
+    dicname = "_memoize_dic_"+method.__name__
+
+    new_args = []
+    for arg in args:
+        if isinstance(arg, numpy.ndarray) and arg.dtype == object:
+            new_args.append(tuple(arg))
+        else:
+            new_args.append(arg)
+    new_args = tuple(new_args)
+
+    try:
+        return getattr(instance, dicname)[new_args]
+    except AttributeError:
+        result = method(instance, *args)
+        setattr(instance, dicname, {new_args: result})
+        return result
+    except KeyError:
+        result = method(instance, *args)
+        getattr(instance,dicname)[new_args] = result
+        return result
+
 
 
 

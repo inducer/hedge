@@ -28,7 +28,7 @@ def make_mesh(a, b, pml_width=0.25, **kwargs):
     from meshpy.geometry import GeometryBuilder, make_box
     geob = GeometryBuilder()
 
-    box_points, box_facets, _ = make_box(a, b)
+    box_points, box_facets, _, box_markers = make_box(a, b)
     geob.add_geometry(box_points, box_facets)
     geob.wrap_in_box(pml_width)
 

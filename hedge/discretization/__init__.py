@@ -1067,10 +1067,23 @@ class Discretization(TimestepCalculator):
             if len(field) == 0:
                 return numpy.zeros(())
 
-            result = self.boundary_empty(tag, shape=ls, dtype=field[0].dtype)
+            dtype = None
+            for field_i in field:
+                try:
+                    dtype = field_i.dtype
+                    break
+                except AttributeError:
+                    pass
+
+            result = self.boundary_empty(tag, shape=ls, dtype=dtype)
             from pytools import indices_in_shape
             for i in indices_in_shape(ls):
-                result[i] = field[i][bdry.vol_indices]
+                field_i = field[i]
+                if isinstance(field_i, numpy.ndarray):
+                    result[i] = field_i[bdry.vol_indices]
+                else:
+                    # a scalar, will be broadcast
+                    result[i] = field_i
 
             return result
         else:
@@ -1215,21 +1228,73 @@ class Discretization(TimestepCalculator):
             for el in eg.members)
             for eg in self.element_groups)
 
-    def get_point_evaluator(self, point, thresh=0):
-        for eg in self.element_groups:
-            for el, rng in zip(eg.members, eg.ranges):
-                if el.contains_point(point, thresh):
-                    ldis = eg.local_discretization
-                    basis_values = numpy.array([
-                            phi(el.inverse_map(point))
-                            for phi in ldis.basis_functions()])
-                    vdm_t = ldis.vandermonde().T
-                    return _PointEvaluator(
-                            discr=self,
-                            el_range=rng,
-                            interp_coeff=la.solve(vdm_t, basis_values))
 
-        raise RuntimeError("point %s not found" % point)
+    def get_point_evaluator(self, point, use_btree=False, thresh=0):
+        def make_point_evaluator(el, eg, rng):
+            """For a given element *el*/element group *eg* in which *point*
+            is contained, return a callable that accepts fields an returns
+            an evaluation at *point*.
+            """
+
+            ldis = eg.local_discretization
+            basis_values = numpy.array([
+                phi(el.inverse_map(point))
+                for phi in ldis.basis_functions()])
+            vdm_t = ldis.vandermonde().T
+            return _PointEvaluator(
+                    discr=self,
+                    el_range=rng,
+                    interp_coeff=la.solve(vdm_t, basis_values))
+
+        if use_btree:
+            elements_in_bucket = self.get_spatial_btree().generate_matches(point)
+            for el, rng, eg in elements_in_bucket:
+                if el.contains_point(point,thresh):
+                    pe = make_point_evaluator(el, eg, rng)
+                    return pe
+        else:
+            for eg in self.element_groups:
+                for el, rng in zip(eg.members, eg.ranges):
+                    if el.contains_point(point,thresh):
+                        pe = make_point_evaluator(el, eg, rng)
+                        return pe
+
+        raise RuntimeError(
+                "point %s not found. Consider changing threshold."
+                % point)
+
+    def get_regrid_values(self, field_in, new_discr, dtype=None, 
+            use_btree=True, thresh=0):
+        """:param field_in: nodal values on old grid.
+        :param new_discr: new discretization.
+        :param use_btree: bool to decide if a spatial binary tree will be used.
+        """
+
+        if self.get_kind(field_in)!= "numpy":
+            raise NotImplementedError(
+                    "get_regrid_values needs numpy input field")
+
+        def regrid(scalar_field):
+            result = new_discr.volume_empty(dtype=dtype, kind="numpy")
+            for ii in range(len(new_discr.nodes)):
+                pe = self.get_point_evaluator(new_discr.nodes[ii], use_btree, thresh)
+                result[ii] = pe(scalar_field)
+            return result
+
+        from pytools.obj_array import with_object_array_or_scalar
+        return with_object_array_or_scalar(regrid, field_in)
+
+    @memoize_method
+    def get_spatial_btree(self):
+        from pytools.spatial_btree import SpatialBinaryTreeBucket
+        spatial_btree = SpatialBinaryTreeBucket(*self.mesh.bounding_box())
+
+        for eg in self.element_groups:
+            for el, rng in zip(eg.members,eg.ranges):
+                spatial_btree.insert((el,rng,eg),el.bounding_box(self.mesh.points))
+
+        return spatial_btree
+
     # }}}
 
     # {{{ op template execution -----------------------------------------------
@@ -1506,7 +1571,7 @@ def adaptive_project_function_1d(discr, f, dtype=None, kind=None,
                 el_result = numpy.dot(
                         ldis.vandermonde(),
                         el.inverse_map.jacobian()*numpy.array([
-                            quad(func=lambda x: 
+                            quad(func=lambda x:
                                 basis_func(el.inverse_map(numpy.array([x])))
                                 * numpy.asarray(f(numpy.array([x]), el))[idx], a=a, b=b,
                                 epsrel=epsrel, epsabs=epsabs)[0]

@@ -79,8 +79,9 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
     else:
         mesh_data = rcon.receive_mesh()
 
-    for order in [1,2,3,4,5,6]:
-        extra_discr_args.setdefault("debug", []).append("cuda_no_plan")
+    for order in [4,5,6]:
+    #for order in [1,2,3,4,5,6]:
+        extra_discr_args.setdefault("debug", []).extend(["cuda_no_plan", "cuda_dump_kernels"])
 
         op = MaxwellOperator(epsilon, mu, \
                 flux_type=flux_type_arg, \
@@ -248,4 +249,4 @@ if __name__ == "__main__":
     if in_mpi_relaunch():
         test_maxwell_cavities_mpi()
     else:
-        main()
+        do_test_maxwell_cavities_cuda(numpy.float32)
