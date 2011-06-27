@@ -138,7 +138,7 @@ class Kernel:
         elgroup, = discr.element_groups
 
         try:
-            kernel, mat_texref = \
+            kernel, block, mat_texref = \
                     self.get_kernel(with_scaling=True, for_benchmark=True)
         except cuda.CompileError:
             return None
@@ -177,7 +177,7 @@ class Kernel:
         cuda.Context.synchronize()
         for i in range(count):
             try:
-                kernel.prepared_call(self.grid,
+                kernel.prepared_call(self.grid, block,
                         out_vector.gpudata,
                         in_vector.gpudata,
                         0,
@@ -198,7 +198,7 @@ class Kernel:
         given = self.discr.given
         plan = self.plan
 
-        kernel, mat_texref = self.get_kernel()
+        kernel, block, mat_texref = self.get_kernel()
 
         mat_texref.set_array(prepped_mat)
 
@@ -212,7 +212,7 @@ class Kernel:
 
         if discr.instrumented:
             discr.el_local_timer.add_timer_callable(
-                    kernel.prepared_timed_call(self.grid,
+                    kernel.prepared_timed_call(self.grid, block,
                         out_vector.gpudata,
                         in_vector.gpudata,
                         debugbuf.gpudata,
@@ -237,7 +237,7 @@ class Kernel:
 
             discr.gmem_bytes_el_local.add(gmem_bytes)
         else:
-            kernel.prepared_call(self.grid,
+            kernel.prepared_call(self.grid, block,
                     out_vector.gpudata,
                     in_vector.gpudata,
                     debugbuf.gpudata,
@@ -462,14 +462,14 @@ class Kernel:
 
         func.prepare(
                 "PPPI",
-                block=(
-                    given.devdata.smem_granularity,
-                    plan.parallelism.parallel,
-                    plan.aligned_image_dofs_per_microblock
-                        //given.devdata.smem_granularity),
                 texrefs=texrefs)
+        block = (
+                given.devdata.smem_granularity,
+                plan.parallelism.parallel,
+                plan.aligned_image_dofs_per_microblock
+                //given.devdata.smem_granularity)
 
-        return func, mat_texref
+        return func, block, mat_texref
 
     # data blocks -------------------------------------------------------------
     def prepare_matrix(self, matrix):

@@ -462,7 +462,7 @@ def parse_gmsh(line_iterable, force_dimension=None, periodicity=None,
                 if next_line == "$End"+section_name:
                     break
 
-                dimension, number, name = next_line.split()
+                dimension, number, name = next_line.split(" ", 2)
                 dimension = int(dimension)
                 number = int(number)
 
