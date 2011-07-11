@@ -71,7 +71,7 @@ def main(write_output=True,
             TimeHarmonicGivenFunction, \
             TimeIntervalGivenFunction
 
-    op = StrongWaveOperator(-1, mesh.dimensions, 
+    op = StrongWaveOperator(-1, dim,
             source_f=TimeIntervalGivenFunction(
                 TimeHarmonicGivenFunction(
                     make_tdep_given(source_u), omega=10),
@@ -125,8 +125,6 @@ def main(write_output=True,
 
     # timestep loop -----------------------------------------------------------
     rhs = op.bind(discr)
-    from hedge.optemplate.tools import pretty_print_optemplate
-    print pretty_print_optemplate(op.op_template())
     try:
         from hedge.timestep import times_and_steps
         step_it = times_and_steps(

@@ -207,7 +207,7 @@ class IdentityMapperMixin(LocalOpReducerMixin, FluxOpReducerMixin):
 
 class BoundOpMapperMixin(object):
     def map_operator_binding(self, expr, *args, **kwargs):
-        return expr.op.get_mapper_method(self)(expr.op, expr.field, *args, **kwargs)
+        return getattr(self, expr.op.mapper_method)(expr.op, expr.field, *args, **kwargs)
 
 
 

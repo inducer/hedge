@@ -111,20 +111,16 @@ class WeakFormDiffOperatorBase(DiffOperatorBase):
     pass
 
 class StiffnessOperator(StrongFormDiffOperatorBase):
-    def get_mapper_method(self, mapper):
-        return mapper.map_stiffness
+    mapper_method = intern("map_stiffness")
 
 class DifferentiationOperator(StrongFormDiffOperatorBase):
-    def get_mapper_method(self, mapper):
-        return mapper.map_diff
+    mapper_method = intern("map_diff")
 
 class StiffnessTOperator(WeakFormDiffOperatorBase):
-    def get_mapper_method(self, mapper):
-        return mapper.map_stiffness_t
+    mapper_method = intern("map_stiffness_t")
 
 class MInvSTOperator(WeakFormDiffOperatorBase):
-    def get_mapper_method(self, mapper):
-        return mapper.map_minv_st
+    mapper_method = intern("map_minv_st")
 
 class QuadratureStiffnessTOperator(DiffOperatorBase):
     """
@@ -145,8 +141,7 @@ class QuadratureStiffnessTOperator(DiffOperatorBase):
     def __getinitargs__(self):
         return (self.xyz_axis, self.quadrature_tag)
 
-    def get_mapper_method(self, mapper):
-        return mapper.map_quad_stiffness_t
+    mapper_method = intern("map_quad_stiffness_t")
 
 
 
@@ -179,16 +174,14 @@ class ReferenceDifferentiationOperator(ReferenceDiffOperatorBase):
     def matrices(element_group):
         return element_group.differentiation_matrices
 
-    def get_mapper_method(self, mapper):
-        return mapper.map_ref_diff
+    mapper_method = intern("map_ref_diff")
 
 class ReferenceStiffnessTOperator(ReferenceDiffOperatorBase):
     @staticmethod
     def matrices(element_group):
         return element_group.stiffness_t_matrices
 
-    def get_mapper_method(self, mapper):
-        return mapper.map_ref_stiffness_t
+    mapper_method = intern("map_ref_stiffness_t")
 
 class ReferenceQuadratureStiffnessTOperator(ReferenceDiffOperatorBase):
     """
@@ -206,8 +199,7 @@ class ReferenceQuadratureStiffnessTOperator(ReferenceDiffOperatorBase):
     def __getinitargs__(self):
         return (self.rst_axis, self.quadrature_tag)
 
-    def get_mapper_method(self, mapper):
-        return mapper.map_ref_quad_stiffness_t
+    mapper_method = intern("map_ref_quad_stiffness_t")
 
     def preimage_ranges(self, eg):
         return eg.quadrature_info[self.quadrature_tag].ranges
@@ -228,15 +220,13 @@ class ElementwiseLinearOperator(Operator):
     def coefficients(self, element_group):
         return None
 
-    def get_mapper_method(self, mapper):
-        return mapper.map_elementwise_linear
+    mapper_method = intern("map_elementwise_linear")
 
 
 
 
 class ElementwiseMaxOperator(StatelessOperator):
-    def get_mapper_method(self, mapper):
-        return mapper.map_elementwise_max
+    mapper_method = intern("map_elementwise_max")
 
 
 
@@ -255,8 +245,7 @@ class QuadratureGridUpsampler(Operator):
     def __getinitargs__(self):
         return (self.quadrature_tag,)
 
-    def get_mapper_method(self, mapper):
-        return mapper.map_quad_grid_upsampler
+    mapper_method = intern("map_quad_grid_upsampler")
 
 
 
@@ -274,8 +263,7 @@ class QuadratureInteriorFacesGridUpsampler(Operator):
     def __getinitargs__(self):
         return (self.quadrature_tag,)
 
-    def get_mapper_method(self, mapper):
-        return mapper.map_quad_int_faces_grid_upsampler
+    mapper_method = intern("map_quad_int_faces_grid_upsampler")
 
 
 
@@ -295,8 +283,7 @@ class QuadratureBoundaryGridUpsampler(Operator):
     def __getinitargs__(self):
         return (self.quadrature_tag, self.boundary_tag)
 
-    def get_mapper_method(self, mapper):
-        return mapper.map_quad_bdry_grid_upsampler
+    mapper_method = intern("map_quad_bdry_grid_upsampler")
 
 
 
@@ -398,8 +385,7 @@ class MassOperator(MassOperatorBase):
     def coefficients(element_group):
         return element_group.jacobians
 
-    def get_mapper_method(self, mapper):
-        return mapper.map_mass
+    mapper_method = intern("map_mass")
 
 class InverseMassOperator(MassOperatorBase):
     @staticmethod
@@ -410,8 +396,7 @@ class InverseMassOperator(MassOperatorBase):
     def coefficients(element_group):
         return element_group.inverse_jacobians
 
-    def get_mapper_method(self, mapper):
-        return mapper.map_inverse_mass
+    mapper_method = intern("map_inverse_mass")
 
 
 
@@ -435,8 +420,7 @@ class QuadratureMassOperator(Operator):
     def __getinitargs__(self):
         return (self.quadrature_tag,)
 
-    def get_mapper_method(self, mapper):
-        return mapper.map_quad_mass
+    mapper_method = intern("map_quad_mass")
 
 
 
@@ -457,8 +441,7 @@ class ReferenceQuadratureMassOperator(Operator):
     def __getinitargs__(self):
         return (self.quadrature_tag,)
 
-    def get_mapper_method(self, mapper):
-        return mapper.map_ref_quad_mass
+    mapper_method = intern("map_ref_quad_mass")
 
 
 
@@ -478,8 +461,7 @@ class ReferenceMassOperator(ReferenceMassOperatorBase):
     def coefficients(element_group):
         return None
 
-    def get_mapper_method(self, mapper):
-        return mapper.map_ref_mass
+    mapper_method = intern("map_ref_mass")
 
 
 
@@ -493,8 +475,7 @@ class ReferenceInverseMassOperator(ReferenceMassOperatorBase):
     def coefficients(element_group):
         return None
 
-    def get_mapper_method(self, mapper):
-        return mapper.map_ref_inverse_mass
+    mapper_method = intern("map_ref_inverse_mass")
 
 # }}}
 
@@ -506,8 +487,7 @@ class BoundarizeOperator(Operator):
     def __getinitargs__(self):
         return (self.tag,)
 
-    def get_mapper_method(self, mapper):
-        return mapper.map_boundarize
+    mapper_method = intern("map_boundarize")
 
 
 
@@ -533,8 +513,7 @@ class FluxExchangeOperator(pymbolic.primitives.AlgebraicLeaf):
     def get_hash(self):
         return hash((self.__class__, self.index, self.rank, self.arg_fields))
 
-    def get_mapper_method(self, mapper):
-        return mapper.map_flux_exchange
+    mapper_method = intern("map_flux_exchange")
 
     def is_equal(self, other):
         return self.__class__ == other.__class__ and \
@@ -586,8 +565,7 @@ class FluxOperator(FluxOperatorBase):
     def __getinitargs__(self):
         return (self.flux, self.is_lift)
 
-    def get_mapper_method(self, mapper):
-        return mapper.map_flux
+    mapper_method = intern("map_flux")
 
 
 
@@ -607,8 +585,7 @@ class BoundaryFluxOperator(BoundaryFluxOperatorBase):
     def __getinitargs__(self):
         return (self.flux, self.boundary_tag, self.is_lift)
 
-    def get_mapper_method(self, mapper):
-        return mapper.map_bdry_flux
+    mapper_method = intern("map_bdry_flux")
 
 
 
@@ -631,8 +608,7 @@ class QuadratureFluxOperator(QuadratureFluxOperatorBase):
     def __getinitargs__(self):
         return (self.flux, self.quadrature_tag)
 
-    def get_mapper_method(self, mapper):
-        return mapper.map_quad_flux
+    mapper_method = intern("map_quad_flux")
 
 
 
@@ -655,8 +631,7 @@ class QuadratureBoundaryFluxOperator(
     def __getinitargs__(self):
         return (self.flux, self.quadrature_tag, self.boundary_tag)
 
-    def get_mapper_method(self, mapper):
-        return mapper.map_quad_bdry_flux
+    mapper_method = intern("map_quad_bdry_flux")
 
 
 
@@ -806,8 +781,7 @@ class WholeDomainFluxOperator(pymbolic.primitives.AlgebraicLeaf):
         return (self.is_lift, self.interiors, self.boundaries,
                 self.quadrature_tag)
 
-    def get_mapper_method(self, mapper):
-        return mapper.map_whole_domain_flux
+    mapper_method = intern("map_whole_domain_flux")
 
 # }}}
 

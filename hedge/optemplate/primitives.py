@@ -56,8 +56,7 @@ class ScalarParameter(pymbolic.primitives.Variable):
         from hedge.optemplate import StringifyMapper
         return StringifyMapper
 
-    def get_mapper_method(self, mapper):
-        return mapper.map_scalar_parameter
+    mapper_method = intern("map_scalar_parameter")
 
 # }}}
 
@@ -71,8 +70,7 @@ class OperatorBinding(pymbolic.primitives.AlgebraicLeaf):
         from hedge.optemplate import StringifyMapper
         return StringifyMapper
 
-    def get_mapper_method(self, mapper):
-        return mapper.map_operator_binding
+    mapper_method = intern("map_operator_binding")
 
     def __getinitargs__(self):
         return self.op, self.field
@@ -122,8 +120,7 @@ class BoundaryPair(pymbolic.primitives.AlgebraicLeaf):
         self.bfield = bfield
         self.tag = tag
 
-    def get_mapper_method(self, mapper):
-        return mapper.map_boundary_pair
+    mapper_method = intern("map_boundary_pair")
 
     def stringifier(self):
         from hedge.optemplate.mappers import StringifyMapper
@@ -170,8 +167,7 @@ class BoundaryNormalComponent(pymbolic.primitives.AlgebraicLeaf):
                 and other.axis == self.axis
                 and other.quadrature_tag == self.quadrature_tag)
 
-    def get_mapper_method(self, mapper):
-        return mapper.map_normal_component
+    mapper_method = intern("map_normal_component")
 
     def __getinitargs__(self):
         return (self.boundary_tag, self.axis, self.quadrature_tag)
@@ -213,8 +209,7 @@ class Jacobian(GeometricFactorBase):
         from hedge.optemplate.mappers import StringifyMapper
         return StringifyMapper
 
-    def get_mapper_method(self, mapper):
-        return mapper.map_jacobian
+    mapper_method = intern("map_jacobian")
 
 
 
@@ -255,8 +250,7 @@ class ForwardMetricDerivative(GeometricFactorBase):
                 and other.rst_axis == self.rst_axis
                 )
 
-    def get_mapper_method(self, mapper):
-        return mapper.map_forward_metric_derivative
+    mapper_method = intern("map_forward_metric_derivative")
 
     def __getinitargs__(self):
         return (self.quadrature_tag, self.xyz_axis, self.rst_axis)
@@ -298,8 +292,7 @@ class InverseMetricDerivative(GeometricFactorBase):
                 and other.xyz_axis == self.xyz_axis
                 )
 
-    def get_mapper_method(self, mapper):
-        return mapper.map_inverse_metric_derivative
+    mapper_method = intern("map_inverse_metric_derivative")
 
     def __getinitargs__(self):
         return (self.quadrature_tag, self.rst_axis, self.xyz_axis)
