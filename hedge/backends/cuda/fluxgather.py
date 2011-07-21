@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Interface with Nvidia CUDA."""
 
 from __future__ import division
@@ -36,7 +37,7 @@ import hedge.backends.cuda.plan
 from pymbolic.mapper.c_code import CCodeMapper
 from hedge.flux import FluxIdentityMapper
 
-from codepy.cgen import (
+from cgen import (
         Pointer, POD, Value, ArrayOf, Typedef,
         Module, FunctionDeclaration, FunctionBody, Block, LiteralBlock,
         Comment, Line, Include,
@@ -58,7 +59,7 @@ class GPUIndexLists(Record):
 # {{{ structures --------------------------------------------------------------
 @memoize
 def face_pair_struct(float_type, dims):
-    from codepy.cgen import GenerableStruct
+    from cgen import GenerableStruct
     return GenerableStruct("face_pair", [
         POD(float_type, "h", ),
         POD(float_type, "order"),
@@ -83,7 +84,7 @@ def face_pair_struct(float_type, dims):
 
 @memoize
 def flux_header_struct(float_type, dims):
-    from codepy.cgen import GenerableStruct
+    from cgen import GenerableStruct
 
     return GenerableStruct("flux_header", [
         POD(numpy.uint16, "same_facepairs_end"),
@@ -765,7 +766,7 @@ class Kernel:
 
     @memoize_method
     def get_kernel(self, fdata, ilist_data, for_benchmark):
-        from codepy.cgen.cuda import CudaShared, CudaGlobal
+        from cgen.cuda import CudaShared, CudaGlobal
         from pycuda.tools import dtype_to_ctype
 
         discr = self.discr
@@ -1146,7 +1147,7 @@ class Kernel:
 
         #print len(same_fp_structs), len(diff_fp_structs), len(bdry_fp_structs)
 
-        from codepy.cgen import Value
+        from cgen import Value
         from hedge.backends.cuda.tools import make_superblocks
 
         return make_superblocks(
@@ -1251,7 +1252,7 @@ class Kernel:
         headers = (min_headers * dups)[:block_count]
         fp_blocks = (min_fp_blocks * dups)[:block_count]
 
-        from codepy.cgen import Value
+        from cgen import Value
         from hedge.backends.cuda.tools import make_superblocks
 
         return make_superblocks(
@@ -1291,7 +1292,7 @@ class Kernel:
         ilist_length = single_valued(len(il) for il in ilists)
         assert ilist_length == self.plan.dofs_per_face
 
-        from codepy.cgen import Typedef, POD
+        from cgen import Typedef, POD
 
         from pytools import flatten
         flat_ilists_uncast = numpy.array(list(flatten(ilists)))

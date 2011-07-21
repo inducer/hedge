@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Interface with Nvidia CUDA."""
 
 from __future__ import division
@@ -244,14 +245,14 @@ class Kernel:
 
     @memoize_method
     def get_kernel(self, diff_op, elgroup, for_benchmark=False):
-        from codepy.cgen import \
+        from cgen import \
                 Pointer, POD, Value, ArrayOf, Const, \
                 Module, FunctionDeclaration, FunctionBody, Block, \
                 Comment, Line, Define, Include, \
                 Initializer, If, For, Statement, Assign
 
         from pycuda.tools import dtype_to_ctype
-        from codepy.cgen.cuda import CudaShared, CudaGlobal
+        from cgen.cuda import CudaShared, CudaGlobal
 
         discr = self.discr
         d = discr.dimensions

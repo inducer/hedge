@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Bad-cell indicators."""
 
 from __future__ import division
@@ -542,7 +543,7 @@ class ElementwiseCodeExecutor(object):
         toolchain = toolchain.copy()
         add_codepy(toolchain)
 
-        from codepy.cgen import (Value, Include, Statement,
+        from cgen import (Value, Include, Statement,
                 Typedef, FunctionBody, FunctionDeclaration, Block, Const,
                 Line, POD, Initializer, CustomLoop)
         S = Statement
@@ -622,9 +623,9 @@ class ElementwiseCodeExecutor(object):
 
         microblocks_per_block = 1
 
-        from codepy.cgen.cuda import CudaGlobal
+        from cgen.cuda import CudaGlobal
 
-        from codepy.cgen import (Module, Value, Include,
+        from cgen import (Module, Value, Include,
                 Typedef, FunctionBody, FunctionDeclaration, Const,
                 Line, POD, LiteralBlock,
                 Define, Pointer)
@@ -759,11 +760,11 @@ class ElementwiseCodeExecutor(object):
 
 class SkylineModeProcessor(ElementwiseCodeExecutor):
     def get_cpu_extra_includes(self):
-        from codepy.cgen import Include
+        from cgen import Include
         return [Include("boost/scoped_array.hpp")]
 
     def get_cpu_extra_parameter_declarators(self):
-        from codepy.cgen import Value, POD
+        from cgen import Value, POD
         return [
                 Value("numpy_array<npy_uint32>", "mode_degrees"),
                 POD(numpy.uint32, "max_degree")]
@@ -778,7 +779,7 @@ class SkylineModeProcessor(ElementwiseCodeExecutor):
             ldis.order]
 
     def get_cpu_extra_preamble(self):
-        from codepy.cgen import Initializer, Value, POD, Statement
+        from cgen import Initializer, Value, POD, Statement
         return [
                 Initializer(Value("numpy_array<npy_uint32>::const_iterator",
                     "mode_degrees_iterator"),
@@ -790,7 +791,7 @@ class SkylineModeProcessor(ElementwiseCodeExecutor):
                 ]
 
     def get_cpu_per_element_code(self):
-        from codepy.cgen import (Value, Statement, Initializer, While,
+        from cgen import (Value, Statement, Initializer, While,
                 Comment, Block, For, Line, Pointer)
         S = Statement
         return [
@@ -838,8 +839,8 @@ class SkylineModeProcessor(ElementwiseCodeExecutor):
                 ]
 
     def get_cuda_extra_preamble(self, discr, dtype, eg):
-        from codepy.cgen import ArrayOf, Value, Initializer
-        from codepy.cgen.cuda import CudaConstant
+        from cgen import ArrayOf, Value, Initializer
+        from cgen.cuda import CudaConstant
 
         ldis = eg.local_discretization
         mode_degrees = [sum(mode_indices) for mode_indices in
@@ -908,7 +909,7 @@ class SkylineModeProcessor(ElementwiseCodeExecutor):
 
 class AveragingModeProcessor(ElementwiseCodeExecutor):
     def get_cpu_per_element_code(self):
-        from codepy.cgen import (Value, Statement, Initializer, While, Block)
+        from cgen import (Value, Statement, Initializer, While, Block)
         S = Statement
         return [
                 # assumes there is more than one coefficient

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Just-in-time compiling backend: Flux code generation."""
 
 from __future__ import division
@@ -233,7 +234,7 @@ def get_flux_toolchain(discr, fluxes):
 
 
 def get_interior_flux_mod(fluxes, fvi, discr, dtype):
-    from codepy.cgen import \
+    from cgen import \
             FunctionDeclaration, FunctionBody, \
             Const, Reference, Value, MaybeUnused, Typedef, POD, \
             Statement, Include, Line, Block, Initializer, Assign, \
@@ -359,7 +360,7 @@ def get_interior_flux_mod(fluxes, fvi, discr, dtype):
 
 
 def get_boundary_flux_mod(fluxes, fvi, discr, dtype):
-    from codepy.cgen import \
+    from cgen import \
             FunctionDeclaration, FunctionBody, Typedef, Struct, \
             Const, Reference, Value, POD, MaybeUnused, \
             Statement, Include, Line, Block, Initializer, Assign, \
