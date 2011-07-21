@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Interface with Nvidia CUDA."""
 
 from __future__ import division
@@ -258,15 +259,15 @@ class Kernel:
 
     @memoize_method
     def get_kernel(self, with_scaling, for_benchmark=False):
-        from codepy.cgen import \
+        from cgen import \
                 Pointer, POD, Value, ArrayOf, \
                 Module, FunctionDeclaration, FunctionBody, Block, \
                 Line, Define, Include, \
                 Initializer, If, For, Statement, Assign, \
                 ArrayInitializer
 
-        from codepy.cgen import dtype_to_ctype
-        from codepy.cgen.cuda import CudaShared, CudaConstant, CudaGlobal
+        from cgen import dtype_to_ctype
+        from cgen.cuda import CudaShared, CudaConstant, CudaGlobal
 
         discr = self.discr
         d = discr.dimensions
@@ -508,7 +509,7 @@ class Kernel:
                 )
 
         if self.plan.use_prefetch_branch:
-            from codepy.cgen import make_multiple_ifs
+            from cgen import make_multiple_ifs
             f_body.append(make_multiple_ifs([
                     ("segment_el_count == %d" % fetch_count,
                         mat_mul_outer_loop(fetch_count))

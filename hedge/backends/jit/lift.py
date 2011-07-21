@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Just-in-time compiling backend."""
 
 from __future__ import division
@@ -38,7 +39,7 @@ class JitLifter:
     @memoize_method
     def make_lift(self, fgroup, with_scale, dtype):
         discr = self.discr
-        from codepy.cgen import (
+        from cgen import (
                 FunctionDeclaration, FunctionBody, Typedef,
                 Const, Reference, Value, POD,
                 Statement, Include, Line, Block, Initializer, Assign,

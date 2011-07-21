@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Base facility for C generation from vector expressions."""
 
 from __future__ import division
@@ -211,7 +212,7 @@ class CompiledVectorExpressionBase(object):
             r = repr(num)
             if "." not in r:
                 from pytools import to_uncomplex_dtype
-                from codepy.cgen import dtype_to_ctype
+                from cgen import dtype_to_ctype
                 return "%s(%s)" % (dtype_to_ctype(
                         to_uncomplex_dtype(result_dtype)), r)
             else:
@@ -223,7 +224,7 @@ class CompiledVectorExpressionBase(object):
         for vei in self.vec_expr_info_list:
             expr_code = code_mapper(vei.expr, PREC_NONE)
             if vei.do_not_return:
-                from codepy.cgen import dtype_to_ctype
+                from cgen import dtype_to_ctype
                 code_lines.append(
                         "%s %s = %s;" % (
                             dtype_to_ctype(result_dtype), vei.name, expr_code))
