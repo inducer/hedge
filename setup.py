@@ -145,6 +145,7 @@ def main():
             install_requires=[
                 "PyUblas>=0.93.1",
                 "pytools>=10",
+                "cgen",
                 "codepy>=0.90",
                 "pymbolic>=0.90",
                 "meshpy>=0.91",
