@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Interface with Nvidia CUDA."""
 
 from __future__ import division
@@ -459,7 +460,7 @@ class ExecutionMapper(ExecutionMapperBase):
         then = self.rec(expr.then)
         else_ = self.rec(expr.else_)
 
-        return gpuarray.if_positive(crit, then_, else_)
+        return gpuarray.if_positive(crit, then, else_)
 
 
 
