@@ -231,7 +231,7 @@ class VtkVisualizer(Visualizer, hedge.tools.Closable):
             elif ldis.geometry is Tetrahedron:
                 vtk_eltype = VTK_TETRA
             else:
-                raise RuntimeError("unsupported element type: %s" 
+                raise RuntimeError("unsupported element type: %s"
                         % ldis.geometry)
 
             cell_types.extend([vtk_eltype] * len(smi) * len(eg.members))
@@ -254,13 +254,17 @@ class VtkVisualizer(Visualizer, hedge.tools.Closable):
 
             vtkf.add_child(collection)
 
+            from os.path import relpath, dirname
+            rel_path_start = dirname(self.pvd_name)
+
             tsteps = self.timestep_to_pathnames.keys()
             tsteps.sort()
             for i, time in enumerate(tsteps):
                 for part, pathname in enumerate(self.timestep_to_pathnames[time]):
                     collection.add_child(XMLElement(
                         "DataSet",
-                        timestep=time, part=part, file=pathname))
+                        timestep=time, part=part,
+                        file=relpath(pathname, rel_path_start)))
             outf = open(self.pvd_name, "w")
             xmlroot.write(outf)
             outf.close()
@@ -280,6 +284,7 @@ class VtkVisualizer(Visualizer, hedge.tools.Closable):
                     compressor=self.compressor
                     )
         else:
+            from os.path import basename
             filename_pattern = (
                     pathname + "-%05d." + self.grid.vtk_extension())
             if self.pcontext.is_head_rank:
@@ -289,7 +294,8 @@ class VtkVisualizer(Visualizer, hedge.tools.Closable):
                         index_pathname="%s.p%s" % (
                             pathname, self.grid.vtk_extension()),
                         pathnames=[
-                            filename_pattern % rank for rank in self.pcontext.ranks],
+                            basename(filename_pattern % rank)
+                            for rank in self.pcontext.ranks],
                        compressor=self.compressor
                        )
             else:
