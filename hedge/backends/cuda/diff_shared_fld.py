@@ -142,7 +142,7 @@ class Kernel:
         from hedge.optemplate \
                 import ReferenceDifferentiationOperator as op_class
         try:
-            func = self.get_kernel(op_class, elgroup, for_benchmark=True)
+            block, func = self.get_kernel(op_class, elgroup, for_benchmark=True)
         except cuda.CompileError:
             return None
 
@@ -171,7 +171,7 @@ class Kernel:
         cuda.Context.synchronize()
         for i in range(count):
             try:
-                func.prepared_call(self.grid,
+                func.prepared_call(self.grid, block,
                         0, # debugbuf
                         field.gpudata,
                         *rst_diff_gpudata)
@@ -192,7 +192,7 @@ class Kernel:
         d = discr.dimensions
         elgroup, = discr.element_groups
 
-        func = self.get_kernel(op_class, elgroup)
+        block, func = self.get_kernel(op_class, elgroup)
 
         assert field.dtype == given.float_type
 
@@ -208,7 +208,7 @@ class Kernel:
 
         if discr.instrumented:
             discr.diff_op_timer.add_timer_callable(
-                    func.prepared_timed_call(self.grid,
+                    func.prepared_timed_call(self.grid, block,
                         debugbuf.gpudata, field.gpudata, *rst_diff_gpudata))
 
             block_gmem_floats = (
@@ -230,7 +230,7 @@ class Kernel:
 
             discr.gmem_bytes_diff.add(gmem_bytes)
         else:
-            func.prepared_call(self.grid,
+            func.prepared_call(self.grid, block,
                     debugbuf.gpudata, field.gpudata, *rst_diff_gpudata)
 
         if use_debugbuf:
@@ -493,14 +493,16 @@ class Kernel:
         else:
             assert False
 
+        block = (
+                given.devdata.smem_granularity,
+                plan.parallelism.parallel,
+                given.microblock.aligned_floats//given.devdata.smem_granularity)
+
         func.prepare(
                 ["PP"] + discr.dimensions*[float_type],
-                block=(
-                    given.devdata.smem_granularity,
-                    plan.parallelism.parallel,
-                    given.microblock.aligned_floats//given.devdata.smem_granularity),
                 texrefs=[diff_rst_mat_texref])
-        return func
+
+        return block, func
 
     # data blocks -------------------------------------------------------------
     @memoize_method
