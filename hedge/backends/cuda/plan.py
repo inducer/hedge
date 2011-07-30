@@ -173,6 +173,10 @@ class ExecutionPlan(object):
         return None
 
     def max_registers(self):
+        from warnings import warn
+        warn("max_registers is deprecated", DeprecationWarning,
+                stacklevel=2)
+
         regs = self.registers()
 
         from pycuda.tools import OccupancyRecord
@@ -194,9 +198,8 @@ class ExecutionPlan(object):
                 registers=self.registers())
 
     def __str__(self):
-            return ("regs=%d(+%d) threads=%d smem=%d occ=%f" % (
+            return ("regs=%d threads=%d smem=%d occ=%f" % (
                 self.registers(),
-                self.max_registers()-self.registers(),
                 self.threads(),
                 self.shared_mem_use(),
                 self.occupancy_record().occupancy,

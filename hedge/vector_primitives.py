@@ -122,8 +122,7 @@ class CUDALinearCombiner:
         knl_args.append(result.gpudata)
         knl_args.append(self.mem_size)
 
-        self.kernel.set_block_shape(*self.block)
-        self.kernel.prepared_async_call(self.grid, None, *knl_args)
+        self.kernel.prepared_async_call(self.grid, self.block, None, *knl_args)
 
         return result
 
