@@ -288,6 +288,10 @@ class Kernel:
         assert plan.image_dofs_per_el == given.dofs_per_el()
         assert plan.aligned_image_dofs_per_microblock == given.microblock.aligned_floats
 
+        # FIXME: aligned_image_dofs_per_microblock must be divisible
+        # by this, therefore hardcoding for now.
+        chunk_size = 16
+
         cmod.extend([
                 Line(),
                 Define("DIMENSIONS", discr.dimensions),
@@ -299,7 +303,7 @@ class Kernel:
                 Define("ELS_PER_MB", given.microblock.elements),
                 Define("IMAGE_DOFS_PER_MB", "(IMAGE_DOFS_PER_EL*ELS_PER_MB)"),
                 Line(),
-                Define("CHUNK_SIZE", given.devdata.smem_granularity),
+                Define("CHUNK_SIZE", chunk_size),
                 Define("CHUNK_DOF", "threadIdx.x"),
                 Define("PAR_MB_NR", "threadIdx.y"),
                 Define("CHUNK_NR", "threadIdx.z"),
@@ -493,10 +497,11 @@ class Kernel:
         else:
             assert False
 
+        assert given.microblock.aligned_floats % chunk_size == 0
         block = (
-                given.devdata.smem_granularity,
+                chunk_size,
                 plan.parallelism.parallel,
-                given.microblock.aligned_floats//given.devdata.smem_granularity)
+                given.microblock.aligned_floats//chunk_size)
 
         func.prepare(
                 ["PP"] + discr.dimensions*[float_type],
