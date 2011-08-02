@@ -265,11 +265,11 @@ def test_imex_timestep_accuracy():
     from hedge.tools import EOCRecorder
 
     def rhs_expl(t, y):
-        A = (1-numpy.cos(0*t))*numpy.array([[0,1], [-1/t**2,0]])
+        A = (1-numpy.cos(t))*numpy.array([[0,1], [-1/t**2,0]])
         return numpy.dot(A, y)
 
     def rhs_impl(t, y0, alpha):
-        A = (numpy.cos(0*t))*numpy.array([[0,1], [-1/t**2,0]])
+        A = (numpy.cos(t))*numpy.array([[0,1], [-1/t**2,0]])
         return la.solve(numpy.eye(2)-alpha*A, numpy.dot(A, y0))
 
     def soln(t):
