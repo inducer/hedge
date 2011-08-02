@@ -43,7 +43,7 @@ class KennedyCarpenterIMEXRungeKuttaBase(EmbeddedRungeKuttaTimeStepperBase):
     """
 
     def __call__(self, y, t, dt, rhs_expl, rhs_impl, reject_hook=None):
-        r"""
+        """
         :arg rhs_impl: for a signature of (t, y0, alpha), returns
           a value of *k* satisfying
 
@@ -64,17 +64,16 @@ class KennedyCarpenterIMEXRungeKuttaBase(EmbeddedRungeKuttaTimeStepperBase):
         from hedge.tools import count_dofs
 
         # {{{ preparation, linear combiners
+        self.first_rhs_expl = rhs_expl(t, y)
+        self.first_rhs_impl = rhs_impl(t, y, 0.)
         try:
-            self.last_rhs_expl
+            self.norm
         except AttributeError:
-            self.last_rhs_expl = rhs_expl(t, y)
-            self.last_rhs_impl = rhs_impl(t, y, 0)
-
-            self.dof_count = count_dofs(self.last_rhs_expl)
+            self.dof_count = count_dofs(self.first_rhs_expl)
 
             if self.adaptive:
                 self.norm = self.vector_primitive_factory \
-                        .make_maximum_norm(self.last_rhs)
+                        .make_maximum_norm(self.first_rhs_expl)
             else:
                 self.norm = None
 
@@ -93,8 +92,8 @@ class KennedyCarpenterIMEXRungeKuttaBase(EmbeddedRungeKuttaTimeStepperBase):
                 if len(coeffs_expl) == 0:
                     assert c == 0
                     assert len(coeffs_impl) == 0
-                    this_rhs_expl = self.last_rhs_expl
-                    this_rhs_impl = self.last_rhs_impl
+                    this_rhs_expl = self.first_rhs_expl
+                    this_rhs_impl = self.first_rhs_impl
                 else:
                     sub_timer = self.timer.start_sub_timer()
 
@@ -109,12 +108,16 @@ class KennedyCarpenterIMEXRungeKuttaBase(EmbeddedRungeKuttaTimeStepperBase):
                             if coeff]
                     flop_count[0] += len(args)*2 - 1
                     sub_y = self.get_linear_combiner(
-                            len(args), self.last_rhs_expl)(*args)
-                    sub_timer.stop().submit()
+                            len(args), this_rhs_expl)(*args)
 
-                    this_rhs_expl = rhs_expl(t + c*dt, sub_y)
                     this_rhs_impl = rhs_impl(t + c*dt, sub_y, 
                             self.gamma*dt)
+                    args = [(1,sub_y)] + [(self.gamma*dt,this_rhs_impl)]
+                    flop_count[0] += 2
+                    sub_y = self.get_linear_combiner(
+                            len(args), this_rhs_expl)(*args)
+                    this_rhs_expl = rhs_expl(t + c*dt, sub_y)
+                    sub_timer.stop().submit()
 
                 explicit_rhss.append(this_rhs_expl)
                 implicit_rhss.append(this_rhs_impl)
@@ -131,9 +134,10 @@ class KennedyCarpenterIMEXRungeKuttaBase(EmbeddedRungeKuttaTimeStepperBase):
                                 coeffs + coeffs, 
                                 explicit_rhss + implicit_rhss)
                         if coeff]
+
                 flop_count[0] += len(args)*2 - 1
                 return self.get_linear_combiner(
-                        len(args), self.last_rhs_expl)(*args)
+                        len(args), this_rhs_expl)(*args)
 
             if not self.adaptive:
                 if self.use_high_order:
@@ -141,9 +145,8 @@ class KennedyCarpenterIMEXRungeKuttaBase(EmbeddedRungeKuttaTimeStepperBase):
                 else:
                     y = finish_solution(self.low_order_coeffs)
 
-                self.last_rhs_expl = this_rhs_expl
-                self.last_rhs_impl = this_rhs_impl
                 self.flop_counter.add(self.dof_count*flop_count[0])
+
                 return y
             else:
                 # {{{ step size adaptation
@@ -155,7 +158,7 @@ class KennedyCarpenterIMEXRungeKuttaBase(EmbeddedRungeKuttaTimeStepperBase):
                 from hedge.timestep.runge_kutta import adapt_step_size
                 accept_step, next_dt, rel_err = adapt_step_size(
                         t, dt, y, high_order_end_y, low_order_end_y,
-                        self, self.get_linear_combiner(2, self.last_rhs), self.norm)
+                        self, self.get_linear_combiner(2, this_rhs_expl), self.norm)
 
                 if not accept_step:
                     if reject_hook:
@@ -165,8 +168,7 @@ class KennedyCarpenterIMEXRungeKuttaBase(EmbeddedRungeKuttaTimeStepperBase):
                     # ... and go back to top of loop
                 else:
                     # finish up
-                    self.last_rhs_expl = this_rhs_expl
-                    self.last_rhs_impl = this_rhs_impl
+
                     self.flop_counter.add(self.dof_count*flop_count[0])
 
                     return high_order_end_y, t+dt, dt, next_dt
