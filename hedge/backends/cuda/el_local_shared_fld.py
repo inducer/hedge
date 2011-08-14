@@ -145,7 +145,7 @@ class Kernel:
 
         try:
             kernel, block, mat_texref = \
-                    self.get_kernel(with_scaling=True, for_benchmark=True)
+                    self.get_kernel(for_benchmark=True)
         except cuda.CompileError:
             return None
 
