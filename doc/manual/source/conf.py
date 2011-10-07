@@ -193,18 +193,20 @@ intersphinx_mapping = {
         'http://docs.python.org/dev': None,
         'http://docs.scipy.org/doc/numpy/': None,
         'http://documen.tician.de/codepy/': None,
-        'http://documen.tician.de/pymbolic/': None,
+        #'http://documen.tician.de/pymbolic/': None,
         'http://documen.tician.de/pyvisfile/': None,
         'http://documen.tician.de/meshpy/': None,
         }
 
 def autodoc_process_signature(app, what, name, obj, options, signature, 
         return_annotation):
-    from re import sub
-    signature = sub(r"<class 'hedge\.mesh\.(TAG_[A-Z]+)'>", r"\1", signature)
-    signature = sub(r"<(hedge\.data\.[a-zA-Z]+) object at 0x[0-9a-f]+>", r"\1(0)", signature)
-    signature = sub(r"<function <lambda> at 0x[0-9a-f]+>", "function", signature)
-    signature = sub(r"0*0000000000[0-9]", "", signature)
+    if signature is not None:
+        from re import sub
+        signature = sub(r"<class 'hedge\.mesh\.(TAG_[A-Z]+)'>", r"\1", signature)
+        signature = sub(r"<(hedge\.data\.[a-zA-Z]+) object at 0x[0-9a-f]+>", r"\1(0)", signature)
+        signature = sub(r"<function <lambda> at 0x[0-9a-f]+>", "function", signature)
+        signature = sub(r"0*0000000000[0-9]", "", signature)
+
     return (signature, return_annotation)
 
 def setup(app):
