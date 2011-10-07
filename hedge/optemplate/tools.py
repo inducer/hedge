@@ -34,18 +34,7 @@ import pymbolic.primitives
 
 
 # {{{ convenience functions for optemplate creation ---------------------------
-def make_vector_field(name, components):
-    """Return an object array of *components* subscripted
-    :class:`Field` instances.
-
-    :param components: The number of components in the vector.
-    """
-    if isinstance(components, int):
-        components = range(components)
-
-    from hedge.tools import join_fields
-    vfld = pymbolic.primitives.Variable(name)
-    return join_fields(*[vfld[i] for i in components])
+from pymbolic.primitives import make_sym_vector as make_vector_field
 
 
 
