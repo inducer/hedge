@@ -71,7 +71,7 @@ class ExecutionPlan(ExecutionPlanBase):
                 * self.aligned_preimage_dofs_per_microblock)
 
     def threads(self):
-        return (self.parallelism.parallel 
+        return (self.parallelism.parallel
                 * self.aligned_image_dofs_per_microblock)
 
     def __str__(self):
@@ -145,7 +145,7 @@ class Kernel:
 
         try:
             kernel, block, mat_texref = \
-                    self.get_kernel(with_scaling=True, for_benchmark=True)
+                    self.get_kernel(for_benchmark=True)
         except cuda.CompileError:
             return None
 
@@ -301,6 +301,10 @@ class Kernel:
         plan = self.plan
         par = plan.parallelism
 
+        # FIXME: aligned_image_dofs_per_microblock must be divisible
+        # by this, therefore hardcoding for now.
+        chunk_size = 16
+
         cmod.extend([
                 Line(),
                 Define("DIMENSIONS", discr.dimensions),
@@ -314,7 +318,7 @@ class Kernel:
                 Line(),
                 Define("IMAGE_DOFS_PER_MB", "(IMAGE_DOFS_PER_EL*MB_EL_COUNT)"),
                 Line(),
-                Define("CHUNK_SIZE", given.devdata.smem_granularity),
+                Define("CHUNK_SIZE", chunk_size),
                 Define("CHUNK_DOF", "threadIdx.x"),
                 Define("PAR_MB_NR", "threadIdx.y"),
                 Define("CHUNK_NR", "threadIdx.z"),
@@ -469,11 +473,12 @@ class Kernel:
         func.prepare(
                 "PPPI",
                 texrefs=texrefs)
+        assert plan.aligned_image_dofs_per_microblock % chunk_size == 0
         block = (
-                given.devdata.smem_granularity,
+                chunk_size,
                 plan.parallelism.parallel,
                 plan.aligned_image_dofs_per_microblock
-                //given.devdata.smem_granularity)
+                //chunk_size)
 
         return func, block, mat_texref
 

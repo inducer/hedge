@@ -404,7 +404,7 @@ class Kernel:
         fdata = self.fake_flux_face_data_block(block_count)
         ilist_data = self.fake_index_list_data()
 
-        gather, texref_map = self.get_kernel(fdata, ilist_data,
+        block, gather, texref_map = self.get_kernel(fdata, ilist_data,
                 for_benchmark=True)
 
         for dep_expr in self.all_deps:
@@ -424,7 +424,7 @@ class Kernel:
 
             try:
                 gather.prepared_call(
-                        (block_count, 1),
+                        (block_count, 1), block,
                         0,
                         fdata.device_memory,
                         *tuple(fof.gpudata for fof in all_fluxes_on_faces)
@@ -453,7 +453,7 @@ class Kernel:
         fdata = self.flux_face_data_block(elgroup)
         ilist_data = self.index_list_data()
 
-        gather, texref_map = self.get_kernel(fdata, ilist_data,
+        block, gather, texref_map = self.get_kernel(fdata, ilist_data,
                 for_benchmark=False)
 
         for dep_expr in self.all_deps:
@@ -478,7 +478,7 @@ class Kernel:
 
         if discr.instrumented:
             discr.flux_gather_timer.add_timer_callable(gather.prepared_timed_call(
-                    (len(discr.blocks), 1),
+                    (len(discr.blocks), 1), block,
                     debugbuf.gpudata,
                     fdata.device_memory,
                     *tuple(fof.gpudata for fof in all_fluxes_on_faces)
@@ -502,7 +502,7 @@ class Kernel:
                         ))
         else:
             gather.prepared_call(
-                    (len(discr.blocks), 1),
+                    (len(discr.blocks), 1), block,
                     debugbuf.gpudata,
                     fdata.device_memory,
                     *tuple(fof.gpudata for fof in all_fluxes_on_faces)
@@ -970,9 +970,7 @@ class Kernel:
         mod = SourceModule(
                 #allow_user_edit(cmod, "kernel.cu", "the flux kernel"),
                 cmod,
-                keep="cuda_keep_kernels" in discr.debug,
-                options=["--maxrregcount=%d" % self.plan.max_registers()]
-                )
+                keep="cuda_keep_kernels" in discr.debug)
         expr_to_texture_map = dict(
                 (dep_expr, mod.get_texref(
                     "field%d_tex" % self.dep_to_index[dep_expr]))
@@ -987,10 +985,9 @@ class Kernel:
         index_list_texref.set_flags(cuda.TRSF_READ_AS_INTEGER)
 
         func = mod.get_function("apply_flux")
+        block = (fplan.threads_per_face(), fplan.parallel_faces, 1)
         func.prepare(
                 (2+len(self.fluxes))*"P",
-                block=(fplan.threads_per_face(),
-                    fplan.parallel_faces, 1),
                 texrefs=expr_to_texture_map.values()
                 + [index_list_texref])
 
@@ -1000,7 +997,7 @@ class Kernel:
                     func.shared_size_bytes,
                     func.num_regs)
 
-        return func, expr_to_texture_map
+        return block, func, expr_to_texture_map
 
     # }}}
 

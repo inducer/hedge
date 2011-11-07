@@ -69,7 +69,6 @@ class CompiledVectorExpression(CompiledVectorExpressionBase):
             for expr in self.result_vec_expr_info_list]
 
         size = results[0].size
-        kernel_rec.kernel.set_block_shape(*results[0]._block)
         args = ([r.gpudata for r in results]
                 +[v.gpudata for v in vectors]
                 +scalars
@@ -77,9 +76,9 @@ class CompiledVectorExpression(CompiledVectorExpressionBase):
 
         if stats_callback is not None:
             stats_callback(size,  self,
-                    kernel_rec.kernel.prepared_timed_call(vectors[0]._grid, *args))
+                    kernel_rec.kernel.prepared_timed_call(vectors[0]._grid, results[0]._block, *args))
         else:
-            kernel_rec.kernel.prepared_async_call(vectors[0]._grid, self.stream, *args)
+            kernel_rec.kernel.prepared_async_call(vectors[0]._grid, results[0]._block, self.stream, *args)
 
         return results
 

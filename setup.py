@@ -149,7 +149,8 @@ def main():
                 "codepy>=0.90",
                 "pymbolic>=0.90",
                 "meshpy>=0.91",
-                "decorator>=3.2.0"
+                "decorator>=3.2.0",
+                "pytest>=2"
                 ],
             extras_require = {
                 "silo": ["pyvisfile"],

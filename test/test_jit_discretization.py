@@ -169,7 +169,7 @@ def test_tri_diff_mat():
 
         linf_error = la.norm(df_num-df, numpy.Inf)
         print linf_error
-        assert linf_error < 3e-5
+        assert linf_error < 4e-5
 
 
 

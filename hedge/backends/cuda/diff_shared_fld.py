@@ -142,7 +142,7 @@ class Kernel:
         from hedge.optemplate \
                 import ReferenceDifferentiationOperator as op_class
         try:
-            func = self.get_kernel(op_class, elgroup, for_benchmark=True)
+            block, func = self.get_kernel(op_class, elgroup, for_benchmark=True)
         except cuda.CompileError:
             return None
 
@@ -171,7 +171,7 @@ class Kernel:
         cuda.Context.synchronize()
         for i in range(count):
             try:
-                func.prepared_call(self.grid,
+                func.prepared_call(self.grid, block,
                         0, # debugbuf
                         field.gpudata,
                         *rst_diff_gpudata)
@@ -192,7 +192,7 @@ class Kernel:
         d = discr.dimensions
         elgroup, = discr.element_groups
 
-        func = self.get_kernel(op_class, elgroup)
+        block, func = self.get_kernel(op_class, elgroup)
 
         assert field.dtype == given.float_type
 
@@ -208,7 +208,7 @@ class Kernel:
 
         if discr.instrumented:
             discr.diff_op_timer.add_timer_callable(
-                    func.prepared_timed_call(self.grid,
+                    func.prepared_timed_call(self.grid, block,
                         debugbuf.gpudata, field.gpudata, *rst_diff_gpudata))
 
             block_gmem_floats = (
@@ -230,7 +230,7 @@ class Kernel:
 
             discr.gmem_bytes_diff.add(gmem_bytes)
         else:
-            func.prepared_call(self.grid,
+            func.prepared_call(self.grid, block,
                     debugbuf.gpudata, field.gpudata, *rst_diff_gpudata)
 
         if use_debugbuf:
@@ -288,6 +288,10 @@ class Kernel:
         assert plan.image_dofs_per_el == given.dofs_per_el()
         assert plan.aligned_image_dofs_per_microblock == given.microblock.aligned_floats
 
+        # FIXME: aligned_image_dofs_per_microblock must be divisible
+        # by this, therefore hardcoding for now.
+        chunk_size = 16
+
         cmod.extend([
                 Line(),
                 Define("DIMENSIONS", discr.dimensions),
@@ -299,7 +303,7 @@ class Kernel:
                 Define("ELS_PER_MB", given.microblock.elements),
                 Define("IMAGE_DOFS_PER_MB", "(IMAGE_DOFS_PER_EL*ELS_PER_MB)"),
                 Line(),
-                Define("CHUNK_SIZE", given.devdata.smem_granularity),
+                Define("CHUNK_SIZE", chunk_size),
                 Define("CHUNK_DOF", "threadIdx.x"),
                 Define("PAR_MB_NR", "threadIdx.y"),
                 Define("CHUNK_NR", "threadIdx.z"),
@@ -493,14 +497,17 @@ class Kernel:
         else:
             assert False
 
+        assert given.microblock.aligned_floats % chunk_size == 0
+        block = (
+                chunk_size,
+                plan.parallelism.parallel,
+                given.microblock.aligned_floats//chunk_size)
+
         func.prepare(
                 ["PP"] + discr.dimensions*[float_type],
-                block=(
-                    given.devdata.smem_granularity,
-                    plan.parallelism.parallel,
-                    given.microblock.aligned_floats//given.devdata.smem_granularity),
                 texrefs=[diff_rst_mat_texref])
-        return func
+
+        return block, func
 
     # data blocks -------------------------------------------------------------
     @memoize_method

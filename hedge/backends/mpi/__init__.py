@@ -629,11 +629,12 @@ class ParallelDiscretization(hedge.discretization.TimestepCalculator):
                 op=mpi.MIN)
 
     # compilation -------------------------------------------------------------
-    def compile(self, optemplate, post_bind_mapper=lambda x:x ):
+    def compile(self, optemplate, post_bind_mapper=lambda x:x, type_hints={} ):
         fci = FluxCommunicationInserter(self.neighbor_ranks)
         return self.subdiscr.compile(
                 optemplate,
-                post_bind_mapper=lambda x: fci(post_bind_mapper(x)))
+                post_bind_mapper=lambda x: fci(post_bind_mapper(x)),
+                type_hints=type_hints)
 
 
 

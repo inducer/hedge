@@ -65,34 +65,7 @@ def memoize_method_with_obj_array_args(method, instance, *args):
 
 
 
-def make_common_subexpression(field, prefix=None):
-    from pytools.obj_array import log_shape
-    from hedge.tools import is_zero
-    from pymbolic.primitives import CommonSubexpression
-
-    ls = log_shape(field)
-    if ls != ():
-        from pytools import indices_in_shape
-        result = numpy.zeros(ls, dtype=object)
-
-        for i in indices_in_shape(ls):
-            if prefix is not None:
-                component_prefix = prefix+"_".join(str(i_i) for i_i in i)
-            else:
-                component_prefix = None
-
-            if is_zero(field[i]):
-                result[i] = 0
-            else:
-                result[i] = CommonSubexpression(field[i], component_prefix)
-
-        return result
-    else:
-        if is_zero(field):
-            return 0
-        else:
-            return CommonSubexpression(field, prefix)
-
+from pymbolic.primitives import make_common_subexpression
 
 
 
