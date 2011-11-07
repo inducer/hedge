@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from __future__ import division
 
 __copyright__ = "Copyright (C) 2008 Andreas Kloeckner"
@@ -1226,7 +1227,7 @@ class Discretization(hedge.discretization.Discretization):
         from_indices, to_indices = self._boundarize_info(tag)
 
         temp_tgt = numpy.zeros(
-                (self.face_strage_info.aligned_boundary_dof_count,), 
+                (self.face_storage_info.aligned_boundary_dof_count,), 
                 dtype=numpy.int32)
         temp_tgt[to_indices] = from_indices
 
