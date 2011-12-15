@@ -239,17 +239,17 @@ class CUDAIntervalTimer(PostLogQuantity):
     def __init__(self, name, description=None, stream=None):
         PostLogQuantity.__init__(self, name, "s", description)
         self.stream = stream
-        self.callables = []
+        self.callables = 0
 
     def start_sub_timer(self):
         return self._SubTimer(self, self.stream)
 
     def add_timer_callable(self, f):
-        self.callables.append(f)
+        self.callables += f()
 
     def __call__(self):
-        result = sum(clbl() for clbl in self.callables)
-        self.callables = []
+        result = self.callables
+        self.callables = 0
         return result
 
 
