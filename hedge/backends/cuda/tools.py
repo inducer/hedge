@@ -231,7 +231,7 @@ class CUDAIntervalTimer(PostLogQuantity):
             return self
 
         def submit(self):
-            self.itimer.callables.append(self.elapsed)
+            self.itimer.add_timer_callable(self.elapsed)
 
         def elapsed(self):
             return 1e-3*(self.stop_event.time_since(self.start_event))
