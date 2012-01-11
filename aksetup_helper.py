@@ -257,7 +257,7 @@ def expand_value(v, options):
 
 def expand_options(options):
     return dict(
-            (k, expand_value(v, options)) for k, v in options.iteritems())
+            (k, expand_value(v, options)) for k, v in options.items())
 
 
 
@@ -726,8 +726,8 @@ def check_git_submodules():
         stdout_data, _ = popen.communicate()
         if popen.returncode != 0:
             git_error = "git returned error code %d" % popen.returncode
-    except OSError, e:
-        git_error = e
+    except OSError:
+        git_error = "(os error, likely git not found)"
 
     if git_error is not None:
         print("-------------------------------------------------------------------------")
@@ -737,7 +737,7 @@ def check_git_submodules():
         print("not invoke git to check whether my submodules are up to date.")
         print("")
         print("The error was:")
-        print(e)
+        print(git_error)
         print("Hit Ctrl-C now if you'd like to think about the situation.")
         print("-------------------------------------------------------------------------")
         count_down_delay(delay=5)
@@ -797,7 +797,9 @@ def check_git_submodules():
             print("Hit Ctrl-C now if you'd like to think about the situation.")
             print("-------------------------------------------------------------------------")
 
-            count_down_delay(delay=10)
+            from os.path import exists
+            if not exists(".dirty-git-ok"):
+                count_down_delay(delay=10)
 
 
 
