@@ -1,61 +1,76 @@
-# Hedge - the Hybrid'n'Easy DG Environment
-# Copyright (C) 2007 Andreas Kloeckner
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
-
-
+"""Hedge is the Hybrid'n'Easy Discontinuous Galerkin Environment."""
 
 from __future__ import division
-import numpy
-import numpy.linalg as la
+
+__copyright__ = "Copyright (C) 2007 Andreas Kloeckner"
+
+__license__ = """
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+"""
+
+
+
+
+import numpy as np
 
 
 
 
 def make_mesh(a, b, pml_width=0.25, **kwargs):
-    from meshpy.geometry import GeometryBuilder, make_box
+    from meshpy.geometry import GeometryBuilder, make_circle
     geob = GeometryBuilder()
 
-    box_points, box_facets, _, box_markers = make_box(a, b)
-    geob.add_geometry(box_points, box_facets)
+    circle_centers = [(-1.5, 0), (1.5, 0)]
+    for cent in circle_centers:
+        geob.add_geometry(*make_circle(1, cent))
+
+    geob.wrap_in_box(1)
     geob.wrap_in_box(pml_width)
 
     mesh_mod = geob.mesher_module()
     mi = mesh_mod.MeshInfo()
     geob.set(mi)
 
+    mi.set_holes(circle_centers)
+
     built_mi = mesh_mod.build(mi, **kwargs)
 
     def boundary_tagger(fvi, el, fn, points):
         return []
 
-    from hedge.mesh import make_conformal_mesh
-    return make_conformal_mesh(
-            built_mi.points,
-            built_mi.elements, 
+    from hedge.mesh import make_conformal_mesh_ext
+    from hedge.mesh.element import Triangle
+    pts = np.asarray(built_mi.points, dtype=np.float64)
+    return make_conformal_mesh_ext(
+            pts,
+            [Triangle(i, el, pts)
+                for i, el in enumerate(built_mi.elements)],
             boundary_tagger)
 
 
 
 
 def main(write_output=True):
-    from hedge.timestep import RK4TimeStepper
-    from hedge.mesh import make_disk_mesh
+    from hedge.timestep.runge_kutta import LSRK4TimeStepper
     from math import sqrt, pi, exp
 
-    from hedge.backends import guess_run_context, FEAT_CUDA
+    from hedge.backends import guess_run_context
     rcon = guess_run_context()
 
     epsilon0 = 8.8541878176e-12 # C**2 / (N m**2)
@@ -65,14 +80,11 @@ def main(write_output=True):
 
     c = 1/sqrt(mu*epsilon)
 
-    cylindrical = False
-    periodic = False
-
     pml_width = 0.5
-    #mesh = make_mesh(a=numpy.array((-1,-1,-1)), b=numpy.array((1,1,1)), 
-    #mesh = make_mesh(a=numpy.array((-3,-3)), b=numpy.array((3,3)), 
-    mesh = make_mesh(a=numpy.array((-1,-1)), b=numpy.array((1,1)), 
-    #mesh = make_mesh(a=numpy.array((-2,-2)), b=numpy.array((2,2)), 
+    #mesh = make_mesh(a=np.array((-1,-1,-1)), b=np.array((1,1,1)),
+    #mesh = make_mesh(a=np.array((-3,-3)), b=np.array((3,3)),
+    mesh = make_mesh(a=np.array((-1,-1)), b=np.array((1,1)),
+    #mesh = make_mesh(a=np.array((-2,-2)), b=np.array((2,2)),
             pml_width=pml_width, max_volume=0.01)
 
     if rcon.is_head_rank:
@@ -84,18 +96,18 @@ def main(write_output=True):
         def volume_interpolant(self, t, discr):
             from hedge.tools import make_obj_array
 
-            result = discr.volume_zeros(kind="numpy", dtype=numpy.float64)
+            result = discr.volume_zeros(kind="numpy", dtype=np.float64)
 
             omega = 6*c
             if omega*t > 2*pi:
                 return make_obj_array([result, result, result])
 
             x = make_obj_array(discr.nodes.T)
-            r = numpy.sqrt(numpy.dot(x, x))
+            r = np.sqrt(np.dot(x, x))
 
             idx = r<0.3
-            result[idx] = (1+numpy.cos(pi*r/0.3))[idx] \
-                    *numpy.sin(omega*t)**3
+            result[idx] = (1+np.cos(pi*r/0.3))[idx] \
+                    *np.sin(omega*t)**3
 
             result = discr.convert_volume(result, kind=discr.compute_kind,
                     dtype=discr.default_scalar_type)
@@ -126,7 +138,7 @@ def main(write_output=True):
 
     fields = op.assemble_ehpq(discr=discr)
 
-    stepper = RK4TimeStepper()
+    stepper = LSRK4TimeStepper()
 
     if rcon.is_head_rank:
         print "order %d" % order
@@ -187,12 +199,12 @@ def main(write_output=True):
                 #pml_rhs_e, pml_rhs_h, pml_rhs_p, pml_rhs_q = \
                         #op.split_ehpq(rhs(t, fields))
                 j = Current().volume_interpolant(t, discr)
-                vis.add_data(visf, [ 
-                    ("e", discr.convert_volume(e, "numpy")), 
-                    ("h", discr.convert_volume(h, "numpy")), 
-                    ("p", discr.convert_volume(p, "numpy")), 
-                    ("q", discr.convert_volume(q, "numpy")), 
-                    ("j", discr.convert_volume(j, "numpy")), 
+                vis.add_data(visf, [
+                    ("e", discr.convert_volume(e, "numpy")),
+                    ("h", discr.convert_volume(h, "numpy")),
+                    ("p", discr.convert_volume(p, "numpy")),
+                    ("q", discr.convert_volume(q, "numpy")),
+                    ("j", discr.convert_volume(j, "numpy")),
                     #("pml_rhs_e", pml_rhs_e),
                     #("pml_rhs_h", pml_rhs_h),
                     #("pml_rhs_p", pml_rhs_p),
@@ -201,7 +213,7 @@ def main(write_output=True):
                     #("max_rhs_h", max_rhs_h),
                     #("max_rhs_p", max_rhs_p),
                     #("max_rhs_q", max_rhs_q),
-                    ], 
+                    ],
                     time=t, step=step)
                 visf.close()
 
