@@ -190,7 +190,7 @@ def make_conformal_mesh_ext(points, elements,
         allow_internal_boundaries=False,
         _is_rankbdry_face=None,
         ):
-    """Construct a simplical mesh.
+    """Construct a simplicial mesh.
 
     Face indices follow the convention for the respective element,
     such as Triangle or Tetrahedron, in this module.
