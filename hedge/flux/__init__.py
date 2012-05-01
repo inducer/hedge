@@ -121,7 +121,7 @@ class _SidedFlux(Flux):
         self.is_interior = is_interior
 
     def __getinitargs__(self):
-        return (is_interior,)
+        return (self.is_interior,)
 
     def is_equal(self, other):
         return (isinstance(other, self.__class__)
