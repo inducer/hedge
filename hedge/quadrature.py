@@ -361,6 +361,21 @@ class XiaoGimbutasSimplexCubature(Quadrature):
 
 
 
+class CoolsSimplexCubature(Quadrature):
+    def __init__(self, order, dimension):
+        if dimension == 2:
+            from hedge.cools_quad_data import triangle_table as table
+        else:
+            raise ValueError("invalid dimensionality for XG quadrature")
+
+        Quadrature.__init__(self, table[order]["points"], table[order]["weights"])
+
+        self.exact_to = order
+
+
+
+
+
 def get_simplex_cubature(exact_to_degree, dim):
     """Return a *dim*-dimensional quadrature satisfying
     at least the *exact_to_degree* requirement (but may be more 
