@@ -42,6 +42,9 @@ class OperatorBase(object):
     def shape(self):
         raise NotImplementedError
 
+    def matvec(self, x):
+        return self(x)
+
     def __neg__(self):
         return NegOperator(self)
 
