@@ -28,5 +28,5 @@ import pyublas
 # break dependency cycle by importing this first
 import hedge.tools
 
-# make sure hedge.mesh.generators -> hedge.mesh monkeypatch happens
+# make sure hedge.mesh.generator -> hedge.mesh monkeypatch happens
 import hedge.mesh.generator
