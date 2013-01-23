@@ -1086,7 +1086,7 @@ def test_filter():
 
         int_error = abs(discr.integral(u) - discr.integral(filt_u))
         l2_ratio = discr.norm(filt_u) / discr.norm(u)
-        assert int_error < 5e-15
+        assert int_error < 1e-14
         assert 0.96 < l2_ratio < 0.99999
 
     test_freq(3)
