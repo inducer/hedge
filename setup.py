@@ -147,8 +147,8 @@ def main():
                 "pytools>=10",
                 "cgen",
                 "codepy>=0.90",
-                "pymbolic>=0.90",
-                "meshpy>=0.91",
+                "pymbolic>=2013.1",
+                "meshpy>=2013.1",
                 "decorator>=3.2.0",
                 "pytest>=2"
                 ],
