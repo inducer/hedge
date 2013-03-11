@@ -152,6 +152,7 @@ def get_flux_var_info(fluxes):
     from hedge.optemplate import BoundaryPair
 
     for flux_idx, flux_binding in enumerate(fluxes):
+        from hedge.optemplate.primitives import CFunction
         for dep in FluxDependencyMapper(include_calls=False)(flux_binding.op.flux):
             if isinstance(dep, FluxScalarParameter):
                 scalar_parameters.add(dep)
@@ -207,6 +208,8 @@ def get_flux_var_info(fluxes):
                                 (flux_idx,
                                     FieldComponent(dep.index, not dep.is_interior)),
                                 arg_name)
+            elif isinstance(dep, CFunction):
+                pass
             else:
                 raise ValueError("unknown flux dependency type: %s" % dep)
 
