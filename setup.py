@@ -134,6 +134,10 @@ def main():
                 "PyUblas>=2013.1",
                 ],
             install_requires=[
+                # This is *not* redundant. Distribute will delete PyUblas
+                # after install if this is not here.
+                "PyUblas>=2013.1",
+
                 "pytools>=10",
                 "cgen",
                 "codepy>=2013.1",
