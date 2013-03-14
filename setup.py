@@ -131,13 +131,12 @@ def main():
             ext_package="hedge",
 
             setup_requires=[
-                "PyUblas>=0.93.1",
+                "PyUblas>=2013.1",
                 ],
             install_requires=[
-                "PyUblas>=2013.1",
                 "pytools>=10",
                 "cgen",
-                "codepy>=0.90",
+                "codepy>=2013.1",
                 "pymbolic>=2013.1",
                 "meshpy>=2013.1",
                 "decorator>=3.2.0",
