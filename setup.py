@@ -134,7 +134,7 @@ def main():
                 "PyUblas>=0.93.1",
                 ],
             install_requires=[
-                "PyUblas>=0.93.1",
+                "PyUblas>=2013.1",
                 "pytools>=10",
                 "cgen",
                 "codepy>=0.90",
