@@ -60,7 +60,7 @@ def main():
     EXTRA_LIBRARIES = []
 
     INCLUDE_DIRS = [
-            "src/cpp",
+            "hedge/include",
             ] \
             + conf["BOOST_BINDINGS_INC_DIR"] \
             + conf["BOOST_INC_DIR"] \
@@ -77,26 +77,17 @@ def main():
 
     handle_component("BLAS")
 
+    try:
+        from distutils.command.build_py import build_py_2to3 as build_py
+    except ImportError:
+        # 2.x
+        from distutils.command.build_py import build_py
+
     setup(name="hedge",
             # metadata
             version="0.91",
             description="Hybrid Easy Discontinuous Galerkin Environment",
-            long_description="""
-            hedge is an unstructured, high-order, parallel
-            Discontinuous Galerkin solver for partial differential
-            equations.
-
-            Features:
-
-            * Supports simplicial unstructured meshes in two and
-              three dimensions (i.e. triangles and tetrahedra)
-            * Approximates using orthogonal polynomials of any degree
-              (and therefore to any order of accuracy) you specify at
-              runtime
-            * Solves PDEs in parallel using MPI
-            * Easy to use
-            * Powerful Parallel Visualization
-            """,
+            long_description=open("README.rst", "rt").read(),
             author=u"Andreas Kloeckner",
             author_email="inform@tiker.net",
             license="MIT",
@@ -174,9 +165,18 @@ def main():
                     extra_link_args=conf["LDFLAGS"],
                     ),
                 ],
-            data_files=[
-            ("include/hedge", glob.glob("src/cpp/hedge/*.hpp")),
-            ],
+
+            zip_safe=False,
+
+            include_package_data=True,
+            package_data={
+                    "hedge": [
+                        "include/hedge/*.hpp",
+                        ]
+                    },
+
+            # 2to3 invocation
+            cmdclass={'build_py': build_py},
             )
 
 

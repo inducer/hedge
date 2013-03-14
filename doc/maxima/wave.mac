@@ -63,7 +63,6 @@ print(fullhypsimp(wave_invV.vstack(
     -rest(wave_wmins))
     ));
 
-/*
 /* ------------------------------------------------------------------------- */
 
 wave_eigenvalues:makelist(wave_D[i,i], i, 1, length(wave_D));
@@ -98,4 +97,3 @@ wave_knownstrongwflux:vstack(
   );
 
 assert(norm_2_squared(fullhypsimp(wave_knownstrongwflux - wave_strongwflux))=0);
-*/

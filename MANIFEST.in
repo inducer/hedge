@@ -1,4 +1,5 @@
-include src/cpp/*.hpp
+include hedge/include/hedge/*.hpp
+
 include src/wrapper/*.hpp
 
 include bin/rm-vis
