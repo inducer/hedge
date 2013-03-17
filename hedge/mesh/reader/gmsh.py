@@ -276,7 +276,7 @@ class HedgeGmshMeshReceiver(GmshMeshReceiverBase):
 
     # {{{ mesh construction
 
-    def build_mesh(self, periodicity, allow_internal_boundaries, tag_mapper):
+    def build_mesh(self, periodicity, allow_internal_boundaries, tag_mapper, boundary_tagger=None):
         # figure out dimensionalities
         vol_dim = max(el.el_type.dimensions for key, el in
                 self.gmsh_vertex_nrs_to_element.iteritems() )
@@ -337,22 +337,23 @@ class HedgeGmshMeshReceiver(GmshMeshReceiverBase):
                     for tag_nr in hedge_el_to_gmsh_element[el].tag_numbers
                     if (tag_nr, el.dimensions) in self.tag_name_map]
 
-        def boundary_tagger(fvi, el, fn, all_v):
-            gmsh_vertex_nrs = frozenset(
-                    hedge_vertex_nr_to_gmsh_node_nr[face_vertex_index]
-                    for face_vertex_index in fvi)
+        if boundary_tagger is None:
+            def boundary_tagger(fvi, el, fn, all_v):
+                gmsh_vertex_nrs = frozenset(
+                        hedge_vertex_nr_to_gmsh_node_nr[face_vertex_index]
+                        for face_vertex_index in fvi)
 
-            try:
-                gmsh_element = self.gmsh_vertex_nrs_to_element[gmsh_vertex_nrs]
-            except KeyError:
-                return []
-            else:
-                x = [self.tag_name_map[tag_nr, el.dimensions-1]
-                        for tag_nr in gmsh_element.tag_numbers
-                        if (tag_nr, el.dimensions-1) in self.tag_name_map]
-                if len(x) > 1:
-                    from pudb import set_trace; set_trace()
-                return x
+                try:
+                    gmsh_element = self.gmsh_vertex_nrs_to_element[gmsh_vertex_nrs]
+                except KeyError:
+                    return []
+                else:
+                    x = [self.tag_name_map[tag_nr, el.dimensions-1]
+                            for tag_nr in gmsh_element.tag_numbers
+                            if (tag_nr, el.dimensions-1) in self.tag_name_map]
+                    if len(x) > 1:
+                        from pudb import set_trace; set_trace()
+                    return x
 
         vertex_array = np.array(hedge_vertices, dtype=np.float64)
         pt_dim = vertex_array.shape[-1]
@@ -382,7 +383,7 @@ class HedgeGmshMeshReceiver(GmshMeshReceiverBase):
 
 def read_gmsh(filename, force_dimension=None, periodicity=None,
         allow_internal_boundaries=False,
-        tag_mapper=lambda tag: tag):
+        tag_mapper=lambda tag: tag, boundary_tagger=None):
     """
     :param force_dimension: if not None, truncate point coordinates to this many dimensions.
     """
@@ -393,7 +394,7 @@ def read_gmsh(filename, force_dimension=None, periodicity=None,
 
     return mr.build_mesh(periodicity=periodicity,
             allow_internal_boundaries=allow_internal_boundaries,
-            tag_mapper=tag_mapper)
+            tag_mapper=tag_mapper, boundary_tagger=boundary_tagger)
 
 
 

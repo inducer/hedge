@@ -39,7 +39,7 @@ def main(write_output=True, order=6):
     if rcon.is_head_rank:
         from hedge.mesh.reader.gmsh import read_gmsh
         mesh = read_gmsh("octahedron.msh", 
-                tag_mapper=lambda x,y,z,w: ["traction"])
+                boundary_tagger=lambda x,y,z,w: ["traction"])
 
     if rcon.is_head_rank:
         print "%d elements" % len(mesh.elements)
