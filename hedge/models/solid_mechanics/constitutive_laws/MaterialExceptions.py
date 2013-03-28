@@ -1,2 +1,0 @@
-class NegativeJacobianError(ValueError):
-    pass

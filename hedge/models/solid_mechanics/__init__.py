@@ -3,7 +3,7 @@
 
 from __future__ import division
 
-__copyright__ = "Copyright (C) 2013 Felipe Hernandez"
+__copyright__ = "Copyright (C) 2013 Andreas Kloeckner"
 
 __license__ = """
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -34,10 +34,11 @@ from hedge.tools import make_obj_array
 from hedge.mesh import TAG_ALL, TAG_NONE
 
 class SolidMechanicsOperator(HyperbolicOperator):
-    """A 3D Maxwell operator which supports fixed or variable
-    isotropic, non-dispersive, positive epsilon and mu.
+    """A 3D Solid Mechanics operator which supports constitutive
+    behaviors specified in the constitutive_laws/ folder
 
-    Field order is [Ex Ey Ez Hx Hy Hz].
+    Field order is [Vx Vy Vz Ux Uy Uz]. 
+    (V = dU/dt, U is displacement field)
     """
 
     _default_dimensions = 3
@@ -48,10 +49,8 @@ class SolidMechanicsOperator(HyperbolicOperator):
             init_velocity=None,
             dirichlet_tag=hedge.mesh.TAG_ALL,
             dirichlet_bc_data=None,
-            #hedge.data.ConstantGivenFunction(),
             traction_tag=hedge.mesh.TAG_NONE,
             traction_bc_data=None,
-            #hedge.data.ConstantGivenFunction(),
             dimensions=None):
         """
         :param flux_type: can be in [0,1] for anything between central and upwind,
@@ -144,7 +143,9 @@ class SolidMechanicsOperator(HyperbolicOperator):
 
 
     def local_derivatives(self, w=None):
-        """Template for the spatial derivatives of the relevant components of E and H"""
+        """Template for the volume terms of the time derivatives for
+        U and V.  dU/dt = V, and dV/dt = div P.  Body forces not yet
+        implemented"""
         u, v, F = self.split_grad_vars(w)
         dim = self.dimensions
 
@@ -175,10 +176,9 @@ class SolidMechanicsOperator(HyperbolicOperator):
         derivatives, flux, boundary conditions etc.
 
         NOTE: Only boundary conditions allowed currently are homogenous
-        traction, which is to say that I haven't done any 
+        dirichlet and neumann, and I'm not sure dirichlet is done 
+        properly
         """
-        from hedge.second_order import IPDGSecondDerivative, \
-                SecondDerivativeTarget
         from hedge.optemplate import InverseMassOperator, Field, \
                 make_vector_field
 
@@ -201,8 +201,7 @@ class SolidMechanicsOperator(HyperbolicOperator):
         w = join_fields(u,v,F)
         flux_w = w
 
-        from hedge.optemplate import BoundaryPair, \
-                InverseMassOperator, get_flux_operator
+        from hedge.optemplate import BoundaryPair, get_flux_operator
 
         flux_op = get_flux_operator(self.flux(self.beta, is_dirich=False))
         d_flux_op = get_flux_operator(self.flux(self.beta, is_dirich=True))

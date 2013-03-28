@@ -68,9 +68,9 @@ def main(write_output=True, order=6):
  
     from hedge.mesh import TAG_NONE, TAG_ALL
     from hedge.models.solid_mechanics import SolidMechanicsOperator
-    from hedge.models.solid_mechanics.constitutive_laws import neohookean
+    from hedge.models.solid_mechanics.constitutive_laws import NeoHookean
     
-    material = neohookean(50, 10, 0.3)
+    material = NeoHookean(50, 10, 0.3)
     
     op = SolidMechanicsOperator(material, 
             init_displacement=GivenFunction(Displacement()),
