@@ -53,3 +53,4 @@ TAGS
 *.tmp
 *.vlog
 .swp
+.DS_Store
