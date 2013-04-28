@@ -31,14 +31,14 @@ def main(write_output=True, order=6):
 
     dim = 3
     output_dir = "octahedron"
-    
+
     import os
     if not os.access(output_dir, os.F_OK):
         os.makedirs(output_dir)
 
     if rcon.is_head_rank:
         from hedge.mesh.reader.gmsh import read_gmsh
-        mesh = read_gmsh("octahedron.msh", 
+        mesh = read_gmsh("octahedron.msh",
                 boundary_tagger=lambda x,y,z,w: ["traction"])
 
     if rcon.is_head_rank:
@@ -52,37 +52,35 @@ def main(write_output=True, order=6):
         def __call__(self, x, el):
             R = x[0] + x[1] + x[2]
             return [-R/30, -R/30, -R/30]
-    
+
     final_time = 3
-    
-    discr = rcon.make_discretization(mesh_data, order=order, 
+
+    discr = rcon.make_discretization(mesh_data, order=order,
             debug=[])
 
     from hedge.visualization import VtkVisualizer
     if write_output:
         vis = VtkVisualizer(discr, rcon, join(output_dir, "test-%d" % order))
-        
+
     if rcon.is_head_rank:
         print "order %d" % order
         print "#elements=", len(mesh.elements)
- 
-    from hedge.mesh import TAG_NONE, TAG_ALL
+
     from hedge.models.solid_mechanics import SolidMechanicsOperator
-    from hedge.models.solid_mechanics.constitutive_laws import NeoHookean
-    
+    from hedge.models.solid_mechanics.constitutive_laws.neo_hookean import NeoHookean
+
     material = NeoHookean(50, 10, 0.3)
-    
-    op = SolidMechanicsOperator(material, 
+
+    op = SolidMechanicsOperator(material,
             init_displacement=GivenFunction(Displacement()),
             dimensions=discr.dimensions)
     fields = op.assemble_vars(discr=discr)
-    
+
     from hedge.timestep import LSRK4TimeStepper
     stepper = LSRK4TimeStepper()
-    from time import time
-    last_tsep = time()
     t = 0
 
+    print "ENTER!"
     # diagnostics setup -------------------------------------------------
     from pytools.log import LogManager, add_general_quantities, \
             add_simulation_quantities, add_run_info
@@ -102,7 +100,7 @@ def main(write_output=True, order=6):
     vis_timer = IntervalTimer("t_vis", "Time spent visualizing")
     logmgr.add_quantity(vis_timer)
     logmgr.add_watches(["step.max", "t_sim.max", "t_step.max"])
-    
+
     p_calc = op.bind_stress_calculator(discr)
     rhs = op.bind(discr)
 
@@ -114,6 +112,7 @@ def main(write_output=True, order=6):
                     stepper=stepper, t=t, fields=fields))
 
         for step, t, dt in step_it:
+            print "STEP!"
             u, v = op.split_vars(fields)
             P    = p_calc(u)
             if step % 5 == 0 and write_output:
@@ -127,7 +126,7 @@ def main(write_output=True, order=6):
                     time=t, step=step
                     )
                 visf.close()
-            
+
             fields = stepper(fields, t, dt, rhs)
     finally:
         if write_output:

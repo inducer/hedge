@@ -1,5 +1,5 @@
 # -*- coding: utf8 -*-
-"""Implementation of Neohookean constitutive law""" 
+"""Implementation of Neohookean constitutive law"""
 
 from __future__ import division
 
@@ -25,17 +25,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 
-from pytools import memoize_method
-# coding= utf-8
-
-import Mat3 as mat3
-from MaterialExceptions import NegativeJacobianError
-from Material import Material
+import hedge.models.solid_mechanics.mat3 as mat3
+from hedge.models.solid_mechanics.materials import Material
 
 class Elastic(Material):
-    """
-    An Elastic material model
-    """
     # interface
     def celerity(self, Fn, ndm):
         """
@@ -50,13 +43,13 @@ class Elastic(Material):
         F = [1,0,0, \
              0,1,0, \
              0,0,1]
-    
+
         assert ndm == 2 or ndm == 3, "dimensions should be 2 or 3"
         if ndm == 2:
             F = mat3.copyMat2ToMat3(Fn)
         else:
             F = mat3.copyMat3(Fn)
-       
+
         F = mat3.add(F, mat3.scaleMat(-1))
         trace = mat3.trace(F)
 
@@ -76,12 +69,12 @@ class Elastic(Material):
         P[5] = P[7] = mu*(F[5] + F[7])
 
         return P
-   
+
     def tangent_moduli(self, Fn, ndf, ndm):
         """
         Computes elastic tangent moduli C = dW/dF
         """
-        
+
         tangent = [0,]*81
         Miiii = self.l + 2*self.mu
         Miijj = self.l
@@ -109,5 +102,3 @@ class Elastic(Material):
         self.l = nu * E / (1+nu) / (1-2*nu)
         self.mu = E / 2 / (1+nu)
         return
-
-

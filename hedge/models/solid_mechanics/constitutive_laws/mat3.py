@@ -25,7 +25,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 
-from pytools import memoize_method
+
 def copyMat2ToMat3(m2):
     m3 = [1,0,0,0,1,0,0,0,1]
     m3[0] = m2[0]
