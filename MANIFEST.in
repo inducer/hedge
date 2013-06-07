@@ -8,6 +8,12 @@ include doc/notes/*.fig
 include doc/notes/*.tm
 include doc/notes/*.ts
 
+include doc/manual/source/*.rst
+include doc/manual/source/conf.py
+include doc/manual/Makefile
+include doc/manual/source/_static/*.css
+include doc/manual/source/_templates/*.html
+
 include TODO
 include HACKING
 include LICENSE
