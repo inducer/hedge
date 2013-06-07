@@ -519,7 +519,7 @@ def test_mapping_differences_tri():
             f_values = [f(pt_in_element) for f in functions]
             avg = sum(f_values) / len(f_values)
             err = [abs(fv-avg) for fv in f_values]
-            assert max(err) < 5e-13
+            assert max(err) < 1e-12
 
 
 
