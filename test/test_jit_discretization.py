@@ -958,7 +958,13 @@ def test_elliptic():
     v_x = pymbolic.var("x")
     truesol = pymbolic.parse("math.sin(x[0]**2*x[1]**2)")
     truesol_c = pymbolic.compile(truesol, variables=["x"])
-    rhs = pymbolic.laplace(truesol, [v_x[0], v_x[1]])
+
+    def laplace(expression, variables):
+        return sum(pymbolic.diff(
+            pymbolic.diff(expression, var), var)
+            for var in variables)
+
+    rhs = laplace(truesol, [v_x[0], v_x[1]])
     rhs_c = pymbolic.compile(rhs, variables=["x", "el"])
 
     from hedge.mesh import TAG_ALL, TAG_NONE
