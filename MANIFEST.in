@@ -20,7 +20,6 @@ include LICENSE
 include examples/*/*.py
 include test/*.py
 
-include ez_setup.py
 include configure.py
 include Makefile.in
 include aksetup_helper.py
