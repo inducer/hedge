@@ -18,10 +18,8 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 
-
-
 def get_config_schema():
-    from aksetup_helper import ConfigSchema, Option, \
+    from aksetup_helper import ConfigSchema, \
             IncludeDir, LibraryDir, Libraries, BoostLibraries, \
             Switch, StringListOption, make_boost_base_options
 
@@ -41,10 +39,7 @@ def get_config_schema():
         ])
 
 
-
-
 def main():
-    import glob
     from aksetup_helper import hack_distutils, get_config, setup, \
             PyUblasExtension
 
@@ -54,7 +49,7 @@ def main():
     LIBRARY_DIRS = conf["BOOST_LIB_DIR"]
     LIBRARIES = conf["BOOST_PYTHON_LIBNAME"]
 
-    EXTRA_DEFINES = { "PYUBLAS_HAVE_BOOST_BINDINGS":1 }
+    EXTRA_DEFINES = {"PYUBLAS_HAVE_BOOST_BINDINGS": 1}
     EXTRA_INCLUDE_DIRS = []
     EXTRA_LIBRARY_DIRS = []
     EXTRA_LIBRARIES = []
@@ -93,20 +88,20 @@ def main():
             license="MIT",
             url="http://mathema.tician.de/software/hedge",
             classifiers=[
-              'Environment :: Console',
-              'Development Status :: 4 - Beta',
-              'Intended Audience :: Developers',
-              'Intended Audience :: Other Audience',
-              'Intended Audience :: Science/Research',
-              'License :: OSI Approved :: MIT License',
-              'Natural Language :: English',
-              'Programming Language :: C++',
-              'Programming Language :: Python',
-              'Topic :: Scientific/Engineering',
-              'Topic :: Scientific/Engineering :: Mathematics',
-              'Topic :: Scientific/Engineering :: Physics',
-              'Topic :: Scientific/Engineering :: Visualization',
-              ],
+                'Environment :: Console',
+                'Development Status :: 4 - Beta',
+                'Intended Audience :: Developers',
+                'Intended Audience :: Other Audience',
+                'Intended Audience :: Science/Research',
+                'License :: OSI Approved :: MIT License',
+                'Natural Language :: English',
+                'Programming Language :: C++',
+                'Programming Language :: Python',
+                'Topic :: Scientific/Engineering',
+                'Topic :: Scientific/Engineering :: Mathematics',
+                'Topic :: Scientific/Engineering :: Physics',
+                'Topic :: Scientific/Engineering :: Visualization',
+                ],
 
             # build info
             packages=[
@@ -146,14 +141,15 @@ def main():
                 "decorator>=3.2.0",
                 "pytest>=2"
                 ],
-            extras_require = {
+            extras_require={
                 "silo": ["pyvisfile"],
                 "parallel": ["PyMetis>=0.91"],
                 },
 
             ext_modules=[
                 PyUblasExtension("_internal",
-                    ["src/wrapper/wrap_main.cpp",
+                    [
+                        "src/wrapper/wrap_main.cpp",
                         "src/wrapper/wrap_base.cpp",
                         "src/wrapper/wrap_mesh.cpp",
                         "src/wrapper/wrap_special_function.cpp",
@@ -179,10 +175,7 @@ def main():
                     },
 
             # 2to3 invocation
-            cmdclass={'build_py': build_py},
-            )
-
-
+            cmdclass={'build_py': build_py})
 
 
 if __name__ == '__main__':
