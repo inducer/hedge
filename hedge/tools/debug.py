@@ -75,8 +75,14 @@ def typedump(value, max_seq=5, special_handlers={}):
 
 from pytools.debug import (
         make_unique_filesystem_object,
-        get_run_debug_directory,
-        open_unique_debug_file)
+        get_run_debug_directory)
+
+
+def open_unique_debug_file(stem, extension=""):
+    from pytools.debug import (
+            open_unique_debug_file as
+            open_unique_debug_file_base)
+    return open_unique_debug_file_base(stem, extension)[0]
 
 
 
