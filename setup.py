@@ -26,7 +26,7 @@ def get_config_schema():
     return ConfigSchema(make_boost_base_options() + [
         BoostLibraries("python"),
 
-        IncludeDir("BOOST_BINDINGS", []),
+        IncludeDir("BOOST_BINDINGS", ["../boost-numeric-bindings"]),
 
         Switch("HAVE_BLAS", False, "Whether to build with support for BLAS"),
         LibraryDir("BLAS", []),
