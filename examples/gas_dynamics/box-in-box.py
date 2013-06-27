@@ -15,18 +15,11 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 
-
-
 from __future__ import division
 import numpy
-import numpy.linalg as la
-
-
 
 
 def make_boxmesh():
-    import numpy
-    from math import pi, cos, sin
     from meshpy.tet import MeshInfo, build
     from meshpy.geometry import GeometryBuilder, Marker, make_box
 
@@ -34,29 +27,24 @@ def make_boxmesh():
 
     box_marker = Marker.FIRST_USER_MARKER
     extent_small = 0.1*numpy.ones(3, dtype=numpy.float64)
-    points, facets, _ = \
-            make_box(-extent_small, extent_small)
 
-    geob.add_geometry(points, facets, facet_markers=box_marker)
+    geob.add_geometry(*make_box(-extent_small, extent_small))
 
     # make small "separator box" for region attribute
-    points, facets, _ = \
-            make_box(
-                    -extent_small*4,
-                    numpy.array([4,0.4,0.4], dtype=numpy.float64))
 
-    geob.add_geometry(points, facets)
+    geob.add_geometry(
+            *make_box(
+                -extent_small*4,
+                numpy.array([4, 0.4, 0.4], dtype=numpy.float64)))
 
-    points, facets, facet_markers = \
-            make_box(
-                    numpy.array([-1,-1,-1], dtype=numpy.float64),
-                    numpy.array([5,1,1], dtype=numpy.float64))
-
-    geob.add_geometry(points, facets, facet_markers=facet_markers)
+    geob.add_geometry(
+            *make_box(
+                numpy.array([-1, -1, -1], dtype=numpy.float64),
+                numpy.array([5, 1, 1], dtype=numpy.float64)))
 
     mesh_info = MeshInfo()
     geob.set(mesh_info)
-    mesh_info.set_holes([(0,0,0)])
+    mesh_info.set_holes([(0, 0, 0)])
 
     # region attributes
     mesh_info.regions.resize(1)
@@ -70,7 +58,8 @@ def make_boxmesh():
             0.005
             ])
 
-    mesh = build(mesh_info, max_volume=0.02, volume_constraints=True, attributes=True)
+    mesh = build(mesh_info, max_volume=0.02,
+            volume_constraints=True, attributes=True)
     print "%d elements" % len(mesh.elements)
     #mesh.write_vtk("box-in-box.vtk")
     #print "done writing"
@@ -96,13 +85,9 @@ def make_boxmesh():
             mesh.points, mesh.elements, bdry_tagger)
 
 
-
-
 def main():
     from hedge.backends import guess_run_context
-    rcon = guess_run_context(
-    ["cuda"]
-    )
+    rcon = guess_run_context(["cuda"])
 
     if rcon.is_head_rank:
         mesh = make_boxmesh()
@@ -128,7 +113,8 @@ def main():
                 inflow_tag="inflow", outflow_tag="outflow", noslip_tag="noslip")
 
         discr = rcon.make_discretization(mesh_data, order=order,
-                        debug=[#"cuda_no_plan",
+                        debug=[
+                            #"cuda_no_plan",
                             #"cuda_dump_kernels",
                             #"dump_dataflow_graph",
                             #"dump_optemplate_stages",
@@ -139,7 +125,7 @@ def main():
                         default_scalar_type=numpy.float32,
                         tune_for=op.op_template())
 
-        from hedge.visualization import SiloVisualizer, VtkVisualizer
+        from hedge.visualization import SiloVisualizer, VtkVisualizer  # noqa
         #vis = VtkVisualizer(discr, rcon, "shearflow-%d" % order)
         vis = SiloVisualizer(discr, rcon)
 
@@ -148,10 +134,12 @@ def main():
         navierstokes_ex = op.bind(discr)
 
         max_eigval = [0]
+
         def rhs(t, q):
             ode_rhs, speed = navierstokes_ex(t, q)
             max_eigval[0] = speed
             return ode_rhs
+
         rhs(0, fields)
 
         if rcon.is_head_rank:
@@ -177,6 +165,7 @@ def main():
         logmgr.add_watches(["step.max", "t_sim.max", "t_step.max"])
 
         from pytools.log import LogQuantity
+
         class ChangeSinceLastStep(LogQuantity):
             """Records the change of a variable between a time step and the previous
                one"""
@@ -210,17 +199,23 @@ def main():
 
                     #rhs_fields = rhs(t, fields)
 
-                    from hedge.discretization import ones_on_boundary
                     vis.add_data(visf,
                             [
-                                ("rho", discr.convert_volume(op.rho(fields), kind="numpy")),
-                                ("e", discr.convert_volume(op.e(fields), kind="numpy")),
-                                ("rho_u", discr.convert_volume(op.rho_u(fields), kind="numpy")),
-                                ("u", discr.convert_volume(op.u(fields), kind="numpy")),
+                                ("rho", discr.convert_volume(
+                                    op.rho(fields), kind="numpy")),
+                                ("e", discr.convert_volume(
+                                    op.e(fields), kind="numpy")),
+                                ("rho_u", discr.convert_volume(
+                                    op.rho_u(fields), kind="numpy")),
+                                ("u", discr.convert_volume(
+                                    op.u(fields), kind="numpy")),
 
-                                #("rhs_rho", discr.convert_volume(op.rho(rhs_fields), kind="numpy")),
-                                #("rhs_e", discr.convert_volume(op.e(rhs_fields), kind="numpy")),
-                                #("rhs_rho_u", discr.convert_volume(op.rho_u(rhs_fields), kind="numpy")),
+                                # ("rhs_rho", discr.convert_volume(
+                                #     op.rho(rhs_fields), kind="numpy")),
+                                # ("rhs_e", discr.convert_volume(
+                                #     op.e(rhs_fields), kind="numpy")),
+                                # ("rhs_rho_u", discr.convert_volume(
+                                #     op.rho_u(rhs_fields), kind="numpy")),
                                 ],
                             expressions=[
                                 ("p", "(0.4)*(e- 0.5*(rho_u*u))"),
