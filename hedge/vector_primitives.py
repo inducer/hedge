@@ -25,15 +25,11 @@ THE SOFTWARE.
 """
 
 
-
-
 import numpy
-import numpy.linalg as la
 
 
+# {{{ linear combinations
 
-
-# {{{ linear combinations -----------------------------------------------------
 class ObjectArrayLinearCombinationWrapper(object):
     def __init__(self, scalar_kernel):
         self.scalar_kernel = scalar_kernel
@@ -51,16 +47,12 @@ class ObjectArrayLinearCombinationWrapper(object):
         return result
 
 
-
-
 class UnoptimizedLinearCombiner(object):
     def __init__(self, result_dtype, scalar_dtype):
         self.result_type = result_dtype.type
 
     def __call__(self, *args):
-        return sum(self.result_type(fac)*vec for fac, vec in args)
-
-
+        return sum(vec*self.result_type(fac) for fac, vec in args)
 
 
 class NumpyLinearCombiner(object):
@@ -82,8 +74,6 @@ class NumpyLinearCombiner(object):
         self.kernel(result, *tuple(flatten(args)))
 
         return result
-
-
 
 
 class CUDALinearCombiner:
@@ -128,7 +118,9 @@ class CUDALinearCombiner:
 
 # }}}
 
-# {{{ inner product -----------------------------------------------------------
+
+# {{{ inner product
+
 class ObjectArrayInnerProductWrapper(object):
     def __init__(self, scalar_kernel):
         self.scalar_kernel = scalar_kernel
@@ -145,6 +137,7 @@ class ObjectArrayInnerProductWrapper(object):
         return result
 
 # }}}
+
 
 # {{{ maximum norm ------------------------------------------------------------
 
@@ -163,18 +156,20 @@ class ObjectArrayMaximumNormWrapper(object):
 # }}}
 
 
-
 # {{{ vector primitive factory
 
 _NO_VPF_SUGGESTION = ("--perhaps you need to pass "
                         "a vector primitive factory somewhere (for example "
                         "to a timestepper)?")
 
+
 class VectorPrimitiveFactory(object):
-    def make_special_linear_combiner(self, result_dtype, scalar_dtype, sample_vec, arg_count):
+    def make_special_linear_combiner(self, result_dtype, scalar_dtype,
+            sample_vec, arg_count):
         return None
 
-    def make_linear_combiner(self, result_dtype, scalar_dtype, sample_vec, arg_count):
+    def make_linear_combiner(self, result_dtype, scalar_dtype,
+            sample_vec, arg_count):
         """
         :param result_dtype: dtype of the desired result.
         :param scalar_dtype: dtype of the scalars.
@@ -199,7 +194,7 @@ class VectorPrimitiveFactory(object):
 
             if kernel is None:
                 from warnings import warn
-                warn("using unoptimized linear combination routine" + 
+                warn("using unoptimized linear combination routine" +
                         _NO_VPF_SUGGESTION)
                 kernel = UnoptimizedLinearCombiner(result_dtype, scalar_dtype)
 
@@ -242,8 +237,6 @@ class VectorPrimitiveFactory(object):
             sample_vec = sample_vec[0]
 
         if isinstance(sample_vec, numpy.ndarray) and sample_vec.dtype != object:
-            def kernel(vec):
-                return la.norm(vec, numpy.inf)
             kernel = numpy.max
         else:
             kernel = self.make_special_maximum_norm(sample_vec)
@@ -258,17 +251,14 @@ class VectorPrimitiveFactory(object):
         return kernel
 
 
-
-
-
 class CUDAVectorPrimitiveFactory(VectorPrimitiveFactory):
     def __init__(self, discr=None):
         self.discr = discr
 
     def make_special_linear_combiner(self, *args, **kwargs):
         my_kwargs = kwargs.copy()
-        kwargs["pool"] = self.discr.pool
-        return CUDALinearCombiner(*args, **kwargs)
+        my_kwargs["pool"] = self.discr.pool
+        return CUDALinearCombiner(*args, **my_kwargs)
 
     def make_special_inner_product(self, sample_vec):
         from pycuda.gpuarray import GPUArray
@@ -301,8 +291,6 @@ class CUDAVectorPrimitiveFactory(VectorPrimitiveFactory):
             return kernel
 
 # }}}
-
-
 
 
 # vim: foldmethod=marker
