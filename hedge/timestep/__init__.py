@@ -27,22 +27,22 @@ THE SOFTWARE.
 """
 
 
-
 from hedge.timestep.runge_kutta import RK4TimeStepper, LSRK4TimeStepper
 from hedge.timestep.ab import AdamsBashforthTimeStepper
 from hedge.timestep.ssprk3 import SSPRK3TimeStepper
 
-
+__all__ = [
+    "RK4TimeStepper", "LSRK4TimeStepper",
+    "AdamsBashforthTimeStepper", "SSPRK3TimeStepper"
+    ]
 
 
 class TimeStepUnderflow(Exception):
     pass
 
 
-
-
 def times_and_steps(max_dt_getter, taken_dt_getter=None,
-        start_time=0, final_time=None, max_steps=None, 
+        start_time=0, final_time=None, max_steps=None,
         logmgr=None):
     """Generate tuples *(step, t, recommended_dt)* to control a timestep loop.
     The controlled simulation may decide to take a smaller timestep, and
@@ -56,7 +56,7 @@ def times_and_steps(max_dt_getter, taken_dt_getter=None,
     :param logmgr: An instance of :class:`pytools.log.LogManager` (or None).
       This routine will then take care of telling the log manager about
       time step sizes.
-    :param max_steps: Maximum number of steps taken. A "step" is one 
+    :param max_steps: Maximum number of steps taken. A "step" is one
       execution of the loop body.
     """
     if final_time is None and max_steps is None:

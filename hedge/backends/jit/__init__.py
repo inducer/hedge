@@ -32,6 +32,9 @@ import hedge.optemplate
 from hedge.backends.exec_common import ExecutionMapperBase
 import numpy
 
+import logging
+logger = logging.getLogger(__name__)
+
 
 
 
@@ -509,6 +512,8 @@ class Discretization(hedge.discretization.Discretization):
             ])
 
     def __init__(self, *args, **kwargs):
+        logger.info("init jit discretization: start")
+
         toolchain = kwargs.pop("toolchain", None)
 
         # tolerate (and ignore) the CUDA backend's tune_for argument
@@ -525,6 +530,8 @@ class Discretization(hedge.discretization.Discretization):
         add_hedge(toolchain)
 
         self.toolchain = toolchain
+
+        logger.info("init jit discretization: done")
 
 # }}}
 

@@ -25,39 +25,39 @@ THE SOFTWARE.
 """
 
 
-
-
 import numpy
 from hedge.timestep.base import TimeStepper
 
 
+# {{{ Carpenter/Kennedy low-storage fourth-order Runge-Kutta
 
-
-# {{{ Carpenter/Kennedy low-storage fourth-order Runge-Kutta ------------------
 class LSRK4TimeStepper(TimeStepper):
     """A low storage fourth-order Runge-Kutta method
 
     See JSH, TW: Nodal Discontinuous Galerkin Methods p.64
-    or 
-    Carpenter, M.H., and Kennedy, C.A., Fourth-order-2N-storage 
+    or
+    Carpenter, M.H., and Kennedy, C.A., Fourth-order-2N-storage
     Runge-Kutta schemes, NASA Langley Tech Report TM 109112, 1994
     """
 
-    _RK4A = [0.0,
-            -567301805773 /1357537059087,
-            -2404267990393/2016746695238,
-            -3550918686646/2091501179385,
-            -1275806237668/ 842570457699,
+    _RK4A = [
+            0.0,
+            -567301805773 / 1357537059087,
+            -2404267990393 / 2016746695238,
+            -3550918686646 / 2091501179385,
+            -1275806237668 / 842570457699,
             ]
 
-    _RK4B = [1432997174477/ 9575080441755,
-            5161836677717 /13612068292357,
+    _RK4B = [
+            1432997174477 / 9575080441755,
+            5161836677717 / 13612068292357,
             1720146321549 / 2090206949498,
             3134564353537 / 4481467310338,
-            2277821191437 /14882151754819,
+            2277821191437 / 14882151754819,
             ]
 
-    _RK4C = [0.0,
+    _RK4C = [
+            0.0,
             1432997174477/9575080441755,
             2526269341429/6820363962896,
             2006345519317/3224310063776,
@@ -91,7 +91,7 @@ class LSRK4TimeStepper(TimeStepper):
         self.dtype = numpy.dtype(dtype)
         self.scalar_dtype = match_precision(
                 numpy.dtype(numpy.float64), self.dtype)
-        self.coeffs = numpy.array([self._RK4A, self._RK4B, self._RK4C], 
+        self.coeffs = numpy.array([self._RK4A, self._RK4B, self._RK4C],
                 dtype=self.scalar_dtype).T
 
     def get_stability_relevant_init_args(self):
@@ -110,7 +110,7 @@ class LSRK4TimeStepper(TimeStepper):
             self.dof_count = count_dofs(self.residual)
 
             self.linear_combiner = self.vector_primitive_factory\
-                    .make_linear_combiner(self.dtype, self.scalar_dtype, 
+                    .make_linear_combiner(self.dtype, self.scalar_dtype,
                             y, arg_count=2)
 
         lc = self.linear_combiner
@@ -131,8 +131,6 @@ class LSRK4TimeStepper(TimeStepper):
         return y
 
 
-
-
 class RK4TimeStepper(LSRK4TimeStepper):
     def __init__(self, *args, **kwargs):
         from warnings import warn
@@ -140,12 +138,12 @@ class RK4TimeStepper(LSRK4TimeStepper):
                 DeprecationWarning, stacklevel=2)
 
         LSRK4TimeStepper.__init__(self, *args, **kwargs)
+
 # }}}
 
 
+# {{{ Embedded Runge-Kutta schemes base class
 
-
-# {{{ Embedded Runge-Kutta schemes base class ---------------------------------
 def adapt_step_size(t, dt,
         start_y, high_order_end_y, low_order_end_y, stepper, lc2, norm):
     normalization = stepper.atol + stepper.rtol*max(
@@ -159,12 +157,11 @@ def adapt_step_size(t, dt,
     from hedge.tools import count_dofs
     rel_err = norm(error)/count_dofs(error)**0.5
     if rel_err == 0:
-       rel_err = 1e-14
+        rel_err = 1e-14
 
     if rel_err > 1 or numpy.isnan(rel_err):
         # reject step
 
-        last_dt = dt
         if not numpy.isnan(rel_err):
             dt = max(
                     0.9 * dt * rel_err**(-1/stepper.low_order),
@@ -185,8 +182,6 @@ def adapt_step_size(t, dt,
                 stepper.max_dt_growth*dt)
 
         return True, next_dt, rel_err
-
-
 
 
 class EmbeddedRungeKuttaTimeStepperBase(TimeStepper):
@@ -245,12 +240,10 @@ class EmbeddedRungeKuttaTimeStepperBase(TimeStepper):
         except KeyError:
             lc = self.vector_primitive_factory \
                     .make_linear_combiner(
-                    self.dtype, self.scalar_dtype, sample_vec,
-                    arg_count=arg_count)
+                            self.dtype, self.scalar_dtype, sample_vec,
+                            arg_count=arg_count)
             self.linear_combiner_cache[arg_count] = lc
             return lc
-
-
 
 
 class EmbeddedButcherTableauTimeStepperBase(EmbeddedRungeKuttaTimeStepperBase):
@@ -321,12 +314,13 @@ class EmbeddedButcherTableauTimeStepperBase(EmbeddedRungeKuttaTimeStepperBase):
                 high_order_end_y = finish_solution(self.high_order_coeffs)
                 low_order_end_y = finish_solution(self.low_order_coeffs)
 
-                flop_count[0] += 3+1 # one two-lincomb, one norm
+                flop_count[0] += 3+1  # one two-lincomb, one norm
 
                 # Perform error estimation based on un-limited solutions.
                 accept_step, next_dt, rel_err = adapt_step_size(
                         t, dt, y, high_order_end_y, low_order_end_y,
-                        self, self.get_linear_combiner(2, high_order_end_y), self.norm)
+                        self, self.get_linear_combiner(2, high_order_end_y),
+                        self.norm)
 
                 if not accept_step:
                     if reject_hook:
@@ -345,9 +339,8 @@ class EmbeddedButcherTableauTimeStepperBase(EmbeddedRungeKuttaTimeStepperBase):
 # }}}
 
 
+# {{{ Bogacki-Shampine second/third-order Runge-Kutta
 
-
-# {{{ Bogacki-Shampine second/third-order Runge-Kutta -------------------------
 class ODE23TimeStepper(EmbeddedButcherTableauTimeStepperBase):
     """Bogacki-Shampine second/third-order Runge-Kutta.
 
@@ -375,9 +368,8 @@ class ODE23TimeStepper(EmbeddedButcherTableauTimeStepperBase):
 # }}}
 
 
+# {{{ Dormand-Prince fourth/fifth-order Runge-Kutta
 
-
-# {{{ Dormand-Prince fourth/fifth-order Runge-Kutta ---------------------------
 class ODE45TimeStepper(EmbeddedButcherTableauTimeStepperBase):
     """Dormand-Prince fourth/fifth-order Runge-Kutta.
 
@@ -401,7 +393,7 @@ class ODE45TimeStepper(EmbeddedButcherTableauTimeStepperBase):
             ]
 
     low_order = 4
-    low_order_coeffs = [5179/57600, 0, 7571/16695, 393/640, -92097/339200, 
+    low_order_coeffs = [5179/57600, 0, 7571/16695, 393/640, -92097/339200,
             187/2100, 1/40]
     high_order = 5
     high_order_coeffs = [35/384, 0, 500/1113, 125/192, -2187/6784, 11/84, 0]
@@ -409,9 +401,8 @@ class ODE45TimeStepper(EmbeddedButcherTableauTimeStepperBase):
 # }}}
 
 
-
-
 # {{{ Shu-Osher-form SSP RK
+
 class EmbeddedShuOsherFormTimeStepperBase(EmbeddedRungeKuttaTimeStepperBase):
     r"""
     The attribute *shu_osher_tableau* is defined by and consists of a tuple of
@@ -428,7 +419,6 @@ class EmbeddedShuOsherFormTimeStepperBase(EmbeddedRungeKuttaTimeStepperBase):
     [1] S. Gottlieb, D. Ketcheson, and C.-W. Shu, Strong Stability Preserving
     Time Discretizations. World Scientific, 2011.
     """
-
 
     def __call__(self, y, t, dt, rhs, reject_hook=None):
 
@@ -458,7 +448,7 @@ class EmbeddedShuOsherFormTimeStepperBase(EmbeddedRungeKuttaTimeStepperBase):
 
             for alpha_list, beta_list in self.shu_osher_tableau:
                 sub_timer = self.timer.start_sub_timer()
-                args = ([(alpha, row_values[i]) for alpha, i in alpha_list] 
+                args = ([(alpha, row_values[i]) for alpha, i in alpha_list]
                         + [(dt*beta, get_rhs(i)) for beta, i in beta_list])
                 flop_count += len(args)*2 - 1
 
@@ -500,7 +490,7 @@ class EmbeddedShuOsherFormTimeStepperBase(EmbeddedRungeKuttaTimeStepperBase):
                     norm = self.norm = self.vector_primitive_factory \
                             .make_maximum_norm(some_rhs)
 
-                flop_count += 3+1 # one two-lincomb, one norm
+                flop_count += 3+1  # one two-lincomb, one norm
                 accept_step, next_dt, rel_err = adapt_step_size(
                         t, dt, y, high_order_end_y, low_order_end_y,
                         self, self.get_linear_combiner(2, some_rhs), norm)
@@ -516,10 +506,8 @@ class EmbeddedShuOsherFormTimeStepperBase(EmbeddedRungeKuttaTimeStepperBase):
                     self.flop_counter.add(self.dof_count*flop_count)
 
                     return high_order_end_y, t+dt, dt, next_dt
+
                 # }}}
-
-
-
 
 
 class SSP2TimeStepper(EmbeddedShuOsherFormTimeStepperBase):
@@ -533,15 +521,13 @@ class SSP2TimeStepper(EmbeddedShuOsherFormTimeStepperBase):
     dt_fudge_factor = 1
 
     shu_osher_tableau = [
-            ([(1,0)], [(1, 0)]),
-            ([(1/2,0), (1/2,1)], [(1/2, 1)]),
+            ([(1, 0)], [(1, 0)]),
+            ([(1/2, 0), (1/2, 1)], [(1/2, 1)]),
             ]
 
     # no low-order
     high_order = 2
     high_order_index = 2
-
-
 
 
 class SSP3TimeStepper(EmbeddedShuOsherFormTimeStepperBase):
@@ -555,16 +541,14 @@ class SSP3TimeStepper(EmbeddedShuOsherFormTimeStepperBase):
     dt_fudge_factor = 1
 
     shu_osher_tableau = [
-            ([(1,0)], [(1, 0)]),
-            ([(3/4,0), (1/4, 1)], [(1/4, 1)]),
-            ([(1/3,0), (2/3, 2)], [(2/3, 2)]),
+            ([(1, 0)], [(1, 0)]),
+            ([(3/4, 0), (1/4, 1)], [(1/4, 1)]),
+            ([(1/3, 0), (2/3, 2)], [(2/3, 2)]),
             ]
 
     # no low-order
     high_order = 3
     high_order_index = 3
-
-
 
 
 class SSP23FewStageTimeStepper(EmbeddedShuOsherFormTimeStepperBase):
@@ -578,19 +562,17 @@ class SSP23FewStageTimeStepper(EmbeddedShuOsherFormTimeStepperBase):
     dt_fudge_factor = 1
 
     shu_osher_tableau = [
-            ([(1,0)], [(1/2, 0)]),
-            ([(1,1)], [(1/2, 1)]),
-            ([(1/3,0), (2/3,2)], [(1/2*2/3, 2)]),
-            ([(2/3,0), (1/3,2)], [(1/2*1/3, 2)]),
-            ([(1,4)], [(1/2, 4)]),
+            ([(1, 0)], [(1/2, 0)]),
+            ([(1, 1)], [(1/2, 1)]),
+            ([(1/3, 0), (2/3, 2)], [(1/2*2/3, 2)]),
+            ([(2/3, 0), (1/3, 2)], [(1/2*1/3, 2)]),
+            ([(1, 4)], [(1/2, 4)]),
             ]
 
     low_order = 2
     low_order_index = 3
     high_order = 3
     high_order_index = 5
-
-
 
 
 class SSP23ManyStageTimeStepper(EmbeddedShuOsherFormTimeStepperBase):
@@ -607,12 +589,12 @@ class SSP23ManyStageTimeStepper(EmbeddedShuOsherFormTimeStepperBase):
     # Entry 7 is not consistent as a second-order approximation.
 
     shu_osher_tableau = [
-            ([(1, i)], [(1/6, i)]) for  i in range(6)
+                ([(1, i)], [(1/6, i)]) for i in range(6)
             ]+[
-            ([(1/7,0), (6*1/7, 6)], [(1/6*1/7, 6)]), # 7
-            ([(3/5, 1), (2/5, 6)], []), # 8: u^{(6)\ast}
+                ([(1/7, 0), (6*1/7, 6)], [(1/6*1/7, 6)]),  # 7
+                ([(3/5, 1), (2/5, 6)], []),  # 8: u^{(6)\ast}
             ]+[
-            ([(1, i-1)], [(1/6, i-1)]) for  i in range(9, 9+2+1)
+                ([(1, i-1)], [(1/6, i-1)]) for i in range(9, 9+2+1)
             ]
 
     low_order = 2
