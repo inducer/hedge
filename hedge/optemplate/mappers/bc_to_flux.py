@@ -25,15 +25,11 @@ THE SOFTWARE.
 """
 
 
-
-
 from pytools import memoize_method
 from pymbolic.mapper import CSECachingMapperMixin
 from hedge.optemplate.mappers import (
         IdentityMapper, DependencyMapper, CombineMapper,
         OperatorReducerMixin)
-
-
 
 
 class ExpensiveBoundaryOperatorDetector(CombineMapper):
@@ -58,8 +54,8 @@ class ExpensiveBoundaryOperatorDetector(CombineMapper):
             return True
 
         elif isinstance(expr.op, (
-            QuadratureGridUpsampler,
-            QuadratureBoundaryGridUpsampler)):
+                QuadratureGridUpsampler,
+                QuadratureBoundaryGridUpsampler)):
             return True
 
         else:
@@ -86,15 +82,12 @@ class ExpensiveBoundaryOperatorDetector(CombineMapper):
         return CombineMapper.__call__(self, expr)
 
 
-
-
-
 class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
-    """Operates on :class:`FluxOperator` instances bound to :class:`BoundaryPair`. If the
-    boundary pair's *bfield* is an expression of what's available in the
-    *field*, we can avoid fetching the data for the explicit boundary
-    condition and just substitute the *bfield* expression into the flux. This
-    mapper does exactly that.
+    """Operates on :class:`FluxOperator` instances bound to
+    :class:`BoundaryPair`. If the boundary pair's *bfield* is an expression of
+    what's available in the *field*, we can avoid fetching the data for the
+    explicit boundary condition and just substitute the *bfield* expression
+    into the flux. This mapper does exactly that.
     """
 
     map_common_subexpression_uncached = \
@@ -236,8 +229,9 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
                     from hedge.mesh import TAG_RANK_BOUNDARY
                     op_tag = TAG_RANK_BOUNDARY(expr.op.rank)
                     if bpair.tag != op_tag:
-                        raise RuntimeError("BoundarizeOperator and FluxExchangeOperator "
-                                "do not agree about boundary tag: %s vs %s"
+                        raise RuntimeError("BoundarizeOperator and "
+                                "FluxExchangeOperator do not agree about "
+                                "boundary tag: %s vs %s"
                                 % (op_tag, bpair.tag))
                     return FieldComponent(
                             self.register_boundary_expr(expr),
@@ -304,4 +298,3 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
                         make_obj_array([self.rec(e) for e in mbfeef.vol_expr_list]),
                         make_obj_array([self.rec(e) for e in mbfeef.bdry_expr_list]),
                         bpair.tag))
-

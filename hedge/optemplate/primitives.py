@@ -25,28 +25,25 @@ THE SOFTWARE.
 """
 
 
-
-
 import numpy
 import pymbolic.primitives
 import hedge.mesh
 
-
-
-
-
-# {{{ variables ---------------------------------------------------------------
 from hedge.tools.symbolic import CFunction
 
+__all__ = ["CFunction"]
+
+
+# {{{ variables
+
 Field = pymbolic.primitives.Variable
+
 
 def make_field(var_or_string):
     if not isinstance(var_or_string, pymbolic.primitives.Expression):
         return Field(var_or_string)
     else:
         return var_or_string
-
-
 
 
 class ScalarParameter(pymbolic.primitives.Variable):
@@ -60,7 +57,9 @@ class ScalarParameter(pymbolic.primitives.Variable):
 
 # }}}
 
-# {{{ technical helpers -------------------------------------------------------
+
+# {{{ technical helpers
+
 class OperatorBinding(pymbolic.primitives.AlgebraicLeaf):
     def __init__(self, op, field):
         self.op = op
@@ -86,8 +85,6 @@ class OperatorBinding(pymbolic.primitives.AlgebraicLeaf):
         return hash((self.__class__, self.op, hashable_field(self.field)))
 
 
-
-
 class PrioritizedSubexpression(pymbolic.primitives.CommonSubexpression):
     """When the optemplate-to-code transformation is performed,
     prioritized subexpressions  work like common subexpression in
@@ -106,8 +103,6 @@ class PrioritizedSubexpression(pymbolic.primitives.CommonSubexpression):
 
     def get_extra_properties(self):
         return {"priority": self.priority}
-
-
 
 
 class BoundaryPair(pymbolic.primitives.AlgebraicLeaf):
@@ -147,7 +142,8 @@ class BoundaryPair(pymbolic.primitives.AlgebraicLeaf):
 
 # }}}
 
-# {{{ geometry data -----------------------------------------------------------
+# {{{ geometry data
+
 class BoundaryNormalComponent(pymbolic.primitives.AlgebraicLeaf):
     def __init__(self, boundary_tag, axis, quadrature_tag=None):
         self.boundary_tag = boundary_tag
@@ -173,13 +169,9 @@ class BoundaryNormalComponent(pymbolic.primitives.AlgebraicLeaf):
         return (self.boundary_tag, self.axis, self.quadrature_tag)
 
 
-
-
 def make_normal(tag, dimensions):
     return numpy.array([BoundaryNormalComponent(tag, i)
         for i in range(dimensions)], dtype=object)
-
-
 
 
 class GeometricFactorBase(pymbolic.primitives.AlgebraicLeaf):
@@ -194,14 +186,12 @@ class GeometricFactorBase(pymbolic.primitives.AlgebraicLeaf):
     def get_hash(self):
         return hash((self.__class__, self.quadrature_tag))
 
-    def is_equal(self, other): 
+    def is_equal(self, other):
         return (other.__class__ == self.__class__
                 and other.quadrature_tag == self.quadrature_tag)
 
     def __getinitargs__(self):
         return (self.quadrature_tag,)
-
-
 
 
 class Jacobian(GeometricFactorBase):
@@ -212,15 +202,12 @@ class Jacobian(GeometricFactorBase):
     mapper_method = intern("map_jacobian")
 
 
-
-
-
 class ForwardMetricDerivative(GeometricFactorBase):
     """
     Pointwise metric derivatives representing
 
     .. math::
-    
+
         \frac{d x_{\mathtt{xyz\_axis}} }{d r_{\mathtt{rst\_axis}} }
     """
 
@@ -240,7 +227,7 @@ class ForwardMetricDerivative(GeometricFactorBase):
         return StringifyMapper
 
     def get_hash(self):
-        return hash((self.__class__, self.quadrature_tag, 
+        return hash((self.__class__, self.quadrature_tag,
             self.xyz_axis, self.rst_axis))
 
     def is_equal(self, other):
@@ -256,14 +243,12 @@ class ForwardMetricDerivative(GeometricFactorBase):
         return (self.quadrature_tag, self.xyz_axis, self.rst_axis)
 
 
-
-
 class InverseMetricDerivative(GeometricFactorBase):
     """
     Pointwise metric derivatives representing
 
     .. math::
-    
+
         \frac{d r_{\mathtt{rst\_axis}} }{d x_{\mathtt{xyz\_axis}} }
     """
 
@@ -283,8 +268,9 @@ class InverseMetricDerivative(GeometricFactorBase):
         return StringifyMapper
 
     def get_hash(self):
-        return hash((self.__class__, self.quadrature_tag, 
+        return hash((self.__class__, self.quadrature_tag,
             self.xyz_axis, self.rst_axis))
+
     def is_equal(self, other):
         return (other.__class__ == self.__class__
                 and other.quadrature_tag == self.quadrature_tag

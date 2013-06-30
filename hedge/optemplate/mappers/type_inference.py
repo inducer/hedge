@@ -24,19 +24,16 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 
-
-
 import pymbolic.mapper
 
 
-
-
 # {{{ representation tags
+
 class NodalRepresentation(object):
     """A tag representing nodal representation.
 
-    Volume and boundary vectors below are represented either nodally or on a quadrature
-    grid. This tag expresses one of the two.
+    Volume and boundary vectors below are represented either nodally or on a
+    quadrature grid. This tag expresses one of the two.
     """
     def __repr__(self):
         return "Nodal"
@@ -47,12 +44,13 @@ class NodalRepresentation(object):
     def __ne__(self, other):
         return not self.__eq__(other)
 
+
 class QuadratureRepresentation(object):
     """A tag representing representation on a quadrature grid tagged with
     *quadrature_tag".
 
-    Volume and boundary vectors below are represented either nodally or on a quadrature
-    grid. This tag expresses one of the two.
+    Volume and boundary vectors below are represented either nodally or on a
+    quadrature grid. This tag expresses one of the two.
     """
     def __init__(self, quadrature_tag):
         self.quadrature_tag = quadrature_tag
@@ -67,10 +65,11 @@ class QuadratureRepresentation(object):
     def __repr__(self):
         return "Quadrature(%r)" % self.quadrature_tag
 
-
-
 # }}}
+
+
 # {{{ type information --------------------------------------------------------
+
 class type_info:
     """These classes represent various bits and pieces of information that
     we may deduce about expressions in our optemplate.
@@ -100,7 +99,7 @@ class type_info:
                                 "cannot be unified" % (self, other,
                                     pretty_print_optemplate(expr)))
                     else:
-                        raise TypeError("types '%s' and '%s' cannot be unified" 
+                        raise TypeError("types '%s' and '%s' cannot be unified"
                                 % (self, other))
                 else:
                     return u_o_s
@@ -108,13 +107,13 @@ class type_info:
                 return u_s_o
 
             if u_s_o != u_o_s:
-                raise RuntimeError("types '%s' and '%s' don't agree about their unifier" 
-                        % (self, other))
+                raise RuntimeError("types '%s' and '%s' don't agree about "
+                        "their unifier" % (self, other))
             return u_s_o
 
         def unify_inner(self, other):
-            """Actual implementation that tries to unify self and other. 
-            May return *NotImplemented* to indicate that the reverse unification 
+            """Actual implementation that tries to unify self and other.
+            May return *NotImplemented* to indicate that the reverse unification
             should be tried. This methods is overriden by derived classes.
             Derived classes should delegate to base classes if they don't know the
             answer.
@@ -223,7 +222,6 @@ class type_info:
             else:
                 return type_info.TypeInfo.unify_inner(self, other)
 
-
     class KnownBoundary(TypeInfo, BoundaryVectorBase):
         """Type information indicating that this must be a boundary vector."""
 
@@ -234,7 +232,7 @@ class type_info:
             # Unification with KnownRepresentation is handled in KnownRepresentation.
             # Here, we only need to unify with BoundaryVector.
 
-            if (isinstance(other, type_info.BoundaryVector) 
+            if (isinstance(other, type_info.BoundaryVector)
                     and self.boundary_tag == other.boundary_tag):
                 return other
             else:
@@ -249,10 +247,10 @@ class type_info:
             return "KnownRepresentation(%s)" % self.repr_tag
 
         def unify_inner(self, other):
-            if (isinstance(other, type_info.VolumeVector) 
+            if (isinstance(other, type_info.VolumeVector)
                     and self.repr_tag == other.repr_tag):
                 return other
-            elif (isinstance(other, type_info.BoundaryVector) 
+            elif (isinstance(other, type_info.BoundaryVector)
                     and self.repr_tag == other.repr_tag):
                 return other
             elif isinstance(other, type_info.KnownVolume):
@@ -273,7 +271,7 @@ class type_info:
         def __repr__(self):
             return "Volume(%s)" % self.repr_tag
 
-    class InteriorFacesVector(FinalType, VectorRepresentationBase, 
+    class InteriorFacesVector(FinalType, VectorRepresentationBase,
             InteriorFacesVectorBase):
         def __init__(self, repr_tag):
             if not isinstance(repr_tag, QuadratureRepresentation):
@@ -297,7 +295,9 @@ class type_info:
             return (self.boundary_tag, self.repr_tag)
     # }}}
 
+
 # {{{ aspect extraction functions
+
 def extract_representation(ti):
     try:
         own_repr_tag = ti.repr_tag
@@ -306,6 +306,7 @@ def extract_representation(ti):
     else:
         return type_info.KnownRepresentation(own_repr_tag)
 
+
 def extract_domain(ti):
     if isinstance(ti, type_info.VolumeVectorBase):
         return type_info.KnownVolume()
@@ -313,13 +314,14 @@ def extract_domain(ti):
         return type_info.KnownBoundary(ti.boundary_tag)
     else:
         return type_info.no_type
+
+# }}}
+
 # }}}
 
 
+# {{{ TypeDict helper type
 
-
-# }}}
-# {{{ TypeDict helper type ----------------------------------------------------
 class TypeDict(object):
     def __init__(self, hints):
         self.container = hints.copy()
@@ -349,11 +351,11 @@ class TypeDict(object):
     def iteritems(self):
         return self.container.iteritems()
 
-
-
-
 # }}}
-# {{{ type inference mapper ---------------------------------------------------
+
+
+# {{{ type inference mapper
+
 class TypeInferrer(pymbolic.mapper.RecursiveMapper):
     def __init__(self):
         self.cse_last_results = {}
@@ -363,6 +365,7 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
 
         while True:
             typedict.change_flag = False
+
             def infer_for_expr(expr):
                 tp = pymbolic.mapper.RecursiveMapper.__call__(self, expr, typedict)
                 typedict[expr] = tp
@@ -390,7 +393,7 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
         typedict[expr] = tp
         return tp
 
-    # Information needs to propagate upward (toward the leaves) *and* 
+    # Information needs to propagate upward (toward the leaves) *and*
     # downward (toward the roots) in the expression tree.
 
     # {{{ base cases
@@ -448,11 +451,11 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
 
     def map_operator_binding(self, expr, typedict):
         from hedge.optemplate.operators import (
-                DiffOperatorBase, 
-                ReferenceDiffOperatorBase, 
+                DiffOperatorBase,
+                ReferenceDiffOperatorBase,
 
-                MassOperatorBase, 
-                ReferenceMassOperatorBase, 
+                MassOperatorBase,
+                ReferenceMassOperatorBase,
 
                 ElementwiseMaxOperator,
                 BoundarizeOperator, FluxExchangeOperator,
@@ -461,18 +464,16 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
                 QuadratureInteriorFacesGridUpsampler,
 
                 MassOperator,
-                ReferenceMassOperator, 
+                ReferenceMassOperator,
                 ReferenceQuadratureMassOperator,
 
-                StiffnessTOperator, 
-                ReferenceStiffnessTOperator, 
+                StiffnessTOperator,
+                ReferenceStiffnessTOperator,
                 ReferenceQuadratureStiffnessTOperator,
 
                 ElementwiseLinearOperator)
 
-        own_type = typedict[expr]
-
-        if isinstance(expr.op, 
+        if isinstance(expr.op,
                 (ReferenceQuadratureStiffnessTOperator,
                     ReferenceQuadratureMassOperator)):
             typedict[expr.field] = type_info.VolumeVector(
@@ -480,14 +481,14 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
             self.rec(expr.field, typedict)
             return type_info.VolumeVector(NodalRepresentation())
 
-        elif isinstance(expr.op, 
+        elif isinstance(expr.op,
                 (ReferenceStiffnessTOperator, StiffnessTOperator)):
             # stiffness_T can be specialized for quadrature by OperatorSpecializer
             typedict[expr.field] = type_info.KnownVolume()
             self.rec(expr.field, typedict)
             return type_info.VolumeVector(NodalRepresentation())
 
-        elif isinstance(expr.op, 
+        elif isinstance(expr.op,
                 (ReferenceMassOperator, MassOperator)):
             # mass can be specialized for quadrature by OperatorSpecializer
             typedict[expr.field] = type_info.KnownVolume()
@@ -495,10 +496,10 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
             return type_info.VolumeVector(NodalRepresentation())
 
         elif isinstance(expr.op, (
-            DiffOperatorBase,
-            ReferenceDiffOperatorBase, 
-            MassOperatorBase,
-            ReferenceMassOperatorBase)):
+                DiffOperatorBase,
+                ReferenceDiffOperatorBase,
+                MassOperatorBase,
+                ReferenceMassOperatorBase)):
             # all other operators are purely nodal
             typedict[expr.field] = type_info.VolumeVector(NodalRepresentation())
             self.rec(expr.field, typedict)
@@ -579,7 +580,7 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
             return type_info.VolumeVector(NodalRepresentation())
 
         else:
-            raise RuntimeError("TypeInferrer doesn't know how to handle '%s'" 
+            raise RuntimeError("TypeInferrer doesn't know how to handle '%s'"
                     % expr.op)
 
     def map_whole_domain_flux(self, expr, typedict):
@@ -681,8 +682,6 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
             return last_tp
 
 # }}}
-
-
 
 
 # vim: foldmethod=marker

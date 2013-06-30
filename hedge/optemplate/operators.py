@@ -25,17 +25,14 @@ THE SOFTWARE.
 """
 
 
-
-
-import numpy
+import numpy as np
 import numpy.linalg as la
 import pymbolic.primitives
 from pytools import Record, memoize_method
 
 
+# {{{ base classes
 
-
-# {{{ base classes ------------------------------------------------------------
 class Operator(pymbolic.primitives.Leaf):
     def stringifier(self):
         from hedge.optemplate import StringifyMapper
@@ -43,6 +40,7 @@ class Operator(pymbolic.primitives.Leaf):
 
     def __call__(self, expr):
         from hedge.tools import with_object_array_or_scalar, is_zero
+
         def bind_one(subexpr):
             if is_zero(subexpr):
                 return subexpr
@@ -74,19 +72,17 @@ class Operator(pymbolic.primitives.Leaf):
                 self.__getinitargs__() == other.__getinitargs__()
 
 
-
-
 class StatelessOperator(Operator):
     def __getinitargs__(self):
         return ()
 
-
-
 # }}}
 
-# {{{ differentiation operators -----------------------------------------------
+
+# {{{ differentiation operators
 
 # {{{ global differentiation
+
 class DiffOperatorBase(Operator):
     def __init__(self, xyz_axis):
         Operator.__init__(self)
@@ -104,23 +100,30 @@ class DiffOperatorBase(Operator):
                 # first argument is always the axis
                 and self.__getinitargs__()[1:] == other.__getinitargs__()[1:])
 
+
 class StrongFormDiffOperatorBase(DiffOperatorBase):
     pass
+
 
 class WeakFormDiffOperatorBase(DiffOperatorBase):
     pass
 
+
 class StiffnessOperator(StrongFormDiffOperatorBase):
     mapper_method = intern("map_stiffness")
+
 
 class DifferentiationOperator(StrongFormDiffOperatorBase):
     mapper_method = intern("map_diff")
 
+
 class StiffnessTOperator(WeakFormDiffOperatorBase):
     mapper_method = intern("map_stiffness_t")
 
+
 class MInvSTOperator(WeakFormDiffOperatorBase):
     mapper_method = intern("map_minv_st")
+
 
 class QuadratureStiffnessTOperator(DiffOperatorBase):
     """
@@ -144,14 +147,15 @@ class QuadratureStiffnessTOperator(DiffOperatorBase):
     mapper_method = intern("map_quad_stiffness_t")
 
 
-
 def DiffOperatorVector(els):
     from hedge.tools import join_fields
     return join_fields(*els)
 
 # }}}
 
+
 # {{{ reference-element differentiation
+
 class ReferenceDiffOperatorBase(Operator):
     def __init__(self, rst_axis):
         Operator.__init__(self)
@@ -169,6 +173,7 @@ class ReferenceDiffOperatorBase(Operator):
                 # first argument is always the axis
                 and self.__getinitargs__()[1:] == other.__getinitargs__()[1:])
 
+
 class ReferenceDifferentiationOperator(ReferenceDiffOperatorBase):
     @staticmethod
     def matrices(element_group):
@@ -176,12 +181,14 @@ class ReferenceDifferentiationOperator(ReferenceDiffOperatorBase):
 
     mapper_method = intern("map_ref_diff")
 
+
 class ReferenceStiffnessTOperator(ReferenceDiffOperatorBase):
     @staticmethod
     def matrices(element_group):
         return element_group.stiffness_t_matrices
 
     mapper_method = intern("map_ref_stiffness_t")
+
 
 class ReferenceQuadratureStiffnessTOperator(ReferenceDiffOperatorBase):
     """
@@ -212,7 +219,9 @@ class ReferenceQuadratureStiffnessTOperator(ReferenceDiffOperatorBase):
 
 # }}}
 
-# {{{ elementwise operators ---------------------------------------------------
+
+# {{{ elementwise operators
+
 class ElementwiseLinearOperator(Operator):
     def matrix(self, element_group):
         raise NotImplementedError
@@ -223,15 +232,12 @@ class ElementwiseLinearOperator(Operator):
     mapper_method = intern("map_elementwise_linear")
 
 
-
-
 class ElementwiseMaxOperator(StatelessOperator):
     mapper_method = intern("map_elementwise_max")
 
 
+# {{{ quadrature upsamplers
 
-
-# {{{ quadrature upsamplers ---------------------------------------------------
 class QuadratureGridUpsampler(Operator):
     """In a user-specified optemplate, this operator can be used to interpolate
     volume and boundary data to their corresponding quadrature grids.
@@ -248,8 +254,6 @@ class QuadratureGridUpsampler(Operator):
     mapper_method = intern("map_quad_grid_upsampler")
 
 
-
-
 class QuadratureInteriorFacesGridUpsampler(Operator):
     """Interpolates nodal volume data to interior face data on a quadrature
     grid.
@@ -264,8 +268,6 @@ class QuadratureInteriorFacesGridUpsampler(Operator):
         return (self.quadrature_tag,)
 
     mapper_method = intern("map_quad_int_faces_grid_upsampler")
-
-
 
 
 class QuadratureBoundaryGridUpsampler(Operator):
@@ -285,12 +287,11 @@ class QuadratureBoundaryGridUpsampler(Operator):
 
     mapper_method = intern("map_quad_bdry_grid_upsampler")
 
-
-
-
 # }}}
 
-# {{{ various elementwise linear operators -----------------------------------
+
+# {{{ various elementwise linear operators
+
 class FilterOperator(ElementwiseLinearOperator):
     def __init__(self, mode_response_func):
         """
@@ -308,23 +309,18 @@ class FilterOperator(ElementwiseLinearOperator):
     def matrix(self, eg):
         ldis = eg.local_discretization
 
-        node_count = ldis.node_count()
-
         filter_coeffs = [self.mode_response_func(mid, ldis)
             for mid in ldis.generate_mode_identifiers()]
 
         # build filter matrix
         vdm = ldis.vandermonde()
         from hedge.tools import leftsolve
-        from numpy import dot
-        mat = numpy.asarray(
+        mat = np.asarray(
             leftsolve(vdm,
-                dot(vdm, numpy.diag(filter_coeffs))),
+                np.dot(vdm, np.diag(filter_coeffs))),
             order="C")
 
         return mat
-
-
 
 
 class OnesOperator(ElementwiseLinearOperator, StatelessOperator):
@@ -332,9 +328,7 @@ class OnesOperator(ElementwiseLinearOperator, StatelessOperator):
         ldis = eg.local_discretization
 
         node_count = ldis.node_count()
-        return numpy.ones((node_count, node_count), dtype=numpy.float64)
-
-
+        return np.ones((node_count, node_count), dtype=np.float64)
 
 
 class AveragingOperator(ElementwiseLinearOperator, StatelessOperator):
@@ -343,25 +337,24 @@ class AveragingOperator(ElementwiseLinearOperator, StatelessOperator):
         # see Hesthaven and Warburton page 227
 
         mmat = eg.local_discretization.mass_matrix()
-        standard_el_vol = numpy.sum(numpy.dot(mmat, numpy.ones(mmat.shape[0])))
-        avg_mat_row = numpy.sum(mmat,0)/standard_el_vol
+        standard_el_vol = np.sum(np.dot(mmat, np.ones(mmat.shape[0])))
+        avg_mat_row = np.sum(mmat, 0)/standard_el_vol
 
-        avg_mat = numpy.zeros((numpy.size(avg_mat_row), numpy.size(avg_mat_row)))
+        avg_mat = np.zeros((np.size(avg_mat_row), np.size(avg_mat_row)))
         avg_mat[:] = avg_mat_row
         return avg_mat
 
 
-
-
 class InverseVandermondeOperator(ElementwiseLinearOperator, StatelessOperator):
     def matrix(self, eg):
-        return numpy.asarray(
+        return np.asarray(
                 la.inv(eg.local_discretization.vandermonde()),
                 order="C")
 
+
 class VandermondeOperator(ElementwiseLinearOperator, StatelessOperator):
     def matrix(self, eg):
-        return numpy.asarray(
+        return np.asarray(
                 eg.local_discretization.vandermonde(),
                 order="C")
 
@@ -369,11 +362,11 @@ class VandermondeOperator(ElementwiseLinearOperator, StatelessOperator):
 
 # }}}
 
-# {{{ mass operators ----------------------------------------------------------
+
+# {{{ mass operators
+
 class MassOperatorBase(ElementwiseLinearOperator, StatelessOperator):
     pass
-
-
 
 
 class MassOperator(MassOperatorBase):
@@ -387,6 +380,7 @@ class MassOperator(MassOperatorBase):
 
     mapper_method = intern("map_mass")
 
+
 class InverseMassOperator(MassOperatorBase):
     @staticmethod
     def matrix(element_group):
@@ -397,9 +391,6 @@ class InverseMassOperator(MassOperatorBase):
         return element_group.inverse_jacobians
 
     mapper_method = intern("map_inverse_mass")
-
-
-
 
 
 class QuadratureMassOperator(Operator):
@@ -423,9 +414,6 @@ class QuadratureMassOperator(Operator):
     mapper_method = intern("map_quad_mass")
 
 
-
-
-
 class ReferenceQuadratureMassOperator(Operator):
     """
     .. note::
@@ -444,12 +432,8 @@ class ReferenceQuadratureMassOperator(Operator):
     mapper_method = intern("map_ref_quad_mass")
 
 
-
-
 class ReferenceMassOperatorBase(MassOperatorBase):
     pass
-
-
 
 
 class ReferenceMassOperator(ReferenceMassOperatorBase):
@@ -462,8 +446,6 @@ class ReferenceMassOperator(ReferenceMassOperatorBase):
         return None
 
     mapper_method = intern("map_ref_mass")
-
-
 
 
 class ReferenceInverseMassOperator(ReferenceMassOperatorBase):
@@ -479,7 +461,9 @@ class ReferenceInverseMassOperator(ReferenceMassOperatorBase):
 
 # }}}
 
-# {{{ boundary-related operators ----------------------------------------------
+
+# {{{ boundary-related operators
+
 class BoundarizeOperator(Operator):
     def __init__(self, tag):
         self.tag = tag
@@ -488,9 +472,6 @@ class BoundarizeOperator(Operator):
         return (self.tag,)
 
     mapper_method = intern("map_boundarize")
-
-
-
 
 
 class FluxExchangeOperator(pymbolic.primitives.AlgebraicLeaf):
@@ -521,7 +502,9 @@ class FluxExchangeOperator(pymbolic.primitives.AlgebraicLeaf):
 
 # }}}
 
-# {{{ flux-like operators -----------------------------------------------------
+
+# {{{ flux-like operators
+
 class FluxOperatorBase(Operator):
     def __init__(self, flux, is_lift=False):
         Operator.__init__(self)
@@ -553,21 +536,19 @@ class FluxOperatorBase(Operator):
         return self.__call__(arg)
 
 
-
-
 class QuadratureFluxOperatorBase(FluxOperatorBase):
     pass
 
+
 class BoundaryFluxOperatorBase(FluxOperatorBase):
     pass
+
 
 class FluxOperator(FluxOperatorBase):
     def __getinitargs__(self):
         return (self.flux, self.is_lift)
 
     mapper_method = intern("map_flux")
-
-
 
 
 class BoundaryFluxOperator(BoundaryFluxOperatorBase):
@@ -586,9 +567,6 @@ class BoundaryFluxOperator(BoundaryFluxOperatorBase):
         return (self.flux, self.boundary_tag, self.is_lift)
 
     mapper_method = intern("map_bdry_flux")
-
-
-
 
 
 class QuadratureFluxOperator(QuadratureFluxOperatorBase):
@@ -611,8 +589,6 @@ class QuadratureFluxOperator(QuadratureFluxOperatorBase):
     mapper_method = intern("map_quad_flux")
 
 
-
-
 class QuadratureBoundaryFluxOperator(
         QuadratureFluxOperatorBase, BoundaryFluxOperatorBase):
     """
@@ -632,8 +608,6 @@ class QuadratureBoundaryFluxOperator(
         return (self.flux, self.quadrature_tag, self.boundary_tag)
 
     mapper_method = intern("map_quad_bdry_flux")
-
-
 
 
 class VectorFluxOperator(object):
@@ -659,9 +633,6 @@ class VectorFluxOperator(object):
                 "Use the less ambiguous parenthesized syntax instead.",
                 DeprecationWarning, stacklevel=2)
         return self.__call__(arg)
-
-
-
 
 
 class WholeDomainFluxOperator(pymbolic.primitives.AlgebraicLeaf):
@@ -709,7 +680,6 @@ class WholeDomainFluxOperator(pymbolic.primitives.AlgebraicLeaf):
             from hedge.optemplate.tools import get_flux_dependencies
             return set(get_flux_dependencies(
                     self.flux_expr, self.bpair, bdry="ext"))
-
 
     def __init__(self, is_lift, interiors, boundaries,
             quadrature_tag):
@@ -763,7 +733,7 @@ class WholeDomainFluxOperator(pymbolic.primitives.AlgebraicLeaf):
                             b.flux_expr, b.bpair.tag, self.is_lift)(b.bpair)
                 else:
                     yield QuadratureBoundaryFluxOperator(
-                            b.flux_expr, self.quadrature_tag, 
+                            b.flux_expr, self.quadrature_tag,
                             b.bpair.tag)(b.bpair)
 
         from pymbolic.primitives import flattened_sum

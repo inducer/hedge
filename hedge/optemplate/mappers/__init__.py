@@ -25,10 +25,7 @@ THE SOFTWARE.
 """
 
 
-
-
-
-import numpy
+import numpy as np
 import pymbolic.primitives
 import pymbolic.mapper.stringifier
 import pymbolic.mapper.evaluator
@@ -39,9 +36,8 @@ import pymbolic.mapper.flop_counter
 from pymbolic.mapper import CSECachingMapperMixin
 
 
+# {{{ mixins
 
-
-# {{{ mixins ------------------------------------------------------------------
 class LocalOpReducerMixin(object):
     """Reduces calls to mapper methods for all local differentiation
     operators to a single mapper method, and likewise for mass
@@ -104,8 +100,6 @@ class LocalOpReducerMixin(object):
     # }}}
 
 
-
-
 class FluxOpReducerMixin(object):
     """Reduces calls to mapper methods for all flux
     operators to a smaller number of mapper methods.
@@ -121,7 +115,6 @@ class FluxOpReducerMixin(object):
 
     def map_quad_bdry_flux(self, expr, *args, **kwargs):
         return self.map_flux_base(expr, *args, **kwargs)
-
 
 
 class OperatorReducerMixin(LocalOpReducerMixin, FluxOpReducerMixin):
@@ -140,16 +133,12 @@ class OperatorReducerMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     map_quad_bdry_grid_upsampler = map_diff_base
 
 
-
-
 class CombineMapperMixin(object):
     def map_operator_binding(self, expr):
         return self.combine([self.rec(expr.op), self.rec(expr.field)])
 
     def map_boundary_pair(self, expr):
         return self.combine([self.rec(expr.field), self.rec(expr.bfield)])
-
-
 
 
 class IdentityMapperMixin(LocalOpReducerMixin, FluxOpReducerMixin):
@@ -203,21 +192,18 @@ class IdentityMapperMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     map_normal_component = map_elementwise_linear
 
 
-
-
 class BoundOpMapperMixin(object):
     def map_operator_binding(self, expr, *args, **kwargs):
-        return getattr(self, expr.op.mapper_method)(expr.op, expr.field, *args, **kwargs)
-
-
+        return getattr(self, expr.op.mapper_method)(
+                expr.op, expr.field, *args, **kwargs)
 
 # }}}
 
-# {{{ basic mappers -----------------------------------------------------------
+
+# {{{ basic mappers
+
 class CombineMapper(CombineMapperMixin, pymbolic.mapper.CombineMapper):
     pass
-
-
 
 
 class DependencyMapper(
@@ -228,9 +214,9 @@ class DependencyMapper(
             include_operator_bindings=True,
             composite_leaves=None,
             **kwargs):
-        if composite_leaves == False:
+        if composite_leaves is False:
             include_operator_bindings = False
-        if composite_leaves == True:
+        if composite_leaves is True:
             include_operator_bindings = True
 
         pymbolic.mapper.dependency.DependencyMapper.__init__(self,
@@ -278,23 +264,15 @@ class FlopCounter(
     map_inverse_metric_derivative = map_normal_component
 
 
-
-
-
 class IdentityMapper(
         IdentityMapperMixin,
         pymbolic.mapper.IdentityMapper):
     pass
 
 
-
-
-
 class SubstitutionMapper(pymbolic.mapper.substitutor.SubstitutionMapper,
         IdentityMapperMixin):
     pass
-
-
 
 
 class CSERemover(IdentityMapper):
@@ -303,7 +281,9 @@ class CSERemover(IdentityMapper):
 
 # }}}
 
-# {{{ operator binder ---------------------------------------------------------
+
+# {{{ operator binder
+
 class OperatorBinder(CSECachingMapperMixin, IdentityMapper):
     map_common_subexpression_uncached = \
             IdentityMapper.map_common_subexpression
@@ -330,7 +310,9 @@ class OperatorBinder(CSECachingMapperMixin, IdentityMapper):
 
 # }}}
 
-# {{{ operator specializer ----------------------------------------------------
+
+# {{{ operator specializer
+
 class OperatorSpecializer(CSECachingMapperMixin, IdentityMapper):
     """Guided by a typedict obtained through type inference (i.e. by
     :class:`hedge.optemplate.mappers.type_inference.TypeInferrrer`),
@@ -381,7 +363,7 @@ class OperatorSpecializer(CSECachingMapperMixin, IdentityMapper):
             # numpy arrays are not hashable
             # has_quad_operand remains unset
 
-            assert isinstance(expr.field, numpy.ndarray)
+            assert isinstance(expr.field, np.ndarray)
         else:
             try:
                 field_repr_tag = field_type.repr_tag
@@ -408,14 +390,14 @@ class OperatorSpecializer(CSECachingMapperMixin, IdentityMapper):
 
         elif (isinstance(expr.op, StiffnessTOperator) and has_quad_operand):
             return QuadratureStiffnessTOperator(
-                    expr.op.xyz_axis, field_repr_tag.quadrature_tag) \
-                    (self.rec(expr.field))
+                    expr.op.xyz_axis, field_repr_tag.quadrature_tag)(
+                            self.rec(expr.field))
 
         elif (isinstance(expr.op, ReferenceStiffnessTOperator)
                 and has_quad_operand):
             return ReferenceQuadratureStiffnessTOperator(
-                    expr.op.xyz_axis, field_repr_tag.quadrature_tag) \
-                    (self.rec(expr.field))
+                    expr.op.xyz_axis, field_repr_tag.quadrature_tag)(
+                            self.rec(expr.field))
 
         elif (isinstance(expr.op, QuadratureGridUpsampler)
                 and isinstance(field_type, type_info.BoundaryVectorBase)):
@@ -497,7 +479,7 @@ class OperatorSpecializer(CSECachingMapperMixin, IdentityMapper):
             raise NotImplementedError("normal components on quad. grids")
 
             return BoundaryNormalComponent(
-                    expr.boundary_tag, expr.axis, 
+                    expr.boundary_tag, expr.axis,
                     expr_type.repr_tag.quadrature_tag)
 
         # a leaf, doesn't change
@@ -505,7 +487,8 @@ class OperatorSpecializer(CSECachingMapperMixin, IdentityMapper):
 
 # }}}
 
-# {{{ global-to-reference mapper ----------------------------------------------
+
+# {{{ global-to-reference mapper
 
 class GlobalToReferenceMapper(CSECachingMapperMixin, IdentityMapper):
     """Maps operators that apply on the global function space down to operators on
@@ -568,13 +551,13 @@ class GlobalToReferenceMapper(CSECachingMapperMixin, IdentityMapper):
         elif isinstance(expr.op, QuadratureMassOperator):
             return ReferenceQuadratureMassOperator(
                     expr.op.quadrature_tag)(
-                    Jacobian(expr.op.quadrature_tag) * self.rec(expr.field))
+                            Jacobian(expr.op.quadrature_tag) * self.rec(expr.field))
 
-        elif isinstance(expr.op, InverseMassOperator) :
+        elif isinstance(expr.op, InverseMassOperator):
             return ReferenceInverseMassOperator()(
                 1/Jacobian(None) * self.rec(expr.field))
 
-        elif isinstance(expr.op, StiffnessOperator) :
+        elif isinstance(expr.op, StiffnessOperator):
             return ReferenceMassOperator()(Jacobian(None) *
                     self.rec(
                         DifferentiationOperator(expr.op.xyz_axis)(expr.field)))
@@ -604,7 +587,9 @@ class GlobalToReferenceMapper(CSECachingMapperMixin, IdentityMapper):
 
 # }}}
 
+
 # {{{ stringification ---------------------------------------------------------
+
 class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
     def _format_btag(self, tag):
         from hedge.mesh import SYSTEM_TAGS
@@ -740,10 +725,10 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
     # {{{ geometry data
     def map_normal_component(self, expr, enclosing_prec):
         if expr.quadrature_tag is None:
-            return ("Normal<tag=%s>[%d]" 
+            return ("Normal<tag=%s>[%d]"
                     % (expr.boundary_tag, expr.axis))
         else:
-            return ("Q[%s]Normal<tag=%s>[%d]" 
+            return ("Q[%s]Normal<tag=%s>[%d]"
                     % (expr.quadrature_tag, expr.boundary_tag, expr.axis))
 
     def map_jacobian(self, expr, enclosing_prec):
@@ -786,8 +771,6 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
 
     def map_quad_bdry_grid_upsampler(self, expr, enclosing_prec):
         return "ToBdryQ[%s,%s]" % (expr.quadrature_tag, expr.boundary_tag)
-
-
 
 
 class PrettyStringifyMapper(
@@ -877,18 +860,15 @@ class PrettyStringifyMapper(
                 self.get_flux_number(expr.flux))
 
 
-
-
 class NoCSEStringifyMapper(StringifyMapper):
     def map_common_subexpression(self, expr, enclosing_prec):
         return self.rec(expr.child, enclosing_prec)
 
-
-
-
 # }}}
 
-# {{{ quadrature support ------------------------------------------------------
+
+# {{{ quadrature support
+
 class QuadratureUpsamplerRemover(CSECachingMapperMixin, IdentityMapper):
     def __init__(self, quad_min_degrees, do_warn=True):
         IdentityMapper.__init__(self)
@@ -906,15 +886,16 @@ class QuadratureUpsamplerRemover(CSECachingMapperMixin, IdentityMapper):
                 QuadratureBoundaryGridUpsampler)
 
         if isinstance(expr.op, (QuadratureGridUpsampler,
-            QuadratureInteriorFacesGridUpsampler,
-            QuadratureBoundaryGridUpsampler)):
+                QuadratureInteriorFacesGridUpsampler,
+                QuadratureBoundaryGridUpsampler)):
             try:
                 min_degree = self.quad_min_degrees[expr.op.quadrature_tag]
             except KeyError:
                 if self.do_warn:
                     from warnings import warn
                     warn("No minimum degree for quadrature tag '%s' specified--"
-                            "falling back to nodal evaluation" % expr.op.quadrature_tag)
+                            "falling back to nodal evaluation"
+                            % expr.op.quadrature_tag)
                 return self.rec(expr.field)
             else:
                 if min_degree is None:
@@ -923,8 +904,6 @@ class QuadratureUpsamplerRemover(CSECachingMapperMixin, IdentityMapper):
                     return expr.op(self.rec(expr.field))
         else:
             return IdentityMapper.map_operator_binding(self, expr)
-
-
 
 
 class QuadratureDetector(CSECachingMapperMixin, CombineMapper):
@@ -957,20 +936,18 @@ class QuadratureDetector(CSECachingMapperMixin, CombineMapper):
                 QuadratureInteriorFacesGridUpsampler)
 
         if isinstance(expr.op, (
-            DiffOperatorBase, FluxOperatorBase,
-            MassOperatorBase)):
+                DiffOperatorBase, FluxOperatorBase,
+                MassOperatorBase)):
             return None
         elif isinstance(expr.op, (QuadratureGridUpsampler,
-            QuadratureInteriorFacesGridUpsampler)):
+                QuadratureInteriorFacesGridUpsampler)):
             return expr.op
         else:
             return CombineMapper.map_operator_binding(self, expr)
 
 
-
-
 class QuadratureUpsamplerChanger(CSECachingMapperMixin, IdentityMapper):
-    """This mapper descends the expression tree, down to each 
+    """This mapper descends the expression tree, down to each
     quadrature-consuming operator (diff, mass) along each branch.
     It then change
     """
@@ -991,24 +968,27 @@ class QuadratureUpsamplerChanger(CSECachingMapperMixin, IdentityMapper):
                 QuadratureInteriorFacesGridUpsampler)
 
         if isinstance(expr.op, (
-            DiffOperatorBase, FluxOperatorBase,
-            MassOperatorBase)):
+                DiffOperatorBase, FluxOperatorBase,
+                MassOperatorBase)):
             return expr
         elif isinstance(expr.op, (QuadratureGridUpsampler,
-            QuadratureInteriorFacesGridUpsampler)):
+                QuadratureInteriorFacesGridUpsampler)):
             return self.desired_quad_op(expr.field)
         else:
             return IdentityMapper.map_operator_binding(self, expr)
 
 # }}}
 
-# {{{ simplification / optimization -------------------------------------------
+
+# {{{ simplification / optimization
+
 class CommutativeConstantFoldingMapper(
         pymbolic.mapper.constant_folder.CommutativeConstantFoldingMapper,
         IdentityMapperMixin):
 
     def __init__(self):
-        pymbolic.mapper.constant_folder.CommutativeConstantFoldingMapper.__init__(self)
+        pymbolic.mapper.constant_folder\
+                .CommutativeConstantFoldingMapper.__init__(self)
         self.dep_mapper = DependencyMapper()
 
     def is_constant(self, expr):
@@ -1103,7 +1083,6 @@ class CommutativeConstantFoldingMapper(
                 subst_map[fc] = FieldComponent(new_idx, is_interior=True)
                 new_idx += 1
 
-
         # process boundary field
         new_bdry_field = []
         new_idx = 0
@@ -1138,8 +1117,6 @@ class CommutativeConstantFoldingMapper(
     # }}}
 
 
-
-
 class EmptyFluxKiller(CSECachingMapperMixin, IdentityMapper):
     def __init__(self, mesh):
         IdentityMapper.__init__(self)
@@ -1152,12 +1129,10 @@ class EmptyFluxKiller(CSECachingMapperMixin, IdentityMapper):
         from hedge.optemplate import BoundaryFluxOperatorBase
 
         if (isinstance(expr.op, BoundaryFluxOperatorBase) and
-            len(self.mesh.tag_to_boundary.get(expr.op.boundary_tag, [])) == 0):
+                len(self.mesh.tag_to_boundary.get(expr.op.boundary_tag, [])) == 0):
             return 0
         else:
             return IdentityMapper.map_operator_binding(self, expr)
-
-
 
 
 class _InnerDerivativeJoiner(pymbolic.mapper.RecursiveMapper):
@@ -1193,6 +1168,7 @@ class _InnerDerivativeJoiner(pymbolic.mapper.RecursiveMapper):
 
             sub_derivatives = {}
             nonscalar = self.rec(nonscalar, sub_derivatives)
+
             def do_map(expr):
                 if is_scalar(expr):
                     return expr
@@ -1224,8 +1200,6 @@ class _InnerDerivativeJoiner(pymbolic.mapper.RecursiveMapper):
 
     def map_quotient(self, expr, *args):
         return DerivativeJoiner()(expr)
-
-
 
 
 class DerivativeJoiner(CSECachingMapperMixin, IdentityMapper):
@@ -1264,8 +1238,6 @@ class DerivativeJoiner(CSECachingMapperMixin, IdentityMapper):
 
         from pymbolic.primitives import flattened_sum
         return flattened_sum(new_children)
-
-
 
 
 class _InnerInverseMassContractor(pymbolic.mapper.RecursiveMapper):
@@ -1315,8 +1287,8 @@ class _InnerInverseMassContractor(pymbolic.mapper.RecursiveMapper):
             assert not binding.op.is_lift
 
             return BoundaryFluxOperator(binding.op.flux,
-                        binding.op.boundary_tag, is_lift=True)(
-                    self.outer_mass_contractor(binding.field))
+                    binding.op.boundary_tag, is_lift=True)(
+                        self.outer_mass_contractor(binding.field))
         else:
             self.extra_operator_count += 1
             return InverseMassOperator()(
@@ -1326,8 +1298,7 @@ class _InnerInverseMassContractor(pymbolic.mapper.RecursiveMapper):
         return expr.__class__(tuple(self.rec(child) for child in expr.children))
 
     def map_product(self, expr):
-        from hedge.optemplate import (
-                InverseMassOperator, OperatorBinding, ScalarParameter)
+        from hedge.optemplate import InverseMassOperator, ScalarParameter
 
         def is_scalar(expr):
             return isinstance(expr, (int, float, complex, ScalarParameter))
@@ -1350,9 +1321,6 @@ class _InnerInverseMassContractor(pymbolic.mapper.RecursiveMapper):
                     return self.rec(expr)
             return expr.__class__(tuple(
                 do_map(child) for child in expr.children))
-
-
-
 
 
 class InverseMassContractor(CSECachingMapperMixin, IdentityMapper):
@@ -1380,12 +1348,11 @@ class InverseMassContractor(CSECachingMapperMixin, IdentityMapper):
         else:
             return binding.op(self.rec(binding.field))
 
-
-
-
 # }}}
 
-# {{{ error checker -----------------------------------------------------------
+
+# {{{ error checker
+
 class ErrorChecker(CSECachingMapperMixin, IdentityMapper):
     map_common_subexpression_uncached = \
             IdentityMapper.map_common_subexpression
@@ -1412,12 +1379,11 @@ class ErrorChecker(CSECachingMapperMixin, IdentityMapper):
 
         return expr
 
-
-
-
 # }}}
 
-# {{{ collectors for various optemplate components --------------------------------
+
+# {{{ collectors for various optemplate components
+
 class CollectorMixin(OperatorReducerMixin, LocalOpReducerMixin, FluxOpReducerMixin):
     def combine(self, values):
         from pytools import flatten
@@ -1448,8 +1414,6 @@ class CollectorMixin(OperatorReducerMixin, LocalOpReducerMixin, FluxOpReducerMix
         return result
 
 
-
-
 class FluxCollector(CSECachingMapperMixin, CollectorMixin, CombineMapper):
     map_common_subexpression_uncached = \
             CombineMapper.map_common_subexpression
@@ -1475,13 +1439,9 @@ class FluxCollector(CSECachingMapperMixin, CollectorMixin, CombineMapper):
         return result
 
 
-
-
 class BoundaryTagCollector(CollectorMixin, CombineMapper):
     def map_boundary_pair(self, bpair):
         return set([bpair.tag])
-
-
 
 
 class GeometricFactorCollector(CollectorMixin, CombineMapper):
@@ -1490,8 +1450,6 @@ class GeometricFactorCollector(CollectorMixin, CombineMapper):
 
     map_forward_metric_derivative = map_jacobian
     map_inverse_metric_derivative = map_jacobian
-
-
 
 
 class BoundOperatorCollector(CSECachingMapperMixin, CollectorMixin, CombineMapper):
@@ -1509,6 +1467,7 @@ class BoundOperatorCollector(CSECachingMapperMixin, CollectorMixin, CombineMappe
 
         return result | CombineMapper.map_operator_binding(self, expr)
 
+
 class FluxExchangeCollector(CSECachingMapperMixin, CollectorMixin, CombineMapper):
     map_common_subexpression_uncached = \
             CombineMapper.map_common_subexpression
@@ -1518,14 +1477,18 @@ class FluxExchangeCollector(CSECachingMapperMixin, CollectorMixin, CombineMapper
 
 # }}}
 
-# {{{ evaluation --------------------------------------------------------------
+
+# {{{ evaluation
+
 class Evaluator(pymbolic.mapper.evaluator.EvaluationMapper):
     def map_boundary_pair(self, bp):
         from hedge.optemplate.primitives import BoundaryPair
         return BoundaryPair(self.rec(bp.field), self.rec(bp.bfield), bp.tag)
 # }}}
 
-# {{{ boundary combiner (used by CUDA backend) --------------------------------
+
+# {{{ boundary combiner (used by CUDA backend)
+
 class BoundaryCombiner(CSECachingMapperMixin, IdentityMapper):
     """Combines inner fluxes and boundary fluxes into a
     single, whole-domain operator of type
@@ -1631,7 +1594,6 @@ class BoundaryCombiner(CSECachingMapperMixin, IdentityMapper):
             else:
                 return result + flattened_sum(self.rec(r_i) for r_i in expressions)
 # }}}
-
 
 
 # vim: foldmethod=marker
