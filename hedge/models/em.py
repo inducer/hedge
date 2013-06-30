@@ -35,8 +35,6 @@ from hedge.tools import make_obj_array
 # TODO: Check PML
 
 
-
-
 class MaxwellOperator(HyperbolicOperator):
     """A 3D Maxwell operator which supports fixed or variable
     isotropic, non-dispersive, positive epsilon and mu.
@@ -57,10 +55,12 @@ class MaxwellOperator(HyperbolicOperator):
         """
         :param flux_type: can be in [0,1] for anything between central and upwind,
           or "lf" for Lax-Friedrichs
-        :param epsilon: can be a number, for fixed material throughout the computation
-          domain, or a TimeConstantGivenFunction for spatially variable material coefficients
+        :param epsilon: can be a number, for fixed material throughout the
+            computation domain, or a TimeConstantGivenFunction for spatially
+            variable material coefficients
         :param mu: can be a number, for fixed material throughout the computation
-          domain, or a TimeConstantGivenFunction for spatially variable material coefficients
+            domain, or a TimeConstantGivenFunction for spatially variable material
+            coefficients
         """
 
         self.dimensions = dimensions or self._default_dimensions
@@ -155,7 +155,7 @@ class MaxwellOperator(HyperbolicOperator):
                 from hedge.flux import Max
                 c_int = (epsilon.int*mu.int)**(-0.5)
                 c_ext = (epsilon.ext*mu.ext)**(-0.5)
-                max_c = Max(c_int, c_ext)
+                max_c = Max(c_int, c_ext)  # noqa
 
             return join_fields(
                     # flux e,
@@ -177,13 +177,13 @@ class MaxwellOperator(HyperbolicOperator):
                     (
                         -1/(Z_int+Z_ext)*self.space_cross_h(normal,
                             Z_ext*(h.int-h.ext)
-                            -flux_type*self.space_cross_e(normal, e.int-e.ext))
+                            - flux_type*self.space_cross_e(normal, e.int-e.ext))
                         ),
                     # flux h
                     (
                         1/(Y_int + Y_ext)*self.space_cross_e(normal,
                             Y_ext*(e.int-e.ext)
-                            +flux_type*self.space_cross_h(normal, h.int-h.ext))
+                            + flux_type*self.space_cross_h(normal, h.int-h.ext))
                         ),
                     )
         else:
@@ -191,7 +191,10 @@ class MaxwellOperator(HyperbolicOperator):
                     % self.flux_type)
 
     def local_derivatives(self, w=None):
-        """Template for the spatial derivatives of the relevant components of E and H"""
+        """Template for the spatial derivatives of the relevant components of
+        :math:`E` and :math:`H`
+        """
+
         e, h = self.split_eh(self.field_placeholder(w))
 
         def e_curl(field):
@@ -298,17 +301,16 @@ class MaxwellOperator(HyperbolicOperator):
         if not self.fixed_material:
             from warnings import warn
             if self.incident_tag != hedge.mesh.TAG_NONE:
-                warn("Incident boundary conditions assume homogeneous"+
+                warn("Incident boundary conditions assume homogeneous"
                      " background material, results may be unphysical")
 
         from hedge.tools import count_subset
-        from hedge.tools import join_fields
         fld_cnt = count_subset(self.get_eh_subset())
 
         if self.incident_bc_data is not None:
             from hedge.optemplate import make_vector_field
             inc_field = cse(
-                   -make_vector_field("incident_bc", fld_cnt))
+                    - make_vector_field("incident_bc", fld_cnt))
         else:
             inc_field = make_obj_array([0]*fld_cnt)
 
@@ -345,9 +347,12 @@ class MaxwellOperator(HyperbolicOperator):
 
         if self.fixed_material:
             # need to check this
-            material_divisor = [self.epsilon]*elec_components+[self.mu]*mag_components
+            material_divisor = (
+                    [self.epsilon]*elec_components+[self.mu]*mag_components)
         else:
-            material_divisor = join_fields([epsilon]*elec_components, [mu]*mag_components)
+            material_divisor = join_fields(
+                    [epsilon]*elec_components,
+                    [mu]*mag_components)
 
         tags_and_bcs = [
                 (self.pec_tag, self.pec_bc(w)),
@@ -366,8 +371,8 @@ class MaxwellOperator(HyperbolicOperator):
                         cse(BoundarizeOperator(tag)(mu)),
                         bc)
 
-        from hedge.optemplate import BoundarizeOperator
-        return (- self.local_derivatives(w) \
+        return (
+                - self.local_derivatives(w)
                 + InverseMassOperator()(
                     flux_op(flux_w)
                     + sum(
@@ -463,7 +468,11 @@ class MaxwellOperator(HyperbolicOperator):
 
         from hedge.flux import FluxVectorPlaceholder as FVP
         if isinstance(w, FVP):
-            return FVP(scalars=epsilon), FVP(scalars=mu), FVP(scalars=e), FVP(scalars=h)
+            return (
+                    FVP(scalars=epsilon),
+                    FVP(scalars=mu),
+                    FVP(scalars=e),
+                    FVP(scalars=h))
         else:
             return epsilon, mu, make_obj_array(e), make_obj_array(h)
 
@@ -479,23 +488,23 @@ class MaxwellOperator(HyperbolicOperator):
             return make_obj_array(e), make_obj_array(h)
 
     def get_eh_subset(self):
-        """Return a 6-tuple of :class:`bool` objects indicating whether field components
-        are to be computed. The fields are numbered in the order specified
-        in the class documentation.
+        """Return a 6-tuple of :class:`bool` objects indicating whether field
+        components are to be computed. The fields are numbered in the order
+        specified in the class documentation.
         """
         return 6*(True,)
 
     def max_eigenvalue(self, t, fields=None, discr=None):
-        """Return the largest eigenvalue of Maxwell's equations as a hyperbolic system."""
+        """Return the largest eigenvalue of Maxwell's equations as a hyperbolic
+        system.
+        """
         from math import sqrt
         if self.fixed_material:
             return 1/sqrt(self.epsilon*self.mu)
         else:
             return discr.nodewise_max(
                     (self.epsilon.volume_interpolant(t, discr)
-                        *self.mu.volume_interpolant(t, discr))**(-0.5))
-
-
+                        * self.mu.volume_interpolant(t, discr))**(-0.5))
 
 
 class TMMaxwellOperator(MaxwellOperator):
@@ -508,12 +517,10 @@ class TMMaxwellOperator(MaxwellOperator):
 
     def get_eh_subset(self):
         return (
-                (False,False,True) # only ez
+                (False, False, True)  # only ez
                 +
-                (True,True,False) # hx and hy
+                (True, True, False)  # hx and hy
                 )
-
-
 
 
 class TEMaxwellOperator(MaxwellOperator):
@@ -526,10 +533,11 @@ class TEMaxwellOperator(MaxwellOperator):
 
     def get_eh_subset(self):
         return (
-                (True,True,False) # ex and ey
+                (True, True, False)  # ex and ey
                 +
-                (False,False,True) # only hz
+                (False, False, True)  # only hz
                 )
+
 
 class TE1DMaxwellOperator(MaxwellOperator):
     """A 1D TE Maxwell operator.
@@ -541,9 +549,9 @@ class TE1DMaxwellOperator(MaxwellOperator):
 
     def get_eh_subset(self):
         return (
-                (True,True,False)
+                (True, True, False)
                 +
-                (False,False,True)
+                (False, False, True)
                 )
 
 
@@ -557,7 +565,7 @@ class SourceFree1DMaxwellOperator(MaxwellOperator):
 
     def get_eh_subset(self):
         return (
-                (False,True,False)
+                (False, True, False)
                 +
-                (False,False,True)
+                (False, False, True)
                 )
