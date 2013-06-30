@@ -23,21 +23,19 @@ THE SOFTWARE.
 """
 
 
-
-
 import hedge.tools
-import numpy
+import numpy as np
 
-
+import logging
+logger = logging.getLogger(__name__)
 
 
 class Visualizer(object):
     pass
 
 
+# {{{ gnuplot mesh vis
 
-
-# gnuplot mesh vis ------------------------------------------------------------
 def write_gnuplot_mesh(filename, mesh):
     gp_file = open(filename, "w")
 
@@ -47,10 +45,11 @@ def write_gnuplot_mesh(filename, mesh):
             gp_file.write("%f %f\n" % tuple(mesh.points[pt]))
         gp_file.write("%f %f\n\n" % tuple(mesh.points[el.vertex_indices[0]]))
 
+# }}}
 
 
+# {{{ legacy vtk
 
-# legacy vtk ------------------------------------------------------------------
 def _three_vector(x):
     if len(x) == 3:
         return x
@@ -58,8 +57,6 @@ def _three_vector(x):
         return x[0], x[1], 0.
     elif len(x) == 1:
         return x[0], 0, 0.
-
-
 
 
 class LegacyVtkFile(object):
@@ -90,8 +87,6 @@ class LegacyVtkFile(object):
             self.is_closed = True
 
 
-
-
 class LegacyVtkVisualizer(Visualizer):
     def __init__(self, discr):
         from pyvtk import PolyData
@@ -118,7 +113,7 @@ class LegacyVtkVisualizer(Visualizer):
         from pyvtk import Scalars, Vectors
 
         vtkfile.pointdata.extend(
-                Scalars(numpy.array(scale_factor*field),
+                Scalars(np.array(scale_factor*field),
                     name=name, lookup_table="default")
                 for name, field in scalars)
         vtkfile.pointdata.extend(
@@ -126,10 +121,11 @@ class LegacyVtkVisualizer(Visualizer):
                     for v in zip(field)], name=name)
                 for name, field in vectors)
 
+# }}}
 
 
+# {{{ xml vtk
 
-# xml vtk ---------------------------------------------------------------------
 class VtkFile(hedge.tools.Closable):
     def __init__(self, pathname, grid, filenames=None, compressor=None):
         """`compressor` may be what ever is accepted by :mod:`pyvisfile`."""
@@ -156,11 +152,9 @@ class VtkFile(hedge.tools.Closable):
         outf.close()
 
 
-
-
-
 class ParallelVtkFile(VtkFile):
-    def __init__(self, pathname, grid, index_pathname, pathnames=None, compressor=None):
+    def __init__(self, pathname, grid, index_pathname, pathnames=None,
+            compressor=None):
         VtkFile.__init__(self, pathname, grid)
         self.index_pathname = index_pathname
         self.pathnames = pathnames
@@ -179,12 +173,10 @@ class ParallelVtkFile(VtkFile):
         outf.close()
 
 
-
-
-
-
 class VtkVisualizer(Visualizer, hedge.tools.Closable):
     def __init__(self, discr, pcontext=None, basename=None, compressor=None):
+        logger.info("init vtk visualizer: start")
+
         hedge.tools.Closable.__init__(self)
 
         from pytools import assert_not_a_file
@@ -238,10 +230,12 @@ class VtkVisualizer(Visualizer, hedge.tools.Closable):
 
         self.grid = UnstructuredGrid(
                 (len(discr),
-                    DataArray("points", discr.nodes, vector_format=VF_LIST_OF_VECTORS)),
-                numpy.asarray(cells),
-                cell_types=numpy.asarray(cell_types, dtype=numpy.uint8))
+                    DataArray("points", discr.nodes,
+                        vector_format=VF_LIST_OF_VECTORS)),
+                np.asarray(cells),
+                cell_types=np.asarray(cell_types, dtype=np.uint8))
 
+        logger.info("init vtk visualizer: done")
 
     def update_pvd(self):
         if self.pvd_name and self.timestep_to_pathnames:
@@ -279,7 +273,8 @@ class VtkVisualizer(Visualizer, hedge.tools.Closable):
         appended to *pathname*.
         """
         if self.pcontext is None or len(self.pcontext.ranks) == 1:
-            return VtkFile(pathname+"."+self.grid.vtk_extension(),
+            return VtkFile(
+                    pathname+"."+self.grid.vtk_extension(),
                     self.grid.copy(),
                     compressor=self.compressor
                     )
@@ -296,8 +291,8 @@ class VtkVisualizer(Visualizer, hedge.tools.Closable):
                         pathnames=[
                             basename(filename_pattern % rank)
                             for rank in self.pcontext.ranks],
-                       compressor=self.compressor
-                       )
+                        compressor=self.compressor
+                        )
             else:
                 return VtkFile(
                         filename_pattern % self.pcontext.rank,
@@ -315,8 +310,8 @@ class VtkVisualizer(Visualizer, hedge.tools.Closable):
             if len(self.timestep_to_pathnames) % 5 == 0:
                 self.update_pvd()
 
-    def add_data(self, visf, variables=[], scalars=[], vectors=[], time=None, step=None,
-            scale_factor=1):
+    def add_data(self, visf, variables=[], scalars=[], vectors=[],
+            time=None, step=None, scale_factor=1):
         if scalars or vectors:
             import warnings
             warnings.warn("`scalars' and `vectors' arguments are deprecated",
@@ -330,11 +325,11 @@ class VtkVisualizer(Visualizer, hedge.tools.Closable):
 
         self.register_pathname(time, visf.get_head_pathname())
 
+# }}}
 
 
+# {{{ silo
 
-
-# silo ------------------------------------------------------------------------
 class SiloMeshData(object):
     def __init__(self, dim, coords, element_groups):
         self.coords = coords
@@ -370,7 +365,8 @@ class SiloMeshData(object):
                     elif ldis.geometry is Tetrahedron:
                         self.shapetypes.append(DB_ZONETYPE_TET)
                     else:
-                        raise RuntimeError("unsupported element type: %s" % ldis.geometry)
+                        raise RuntimeError(
+                                "unsupported element type: %s" % ldis.geometry)
 
                 self.shapesizes.append(poly_length)
                 self.shapecounts.append(poly_count)
@@ -379,16 +375,15 @@ class SiloMeshData(object):
     def put_mesh(self, silo, zonelist_name, mesh_name, mesh_opts):
         if self.shapetypes:
             assert len(self.shapetypes) == len(self.shapesizes)
-            silo.put_zonelist_2(zonelist_name, self.nzones, self.ndims, self.nodelist,
-                    0, 0, self.shapetypes, self.shapesizes, self.shapecounts)
+            silo.put_zonelist_2(zonelist_name, self.nzones, self.ndims,
+                    self.nodelist, 0, 0, self.shapetypes, self.shapesizes,
+                    self.shapecounts)
         else:
             silo.put_zonelist(zonelist_name, self.nzones, self.ndims, self.nodelist,
                     self.shapesizes, self.shapecounts)
 
         silo.put_ucdmesh(mesh_name, [], self.coords, self.nzones,
                 zonelist_name, None, mesh_opts)
-
-
 
 
 class SiloVisualizer(Visualizer):
@@ -399,6 +394,8 @@ class SiloVisualizer(Visualizer):
         self.generated = False
 
     def _generate(self):
+        logger.info("generating data for silo visualizer: start")
+
         # only generate vis data when vis is really needed.
         # saves startup time when debugging.
         def generate_fine_elements(eg):
@@ -434,13 +431,15 @@ class SiloVisualizer(Visualizer):
         self.dim = discr.dimensions
         if self.dim != 1:
             self.fine_mesh = SiloMeshData(self.dim,
-                    numpy.asarray(discr.nodes.T, order="C"),
+                    np.asarray(discr.nodes.T, order="C"),
                     generate_fine_element_groups())
             self.coarse_mesh = SiloMeshData(self.dim,
-                    numpy.asarray(discr.mesh.points.T, order="C"),
+                    np.asarray(discr.mesh.points.T, order="C"),
                     generate_coarse_element_groups())
         else:
-            self.xvals = numpy.asarray(discr.nodes.T, order="C")
+            self.xvals = np.asarray(discr.nodes.T, order="C")
+
+        logger.info("generating data for silo visualizer: done")
 
         self.generated = True
 
@@ -512,16 +511,22 @@ class SiloVisualizer(Visualizer):
                 else:
                     if ls != ():
                         field = field[0]
-                    silo.put_ucdvar1(name, "finemesh", scale_factor*field, DB_NODECENT)
+                    silo.put_ucdvar1(
+                            name, "finemesh", scale_factor*field, DB_NODECENT)
 
         if expressions:
             silo.put_defvars("defvars", expressions)
 
+# }}}
 
 
+# {{{ tools
 
-# tools -----------------------------------------------------------------------
 def get_rank_partition(pcon, discr):
     vec = discr.volume_zeros()
     vec[:] = pcon.rank
     return vec
+
+# }}}
+
+# vim: foldmethod=marker
