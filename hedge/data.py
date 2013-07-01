@@ -24,15 +24,17 @@ THE SOFTWARE.
 """
 
 
-
-
 import numpy
 from pytools import memoize_method
 
+from warnings import warn
+warn("hedge.data is deprecated and should no longer be used. Instead, "
+        "use bare hedge expressions that get inserted into operators",
+        DeprecationWarning)
 
 
+# {{{ helpers
 
-# helpers ---------------------------------------------------------------------
 class _ConstantFunctionContainer:
     def __init__(self, value):
         self.value = value
@@ -44,11 +46,11 @@ class _ConstantFunctionContainer:
     def __call__(self, x, el):
         return self.value
 
+# }}}
 
 
+# {{{ abstract interfaces
 
-
-# {{{ abstract interfaces -----------------------------------------------------
 class IGivenFunction(object):
     """Abstract interface for obtaining interpolants of I{time-independent}
     functions.
@@ -318,7 +320,7 @@ class CompiledExpressionData(
             return make_obj_array(
                     [var("%s%d" % (basename, i)) for i in range(self.dimensions)])
 
-        from hedge.optemplate.primitives  import ScalarParameter
+        from hedge.optemplate.primitives import ScalarParameter
         from hedge.optemplate.tools import make_vector_field
 
         x = make_vector_field("x", discr.dimensions)
@@ -364,7 +366,7 @@ class CompiledExpressionData(
         from hedge.tools import make_obj_array
         return discr.convert_volume(
                 make_obj_array([
-                    numpy.array(discr.nodes[:,i],
+                    numpy.array(discr.nodes[:, i],
                         dtype=discr.default_scalar_type)
                     for i in range(discr.dimensions)]),
                 kind=discr.compute_kind)
@@ -386,7 +388,7 @@ class CompiledExpressionData(
         bnodes = discr.get_boundary(tag).nodes
         nodes = discr.convert_boundary(
                 make_obj_array([
-                    numpy.array(bnodes[:,i],
+                    numpy.array(bnodes[:, i],
                         dtype=discr.default_scalar_type)
                         for i in range(discr.dimensions)]),
                 tag, kind=discr.compute_kind)
@@ -402,7 +404,7 @@ class CompiledExpressionData(
             raise TypeError("invalid arguments to "
                     "CompiledExpressionData.boundary_interpolant")
 
-        return self(discr, t, fields, 
+        return self(discr, t, fields,
                 self.get_boundary_nodes(discr, tag),
                 lambda: discr.boundary_empty(tag))
 
