@@ -136,7 +136,7 @@ def main():
                 "pytools>=10",
                 "cgen",
                 "codepy>=2013.1",
-                "pymbolic>=2013.1",
+                "pymbolic>=2013.3.3",
                 "meshpy>=2013.1",
                 "decorator>=3.2.0",
                 "pytest>=2"
