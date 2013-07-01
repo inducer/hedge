@@ -29,9 +29,7 @@ import numpy
 import pymbolic.primitives
 import hedge.mesh
 
-from hedge.tools.symbolic import CFunction
-
-__all__ = ["CFunction"]
+from hedge.tools.symbolic import CFunction  # noqa
 
 
 # {{{ variables
@@ -139,8 +137,8 @@ class BoundaryPair(pymbolic.primitives.AlgebraicLeaf):
                 and field_equal(other.bfield, self.bfield)
                 and other.tag == self.tag)
 
-
 # }}}
+
 
 # {{{ geometry data
 
@@ -203,7 +201,7 @@ class Jacobian(GeometricFactorBase):
 
 
 class ForwardMetricDerivative(GeometricFactorBase):
-    """
+    r"""
     Pointwise metric derivatives representing
 
     .. math::
@@ -244,7 +242,7 @@ class ForwardMetricDerivative(GeometricFactorBase):
 
 
 class InverseMetricDerivative(GeometricFactorBase):
-    """
+    r"""
     Pointwise metric derivatives representing
 
     .. math::
@@ -284,8 +282,6 @@ class InverseMetricDerivative(GeometricFactorBase):
         return (self.quadrature_tag, self.rst_axis, self.xyz_axis)
 
 # }}}
-
-
 
 
 # vim: foldmethod=marker
