@@ -146,8 +146,8 @@ class LatticeBoltzmannOperator(HyperbolicOperator):
                 np.dot(velocity, stiff_t*q) - flux_op(q))
 
     def f_bar(self):
-        from hedge.optemplate import make_vector_field
-        return make_vector_field("f_bar", len(self.method))
+        from hedge.optemplate import make_sym_vector
+        return make_sym_vector("f_bar", len(self.method))
 
     def rho(self, f_bar):
         return sum(f_bar)
@@ -165,7 +165,7 @@ class LatticeBoltzmannOperator(HyperbolicOperator):
             zip(self.method.direction_vectors, f_bar)])
 
     def collision_update(self, f_bar):
-        from hedge.tools.symbolic import make_common_subexpression as cse
+        from hedge.optemplate.primitives import make_common_subexpression as cse
         rho = cse(self.rho(f_bar), "rho")
         rho_u = self.rho_u(f_bar)
         u = cse(rho_u/rho, "u")

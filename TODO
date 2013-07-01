@@ -4,3 +4,5 @@ Check whether timestep makes a difference in wave eq for
   non-reflection Dirichlet BC
 Visualization normals issue
 Upwinding for the wave equation
+
+vector exprs with scalars as arguments

@@ -49,11 +49,17 @@ class Instruction(Record):
 
 
 class Assign(Instruction):
-    # attributes: names, exprs, do_not_return, priority
-    #
-    # do_not_return is a list of bools indicating whether the corresponding
-    # entry in names and exprs describes an expression that is not needed
-    # beyond this assignment
+    """
+    .. attribute:: names
+    .. attribute:: exprs
+    .. attribute:: do_not_return
+
+        a list of bools indicating whether the corresponding entry in names and
+        exprs describes an expression that is not needed beyond this assignment
+
+    .. attribute:: priority
+    .. attribute:: is_scalar_valued
+    """
 
     comment = ""
 
@@ -589,6 +595,10 @@ class OperatorCompilerBase(IdentityMapper):
 
     # {{{ top-level driver ----------------------------------------------------
     def __call__(self, expr, type_hints={}):
+        # Put the result expressions into variables as well.
+        from hedge.optemplate import make_common_subexpression as cse
+        expr = cse(expr, "_result")
+
         from hedge.optemplate.mappers.type_inference import TypeInferrer
         self.typedict = TypeInferrer()(expr, type_hints)
 
@@ -637,12 +647,7 @@ class OperatorCompilerBase(IdentityMapper):
 
         # }}}
 
-        # Once flux batching is figured out, we also need to know which
-        # derivatives are going to be needed, because once the
-        # rst-derivatives are available, it's best to calculate the
-        # xyz ones and throw the rst ones out. It's naturally good if
-        # we can avoid computing (or storing) some of the xyz ones.
-        # So figure out which XYZ derivatives of what are needed.
+        # Used for diff batching
 
         self.diff_ops = self.collect_diff_ops(expr)
 
@@ -652,9 +657,6 @@ class OperatorCompilerBase(IdentityMapper):
         # Finally, walk the expression and build the code.
         result = IdentityMapper.__call__(self, expr)
 
-        # Then, put the toplevel expressions into variables as well.
-        from hedge.tools import with_object_array_or_scalar
-        result = with_object_array_or_scalar(self.assign_to_new_var, result)
         return Code(self.aggregate_assignments(self.code, result), result)
 
     # }}}
@@ -687,7 +689,8 @@ class OperatorCompilerBase(IdentityMapper):
         self.assigned_names.add(name)
         return name
 
-    def assign_to_new_var(self, expr, priority=0, prefix=None):
+    def assign_to_new_var(self, expr, priority=0, prefix=None,
+            is_scalar_valued=False):
         from pymbolic.primitives import Variable, Subscript
 
         # Observe that the only things that can be legally subscripted in
@@ -697,32 +700,39 @@ class OperatorCompilerBase(IdentityMapper):
             return expr
 
         new_name = self.get_var_name(prefix)
-        self.code.append(self.make_assign(new_name, expr, priority))
+        self.code.append(self.make_assign(
+            new_name, expr, priority, is_scalar_valued))
 
         return Variable(new_name)
 
     # }}}
 
-    # {{{ map_xxx routines ----------------------------------------------------
+    # {{{ map_xxx routines
+
     def map_common_subexpression(self, expr):
         try:
             return self.expr_to_var[expr.child]
         except KeyError:
             priority = getattr(expr, "priority", 0)
 
+            from hedge.optemplate.mappers.type_inference import type_info
+            is_scalar_valued = isinstance(self.typedict[expr], type_info.Scalar)
+
             from hedge.optemplate import OperatorBinding
             if isinstance(expr.child, OperatorBinding):
                 # We need to catch operator bindings here and
                 # treat them specially. They get assigned to their
                 # own variable by default, which would mean the
-                # CSE prefix would be omitted.
+                # CSE prefix would be omitted, making the resulting
+                # code less readable.
                 rec_child = self.map_operator_binding(
                         expr.child, name_hint=expr.prefix)
             else:
                 rec_child = self.rec(expr.child)
 
             cse_var = self.assign_to_new_var(rec_child,
-                    priority=priority, prefix=expr.prefix)
+                    priority=priority, prefix=expr.prefix,
+                    is_scalar_valued=is_scalar_valued)
 
             self.expr_to_var[expr.child] = cse_var
             return cse_var
@@ -749,10 +759,20 @@ class OperatorCompilerBase(IdentityMapper):
                     prefix=name_hint)
             return result_var
 
-    def map_normal_component(self, expr):
-        # make sure normal component assignments stand alone and don't get
+    def map_ones(self, expr):
+        # make sure expression stands alone and doesn't get
         # muddled up in vector math
-        return self.assign_to_new_var(expr)
+        return self.assign_to_new_var(expr, prefix="ones")
+
+    def map_node_coordinate_component(self, expr):
+        # make sure expression stands alone and doesn't get
+        # muddled up in vector math
+        return self.assign_to_new_var(expr, prefix="nodes%d" % expr.axis)
+
+    def map_normal_component(self, expr):
+        # make sure expression stands alone and doesn't get
+        # muddled up in vector math
+        return self.assign_to_new_var(expr, prefix="normal%d" % expr.axis)
 
     def map_call(self, expr):
         from hedge.optemplate.primitives import CFunction
@@ -860,24 +880,29 @@ class OperatorCompilerBase(IdentityMapper):
                     return var(names[idx])
 
             raise RuntimeError("flux '%s' not in any flux batch" % expr)
+
     # }}}
 
-    # {{{ instruction producers -----------------------------------------------
-    def make_assign(self, name, expr, priority):
+    # {{{ instruction producers
+
+    def make_assign(self, name, expr, priority, is_scalar_valued=False):
         return Assign(names=[name], exprs=[expr],
                 dep_mapper_factory=self.dep_mapper_factory,
-                priority=priority)
+                priority=priority,
+                is_scalar_valued=is_scalar_valued)
 
     def make_flux_batch_assign(self, names, expressions, repr_op):
         return FluxBatchAssign(names=names, expressions=expressions, repr_op=repr_op)
 
     # }}}
 
-    # {{{ assignment aggregration pass ----------------------------------------
+    # {{{ assignment aggregration pass
+
     def aggregate_assignments(self, instructions, result):
         from pymbolic.primitives import Variable
 
-        # aggregation helpers -------------------------------------------------
+        # {{{ aggregation helpers
+
         def get_complete_origins_set(insn, skip_levels=0):
             if skip_levels < 0:
                 skip_levels = 0
@@ -918,7 +943,10 @@ class OperatorCompilerBase(IdentityMapper):
                     dep_mapper_factory=self.dep_mapper_factory,
                     priority=max(ass_1.priority, ass_2.priority))
 
-        # main aggregation pass -----------------------------------------------
+        # }}}
+
+        # {{{ main aggregation pass
+
         origins_map = dict(
                     (assignee, insn)
                     for insn in instructions
@@ -926,7 +954,7 @@ class OperatorCompilerBase(IdentityMapper):
 
         from pytools import partition
         unprocessed_assigns, other_insns = partition(
-                lambda insn: isinstance(insn, Assign),
+                lambda insn: isinstance(insn, Assign) and not insn.is_scalar_valued,
                 instructions)
 
         # filter out zero-flop-count assigns--no need to bother with those
@@ -1067,11 +1095,12 @@ class OperatorCompilerBase(IdentityMapper):
 
         return [schedule_and_finalize_assignment(ass)
             for ass in processed_assigns] + other_insns
+
+        # }}}
+
     # }}}
 
 # }}}
-
-
 
 
 # vim: foldmethod=marker

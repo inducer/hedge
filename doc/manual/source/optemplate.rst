@@ -7,10 +7,10 @@ Summary
 -------
 
 An "operator template" is an expression tree that represents
-a DG operator. The following components can be used to build 
+a DG operator. The following components can be used to build
 one in :mod:`hedge`:
 
-* Scalar constants, may be of type 
+* Scalar constants, may be of type
   :class:`int`, :class:`float`, :class:`complex`,
   :class:`numpy.number`. These occur directly as part of the
   expression tree. :func:`pymbolic.primitives.is_constant`
@@ -23,14 +23,14 @@ one in :mod:`hedge`:
   Use :func:`pytools.obj_array.join_fields` to easily create
   object arrays from scalars and other arrays.
 
-* :class:`hedge.optemplate.Field`: A placeholder for a 
+* :class:`hedge.optemplate.Field`: A placeholder for a
   user-supplied field.
 
-  :class:`~hedge.optemplate.Field` instances or 
-  :class:`pymbolic.primitives.Subscript` instances involving 
+  :class:`~hedge.optemplate.Field` instances or
+  :class:`pymbolic.primitives.Subscript` instances involving
   them are interpreted as scalar DG-discretized fields.
 
-* :class:`hedge.optemplate.ScalarParameter`: A placeholder for a 
+* :class:`hedge.optemplate.ScalarParameter`: A placeholder for a
   user-supplied scalar value.
 
 * :class:`pymbolic.primitives.Sum`,
@@ -50,13 +50,13 @@ one in :mod:`hedge`:
   when the operator expression tree is walked to evaluate
   the operator.
 
-  Use :func:`hedge.tools.symbolic.make_common_subexpression` to wrap 
+  Use :func:`hedge.optemplate.primitives.make_common_subexpression` to wrap
   each component of an object array in a CSE.
 
 * :class:`pymbolic.primitives.Call`: The function attribute must
   evaluate to a name that was registered by calling
   :meth:`hedge.discretization.Discretization.add_function`
-  or be a value of type :class:`hedge.tools.symbolic.CFunction`.
+  or be a value of type :class:`hedge.optemplate.primitives.CFunction`.
 
 * Operators may be left-multiplied with other field expressions.
   See :ref:`optemplate-operators` for an overview.
@@ -71,7 +71,7 @@ Leaf Nodes
 
 .. autoclass:: Field
 
-.. autofunction:: hedge.optemplate.tools.make_vector_field
+.. autofunction:: hedge.optemplate.make_sym_vector
 
 .. autoclass:: ScalarParameter
 
@@ -123,7 +123,7 @@ Boundary-valued operators
 """""""""""""""""""""""""
 
 These operators are only meaningful within the *bfield*
-argument of :class:`BoundaryPair`, because they 
+argument of :class:`BoundaryPair`, because they
 evaluate to boundary vectors of the given *tag*.
 
 .. autoclass:: BoundarizeOperator

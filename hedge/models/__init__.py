@@ -25,8 +25,6 @@ THE SOFTWARE.
 """
 
 
-
-
 class Operator(object):
     """A base class for Discontinuous Galerkin operators.
 
@@ -36,8 +34,6 @@ class Operator(object):
     tree.
     """
     pass
-
-
 
 
 class TimeDependentOperator(Operator):
@@ -51,12 +47,10 @@ class TimeDependentOperator(Operator):
     pass
 
 
-
-
 class HyperbolicOperator(Operator):
     """A base class for hyperbolic Discontinuous Galerkin operators."""
 
-    def estimate_timestep(self, discr, 
+    def estimate_timestep(self, discr,
             stepper=None, stepper_class=None, stepper_args=None,
             t=None, fields=None):
         u"""Estimate the largest stable timestep, given a time stepper
@@ -71,4 +65,3 @@ class HyperbolicOperator(Operator):
                 approximate_rk4_relative_imag_stability_region
         return rk4_dt * approximate_rk4_relative_imag_stability_region(
                 stepper, stepper_class, stepper_args)
-

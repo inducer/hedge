@@ -25,20 +25,17 @@ THE SOFTWARE.
 """
 
 
-
-
 import hedge.discretization
 import hedge.optemplate
 from hedge.backends.exec_common import ExecutionMapperBase
-import numpy
+import numpy as np
 
 import logging
 logger = logging.getLogger(__name__)
 
 
+# {{{ exec mapper
 
-
-# {{{ exec mapper -------------------------------------------------------------
 class ExecutionMapper(ExecutionMapperBase):
     # {{{ code execution functions --------------------------------------------
     def exec_assign(self, insn):
@@ -66,8 +63,10 @@ class ExecutionMapper(ExecutionMapperBase):
 
         class ZeroSpec:
             pass
+
         class BoundaryZeros(ZeroSpec):
             pass
+
         class VolumeZeros(ZeroSpec):
             pass
 
@@ -97,8 +96,8 @@ class ExecutionMapper(ExecutionMapperBase):
             elif isinstance(arg, VolumeZeros):
                 return self.discr.volume_zeros(
                         dtype=max_dtype)
-            elif isinstance(arg, numpy.ndarray):
-                return numpy.asarray(arg, dtype=max_dtype)
+            elif isinstance(arg, np.ndarray):
+                return np.asarray(arg, dtype=max_dtype)
             else:
                 return arg
 
@@ -129,14 +128,15 @@ class ExecutionMapper(ExecutionMapperBase):
             arg_struct = module.ArgStruct()
             for arg_name, arg in zip(insn.flux_var_info.arg_names, args):
                 setattr(arg_struct, arg_name, arg)
-            for arg_num, scalar_arg_expr in enumerate(insn.flux_var_info.scalar_parameters):
+            for arg_num, scalar_arg_expr in enumerate(
+                    insn.flux_var_info.scalar_parameters):
                 setattr(arg_struct,
                         "_scalar_arg_%d" % arg_num,
                         self.rec(scalar_arg_expr))
 
             fof_shape = (fg.face_count*fg.face_length()*fg.element_count(),)
             all_fluxes_on_faces = [
-                    numpy.zeros(fof_shape, dtype=max_dtype)
+                    np.zeros(fof_shape, dtype=max_dtype)
                     for f in insn.expressions]
             for i, fof in enumerate(all_fluxes_on_faces):
                 setattr(arg_struct, "flux%d_on_faces" % i, fof)
@@ -192,20 +192,30 @@ class ExecutionMapper(ExecutionMapperBase):
     # }}}
 
     # {{{ expression mappings -------------------------------------------------
+
+    def map_nodal_sum(self, op, field_expr):
+        return np.sum(self.rec(field_expr))
+
+    def map_nodal_max(self, op, field_expr):
+        return np.max(self.rec(field_expr))
+
+    def map_nodal_min(self, op, field_expr):
+        return np.min(self.rec(field_expr))
+
     def map_if_positive(self, expr):
         crit = self.rec(expr.criterion)
         bool_crit = crit > 0
         then = self.rec(expr.then)
         else_ = self.rec(expr.else_)
 
-        true_indices = numpy.nonzero(bool_crit)
-        false_indices = numpy.nonzero(~bool_crit)
+        true_indices = np.nonzero(bool_crit)
+        false_indices = np.nonzero(~bool_crit)
 
-        result = numpy.empty_like(crit)
+        result = np.empty_like(crit)
 
-        if isinstance(then, numpy.ndarray):
+        if isinstance(then, np.ndarray):
             then = then[true_indices]
-        if isinstance(else_, numpy.ndarray):
+        if isinstance(else_, np.ndarray):
             else_ = else_[false_indices]
 
         result[true_indices] = then
@@ -260,7 +270,7 @@ class ExecutionMapper(ExecutionMapperBase):
         from hedge._internal import perform_elwise_operator
         quad_info = self.discr.get_quadrature_info(qtag)
 
-        out = numpy.zeros(quad_info.node_count, field.dtype)
+        out = np.zeros(quad_info.node_count, field.dtype)
         for eg in self.discr.element_groups:
             eg_quad_info = eg.quadrature_info[qtag]
 
@@ -282,7 +292,7 @@ class ExecutionMapper(ExecutionMapperBase):
         from hedge._internal import perform_elwise_operator
         quad_info = self.discr.get_quadrature_info(qtag)
 
-        out = numpy.zeros(quad_info.int_faces_node_count, field.dtype)
+        out = np.zeros(quad_info.int_faces_node_count, field.dtype)
         for eg in self.discr.element_groups:
             eg_quad_info = eg.quadrature_info[qtag]
 
@@ -302,7 +312,7 @@ class ExecutionMapper(ExecutionMapperBase):
         bdry = self.discr.get_boundary(op.boundary_tag)
         bdry_q_info = bdry.get_quadrature_info(op.quadrature_tag)
 
-        out = numpy.zeros(bdry_q_info.node_count, field.dtype)
+        out = np.zeros(bdry_q_info.node_count, field.dtype)
 
         from hedge._internal import perform_elwise_operator
         for fg, from_ranges, to_ranges, ldis_quad_info in zip(
@@ -330,11 +340,13 @@ class ExecutionMapper(ExecutionMapperBase):
 
 # }}}
 
+
 # {{{ executor ----------------------------------------------------------------
+
 class Executor(object):
     def __init__(self, discr, optemplate, post_bind_mapper, type_hints):
         self.discr = discr
-        self.code = self.compile_optemplate(discr, optemplate, 
+        self.code = self.compile_optemplate(discr, optemplate,
                 post_bind_mapper, type_hints)
         self.elwise_linear_cache = {}
 
@@ -361,13 +373,12 @@ class Executor(object):
             out = discr.volume_zeros()
             from time import time
 
-            xyz_needed = range(discr.dimensions)
-
             fof_shape = (fg.face_count*fg.face_length()*fg.element_count(),)
-            fof = numpy.zeros(fof_shape, dtype=self.discr.default_scalar_type)
+            fof = np.zeros(fof_shape, dtype=self.discr.default_scalar_type)
 
             start = time()
-            f(fg, fg.ldis_loc.lifting_matrix(), fg.local_el_inverse_jacobians, fof, out)
+            f(fg, fg.ldis_loc.lifting_matrix(),
+                    fg.local_el_inverse_jacobians, fof, out)
             return time() - start
 
         def pick_faster_func(benchmark, choices, attempts=3):
@@ -392,9 +403,9 @@ class Executor(object):
         def dump_optemplate(name, optemplate):
             if "dump_optemplate_stages" in discr.debug:
                 from hedge.tools import open_unique_debug_file
-                from hedge.optemplate import pretty_print_optemplate
+                from hedge.optemplate import pretty
                 open_unique_debug_file("%02d-%s" % (stage[0], name), ".txt").write(
-                        pretty_print_optemplate(optemplate))
+                        pretty(optemplate))
                 stage[0] += 1
 
         optemplate = process_optemplate(optemplate,
@@ -413,8 +424,7 @@ class Executor(object):
         from pytools.log import time_and_count_function
         from hedge.tools import time_count_flop
 
-        from hedge.tools import \
-                diff_rst_flops, diff_rescale_one_flops, mass_flops
+        from hedge.tools import diff_rst_flops, mass_flops
 
         if discr.quad_min_degrees:
             from warnings import warn
@@ -473,7 +483,7 @@ class Executor(object):
             try:
                 matrix, coeffs = self.elwise_linear_cache[eg, op, field.dtype]
             except KeyError:
-                matrix = numpy.asarray(op.matrix(eg), dtype=field.dtype)
+                matrix = np.asarray(op.matrix(eg), dtype=field.dtype)
                 coeffs = op.coefficients(eg)
                 self.elwise_linear_cache[eg, op, field.dtype] = matrix, coeffs
 
@@ -494,7 +504,9 @@ class Executor(object):
 
 # }}}
 
-# {{{ discretization ----------------------------------------------------------
+
+# {{{ discretization
+
 class Discretization(hedge.discretization.Discretization):
     exec_mapper_class = ExecutionMapper
     executor_class = Executor
@@ -507,9 +519,9 @@ class Discretization(hedge.discretization.Discretization):
 
     @classmethod
     def noninteractive_debug_flags(cls):
-        return hedge.discretization.Discretization.noninteractive_debug_flags() | set([
-            "jit_dont_optimize_large_exprs",
-            ])
+        return (
+                hedge.discretization.Discretization.noninteractive_debug_flags()
+                | set(["jit_dont_optimize_large_exprs"]))
 
     def __init__(self, *args, **kwargs):
         logger.info("init jit discretization: start")
@@ -517,7 +529,7 @@ class Discretization(hedge.discretization.Discretization):
         toolchain = kwargs.pop("toolchain", None)
 
         # tolerate (and ignore) the CUDA backend's tune_for argument
-        _ = kwargs.pop("tune_for", None)
+        kwargs.pop("tune_for", None)
 
         hedge.discretization.Discretization.__init__(self, *args, **kwargs)
 
@@ -534,8 +546,6 @@ class Discretization(hedge.discretization.Discretization):
         logger.info("init jit discretization: done")
 
 # }}}
-
-
 
 
 # vim: foldmethod=marker

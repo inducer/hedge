@@ -264,12 +264,11 @@ class VariableCoefficientAdvectionOperator(HyperbolicOperator):
     def bind_characteristic_velocity(self, discr):
         from hedge.optemplate.operators import (
                 ElementwiseMaxOperator)
-        from hedge.optemplate import make_vector_field
-        velocity_vec = make_vector_field("v", self.dimensions)
+        from hedge.optemplate import make_sym_vector
+        velocity_vec = make_sym_vector("v", self.dimensions)
         velocity = ElementwiseMaxOperator()(
                 numpy.dot(velocity_vec, velocity_vec)**0.5)
 
-        from hedge.optemplate import Field
         compiled = discr.compile(velocity)
 
         def do(t, u):
@@ -280,10 +279,10 @@ class VariableCoefficientAdvectionOperator(HyperbolicOperator):
     def op_template(self, with_sensor=False):
         # {{{ operator preliminaries ------------------------------------------
         from hedge.optemplate import (Field, BoundaryPair, get_flux_operator,
-                make_stiffness_t, InverseMassOperator, make_vector_field, 
+                make_stiffness_t, InverseMassOperator, make_sym_vector,
                 ElementwiseMaxOperator, BoundarizeOperator)
 
-        from hedge.tools.symbolic import make_common_subexpression as cse
+        from hedge.optemplate.primitives import make_common_subexpression as cse
 
         from hedge.optemplate.operators import (
                 QuadratureGridUpsampler,
@@ -296,7 +295,7 @@ class VariableCoefficientAdvectionOperator(HyperbolicOperator):
                                 ptwise_dot
 
         u = Field("u")
-        v = make_vector_field("v", self.dimensions)
+        v = make_sym_vector("v", self.dimensions)
         c = ElementwiseMaxOperator()(ptwise_dot(1, 1, v, v))
 
         quad_u = cse(to_quad(u))
@@ -363,8 +362,8 @@ class VariableCoefficientAdvectionOperator(HyperbolicOperator):
         quad_u = cse(to_quad(u))
         quad_v = cse(to_quad(v))
 
-        return m_inv(numpy.dot(minv_st, cse(quad_v*quad_u)) 
-                - (flux_op(quad_face_w) 
+        return m_inv(numpy.dot(minv_st, cse(quad_v*quad_u))
+                - (flux_op(quad_face_w)
                     + flux_op(BoundaryPair(quad_face_w, bc_w, TAG_ALL)))) \
                             + diffusion_part
 

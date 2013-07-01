@@ -29,12 +29,23 @@ import numpy
 import pymbolic.primitives
 import hedge.mesh
 
-from hedge.tools.symbolic import CFunction  # noqa
+from pymbolic.primitives import make_common_subexpression  # noqa
+
+from pytools import MovedFunctionDeprecationWrapper
+
+
+class LeafBase(pymbolic.primitives.AlgebraicLeaf):
+    def stringifier(self):
+        from hedge.optemplate import StringifyMapper
+        return StringifyMapper
 
 
 # {{{ variables
 
 Field = pymbolic.primitives.Variable
+
+make_sym_vector = pymbolic.primitives.make_sym_vector
+make_sym_array = pymbolic.primitives.make_sym_array
 
 
 def make_field(var_or_string):
@@ -53,19 +64,33 @@ class ScalarParameter(pymbolic.primitives.Variable):
 
     mapper_method = intern("map_scalar_parameter")
 
+
+class CFunction(pymbolic.primitives.Variable):
+    """A symbol representing a C-level function, to be used as the function
+    argument of :class:`pymbolic.primitives.Call`.
+    """
+    def stringifier(self):
+        from hedge.optemplate import StringifyMapper
+        return StringifyMapper
+
+    def __call__(self, expr):
+        from pytools.obj_array import with_object_array_or_scalar
+        from functools import partial
+        return with_object_array_or_scalar(
+                partial(pymbolic.primitives.Expression.__call__, self),
+                expr)
+
+    mapper_method = "map_c_function"
+
 # }}}
 
 
 # {{{ technical helpers
 
-class OperatorBinding(pymbolic.primitives.AlgebraicLeaf):
+class OperatorBinding(LeafBase):
     def __init__(self, op, field):
         self.op = op
         self.field = field
-
-    def stringifier(self):
-        from hedge.optemplate import StringifyMapper
-        return StringifyMapper
 
     mapper_method = intern("map_operator_binding")
 
@@ -103,7 +128,7 @@ class PrioritizedSubexpression(pymbolic.primitives.CommonSubexpression):
         return {"priority": self.priority}
 
 
-class BoundaryPair(pymbolic.primitives.AlgebraicLeaf):
+class BoundaryPair(LeafBase):
     """Represents a pairing of a volume and a boundary field, used for the
     application of boundary fluxes.
     """
@@ -114,10 +139,6 @@ class BoundaryPair(pymbolic.primitives.AlgebraicLeaf):
         self.tag = tag
 
     mapper_method = intern("map_boundary_pair")
-
-    def stringifier(self):
-        from hedge.optemplate.mappers import StringifyMapper
-        return StringifyMapper
 
     def __getinitargs__(self):
         return (self.field, self.bfield, self.tag)
@@ -140,39 +161,54 @@ class BoundaryPair(pymbolic.primitives.AlgebraicLeaf):
 # }}}
 
 
+class Ones(LeafBase):
+    def __init__(self, quadrature_tag=None):
+        self.quadrature_tag = quadrature_tag
+
+    def __getinitargs__(self):
+        return (self.quadrature_tag,)
+
+    mapper_method = intern("map_ones")
+
+
 # {{{ geometry data
 
-class BoundaryNormalComponent(pymbolic.primitives.AlgebraicLeaf):
+class NodeCoordinateComponent(LeafBase):
+    def __init__(self, axis, quadrature_tag=None):
+        self.axis = axis
+        self.quadrature_tag = quadrature_tag
+
+    def __getinitargs__(self):
+        return (self.axis, self.quadrature_tag)
+
+    mapper_method = intern("map_node_coordinate_component")
+
+
+def nodes(dim, quadrature_tag=None):
+    return numpy.array([NodeCoordinateComponent(i, quadrature_tag)
+        for i in range(dim)], dtype=object)
+
+
+class BoundaryNormalComponent(LeafBase):
     def __init__(self, boundary_tag, axis, quadrature_tag=None):
         self.boundary_tag = boundary_tag
         self.axis = axis
         self.quadrature_tag = quadrature_tag
 
-    def stringifier(self):
-        from hedge.optemplate.mappers import StringifyMapper
-        return StringifyMapper
-
-    def get_hash(self):
-        return hash((self.__class__,)+self.__getinitargs__())
-
-    def is_equal(self, other):
-        return (other.__class__ == self.__class__
-                and other.boundary_tag == self.boundary_tag
-                and other.axis == self.axis
-                and other.quadrature_tag == self.quadrature_tag)
-
-    mapper_method = intern("map_normal_component")
-
     def __getinitargs__(self):
         return (self.boundary_tag, self.axis, self.quadrature_tag)
 
+    mapper_method = intern("map_normal_component")
 
-def make_normal(tag, dimensions):
+
+def normal(tag, dimensions):
     return numpy.array([BoundaryNormalComponent(tag, i)
         for i in range(dimensions)], dtype=object)
 
+make_normal = MovedFunctionDeprecationWrapper(normal)
 
-class GeometricFactorBase(pymbolic.primitives.AlgebraicLeaf):
+
+class GeometricFactorBase(LeafBase):
     def __init__(self, quadrature_tag):
         """
         :param quadrature_tag: quadrature tag for the grid on
@@ -181,22 +217,11 @@ class GeometricFactorBase(pymbolic.primitives.AlgebraicLeaf):
         """
         self.quadrature_tag = quadrature_tag
 
-    def get_hash(self):
-        return hash((self.__class__, self.quadrature_tag))
-
-    def is_equal(self, other):
-        return (other.__class__ == self.__class__
-                and other.quadrature_tag == self.quadrature_tag)
-
     def __getinitargs__(self):
         return (self.quadrature_tag,)
 
 
 class Jacobian(GeometricFactorBase):
-    def stringifier(self):
-        from hedge.optemplate.mappers import StringifyMapper
-        return StringifyMapper
-
     mapper_method = intern("map_jacobian")
 
 
@@ -220,25 +245,10 @@ class ForwardMetricDerivative(GeometricFactorBase):
         self.xyz_axis = xyz_axis
         self.rst_axis = rst_axis
 
-    def stringifier(self):
-        from hedge.optemplate.mappers import StringifyMapper
-        return StringifyMapper
-
-    def get_hash(self):
-        return hash((self.__class__, self.quadrature_tag,
-            self.xyz_axis, self.rst_axis))
-
-    def is_equal(self, other):
-        return (other.__class__ == self.__class__
-                and other.quadrature_tag == self.quadrature_tag
-                and other.xyz_axis == self.xyz_axis
-                and other.rst_axis == self.rst_axis
-                )
-
-    mapper_method = intern("map_forward_metric_derivative")
-
     def __getinitargs__(self):
         return (self.quadrature_tag, self.xyz_axis, self.rst_axis)
+
+    mapper_method = intern("map_forward_metric_derivative")
 
 
 class InverseMetricDerivative(GeometricFactorBase):
@@ -261,25 +271,10 @@ class InverseMetricDerivative(GeometricFactorBase):
         self.rst_axis = rst_axis
         self.xyz_axis = xyz_axis
 
-    def stringifier(self):
-        from hedge.optemplate.mappers import StringifyMapper
-        return StringifyMapper
-
-    def get_hash(self):
-        return hash((self.__class__, self.quadrature_tag,
-            self.xyz_axis, self.rst_axis))
-
-    def is_equal(self, other):
-        return (other.__class__ == self.__class__
-                and other.quadrature_tag == self.quadrature_tag
-                and other.rst_axis == self.rst_axis
-                and other.xyz_axis == self.xyz_axis
-                )
-
-    mapper_method = intern("map_inverse_metric_derivative")
-
     def __getinitargs__(self):
         return (self.quadrature_tag, self.rst_axis, self.xyz_axis)
+
+    mapper_method = intern("map_inverse_metric_derivative")
 
 # }}}
 

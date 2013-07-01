@@ -84,16 +84,16 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
             result[numpy.array(subset, dtype=bool)] = v
             return result
 
-        from hedge.optemplate import make_vector_field
+        from hedge.optemplate import make_sym_vector
         sig = pad_vec(
-                make_vector_field("sigma", self.dimensions),
+                make_sym_vector("sigma", self.dimensions),
                 dim_subset)
         sig_prime = pad_vec(
-                make_vector_field("sigma_prime", self.dimensions),
+                make_sym_vector("sigma_prime", self.dimensions),
                 dim_subset)
         if self.add_decay:
             tau = pad_vec(
-                    make_vector_field("tau", self.dimensions),
+                    make_sym_vector("tau", self.dimensions),
                     dim_subset)
         else:
             tau = numpy.zeros((3,))
@@ -130,8 +130,8 @@ class AbarbanelGottliebPMLMaxwellOperator(MaxwellOperator):
         from hedge.tools import count_subset
         fld_cnt = count_subset(self.get_eh_subset())
         if w is None:
-            from hedge.optemplate import make_vector_field
-            w = make_vector_field("w", fld_cnt+2*self.dimensions)
+            from hedge.optemplate import make_sym_vector
+            w = make_sym_vector("w", fld_cnt+2*self.dimensions)
 
         from hedge.tools import join_fields
         return join_fields(

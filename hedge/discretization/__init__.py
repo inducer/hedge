@@ -136,24 +136,33 @@ class TimestepCalculator(object):
 
 
 class Discretization(TimestepCalculator):
-    """The global approximation space.
+    r"""The global approximation space.
 
     Instances of this class tie together a local discretization (i.e.
     polynomials on an elemnent) into a function space on a mesh. They
     provide creation functions such as interpolating given functions,
     differential operators and flux lifting operators.
 
-    :ivar dimensions:
-    :ivar run_context:
-    :ivar mesh:
-    :ivar debug: a set of debug flags (which are strings).
-    :ivar default_scalar_type: Default numpy type for :meth:`volume_zeros`
+    .. attribute:: dimensions
+    .. attribute:: run_context
+    .. attribute:: mesh
+    .. attribute:: debug
+
+        a set of debug flags (which are strings).
+
+    .. attribute:: default_scalar_type
+
+        Default numpy type for :meth:`volume_zeros`
         and company.
 
-    :ivar quad_min_degrees: A mapping from quadrature tags to the degrees to
+    .. attribute:: quad_min_degrees
+
+        A mapping from quadrature tags to the degrees to
         which the desired quadrature is supposed to be exact.
 
-    :ivar inverse_metric_derivatives: A list of lists of full-volume vectors,
+    .. attribute:: inverse_metric_derivatives
+
+        A list of lists of full-volume vectors,
         such that the vector *inverse_metric_derivatives[xyz_axis][rst_axis]*
         gives the metric derivatives on the entire volume.
 
@@ -162,6 +171,7 @@ class Discretization(TimestepCalculator):
     """
 
     # {{{ debug flags
+
     @classmethod
     def all_debug_flags(cls):
         return set([
@@ -1092,100 +1102,83 @@ class Discretization(TimestepCalculator):
 
     # }}}
 
-    # {{{ scalar reduction ----------------------------------------------------
-    def nodewise_dot_product(self, a, b):
-        return np.dot(a, b)
-
-    def _integral_projection(self):
-        """Find a vector :math:`v` such that
-        :math:`v\cdot M u=\int u`."""
-
-        return ones_on_volume(self)
+    # {{{ scalar reduction
 
     @memoize_method
-    def _mass_integral_projection(self):
-        from hedge.optemplate.operators import MassOperator
-        return MassOperator().apply(self, self._integral_projection())
+    def _integral_op(self, arg_shape):
+        import hedge.optemplate as sym
+        if arg_shape == ():
+            u = np.zeros(1, dtype=np.object)
+            u[0] = sym.Field("arg")
+        else:
+            u = sym.make_sym_array("arg", arg_shape)
+
+        return self.compile(sym.integral(u))
+
+    def integral(self, volume_vector):
+        from hedge.tools import log_shape
+        return self._integral_op(log_shape(volume_vector))(arg=volume_vector)
 
     @memoize_method
     def mesh_volume(self):
         return self.integral(ones_on_volume(self))
 
-    def integral(self, volume_vector):
-        from hedge.tools import log_shape
-
-        ls = log_shape(volume_vector)
-        if ls == ():
-            if isinstance(volume_vector, (int, float, complex)):
-                # accept scalars as volume_vector
-                empty = self.volume_empty(dtype=type(volume_vector))
-                empty.fill(volume_vector)
-                volume_vector = empty
-
-            return self.nodewise_dot_product(
-                    self._mass_integral_projection(), volume_vector)
-        else:
-            result = np.zeros(shape=ls, dtype=float)
-
-            from pytools import indices_in_shape
-            for i in indices_in_shape(ls):
-                vvi = volume_vector[i]
-                if isinstance(vvi, (int, float)) and vvi == 0:
-                    result[i] = 0
-                else:
-                    result[i] = self.nodewise_dot_product(
-                            self._mass_integral_projection(), volume_vector[i])
-
-            return result
-
     @memoize_method
-    def _compiled_mass_operator(self):
-        from hedge.optemplate import MassOperator, Field
-        mass_op_func = self.compile(MassOperator() * Field("f"))
-        return lambda f: mass_op_func(f=f)
+    def _norm_op(self, p, arg_shape):
+        import hedge.optemplate as sym
+        if arg_shape == ():
+            u = np.zeros(1, dtype=np.object)
+            u[0] = sym.Field("arg")
+        else:
+            u = sym.make_sym_array("arg", arg_shape)
+
+        return self.compile(sym.norm(p, u))
 
     def norm(self, volume_vector, p=2):
-        if p == np.Inf:
-            return np.abs(volume_vector).max()
-        elif p == 2:
-            return self.inner_product(
-                    volume_vector,
-                    volume_vector) ** (1 / p)
+        from hedge.tools import log_shape
+        return self._norm_op(p, log_shape(volume_vector))(arg=volume_vector)
+
+    @memoize_method
+    def _inner_product_op(self, p, arg_shape):
+        import hedge.optemplate as sym
+        if arg_shape == ():
+            a = np.zeros(1, dtype=np.object)
+            a[0] = sym.Field("a")
+            b = np.zeros(1, dtype=np.object)
+            b[0] = sym.Field("b")
         else:
-            return self.integral(np.abs(volume_vector) ** p)**(1/p)
+            a = sym.make_sym_array("a", arg_shape)
+            b = sym.make_sym_array("b", arg_shape)
+
+        return np.sum(a * sym.MassOperator(b))
 
     def inner_product(self, a, b):
-        mass_op = self._compiled_mass_operator()
-
         from hedge.tools import log_shape
-        ls = log_shape(a)
-        assert log_shape(b) == ls
-        if ls == ():
-            return float(self.nodewise_dot_product(
-                    a, mass_op(b)))
-        else:
-            assert len(ls) == 1
-            return float(sum(
-                    self.nodewise_dot_product(
-                        sub_a, mass_op(sub_b))
-                    for sub_a, sub_b in zip(a, b)))
+        shape = log_shape(a)
+        if log_shape(b) != shape:
+            raise ValueError("second arg of inner_product must have same shape")
+
+        return self._inner_product_op(shape)(a=a, b=b)
 
     def nodewise_max(self, a):
-        return np.max(a)
+        from warnings import warn
+        warn("nodewise_max is deprecated, build an equivalent operator instead",
+                DeprecationWarning)
 
-    def nodewise_min(self, a):
-        return np.min(a)
+        return np.max(a)
 
     # }}}
 
-    # {{{ vector primitives ---------------------------------------------------
+    # {{{ vector primitives
+
     def get_vector_primitive_factory(self):
         from hedge.vector_primitives import VectorPrimitiveFactory
         return VectorPrimitiveFactory()
 
     # }}}
 
-    # {{{ element data retrieval ----------------------------------------------
+    # {{{ element data retrieval
+
     def find_el_range(self, el_id):
         group, idx = self.group_map[el_id]
         return group.ranges[idx]
@@ -1205,7 +1198,8 @@ class Discretization(TimestepCalculator):
 
     # }}}
 
-    # {{{ misc stuff ----------------------------------------------------------
+    # {{{ misc stuff
+
     @memoize_method
     def dt_non_geometric_factor(self):
         distinct_ldis = set(eg.local_discretization
@@ -1289,7 +1283,8 @@ class Discretization(TimestepCalculator):
 
     # }}}
 
-    # {{{ op template execution -----------------------------------------------
+    # {{{ op template execution
+
     def compile(self, optemplate, post_bind_mapper=lambda x: x,
             type_hints={}):
         from hedge.optemplate.mappers import QuadratureUpsamplerRemover
@@ -1308,6 +1303,7 @@ class Discretization(TimestepCalculator):
 
     def add_function(self, name, func):
         self.exec_functions[name] = func
+
     # }}}
 
 

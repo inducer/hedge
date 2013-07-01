@@ -25,18 +25,13 @@ THE SOFTWARE.
 """
 
 
-
-
-import hedge.discretization
-import hedge.optemplate
 from pytools import memoize_method
 from hedge.compiler import OperatorCompilerBase, FluxBatchAssign, \
         Assign
 
 
+# {{{ jit instructions
 
-
-# {{{ jit instructions --------------------------------------------------------
 class VectorExprAssign(Assign):
     __slots__ = ["toolchain"]
 
@@ -72,7 +67,6 @@ class VectorExprAssign(Assign):
                 toolchain=toolchain)
 
 
-
 class CompiledFluxBatchAssign(FluxBatchAssign):
     # members: compiled_func, arg_specs, is_boundary, quadrature_tag
 
@@ -102,7 +96,7 @@ class CompiledFluxBatchAssign(FluxBatchAssign):
 
         if not self.is_boundary:
             mod = get_interior_flux_mod(
-                    self.expressions, self.flux_var_info, 
+                    self.expressions, self.flux_var_info,
                     discr, dtype)
 
             if discr.instrumented:
@@ -128,13 +122,11 @@ class CompiledFluxBatchAssign(FluxBatchAssign):
 
         return mod
 
-
-
-
-
 # }}}
 
-# {{{ subclassed compiler -----------------------------------------------------
+
+# {{{ subclassed compiler
+
 class OperatorCompiler(OperatorCompilerBase):
     def __init__(self, discr):
         OperatorCompilerBase.__init__(self,
@@ -199,6 +191,7 @@ class OperatorCompiler(OperatorCompilerBase):
     # }}}
 
     # {{{ vector math
+
     def finalize_multi_assign(self, names, exprs, do_not_return, priority):
         from pytools import any
         from hedge.tools import is_zero
@@ -215,14 +208,14 @@ class OperatorCompiler(OperatorCompilerBase):
             return Assign(names, exprs, priority=priority,
                     dep_mapper_factory=self.dep_mapper_factory)
         else:
-            return VectorExprAssign(names=names, exprs=exprs, 
+            return VectorExprAssign(names=names, exprs=exprs,
                     do_not_return=do_not_return,
                     dep_mapper_factory=self.dep_mapper_factory,
                     priority=priority)
+
     # }}}
+
 # }}}
-
-
 
 
 # vim: foldmethod=marker

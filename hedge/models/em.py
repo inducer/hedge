@@ -29,7 +29,7 @@ from pytools import memoize_method
 
 import hedge.mesh
 from hedge.models import HyperbolicOperator
-from hedge.tools.symbolic import make_common_subexpression as cse
+from hedge.optemplate.primitives import make_common_subexpression as cse
 from hedge.tools import make_obj_array
 
 # TODO: Check PML
@@ -51,16 +51,20 @@ class MaxwellOperator(HyperbolicOperator):
             pmc_tag=hedge.mesh.TAG_NONE,
             absorb_tag=hedge.mesh.TAG_NONE,
             incident_tag=hedge.mesh.TAG_NONE,
-            incident_bc=None, current=None, dimensions=None):
+            incident_bc=lambda maxwell_op, e, h: 0, current=0, dimensions=None):
         """
-        :param flux_type: can be in [0,1] for anything between central and upwind,
+        :arg flux_type: can be in [0,1] for anything between central and upwind,
           or "lf" for Lax-Friedrichs
-        :param epsilon: can be a number, for fixed material throughout the
+        :arg epsilon: can be a number, for fixed material throughout the
             computation domain, or a TimeConstantGivenFunction for spatially
             variable material coefficients
-        :param mu: can be a number, for fixed material throughout the computation
+        :arg mu: can be a number, for fixed material throughout the computation
             domain, or a TimeConstantGivenFunction for spatially variable material
             coefficients
+        :arg incident_bc_getter: a function of signature *(maxwell_op, e, h)* that
+            accepts *e* and *h* as a symbolic object arrays
+            returns a symbolic expression for the incident
+            boundary condition
         """
 
         self.dimensions = dimensions or self._default_dimensions
@@ -84,12 +88,7 @@ class MaxwellOperator(HyperbolicOperator):
         self.mu = mu
 
         from pymbolic.primitives import is_constant
-
-        self.fixed_material = is_constant(epsilon)
-
-        if self.fixed_material != is_constant(mu):
-            raise RuntimeError("mu and epsilon must both be "
-                    "either hedge.data quantities or constants")
+        self.fixed_material = is_constant(epsilon) and is_constant(mu)
 
         self.flux_type = flux_type
         if bdry_flux_type is None:
@@ -108,7 +107,7 @@ class MaxwellOperator(HyperbolicOperator):
     @property
     def c(self):
         from warnings import warn
-        warn("MaxwellOperator.c is deprecated")
+        warn("MaxwellOperator.c is deprecated", DeprecationWarning)
         if not self.fixed_material:
             raise RuntimeError("Cannot compute speed of light "
                     "for non-constant material")
@@ -204,20 +203,13 @@ class MaxwellOperator(HyperbolicOperator):
             return self.space_cross_h(nabla, field)
 
         from hedge.optemplate import make_nabla
-        from hedge.tools import join_fields, count_subset
+        from hedge.tools import join_fields
 
         nabla = make_nabla(self.dimensions)
 
-        if self.current is not None:
-            from hedge.optemplate import make_vector_field
-            j = make_vector_field("j",
-                    count_subset(self.get_eh_subset()[:3]))
-        else:
-            j = 0
-
         # in conservation form: u_t + A u_x = 0
         return join_fields(
-                (j - h_curl(h)),
+                (self.current - h_curl(h)),
                 e_curl(e)
                 )
 
@@ -226,8 +218,8 @@ class MaxwellOperator(HyperbolicOperator):
         from hedge.tools import count_subset
         fld_cnt = count_subset(self.get_eh_subset())
         if w is None:
-            from hedge.optemplate import make_vector_field
-            w = make_vector_field("w", fld_cnt)
+            from hedge.optemplate import make_sym_vector
+            w = make_sym_vector("w", fld_cnt)
 
         return w
 
@@ -258,8 +250,8 @@ class MaxwellOperator(HyperbolicOperator):
         absorbing boundary conditions.
         """
 
-        from hedge.optemplate import make_normal
-        absorb_normal = make_normal(self.absorb_tag, self.dimensions)
+        from hedge.optemplate import normal
+        absorb_normal = normal(self.absorb_tag, self.dimensions)
 
         from hedge.optemplate import BoundarizeOperator, Field
         from hedge.tools import join_fields
@@ -304,17 +296,7 @@ class MaxwellOperator(HyperbolicOperator):
                 warn("Incident boundary conditions assume homogeneous"
                      " background material, results may be unphysical")
 
-        from hedge.tools import count_subset
-        fld_cnt = count_subset(self.get_eh_subset())
-
-        if self.incident_bc_data is not None:
-            from hedge.optemplate import make_vector_field
-            inc_field = cse(
-                    - make_vector_field("incident_bc", fld_cnt))
-        else:
-            inc_field = make_obj_array([0]*fld_cnt)
-
-        return inc_field
+        return cse(-self.incident_bc_data(self, e, h))
 
     def op_template(self, w=None):
         """The full operator template - the high level description of
@@ -323,15 +305,14 @@ class MaxwellOperator(HyperbolicOperator):
         Combines the relevant operator templates for spatial
         derivatives, flux, boundary conditions etc.
         """
-        from hedge.optemplate import Field
         from hedge.tools import join_fields
         w = self.field_placeholder(w)
 
         if self.fixed_material:
             flux_w = w
         else:
-            epsilon = Field("epsilon")
-            mu = Field("mu")
+            epsilon = self.epsilon
+            mu = self.mu
 
             flux_w = join_fields(epsilon, mu, w)
 
@@ -389,31 +370,11 @@ class MaxwellOperator(HyperbolicOperator):
 
         compiled_op_template = discr.compile(self.op_template())
 
-        from hedge.tools import full_to_subset_indices
-        e_indices = full_to_subset_indices(self.get_eh_subset()[0:3])
-        all_indices = full_to_subset_indices(self.get_eh_subset())
-
         def rhs(t, w):
-            if self.current is not None:
-                j = self.current.volume_interpolant(t, discr)[e_indices]
-            else:
-                j = 0
-
-            if self.incident_bc_data is not None:
-                incident_bc_data = self.incident_bc_data.boundary_interpolant(
-                        t, discr, self.incident_tag)[all_indices]
-            else:
-                incident_bc_data = 0
-
             kwargs = {}
             kwargs.update(extra_context)
-            if not self.fixed_material:
-                kwargs["epsilon"] = self.epsilon.volume_interpolant(t, discr)
-                kwargs["mu"] = self.mu.volume_interpolant(t, discr)
 
-            return compiled_op_template(
-                    w=w, j=j, incident_bc=incident_bc_data,
-                    **kwargs)
+            return compiled_op_template(w=w, t=t, **kwargs)
 
         return rhs
 
@@ -494,17 +455,23 @@ class MaxwellOperator(HyperbolicOperator):
         """
         return 6*(True,)
 
-    def max_eigenvalue(self, t, fields=None, discr=None):
+    def max_eigenvalue_expr(self):
         """Return the largest eigenvalue of Maxwell's equations as a hyperbolic
         system.
         """
         from math import sqrt
         if self.fixed_material:
-            return 1/sqrt(self.epsilon*self.mu)
+            return 1/sqrt(self.epsilon*self.mu)  # a number
         else:
-            return discr.nodewise_max(
-                    (self.epsilon.volume_interpolant(t, discr)
-                        * self.mu.volume_interpolant(t, discr))**(-0.5))
+            import hedge.optemplate as sym
+            return sym.NodalMax()(1/sym.CFunction("sqrt")(self.epsilon*self.mu))
+
+    def max_eigenvalue(self, t, fields=None, discr=None, context={}):
+        if self.fixed_material:
+            return self.max_eigenvalue_expr(self, t)
+        else:
+            raise ValueError("max_eigenvalue is no longer supported for "
+                    "variable-coefficient problems--use max_eigenvalue_expr")
 
 
 class TMMaxwellOperator(MaxwellOperator):

@@ -37,6 +37,24 @@ class ExecutionMapperBase(hedge.optemplate.Evaluator,
         self.discr = executor.discr
         self.executor = executor
 
+    def map_ones(self, expr):
+        # FIXME
+        if expr.quadrature_tag is not None:
+            raise NotImplementedError("ones on quad. grids")
+
+        result = self.discr.volume_empty(kind=self.discr.compute_kind)
+        result.fill(1)
+        return result
+
+    def map_node_coordinate_component(self, expr):
+        # FIXME
+        if expr.quadrature_tag is not None:
+            raise NotImplementedError("node coordinate components on quad. grids")
+        # FIXME: Data transfer and strided CPU index every time, ugh.
+        return self.discr.convert_volume(
+                self.discr.nodes[:, expr.axis],
+                kind=self.discr.compute_kind)
+
     def map_normal_component(self, expr):
         if expr.quadrature_tag is not None:
             raise NotImplementedError("normal components on quad. grids")

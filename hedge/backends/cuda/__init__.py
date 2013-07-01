@@ -1485,6 +1485,7 @@ class Discretization(hedge.discretization.Discretization):
     # }}}
 
     # {{{ scalar reduction
+
     def nodewise_dot_product(self, a, b):
         return gpuarray.subset_dot(
                 self._meaningful_volume_indices(),
@@ -1492,9 +1493,6 @@ class Discretization(hedge.discretization.Discretization):
 
     def nodewise_max(self, a):
         return gpuarray.subset_max(self._meaningful_volume_indices(), a).get()
-
-    def nodewise_min(self, a):
-        return gpuarray.subset_min(self._meaningful_volume_indices(), a).get()
 
     # }}}
 

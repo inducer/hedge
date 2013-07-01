@@ -38,10 +38,9 @@ from hedge.second_order import (
         StabilizedCentralSecondDerivative,
         CentralSecondDerivative,
         IPDGSecondDerivative)
-from hedge.tools.symbolic import make_common_subexpression as cse
+from hedge.optemplate.primitives import make_common_subexpression as cse
 from pytools import memoize_method
-from hedge.tools.symbolic import memoize_method_with_obj_array_args
-from hedge.optemplate.tools import make_vector_field
+from hedge.optemplate.tools import make_sym_vector
 from pytools.obj_array import make_obj_array, join_fields
 
 AXES = ["x", "y", "z", "w"]
@@ -210,7 +209,7 @@ class GasDynamicsOperator(TimeDependentOperator):
 
     # {{{ conversions ---------------------------------------------------------
     def state(self):
-        return make_vector_field("q", self.dimensions+2)
+        return make_sym_vector("q", self.dimensions+2)
 
     @memoize_method
     def volq_state(self):
@@ -296,7 +295,7 @@ class GasDynamicsOperator(TimeDependentOperator):
 
     def primitive_to_conservative(self, prims, use_cses=True):
         if not use_cses:
-            from hedge.tools.symbolic import make_common_subexpression as cse
+            from hedge.optemplate.primitives import make_common_subexpression as cse
         else:
             def cse(x, name): return x
 
@@ -312,7 +311,7 @@ class GasDynamicsOperator(TimeDependentOperator):
 
     def conservative_to_primitive(self, q, use_cses=True):
         if use_cses:
-            from hedge.tools.symbolic import make_common_subexpression as cse
+            from hedge.optemplate.primitives import make_common_subexpression as cse
         else:
             def cse(x, name): return x
 
@@ -335,7 +334,7 @@ class GasDynamicsOperator(TimeDependentOperator):
         return ElementwiseMaxOperator()(speed)
 
     def bind_characteristic_velocity(self, discr):
-        state = make_vector_field("q", self.dimensions+2)
+        state = make_sym_vector("q", self.dimensions+2)
 
         compiled = discr.compile(
                 self.characteristic_velocity_optemplate(state))
@@ -486,7 +485,7 @@ class GasDynamicsOperator(TimeDependentOperator):
           BC is linearized.
         """
         if state0 is None:
-            state0 = make_vector_field(bc_name, self.dimensions+2)
+            state0 = make_sym_vector(bc_name, self.dimensions+2)
 
         state0 = cse(to_bdry_quad(state0))
 
@@ -558,7 +557,7 @@ class GasDynamicsOperator(TimeDependentOperator):
     def noslip_state(self, state):
         from hedge.optemplate import make_normal
         state0 = join_fields(
-            make_vector_field("bc_q_noslip", 2),
+            make_sym_vector("bc_q_noslip", 2),
             [0]*self.dimensions)
         normal = make_normal(self.noslip_tag, self.dimensions)
         bc = self.make_bc_info("bc_q_noslip", self.noslip_tag, state, state0)
@@ -597,7 +596,7 @@ class GasDynamicsOperator(TimeDependentOperator):
         from hedge.optemplate import BoundarizeOperator
         return {
                 self.supersonic_inflow_tag:
-                make_vector_field("bc_q_supersonic_in", self.dimensions+2),
+                make_sym_vector("bc_q_supersonic_in", self.dimensions+2),
                 self.supersonic_outflow_tag:
                 BoundarizeOperator(self.supersonic_outflow_tag)(
                             (state)),
@@ -789,7 +788,7 @@ class GasDynamicsOperator(TimeDependentOperator):
 
         if self.source is not None:
             result = result + join_fields(
-                    make_vector_field("source_vect", len(self.state())),
+                    make_sym_vector("source_vect", len(self.state())),
                     # extra field for speed
                     0)
 

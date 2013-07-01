@@ -105,14 +105,14 @@ class DivergenceOperator(Operator):
 
     def op_template(self):
         from hedge.mesh import TAG_ALL
-        from hedge.optemplate import make_vector_field, BoundaryPair, \
+        from hedge.optemplate import make_sym_vector, BoundaryPair, \
                 get_flux_operator, make_nabla, InverseMassOperator
 
         nabla = make_nabla(self.dimensions)
         m_inv = InverseMassOperator()
 
-        v = make_vector_field("v", self.arg_count)
-        bc = make_vector_field("bc", self.arg_count)
+        v = make_sym_vector("v", self.arg_count)
+        bc = make_sym_vector("bc", self.arg_count)
 
         local_op_result = 0
         idx = 0

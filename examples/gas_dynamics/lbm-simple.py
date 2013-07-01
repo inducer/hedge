@@ -73,7 +73,7 @@ def main(write_output=True, dtype=np.float32):
         w = 0.05
         delta = 0.05
 
-        from hedge.tools.symbolic import make_common_subexpression as cse
+        from hedge.optemplate.primitives import make_common_subexpression as cse
         u = cse(make_obj_array([
             IfPositive(x[1]-1/2,
                 u0*tanh(4*(3/4-x[1])/w),

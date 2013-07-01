@@ -39,7 +39,8 @@ class Operator(pymbolic.primitives.Leaf):
         return StringifyMapper
 
     def __call__(self, expr):
-        from hedge.tools import with_object_array_or_scalar, is_zero
+        from pytools.obj_array import with_object_array_or_scalar
+        from hedge.tools import is_zero
 
         def bind_one(subexpr):
             if is_zero(subexpr):
@@ -75,6 +76,26 @@ class Operator(pymbolic.primitives.Leaf):
 class StatelessOperator(Operator):
     def __getinitargs__(self):
         return ()
+
+# }}}
+
+
+# {{{ sum, integral, max
+
+class NodalReductionOperator(StatelessOperator):
+    pass
+
+
+class NodalSum(NodalReductionOperator):
+    mapper_method = intern("map_nodal_sum")
+
+
+class NodalMax(NodalReductionOperator):
+    mapper_method = intern("map_nodal_max")
+
+
+class NodalMin(NodalReductionOperator):
+    mapper_method = intern("map_nodal_min")
 
 # }}}
 
@@ -754,9 +775,6 @@ class WholeDomainFluxOperator(pymbolic.primitives.AlgebraicLeaf):
     mapper_method = intern("map_whole_domain_flux")
 
 # }}}
-
-
-
 
 
 # vim: foldmethod=marker

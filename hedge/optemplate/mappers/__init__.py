@@ -119,18 +119,23 @@ class FluxOpReducerMixin(object):
 
 class OperatorReducerMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     """Reduces calls to *any* operator mapping function to just one."""
-    def map_diff_base(self, expr, *args, **kwargs):
+    def _map_op_base(self, expr, *args, **kwargs):
         return self.map_operator(expr, *args, **kwargs)
 
-    map_ref_diff_base = map_diff_base
-    map_elementwise_linear = map_diff_base
-    map_flux_base = map_diff_base
-    map_elementwise_max = map_diff_base
-    map_boundarize = map_diff_base
-    map_flux_exchange = map_diff_base
-    map_quad_grid_upsampler = map_diff_base
-    map_quad_int_faces_grid_upsampler = map_diff_base
-    map_quad_bdry_grid_upsampler = map_diff_base
+    map_nodal_sum = _map_op_base
+    map_nodal_max = _map_op_base
+    map_nodal_min = _map_op_base
+
+    map_diff_base = _map_op_base
+    map_ref_diff_base = _map_op_base
+    map_elementwise_linear = _map_op_base
+    map_flux_base = _map_op_base
+    map_elementwise_max = _map_op_base
+    map_boundarize = _map_op_base
+    map_flux_exchange = _map_op_base
+    map_quad_grid_upsampler = _map_op_base
+    map_quad_int_faces_grid_upsampler = _map_op_base
+    map_quad_bdry_grid_upsampler = _map_op_base
 
 
 class CombineMapperMixin(object):
@@ -172,10 +177,19 @@ class IdentityMapperMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     def map_scalar_parameter(self, expr, *args, **kwargs):
         # it's a leaf--no changing children
         return expr
+
     map_c_function = map_scalar_parameter
+
+    map_ones = map_scalar_parameter
+    map_node_coordinate_component = map_scalar_parameter
+    map_normal_component = map_elementwise_linear
     map_jacobian = map_scalar_parameter
     map_inverse_metric_derivative = map_scalar_parameter
     map_forward_metric_derivative = map_scalar_parameter
+
+    map_nodal_sum = map_elementwise_linear
+    map_nodal_min = map_elementwise_linear
+    map_nodal_max = map_elementwise_linear
 
     map_mass_base = map_elementwise_linear
     map_ref_mass_base = map_elementwise_linear
@@ -188,8 +202,6 @@ class IdentityMapperMixin(LocalOpReducerMixin, FluxOpReducerMixin):
     map_quad_grid_upsampler = map_elementwise_linear
     map_quad_int_faces_grid_upsampler = map_elementwise_linear
     map_quad_bdry_grid_upsampler = map_elementwise_linear
-
-    map_normal_component = map_elementwise_linear
 
 
 class BoundOpMapperMixin(object):
@@ -236,12 +248,17 @@ class DependencyMapper(
     def map_scalar_parameter(self, expr):
         return set([expr])
 
-    def map_normal_component(self, expr):
+    def _map_leaf(self, expr):
         return set()
 
-    map_jacobian = map_normal_component
-    map_forward_metric_derivative = map_normal_component
-    map_inverse_metric_derivative = map_normal_component
+    map_ones = _map_leaf
+
+    map_node_coordinate_component = _map_leaf
+    map_normal_component = _map_leaf
+
+    map_jacobian = _map_leaf
+    map_forward_metric_derivative = _map_leaf
+    map_inverse_metric_derivative = _map_leaf
 
 
 class FlopCounter(
@@ -255,6 +272,12 @@ class FlopCounter(
 
     def map_c_function(self, expr):
         return 1
+
+    def map_ones(self, expr):
+        return 0
+
+    def map_node_coordinate_component(self, expr):
+        return 0
 
     def map_normal_component(self, expr):
         return 0
@@ -615,7 +638,21 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
                 self.rec(expr.bfield, PREC_NONE),
                 self._format_btag(expr.tag))
 
+    # {{{ nodal ops
+
+    def map_nodal_sum(self, expr, enclosing_prec):
+        return "NodalSum"
+
+    def map_nodal_max(self, expr, enclosing_prec):
+        return "NodalMax"
+
+    def map_nodal_min(self, expr, enclosing_prec):
+        return "NodalMin"
+
+    # }}}
+
     # {{{ global differentiation
+
     def map_diff(self, expr, enclosing_prec):
         return "Diffx%d" % expr.xyz_axis
 
@@ -634,6 +671,7 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
     # }}}
 
     # {{{ global mass
+
     def map_mass(self, expr, enclosing_prec):
         return "M"
 
@@ -642,6 +680,7 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
 
     def map_quad_mass(self, expr, enclosing_prec):
         return "Q[%s]M" % expr.quadrature_tag
+
     # }}}
 
     # {{{ reference differentiation
@@ -657,6 +696,7 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
     # }}}
 
     # {{{ reference mass
+
     def map_ref_mass(self, expr, enclosing_prec):
         return "RefM"
 
@@ -665,12 +705,14 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
 
     def map_ref_quad_mass(self, expr, enclosing_prec):
         return "RefQ[%s]M" % expr.quadrature_tag
+
     # }}}
 
     def map_elementwise_linear(self, expr, enclosing_prec):
         return "ElWLin:%s" % expr.__class__.__name__
 
     # {{{ flux
+
     def map_flux(self, expr, enclosing_prec):
         from pymbolic.mapper.stringifier import PREC_NONE
         return "%s(%s)" % (
@@ -722,7 +764,20 @@ class StringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
         return "FExch<idx=%s,rank=%d>(%s)" % (expr.index, expr.rank,
                 ", ".join(self.rec(arg, PREC_NONE) for arg in expr.arg_fields))
 
+    def map_ones(self, expr, enclosing_prec):
+        if expr.quadrature_tag is None:
+            return "Ones"
+        else:
+            return "Q[%s]Ones" % expr.quadrature_tag
+
     # {{{ geometry data
+
+    def map_node_coordinate_component(self, expr, enclosing_prec):
+        if expr.quadrature_tag is None:
+            return "x[%d]" % expr.axis
+        else:
+            return ("Q[%s]x[%d]" % (expr.quadrature_tag, expr.axis))
+
     def map_normal_component(self, expr, enclosing_prec):
         if expr.quadrature_tag is None:
             return ("Normal<tag=%s>[%d]"
@@ -1394,6 +1449,8 @@ class CollectorMixin(OperatorReducerMixin, LocalOpReducerMixin, FluxOpReducerMix
 
     map_operator = map_constant
     map_variable = map_constant
+    map_ones = map_constant
+    map_node_coordinate_component = map_constant
     map_normal_component = map_constant
     map_jacobian = map_constant
     map_forward_metric_derivative = map_constant

@@ -61,7 +61,7 @@ class PerssonPeraireDiscontinuitySensor(object):
     def op_template(self, u=None):
         from pymbolic.primitives import IfPositive, Variable
         from hedge.optemplate.primitives import Field, ScalarParameter
-        from hedge.tools.symbolic import make_common_subexpression as cse
+        from hedge.optemplate.primitives import make_common_subexpression as cse
         from math import pi
 
         if u is None:
@@ -297,7 +297,7 @@ class BottomChoppingFilterResponseFunction:
 
 class DecayInformation(Record):
     def __init__(self, **kwargs):
-        from hedge.tools.symbolic import make_common_subexpression as cse
+        from hedge.optemplate.primitives import make_common_subexpression as cse
 
         Record.__init__(self, dict((name, cse(expr, name))
             for name, expr in kwargs.iteritems()))
@@ -347,7 +347,7 @@ class DecayFitDiscontinuitySensorBase(object):
                 InverseMassOperator)
         from hedge.optemplate.primitives import Field
         from hedge.optemplate.tools import get_flux_operator
-        from hedge.tools.symbolic import make_common_subexpression as cse
+        from hedge.optemplate.primitives import make_common_subexpression as cse
         from hedge.optemplate.primitives import CFunction
         from pymbolic.primitives import Variable
 
@@ -505,7 +505,7 @@ class DecayGatingDiscontinuitySensorBase(
         from hedge.optemplate.primitives import (
                 CFunction, ScalarParameter)
         from math import pi
-        from hedge.tools.symbolic import make_common_subexpression as cse
+        from hedge.optemplate.primitives import make_common_subexpression as cse
 
         if self.correct_for_fit_error:
             decay_expt = cse(result.decay_expt_corrected, "decay_expt")

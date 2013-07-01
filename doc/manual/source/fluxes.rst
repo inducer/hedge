@@ -11,7 +11,7 @@ Summary
 An "flux expression" is an expression tree that represents
 a numerical DG flux. Flux expressions may be passed to
 :func:`hedge.optemplate.get_flux_operator` to integrate
-with the :ref:`optemplate`.  The following components can be 
+with the :ref:`optemplate`.  The following components can be
 used to build flux expressions in :mod:`hedge`:
 
 * Scalar constants, may be of type
@@ -70,7 +70,7 @@ used to build flux expressions in :mod:`hedge`:
   when the flux expression tree is walked to evaluate
   the operator.
 
-  Use :func:`hedge.tools.symbolic.make_common_subexpression` 
+  Use :func:`hedge.optemplate.primitives.make_common_subexpression`
   to wrap each component of an object array in a CSE.
 
 * :class:`hedge.flux.FluxScalarParameter`: A placeholder for a
@@ -78,9 +78,9 @@ used to build flux expressions in :mod:`hedge`:
   as :class:`hedge.optemplate.ScalarParameter`.
 
 * :class:`pymbolic.primitives.Call`: The *function* attribute
-  must evaluate to one of a number of predefined 
+  must evaluate to one of a number of predefined
   :class:`pymbolic.primitive.FunctionSymbol` instances
-  or be a value of type :class:`hedge.tools.symbolic.CFunction`.
+  or be a value of type :class:`hedge.optemplate.primitives.CFunction`.
 
   .. seealso:: :ref:`flux-function-symbols`.
 

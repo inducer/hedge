@@ -321,10 +321,10 @@ class CompiledExpressionData(
                     [var("%s%d" % (basename, i)) for i in range(self.dimensions)])
 
         from hedge.optemplate.primitives import ScalarParameter
-        from hedge.optemplate.tools import make_vector_field
+        from hedge.optemplate.tools import make_sym_vector
 
-        x = make_vector_field("x", discr.dimensions)
-        fields = make_vector_field("fields", self.arg_count)
+        x = make_sym_vector("x", discr.dimensions)
+        fields = make_sym_vector("fields", self.arg_count)
         exprs = self.expressions_getter(
                 t=ScalarParameter("t"), x=x, fields=fields)
 

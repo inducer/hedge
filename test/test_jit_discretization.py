@@ -102,8 +102,9 @@ def test_quadrature_tri_mass_mat_monomial():
     m, n = 2, 1
     f = Monomial((m, n))
     f_vec = discr.interpolate_volume_function(lambda x, el: f(x))
-    #ones = discr.interpolate_volume_function(lambda x, el: 1)
-    int_proj = discr._integral_projection()
+
+    from hedge.discretization import ones_on_volume
+    ones = ones_on_volume(discr)
 
     if False:
         from hedge.visualization import SiloVisualizer
@@ -115,13 +116,13 @@ def test_quadrature_tri_mass_mat_monomial():
     from hedge.optemplate import (MassOperator, Field, QuadratureGridUpsampler)
     f_fld = Field("f")
     mass_op = discr.compile(MassOperator()(f_fld*f_fld))
-    from hedge.tools.symbolic import make_common_subexpression as cse
+    from hedge.optemplate.primitives import make_common_subexpression as cse
     f_upsamp = cse(QuadratureGridUpsampler("quad")(f_fld))
     quad_mass_op = discr.compile(
         MassOperator()(f_upsamp*f_upsamp))
 
-    num_integral_1 = numpy.dot(int_proj, mass_op(f=f_vec))
-    num_integral_2 = numpy.dot(int_proj, quad_mass_op(f=f_vec))
+    num_integral_1 = numpy.dot(ones, mass_op(f=f_vec))
+    num_integral_2 = numpy.dot(ones, quad_mass_op(f=f_vec))
     true_integral = 4/((2*m+1)*(2*n+1))
     err_1 = abs(num_integral_1-true_integral)
     err_2 = abs(num_integral_2-true_integral)

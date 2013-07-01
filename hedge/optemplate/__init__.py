@@ -25,8 +25,7 @@ THE SOFTWARE.
 """
 
 
-
-from hedge.optemplate.primitives import *
-from hedge.optemplate.operators import *
-from hedge.optemplate.mappers import *
-from hedge.optemplate.tools import *
+from hedge.optemplate.primitives import *  # noqa
+from hedge.optemplate.operators import *  # noqa
+from hedge.optemplate.mappers import *  # noqa
+from hedge.optemplate.tools import *  # noqa

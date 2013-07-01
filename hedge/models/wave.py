@@ -26,17 +26,14 @@ THE SOFTWARE.
 """
 
 
-
-
-import numpy
+import numpy as np
 import hedge.mesh
 from hedge.models import HyperbolicOperator
 from hedge.second_order import CentralSecondDerivative
 
 
+# {{{ constant-velocity
 
-
-# {{{ constant-velocity -------------------------------------------------------
 class StrongWaveOperator(HyperbolicOperator):
     """This operator discretizes the wave equation
     :math:`\\partial_t^2 u = c^2 \\Delta u`.
@@ -91,7 +88,7 @@ class StrongWaveOperator(HyperbolicOperator):
 
         from hedge.tools import join_fields
         flux_weak = join_fields(
-                numpy.dot(v.avg, normal),
+                np.dot(v.avg, normal),
                 u.avg * normal)
 
         if self.flux_type == "central":
@@ -100,19 +97,19 @@ class StrongWaveOperator(HyperbolicOperator):
             # see doc/notes/hedge-notes.tm
             flux_weak -= self.sign*join_fields(
                     0.5*(u.int-u.ext),
-                    0.5*(normal * numpy.dot(normal, v.int-v.ext)))
+                    0.5*(normal * np.dot(normal, v.int-v.ext)))
         else:
             raise ValueError("invalid flux type '%s'" % self.flux_type)
 
         flux_strong = join_fields(
-                numpy.dot(v.int, normal),
+                np.dot(v.int, normal),
                 u.int * normal) - flux_weak
 
         return -self.c*flux_strong
 
     def op_template(self):
         from hedge.optemplate import \
-                make_vector_field, \
+                make_sym_vector, \
                 BoundaryPair, \
                 get_flux_operator, \
                 make_nabla, \
@@ -121,18 +118,15 @@ class StrongWaveOperator(HyperbolicOperator):
 
         d = self.dimensions
 
-        w = make_vector_field("w", d+1)
+        w = make_sym_vector("w", d+1)
         u = w[0]
         v = w[1:]
 
         # boundary conditions -------------------------------------------------
         from hedge.tools import join_fields
 
-
         # dirichlet BCs -------------------------------------------------------
-        from hedge.optemplate import make_normal, Field
-
-        dir_normal = make_normal(self.dirichlet_tag, d)
+        from hedge.optemplate import normal, Field
 
         dir_u = BoundarizeOperator(self.dirichlet_tag) * u
         dir_v = BoundarizeOperator(self.dirichlet_tag) * v
@@ -153,15 +147,14 @@ class StrongWaveOperator(HyperbolicOperator):
         neu_bc = join_fields(neu_u, -neu_v)
 
         # radiation BCs -------------------------------------------------------
-        from hedge.optemplate import make_normal
-        rad_normal = make_normal(self.radiation_tag, d)
+        rad_normal = normal(self.radiation_tag, d)
 
         rad_u = BoundarizeOperator(self.radiation_tag) * u
         rad_v = BoundarizeOperator(self.radiation_tag) * v
 
         rad_bc = join_fields(
-                0.5*(rad_u - self.sign*numpy.dot(rad_normal, rad_v)),
-                0.5*rad_normal*(numpy.dot(rad_normal, rad_v) - self.sign*rad_u)
+                0.5*(rad_u - self.sign*np.dot(rad_normal, rad_v)),
+                0.5*rad_normal*(np.dot(rad_normal, rad_v) - self.sign*rad_u)
                 )
 
         # entire operator -----------------------------------------------------
@@ -171,7 +164,7 @@ class StrongWaveOperator(HyperbolicOperator):
         from hedge.tools import join_fields
         result = (
                 - join_fields(
-                    -self.c*numpy.dot(nabla, v),
+                    -self.c*np.dot(nabla, v),
                     -self.c*(nabla*u)
                     )
                 +
@@ -215,9 +208,8 @@ class StrongWaveOperator(HyperbolicOperator):
 # }}}
 
 
+# {{{ variable-velocity
 
-
-# {{{ variable-velocity -------------------------------------------------------
 class VariableVelocityStrongWaveOperator(HyperbolicOperator):
     """This operator discretizes the wave equation
     :math:`\\partial_t^2 u = c^2 \\Delta u`.
@@ -231,7 +223,8 @@ class VariableVelocityStrongWaveOperator(HyperbolicOperator):
         \partial_t v - c \\nabla u = 0
     """
 
-    def __init__(self, c, dimensions, source=None,
+    def __init__(
+            self, c, dimensions, source=None,
             flux_type="upwind",
             dirichlet_tag=hedge.mesh.TAG_ALL,
             neumann_tag=hedge.mesh.TAG_NONE,
@@ -275,8 +268,8 @@ class VariableVelocityStrongWaveOperator(HyperbolicOperator):
 
         from hedge.tools import join_fields
         flux = self.time_sign*1/2*join_fields(
-                c.ext * numpy.dot(v.ext, normal)
-                - c.int * numpy.dot(v.int, normal),
+                c.ext * np.dot(v.ext, normal)
+                - c.int * np.dot(v.int, normal),
                 normal*(c.ext*u.ext - c.int*u.int))
 
         if self.flux_type == "central":
@@ -284,8 +277,8 @@ class VariableVelocityStrongWaveOperator(HyperbolicOperator):
         elif self.flux_type == "upwind":
             flux += join_fields(
                     c.ext*u.ext - c.int*u.int,
-                    c.ext*normal*numpy.dot(normal, v.ext)
-                    - c.int*normal*numpy.dot(normal, v.int)
+                    c.ext*normal*np.dot(normal, v.ext)
+                    - c.int*normal*np.dot(normal, v.int)
                     )
         else:
             raise ValueError("invalid flux type '%s'" % self.flux_type)
@@ -300,7 +293,6 @@ class VariableVelocityStrongWaveOperator(HyperbolicOperator):
         from hedge.optemplate import Field
         velocity = ElementwiseMaxOperator()(Field("c"))
 
-        from hedge.optemplate import Field
         compiled = discr.compile(velocity)
 
         def do(t, w):
@@ -311,7 +303,7 @@ class VariableVelocityStrongWaveOperator(HyperbolicOperator):
     def op_template(self, with_sensor=False):
         from hedge.optemplate import \
                 Field, \
-                make_vector_field, \
+                make_sym_vector, \
                 BoundaryPair, \
                 get_flux_operator, \
                 make_nabla, \
@@ -320,7 +312,7 @@ class VariableVelocityStrongWaveOperator(HyperbolicOperator):
 
         d = self.dimensions
 
-        w = make_vector_field("w", d+1)
+        w = make_sym_vector("w", d+1)
         u = w[0]
         v = w[1:]
 
@@ -329,9 +321,6 @@ class VariableVelocityStrongWaveOperator(HyperbolicOperator):
         flux_w = join_fields(c, w)
 
         # {{{ boundary conditions
-        from hedge.flux import make_normal
-        normal = make_normal(d)
-
         from hedge.tools import join_fields
 
         # Dirichlet
@@ -358,8 +347,8 @@ class VariableVelocityStrongWaveOperator(HyperbolicOperator):
 
         rad_bc = join_fields(
                 rad_c,
-                0.5*(rad_u - self.time_sign*numpy.dot(rad_normal, rad_v)),
-                0.5*rad_normal*(numpy.dot(rad_normal, rad_v) - self.time_sign*rad_u)
+                0.5*(rad_u - self.time_sign*np.dot(rad_normal, rad_v)),
+                0.5*rad_normal*(np.dot(rad_normal, rad_v) - self.time_sign*rad_u)
                 )
 
         # }}}
@@ -408,7 +397,7 @@ class VariableVelocityStrongWaveOperator(HyperbolicOperator):
 
         return (
                 - join_fields(
-                    -self.time_sign*c*numpy.dot(nabla, v) - make_diffusion(u),
+                    -self.time_sign*c*np.dot(nabla, v) - make_diffusion(u),
                     -self.time_sign*c*(nabla*u) - with_object_array_or_scalar(
                         make_diffusion, v)
                     )
@@ -419,7 +408,6 @@ class VariableVelocityStrongWaveOperator(HyperbolicOperator):
                     + flux_op(BoundaryPair(flux_w, neu_bc, self.neumann_tag))
                     + flux_op(BoundaryPair(flux_w, rad_bc, self.radiation_tag))
                     ))
-
 
     def bind(self, discr, sensor=None):
         from hedge.mesh import check_bc_coverage
@@ -458,8 +446,6 @@ class VariableVelocityStrongWaveOperator(HyperbolicOperator):
         return discr.nodewise_max(c)
 
 # }}}
-
-
 
 
 # vim: foldmethod=marker

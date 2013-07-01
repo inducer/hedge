@@ -27,19 +27,15 @@ THE SOFTWARE.
 """
 
 
-
-
-import numpy
-import numpy.linalg as la
+import numpy as np
 import hedge._internal
 from pytools import memoize_method
 
 
+# {{{ discretization-level quadrature info
 
-
-# {{{ discretization-level quadrature info ------------------------------------
 class QuadratureInfo(object):
-    """Discretization-level quadrature info.
+    r"""Discretization-level quadrature info.
 
     Once fully filled, this structure has the following data members:
 
@@ -48,7 +44,7 @@ class QuadratureInfo(object):
     :ivar volume_jacobians: Full-volume vector of jacobians on this
       quadrature grid.
 
-    :ivar inverse_metric_derivatives: A list of lists of full-volume 
+    :ivar inverse_metric_derivatives: A list of lists of full-volume
         vectors, such that the vector
         *inverse_metric_derivatives[xyz_axis][rst_axis]* gives the metric
         derivatives on the entire volume for this quadrature grid
@@ -58,11 +54,12 @@ class QuadratureInfo(object):
     """
 
 # }}}
-# {{{ element groups ----------------------------------------------------------
+
+
+# {{{ element groups
+
 class ElementGroupBase(object):
     pass
-
-
 
 
 class StraightElementGroup(ElementGroupBase):
@@ -70,19 +67,21 @@ class StraightElementGroup(ElementGroupBase):
 
     :ivar members: a list of :class:`hedge.mesh.Element` instances in this group.
     :ivar member_nrs: a list of the element ID numbers in this group.
-    :ivar local_discretization: an instance of 
+    :ivar local_discretization: an instance of
       :class:`hedge.discretization.local.LocalDiscretization`.
     :ivar ranges: a list of :class:`slice` objects indicating the DOF numbers for
       each element. Note: This is actually a C++ ElementRanges object.
     :ivar mass_matrix: The element-local mass matrix :math:`M`.
     :ivar inverse_mass_matrix: the element-local inverse mass matrix :math:`M^{-1}`.
-    :ivar differentiation_matrices: local differentiation matrices :math:`D_r, D_s, D_t`, 
-      i.e.  differentiation by :math:`r, s, t, \dots`.
-    :ivar stiffness_matrices: the element-local stiffness matrices :math:`MD_r, MD_s,\dots`.
+    :ivar differentiation_matrices:
+        local differentiation matrices :math:`D_r, D_s, D_t`,
+        i.e.  differentiation by :math:`r, s, t, \dots`.
+    :ivar stiffness_matrices: the element-local stiffness matrices
+        :math:`MD_r, MD_s,\dots`.
     :ivar quadrature_info: a map from quadrature tag to QuadratureInfo instance.
     """
 
-    def el_array_from_volume(self, vol_array):
+    def vol_el_view(self, vol_array):
         """Return a 2-dimensional view of *vol_array* in which the first
         dimension numbers elements within this element group and the second
         dimension numbers nodes within each of those elements.
@@ -90,10 +89,13 @@ class StraightElementGroup(ElementGroupBase):
         return (vol_array[self.ranges.start:self.ranges.start+self.ranges.total_size]
                 .reshape(len(self.ranges), -1))
 
+    el_array_from_volume = vol_el_view
+
     # {{{ quadrature info
+
     class QuadratureInfo:
         """
-        :ivar ldis_quad_info: an instance of 
+        :ivar ldis_quad_info: an instance of
           :class:`hedge.discretization.local.Element.QuadratureInfo`.
         :ivar ranges: a list of :class:`slice` objects indicating the DOF numbers for
           each element. Note: This is actually a C++ ElementRanges object.
@@ -104,7 +106,7 @@ class StraightElementGroup(ElementGroupBase):
           each element's range includes all its faces.
           Note: This is actually a C++ ElementRanges object.
         """
-        def __init__(self, el_group, min_degree, 
+        def __init__(self, el_group, min_degree,
                 start_vol_node, start_int_faces_node):
             ldis = el_group.local_discretization
 
@@ -121,7 +123,7 @@ class StraightElementGroup(ElementGroupBase):
                     ldis.face_count()*ldis_quad_info.face_node_count(),
                     len(el_group.members))
 
-        def el_array_from_volume(self, vol_array):
+        def vol_el_view(self, vol_array):
             """Return a 2-dimensional view of *vol_array* in which the first
             dimension numbers elements within this element group and the second
             dimension numbers nodes within each of those elements.
@@ -129,29 +131,28 @@ class StraightElementGroup(ElementGroupBase):
             return (vol_array[
                 self.ranges.start:self.ranges.start+self.ranges.total_size]
                 .reshape(len(self.ranges), -1))
+
+        el_array_from_volume = vol_el_view
+
     # }}}
-
-
-
-
 
 
 class CurvedElementGroup(ElementGroupBase):
     pass
 
-
-
-
 # }}}
-# {{{ face groups -------------------------------------------------------------
+
+
+# {{{ face groups
+
 class StraightFaceGroup(hedge._internal.StraightFaceGroup):
     """
     Each face group has its own element numbering.
 
-    :ivar ldis_loc: An instance of 
+    :ivar ldis_loc: An instance of
         :hedge.discretization.local.LocalDiscretization`,
         used for the interior side of each face.
-    :ivar ldis_opp: An instance of 
+    :ivar ldis_opp: An instance of
         :hedge.discretization.local.LocalDiscretization`,
         used for the exterior side of each face.
     :ivar local_el_inverse_jacobians: A list of inverse
@@ -160,23 +161,23 @@ class StraightFaceGroup(hedge._internal.StraightFaceGroup):
     The following attributes are inherited from the C++ level:
 
     :ivar face_pairs: A list of face pair instances.
-    :ivar double_sided: A :class:`bool` indicating whether this 
+    :ivar double_sided: A :class:`bool` indicating whether this
         face group is double-sided, i.e. represents both sides
         of each face-pair, or only the interior side.
-    :ivar index_lists: A numpy array of shape 
+    :ivar index_lists: A numpy array of shape
         *(index_list_count, index_list_length)*.
     :ivar face_count: The number of faces of each element
         in :attr:`ldis_loc`.
-    :ivar local_el_write_base: a list of global volume 
+    :ivar local_el_write_base: a list of global volume
         element base indices, indexed in local element numbers.
 
     Face groups on quadrature grids additionally have these
     properties:
 
-    :ivar ldis_loc_quad_info: refer to 
+    :ivar ldis_loc_quad_info: refer to
       :class:`hedge.discretization.local.LocalDiscretization.QuadratureInfo`
       instance relevant for this face group's :attr:`ldis_loc`.
-    :ivar ldis_opp_quad_info: refer to 
+    :ivar ldis_opp_quad_info: refer to
       :class:`hedge.discretization.local.LocalDiscretization.QuadratureInfo`
       instance relevant for this face group's :attr:`ldis_opp`.
 
@@ -197,16 +198,16 @@ class StraightFaceGroup(hedge._internal.StraightFaceGroup):
 
     def commit(self, discr, ldis_loc, ldis_opp, get_write_el_base=None):
         """
-        :param get_write_el_base: a function of *(read_el_base, element_id)* 
+        :param get_write_el_base: a function of *(read_el_base, element_id)*
           returning the DOF index to which data should be written post-lift.
           This is needed since on a quadrature grid, element base indices in a
           face pair refer to interior boundary vectors and are hence only
           usable for reading.
         """
         if self.fil_registry.index_lists:
-            self.index_lists = numpy.array(
+            self.index_lists = np.array(
                     self.fil_registry.index_lists,
-                    dtype=numpy.uint32, order="C")
+                    dtype=np.uint32, order="C")
             del self.fil_registry
 
         if ldis_loc is None:
@@ -228,9 +229,9 @@ class StraightFaceGroup(hedge._internal.StraightFaceGroup):
         used_bases_and_els.sort()
         el_id_to_local_number = dict(
                 (bae[1], i) for i, bae in enumerate(used_bases_and_els))
-        self.local_el_write_base = numpy.fromiter(
-                (get_write_el_base(*bae) 
-                    for bae in used_bases_and_els), dtype=numpy.uint32)
+        self.local_el_write_base = np.fromiter(
+                (get_write_el_base(*bae)
+                    for bae in used_bases_and_els), dtype=np.uint32)
 
         for fp in self.face_pairs:
             for side in [fp.int_side, fp.ext_side]:
@@ -238,15 +239,13 @@ class StraightFaceGroup(hedge._internal.StraightFaceGroup):
                     side.local_el_number = el_id_to_local_number[side.element_id]
 
         # transfer inverse jacobians
-        self.local_el_inverse_jacobians = numpy.fromiter(
-                (abs(discr.mesh.elements[bae[1]].inverse_map.jacobian()) 
+        self.local_el_inverse_jacobians = np.fromiter(
+                (abs(discr.mesh.elements[bae[1]].inverse_map.jacobian())
                     for bae in used_bases_and_els),
                 dtype=float)
 
         self.ldis_loc = ldis_loc
         self.ldis_opp = ldis_opp
-
-
 
 
 class CurvedFaceGroup(hedge._internal.CurvedFaceGroup):
@@ -260,9 +259,9 @@ class CurvedFaceGroup(hedge._internal.CurvedFaceGroup):
 
     def commit(self, discr, ldis_loc, ldis_opp):
         if self.fil_registry.index_lists:
-            self.index_lists = numpy.array(
+            self.index_lists = np.array(
                     self.fil_registry.index_lists,
-                    dtype=numpy.uint32, order="C")
+                    dtype=np.uint32, order="C")
             del self.fil_registry
 
         if ldis_loc is None:
@@ -280,8 +279,8 @@ class CurvedFaceGroup(hedge._internal.CurvedFaceGroup):
         used_bases_and_els.sort()
         el_id_to_local_number = dict(
                 (bae[1], i) for i, bae in enumerate(used_bases_and_els))
-        self.local_el_write_base = numpy.fromiter(
-                (bae[0] for bae in used_bases_and_els), dtype=numpy.uint32)
+        self.local_el_write_base = np.fromiter(
+                (bae[0] for bae in used_bases_and_els), dtype=np.uint32)
 
         for fp in self.face_pairs:
             for side in [fp.int_side, fp.ext_side]:
@@ -289,15 +288,13 @@ class CurvedFaceGroup(hedge._internal.CurvedFaceGroup):
                     side.local_el_number = el_id_to_local_number[side.element_id]
 
         # transfer inverse jacobians
-        self.local_el_inverse_jacobians = numpy.fromiter(
-                (abs(discr.mesh.elements[bae[1]].inverse_map.jacobian()) 
+        self.local_el_inverse_jacobians = np.fromiter(
+                (abs(discr.mesh.elements[bae[1]].inverse_map.jacobian())
                     for bae in used_bases_and_els),
                 dtype=float)
 
         self.ldis_loc = ldis_loc
         self.ldis_opp = ldis_opp
-
-
 
 
 class StraightCurvedFaceGroup(hedge._internal.StraightCurvedFaceGroup):
@@ -311,9 +308,9 @@ class StraightCurvedFaceGroup(hedge._internal.StraightCurvedFaceGroup):
 
     def commit(self, discr, ldis_loc, ldis_opp):
         if self.fil_registry.index_lists:
-            self.index_lists = numpy.array(
+            self.index_lists = np.array(
                     self.fil_registry.index_lists,
-                    dtype=numpy.uint32, order="C")
+                    dtype=np.uint32, order="C")
             del self.fil_registry
 
         if ldis_loc is None:
@@ -332,8 +329,8 @@ class StraightCurvedFaceGroup(hedge._internal.StraightCurvedFaceGroup):
         el_id_to_local_number = dict(
                 (bae[1], i) for i, bae in enumerate(used_bases_and_els))
 
-        self.local_el_write_base = numpy.fromiter(
-                (bae[0] for bae in used_bases_and_els), dtype=numpy.uint32)
+        self.local_el_write_base = np.fromiter(
+                (bae[0] for bae in used_bases_and_els), dtype=np.uint32)
 
         for fp in self.face_pairs:
             for side in [fp.int_side, fp.ext_side]:
@@ -341,27 +338,27 @@ class StraightCurvedFaceGroup(hedge._internal.StraightCurvedFaceGroup):
                     side.local_el_number = el_id_to_local_number[side.element_id]
 
         # transfer inverse jacobians
-        self.local_el_inverse_jacobians = numpy.fromiter(
-                (abs(discr.mesh.elements[bae[1]].inverse_map.jacobian()) 
+        self.local_el_inverse_jacobians = np.fromiter(
+                (abs(discr.mesh.elements[bae[1]].inverse_map.jacobian())
                     for bae in used_bases_and_els),
                 dtype=float)
 
         self.ldis_loc = ldis_loc
         self.ldis_opp = ldis_opp
 
-
-
-
 # }}}
-# {{{ boundary ----------------------------------------------------------------
+
+
+# {{{ boundary
+
 class Boundary(object):
     """
     :ivar nodes: an array of node coordinates.
     :ivar vol_indices: a numpy intp of volume indices of all nodes,
         for quick data extraction from volume data.
     :ivar face_groups: a list of :class:`FaceGroup` instances.
-    :ivar fg_ranges: a list of lists of :class:`slice` objects indicating the 
-      DOF numbers in the boundary vector for each face. Note: The entries of 
+    :ivar fg_ranges: a list of lists of :class:`slice` objects indicating the
+      DOF numbers in the boundary vector for each face. Note: The entries of
       this list are actually C++ ElementRanges objects. There is one list per face
       group object, in the same order.
     :ivar el_face_to_face_group_and_face_pair:
@@ -370,7 +367,7 @@ class Boundary(object):
             el_face_to_face_group_and_face_pair={}):
         self.discr = discr
         self.nodes = nodes
-        self.vol_indices = numpy.asarray(vol_indices, dtype=numpy.intp)
+        self.vol_indices = np.asarray(vol_indices, dtype=np.intp)
         self.face_groups = face_groups
         self.fg_ranges = fg_ranges
         self.el_face_to_face_group_and_face_pair = \
@@ -388,17 +385,17 @@ class Boundary(object):
         for flux_face in [fp.int_side, fp.ext_side]:
             if flux_face.element_id == el.id and flux_face.face_id == face_nbr:
                 return flux_face
-        raise KeyError, "flux face not found in boundary"
+        raise KeyError("flux face not found in boundary")
 
     def is_empty(self):
         return len(self.nodes) == 0
 
     class QuadratureInfo:
         """
-        Unless otherwise noted, attributes have the same meaning as above, but for 
+        Unless otherwise noted, attributes have the same meaning as above, but for
         the quadrature grid.
 
-        :ivar ldis_quad_info: 
+        :ivar ldis_quad_info:
         :ivar face_groups:
         :ivar fg_ranges:
         :ivar fg_ldis_quad_infos: An array of :class:`QuadratureInfo` instances
@@ -443,7 +440,6 @@ class Boundary(object):
             fg_start += quad_fg_range.total_size
 
             # create the quadrature face group
-            fg_type = StraightFaceGroup
             quad_fg = type(fg)(double_sided=False,
                     debug="ilist_generation" in discr.debug)
             quad_face_groups.append(quad_fg)
@@ -458,18 +454,21 @@ class Boundary(object):
 
                 def find_el_base_index(el):
                     group, idx = discr.group_map[el.id]
-                    return group.quadrature_info[quadrature_tag].el_faces_ranges[idx].start
+                    return group.quadrature_info[quadrature_tag] \
+                            .el_faces_ranges[idx].start
 
                 face_indices = tuple(range(quad_fnc*face_nr, quad_fnc*(face_nr+1)))
 
                 quad_fp.int_side.el_base_index = find_el_base_index(el)
                 quad_fp.ext_side.el_base_index = f_start
-                quad_fp.int_side.face_index_list_number = quad_fg.register_face_index_list(
-                        identifier=face_nr,
-                        generator=lambda: face_indices)
-                quad_fp.ext_side.face_index_list_number = quad_fg.register_face_index_list(
-                        identifier=(),
-                        generator=lambda: tuple(xrange(quad_fnc)))
+                quad_fp.int_side.face_index_list_number = \
+                        quad_fg.register_face_index_list(
+                                identifier=face_nr,
+                                generator=lambda: face_indices)
+                quad_fp.ext_side.face_index_list_number = \
+                        quad_fg.register_face_index_list(
+                                identifier=(),
+                                generator=lambda: tuple(xrange(quad_fnc)))
                 self.discr._set_flux_face_data(quad_fp.int_side, ldis, ef)
 
                 # check that all property assigns found their C++-side slots
@@ -498,11 +497,6 @@ class Boundary(object):
                 fg_ldis_quad_infos=fg_ldis_quad_infos,
                 node_count=fg_start)
 
-        return q_info
-
-
-
-
-
 # }}}
+
 # vim: foldmethod=marker

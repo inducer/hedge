@@ -25,18 +25,16 @@ THE SOFTWARE.
 """
 
 
+import numpy as np
+import pymbolic.primitives  # noqa
+from pytools import MovedFunctionDeprecationWrapper
+from decorator import decorator
 
 
-import numpy
-import pymbolic.primitives
+# {{{ convenience functions for optemplate creation
 
-
-
-
-# {{{ convenience functions for optemplate creation ---------------------------
-from pymbolic.primitives import make_sym_vector as make_vector_field
-
-
+make_vector_field = \
+        MovedFunctionDeprecationWrapper(pymbolic.primitives.make_sym_vector)
 
 
 def get_flux_operator(flux):
@@ -54,13 +52,12 @@ def get_flux_operator(flux):
         return FluxOperator(flux)
 
 
-
-
 def make_nabla(dim):
     from hedge.tools import make_obj_array
     from hedge.optemplate import DifferentiationOperator
     return make_obj_array(
             [DifferentiationOperator(i) for i in range(dim)])
+
 
 def make_minv_stiffness_t(dim):
     from hedge.tools import make_obj_array
@@ -68,11 +65,13 @@ def make_minv_stiffness_t(dim):
     return make_obj_array(
         [MInvSTOperator(i) for i in range(dim)])
 
+
 def make_stiffness(dim):
     from hedge.tools import make_obj_array
     from hedge.optemplate import StiffnessOperator
     return make_obj_array(
         [StiffnessOperator(i) for i in range(dim)])
+
 
 def make_stiffness_t(dim):
     from hedge.tools import make_obj_array
@@ -81,15 +80,53 @@ def make_stiffness_t(dim):
         [StiffnessTOperator(i) for i in range(dim)])
 
 
+def integral(arg):
+    import hedge.optemplate as sym
+    return sym.NodalSum()(sym.MassOperator()(sym.Ones())*arg)
 
+
+def norm(p, arg):
+    """
+    :arg arg: is assumed to be a vector, i.e. have shape ``(n,)``.
+    """
+    import hedge.optemplate as sym
+
+    if p == 2:
+        comp_norm_squared = sym.NodalSum()(
+                sym.CFunction("fabs")(
+                    arg * sym.MassOperator()(arg)))
+        return sym.CFunction("sqrt")(sum(comp_norm_squared))
+
+    elif p == np.Inf:
+        comp_norm = sym.NodalMax()(sym.CFunction("fabs")(arg))
+        from pymbolic.primitives import Max
+        return reduce(Max, comp_norm)
+
+    else:
+        return sum(sym.NodalSum()(sym.CFunction("fabs")(arg)**p))**(1/p)
+
+
+def flat_end_sin(x):
+    from hedge.optemplate.primitives import CFunction
+    from pymbolic.primitives import IfPositive
+    from math import pi
+    return IfPositive(-pi/2-x,
+            -1, IfPositive(x-pi/2, 1, CFunction("sin")(x)))
+
+
+def smooth_ifpos(crit, right, left, width):
+    from math import pi
+    return 0.5*((left+right)
+            + (right-left)*flat_end_sin(
+                pi/2/width * crit))
 # }}}
 
-# {{{ optemplate tools --------------------------------------------------------
+
+# {{{ optemplate tools
+
 def is_scalar(expr):
     from hedge.optemplate import ScalarParameter
     return isinstance(expr, (int, float, complex, ScalarParameter))
-
-
 
 
 def get_flux_dependencies(flux, field, bdry="all"):
@@ -132,8 +169,6 @@ def get_flux_dependencies(flux, field, bdry="all"):
                 yield value
 
 
-
-
 def split_optemplate_for_multirate(state_vector, op_template,
         index_groups):
     class IndexGroupKillerSubstMap:
@@ -169,7 +204,6 @@ def split_optemplate_for_multirate(state_vector, op_template,
             for killer in killers]
 
 
-
 def ptwise_mul(a, b):
     from pytools.obj_array import log_shape
     a_log_shape = log_shape(a)
@@ -178,19 +212,17 @@ def ptwise_mul(a, b):
     from pytools import indices_in_shape
 
     if a_log_shape == ():
-        result = numpy.empty(b_log_shape, dtype=object)
+        result = np.empty(b_log_shape, dtype=object)
         for i in indices_in_shape(b_log_shape):
             result[i] = a*b[i]
     elif b_log_shape == ():
-        result = numpy.empty(a_log_shape, dtype=object)
+        result = np.empty(a_log_shape, dtype=object)
         for i in indices_in_shape(a_log_shape):
             result[i] = a[i]*b
     else:
-        raise ValueError, "ptwise_mul can't handle two non-scalars"
+        raise ValueError("ptwise_mul can't handle two non-scalars")
 
     return result
-
-
 
 
 def ptwise_dot(logdims1, logdims2, a1, a2):
@@ -200,7 +232,7 @@ def ptwise_dot(logdims1, logdims2, a1, a2):
     assert a1_log_shape[-1] == a2_log_shape[0]
     len_k = a2_log_shape[0]
 
-    result = numpy.empty(a1_log_shape[:-1]+a2_log_shape[1:], dtype=object)
+    result = np.empty(a1_log_shape[:-1]+a2_log_shape[1:], dtype=object)
 
     from pytools import indices_in_shape
     for a1_i in indices_in_shape(a1_log_shape[:-1]):
@@ -215,11 +247,11 @@ def ptwise_dot(logdims1, logdims2, a1, a2):
     else:
         return result
 
-
-
 # }}}
 
-# {{{ process_optemplate function ---------------------------------------------
+
+# {{{ process_optemplate function
+
 def process_optemplate(optemplate, post_bind_mapper=None,
         dumper=lambda name, optemplate: None, mesh=None,
         type_hints={}):
@@ -274,7 +306,7 @@ def process_optemplate(optemplate, post_bind_mapper=None,
     dumper("before-global-to-reference", optemplate)
     optemplate = GlobalToReferenceMapper(mesh.dimensions)(optemplate)
 
-    # Ordering restriction: 
+    # Ordering restriction:
     #
     # - Must specialize quadrature operators before performing inverse mass
     # contraction, because there are no inverse-mass-contracted variants of the
@@ -293,12 +325,12 @@ def process_optemplate(optemplate, post_bind_mapper=None,
 
     return optemplate
 
-
-
 # }}}
 
-# {{{ pretty printing ---------------------------------------------------------
-def pretty_print_optemplate(optemplate):
+
+# {{{ pretty printing
+
+def pretty(optemplate):
     from hedge.optemplate.mappers import PrettyStringifyMapper
 
     stringify_mapper = PrettyStringifyMapper()
@@ -324,9 +356,36 @@ def pretty_print_optemplate(optemplate):
         result = "\n".join("flux "+fs for fs in flux_cses)+"\n\n"+result
 
     return result
+
 # }}}
 
 
+@decorator
+def memoize_method_with_obj_array_args(method, instance, *args):
+    """This decorator manages to memoize functions that
+    take object arrays (which are mutable, but are assumed
+    to never change) as arguments.
+    """
+    dicname = "_memoize_dic_"+method.__name__
+
+    new_args = []
+    for arg in args:
+        if isinstance(arg, np.ndarray) and arg.dtype == object:
+            new_args.append(tuple(arg))
+        else:
+            new_args.append(arg)
+    new_args = tuple(new_args)
+
+    try:
+        return getattr(instance, dicname)[new_args]
+    except AttributeError:
+        result = method(instance, *args)
+        setattr(instance, dicname, {new_args: result})
+        return result
+    except KeyError:
+        result = method(instance, *args)
+        getattr(instance, dicname)[new_args] = result
+        return result
 
 
 # vim: foldmethod=marker

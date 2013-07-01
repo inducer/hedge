@@ -47,7 +47,7 @@ class LaplacianOperatorBase(object):
           :class:`hedge.models.diffusion.DiffusionOperator` needs this.
         """
 
-        from hedge.optemplate import Field, make_vector_field
+        from hedge.optemplate import Field, make_sym_vector
         from hedge.second_order import SecondDerivativeTarget
 
         if u is None:
@@ -74,7 +74,7 @@ class LaplacianOperatorBase(object):
             if isinstance(self.diffusion_tensor, np.ndarray):
                 sym_diff_tensor = self.diffusion_tensor
             else:
-                sym_diff_tensor = (make_vector_field(
+                sym_diff_tensor = (make_sym_vector(
                         "diffusion", self.dimensions**2)
                         .reshape(self.dimensions, self.dimensions))
 

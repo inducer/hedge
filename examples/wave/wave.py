@@ -15,26 +15,20 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 
-
-
 from __future__ import division
-import numpy
-import numpy.linalg as la
+import numpy as np
 from hedge.mesh import TAG_ALL, TAG_NONE
 
 
-
-
-def main(write_output=True, 
-        dir_tag=TAG_NONE, neu_tag=TAG_NONE, rad_tag=TAG_ALL, 
-        flux_type_arg="upwind", dtype=numpy.float64, debug=[]):
-    from pytools.stopwatch import Job
-    from math import sin, cos, pi, exp, sqrt
+def main(write_output=True,
+        dir_tag=TAG_NONE, neu_tag=TAG_NONE, rad_tag=TAG_ALL,
+        flux_type_arg="upwind", dtype=np.float64, debug=[]):
+    from math import sin, cos, pi, exp, sqrt  # noqa
 
     from hedge.backends import guess_run_context
     rcon = guess_run_context()
 
-    dim = 3
+    dim = 2
 
     if dim == 1:
         if rcon.is_head_rank:
@@ -43,13 +37,13 @@ def main(write_output=True,
     elif dim == 2:
         from hedge.mesh.generator import make_rect_mesh
         if rcon.is_head_rank:
-            mesh = make_rect_mesh(a=(-0.5,-0.5),b=(0.5,0.5),max_area=0.008)
+            mesh = make_rect_mesh(a=(-0.5, -0.5), b=(0.5, 0.5), max_area=0.008)
     elif dim == 3:
         if rcon.is_head_rank:
             from hedge.mesh.generator import make_ball_mesh
             mesh = make_ball_mesh(max_volume=0.0005)
     else:
-        raise RuntimeError, "bad number of dimensions"
+        raise RuntimeError("bad number of dimensions")
 
     if rcon.is_head_rank:
         print "%d elements" % len(mesh.elements)
@@ -60,12 +54,11 @@ def main(write_output=True,
     from hedge.timestep.runge_kutta import LSRK4TimeStepper
     stepper = LSRK4TimeStepper(dtype=dtype)
 
-
     def source_u(x, el):
-        return exp(-numpy.dot(x, x)*128)
+        return exp(-np.dot(x, x)*128)
 
     from hedge.models.wave import StrongWaveOperator
-    from hedge.mesh import TAG_ALL, TAG_NONE
+    from hedge.mesh import TAG_ALL, TAG_NONE  # noqa
     from hedge.data import \
             make_tdep_given, \
             TimeHarmonicGivenFunction, \
@@ -116,7 +109,7 @@ def main(write_output=True,
     logmgr.add_quantity(vis_timer)
     stepper.add_instrumentation(logmgr)
 
-    from hedge.log import Integral, LpNorm
+    from hedge.log import LpNorm
     u_getter = lambda: fields[0]
     logmgr.add_quantity(LpNorm(u_getter, discr, 1, name="l1_u"))
     logmgr.add_quantity(LpNorm(u_getter, discr, name="l2_u"))
@@ -139,7 +132,7 @@ def main(write_output=True,
                 vis.add_data(visf,
                         [
                             ("u", discr.convert_volume(fields[0], kind="numpy")),
-                            ("v", discr.convert_volume(fields[1:], kind="numpy")), 
+                            ("v", discr.convert_volume(fields[1:], kind="numpy")),
                         ],
                         time=t,
                         step=step)
@@ -158,23 +151,22 @@ def main(write_output=True,
         discr.close()
 
 if __name__ == "__main__":
-    main(True, TAG_ALL, TAG_NONE, TAG_NONE, "upwind", numpy.float64,
+    main(True, TAG_ALL, TAG_NONE, TAG_NONE, "upwind", np.float64,
             debug=["cuda_no_plan", "dump_optemplate_stages"])
 
 
-
-
 # entry points for py.test ----------------------------------------------------
+
 def test_wave():
     from pytools.test import mark_test
     mark_long = mark_test.long
 
     yield ("dirichlet wave equation with SP data", mark_long(main),
-            False, TAG_ALL, TAG_NONE, TAG_NONE, "upwind", numpy.float64)
+            False, TAG_ALL, TAG_NONE, TAG_NONE, "upwind", np.float64)
     yield ("dirichlet wave equation with SP complex data", mark_long(main),
-            False, TAG_ALL, TAG_NONE, TAG_NONE, "upwind", numpy.complex64)
+            False, TAG_ALL, TAG_NONE, TAG_NONE, "upwind", np.complex64)
     yield ("dirichlet wave equation with DP complex data", mark_long(main),
-            False, TAG_ALL, TAG_NONE, TAG_NONE, "upwind", numpy.complex128)
+            False, TAG_ALL, TAG_NONE, TAG_NONE, "upwind", np.complex128)
     for flux_type in ["upwind", "central"]:
         yield ("dirichlet wave equation with %s flux" % flux_type,
                 mark_long(main),

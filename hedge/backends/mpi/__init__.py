@@ -26,8 +26,6 @@ THE SOFTWARE.
 """
 
 
-
-
 import pytools
 import numpy
 import numpy.linalg as la
@@ -42,10 +40,9 @@ import pytools.mpiwrap as mpi
 from pymbolic.mapper import CSECachingMapperMixin
 
 
-
-
 class RankData(pytools.Record):
-    def __init__(self,
+    def __init__(
+            self,
             mesh,
             global2local_elements,
             global2local_vertex_indices,
@@ -63,8 +60,6 @@ class RankData(pytools.Record):
                 mesh=mesh,
                 old_el_numbers=old_el_numbers
                 )
-
-
 
 
 class MPIRunContext(RunContext):
@@ -104,9 +99,11 @@ class MPIRunContext(RunContext):
             rank_data = RankData(
                     mesh=part_data.mesh,
                     global2local_elements=part_data.global2local_elements,
-                    global2local_vertex_indices=part_data.global2local_vertex_indices,
+                    global2local_vertex_indices=part_data
+                            .global2local_vertex_indices,
                     neighbor_ranks=part_data.neighbor_parts,
-                    global_periodic_opposite_faces=part_data.global_periodic_opposite_faces,
+                    global_periodic_opposite_faces=part_data
+                            .global_periodic_opposite_faces,
                     tag_to_elements=part_data.tag_to_elements)
 
             rank = part_data.part_nr
@@ -125,8 +122,8 @@ class MPIRunContext(RunContext):
         print "receive end rank", self.rank
 
     def make_discretization(self, mesh_data, *args, **kwargs):
-        return ParallelDiscretization(self, 
-                self.serial_context.discr_class, mesh_data, 
+        return ParallelDiscretization(self,
+                self.serial_context.discr_class, mesh_data,
                 *args, **kwargs)
 
     def make_timer(self, name, description=None):
@@ -136,17 +133,12 @@ class MPIRunContext(RunContext):
         return self.serial_context.make_linear_combiner(*args, **kwargs)
 
 
-
-
 # Subtlety here: The vectors for isend and irecv need to stay allocated
 # for as long as the request is not completed. The wrapper aids this
 # by making sure the vector outlives the request by using Boost.Python's
 # with_custodian_and_ward mechanism. However, this "life support" gets
 # eliminated if the only reference to the request is from inside a
 # RequestList, so we need to provide our own life support for these vectors.
-
-
-
 
 class BoundarizeSendFuture(Future):
     def __init__(self, pdiscr, rank, field):
@@ -163,8 +155,6 @@ class BoundarizeSendFuture(Future):
         return [], [SendCompletionFuture(
             self.pdiscr.context.communicator, self.rank,
             self.bdry_future(), self.pdiscr)]
-
-
 
 
 class MPICompletionFuture(Future):
@@ -191,8 +181,6 @@ class MPICompletionFuture(Future):
             return self.result
 
 
-
-
 class SendCompletionFuture(MPICompletionFuture):
     def __init__(self, comm, rank, send_vec, pdiscr):
         self.send_vec = send_vec
@@ -204,8 +192,6 @@ class SendCompletionFuture(MPICompletionFuture):
 
     def finish(self, status):
         return [], []
-
-
 
 
 class ReceiveCompletionFuture(MPICompletionFuture):
@@ -228,8 +214,6 @@ class ReceiveCompletionFuture(MPICompletionFuture):
         return [], [BoundaryConvertFuture(
             self.pdiscr, self.rank, self.indices_and_names,
             self.recv_vec)]
-
-
 
 
 class BoundaryConvertFuture(Future):
@@ -255,8 +239,6 @@ class BoundaryConvertFuture(Future):
                 for idx, name in self.indices_and_names], []
 
 
-
-
 def make_custom_exec_mapper_class(superclass):
     class ExecutionMapper(superclass):
         def __init__(self, context, executor):
@@ -272,7 +254,8 @@ def make_custom_exec_mapper_class(superclass):
                     [self.rec(fld) for fld in insn.arg_fields])
 
             if self.discr.instrumented:
-                pdiscr.comm_flux_counter.add(len(pdiscr.neighbor_ranks)*len(arg_fields))
+                pdiscr.comm_flux_counter.add(
+                        len(pdiscr.neighbor_ranks)*len(arg_fields))
             return ([],
                     [BoundarizeSendFuture(pdiscr, rank, arg_fields)
                         for rank in pdiscr.neighbor_ranks]
@@ -280,9 +263,22 @@ def make_custom_exec_mapper_class(superclass):
                         insn.rank_to_index_and_name[rank])
                         for rank in pdiscr.neighbor_ranks])
 
+        def map_nodal_sum(self, op, field_expr):
+            return self.discr.parallel_discr.context.communicator.allreduce(
+                    superclass.map_nodal_sum(self, op, field_expr),
+                    op=mpi.SUM)
+
+        def map_nodal_max(self, op, field_expr):
+            return self.discr.parallel_discr.context.communicator.allreduce(
+                    superclass.map_nodal_max(self, op, field_expr),
+                    op=mpi.MAX)
+
+        def map_nodal_min(self, op, field_expr):
+            return self.discr.parallel_discr.context.communicator.allreduce(
+                    superclass.map_nodal_min(self, op, field_expr),
+                    op=mpi.MIN)
+
     return ExecutionMapper
-
-
 
 
 class FluxCommunicationInserter(
@@ -343,8 +339,6 @@ class FluxCommunicationInserter(
                 return IdentityMapper.map_operator_binding(self, expr)
 
 
-
-
 class ParallelDiscretization(hedge.discretization.TimestepCalculator):
     @classmethod
     def my_debug_flags(cls):
@@ -372,7 +366,8 @@ class ParallelDiscretization(hedge.discretization.TimestepCalculator):
 
         self.global2local_vertex_indices = rank_data.global2local_vertex_indices
         self.neighbor_ranks = rank_data.neighbor_ranks
-        self.global_periodic_opposite_faces = rank_data.global_periodic_opposite_faces
+        self.global_periodic_opposite_faces = \
+                rank_data.global_periodic_opposite_faces
 
         if rank_data.old_el_numbers is not None:
             from hedge.tools import reverse_lookup_table
@@ -409,7 +404,8 @@ class ParallelDiscretization(hedge.discretization.TimestepCalculator):
         else:
             raise AttributeError(name)
 
-    # neighbor connectivity ---------------------------------------------------
+    # {{{ neighbor connectivity
+
     def _setup_neighbor_connections(self):
         comm = self.context.communicator
 
@@ -469,7 +465,8 @@ class ParallelDiscretization(hedge.discretization.TimestepCalculator):
             received_packets = {}
             while len(received_packets) < len(self.neighbor_ranks):
                 status = mpi.Status()
-                received_packet = comm.recv(tag=0, source=mpi.ANY_SOURCE, status=status)
+                received_packet = comm.recv(
+                        tag=0, source=mpi.ANY_SOURCE, status=status)
                 received_packets[status.source] = received_packet
 
             mpi.Request.Waitall(send_requests)
@@ -532,12 +529,14 @@ class ParallelDiscretization(hedge.discretization.TimestepCalculator):
                         # this happens if my_global_vertices is not a permutation
                         # of the neighbor's face vertices. Periodicity is the only
                         # reason why that would be so.
-                        my_vertices_there, axis = self.global_periodic_opposite_faces[
-                                my_global_vertices]
+                        my_vertices_there, axis = \
+                                self.global_periodic_opposite_faces[
+                                        my_global_vertices]
                         nb_face_idx = nb_face_order[frozenset(my_vertices_there)]
 
-                        his_vertices_here, axis2 = self.global_periodic_opposite_faces[
-                                nb_all_facevertices_global[nb_face_idx]]
+                        his_vertices_here, axis2 = \
+                                self.global_periodic_opposite_faces[
+                                        nb_all_facevertices_global[nb_face_idx]]
 
                         assert axis == axis2
 
@@ -556,9 +555,12 @@ class ParallelDiscretization(hedge.discretization.TimestepCalculator):
 
                         # check if the nodes really match up
                         if "parallel_setup" in self.debug:
-                            my_node_indices = [eslice.start+i for i in ldis.face_indices()[face_nr]]
+                            my_node_indices = [
+                                    eslice.start+i
+                                    for i in ldis.face_indices()[face_nr]]
 
-                            for my_i, other_i in zip(my_node_indices, shuffled_other_node_indices):
+                            for my_i, other_i in zip(
+                                    my_node_indices, shuffled_other_node_indices):
                                 dist = self.nodes[my_i]-flat_nb_node_coords[other_i]
                                 dist[axis] = 0
                                 assert la.norm(dist) < 1e-14
@@ -584,7 +586,8 @@ class ParallelDiscretization(hedge.discretization.TimestepCalculator):
                             my_node_indices = [eslice.start+i
                                     for i in ldis.face_indices()[face_nr]]
 
-                            for my_i, other_i in zip(my_node_indices, shuffled_other_node_indices):
+                            for my_i, other_i in zip(
+                                    my_node_indices, shuffled_other_node_indices):
                                 dist = self.nodes[my_i]-flat_nb_node_coords[other_i]
                                 assert la.norm(dist) < 1e-14
 
@@ -600,22 +603,7 @@ class ParallelDiscretization(hedge.discretization.TimestepCalculator):
                 self.from_neighbor_maps[rank] = \
                         self.subdiscr.prepare_from_neighbor_map(from_indices)
 
-    # norm and integral -------------------------------------------------------
-    def nodewise_dot_product(self, a, b):
-        return self.context.communicator.allreduce(
-                self.subdiscr.nodewise_inner_product(a, b))
-
-    def norm(self, volume_vector, p=2):
-        def add_norms(x, y):
-            return (x**p + y**p)**(1/p)
-
-        return self.context.communicator.allreduce(
-                self.subdiscr.norm(volume_vector, p),
-                op=add_norms)
-
-    def integral(self, volume_vector):
-        return self.context.communicator.allreduce(
-                self.subdiscr.integral(volume_vector))
+    # }}}
 
     # dt estimation -----------------------------------------------------------
     def dt_non_geometric_factor(self):
@@ -629,15 +617,12 @@ class ParallelDiscretization(hedge.discretization.TimestepCalculator):
                 op=mpi.MIN)
 
     # compilation -------------------------------------------------------------
-    def compile(self, optemplate, post_bind_mapper=lambda x:x, type_hints={} ):
+    def compile(self, optemplate, post_bind_mapper=lambda x: x, type_hints={}):
         fci = FluxCommunicationInserter(self.neighbor_ranks)
         return self.subdiscr.compile(
                 optemplate,
                 post_bind_mapper=lambda x: fci(post_bind_mapper(x)),
                 type_hints=type_hints)
-
-
-
 
 
 def reassemble_volume_field(rcon, global_discr, local_discr, field):
