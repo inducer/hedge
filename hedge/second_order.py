@@ -26,15 +26,12 @@ THE SOFTWARE.
 """
 
 
-
-
-import numpy
+import numpy as np
 import hedge.optemplate
 
 
+# {{{ stabilization term generator
 
-
-# stabilization term generator ------------------------------------------------
 class StabilizationTermGenerator(hedge.optemplate.IdentityMapper):
     def __init__(self, flux_args):
         hedge.optemplate.IdentityMapper.__init__(self)
@@ -122,7 +119,7 @@ class StabilizationTermGenerator(hedge.optemplate.IdentityMapper):
     def map_variable(self, expr, quad_above=[]):
         from hedge.flux import FieldComponent
         return FieldComponent(
-                self.get_flux_arg_idx(expr, quad_above), 
+                self.get_flux_arg_idx(expr, quad_above),
                 is_interior=True)
 
     def map_subscript(self, expr, quad_above=[]):
@@ -133,7 +130,10 @@ class StabilizationTermGenerator(hedge.optemplate.IdentityMapper):
                 self.get_flux_arg_idx(expr, quad_above),
                 is_interior=True)
 
+# }}}
 
+
+# {{{ neumann bc generator
 
 class NeumannBCGenerator(hedge.optemplate.IdentityMapper):
     def __init__(self, tag, bc):
@@ -155,7 +155,7 @@ class NeumannBCGenerator(hedge.optemplate.IdentityMapper):
                         "operator encountered by stab term generator")
 
             from hedge.optemplate import BoundaryNormalComponent
-            return (self.bc * factor * 
+            return (self.bc * factor *
                     BoundaryNormalComponent(self.tag, expr.op.xyz_axis))
 
         elif isinstance(expr.op, hedge.optemplate.FluxOperatorBase):
@@ -166,7 +166,7 @@ class NeumannBCGenerator(hedge.optemplate.IdentityMapper):
             raise ValueError("neumann normal direction generator doesn't know "
                     "what to do with '%s'" % expr)
 
-
+# }}}
 
 
 class IPDGDerivativeGenerator(hedge.optemplate.IdentityMapper):
@@ -174,8 +174,7 @@ class IPDGDerivativeGenerator(hedge.optemplate.IdentityMapper):
         if isinstance(expr.op, hedge.optemplate.DiffOperatorBase):
             from hedge.optemplate import (
                     WeakFormDiffOperatorBase,
-                    StrongFormDiffOperatorBase,
-                    QuadratureGridUpsampler)
+                    StrongFormDiffOperatorBase)
 
             if isinstance(expr.op, WeakFormDiffOperatorBase):
                 factor = -1
@@ -192,7 +191,7 @@ class IPDGDerivativeGenerator(hedge.optemplate.IdentityMapper):
             return 0
         elif isinstance(expr.op, hedge.optemplate.InverseMassOperator):
             return self.rec(expr.field)
-        elif isinstance(expr.op, 
+        elif isinstance(expr.op,
                 hedge.optemplate.QuadratureInteriorFacesGridUpsampler):
             return hedge.optemplate.IdentityMapper.map_operator_binding(
                     self, expr)
@@ -202,22 +201,21 @@ class IPDGDerivativeGenerator(hedge.optemplate.IdentityMapper):
                     "what to do with '%s'" % pretty_print_optemplate(expr))
 
 
+# {{{ second derivative target
 
-
-# second derivative target ----------------------------------------------------
 class SecondDerivativeTarget(object):
-    def __init__(self, dimensions, strong_form, operand, 
+    def __init__(self, dimensions, strong_form, operand,
             int_flux_operand=None,
             bdry_flux_int_operand=None):
         """
         :param int_flux_operand: if not None, is used as the interior
-          argument to the interior fluxes. This is useful e.g. if the boundary 
+          argument to the interior fluxes. This is useful e.g. if the boundary
           values are on a quadrature grid--in this case, *bdry_flux_int_operand*
           can be passed to also be on a boundary grid. If it is None, it defaults
           to *operand*.
 
         :param bdry_flux_int_operand: if not None, is used as the interior
-          argument to the boundary fluxes. This is useful e.g. if the boundary 
+          argument to the boundary fluxes. This is useful e.g. if the boundary
           values are on a quadrature grid--in this case, *bdry_flux_int_operand*
           can be passed to also be on a boundary grid. If it is None, it defaults
           to *int_flux_operand*.
@@ -255,7 +253,7 @@ class SecondDerivativeTarget(object):
                 raise ValueError("operand of vec_times must have %d dimensions"
                         % self.dimensions)
 
-            return numpy.dot(vec, operand)
+            return np.dot(vec, operand)
         else:
             return vec*operand
 
@@ -311,15 +309,16 @@ class SecondDerivativeTarget(object):
 
     @property
     def minv_all(self):
-        from hedge.tools.symbolic import make_common_subexpression as cse
+        from hedge.optemplate.primitives import make_common_subexpression as cse
         from hedge.optemplate.operators import InverseMassOperator
-        return (cse(InverseMassOperator()(self.local_derivatives), "grad_loc") 
+        return (cse(InverseMassOperator()(self.local_derivatives), "grad_loc")
                 + cse(InverseMassOperator()(self.fluxes), "grad_flux"))
 
+# }}}
 
 
+# {{{ second derivative schemes
 
-# second derivative schemes ---------------------------------------------------
 class SecondDerivativeBase(object):
     def grad(self, tgt, bc_getter, dirichlet_tags, neumann_tags):
         """
@@ -340,7 +339,7 @@ class SecondDerivativeBase(object):
 
         tgt.add_derivative()
         tgt.add_inner_fluxes(
-                adjust_flux(self.grad_interior_flux(tgt, u)), 
+                adjust_flux(self.grad_interior_flux(tgt, u)),
                 tgt.int_flux_operand)
 
         for tag in dirichlet_tags:
@@ -350,7 +349,7 @@ class SecondDerivativeBase(object):
 
         for tag in neumann_tags:
             tgt.add_boundary_flux(
-                    adjust_flux(n_times(u.int)), 
+                    adjust_flux(n_times(u.int)),
                     tgt.bdry_flux_int_operand, 0, tag)
 
     def add_div_bcs(self, tgt, bc_getter, dirichlet_tags, neumann_tags,
@@ -369,7 +368,7 @@ class SecondDerivativeBase(object):
         for tag in dirichlet_tags:
             dir_bc_w = join_fields(
                     [0]*grad_flux_arg_count,
-                    [bc_getter(tag, unwrap_cse(vol_expr)) for vol_expr in 
+                    [bc_getter(tag, unwrap_cse(vol_expr)) for vol_expr in
                         flux_arg_int[grad_flux_arg_count:]])
             tgt.add_boundary_flux(
                     adjust_flux(n_times(flux_v.int-stab_term)),
@@ -387,23 +386,21 @@ class SecondDerivativeBase(object):
                     loc_bc_vec, neu_bc_w, tag)
 
 
-
-
 class LDGSecondDerivative(SecondDerivativeBase):
     def __init__(self, beta_value=0.5, stab_coefficient=1):
         self.beta_value = beta_value
         self.stab_coefficient = stab_coefficient
 
     def beta(self, tgt):
-        return numpy.array([self.beta_value]*tgt.dimensions, dtype=numpy.float64)
+        return np.array([self.beta_value]*tgt.dimensions, dtype=np.float64)
 
     def grad_interior_flux(self, tgt, u):
-        from hedge.tools.symbolic import make_common_subexpression as cse
+        from hedge.optemplate.primitives import make_common_subexpression as cse
         n_times = tgt.normal_times_flux
         v_times = tgt.vec_times
 
         return n_times(
-                cse(u.avg, "u_avg") 
+                cse(u.avg, "u_avg")
                 - v_times(self.beta(tgt), n_times(u.int-u.ext)))
 
     def div(self, tgt, bc_getter, dirichlet_tags, neumann_tags):
@@ -412,9 +409,8 @@ class LDGSecondDerivative(SecondDerivativeBase):
           *volume_expr* will be None to query the Neumann condition.
         """
 
-        from hedge.tools.symbolic import make_common_subexpression as cse
-        from hedge.flux import FluxVectorPlaceholder, make_normal, PenaltyTerm
-        normal = make_normal(tgt.dimensions)
+        from hedge.optemplate.primitives import make_common_subexpression as cse
+        from hedge.flux import FluxVectorPlaceholder, PenaltyTerm
 
         n_times = tgt.normal_times_flux
         v_times = tgt.vec_times
@@ -430,11 +426,12 @@ class LDGSecondDerivative(SecondDerivativeBase):
 
         stab_term_generator = StabilizationTermGenerator(
                 list(tgt.int_flux_operand))
-        stab_term = (self.stab_coefficient * PenaltyTerm() 
+        stab_term = (self.stab_coefficient * PenaltyTerm()
                 * stab_term_generator(tgt.int_flux_operand))
 
-        flux = n_times(flux_v.avg 
-                + v_times(self.beta(tgt), cse(n_times(flux_v.int - flux_v.ext), "jump_v"))
+        flux = n_times(flux_v.avg
+                + v_times(self.beta(tgt),
+                    cse(n_times(flux_v.int - flux_v.ext), "jump_v"))
                 - stab_term)
 
         from pytools.obj_array import make_obj_array
@@ -447,13 +444,9 @@ class LDGSecondDerivative(SecondDerivativeBase):
                 stab_term, adjust_flux, flux_v, flux_arg_int, tgt.dimensions)
 
 
-
-
 class StabilizedCentralSecondDerivative(LDGSecondDerivative):
     def __init__(self, stab_coefficient=1):
         LDGSecondDerivative.__init__(self, 0, stab_coefficient=stab_coefficient)
-
-
 
 
 class CentralSecondDerivative(LDGSecondDerivative):
@@ -461,14 +454,12 @@ class CentralSecondDerivative(LDGSecondDerivative):
         LDGSecondDerivative.__init__(self, 0, 0)
 
 
-
-
 class IPDGSecondDerivative(SecondDerivativeBase):
     def __init__(self, stab_coefficient=1):
         self.stab_coefficient = stab_coefficient
 
     def grad_interior_flux(self, tgt, u):
-        from hedge.tools.symbolic import make_common_subexpression as cse
+        from hedge.optemplate.primitives import make_common_subexpression as cse
         n_times = tgt.normal_times_flux
         return n_times(cse(u.avg, "u_avg"))
 
@@ -478,12 +469,10 @@ class IPDGSecondDerivative(SecondDerivativeBase):
           *volume_expr* will be None to query the Neumann condition.
         """
 
-        from hedge.tools.symbolic import make_common_subexpression as cse
-        from hedge.flux import FluxVectorPlaceholder, make_normal, PenaltyTerm
-        normal = make_normal(tgt.dimensions)
+        from hedge.optemplate.primitives import make_common_subexpression as cse
+        from hedge.flux import FluxVectorPlaceholder, PenaltyTerm
 
         n_times = tgt.normal_times_flux
-        v_times = tgt.vec_times
 
         if tgt.strong_form:
             def adjust_flux(f):
@@ -498,11 +487,11 @@ class IPDGSecondDerivative(SecondDerivativeBase):
         flux_v = flux_w[:dim]
         pure_diff_v = flux_w[dim:]
         flux_args = (
-                list(tgt.int_flux_operand) 
+                list(tgt.int_flux_operand)
                 + list(IPDGDerivativeGenerator()(tgt.int_flux_operand)))
 
         stab_term_generator = StabilizationTermGenerator(flux_args)
-        stab_term = (self.stab_coefficient * PenaltyTerm() 
+        stab_term = (self.stab_coefficient * PenaltyTerm()
                 * stab_term_generator(tgt.int_flux_operand))
         flux = n_times(pure_diff_v.avg - stab_term)
 
@@ -515,3 +504,6 @@ class IPDGSecondDerivative(SecondDerivativeBase):
         self.add_div_bcs(tgt, bc_getter, dirichlet_tags, neumann_tags,
                 stab_term, adjust_flux, flux_v, flux_arg_int, 2*tgt.dimensions)
 
+# }}}
+
+# vim: fdm=marker
