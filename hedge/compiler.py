@@ -25,15 +25,12 @@ THE SOFTWARE.
 """
 
 
-
-
 from pytools import Record, memoize_method
 from hedge.optemplate import IdentityMapper
 
 
+# {{{ instructions
 
-
-# {{{ instructions ------------------------------------------------------------
 class Instruction(Record):
     __slots__ = ["dep_mapper_factory"]
     priority = 0
@@ -49,6 +46,7 @@ class Instruction(Record):
 
     def get_executor_method(self, executor):
         raise NotImplementedError
+
 
 class Assign(Instruction):
     # attributes: names, exprs, do_not_return, priority
@@ -109,7 +107,7 @@ class Assign(Instruction):
 
             lines = []
             lines.append("{" + comment)
-            for n, e, dnr  in zip(self.names, self.exprs, self.do_not_return):
+            for n, e, dnr in zip(self.names, self.exprs, self.do_not_return):
                 if dnr:
                     dnr_indicator = "-#"
                 else:
@@ -122,6 +120,7 @@ class Assign(Instruction):
     def get_executor_method(self, executor):
         return executor.exec_assign
 
+
 class FluxBatchAssign(Instruction):
     __slots__ = ["names", "expressions", "repr_op"]
     """
@@ -133,7 +132,7 @@ class FluxBatchAssign(Instruction):
 
         .. note ::
 
-            All operators in :attr:`expressions` are guaranteed to 
+            All operators in :attr:`expressions` are guaranteed to
             yield the same operator from
             :meth:`hedge.optemplate.operators.FluxOperatorBase.repr_op`.
 
@@ -168,6 +167,7 @@ class FluxBatchAssign(Instruction):
     def get_executor_method(self, executor):
         return executor.exec_flux_batch_assign
 
+
 class DiffBatchAssign(Instruction):
     """
     :ivar names:
@@ -175,8 +175,9 @@ class DiffBatchAssign(Instruction):
 
         .. note ::
 
-            All operators here are guaranteed to satisfy 
-            :meth:`hedge.optemplate.operators.DiffOperatorBase.equal_except_for_axis`.
+            All operators here are guaranteed to satisfy
+            :meth:`hedge.optemplate.operators.DiffOperatorBase.
+            equal_except_for_axis`.
 
     :ivar field:
     """
@@ -205,9 +206,11 @@ class DiffBatchAssign(Instruction):
     def get_executor_method(self, executor):
         return executor.exec_diff_batch_assign
 
+
 class QuadratureDiffBatchAssign(DiffBatchAssign):
     def get_executor_method(self, executor):
         return executor.exec_quad_diff_batch_assign
+
 
 class FluxExchangeBatchAssign(Instruction):
     __slots__ = [
@@ -254,13 +257,12 @@ class FluxExchangeBatchAssign(Instruction):
     def get_executor_method(self, executor):
         return executor.exec_flux_exchange_batch_assign
 
-
-
-
 # }}}
 
-# {{{ graphviz/dot dataflow graph drawing -------------------------------------
-def dot_dataflow_graph(code, max_node_label_length=30, 
+
+# {{{ graphviz/dot dataflow graph drawing
+
+def dot_dataflow_graph(code, max_node_label_length=30,
         label_wrap_width=50):
     origins = {}
     node_names = {}
@@ -315,11 +317,11 @@ def dot_dataflow_graph(code, max_node_label_length=30,
 
     return "digraph dataflow {\n%s\n}\n" % "\n".join(result)
 
-
-
 # }}}
 
-# {{{ code representation -----------------------------------------------------
+
+# {{{ code representation
+
 class Code(object):
     def __init__(self, instructions, result):
         self.instructions = instructions
@@ -531,12 +533,11 @@ class Code(object):
 
     # }}}
 
-
-
-
 # }}}
 
-# {{{ compiler ----------------------------------------------------------------
+
+# {{{ compiler
+
 class OperatorCompilerBase(IdentityMapper):
     class FluxRecord(Record):
         __slots__ = ["flux_expr", "dependencies", "repr_op"]
@@ -592,7 +593,7 @@ class OperatorCompilerBase(IdentityMapper):
         self.typedict = TypeInferrer()(expr, type_hints)
 
         # {{{ flux batching
-        # Fluxes can be evaluated faster in batches. Here, we find flux 
+        # Fluxes can be evaluated faster in batches. Here, we find flux
         # batches that we can evaluate together.
 
         # For each FluxRecord, find the other fluxes its flux depends on.
@@ -627,7 +628,7 @@ class OperatorCompilerBase(IdentityMapper):
                 for repr_op, batch in batches_by_repr_op.iteritems():
                     self.flux_batches.append(
                             self.FluxBatch(
-                                repr_op=repr_op, 
+                                repr_op=repr_op,
                                 flux_exprs=list(batch)))
 
                 admissible_deps |= set(fr.flux_expr for fr in present_batch)
@@ -711,7 +712,7 @@ class OperatorCompilerBase(IdentityMapper):
 
             from hedge.optemplate import OperatorBinding
             if isinstance(expr.child, OperatorBinding):
-                # We need to catch operator bindings here and 
+                # We need to catch operator bindings here and
                 # treat them specially. They get assigned to their
                 # own variable by default, which would mean the
                 # CSE prefix would be omitted.
@@ -728,8 +729,7 @@ class OperatorCompilerBase(IdentityMapper):
 
     def map_operator_binding(self, expr, name_hint=None):
         from hedge.optemplate.operators import (
-                ReferenceDiffOperatorBase, 
-                FluxExchangeOperator,
+                ReferenceDiffOperatorBase,
                 FluxOperatorBase)
 
         if isinstance(expr.op, ReferenceDiffOperatorBase):
@@ -750,7 +750,7 @@ class OperatorCompilerBase(IdentityMapper):
             return result_var
 
     def map_normal_component(self, expr):
-        # make sure normal component assignments stand alone and don't get 
+        # make sure normal component assignments stand alone and don't get
         # muddled up in vector math
         return self.assign_to_new_var(expr)
 
@@ -765,7 +765,7 @@ class OperatorCompilerBase(IdentityMapper):
             return self.assign_to_new_var(
                     type(expr)(
                         expr.function,
-                        [self.assign_to_new_var(self.rec(par)) 
+                        [self.assign_to_new_var(self.rec(par))
                             for par in expr.parameters]))
 
     def map_ref_diff_op_binding(self, expr):
@@ -780,7 +780,7 @@ class OperatorCompilerBase(IdentityMapper):
             names = [self.get_var_name() for d in all_diffs]
 
             from pytools import single_valued
-            op_class=single_valued(type(d.op) for d in all_diffs)
+            op_class = single_valued(type(d.op) for d in all_diffs)
 
             from hedge.optemplate.operators import \
                     ReferenceQuadratureStiffnessTOperator
@@ -815,7 +815,6 @@ class OperatorCompilerBase(IdentityMapper):
 
             assert len(all_flux_xchgs) > 0
 
-            from pytools import single_valued
             names = [self.get_var_name() for d in all_flux_xchgs]
             self.code.append(
                     FluxExchangeBatchAssign(
@@ -823,7 +822,9 @@ class OperatorCompilerBase(IdentityMapper):
                         indices_and_ranks=[
                             (fe.index, fe.rank)
                             for fe in all_flux_xchgs],
-                        arg_fields=[self.rec(arg_field) for arg_field in fe.arg_fields],
+                        arg_fields=[
+                            self.rec(arg_field)
+                            for arg_field in fe.arg_fields],
                         dep_mapper_factory=self.dep_mapper_factory))
 
             from pymbolic import var
@@ -894,6 +895,7 @@ class OperatorCompilerBase(IdentityMapper):
             return result
 
         var_assignees_cache = {}
+
         def get_var_assignees(insn):
             try:
                 return var_assignees_cache[insn]
@@ -980,7 +982,7 @@ class OperatorCompilerBase(IdentityMapper):
                                 | other_assign.get_dependencies(
                                     each_vector=True))
 
-                        if (new_assignee_count + new_dep_count \
+                        if (new_assignee_count + new_dep_count
                                 > self.max_vectors_in_batch_expr):
                             continue
 
