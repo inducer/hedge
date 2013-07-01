@@ -25,11 +25,8 @@ THE SOFTWARE.
 """
 
 
-
-
+import numpy as np
 import hedge.optemplate
-
-
 
 
 class ExecutionMapperBase(hedge.optemplate.Evaluator,
@@ -72,6 +69,6 @@ class ExecutionMapperBase(hedge.optemplate.Evaluator,
         try:
             func = self.discr.exec_functions[func_name]
         except KeyError:
-            func = getattr(numpy, expr.function.name)
+            func = getattr(np, expr.function.name)
 
         return func(*[self.rec(p) for p in expr.parameters])
