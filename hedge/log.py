@@ -25,11 +25,8 @@ THE SOFTWARE.
 """
 
 
-
 from pytools.log import LogQuantity, MultiLogQuantity
-import numpy
-
-
+import numpy as np
 
 
 def axis_name(axis):
@@ -43,8 +40,6 @@ def axis_name(axis):
         raise RuntimeError("invalid axis index")
 
 
-
-
 class Integral(LogQuantity):
     """Log the volume integral of a variable in a scope."""
 
@@ -54,7 +49,8 @@ class Integral(LogQuantity):
 
         :param getter: a callable that returns the value of which to
           take the integral.
-        :param discr: a L{discretization.Discretization} to which the variable belongs.
+        :param discr: a :class:`hedge.discretization.Discretization`
+            to which the variable belongs.
         :param name: the name reported to the :class:`pytools.log.LogManager`.
         :param unit: the unit of measure for the log quantity.
         :param description: A description fed to the :class:`pytools.log.LogManager`.
@@ -82,12 +78,10 @@ class Integral(LogQuantity):
 
         if len(log_shape(var)) == 1:
             return sum(
-                    self.discr.integral(numpy.abs(v))
+                    self.discr.integral(np.abs(v))
                     for v in var)
         else:
             return self.discr.integral(var)
-
-
 
 
 class LpNorm(LogQuantity):
@@ -99,12 +93,14 @@ class LpNorm(LogQuantity):
 
         :param getter: a callable that returns the value of which to
           take the norm.
-        :param discr: a L{discretization.Discretization} to which the variable belongs.
+        :param discr: a :class:`hedge.discretization.Discretization`
+            to which the variable belongs.
         :param p: the power of the norm.
         :param name: the name reported to the :class:`pytools.log.LogManager`.
         :param unit: the unit of measure for the log quantity.
         :param description: A description fed to the :class:`pytools.log.LogManager`.
         """
+
         self.getter = getter
         self.discr = discr
         self.p = p
@@ -121,7 +117,7 @@ class LpNorm(LogQuantity):
     def default_aggregator(self):
         from pytools import norm_inf, Norm
 
-        if self.p == numpy.Inf:
+        if self.p == np.Inf:
             return norm_inf
         else:
             return Norm(self.p)
@@ -131,9 +127,8 @@ class LpNorm(LogQuantity):
         return self.discr.norm(var, self.p)
 
 
+# {{{ electromagnetic quantities
 
-
-# electromagnetic quantities --------------------------------------------------
 class EMFieldGetter(object):
     """Makes E and H field accessible as self.e and self.h from a variable lookup.
     To be used with the EM log quantities in this module."""
@@ -153,7 +148,6 @@ class EMFieldGetter(object):
         fields = self.fgetter()
         e, h = self.maxwell_op.split_eh(fields)
         return h
-
 
 
 class ElectricFieldEnergy(LogQuantity):
@@ -177,8 +171,6 @@ class ElectricFieldEnergy(LogQuantity):
         return self.fields.discr.integral(energy_density)
 
 
-
-
 class MagneticFieldEnergy(LogQuantity):
     def __init__(self, fields, name="W_mag"):
         LogQuantity.__init__(self, name, "J", "Energy of the magnetic field")
@@ -198,7 +190,6 @@ class MagneticFieldEnergy(LogQuantity):
         from hedge.tools import ptwise_dot
         energy_density = 1/2*(ptwise_dot(1, 1, h, b))
         return self.fields.discr.integral(energy_density)
-
 
 
 class EMFieldMomentum(MultiLogQuantity):
@@ -226,8 +217,6 @@ class EMFieldMomentum(MultiLogQuantity):
                 )
 
     def __call__(self):
-        max_op = self.fields.maxwell_op
-
         e = self.fields.e
         h = self.fields.h
 
@@ -235,8 +224,6 @@ class EMFieldMomentum(MultiLogQuantity):
 
         momentum_density = poynting_s/self.c0**2
         return self.fields.discr.integral(momentum_density)
-
-
 
 
 class EMFieldDivergenceD(LogQuantity):
@@ -256,8 +243,6 @@ class EMFieldDivergenceD(LogQuantity):
         div_d = self.bound_div_op(d)
 
         return self.fields.discr.integral(div_d)
-
-
 
 
 class EMFieldDivergenceB(MultiLogQuantity):
@@ -282,9 +267,7 @@ class EMFieldDivergenceB(MultiLogQuantity):
         div_b = self.div_op(b)
 
         return [self.fields.discr.integral(div_b),
-                self.fields.discr.integral(numpy.absolute(div_b))]
-
-
+                self.fields.discr.integral(np.absolute(div_b))]
 
 
 def add_em_energies(mgr, maxwell_op, fields):
@@ -292,10 +275,12 @@ def add_em_energies(mgr, maxwell_op, fields):
     mgr.add_quantity(MagneticFieldEnergy(fields))
 
 
-
-
 def add_em_quantities(mgr, maxwell_op, fields):
     add_em_energies(mgr, maxwell_op, fields)
     mgr.add_quantity(EMFieldMomentum(fields, maxwell_op.c))
     mgr.add_quantity(EMFieldDivergenceD(maxwell_op, fields))
     mgr.add_quantity(EMFieldDivergenceB(maxwell_op, fields))
+
+# }}}
+
+# vim: fdm=marker
