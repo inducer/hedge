@@ -26,9 +26,7 @@ THE SOFTWARE.
 """
 
 
-
-
-import numpy
+import numpy as np
 
 from hedge.models import Operator
 from hedge.second_order import LDGSecondDerivative
@@ -36,27 +34,28 @@ import hedge.data
 import hedge.iterative
 
 
-
-
 class LaplacianOperatorBase(object):
     def op_template(self, apply_minv, u=None, dir_bc=None, neu_bc=None):
         """
         :param apply_minv: :class:`bool` specifying whether to compute a complete
           divergence operator. If False, the final application of the inverse
-          mass operator is skipped. This is used in :meth:`op` in order to reduce
-          the scheme :math:`M^{-1} S u = f` to :math:`S u = M f`, so that the mass operator
-          only needs to be applied once, when preparing the right hand side
-          in :meth:`prepare_rhs`.
+          mass operator is skipped. This is used in :meth:`op` in order to
+          reduce the scheme :math:`M^{-1} S u = f` to :math:`S u = M f`, so
+          that the mass operator only needs to be applied once, when preparing
+          the right hand side in :meth:`prepare_rhs`.
 
           :class:`hedge.models.diffusion.DiffusionOperator` needs this.
         """
 
-        from hedge.optemplate import InverseMassOperator, Field, make_vector_field
+        from hedge.optemplate import Field, make_vector_field
         from hedge.second_order import SecondDerivativeTarget
 
-        if u is None: u = Field("u")
-        if dir_bc is None: dir_bc = Field("dir_bc")
-        if neu_bc is None: neu_bc = Field("neu_bc")
+        if u is None:
+            u = Field("u")
+        if dir_bc is None:
+            dir_bc = Field("dir_bc")
+        if neu_bc is None:
+            neu_bc = Field("neu_bc")
 
         # strong_form here allows IPDG to reuse the value of grad u.
         grad_tgt = SecondDerivativeTarget(
@@ -72,14 +71,14 @@ class LaplacianOperatorBase(object):
                 neumann_tags=[self.neumann_tag])
 
         def apply_diff_tensor(v):
-            if isinstance(self.diffusion_tensor, numpy.ndarray):
+            if isinstance(self.diffusion_tensor, np.ndarray):
                 sym_diff_tensor = self.diffusion_tensor
             else:
                 sym_diff_tensor = (make_vector_field(
                         "diffusion", self.dimensions**2)
                         .reshape(self.dimensions, self.dimensions))
 
-            return numpy.dot(sym_diff_tensor, v)
+            return np.dot(sym_diff_tensor, v)
 
         div_tgt = SecondDerivativeTarget(
                 self.dimensions, strong_form=False,
@@ -105,8 +104,6 @@ class LaplacianOperatorBase(object):
             return div_tgt.all
 
 
-
-
 class PoissonOperator(Operator, LaplacianOperatorBase):
     """Implements the Local Discontinuous Galerkin (LDG) Method for elliptic
     operators.
@@ -117,8 +114,10 @@ class PoissonOperator(Operator, LaplacianOperatorBase):
     """
 
     def __init__(self, dimensions, diffusion_tensor=None,
-            dirichlet_bc=hedge.data.ConstantGivenFunction(), dirichlet_tag="dirichlet",
-            neumann_bc=hedge.data.ConstantGivenFunction(), neumann_tag="neumann",
+            dirichlet_bc=hedge.data.ConstantGivenFunction(),
+            dirichlet_tag="dirichlet",
+            neumann_bc=hedge.data.ConstantGivenFunction(),
+            neumann_tag="neumann",
             scheme=LDGSecondDerivative()):
         self.dimensions = dimensions
 
@@ -130,7 +129,7 @@ class PoissonOperator(Operator, LaplacianOperatorBase):
         self.neumann_tag = neumann_tag
 
         if diffusion_tensor is None:
-            diffusion_tensor = numpy.eye(dimensions)
+            diffusion_tensor = np.eye(dimensions)
         self.diffusion_tensor = diffusion_tensor
 
     # bound operator ----------------------------------------------------------
@@ -143,8 +142,6 @@ class PoissonOperator(Operator, LaplacianOperatorBase):
         check_bc_coverage(discr.mesh, [self.dirichlet_tag, self.neumann_tag])
 
         return BoundPoissonOperator(self, discr)
-
-
 
 
 class BoundPoissonOperator(hedge.iterative.OperatorBase):
@@ -163,7 +160,7 @@ class BoundPoissonOperator(hedge.iterative.OperatorBase):
         self.compiled_op = discr.compile(op)
         self.compiled_bc_op = discr.compile(bc_op)
 
-        if not isinstance(pop.diffusion_tensor, numpy.ndarray):
+        if not isinstance(pop.diffusion_tensor, np.ndarray):
             self.diffusion = pop.diffusion_tensor.volume_interpolant(discr)
 
         # Check whether use of Poincaré mean-value method is required.
@@ -185,7 +182,7 @@ class BoundPoissonOperator(hedge.iterative.OperatorBase):
 
     def op(self, u):
         context = {"u": u}
-        if not isinstance(self.poisson_op.diffusion_tensor, numpy.ndarray):
+        if not isinstance(self.poisson_op.diffusion_tensor, np.ndarray):
             context["diffusion"] = self.diffusion
 
         result = self.compiled_op(**context)
@@ -243,11 +240,9 @@ class BoundPoissonOperator(hedge.iterative.OperatorBase):
             - self.compiled_bc_op(
                 u=self.discr.volume_zeros(),
                 dir_bc=pop.dirichlet_bc.boundary_interpolant(
-                    self.discr, pop.dirichlet_tag), 
+                    self.discr, pop.dirichlet_tag),
                 neu_bc=pop.neumann_bc.boundary_interpolant(
                     self.discr, pop.neumann_tag)))
-
-
 
 
 class HelmholtzOperator(PoissonOperator):
@@ -257,7 +252,8 @@ class HelmholtzOperator(PoissonOperator):
 
     def op_template(self, apply_minv, u=None, dir_bc=None, neu_bc=None):
         from hedge.optemplate import Field
-        if u is None: u = Field("u")
+        if u is None:
+            u = Field("u")
 
         result = PoissonOperator.op_template(self,
                 apply_minv, u, dir_bc, neu_bc)
