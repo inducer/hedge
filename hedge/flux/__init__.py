@@ -23,8 +23,6 @@ THE SOFTWARE.
 """
 
 
-
-
 import numpy
 import pymbolic.primitives
 import pymbolic.mapper.collector
@@ -35,14 +33,11 @@ import pymbolic.mapper.constant_folder
 import pymbolic.mapper.flop_counter
 
 
+# {{{ python fluxes
 
-
-# python fluxes ---------------------------------------------------------------
 class Flux(pymbolic.primitives.AlgebraicLeaf):
     def stringifier(self):
         return FluxStringifyMapper
-
-
 
 
 class FluxScalarParameter(pymbolic.primitives.Variable):
@@ -52,8 +47,6 @@ class FluxScalarParameter(pymbolic.primitives.Variable):
 
     def get_mapper_method(self, mapper):
         return mapper.map_scalar_parameter
-
-
 
 
 class FieldComponent(Flux):
@@ -80,8 +73,6 @@ class FieldComponent(Flux):
         return mapper.map_field_component
 
 
-
-
 class Normal(Flux):
     def __init__(self, axis):
         self.axis = axis
@@ -101,8 +92,6 @@ class Normal(Flux):
         return mapper.map_normal
 
 
-
-
 class _StatelessFlux(Flux):
     def __getinitargs__(self):
         return ()
@@ -112,8 +101,6 @@ class _StatelessFlux(Flux):
 
     def get_hash(self):
         return hash(self.__class__)
-
-
 
 
 class _SidedFlux(Flux):
@@ -131,23 +118,25 @@ class _SidedFlux(Flux):
         return hash((self.__class__, self.is_interior))
 
 
-
-
 class FaceJacobian(_StatelessFlux):
     def get_mapper_method(self, mapper):
         return mapper.map_face_jacobian
+
 
 class ElementJacobian(_SidedFlux):
     def get_mapper_method(self, mapper):
         return mapper.map_element_jacobian
 
+
 class ElementOrder(_SidedFlux):
     def get_mapper_method(self, mapper):
         return mapper.map_element_order
 
+
 class LocalMeshSize(_StatelessFlux):
     def get_mapper_method(self, mapper):
         return mapper.map_local_mesh_size
+
 
 def make_penalty_term(power=1):
     from pymbolic.primitives import CommonSubexpression
@@ -156,21 +145,20 @@ def make_penalty_term(power=1):
             "penalty")
 
 
-
-
 PenaltyTerm = make_penalty_term
-
-
 
 
 class FluxFunctionSymbol(pymbolic.primitives.FunctionSymbol):
     pass
 
+
 class Abs(FluxFunctionSymbol):
     arg_count = 1
 
+
 class Max(FluxFunctionSymbol):
     arg_count = 2
+
 
 class Min(FluxFunctionSymbol):
     arg_count = 2
@@ -180,19 +168,12 @@ flux_max = Max()
 flux_min = Min()
 
 
-
 def norm(v):
     return numpy.dot(v, v)**0.5
 
 
-
-
-
 def make_normal(dimensions):
     return numpy.array([Normal(i) for i in range(dimensions)], dtype=object)
-
-
-
 
 
 class FluxConstantPlaceholder(object):
@@ -212,14 +193,9 @@ class FluxConstantPlaceholder(object):
         return self.constant
 
 
-
-
 class FluxZeroPlaceholder(FluxConstantPlaceholder):
     def __init__(self):
         FluxConstantPlaceholder.__init__(self, 0)
-
-
-
 
 
 class FluxScalarPlaceholder(object):
@@ -240,8 +216,6 @@ class FluxScalarPlaceholder(object):
     @property
     def avg(self):
         return 0.5*(self.int+self.ext)
-
-
 
 
 class FluxVectorPlaceholder(object):
@@ -284,10 +258,11 @@ class FluxVectorPlaceholder(object):
     def avg(self):
         return numpy.array([scalar.avg for scalar in self.scalars])
 
+# }}}
 
 
+# {{{ internal flux wrangling
 
-# internal flux wrangling -----------------------------------------------------
 class FluxIdentityMapperMixin(object):
     def map_field_component(self, expr):
         return expr
@@ -306,12 +281,11 @@ class FluxIdentityMapperMixin(object):
         return expr
 
 
-
-
 class FluxIdentityMapper(
         pymbolic.mapper.IdentityMapper,
         FluxIdentityMapperMixin):
     pass
+
 
 class FluxSubstitutionMapper(pymbolic.mapper.substitutor.SubstitutionMapper,
         FluxIdentityMapperMixin):
@@ -323,8 +297,6 @@ class FluxSubstitutionMapper(pymbolic.mapper.substitutor.SubstitutionMapper,
             return expr
 
     map_normal = map_field_component
-
-
 
 
 class FluxStringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
@@ -350,28 +322,15 @@ class FluxStringifyMapper(pymbolic.mapper.stringifier.StringifyMapper):
         return "h"
 
 
-
-
 class PrettyFluxStringifyMapper(
         pymbolic.mapper.stringifier.CSESplittingStringifyMapperMixin,
         FluxStringifyMapper):
     pass
-
-
-
-class PrettyFluxStringifyMapper(
-        pymbolic.mapper.stringifier.CSESplittingStringifyMapperMixin,
-        FluxStringifyMapper):
-    pass
-
 
 
 class FluxFlattenMapper(pymbolic.mapper.flattener.FlattenMapper,
         FluxIdentityMapperMixin):
     pass
-
-
-
 
 
 class FluxDependencyMapper(pymbolic.mapper.dependency.DependencyMapper):
@@ -391,14 +350,9 @@ class FluxDependencyMapper(pymbolic.mapper.dependency.DependencyMapper):
         return set([expr])
 
 
-
-
-
 class FluxTermCollector(pymbolic.mapper.collector.TermCollector,
         FluxIdentityMapperMixin):
     pass
-
-
 
 
 class FluxAllDependencyMapper(FluxDependencyMapper):
@@ -410,7 +364,6 @@ class FluxAllDependencyMapper(FluxDependencyMapper):
 
     def map_local_mesh_size(self, expr):
         return set([expr])
-
 
 
 class FluxNormalizationMapper(pymbolic.mapper.collector.TermCollector,
@@ -425,14 +378,10 @@ class FluxNormalizationMapper(pymbolic.mapper.collector.TermCollector,
             return expr
 
 
-
-
 class FluxCCFMapper(pymbolic.mapper.constant_folder.CommutativeConstantFoldingMapper,
         FluxIdentityMapperMixin):
     def is_constant(self, expr):
         return not bool(FluxAllDependencyMapper()(expr))
-
-
 
 
 class FluxExpandMapper(pymbolic.mapper.expander.ExpandMapper,
@@ -440,8 +389,6 @@ class FluxExpandMapper(pymbolic.mapper.expander.ExpandMapper,
     def __init__(self):
         pymbolic.mapper.expander.ExpandMapper.__init__(self,
                 FluxNormalizationMapper())
-
-
 
 
 class FluxFlipper(FluxIdentityMapper):
@@ -455,10 +402,6 @@ class FluxFlipper(FluxIdentityMapper):
         return expr.__class__(not expr.is_interior)
 
     map_element_order = map_element_jacobian
-
-
-
-
 
 
 class FluxFlopCounter(pymbolic.mapper.flop_counter.FlopCounter):
