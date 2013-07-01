@@ -27,17 +27,13 @@ THE SOFTWARE.
 """
 
 
-
-
-import numpy
+import numpy as np
 import numpy.linalg as la
 import hedge.tools
 import hedge.mesh
 import hedge.optemplate
 import hedge._internal
 from pytools import memoize_method
-
-
 
 
 class OpTemplateFunction:
@@ -47,8 +43,6 @@ class OpTemplateFunction:
 
     def __call__(self, **vars):
         return self.discr.run_preprocessed_optemplate(self.pp_optemplate, vars)
-
-
 
 
 class _PointEvaluator(object):
@@ -61,19 +55,18 @@ class _PointEvaluator(object):
         from hedge.tools import log_shape
         ls = log_shape(field)
         if ls != ():
-            result = numpy.zeros(ls, dtype=self.discr.default_scalar_type)
+            result = np.zeros(ls, dtype=self.discr.default_scalar_type)
             from pytools import indices_in_shape
             for i in indices_in_shape(ls):
-                result[i] = numpy.dot(
+                result[i] = np.dot(
                         self.interp_coeff, field[i][self.el_range])
             return result
         else:
-            return numpy.dot(self.interp_coeff, field[self.el_range])
-
-
+            return np.dot(self.interp_coeff, field[self.el_range])
 
 
 # {{{ timestep calculator (deprecated)
+
 class TimestepCalculator(object):
     def dt_factor(self, max_system_ev, order=1,
             stepper_class=None, *stepper_args):
@@ -140,8 +133,6 @@ class TimestepCalculator(object):
                 None, stepper_class, stepper_args)
 
 # }}}
-
-
 
 
 class Discretization(TimestepCalculator):
@@ -215,7 +206,7 @@ class Discretization(TimestepCalculator):
     # {{{ construction / finalization
     def __init__(self, mesh, local_discretization=None,
             order=None, quad_min_degrees={},
-            debug=set(), default_scalar_type=numpy.float64, run_context=None):
+            debug=set(), default_scalar_type=np.float64, run_context=None):
         """
         :param quad_min_degrees: A mapping from quadrature tags to the degrees to
           which the desired quadrature is supposed to be exact.
@@ -248,7 +239,6 @@ class Discretization(TimestepCalculator):
             print "available debug flags:"
             for df in sorted(self.all_debug_flags()):
                 print "    %s" % df
-
 
         self.instrumented = False
 
@@ -392,8 +382,8 @@ class Discretization(TimestepCalculator):
             self.element_groups.append(eg)
 
             eg.members = straight_elements
-            eg.member_nrs = numpy.fromiter((el.id for el in eg.members),
-                    dtype=numpy.uint32)
+            eg.member_nrs = np.fromiter((el.id for el in eg.members),
+                    dtype=np.uint32)
             eg.local_discretization = ldis = local_discretization
             eg.ranges = UniformElementRanges(
                     0,
@@ -412,11 +402,11 @@ class Discretization(TimestepCalculator):
             # while it seems convenient, nodes should not have an
             # "element number" dimension: this would break once
             # p-adaptivity is implemented
-            self.nodes = numpy.empty(
+            self.nodes = np.empty(
                     (len(self.mesh.elements) * nodes_per_el, self.dimensions),
                     dtype=float, order="C")
 
-            unit_nodes = numpy.empty((nodes_per_el, self.dimensions),
+            unit_nodes = np.empty((nodes_per_el, self.dimensions),
                     dtype=float, order="C")
 
             for i_node, node in enumerate(ldis.unit_nodes()):
@@ -446,11 +436,11 @@ class Discretization(TimestepCalculator):
             dmats = eg.differentiation_matrices = \
                     ldis.differentiation_matrices()
             eg.stiffness_matrices = \
-                    [numpy.dot(mmat, d) for d in dmats]
+                    [np.dot(mmat, d) for d in dmats]
             eg.stiffness_t_matrices = \
-                    [numpy.dot(d.T, mmat.T) for d in dmats]
+                    [np.dot(d.T, mmat.T) for d in dmats]
             eg.minv_st = \
-                    [numpy.dot(numpy.dot(immat, d.T), mmat) for d in dmats]
+                    [np.dot(np.dot(immat, d.T), mmat) for d in dmats]
 
     @memoize_method
     def volume_jacobians(self, quadrature_tag=None, kind="numpy"):
@@ -465,9 +455,7 @@ class Discretization(TimestepCalculator):
             vol_jac = self.volume_empty(kind=kind)
 
             for eg in self.element_groups:
-                ldis = eg.local_discretization
-
-                (eg.el_array_from_volume(vol_jac).T)[:,:] = numpy.array([
+                (eg.el_array_from_volume(vol_jac).T)[:, :] = np.array([
                     abs(el.map.jacobian())
                     for el in eg.members])
 
@@ -476,14 +464,14 @@ class Discretization(TimestepCalculator):
             q_info = self.get_quadrature_info(quadrature_tag)
 
             def make_empty_quad_vol_vector():
-                return numpy.empty(q_info.node_count, dtype=numpy.float64)
+                return np.empty(q_info.node_count, dtype=np.float64)
 
             vol_jac = make_empty_quad_vol_vector()
 
             for eg in self.element_groups:
                 eg_q_info = eg.quadrature_info[quadrature_tag]
-                (eg_q_info.el_array_from_volume(vol_jac).T)[:,:] \
-                        = numpy.array([abs(el.map.jacobian()) for el in eg.members])
+                (eg_q_info.el_array_from_volume(vol_jac).T)[:, :] \
+                        = np.array([abs(el.map.jacobian()) for el in eg.members])
 
             return vol_jac
 
@@ -509,14 +497,14 @@ class Discretization(TimestepCalculator):
                 for xyz_coord in range(ldis.dimensions):
                     for rst_coord in range(ldis.dimensions):
                         (eg.el_array_from_volume(
-                            result[xyz_coord][rst_coord]).T)[:,:] \
-                                    = [ el.inverse_map.matrix[rst_coord, xyz_coord]
+                            result[xyz_coord][rst_coord]).T)[:, :] \
+                                    = [el.inverse_map.matrix[rst_coord, xyz_coord]
                                             for el in eg.members]
 
         else:
             q_info = self.get_quadrature_info(quadrature_tag)
             result = [[
-                numpy.empty(q_info.node_count)
+                np.empty(q_info.node_count)
                 for i in range(self.dimensions)]
                 for i in range(self.dimensions)]
 
@@ -527,12 +515,11 @@ class Discretization(TimestepCalculator):
                 for xyz_coord in range(ldis.dimensions):
                     for rst_coord in range(ldis.dimensions):
                         (eg_q_info.el_array_from_volume(
-                            inv_met[xyz_coord][rst_coord]).T)[:,:] \
+                            result[xyz_coord][rst_coord]).T)[:, :] \
                                     = [el.inverse_map.matrix[rst_coord, xyz_coord]
                                             for el in eg.members]
 
         return result
-
 
     @memoize_method
     def forward_metric_derivatives(self, quadrature_tag=None, kind="numpy"):
@@ -556,8 +543,8 @@ class Discretization(TimestepCalculator):
                 for xyz_coord in range(ldis.dimensions):
                     for rst_coord in range(ldis.dimensions):
                         (eg.el_array_from_volume(
-                            result[xyz_coord][rst_coord]).T)[:,:] \
-                                    = [ el.map.matrix[rst_coord, xyz_coord]
+                            result[xyz_coord][rst_coord]).T)[:, :] \
+                                    = [el.map.matrix[rst_coord, xyz_coord]
                                             for el in eg.members]
 
             return result
@@ -578,7 +565,7 @@ class Discretization(TimestepCalculator):
                 identifier=(fi_n, findices_shuffle_op_n, "wtm"),
                 generator=lambda:
                 get_write_to_map_from_permutation(
-                findices_shuffle_op_n(findices_n), findices_n))
+                    findices_shuffle_op_n(findices_n), findices_n))
 
     def _set_flux_face_data(self, f, ldis, (el, fi)):
         f.element_jacobian = el.map.jacobian()
@@ -626,8 +613,7 @@ class Discretization(TimestepCalculator):
             findices_n = ldis_n.face_indices()[fi_n]
 
             try:
-                findices_shuffle_op_n = \
-                        ldis_l.get_face_index_shuffle_to_match(
+                findices_shuffle_op_n = ldis_l.get_face_index_shuffle_to_match(
                         vertices_l, vertices_n)
 
             except FaceVertexMismatch:
@@ -707,13 +693,13 @@ class Discretization(TimestepCalculator):
         (Otherwise get_boundary would unnecessarily become non-local when run
         in parallel.)
         """
-        from hedge.discretization.data  import StraightFaceGroup
+        from hedge.discretization.data import StraightFaceGroup
         nodes = []
         vol_indices = []
         fg_type = StraightFaceGroup
         face_group = fg_type(double_sided=False,
                 debug="ilist_generation" in self.debug)
-        ldis = None # if this boundary is empty, we might as well have no ldis
+        ldis = None  # if this boundary is empty, we might as well have no ldis
         el_face_to_face_group_and_face_pair = {}
 
         for ef in self.mesh.tag_to_boundary.get(tag, []):
@@ -721,7 +707,7 @@ class Discretization(TimestepCalculator):
 
             el_slice, ldis = self.find_el_data(el.id)
             face_indices = ldis.face_indices()[face_nr]
-            face_indices_ary = numpy.array(face_indices, dtype=numpy.intp)
+            face_indices_ary = np.array(face_indices, dtype=np.intp)
 
             f_start = len(nodes)
             nodes.extend(self.nodes[el_slice.start + face_indices_ary])
@@ -758,11 +744,11 @@ class Discretization(TimestepCalculator):
 
         from hedge._internal import UniformElementRanges
         fg_ranges = [UniformElementRanges(
-            0, # FIXME: need to vary element starts
+            0,  # FIXME: need to vary element starts
             fg.ldis_loc.face_node_count(), len(face_group.face_pairs))
             for fg in face_groups]
 
-        nodes_ary = numpy.array(nodes)
+        nodes_ary = np.array(nodes)
         nodes_ary.shape = (len(nodes), self.dimensions)
 
         from hedge.discretization.data import Boundary
@@ -815,8 +801,10 @@ class Discretization(TimestepCalculator):
 
             ldis_l = fg.ldis_loc
             ldis_n = fg.ldis_opp
-            ldis_q_info_l = ldis_l.get_quadrature_info(self.quad_min_degrees[quad_tag])
-            ldis_q_info_n = ldis_n.get_quadrature_info(self.quad_min_degrees[quad_tag])
+            ldis_q_info_l = ldis_l.get_quadrature_info(
+                    self.quad_min_degrees[quad_tag])
+            ldis_q_info_n = ldis_n.get_quadrature_info(
+                    self.quad_min_degrees[quad_tag])
             fnc_l = ldis_q_info_l.face_node_count()
             fnc_n = ldis_q_info_n.face_node_count()
 
@@ -832,7 +820,7 @@ class Discretization(TimestepCalculator):
                 try:
                     findices_shuffle_op_n = \
                             ldis_q_info_l.get_face_index_shuffle_to_match(
-                            vertices_l, vertices_n)
+                                    vertices_l, vertices_n)
 
                 except FaceVertexMismatch:
                     # This happens if vertices_l is not a permutation
@@ -845,8 +833,6 @@ class Discretization(TimestepCalculator):
                     findices_shuffle_op_n = \
                             ldis_q_info_l.get_face_index_shuffle_to_match(
                                     vertices_l, vertices_n)
-                else:
-                    periodic_axis = None
 
                 # create and fill the face pair
                 quad_fp = type(quad_fg).FacePair()
@@ -944,8 +930,8 @@ class Discretization(TimestepCalculator):
                 field = with_object_array_or_scalar(
                         lambda f: f[read_map], field)
             else:
-                field = numpy.asarray(
-                        numpy.take(field, read_map, axis=len(ls)),
+                field = np.asarray(
+                        np.take(field, read_map, axis=len(ls)),
                         order="C")
 
         return ImmediateFuture(
@@ -957,7 +943,7 @@ class Discretization(TimestepCalculator):
 
         if dtype is None:
             dtype = self.default_scalar_type
-        return numpy.empty(shape + (len(self.nodes),), dtype)
+        return np.empty(shape + (len(self.nodes),), dtype)
 
     def volume_zeros(self, shape=(), dtype=None, kind="numpy"):
         if kind != "numpy":
@@ -965,7 +951,7 @@ class Discretization(TimestepCalculator):
 
         if dtype is None:
             dtype = self.default_scalar_type
-        return numpy.zeros(shape + (len(self.nodes),), dtype)
+        return np.zeros(shape + (len(self.nodes),), dtype)
 
     def interpolate_volume_function(self, f, dtype=None, kind=None):
         if kind is None:
@@ -993,7 +979,7 @@ class Discretization(TimestepCalculator):
 
         if dtype is None:
             dtype = self.default_scalar_type
-        return numpy.empty(shape + (len(self.get_boundary(tag).nodes),), dtype)
+        return np.empty(shape + (len(self.get_boundary(tag).nodes),), dtype)
 
     def boundary_zeros(self, tag, shape=(), dtype=None, kind="numpy"):
         if kind not in ["numpy", "numpy-mpi-recv"]:
@@ -1001,7 +987,7 @@ class Discretization(TimestepCalculator):
         if dtype is None:
             dtype = self.default_scalar_type
 
-        return numpy.zeros(shape + (len(self.get_boundary(tag).nodes),), dtype)
+        return np.zeros(shape + (len(self.get_boundary(tag).nodes),), dtype)
 
     def interpolate_boundary_function(self, f, tag, dtype=None, kind=None):
         if kind is None:
@@ -1017,7 +1003,7 @@ class Discretization(TimestepCalculator):
         out = self.boundary_zeros(tag, shape, dtype, kind="numpy")
         slice_pfx = (slice(None),) * len(shape)
         for point_nr, x in enumerate(self.get_boundary(tag).nodes):
-            out[slice_pfx + (point_nr,)] = f(x, None) # FIXME
+            out[slice_pfx + (point_nr,)] = f(x, None)  # FIXME
 
         return self.convert_boundary(out, tag, kind)
 
@@ -1031,9 +1017,10 @@ class Discretization(TimestepCalculator):
         for fg in self.get_boundary(tag).face_groups:
             for face_pair in fg.face_pairs:
                 oeb = face_pair.ext_side.el_base_index
-                opp_index_list = fg.index_lists[face_pair.ext_side.face_index_list_number]
+                opp_index_list = \
+                        fg.index_lists[face_pair.ext_side.face_index_list_number]
                 for i in opp_index_list:
-                    result[:,oeb+i] = face_pair.int_side.normal
+                    result[:, oeb+i] = face_pair.int_side.normal
 
         return self.convert_boundary(result, tag, kind)
 
@@ -1070,7 +1057,7 @@ class Discretization(TimestepCalculator):
 
         if is_obj_array(field):
             if len(field) == 0:
-                return numpy.zeros(())
+                return np.zeros(())
 
             dtype = None
             for field_i in field:
@@ -1084,7 +1071,7 @@ class Discretization(TimestepCalculator):
             from pytools import indices_in_shape
             for i in indices_in_shape(ls):
                 field_i = field[i]
-                if isinstance(field_i, numpy.ndarray):
+                if isinstance(field_i, np.ndarray):
                     result[i] = field_i[bdry.vol_indices]
                 else:
                     # a scalar, will be broadcast
@@ -1101,13 +1088,13 @@ class Discretization(TimestepCalculator):
                 self.boundarize_volume_field(field, tag, kind))
 
     def prepare_from_neighbor_map(self, indices):
-        return numpy.array(indices, dtype=numpy.intp)
+        return np.array(indices, dtype=np.intp)
 
     # }}}
 
     # {{{ scalar reduction ----------------------------------------------------
     def nodewise_dot_product(self, a, b):
-        return numpy.dot(a, b)
+        return np.dot(a, b)
 
     def _integral_projection(self):
         """Find a vector :math:`v` such that
@@ -1138,7 +1125,7 @@ class Discretization(TimestepCalculator):
             return self.nodewise_dot_product(
                     self._mass_integral_projection(), volume_vector)
         else:
-            result = numpy.zeros(shape=ls, dtype=float)
+            result = np.zeros(shape=ls, dtype=float)
 
             from pytools import indices_in_shape
             for i in indices_in_shape(ls):
@@ -1158,14 +1145,14 @@ class Discretization(TimestepCalculator):
         return lambda f: mass_op_func(f=f)
 
     def norm(self, volume_vector, p=2):
-        if p == numpy.Inf:
-            return numpy.abs(volume_vector).max()
+        if p == np.Inf:
+            return np.abs(volume_vector).max()
         elif p == 2:
             return self.inner_product(
                     volume_vector,
                     volume_vector) ** (1 / p)
         else:
-            return self.integral(numpy.abs(volume_vector) ** p)**(1/p)
+            return self.integral(np.abs(volume_vector) ** p)**(1/p)
 
     def inner_product(self, a, b):
         mass_op = self._compiled_mass_operator()
@@ -1184,10 +1171,10 @@ class Discretization(TimestepCalculator):
                     for sub_a, sub_b in zip(a, b)))
 
     def nodewise_max(self, a):
-        return numpy.max(a)
+        return np.max(a)
 
     def nodewise_min(self, a):
-        return numpy.min(a)
+        return np.min(a)
 
     # }}}
 
@@ -1233,7 +1220,6 @@ class Discretization(TimestepCalculator):
             for el in eg.members)
             for eg in self.element_groups)
 
-
     def get_point_evaluator(self, point, use_btree=False, thresh=0):
         def make_point_evaluator(el, eg, rng):
             """For a given element *el*/element group *eg* in which *point*
@@ -1242,7 +1228,7 @@ class Discretization(TimestepCalculator):
             """
 
             ldis = eg.local_discretization
-            basis_values = numpy.array([
+            basis_values = np.array([
                 phi(el.inverse_map(point))
                 for phi in ldis.basis_functions()])
             vdm_t = ldis.vandermonde().T
@@ -1254,13 +1240,13 @@ class Discretization(TimestepCalculator):
         if use_btree:
             elements_in_bucket = self.get_spatial_btree().generate_matches(point)
             for el, rng, eg in elements_in_bucket:
-                if el.contains_point(point,thresh):
+                if el.contains_point(point, thresh):
                     pe = make_point_evaluator(el, eg, rng)
                     return pe
         else:
             for eg in self.element_groups:
                 for el, rng in zip(eg.members, eg.ranges):
-                    if el.contains_point(point,thresh):
+                    if el.contains_point(point, thresh):
                         pe = make_point_evaluator(el, eg, rng)
                         return pe
 
@@ -1268,14 +1254,14 @@ class Discretization(TimestepCalculator):
                 "point %s not found. Consider changing threshold."
                 % point)
 
-    def get_regrid_values(self, field_in, new_discr, dtype=None, 
+    def get_regrid_values(self, field_in, new_discr, dtype=None,
             use_btree=True, thresh=0):
         """:param field_in: nodal values on old grid.
         :param new_discr: new discretization.
         :param use_btree: bool to decide if a spatial binary tree will be used.
         """
 
-        if self.get_kind(field_in)!= "numpy":
+        if self.get_kind(field_in) != "numpy":
             raise NotImplementedError(
                     "get_regrid_values needs numpy input field")
 
@@ -1295,8 +1281,9 @@ class Discretization(TimestepCalculator):
         spatial_btree = SpatialBinaryTreeBucket(*self.mesh.bounding_box())
 
         for eg in self.element_groups:
-            for el, rng in zip(eg.members,eg.ranges):
-                spatial_btree.insert((el,rng,eg),el.bounding_box(self.mesh.points))
+            for el, rng in zip(eg.members, eg.ranges):
+                spatial_btree.insert(
+                        (el, rng, eg), el.bounding_box(self.mesh.points))
 
         return spatial_btree
 
@@ -1324,9 +1311,8 @@ class Discretization(TimestepCalculator):
     # }}}
 
 
+# {{{ random utilities
 
-
-# {{{ random utilities --------------------------------------------------------
 class SymmetryMap(object):
     """A symmetry map on global DG functions.
 
@@ -1371,8 +1357,6 @@ class SymmetryMap(object):
         return result
 
 
-
-
 def generate_random_constant_on_elements(discr):
     result = discr.volume_zeros()
     import random
@@ -1380,8 +1364,6 @@ def generate_random_constant_on_elements(discr):
         for e_start, e_end in eg.ranges:
             result[e_start:e_end] = random.random()
     return result
-
-
 
 
 def ones_on_boundary(discr, tag):
@@ -1398,11 +1380,9 @@ def ones_on_boundary(discr, tag):
             el_range, ldis = discr.find_el_data(el.id)
             fl_indices = ldis.face_indices()[fl]
             result[el_range.start
-                    .asarray(fl_indices, dtype=numpy.intp)] = 1
+                    .asarray(fl_indices, dtype=np.intp)] = 1
 
     return result
-
-
 
 
 def ones_on_volume(discr):
@@ -1410,11 +1390,11 @@ def ones_on_volume(discr):
     result.fill(1)
     return result
 
-
-
 # }}}
 
-# {{{ projection between different discretizations ----------------------------
+
+# {{{ projection between different discretizations
+
 class Projector:
     def __init__(self, from_discr, to_discr):
         self.from_discr = from_discr
@@ -1467,10 +1447,9 @@ class Projector:
             to_matrix = to_ldis.vandermonde()
 
             from hedge.tools import leftsolve
-            from numpy import dot
             self.interp_matrices.append(
-                    numpy.asarray(
-                        leftsolve(from_matrix, dot(to_matrix, pmat)),
+                    np.asarray(
+                        leftsolve(from_matrix, np.dot(to_matrix, pmat)),
                         order="C"))
 
     def __call__(self, from_vec):
@@ -1478,7 +1457,7 @@ class Projector:
         from hedge.tools import log_shape
 
         ls = log_shape(from_vec)
-        result = numpy.empty(shape=ls, dtype=object)
+        result = np.empty(shape=ls, dtype=object)
 
         from pytools import indices_in_shape
         for i in indices_in_shape(ls):
@@ -1498,11 +1477,11 @@ class Projector:
         else:
             return result
 
-
-
 # }}}
 
-# {{{ filter ------------------------------------------------------------------
+
+# {{{ filter
+
 class ExponentialFilterResponseFunction:
     """A typical exponential-falloff mode response filter function.
 
@@ -1530,8 +1509,6 @@ class ExponentialFilterResponseFunction:
         return exp(- self.alpha * eta ** self.order)
 
 
-
-
 class Filter:
     def __init__(self, discr, mode_response_func):
         from warnings import warn
@@ -1546,7 +1523,9 @@ class Filter:
 
 # }}}
 
-# {{{ high-precision projection in 1D -----------------------------------------
+
+# {{{ high-precision projection in 1D
+
 def adaptive_project_function_1d(discr, f, dtype=None, kind=None,
         epsrel=1e-8, epsabs=1e-8):
     if kind is None:
@@ -1561,7 +1540,6 @@ def adaptive_project_function_1d(discr, f, dtype=None, kind=None,
 
     from scipy.integrate import quad
 
-    slice_pfx = (slice(None),) * len(shape)
     out = discr.volume_empty(shape, dtype, kind="numpy")
 
     from pytools import indices_in_shape
@@ -1573,12 +1551,12 @@ def adaptive_project_function_1d(discr, f, dtype=None, kind=None,
             for el, el_slice in zip(eg.members, eg.ranges):
                 a = discr.nodes[el_slice.start][0]
                 b = discr.nodes[el_slice.stop-1][0]
-                el_result = numpy.dot(
+                el_result = np.dot(
                         ldis.vandermonde(),
-                        el.inverse_map.jacobian()*numpy.array([
+                        el.inverse_map.jacobian()*np.array([
                             quad(func=lambda x:
-                                basis_func(el.inverse_map(numpy.array([x])))
-                                * numpy.asarray(f(numpy.array([x]), el))[idx], a=a, b=b,
+                                basis_func(el.inverse_map(np.array([x])))
+                                * np.asarray(f(np.array([x]), el))[idx], a=a, b=b,
                                 epsrel=epsrel, epsabs=epsabs)[0]
                             for i, basis_func in enumerate(basis)]))
 
