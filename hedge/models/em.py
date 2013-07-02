@@ -296,7 +296,15 @@ class MaxwellOperator(HyperbolicOperator):
                 warn("Incident boundary conditions assume homogeneous"
                      " background material, results may be unphysical")
 
-        return cse(-self.incident_bc_data(self, e, h))
+        from hedge.tools import count_subset
+        fld_cnt = count_subset(self.get_eh_subset())
+
+        from hedge.tools import is_zero
+        incident_bc_data = self.incident_bc_data(self, e, h)
+        if is_zero(incident_bc_data):
+            return make_obj_array([0]*fld_cnt)
+        else:
+            return cse(-incident_bc_data)
 
     def op_template(self, w=None):
         """The full operator template - the high level description of
@@ -334,6 +342,7 @@ class MaxwellOperator(HyperbolicOperator):
             material_divisor = join_fields(
                     [epsilon]*elec_components,
                     [mu]*mag_components)
+
 
         tags_and_bcs = [
                 (self.pec_tag, self.pec_bc(w)),
@@ -468,7 +477,7 @@ class MaxwellOperator(HyperbolicOperator):
 
     def max_eigenvalue(self, t, fields=None, discr=None, context={}):
         if self.fixed_material:
-            return self.max_eigenvalue_expr(self, t)
+            return self.max_eigenvalue_expr()
         else:
             raise ValueError("max_eigenvalue is no longer supported for "
                     "variable-coefficient problems--use max_eigenvalue_expr")
