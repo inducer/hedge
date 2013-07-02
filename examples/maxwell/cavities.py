@@ -18,6 +18,9 @@
 from __future__ import division
 import numpy as np
 
+import logging
+logger = logging.getLogger(__name__)
+
 
 def main(write_output=True, allow_features=None, flux_type_arg=1,
         bdry_flux_type_arg=None, extra_discr_args={}):
@@ -32,6 +35,8 @@ def main(write_output=True, allow_features=None, flux_type_arg=1,
             RectangularWaveguideMode,
             RectangularCavityMode)
     from hedge.models.em import MaxwellOperator
+
+    logging.basicConfig(level=logging.DEBUG)
 
     from hedge.backends import guess_run_context
     rcon = guess_run_context(allow_features)
