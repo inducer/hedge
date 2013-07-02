@@ -52,7 +52,9 @@ class ExecutionMapperBase(hedge.optemplate.Evaluator,
             raise NotImplementedError("node coordinate components on quad. grids")
         # FIXME: Data transfer and strided CPU index every time, ugh.
         return self.discr.convert_volume(
-                self.discr.nodes[:, expr.axis],
+                # Yes, that .copy() is necessary because much of hedge
+                # doesn't check for striding. Ugh^2.
+                self.discr.nodes[:, expr.axis].copy(),
                 kind=self.discr.compute_kind)
 
     def map_normal_component(self, expr):
