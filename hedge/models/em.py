@@ -371,7 +371,7 @@ class MaxwellOperator(HyperbolicOperator):
                         for tag, bc in tags_and_bcs))
                     ) / material_divisor
 
-    def bind(self, discr, **extra_context):
+    def bind(self, discr):
         "Convert the abstract operator template into compiled code."
         from hedge.mesh import check_bc_coverage
         check_bc_coverage(discr.mesh, [
@@ -379,7 +379,7 @@ class MaxwellOperator(HyperbolicOperator):
 
         compiled_op_template = discr.compile(self.op_template())
 
-        def rhs(t, w):
+        def rhs(t, w, **extra_context):
             kwargs = {}
             kwargs.update(extra_context)
 
