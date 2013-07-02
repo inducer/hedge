@@ -267,7 +267,7 @@ class EMFieldDivergenceB(MultiLogQuantity):
         div_b = self.div_op(b)
 
         return [self.fields.discr.integral(div_b),
-                self.fields.discr.integral(np.absolute(div_b))]
+                self.fields.discr.integral(abs(div_b))]
 
 
 def add_em_energies(mgr, maxwell_op, fields):
