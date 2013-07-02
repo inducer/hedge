@@ -443,7 +443,6 @@ class ExecutionMapper(ExecutionMapperBase):
 
         return result
 
-
     def map_elementwise_max(self, op, field_expr):
         field = self.rec(field_expr)
         field_out = gpuarray.zeros_like(field)
@@ -462,6 +461,24 @@ class ExecutionMapper(ExecutionMapperBase):
 
         return gpuarray.if_positive(crit, then, else_)
 
+    # {{{ scalar reduction
+
+    def map_nodal_sum(self, op, field_expr):
+        return gpuarray.subset_sum(
+                self.executor.discr._meaningful_volume_indices(),
+                self.rec(field_expr)).get()
+
+    def map_nodal_max(self, op, field_expr):
+        return gpuarray.subset_max(
+                self.executor.discr._meaningful_volume_indices(),
+                self.rec(field_expr)).get()
+
+    def map_nodal_min(self, op, field_expr):
+        return gpuarray.subset_min(
+                self.executor.discr._meaningful_volume_indices(),
+                self.rec(field_expr)).get()
+
+    # }}}
 
 
 
