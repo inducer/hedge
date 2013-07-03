@@ -1,34 +1,37 @@
-# Hedge - the Hybrid'n'Easy DG Environment
-# Copyright (C) 2007 Andreas Kloeckner
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
-
-
+"""Wiggly geometry wave propagation."""
 
 from __future__ import division
-import numpy
-import numpy.linalg as la
-from hedge.mesh import TAG_ALL, TAG_NONE
+
+__copyright__ = "Copyright (C) 2009 Andreas Kloeckner"
+
+__license__ = """
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+"""
 
 
+import numpy as np
+from hedge.mesh import TAG_ALL, TAG_NONE  # noqa
 
 
-def main(write_output=True, 
-        flux_type_arg="upwind", dtype=numpy.float64, debug=[]):
-    from pytools.stopwatch import Job
-    from math import sin, cos, pi, exp, sqrt
+def main(write_output=True,
+        flux_type_arg="upwind", dtype=np.float64, debug=[]):
+    from math import sin, cos, pi, exp, sqrt  # noqa
 
     from hedge.backends import guess_run_context
     rcon = guess_run_context()
@@ -36,7 +39,8 @@ def main(write_output=True,
     if rcon.is_head_rank:
         from hedge.mesh.reader.gmsh import generate_gmsh
         mesh = generate_gmsh(GEOMETRY, 2,
-                allow_internal_boundaries=True)
+                allow_internal_boundaries=True,
+                force_dimension=2)
 
         print "%d elements" % len(mesh.elements)
         mesh_data = rcon.distribute_mesh(mesh)
@@ -45,28 +49,28 @@ def main(write_output=True,
 
     discr = rcon.make_discretization(mesh_data, order=4, debug=debug,
             default_scalar_type=dtype)
-    from hedge.timestep import RK4TimeStepper
-    stepper = RK4TimeStepper(dtype=dtype)
+    from hedge.timestep.runge_kutta import LSRK4TimeStepper
+    stepper = LSRK4TimeStepper(dtype=dtype)
 
     from hedge.visualization import VtkVisualizer
     if write_output:
         vis = VtkVisualizer(discr, rcon, "fld")
 
-    def source_u(x, el):
-        return exp(-numpy.dot(x, x)*128)
+    source_center = 0
+    source_width = 0.05
+    source_omega = 3
+
+    import hedge.optemplate as sym
+    sym_x = sym.nodes(2)
+    sym_source_center_dist = sym_x - source_center
 
     from hedge.models.wave import StrongWaveOperator
-    from hedge.mesh import TAG_ALL, TAG_NONE
-    from hedge.data import \
-            make_tdep_given, \
-            TimeHarmonicGivenFunction, \
-            TimeIntervalGivenFunction
-
-    op = StrongWaveOperator(-1, discr.dimensions, 
-            source_f=TimeIntervalGivenFunction(
-                TimeHarmonicGivenFunction(
-                    make_tdep_given(source_u), omega=10),
-                0, 1),
+    op = StrongWaveOperator(-1, discr.dimensions,
+            source_f=
+            sym.CFunction("sin")(source_omega*sym.ScalarParameter("t"))
+            * sym.CFunction("exp")(
+                -np.dot(sym_source_center_dist, sym_source_center_dist)
+                / source_width**2),
             dirichlet_tag="boundary",
             neumann_tag=TAG_NONE,
             radiation_tag=TAG_NONE,
@@ -114,7 +118,7 @@ def main(write_output=True,
                 vis.add_data(visf,
                         [
                             ("u", fields[0]),
-                            ("v", fields[1:]), 
+                            ("v", fields[1:]),
                         ],
                         time=t,
                         step=step)

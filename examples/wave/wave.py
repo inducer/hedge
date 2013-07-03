@@ -54,21 +54,23 @@ def main(write_output=True,
     from hedge.timestep.runge_kutta import LSRK4TimeStepper
     stepper = LSRK4TimeStepper(dtype=dtype)
 
-    def source_u(x, el):
-        return exp(-np.dot(x, x)*128)
-
     from hedge.models.wave import StrongWaveOperator
     from hedge.mesh import TAG_ALL, TAG_NONE  # noqa
-    from hedge.data import \
-            make_tdep_given, \
-            TimeHarmonicGivenFunction, \
-            TimeIntervalGivenFunction
+
+    source_center = np.array([0.1, 0.22])
+    source_width = 0.05
+    source_omega = 3
+
+    import hedge.optemplate as sym
+    sym_x = sym.nodes(2)
+    sym_source_center_dist = sym_x - source_center
 
     op = StrongWaveOperator(-1, dim,
-            source_f=TimeIntervalGivenFunction(
-                TimeHarmonicGivenFunction(
-                    make_tdep_given(source_u), omega=10),
-                0, 1),
+            source_f=
+            sym.CFunction("sin")(source_omega*sym.ScalarParameter("t"))
+            * sym.CFunction("exp")(
+                -np.dot(sym_source_center_dist, sym_source_center_dist)
+                / source_width**2),
             dirichlet_tag=dir_tag,
             neumann_tag=neu_tag,
             radiation_tag=rad_tag,
@@ -87,7 +89,8 @@ def main(write_output=True,
     fields = join_fields(discr.volume_zeros(dtype=dtype),
             [discr.volume_zeros(dtype=dtype) for i in range(discr.dimensions)])
 
-    # diagnostics setup -------------------------------------------------------
+    # {{{ diagnostics setup
+
     from pytools.log import LogManager, \
             add_general_quantities, \
             add_simulation_quantities, \
@@ -116,7 +119,10 @@ def main(write_output=True,
 
     logmgr.add_watches(["step.max", "t_sim.max", "l2_u", "t_step.max"])
 
-    # timestep loop -----------------------------------------------------------
+    # }}}
+
+    # {{{ timestep loop
+
     rhs = op.bind(discr)
     try:
         from hedge.timestep import times_and_steps
@@ -150,12 +156,14 @@ def main(write_output=True,
         logmgr.close()
         discr.close()
 
+    # }}}
+
 if __name__ == "__main__":
     main(True, TAG_ALL, TAG_NONE, TAG_NONE, "upwind", np.float64,
             debug=["cuda_no_plan", "dump_optemplate_stages"])
 
 
-# entry points for py.test ----------------------------------------------------
+# {{{ entry points for py.test
 
 def test_wave():
     from pytools.test import mark_test
@@ -175,3 +183,7 @@ def test_wave():
             False, TAG_NONE, TAG_ALL, TAG_NONE)
     yield ("radiation-bc wave equation", mark_long(main),
             False, TAG_NONE, TAG_NONE, TAG_ALL)
+
+# }}}
+
+# ij

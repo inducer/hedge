@@ -343,7 +343,6 @@ class MaxwellOperator(HyperbolicOperator):
                     [epsilon]*elec_components,
                     [mu]*mag_components)
 
-
         tags_and_bcs = [
                 (self.pec_tag, self.pec_bc(w)),
                 (self.pmc_tag, self.pmc_bc(w)),

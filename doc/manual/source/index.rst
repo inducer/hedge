@@ -18,7 +18,6 @@ and (moderately useless)
     optemplate
     fluxes
     models
-    data
 
     timestepping
     visualization

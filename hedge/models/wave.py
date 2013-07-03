@@ -52,10 +52,10 @@ class StrongWaveOperator(HyperbolicOperator):
     :math:`c` is assumed to be constant across all space.
     """
 
-    def __init__(self, c, dimensions, source_f=None,
+    def __init__(self, c, dimensions, source_f=0,
             flux_type="upwind",
             dirichlet_tag=hedge.mesh.TAG_ALL,
-            dirichlet_bc_f=None,
+            dirichlet_bc_f=0,
             neumann_tag=hedge.mesh.TAG_NONE,
             radiation_tag=hedge.mesh.TAG_NONE):
         assert isinstance(dimensions, int)
@@ -175,8 +175,7 @@ class StrongWaveOperator(HyperbolicOperator):
                     + flux_op(BoundaryPair(w, rad_bc, self.radiation_tag))
                     ))
 
-        if self.source_f is not None:
-            result[0] += Field("source_u")
+        result[0] += self.source_f
 
         return result
 
@@ -189,16 +188,8 @@ class StrongWaveOperator(HyperbolicOperator):
 
         compiled_op_template = discr.compile(self.op_template())
 
-        def rhs(t, w):
-            kwargs = {"w": w}
-            if self.dirichlet_bc_f:
-                kwargs["dir_bc_u"] = self.dirichlet_bc_f.boundary_interpolant(
-                        t, discr, self.dirichlet_tag)
-
-            if self.source_f is not None:
-                kwargs["source_u"] = self.source_f.volume_interpolant(t, discr)
-
-            return compiled_op_template(**kwargs)
+        def rhs(t, w, **extra_context):
+            return compiled_op_template(t=t, w=w, **extra_context)
 
         return rhs
 
@@ -211,20 +202,20 @@ class StrongWaveOperator(HyperbolicOperator):
 # {{{ variable-velocity
 
 class VariableVelocityStrongWaveOperator(HyperbolicOperator):
-    """This operator discretizes the wave equation
-    :math:`\\partial_t^2 u = c^2 \\Delta u`.
+    r"""This operator discretizes the wave equation
+    :math:`\partial_t^2 u = c^2 \Delta u`.
 
     To be precise, we discretize the hyperbolic system
 
     .. math::
 
-        \partial_t u - c \\nabla \\cdot v = 0
+        \partial_t u - c \nabla \cdot v = 0
 
-        \partial_t v - c \\nabla u = 0
+        \partial_t v - c \nabla u = 0
     """
 
     def __init__(
-            self, c, dimensions, source=None,
+            self, c, dimensions, source=0,
             flux_type="upwind",
             dirichlet_tag=hedge.mesh.TAG_ALL,
             neumann_tag=hedge.mesh.TAG_NONE,
@@ -233,11 +224,7 @@ class VariableVelocityStrongWaveOperator(HyperbolicOperator):
             diffusion_coeff=None,
             diffusion_scheme=CentralSecondDerivative()
             ):
-        """`c` is assumed to be positive and conforms to the
-        :class:`hedge.data.ITimeDependentGivenFunction` interface.
-
-        `source` also conforms to the
-        :class:`hedge.data.ITimeDependentGivenFunction` interface.
+        """*c* and *source* are optemplate expressions.
         """
         assert isinstance(dimensions, int)
 
@@ -288,15 +275,12 @@ class VariableVelocityStrongWaveOperator(HyperbolicOperator):
     # }}}
 
     def bind_characteristic_velocity(self, discr):
-        from hedge.optemplate.operators import (
-                ElementwiseMaxOperator)
-        from hedge.optemplate import Field
-        velocity = ElementwiseMaxOperator()(Field("c"))
+        from hedge.optemplate.operators import ElementwiseMaxOperator
 
-        compiled = discr.compile(velocity)
+        compiled = discr.compile(ElementwiseMaxOperator()(self.c))
 
-        def do(t, w):
-            return compiled(c=self.c.volume_interpolant(t, discr))
+        def do(t, w, **extra_context):
+            return compiled(t=t, w=w, **extra_context)
 
         return do
 
@@ -317,21 +301,20 @@ class VariableVelocityStrongWaveOperator(HyperbolicOperator):
         v = w[1:]
 
         from hedge.tools import join_fields
-        c = Field("c")
-        flux_w = join_fields(c, w)
+        flux_w = join_fields(self.c, w)
 
         # {{{ boundary conditions
         from hedge.tools import join_fields
 
         # Dirichlet
-        dir_c = BoundarizeOperator(self.dirichlet_tag) * c
+        dir_c = BoundarizeOperator(self.dirichlet_tag) * self.c
         dir_u = BoundarizeOperator(self.dirichlet_tag) * u
         dir_v = BoundarizeOperator(self.dirichlet_tag) * v
 
         dir_bc = join_fields(dir_c, -dir_u, dir_v)
 
         # Neumann
-        neu_c = BoundarizeOperator(self.neumann_tag) * c
+        neu_c = BoundarizeOperator(self.neumann_tag) * self.c
         neu_u = BoundarizeOperator(self.neumann_tag) * u
         neu_v = BoundarizeOperator(self.neumann_tag) * v
 
@@ -341,7 +324,7 @@ class VariableVelocityStrongWaveOperator(HyperbolicOperator):
         from hedge.optemplate import make_normal
         rad_normal = make_normal(self.radiation_tag, d)
 
-        rad_c = BoundarizeOperator(self.radiation_tag) * c
+        rad_c = BoundarizeOperator(self.radiation_tag) * self.c
         rad_u = BoundarizeOperator(self.radiation_tag) * u
         rad_v = BoundarizeOperator(self.radiation_tag) * v
 
@@ -397,8 +380,10 @@ class VariableVelocityStrongWaveOperator(HyperbolicOperator):
 
         return (
                 - join_fields(
-                    -self.time_sign*c*np.dot(nabla, v) - make_diffusion(u),
-                    -self.time_sign*c*(nabla*u) - with_object_array_or_scalar(
+                    - self.time_sign*self.c*np.dot(nabla, v) - make_diffusion(u)
+                    + self.source,
+
+                    -self.time_sign*self.c*(nabla*u) - with_object_array_or_scalar(
                         make_diffusion, v)
                     )
                 +
@@ -424,26 +409,13 @@ class VariableVelocityStrongWaveOperator(HyperbolicOperator):
             if sensor is not None:
                 kwargs["sensor"] = sensor(t, w)
 
-            rhs = compiled_op_template(w=w,
-                    c=self.c.volume_interpolant(t, discr),
-                    **kwargs)
-
-            if self.source is not None:
-                rhs[0] += self.source.volume_interpolant(t, discr)
-
-            return rhs
+            return compiled_op_template(t=t, w=w, **kwargs)
 
         return rhs
 
-    def max_eigenvalue(self, t, fields=None, discr=None):
-        # Gives the max eigenvalue of a vector of eigenvalues.
-        # As the velocities of each node is stored in the velocity-vector-field
-        # a pointwise dot product of this vector has to be taken to get the
-        # magnitude of the velocity at each node. From this vector the maximum
-        # values limits the timestep.
-
-        c = self.c.volume_interpolant(t, discr)
-        return discr.nodewise_max(c)
+    def max_eigenvalue_expr(self):
+        import hedge.optemplate as sym
+        return sym.NodalMax()(sym.CFunction("fabs")(self.c))
 
 # }}}
 

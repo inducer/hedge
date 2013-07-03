@@ -1,36 +1,40 @@
-# Hedge - the Hybrid'n'Easy DG Environment
-# Copyright (C) 2009 Andreas Kloeckner
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
-
-
+"""Variable-coefficient wave propagation."""
 
 from __future__ import division
-import numpy
-import numpy.linalg as la
+
+__copyright__ = "Copyright (C) 2009 Andreas Kloeckner"
+
+__license__ = """
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+"""
+
+
+import numpy as np
 from hedge.mesh import TAG_ALL, TAG_NONE
 
 
-
-
-def main(write_output=True, \
-        dir_tag=TAG_NONE, \
-        neu_tag=TAG_NONE,\
+def main(write_output=True,
+        dir_tag=TAG_NONE,
+        neu_tag=TAG_NONE,
         rad_tag=TAG_ALL,
         flux_type_arg="upwind"):
-    from math import sin, cos, pi, exp, sqrt
+    from math import sin, cos, pi, exp, sqrt  # noqa
 
     from hedge.backends import guess_run_context
     rcon = guess_run_context()
@@ -44,13 +48,13 @@ def main(write_output=True, \
     elif dim == 2:
         from hedge.mesh.generator import make_rect_mesh
         if rcon.is_head_rank:
-            mesh = make_rect_mesh(a=(-1,-1),b=(1,1),max_area=0.003)
+            mesh = make_rect_mesh(a=(-1, -1), b=(1, 1), max_area=0.003)
     elif dim == 3:
         if rcon.is_head_rank:
             from hedge.mesh.generator import make_ball_mesh
             mesh = make_ball_mesh(max_volume=0.0005)
     else:
-        raise RuntimeError, "bad number of dimensions"
+        raise RuntimeError("bad number of dimensions")
 
     if rcon.is_head_rank:
         print "%d elements" % len(mesh.elements)
@@ -60,34 +64,32 @@ def main(write_output=True, \
 
     discr = rcon.make_discretization(mesh_data, order=4)
 
-    from hedge.timestep import RK4TimeStepper
-    stepper = RK4TimeStepper()
+    from hedge.timestep.runge_kutta import LSRK4TimeStepper
+    stepper = LSRK4TimeStepper()
 
     from hedge.visualization import VtkVisualizer
     if write_output:
         vis = VtkVisualizer(discr, rcon, "fld")
 
-    def source_u(x, el):
-        x = x - numpy.array([0.7, 0.4])
-        return exp(-numpy.dot(x, x)*256)
+    source_center = np.array([0.7, 0.4])
+    source_width = 1/16
+    source_omega = 3
 
-    def c_speed(x, el):
-        if la.norm(x) < 0.4:
-            return 1
-        else:
-            return 0.5
+    import hedge.optemplate as sym
+    sym_x = sym.nodes(2)
+    sym_source_center_dist = sym_x - source_center
 
     from hedge.models.wave import VariableVelocityStrongWaveOperator
-    from hedge.data import \
-            TimeIntervalGivenFunction, \
-            make_tdep_given
-    from hedge.mesh import TAG_ALL, TAG_NONE
     op = VariableVelocityStrongWaveOperator(
-            make_tdep_given(c_speed),
-            discr.dimensions, 
-            source=TimeIntervalGivenFunction(
-                make_tdep_given(source_u),
-                0, 0.1),
+            c=sym.If(sym.Comparison(
+                np.dot(sym_x, sym_x), "<", 0.4**2),
+                1, 0.5),
+            dimensions=discr.dimensions,
+            source=
+            sym.CFunction("sin")(source_omega*sym.ScalarParameter("t"))
+            * sym.CFunction("exp")(
+                -np.dot(sym_source_center_dist, sym_source_center_dist)
+                / source_width**2),
             dirichlet_tag=dir_tag,
             neumann_tag=neu_tag,
             radiation_tag=rad_tag,
@@ -98,7 +100,8 @@ def main(write_output=True, \
     fields = join_fields(discr.volume_zeros(),
             [discr.volume_zeros() for i in range(discr.dimensions)])
 
-    # diagnostics setup -------------------------------------------------------
+    # {{{ diagnostics setup
+
     from pytools.log import LogManager, \
             add_general_quantities, \
             add_simulation_quantities, \
@@ -120,23 +123,32 @@ def main(write_output=True, \
     logmgr.add_quantity(vis_timer)
     stepper.add_instrumentation(logmgr)
 
-    from hedge.log import Integral, LpNorm
+    from hedge.log import LpNorm
     u_getter = lambda: fields[0]
     logmgr.add_quantity(LpNorm(u_getter, discr, 1, name="l1_u"))
     logmgr.add_quantity(LpNorm(u_getter, discr, name="l2_u"))
 
     logmgr.add_watches(["step.max", "t_sim.max", "l2_u", "t_step.max"])
 
-    # timestep loop -----------------------------------------------------------
+    # }}}
+
+    # {{{ timestep loop
+
     rhs = op.bind(discr)
     try:
-        dt = op.estimate_timestep(discr, stepper=stepper, fields=fields)
+        from hedge.timestep.stability import \
+                approximate_rk4_relative_imag_stability_region
+        max_dt = (
+                1/discr.compile(op.max_eigenvalue_expr())()
+                * discr.dt_non_geometric_factor()
+                * discr.dt_geometric_factor()
+                * approximate_rk4_relative_imag_stability_region(stepper))
         if flux_type_arg == "central":
-            dt *= 0.25
+            max_dt *= 0.25
 
         from hedge.timestep import times_and_steps
         step_it = times_and_steps(final_time=3, logmgr=logmgr,
-                max_dt_getter=lambda t: dt)
+                max_dt_getter=lambda t: max_dt)
 
         for step, t, dt in step_it:
             if step % 10 == 0 and write_output:
@@ -145,8 +157,7 @@ def main(write_output=True, \
                 vis.add_data(visf,
                         [
                             ("u", fields[0]),
-                            ("v", fields[1:]), 
-                            ("c", op.c.volume_interpolant(0, discr)), 
+                            ("v", fields[1:]),
                         ],
                         time=t,
                         step=step)
@@ -162,10 +173,10 @@ def main(write_output=True, \
         logmgr.close()
         discr.close()
 
+    # }}}
+
 if __name__ == "__main__":
-    main(flux_type_arg="central")
-
-
+    main(flux_type_arg="upwind")
 
 
 # entry points for py.test ----------------------------------------------------
@@ -181,3 +192,5 @@ def test_var_velocity_wave():
             False, TAG_NONE, TAG_ALL, TAG_NONE)
     yield ("radiation-bc var-v wave equation", mark_long(main),
             False, TAG_NONE, TAG_NONE, TAG_ALL)
+
+# vim: foldmethod=marker
