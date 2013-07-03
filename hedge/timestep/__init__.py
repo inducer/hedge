@@ -27,6 +27,8 @@ THE SOFTWARE.
 """
 
 
+import numpy as np
+
 from hedge.timestep.runge_kutta import RK4TimeStepper, LSRK4TimeStepper
 from hedge.timestep.ab import AdamsBashforthTimeStepper
 from hedge.timestep.ssprk3 import SSPRK3TimeStepper
@@ -69,7 +71,7 @@ def times_and_steps(max_dt_getter, taken_dt_getter=None,
     if final_time is not None and start_time > final_time:
         raise ValueError("final_time is before start_time")
 
-    t = start_time
+    t = np.float64(start_time)
     step = 0
 
     final_step = False
