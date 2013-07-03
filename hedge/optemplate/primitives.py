@@ -29,7 +29,8 @@ import numpy
 import pymbolic.primitives
 import hedge.mesh
 
-from pymbolic.primitives import make_common_subexpression  # noqa
+from pymbolic.primitives import (  # noqa
+        make_common_subexpression, If, Comparison)
 
 from pytools import MovedFunctionDeprecationWrapper
 

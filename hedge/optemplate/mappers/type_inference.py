@@ -443,6 +443,14 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
         return self.infer_for_children(expr, typedict,
                 children=[expr.base, expr.exponent])
 
+    def map_if(self, expr, typedict):
+        return self.infer_for_children(expr, typedict,
+                children=[expr.condition, expr.then, expr.else_])
+
+    def map_comparison(self, expr, typedict):
+        return self.infer_for_children(expr, typedict,
+                children=[expr.left, expr.right])
+
     def map_if_positive(self, expr, typedict):
         return self.infer_for_children(expr, typedict,
                 children=[expr.criterion, expr.then, expr.else_])
@@ -666,7 +674,8 @@ class TypeInferrer(pymbolic.mapper.RecursiveMapper):
                 QuadratureRepresentation(expr.quadrature_tag))
                 .unify(typedict[expr], expr))
         else:
-            return (type_info.KnownVolume().unify(typedict[expr], expr))
+            return (type_info.VolumeVector(NodalRepresentation())
+                    .unify(typedict[expr], expr))
 
     def map_normal_component(self, expr, typedict):
         # FIXME: This is a bit dumb. If the quadrature_tag is None,

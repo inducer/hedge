@@ -222,6 +222,26 @@ class ExecutionMapper(ExecutionMapperBase):
         result[false_indices] = else_
         return result
 
+    def map_if(self, expr):
+        bool_crit = self.rec(expr.condition)
+        then = self.rec(expr.then)
+        else_ = self.rec(expr.else_)
+
+        true_indices = np.nonzero(bool_crit)
+        false_indices = np.nonzero(~bool_crit)
+
+        result = self.discr.volume_empty(
+                kind=self.discr.compute_kind)
+
+        if isinstance(then, np.ndarray):
+            then = then[true_indices]
+        if isinstance(else_, np.ndarray):
+            else_ = else_[false_indices]
+
+        result[true_indices] = then
+        result[false_indices] = else_
+        return result
+
     def map_ref_diff_base(self, op, field_expr):
         raise NotImplementedError(
                 "differentiation should be happening in batched form")

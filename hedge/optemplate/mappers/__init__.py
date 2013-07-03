@@ -1256,6 +1256,12 @@ class _InnerDerivativeJoiner(pymbolic.mapper.RecursiveMapper):
     def map_quotient(self, expr, *args):
         return DerivativeJoiner()(expr)
 
+    map_node_coordinate_component = map_algebraic_leaf
+    map_normal_component = map_algebraic_leaf
+    map_jacobian = map_algebraic_leaf
+    map_inverse_metric_derivative = map_algebraic_leaf
+    map_forward_metric_derivative = map_algebraic_leaf
+
 
 class DerivativeJoiner(CSECachingMapperMixin, IdentityMapper):
     """Joins derivatives:
