@@ -6,3 +6,4 @@ Visualization normals issue
 Upwinding for the wave equation
 
 vector exprs with scalars as arguments
+Get rid of hedge.data outright
