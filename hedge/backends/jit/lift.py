@@ -150,8 +150,6 @@ class JitLifter:
         return mod.compile(self.discr.toolchain).lift
 
     def __call__(self, fgroup, matrix, scaling, field, out):
-        result = self.discr.volume_zeros(dtype=field.dtype)
-
         from pytools import to_uncomplex_dtype
         uncomplex_dtype = to_uncomplex_dtype(field.dtype)
         args = [fgroup, matrix.astype(uncomplex_dtype), field, out]
@@ -159,6 +157,6 @@ class JitLifter:
         if scaling is not None:
             args.append(scaling)
 
-        self.make_lift(fgroup, 
-                with_scale=scaling is not None, 
-                dtype=field.dtype)(*args)
+        self.make_lift(fgroup,
+                scaling is not None,
+                field.dtype)(*args)
