@@ -145,7 +145,8 @@ def print_error_structure(discr, computed, reference, diff,
 # exec mapper -----------------------------------------------------------------
 class ExecutionMapper(ExecutionMapperBase):
     def exec_assign(self, insn):
-        return [(insn.name, self(insn.expr))], []
+        return [(name, self(expr))
+                for name, expr in zip(insn.names, insn.exprs)], []
 
     def exec_vector_expr_assign(self, insn):
         if self.executor.discr.instrumented:
@@ -647,9 +648,9 @@ class Executor(object):
         def dump_optemplate(name, optemplate):
             if "dump_optemplate_stages" in debug_flags:
                 from hedge.tools import open_unique_debug_file
-                from hedge.optemplate import pretty_print_optemplate
+                from hedge.optemplate import pretty
                 open_unique_debug_file("%02d-%s" % (stage[0], name), ".txt").write(
-                        pretty_print_optemplate(optemplate))
+                        pretty(optemplate))
                 stage[0] += 1
 
         from hedge.optemplate.mappers import BoundaryCombiner
