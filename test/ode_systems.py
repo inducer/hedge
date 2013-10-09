@@ -18,11 +18,7 @@
 from __future__ import division
 
 
-
-
 import numpy
-import numpy.linalg as la
-from hedge.backends.jit import Discretization as JITDiscretization
 from math import sqrt, log, sin, cos, exp
 
 
@@ -40,9 +36,6 @@ class LinearODESystemsBase():
         self.t_end = 1
         self.initial_values = numpy.array([self.soln_0(self.t_start),
             self.soln_1(self.t_start)])
-
-
-
 
 
 class Basic(LinearODESystemsBase):
@@ -76,9 +69,6 @@ class Basic(LinearODESystemsBase):
                 5*sqrt(3)/3*sin(inner)
                 + cos(inner)
                 )
-
-
-
 
 
 class Full(LinearODESystemsBase):
@@ -115,9 +105,6 @@ class Full(LinearODESystemsBase):
         return exp(t)*sin(t)
 
 
-
-
-
 class Real(LinearODESystemsBase):
     """
     ODE-system - real
@@ -147,8 +134,6 @@ class Real(LinearODESystemsBase):
 
     def soln_1(self, t):
         return 1/3*exp(-4*t)*(2*exp(5*t)-3)
-
-
 
 
 class Comp(LinearODESystemsBase):
@@ -182,9 +167,6 @@ class Comp(LinearODESystemsBase):
         return sin(t)*(cos(2*t)-1)-cos(t)*sin(2*t)
 
 
-
-
-
 class CC(LinearODESystemsBase):
     """
     ODE-system - complex-conjungated
@@ -212,9 +194,6 @@ class CC(LinearODESystemsBase):
 
     def soln_1(self, t):
         return exp(t)*cos(t)
-
-
-
 
 
 class Tria(LinearODESystemsBase):
@@ -250,9 +229,6 @@ class Tria(LinearODESystemsBase):
                 )
 
 
-
-
-
 class Inh(LinearODESystemsBase):
     """
     ODE-system - inhom
@@ -281,13 +257,11 @@ class Inh(LinearODESystemsBase):
 
     def soln_0(self, t):
         return exp(-2*t) * (6/25*sin(3*t)
-                +42/25*cos(3*t))+8/25*exp(2*t)
+                + 42/25*cos(3*t))+8/25*exp(2*t)
 
     def soln_1(self, t):
         return exp(-2*t) * (-42/25*sin(3*t)
-                +6/25*cos(3*t))-6/25*exp(2*t)
-
-
+                + 6 / 25*cos(3*t))-6/25*exp(2*t)
 
 
 class Inh2(LinearODESystemsBase):
@@ -326,9 +300,6 @@ class Inh2(LinearODESystemsBase):
         return -9/40*exp(-4*t)+3/5*exp(t)-0.5*t-3/8
 
 
-
-
-
 class ExtForceStiff(LinearODESystemsBase):
     """
     ∂w/∂t = A w + f(t)
@@ -364,11 +335,9 @@ class ExtForceStiff(LinearODESystemsBase):
                 - 1000 * (exp(-t) + exp(-0.001*t))
 
     def soln_1(self, t):
-        return 1000 * (self.c1 * exp(self.lambda_1*t) * (self.lambda_1 + 1)\
-                + self.c2 * exp(self.lambda_2*t) * (self.lambda_2 + 1)\
+        return 1000 * (self.c1 * exp(self.lambda_1*t) * (self.lambda_1 + 1)
+                + self.c2 * exp(self.lambda_2*t) * (self.lambda_2 + 1)
                 - 999 * exp(-0.001*t))
-
-
 
 
 class StiffUncoupled(LinearODESystemsBase):
@@ -401,9 +370,6 @@ class StiffUncoupled(LinearODESystemsBase):
         return exp(self.lambda_2*t)
 
 
-
-
-
 class NonStiffUncoupled(LinearODESystemsBase):
     """
     ∂w/∂t = A w
@@ -434,17 +400,14 @@ class NonStiffUncoupled(LinearODESystemsBase):
         return exp(self.lambda_2*t)
 
 
-
-
-
 class WeakCoupled(LinearODESystemsBase):
     """
     A = [[-1,0.001]
         [0.001,-0.001]]
     """
     def __init__(self):
-        self.lambda_1 = -(sqrt(998005)+1001)/2000  #-1.000001001
-        self.lambda_2 = (sqrt(998005)-1001)/2000   #-0.000998999
+        self.lambda_1 = -(sqrt(998005)+1001)/2000  # -1.000001001
+        self.lambda_2 = (sqrt(998005)-1001)/2000   # -0.000998999
         LinearODESystemsBase.__init__(self)
         self.t_end = 2
 
@@ -470,16 +433,14 @@ class WeakCoupled(LinearODESystemsBase):
                 )
 
 
-
-
 class WeakCoupledInit(LinearODESystemsBase):
     """
     A = [[-1,0.001]
         [0.001,-0.001]]
     """
     def __init__(self):
-        self.lambda_1 = -(sqrt(998005)+1001)/2000  #-1.000001001
-        self.lambda_2 = (sqrt(998005)-1001)/2000   #-0.000998999
+        self.lambda_1 = -(sqrt(998005)+1001)/2000  # -1.000001001
+        self.lambda_2 = (sqrt(998005)-1001)/2000   # -0.000998999
         self.a11 = -1
         self.a12 = 0.001
         self.t_start = 0
@@ -515,9 +476,6 @@ class WeakCoupledInit(LinearODESystemsBase):
                 )
 
 
-
-
-
 class StrongCoupled(LinearODESystemsBase):
     """
     A = [[-1,-1]
@@ -549,9 +507,6 @@ class StrongCoupled(LinearODESystemsBase):
                 exp(self.lambda_2*t) * (sqrt(994001)+999)
                 + exp(self.lambda_1*t) * (999-sqrt(994001))
                 )
-
-
-
 
 
 class ExtForceNonStiff(LinearODESystemsBase):
@@ -589,12 +544,8 @@ class ExtForceNonStiff(LinearODESystemsBase):
 
     def soln_1(self, t):
         return self.c1 * (self.lambda_1 + 10) * exp(self.lambda_1*t)\
-                + self.c2 *(self.lambda_2 + 10) * exp(self.lambda_2*t)\
+                + self.c2 * (self.lambda_2 + 10) * exp(self.lambda_2*t)\
                 - 9 * exp(-t)
-
-
-
-
 
 
 class StiffCoupled2(LinearODESystemsBase):
@@ -624,10 +575,7 @@ class StiffCoupled2(LinearODESystemsBase):
         return exp(self.lambda_1*t) + exp(self.lambda_2*t)
 
     def soln_1(self, t):
-        return  exp(self.lambda_2*t)
-
-
-
+        return exp(self.lambda_2*t)
 
 
 class StiffComp(LinearODESystemsBase):
@@ -657,10 +605,7 @@ class StiffComp(LinearODESystemsBase):
         return 2*cos(10*t)
 
     def soln_1(self, t):
-        return  -20*sin(10*t)
-
-
-
+        return -20*sin(10*t)
 
 
 class StiffComp2(LinearODESystemsBase):
@@ -699,13 +644,11 @@ class StiffComp2(LinearODESystemsBase):
     def soln_1(self, t):
         return -1/self.a12 * (
                 (exp(self.alpha*t)*self.omega*sin(t*self.omega)
-                    + (self.a11-self.alpha)*exp(self.alpha*t)*cos(t*self.omega))*self.c2
+                    + (self.a11-self.alpha)*exp(self.alpha*t)*cos(t*self.omega))
+                * self.c2
                 + ((self.a11-self.alpha)*exp(self.alpha*t)*sin(t*self.omega)
                     - exp(self.alpha*t)*self.omega*cos(t*self.omega))*self.c1
                 )
-
-
-
 
 
 class StiffOscil(LinearODESystemsBase):
@@ -735,4 +678,4 @@ class StiffOscil(LinearODESystemsBase):
         return 1/10*sin(t*10)
 
     def soln_1(self, t):
-        return  sin(t)
+        return sin(t)
