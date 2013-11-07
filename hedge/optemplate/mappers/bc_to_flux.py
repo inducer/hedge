@@ -272,8 +272,8 @@ class BCToFluxRewriter(CSECachingMapperMixin, IdentityMapper):
 
         mbfeef = MaxBoundaryFluxEvaluableExpressionFinder(list(vol_field),
                 self.expensive_bdry_op_detector)
-        #from hedge.optemplate.tools import pretty_print_optemplate
-        #print pretty_print_optemplate(bdry_field)
+        #from hedge.optemplate.tools import pretty
+        #print pretty(bdry_field)
         #raw_input("YO")
         new_bdry_field = mbfeef(bdry_field)
 

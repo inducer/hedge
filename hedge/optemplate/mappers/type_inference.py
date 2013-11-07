@@ -94,10 +94,10 @@ class type_info:
             if u_s_o is NotImplemented:
                 if u_o_s is NotImplemented:
                     if expr is not None:
-                        from hedge.optemplate.tools import pretty_print_optemplate
+                        from hedge.optemplate.tools import pretty
                         raise TypeError("types '%s' and '%s' for '%s' "
                                 "cannot be unified" % (self, other,
-                                    pretty_print_optemplate(expr)))
+                                    pretty(expr)))
                     else:
                         raise TypeError("types '%s' and '%s' cannot be unified"
                                 % (self, other))
