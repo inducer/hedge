@@ -112,9 +112,9 @@ class StabilizationTermGenerator(hedge.optemplate.IdentityMapper):
                         "when generating stabilization term")
             return self.rec(expr.field, [expr.op])
         else:
-            from hedge.optemplate.tools import pretty_print_optemplate
+            from hedge.optemplate.tools import pretty
             raise ValueError("stabilization term generator doesn't know "
-                    "what to do with '%s'" % pretty_print_optemplate(expr))
+                    "what to do with '%s'" % pretty(expr))
 
     def map_variable(self, expr, quad_above=[]):
         from hedge.flux import FieldComponent
@@ -196,9 +196,9 @@ class IPDGDerivativeGenerator(hedge.optemplate.IdentityMapper):
             return hedge.optemplate.IdentityMapper.map_operator_binding(
                     self, expr)
         else:
-            from hedge.optemplate.tools import pretty_print_optemplate
+            from hedge.optemplate.tools import pretty
             raise ValueError("IPDG derivative generator doesn't know "
-                    "what to do with '%s'" % pretty_print_optemplate(expr))
+                    "what to do with '%s'" % pretty(expr))
 
 
 # {{{ second derivative target
