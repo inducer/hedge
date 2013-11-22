@@ -194,7 +194,7 @@ class Kernel:
 
         block, func = self.get_kernel(op_class, elgroup)
 
-        assert field.dtype == given.float_type
+        assert field.dtype == given.float_type, "Wrong types: %s: %s, %s: %s" % (field, field.dtype, given, given.float_type)
 
         use_debugbuf = set(["cuda_diff", "cuda_debugbuf"]) <= discr.debug
         if use_debugbuf:
