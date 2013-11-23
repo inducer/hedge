@@ -283,7 +283,7 @@ class ExecutionPlan(hedge.backends.cuda.plan.ExecutionPlan):
 
 
 
-def make_plan(discr, eg, given, tune_for, dofs_per_face, quadrature_tag, 
+def make_plan(discr, eg, given, tune_for, dofs_per_face, quadrature_tag,
         given_mbs_per_block=None):
     from hedge.backends.cuda.execute import Executor
     if tune_for is not None:
@@ -466,7 +466,7 @@ class Kernel:
                 else:
                     dep_field = discr.volume_zeros()
 
-            assert dep_field.dtype == given.float_type
+            assert dep_field.dtype == given.float_type, "Wrong types: %s: %s, %s: %s" % (dep_expr, dep_field.dtype, given, given.float_type)
             dep_field.bind_to_texref_ext(texref_map[dep_expr],
                     allow_double_hack=True)
 
