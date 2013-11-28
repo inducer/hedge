@@ -1,3 +1,6 @@
+.. image:: https://badge.fury.io/py/hedge.png
+    :target: http://pypi.python.org/pypi/hedge
+
 hedge is an unstructured, high-order, parallel
 Discontinuous Galerkin solver for partial differential
 equations.
