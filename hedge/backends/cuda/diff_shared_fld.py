@@ -504,7 +504,7 @@ class Kernel:
                 given.microblock.aligned_floats//chunk_size)
 
         func.prepare(
-                ["PP"] + discr.dimensions*[float_type],
+                ["PP"] + discr.dimensions*["P"],
                 texrefs=[diff_rst_mat_texref])
 
         return block, func
