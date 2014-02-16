@@ -255,7 +255,9 @@ class OrthonormalLocalDiscretization(LocalDiscretization):
         from hedge.tools import leftsolve
         # see doc/hedge-notes.tm
         v = self.vandermonde()
-        return [leftsolve(v, vdiff) for vdiff in self.grad_vandermonde()]
+        return [numpy.asarray(
+            leftsolve(v, vdiff), order="C")
+            for vdiff in self.grad_vandermonde()]
 
 # }}}
 
