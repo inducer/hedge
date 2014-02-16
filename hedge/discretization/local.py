@@ -24,9 +24,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 
-
-
-
 import numpy
 import numpy.linalg as la
 from hedge.tools import AffineMap
@@ -36,9 +33,8 @@ from pytools import memoize_method
 import hedge.mesh.element
 
 
-
-
 # {{{ warping helpers ---------------------------------------------------------
+
 class WarpFactorCalculator:
     """Calculator for Warburton's warp factor.
 
@@ -64,15 +60,12 @@ class WarpFactorCalculator:
             return self.int_f(x) / (1 - x ** 2)
 
 
-
-
 class FaceVertexMismatch(Exception):
     def __init__(self, value):
         self.value = value
+
     def __str__(self):
         return repr(self.value)
-
-
 
 
 class TriangleWarper:
@@ -115,15 +108,14 @@ class TriangleWarper:
 
         return reduce(add, shifts)
 
-
-
-
 # }}}
+
 
 TriangleBasisFunction = hedge._internal.TriangleBasisFunction
 GradTriangleBasisFunction = hedge._internal.GradTriangleBasisFunction
 TetrahedronBasisFunction = hedge._internal.TetrahedronBasisFunction
 GradTetrahedronBasisFunction = hedge._internal.GradTetrahedronBasisFunction
+
 
 # {{{ base classes ------------------------------------------------------------
 # {{{ generic base classes ----------------------------------------------------
@@ -171,7 +163,7 @@ class LocalDiscretization(object):
 
         for i_face, f_indices in enumerate(self.face_indices()):
             f_indices = numpy.array(f_indices, dtype=numpy.uintp)
-            result[f_indices, i_face*fmm_width : (i_face + 1)*fmm_width] = \
+            result[f_indices, i_face*fmm_width: (i_face + 1)*fmm_width] = \
                     face_mass_matrix
 
         return result
@@ -212,7 +204,6 @@ class LocalDiscretization(object):
         """
 
         node_tups = self.node_tuples()
-        d = self.dimensions
 
         from pytools import get_read_from_map_from_permutation
 
@@ -231,8 +222,6 @@ class LocalDiscretization(object):
 
         return p
     # }}}
-
-
 
 
 class OrthonormalLocalDiscretization(LocalDiscretization):
@@ -270,7 +259,9 @@ class OrthonormalLocalDiscretization(LocalDiscretization):
 
 # }}}
 
+
 # {{{ simplex base class ------------------------------------------------------
+
 class PkSimplexDiscretization(OrthonormalLocalDiscretization):
     # queries -----------------------------------------------------------------
     @property
@@ -294,8 +285,6 @@ class PkSimplexDiscretization(OrthonormalLocalDiscretization):
     def vertex_indices(self):
         """Return the list of the vertices' node indices."""
         from pytools import wandering_element
-
-        result = []
 
         node_tup_to_idx = dict(
                 (ituple, idx)
@@ -367,7 +356,7 @@ class PkSimplexDiscretization(OrthonormalLocalDiscretization):
 
     @memoize_method
     def face_affine_maps(self):
-        """Return an affine map for each face that maps the (n-1)-dimensional 
+        """Return an affine map for each face that maps the (n-1)-dimensional
         face unit coordinates to their volume coordintes.
         """
         face_vertex_node_index_lists = \
@@ -380,13 +369,13 @@ class PkSimplexDiscretization(OrthonormalLocalDiscretization):
                 vertex_node_indices - set(face_vertex_node_indices))]
 
         unit_nodes = self.unit_nodes()
-        sets_of_to_points = [[unit_nodes[fvni] 
+        sets_of_to_points = [[unit_nodes[fvni]
                 for fvni in face_vertex_node_indices]
                 + [find_missing_node(face_vertex_node_indices)]
                 for face_vertex_node_indices in face_vertex_node_index_lists]
         from_points = sets_of_to_points[0]
 
-        # Construct an affine map that promotes face nodes into volume 
+        # Construct an affine map that promotes face nodes into volume
         # by appending -1, this should end up on the first face
         dim = self.dimensions
         from hedge.tools.affine import AffineMap
@@ -461,7 +450,7 @@ class PkSimplexDiscretization(OrthonormalLocalDiscretization):
 
         unodes = self.unit_nodes()
         face_unit_nodes = [
-                check_and_chop(unodes[i]) 
+                check_and_chop(unodes[i])
                 for i in self.face_indices()[0]]
 
         return self.get_face_index_shuffle_lookup_map_for_nodes(face_unit_nodes)
@@ -604,7 +593,7 @@ class PkSimplexDiscretization(OrthonormalLocalDiscretization):
         def volume_up_interpolation_matrix(self):
             from hedge.tools.linalg import leftsolve
             return leftsolve(
-                        self.ldis.vandermonde(), 
+                        self.ldis.vandermonde(),
                         self.vandermonde())
 
         @memoize_method
@@ -617,7 +606,7 @@ class PkSimplexDiscretization(OrthonormalLocalDiscretization):
         @memoize_method
         def volume_to_face_up_interpolation_matrix(self):
             """Generate a matrix that maps volume nodal values to
-            a vector of face nodal values on the quadrature grid, with 
+            a vector of face nodal values on the quadrature grid, with
             faces immediately concatenated, i.e::
 
                 [face 1 nodal data][face 2 nodal data]...
@@ -643,7 +632,7 @@ class PkSimplexDiscretization(OrthonormalLocalDiscretization):
         def face_up_interpolation_matrix(self):
             from hedge.tools.linalg import leftsolve
             return leftsolve(
-                        self.ldis.face_vandermonde(), 
+                        self.ldis.face_vandermonde(),
                         self.face_vandermonde())
 
         @memoize_method
@@ -667,7 +656,6 @@ class PkSimplexDiscretization(OrthonormalLocalDiscretization):
                     order="C")
                     for diff_vdm in self.diff_vandermonde_matrices()]
 
-
         @memoize_method
         def face_mass_matrix(self):
             return numpy.asarray(
@@ -680,7 +668,7 @@ class PkSimplexDiscretization(OrthonormalLocalDiscretization):
 
         @memoize_method
         def multi_face_mass_matrix(self):
-            z= self.ldis._assemble_multi_face_mass_matrix(
+            z = self.ldis._assemble_multi_face_mass_matrix(
                     self.face_mass_matrix())
             return z
         # }}}
@@ -697,7 +685,6 @@ class PkSimplexDiscretization(OrthonormalLocalDiscretization):
                     self.get_face_index_shuffle_lookup_map())
         # }}}
 
-
     @memoize_method
     def get_quadrature_info(self, exact_to_degree):
         return self.QuadratureInfo(self, exact_to_degree)
@@ -706,6 +693,7 @@ class PkSimplexDiscretization(OrthonormalLocalDiscretization):
 
 # }}}
 # }}}
+
 
 # {{{ interval local discretization -------------------------------------------
 class IntervalDiscretization(PkSimplexDiscretization):
@@ -803,7 +791,7 @@ class IntervalDiscretization(PkSimplexDiscretization):
           r**i for i <= N
         """
         from hedge.polynomial import VectorLegendreFunction
-        return [VectorLegendreFunction(idx[0]) 
+        return [VectorLegendreFunction(idx[0])
                 for idx in self.generate_mode_identifiers()]
 
     def grad_basis_functions(self):
@@ -839,9 +827,8 @@ class IntervalDiscretization(PkSimplexDiscretization):
     def dt_geometric_factor(self, vertices, el):
         return abs(el.map.jacobian())
 
-
-
 # }}}
+
 
 # {{{ triangle local discretization -------------------------------------------
 class TriangleDiscretization(PkSimplexDiscretization):
@@ -929,6 +916,7 @@ class TriangleDiscretization(PkSimplexDiscretization):
                     []).append(node_tup)
 
         result = []
+
         def add_face_nodes(faces):
             result.extend(faces_to_nodes.get(frozenset(faces), []))
 
@@ -1032,7 +1020,7 @@ class TriangleDiscretization(PkSimplexDiscretization):
     # {{{ basis functions -----------------------------------------------------
     @memoize_method
     def basis_functions(self):
-        """Get a sequence of functions that form a basis of the 
+        """Get a sequence of functions that form a basis of the
         approximation space.
 
         The approximation space is spanned by the polynomials:::
@@ -1043,7 +1031,7 @@ class TriangleDiscretization(PkSimplexDiscretization):
                 self.generate_mode_identifiers()]
 
     def grad_basis_functions(self):
-        """Get the gradient functions of the basis_functions(), 
+        """Get the gradient functions of the basis_functions(),
         in the same order.
         """
 
@@ -1063,9 +1051,8 @@ class TriangleDiscretization(PkSimplexDiscretization):
                 for vi1, vi2 in [(0, 1), (1, 2), (2, 0)])/2
         return area / semiperimeter
 
-
-
 # }}}
+
 
 # {{{ tetrahedron local discretization ----------------------------------------
 class TetrahedronDiscretization(PkSimplexDiscretization):
@@ -1114,8 +1101,8 @@ class TetrahedronDiscretization(PkSimplexDiscretization):
     """
 
     # In case you were wondering: the double backslashes in the docstring
-    # above are required because single backslashes serve to escape 
-    # their subsequent newlines, and thus end up not yielding a 
+    # above are required because single backslashes serve to escape
+    # their subsequent newlines, and thus end up not yielding a
     # correct docstring.
 
     dimensions = 3
@@ -1151,6 +1138,7 @@ class TetrahedronDiscretization(PkSimplexDiscretization):
                         []).append(node_tup)
 
             result = []
+
             def add_face_nodes(faces):
                 result.extend(faces_to_nodes.get(frozenset(faces), []))
 
@@ -1194,8 +1182,8 @@ class TetrahedronDiscretization(PkSimplexDiscretization):
             result = node_tups
             #result.sort(cmp_node_tuples)
 
-        for i, nt in enumerate(result):
-            fnt = self.faces_for_node_tuple(nt)
+        #for i, nt in enumerate(result):
+            #fnt = self.faces_for_node_tuple(nt)
             #print i, nt, fnt
 
         return result
@@ -1226,9 +1214,9 @@ class TetrahedronDiscretization(PkSimplexDiscretization):
 
         # reflects vertices in equilateral coordinates
         return numpy.array([
-            (-lambda1  +lambda2),
-            (-lambda1  -lambda2  +2*lambda3            )/sqrt(3.0),
-            (-lambda1  -lambda2  -  lambda3  +3*lambda4)/sqrt(6.0),
+            (-lambda1 + lambda2),
+            (-lambda1 - lambda2 + 2*lambda3)/sqrt(3.0),
+            (-lambda1 - lambda2 - lambda3 + 3 * lambda4)/sqrt(6.0),
             ])
 
     # see doc/hedge-notes.tm
@@ -1289,7 +1277,7 @@ class TetrahedronDiscretization(PkSimplexDiscretization):
 
             # find the vertex opposite to the current face
             opp_vertex_index = (
-                    set(all_vertex_indices) 
+                    set(all_vertex_indices)
                     - set(fvi)).__iter__().next()
 
             shifted = []
@@ -1303,7 +1291,7 @@ class TetrahedronDiscretization(PkSimplexDiscretization):
                     if abs(denom) > 1e-12:
                         blend /= denom
                     else:
-                        blend = 0.5 # each edge gets shifted twice
+                        blend = 0.5  # each edge gets shifted twice
                         break
 
                 shifted.append(ep + blend*reduce(add,
@@ -1333,7 +1321,7 @@ class TetrahedronDiscretization(PkSimplexDiscretization):
                     node_dict[add_tuples(current, d3)],
                     node_dict[add_tuples(current, d4)],
                     ))
-            except KeyError, e:
+            except KeyError:
                 pass
 
         result = []
@@ -1372,6 +1360,7 @@ class TetrahedronDiscretization(PkSimplexDiscretization):
         """
         return [GradTetrahedronBasisFunction(*idx) for idx in
                 self.generate_mode_identifiers()]
+
     @memoize_method
     def face_basis(self):
         from pytools import generate_nonnegative_integer_tuples_summing_to_at_most
@@ -1386,14 +1375,13 @@ class TetrahedronDiscretization(PkSimplexDiscretization):
         result = abs(el.map.jacobian())/max(abs(fj) for fj in el.face_jacobians)
         if self.order in [1, 2]:
             from warnings import warn
-            warn("cowardly halving timestep for order 1 and 2 tets to avoid CFL issues")
+            warn("cowardly halving timestep for order 1 and 2 tets "
+                    "to avoid CFL issues")
             result /= 2
 
         return result
 
 # }}}
-
-
 
 
 GEOMETRY_TO_LDIS = {
