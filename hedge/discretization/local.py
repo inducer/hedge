@@ -594,9 +594,11 @@ class PkSimplexDiscretization(OrthonormalLocalDiscretization):
         @memoize_method
         def volume_up_interpolation_matrix(self):
             from hedge.tools.linalg import leftsolve
-            return leftsolve(
+            return numpy.asarray(
+                    leftsolve(
                         self.ldis.vandermonde(),
-                        self.vandermonde())
+                        self.vandermonde()),
+                    order="C")
 
         @memoize_method
         def diff_vandermonde_matrices(self):
