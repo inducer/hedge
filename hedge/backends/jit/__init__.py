@@ -565,6 +565,16 @@ class Discretization(hedge.discretization.Discretization):
 
         logger.info("init jit discretization: done")
 
+    # {{{ scalar reduction
+
+    def nodewise_dot_product(self, a, b):
+        return np.dot(a, b)
+
+    def nodewise_max(self, a):
+        return np.max(a)
+
+    # }}}
+
 # }}}
 
 
