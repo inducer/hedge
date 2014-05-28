@@ -18,13 +18,17 @@
 from __future__ import division
 
 
-
-
 import numpy
 import numpy.linalg as la
 import pytools.test
 
 
+try:
+    import faulthandler
+except ImportError:
+    pass
+else:
+    faulthandler.enable()
 
 
 def test_simp_orthogonality():
@@ -856,6 +860,8 @@ def test_all_periodic_no_boundary():
     """Test that an all-periodic brick has no boundary."""
     from hedge.mesh import TAG_ALL
     from hedge.mesh.generator import make_box_mesh
+    import pytest
+    pytest.skip("periodicity not currently supported")
 
     mesh = make_box_mesh(periodicity=(True,True,True))
 
@@ -915,8 +921,6 @@ def test_identify_affine_map():
         assert la.norm(b-amap2.vector) < 1e-12
 
 
-
-# main program ----------------------------------------------------------------
 if __name__ == "__main__":
     import sys
     if len(sys.argv) > 1:
@@ -924,4 +928,3 @@ if __name__ == "__main__":
     else:
         from py.test.cmdline import main
         main([__file__])
-

@@ -672,13 +672,14 @@ def make_box_mesh(a=(0, 0, 0), b=(1, 1, 1),
     axes = ["x", "y", "z"]
 
     per_count = count(p for p in periodicity if p)
-    mesh_info.pbc_groups.resize(per_count)
-    pbc_group_number = 0
 
     marker_to_tag = {}
     mesh_periodicity = []
     periodic_tags = set()
 
+    if per_count:
+        mesh_info.pbc_groups.resize(per_count)
+    pbc_group_number = 0
     for axis, axis_per in enumerate(periodicity):
         minus_marker = 1+2*axis
         plus_marker = 2+2*axis
