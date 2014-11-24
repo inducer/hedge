@@ -22,6 +22,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 
+import pymbolic
+pymbolic.disable_subscript_by_getitem()
+
 # make sure numpy-to-C++ converters are available
 import pyublas
 

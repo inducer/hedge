@@ -26,7 +26,6 @@ THE SOFTWARE.
 import numpy
 import pymbolic.primitives
 import pymbolic.mapper.collector
-import pymbolic.mapper.expander
 import pymbolic.mapper.flattener
 import pymbolic.mapper.substitutor
 import pymbolic.mapper.constant_folder
@@ -382,13 +381,6 @@ class FluxCCFMapper(pymbolic.mapper.constant_folder.CommutativeConstantFoldingMa
         FluxIdentityMapperMixin):
     def is_constant(self, expr):
         return not bool(FluxAllDependencyMapper()(expr))
-
-
-class FluxExpandMapper(pymbolic.mapper.expander.ExpandMapper,
-        FluxIdentityMapperMixin):
-    def __init__(self):
-        pymbolic.mapper.expander.ExpandMapper.__init__(self,
-                FluxNormalizationMapper())
 
 
 class FluxFlipper(FluxIdentityMapper):

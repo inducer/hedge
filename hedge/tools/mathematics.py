@@ -110,7 +110,7 @@ class SubsettableCrossProduct:
                     for k, k_real in enumerate(subset_indices(op2_subset)):
                         lc = levi_civita((i, j_real, k_real))
                         if lc != 0:
-                            this_expr += lc*op1[j]*op2[k]
+                            this_expr += lc*op1.index(j)*op2.index(k)
                             this_component.append((lc, j, k))
                 self.functions.append(pymbolic.compile(this_expr,
                     variables=[op1, op2]))

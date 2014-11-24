@@ -164,11 +164,11 @@ class CompiledVectorExpressionBase(object):
 
         var_i = var("i")
         subst_map = dict(
-                list(zip(self.vector_deps, [var(vecname)[var_i]
+                list(zip(self.vector_deps, [var(vecname).index(var_i)
                     for vecname in self.vector_dep_names]))
                 +list(zip(self.scalar_deps,
                     [var(scaname) for scaname in self.scalar_dep_names]))
-                +[(var(vei.name), var(vei.name)[var_i])
+                +[(var(vei.name), var(vei.name).index(var_i))
                     for vei in vec_expr_info_list
                     if not vei.do_not_return])
 

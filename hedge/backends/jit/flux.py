@@ -53,7 +53,7 @@ class FluxConcretizer(FluxIdentityMapper):
             return 0
         else:
             from pymbolic import var
-            return var(arg_name+"_it")[var(where+"_idx")]
+            return var(arg_name+"_it").index(var(where+"_idx"))
 
     def map_scalar_parameter(self, expr):
         from pymbolic import var

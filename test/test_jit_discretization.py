@@ -965,7 +965,7 @@ def test_elliptic():
             pymbolic.diff(expression, var), var)
             for var in variables)
 
-    rhs = laplace(truesol, [v_x[0], v_x[1]])
+    rhs = laplace(truesol, [v_x.index(0), v_x.index(1)])
     rhs_c = pymbolic.compile(rhs, variables=["x", "el"])
 
     from hedge.mesh import TAG_ALL, TAG_NONE
