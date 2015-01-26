@@ -317,7 +317,8 @@ class ExecutionMapper(ExecutionMapperBase):
             eg_quad_info = eg.quadrature_info[qtag]
 
             perform_elwise_operator(eg.ranges, eg_quad_info.el_faces_ranges,
-                eg_quad_info.ldis_quad_info.volume_to_face_up_interpolation_matrix(),
+                eg_quad_info.ldis_quad_info.volume_to_face_up_interpolation_matrix()
+                .copy(),
                 field, out)
 
         return out
