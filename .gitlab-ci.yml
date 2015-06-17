@@ -2,6 +2,7 @@ Python 2.7:
   script:
   - py_version=2.7
   - EXTRA_INSTALL=numpy
+  - echo "BOOST_BINDINGS_INC_DIR = ['boost-numeric-bindings']" > siteconf.py
   - if ! test -d boost-numeric-bindings; then git clone http://git.tiker.net/trees/boost-numeric-bindings.git; fi
   - curl -L -O -k https://gitlab.tiker.net/inducer/ci-support/raw/master/build-and-test-py-project.sh
   - ". ./build-and-test-py-project.sh"
