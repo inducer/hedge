@@ -1,2 +1,3 @@
+git+git://github.com/inducer/meshpy
 git+git://github.com/inducer/pyublas
 
