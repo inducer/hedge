@@ -165,7 +165,7 @@ def main():
                     include_dirs=INCLUDE_DIRS + EXTRA_INCLUDE_DIRS,
                     library_dirs=LIBRARY_DIRS + EXTRA_LIBRARY_DIRS,
                     libraries=LIBRARIES + EXTRA_LIBRARIES,
-                    define_macros=list(EXTRA_DEFINES.iteritems()),
+                    define_macros=list(EXTRA_DEFINES.items()),
                     extra_compile_args=conf["CXXFLAGS"],
                     extra_link_args=conf["LDFLAGS"],
                     ),
