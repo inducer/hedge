@@ -44,8 +44,7 @@ class FluxScalarParameter(pymbolic.primitives.Variable):
         pymbolic.primitives.Variable.__init__(self, name)
         self.is_complex = is_complex
 
-    def get_mapper_method(self, mapper):
-        return mapper.map_scalar_parameter
+    mapper_method = "map_scalar_parameter"
 
 
 class FieldComponent(Flux):
@@ -68,8 +67,7 @@ class FieldComponent(Flux):
                 self.index,
                 self.is_interior))
 
-    def get_mapper_method(self, mapper):
-        return mapper.map_field_component
+    mapper_method = "map_field_component"
 
 
 class Normal(Flux):
@@ -87,8 +85,7 @@ class Normal(Flux):
                 self.__class__,
                 self.axis))
 
-    def get_mapper_method(self, mapper):
-        return mapper.map_normal
+    mapper_method = "map_normal"
 
 
 class _StatelessFlux(Flux):
@@ -118,23 +115,19 @@ class _SidedFlux(Flux):
 
 
 class FaceJacobian(_StatelessFlux):
-    def get_mapper_method(self, mapper):
-        return mapper.map_face_jacobian
+    mapper_method = "map_face_jacobian"
 
 
 class ElementJacobian(_SidedFlux):
-    def get_mapper_method(self, mapper):
-        return mapper.map_element_jacobian
+    mapper_method = "map_element_jacobian"
 
 
 class ElementOrder(_SidedFlux):
-    def get_mapper_method(self, mapper):
-        return mapper.map_element_order
+    mapper_method = "map_element_order"
 
 
 class LocalMeshSize(_StatelessFlux):
-    def get_mapper_method(self, mapper):
-        return mapper.map_local_mesh_size
+    mapper_method = "map_local_mesh_size"
 
 
 def make_penalty_term(power=1):
